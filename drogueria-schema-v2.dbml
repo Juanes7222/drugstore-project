@@ -1,0 +1,1674 @@
+// =============================================================
+// Sistema Integral de Gestión para Droguería - DBML v0.3.1
+// =============================================================
+//
+// Convenciones globales:
+//   - Identificadores: VARCHAR con UUIDv7 (time-ordered; ordenación natural para sync)
+//   - Timestamps: createdAt, updatedAt en toda tabla; createdById/updatedById en transaccionales
+//   - Soft delete: isActive boolean [default: true]; deletedAt solo en Client (Habeas Data)
+//   - Decimal: montos decimal(15, 2); tasas decimal(6, 4); porcentajes decimal(5, 2); cantidades int signed
+//   - Naming: PascalCase singular tablas; camelCase columnas; FK `<entity>Id`
+//   - Polimorfismo: multi-FK + CHECK constraint (en migración SQL adicional)
+//   - AuditLog: append-only estricto, FK con delete NO ACTION/RESTRICT
+//   - Storage XML fiscal: in-DB para MVP (TOAST); migración a S3/MinIO documentada como backlog
+//
+// Cumplimiento regulatorio modelado:
+//   - Resolución DIAN 000165/2023 (FEV v1.9, UBL 2.1, XAdES-BES, CUFE/CUDE SHA-384)
+//   - Decreto 780/2016 (INVIMA: trazabilidad por lote, vencimientos)
+//   - Ley 1581/2012 (Habeas Data: consentimiento, log de acceso a datos personales)
+//   - Retención mínima 5 años para documentos fiscales
+//   - Operación local-first: SyncQueue + idempotencia + rangos por workstation
+//
+// Targets:
+//   - Este DBML apunta al servidor central (PostgreSQL).
+//   - El POS local usa SQLite/SQLCipher como subset derivado; diferencias dialectales
+//     documentadas en sección "Notas para SQLite local" al final.
+//
+// Compatibility Prisma:
+//   - DEFERRABLE constraints, CHECK constraints, partial unique indexes, EXCLUDE
+//     constraints y enums nativos se aplican en migración SQL cruda posterior
+//     (ver sección final).
+//
+// Cambios principales desde v0.1 (más recientes desde v0.2 → v0.3):
+//   + UserSession para RF-AUTH-14/33 (invalidación inmediata de sesiones)
+//   + InventoryAdjustmentDocument (RF-INV-34..42 - movimientos de ajuste requieren doc)
+//   + AutoExpirationJob (tracking de crons de AUTO_EXPIRATION)
+//   + FiscalResolutionAllocation (rangos por workstation para offline-first)
+//   + Prescription (datos completos INVIMA en sub-tabla)
+//   + SystemConfig (parámetros runtime configurables)
+//   + Habeas Data fields en Client (consentimiento + estado solicitudes)
+//   + Snapshot de clasificación de cliente en Sale (inmutabilidad histórica)
+//   + Dual numbering en Sale (localNumber offline + internalNumber post-sync)
+//   + Campos de conflict resolution en SyncQueue
+//   + Totalizador de cierre en CashShift (RF-CAJA-19..25)
+//   + TaxScheme y PaymentMethod con vigencia temporal
+//   + Optimistic locking en Lot (version)
+//   + Nuevos estados: PurchaseReceptionState, PurchaseReturnState, AdjustmentState
+//   + Enum ClientReturnState (separado de PurchaseReturnState) — flujos distintos
+//   + Enum PhysicalCountState + tabla PhysicalCount (1:N con InventoryAdjustmentDocument)
+//   + Sale.syncQueueId eliminado (acoplamiento circular) → trazabilidad vía correlationId
+//   + SaleItem.syncQueueId también removido en consecuencia
+//   - CashShift.pendingSyncSalesCount / pendingFiscalDocsCount / rejectedFiscalDocsCount (contadores stale)
+//   + FiscalDocument.archivedAt + xmlStorageKey + xmlStorageBackend + retentionExpiresAt
+//   + Prescription campos CONTROLLED_SUBSTANCE (bookEntry/Page, recipeType)
+//   + ShiftCashCount.paymentMethodIsCash + CHECK denominationsBreakdown sólo si isCash
+//   + Documentación de partial uniques vía bloque Indexes {} (taxscheme, pricehistory, taxhistory, barcode)
+//   + Nota SQLite: replicación de FiscalResolutionAllocation + manejo CONTROLLED_SUBSTANCE
+//   (v0.3.1) Correcciones de consistencia:
+//   + RecipeType enum para Prescription.recipeType
+//   + ClientReturn.creditNoteId para trazabilidad directa a nota crédito fiscal
+//   + Documentación de triggeredBy/triggeredByUserId en AutoExpirationJob
+//   + SyncOperationType incluye RESOLUTION_ALLOCATION
+//   + Nota de CHECK referenceDocumentId centralizada para migration-addons.sql
+//   + Nota explícita de CHECK PHYSICAL_COUNT en InventoryMovement
+// =============================================================
+
+
+// =============================================================
+// ENUMS
+// =============================================================
+
+Enum RoleType {
+  CASHIER
+  INVENTORY_ASSISTANT
+  ADMIN
+  ACCOUNTANT
+}
+
+Enum SaleType {
+  FREE_SALE
+  PRESCRIPTION
+  CONTROLLED_SUBSTANCE
+}
+
+Enum LotState {
+  ACTIVE
+  EXHAUSTED
+  EXPIRED
+  BLOCKED
+}
+
+Enum MovementType {
+  PURCHASE_RECEIPT
+  SALE
+  POSITIVE_ADJUSTMENT
+  NEGATIVE_ADJUSTMENT
+  CLIENT_RETURN
+  SUPPLIER_RETURN
+  ADMIN_BLOCK
+  ADMIN_UNBLOCK
+  AUTO_EXPIRATION
+  PHYSICAL_COUNT
+  INITIAL_STOCK
+}
+
+Enum ShiftState {
+  OPEN
+  CLOSED
+  FORCED_CLOSE
+}
+
+Enum CashCountType {
+  PARTIAL
+  CLOSING
+}
+
+Enum SaleOperationalState {
+  IN_PROGRESS
+  CONFIRMED
+  ANNULLED
+  ABANDONED
+}
+
+Enum IdentificationType {
+  CC
+  NIT
+  CE
+  PASSPORT
+  TI
+  PEP
+}
+
+Enum ClientType {
+  PARTICULAR
+  FREQUENT
+  INSTITUTIONAL
+}
+
+Enum SupplierIdentificationType {
+  NIT
+  CC
+  CE
+  PASSPORT
+}
+
+Enum PurchaseOrderState {
+  DRAFT
+  CONFIRMED
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  ANNULLED
+}
+
+Enum PurchaseReceptionState {
+  DRAFT
+  CONFIRMED
+  ANNULLED
+}
+
+Enum PurchaseReturnState {
+  DRAFT
+  CONFIRMED
+  APPROVED
+  ANNULLED
+}
+
+Enum ClientReturnState {
+  DRAFT
+  PENDING_PICKUP
+  CONFIRMED
+  REJECTED
+  ANNULLED
+}
+
+Enum PhysicalCountState {
+  OPEN
+  COUNTED
+  REVIEWED
+  APPROVED
+  APPLIED
+  ANNULLED
+}
+
+Enum FiscalDocumentType {
+  INVOICE
+  POS_TICKET
+  CREDIT_NOTE
+  DEBIT_NOTE
+  SUPPORT_DOCUMENT
+}
+
+Enum FiscalDocumentState {
+  PENDING_GENERATION
+  GENERATION_ERROR
+  PENDING_SIGNATURE
+  SIGNATURE_ERROR
+  PENDING_TRANSMISSION
+  IN_TRANSMISSION
+  PENDING_RESPONSE
+  VALIDATED
+  REJECTED
+  CONTINGENCY
+  ANNULLED
+}
+
+Enum ResolutionState {
+  ACTIVE
+  EXPIRING
+  EXHAUSTED
+  EXPIRED
+}
+
+Enum SyncOperationType {
+  SALE_CONFIRMATION
+  SHIFT_CLOSURE
+  CLIENT_CREATION
+  INVENTORY_ADJUSTMENT
+  FISCAL_DOCUMENT_SYNC
+  PRESCRIPTION_REGISTRATION
+  RESOLUTION_ALLOCATION
+}
+
+Enum SyncStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+Enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  ACCESS
+  EXPORT
+  LOGIN
+  LOGOUT
+  SECURITY_ALERT
+  STATE_CHANGE
+}
+
+Enum SystemModule {
+  AUTH_USERS
+  CASH_SHIFT
+  CATALOG
+  INVENTORY
+  PURCHASES
+  SALES_POS
+  CLIENTS
+  SYNC_OFFLINE
+  FISCAL_DIAN
+  REPORTS
+  CONFIGURATION
+}
+
+Enum ConfigValueType {
+  NUMBER
+  BOOLEAN
+  STRING
+  ARRAY
+  OBJECT
+}
+
+Enum BarcodeType {
+  EAN13
+  EAN14
+  GTIN
+  INTERNAL
+  DATAMATRIX
+}
+
+Enum DataSubjectRequestStatus {
+  NONE
+  PENDING_RECTIFICATION
+  PENDING_ERASURE
+  RECTIFIED
+  ERASURED
+  REJECTED
+}
+
+Enum SessionRevocationReason {
+  LOGOUT
+  INACTIVITY
+  ROLE_CHANGE
+  USER_DEACTIVATION
+  ADMIN_REVOCATION
+  PASSWORD_CHANGED
+  TOKEN_EXPIRATION
+}
+
+Enum AdjustmentState {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  APPLIED
+  ANNULLED
+}
+
+Enum TaxSchemeType {
+  IVA
+  INC
+  RETEFUENTE
+  RETEICA
+  IMPOCONSUMO
+  EXENTO
+}
+
+Enum PaymentMethodCategory {
+  CASH
+  DEBIT_CARD
+  CREDIT_CARD
+  BANK_TRANSFER
+  DIGITAL_WALLET
+  CHECK
+  CREDIT
+  OTHER
+}
+
+Enum RecipeType {
+  OFICIAL
+  PARTICULAR
+  INSTITUCIONAL
+}
+
+
+// =============================================================
+// Módulo 1 - Autenticación y Usuarios
+// =============================================================
+
+Table User {
+  id varchar [pk]
+  username varchar [unique]
+  fullName varchar
+  email varchar
+
+  passwordHash varchar
+  passwordAlgorithm varchar
+  passwordChangedAt datetime
+  passwordMustChangeNextLogin boolean [default: false]
+
+  role RoleType
+  isActive boolean [default: true]
+
+  failedLoginAttempts int [default: 0]
+  lockedUntil datetime
+  lastLoginAt datetime
+  lastLoginWorkstationId varchar
+
+  createdAt datetime
+  updatedAt datetime
+  createdById varchar
+
+  Indexes {
+    role [name: 'ix_user_role']
+  }
+
+  Note: 'Usuarios del sistema (cajeros, admin, contadores, auxiliares), distintos de Client.\nemail es dato de contacto opcional, no credencial de acceso.\nHistorial de contraseñas (N últimas) se almacena en PasswordHistory [TODO post-MVP].'
+}
+
+Table UserSession {
+  id varchar [pk]
+  userId varchar
+  workstationId varchar
+
+  tokenHash varchar [unique]
+  refreshTokenHash varchar
+
+  issuedAt datetime
+  lastActivityAt datetime
+  expiresAt datetime
+
+  revokedAt datetime
+  revokedReason SessionRevocationReason
+  revokedByUserId varchar
+
+  ipAddress varchar
+  userAgent varchar
+
+  Indexes {
+    (userId, revokedAt) [name: 'ix_usersession_user_active']
+    expiresAt [name: 'ix_usersession_expires']
+  }
+
+  Note: 'Soporte a RF-AUTH-14 (invalidación inmediata por cambio de rol) y RF-AUTH-33.\ntokenHash es SHA-256 del token raw; refreshTokenHash idem para refresh tokens.'
+}
+
+
+// =============================================================
+// Módulo 7 - Clientes
+// =============================================================
+
+Table ClientClassification {
+  id varchar [pk]
+  type ClientType [unique]
+  discountPercentage decimal(5, 2) [default: 0]
+  sortOrder int [default: 0]
+  isActive boolean [default: true]
+  createdAt datetime
+  updatedAt datetime
+
+  Note: 'id es surrogate; type es el identificador semántico. \nMantener ambos permite evolucionar a múltiples clasificaciones por tipo \n(convenios institucionales diferenciados) sin migración destructiva.'
+}
+
+Table Client {
+  id varchar [pk]
+  identificationType IdentificationType
+  identificationNumber varchar
+  fullName varchar
+  email varchar
+  phone varchar
+  address varchar
+  municipality varchar
+  department varchar
+
+  isActive boolean [default: true]
+  createdAt datetime
+  updatedAt datetime
+  createdById varchar
+  updatedById varchar
+
+  classificationId varchar
+
+  consentGivenAt datetime
+  consentVersion varchar
+  consentScope json
+  dataSubjectRequestStatus DataSubjectRequestStatus [default: 'NONE']
+  dataSubjectRequestAt datetime
+
+  Indexes {
+    (identificationType, identificationNumber) [unique, name: 'ux_client_identification']
+    fullName [name: 'ix_client_name']
+    classificationId [name: 'ix_client_classification']
+    municipality [name: 'ix_client_municipality']
+  }
+
+  Note: 'Identificación compuesta por (tipo + número) - Ley 1581/2012 Habeas Data.\nconsentScope almacena array JSON con fines autorizados: ["marketing", "data_sharing", "history"].'
+}
+
+
+// =============================================================
+// Módulo 3 - Catálogo de Productos
+// =============================================================
+
+Table Category {
+  id varchar [pk]
+  name varchar [unique]
+  sortOrder int [default: 0]
+  isActive boolean [default: true]
+  createdAt datetime
+  updatedAt datetime
+}
+
+Table PharmaceuticalForm {
+  id varchar [pk]
+  name varchar [unique]
+  sortOrder int [default: 0]
+  isActive boolean [default: true]
+  createdAt datetime
+  updatedAt datetime
+}
+
+Table TaxScheme {
+  id varchar [pk]
+  code varchar
+  name varchar
+  taxType TaxSchemeType
+  rate decimal(6, 4)
+
+  effectiveFrom datetime [not null]
+  effectiveTo datetime
+
+  isActive boolean [default: true]
+  createdAt datetime
+  updatedAt datetime
+  createdById varchar
+
+  Indexes {
+    (code, rate) [name: 'ix_taxscheme_code_rate']
+    (code, rate) [name: 'ux_taxscheme_active', note: 'Partial unique: WHERE effectiveTo IS NULL - generada via migration-addons.sql']
+  }
+
+  Note: 'Vigencia temporal obligatoria para reconstruir reportes exógenas y fiscales históricos.\nUnique parcial (migración SQL): (code, rate) WHERE effective_to IS NULL - solo una tarifa vigente por código.'
+}
+
+Table PaymentMethod {
+  id varchar [pk]
+  internalCode varchar [unique]
+  name varchar
+  dianCode varchar
+  category PaymentMethodCategory
+  isCash boolean [default: false]
+  sortOrder int [default: 0]
+  isActive boolean [default: true]
+  createdAt datetime
+  updatedAt datetime
+
+  Note: 'dianCode mapea al catálogo oficial DIAN de medios de pago para facturación electrónica.'
+}
+
+Table Product {
+  id varchar [pk]
+  internalCode varchar [unique]
+  commercialName varchar
+  genericName varchar
+  activePrinciple varchar
+  concentration varchar
+  concentrationUnit varchar
+  laboratory varchar
+
+  saleType SaleType
+  minimumStock int [default: 0]
+
+  isActive boolean [default: true]
+  discontinuationReason varchar
+
+  invimaRegistry varchar
+  atcCode varchar
+  therapeuticIndication varchar
+  storageConditions varchar
+  internalNotes varchar
+
+  categoryId varchar
+  pharmaceuticalFormId varchar
+
+  currentPriceId varchar
+  currentTaxHistoryId varchar
+
+  createdAt datetime
+  updatedAt datetime
+  createdById varchar
+
+  Indexes {
+    commercialName [name: 'ix_product_commercial']
+    genericName [name: 'ix_product_generic']
+    activePrinciple [name: 'ix_product_principle']
+    isActive [name: 'ix_product_active']
+    (categoryId, isActive) [name: 'ix_product_category_active']
+    invimaRegistry [name: 'ix_product_invima']
+  }
+
+  Note: 'currentPriceId y currentTaxHistoryId son punteros fast-lookup denormalizados \n(nullable) mantenidos por la app tras cada cambio. \nDEFERRABLE INITIALLY DEFERRED en migración SQL cruda. \nInsert order: 1) INSERT Product con NULL pointers; \n2) INSERT ProductPriceHistory/ProductTaxHistory; \n3) UPDATE Product SET currentXxxId = ?. \nPara SQLite POS local: PRAGMA defer_foreign_keys=ON dentro de la transacción.\ninternalNotes almacena notas internas; cifrado a nivel app si contiene \ndatos comercialmente sensibles.'
+}
+
+Table ProductBarcode {
+  id varchar [pk]
+  productId varchar
+  barcode varchar [unique]
+  barcodeType BarcodeType
+  isPrimary boolean [default: false]
+  createdAt datetime
+
+  Indexes {
+    productId [name: 'ix_productbarcode_product']
+    (productId) [name: 'ux_product_primary_barcode', note: 'Partial unique: WHERE isPrimary = true - generada via migration-addons.sql']
+  }
+
+  Note: 'isPrimary marca el código principal para escaneo rápido. \nUnique parcial (migración SQL): (product_id) WHERE is_primary = true.'
+}
+
+Table ProductPriceHistory {
+  id varchar [pk]
+  productId varchar
+
+  previousPriceHistoryId varchar
+
+  price decimal(15, 2) [not null]
+  effectiveFrom datetime [not null]
+  effectiveTo datetime
+
+  changedById varchar
+  changedAt datetime
+  changeReason varchar
+
+  Indexes {
+    productId [name: 'ix_pricehistory_product']
+    (productId, effectiveFrom) [name: 'ix_pricehistory_product_from']
+    (productId) [name: 'ux_price_history_product_active', note: 'Partial unique: WHERE effectiveTo IS NULL - generada via migration-addons.sql']
+  }
+
+  Note: 'Vigencia temporal. Cada fila es la tarifa activa en su ventana. \nUnique parcial (migración SQL): (product_id) WHERE effective_to IS NULL.\npreviousPriceHistoryId forma linked list para reconstruir histórico \nsin escanear todas las filas del producto.'
+}
+
+Table ProductTaxHistory {
+  id varchar [pk]
+  productId varchar
+
+  previousTaxHistoryId varchar
+
+  taxSchemeId varchar
+
+  effectiveFrom datetime [not null]
+  effectiveTo datetime
+
+  changedById varchar
+  changedAt datetime
+  changeReason varchar
+
+  Indexes {
+    productId [name: 'ix_taxhistory_product']
+    (productId) [name: 'ux_tax_history_product_active', note: 'Partial unique: WHERE effectiveTo IS NULL - generada via migration-addons.sql']
+  }
+
+  Note: 'Cada fila representa el tax scheme activo en su ventana. \nUnique parcial: (product_id) WHERE effective_to IS NULL.'
+}
+
+
+// =============================================================
+// Módulo 4 - Inventario y Lotes
+// =============================================================
+
+Table Lot {
+  id varchar [pk]
+  batchNumber varchar
+  expirationDate datetime
+  entryDate datetime
+
+  state LotState [default: 'ACTIVE']
+  currentStock int [default: 0]
+  version int [default: 0]
+
+  productId varchar
+  locationCode varchar
+
+  createdAt datetime
+  updatedAt datetime
+
+  blockedAt datetime
+  blockedByUserId varchar
+  blockReason varchar
+
+  Indexes {
+    productId [name: 'ix_lot_product']
+    (productId, state) [name: 'ix_lot_product_state']
+    expirationDate [name: 'ix_lot_expiration']
+  }
+
+  Note: 'currentStock es contador desnormalizado protegido por version (optimistic locking).\nMutaciones atómicas: \nUPDATE lot SET current_stock = ?, version = version+1, updated_at = NOW() \nWHERE id = ? AND version = ? AND product_id = ?.\nUnique compuesta (migración SQL): (product_id, batch_number).\nlocationCode es string simple para single-store; \ncuando se habilite multi-almacén, migrar a tabla LotLocation.'
+}
+
+Table InventoryMovement {
+  id varchar [pk]
+  movementType MovementType
+  quantity int
+  previousStock int
+  resultingStock int
+
+  createdById varchar
+  createdAt datetime
+  lotId varchar
+
+  purchaseReceptionId varchar
+  saleId varchar
+  supplierReturnId varchar
+  clientReturnId varchar
+  adjustmentDocumentId varchar
+  autoExpirationJobId varchar
+
+  reason varchar
+  approvedByUserId varchar
+
+  Indexes {
+    lotId [name: 'ix_movement_lot']
+    (lotId, createdAt) [name: 'ix_movement_lot_date']
+    createdAt [name: 'ix_movement_date']
+    (movementType, createdAt) [name: 'ix_movement_type_date']
+    adjustmentDocumentId [name: 'ix_movement_adjustment']
+  }
+
+  Note: 'Polymorphic source FK. CHECK constraint (migración SQL): \nexactamente un source FK poblado según movementType. \nPara movementType = PHYSICAL_COUNT: adjustmentDocumentId IS NOT NULL (el movimiento nunca se genera de forma directa sino siempre a través de un InventoryAdjustmentDocument con physicalCountId). \nVer bloque "Migración SQL adicional".'
+}
+
+Table InventoryAdjustmentDocument {
+  id varchar [pk]
+  sequentialNumber int [unique]
+  state AdjustmentState [default: 'DRAFT']
+
+  reason varchar
+  notes varchar
+
+  createdAt datetime
+  createdByUserId varchar
+  submittedForApprovalAt datetime
+
+  approvedAt datetime
+  approvedByUserId varchar
+  approvalNotes varchar
+
+  rejectedAt datetime
+  rejectedByUserId varchar
+  rejectionReason varchar
+
+  appliedAt datetime
+  annulledAt datetime
+  annulledByUserId varchar
+  annulmentReason varchar
+
+  physicalCountId varchar
+
+  Note: 'Documento soporte obligatorio para POSITIVE_ADJUSTMENT, NEGATIVE_ADJUSTMENT y PHYSICAL_COUNT (RF-INV-34..42). Sin este doc no se pueden registrar esos movimientos.\nphysicalCountId se popula solo cuando el ajuste deriva de una sesión de conteo físico (uno a muchos: un conteo puede generar varios ajustes por producto/lote).'
+}
+
+Table AutoExpirationJob {
+  id varchar [pk]
+  startedAt datetime
+  finishedAt datetime
+  lotsAffected int
+  triggeredBy varchar
+  triggeredByUserId varchar
+  notes varchar
+
+  Note: 'Tracking del cron que marca lotes como EXPIRED y genera movimientos AUTO_EXPIRATION.\ntriggeredBy indica el origen del disparo: "CRON" para ejecución automática programada, "MANUAL" para ejecución iniciada por un usuario. triggeredByUserId se completa únicamente cuando triggeredBy = "MANUAL" con el ID del usuario que la inició; en caso de "CRON" este campo queda NULL.'
+}
+
+Table PhysicalCount {
+  id varchar [pk]
+  sequentialNumber int [unique]
+  state PhysicalCountState [default: 'OPEN']
+
+  startedAt datetime
+  startedByUserId varchar
+  finishedAt datetime
+  approvedAt datetime
+  approvedByUserId varchar
+  appliedAt datetime
+
+  notes varchar
+
+  createdAt datetime
+  updatedAt datetime
+
+  Indexes {
+    state [name: 'ix_physicalcount_state']
+    startedAt [name: 'ix_physicalcount_started']
+  }
+
+  Note: 'Sesión de conteo físico. Al aprobarse genera uno o varios InventoryAdjustmentDocument (uno por producto o lote).'
+}
+
+
+// =============================================================
+// Módulo 5 - Compras y Recepciones
+// =============================================================
+
+Table Supplier {
+  id varchar [pk]
+  identificationType SupplierIdentificationType
+  identificationNumber varchar
+  businessName varchar
+  contactName varchar
+  phone varchar
+  email varchar
+  address varchar
+  city varchar
+  country varchar [default: 'CO']
+
+  paymentTermsDays int [default: 0]
+  creditLimit decimal(15, 2) [default: 0]
+
+  isActive boolean [default: true]
+  createdAt datetime
+  updatedAt datetime
+  createdById varchar
+
+  Indexes {
+    (identificationType, identificationNumber) [unique, name: 'ux_supplier_identification']
+    businessName [name: 'ix_supplier_name']
+  }
+}
+
+Table PurchaseOrder {
+  id varchar [pk]
+  sequentialNumber int [unique]
+  state PurchaseOrderState [default: 'DRAFT']
+
+  expectedDeliveryDate datetime
+  subtotal decimal(15, 2) [default: 0]
+  totalTax decimal(15, 2) [default: 0]
+  totalAmount decimal(15, 2) [default: 0]
+  notes varchar
+
+  createdAt datetime
+  createdById varchar
+  confirmedAt datetime
+  confirmedById varchar
+  annulledAt datetime
+  annulledById varchar
+  annulmentReason varchar
+
+  supplierId varchar
+
+  Indexes {
+    (supplierId, state) [name: 'ix_po_supplier_state']
+    state [name: 'ix_po_state']
+    createdAt [name: 'ix_po_created']
+  }
+}
+
+Table PurchaseOrderItem {
+  id varchar [pk]
+  purchaseOrderId varchar
+  productId varchar
+
+  requestedQuantity int [default: 0]
+  receivedQuantity int [default: 0]
+  pendingQuantity int [default: 0]
+
+  expectedUnitCost decimal(15, 2) [default: 0]
+
+  Indexes {
+    (purchaseOrderId, productId) [name: 'ix_poi_order_product']
+  }
+
+  Note: 'pendingQuantity = requestedQuantity - receivedQuantity; \nmantenido por app logic al confirmar recepciones.'
+}
+
+Table PurchaseReception {
+  id varchar [pk]
+  sequentialNumber int [unique]
+  state PurchaseReceptionState [default: 'DRAFT']
+
+  receivedAt datetime
+  createdAt datetime
+  createdById varchar
+  updatedAt datetime
+
+  notes varchar
+
+  subtotal decimal(15, 2) [default: 0]
+  totalTax decimal(15, 2) [default: 0]
+  totalAmount decimal(15, 2) [default: 0]
+
+  annulledAt datetime
+  annulledById varchar
+  annulmentReason varchar
+
+  supplierId varchar
+  purchaseOrderId varchar
+
+  Indexes {
+    (supplierId, receivedAt) [name: 'ix_pr_supplier_date']
+    receivedAt [name: 'ix_pr_date']
+    state [name: 'ix_pr_state']
+  }
+
+  Note: 'purchaseOrderId nullable: se soporta recepción sin orden previa (RF compras).'
+}
+
+Table PurchaseReceptionItem {
+  id varchar [pk]
+  purchaseReceptionId varchar
+  productId varchar
+  purchaseOrderItemId varchar
+  lotId varchar
+
+  receivedQuantity int
+  lotNumber varchar
+  expirationDate datetime
+
+  realUnitCost decimal(15, 2)
+  taxSchemeId varchar
+  taxRate decimal(6, 4) [default: 0]
+  taxAmount decimal(15, 2) [default: 0]
+  discountAmount decimal(15, 2) [default: 0]
+  subtotal decimal(15, 2) [default: 0]
+  total decimal(15, 2) [default: 0]
+
+  Indexes {
+    (purchaseReceptionId, productId) [name: 'ix_pri_reception_product']
+  }
+
+  Note: 'purchaseOrderItemId nullable cuando la recepción no está ligada a una orden.\nlotId nullable: se setea tras crear/actualizar el Lot correspondiente (app logic).\nCampos fiscales (taxRate, taxAmount, taxSchemeId) son snapshots necesarios \npara reportes de crédito fiscal IVA en compras.'
+}
+
+Table SupplierReturn {
+  id varchar [pk]
+  sequentialNumber int [unique]
+  state PurchaseReturnState [default: 'DRAFT']
+
+  reason varchar
+  notes varchar
+  subtotal decimal(15, 2) [default: 0]
+  totalTax decimal(15, 2) [default: 0]
+  totalAmount decimal(15, 2) [default: 0]
+
+  createdAt datetime
+  createdById varchar
+  updatedAt datetime
+  annulledAt datetime
+  annulledById varchar
+  annulmentReason varchar
+
+  supplierId varchar
+  purchaseReceptionId varchar
+
+  Indexes {
+    (supplierId, createdAt) [name: 'ix_sret_supplier_date']
+  }
+}
+
+Table SupplierReturnItem {
+  id varchar [pk]
+  supplierReturnId varchar
+  productId varchar
+  lotId varchar
+  quantity int
+
+  unitCost decimal(15, 2) [default: 0]
+  totalAmount decimal(15, 2) [default: 0]
+
+  Indexes {
+    (supplierReturnId, productId) [name: 'ix_sri_return_product']
+  }
+}
+
+
+// =============================================================
+// Módulo 6 - Ventas POS
+// =============================================================
+
+Table Workstation {
+  id varchar [pk]
+  name varchar [unique]
+  code varchar [unique]
+  macAddress varchar
+  serialNumber varchar
+
+  isActive boolean [default: true]
+  registeredAt datetime
+  lastSeenAt datetime
+
+  createdAt datetime
+  updatedAt datetime
+
+  Note: 'code es el código fiscal DIAN registrado para la estación.'
+}
+
+Table Sale {
+  id varchar [pk]
+
+  localNumber bigint
+  internalNumber int [unique]
+
+  operationalState SaleOperationalState [default: 'IN_PROGRESS']
+
+  startedAt datetime
+  confirmedAt datetime
+  annulledAt datetime
+  lastModifiedAt datetime
+
+  clientIdentificationTypeSnapshot IdentificationType
+  clientIdentificationNumberSnapshot varchar
+  clientNameSnapshot varchar
+  clientId varchar
+  clientClassificationIdSnapshot varchar
+  clientTypeSnapshot ClientType
+
+  subtotal decimal(15, 2) [default: 0]
+  totalDiscount decimal(15, 2) [default: 0]
+  totalTax decimal(15, 2) [default: 0]
+  totalCost decimal(15, 2) [default: 0]
+  totalAmount decimal(15, 2) [default: 0]
+  changeAmount decimal(15, 2) [default: 0]
+
+  annulledById varchar
+  annulmentReason varchar
+  annulmentNotes varchar
+
+  cashShiftId varchar
+  workstationId varchar
+  userId varchar
+
+  sourceWorkstationId varchar
+  sourceCreatedAt datetime
+
+  Indexes {
+    (cashShiftId, operationalState) [name: 'ix_sale_shift_state']
+    (workstationId, confirmedAt) [name: 'ix_sale_ws_confirmed']
+    confirmedAt [name: 'ix_sale_confirmed']
+    (operationalState, confirmedAt) [name: 'ix_sale_opstate_confirmed']
+    (clientId, confirmedAt) [name: 'ix_sale_client_history']
+    (localNumber, sourceWorkstationId) [unique, name: 'ux_sale_local_per_ws']
+  }
+
+  Note: 'CHECK constraints (migración SQL):\n- (operationalState IN (CONFIRMED, ANNULLED)) => confirmed_at IS NOT NULL\n- operationalState = ANNULLED => annulledAt IS NOT NULL AND annulledById IS NOT NULL\nNumeración dual offline-first: localNumber asignado por POS al crear (único por workstation), internalNumber asignado por server post-sync (único global). La factura/ticket provisional usa localNumber; el documento fiscal DIAN definitivo lleva internalNumber.\nSnapshots del cliente preservan historial inmutable ante cambios posteriores en Client.\nTrazabilidad con SyncQueue: cuando la venta es creada offline, el POS encola SyncQueue con correlationId = Sale.id. Tras procesar, server hace lookup por SyncQueue.correlationId para asignar internalNumber. No se usa FK directa Sale → SyncQueue para evitar dependencia circular.'
+}
+
+Table SaleItem {
+  id varchar [pk]
+  saleId varchar
+  productId varchar
+
+  productInternalCodeSnapshot varchar
+  productCommercialNameSnapshot varchar
+  productGenericNameSnapshot varchar
+  productConcentrationSnapshot varchar
+
+  quantity int [default: 0]
+  unitPrice decimal(15, 2)
+  unitCost decimal(15, 2) [default: 0]
+
+  taxRate decimal(6, 4)
+  taxAmount decimal(15, 2)
+
+  discountPercentage decimal(5, 2) [default: 0]
+  discountAmount decimal(15, 2) [default: 0]
+  discountReason varchar
+
+  subtotal decimal(15, 2)
+  total decimal(15, 2)
+
+  requiresPrescription boolean
+  saleItemPrescriptionId varchar
+
+  Indexes {
+    (saleId) [name: 'ix_saleitem_sale']
+    (productId) [name: 'ix_saleitem_product']
+  }
+
+  Note: 'requiresPrescription es snapshot histórico (puede diferir de Product.saleType \nactual si el producto cambió de clasificación regulatoria después de la venta). \nDatos completos del prescriptor en Prescription.\nsaleItemPrescriptionId FK lógico (nullable):\n- 1 SaleItem con requiresPrescription=true → debe tener exactamente 1 Prescription\n- 1 SaleItem con requiresPrescription=false → NO debe tener Prescription\nEnforzar vía app + CHECK constraint: requiresPrescription = (saleItemPrescriptionId IS NOT NULL).'
+}
+
+Table SaleItemLot {
+  id varchar [pk]
+  saleItemId varchar
+  lotId varchar
+  quantity int
+
+  unitCostAtSale decimal(15, 2)
+
+  Indexes {
+    (saleItemId) [name: 'ix_saleitemlot_saleitem']
+    (lotId) [name: 'ix_saleitemlot_lot']
+  }
+
+  Note: 'unitCostAtSale es snapshot del costo del lote en el momento del despacho \n(necesario para margen y valoración PEPS).'
+}
+
+Table SalePayment {
+  id varchar [pk]
+  saleId varchar
+  paymentMethodId varchar
+  amount decimal(15, 2)
+
+  transactionReference varchar
+  authorizationCode varchar
+  cardBrand varchar
+  cardLastFour varchar
+  batchNumber varchar
+  processorResponseCode varchar
+
+  createdAt datetime
+
+  Indexes {
+    (saleId) [name: 'ix_salepayment_sale']
+    (paymentMethodId) [name: 'ix_salepayment_method']
+  }
+}
+
+Table Prescription {
+  id varchar [pk]
+  saleItemId varchar [unique]
+
+  prescriptionNumber varchar
+  prescriberIdType IdentificationType
+  prescriberIdNumber varchar
+  prescriberName varchar
+  prescriberSpecialty varchar
+
+  prescriptionDate datetime
+  expiresAt datetime
+
+  patientFullName varchar
+  patientIdType IdentificationType
+  patientIdNumber varchar
+
+  fileUrl varchar
+  fileHash varchar
+
+  verifiedById varchar
+  verifiedAt datetime
+
+  isControlledSubstance boolean [default: false]
+  controlledSubstanceBookEntry varchar
+  controlledSubstanceBookPage varchar
+  recipeType RecipeType
+
+  createdAt datetime
+
+  Indexes {
+    prescriberIdNumber [name: 'ix_prescription_prescriber']
+    prescriptionNumber [name: 'ix_prescription_number']
+    (isControlledSubstance) [name: 'ix_prescription_controlled', note: 'Partial: WHERE isControlledSubstance = true']
+  }
+
+  Note: 'Datos completos de la fórmula médica para auditorías INVIMA (Ley/Decreto 780/2016).\nfileHash es SHA-256 del archivo digital para integridad; fileUrl apunta al path local o cloud.\nCuando saleItem.product.saleType = CONTROLLED_SUBSTANCE, los campos isControlledSubstance y los de libro de registro son obligatorios por Decreto 780/2016 y normatividad del Fondo Nacional de Estupefacientes. recipeType ahora usa el enum RecipeType: OFICIAL | PARTICULAR | INSTITUCIONAL.\nRESTRICCIÓN CONOCIDA MVP: NO se implementa aún la tabla ControlledSubstanceRegistry (libro oficial con paginación, consecutivo y reporte mensual al FNE). Cuando se integre reporte automático a FNE/INVIMA, este dato se migra a una tabla dedicada con paginación real.'
+}
+
+
+// =============================================================
+// Devoluciones de Clientes
+// =============================================================
+
+Table ClientReturn {
+  id varchar [pk]
+  sequentialNumber int [unique]
+  state ClientReturnState [default: 'DRAFT']
+
+  saleId varchar
+  clientId varchar
+
+  refundAmount decimal(15, 2)
+  subtotalReturned decimal(15, 2) [default: 0]
+  taxReturned decimal(15, 2) [default: 0]
+
+  refundMethodId varchar
+  reason varchar
+  notes varchar
+
+  createdAt datetime
+  createdById varchar
+  updatedAt datetime
+  annulledAt datetime
+  annulledById varchar
+  annulmentReason varchar
+
+  cashShiftId varchar
+  workstationId varchar
+
+  creditNoteId varchar
+
+  Indexes {
+    (saleId) [name: 'ix_clientreturn_sale']
+    (cashShiftId) [name: 'ix_clientreturn_shift']
+    state [name: 'ix_clientreturn_state']
+    creditNoteId [name: 'ix_clientreturn_creditnote']
+  }
+
+  Note: 'creditNoteId es FK opcional hacia FiscalDocument.id para la nota crédito asociada. Permite saber si ya se emitió y consultar su estado sin hacer join desde FiscalDocument.clientReturnId. La relación 1:1 esperada se controla en aplicación (una devolución → una nota crédito).'
+}
+
+Table ClientReturnItem {
+  id varchar [pk]
+  clientReturnId varchar
+  saleItemId varchar
+
+  quantity int
+  unitPriceAtSale decimal(15, 2) [default: 0]
+  unitPriceAtReturn decimal(15, 2) [default: 0]
+  taxAmount decimal(15, 2) [default: 0]
+  totalAmount decimal(15, 2) [default: 0]
+
+  Indexes {
+    (clientReturnId) [name: 'ix_cri_clientreturn']
+  }
+
+  Note: 'unitPriceAtSale y unitPriceAtReturn snapshots del precio en cada momento \npara auditoría correcta (el precio del producto puede haber cambiado \nentre la venta y la devolución).'
+}
+
+Table ClientReturnItemLot {
+  id varchar [pk]
+  clientReturnItemId varchar
+  lotId varchar
+  quantity int
+}
+
+
+// =============================================================
+// Módulo 2 - Caja y Turnos
+// =============================================================
+
+Table CashShift {
+  id varchar [pk]
+  workstationId varchar
+  userId varchar
+
+  state ShiftState [default: 'OPEN']
+
+  openedAt datetime
+  closedAt datetime
+  closedByUserId varchar
+
+  openingBalance decimal(15, 2) [default: 0]
+  openingNotes varchar
+
+  expectedClosingAmount decimal(15, 2) [default: 0]
+  actualClosingAmount decimal(15, 2) [default: 0]
+  closingDifference decimal(15, 2) [default: 0]
+  closingNotes varchar
+  forcedClose boolean [default: false]
+
+  hasExtendedAlert boolean [default: false] 
+
+  createdAt datetime
+  updatedAt datetime
+
+  Indexes {
+    (workstationId, state) [name: 'ix_cashshift_ws_state']
+    (userId, state) [name: 'ix_cashshift_user_state']
+    closedAt [name: 'ix_cashshift_closed']
+  }
+
+  Note: 'Unique parcial (migración SQL): (workstationId) WHERE state = OPEN - RF-CAJA-02.\nUnique parcial (migración SQL): (userId) WHERE state = OPEN - RF-CAJA-03.\nclosedByUserId puede diferir del opener cuando el admin forza cierre (RF-CAJA-04).\nhasExtendedAlert es flag manual del sistema cuando el turno supera la duración configurada en SystemConfig.\nPara RF-CAJA-17 y RF-CAJA-18, los conteos de pendientes de sync/fiscal NO se almacenan en esta tabla (eliminado por riesgo de staleness con múltiples workstations en paralelo). Se calculan en query al cierre: COUNT(Sale WHERE cashShiftId = ? AND sync_status NOT IN (\'COMPLETED\')) y COUNT(FiscalDocument WHERE saleId IN (...) AND fiscalState IN (\'PENDING_TRANSMISSION\', \'IN_TRANSMISSION\', \'REJECTED\')).'
+}
+
+Table ShiftCashCount {
+  id varchar [pk]
+  cashShiftId varchar
+  countType CashCountType
+  paymentMethodId varchar
+  paymentMethodIsCash boolean [default: false]
+
+  expectedAmount decimal(15, 2)
+  declaredAmount decimal(15, 2)
+  difference decimal(15, 2)
+
+  denominationsBreakdown json
+
+  createdAt datetime
+  createdById varchar
+
+  Indexes {
+    (cashShiftId, countType) [name: 'ix_cashcount_shift_type']
+  }
+
+  Note: 'paymentMethodIsCash snapshot de PaymentMethod.isCash al momento del conteo (evita joins para queries).\nCHECK constraints (migración SQL):\n- difference = declaredAmount - expectedAmount\n- (paymentMethodIsCash = false) => denominationsBreakdown IS NULL\ndenominationsBreakdown aplica únicamente a efectivo. Para tarjetas/transferencias ese campo es NULL.'
+}
+
+
+// =============================================================
+// Módulo 9 - Facturación Electrónica DIAN
+// =============================================================
+
+Table FiscalIssuerConfig {
+  id varchar [pk]
+  nit varchar [unique]
+  verificationDigit varchar
+  businessName varchar
+  commercialName varchar
+  organizationType varchar
+  taxRegime varchar
+  taxResponsibilities varchar
+  address varchar
+  municipality varchar
+  department varchar
+  postalCode varchar
+  phone varchar
+  email varchar
+  logoUrl varchar
+
+  updatedAt datetime
+  updatedById varchar
+
+  Note: 'Singleton (id fijo en seeds). Datos del establecimiento emisor ante la DIAN.'
+}
+
+Table TechProviderConfig {
+  id varchar [pk]
+  endpointUrl varchar
+  environment varchar
+  timeoutSeconds int [default: 30]
+  credentialReference varchar
+
+  updatedAt datetime
+  updatedById varchar
+
+  Note: 'Credenciales del proveedor tecnológico NO se almacenan en la BD; \ncredentialReference es alias/pointer hacia el secret manager externo \n(Vault / AWS Secrets Manager / etc.).'
+}
+
+Table FiscalResolution {
+  id varchar [pk]
+  resolutionNumber varchar [unique]
+  documentType FiscalDocumentType
+  prefix varchar
+  rangeFrom int
+  rangeTo int
+  validFrom datetime
+  validTo datetime
+  state ResolutionState [default: 'ACTIVE']
+
+  currentConsecutive int [default: 0]
+
+  workstationId varchar
+
+  createdAt datetime
+  updatedAt datetime
+
+  Indexes {
+    (documentType, prefix) [name: 'ix_resolution_type_prefix']
+    (workstationId, documentType, state) [name: 'ix_resolution_ws_type_state']
+  }
+
+  Note: 'Unique parcial (migración SQL): (workstationId, documentType, prefix) \nWHERE state = ACTIVE - una sola resolución activa por \n(workstationId + documentType + prefix).\nPara multi-workstation con misma resolución compartida: workstationId nullable \ny usar FiscalResolutionAllocation para asignar rangos por estación.'
+}
+
+Table FiscalResolutionAllocation {
+  id varchar [pk]
+  resolutionId varchar
+  workstationId varchar
+
+  rangeFrom int
+  rangeTo int
+  currentConsecutive int [default: 0]
+
+  allocatedAt datetime
+  allocatedByUserId varchar
+  exhaustedAt datetime
+
+  Indexes {
+    (workstationId, resolutionId) [name: 'ix_alloc_ws_resolution']
+  }
+
+  Note: 'Cada workstation recibe un sub-rango dentro de la resolución. \nCuando se agota, pide otro bloque (allocatedAt nuevo).\nEXCLUDE constraint (migración SQL con btree_gist): \nEXCLUDE USING gist (resolution_id WITH =, int4range(range_from, range_to + 1) WITH &&) \n- los rangos asignados a la misma resolución no deben solaparse.'
+}
+
+Table FiscalDocument {
+  id varchar [pk]
+  documentType FiscalDocumentType
+  consecutiveNumber int
+  fullNumber varchar [unique]
+
+  issueDate datetime
+
+  cufeCude varchar [unique]
+  cufeCudeAlgorithm varchar [default: 'SHA-384']
+
+  xmlPayload text
+  signedXml text
+  xmlHash varchar
+
+  fiscalState FiscalDocumentState [default: 'PENDING_GENERATION']
+
+  ptResponseCode varchar
+  ptResponseMessage text
+  lastRetryAt datetime
+  contingencyReason varchar
+
+  retryCount int [default: 0]
+
+  subtotal decimal(15, 2) [default: 0]
+  totalTax decimal(15, 2) [default: 0]
+  totalAmount decimal(15, 2) [default: 0]
+
+  issuerNitSnapshot varchar
+  receiverNitSnapshot varchar
+  receiverNameSnapshot varchar
+  receiverType varchar
+
+  saleId varchar
+  purchaseReceptionId varchar
+  clientReturnId varchar
+  resolutionId varchar
+  allocationId varchar
+  referenceDocumentId varchar
+
+  validUntil datetime
+
+  archivedAt datetime
+  xmlStorageKey varchar
+  xmlStorageBackend varchar
+  retentionExpiresAt datetime
+
+  createdAt datetime
+  updatedAt datetime
+
+  Indexes {
+    (consecutiveNumber, resolutionId) [unique, name: 'ux_fiscal_doc_res_consecutive']
+    fiscalState [name: 'ix_fiscal_doc_state']
+    (fiscalState, lastRetryAt) [name: 'ix_fiscal_doc_state_retry']
+    saleId [name: 'ix_fiscal_doc_sale']
+    purchaseReceptionId [name: 'ix_fiscal_doc_pr']
+    clientReturnId [name: 'ix_fiscal_doc_cr']
+    issueDate [name: 'ix_fiscal_doc_issue_date']
+    (archivedAt) [name: 'ix_fiscal_doc_archived', note: 'Partial: WHERE archivedAt IS NOT NULL']
+    retentionExpiresAt [name: 'ix_fiscal_doc_retention']
+  }
+
+  Note: 'Uniques compuestas (migración SQL como partial indexes): (saleId, documentType), (purchaseReceptionId, documentType), (clientReturnId, documentType).\nCHECK constraint: referenceDocumentId sólo debe poblarse para documentType IN (CREDIT_NOTE, DEBIT_NOTE). Esta restricción se implementa en migration-addons.sql.\nXML storage: in-DB para MVP (Postgres TOAST). Migración futura a object storage (S3/MinIO con WORM lock, replicación cross-region, fallback local) — decisión de arquitectura al pasar a producción.\nNumeración: lock sobre FiscalResolutionAllocation al emitir documento (SELECT FOR UPDATE).\nRetención mínima 5 años según normativa tributaria colombiana.\nCiclo de archivado: archivedAt + xmlStorageKey/xmlStorageBackend identifican cuándo y dónde se movió el XML fuera de la BD. retentionExpiresAt = issueDate + 5 años (calculado en job nocturno). Job de archivado: UPDATE fiscal_document SET archivedAt = NOW(), xmlStorageKey = ?, xmlStorageBackend = ?, xmlPayload = NULL, signedXml = NULL WHERE id = ? AND fiscalState = VALIDATED.'
+}
+
+
+// =============================================================
+// Módulo 8 - Sincronización Offline
+// =============================================================
+
+Table SyncQueue {
+  id varchar [pk]
+  operationUuid varchar [unique]
+
+  operationType SyncOperationType
+  payload text
+  payloadHash varchar
+  payloadSize int
+
+  versionSchema int [default: 1]
+
+  status SyncStatus [default: 'PENDING']
+  retryCount int [default: 0]
+  lastErrorMessage text
+  nextRetryAt datetime
+
+  sourceWorkstationId varchar
+  sourceCreatedAt datetime
+  clientSequence bigint
+
+  receivedAt datetime
+  processedAt datetime
+  correlationId varchar
+
+  workstationId varchar
+
+  Indexes {
+    (status, nextRetryAt) [name: 'ix_syncqueue_status_retry']
+    (sourceWorkstationId, clientSequence) [name: 'ix_syncqueue_source_seq']
+    (operationType, status) [name: 'ix_syncqueue_type_status']
+    correlationId [name: 'ix_syncqueue_correlation']
+  }
+
+  Note: 'Idempotencia por operationUuid.\nResolución de conflictos entre workstations vía \n(sourceWorkstationId, clientSequence) - el server aplica operaciones \nen orden estricto dentro de cada origen.\nSyncSchemaVersion table [TODO post-MVP] para mapear versiones de payload.'
+}
+
+
+// =============================================================
+// Módulo 11 - Configuración
+// =============================================================
+
+Table SystemConfig {
+  key varchar [pk]
+  value json
+  valueType ConfigValueType
+  module SystemModule
+
+  description varchar
+  isSensitive boolean [default: false]
+
+  updatedAt datetime
+  updatedById varchar
+
+  Indexes {
+    module [name: 'ix_sysconfig_module']
+  }
+
+  Note: 'Parámetros configurables en runtime. \nSustituye valores hardcoded dispersos (timeouts, límites de descuento, \npolíticas de contraseña, etc.). isSensitive=true limita lectura a admins.'
+}
+
+
+// =============================================================
+// Auditoría (cross-cutting, append-only)
+// =============================================================
+
+Table AuditLog {
+  id varchar [pk]
+
+  action AuditAction
+  module SystemModule
+
+  entityType varchar
+  entityId varchar
+  entityName varchar
+
+  oldValues json
+  newValues json
+  details text
+
+  userId varchar
+  userRole varchar
+  workstationId varchar
+  sessionId varchar
+
+  correlationId varchar
+  ipAddress varchar
+  userAgent varchar
+
+  createdAt datetime
+
+  Indexes {
+    (createdAt, module) [name: 'ix_audit_created_module']
+    (entityType, entityId) [name: 'ix_audit_entity']
+    (userId, createdAt) [name: 'ix_audit_user_date']
+    (action, createdAt) [name: 'ix_audit_action_date']
+    correlationId [name: 'ix_audit_correlation']
+  }
+
+  Note: 'Append-only estricto. FK con delete: NO ACTION / RESTRICT.\nuserRole denormalizado: el rol del user puede cambiar después del evento.'
+}
+
+
+// =============================================================
+// REFERENCES
+// =============================================================
+
+// Auth & Users
+Ref: User.createdById > User.id [delete: no action]
+Ref: UserSession.userId > User.id [delete: no action]
+Ref: UserSession.workstationId > Workstation.id
+Ref: UserSession.revokedByUserId > User.id [delete: no action]
+
+// Clients
+Ref: Client.classificationId > ClientClassification.id
+Ref: Client.createdById > User.id [delete: no action]
+Ref: Client.updatedById > User.id [delete: no action]
+
+// Catalog
+Ref: TaxScheme.createdById > User.id [delete: no action]
+Ref: Product.categoryId > Category.id
+Ref: Product.pharmaceuticalFormId > PharmaceuticalForm.id
+Ref: Product.currentPriceId > ProductPriceHistory.id [delete: no action]
+Ref: Product.currentTaxHistoryId > ProductTaxHistory.id [delete: no action]
+Ref: Product.createdById > User.id [delete: no action]
+
+Ref: ProductBarcode.productId > Product.id
+Ref: ProductPriceHistory.productId > Product.id
+Ref: ProductPriceHistory.previousPriceHistoryId > ProductPriceHistory.id
+Ref: ProductPriceHistory.changedById > User.id [delete: no action]
+Ref: ProductTaxHistory.productId > Product.id
+Ref: ProductTaxHistory.previousTaxHistoryId > ProductTaxHistory.id
+Ref: ProductTaxHistory.taxSchemeId > TaxScheme.id
+Ref: ProductTaxHistory.changedById > User.id [delete: no action]
+
+// Inventory
+Ref: Lot.productId > Product.id
+Ref: Lot.blockedByUserId > User.id [delete: no action]
+Ref: InventoryMovement.lotId > Lot.id
+Ref: InventoryMovement.createdById > User.id [delete: no action]
+Ref: InventoryMovement.approvedByUserId > User.id [delete: no action]
+Ref: InventoryMovement.purchaseReceptionId > PurchaseReception.id
+Ref: InventoryMovement.saleId > Sale.id
+Ref: InventoryMovement.supplierReturnId > SupplierReturn.id
+Ref: InventoryMovement.clientReturnId > ClientReturn.id
+Ref: InventoryMovement.adjustmentDocumentId > InventoryAdjustmentDocument.id
+Ref: InventoryMovement.autoExpirationJobId > AutoExpirationJob.id
+
+Ref: InventoryAdjustmentDocument.createdByUserId > User.id [delete: no action]
+Ref: InventoryAdjustmentDocument.approvedByUserId > User.id [delete: no action]
+Ref: InventoryAdjustmentDocument.rejectedByUserId > User.id [delete: no action]
+Ref: InventoryAdjustmentDocument.annulledByUserId > User.id [delete: no action]
+Ref: InventoryAdjustmentDocument.physicalCountId > PhysicalCount.id
+
+Ref: AutoExpirationJob.triggeredByUserId > User.id [delete: no action]
+Ref: PhysicalCount.startedByUserId > User.id [delete: no action]
+Ref: PhysicalCount.approvedByUserId > User.id [delete: no action]
+
+// Purchases
+Ref: Supplier.createdById > User.id [delete: no action]
+Ref: PurchaseOrder.supplierId > Supplier.id
+Ref: PurchaseOrder.createdById > User.id [delete: no action]
+Ref: PurchaseOrder.confirmedById > User.id [delete: no action]
+Ref: PurchaseOrder.annulledById > User.id [delete: no action]
+Ref: PurchaseOrderItem.purchaseOrderId > PurchaseOrder.id
+Ref: PurchaseOrderItem.productId > Product.id
+
+Ref: PurchaseReception.supplierId > Supplier.id
+Ref: PurchaseReception.purchaseOrderId > PurchaseOrder.id
+Ref: PurchaseReception.createdById > User.id [delete: no action]
+Ref: PurchaseReception.annulledById > User.id [delete: no action]
+Ref: PurchaseReceptionItem.purchaseReceptionId > PurchaseReception.id
+Ref: PurchaseReceptionItem.productId > Product.id
+Ref: PurchaseReceptionItem.purchaseOrderItemId > PurchaseOrderItem.id
+Ref: PurchaseReceptionItem.lotId > Lot.id
+Ref: PurchaseReceptionItem.taxSchemeId > TaxScheme.id
+
+Ref: SupplierReturn.supplierId > Supplier.id
+Ref: SupplierReturn.purchaseReceptionId > PurchaseReception.id
+Ref: SupplierReturn.createdById > User.id [delete: no action]
+Ref: SupplierReturn.annulledById > User.id [delete: no action]
+Ref: SupplierReturnItem.supplierReturnId > SupplierReturn.id
+Ref: SupplierReturnItem.productId > Product.id
+Ref: SupplierReturnItem.lotId > Lot.id
+
+// Sales POS
+Ref: Sale.cashShiftId > CashShift.id
+Ref: Sale.workstationId > Workstation.id
+Ref: Sale.userId > User.id [delete: no action]
+Ref: Sale.clientId > Client.id
+Ref: Sale.annulledById > User.id [delete: no action]
+Ref: Sale.sourceWorkstationId > Workstation.id
+Ref: Sale.clientClassificationIdSnapshot > ClientClassification.id
+
+Ref: SaleItem.saleId > Sale.id
+Ref: SaleItem.productId > Product.id
+Ref: SaleItemLot.saleItemId > SaleItem.id
+Ref: SaleItemLot.lotId > Lot.id
+
+Ref: SalePayment.saleId > Sale.id
+Ref: SalePayment.paymentMethodId > PaymentMethod.id
+
+Ref: Prescription.saleItemId > SaleItem.id
+Ref: Prescription.verifiedById > User.id [delete: no action]
+
+// Returns
+Ref: ClientReturn.saleId > Sale.id
+Ref: ClientReturn.clientId > Client.id
+Ref: ClientReturn.createdById > User.id [delete: no action]
+Ref: ClientReturn.annulledById > User.id [delete: no action]
+Ref: ClientReturn.refundMethodId > PaymentMethod.id
+Ref: ClientReturn.cashShiftId > CashShift.id
+Ref: ClientReturn.workstationId > Workstation.id
+Ref: ClientReturn.creditNoteId > FiscalDocument.id [delete: set null]
+
+Ref: ClientReturnItem.clientReturnId > ClientReturn.id
+Ref: ClientReturnItem.saleItemId > SaleItem.id
+Ref: ClientReturnItemLot.clientReturnItemId > ClientReturnItem.id
+Ref: ClientReturnItemLot.lotId > Lot.id
+
+// Cash Shift
+Ref: CashShift.workstationId > Workstation.id
+Ref: CashShift.userId > User.id [delete: no action]
+Ref: CashShift.closedByUserId > User.id [delete: no action]
+Ref: ShiftCashCount.cashShiftId > CashShift.id
+Ref: ShiftCashCount.createdById > User.id [delete: no action]
+Ref: ShiftCashCount.paymentMethodId > PaymentMethod.id
+
+// Fiscal (DIAN)
+Ref: FiscalIssuerConfig.updatedById > User.id [delete: no action]
+Ref: TechProviderConfig.updatedById > User.id [delete: no action]
+Ref: FiscalResolution.workstationId > Workstation.id
+Ref: FiscalResolutionAllocation.resolutionId > FiscalResolution.id
+Ref: FiscalResolutionAllocation.workstationId > Workstation.id
+Ref: FiscalResolutionAllocation.allocatedByUserId > User.id [delete: no action]
+
+Ref: FiscalDocument.saleId > Sale.id
+Ref: FiscalDocument.purchaseReceptionId > PurchaseReception.id
+Ref: FiscalDocument.clientReturnId > ClientReturn.id
+Ref: FiscalDocument.resolutionId > FiscalResolution.id
+Ref: FiscalDocument.allocationId > FiscalResolutionAllocation.id
+Ref: FiscalDocument.referenceDocumentId > FiscalDocument.id
+
+// Sync
+Ref: SyncQueue.sourceWorkstationId > Workstation.id
+Ref: SyncQueue.workstationId > Workstation.id
+
+// Audit
+Ref: AuditLog.userId > User.id [delete: no action]
+Ref: AuditLog.workstationId > Workstation.id
+Ref: AuditLog.sessionId > UserSession.id
+
+// Config
+Ref: SystemConfig.updatedById > User.id [delete: no action]
+
+
+// =============================================================
+// NOTAS PARA SQLITE LOCAL (POS)
+// =============================================================
+// El POS local usa SQLite/SQLCipher como subset del schema. Diferencias:
+//   - Sin EXCLUDE constraints → validar no-solapamiento de rangos en app.
+//   - DEFERRABLE no es keyword → usar PRAGMA defer_foreign_keys=ON en la transacción
+//     que crea Product + PriceHistory.
+//   - Enums no nativos → usar CHECK constraints o tablas lookup.
+//   - json columns → usar TEXT con JSON.stringify y validación al leer (json1 ext).
+//   - Sin uuid nativo → generar UUIDv7 en app (librería uuid con time-based).
+//   - Sin text search nativo → buscar por LIKE o FTS5 cuando se necesite.
+//
+// El subset del schema local debe excluir (no aplica al POS):
+//   - FiscalResolutionAllocation (gestión central de rangos)
+//   - TechProviderConfig (gestión central)
+//   - SyncQueue.id → solo se inserta; la cola central la replica en server.
+//   - AuditLog operacional → se envía al server para registro central inmutable.
+//   - PhysicalCount e InventoryAdjustmentDocument → generación central, el POS solo recibe los InventoryMovement resultantes.
+//
+// Replicación de rangos fiscales al POS (RF: rangos por workstation):
+//   - Cuando el server asigna una nueva FiscalResolutionAllocation a una workstation,
+//     encola un SyncQueue.operationType = RESOLUTION_ALLOCATION con payload que incluye
+//     (resolutionId, workstationId, rangeFrom, rangeTo, currentConsecutive).
+//   - El POS replica una tabla local FiscalAllocationCache (no modelada aquí, subset local)
+//     que el motor fiscal local consulta para asignar consecutivos sin lock.
+//   - Cuando currentConsecutive alcanza el límite de rangeTo, el POS bloquea emisión de
+//     documentos fiscales y solicita nuevo bloque al server.
+//
+// Manejo de CONTROLLED_SUBSTANCE en POS:
+//   - El POS NO debe permitir despachar productos con Product.saleType = CONTROLLED_SUBSTANCE
+//     a menos que (a) haya stock suficiente y (b) todos los Prescription campos
+//     isControlledSubstance + controlledSubstanceBookEntry + recipeType estén llenos.
+//   - Validar a nivel de UI antes de mandar al server. Backend re-valida.
+//   - Sugerido: matriz de permisos en SystemConfig que oculte/limite el botón de despacho
+//     para cajero (CAJERO sin permiso 'dispense.controlled_substance' según rol).
