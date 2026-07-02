@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "../../",
+    "baseUrl": "./",
+    "isolatedModules": false,
+    "skipLibCheck": true,
+    "noImplicitAny": false,
+    "paths": {
+      "@/*": ["./src/*"],
+      "@pharmacy/shared-types": ["../../packages/shared-types/src"],
+      "@pharmacy/shared-validation": ["../../packages/shared-validation/src"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
