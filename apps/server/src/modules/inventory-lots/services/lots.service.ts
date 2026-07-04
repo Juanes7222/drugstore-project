@@ -8,12 +8,15 @@ import { BlockLotDto } from '../dto/block-lot.dto';
 import { QueryInventoryMovementDto } from '../dto/query-inventory-movement.dto';
 import { ConsumeStockForSaleParams, ConsumedLot } from '../types/consume-stock.types';
 import { ReceiveStockParams } from '../types/receive-stock.types';
+import { ReverseStockForSaleParams, ReversedSaleLot } from '../types/reverse-stock-for-sale.types';
+import { ConsumeStockForSupplierReturnParams } from '../types/consume-stock-for-supplier-return.types';
 import { InsufficientStockException } from '../exceptions/insufficient-stock.exception';
 import { ConcurrentStockModificationException } from '../exceptions/concurrent-stock-modification.exception';
 import { LotNotActiveException } from '../exceptions/lot-not-active.exception';
 import { LotNotBlockedException } from '../exceptions/lot-not-blocked.exception';
 import { LotNotFoundException } from '../exceptions/lot-not-found.exception';
 import { LotCostUnavailableException } from '../exceptions/lot-cost-unavailable.exception';
+import { LotStateChangedSinceSaleException } from '../exceptions/lot-state-changed-since-sale.exception';
 
 @Injectable()
 export class LotsService {
@@ -196,6 +199,107 @@ export class LotsService {
     return { lotId: newLot.id };
   }
 
+  async reverseStockForSale(params: ReverseStockForSaleParams): Promise<ReversedSaleLot[]> {
+    const { saleId, tx } = params;
+    const lotAggregations = await this.aggregateSaleLots(tx, saleId);
+    if (lotAggregations.size === 0) return [];
+
+    // Pre-flight check: fail all-or-nothing before mutating any lot
+    this.assertNoDisqualifiedLots(lotAggregations);
+
+    const reversedLots: ReversedSaleLot[] = [];
+    for (const [, agg] of lotAggregations) {
+      reversedLots.push(await this.applyLotReversal(tx, agg, saleId));
+    }
+    return reversedLots;
+  }
+
+  async consumeStockForSupplierReturn(params: ConsumeStockForSupplierReturnParams): Promise<void> {
+    const { lotId, quantity, supplierReturnId, tx } = params;
+    const lot = await tx.lot.findUnique({ where: { id: lotId } });
+    if (!lot) throw new LotNotFoundException(lotId);
+    if (lot.currentStock < quantity) {
+      throw new InsufficientStockException(lot.productId, quantity, lot.currentStock);
+    }
+
+    const newStock = lot.currentStock - quantity;
+    const newVersion = lot.version + 1;
+    const newState = newStock === 0 ? LotState.EXHAUSTED : lot.state;
+
+    const updated = await tx.lot.updateMany({
+      where: { id: lot.id, version: lot.version },
+      data: { currentStock: newStock, version: newVersion, state: newState },
+    });
+    if (updated.count === 0) throw new ConcurrentStockModificationException(lot.id);
+
+    await this.createMovement(tx, {
+      lotId: lot.id,
+      movementType: MovementType.SUPPLIER_RETURN,
+      quantity,
+      previousStock: lot.currentStock,
+      resultingStock: newStock,
+      createdById: 'system',
+      supplierReturnId,
+    });
+  }
+
+  private async aggregateSaleLots(
+    tx: Prisma.TransactionClient,
+    saleId: string,
+  ): Promise<Map<string, { lot: { id: string; currentStock: number; version: number; state: LotState }; quantity: number }>> {
+    const rows = await tx.saleItemLot.findMany({
+      where: { saleItem: { saleId } },
+      include: { lot: true },
+    });
+
+    const map = new Map<string, { lot: typeof rows[0]['lot']; quantity: number }>();
+    for (const row of rows) {
+      const existing = map.get(row.lotId);
+      if (existing) { existing.quantity += row.quantity; }
+      else { map.set(row.lotId, { lot: row.lot, quantity: row.quantity }); }
+    }
+    return map;
+  }
+
+  private assertNoDisqualifiedLots(
+    lotAggregations: Map<string, { lot: { id: string; state: LotState }; quantity: number }>,
+  ): void {
+    for (const [, agg] of lotAggregations) {
+      if (agg.lot.state === LotState.EXPIRED || agg.lot.state === LotState.BLOCKED) {
+        throw new LotStateChangedSinceSaleException(agg.lot.id, agg.lot.state);
+      }
+    }
+  }
+
+  private async applyLotReversal(
+    tx: Prisma.TransactionClient,
+    agg: { lot: { id: string; currentStock: number; version: number; state: LotState }; quantity: number },
+    saleId: string,
+  ): Promise<ReversedSaleLot> {
+    const newStock = agg.lot.currentStock + agg.quantity;
+    const newVersion = agg.lot.version + 1;
+    const newState = agg.lot.currentStock === 0 ? LotState.ACTIVE : agg.lot.state;
+
+    const updated = await tx.lot.updateMany({
+      where: { id: agg.lot.id, version: agg.lot.version },
+      data: { currentStock: newStock, version: newVersion, state: newState },
+    });
+    if (updated.count === 0) throw new ConcurrentStockModificationException(agg.lot.id);
+
+    // Reuse SALE movementType; previousStock < resultingStock signals the reversal direction
+    await this.createMovement(tx, {
+      lotId: agg.lot.id,
+      movementType: MovementType.SALE,
+      quantity: agg.quantity,
+      previousStock: agg.lot.currentStock,
+      resultingStock: newStock,
+      createdById: 'system',
+      saleId,
+    });
+
+    return { lotId: agg.lot.id, quantity: agg.quantity };
+  }
+
   private async createMovement(
     tx: Prisma.TransactionClient,
     data: {
@@ -207,6 +311,7 @@ export class LotsService {
       createdById: string;
       saleId?: string;
       purchaseReceptionId?: string;
+      supplierReturnId?: string;
       reason?: string;
     },
   ): Promise<any> {
@@ -224,6 +329,7 @@ export class LotsService {
     // Enforce polymorphic source: only one of these should be set
     if (data.saleId) movementData.sale = { connect: { id: data.saleId } };
     if (data.purchaseReceptionId) movementData.purchaseReception = { connect: { id: data.purchaseReceptionId } };
+    if (data.supplierReturnId) movementData.supplierReturn = { connect: { id: data.supplierReturnId } };
 
     return tx.inventoryMovement.create({ data: movementData });
   }
