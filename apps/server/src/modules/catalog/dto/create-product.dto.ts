@@ -17,10 +17,10 @@ export const CreateProductSchema = z.object({
   therapeuticIndication: z.string().optional(),
   storageConditions: z.string().optional(),
   internalNotes: z.string().optional(),
-  categoryId: z.string().uuid().optional(),
-  pharmaceuticalFormId: z.string().uuid().optional(),
+  categoryId: z.uuid().optional(),
+  pharmaceuticalFormId: z.uuid().optional(),
   initialPrice: z.string().min(1, 'Initial price is required'),
-  initialTaxSchemeId: z.string().uuid('Initial tax scheme ID must be a valid UUID'),
+  initialTaxSchemeId: z.uuid('Initial tax scheme ID must be a valid UUID'),
 });
 
 export type CreateProductDto = z.infer<typeof CreateProductSchema>;

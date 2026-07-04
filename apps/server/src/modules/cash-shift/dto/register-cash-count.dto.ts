@@ -4,7 +4,7 @@ import { CashCountType } from '@pharmacy/shared-types';
 
 export const RegisterCashCountSchema = z.object({
   countType: z.enum([CashCountType.PARTIAL, CashCountType.CLOSING]),
-  paymentMethodId: z.string().uuid(),
+  paymentMethodId: z.uuid(),
   expectedAmount: z.string().transform((val) => new Prisma.Decimal(val)),
   declaredAmount: z.string().transform((val) => new Prisma.Decimal(val)),
   denominationsBreakdown: z.record(z.string(), z.number()).optional(),

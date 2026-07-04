@@ -1,14 +1,14 @@
 import { z } from 'zod';
 
 export const CreateSupplierReturnItemSchema = z.object({
-  productId: z.string().uuid('Invalid product ID'),
-  lotId: z.string().uuid('Invalid lot ID'),
+  productId: z.uuid('Invalid product ID'),
+  lotId: z.uuid('Invalid lot ID'),
   quantity: z.number().int().positive('Quantity must be positive'),
 });
 
 export const CreateSupplierReturnSchema = z.object({
-  supplierId: z.string().uuid('Invalid supplier ID'),
-  purchaseReceptionId: z.string().uuid('Invalid purchase reception ID').optional(),
+  supplierId: z.uuid('Invalid supplier ID'),
+  purchaseReceptionId: z.uuid('Invalid purchase reception ID').optional(),
   reason: z.string().optional(),
   items: z
     .array(CreateSupplierReturnItemSchema)

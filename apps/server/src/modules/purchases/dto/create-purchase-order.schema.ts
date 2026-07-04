@@ -5,12 +5,12 @@ import { z } from 'zod';
  * Candidate for promotion to @pharmacy/shared-validation once frontend form needs the same shape.
  */
 export const CreatePurchaseOrderSchema = z.object({
-  supplierId: z.string().uuid('Invalid supplier ID'),
+  supplierId: z.uuid('Invalid supplier ID'),
   notes: z.string().max(1000).optional(),
   items: z
     .array(
       z.object({
-        productId: z.string().uuid('Invalid product ID'),
+        productId: z.uuid('Invalid product ID'),
         quantity: z
           .string()
           .regex(/^\d+$/, 'Quantity must be a positive integer'),

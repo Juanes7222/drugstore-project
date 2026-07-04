@@ -5,8 +5,8 @@ import { z } from 'zod';
  * Candidate for promotion to @pharmacy/shared-validation once frontend form needs the same shape.
  */
 export const CreateCashShiftSchema = z.object({
-  workstationId: z.string().uuid('Invalid workstation ID'),
-  openedByUserId: z.string().uuid('Invalid user ID'),
+  workstationId: z.uuid('Invalid workstation ID'),
+  openedByUserId: z.uuid('Invalid user ID'),
   baseCashAmount: z
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, 'Invalid currency format')

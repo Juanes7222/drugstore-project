@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const PaymentInputSchema = z.object({
-  paymentMethodId: z.string().uuid("ID de método de pago inválido"),
+  paymentMethodId: z.uuid("ID de método de pago inválido"),
   amount: z.number().positive("El monto del pago debe ser mayor a cero"),
   transactionReference: z.string().max(100).optional(),
   authorizationCode: z.string().max(100).optional(),

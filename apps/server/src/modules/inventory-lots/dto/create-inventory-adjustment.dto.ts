@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const CreateInventoryAdjustmentItemSchema = z.object({
-  lotId: z.string().uuid('Invalid lot ID'),
+  lotId: z.uuid('Invalid lot ID'),
   movementType: z.enum(['POSITIVE_ADJUSTMENT', 'NEGATIVE_ADJUSTMENT']),
   quantity: z.number().int().positive('Quantity must be positive'),
   reason: z.string().max(500).optional(),

@@ -13,7 +13,7 @@ export const CreateInventoryAdjustmentSchema = z.object({
   items: z
     .array(
       z.object({
-        lotId: z.string().uuid('Invalid lot ID'),
+        lotId: z.uuid('Invalid lot ID'),
         quantityAdjustment: z
           .string()
           .regex(/^-?\d+$/, 'Quantity adjustment must be an integer'),

@@ -17,7 +17,7 @@ export const SyncOperationSchema = z.object({
   ]),
   payload: z.record(z.string(), z.any()),
   payloadHash: z.string().min(1, 'Payload hash is required'),
-  sourceWorkstationId: z.string().uuid('Invalid workstation ID'),
+  sourceWorkstationId: z.uuid('Invalid workstation ID'),
   sourceCreatedAt: z.string().datetime('Invalid ISO 8601 datetime'),
   clientSequence: z
     .number()

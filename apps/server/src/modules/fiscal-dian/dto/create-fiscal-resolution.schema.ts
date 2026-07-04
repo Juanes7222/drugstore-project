@@ -5,7 +5,7 @@ import { z } from 'zod';
  * Candidate for promotion to @pharmacy/shared-validation once frontend form needs the same shape.
  */
 export const CreateFiscalResolutionSchema = z.object({
-  workstationId: z.string().uuid('Invalid workstation ID'),
+  workstationId: z.uuid('Invalid workstation ID'),
   documentType: z.enum(['INVOICE', 'POS_TICKET', 'CREDIT_NOTE', 'DEBIT_NOTE']),
   prefix: z
     .string()

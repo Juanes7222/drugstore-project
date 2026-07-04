@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const SetClassificationSchema = z.object({
-  classificationId: z.string().uuid(),
+  classificationId: z.uuid(),
 });
 
 export type SetClassificationDto = z.infer<typeof SetClassificationSchema>;

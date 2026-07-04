@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const AssignProductTaxSchemeSchema = z.object({
-  taxSchemeId: z.string().uuid('Tax scheme ID must be a valid UUID'),
+  taxSchemeId: z.uuid('Tax scheme ID must be a valid UUID'),
   effectiveFrom: z.string().datetime().optional(),
   changeReason: z.string().optional(),
 });
