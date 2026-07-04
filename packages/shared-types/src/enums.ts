@@ -62,6 +62,7 @@ export enum AuditAction {
   IMPORT = "IMPORT",
   APPROVE = "APPROVE",
   ACCESS = "ACCESS",
+  STATE_CHANGE = "STATE_CHANGE",
 }
 
 export enum SystemModule {

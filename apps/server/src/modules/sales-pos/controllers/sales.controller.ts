@@ -12,6 +12,7 @@ import { SalesService } from '../services/sales.service';
 import { CreateSaleDto } from '../dto/create-sale.dto';
 import { QuerySaleDto } from '../dto/query-sale.dto';
 import { ConfirmSaleDto, ConfirmSaleSchema } from '../dto/confirm-sale.dto';
+import { AnnulSaleDto, AnnulSaleSchema } from '../dto/annul-sale.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -61,10 +62,14 @@ export class SalesController {
   }
 
   @Post(':id/annul')
-  @Roles(RoleType.CASHIER, RoleType.ADMIN)
+  @Roles(RoleType.ADMIN)
   @HttpCode(200)
-  @Auditable({ action: AuditAction.UPDATE, module: SystemModule.SALES, entityType: 'Sale' })
-  async annul(@Param('id') id: string): Promise<any> {
-    return this.salesService.annul(id);
+  @Auditable({ action: AuditAction.STATE_CHANGE, module: SystemModule.SALES, entityType: 'Sale' })
+  async annul(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AnnulSaleSchema)) annulDto: AnnulSaleDto,
+    @CurrentUser() user: User,
+  ): Promise<any> {
+    return this.salesService.annul(id, annulDto, user.id);
   }
 }

@@ -11,7 +11,8 @@ import { PrescriptionRequiredNotSupportedException } from '../exceptions/prescri
 import { PaymentAmountMismatchException } from '../exceptions/payment-amount-mismatch.exception';
 import { ChangeRequiresCashPaymentException } from '../exceptions/change-requires-cash-payment.exception';
 import { SaleNotInProgressException } from '../exceptions/sale-not-in-progress.exception';
-import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
+import { SaleNotConfirmedException } from '../exceptions/sale-not-confirmed.exception';
+import { AnnulSaleDto } from '../dto/annul-sale.dto';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { ConsumedLot } from '@/modules/inventory-lots/types/consume-stock.types';
 import { LotNotFoundException } from '@/modules/inventory-lots/exceptions/lot-not-found.exception';
@@ -187,8 +188,29 @@ export class SalesService {
     });
   }
 
-  async annul(id: string): Promise<any> {
-    throw new NotImplementedForPhaseException('sales-pos', 'annul');
+  async annul(id: string, dto: AnnulSaleDto, userId: string): Promise<any> {
+    return this.prisma.$transaction(async (tx) => {
+      const sale = await tx.sale.findUnique({ where: { id } });
+      if (!sale) throw new SaleNotFoundException(id);
+      if (sale.operationalState !== SaleOperationalState.CONFIRMED) {
+        throw new SaleNotConfirmedException(id);
+      }
+
+      // reverseStockForSale throws LotStateChangedSinceSaleException on EXPIRED/BLOCKED lots,
+      // which propagates uncaught and rolls back the entire transaction untouched.
+      await this.lotsService.reverseStockForSale({ saleId: id, tx });
+
+      return tx.sale.update({
+        where: { id },
+        data: {
+          operationalState: SaleOperationalState.ANNULLED,
+          annulledAt: new Date(),
+          annulledById: userId,
+          annulmentReason: dto.annulmentReason,
+          annulmentNotes: dto.annulmentNotes ?? null,
+        },
+      });
+    });
   }
 
   private async getOpenCashShift(tx: Prisma.TransactionClient, userId: string, workstationId: string): Promise<any> {
