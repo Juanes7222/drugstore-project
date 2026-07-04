@@ -11,11 +11,13 @@ import {
 import { SalesService } from '../services/sales.service';
 import { CreateSaleDto } from '../dto/create-sale.dto';
 import { QuerySaleDto } from '../dto/query-sale.dto';
+import { ConfirmSaleDto, ConfirmSaleSchema } from '../dto/confirm-sale.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
-import { AuditAction, SystemModule, RoleType } from '@pharmacy/shared-types';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { CreateSaleSchema } from '@pharmacy/shared-validation';
 
@@ -38,39 +40,30 @@ export class SalesController {
 
   @Post()
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
-  @HttpCode(201)
-  @Auditable({
-    action: AuditAction.CREATE,
-    module: SystemModule.SALES,
-    entityType: 'Sale',
-  })
+  @Auditable({ action: AuditAction.CREATE, module: SystemModule.SALES, entityType: 'Sale' })
   async create(
-    @Body(new ZodValidationPipe(CreateSaleSchema))
-    createDto: CreateSaleDto,
+    @Body(new ZodValidationPipe(CreateSaleSchema)) createDto: CreateSaleDto,
+    @CurrentUser() user: User,
   ): Promise<any> {
-    return this.salesService.create(createDto);
+    return this.salesService.create(createDto, user.id, user.workstationId);
   }
 
   @Post(':id/confirm')
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @HttpCode(200)
-  @Auditable({
-    action: AuditAction.UPDATE,
-    module: SystemModule.SALES,
-    entityType: 'Sale',
-  })
-  async confirm(@Param('id') id: string): Promise<any> {
-    return this.salesService.confirm(id);
+  @Auditable({ action: AuditAction.UPDATE, module: SystemModule.SALES, entityType: 'Sale' })
+  async confirm(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ConfirmSaleSchema)) confirmDto: ConfirmSaleDto,
+    @CurrentUser() user: User,
+  ): Promise<any> {
+    return this.salesService.confirm(id, confirmDto, user.id);
   }
 
   @Post(':id/annul')
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @HttpCode(200)
-  @Auditable({
-    action: AuditAction.UPDATE,
-    module: SystemModule.SALES,
-    entityType: 'Sale',
-  })
+  @Auditable({ action: AuditAction.UPDATE, module: SystemModule.SALES, entityType: 'Sale' })
   async annul(@Param('id') id: string): Promise<any> {
     return this.salesService.annul(id);
   }

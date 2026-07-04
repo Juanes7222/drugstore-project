@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/infrastructure/prisma/prisma.module';
 import { SalesController } from './controllers/sales.controller';
 import { SalesService } from './services/sales.service';
+import { InventoryLotsModule } from '@/modules/inventory-lots/inventory-lots.module';
 
 /**
  * Sales-POS Module
@@ -11,7 +12,7 @@ import { SalesService } from './services/sales.service';
  * - ClientReturn: Client returns and credit note generation
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, InventoryLotsModule],
   controllers: [SalesController],
   providers: [SalesService],
   exports: [SalesService],
