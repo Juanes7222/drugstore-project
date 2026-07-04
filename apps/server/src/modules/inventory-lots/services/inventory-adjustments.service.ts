@@ -65,7 +65,11 @@ export class InventoryAdjustmentsService {
     return doc;
   }
 
-  async create(createDto: CreateInventoryAdjustmentDto, userId: string): Promise<any> {
+  async create(
+    createDto: CreateInventoryAdjustmentDto,
+    userId: string,
+    physicalCountId?: string,
+  ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
       const itemsData = await this.prepareAdjustmentItems(tx, createDto.items);
       const sequentialNumber = await this.getNextSequentialNumber(tx);
@@ -76,6 +80,7 @@ export class InventoryAdjustmentsService {
           reason: createDto.reason,
           notes: createDto.notes,
           createdByUserId: userId,
+          physicalCountId: physicalCountId ?? null,
           movements: {
             create: itemsData.map((m) => ({
               id: crypto.randomUUID(),
@@ -145,9 +150,9 @@ export class InventoryAdjustmentsService {
     });
   }
 
-  async apply(id: string, userId: string): Promise<any> {
-    return this.prisma.$transaction(async (tx) => {
-      const doc = await tx.inventoryAdjustmentDocument.findUnique({
+  async apply(id: string, userId: string, tx?: Prisma.TransactionClient): Promise<any> {
+    const executor = async (client: Prisma.TransactionClient) => {
+      const doc = await client.inventoryAdjustmentDocument.findUnique({
         where: { id },
         include: { movements: true },
       });
@@ -155,18 +160,21 @@ export class InventoryAdjustmentsService {
       if (doc.state !== AdjustmentState.APPROVED) throw new AdjustmentNotApprovedException(id);
 
       // Pre-flight: verify every lot matches its previousStock snapshot before mutating any
-      const lots = await this.verifyAndLoadLots(tx, doc.id, doc.movements);
+      const lots = await this.verifyAndLoadLots(client, doc.id, doc.movements);
 
       // All preconditions passed: apply every movement
       for (const { movement, lot } of lots) {
-        await this.applyMovementToLot(tx, movement, lot);
+        await this.applyMovementToLot(client, movement, lot);
       }
 
-      return tx.inventoryAdjustmentDocument.update({
+      return client.inventoryAdjustmentDocument.update({
         where: { id },
         data: { state: AdjustmentState.APPLIED, appliedAt: new Date() },
       });
-    });
+    };
+
+    if (tx) return executor(tx);
+    return this.prisma.$transaction(executor);
   }
 
   async annul(id: string, userId: string, dto: AnnulInventoryAdjustmentDto): Promise<any> {

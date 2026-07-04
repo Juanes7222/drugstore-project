@@ -3,15 +3,16 @@ import { PrismaModule } from '@/infrastructure/prisma/prisma.module';
 import { LotsController } from './controllers/lots.controller';
 import { InventoryAdjustmentsController } from './controllers/inventory-adjustments.controller';
 import { InventoryMovementsController } from './controllers/inventory-movements.controller';
+import { PhysicalCountsController } from './controllers/physical-counts.controller';
 import { LotsService } from './services/lots.service';
 import { InventoryAdjustmentsService } from './services/inventory-adjustments.service';
 import { InventoryMovementsService } from './services/inventory-movements.service';
+import { PhysicalCountsService } from './services/physical-counts.service';
 
 /**
  * Inventory-Lots Module
  *
- * Deferred to logic phase (not scaffolded in this phase):
- * - PhysicalCount: Physical inventory counting workflows
+ * Deferred to a future phase:
  * - AutoExpirationJob: Automatic lot expiration scheduling and execution
  */
 @Module({
@@ -20,8 +21,19 @@ import { InventoryMovementsService } from './services/inventory-movements.servic
     LotsController,
     InventoryAdjustmentsController,
     InventoryMovementsController,
+    PhysicalCountsController,
   ],
-  providers: [LotsService, InventoryAdjustmentsService, InventoryMovementsService],
-  exports: [LotsService, InventoryAdjustmentsService, InventoryMovementsService],
+  providers: [
+    LotsService,
+    InventoryAdjustmentsService,
+    InventoryMovementsService,
+    PhysicalCountsService,
+  ],
+  exports: [
+    LotsService,
+    InventoryAdjustmentsService,
+    InventoryMovementsService,
+    PhysicalCountsService,
+  ],
 })
 export class InventoryLotsModule {}
