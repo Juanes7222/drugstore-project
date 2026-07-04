@@ -6,12 +6,29 @@ import { PurchaseOrdersController } from './controllers/purchase-orders.controll
 import { PurchaseOrdersService } from './services/purchase-orders.service';
 import { PurchaseReceptionsController } from './controllers/purchase-receptions.controller';
 import { PurchaseReceptionsService } from './services/purchase-receptions.service';
+import { SupplierReturnsController } from './controllers/supplier-returns.controller';
+import { SupplierReturnsService } from './services/supplier-returns.service';
 import { InventoryLotsModule } from '@/modules/inventory-lots/inventory-lots.module';
 
 @Module({
   imports: [PrismaModule, InventoryLotsModule],
-  controllers: [SuppliersController, PurchaseOrdersController, PurchaseReceptionsController],
-  providers: [SuppliersService, PurchaseOrdersService, PurchaseReceptionsService],
-  exports: [SuppliersService, PurchaseOrdersService, PurchaseReceptionsService],
+  controllers: [
+    SuppliersController,
+    PurchaseOrdersController,
+    PurchaseReceptionsController,
+    SupplierReturnsController,
+  ],
+  providers: [
+    SuppliersService,
+    PurchaseOrdersService,
+    PurchaseReceptionsService,
+    SupplierReturnsService,
+  ],
+  exports: [
+    SuppliersService,
+    PurchaseOrdersService,
+    PurchaseReceptionsService,
+    SupplierReturnsService,
+  ],
 })
 export class PurchasesModule {}
