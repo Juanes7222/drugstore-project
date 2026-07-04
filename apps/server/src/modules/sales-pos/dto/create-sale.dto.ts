@@ -23,3 +23,12 @@ export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
     }
   }
 }
+
+export type CreateSaleItemDto = {
+  productId: string;
+  quantity: number;
+  unitPrice: string;
+  discount?: string;
+  discountPercentage?: number;
+  discountReason?: string;
+};

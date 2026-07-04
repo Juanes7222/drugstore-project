@@ -2,7 +2,8 @@ import {
   Controller,
   Get,
   Post,
-  Patch,
+  Put,
+  Delete,
   Param,
   Body,
   Query,
@@ -10,16 +11,16 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { SuppliersService } from '../services/suppliers.service';
-import { CreateSupplierDto } from '../dto/create-supplier.dto';
-import { UpdateSupplierDto } from '../dto/update-supplier.dto';
+import { CreateSupplierDto, CreateSupplierSchema } from '../dto/create-supplier.dto';
+import { UpdateSupplierDto, UpdateSupplierSchema } from '../dto/update-supplier.dto';
 import { QuerySupplierDto } from '../dto/query-supplier.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
-import { AuditAction, SystemModule, RoleType } from '@pharmacy/shared-types';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
-import { SupplierSchema } from '../dto/supplier.schema';
 
 @Controller('purchases/suppliers')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -39,31 +40,30 @@ export class SuppliersController {
   }
 
   @Post()
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
-  @HttpCode(201)
-  @Auditable({
-    action: AuditAction.CREATE,
-    module: SystemModule.PURCHASES,
-    entityType: 'Supplier',
-  })
+  @Roles(RoleType.ADMIN)
+  @Auditable({ action: AuditAction.CREATE, module: SystemModule.PURCHASES, entityType: 'Supplier' })
   async create(
-    @Body(new ZodValidationPipe(SupplierSchema))
-    createDto: CreateSupplierDto,
+    @Body(new ZodValidationPipe(CreateSupplierSchema)) createDto: CreateSupplierDto,
+    @CurrentUser() user: User,
   ): Promise<any> {
-    return this.suppliersService.create(createDto);
+    return this.suppliersService.create(createDto, user.id);
   }
 
-  @Patch(':id')
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
-  @Auditable({
-    action: AuditAction.UPDATE,
-    module: SystemModule.PURCHASES,
-    entityType: 'Supplier',
-  })
+  @Put(':id')
+  @Roles(RoleType.ADMIN)
+  @Auditable({ action: AuditAction.UPDATE, module: SystemModule.PURCHASES, entityType: 'Supplier' })
   async update(
     @Param('id') id: string,
-    @Body() updateDto: UpdateSupplierDto,
+    @Body(new ZodValidationPipe(UpdateSupplierSchema)) updateDto: UpdateSupplierDto,
   ): Promise<any> {
     return this.suppliersService.update(id, updateDto);
+  }
+
+  @Delete(':id')
+  @Roles(RoleType.ADMIN)
+  @HttpCode(204)
+  @Auditable({ action: AuditAction.DELETE, module: SystemModule.PURCHASES, entityType: 'Supplier' })
+  async remove(@Param('id') id: string): Promise<void> {
+    await this.suppliersService.remove(id);
   }
 }

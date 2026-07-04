@@ -1,24 +1,19 @@
-import { SupplierSchema } from './supplier.schema';
-import { z } from 'zod';
+import { z } from "zod";
+import { SupplierIdentificationType } from "@prisma/client";
 
-export class CreateSupplierDto implements z.infer<typeof SupplierSchema> {
-  name!: string;
-  identificationType!: 'NIT' | 'CC' | 'CE' | 'PASSPORT';
-  identificationNumber!: string;
-  email?: string;
-  phoneNumber?: string;
-  country!: string;
-  creditLimit?: string;
+export const CreateSupplierSchema = z.object({
+  identificationType: z.nativeEnum(SupplierIdentificationType),
+  identificationNumber: z.string().min(1, "Identification number is required"),
+  businessName: z.string().min(1, "Business name is required"),
+  contactName: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().email("Invalid email format").optional(),
+  address: z.string().optional(),
+  city: z.string().optional(),
+  country: z.string().optional().default("CO"),
+  paymentTermsDays: z.number().int().min(0).optional().default(0),
+  creditLimit: z.number().positive().optional().default(0),
+  isActive: z.boolean().optional().default(true),
+});
 
-  constructor(data?: z.infer<typeof SupplierSchema>) {
-    if (data) {
-      this.name = data.name;
-      this.identificationType = data.identificationType;
-      this.identificationNumber = data.identificationNumber;
-      this.email = data.email;
-      this.phoneNumber = data.phoneNumber;
-      this.country = data.country;
-      this.creditLimit = data.creditLimit;
-    }
-  }
-}
+export type CreateSupplierDto = z.infer<typeof CreateSupplierSchema>;

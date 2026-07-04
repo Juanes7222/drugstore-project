@@ -1,0 +1,225 @@
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { Prisma, PurchaseReceptionState, PurchaseOrderState } from '@prisma/client';
+import * as crypto from 'crypto';
+import { CreatePurchaseReceptionDto, CreatePurchaseReceptionItemDto } from '../dto/create-purchase-reception.dto';
+import { QueryPurchaseReceptionDto } from '../dto/query-purchase-reception.dto';
+import { PurchaseReceptionNotDraftException } from '../exceptions/purchase-reception-not-draft.exception';
+import { PurchaseReceptionNotFoundException } from '../exceptions/purchase-reception-not-found.exception';
+import { OverReceptionException } from '../exceptions/over-reception.exception';
+import { PurchaseOrderItemMismatchException } from '../exceptions/purchase-order-item-mismatch.exception';
+import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
+import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
+import { PurchaseOrderNotFoundException } from '../exceptions/purchase-order-not-found.exception';
+import { PurchaseOrderItemNotFoundException } from '../exceptions/purchase-order-item-not-found.exception';
+import { LotsService } from '@/modules/inventory-lots/services/lots.service';
+
+@Injectable()
+export class PurchaseReceptionsService {
+  constructor(private prisma: PrismaService, private lotsService: LotsService) {}
+
+  async findAll(query: QueryPurchaseReceptionDto): Promise<any> {
+    const where: Prisma.PurchaseReceptionWhereInput = {};
+    if (query.supplierId) where.supplierId = query.supplierId;
+    if (query.purchaseOrderId) where.purchaseOrderId = query.purchaseOrderId;
+    if (query.state) where.state = query.state as PurchaseReceptionState;
+    if (query.receivedAtFrom) where.receivedAt = { gte: new Date(query.receivedAtFrom) };
+    if (query.receivedAtTo) where.receivedAt = { ...where.receivedAt, lte: new Date(query.receivedAtTo) };
+
+    const [receptions, total] = await this.prisma.$transaction([
+      this.prisma.purchaseReception.findMany({
+        where,
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        orderBy: { createdAt: 'desc' },
+        include: { supplier: true, purchaseOrder: true, items: true },
+      }),
+      this.prisma.purchaseReception.count({ where }),
+    ]);
+    return { data: receptions, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  async findById(id: string): Promise<any> {
+    const reception = await this.prisma.purchaseReception.findUnique({
+      where: { id },
+      include: { supplier: true, purchaseOrder: true, items: { include: { product: true, purchaseOrderItem: true } } },
+    });
+    if (!reception) {
+      throw new PurchaseReceptionNotFoundException(id);
+    }
+    return reception;
+  }
+
+  async create(createDto: CreatePurchaseReceptionDto, userId: string): Promise<any> {
+    return this.prisma.$transaction(async (tx) => {
+      const supplier = await tx.supplier.findUnique({ where: { id: createDto.supplierId } });
+      if (!supplier) {
+        throw new SupplierNotFoundException(createDto.supplierId);
+      }
+
+      let purchaseOrder = null;
+      if (createDto.purchaseOrderId) {
+        purchaseOrder = await tx.purchaseOrder.findUnique({
+          where: { id: createDto.purchaseOrderId },
+          include: { items: true },
+        });
+        if (!purchaseOrder) {
+          throw new PurchaseOrderNotFoundException(createDto.purchaseOrderId);
+        }
+      }
+
+      const itemsData = await Promise.all(createDto.items.map(async (itemDto) => {
+        const product = await tx.product.findUnique({ where: { id: itemDto.productId } });
+        if (!product) {
+          throw new ProductNotFoundException(itemDto.productId);
+        }
+
+        let purchaseOrderItem = null;
+        if (itemDto.purchaseOrderItemId) {
+          purchaseOrderItem = await tx.purchaseOrderItem.findUnique({
+            where: { id: itemDto.purchaseOrderItemId },
+          });
+          if (!purchaseOrderItem) {
+            throw new PurchaseOrderItemNotFoundException(itemDto.purchaseOrderItemId);
+          }
+          if (purchaseOrderItem.purchaseOrderId !== createDto.purchaseOrderId) {
+            throw new PurchaseOrderItemMismatchException(itemDto.purchaseOrderItemId, 'Does not belong to the specified purchase order.');
+          }
+          if (purchaseOrderItem.productId !== itemDto.productId) {
+            throw new PurchaseOrderItemMismatchException(itemDto.purchaseOrderItemId, 'Product ID mismatch.');
+          }
+          if (itemDto.receivedQuantity > (purchaseOrderItem.requestedQuantity - purchaseOrderItem.receivedQuantity)) {
+            throw new OverReceptionException(itemDto.purchaseOrderItemId, purchaseOrderItem.requestedQuantity - purchaseOrderItem.receivedQuantity, itemDto.receivedQuantity);
+          }
+        }
+
+        return {
+          id: crypto.randomUUID(),
+          productId: itemDto.productId,
+          purchaseOrderItemId: itemDto.purchaseOrderItemId || null,
+          receivedQuantity: itemDto.receivedQuantity,
+          lotNumber: itemDto.lotNumber || null,
+          expirationDate: itemDto.expirationDate ? new Date(itemDto.expirationDate) : null,
+          realUnitCost: new Prisma.Decimal(itemDto.realUnitCost),
+          taxSchemeId: itemDto.taxSchemeId,
+          taxRate: new Prisma.Decimal(itemDto.taxRate),
+          discountAmount: new Prisma.Decimal(itemDto.discountAmount || 0),
+        };
+      }));
+
+      const { subtotal, totalTax, totalAmount } = this.calculateReceptionTotals(itemsData);
+      const sequentialNumber = await this.getNextSequentialNumber(tx);
+
+      const reception = await tx.purchaseReception.create({
+        data: {
+          id: crypto.randomUUID(),
+          sequentialNumber,
+          state: PurchaseReceptionState.DRAFT,
+          supplierId: createDto.supplierId,
+          purchaseOrderId: createDto.purchaseOrderId || null,
+          notes: createDto.notes,
+          subtotal,
+          totalTax,
+          totalAmount,
+          createdById: userId,
+          items: { create: itemsData },
+        },
+      });
+      return reception;
+    });
+  }
+
+  async confirm(id: string, userId: string): Promise<any> {
+    return this.prisma.$transaction(async (tx) => {
+      const reception = await tx.purchaseReception.findUnique({
+        where: { id },
+        include: { items: { include: { purchaseOrderItem: true } }, purchaseOrder: { include: { items: true } } },
+      });
+
+      if (!reception) {
+        throw new PurchaseReceptionNotFoundException(id);
+      }
+      if (reception.state !== PurchaseReceptionState.DRAFT) {
+        throw new PurchaseReceptionNotDraftException(id);
+      }
+
+      for (const item of reception.items) {
+        const lot = await this.lotsService.receiveStock({
+          productId: item.productId,
+          quantity: item.receivedQuantity,
+          unitCost: item.realUnitCost,
+          lotNumber: item.lotNumber,
+          expirationDate: item.expirationDate,
+          purchaseReceptionId: reception.id,
+          tx,
+        });
+
+        await tx.purchaseReceptionItem.update({
+          where: { id: item.id },
+          data: { lotId: lot.id },
+        });
+
+        if (item.purchaseOrderItemId) {
+          const updatedOrderItem = await tx.purchaseOrderItem.update({
+            where: { id: item.purchaseOrderItemId },
+            data: {
+              receivedQuantity: { increment: item.receivedQuantity },
+              pendingQuantity: { decrement: item.receivedQuantity },
+            },
+          });
+
+          // Update parent PurchaseOrder state
+          const purchaseOrder = reception.purchaseOrder;
+          if (purchaseOrder) {
+            const allItems = await tx.purchaseOrderItem.findMany({ where: { purchaseOrderId: purchaseOrder.id } });
+            const hasPendingItems = allItems.some(poItem => poItem.pendingQuantity > 0);
+            const newOrderState = hasPendingItems ? PurchaseOrderState.PARTIALLY_RECEIVED : PurchaseOrderState.FULLY_RECEIVED;
+
+            if (purchaseOrder.state !== newOrderState) {
+              await tx.purchaseOrder.update({
+                where: { id: purchaseOrder.id },
+                data: { state: newOrderState },
+              });
+            }
+          }
+        }
+      }
+
+      const updatedReception = await tx.purchaseReception.update({
+        where: { id },
+        data: {
+          state: PurchaseReceptionState.CONFIRMED,
+          receivedAt: new Date(),
+        },
+      });
+      return updatedReception;
+    });
+  }
+
+  async annul(id: string): Promise<any> {
+    // Annulment logic is deferred
+    throw new Error('Annulment not implemented for this phase.');
+  }
+
+  private calculateReceptionTotals(items: Prisma.PurchaseReceptionItemCreateManyPurchaseReceptionInput[]): {
+    subtotal: Prisma.Decimal;
+    totalTax: Prisma.Decimal;
+    totalAmount: Prisma.Decimal;
+  } {
+    const subtotal = items.reduce((sum, item) => sum.plus(new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost).minus(item.discountAmount || 0)), new Prisma.Decimal(0));
+    const totalTax = items.reduce((sum, item) => {
+      const itemSubtotal = new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost).minus(item.discountAmount || 0);
+      return sum.plus(itemSubtotal.times(item.taxRate).dividedBy(100));
+    }, new Prisma.Decimal(0));
+    const totalAmount = subtotal.plus(totalTax);
+    return { subtotal, totalTax, totalAmount };
+  }
+
+  private async getNextSequentialNumber(tx: Prisma.TransactionClient): Promise<number> {
+    const latestReception = await tx.purchaseReception.findFirst({
+      orderBy: { sequentialNumber: 'desc' },
+      select: { sequentialNumber: true },
+    });
+    return (latestReception?.sequentialNumber || 0) + 1;
+  }
+}

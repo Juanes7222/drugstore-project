@@ -1,0 +1,1434 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums for Auth & Catalog domains
+
+enum RoleType {
+  CASHIER
+  INVENTORY_ASSISTANT
+  ADMIN
+  ACCOUNTANT
+}
+
+enum SessionRevocationReason {
+  LOGOUT
+  INACTIVITY
+  ROLE_CHANGE
+  USER_DEACTIVATION
+  ADMIN_REVOCATION
+  PASSWORD_CHANGED
+  TOKEN_EXPIRATION
+}
+
+enum SaleType {
+  FREE_SALE
+  PRESCRIPTION
+  CONTROLLED_SUBSTANCE
+}
+
+enum TaxSchemeType {
+  IVA
+  INC
+  RETEFUENTE
+  RETEICA
+  IMPOCONSUMO
+  EXENTO
+}
+
+enum PaymentMethodCategory {
+  CASH
+  DEBIT_CARD
+  CREDIT_CARD
+  BANK_TRANSFER
+  DIGITAL_WALLET
+  CHECK
+  CREDIT
+  OTHER
+}
+
+enum BarcodeType {
+  EAN13
+  EAN14
+  GTIN
+  INTERNAL
+  DATAMATRIX
+}
+
+// Enums for Clients & Inventory/Lots domains
+
+enum ClientType {
+  PARTICULAR
+  FREQUENT
+  INSTITUTIONAL
+}
+
+enum DataSubjectRequestStatus {
+  NONE
+  PENDING_RECTIFICATION
+  PENDING_ERASURE
+  RECTIFIED
+  ERASURED
+  REJECTED
+}
+
+enum IdentificationType {
+  CC
+  NIT
+  CE
+  PASSPORT
+  TI
+  PEP
+}
+
+enum LotState {
+  ACTIVE
+  EXHAUSTED
+  EXPIRED
+  BLOCKED
+}
+
+enum MovementType {
+  PURCHASE_RECEIPT
+  SALE
+  POSITIVE_ADJUSTMENT
+  NEGATIVE_ADJUSTMENT
+  CLIENT_RETURN
+  SUPPLIER_RETURN
+  ADMIN_BLOCK
+  ADMIN_UNBLOCK
+  AUTO_EXPIRATION
+  PHYSICAL_COUNT
+  INITIAL_STOCK
+}
+
+enum AdjustmentState {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  APPLIED
+  ANNULLED
+}
+
+enum PhysicalCountState {
+  OPEN
+  COUNTED
+  REVIEWED
+  APPROVED
+  APPLIED
+  ANNULLED
+}
+
+// Enums for Purchases & Receptions domain
+
+enum SupplierIdentificationType {
+  NIT
+  CC
+  CE
+  PASSPORT
+}
+
+enum PurchaseOrderState {
+  DRAFT
+  CONFIRMED
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  ANNULLED
+}
+
+enum PurchaseReceptionState {
+  DRAFT
+  CONFIRMED
+  ANNULLED
+}
+
+enum PurchaseReturnState {
+  DRAFT
+  CONFIRMED
+  APPROVED
+  ANNULLED
+}
+
+// Enums for Cash Shift & Sales/POS domain
+
+enum ShiftState {
+  OPEN
+  CLOSED
+  FORCED_CLOSE
+}
+
+enum CashCountType {
+  PARTIAL
+  CLOSING
+}
+
+enum SaleOperationalState {
+  IN_PROGRESS
+  CONFIRMED
+  ANNULLED
+  ABANDONED
+}
+
+enum ClientReturnState {
+  DRAFT
+  PENDING_PICKUP
+  CONFIRMED
+  REJECTED
+  ANNULLED
+}
+
+enum RecipeType {
+  OFICIAL
+  PARTICULAR
+  INSTITUCIONAL
+}
+
+// Enums for Fiscal DIAN domain
+
+enum FiscalDocumentType {
+  INVOICE
+  POS_TICKET
+  CREDIT_NOTE
+  DEBIT_NOTE
+  SUPPORT_DOCUMENT
+}
+
+enum FiscalDocumentState {
+  PENDING_GENERATION
+  GENERATION_ERROR
+  PENDING_SIGNATURE
+  SIGNATURE_ERROR
+  PENDING_TRANSMISSION
+  IN_TRANSMISSION
+  PENDING_RESPONSE
+  VALIDATED
+  REJECTED
+  CONTINGENCY
+  ANNULLED
+}
+
+enum ResolutionState {
+  ACTIVE
+  EXPIRING
+  EXHAUSTED
+  EXPIRED
+}
+
+// Enums for Sync, Configuration & Audit domain
+
+enum SyncOperationType {
+  SALE_CONFIRMATION
+  SHIFT_CLOSURE
+  CLIENT_CREATION
+  INVENTORY_ADJUSTMENT
+  FISCAL_DOCUMENT_SYNC
+  PRESCRIPTION_REGISTRATION
+  RESOLUTION_ALLOCATION
+}
+
+enum SyncStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ConfigValueType {
+  NUMBER
+  BOOLEAN
+  STRING
+  ARRAY
+  OBJECT
+}
+
+enum SystemModule {
+  AUTH_USERS
+  CASH_SHIFT
+  CATALOG
+  INVENTORY
+  PURCHASES
+  SALES_POS
+  CLIENTS
+  SYNC_OFFLINE
+  FISCAL_DIAN
+  REPORTS
+  CONFIGURATION
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  ACCESS
+  EXPORT
+  LOGIN
+  LOGOUT
+  SECURITY_ALERT
+  STATE_CHANGE
+}
+
+// Models for Auth & Catalog domains
+
+/// Primary keys are application-generated UUIDv7 strings for time-ordered sync.
+/// The `uuid` npm package is used at the service layer, not a Prisma-level default.
+model User {
+  id                           String                        @id
+  username                     String                        @unique
+  fullName                     String
+  email                        String?
+  passwordHash                 String
+  passwordAlgorithm            String
+  passwordChangedAt            DateTime?
+  passwordMustChangeNextLogin  Boolean                       @default(false)
+  role                         RoleType
+  isActive                     Boolean                       @default(true)
+  failedLoginAttempts          Int                           @default(0)
+  lockedUntil                  DateTime?
+  lastLoginAt                  DateTime?
+  lastLoginWorkstationId       String?
+  createdAt                    DateTime                      @default(now())
+  updatedAt                    DateTime                      @updatedAt
+  createdById                  String?
+  createdByUser                User?                         @relation("CreatedByUser", fields: [createdById], references: [id], onDelete: NoAction)
+  createdUsers                 User[]                        @relation("CreatedByUser")
+  sessions                     UserSession[]
+  taxSchemes                   TaxScheme[]
+  products                     Product[]
+  productPriceHistories        ProductPriceHistory[]
+  productTaxHistories          ProductTaxHistory[]
+  revokedSessions              UserSession[]                 @relation("RevokedByUser")
+  createdClients               Client[]                      @relation("CreatedByUser")
+  updatedClients               Client[]                      @relation("UpdatedByUser")
+  lots                         Lot[]
+  inventoryMovements           InventoryMovement[]           @relation("CreatedByUser")
+  approvedInventoryMovements   InventoryMovement[]           @relation("ApprovedByUser")
+  inventoryAdjustmentDocuments InventoryAdjustmentDocument[] @relation("CreatedByUser")
+  approvedAdjustmentDocuments  InventoryAdjustmentDocument[] @relation("ApprovedByUser")
+  rejectedAdjustmentDocuments  InventoryAdjustmentDocument[] @relation("RejectedByUser")
+  annulledAdjustmentDocuments  InventoryAdjustmentDocument[] @relation("AnnulledByUser")
+  autoExpirationJobs           AutoExpirationJob[]
+  physicalCounts               PhysicalCount[]               @relation("StartedByUser")
+  approvedPhysicalCounts       PhysicalCount[]               @relation("ApprovedByUser")
+  suppliers                    Supplier[]
+  purchaseOrders               PurchaseOrder[]
+  confirmedPurchaseOrders      PurchaseOrder[]               @relation("ConfirmedPurchaseOrder")
+  annulledPurchaseOrders       PurchaseOrder[]               @relation("AnnulledPurchaseOrder")
+  purchaseReceptions           PurchaseReception[]
+  annulledPurchaseReceptions   PurchaseReception[]           @relation("AnnulledPurchaseReception")
+  supplierReturns              SupplierReturn[]
+  annulledSupplierReturns      SupplierReturn[]              @relation("AnnulledSupplierReturn")
+  cashShifts                   CashShift[]
+  closedCashShifts             CashShift[]                   @relation("ClosedByUser")
+  shiftCashCounts              ShiftCashCount[]
+  sales                        Sale[]
+  annulledSales                Sale[]                        @relation("AnnulledByUser")
+  prescriptions                Prescription[]
+  clientReturns                ClientReturn[]
+  annulledClientReturns        ClientReturn[]                @relation("AnnulledByUser")
+  fiscalIssuerConfigs          FiscalIssuerConfig[]
+  techProviderConfigs          TechProviderConfig[]
+  resolutionAllocations        FiscalResolutionAllocation[]
+  systemConfigs                SystemConfig[]
+  auditLogs                    AuditLog[]
+
+  @@index([role])
+}
+
+model UserSession {
+  id               String                   @id
+  userId           String
+  user             User                     @relation(fields: [userId], references: [id], onDelete: NoAction)
+  workstationId    String
+  workstation      Workstation              @relation(fields: [workstationId], references: [id])
+  tokenHash        String                   @unique
+  refreshTokenHash String?
+  issuedAt         DateTime
+  lastActivityAt   DateTime
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedReason    SessionRevocationReason?
+  revokedByUserId  String?
+  revokedByUser    User?                    @relation("RevokedByUser", fields: [revokedByUserId], references: [id], onDelete: NoAction)
+  ipAddress        String?
+  userAgent        String?
+  auditLogs        AuditLog[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model Workstation {
+  id                     String                       @id
+  name                   String                       @unique
+  code                   String                       @unique
+  macAddress             String?
+  serialNumber           String?
+  isActive               Boolean                      @default(true)
+  registeredAt           DateTime
+  lastSeenAt             DateTime?
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+  sessions               UserSession[]
+  cashShifts             CashShift[]
+  sales                  Sale[]
+  sourceWorkstationSales Sale[]                       @relation("SaleSourceWorkstation")
+  clientReturns          ClientReturn[]
+  fiscalResolutions      FiscalResolution[]
+  resolutionAllocations  FiscalResolutionAllocation[]
+  syncQueueItems         SyncQueue[]
+  syncQueueWorkstations  SyncQueue[]                  @relation("SyncQueueWorkstation")
+  auditLogs              AuditLog[]
+}
+
+model Category {
+  id        String    @id
+  name      String    @unique
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+model PharmaceuticalForm {
+  id        String    @id
+  name      String    @unique
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+}
+
+/// The partial unique index `ux_taxscheme_active` (`code, rate` WHERE `effectiveTo IS NULL`)
+/// is NOT representable in schema.prisma and must be added later through a raw SQL migration.
+model TaxScheme {
+  id                     String                  @id
+  code                   String
+  name                   String
+  taxType                TaxSchemeType
+  rate                   Decimal                 @db.Decimal(6, 4)
+  effectiveFrom          DateTime
+  effectiveTo            DateTime?
+  isActive               Boolean                 @default(true)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  createdById            String
+  createdByUser          User                    @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  productTaxHistories    ProductTaxHistory[]
+  purchaseReceptionItems PurchaseReceptionItem[]
+
+  @@index([code, rate])
+}
+
+model PaymentMethod {
+  id              String                @id
+  internalCode    String                @unique
+  name            String
+  dianCode        String?
+  category        PaymentMethodCategory
+  isCash          Boolean               @default(false)
+  sortOrder       Int                   @default(0)
+  isActive        Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  shiftCashCounts ShiftCashCount[]
+  salePayments    SalePayment[]
+  clientReturns   ClientReturn[]        @relation("RefundMethod")
+}
+
+/// Referential integrity for currentPriceId and currentTaxHistoryId is enforced at the application layer
+/// through a two-step insert (create Product with null pointers, create the history row, then update the pointer),
+/// matching DEFERRABLE INITIALLY DEFERRED semantics. Do not add foreign key constraints for these fields.
+model Product {
+  id                     String                  @id
+  internalCode           String                  @unique
+  commercialName         String
+  genericName            String
+  activePrinciple        String
+  concentration          String?
+  concentrationUnit      String?
+  laboratory             String
+  saleType               SaleType
+  minimumStock           Int                     @default(0)
+  isActive               Boolean                 @default(true)
+  discontinuationReason  String?
+  invimaRegistry         String?
+  atcCode                String?
+  therapeuticIndication  String?
+  storageConditions      String?
+  internalNotes          String?
+  categoryId             String?
+  category               Category?               @relation(fields: [categoryId], references: [id])
+  pharmaceuticalFormId   String?
+  pharmaceuticalForm     PharmaceuticalForm?     @relation(fields: [pharmaceuticalFormId], references: [id])
+  currentPriceId         String?
+  currentTaxHistoryId    String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  createdById            String
+  createdByUser          User                    @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  priceHistories         ProductPriceHistory[]
+  taxHistories           ProductTaxHistory[]
+  barcodes               ProductBarcode[]
+  lots                   Lot[]
+  purchaseOrderItems     PurchaseOrderItem[]
+  purchaseReceptionItems PurchaseReceptionItem[]
+  supplierReturnItems    SupplierReturnItem[]
+  saleItems              SaleItem[]
+
+  @@index([commercialName])
+  @@index([genericName])
+  @@index([activePrinciple])
+  @@index([isActive])
+  @@index([categoryId, isActive])
+  @@index([invimaRegistry])
+}
+
+/// The partial unique index `ux_product_primary_barcode` (`productId` WHERE `isPrimary = true`)
+/// is NOT representable in schema.prisma and must be added later through a raw SQL migration.
+model ProductBarcode {
+  id          String      @id
+  productId   String
+  product     Product     @relation(fields: [productId], references: [id])
+  barcode     String      @unique
+  barcodeType BarcodeType
+  isPrimary   Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+
+  @@index([productId])
+}
+
+/// The partial unique index `ux_price_history_product_active` (`productId` WHERE `effectiveTo IS NULL`)
+/// is NOT representable in schema.prisma and must be added later through a raw SQL migration.
+model ProductPriceHistory {
+  id                     String                @id
+  productId              String
+  product                Product               @relation(fields: [productId], references: [id])
+  previousPriceHistoryId String?
+  previousPriceHistory   ProductPriceHistory?  @relation("PriceHistoryChain", fields: [previousPriceHistoryId], references: [id])
+  nextPriceHistories     ProductPriceHistory[] @relation("PriceHistoryChain")
+  price                  Decimal               @db.Decimal(15, 2)
+  effectiveFrom          DateTime
+  effectiveTo            DateTime?
+  changedById            String
+  changedByUser          User                  @relation(fields: [changedById], references: [id], onDelete: NoAction)
+  changedAt              DateTime
+  changeReason           String?
+
+  @@index([productId])
+  @@index([productId, effectiveFrom])
+}
+
+/// The partial unique index `ux_tax_history_product_active` (`productId` WHERE `effectiveTo IS NULL`)
+/// is NOT representable in schema.prisma and must be added later through a raw SQL migration.
+model ProductTaxHistory {
+  id                   String              @id
+  productId            String
+  product              Product             @relation(fields: [productId], references: [id])
+  previousTaxHistoryId String?
+  previousTaxHistory   ProductTaxHistory?  @relation("TaxHistoryChain", fields: [previousTaxHistoryId], references: [id])
+  nextTaxHistories     ProductTaxHistory[] @relation("TaxHistoryChain")
+  taxSchemeId          String
+  taxScheme            TaxScheme           @relation(fields: [taxSchemeId], references: [id])
+  effectiveFrom        DateTime
+  effectiveTo          DateTime?
+  changedById          String
+  changedByUser        User                @relation(fields: [changedById], references: [id], onDelete: NoAction)
+  changedAt            DateTime
+  changeReason         String?
+
+  @@index([productId])
+}
+
+// Models for Clients & Inventory/Lots domains
+
+/// The `id` is a surrogate key and `type` is the semantic identifier, kept separate to allow
+/// multiple classifications per type in the future (institutional agreements) without a destructive migration.
+model ClientClassification {
+  id                 String     @id
+  type               ClientType @unique
+  discountPercentage Decimal    @default(0) @db.Decimal(5, 2)
+  sortOrder          Int        @default(0)
+  isActive           Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  clients            Client[]
+  salesSnapshots     Sale[]
+}
+
+/// Ley 1581/2012 (Habeas Data) compliance model.
+/// `consentScope` stores a JSON array of authorized purposes such as ["marketing", "data_sharing", "history"].
+model Client {
+  id                       String                   @id
+  identificationType       IdentificationType
+  identificationNumber     String
+  fullName                 String
+  email                    String?
+  phone                    String?
+  address                  String?
+  municipality             String?
+  department               String?
+  isActive                 Boolean                  @default(true)
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  createdById              String
+  createdByUser            User                     @relation("CreatedByUser", fields: [createdById], references: [id], onDelete: NoAction)
+  updatedById              String?
+  updatedByUser            User?                    @relation("UpdatedByUser", fields: [updatedById], references: [id], onDelete: NoAction)
+  classificationId         String?
+  classification           ClientClassification?    @relation(fields: [classificationId], references: [id])
+  consentGivenAt           DateTime?
+  consentVersion           String?
+  consentScope             Json?
+  dataSubjectRequestStatus DataSubjectRequestStatus @default(NONE)
+  dataSubjectRequestAt     DateTime?
+  sales                    Sale[]
+  clientReturns            ClientReturn[]
+
+  @@unique([identificationType, identificationNumber])
+  @@index([fullName])
+  @@index([classificationId])
+  @@index([municipality])
+}
+
+/// `currentStock` is a denormalized counter protected by `version` for optimistic locking,
+/// mutated only through an atomic conditional update (`WHERE id = ? AND version = ? AND productId = ?`).
+/// The composite unique `(productId, batchNumber)` must be added later through a raw SQL migration.
+/// `locationCode` is a plain string for single-store operation; multi-warehouse support would require
+/// a separate `LotLocation` table, out of scope here.
+model Lot {
+  id                     String                  @id
+  batchNumber            String
+  expirationDate         DateTime
+  entryDate              DateTime
+  state                  LotState                @default(ACTIVE)
+  currentStock           Int                     @default(0)
+  version                Int                     @default(0)
+  productId              String
+  product                Product                 @relation(fields: [productId], references: [id])
+  locationCode           String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  blockedAt              DateTime?
+  blockedByUserId        String?
+  blockedByUser          User?                   @relation(fields: [blockedByUserId], references: [id], onDelete: NoAction)
+  blockReason            String?
+  movements              InventoryMovement[]
+  purchaseReceptionItems PurchaseReceptionItem[]
+  supplierReturnItems    SupplierReturnItem[]
+  saleItemLots           SaleItemLot[]
+  clientReturnItemLots   ClientReturnItemLot[]
+
+  @@index([productId])
+  @@index([productId, state])
+  @@index([expirationDate])
+}
+
+/// Polymorphic source FK: exactly one of `purchaseReceptionId`, `saleId`, `supplierReturnId`, `clientReturnId`
+/// is populated depending on `movementType`. This invariant is enforced by a CHECK constraint added in a later
+/// raw SQL migration. All six source columns are now real relations; the CHECK constraint enforces exactly one
+/// populated column per `movementType`.
+model InventoryMovement {
+  id                   String                       @id
+  movementType         MovementType
+  quantity             Int
+  previousStock        Int
+  resultingStock       Int
+  createdById          String
+  createdByUser        User                         @relation("CreatedByUser", fields: [createdById], references: [id], onDelete: NoAction)
+  createdAt            DateTime
+  lotId                String
+  lot                  Lot                          @relation(fields: [lotId], references: [id])
+  adjustmentDocumentId String?
+  adjustmentDocument   InventoryAdjustmentDocument? @relation(fields: [adjustmentDocumentId], references: [id])
+  autoExpirationJobId  String?
+  autoExpirationJob    AutoExpirationJob?           @relation(fields: [autoExpirationJobId], references: [id])
+  reason               String?
+  approvedByUserId     String?
+  approvedByUser       User?                        @relation("ApprovedByUser", fields: [approvedByUserId], references: [id], onDelete: NoAction)
+  purchaseReceptionId  String?
+  purchaseReception    PurchaseReception?           @relation(fields: [purchaseReceptionId], references: [id])
+  saleId               String?
+  sale                 Sale?                        @relation(fields: [saleId], references: [id])
+  supplierReturnId     String?
+  supplierReturn       SupplierReturn?              @relation(fields: [supplierReturnId], references: [id])
+  clientReturnId       String?
+  clientReturn         ClientReturn?                @relation(fields: [clientReturnId], references: [id])
+
+  @@index([lotId])
+  @@index([lotId, createdAt])
+  @@index([createdAt])
+  @@index([movementType, createdAt])
+  @@index([adjustmentDocumentId])
+}
+
+/// Mandatory supporting document for `POSITIVE_ADJUSTMENT`, `NEGATIVE_ADJUSTMENT`, and `PHYSICAL_COUNT` movements.
+/// `physicalCountId` is populated only when the adjustment originates from a physical count session,
+/// since one count can generate several adjustment documents.
+model InventoryAdjustmentDocument {
+  id                     String              @id
+  sequentialNumber       Int                 @unique
+  state                  AdjustmentState     @default(DRAFT)
+  reason                 String?
+  notes                  String?
+  createdAt              DateTime            @default(now())
+  createdByUserId        String
+  createdByUser          User                @relation("CreatedByUser", fields: [createdByUserId], references: [id], onDelete: NoAction)
+  submittedForApprovalAt DateTime?
+  approvedAt             DateTime?
+  approvedByUserId       String?
+  approvedByUser         User?               @relation("ApprovedByUser", fields: [approvedByUserId], references: [id], onDelete: NoAction)
+  approvalNotes          String?
+  rejectedAt             DateTime?
+  rejectedByUserId       String?
+  rejectedByUser         User?               @relation("RejectedByUser", fields: [rejectedByUserId], references: [id], onDelete: NoAction)
+  rejectionReason        String?
+  appliedAt              DateTime?
+  annulledAt             DateTime?
+  annulledByUserId       String?
+  annulledByUser         User?               @relation("AnnulledByUser", fields: [annulledByUserId], references: [id], onDelete: NoAction)
+  annulmentReason        String?
+  physicalCountId        String?
+  physicalCount          PhysicalCount?      @relation(fields: [physicalCountId], references: [id])
+  movements              InventoryMovement[]
+}
+
+/// `triggeredBy` holds either `"CRON"` for scheduled automatic execution or `"MANUAL"` for a user-initiated run.
+/// `triggeredByUserId` is only populated when `triggeredBy` is `"MANUAL"`.
+model AutoExpirationJob {
+  id                String              @id
+  startedAt         DateTime
+  finishedAt        DateTime?
+  lotsAffected      Int?
+  triggeredBy       String
+  triggeredByUserId String?
+  triggeredByUser   User?               @relation(fields: [triggeredByUserId], references: [id], onDelete: NoAction)
+  notes             String?
+  movements         InventoryMovement[]
+}
+
+/// Approving a physical count generates one or more `InventoryAdjustmentDocument` records,
+/// one per product or lot.
+model PhysicalCount {
+  id                  String                        @id
+  sequentialNumber    Int                           @unique
+  state               PhysicalCountState            @default(OPEN)
+  startedAt           DateTime
+  startedByUserId     String
+  startedByUser       User                          @relation("StartedByUser", fields: [startedByUserId], references: [id], onDelete: NoAction)
+  finishedAt          DateTime?
+  approvedAt          DateTime?
+  approvedByUserId    String?
+  approvedByUser      User?                         @relation("ApprovedByUser", fields: [approvedByUserId], references: [id], onDelete: NoAction)
+  appliedAt           DateTime?
+  notes               String?
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
+  adjustmentDocuments InventoryAdjustmentDocument[]
+
+  @@index([state])
+  @@index([startedAt])
+}
+
+// Models for Purchases & Receptions domain
+
+model Supplier {
+  id                   String                     @id
+  identificationType   SupplierIdentificationType
+  identificationNumber String
+  businessName         String
+  contactName          String?
+  phone                String?
+  email                String?
+  address              String?
+  city                 String?
+  country              String                     @default("CO")
+  paymentTermsDays     Int                        @default(0)
+  creditLimit          Decimal                    @default(0) @db.Decimal(15, 2)
+  isActive             Boolean                    @default(true)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  createdById          String
+  createdByUser        User                       @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  purchaseOrders       PurchaseOrder[]
+  purchaseReceptions   PurchaseReception[]
+  supplierReturns      SupplierReturn[]
+
+  @@unique([identificationType, identificationNumber])
+  @@index([businessName])
+}
+
+model PurchaseOrder {
+  id                   String              @id
+  sequentialNumber     Int                 @unique
+  state                PurchaseOrderState  @default(DRAFT)
+  expectedDeliveryDate DateTime?
+  subtotal             Decimal             @default(0) @db.Decimal(15, 2)
+  totalTax             Decimal             @default(0) @db.Decimal(15, 2)
+  totalAmount          Decimal             @default(0) @db.Decimal(15, 2)
+  notes                String?
+  createdAt            DateTime            @default(now())
+  createdById          String
+  createdByUser        User                @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  confirmedAt          DateTime?
+  confirmedById        String?
+  confirmedByUser      User?               @relation("ConfirmedPurchaseOrder", fields: [confirmedById], references: [id], onDelete: NoAction)
+  annulledAt           DateTime?
+  annulledById         String?
+  annulledByUser       User?               @relation("AnnulledPurchaseOrder", fields: [annulledById], references: [id], onDelete: NoAction)
+  annulmentReason      String?
+  supplierId           String
+  supplier             Supplier            @relation(fields: [supplierId], references: [id])
+  items                PurchaseOrderItem[]
+  purchaseReceptions   PurchaseReception[]
+
+  @@index([supplierId, state])
+  @@index([state])
+  @@index([createdAt])
+}
+
+/// `pendingQuantity` equals `requestedQuantity` minus `receivedQuantity` and is maintained by application logic
+/// when receptions are confirmed, not by a database trigger.
+model PurchaseOrderItem {
+  id                String                  @id
+  purchaseOrderId   String
+  purchaseOrder     PurchaseOrder           @relation(fields: [purchaseOrderId], references: [id])
+  productId         String
+  product           Product                 @relation(fields: [productId], references: [id])
+  requestedQuantity Int                     @default(0)
+  receivedQuantity  Int                     @default(0)
+  pendingQuantity   Int                     @default(0)
+  expectedUnitCost  Decimal                 @default(0) @db.Decimal(15, 2)
+  receptionItems    PurchaseReceptionItem[]
+
+  @@index([purchaseOrderId, productId])
+}
+
+/// `purchaseOrderId` is nullable because the system supports receiving goods without a prior purchase order.
+model PurchaseReception {
+  id               String                  @id
+  sequentialNumber Int                     @unique
+  state            PurchaseReceptionState  @default(DRAFT)
+  receivedAt       DateTime?
+  createdAt        DateTime                @default(now())
+  createdById      String
+  createdByUser    User                    @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  updatedAt        DateTime                @updatedAt
+  notes            String?
+  subtotal         Decimal                 @default(0) @db.Decimal(15, 2)
+  totalTax         Decimal                 @default(0) @db.Decimal(15, 2)
+  totalAmount      Decimal                 @default(0) @db.Decimal(15, 2)
+  annulledAt       DateTime?
+  annulledById     String?
+  annulledByUser   User?                   @relation("AnnulledPurchaseReception", fields: [annulledById], references: [id], onDelete: NoAction)
+  annulmentReason  String?
+  supplierId       String
+  supplier         Supplier                @relation(fields: [supplierId], references: [id])
+  purchaseOrderId  String?
+  purchaseOrder    PurchaseOrder?          @relation(fields: [purchaseOrderId], references: [id])
+  items            PurchaseReceptionItem[]
+  movements        InventoryMovement[]
+  fiscalDocuments  FiscalDocument[]
+  supplierReturns  SupplierReturn[]
+
+  @@index([supplierId, receivedAt])
+  @@index([receivedAt])
+  @@index([state])
+}
+
+/// `lotId` is populated only after the corresponding `Lot` row is created or updated by application logic.
+/// `taxRate`/`taxAmount`/`taxSchemeId` are snapshots kept for VAT input-tax reporting on purchases.
+model PurchaseReceptionItem {
+  id                  String             @id
+  purchaseReceptionId String
+  purchaseReception   PurchaseReception  @relation(fields: [purchaseReceptionId], references: [id])
+  productId           String
+  product             Product            @relation(fields: [productId], references: [id])
+  purchaseOrderItemId String?
+  purchaseOrderItem   PurchaseOrderItem? @relation(fields: [purchaseOrderItemId], references: [id])
+  lotId               String?
+  lot                 Lot?               @relation(fields: [lotId], references: [id])
+  receivedQuantity    Int
+  lotNumber           String?
+  expirationDate      DateTime?
+  realUnitCost        Decimal            @db.Decimal(15, 2)
+  taxSchemeId         String
+  taxScheme           TaxScheme          @relation(fields: [taxSchemeId], references: [id])
+  taxRate             Decimal            @default(0) @db.Decimal(6, 4)
+  taxAmount           Decimal            @default(0) @db.Decimal(15, 2)
+  discountAmount      Decimal            @default(0) @db.Decimal(15, 2)
+  subtotal            Decimal            @default(0) @db.Decimal(15, 2)
+  total               Decimal            @default(0) @db.Decimal(15, 2)
+
+  @@index([purchaseReceptionId, productId])
+}
+
+model SupplierReturn {
+  id                  String               @id
+  sequentialNumber    Int                  @unique
+  state               PurchaseReturnState  @default(DRAFT)
+  reason              String?
+  notes               String?
+  subtotal            Decimal              @default(0) @db.Decimal(15, 2)
+  totalTax            Decimal              @default(0) @db.Decimal(15, 2)
+  totalAmount         Decimal              @default(0) @db.Decimal(15, 2)
+  createdAt           DateTime             @default(now())
+  createdById         String
+  createdByUser       User                 @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  updatedAt           DateTime             @updatedAt
+  annulledAt          DateTime?
+  annulledById        String?
+  annulledByUser      User?                @relation("AnnulledSupplierReturn", fields: [annulledById], references: [id], onDelete: NoAction)
+  annulmentReason     String?
+  supplierId          String
+  supplier            Supplier             @relation(fields: [supplierId], references: [id])
+  purchaseReceptionId String?
+  purchaseReception   PurchaseReception?   @relation(fields: [purchaseReceptionId], references: [id])
+  items               SupplierReturnItem[]
+  movements           InventoryMovement[]
+
+  @@index([supplierId, createdAt])
+}
+
+model SupplierReturnItem {
+  id               String         @id
+  supplierReturnId String
+  supplierReturn   SupplierReturn @relation(fields: [supplierReturnId], references: [id])
+  productId        String
+  product          Product        @relation(fields: [productId], references: [id])
+  lotId            String
+  lot              Lot            @relation(fields: [lotId], references: [id])
+  quantity         Int
+  unitCost         Decimal        @default(0) @db.Decimal(15, 2)
+  totalAmount      Decimal        @default(0) @db.Decimal(15, 2)
+
+  @@index([supplierReturnId, productId])
+}
+
+// Models for Cash Shift & Sales/POS domain
+
+/// `closedByUserId` may differ from the shift opener when an administrator forces a close.
+/// The two partial unique constraints (`workstationId` WHERE `state = OPEN`, and `userId` WHERE `state = OPEN`)
+/// must be added later through a raw SQL migration.
+/// Pending-sync and pending-fiscal counters are deliberately not stored here — they are computed on demand
+/// at closing time to avoid staleness across multiple workstations.
+model CashShift {
+  id                    String           @id
+  workstationId         String
+  workstation           Workstation      @relation(fields: [workstationId], references: [id])
+  userId                String
+  user                  User             @relation(fields: [userId], references: [id], onDelete: NoAction)
+  state                 ShiftState       @default(OPEN)
+  openedAt              DateTime
+  closedAt              DateTime?
+  closedByUserId        String?
+  closedByUser          User?            @relation("ClosedByUser", fields: [closedByUserId], references: [id], onDelete: NoAction)
+  openingBalance        Decimal          @default(0) @db.Decimal(15, 2)
+  openingNotes          String?
+  expectedClosingAmount Decimal          @default(0) @db.Decimal(15, 2)
+  actualClosingAmount   Decimal          @default(0) @db.Decimal(15, 2)
+  closingDifference     Decimal          @default(0) @db.Decimal(15, 2)
+  closingNotes          String?
+  forcedClose           Boolean          @default(false)
+  hasExtendedAlert      Boolean          @default(false)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  cashCounts            ShiftCashCount[]
+  sales                 Sale[]
+  clientReturns         ClientReturn[]
+
+  @@index([workstationId, state])
+  @@index([userId, state])
+  @@index([closedAt])
+}
+
+/// `paymentMethodIsCash` is a snapshot of `PaymentMethod.isCash` taken at count time to avoid joins on read.
+/// `difference` must equal `declaredAmount` minus `expectedAmount` (enforced by a CHECK constraint in a later raw SQL migration).
+/// `denominationsBreakdown` only applies when `paymentMethodIsCash` is true — otherwise it stays null.
+model ShiftCashCount {
+  id                     String        @id
+  cashShiftId            String
+  cashShift              CashShift     @relation(fields: [cashShiftId], references: [id])
+  countType              CashCountType
+  paymentMethodId        String
+  paymentMethod          PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodIsCash    Boolean       @default(false)
+  expectedAmount         Decimal       @db.Decimal(15, 2)
+  declaredAmount         Decimal       @db.Decimal(15, 2)
+  difference             Decimal       @db.Decimal(15, 2)
+  denominationsBreakdown Json?
+  createdAt              DateTime      @default(now())
+  createdById            String
+  createdByUser          User          @relation(fields: [createdById], references: [id], onDelete: NoAction)
+
+  @@index([cashShiftId, countType])
+}
+
+/// Dual numbering scheme: `localNumber` is assigned by the POS on creation and is unique per workstation,
+/// used for the provisional receipt; `internalNumber` is assigned by the server after sync and is globally unique,
+/// used on the definitive DIAN fiscal document.
+/// The two CHECK constraints (`operationalState IN (CONFIRMED, ANNULLED) => confirmedAt IS NOT NULL`,
+/// and `operationalState = ANNULLED => annulledAt IS NOT NULL AND annulledById IS NOT NULL`) are deferred
+/// to a later raw SQL migration.
+/// Client snapshot fields preserve immutable history even if the `Client` row changes later.
+/// There is intentionally no direct FK from `Sale` to `SyncQueue` to avoid a circular dependency —
+/// correlation happens through `SyncQueue.correlationId` matching `Sale.id`.
+model Sale {
+  id                                 String                @id
+  localNumber                        BigInt
+  internalNumber                     Int?                  @unique
+  operationalState                   SaleOperationalState  @default(IN_PROGRESS)
+  startedAt                          DateTime
+  confirmedAt                        DateTime?
+  annulledAt                         DateTime?
+  lastModifiedAt                     DateTime
+  clientIdentificationTypeSnapshot   IdentificationType?
+  clientIdentificationNumberSnapshot String?
+  clientNameSnapshot                 String?
+  clientId                           String?
+  client                             Client?               @relation(fields: [clientId], references: [id])
+  clientClassificationIdSnapshot     String?
+  clientClassificationSnapshot       ClientClassification? @relation(fields: [clientClassificationIdSnapshot], references: [id])
+  clientTypeSnapshot                 ClientType?
+  subtotal                           Decimal               @default(0) @db.Decimal(15, 2)
+  totalDiscount                      Decimal               @default(0) @db.Decimal(15, 2)
+  totalTax                           Decimal               @default(0) @db.Decimal(15, 2)
+  totalCost                          Decimal               @default(0) @db.Decimal(15, 2)
+  totalAmount                        Decimal               @default(0) @db.Decimal(15, 2)
+  changeAmount                       Decimal               @default(0) @db.Decimal(15, 2)
+  annulledById                       String?
+  annulledByUser                     User?                 @relation("AnnulledByUser", fields: [annulledById], references: [id], onDelete: NoAction)
+  annulmentReason                    String?
+  annulmentNotes                     String?
+  cashShiftId                        String
+  cashShift                          CashShift             @relation(fields: [cashShiftId], references: [id])
+  workstationId                      String
+  workstation                        Workstation           @relation(fields: [workstationId], references: [id])
+  userId                             String
+  user                               User                  @relation(fields: [userId], references: [id], onDelete: NoAction)
+  sourceWorkstationId                String
+  sourceWorkstation                  Workstation           @relation("SaleSourceWorkstation", fields: [sourceWorkstationId], references: [id])
+  sourceCreatedAt                    DateTime?
+  items                              SaleItem[]
+  payments                           SalePayment[]
+  clientReturns                      ClientReturn[]
+  movements                          InventoryMovement[]
+  fiscalDocuments                    FiscalDocument[]
+
+  @@unique([localNumber, sourceWorkstationId], name: "ux_sale_local_per_ws")
+  @@index([cashShiftId, operationalState])
+  @@index([workstationId, confirmedAt])
+  @@index([confirmedAt])
+  @@index([operationalState, confirmedAt])
+  @@index([clientId, confirmedAt])
+}
+
+/// `requiresPrescription` is a historical snapshot that may differ from the product's current `saleType`
+/// if its regulatory classification changed after the sale.
+/// The invariant `requiresPrescription = (saleItemPrescriptionId IS NOT NULL)` is enforced by application logic
+/// plus a CHECK constraint added in a later raw SQL migration.
+/// See PHASE 2 doc comment on `Product.currentPriceId` for the circular pointer pattern.
+model SaleItem {
+  id                            String             @id
+  saleId                        String
+  sale                          Sale               @relation(fields: [saleId], references: [id])
+  productId                     String
+  product                       Product            @relation(fields: [productId], references: [id])
+  productInternalCodeSnapshot   String
+  productCommercialNameSnapshot String
+  productGenericNameSnapshot    String
+  productConcentrationSnapshot  String?
+  quantity                      Int                @default(0)
+  unitPrice                     Decimal            @db.Decimal(15, 2)
+  unitCost                      Decimal            @default(0) @db.Decimal(15, 2)
+  taxRate                       Decimal            @db.Decimal(6, 4)
+  taxAmount                     Decimal            @db.Decimal(15, 2)
+  discountPercentage            Decimal            @default(0) @db.Decimal(5, 2)
+  discountAmount                Decimal            @default(0) @db.Decimal(15, 2)
+  discountReason                String?
+  subtotal                      Decimal            @db.Decimal(15, 2)
+  total                         Decimal            @db.Decimal(15, 2)
+  requiresPrescription          Boolean            @default(false)
+  saleItemPrescriptionId        String?
+  prescription                  Prescription?      @relation("PrescriptionFromSaleItem")
+  lots                          SaleItemLot[]
+  clientReturnItems             ClientReturnItem[]
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+/// `unitCostAtSale` is a snapshot of the lot's cost at dispensing time, required for margin calculation and FIFO valuation.
+model SaleItemLot {
+  id             String   @id
+  saleItemId     String
+  saleItem       SaleItem @relation(fields: [saleItemId], references: [id])
+  lotId          String
+  lot            Lot      @relation(fields: [lotId], references: [id])
+  quantity       Int
+  unitCostAtSale Decimal  @db.Decimal(15, 2)
+
+  @@index([saleItemId])
+  @@index([lotId])
+}
+
+model SalePayment {
+  id                    String        @id
+  saleId                String
+  sale                  Sale          @relation(fields: [saleId], references: [id])
+  paymentMethodId       String
+  paymentMethod         PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  amount                Decimal       @db.Decimal(15, 2)
+  transactionReference  String?
+  authorizationCode     String?
+  cardBrand             String?
+  cardLastFour          String?
+  batchNumber           String?
+  processorResponseCode String?
+  createdAt             DateTime      @default(now())
+
+  @@index([saleId])
+  @@index([paymentMethodId])
+}
+
+/// Decreto 780/2016 compliance model.
+/// When the related product's `saleType` is `CONTROLLED_SUBSTANCE`, `isControlledSubstance` and the
+/// controlled-substance book fields are mandatory.
+/// A dedicated paginated `ControlledSubstanceRegistry` table for official Fondo Nacional de Estupefacientes
+/// reporting is a known MVP gap, out of scope here.
+model Prescription {
+  id                           String              @id
+  saleItemId                   String              @unique
+  saleItem                     SaleItem            @relation("PrescriptionFromSaleItem", fields: [saleItemId], references: [id])
+  prescriptionNumber           String?
+  prescriberIdType             IdentificationType?
+  prescriberIdNumber           String?
+  prescriberName               String?
+  prescriberSpecialty          String?
+  prescriptionDate             DateTime?
+  expiresAt                    DateTime?
+  patientFullName              String?
+  patientIdType                IdentificationType?
+  patientIdNumber              String?
+  fileUrl                      String?
+  fileHash                     String?
+  verifiedById                 String?
+  verifiedByUser               User?               @relation(fields: [verifiedById], references: [id], onDelete: NoAction)
+  verifiedAt                   DateTime?
+  isControlledSubstance        Boolean             @default(false)
+  controlledSubstanceBookEntry String?
+  controlledSubstanceBookPage  String?
+  recipeType                   RecipeType?
+  createdAt                    DateTime            @default(now())
+
+  @@index([prescriberIdNumber])
+  @@index([prescriptionNumber])
+  @@index([isControlledSubstance])
+}
+
+/// The expected one-to-one relationship (one return, one credit note) is enforced at the application layer.
+model ClientReturn {
+  id               String              @id
+  sequentialNumber Int                 @unique
+  state            ClientReturnState   @default(DRAFT)
+  saleId           String
+  sale             Sale                @relation(fields: [saleId], references: [id])
+  clientId         String
+  client           Client              @relation(fields: [clientId], references: [id])
+  refundAmount     Decimal             @db.Decimal(15, 2)
+  subtotalReturned Decimal             @default(0) @db.Decimal(15, 2)
+  taxReturned      Decimal             @default(0) @db.Decimal(15, 2)
+  refundMethodId   String
+  refundMethod     PaymentMethod       @relation("RefundMethod", fields: [refundMethodId], references: [id])
+  reason           String?
+  notes            String?
+  createdAt        DateTime            @default(now())
+  createdById      String
+  createdByUser    User                @relation(fields: [createdById], references: [id], onDelete: NoAction)
+  updatedAt        DateTime            @updatedAt
+  annulledAt       DateTime?
+  annulledById     String?
+  annulledByUser   User?               @relation("AnnulledByUser", fields: [annulledById], references: [id], onDelete: NoAction)
+  annulmentReason  String?
+  cashShiftId      String
+  cashShift        CashShift           @relation(fields: [cashShiftId], references: [id])
+  workstationId    String
+  workstation      Workstation         @relation(fields: [workstationId], references: [id])
+  creditNoteId     String?             @unique
+  creditNote       FiscalDocument?     @relation("CreditNote", fields: [creditNoteId], references: [id], onDelete: SetNull)
+  items            ClientReturnItem[]
+  movements        InventoryMovement[]
+
+  @@index([saleId])
+  @@index([cashShiftId])
+  @@index([state])
+  @@index([creditNoteId])
+}
+
+/// Both unit price fields are snapshots taken at their respective moments because the product's price
+/// may have changed between the sale and the return.
+model ClientReturnItem {
+  id                String                @id
+  clientReturnId    String
+  clientReturn      ClientReturn          @relation(fields: [clientReturnId], references: [id])
+  saleItemId        String
+  saleItem          SaleItem              @relation(fields: [saleItemId], references: [id])
+  quantity          Int
+  unitPriceAtSale   Decimal               @default(0) @db.Decimal(15, 2)
+  unitPriceAtReturn Decimal               @default(0) @db.Decimal(15, 2)
+  taxAmount         Decimal               @default(0) @db.Decimal(15, 2)
+  totalAmount       Decimal               @default(0) @db.Decimal(15, 2)
+  lots              ClientReturnItemLot[]
+
+  @@index([clientReturnId])
+}
+
+model ClientReturnItemLot {
+  id                 String           @id
+  clientReturnItemId String
+  clientReturnItem   ClientReturnItem @relation(fields: [clientReturnItemId], references: [id])
+  lotId              String
+  lot                Lot              @relation(fields: [lotId], references: [id])
+  quantity           Int
+}
+
+// Models for Fiscal DIAN domain
+
+/// Singleton table seeded with a fixed `id`, holding the issuer's DIAN registration data for the establishment.
+model FiscalIssuerConfig {
+  id                  String   @id
+  nit                 String   @unique
+  verificationDigit   String
+  businessName        String
+  commercialName      String?
+  organizationType    String
+  taxRegime           String
+  taxResponsibilities String?
+  address             String
+  municipality        String
+  department          String
+  postalCode          String?
+  phone               String?
+  email               String?
+  logoUrl             String?
+  updatedAt           DateTime @updatedAt
+  updatedById         String?
+  updatedByUser       User?    @relation(fields: [updatedById], references: [id], onDelete: NoAction)
+}
+
+/// Actual technology-provider credentials are never stored in this database; `credentialReference` is only a pointer
+/// into an external secret manager such as Vault or AWS Secrets Manager.
+model TechProviderConfig {
+  id                  String   @id
+  endpointUrl         String
+  environment         String
+  timeoutSeconds      Int      @default(30)
+  credentialReference String?
+  updatedAt           DateTime @updatedAt
+  updatedById         String?
+  updatedByUser       User?    @relation(fields: [updatedById], references: [id], onDelete: NoAction)
+}
+
+/// The partial unique constraint `(workstationId, documentType, prefix)` WHERE `state = ACTIVE` is deferred to a raw SQL migration.
+/// `workstationId` is nullable to support a single resolution shared across multiple workstations, in which case
+/// per-station ranges are handed out through `FiscalResolutionAllocation`.
+model FiscalResolution {
+  id                 String                       @id
+  resolutionNumber   String                       @unique
+  documentType       FiscalDocumentType
+  prefix             String
+  rangeFrom          Int
+  rangeTo            Int
+  validFrom          DateTime
+  validTo            DateTime
+  state              ResolutionState              @default(ACTIVE)
+  currentConsecutive Int                          @default(0)
+  workstationId      String?
+  workstation        Workstation?                 @relation(fields: [workstationId], references: [id])
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+  allocations        FiscalResolutionAllocation[]
+  fiscalDocuments    FiscalDocument[]
+
+  @@index([documentType, prefix])
+  @@index([workstationId, documentType, state])
+}
+
+/// Each workstation receives a sub-range within a resolution and requests a new block once exhausted.
+/// Preventing overlapping ranges for the same resolution requires a GiST exclusion constraint (`btree_gist`)
+/// added in a later raw SQL migration — not representable in Prisma.
+model FiscalResolutionAllocation {
+  id                 String           @id
+  resolutionId       String
+  resolution         FiscalResolution @relation(fields: [resolutionId], references: [id])
+  workstationId      String
+  workstation        Workstation      @relation(fields: [workstationId], references: [id])
+  rangeFrom          Int
+  rangeTo            Int
+  currentConsecutive Int              @default(0)
+  allocatedAt        DateTime
+  allocatedByUserId  String
+  allocatedByUser    User             @relation(fields: [allocatedByUserId], references: [id], onDelete: NoAction)
+  exhaustedAt        DateTime?
+  fiscalDocuments    FiscalDocument[]
+
+  @@index([workstationId, resolutionId])
+}
+
+/// Three composite partial uniques (`saleId, documentType`, `purchaseReceptionId, documentType`, `clientReturnId, documentType`)
+/// are deferred to a raw SQL migration. The CHECK constraint requiring `referenceDocumentId` to be populated only when
+/// `documentType` is `CREDIT_NOTE` or `DEBIT_NOTE` is likewise deferred.
+/// XML storage is in-database (Postgres TOAST) for the MVP with a documented future migration to object storage.
+/// Numbering requires a row lock on `FiscalResolutionAllocation` at issuance time (`SELECT FOR UPDATE`).
+/// Minimum retention is five years per Colombian tax law.
+/// The archival cycle nulls out `xmlPayload` and `signedXml` once a document is archived, tracked through
+/// `archivedAt`, `xmlStorageKey`, and `xmlStorageBackend`.
+model FiscalDocument {
+  id                   String                      @id
+  documentType         FiscalDocumentType
+  consecutiveNumber    Int
+  fullNumber           String                      @unique
+  issueDate            DateTime
+  cufeCude             String                      @unique
+  cufeCudeAlgorithm    String                      @default("SHA-384")
+  xmlPayload           String?                     @db.Text
+  signedXml            String?                     @db.Text
+  xmlHash              String?
+  fiscalState          FiscalDocumentState         @default(PENDING_GENERATION)
+  ptResponseCode       String?
+  ptResponseMessage    String?                     @db.Text
+  lastRetryAt          DateTime?
+  contingencyReason    String?
+  retryCount           Int                         @default(0)
+  subtotal             Decimal                     @default(0) @db.Decimal(15, 2)
+  totalTax             Decimal                     @default(0) @db.Decimal(15, 2)
+  totalAmount          Decimal                     @default(0) @db.Decimal(15, 2)
+  issuerNitSnapshot    String
+  receiverNitSnapshot  String?
+  receiverNameSnapshot String?
+  receiverType         String?
+  saleId               String?
+  sale                 Sale?                       @relation(fields: [saleId], references: [id])
+  purchaseReceptionId  String?
+  purchaseReception    PurchaseReception?          @relation(fields: [purchaseReceptionId], references: [id])
+  clientReturnId       String?                     @unique
+  clientReturn         ClientReturn?               @relation("CreditNote")
+  resolutionId         String
+  resolution           FiscalResolution            @relation(fields: [resolutionId], references: [id])
+  allocationId         String?
+  allocation           FiscalResolutionAllocation? @relation(fields: [allocationId], references: [id])
+  referenceDocumentId  String?
+  referenceDocument    FiscalDocument?             @relation("FiscalDocumentReference", fields: [referenceDocumentId], references: [id])
+  referencedDocuments  FiscalDocument[]            @relation("FiscalDocumentReference")
+  validUntil           DateTime?
+  archivedAt           DateTime?
+  xmlStorageKey        String?
+  xmlStorageBackend    String?
+  retentionExpiresAt   DateTime?
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+
+  @@unique([consecutiveNumber, resolutionId], name: "ux_fiscal_doc_res_consecutive")
+  @@index([fiscalState])
+  @@index([fiscalState, lastRetryAt])
+  @@index([saleId])
+  @@index([purchaseReceptionId])
+  @@index([clientReturnId])
+  @@index([issueDate])
+  @@index([archivedAt])
+  @@index([retentionExpiresAt])
+}
+
+// Models for Sync, Configuration & Audit domain
+
+/// Idempotency is guaranteed by `operationUuid`.
+/// Conflict resolution between workstations relies on `(sourceWorkstationId, clientSequence)` with the server
+/// applying operations in strict order per origin.
+/// A `SyncSchemaVersion` mapping table is a known post-MVP addition, out of scope here.
+model SyncQueue {
+  id                  String            @id
+  operationUuid       String            @unique
+  operationType       SyncOperationType
+  payload             String            @db.Text
+  payloadHash         String
+  payloadSize         Int
+  versionSchema       Int               @default(1)
+  status              SyncStatus        @default(PENDING)
+  retryCount          Int               @default(0)
+  lastErrorMessage    String?           @db.Text
+  nextRetryAt         DateTime?
+  sourceWorkstationId String
+  sourceWorkstation   Workstation       @relation(fields: [sourceWorkstationId], references: [id])
+  sourceCreatedAt     DateTime
+  clientSequence      BigInt
+  receivedAt          DateTime?
+  processedAt         DateTime?
+  correlationId       String?
+  workstationId       String?
+  workstation         Workstation?      @relation("SyncQueueWorkstation", fields: [workstationId], references: [id])
+
+  @@index([status, nextRetryAt])
+  @@index([sourceWorkstationId, clientSequence])
+  @@index([operationType, status])
+  @@index([correlationId])
+}
+
+/// This table replaces scattered hardcoded values such as timeouts, discount limits, or password policies.
+/// Rows with `isSensitive = true` are restricted to admin-level reads at the service layer, not at the database layer.
+model SystemConfig {
+  key           String          @id
+  value         Json
+  valueType     ConfigValueType
+  module        SystemModule
+  description   String?
+  isSensitive   Boolean         @default(false)
+  updatedAt     DateTime        @updatedAt
+  updatedById   String?
+  updatedByUser User?           @relation(fields: [updatedById], references: [id], onDelete: NoAction)
+
+  @@index([module])
+}
+
+/// This table is strictly append-only. Every foreign key uses `NoAction` on delete so historical rows are never
+/// affected by later deletions of the entities they reference.
+/// `userRole` is deliberately denormalized because a user's role can change after the audited event occurred,
+/// so the log must preserve the role held at the time of the action rather than the user's current one.
+model AuditLog {
+  id            String       @id
+  action        AuditAction
+  module        SystemModule
+  entityType    String
+  entityId      String
+  entityName    String?
+  oldValues     Json?
+  newValues     Json?
+  details       String?      @db.Text
+  userId        String?
+  user          User?        @relation(fields: [userId], references: [id], onDelete: NoAction)
+  userRole      String?
+  workstationId String?
+  workstation   Workstation? @relation(fields: [workstationId], references: [id], onDelete: NoAction)
+  sessionId     String?
+  session       UserSession? @relation(fields: [sessionId], references: [id], onDelete: NoAction)
+  correlationId String?
+  ipAddress     String?
+  userAgent     String?
+  createdAt     DateTime     @default(now())
+
+  @@index([createdAt, module])
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([correlationId])
+}

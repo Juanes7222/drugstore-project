@@ -12,6 +12,7 @@ import { InsufficientStockException } from '../exceptions/insufficient-stock.exc
 import { ConcurrentStockModificationException } from '../exceptions/concurrent-stock-modification.exception';
 import { LotNotActiveException } from '../exceptions/lot-not-active.exception';
 import { LotNotBlockedException } from '../exceptions/lot-not-blocked.exception';
+import { LotNotFoundException } from '../exceptions/lot-not-found.exception';
 import { LotCostUnavailableException } from '../exceptions/lot-cost-unavailable.exception';
 
 @Injectable()

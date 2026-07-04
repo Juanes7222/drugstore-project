@@ -28,7 +28,6 @@ export class AuthService {
   async validateCredentials(username: string, password: string): Promise<User> {
     const user = await (this.prisma.user as any).findUnique({
       where: { username },
-      rejectOnNotFound: false,
     });
 
     this.assertAccountIsUsable(user);
@@ -61,7 +60,6 @@ export class AuthService {
 
     const user = await (this.prisma.user as any).findUnique({
       where: { id: userId },
-      rejectOnNotFound: false,
     });
 
     if (!user) {

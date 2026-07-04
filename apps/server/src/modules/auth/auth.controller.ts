@@ -18,6 +18,7 @@ import { AuthResponseDto } from './dto/auth-response.dto';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
+import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 import { User } from '@pharmacy/shared-types';
 
 @ApiTags('auth')
@@ -53,12 +54,7 @@ export class AuthController {
   async refresh(
     @CurrentUser() user: User,
   ): Promise<{ accessToken: string; expiresAt: Date }> {
-    // TODO: Implement token rotation logic
-    // For now, this is a placeholder that returns the current user
-    return {
-      accessToken: '',
-      expiresAt: new Date(),
-    };
+    throw new NotImplementedForPhaseException('auth', 'refresh');
   }
 
   @Post('logout')
@@ -67,8 +63,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout and revoke current session' })
   async logout(@CurrentUser() user: User): Promise<void> {
-    // TODO: Implement logout by revoking the current session
-    // Requires extracting the session ID from the request context
+    throw new NotImplementedForPhaseException('auth', 'logout');
   }
 
   @Get('me')

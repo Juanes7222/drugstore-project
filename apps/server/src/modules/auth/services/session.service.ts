@@ -36,7 +36,6 @@ export class SessionService {
 
     return (this.prisma.userSession as any).findUnique({
       where: { tokenHash },
-      rejectOnNotFound: false,
     }).then((session: any) => {
       if (
         !session ||
