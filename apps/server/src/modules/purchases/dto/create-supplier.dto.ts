@@ -7,7 +7,7 @@ export const CreateSupplierSchema = z.object({
   businessName: z.string().min(1, "Business name is required"),
   contactName: z.string().optional(),
   phone: z.string().optional(),
-  email: z.string().email("Invalid email format").optional(),
+  email: z.email("Invalid email format").optional(),
   address: z.string().optional(),
   city: z.string().optional(),
   country: z.string().optional().default("CO"),

@@ -14,7 +14,7 @@ export const SupplierSchema = z.object({
     .string()
     .min(1, 'Identification number is required')
     .max(50),
-  email: z.string().email('Invalid email format').optional(),
+  email: z.email('Invalid email format').optional(),
   phoneNumber: z.string().max(20).optional(),
   country: z.string().default('CO'),
   creditLimit: z
