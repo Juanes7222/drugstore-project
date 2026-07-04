@@ -45,24 +45,19 @@ export class AuditLogInterceptor implements NestInterceptor {
     const userId = user?.id || null;
 
     return next.handle().pipe(
-      tap(
-        () => {
-          this.writeAuditLog(metadata, request, userId, userRole).catch(
-            (error) => {
-              this.logger.error(
-                `Failed to write audit log for ${request.method} ${request.url}`,
-                error,
-              );
-            },
-          );
+      tap({
+        next: () => {
+          this.writeAuditLog(metadata, request, userId, userRole).catch((error) => {
+            this.logger.error(
+              `Failed to write audit log for ${request.method} ${request.url}`,
+              error,
+            );
+          });
         },
-        (error) => {
-          this.logger.error(
-            `Error in ${request.method} ${request.url}`,
-            error,
-          );
+        error: (error) => {
+          this.logger.error(`Error in ${request.method} ${request.url}`, error);
         },
-      ),
+      }),
     );
   }
 
