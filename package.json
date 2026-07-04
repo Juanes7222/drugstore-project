@@ -1,0 +1,90 @@
+{
+  "name": "pharmacy-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local-first pharmacy management system (Droguería) for the Colombian regulatory context",
+  "keywords": [
+    "pharmacy",
+    "pos",
+    "point-of-sale",
+    "drogueria",
+    "dian",
+    "fiscal",
+    "colombia",
+    "offline-first",
+    "monorepo"
+  ],
+  "license": "Proprietary",
+  "author": "Development Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/pharmacy-system.git"
+  },
+  "homepage": "https://pharmacy-system.local",
+  "bugs": {
+    "url": "https://github.com/your-org/pharmacy-system/issues"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "packageManager": "pnpm@11.0.0",
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "build:prod": "turbo run build -- --mode production",
+    "start": "turbo run start",
+    "test": "turbo run test",
+    "test:cov": "turbo run test:cov",
+    "test:e2e": "turbo run test:e2e",
+    "test:watch": "turbo run test:watch",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "format": "turbo run format",
+    "format:check": "turbo run format:check",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rm -rf node_modules pnpm-lock.yaml",
+    "clean:dist": "turbo run clean",
+    "prisma:generate": "turbo run prisma:generate",
+    "prisma:migrate": "turbo run prisma:migrate",
+    "prisma:seed": "turbo run prisma:seed",
+    "prisma:studio": "turbo run prisma:studio",
+    "docker:build": "turbo run docker:build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:reset": "docker-compose down -v && docker-compose up -d",
+    "setup": "pnpm install && pnpm prisma:generate",
+    "setup:dev": "pnpm setup && pnpm dev",
+    "setup:db": "pnpm docker:reset && pnpm prisma:migrate && pnpm prisma:seed",
+    "analyze": "turbo run analyze",
+    "analyze:bundle": "turbo run analyze:bundle",
+    "precommit": "pnpm lint && pnpm typecheck",
+    "prepush": "pnpm test && pnpm lint && pnpm typecheck"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0",
+    "prettier": "^3.0.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "typescript": "^5.5.0"
+    }
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "resolutions": {
+    "typescript": "^5.5.0"
+  }
+}

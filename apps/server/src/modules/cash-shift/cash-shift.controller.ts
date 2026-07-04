@@ -2,41 +2,34 @@ import {
   Controller,
   Get,
   Post,
-  Patch,
   Param,
   Body,
-  Query,
   UseGuards,
   HttpCode,
 } from '@nestjs/common';
 import { CashShiftService } from './cash-shift.service';
-import { CreateCashShiftDto } from './dto/create-cash-shift.dto';
-import { UpdateCashShiftDto } from './dto/update-cash-shift.dto';
-import { QueryCashShiftDto } from './dto/query-cash-shift.dto';
+import { OpenCashShiftDto, OpenCashShiftSchema } from './dto/open-cash-shift.dto';
+import {
+  RegisterCashCountDto,
+  RegisterCashCountSchema,
+} from './dto/register-cash-count.dto';
+import { CloseCashShiftDto, CloseCashShiftSchema } from './dto/close-cash-shift.dto';
+import {
+  ForceCloseCashShiftDto,
+  ForceCloseCashShiftSchema,
+} from './dto/force-close-cash-shift.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
-import { AuditAction, SystemModule, RoleType } from '@pharmacy/shared-types';
+import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
-import { CreateCashShiftSchema } from './dto/create-cash-shift.schema';
 
 @Controller('cash-shifts')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class CashShiftController {
   constructor(private cashShiftService: CashShiftService) {}
-
-  @Get()
-  @Roles(RoleType.CASHIER, RoleType.ADMIN)
-  async findAll(@Query() query: QueryCashShiftDto): Promise<any> {
-    return this.cashShiftService.findAll(query);
-  }
-
-  @Get(':id')
-  @Roles(RoleType.CASHIER, RoleType.ADMIN)
-  async findById(@Param('id') id: string): Promise<any> {
-    return this.cashShiftService.findById(id);
-  }
 
   @Post()
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
@@ -46,35 +39,70 @@ export class CashShiftController {
     module: SystemModule.CASH_SHIFT,
     entityType: 'CashShift',
   })
-  async create(
-    @Body(new ZodValidationPipe(CreateCashShiftSchema))
-    createDto: CreateCashShiftDto,
+  async openShift(
+    @Body(new ZodValidationPipe(OpenCashShiftSchema))
+    dto: OpenCashShiftDto,
+    @CurrentUser() user: User,
   ): Promise<any> {
-    return this.cashShiftService.create(createDto);
+    return this.cashShiftService.openShift(
+      user.lastLoginWorkstationId || '',
+      user.id,
+      dto,
+    );
   }
 
-  @Patch(':id')
+  @Post(':id/cash-counts')
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
+  @HttpCode(201)
   @Auditable({
-    action: AuditAction.UPDATE,
+    action: AuditAction.CREATE,
     module: SystemModule.CASH_SHIFT,
-    entityType: 'CashShift',
+    entityType: 'ShiftCashCount',
   })
-  async update(
-    @Param('id') id: string,
-    @Body() updateDto: UpdateCashShiftDto,
+  async registerCashCount(
+    @Param('id') shiftId: string,
+    @Body(new ZodValidationPipe(RegisterCashCountSchema))
+    dto: RegisterCashCountDto,
+    @CurrentUser() user: User,
   ): Promise<any> {
-    return this.cashShiftService.update(id, updateDto);
+    return this.cashShiftService.registerCashCount(shiftId, user.id, dto);
+  }
+
+  @Get(':id/cash-counts')
+  @Roles(RoleType.CASHIER, RoleType.ADMIN)
+  async listCashCounts(@Param('id') shiftId: string): Promise<any> {
+    return (this.cashShiftService as any).listCashCounts(shiftId);
   }
 
   @Post(':id/close')
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @Auditable({
-    action: AuditAction.UPDATE,
+    action: AuditAction.STATE_CHANGE,
     module: SystemModule.CASH_SHIFT,
     entityType: 'CashShift',
   })
-  async close(@Param('id') id: string): Promise<any> {
-    return this.cashShiftService.close(id);
+  async closeShift(
+    @Param('id') shiftId: string,
+    @Body(new ZodValidationPipe(CloseCashShiftSchema))
+    dto: CloseCashShiftDto,
+    @CurrentUser() user: User,
+  ): Promise<any> {
+    return this.cashShiftService.closeShift(shiftId, user.id, dto);
+  }
+
+  @Post(':id/force-close')
+  @Roles(RoleType.ADMIN)
+  @Auditable({
+    action: AuditAction.STATE_CHANGE,
+    module: SystemModule.CASH_SHIFT,
+    entityType: 'CashShift',
+  })
+  async forceCloseShift(
+    @Param('id') shiftId: string,
+    @Body(new ZodValidationPipe(ForceCloseCashShiftSchema))
+    dto: ForceCloseCashShiftDto,
+    @CurrentUser() user: User,
+  ): Promise<any> {
+    return this.cashShiftService.forceCloseShift(shiftId, user.id, dto);
   }
 }

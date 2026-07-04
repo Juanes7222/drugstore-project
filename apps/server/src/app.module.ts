@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { envSchema, EnvConfig } from './config/env.schema';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -20,6 +21,7 @@ import { SyncModule } from './modules/sync/sync.module';
       isGlobal: true,
       validate: (config) => envSchema.parse(config),
     }),
+    ScheduleModule.forRoot(),
     AuthModule,
     CashShiftModule,
     CatalogModule,

@@ -1,26 +1,6 @@
-import { ClientSchema } from '@pharmacy/shared-validation';
+import { CreateClientSchema } from './create-client.dto';
 import { z } from 'zod';
 
-export class UpdateClientDto {
-  fullName?: string;
-  identificationType?: string;
-  identificationNumber?: string;
-  email?: string;
-  phoneNumber?: string;
-  municipality?: string;
-  classificationId?: string;
-  consentScope?: Record<string, boolean>;
+export const UpdateClientSchema = CreateClientSchema.partial();
 
-  constructor(data?: any) {
-    if (data) {
-      this.fullName = data.fullName;
-      this.identificationType = data.identificationType;
-      this.identificationNumber = data.identificationNumber;
-      this.email = data.email;
-      this.phoneNumber = data.phoneNumber;
-      this.municipality = data.municipality;
-      this.classificationId = data.classificationId;
-      this.consentScope = data.consentScope;
-    }
-  }
-}
+export type UpdateClientDto = z.infer<typeof UpdateClientSchema>;

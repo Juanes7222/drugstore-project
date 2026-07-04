@@ -1,32 +1,26 @@
-import { ProductSchema } from '@pharmacy/shared-validation';
 import { z } from 'zod';
+import { SaleType } from '@pharmacy/shared-types';
 
-export class CreateProductDto {
-  genericName!: string;
-  commercialName!: string;
-  laboratoryName!: string;
-  pharmaceuticalFormId!: string;
-  concentration!: string;
-  categoryId!: string;
-  isFreeToSale!: boolean;
-  requiresPrescription!: boolean;
-  sku!: string;
-  currentPrice!: string;
-  currentTaxSchemeId!: string;
+export const CreateProductSchema = z.object({
+  internalCode: z.string().min(1, 'Internal code is required'),
+  commercialName: z.string().min(1, 'Commercial name is required'),
+  genericName: z.string().min(1, 'Generic name is required'),
+  activePrinciple: z.string().min(1, 'Active principle is required'),
+  concentration: z.string().optional(),
+  concentrationUnit: z.string().optional(),
+  laboratory: z.string().min(1, 'Laboratory is required'),
+  saleType: z.enum([SaleType.FREE_SALE, SaleType.PRESCRIPTION, SaleType.CONTROLLED_SUBSTANCE]),
+  minimumStock: z.number().int().nonnegative().default(0),
+  discontinuationReason: z.string().optional(),
+  invimaRegistry: z.string().optional(),
+  atcCode: z.string().optional(),
+  therapeuticIndication: z.string().optional(),
+  storageConditions: z.string().optional(),
+  internalNotes: z.string().optional(),
+  categoryId: z.string().uuid().optional(),
+  pharmaceuticalFormId: z.string().uuid().optional(),
+  initialPrice: z.string().min(1, 'Initial price is required'),
+  initialTaxSchemeId: z.string().uuid('Initial tax scheme ID must be a valid UUID'),
+});
 
-  constructor(data?: any) {
-    if (data) {
-      this.genericName = data.genericName;
-      this.commercialName = data.commercialName;
-      this.laboratoryName = data.laboratoryName;
-      this.pharmaceuticalFormId = data.pharmaceuticalFormId;
-      this.concentration = data.concentration;
-      this.categoryId = data.categoryId;
-      this.isFreeToSale = data.isFreeToSale;
-      this.requiresPrescription = data.requiresPrescription;
-      this.sku = data.sku;
-      this.currentPrice = data.currentPrice;
-      this.currentTaxSchemeId = data.currentTaxSchemeId;
-    }
-  }
-}
+export type CreateProductDto = z.infer<typeof CreateProductSchema>;
