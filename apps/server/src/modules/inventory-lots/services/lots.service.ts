@@ -10,6 +10,7 @@ import { ConsumeStockForSaleParams, ConsumedLot } from '../types/consume-stock.t
 import { ReceiveStockParams } from '../types/receive-stock.types';
 import { ReverseStockForSaleParams, ReversedSaleLot } from '../types/reverse-stock-for-sale.types';
 import { ConsumeStockForSupplierReturnParams } from '../types/consume-stock-for-supplier-return.types';
+import { ReceiveStockFromClientReturnParams } from '../types/receive-stock-from-client-return.types';
 import { InsufficientStockException } from '../exceptions/insufficient-stock.exception';
 import { ConcurrentStockModificationException } from '../exceptions/concurrent-stock-modification.exception';
 import { LotNotActiveException } from '../exceptions/lot-not-active.exception';
@@ -17,6 +18,7 @@ import { LotNotBlockedException } from '../exceptions/lot-not-blocked.exception'
 import { LotNotFoundException } from '../exceptions/lot-not-found.exception';
 import { LotCostUnavailableException } from '../exceptions/lot-cost-unavailable.exception';
 import { LotStateChangedSinceSaleException } from '../exceptions/lot-state-changed-since-sale.exception';
+import { LotNotEligibleForReturnException } from '../exceptions/lot-not-eligible-for-return.exception';
 
 @Injectable()
 export class LotsService {
@@ -243,6 +245,37 @@ export class LotsService {
     });
   }
 
+  async receiveStockFromClientReturn(params: ReceiveStockFromClientReturnParams): Promise<void> {
+    const { lotId, quantity, clientReturnId, tx } = params;
+    const lot = await tx.lot.findUnique({ where: { id: lotId } });
+    if (!lot) throw new LotNotFoundException(lotId);
+
+    // Reject returns into lots that would make invalid stock sellable
+    if (lot.state === LotState.EXPIRED || lot.state === LotState.BLOCKED) {
+      throw new LotNotEligibleForReturnException(lotId, lot.state);
+    }
+
+    const newStock = lot.currentStock + quantity;
+    const newVersion = lot.version + 1;
+    const newState = lot.currentStock === 0 ? LotState.ACTIVE : lot.state;
+
+    const updated = await tx.lot.updateMany({
+      where: { id: lot.id, version: lot.version },
+      data: { currentStock: newStock, version: newVersion, state: newState },
+    });
+    if (updated.count === 0) throw new ConcurrentStockModificationException(lot.id);
+
+    await this.createMovement(tx, {
+      lotId: lot.id,
+      movementType: MovementType.CLIENT_RETURN,
+      quantity,
+      previousStock: lot.currentStock,
+      resultingStock: newStock,
+      createdById: 'system',
+      clientReturnId,
+    });
+  }
+
   private async aggregateSaleLots(
     tx: Prisma.TransactionClient,
     saleId: string,
@@ -312,6 +345,7 @@ export class LotsService {
       saleId?: string;
       purchaseReceptionId?: string;
       supplierReturnId?: string;
+      clientReturnId?: string;
       reason?: string;
     },
   ): Promise<any> {
@@ -330,6 +364,7 @@ export class LotsService {
     if (data.saleId) movementData.sale = { connect: { id: data.saleId } };
     if (data.purchaseReceptionId) movementData.purchaseReception = { connect: { id: data.purchaseReceptionId } };
     if (data.supplierReturnId) movementData.supplierReturn = { connect: { id: data.supplierReturnId } };
+    if (data.clientReturnId) movementData.clientReturn = { connect: { id: data.clientReturnId } };
 
     return tx.inventoryMovement.create({ data: movementData });
   }
