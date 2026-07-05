@@ -1,3 +1,9 @@
 export { FiscalDianModule } from './fiscal-dian.module';
 export { FiscalDocumentsService } from './services/fiscal-documents.service';
 export { FiscalResolutionsService } from './services/fiscal-resolutions.service';
+export { FiscalIssuerConfigService } from './fiscal-issuer-config.service';
+export { TechProviderConfigService } from './tech-provider-config.service';
+export { FiscalIssuerConfigNotSetException } from './exceptions/fiscal-issuer-config-not-set.exception';
+export { TechProviderConfigNotSetException } from './exceptions/tech-provider-config-not-set.exception';
+export { OverlappingActiveResolutionException } from './exceptions/overlapping-active-resolution.exception';
+export { InvalidResolutionRangeException } from './exceptions/invalid-resolution-range.exception';

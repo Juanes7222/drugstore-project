@@ -4,23 +4,25 @@ import { z } from 'zod';
 export class CreateFiscalResolutionDto
   implements z.infer<typeof CreateFiscalResolutionSchema>
 {
-  workstationId!: string;
-  documentType!: 'INVOICE' | 'POS_TICKET' | 'CREDIT_NOTE' | 'DEBIT_NOTE';
+  resolutionNumber!: string;
+  documentType!: 'INVOICE' | 'POS_TICKET' | 'CREDIT_NOTE' | 'DEBIT_NOTE' | 'SUPPORT_DOCUMENT';
   prefix!: string;
-  rangeStart!: string;
-  rangeEnd!: string;
+  rangeFrom!: number;
+  rangeTo!: number;
   validFrom!: string;
-  validUntil!: string;
+  validTo!: string;
+  workstationId!: string | null;
 
   constructor(data?: z.infer<typeof CreateFiscalResolutionSchema>) {
     if (data) {
-      this.workstationId = data.workstationId;
-      this.documentType = data.documentType;
+      this.resolutionNumber = data.resolutionNumber;
+      this.documentType = data.documentType as any;
       this.prefix = data.prefix;
-      this.rangeStart = data.rangeStart;
-      this.rangeEnd = data.rangeEnd;
+      this.rangeFrom = data.rangeFrom;
+      this.rangeTo = data.rangeTo;
       this.validFrom = data.validFrom;
-      this.validUntil = data.validUntil;
+      this.validTo = data.validTo;
+      this.workstationId = data.workstationId ?? null;
     }
   }
 }
