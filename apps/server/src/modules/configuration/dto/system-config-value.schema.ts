@@ -40,6 +40,7 @@ export const UpsertSystemConfigSchema = z.object({
     .min(1, 'Configuration key is required')
     .max(255, 'Configuration key must not exceed 255 characters'),
   module: z.string().min(1, 'Module is required'),
+  description: z.string().max(500).optional(),
   isSensitive: z.boolean().default(false),
   configValue: SystemConfigValueSchema,
 });

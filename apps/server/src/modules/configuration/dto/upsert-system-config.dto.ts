@@ -6,6 +6,7 @@ export class UpsertSystemConfigDto
 {
   key!: string;
   module!: string;
+  description?: string;
   isSensitive!: boolean;
   configValue!: {
     valueType: 'NUMBER' | 'BOOLEAN' | 'STRING' | 'ARRAY' | 'OBJECT';
@@ -16,6 +17,7 @@ export class UpsertSystemConfigDto
     if (data) {
       this.key = data.key;
       this.module = data.module;
+      this.description = data.description;
       this.isSensitive = data.isSensitive;
       this.configValue = data.configValue;
     }
