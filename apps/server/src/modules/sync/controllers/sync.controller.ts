@@ -15,9 +15,10 @@ import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
-import { AuditAction, SystemModule, RoleType } from '@pharmacy/shared-types';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { SyncBatchSchema } from '../dto/sync-operation.schema';
+import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
 
 @Controller('sync')
 export class SyncController {
@@ -26,31 +27,34 @@ export class SyncController {
   @Post('batch')
   @UseGuards(JwtAuthGuard)
   @HttpCode(202)
-  async submitBatch(
+  async receiveBatch(
     @Body(new ZodValidationPipe(SyncBatchSchema))
     batchDto: SyncBatchDto,
+    @CurrentUser() user: User,
   ): Promise<any> {
-    return this.syncService.submitBatch(batchDto);
+    const sourceWorkstationId = (user as any).lastLoginWorkstationId ?? '';
+    return this.syncService.receiveBatch(batchDto, sourceWorkstationId);
   }
 
   @Get('status')
   @UseGuards(JwtAuthGuard)
-  async getWorkstationStatus(): Promise<any> {
-    return this.syncService.getWorkstationStatus();
+  async getStatus(@CurrentUser() user: User): Promise<any> {
+    const sourceWorkstationId = (user as any).lastLoginWorkstationId ?? '';
+    return this.syncService.getStatus(sourceWorkstationId);
   }
 
   @Get('queue')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   async findAllQueue(@Query() query: QuerySyncQueueDto): Promise<any> {
-    return this.syncService.findAllQueue(query);
+    return this.syncService.findAll(query);
   }
 
   @Get('queue/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   async findQueueById(@Param('id') id: string): Promise<any> {
-    return this.syncService.findQueueById(id);
+    return this.syncService.findOne(id);
   }
 
   @Post('queue/:id/retry')
@@ -63,6 +67,6 @@ export class SyncController {
     entityType: 'SyncQueue',
   })
   async retryQueueEntry(@Param('id') id: string): Promise<any> {
-    return this.syncService.retryQueueEntry(id);
+    return this.syncService.retry(id);
   }
 }
