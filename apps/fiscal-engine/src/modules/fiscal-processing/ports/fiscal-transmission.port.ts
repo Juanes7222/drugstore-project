@@ -45,4 +45,23 @@ export interface FiscalTransmissionPort {
     certPassword: string,
     environment: string,
   ): Promise<StatusResult>;
+
+  /**
+   * Fetches the technical key (ClTec) for a numbering range from DIAN's
+   * GetNumberingRange web service. The ClTec is required by the CUFE formula
+   * (section 11.2 of the technical annex) and is fetched live at generation
+   * time rather than cached, because a cached value could go stale relative
+   * to what DIAN has on record for that range.
+   *
+   * @param certificate       The PKCS#12 certificate used for authentication.
+   * @param certPassword      The certificate's private-key password.
+   * @param environment       DIAN environment identifier: "1" production, "2" habilitación.
+   * @param resolutionNumber  The FiscalResolution.resolutionNumber (InvoiceAuthorization).
+   */
+  getNumberingRange(
+    certificate: Buffer,
+    certPassword: string,
+    environment: string,
+    resolutionNumber: string,
+  ): Promise<{ clTec: string }>;
 }

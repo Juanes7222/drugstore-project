@@ -106,8 +106,11 @@ export class ClientReturnsService {
         data: { state: ClientReturnState.CONFIRMED },
       });
 
-      // Fiscal document created inside the same transaction — if it fails,
-      // the whole return confirmation rolls back.
+      // Create a CREDIT_NOTE referencing the sale's validated INVOICE.
+      // Every sale always produces an INVOICE (using final-consumer identity
+      // when no client is registered), so the credit note always has a valid
+      // invoice to reference. Runs inside the same transaction so a fiscal
+      // failure rolls back the entire confirm.
       const fiscalDoc =
         await this.fiscalDocumentsService.createPendingDocumentForClientReturn({
           clientReturnId: id,

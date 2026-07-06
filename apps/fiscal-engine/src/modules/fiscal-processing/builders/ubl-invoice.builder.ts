@@ -1,14 +1,36 @@
 import { create } from 'xmlbuilder2';
 import { CufeCalculator } from './cufe.calculator';
 
+// ── UBL standard namespaces ──
 const UBL_NS = 'urn:oasis:names:specification:ubl:schema:xsd:Invoice-2';
 const CAC_NS = 'urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2';
 const CBC_NS = 'urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2';
 const EXT_NS = 'urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2';
 
-const DIAN_EXT_NS = 'http://www.dian.gov.co/contratos/facturaelectronica/v1';
-const XADES_NS = 'http://uri.etsi.org/01903/v1.3.2#';
+// ── DIAN extension namespaces ──
+const STS_NS = 'http://www.dian.gov.co/contratos/facturaelectronica/v1';
+const DS_NS = 'http://www.w3.org/2000/09/xmldsig#';
+
+// ── DIAN technical constants ──
 const AGENCY_ID = '195';
+const DIAN_AGENCY_NAME = 'CO, DIAN (Dirección de Impuestos y Aduanas Nacionales)';
+const COUNTRY_LIST_AGENCY_ID = '6';
+const COUNTRY_LIST_AGENCY_NAME = 'United Nations Economic Commission for Europe';
+const COUNTRY_LIST_SCHEME_URI =
+  'urn:oasis:names:specification:ubl:codelist:gc:CountryIdentificationCode-2.1';
+const DIAN_NIT = '800197268';
+const DIAN_VERIFICATION_DIGIT = '4';
+const QR_CODE_URL_TEMPLATE =
+  'https://catalogo-vpfe.dian.gov.co/document/searchrch?documentkey=';
+
+// ── Final-consumer identity constants (DIAN annex v1.9, numeral 6.1) ──
+const FINAL_CONSUMER_ADDITIONAL_ACCOUNT_ID = '2';
+const FINAL_CONSUMER_ID = '222222222222';
+const FINAL_CONSUMER_SCHEME_NAME = '13';
+const FINAL_CONSUMER_REGISTRATION_NAME = 'consumidor final';
+const FINAL_CONSUMER_TAX_LEVEL_CODE = 'R-99-PN';
+
+// ── Invoice-level constants ──
 const CURRENCY = 'COP';
 const UNIT_CODE = 'EA';
 const TAX_SCHEME_IVA = '01';
@@ -50,11 +72,17 @@ export interface CustomerPartyData {
   phone?: string;
 }
 
+export interface TaxBreakdown {
+  code: string;
+  amount: any;
+}
+
 export interface SaleTotals {
-  subtotal: any; 
+  subtotal: any;
   totalTax: any;
   totalAmount: any;
   totalDiscount: any;
+  taxAmounts?: TaxBreakdown[];
 }
 
 export interface SaleItem {
@@ -73,13 +101,22 @@ export interface BuildParams {
   documentType: string;
   fullNumber: string;
   issueDate: string;
+  issueTime: string;
   issuerConfig: IssuerConfig;
   customerParty: CustomerPartyData | null;
   sale: SaleTotals;
   saleItems: SaleItem[];
   softwareId: string;
+  softwareSecurityCode: string;
+  resolutionAuthNumber: string;
+  resolutionPeriodStart: string;
+  resolutionPeriodEnd: string;
+  resolutionPrefix: string;
+  resolutionRangeFrom: number;
+  resolutionRangeTo: number;
+  clTec: string;
+  environment: string;
 }
-
 
 function toDec(value: any): string {
   if (value === null || value === undefined) return '0.00';
@@ -92,21 +129,26 @@ function isPositiveAmount(amount: any): boolean {
   return parseFloat(toDec(amount)) > 0;
 }
 
-
 export class UblInvoiceBuilder {
   constructor(private readonly cufeCalculator: CufeCalculator) {}
 
   build(params: BuildParams): string {
+    // Compute the CUFE with the confirmed DIAN formula.
+    const taxAmounts = (params.sale.taxAmounts ?? []).map((t) => ({
+      code: t.code,
+      amount: toDec(t.amount),
+    }));
     const cufe = this.cufeCalculator.computeCufe({
-      documentType: params.documentType,
       fullNumber: params.fullNumber,
       issueDate: params.issueDate,
-      issuerNit: params.issuerConfig.nit,
-      issuerVerificationDigit: params.issuerConfig.verificationDigit,
+      issueTime: params.issueTime,
       subtotal: toDec(params.sale.subtotal),
-      totalTax: toDec(params.sale.totalTax),
+      taxAmounts,
       totalAmount: toDec(params.sale.totalAmount),
-      softwareId: params.softwareId,
+      issuerNit: params.issuerConfig.nit,
+      customerId: params.customerParty?.identificationNumber ?? FINAL_CONSUMER_ID,
+      clTec: params.clTec,
+      environment: params.environment,
     });
 
     const doc = create({ version: '1.0', encoding: 'UTF-8' })
@@ -117,7 +159,7 @@ export class UblInvoiceBuilder {
         'xmlns:ext': EXT_NS,
       });
 
-    this.appendExtensions(doc);
+    this.appendExtensions(doc, params, cufe);
     this.appendDocumentIdentity(doc, params, cufe);
     this.appendSupplierParty(doc, params.issuerConfig);
     this.appendCustomerParty(doc, params.customerParty);
@@ -128,12 +170,110 @@ export class UblInvoiceBuilder {
     return doc.end({ prettyPrint: true });
   }
 
-  private appendExtensions(doc: any): void {
-    const exts = doc.ele('ext:UBLExtensions').ele('ext:UBLExtension');
-    exts.ele('ext:ExtensionContent').ele('dian:DianExtensions', {
-      'xmlns:dian': DIAN_EXT_NS,
-      'xmlns:xades': XADES_NS,
-    }).up().up();
+  // ── DIAN extensions ──────────────────────────────────────────────────
+  // Produces exactly two ext:UBLExtension children:
+  //   1. sts:DianExtensions (with InvoiceControl, InvoiceSource,
+  //      SoftwareProvider, SoftwareSecurityCode, AuthorizationProvider, QRCode)
+  //   2. ds:Signature (empty placeholder; populated during XAdES-EPES signing)
+
+  private appendExtensions(doc: any, params: BuildParams, cufe: string): void {
+    const exts = doc.ele('ext:UBLExtensions');
+
+    // ── First extension: DianExtensions ──
+    const ext1 = exts.ele('ext:UBLExtension');
+    const ec1 = ext1.ele('ext:ExtensionContent');
+    const dian = ec1.ele('sts:DianExtensions', { 'xmlns:sts': STS_NS });
+
+    // InvoiceControl
+    const control = dian.ele('sts:InvoiceControl');
+    control.ele('sts:InvoiceAuthorization').txt(params.resolutionAuthNumber).up();
+    const period = control.ele('sts:AuthorizationPeriod');
+    period.ele('cbc:StartDate').txt(params.resolutionPeriodStart).up();
+    period.ele('cbc:EndDate').txt(params.resolutionPeriodEnd).up();
+    period.up();
+    const authInv = control.ele('sts:AuthorizedInvoices');
+    authInv.ele('sts:Prefix').txt(params.resolutionPrefix).up();
+    authInv.ele('sts:From').txt(String(params.resolutionRangeFrom)).up();
+    authInv.ele('sts:To').txt(String(params.resolutionRangeTo)).up();
+    authInv.up();
+    control.up();
+
+    // InvoiceSource — fixed CO country code
+    const source = dian.ele('sts:InvoiceSource');
+    source
+      .ele('cbc:IdentificationCode', {
+        listAgencyID: COUNTRY_LIST_AGENCY_ID,
+        listAgencyName: COUNTRY_LIST_AGENCY_NAME,
+        listSchemeURI: COUNTRY_LIST_SCHEME_URI,
+      })
+      .txt('CO')
+      .up();
+    source.up();
+
+    // SoftwareProvider — in "software propio" mode, the issuer is the
+    // technology provider, so sts:ProviderID reports the issuer's own NIT
+    // (not a third-party PT NIT).
+    const provider = dian.ele('sts:SoftwareProvider');
+    provider
+      .ele('sts:ProviderID', {
+        schemeAgencyID: AGENCY_ID,
+        schemeAgencyName: DIAN_AGENCY_NAME,
+        schemeID: params.issuerConfig.verificationDigit,
+        schemeName: '31',
+      })
+      .txt(params.issuerConfig.nit)
+      .up();
+    provider
+      .ele('sts:softwareID', {
+        schemeAgencyID: AGENCY_ID,
+        schemeAgencyName: DIAN_AGENCY_NAME,
+      })
+      .txt(params.softwareId)
+      .up();
+    provider.up();
+
+    // SoftwareSecurityCode — 48-character DIAN fingerprint from the secret store
+    dian
+      .ele('sts:SoftwareSecurityCode', {
+        schemeAgencyID: AGENCY_ID,
+        schemeAgencyName: DIAN_AGENCY_NAME,
+      })
+      .txt(params.softwareSecurityCode)
+      .up();
+
+    // AuthorizationProvider — fixed DIAN NIT
+    const authProv = dian.ele('sts:AuthorizationProvider');
+    authProv
+      .ele('sts:AuthorizationProviderID', {
+        schemeAgencyID: AGENCY_ID,
+        schemeAgencyName: DIAN_AGENCY_NAME,
+        schemeID: DIAN_VERIFICATION_DIGIT,
+        schemeName: '31',
+      })
+      .txt(DIAN_NIT)
+      .up();
+    authProv.up();
+
+    // QRCode — URL template with the document's own CUFE substituted
+    dian.ele('sts:QRCode').txt(QR_CODE_URL_TEMPLATE + cufe).up();
+
+    ec1.up();
+    ext1.up();
+
+    // ── Second extension: ds:Signature placeholder ──
+    // The actual XAdES-EPES signature is injected by the DIAN SDK during
+    // signAndSend. The Id attribute follows the convention "xmldsig-" + fullNumber.
+    const ext2 = exts.ele('ext:UBLExtension');
+    const ec2 = ext2.ele('ext:ExtensionContent');
+    ec2
+      .ele('ds:Signature', {
+        'xmlns:ds': DS_NS,
+        Id: `xmldsig-${params.fullNumber}`,
+      })
+      .up();
+    ec2.up();
+    ext2.up();
+
     exts.up();
   }
 
@@ -145,7 +285,9 @@ export class UblInvoiceBuilder {
     doc.ele('cbc:ID').txt(params.fullNumber).up();
     doc.ele('cbc:UUID', { schemeName: CUFE_SCHEME_NAME }).txt(cufe).up();
     doc.ele('cbc:IssueDate').txt(params.issueDate).up();
-    doc.ele('cbc:InvoiceTypeCode')
+    doc.ele('cbc:IssueTime').txt(params.issueTime).up();
+    doc
+      .ele('cbc:InvoiceTypeCode')
       .txt(params.documentType === 'INVOICE' ? DOC_TYPE_INVOICE : DOC_TYPE_CREDIT_NOTE)
       .up();
     doc.ele('cbc:DocumentCurrencyCode').txt(CURRENCY).up();
@@ -153,24 +295,38 @@ export class UblInvoiceBuilder {
 
   private appendSupplierParty(doc: any, config: IssuerConfig): void {
     const sup = doc.ele('cac:AccountingSupplierParty');
-    sup.ele('cbc:AdditionalAccountID', { schemeAgencyID: AGENCY_ID }).txt(config.nit).up();
+    sup
+      .ele('cbc:AdditionalAccountID', { schemeAgencyID: AGENCY_ID })
+      .txt(config.nit)
+      .up();
 
     const party = sup.ele('cac:Party');
     party.ele('cac:PartyName').ele('cbc:RegistrationName').txt(config.businessName).up().up();
 
     this.appendAddress(
       party.ele('cac:PhysicalLocation').ele('cac:Address'),
-      { city: config.municipality, department: config.department, country: 'CO' }
+      { city: config.municipality, department: config.department, country: 'CO' },
     );
 
     const tax = party.ele('cac:PartyTaxScheme');
     tax.ele('cbc:RegistrationName').txt(config.businessName).up();
-    tax.ele('cbc:CompanyID', { schemeAgencyID: AGENCY_ID, schemeID: 'NIT' })
-      .txt(config.nit + config.verificationDigit).up();
+    tax
+      .ele('cbc:CompanyID', {
+        schemeAgencyID: AGENCY_ID,
+        schemeID: config.verificationDigit,
+        schemeName: '31',
+      })
+      .txt(config.nit)
+      .up();
     tax.ele('cac:TaxScheme').ele('cbc:ID').txt(TAX_SCHEME_IVA).up().up();
     tax.up();
 
-    party.ele('cac:PartyLegalEntity').ele('cbc:RegistrationName').txt(config.businessName).up().up();
+    party
+      .ele('cac:PartyLegalEntity')
+      .ele('cbc:RegistrationName')
+      .txt(config.businessName)
+      .up()
+      .up();
 
     this.appendContact(party, { phone: config.phone, email: config.email });
     party.up();
@@ -180,7 +336,8 @@ export class UblInvoiceBuilder {
   private appendCustomerParty(doc: any, customer: CustomerPartyData | null): void {
     const cust = doc.ele('cac:AccountingCustomerParty');
     if (customer) {
-      cust.ele('cbc:AdditionalAccountID', { schemeAgencyID: AGENCY_ID })
+      cust
+        .ele('cbc:AdditionalAccountID', { schemeAgencyID: AGENCY_ID })
         .txt(customer.identificationNumber ?? '')
         .up();
       this.appendIdentifiedCustomer(cust, customer);
@@ -194,10 +351,12 @@ export class UblInvoiceBuilder {
     const party = cust.ele('cac:Party');
     const schemeId = IDENTIFICATION_TYPE_MAP[customer.identificationType ?? ''] ?? '13';
 
-    party.ele('cac:PartyIdentification')
+    party
+      .ele('cac:PartyIdentification')
       .ele('cbc:ID', { schemeAgencyID: AGENCY_ID, schemeID: schemeId })
       .txt(customer.identificationNumber ?? '')
-      .up().up();
+      .up()
+      .up();
 
     if (customer.fullName) {
       party.ele('cac:PartyName').ele('cbc:Name').txt(customer.fullName).up().up();
@@ -205,24 +364,65 @@ export class UblInvoiceBuilder {
 
     this.appendAddress(
       party.ele('cac:PhysicalLocation').ele('cac:Address'),
-      { city: customer.municipality, department: customer.department, country: 'CO' }
+      { city: customer.municipality, department: customer.department, country: 'CO' },
     );
 
     this.appendContact(party, { phone: customer.phone, email: customer.email });
     party.up();
   }
 
+  // ── Final-consumer identity per DIAN annex v1.9, numeral 6.1 ──
+  // When the sale has no registered client, the customer party is populated
+  // with the standardised values below rather than branching into a different
+  // document type (POS_TICKET). This ensures every sale produces an INVOICE
+  // that a credit note can reference unambiguously.
+  // Fields:
+  //   cbc:AdditionalAccountID = "2"
+  //   cbc:ID (PartyIdentification) = "222222222222" with @schemeName = "13", no @schemeID
+  //   cbc:CompanyID (PartyTaxScheme) = "222222222222" with @schemeName = "13", no @schemeID
+  //   cbc:RegistrationName = "consumidor final"
+  //   cbc:TaxLevelCode = "R-99-PN"
   private appendGenericConsumer(cust: any): void {
-    cust.ele('cbc:AdditionalAccountID', { schemeAgencyID: AGENCY_ID }).txt('222222222').up();
+    cust
+      .ele('cbc:AdditionalAccountID')
+      .txt(FINAL_CONSUMER_ADDITIONAL_ACCOUNT_ID)
+      .up();
+
     const party = cust.ele('cac:Party');
-    party.ele('cac:PartyName').ele('cbc:Name').txt('CONSUMIDOR FINAL').up().up();
-    party.ele('cac:PartyTaxScheme').ele('cbc:CompanyID', {
-      schemeAgencyID: AGENCY_ID,
-      schemeID: 'NIT',
-    }).txt('222222222').up().up().up();
+
+    // PartyIdentification with @schemeName = 13 (not 31 = NIT), no @schemeID
+    party
+      .ele('cac:PartyIdentification')
+      .ele('cbc:ID', { schemeName: FINAL_CONSUMER_SCHEME_NAME })
+      .txt(FINAL_CONSUMER_ID)
+      .up()
+      .up();
+
+    party
+      .ele('cac:PartyName')
+      .ele('cbc:Name')
+      .txt(FINAL_CONSUMER_REGISTRATION_NAME)
+      .up()
+      .up();
+
+    const taxScheme = party.ele('cac:PartyTaxScheme');
+    taxScheme
+      .ele('cbc:RegistrationName')
+      .txt(FINAL_CONSUMER_REGISTRATION_NAME)
+      .up();
+    taxScheme
+      .ele('cbc:CompanyID', { schemeName: FINAL_CONSUMER_SCHEME_NAME })
+      .txt(FINAL_CONSUMER_ID)
+      .up();
+    taxScheme
+      .ele('cbc:TaxLevelCode')
+      .txt(FINAL_CONSUMER_TAX_LEVEL_CODE)
+      .up();
+    taxScheme.ele('cac:TaxScheme').ele('cbc:ID').txt(TAX_SCHEME_IVA).up().up();
+    taxScheme.up();
+
     party.up();
   }
-
 
   private appendTaxTotal(doc: any, sale: SaleTotals): void {
     const tt = doc.ele('cac:TaxTotal');
@@ -232,7 +432,6 @@ export class UblInvoiceBuilder {
     sub.ele('cbc:TaxableAmount', { currencyID: CURRENCY }).txt(toDec(sale.subtotal)).up();
     sub.ele('cbc:TaxAmount', { currencyID: CURRENCY }).txt(toDec(sale.totalTax)).up();
 
-    // VERIFICAR ANEXO TÉCNICO: mapeo de tipo de impuesto
     const cat = sub.ele('cac:TaxCategory');
     cat.ele('cbc:ID').txt(TAX_CATEGORY_IVA).up();
     cat.ele('cbc:Percent').txt(IVA_PERCENT_DEFAULT).up();
@@ -248,7 +447,7 @@ export class UblInvoiceBuilder {
     this.appendMonetaryAmount(t, 'cbc:TaxExclusiveAmount', sale.subtotal);
     this.appendMonetaryAmount(t, 'cbc:TaxInclusiveAmount', sale.totalAmount);
     this.appendMonetaryAmount(t, 'cbc:AllowanceTotalAmount', sale.totalDiscount);
-    this.appendMonetaryAmount(t, 'cbc:PrepaidAmount', '0.00'); // valor explícito
+    this.appendMonetaryAmount(t, 'cbc:PrepaidAmount', '0.00');
     this.appendMonetaryAmount(t, 'cbc:PayableAmount', sale.totalAmount);
     t.up();
   }
@@ -280,12 +479,16 @@ export class UblInvoiceBuilder {
     lt.up();
 
     const iEl = line.ele('cac:Item');
-    iEl.ele('cbc:Description')
+    iEl
+      .ele('cbc:Description')
       .txt(item.productCommercialNameSnapshot || item.productGenericNameSnapshot || '')
       .up();
-    iEl.ele('cac:SellersItemIdentification').ele('cbc:ID')
+    iEl
+      .ele('cac:SellersItemIdentification')
+      .ele('cbc:ID')
       .txt(item.productInternalCodeSnapshot ?? '')
-      .up().up();
+      .up()
+      .up();
     this.appendMonetaryAmount(iEl.ele('cac:Price'), 'cbc:PriceAmount', item.unitPrice);
     iEl.up();
 
@@ -298,7 +501,7 @@ export class UblInvoiceBuilder {
 
   private appendAddress(
     addressNode: any,
-    location: { city?: string; department?: string; country: string }
+    location: { city?: string; department?: string; country: string },
   ): void {
     if (location.city) {
       addressNode.ele('cbc:ID').txt(location.city).up();
@@ -307,12 +510,19 @@ export class UblInvoiceBuilder {
     if (location.department) {
       addressNode.ele('cbc:CountrySubentity').txt(location.department).up();
     }
-    addressNode.ele('cbc:Country', { schemeAgencyID: AGENCY_ID })
-      .ele('cbc:IdentificationCode').txt(location.country).up().up();
+    addressNode
+      .ele('cbc:Country', { schemeAgencyID: AGENCY_ID })
+      .ele('cbc:IdentificationCode')
+      .txt(location.country)
+      .up()
+      .up();
     addressNode.up();
   }
 
-  private appendContact(partyNode: any, contact: { phone?: string; email?: string }): void {
+  private appendContact(
+    partyNode: any,
+    contact: { phone?: string; email?: string },
+  ): void {
     if (!contact.phone && !contact.email) return;
     const c = partyNode.ele('cac:Contact');
     if (contact.phone) c.ele('cbc:Telephone').txt(contact.phone).up();

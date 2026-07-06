@@ -214,17 +214,21 @@ export class FiscalDocumentsService {
 
   /**
    * Creates a FiscalDocument in PENDING_GENERATION for a confirmed sale.
+   * Always produces an INVOICE — even when the sale has no client, the
+   * customer party is populated using DIAN's final-consumer identity
+   * (cbc:AdditionalAccountID = "2", PartyIdentification/cbc:ID = 222222222222
+   * with @schemeName = "13", RegistrationName = "consumidor final",
+   * TaxLevelCode = "R-99-PN"), so every sale invoice can be referenced
+   * unambiguously by a credit note later.
+   *
    * Must be called inside the sale confirmation transaction.
-   * documentType is INVOICE when the sale has a clientId, POS_TICKET otherwise —
-   * a deliberate simplification; DIAN's real invoice vs. ticket distinction
-   * involves more than just client presence.
    */
   async createPendingDocumentForSale(params: {
     saleId: string;
     tx: any;
   }): Promise<any> {
     const { saleId, tx } = params;
-    const documentType = await this.resolveDocumentType(tx, saleId);
+    const documentType = 'INVOICE';
     await this.assertNoDuplicateDocument(tx, saleId, documentType);
 
     // sale must exist — we are inside the confirmation transaction
@@ -358,11 +362,10 @@ export class FiscalDocumentsService {
    * Creates a FiscalDocument (CREDIT_NOTE) in PENDING_GENERATION for a
    * confirmed client return.
    *
-   * Loads the return's Sale and that sale's FiscalDocuments, and requires
-   * one with documentType INVOICE and fiscalState VALIDATED — a credit note
-   * is only meaningful against a validated electronic invoice.  If the sale
-   * was fiscally issued as a POS_TICKET or its INVOICE was never validated,
-   * throws NoValidatedInvoiceForCreditNoteException.
+   * Requires the sale to have a FiscalDocument with documentType INVOICE
+   * and fiscalState VALIDATED — a credit note is only meaningful against a
+   * validated electronic invoice.  Every sale now always produces an INVOICE
+   * (even when no client is registered), so the check resolves cleanly.
    *
    * Must be called inside the client return confirmation transaction.
    * Sets referenceDocumentId to the original invoice's id, and updates
@@ -467,15 +470,6 @@ export class FiscalDocumentsService {
    */
   async enqueueGenerationJob(fiscalDocumentId: string): Promise<void> {
     await this.queue.add('generate', { fiscalDocumentId });
-  }
-
-  /** Resolves INVOICE vs POS_TICKET based on whether the sale has a client. */
-  private async resolveDocumentType(tx: any, saleId: string): Promise<string> {
-    const sale = await tx.sale.findUnique({
-      where: { id: saleId },
-      select: { clientId: true },
-    });
-    return sale?.clientId ? 'INVOICE' : 'POS_TICKET';
   }
 
   /**

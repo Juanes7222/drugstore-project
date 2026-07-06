@@ -5,9 +5,22 @@ import { resolve } from 'node:path';
 import { SecretReaderPort, SecretData } from '../ports/secret-reader.port';
 
 /**
- * Resolves "file:relative/path.p12" credential references by reading the
- * .p12 file from a configurable base directory and using a separate
- * environment variable for the private-key password.
+ * Resolves "file:relative/path.json" credential references by reading a JSON
+ * file from a configurable base directory. The JSON file must contain:
+ *
+ * ```json
+ * {
+ *   "certificate": "<base64-encoded PKCS#12 content>",
+ *   "password": "<private-key password>",
+ *   "softwareSecurityCode": "<48-character DIAN fingerprint>"
+ * }
+ * ```
+ *
+ * The software security code is stored here (alongside the certificate)
+ * rather than in a database column because it is a DIAN-issued credential
+ * that belongs in the secure store with the certificate. Adding a column to
+ * FiscalIssuerConfig would couple the schema to this specific credential,
+ * while the secret-reader abstraction keeps it replaceable.
  *
  * This adapter exists so the full pipeline can be run end to end in
  * development and in the DIAN habilitación environment, but a production
@@ -17,7 +30,8 @@ import { SecretReaderPort, SecretData } from '../ports/secret-reader.port';
  *
  * Environment variables consumed:
  *   CERTIFICATE_BASE_DIR    — root directory for file: references
- *   DIAN_CERTIFICATE_PASSWORD — password for every .p12 resolved this way
+ *   DIAN_CERTIFICATE_PASSWORD — no longer consumed directly; the password
+ *                               lives inside the JSON secret file
  */
 @Injectable()
 export class FileSystemSecretReaderAdapter implements SecretReaderPort {
@@ -36,12 +50,42 @@ export class FileSystemSecretReaderAdapter implements SecretReaderPort {
     const baseDir = this.configService.getOrThrow<string>('CERTIFICATE_BASE_DIR');
     const absolutePath = resolve(baseDir, relativePath);
 
-    this.logger.debug(`Reading certificate from ${absolutePath}`);
+    this.logger.debug(`Reading secret from ${absolutePath}`);
 
-    const certificate = await readFile(absolutePath);
+    const rawText = await readFile(absolutePath, 'utf-8');
 
-    const password = this.configService.getOrThrow<string>('DIAN_CERTIFICATE_PASSWORD');
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      throw new Error(
+        `File ${absolutePath} is not valid JSON — expected format: { "certificate": "<base64-p12>", "password": "...", "softwareSecurityCode": "..." }`,
+      );
+    }
 
-    return { certificate, password };
+    const certificateBase64 = parsed.certificate;
+    if (typeof certificateBase64 !== 'string' || certificateBase64.length === 0) {
+      throw new Error(
+        `File ${absolutePath} is missing or has an invalid "certificate" field (expected base64-encoded PKCS#12 content as a non-empty string)`,
+      );
+    }
+
+    const password = parsed.password;
+    if (typeof password !== 'string') {
+      throw new Error(
+        `File ${absolutePath} is missing or has an invalid "password" field`,
+      );
+    }
+
+    const softwareSecurityCode = parsed.softwareSecurityCode;
+    if (typeof softwareSecurityCode !== 'string' || softwareSecurityCode.length === 0) {
+      throw new Error(
+        `File ${absolutePath} is missing or has an invalid "softwareSecurityCode" field (expected 48-character DIAN fingerprint)`,
+      );
+    }
+
+    const certificate = Buffer.from(certificateBase64, 'base64');
+
+    return { certificate, password, softwareSecurityCode };
   }
 }

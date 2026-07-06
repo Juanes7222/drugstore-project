@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { DianClient, SendBillSyncCommand, GetStatusCommand } from 'dian-sdk-node';
+import { DianClient, SendBillSyncCommand, GetStatusCommand, GetNumberingRangeCommand } from 'dian-sdk-node';
 import { FiscalTransmissionPort } from '../ports/fiscal-transmission.port';
 import { SendResult, StatusResult } from '../ports/transmission-results.type';
 
@@ -46,6 +46,41 @@ export class DianSdkFiscalTransmissionAdapter implements FiscalTransmissionPort 
       statusCode: rawResult?.StatusCode != null ? String(rawResult.StatusCode) : null,
     };
   }
+
+  async getNumberingRange(
+    certificate: Buffer,
+    certPassword: string,
+    environment: string,
+    resolutionNumber: string,
+  ): Promise<{ clTec: string }> {
+    const env = environment === '1' ? 1 : 2;
+    const client = new DianClient({ environment: env });
+
+    await client.initialize({
+      certificate,
+      passwordPsswrd: certPassword,
+    });
+
+    this.logger.debug(
+      `DianClient initialized, executing GetNumberingRangeCommand for resolution ${resolutionNumber}`,
+    );
+
+    const command = new GetNumberingRangeCommand();
+    const rawResult: any = await client.execute(command, {
+      resolutionNumber,
+    });
+
+    const clTec: string = rawResult?.ClTec ?? '';
+
+    if (!clTec) {
+      this.logger.warn(
+        `GetNumberingRange returned empty ClTec for resolution ${resolutionNumber} — CUFE will be incorrect`,
+      );
+    }
+
+    return { clTec };
+  }
+}
 
   async checkStatus(
     trackId: string,
