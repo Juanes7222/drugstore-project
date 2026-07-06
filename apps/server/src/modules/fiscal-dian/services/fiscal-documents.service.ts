@@ -35,7 +35,69 @@ export class FiscalDocumentsService {
     throw new NotImplementedForPhaseException('fiscal-dian', 'retryDocument');
   }
 
-  // ── New methods for Phase 25 ───────────────────────────────────
+  // ── Shared numbering helper (extracted from createPendingDocumentForSale) ──
+
+  /**
+   * Locates an active, non-exhausted FiscalResolutionAllocation for the given
+   * workstation and document type, then atomically increments the current
+   * consecutive number under PostgreSQL row-level locking.  Returns the
+   * allocation, its parent resolution, and the newly allocated consecutive.
+   *
+   * Throws NoActiveResolutionForWorkstationException or
+   * ResolutionExhaustedException.
+   *
+   * Shared by createPendingDocumentForSale (via the sale's own workstationId)
+   * and createPendingDocumentForPurchaseReception (via the caller-supplied
+   * workstationId).
+   */
+  private async allocateDocumentNumber(params: {
+    tx: any;
+    workstationId: string;
+    documentType: string;
+  }): Promise<{ allocation: any; resolution: any; consecutiveNumber: number }> {
+    const { tx, workstationId, documentType } = params;
+
+    const allocation = await (tx.fiscalResolutionAllocation as any).findFirst({
+      where: {
+        workstationId,
+        exhaustedAt: null,
+        resolution: {
+          state: 'ACTIVE',
+          documentType,
+        },
+      },
+      include: { resolution: true },
+    });
+
+    if (!allocation) {
+      throw new NoActiveResolutionForWorkstationException(
+        workstationId,
+        documentType,
+      );
+    }
+
+    const updated = await tx.fiscalResolutionAllocation.update({
+      where: { id: allocation.id },
+      data: { currentConsecutive: { increment: 1 } },
+    });
+
+    if (updated.currentConsecutive > updated.rangeTo) {
+      await tx.fiscalResolutionAllocation.update({
+        where: { id: allocation.id },
+        data: { exhaustedAt: new Date() },
+      });
+      throw new ResolutionExhaustedException(allocation.id);
+    }
+
+    return {
+      allocation,
+      resolution: allocation.resolution,
+      consecutiveNumber: updated.currentConsecutive,
+    };
+  }
+
+  // ── Refactored: now calls allocateDocumentNumber instead of the two
+  //    separate private methods that are no longer needed. ──
 
   /**
    * Creates a FiscalDocument in PENDING_GENERATION for a confirmed sale.
@@ -52,19 +114,29 @@ export class FiscalDocumentsService {
     const documentType = await this.resolveDocumentType(tx, saleId);
     await this.assertNoDuplicateDocument(tx, saleId, documentType);
 
-    const allocation = await this.findActiveAllocation(tx, saleId, documentType);
-    const nextConsecutive = await this.allocateNextConsecutive(tx, allocation);
-    const resolution = allocation.resolution;
+    // sale must exist — we are inside the confirmation transaction
+    const sale = await tx.sale.findUnique({
+      where: { id: saleId },
+      select: { workstationId: true },
+    });
+    const { allocation, resolution, consecutiveNumber } =
+      await this.allocateDocumentNumber({
+        tx,
+        workstationId: sale.workstationId,
+        documentType,
+      });
 
-    const issuerConfig = await (this.prisma.fiscalIssuerConfig as any).findFirst();
+    const issuerConfig = await (
+      this.prisma.fiscalIssuerConfig as any
+    ).findFirst();
     const docId = crypto.randomUUID();
 
     return tx.fiscalDocument.create({
       data: {
         id: docId,
         documentType,
-        consecutiveNumber: nextConsecutive,
-        fullNumber: `${resolution.prefix}${nextConsecutive}`,
+        consecutiveNumber,
+        fullNumber: `${resolution.prefix}${consecutiveNumber}`,
         issueDate: new Date(),
         cufeCude: `${PLACEHOLDER_CUFE_PREFIX}${docId}`,
         fiscalState: 'PENDING_GENERATION',
@@ -77,6 +149,94 @@ export class FiscalDocumentsService {
         allocationId: allocation.id,
       },
     });
+  }
+
+  /**
+   * Creates a FiscalDocument (SUPPORT_DOCUMENT) in PENDING_GENERATION for a
+   * confirmed purchase reception, but only when the supplier's
+   * identificationType is not NIT — a NIT-identified supplier is presumed to
+   * issue its own electronic invoice, making the support document unnecessary.
+   *
+   * Must be called inside the purchase reception confirmation transaction.
+   * Returns the created document id, or null if no document was needed.
+   *
+   * @see createPendingDocumentForSale — parallel flow for sales.
+   *
+   * ── Heuristic notice ──
+   * This check uses `identificationType !== NIT` as a proxy for "supplier not
+   * obligated to invoice electronically".  A future schema change that adds
+   * an explicit `Supplier.isElectronicInvoicer` boolean would replace this
+   * approximation outright — not refine it further.
+   *
+   * ── Operational note ──
+   * PurchaseReception has no workstationId of its own (receiving stock is not
+   * a per-cashier operation), so the caller must supply the confirming user's
+   * session workstationId.  That workstation must have an active
+   * SUPPORT_DOCUMENT allocation set up during fiscal configuration — most
+   * naturally a dedicated back-office workstation, not a POS terminal.
+   */
+  async createPendingDocumentForPurchaseReception(params: {
+    purchaseReceptionId: string;
+    workstationId: string;
+    tx: any;
+  }): Promise<{ id: string } | null> {
+    const { purchaseReceptionId, workstationId, tx } = params;
+
+    // The reception was just confirmed in the same transaction, so it exists.
+    const reception = await tx.purchaseReception.findUnique({
+      where: { id: purchaseReceptionId },
+      select: {
+        supplier: {
+          select: { identificationType: true },
+        },
+      },
+    });
+
+    // NIT-identified suppliers are presumed to issue their own electronic
+    // invoices, so no SUPPORT_DOCUMENT is needed.
+    if (reception?.supplier?.identificationType === 'NIT') {
+      return null;
+    }
+
+    const documentType = 'SUPPORT_DOCUMENT';
+    await this.assertNoDuplicateDocumentForReception(
+      tx,
+      purchaseReceptionId,
+      documentType,
+    );
+
+    const { allocation, resolution, consecutiveNumber } =
+      await this.allocateDocumentNumber({
+        tx,
+        workstationId,
+        documentType,
+      });
+
+    const issuerConfig = await (
+      this.prisma.fiscalIssuerConfig as any
+    ).findFirst();
+    const docId = crypto.randomUUID();
+
+    const doc = await tx.fiscalDocument.create({
+      data: {
+        id: docId,
+        documentType,
+        consecutiveNumber,
+        fullNumber: `${resolution.prefix}${consecutiveNumber}`,
+        issueDate: new Date(),
+        cufeCude: `${PLACEHOLDER_CUFE_PREFIX}${docId}`,
+        fiscalState: 'PENDING_GENERATION',
+        issuerNitSnapshot: issuerConfig?.nit ?? '',
+        subtotal: 0,
+        totalTax: 0,
+        totalAmount: 0,
+        purchaseReceptionId,
+        resolutionId: resolution.id,
+        allocationId: allocation.id,
+      },
+    });
+
+    return { id: doc.id };
   }
 
   /**
@@ -110,60 +270,34 @@ export class FiscalDocumentsService {
     }
   }
 
-  /** Finds an active, non-exhausted allocation for the sale's workstation. */
-  private async findActiveAllocation(
+  /**
+   * Throws DuplicateFiscalDocumentException if a FiscalDocument already
+   * exists for the given (purchaseReceptionId, documentType) pair.
+   *
+   * The exception message references "sale" as the source id for historical
+   * reasons; a future refactor should parameterise the label or unify the
+   * check for both Sale and PurchaseReception.
+   */
+  private async assertNoDuplicateDocumentForReception(
     tx: any,
-    saleId: string,
+    purchaseReceptionId: string,
     documentType: string,
-  ): Promise<any> {
-    const sale = await tx.sale.findUnique({
-      where: { id: saleId },
-      select: { workstationId: true },
+  ): Promise<void> {
+    const existing = await tx.fiscalDocument.findFirst({
+      where: { purchaseReceptionId, documentType },
     });
-
-    const allocation = await (tx.fiscalResolutionAllocation as any).findFirst({
-      where: {
-        workstationId: sale.workstationId,
-        exhaustedAt: null,
-        resolution: {
-          state: 'ACTIVE',
-          documentType,
-        },
-      },
-      include: { resolution: true },
-    });
-
-    if (!allocation) {
-      throw new NoActiveResolutionForWorkstationException(
-        sale.workstationId,
+    if (existing) {
+      throw new DuplicateFiscalDocumentException(
+        purchaseReceptionId,
         documentType,
       );
     }
-    return allocation;
   }
 
-  /**
-   * Atomically increments currentConsecutive on the allocation row.
-   * PostgreSQL's UPDATE row lock serialises concurrent allocations, so
-   * two transactions racing on the same allocation never see the same value.
-   * Throws ResolutionExhaustedException if the new value exceeds rangeTo.
-   */
-  private async allocateNextConsecutive(
-    tx: any,
-    allocation: any,
-  ): Promise<number> {
-    const updated = await tx.fiscalResolutionAllocation.update({
-      where: { id: allocation.id },
-      data: { currentConsecutive: { increment: 1 } },
-    });
-
-    if (updated.currentConsecutive > updated.rangeTo) {
-      await tx.fiscalResolutionAllocation.update({
-        where: { id: allocation.id },
-        data: { exhaustedAt: new Date() },
-      });
-      throw new ResolutionExhaustedException(allocation.id);
-    }
-    return updated.currentConsecutive;
-  }
+  // ── Removed private methods ──
+  // findActiveAllocation  →  replaced by allocateDocumentNumber
+  // allocateNextConsecutive →  replaced by allocateDocumentNumber
+  //
+  // Both were inlined into the single allocateDocumentNumber helper that
+  // the two creation methods now share.
 }

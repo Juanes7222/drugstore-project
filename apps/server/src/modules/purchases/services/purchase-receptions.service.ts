@@ -13,10 +13,15 @@ import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exce
 import { PurchaseOrderNotFoundException } from '../exceptions/purchase-order-not-found.exception';
 import { PurchaseOrderItemNotFoundException } from '../exceptions/purchase-order-item-not-found.exception';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
+import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
 
 @Injectable()
 export class PurchaseReceptionsService {
-  constructor(private prisma: PrismaService, private lotsService: LotsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private lotsService: LotsService,
+    private fiscalDocumentsService: FiscalDocumentsService,
+  ) {}
 
   async findAll(query: QueryPurchaseReceptionDto): Promise<any> {
     const where: Prisma.PurchaseReceptionWhereInput = {};
@@ -129,8 +134,10 @@ export class PurchaseReceptionsService {
     });
   }
 
-  async confirm(id: string, userId: string): Promise<any> {
-    return this.prisma.$transaction(async (tx) => {
+  async confirm(id: string, userId: string, workstationId: string): Promise<any> {
+    let fiscalDocumentId: string | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
       const reception = await tx.purchaseReception.findUnique({
         where: { id },
         include: { items: { include: { purchaseOrderItem: true } }, purchaseOrder: { include: { items: true } } },
@@ -192,8 +199,29 @@ export class PurchaseReceptionsService {
           receivedAt: new Date(),
         },
       });
+
+      // Fiscal document created inside the same transaction — if it fails,
+      // the whole reception confirmation rolls back.
+      const fiscalDoc =
+        await this.fiscalDocumentsService.createPendingDocumentForPurchaseReception({
+          purchaseReceptionId: id,
+          workstationId,
+          tx,
+        });
+      if (fiscalDoc) {
+        fiscalDocumentId = fiscalDoc.id;
+      }
+
       return updatedReception;
     });
+
+    // Enqueue only after the transaction has committed successfully,
+    // and only when a document was actually created (NIT supplier returns null).
+    if (fiscalDocumentId) {
+      await this.fiscalDocumentsService.enqueueGenerationJob(fiscalDocumentId);
+    }
+
+    return result;
   }
 
   async annul(id: string): Promise<any> {

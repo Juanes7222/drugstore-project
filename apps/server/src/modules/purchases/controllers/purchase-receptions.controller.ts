@@ -54,7 +54,7 @@ export class PurchaseReceptionsController {
     @Param('id') id: string,
     @CurrentUser() user: User,
   ): Promise<any> {
-    return this.purchaseReceptionsService.confirm(id, user.id);
+    return this.purchaseReceptionsService.confirm(id, user.id, user.workstationId);
   }
 
   @Post(':id/annul')

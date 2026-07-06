@@ -9,9 +9,10 @@ import { PurchaseReceptionsService } from './services/purchase-receptions.servic
 import { SupplierReturnsController } from './controllers/supplier-returns.controller';
 import { SupplierReturnsService } from './services/supplier-returns.service';
 import { InventoryLotsModule } from '@/modules/inventory-lots/inventory-lots.module';
+import { FiscalDianModule } from '@/modules/fiscal-dian/fiscal-dian.module';
 
 @Module({
-  imports: [PrismaModule, InventoryLotsModule],
+  imports: [PrismaModule, InventoryLotsModule, FiscalDianModule],
   controllers: [
     SuppliersController,
     PurchaseOrdersController,
