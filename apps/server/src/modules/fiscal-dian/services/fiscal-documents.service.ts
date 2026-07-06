@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 import { QueryFiscalDocumentsDto } from '../dto/query-fiscal-documents.dto';
+import { DocumentNotRetryableException } from '../exceptions/document-not-retryable.exception';
 import { DuplicateFiscalDocumentException } from '../exceptions/duplicate-fiscal-document.exception';
 import { NoActiveResolutionForWorkstationException } from '../exceptions/no-active-resolution-for-workstation.exception';
 import { NoValidatedInvoiceForCreditNoteException } from '../exceptions/no-validated-invoice-for-credit-note.exception';
@@ -32,8 +33,119 @@ export class FiscalDocumentsService {
     throw new NotImplementedForPhaseException('fiscal-dian', 'getXmlPayload');
   }
 
-  async retryDocument(id: string): Promise<any> {
-    throw new NotImplementedForPhaseException('fiscal-dian', 'retryDocument');
+  /**
+   * Retries a FiscalDocument based on its current state.
+   *
+   * For GENERATION_ERROR, SIGNATURE_ERROR, or CONTINGENCY — resets state to
+   * PENDING_GENERATION and returns the same document id for re-enqueueing.
+   *
+   * For REJECTED — creates a brand-new FiscalDocument for the same source
+   * (sale, purchase reception, or client return) under a new consecutive
+   * number, leaving the rejected one untouched as a historical record.
+   *
+   * Any other state throws DocumentNotRetryableException.
+   *
+   * The entire operation runs inside a single prisma.$transaction.
+   */
+  async retry(
+    fiscalDocumentId: string,
+    callerWorkstationId: string,
+  ): Promise<{ id: string }> {
+    return (this.prisma as any).$transaction(async (tx: any) => {
+      const doc = await tx.fiscalDocument.findUnique({
+        where: { id: fiscalDocumentId },
+        select: {
+          id: true,
+          fiscalState: true,
+          saleId: true,
+          purchaseReceptionId: true,
+          clientReturnId: true,
+        },
+      });
+
+      if (!doc) {
+        throw new DocumentNotRetryableException(
+          fiscalDocumentId,
+          'NOT_FOUND',
+        );
+      }
+
+      // ── Regulatory assumption ───────────────────────────────────────────
+      // GENERATION_ERROR, SIGNATURE_ERROR, and CONTINGENCY are failures that
+      // occurred before DIAN evaluated the document's content — either the
+      // failure happened before transmission, or the document was issued under
+      // contingency numbering and still needs to be reported through — so
+      // retrying resends the exact same document under its existing
+      // consecutive number.  If the current DIAN technical annex later
+      // contradicts this, adjust the branch below.
+      switch (doc.fiscalState) {
+        case 'GENERATION_ERROR':
+        case 'SIGNATURE_ERROR':
+        case 'CONTINGENCY': {
+          const updated = await tx.fiscalDocument.update({
+            where: { id: fiscalDocumentId },
+            data: {
+              fiscalState: 'PENDING_GENERATION',
+              retryCount: { increment: 1 },
+              lastRetryAt: new Date(),
+            },
+          });
+          return { id: updated.id };
+        }
+
+        // ── Regulatory assumption ─────────────────────────────────────────
+        // REJECTED is different: DIAN evaluated the document and refused it,
+        // and the general practice is that a rejected number is not reused.
+        // The correct remedy is a brand-new document, with a new consecutive
+        // number, for the same underlying sale, reception, or return.  If the
+        // current DIAN technical annex later contradicts this, adjust the
+        // branch below.
+        case 'REJECTED': {
+          if (doc.saleId) {
+            const newDoc = await this.createPendingDocumentForSale({
+              saleId: doc.saleId,
+              tx,
+            });
+            return { id: newDoc.id };
+          }
+          if (doc.purchaseReceptionId) {
+            const result =
+              await this.createPendingDocumentForPurchaseReception({
+                purchaseReceptionId: doc.purchaseReceptionId,
+                workstationId: callerWorkstationId,
+                tx,
+              });
+            // result is null when the supplier's identificationType is NIT.
+            // A REJECTED SUPPORT_DOCUMENT should not exist for a NIT supplier,
+            // but guard against it anyway.
+            if (!result) {
+              throw new DocumentNotRetryableException(
+                fiscalDocumentId,
+                doc.fiscalState,
+              );
+            }
+            return result;
+          }
+          if (doc.clientReturnId) {
+            return await this.createPendingDocumentForClientReturn({
+              clientReturnId: doc.clientReturnId,
+              tx,
+            });
+          }
+          // REJECTED document with no source association — should not occur
+          throw new DocumentNotRetryableException(
+            fiscalDocumentId,
+            doc.fiscalState,
+          );
+        }
+
+        default:
+          throw new DocumentNotRetryableException(
+            fiscalDocumentId,
+            doc.fiscalState,
+          );
+      }
+    });
   }
 
   // ── Shared numbering helper (extracted from createPendingDocumentForSale) ──
@@ -366,14 +478,32 @@ export class FiscalDocumentsService {
     return sale?.clientId ? 'INVOICE' : 'POS_TICKET';
   }
 
-  /** Throws DuplicateFiscalDocumentException if one already exists. */
+  /**
+   * Throws DuplicateFiscalDocumentException if a non-terminal FiscalDocument
+   * already exists for the given (saleId, documentType) pair.
+   *
+   * A prior document in REJECTED or ANNULLED does NOT count as blocking —
+   * those are terminal, non-competing states that the retry flow needs to
+   * create past.
+   *
+   * ── Regulatory assumption ──
+   * If the DIAN technical annex later mandates that REJECTED numbers are
+   * reusable (i.e. the same consecutive number can be retried after fixing
+   * the content), this whole assertion would need to change from "skip
+   * terminal states" to "only block on non-terminal states" — the logic is
+   * the same, but the rationale would be different.
+   */
   private async assertNoDuplicateDocument(
     tx: any,
     saleId: string,
     documentType: string,
   ): Promise<void> {
     const existing = await tx.fiscalDocument.findFirst({
-      where: { saleId, documentType },
+      where: {
+        saleId,
+        documentType,
+        fiscalState: { notIn: ['REJECTED', 'ANNULLED'] },
+      },
     });
     if (existing) {
       throw new DuplicateFiscalDocumentException(saleId, documentType);
@@ -381,8 +511,11 @@ export class FiscalDocumentsService {
   }
 
   /**
-   * Throws DuplicateFiscalDocumentException if a FiscalDocument already
-   * exists for the given (purchaseReceptionId, documentType) pair.
+   * Throws DuplicateFiscalDocumentException if a non-terminal FiscalDocument
+   * already exists for the given (purchaseReceptionId, documentType) pair.
+   *
+   * See assertNoDuplicateDocument for the regulatory assumption behind
+   * excluding REJECTED and ANNULLED from the conflict check.
    *
    * The exception message references "sale" as the source id for historical
    * reasons; a future refactor should parameterise the label or unify the
@@ -394,7 +527,11 @@ export class FiscalDocumentsService {
     documentType: string,
   ): Promise<void> {
     const existing = await tx.fiscalDocument.findFirst({
-      where: { purchaseReceptionId, documentType },
+      where: {
+        purchaseReceptionId,
+        documentType,
+        fiscalState: { notIn: ['REJECTED', 'ANNULLED'] },
+      },
     });
     if (existing) {
       throw new DuplicateFiscalDocumentException(
@@ -405,8 +542,11 @@ export class FiscalDocumentsService {
   }
 
   /**
-   * Throws DuplicateFiscalDocumentException if a FiscalDocument already
-   * exists for the given (clientReturnId, documentType) pair.
+   * Throws DuplicateFiscalDocumentException if a non-terminal FiscalDocument
+   * already exists for the given (clientReturnId, documentType) pair.
+   *
+   * See assertNoDuplicateDocument for the regulatory assumption behind
+   * excluding REJECTED and ANNULLED from the conflict check.
    *
    * FiscalDocument.clientReturnId has a @unique constraint at the schema
    * level as well, so this check provides a cleaner error message before
@@ -418,7 +558,11 @@ export class FiscalDocumentsService {
     documentType: string,
   ): Promise<void> {
     const existing = await tx.fiscalDocument.findFirst({
-      where: { clientReturnId, documentType },
+      where: {
+        clientReturnId,
+        documentType,
+        fiscalState: { notIn: ['REJECTED', 'ANNULLED'] },
+      },
     });
     if (existing) {
       throw new DuplicateFiscalDocumentException(clientReturnId, documentType);

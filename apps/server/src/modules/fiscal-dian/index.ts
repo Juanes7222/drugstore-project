@@ -8,6 +8,7 @@ export { FiscalIssuerConfigNotSetException } from './exceptions/fiscal-issuer-co
 export { TechProviderConfigNotSetException } from './exceptions/tech-provider-config-not-set.exception';
 export { OverlappingActiveResolutionException } from './exceptions/overlapping-active-resolution.exception';
 export { InvalidResolutionRangeException } from './exceptions/invalid-resolution-range.exception';
+export { DocumentNotRetryableException } from './exceptions/document-not-retryable.exception';
 export { DuplicateFiscalDocumentException } from './exceptions/duplicate-fiscal-document.exception';
 export { ResolutionExhaustedException } from './exceptions/resolution-exhausted.exception';
 export { NoActiveResolutionForWorkstationException } from './exceptions/no-active-resolution-for-workstation.exception';
