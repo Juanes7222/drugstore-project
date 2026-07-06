@@ -7,6 +7,7 @@ import { NotImplementedForPhaseException } from '@/common/exceptions/not-impleme
 import { QueryFiscalDocumentsDto } from '../dto/query-fiscal-documents.dto';
 import { DuplicateFiscalDocumentException } from '../exceptions/duplicate-fiscal-document.exception';
 import { NoActiveResolutionForWorkstationException } from '../exceptions/no-active-resolution-for-workstation.exception';
+import { NoValidatedInvoiceForCreditNoteException } from '../exceptions/no-validated-invoice-for-credit-note.exception';
 import { ResolutionExhaustedException } from '../exceptions/resolution-exhausted.exception';
 
 /** Placeholder CUFE used before the actual cryptographic hash is computed. */
@@ -239,6 +240,115 @@ export class FiscalDocumentsService {
     return { id: doc.id };
   }
 
+  // ── New methods for Phase 29 (ClientReturn CREDIT_NOTE) ─────────
+
+  /**
+   * Creates a FiscalDocument (CREDIT_NOTE) in PENDING_GENERATION for a
+   * confirmed client return.
+   *
+   * Loads the return's Sale and that sale's FiscalDocuments, and requires
+   * one with documentType INVOICE and fiscalState VALIDATED — a credit note
+   * is only meaningful against a validated electronic invoice.  If the sale
+   * was fiscally issued as a POS_TICKET or its INVOICE was never validated,
+   * throws NoValidatedInvoiceForCreditNoteException.
+   *
+   * Must be called inside the client return confirmation transaction.
+   * Sets referenceDocumentId to the original invoice's id, and updates
+   * ClientReturn.creditNoteId to the new document's id, both atomically in
+   * the same transaction.
+   */
+  async createPendingDocumentForClientReturn(params: {
+    clientReturnId: string;
+    tx: any;
+  }): Promise<{ id: string }> {
+    const { clientReturnId, tx } = params;
+
+    // Load the return to get its workstationId and the parent sale
+    const clientReturn = await tx.clientReturn.findUnique({
+      where: { id: clientReturnId },
+      select: {
+        workstationId: true,
+        sale: {
+          select: { id: true },
+        },
+      },
+    });
+
+    // Find the original validated INVOICE for this sale
+    const invoiceDoc = await tx.fiscalDocument.findFirst({
+      where: {
+        saleId: clientReturn.sale.id,
+        documentType: 'INVOICE',
+        fiscalState: 'VALIDATED',
+      },
+      select: { id: true, documentType: true, fiscalState: true },
+    });
+
+    if (!invoiceDoc) {
+      // Distinguish "no document at all" from "document exists but is not a
+      // validated INVOICE" for a clearer error message.
+      const anyDoc = await tx.fiscalDocument.findFirst({
+        where: { saleId: clientReturn.sale.id },
+        select: { documentType: true, fiscalState: true },
+      });
+      throw new NoValidatedInvoiceForCreditNoteException(
+        clientReturn.sale.id,
+        anyDoc?.documentType,
+        anyDoc?.fiscalState,
+      );
+    }
+
+    const documentType = 'CREDIT_NOTE';
+    await this.assertNoDuplicateDocumentForClientReturn(
+      tx,
+      clientReturnId,
+      documentType,
+    );
+
+    const { allocation, resolution, consecutiveNumber } =
+      await this.allocateDocumentNumber({
+        tx,
+        workstationId: clientReturn.workstationId,
+        documentType,
+      });
+
+    const issuerConfig = await (
+      this.prisma.fiscalIssuerConfig as any
+    ).findFirst();
+    const docId = crypto.randomUUID();
+
+    const doc = await tx.fiscalDocument.create({
+      data: {
+        id: docId,
+        documentType,
+        consecutiveNumber,
+        fullNumber: `${resolution.prefix}${consecutiveNumber}`,
+        issueDate: new Date(),
+        cufeCude: `${PLACEHOLDER_CUFE_PREFIX}${docId}`,
+        fiscalState: 'PENDING_GENERATION',
+        issuerNitSnapshot: issuerConfig?.nit ?? '',
+        subtotal: 0,
+        totalTax: 0,
+        totalAmount: 0,
+        clientReturnId,
+        // referenceDocumentId is populated only for CREDIT_NOTE / DEBIT_NOTE;
+        // the CHECK constraint is deferred to a future migration.
+        referenceDocumentId: invoiceDoc.id,
+        resolutionId: resolution.id,
+        allocationId: allocation.id,
+      },
+    });
+
+    // Update the forward-pointing creditNoteId so a return can be read
+    // without joining through FiscalDocument.
+    await tx.clientReturn.update({
+      where: { id: clientReturnId },
+      data: { creditNoteId: doc.id },
+    });
+
+    return { id: doc.id };
+  }
+
   /**
    * Enqueues a generation job onto the fiscal-documents BullMQ queue.
    * Must be called only after the sale transaction has committed.
@@ -291,6 +401,27 @@ export class FiscalDocumentsService {
         purchaseReceptionId,
         documentType,
       );
+    }
+  }
+
+  /**
+   * Throws DuplicateFiscalDocumentException if a FiscalDocument already
+   * exists for the given (clientReturnId, documentType) pair.
+   *
+   * FiscalDocument.clientReturnId has a @unique constraint at the schema
+   * level as well, so this check provides a cleaner error message before
+   * the database constraint violation surfaces.
+   */
+  private async assertNoDuplicateDocumentForClientReturn(
+    tx: any,
+    clientReturnId: string,
+    documentType: string,
+  ): Promise<void> {
+    const existing = await tx.fiscalDocument.findFirst({
+      where: { clientReturnId, documentType },
+    });
+    if (existing) {
+      throw new DuplicateFiscalDocumentException(clientReturnId, documentType);
     }
   }
 

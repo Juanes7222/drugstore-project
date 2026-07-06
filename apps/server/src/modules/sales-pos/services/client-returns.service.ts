@@ -14,6 +14,7 @@ import { SaleNotFoundException } from '../exceptions/sale-not-found.exception';
 import { SaleNotConfirmedException } from '../exceptions/sale-not-confirmed.exception';
 import { CashShiftNotOpenForWorkstationException } from '../exceptions/cash-shift-not-open-for-workstation.exception';
 import { ClientReturnCalculatorService } from './client-return-calculator.service';
+import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
 
 @Injectable()
 export class ClientReturnsService {
@@ -21,6 +22,7 @@ export class ClientReturnsService {
     private prisma: PrismaService,
     private lotsService: LotsService,
     private calc: ClientReturnCalculatorService,
+    private fiscalDocumentsService: FiscalDocumentsService,
   ) {}
 
   async findAll(query: { page?: number; pageSize?: number; state?: string }): Promise<any> {
@@ -80,7 +82,9 @@ export class ClientReturnsService {
   }
 
   async confirm(id: string, _userId: string): Promise<any> {
-    return this.prisma.$transaction(async (tx) => {
+    let fiscalDocumentId: string | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
       const ret = await this.requireReturn(tx, id);
       if (ret.state !== ClientReturnState.DRAFT && ret.state !== ClientReturnState.PENDING_PICKUP) {
         throw new ClientReturnNotDraftException(id);
@@ -96,8 +100,30 @@ export class ClientReturnsService {
           await this.lotsService.receiveStockFromClientReturn({ lotId: lot.lotId, quantity: lot.quantity, clientReturnId: ret.id, tx });
         }
       }
-      return tx.clientReturn.update({ where: { id }, data: { state: ClientReturnState.CONFIRMED } });
+
+      const updatedReturn = await tx.clientReturn.update({
+        where: { id },
+        data: { state: ClientReturnState.CONFIRMED },
+      });
+
+      // Fiscal document created inside the same transaction — if it fails,
+      // the whole return confirmation rolls back.
+      const fiscalDoc =
+        await this.fiscalDocumentsService.createPendingDocumentForClientReturn({
+          clientReturnId: id,
+          tx,
+        });
+      fiscalDocumentId = fiscalDoc.id;
+
+      return updatedReturn;
     });
+
+    // Enqueue only after the transaction has committed successfully
+    if (fiscalDocumentId) {
+      await this.fiscalDocumentsService.enqueueGenerationJob(fiscalDocumentId);
+    }
+
+    return result;
   }
 
   async reject(id: string, dto: RejectClientReturnDto): Promise<any> {
