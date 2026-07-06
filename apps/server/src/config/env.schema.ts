@@ -8,6 +8,7 @@ export const envSchema = z.object({
   JWT_REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(604800),
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  REDIS_URL: z.string().default('redis://localhost:6379').describe('Redis connection string for BullMQ'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

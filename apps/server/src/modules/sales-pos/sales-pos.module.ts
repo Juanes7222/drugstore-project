@@ -6,6 +6,7 @@ import { ClientReturnsController } from './controllers/client-returns.controller
 import { ClientReturnsService } from './services/client-returns.service';
 import { ClientReturnCalculatorService } from './services/client-return-calculator.service';
 import { InventoryLotsModule } from '@/modules/inventory-lots/inventory-lots.module';
+import { FiscalDianModule } from '@/modules/fiscal-dian/fiscal-dian.module';
 
 /**
  * Sales-POS Module
@@ -14,7 +15,7 @@ import { InventoryLotsModule } from '@/modules/inventory-lots/inventory-lots.mod
  * - Prescription: Prescription-based sales workflows and validation
  */
 @Module({
-  imports: [PrismaModule, InventoryLotsModule],
+  imports: [PrismaModule, InventoryLotsModule, FiscalDianModule],
   controllers: [SalesController, ClientReturnsController],
   providers: [SalesService, ClientReturnsService, ClientReturnCalculatorService],
   exports: [SalesService, ClientReturnsService],

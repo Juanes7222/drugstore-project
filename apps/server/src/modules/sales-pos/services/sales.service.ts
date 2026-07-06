@@ -18,6 +18,7 @@ import { ConsumedLot } from '@/modules/inventory-lots/types/consume-stock.types'
 import { LotNotFoundException } from '@/modules/inventory-lots/exceptions/lot-not-found.exception';
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 import { DiscountReasonRequiredException } from '@/modules/catalog/exceptions/discount-reason-required.exception';
+import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
 
 interface SaleItemCalculations {
   unitPrice: Prisma.Decimal;
@@ -31,7 +32,11 @@ interface SaleItemCalculations {
 
 @Injectable()
 export class SalesService {
-  constructor(private prisma: PrismaService, private lotsService: LotsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private lotsService: LotsService,
+    private fiscalDocumentsService: FiscalDocumentsService,
+  ) {}
 
   async findAll(query: QuerySaleDto): Promise<any> {
     const where: Prisma.SaleWhereInput = {};
@@ -114,7 +119,9 @@ export class SalesService {
   }
 
   async confirm(saleId: string, confirmDto: ConfirmSaleDto, userId: string): Promise<any> {
-    return this.prisma.$transaction(async (tx) => {
+    let fiscalDocumentId: string | null = null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
       const sale = await tx.sale.findUnique({
         where: { id: saleId },
         include: { items: { include: { product: true } } },
@@ -184,8 +191,25 @@ export class SalesService {
           changeAmount,
         },
       });
+
+      // Fiscal document created inside the same transaction — if it fails,
+      // the whole sale confirmation rolls back. A confirmed sale without a
+      // fiscal document is not an acceptable partial state.
+      const fiscalDoc = await this.fiscalDocumentsService.createPendingDocumentForSale({
+        saleId,
+        tx,
+      });
+      fiscalDocumentId = fiscalDoc.id;
+
       return updatedSale;
     });
+
+    // Enqueue only after the transaction has committed successfully
+    if (fiscalDocumentId) {
+      await this.fiscalDocumentsService.enqueueGenerationJob(fiscalDocumentId);
+    }
+
+    return result;
   }
 
   async annul(id: string, dto: AnnulSaleDto, userId: string): Promise<any> {
