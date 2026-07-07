@@ -122,6 +122,26 @@ covers as well.
 - One behavior per test. Split a test that asserts multiple unrelated
   outcomes into separate cases.
 
+## Test cleanliness
+
+- Favor DAMP over DRY inside test bodies. A test should be readable top to
+  bottom without jumping to a helper to understand what is being verified.
+  Some repetition in the arrange section across tests is acceptable and
+  often preferable to a shared helper that hides intent.
+- Factory functions abstract data construction only, never assertion logic.
+  If two tests need different assertion behavior, they do not share a
+  helper for that part even if their setup looks similar.
+- No control flow inside a test body: no if/else, no loops, no try/catch.
+  A test that needs branching logic to pass is testing more than one
+  behavior; split it into separate test cases instead.
+- Never commit test.only, describe.only, or test.skip without an inline
+  comment explaining why and a linked issue if the skip is long-lived.
+  Prefer eslint-plugin-jest rules no-focused-tests and no-disabled-tests
+  to catch these before commit.
+- Each test asserts on values it can trace back to its own arrange block.
+  Avoid asserting against shared mutable fixtures that other tests in the
+  same file also mutate.
+
 ## Assertions and data
 
 - Prefer specific matchers over toBeTruthy/toBeFalsy: toEqual for objects,
@@ -163,6 +183,7 @@ Known project risks that affect how tests must be written:
   regression a specific test guards against.
 - No JSDoc on test functions. Reserve JSDoc for exported test utilities and
   factories shared across spec files (e.g. generateTestToken).
+- No use emojis never
 
 ## When to ask instead of assuming
 

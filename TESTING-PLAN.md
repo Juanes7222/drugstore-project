@@ -1,8 +1,8 @@
 # Plan de Testing — Pharmacy System (Droguería)
 
-**Versión:** 1.0  
+**Versión:** 1.1  
 **Última actualización:** Julio 2026  
-**Estado:** Fase 0 — Sin tests implementados
+**Estado:** Fase 1 parcial — Infraestructura lista, 56 tests existentes y pasando
 
 ---
 
@@ -65,15 +65,18 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.spec.ts`) | **CERO** — Ninguno existe en todo el proyecto |
-| Configuraciones de test (jest.config, vitest.config) | **CERO** — Sin configurar |
-| Dependencias de testing instaladas | **NINGUNA** — Sin `jest`, `vitest`, `@nestjs/testing`, etc. |
-| Scripts `test` en sub-packages | **NINGUNO** — Los scripts del root delegan a `turbo run test` pero ningún package los implementa |
-| Cobertura actual | **0%** — La documentación exige ≥80% |
+| Archivos de test (`*.spec.ts`) | **5 archivos, 56 tests** — todos pasando |
+| Configuraciones de test (jest.config) | **LISTO** — `apps/server`, `shared-types`, `shared-validation` tienen jest.config.ts |
+| Dependencias de testing instaladas | **LISTO** — `jest`, `ts-jest`, `@nestjs/testing`, `jest-mock-extended`, `supertest` instalados |
+| Scripts `test` en sub-packages | **LISTO** — `test`, `test:cov`, `test:watch`, `test:e2e` configurados |
+| Cobertura actual | **~2%** (solo shared-validation + env.schema cubiertos) — Meta: ≥80% |
 | Servicios con lógica real (testeables) | **~15 servicios** (auth, products, categories, tax-schemes, sales, client-returns, cash-shift, clients, lots, etc.) |
-| Servicios stub/placeholder | **~10 servicios** (sync, fiscal-dian generación, reports, configuration, purchases, inventory adjustments, etc.) |
+| Servicios con lógica real | **~22 servicios** (incluyendo configuration, fiscal-dian, purchases, reports, sync) |
 | Archivos TypeScript en apps/server | **~140 archivos**, ~15,000+ líneas de código |
 | Modelos Prisma | **60+ modelos**, **28 enums** |
+| Tests existentes (shared-validation) | **44 tests** — client-schema, product-schema, create-sale-schema, user-login-schema |
+| Tests existentes (apps/server) | **12 tests** — env.schema |
+| `PrismaService` typing | **CORREGIDO** — `extends PrismaClient` directamente, acceso tipado completo. Ya no usa `(as any)` |
 
 ### Arquitectura del proyecto
 
@@ -100,19 +103,19 @@ pharmacy-system/
 | `cash-shift/` | **FULL** — Apertura, cierre, conteo, force close | 8 archivos |
 | `clients/` | **FULL** — CRUD, consentimiento, Habeas Data, clasificación | 8 archivos |
 | `inventory-lots/` | **MIXTO** — Core de stock: FULL. Ajustes/Physical Count: STUB | 10 archivos |
-| `configuration/` | **STUB** | 6 archivos |
-| `fiscal-dian/` | **STUB** (lógica de generación delegada a fiscal-engine) | 10 archivos |
-| `purchases/` | **STUB** | 10 archivos |
-| `reports/` | **STUB** | 6 archivos |
-| `sync/` | **STUB** | 8 archivos |
+| `configuration/` | **FULL** — CRUD con sensitive mask, validación de tipos | 6 archivos |
+| `fiscal-dian/` | **FULL** — Documentos fiscales, resoluciones, issuer/tech-provider config | 10 archivos |
+| `purchases/` | **FULL** — Órdenes de compra, recepciones, devoluciones a proveedor, proveedores | 10 archivos |
+| `reports/` | **FULL** — Reportes de ventas, inventario, análisis por fechas | 6 archivos |
+| `sync/` | **FULL** — Sincronización offline con batches, hash validation, dispatcher | 8 archivos |
 
 ### Issues encontrados durante el diagnóstico
 
-1. **`PrismaService` no tipado completamente**: Solo expone 3 getters (`user`, `userSession`, `auditLog`). Todo lo demás accede vía `(this.prisma as any).model`. Los mocks de tests también serán `any`.
+1. ~~**`PrismaService` no tipado**~~ → **RESUELTO**: `PrismaService` ahora extiende `PrismaClient` directamente. Todos los modelos tienen typing completo. Ya no hay casts `(as any)` en los servicios.
 2. **Divergencia shared-validation vs local DTOs**: El schema `ProductSchema` en `shared-validation` difiere del `CreateProductSchema` local en `catalog/dto/`. El controller legacy usa el shared, el products controller usa el local.
-3. **Divergencia de enums**: `shared-types` tiene `ELECTRONIC_WALLET`, Prisma tiene `DIGITAL_WALLET` (mismo concepto, distinto nombre).
+3. **Divergencia de enums**: `shared-types` tiene `ELECTRONIC_WALLET` y `TRANSFER`; Prisma tiene `DIGITAL_WALLET` y `BANK_TRANSFER`. Pendiente de resolver.
 4. **`LoginDto` tiene campo `email`** pero passport-local usa `username` por defecto. El schema valida `email`.
-5. **`noImplicitAny` deshabilitado** en `apps/server/tsconfig.json` (desviación del strict mode documentado).
+5. **`noImplicitAny` deshabilitado** en `apps/server/tsconfig.json` (desviación del strict mode documentado). Sigue sin corregir.
 
 ---
 
@@ -413,17 +416,19 @@ El plan se ejecuta en **6 fases**, priorizando lo que ya tiene lógica de negoci
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-### Orden cronológico recomendado
+### Orden cronológico recomendado (actualizado)
 
 ```
-Día 1-2:   Instalar dependencias + jest config + Fase 1 (shared-validation)
-Día 3-5:   Fase 2 (pipes, guards, filters, interceptors, env schema)
-Día 6-8:   Fase 3A: Auth (AuthService + SessionService + PasswordHasher + JwtStrategy)
-Día 9-11:  Fase 3B: Catalog (ProductsService + CategoriesService + TaxSchemesService)
-Día 12-14: Fase 3C: Sales + Cash + Clients + Inventory (servicios principales)
-Día 15-17: Fase 4: Controladores de integración
-Día 18-21: Fase 5: E2E flujos críticos
-Día 22-23: Fase 6: CI/CD, threshold de cobertura, documentación
+Día 1:     Instalar dependencias + jest config + shared-validation tests    ← COMPLETADO
+Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)          ← EN CURSO
+Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)
+Día 5-6:   Fase 3A: Auth (AuthService + SessionService + PasswordHasher + JwtStrategy + LocalStrategy)
+Día 7-8:   Fase 3B: Catalog (ProductsService + CategoriesService + TaxSchemesService)
+Día 9-11:  Fase 3C: Sales + Cash + Clients + Inventory (servicios principales)
+Día 12-13: Fase 3C (continuación: LotsService, ClientReturnCalculatorService)
+Día 14-16: Fase 4: Controladores de integración
+Día 17-20: Fase 5: E2E flujos críticos
+Día 21-22: Fase 6: CI/CD, threshold de cobertura, documentación
 ```
 
 ---
@@ -434,91 +439,123 @@ Día 22-23: Fase 6: CI/CD, threshold de cobertura, documentación
 
 ### 5.1 shared-validation — Schemas Zod
 
+**Estado:** ✅ **IMPLEMENTADO** — 4 spec files, 44 tests pasando.
+
 Cada schema tiene reglas de validación específicas. Ubicación de tests: al lado del fuente.
 
 ```
 packages/shared-validation/src/
 ├── product-schema.ts
-├── product-schema.spec.ts        ← nuevo
+├── product-schema.spec.ts        ← EXISTE (94 líneas, 10 escenarios)
 ├── client-schema.ts
-├── client-schema.spec.ts         ← nuevo
+├── client-schema.spec.ts         ← EXISTE (104 líneas, 9 escenarios)
 ├── create-sale-schema.ts
-├── create-sale-schema.spec.ts    ← nuevo
+├── create-sale-schema.spec.ts    ← EXISTE (212 líneas, 16 escenarios)
 ├── user-login-schema.ts
-├── user-login-schema.spec.ts     ← nuevo
+├── user-login-schema.spec.ts     ← EXISTE (80 líneas, 9 escenarios)
 └── index.ts
 ```
 
-#### ProductSchema — Casos de test
+> **Nota:** Las tablas siguientes reflejan los tests **realmente implementados**, que pueden diferir del diseño original del plan. Los schemas reales tienen prioridad.
+
+#### ProductSchema — Casos de test implementados
 
 | ID | Escenario | Entrada | Esperado |
 |----|-----------|---------|----------|
-| SHV-P01 | Datos completos válidos | `{ name: "Acetaminofén 500mg", genericName: "Paracetamol", barcode: "7701234567890", sellingPrice: "1500.00", productType: "FREE_SALE" }` | Parse exitoso |
-| SHV-P02 | `name` vacío | `name: ""` | `ZodError` (min 1 carácter) |
-| SHV-P03 | `name` excede 255 chars | `name: "a".repeat(256)` | `ZodError` (max 255) |
+| SHV-P01 | Datos completos válidos | `{ name, genericName, barcode, invimaCertificate, saleType: "FREE_SALE", requiresPrescription, currentStock, minimumStock, purchasePrice, sellingPrice, taxPercentage, expirationDate }` | Parse exitoso |
+| SHV-P02 | `name` vacío | `name: ""` | `ZodError` (min 1) |
+| SHV-P03 | `name` excede 255 chars | `name: "x".repeat(256)` | `ZodError` (max 255) |
 | SHV-P04 | `genericName` vacío | `genericName: ""` | `ZodError` |
-| SHV-P05 | `barcode` no numérico | `barcode: "abc123"` | `ZodError` |
-| SHV-P06 | `barcode` muy corto | `barcode: "123"` | `ZodError` |
-| SHV-P07 | `sellingPrice` formato inválido | `sellingPrice: "1500"` (sin decimales) | `ZodError` |
-| SHV-P08 | `sellingPrice` no es string | `sellingPrice: 1500` | `ZodError` |
-| SHV-P09 | `productType` no es enum válido | `productType: "INVALID"` | `ZodError` |
-| SHV-P10 | Campos opcionales omitidos | Solo campos requeridos | Parse exitoso |
-| SHV-P11 | Campos opcionales incluidos | `{ description: "Analgésico", laboratory: "Genfar" }` | Parse exitoso |
+| SHV-P05 | `currentStock` negativo | `currentStock: -1` | `ZodError` (nonnegative) |
+| SHV-P06 | `currentStock` no entero | `currentStock: 10.5` | `ZodError` (int) |
+| SHV-P07 | `purchasePrice` sin decimales | `purchasePrice: "800"` | Parse exitoso (regex permite decimales opcionales) |
+| SHV-P08 | `sellingPrice` con letras | `sellingPrice: "abc"` | `ZodError` |
+| SHV-P09 | `saleType` inválido | `saleType: "INVALID"` | `ZodError` |
+| SHV-P10 | `expirationDate` no datetime | `expirationDate: "not-a-date"` | `ZodError` |
 
-#### ClientSchema — Casos de test
+#### ClientSchema — Casos de test implementados
 
 | ID | Escenario | Entrada | Esperado |
 |----|-----------|---------|----------|
-| SHV-C01 | Datos completos válidos | `{ identificationType: "CC", identificationNumber: "1234567890", fullName: "Juan Pérez", email: "juan@email.com", phone: "3101234567" }` | Parse exitoso |
+| SHV-C01 | Datos completos válidos | `{ firstName: "Juan", lastName: "Pérez", identificationType: "CC", identificationNumber: "1234567890", email: "juan@email.com", phone: "3101234567", address: "Calle 123" }` | Parse exitoso |
 | SHV-C02 | `identificationType` inválido | `identificationType: "XX"` | `ZodError` |
-| SHV-C03 | `identificationNumber` vacío | `identificationNumber: ""` | `ZodError` |
-| SHV-C04 | `fullName` vacío | `fullName: ""` | `ZodError` |
-| SHV-C05 | `email` formato inválido | `email: "notanemail"` | `ZodError` |
-| SHV-C06 | `phone` muy corto | `phone: "123"` | `ZodError` |
-| SHV-C07 | Campos opcionales omitidos | Solo campos requeridos | Parse exitoso |
+| SHV-C03 | `firstName` vacío | `firstName: ""` | `ZodError` |
+| SHV-C04 | `firstName` > 100 chars | `firstName: "x".repeat(101)` | `ZodError` (max 100) |
+| SHV-C05 | `lastName` vacío | `lastName: ""` | `ZodError` |
+| SHV-C06 | `identificationNumber` vacío | `identificationNumber: ""` | `ZodError` |
+| SHV-C07 | `identificationNumber` > 20 chars | `identificationNumber: "1".repeat(21)` | `ZodError` (max 20) |
+| SHV-C08 | `email` formato inválido | `email: "notanemail"` | `ZodError` |
+| SHV-C09 | `phone` > 20 chars | `phone: "x".repeat(21)` | `ZodError` (max 20) |
+| SHV-C10 | Campos opcionales omitidos | Solo `firstName`, `lastName`, `identificationType`, `identificationNumber` | Parse exitoso, `email` y `phone` son `undefined` |
 
-#### CreateSaleSchema — Casos de test
+> **Nota:** El schema real usa `firstName`/`lastName` (no `fullName` como en el diseño original).
+
+#### CreateSaleSchema — Casos de test implementados
 
 | ID | Escenario | Entrada | Esperado |
 |----|-----------|---------|----------|
-| SHV-S01 | Venta con items válidos | `{ workstationId: "uuid", items: [{ productId: "uuid", quantity: 2, unitPrice: "5000.00" }] }` | Parse exitoso |
-| SHV-S02 | Sin items | `items: []` | `ZodError` (min 1 item) |
-| SHV-S03 | `quantity` cero o negativo | `quantity: 0` | `ZodError` (min 1) |
-| SHV-S04 | `unitPrice` formato inválido | `unitPrice: "abc"` | `ZodError` |
-| SHV-S05 | `clientId` opcional incluido | `clientId: "uuid"` | Parse exitoso |
-| SHV-S06 | `items` con `discountPercentage` | `discountPercentage: 10` | Parse exitoso |
-| SHV-S07 | `discountPercentage` fuera de rango | `discountPercentage: -1` o `101` | `ZodError` (0-100) |
+| SHV-S01 | Venta con 1 item válido | `{ saleType: "FREE_SALE", cashShiftId: "<uuid>", items: [{ productId: "<uuid>", quantity: 2, unitPrice: "5000.00" }] }` | Parse exitoso |
+| SHV-S02 | Venta con múltiples items | `items: [item1, item2]` con 2 items | Parse exitoso, `items.length === 2` |
+| SHV-S03 | `clientId` opcional incluido | `clientId: "<uuid>"` | Parse exitoso |
+| SHV-S04 | `prescriptionNumber` opcional | `prescriptionNumber: "RX-2024-001"` | Parse exitoso |
+| SHV-S05 | Item con `discount` | `discount: "500.00"` | Parse exitoso |
+| SHV-S06 | Sin items (`items: []`) | `items: []` | `ZodError` (min 1) |
+| SHV-S07 | `quantity` negativo | `quantity: -1` | `ZodError` (positive) |
+| SHV-S08 | `quantity` cero | `quantity: 0` | `ZodError` (positive) |
+| SHV-S09 | `quantity` no entero | `quantity: 1.5` | `ZodError` (int) |
+| SHV-S10 | `unitPrice` no numérico | `unitPrice: "abc"` | `ZodError` (regex) |
+| SHV-S11 | `productId` no UUID | `productId: "not-a-uuid"` | `ZodError` (uuid) |
+| SHV-S12 | `cashShiftId` no UUID | `cashShiftId: "not-a-uuid"` | `ZodError` (uuid) |
+| SHV-S13 | `saleType` inválido | `saleType: "INVALID"` | `ZodError` |
+| SHV-S14 | `discount` no numérico | `discount: "abc"` | `ZodError` (regex) |
+| SHV-S15 | `clientId` no UUID | `clientId: "not-a-uuid"` | `ZodError` (uuid) |
 
-#### UserLoginSchema — Casos de test
+> **Nota:** El schema real usa `saleType`, `cashShiftId` y `discount` (no `workstationId` ni `discountPercentage` como en el diseño original).
+
+#### UserLoginSchema — Casos de test implementados
 
 | ID | Escenario | Entrada | Esperado |
 |----|-----------|---------|----------|
 | SHV-L01 | Credenciales válidas | `{ email: "admin@farmacia.com", password: "secret123" }` | Parse exitoso |
 | SHV-L02 | `email` inválido (sin @) | `email: "notanemail"` | `ZodError` |
 | SHV-L03 | `email` vacío | `email: ""` | `ZodError` |
-| SHV-L04 | `password` vacío | `password: ""` | `ZodError` (min 1) |
-| SHV-L05 | `password` ausente | `{}` | `ZodError` |
+| SHV-L04 | `password` < 8 caracteres | `password: "1234567"` | `ZodError` (min 8) |
+| SHV-L05 | `password` vacío | `password: ""` | `ZodError` |
+| SHV-L06 | `password` mínimo exacto | `password: "12345678"` | Parse exitoso |
+| SHV-L07 | `email` ausente | Solo `password` | `ZodError` |
+| SHV-L08 | `password` ausente | Solo `email` | `ZodError` |
+| SHV-L09 | Objeto vacío | `{}` | `ZodError` |
+
+> **Nota:** El schema real exige password `min(8)` (no `min(1)` como en el diseño original).
 
 ### 5.2 shared-types — Enums e Interfaces
 
-Las interfaces TypeScript puras no requieren tests unitarios (el compilador las verifica). Los enums deben verificarse contra Prisma.
+**Estado:** 🟡 **Parcial** — Tests de consistencia pendientes (ver enums.spec.ts).
+
+Las interfaces TypeScript puras no requieren tests unitarios (el compilador las verifica). Los enums deben verificarse contra Prisma para detectar divergencias temprano.
 
 **Tests de consistencia de enums:**
 
 ```
 packages/shared-types/src/
-├── enums.spec.ts    ← nuevo
+├── enums.spec.ts    ← PENDIENTE (crear)
 └── enums.ts
 ```
 
-| ID | Escenario | Verificación |
-|----|-----------|-------------|
-| SHT-E01 | `RoleType` coincide con Prisma | Todos los valores de `RoleType` existen en el enum Prisma `RoleType` |
-| SHT-E02 | `SaleOperationalState` coincide con Prisma | Subconjunto de Prisma `SaleOperationalState` |
-| SHT-E03 | `FiscalDocumentType` coincide con Prisma | Subconjunto de Prisma `FiscalDocumentType` |
-| SHT-E04 | `PaymentMethodCategory` coincide con Prisma | Mapeo 1:1 — detectar divergencias como `ELECTRONIC_WALLET` vs `DIGITAL_WALLET` |
+| ID | Escenario | Verificación | Divergencia conocida |
+|----|-----------|-------------|---------------------|
+| SHT-E01 | `RoleType` coincide con Prisma | Todos los valores de `RoleType` existen en el enum Prisma `RoleType` | ✅ Coinciden |
+| SHT-E02 | `SaleOperationalState` coincide con Prisma | Subconjunto de Prisma `SaleOperationalState` | ✅ Coinciden |
+| SHT-E03 | `FiscalDocumentType` coincide con Prisma | Subconjunto de Prisma `FiscalDocumentType` | ✅ Coinciden |
+| SHT-E04 | `PaymentMethodCategory` coincide con Prisma | Mapeo 1:1 | ❌ **`ELECTRONIC_WALLET`** (shared) vs **`DIGITAL_WALLET`** (Prisma). **`TRANSFER`** (shared) vs **`BANK_TRANSFER`** (Prisma) |
+| SHT-E05 | `SaleType` coincide con Prisma | Subconjunto de Prisma `SaleType` | ✅ Coinciden |
+| SHT-E06 | `IdentificationType` coincide con Prisma | Subconjunto de Prisma `IdentificationType` | ✅ Coinciden |
+| SHT-E07 | `FiscalDocumentState` coincide con Prisma | Subconjunto de Prisma `FiscalDocumentState` | (verificar) |
+| SHT-E08 | `SystemModule` coincide con Prisma | Subconjunto de Prisma `SystemModule` | (verificar — Prisma tiene más valores) |
+| SHT-E09 | `AuditAction` coincide con Prisma | Subconjunto de Prisma `AuditAction` | (verificar) |
+| SHT-E10 | `TaxSchemeType` coincide con Prisma | Subconjunto de Prisma `TaxSchemeType` | (verificar) |
 
-**Nota:** Estos tests requieren acceso al Prisma client generado (`@prisma/client`). Se pueden hacer comparando strings de los valores de los enums, sin necesidad de importar Prisma.
+**Nota:** Estos tests **no requieren** acceso a Prisma client. Se implementan comparando strings de los valores de los enums directamente. El test SHT-E04 debe fallar explícitamente para documentar las divergencias conocidas de `PaymentMethodCategory`.
 
 ---
 
@@ -1853,43 +1890,62 @@ export function generateExpiredToken(payload: {
 
 ---
 
-## 11. Resumen de Estimaciones
+## 11. Resumen de Estimaciones (Actualizado)
 
-| Fase | Descripción | Archivos de test | Tests estimados | Esfuerzo (días) |
-|------|-------------|-----------------|-----------------|-----------------|
-| **F1** | Paquetes compartidos (shared-validation, shared-types) | 5 spec files | ~26 | 1-2 |
-| **F2** | Capa common/infra (pipes, guards, filters, interceptors, env, prisma) | 7 spec files | ~40 | 2-3 |
-| **F3A** | Auth (AuthService, SessionService, PasswordHasher, JwtStrategy, LocalStrategy) | 5 spec files | ~35 | 2-3 |
-| **F3B** | Catalog (ProductsService, CategoriesService, TaxSchemesService) | 3 spec files | ~25 | 2 |
-| **F3C** | Sales + Cash + Clients + Inventory (SalesService, ClientReturnsService, CashShiftService, ClientsService, LotsService, ClientReturnCalculator) | 6 spec files | ~45 | 3-4 |
-| **F4** | Controladores (integración) | 9 spec files | ~72 | 3-4 |
-| **F5** | E2E flujos críticos | 8 e2e-spec files | ~24 | 3-4 |
-| **F6** | CI/CD, utilidades de testing, documentación | — | — | 2-3 |
-| **TOTAL** | | **43 spec files** | **~267 tests** | **18-25 días** |
+| Fase | Descripción | Archivos de test | Tests | Esfuerzo (días) | Estado |
+|------|-------------|-----------------|-------|-----------------|--------|
+| **F0** | Infraestructura (deps, configs, scripts, turbo) | — | — | 1 | ✅ COMPLETO |
+| **F1** | Paquetes compartidos | 5 spec files | ~26 (44 reales) | 1-2 | 🟡 PARCIAL (shared-validation OK, shared-types pendiente) |
+| **F2** | Capa common/infra (pipes, guards, filters, interceptors, prisma) | 6 spec files | ~40 | 2-3 | 🔴 PENDIENTE |
+| **F3A** | Auth (AuthService, SessionService, PasswordHasher, JwtStrategy, LocalStrategy) | 5 spec files | ~35 | 2-3 | 🔴 PENDIENTE |
+| **F3B** | Catalog (ProductsService, CategoriesService, TaxSchemesService) | 3 spec files | ~25 | 2 | 🔴 PENDIENTE |
+| **F3C** | Sales + Cash + Clients + Inventory | 6 spec files | ~45 | 3-4 | 🔴 PENDIENTE |
+| **F4** | Controladores (integración) | 9 spec files | ~72 | 3-4 | 🔴 PENDIENTE |
+| **F5** | E2E flujos críticos | 8 e2e-spec files | ~24 | 3-4 | 🔴 PENDIENTE |
+| **F6** | CI/CD, utilidades de testing | — | — | 2-3 | 🔴 PENDIENTE |
+| **TOTAL RESTANTE** | | **~37 spec files** | **~241 tests** | **~20-25 días** | |
 
 ### Distribución por tipo de test
 
 ```
-Unitarios (shared + common + services):  ~171 tests  (64%)
-Integración (controllers):                ~72 tests  (27%)
-E2E (flujos completos):                   ~24 tests  (9%)
-                                        ─────────
-TOTAL:                                   ~267 tests
+Ya implementados (shared-validation):      44 tests  (14%)
+Unitarios (common + services restantes):  ~127 tests  (40%)
+Integración (controllers):                ~72 tests  (23%)
+E2E (flujos completos):                   ~24 tests  (8%)
+Utilidades + CI/CD:                       —          —
+                                         ─────────
+TOTAL (cuando esté completo):            ~312+ tests
+```
+
+### Cronograma ajustado
+
+```
+Día 1:     Infraestructura + shared-validation tests    ← COMPLETADO
+Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)
+Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)
+Día 5-6:   Fase 3A (Auth completo: AuthService, SessionService, PasswordHasher, estrategias)
+Día 7-8:   Fase 3B (Catalog: ProductsService, CategoriesService, TaxSchemesService)
+Día 9-11:  Fase 3C (SalesService, ClientReturnsService, CashShiftService, etc.)
+Día 12-13: Fase 3C (ClientsService, LotsService, ClientReturnCalculatorService)
+Día 14-16: Fase 4 (Controladores: integración)
+Día 17-20: Fase 5 (E2E: infraestructura + flujos críticos)
+Día 21-22: Fase 6 (CI/CD, utilidades, documentación)
 ```
 
 ---
 
 ## 12. Riesgos Identificados
 
-### Riesgo 1: PrismaService no tipado — Mocks con `any`
+### Riesgo 1: ~~PrismaService no tipado — Mocks con `any`~~ → **RESUELTO**
 
-**Problema:** `PrismaService` solo expone 3 getters tipados (`user`, `userSession`, `auditLog`). Todos los servicios acceden vía `(this.prisma as any).model`. Los mocks heredan este problema.
+**Estado:** ✅ **Corregido** — `PrismaService` ahora extiende `PrismaClient` directamente en lugar de envolverlo parcialmente. Todos los modelos tienen typing completo sin necesidad de casts `(as any)`.
 
-**Impacto:** Los tests no verifican tipos en las queries a Prisma. Un typo en `prisma.productt.findUnique()` (doble 't') no sería detectado por TypeScript ni por el test unitario (el mock acepta cualquier método).
+**Mitigación aplicada:**
+- `PrismaService` se definió como `export class PrismaService extends PrismaClient`
+- Los servicios acceden a `this.prisma.model` con typing completo de Prisma Client
+- Para mocks en tests: usar `mockDeep<PrismaClient>()` de `jest-mock-extended` — el mock refleja la forma completa del cliente
 
-**Mitigación:**
-- Corto plazo: Usar `jest-mock-extended` con `mockDeep<PrismaClient>()` — el mock tiene la forma correcta aunque el código fuente use `any`.
-- Mediano plazo: Agregar getters tipados para TODOS los modelos en `PrismaService`. Los tests existentes seguirán funcionando después del refactor.
+**Riesgo remanente:** Aunque el typing ahora es completo, los mocks con `mockDeep<PrismaClient>()` son deep mocks que aceptan cualquier llamada. Sigue siendo posible que un test pase aunque el código real tenga errores de lógica en las queries. Se mitiga con tests de integración contra Prisma real (Fase 4 y E2E).
 
 ### Riesgo 2: Tests E2E requieren PostgreSQL
 
@@ -1908,12 +1964,16 @@ TOTAL:                                   ~267 tests
 
 **Impacto:** Tests que verifican llamadas dentro de transacciones pueden fallar si el mock no ejecuta el callback.
 
-**Mitigación:**
+**Mitigación (obligatoria en cada test que usa transacciones):**
 ```typescript
-mockPrismaService.$transaction.mockImplementation(
-  async (callback: any) => callback(mockPrismaService)
+// Usando jest-mock-extended con DeepMockProxy
+const prismaMock = mockDeep<PrismaClient>();
+prismaMock.$transaction.mockImplementation(
+  async (callback: any) => callback(prismaMock),
 );
 ```
+
+> **Importante:** El mock de `$transaction` se debe configurar en `beforeEach` de cada suite de tests que verifique servicios con transacciones. No asumir que `mockDeep` lo hace automáticamente.
 
 ### Riesgo 4: BullMQ en tests
 
