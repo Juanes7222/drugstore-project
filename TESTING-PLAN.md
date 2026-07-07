@@ -1,8 +1,8 @@
 # Plan de Testing — Pharmacy System (Droguería)
 
-**Versión:** 2.0  
+**Versión:** 2.1  
 **Última actualización:** Julio 2026  
-**Estado:** Fase 4 completa — Todos los controladores con tests de integración. **399 tests, 29 suites, todos pasando**
+**Estado:** Fase 4 completa + Fase 5 infraestructura lista. **401 tests, 30 suites, todos pasando**
 
 ---
 
@@ -113,6 +113,12 @@ pharmacy-system/
 ### Bugs corregidos durante Fase 4
 
 1. **`CashCountType` ausente en shared-types**: El DTO `register-cash-count.dto.ts` importaba `{ CashCountType }` desde `@pharmacy/shared-types`, pero este enum no existía en los fuentes compartidos. Se agregó a `packages/shared-types/src/enums.ts` y se exportó desde `index.ts`. Sin esta corrección, los tests de integración de `cash-shift.controller.spec.ts` fallaban al compilar.
+
+### Cambios de infraestructura durante Fase 5
+
+1. **Migración a Prisma 7 config**: `schema.prisma` ya no puede contener `url` en el bloque `datasource`. Se movió a `prisma.config.ts` (CLI) y al constructor de `PrismaService` (runtime). Los comandos `--skip-generate` y `--url` ya no existen en Prisma 7.
+
+2. **`@prisma/client` module resolution**: El custom `output = "../generated/client"` en el schema hacía que `@prisma/client` en node_modules no encontrara el cliente generado (busca en `.prisma/client/`). Se agregó `moduleNameMapper` para `@prisma/client` en `jest.e2e.config.ts` apuntando a `<rootDir>/generated/client`.
 
 ### Issues encontrados durante el diagnóstico
 
@@ -417,10 +423,10 @@ El plan se ejecuta en **6 fases**, priorizando lo que ya tiene lógica de negoci
 │ Fase 3B: Catalog              ████████████████████  2 días     ~58  │ ✅ COMPLETO
 │ Fase 3C: Resto servicios      ████████████████████  3-4 días   ~96  │ ✅ COMPLETO
 │ Fase 4: Controladores         ████████████████████  3-4 días   ~88  │ ✅ COMPLETO
-│ Fase 5: Tests E2E             ░░░░░░░░░░░░░░░░░░░░  3-4 días   ~24  │ 🔴 PENDIENTE
+│ Fase 5: Tests E2E             ██░░░░░░░░░░░░░░░░░░  3-4 días   ~24  │ 🟡 EN PROGRESO (infraestructura lista, 2/24 tests)
 │ Fase 6: CI/CD + Utilidades    ░░░░░░░░░░░░░░░░░░░░  2-3 días    --  │ 🔴 PENDIENTE
 ├──────────────────────────────────────────────────────────────────────┤
-│ TOTAL IMPLEMENTADO: ~399 tests / ~400+ estimados (8-13 días restantes)│
+│ TOTAL IMPLEMENTADO: ~401 tests / ~420+ estimados (8-13 días restantes)│
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1350,11 +1356,47 @@ Cada test verifica:
 
 **Herramientas:**
 - `supertest` para HTTP requests al servidor
-- `@testcontainers/postgresql` (o Docker Compose con PostgreSQL 16) para BD de test
-- `prisma migrate deploy` para crear el schema antes de los tests
-- `prisma db seed` (opcional) para datos de prueba
+- Docker Compose (`docker-compose.test.yml`) con PostgreSQL 16 + Redis 7 para BD de test
+- `prisma db push` para sincronizar el schema antes de los tests
+- Env vars configuradas via `setupFiles` de Jest
 
-### 9.1 Setup de E2E
+**Estado:** ✅ **Infraestructura completa** — 1 smoke test pasando (2 tests). Flujos de negocio pendientes.
+
+### 9.1 Infraestructura implementada
+
+#### `docker-compose.test.yml` (raíz del proyecto)
+
+```yaml
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: pharmacy-postgres-test
+    environment:
+      POSTGRES_USER: pharmacy_test
+      POSTGRES_PASSWORD: pharmacy_test
+      POSTGRES_DB: pharmacy_test_db
+    ports:
+      - '5433:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pharmacy_test -d pharmacy_test_db']
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    tmpfs: /var/lib/postgresql/data
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: pharmacy-redis-test
+    ports:
+      - '6380:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 10
+```
+
+Usa `tmpfs` para la data de PostgreSQL (almacenamiento en memoria, se limpia al detener el contenedor).
 
 #### `apps/server/jest.e2e.config.ts`
 
@@ -1368,8 +1410,9 @@ const config: Config = {
   testEnvironment: 'node',
   transform: {
     '^.+\\.ts$': ['ts-jest', {
-      tsconfig: 'tsconfig.json',
+      tsconfig: 'tsconfig.e2e.json',
       useESM: true,
+      diagnostics: false,
     }],
   },
   moduleNameMapper: {
@@ -1378,50 +1421,69 @@ const config: Config = {
       '<rootDir>/../../packages/shared-types/src/index.ts',
     '^@pharmacy/shared-validation$':
       '<rootDir>/../../packages/shared-validation/src/index.ts',
+    '^@prisma/client$': '<rootDir>/generated/client',
   },
-  globalSetup: '<rootDir>/test/e2e/global-setup.ts',
-  globalTeardown: '<rootDir>/test/e2e/global-teardown.ts',
+  setupFiles: ['./test/set-env.ts'],
+  coverageDirectory: './coverage-e2e',
+  collectCoverage: false,
+  verbose: true,
+  testTimeout: 30000,
+  forceExit: true,
+  detectOpenHandles: true,
 };
 
 export default config;
 ```
 
-#### `apps/server/test/e2e/global-setup.ts`
+#### `apps/server/test/set-env.ts`
 
 ```typescript
-import { execSync } from 'child_process';
+// Set test environment variables before any module is compiled.
+process.env.DATABASE_URL =
+  process.env.DATABASE_URL ??
+  'postgresql://pharmacy_test:pharmacy_test@localhost:5433/pharmacy_test_db';
 
-export default async function globalSetup(): Promise<void> {
-  // Asegurar que Prisma Client esté generado
-  execSync('pnpm exec prisma generate', { stdio: 'inherit' });
+process.env.JWT_ACCESS_SECRET =
+  process.env.JWT_ACCESS_SECRET ??
+  'test-access-secret-key-32-chars-minimum!!';
 
-  // Ejecutar migraciones en BD de test
-  process.env.DATABASE_URL =
-    process.env.TEST_DATABASE_URL ||
-    'postgresql://test:test@localhost:5432/pharmacy_test';
-  execSync('pnpm exec prisma migrate deploy', { stdio: 'inherit' });
+process.env.JWT_REFRESH_SECRET =
+  process.env.JWT_REFRESH_SECRET ??
+  'test-refresh-secret-key-32-chars-minimum';
+
+process.env.JWT_ACCESS_TTL_SECONDS = process.env.JWT_ACCESS_TTL_SECONDS ?? '900';
+process.env.JWT_REFRESH_TTL_SECONDS = process.env.JWT_REFRESH_TTL_SECONDS ?? '604800';
+process.env.PORT = process.env.PORT ?? '3001';
+process.env.NODE_ENV = 'test';
+process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6380';
+```
+
+#### `apps/server/tsconfig.e2e.json`
+
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "jest"]
+  },
+  "include": ["test/**/*.e2e-spec.ts", "test/set-env.ts"]
 }
 ```
 
-#### `apps/server/test/e2e/app-setup.ts`
+#### `scripts/test-e2e.ps1`
 
-```typescript
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
-import { AppModule } from '../../src/app.module';
-
-export async function createTestApp(): Promise<INestApplication> {
-  const moduleFixture: TestingModule = await Test.createTestingModule({
-    imports: [AppModule],
-  }).compile();
-
-  const app = moduleFixture.createNestApplication();
-  await app.init();
-  return app;
-}
-```
+Script PowerShell que orquesta todo:
+1. `docker compose -f docker-compose.test.yml up -d`
+2. Espera a que PostgreSQL y Redis estén saludables
+3. Corre `prisma db push --accept-data-loss`
+4. Ejecuta `pnpm test:e2e`
+5. Captura exit code
+6. Detiene contenedores con `docker compose down`
+7. Exit con el código de Jest
 
 ### 9.2 Flujos E2E
+
+Ubicación: `apps/server/test/`
 
 Ubicación: `apps/server/test/e2e/flows/`
 
@@ -1968,11 +2030,12 @@ Día 7-8:   Fase 3B (Catalog: ProductsService, CategoriesService, TaxSchemesServ
 Día 9-11:  Fase 3C (SalesService, ClientReturnsService, CashShiftService, ClientsService, LotsService, ClientReturnCalculatorService)  ← COMPLETADO
 Día 12-13: Fase 3C (continuación: corner cases, ajustes post-review)  ← COMPLETADO
 Día 14-16: Fase 4 (Controladores: integración)                        ← COMPLETADO
-Día 17-20: Fase 5 (E2E: infraestructura + flujos críticos)
+Día 17-18: Fase 5 (E2E: infraestructura + 1° flujo)
+Día 19-20: Fase 5 (E2E: flujos restantes)
 Día 21-22: Fase 6 (CI/CD, utilidades, documentación)
 ```
 
-### Nuevo cronograma (post-Fase 4)
+### Nuevo cronograma (post-infraestructura E2E)
 
 ```
 Día 1:     Infraestructura + shared-validation tests                  ← COMPLETADO
@@ -1983,7 +2046,8 @@ Día 7-8:   Fase 3B (Catalog: Products, Categories, TaxSchemes)       ← COMPLE
 Día 9-11:  Fase 3C (Sales, Returns, CashShift, Clients, Lots)        ← COMPLETADO
 Día 12-13: Fase 3C (continuación)                                     ← COMPLETADO
 Día 14-16: Fase 4 (Controladores: integración — 88 tests)             ← COMPLETADO
-Día 17-20: Fase 5 (E2E: infraestructura + flujos críticos — ~24 tests)
+Día 17-18: Fase 5 (E2E: infraestructura Docker + Prisma 7 config)     ← COMPLETADO
+Día 19-20: Fase 5 (E2E: flujos críticos restantes — ~22 tests pendientes)
 Día 21-22: Fase 6 (CI/CD, utilidades, documentación)
 ```
 
@@ -2009,9 +2073,9 @@ Día 21-22: Fase 6 (CI/CD, utilidades, documentación)
 **Impacto:** Los tests E2E fallarán en entornos sin Docker o PostgreSQL local.
 
 **Mitigación:**
-- CI/CD: Usar `services.postgres` en GitHub Actions.
-- Desarrollo local: Proveer `docker-compose.test.yml` con PostgreSQL + Redis para tests.
-- Alternativa: Usar `@testcontainers/postgresql` para levantar PostgreSQL programáticamente en los tests (requiere Docker).
+- ✅ **Infraestructura implementada:** `docker-compose.test.yml` con PostgreSQL 16 y Redis 7.
+- ✅ **Script de orquestación:** `scripts/test-e2e.ps1` que levanta contenedores, corre `prisma db push`, ejecuta tests, y limpia.
+- CI/CD futuro: Usar `services.postgres` en GitHub Actions.
 
 ### Riesgo 3: Transacciones anidadas en mocks
 
