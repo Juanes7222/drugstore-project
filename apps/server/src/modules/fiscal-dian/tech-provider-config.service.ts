@@ -10,7 +10,7 @@ export class TechProviderConfigService {
 
   /** Returns the singleton TechProviderConfig, or throws if never set. */
   async find(): Promise<any> {
-    const config = await (this.prisma.techProviderConfig as any).findUnique({
+    const config = await this.prisma.techProviderConfig.findUnique({
       where: { id: TECH_PROVIDER_CONFIG_ID },
     });
     if (!config) {
@@ -24,7 +24,7 @@ export class TechProviderConfigService {
     dto: UpsertTechProviderConfigDto,
     updatedById: string,
   ): Promise<any> {
-    return (this.prisma.techProviderConfig as any).upsert({
+    return this.prisma.techProviderConfig.upsert({
       where: { id: TECH_PROVIDER_CONFIG_ID },
       create: {
         id: TECH_PROVIDER_CONFIG_ID,

@@ -26,7 +26,7 @@ export class AuthService {
   ) {}
 
   async validateCredentials(username: string, password: string): Promise<User> {
-    const user = await (this.prisma.user as any).findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { username },
     });
 
@@ -58,7 +58,7 @@ export class AuthService {
       throw new SessionRevokedException();
     }
 
-    const user = await (this.prisma.user as any).findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
 
@@ -75,7 +75,7 @@ export class AuthService {
     ipAddress?: string;
     userAgent?: string;
   }): Promise<AuthResponseDto> {
-    const user = await (this.prisma.user as any).findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: params.userId },
     });
 
@@ -133,7 +133,7 @@ export class AuthService {
   }
 
   private async handleFailedLoginAttempt(userId: string): Promise<void> {
-    const user = await (this.prisma.user as any).findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
     if (!user) {
       return;
@@ -148,7 +148,7 @@ export class AuthService {
         Date.now() + ACCOUNT_LOCK_DURATION_MINUTES * 60 * 1000,
       );
 
-      await (this.prisma.user as any).update({
+      await this.prisma.user.update({
         where: { id: userId },
         data: {
           failedLoginAttempts: newFailedAttempts,
@@ -159,20 +159,20 @@ export class AuthService {
       throw new AccountLockedException(lockedUntil);
     }
 
-    await (this.prisma.user as any).update({
+    await this.prisma.user.update({
       where: { id: userId },
       data: { failedLoginAttempts: newFailedAttempts },
     });
   }
 
   private async resetFailedLoginAttempts(userId: string): Promise<void> {
-    await (this.prisma.user as any).update({
+    await this.prisma.user.update({
       where: { id: userId },
       data: { failedLoginAttempts: 0 },
     });
   }
 
-  private assertAccountIsUsable(user: User | null): void {
+  private assertAccountIsUsable(user: { isActive: boolean; lockedUntil: Date | null } | null): void {
     if (!user) {
       throw new InvalidCredentialsException();
     }

@@ -9,6 +9,7 @@
     "noImplicitAny": false,
     "paths": {
       "@/*": ["./src/*"],
+      "@prisma/client": ["./generated/client"],
       "@pharmacy/shared-types": ["../../packages/shared-types/src"],
       "@pharmacy/shared-validation": ["../../packages/shared-validation/src"]
     }

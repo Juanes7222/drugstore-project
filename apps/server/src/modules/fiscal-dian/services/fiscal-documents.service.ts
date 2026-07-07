@@ -51,7 +51,7 @@ export class FiscalDocumentsService {
     fiscalDocumentId: string,
     callerWorkstationId: string,
   ): Promise<{ id: string }> {
-    return (this.prisma as any).$transaction(async (tx: any) => {
+    return this.prisma.$transaction(async (tx: any) => {
       const doc = await tx.fiscalDocument.findUnique({
         where: { id: fiscalDocumentId },
         select: {
@@ -170,7 +170,7 @@ export class FiscalDocumentsService {
   }): Promise<{ allocation: any; resolution: any; consecutiveNumber: number }> {
     const { tx, workstationId, documentType } = params;
 
-    const allocation = await (tx.fiscalResolutionAllocation as any).findFirst({
+    const allocation = await tx.fiscalResolutionAllocation.findFirst({
       where: {
         workstationId,
         exhaustedAt: null,
@@ -243,9 +243,7 @@ export class FiscalDocumentsService {
         documentType,
       });
 
-    const issuerConfig = await (
-      this.prisma.fiscalIssuerConfig as any
-    ).findFirst();
+    const issuerConfig = await this.prisma.fiscalIssuerConfig.findFirst();
     const docId = crypto.randomUUID();
 
     return tx.fiscalDocument.create({
@@ -329,9 +327,7 @@ export class FiscalDocumentsService {
         documentType,
       });
 
-    const issuerConfig = await (
-      this.prisma.fiscalIssuerConfig as any
-    ).findFirst();
+    const issuerConfig = await this.prisma.fiscalIssuerConfig.findFirst();
     const docId = crypto.randomUUID();
 
     const doc = await tx.fiscalDocument.create({
@@ -427,9 +423,7 @@ export class FiscalDocumentsService {
         documentType,
       });
 
-    const issuerConfig = await (
-      this.prisma.fiscalIssuerConfig as any
-    ).findFirst();
+    const issuerConfig = await this.prisma.fiscalIssuerConfig.findFirst();
     const docId = crypto.randomUUID();
 
     const doc = await tx.fiscalDocument.create({

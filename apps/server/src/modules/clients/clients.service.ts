@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, DataSubjectRequestStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -20,7 +20,7 @@ export class ClientsService {
 
   async create(dto: CreateClientDto, userId: string): Promise<any> {
     try {
-      return await (this.prisma.client as any).create({
+      return await this.prisma.client.create({
         data: {
           id: crypto.randomUUID(),
           ...dto,
@@ -38,7 +38,7 @@ export class ClientsService {
   async update(id: string, dto: UpdateClientDto, userId: string): Promise<any> {
     await this.findById(id);
     try {
-      return await (this.prisma.client as any).update({
+      return await this.prisma.client.update({
         where: { id },
         data: { ...dto, updatedById: userId },
       });
@@ -52,7 +52,7 @@ export class ClientsService {
 
   async registerConsent(id: string, dto: RegisterConsentDto, userId: string): Promise<any> {
     await this.findById(id);
-    return (this.prisma.client as any).update({
+    return this.prisma.client.update({
       where: { id },
       data: {
         consentVersion: dto.consentVersion,
@@ -65,7 +65,7 @@ export class ClientsService {
 
   async setClassification(id: string, dto: SetClassificationDto, userId: string): Promise<any> {
     await this.findById(id);
-    return (this.prisma.client as any).update({
+    return this.prisma.client.update({
       where: { id },
       data: {
         classificationId: dto.classificationId,
@@ -79,7 +79,7 @@ export class ClientsService {
     if (client.dataSubjectRequestStatus === 'PENDING_RECTIFICATION' || client.dataSubjectRequestStatus === 'PENDING_ERASURE') {
       throw new DataSubjectRequestAlreadyPendingException(id);
     }
-    return (this.prisma.client as any).update({
+    return this.prisma.client.update({
       where: { id },
       data: {
         dataSubjectRequestStatus: dto.requestType === 'RECTIFICATION' ? 'PENDING_RECTIFICATION' : 'PENDING_ERASURE',
@@ -103,7 +103,7 @@ export class ClientsService {
       return this.anonymizeClient(id, newStatus, userId);
     }
 
-    return (this.prisma.client as any).update({
+    return this.prisma.client.update({
       where: { id },
       data: { dataSubjectRequestStatus: newStatus, updatedById: userId },
     });
@@ -112,8 +112,8 @@ export class ClientsService {
   // Erasure is implemented as anonymization to preserve historical Sale records.
   // The Sale model keeps its own immutable snapshot of client data at the time of purchase,
   // allowing us to safely overwrite the Client row without corrupting past transactions.
-  private async anonymizeClient(id: string, status: string, userId: string): Promise<any> {
-    return (this.prisma.client as any).update({
+  private async anonymizeClient(id: string, status: DataSubjectRequestStatus, userId: string): Promise<any> {
+    return this.prisma.client.update({
       where: { id },
       data: {
         fullName: 'ANONYMIZED',
@@ -130,16 +130,16 @@ export class ClientsService {
   }
 
   async findById(id: string): Promise<any> {
-    const client = await (this.prisma.client as any).findUnique({ where: { id } });
+    const client = await this.prisma.client.findUnique({ where: { id } });
     if (!client) throw new ClientNotFoundException(id);
     return client;
   }
 
   async findAll(query: QueryClientDto): Promise<any> {
-    return (this.prisma.client as any).findMany();
+    return this.prisma.client.findMany();
   }
 
   async findAllClassifications(): Promise<any> {
-    return (this.prisma.clientClassification as any).findMany();
+    return this.prisma.clientClassification.findMany();
   }
 }

@@ -9,6 +9,7 @@ import { ShiftAlreadyOpenException } from './exceptions/shift-already-open.excep
 import { ShiftNotOpenException } from './exceptions/shift-not-open.exception';
 import { MissingClosingCashCountsException } from './exceptions/missing-closing-cash-counts.exception';
 import { InvalidCashCountForNonCashMethodException } from './exceptions/invalid-cash-count-for-non-cash-method.exception';
+import { PaymentMethodNotFoundException } from './exceptions/payment-method-not-found.exception';
 import * as crypto from 'crypto';
 
 const EXTENDED_SHIFT_THRESHOLD_HOURS = 6;
@@ -24,7 +25,7 @@ export class CashShiftService {
   ): Promise<any> {
     await this.assertNoOpenShiftExists(workstationId);
 
-    return (this.prisma.cashShift as any).create({
+    return this.prisma.cashShift.create({
       data: {
         id: this.generateId(),
         workstationId,
@@ -44,9 +45,13 @@ export class CashShiftService {
   ): Promise<any> {
     const shift = await this.getOpenShift(shiftId);
 
-    const paymentMethod = await (this.prisma.paymentMethod as any).findUnique({
+    const paymentMethod = await this.prisma.paymentMethod.findUnique({
       where: { id: dto.paymentMethodId },
     });
+
+    if (!paymentMethod) {
+      throw new PaymentMethodNotFoundException(dto.paymentMethodId);
+    }
 
     if (dto.denominationsBreakdown && !paymentMethod.isCash) {
       throw new InvalidCashCountForNonCashMethodException();
@@ -54,7 +59,7 @@ export class CashShiftService {
 
     const difference = dto.declaredAmount.minus(dto.expectedAmount);
 
-    return (this.prisma.shiftCashCount as any).create({
+    return this.prisma.shiftCashCount.create({
       data: {
         id: this.generateId(),
         cashShiftId: shiftId,
@@ -65,8 +70,8 @@ export class CashShiftService {
         declaredAmount: dto.declaredAmount,
         difference,
         denominationsBreakdown: paymentMethod.isCash
-          ? dto.denominationsBreakdown || null
-          : null,
+          ? dto.denominationsBreakdown ?? Prisma.DbNull
+          : Prisma.DbNull,
         createdById: userId,
         createdAt: new Date(),
       },
@@ -80,7 +85,7 @@ export class CashShiftService {
   ): Promise<any> {
     const shift = await this.getOpenShift(shiftId);
 
-    const closingCounts = await (this.prisma.shiftCashCount as any).findMany({
+    const closingCounts = await this.prisma.shiftCashCount.findMany({
       where: {
         cashShiftId: shiftId,
         countType: 'CLOSING',
@@ -103,7 +108,7 @@ export class CashShiftService {
 
     const closingDifference = actualAmount.minus(expectedAmount);
 
-    return (this.prisma.cashShift as any).update({
+    return this.prisma.cashShift.update({
       where: { id: shiftId },
       data: {
         state: 'CLOSED',
@@ -124,7 +129,7 @@ export class CashShiftService {
   ): Promise<any> {
     const shift = await this.getOpenShift(shiftId);
 
-    const closingCounts = await (this.prisma.shiftCashCount as any).findMany({
+    const closingCounts = await this.prisma.shiftCashCount.findMany({
       where: {
         cashShiftId: shiftId,
         countType: 'CLOSING',
@@ -136,7 +141,7 @@ export class CashShiftService {
 
     const closingDifference = actualAmount.minus(expectedAmount);
 
-    return (this.prisma.cashShift as any).update({
+    return this.prisma.cashShift.update({
       where: { id: shiftId },
       data: {
         state: 'FORCED_CLOSE',
@@ -156,7 +161,7 @@ export class CashShiftService {
       Date.now() - EXTENDED_SHIFT_THRESHOLD_HOURS * 60 * 60 * 1000,
     );
 
-    await (this.prisma.cashShift as any).updateMany({
+    await this.prisma.cashShift.updateMany({
       where: {
         state: 'OPEN',
         openedAt: { lt: thresholdTime },
@@ -167,7 +172,7 @@ export class CashShiftService {
   }
 
   private async getOpenShift(shiftId: string): Promise<any> {
-    const shift = await (this.prisma.cashShift as any).findUnique({
+    const shift = await this.prisma.cashShift.findUnique({
       where: { id: shiftId },
     });
 
@@ -179,7 +184,7 @@ export class CashShiftService {
   }
 
   private async assertNoOpenShiftExists(workstationId: string): Promise<void> {
-    const openShift = await (this.prisma.cashShift as any).findFirst({
+    const openShift = await this.prisma.cashShift.findFirst({
       where: {
         workstationId,
         state: 'OPEN',
@@ -192,7 +197,7 @@ export class CashShiftService {
   }
 
   private async getActivePaymentMethods(shiftId: string): Promise<any[]> {
-    return (this.prisma.salePayment as any).findMany({
+    return this.prisma.salePayment.findMany({
       where: {
         sale: {
           cashShiftId: shiftId,

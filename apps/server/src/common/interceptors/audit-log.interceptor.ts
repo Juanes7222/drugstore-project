@@ -11,6 +11,7 @@ import { tap } from 'rxjs/operators';
 import { Request } from 'express';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import type { AuditAction as PrismaAuditAction, SystemModule as PrismaSystemModule } from '@prisma/client';
 import { AUDITABLE_KEY, AuditableMetadata } from '../decorators/auditable.decorator';
 import { User } from '@pharmacy/shared-types';
 
@@ -68,11 +69,11 @@ export class AuditLogInterceptor implements NestInterceptor {
     userRole: string | null,
   ): Promise<void> {
     try {
-      await (this.prisma.auditLog as any).create({
+      await this.prisma.auditLog.create({
         data: {
           id: this.generateId(),
-          action: metadata.action,
-          module: metadata.module,
+          action: metadata.action as unknown as PrismaAuditAction,
+          module: metadata.module as unknown as PrismaSystemModule,
           entityType: metadata.entityType,
           entityId: this.extractEntityId(request),
           userId,

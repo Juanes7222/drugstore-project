@@ -12,10 +12,10 @@ const RETRY_FIXED_DELAY_SECONDS = 60;
 
 /** Operation types that the cron job replays. */
 const SUPPORTED_TYPES = [
-  'SALE_CONFIRMATION',
-  'SHIFT_CLOSURE',
-  'CLIENT_CREATION',
-  'INVENTORY_ADJUSTMENT',
+  'SALE_CONFIRMATION' as const,
+  'SHIFT_CLOSURE' as const,
+  'CLIENT_CREATION' as const,
+  'INVENTORY_ADJUSTMENT' as const,
 ];
 
 @Injectable()
@@ -42,7 +42,7 @@ export class SyncProcessingJob {
 
   /** Queries for supported entries that are ready to process. */
   private async fetchSupportedEntries(): Promise<any[]> {
-    return (this.prisma.syncQueue as any).findMany({
+    return this.prisma.syncQueue.findMany({
       where: {
         operationType: { in: SUPPORTED_TYPES },
         OR: [
@@ -58,14 +58,14 @@ export class SyncProcessingJob {
   /** Dispatches a single entry and updates its status to COMPLETED. */
   private async processEntry(entry: any): Promise<void> {
     try {
-      await (this.prisma.syncQueue as any).update({
+      await this.prisma.syncQueue.update({
         where: { id: entry.id },
         data: { status: 'PROCESSING' },
       });
 
       await this.dispatcher.dispatch(entry);
 
-      await (this.prisma.syncQueue as any).update({
+      await this.prisma.syncQueue.update({
         where: { id: entry.id },
         data: { status: 'COMPLETED', processedAt: new Date() },
       });
@@ -81,7 +81,7 @@ export class SyncProcessingJob {
       Date.now() + RETRY_FIXED_DELAY_SECONDS * 1000,
     );
 
-    await (this.prisma.syncQueue as any).update({
+    await this.prisma.syncQueue.update({
       where: { id: entry.id },
       data: {
         status: 'FAILED',

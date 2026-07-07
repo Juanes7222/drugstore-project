@@ -9,19 +9,19 @@ export class PharmaceuticalFormsService {
   constructor(private prisma: PrismaService) {}
 
   async findAll(): Promise<any> {
-    return (this.prisma.pharmaceuticalForm as any).findMany({
+    return this.prisma.pharmaceuticalForm.findMany({
       orderBy: { sortOrder: 'asc' },
     });
   }
 
   async findById(id: string): Promise<any> {
-    return (this.prisma.pharmaceuticalForm as any).findUnique({
+    return this.prisma.pharmaceuticalForm.findUnique({
       where: { id },
     });
   }
 
   async create(dto: CreatePharmaceuticalFormDto): Promise<any> {
-    return (this.prisma.pharmaceuticalForm as any).create({
+    return this.prisma.pharmaceuticalForm.create({
       data: {
         id: this.generateId(),
         name: dto.name,
@@ -42,7 +42,7 @@ export class PharmaceuticalFormsService {
 
     updateData.updatedAt = new Date();
 
-    return (this.prisma.pharmaceuticalForm as any).update({
+    return this.prisma.pharmaceuticalForm.update({
       where: { id },
       data: updateData,
     });

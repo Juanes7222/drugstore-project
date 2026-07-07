@@ -10,13 +10,13 @@ export class TaxSchemesService {
   constructor(private prisma: PrismaService) {}
 
   async findAll(): Promise<any> {
-    return (this.prisma.taxScheme as any).findMany({
+    return this.prisma.taxScheme.findMany({
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async findById(id: string): Promise<any> {
-    return (this.prisma.taxScheme as any).findUnique({
+    return this.prisma.taxScheme.findUnique({
       where: { id },
     });
   }
@@ -24,7 +24,7 @@ export class TaxSchemesService {
   async create(userId: string, dto: CreateTaxSchemeDto): Promise<any> {
     const rateDecimal = new Prisma.Decimal(dto.rate);
 
-    const existingActive = await (this.prisma.taxScheme as any).findFirst({
+    const existingActive = await this.prisma.taxScheme.findFirst({
       where: {
         code: dto.code,
         rate: rateDecimal,
@@ -36,7 +36,7 @@ export class TaxSchemesService {
       throw new DuplicateActiveTaxSchemeException(dto.code, dto.rate);
     }
 
-    return (this.prisma.taxScheme as any).create({
+    return this.prisma.taxScheme.create({
       data: {
         id: this.generateId(),
         code: dto.code,
@@ -53,7 +53,7 @@ export class TaxSchemesService {
   }
 
   async deactivate(id: string): Promise<any> {
-    return (this.prisma.taxScheme as any).update({
+    return this.prisma.taxScheme.update({
       where: { id },
       data: {
         effectiveTo: new Date(),

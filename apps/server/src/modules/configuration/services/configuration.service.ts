@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { $Enums } from '@prisma/client';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { RoleType, User } from '@pharmacy/shared-types';
 import { SystemConfigValueSchema } from '../dto/system-config-value.schema';
@@ -15,7 +16,7 @@ export class ConfigurationService {
    * the `value` is replaced with null unless the caller has the ADMIN role.
    */
   async findAll(user: User): Promise<any[]> {
-    const configs = await (this.prisma.systemConfig as any).findMany();
+    const configs = await this.prisma.systemConfig.findMany();
     return configs.map((config: any) => this.applySensitiveMask(config, user));
   }
 
@@ -24,7 +25,7 @@ export class ConfigurationService {
    * masking rule applies as in findAll.
    */
   async findByKey(key: string, user: User): Promise<any> {
-    const config = await (this.prisma.systemConfig as any).findUnique({
+    const config = await this.prisma.systemConfig.findUnique({
       where: { key },
     });
     if (!config) {
@@ -51,13 +52,13 @@ export class ConfigurationService {
   ): Promise<any> {
     this.assertValidValueType(key, dto.configValue.valueType, dto.configValue.value);
 
-    const existing = await (this.prisma.systemConfig as any).findUnique({
+    const existing = await this.prisma.systemConfig.findUnique({
       where: { key },
     });
 
     if (existing) {
       this.assertIdentityFieldsUnchanged(key, existing, dto);
-      return (this.prisma.systemConfig as any).update({
+      return this.prisma.systemConfig.update({
         where: { key },
         data: {
           value: dto.configValue.value,
@@ -67,12 +68,12 @@ export class ConfigurationService {
       });
     }
 
-    return (this.prisma.systemConfig as any).create({
+    return this.prisma.systemConfig.create({
       data: {
         key,
         value: dto.configValue.value,
         valueType: dto.configValue.valueType,
-        module: dto.module,
+        module: dto.module as $Enums.SystemModule,
         description: dto.description ?? null,
         isSensitive: dto.isSensitive,
         updatedById: user.id,

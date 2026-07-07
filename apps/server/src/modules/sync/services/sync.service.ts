@@ -30,10 +30,10 @@ export class SyncService {
   /** Returns the calling workstation's pending and failed queue counts. */
   async getStatus(sourceWorkstationId: string): Promise<any> {
     const [pending, failed] = await Promise.all([
-      (this.prisma.syncQueue as any).count({
+      this.prisma.syncQueue.count({
         where: { sourceWorkstationId, status: 'PENDING' },
       }),
-      (this.prisma.syncQueue as any).count({
+      this.prisma.syncQueue.count({
         where: { sourceWorkstationId, status: 'FAILED' },
       }),
     ]);
@@ -47,30 +47,30 @@ export class SyncService {
     if (query.operationType) where.operationType = query.operationType;
 
     const [data, total] = await Promise.all([
-      (this.prisma.syncQueue as any).findMany({
+      this.prisma.syncQueue.findMany({
         where,
         orderBy: { receivedAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),
-      (this.prisma.syncQueue as any).count({ where }),
+      this.prisma.syncQueue.count({ where }),
     ]);
     return { data, total, page: query.page, pageSize: query.pageSize };
   }
 
   /** Returns a single queue entry by ID. */
   async findOne(id: string): Promise<any> {
-    return (this.prisma.syncQueue as any).findUnique({ where: { id } });
+    return this.prisma.syncQueue.findUnique({ where: { id } });
   }
 
   /** Resets a FAILED entry back to PENDING and clears the retry timer. */
   async retry(id: string): Promise<any> {
-    const entry = await (this.prisma.syncQueue as any).findUnique({
+    const entry = await this.prisma.syncQueue.findUnique({
       where: { id },
     });
     if (!entry) return null;
 
-    return (this.prisma.syncQueue as any).update({
+    return this.prisma.syncQueue.update({
       where: { id },
       data: { status: 'PENDING', nextRetryAt: null, lastErrorMessage: null },
     });
@@ -98,7 +98,7 @@ export class SyncService {
 
   /** Inserts a new PENDING SyncQueue record. */
   private async createQueueEntry(op: any, sourceWorkstationId: string): Promise<void> {
-    await (this.prisma.syncQueue as any).create({
+    await this.prisma.syncQueue.create({
       data: {
         id: crypto.randomUUID(),
         operationUuid: op.operationUuid,

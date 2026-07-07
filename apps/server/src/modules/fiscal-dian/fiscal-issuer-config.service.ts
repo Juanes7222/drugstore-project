@@ -10,7 +10,7 @@ export class FiscalIssuerConfigService {
 
   /** Returns the singleton FiscalIssuerConfig, or throws if never set. */
   async find(): Promise<any> {
-    const config = await (this.prisma.fiscalIssuerConfig as any).findUnique({
+    const config = await this.prisma.fiscalIssuerConfig.findUnique({
       where: { id: FISCAL_ISSUER_CONFIG_ID },
     });
     if (!config) {
@@ -24,7 +24,7 @@ export class FiscalIssuerConfigService {
     dto: UpsertFiscalIssuerConfigDto,
     updatedById: string,
   ): Promise<any> {
-    return (this.prisma.fiscalIssuerConfig as any).upsert({
+    return this.prisma.fiscalIssuerConfig.upsert({
       where: { id: FISCAL_ISSUER_CONFIG_ID },
       create: {
         id: FISCAL_ISSUER_CONFIG_ID,

@@ -10,19 +10,19 @@ export class FiscalResolutionAllocationsService {
   /** Paginated list of all allocations. */
   async findAll(page = 1, pageSize = 20): Promise<any> {
     const [data, total] = await Promise.all([
-      (this.prisma.fiscalResolutionAllocation as any).findMany({
+      this.prisma.fiscalResolutionAllocation.findMany({
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { allocatedAt: 'desc' },
       }),
-      (this.prisma.fiscalResolutionAllocation as any).count(),
+      this.prisma.fiscalResolutionAllocation.count(),
     ]);
     return { data, total, page, pageSize };
   }
 
   /** Returns a single allocation by id. */
   async findById(id: string): Promise<any> {
-    return (this.prisma.fiscalResolutionAllocation as any).findUnique({
+    return this.prisma.fiscalResolutionAllocation.findUnique({
       where: { id },
     });
   }
@@ -42,7 +42,7 @@ export class FiscalResolutionAllocationsService {
       );
     }
 
-    const resolution = await (this.prisma.fiscalResolution as any).findUnique({
+    const resolution = await this.prisma.fiscalResolution.findUnique({
       where: { id: dto.resolutionId },
     });
     if (!resolution) {
@@ -56,7 +56,7 @@ export class FiscalResolutionAllocationsService {
 
     await this.assertNoOverlappingAllocation(dto);
 
-    return (this.prisma.fiscalResolutionAllocation as any).create({
+    return this.prisma.fiscalResolutionAllocation.create({
       data: {
         id: crypto.randomUUID(),
         resolutionId: dto.resolutionId,
@@ -74,7 +74,7 @@ export class FiscalResolutionAllocationsService {
   private async assertNoOverlappingAllocation(
     dto: CreateFiscalResolutionAllocationDto,
   ): Promise<void> {
-    const overlapping = await (this.prisma.fiscalResolutionAllocation as any).findFirst({
+    const overlapping = await this.prisma.fiscalResolutionAllocation.findFirst({
       where: {
         resolutionId: dto.resolutionId,
         rangeFrom: { lt: dto.rangeTo },

@@ -12,12 +12,18 @@
   },
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest --forceExit --detectOpenHandles",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage --forceExit --detectOpenHandles"
   },
   "dependencies": {
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.3.4",
     "typescript": "^6.0.3"
   }
 }

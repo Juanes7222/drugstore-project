@@ -32,7 +32,7 @@ export class ResolutionExpirationAlertJob {
 
   /** Marks ACTIVE resolutions whose validTo falls within the threshold as EXPIRING. */
   private async markExpiring(now: Date, threshold: Date): Promise<void> {
-    const result = await (this.prisma.fiscalResolution as any).updateMany({
+    const result = await this.prisma.fiscalResolution.updateMany({
       where: {
         state: 'ACTIVE',
         validTo: { gte: now, lte: threshold },
@@ -46,7 +46,7 @@ export class ResolutionExpirationAlertJob {
 
   /** Marks ACTIVE or EXPIRING resolutions past their validTo as EXPIRED. */
   private async markExpired(now: Date): Promise<void> {
-    const result = await (this.prisma.fiscalResolution as any).updateMany({
+    const result = await this.prisma.fiscalResolution.updateMany({
       where: {
         state: { in: ['ACTIVE', 'EXPIRING'] },
         validTo: { lt: now },

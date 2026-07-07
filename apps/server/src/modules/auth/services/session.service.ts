@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { SessionRevocationReason } from '@prisma/client';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -15,7 +16,7 @@ export class SessionService {
     ipAddress?: string;
     userAgent?: string;
   }): Promise<any> {
-    return (this.prisma.userSession as any).create({
+    return this.prisma.userSession.create({
       data: {
         id: this.generateId(),
         userId: params.userId,
@@ -34,7 +35,7 @@ export class SessionService {
   async findActiveSessionByTokenHash(tokenHash: string): Promise<any> {
     const now = new Date();
 
-    return (this.prisma.userSession as any).findUnique({
+    return this.prisma.userSession.findUnique({
       where: { tokenHash },
     }).then((session: any) => {
       if (
@@ -50,9 +51,9 @@ export class SessionService {
 
   async revokeSession(
     sessionId: string,
-    reason: string,
+    reason: SessionRevocationReason,
   ): Promise<any> {
-    return (this.prisma.userSession as any).update({
+    return this.prisma.userSession.update({
       where: { id: sessionId },
       data: {
         revokedAt: new Date(),
@@ -62,7 +63,7 @@ export class SessionService {
   }
 
   async touchLastActivity(sessionId: string): Promise<any> {
-    return (this.prisma.userSession as any).update({
+    return this.prisma.userSession.update({
       where: { id: sessionId },
       data: {
         lastActivityAt: new Date(),

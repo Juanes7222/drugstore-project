@@ -9,19 +9,19 @@ export class CategoriesService {
   constructor(private prisma: PrismaService) {}
 
   async findAll(): Promise<any> {
-    return (this.prisma.category as any).findMany({
+    return this.prisma.category.findMany({
       orderBy: { sortOrder: 'asc' },
     });
   }
 
   async findById(id: string): Promise<any> {
-    return (this.prisma.category as any).findUnique({
+    return this.prisma.category.findUnique({
       where: { id },
     });
   }
 
   async create(dto: CreateCategoryDto): Promise<any> {
-    return (this.prisma.category as any).create({
+    return this.prisma.category.create({
       data: {
         id: this.generateId(),
         name: dto.name,
@@ -42,7 +42,7 @@ export class CategoriesService {
 
     updateData.updatedAt = new Date();
 
-    return (this.prisma.category as any).update({
+    return this.prisma.category.update({
       where: { id },
       data: updateData,
     });

@@ -60,7 +60,7 @@ export class ReportsService {
   async getInventoryValuation(query: ReportDateRangeQueryDto): Promise<any> {
     assertValidDateRange(query.dateFrom, query.dateTo);
     const asOfDate = new Date(query.dateFrom);
-    const lots = await (this.prisma.lot as any).findMany({
+    const lots = await this.prisma.lot.findMany({
       where: { currentStock: { gt: 0 } },
       include: {
         product: { select: { id: true, commercialName: true } },
@@ -113,7 +113,7 @@ export class ReportsService {
   // ── Private database-access helpers ──────────────────────────────
 
   private async fetchConfirmedSales(query: ReportDateRangeQueryDto): Promise<any[]> {
-    return (this.prisma.sale as any).findMany({
+    return this.prisma.sale.findMany({
       where: {
         operationalState: 'CONFIRMED',
         confirmedAt: { gte: new Date(query.dateFrom), lte: new Date(query.dateTo) },
@@ -123,7 +123,7 @@ export class ReportsService {
   }
 
   private async fetchClosedShifts(query: ReportDateRangeQueryDto): Promise<any[]> {
-    return (this.prisma.cashShift as any).findMany({
+    return this.prisma.cashShift.findMany({
       where: {
         closedAt: { gte: new Date(query.dateFrom), lte: new Date(query.dateTo) },
         state: 'CLOSED',
@@ -133,7 +133,7 @@ export class ReportsService {
   }
 
   private async fetchShiftPayments(shiftIds: string[]): Promise<any[]> {
-    return (this.prisma.sale as any).findMany({
+    return this.prisma.sale.findMany({
       where: { cashShiftId: { in: shiftIds }, operationalState: 'CONFIRMED' },
       include: { payments: { include: { paymentMethod: { select: { category: true } } } } },
     });
@@ -147,7 +147,7 @@ export class ReportsService {
    * proxy for when the document reached VALIDATED state.
    */
   private async fetchTaxSummaryFiscalDocs(dateFrom: Date, dateTo: Date): Promise<any[]> {
-    return (this.prisma.fiscalDocument as any).findMany({
+    return this.prisma.fiscalDocument.findMany({
       where: {
         documentType: 'INVOICE',
         fiscalState: 'VALIDATED',

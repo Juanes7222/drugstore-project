@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { CreateFiscalResolutionDto } from '../dto/create-fiscal-resolution.dto';
 import { QueryFiscalResolutionsDto } from '../dto/query-fiscal-resolutions.dto';
@@ -15,20 +16,20 @@ export class FiscalResolutionsService {
     if (query.state) where.state = query.state;
 
     const [data, total] = await Promise.all([
-      (this.prisma.fiscalResolution as any).findMany({
+      this.prisma.fiscalResolution.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),
-      (this.prisma.fiscalResolution as any).count({ where }),
+      this.prisma.fiscalResolution.count({ where }),
     ]);
     return { data, total, page: query.page, pageSize: query.pageSize };
   }
 
   /** Returns a single resolution by id. */
   async findById(id: string): Promise<any> {
-    return (this.prisma.fiscalResolution as any).findUnique({
+    return this.prisma.fiscalResolution.findUnique({
       where: { id },
     });
   }
@@ -45,8 +46,9 @@ export class FiscalResolutionsService {
 
     await this.assertNoOverlap(dto);
 
-    return (this.prisma.fiscalResolution as any).create({
+    return this.prisma.fiscalResolution.create({
       data: {
+        id: crypto.randomUUID(),
         resolutionNumber: dto.resolutionNumber,
         documentType: dto.documentType,
         prefix: dto.prefix,
@@ -63,7 +65,7 @@ export class FiscalResolutionsService {
 
   /** Throws if an ACTIVE resolution overlaps on (workstationId, documentType, prefix). */
   private async assertNoOverlap(dto: CreateFiscalResolutionDto): Promise<void> {
-    const existing = await (this.prisma.fiscalResolution as any).findFirst({
+    const existing = await this.prisma.fiscalResolution.findFirst({
       where: {
         state: 'ACTIVE',
         documentType: dto.documentType,

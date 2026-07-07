@@ -20,7 +20,7 @@ export class ProductsService {
   ): Promise<any> {
     const priceDecimal = new Prisma.Decimal(dto.initialPrice);
 
-    return (this.prisma as any).$transaction(async (tx: any) => {
+    return this.prisma.$transaction(async (tx: any) => {
       const product = await tx.product.create({
         data: {
           id: this.generateId(),
@@ -107,7 +107,7 @@ export class ProductsService {
 
     updateData.updatedAt = new Date();
 
-    return (this.prisma.product as any).update({
+    return this.prisma.product.update({
       where: { id: productId },
       data: updateData,
     });
@@ -121,7 +121,7 @@ export class ProductsService {
     const priceDecimal = new Prisma.Decimal(dto.price);
     const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
 
-    return (this.prisma as any).$transaction(async (tx: any) => {
+    return this.prisma.$transaction(async (tx: any) => {
       await this.closeActivePriceHistory(tx, productId);
 
       const newPriceHistory = await tx.productPriceHistory.create({
@@ -152,7 +152,7 @@ export class ProductsService {
   ): Promise<any> {
     const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
 
-    return (this.prisma as any).$transaction(async (tx: any) => {
+    return this.prisma.$transaction(async (tx: any) => {
       await this.closeActiveTaxHistory(tx, productId);
 
       const newTaxHistory = await tx.productTaxHistory.create({
@@ -181,7 +181,7 @@ export class ProductsService {
     dto: AddProductBarcodeDto,
   ): Promise<any> {
     if (dto.isPrimary) {
-      return (this.prisma as any).$transaction(async (tx: any) => {
+      return this.prisma.$transaction(async (tx: any) => {
         await this.unsetExistingPrimaryBarcode(tx, productId);
 
         return tx.productBarcode.create({
@@ -198,7 +198,7 @@ export class ProductsService {
     }
 
     try {
-      return await (this.prisma.productBarcode as any).create({
+      return await this.prisma.productBarcode.create({
         data: {
           id: this.generateId(),
           productId,
@@ -220,7 +220,7 @@ export class ProductsService {
     productId: string,
     barcodeId: string,
   ): Promise<any> {
-    return (this.prisma as any).$transaction(async (tx: any) => {
+    return this.prisma.$transaction(async (tx: any) => {
       await this.unsetExistingPrimaryBarcode(tx, productId);
 
       return tx.productBarcode.update({
