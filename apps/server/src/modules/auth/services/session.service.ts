@@ -71,6 +71,27 @@ export class SessionService {
     });
   }
 
+  /**
+   * Updates the token hashes and expiry for a session after a token rotation.
+   * This invalidates the previous access and refresh tokens so they can no longer be used.
+   */
+  async updateSessionTokens(
+    sessionId: string,
+    tokenHash: string,
+    refreshTokenHash: string,
+    expiresAt: Date,
+  ): Promise<any> {
+    return this.prisma.userSession.update({
+      where: { id: sessionId },
+      data: {
+        tokenHash,
+        refreshTokenHash,
+        expiresAt,
+        lastActivityAt: new Date(),
+      },
+    });
+  }
+
   private generateId(): string {
     return crypto.randomUUID();
   }

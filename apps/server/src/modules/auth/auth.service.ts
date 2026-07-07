@@ -132,6 +132,68 @@ export class AuthService {
     await this.sessionService.revokeSession(sessionId, 'LOGOUT');
   }
 
+  /**
+   * Refresh an active session by issuing new access and refresh tokens.
+   * The previous tokenHash is replaced so the old access token can no longer be used
+   * (defense against token theft if a token is leaked).
+   */
+  async refreshSession(tokenHash: string): Promise<{ accessToken: string; expiresAt: Date; refreshToken: string }> {
+    const session = await this.sessionService.findActiveSessionByTokenHash(tokenHash);
+
+    if (!session) {
+      // The session may have expired or been revoked since the JWT was issued.
+      // JwtStrategy already validated it milliseconds ago via validateActiveSession,
+      // but we check again to be safe.
+      throw new SessionExpiredException();
+    }
+
+    const newTokenHash = this.hashToken(crypto.randomBytes(32).toString('hex'));
+    const newRefreshTokenHash = this.hashToken(crypto.randomBytes(32).toString('hex'));
+
+    const accessTokenTtl = this.configService.get('JWT_ACCESS_TTL_SECONDS')!;
+    const refreshTokenTtl = this.configService.get('JWT_REFRESH_TTL_SECONDS')!;
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + accessTokenTtl * 1000);
+
+    const accessToken = this.jwtService.sign(
+      { sub: session.userId, tokenHash: newTokenHash },
+      { expiresIn: accessTokenTtl },
+    );
+
+    const refreshToken = this.jwtService.sign(
+      { sub: session.userId, refreshTokenHash: newRefreshTokenHash },
+      { expiresIn: refreshTokenTtl },
+    );
+
+    // Atomically rotate the token hashes and update the session expiry.
+    // The old tokenHash is freed and the previous access token becomes invalid.
+    await this.sessionService.updateSessionTokens(
+      session.id,
+      newTokenHash,
+      newRefreshTokenHash,
+      expiresAt,
+    );
+
+    return { accessToken, refreshToken, expiresAt };
+  }
+
+  /**
+   * Logout the current session by revoking it with reason 'LOGOUT'.
+   * Once revoked, any subsequent request with the same access token is rejected
+   * (checked in JwtStrategy.validate → validateActiveSession).
+   */
+  async logoutSession(tokenHash: string): Promise<void> {
+    const session = await this.sessionService.findActiveSessionByTokenHash(tokenHash);
+
+    if (!session) {
+      // Session already expired or revoked — nothing to do, idempotent logout.
+      return;
+    }
+
+    await this.sessionService.revokeSession(session.id, 'LOGOUT');
+  }
+
   private async handleFailedLoginAttempt(userId: string): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 

@@ -3,13 +3,15 @@ import {
   Post,
   Get,
   Body,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
   Headers,
-  UsePipes,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { JwtService } from '@nestjs/jwt';
+import { ExtractJwt } from 'passport-jwt';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UserLoginSchema } from '@pharmacy/shared-validation';
 import { AuthService } from './auth.service';
@@ -18,21 +20,22 @@ import { AuthResponseDto } from './dto/auth-response.dto';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
-import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 import { User } from '@pharmacy/shared-types';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private jwtService: JwtService,
+  ) {}
 
   @Post('login')
   @UseGuards(AuthGuard('local'))
-  @UsePipes(new ZodValidationPipe(UserLoginSchema))
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with username and password' })
   async login(
-    @Body() _loginDto: LoginDto,
+    @Body(new ZodValidationPipe(UserLoginSchema)) _loginDto: LoginDto,
     @CurrentUser() user: User,
     @Headers('x-workstation-id') workstationId: string,
     @Headers('x-client-ip') clientIp?: string,
@@ -52,9 +55,18 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Refresh access and refresh tokens' })
   async refresh(
-    @CurrentUser() user: User,
-  ): Promise<{ accessToken: string; expiresAt: Date }> {
-    throw new NotImplementedForPhaseException('auth', 'refresh');
+    @Req() req: any,
+  ): Promise<{ accessToken: string; refreshToken: string; expiresAt: Date }> {
+    // Extract the raw JWT from the Authorization header. JwtAuthGuard already
+    // verified the token signature and expiration, so we only decode it here
+    // to obtain the current tokenHash for session lookup.
+    const rawToken = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+    const payload = this.jwtService.decode(rawToken) as {
+      sub: string;
+      tokenHash: string;
+    };
+
+    return this.authService.refreshSession(payload.tokenHash);
   }
 
   @Post('logout')
@@ -62,8 +74,14 @@ export class AuthController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout and revoke current session' })
-  async logout(@CurrentUser() user: User): Promise<void> {
-    throw new NotImplementedForPhaseException('auth', 'logout');
+  async logout(@Req() req: any): Promise<void> {
+    const rawToken = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+    const payload = this.jwtService.decode(rawToken) as {
+      sub: string;
+      tokenHash: string;
+    };
+
+    await this.authService.logoutSession(payload.tokenHash);
   }
 
   @Get('me')

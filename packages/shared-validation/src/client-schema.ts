@@ -24,7 +24,6 @@ export const ClientSchema = z.object({
     .min(1, "El numero de identificacion es obligatorio")
     .max(20),
   email: z
-    .string()
     .email("Correo electronico invalido")
     .nullable()
     .optional(),

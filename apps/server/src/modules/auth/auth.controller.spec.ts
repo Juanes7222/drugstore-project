@@ -8,10 +8,10 @@ jest.mock('@prisma/client', () => {
 });
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { JwtService } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
-import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 
 // ---------------------------------------------------------------------------
 // Factory helpers
@@ -63,6 +63,12 @@ const mockAuthService = {
   issueSession: jest.fn(),
   validateActiveSession: jest.fn(),
   revokeSession: jest.fn(),
+  refreshSession: jest.fn(),
+  logoutSession: jest.fn(),
+};
+
+const mockJwtService = {
+  decode: jest.fn(),
 };
 
 // ---------------------------------------------------------------------------
@@ -80,11 +86,13 @@ describe('AuthController (integration)', () => {
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: mockAuthService },
+        { provide: JwtService, useValue: mockJwtService },
       ],
     }).compile();
 
     controller = module.get<AuthController>(AuthController);
     authService = module.get(AuthService) as jest.Mocked<typeof mockAuthService>;
+    jest.mocked(mockJwtService.decode).mockClear();
   });
 
   // -----------------------------------------------------------------------
@@ -155,12 +163,44 @@ describe('AuthController (integration)', () => {
   // POST /auth/refresh
   // -----------------------------------------------------------------------
   describe('POST /auth/refresh', () => {
-    it('should throw NotImplementedForPhaseException', async () => {
-      const user = buildMockUser();
+    it('should extract tokenHash from JWT and call refreshSession', async () => {
+      const tokenHash = 'current-token-hash';
+      const mockReq = {
+        headers: { authorization: 'Bearer some.jwt.token' },
+      };
+      mockJwtService.decode.mockReturnValue({
+        sub: 'user-uuid-1',
+        tokenHash,
+      });
+      const expectedResponse = {
+        accessToken: 'new-access-token',
+        refreshToken: 'new-refresh-token',
+        expiresAt: new Date(Date.now() + 900000),
+      };
+      mockAuthService.refreshSession.mockResolvedValue(expectedResponse);
 
-      await expect(
-        controller.refresh(user as any),
-      ).rejects.toThrow(NotImplementedForPhaseException);
+      const result = await controller.refresh(mockReq as any);
+
+      expect(mockJwtService.decode).toHaveBeenCalledWith('some.jwt.token');
+      expect(mockAuthService.refreshSession).toHaveBeenCalledWith(tokenHash);
+      expect(result).toEqual(expectedResponse);
+    });
+
+    it('should propagate error when authService.refreshSession throws', async () => {
+      const mockReq = {
+        headers: { authorization: 'Bearer some.jwt.token' },
+      };
+      mockJwtService.decode.mockReturnValue({
+        sub: 'user-uuid-1',
+        tokenHash: 'some-hash',
+      });
+      mockAuthService.refreshSession.mockRejectedValue(
+        new Error('Session expired'),
+      );
+
+      await expect(controller.refresh(mockReq as any)).rejects.toThrow(
+        'Session expired',
+      );
     });
   });
 
@@ -168,12 +208,34 @@ describe('AuthController (integration)', () => {
   // POST /auth/logout
   // -----------------------------------------------------------------------
   describe('POST /auth/logout', () => {
-    it('should throw NotImplementedForPhaseException', async () => {
-      const user = buildMockUser();
+    it('should extract tokenHash from JWT and call logoutSession', async () => {
+      const tokenHash = 'current-token-hash';
+      const mockReq = {
+        headers: { authorization: 'Bearer some.jwt.token' },
+      };
+      mockJwtService.decode.mockReturnValue({
+        sub: 'user-uuid-1',
+        tokenHash,
+      });
+      mockAuthService.logoutSession.mockResolvedValue(undefined);
 
-      await expect(
-        controller.logout(user as any),
-      ).rejects.toThrow(NotImplementedForPhaseException);
+      await controller.logout(mockReq as any);
+
+      expect(mockJwtService.decode).toHaveBeenCalledWith('some.jwt.token');
+      expect(mockAuthService.logoutSession).toHaveBeenCalledWith(tokenHash);
+    });
+
+    it('should succeed even when session is already expired (idempotent)', async () => {
+      const mockReq = {
+        headers: { authorization: 'Bearer some.jwt.token' },
+      };
+      mockJwtService.decode.mockReturnValue({
+        sub: 'user-uuid-1',
+        tokenHash: 'some-hash',
+      });
+      mockAuthService.logoutSession.mockResolvedValue(undefined);
+
+      await expect(controller.logout(mockReq as any)).resolves.toBeUndefined();
     });
   });
 
