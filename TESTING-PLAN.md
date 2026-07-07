@@ -1,8 +1,8 @@
 # Plan de Testing — Pharmacy System (Droguería)
 
-**Versión:** 1.4  
+**Versión:** 1.5  
 **Última actualización:** Julio 2026  
-**Estado:** Fase 3B completa — Catalog module testeado, ~215 tests existentes y pasando
+**Estado:** Fase 3C completa — Sales, Returns, CashShift, Clients, Lots testeados. **311 tests, 20 suites, todos pasando**
 
 ---
 
@@ -65,18 +65,18 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.spec.ts`) | **19 archivos, ~215 tests** — todos pasando |
+| Archivos de test (`*.spec.ts`) | **25 archivos, ~311 tests** — todos pasando |
 | Configuraciones de test (jest.config) | **LISTO** — `apps/server`, `shared-types`, `shared-validation` tienen jest.config.ts |
 | Dependencias de testing instaladas | **LISTO** — `jest`, `ts-jest`, `@nestjs/testing`, `jest-mock-extended`, `supertest` instalados |
 | Scripts `test` en sub-packages | **LISTO** — `test`, `test:cov`, `test:watch`, `test:e2e` configurados |
-| Cobertura actual | **~20%** (shared-validation + shared-types + common/infra + auth cubiertos) — Meta: ≥80% |
-| Servicios con lógica real (testeables) | **~15 servicios** (auth, products, categories, tax-schemes, sales, client-returns, cash-shift, clients, lots, etc.) |
+| Cobertura actual | **~35%** (shared-validation + shared-types + common/infra + auth + catalog + sales + returns + cash-shift + clients + lots cubiertos) — Meta: ≥80% |
+| Servicios con lógica real (testeables) | **~22 servicios** (auth, products, categories, tax-schemes, sales, client-returns, cash-shift, clients, lots, configuration, fiscal-dian, purchases, reports, sync, etc.) |
 | Servicios con lógica real | **~22 servicios** (incluyendo configuration, fiscal-dian, purchases, reports, sync) |
 | Archivos TypeScript en apps/server | **~140 archivos**, ~15,000+ líneas de código |
 | Modelos Prisma | **60+ modelos**, **28 enums** |
 | Tests existentes (shared-validation) | **43 tests** — client-schema, product-schema, create-sale-schema, user-login-schema |
 | Tests existentes (shared-types) | **11 tests** — enums.spec (consistencia contra Prisma) |
-| Tests existentes (apps/server) | **~160 tests** — env.schema, ZodValidationPipe, RolesGuard, HttpExceptionFilter, AuditLogInterceptor, PrismaService, AuthService, SessionService, PasswordHasherService, JwtStrategy, LocalStrategy, ProductsService, CategoriesService, TaxSchemesService |
+| Tests existentes (apps/server) | **~257 tests** — env.schema, ZodValidationPipe, RolesGuard, HttpExceptionFilter, AuditLogInterceptor, PrismaService, AuthService, SessionService, PasswordHasherService, JwtStrategy, LocalStrategy, ProductsService, CategoriesService, TaxSchemesService, ClientsService, LotsService, SalesService, ClientReturnsService, CashShiftService |
 | `PrismaService` typing | **CORREGIDO** — `extends PrismaClient` directamente, acceso tipado completo. Ya no usa `(as any)` |
 
 ### Arquitectura del proyecto
@@ -410,12 +410,12 @@ El plan se ejecuta en **6 fases**, priorizando lo que ya tiene lógica de negoci
 │ Fase 2: Capa Infraestructura  ████████████████████  2-3 días   ~44  │ ✅ COMPLETO
 │ Fase 3A: Auth                 ████████████████████  2-3 días   ~58  │ ✅ COMPLETO
 │ Fase 3B: Catalog              ████████████████████  2 días     ~58  │ ✅ COMPLETO
-│ Fase 3C: Resto servicios      ░░░░░░░░░░░░░░░░░░░░  3-4 días   ~35  │ 🔴 PENDIENTE
+│ Fase 3C: Resto servicios      ████████████████████  3-4 días   ~96  │ ✅ COMPLETO
 │ Fase 4: Controladores         ░░░░░░░░░░░░░░░░░░░░  3-4 días   ~72  │ 🔴 PENDIENTE
 │ Fase 5: Tests E2E             ░░░░░░░░░░░░░░░░░░░░  3-4 días   ~24  │ 🔴 PENDIENTE
 │ Fase 6: CI/CD + Utilidades    ░░░░░░░░░░░░░░░░░░░░  2-3 días    --  │ 🔴 PENDIENTE
 ├──────────────────────────────────────────────────────────────────────┤
-│ TOTAL IMPLEMENTADO: ~215 tests / ~300+ estimados (10-13 días restantes)│
+│ TOTAL IMPLEMENTADO: ~311 tests / ~400+ estimados (8-13 días restantes)│
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -427,8 +427,8 @@ Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)              
 Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)      ← COMPLETADO
 Día 5-6:   Fase 3A: Auth (AuthService + SessionService + PasswordHasher + JwtStrategy + LocalStrategy)   ← COMPLETADO
 Día 7-8:   Fase 3B: Catalog (ProductsService + CategoriesService + TaxSchemesService)                     ← COMPLETADO
-Día 9-11:  Fase 3C: Sales + Cash + Clients + Inventory (servicios principales)
-Día 12-13: Fase 3C (continuación: LotsService, ClientReturnCalculatorService)
+Día 9-11:  Fase 3C: SalesService + ClientReturnsService + CashShiftService + ClientsService + LotsService  ← COMPLETADO
+Día 12-13: Fase 3C (continuación: ajustes, corner cases adicionales)                                       ← COMPLETADO
 Día 14-16: Fase 4: Controladores de integración
 Día 17-20: Fase 5: E2E flujos críticos
 Día 21-22: Fase 6: CI/CD, threshold de cobertura, documentación
@@ -1079,6 +1079,7 @@ apps/server/src/modules/<module>/services/
 
 ### 7.9 SalesService
 
+**Estado:** ✅ **IMPLEMENTADO** — 24 tests pasando.
 **Archivo:** `apps/server/src/modules/sales-pos/services/sales.service.spec.ts`
 
 351 líneas. El servicio más complejo. Ciclo completo: create → confirm → annul.
@@ -1126,6 +1127,7 @@ apps/server/src/modules/<module>/services/
 
 ### 7.10 ClientReturnsService
 
+**Estado:** ✅ **IMPLEMENTADO** — 10 tests pasando.
 **Archivo:** `apps/server/src/modules/sales-pos/services/client-returns.service.spec.ts`
 
 163 líneas. Ciclo completo de devolución.
@@ -1144,6 +1146,7 @@ apps/server/src/modules/<module>/services/
 
 ### 7.11 ClientReturnCalculatorService
 
+**Estado:** ✅ **IMPLEMENTADO** — 8 tests pasando.
 **Archivo:** `apps/server/src/modules/sales-pos/services/client-return-calculator.service.spec.ts`
 
 119 líneas. Cálculos auxiliares para devoluciones.
@@ -1159,6 +1162,7 @@ apps/server/src/modules/<module>/services/
 
 ### 7.12 CashShiftService
 
+**Estado:** ✅ **IMPLEMENTADO** — 12 tests pasando.
 **Archivo:** `apps/server/src/modules/cash-shift/services/cash-shift.service.spec.ts`
 
 238 líneas. Ciclo de vida de turno de caja.
@@ -1178,6 +1182,7 @@ apps/server/src/modules/<module>/services/
 
 ### 7.13 ClientsService
 
+**Estado:** ✅ **IMPLEMENTADO** — 15 tests pasando.
 **Archivo:** `apps/server/src/modules/clients/services/clients.service.spec.ts`
 
 145 líneas. CRUD + consentimiento + Habeas Data.
@@ -1199,6 +1204,7 @@ apps/server/src/modules/<module>/services/
 
 ### 7.14 LotsService
 
+**Estado:** ✅ **IMPLEMENTADO** — 27 tests pasando.
 **Archivo:** `apps/server/src/modules/inventory-lots/services/lots.service.spec.ts`
 
 444 líneas (solo métodos implementados).
@@ -1918,39 +1924,44 @@ export function generateExpiredToken(payload: {
 | **F2** | Capa common/infra (pipes, guards, filters, interceptors, prisma) | 6 spec files | ~44 | 2-3 | ✅ COMPLETO |
 | **F3A** | Auth (AuthService, SessionService, PasswordHasher, JwtStrategy, LocalStrategy) | 5 spec files | ~58 | 2-3 | ✅ COMPLETO |
 | **F3B** | Catalog (ProductsService, CategoriesService, TaxSchemesService) | 3 spec files | ~58 | 2 | ✅ COMPLETO |
-| **F3C** | Sales + Cash + Clients + Inventory | 6 spec files | ~35 | 3-4 | 🔴 PENDIENTE |
+| **F3C** | Sales + Cash + Clients + Inventory | 6 spec files | ~96 | 3-4 | ✅ COMPLETO |
 | **F4** | Controladores (integración) | 9 spec files | ~72 | 3-4 | 🔴 PENDIENTE |
 | **F5** | E2E flujos críticos | 8 e2e-spec files | ~24 | 3-4 | 🔴 PENDIENTE |
 | **F6** | CI/CD, utilidades de testing | — | — | 2-3 | 🔴 PENDIENTE |
-| **TOTAL COMPLETADO** | | **19 spec files** | **~215 tests** | **~9 días** | |
-| **TOTAL RESTANTE** | | **~23 spec files** | **~131 tests** | **~10-13 días** | |
+| **TOTAL COMPLETADO** | | **25 spec files** | **~311 tests** | **~13 días** | |
+| **TOTAL RESTANTE** | | **~17 spec files** | **~96 tests** | **~8-13 días** | |
 
 ### Distribución por tipo de test
 
 ```
-Ya implementados (F1 + F2 + F3A + F3B):   215 tests  (72%)
-  ├── shared-validation (Zod schemas):      43 tests
-  ├── shared-types (enums):                 11 tests
-  ├── env.schema:                           10 tests
-  ├── ZodValidationPipe:                     9 tests
-  ├── RolesGuard:                            7 tests
-  ├── HttpExceptionFilter:                  12 tests
-  ├── AuditLogInterceptor:                  21 tests
-  ├── PrismaService:                         3 tests
-  ├── PasswordHasherService:                 7 tests
-  ├── SessionService:                       16 tests
-  ├── AuthService:                          30 tests
-  ├── JwtStrategy:                           3 tests
-  ├── LocalStrategy:                         2 tests
-  ├── ProductsService:                      32 tests
-  ├── CategoriesService:                    13 tests
-  └── TaxSchemesService:                    13 tests
-Pendientes (F3C):                          ~35 tests  (12%)
-Integración (F4 — controllers):           ~72 tests  (24%)
-E2E (F5 — flujos completos):              ~24 tests  (8%)
-Utilidades (F6 — CI/CD + helpers):         —          —
-                                           ─────────
-TOTAL (cuando esté completo):             ~300+ tests
+Ya implementados (F1 + F2 + F3A + F3B + F3C):   311 tests  (76%)
+  ├── shared-validation (Zod schemas):           43 tests
+  ├── shared-types (enums):                      11 tests
+  ├── env.schema:                                10 tests
+  ├── ZodValidationPipe:                          9 tests
+  ├── RolesGuard:                                 7 tests
+  ├── HttpExceptionFilter:                       12 tests
+  ├── AuditLogInterceptor:                       21 tests
+  ├── PrismaService:                              3 tests
+  ├── PasswordHasherService:                      7 tests
+  ├── SessionService:                            16 tests
+  ├── AuthService:                               30 tests
+  ├── JwtStrategy:                                3 tests
+  ├── LocalStrategy:                              2 tests
+  ├── ProductsService:                           32 tests
+  ├── CategoriesService:                         13 tests
+  ├── TaxSchemesService:                         13 tests
+  ├── SalesService:                              24 tests
+  ├── ClientReturnsService:                      10 tests
+  ├── ClientReturnCalculatorService:              8 tests
+  ├── CashShiftService:                          12 tests
+  ├── ClientsService:                            15 tests
+  └── LotsService:                               27 tests
+Integración (F4 — controllers):                ~72 tests  (18%)
+E2E (F5 — flujos completos):                   ~24 tests  (6%)
+Utilidades (F6 — CI/CD + helpers):              —          —
+                                                ─────────
+TOTAL (cuando esté completo):                  ~400+ tests
 ```
 
 ### Cronograma ajustado
@@ -1960,11 +1971,12 @@ Día 1:     Infraestructura + shared-validation tests                  ← COMPL
 Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)    ← COMPLETADO
 Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)  ← COMPLETADO
 Día 5-6:   Fase 3A (Auth completo: AuthService, SessionService, PasswordHasher, estrategias)  ← COMPLETADO
-Día 7-8:   Fase 3B (Catalog: ProductsService, CategoriesService, TaxSchemesService)  ← EN CURSO
-Día 10-12:  Fase 3C (SalesService, ClientReturnsService, CashShiftService, ClientsService, LotsService, ClientReturnCalculatorService)
-Día 13-15: Fase 4 (Controladores: integración)
-Día 16-19: Fase 5 (E2E: infraestructura + flujos críticos)
-Día 20-22: Fase 6 (CI/CD, utilidades, documentación)
+Día 7-8:   Fase 3B (Catalog: ProductsService, CategoriesService, TaxSchemesService)  ← COMPLETADO
+Día 9-11:  Fase 3C (SalesService, ClientReturnsService, CashShiftService, ClientsService, LotsService, ClientReturnCalculatorService)  ← COMPLETADO
+Día 12-13: Fase 3C (continuación: corner cases, ajustes post-review)  ← COMPLETADO
+Día 14-16: Fase 4 (Controladores: integración)
+Día 17-20: Fase 5 (E2E: infraestructura + flujos críticos)
+Día 21-22: Fase 6 (CI/CD, utilidades, documentación)
 ```
 
 ---

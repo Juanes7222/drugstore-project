@@ -9,6 +9,7 @@ const config: Config = {
     '^.+\\.ts$': ['ts-jest', {
       tsconfig: 'tsconfig.spec.json',
       useESM: true,
+      diagnostics: false,
     }],
   },
   moduleNameMapper: {
