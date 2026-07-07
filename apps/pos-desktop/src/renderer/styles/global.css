@@ -1,0 +1,433 @@
+/**
+ * Global styles — Pharmacy POS Terminal
+ * Tailwind CSS v4 theme, design tokens, font loading, reduced-motion handling.
+ *
+ * This file is the single source of truth for the design system tokens.
+ * All future screens reference the CSS custom properties generated from @theme,
+ * and use Tailwind utility classes that map to these tokens.
+ */
+
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* Theme — Design tokens per design-system.md                          */
+/* ------------------------------------------------------------------ */
+
+@theme {
+  /* ---- Palette ---- */
+  --color-pharma: #0B6E6B;
+  --color-urgency: #E8780A;
+  --color-sync: #4A6572;
+  --color-restrict: #5B3E96;
+  --color-surface: #F9F6F0;
+  --color-ink: #171614;
+
+  /* ---- Supporting surface tints (Phase 2) ---- */
+  --color-urgency-surface: #FFF3E5;
+  --color-restrict-surface: #F0EBFA;
+  --color-panel: #FFFFFF;
+
+  /* ---- Type families ---- */
+  --font-ui: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, monospace;
+
+  /* ---- Type scale (Inter-optimized, 8-hour-readability priority) ---- */
+  --text-caption: 0.75rem;      /* 12px — secondary labels, lot expiry inline */
+  --text-caption--line-height: calc(1.25 / 0.75);
+  --text-body-sm: 0.8125rem;    /* 13px — cart item details, stock counts */
+  --text-body-sm--line-height: calc(1.4 / 0.8125);
+  --text-body: 0.875rem;        /* 14px — primary body, product names */
+  --text-body--line-height: calc(1.5 / 0.875);
+  --text-ui: 1rem;              /* 16px — section headers, panel titles */
+  --text-ui--line-height: calc(1.5 / 1);
+  --text-price: 1.125rem;       /* 18px — cart prices, totals */
+  --text-price--line-height: calc(1.4 / 1.125);
+  --text-total: 1.5rem;         /* 24px — grand total, change amount */
+  --text-total--line-height: calc(1.3 / 1.5);
+  --text-heading: 1.25rem;      /* 20px — screen titles */
+  --text-heading--line-height: calc(1.4 / 1.25);
+
+  /* ---- Font weights ---- */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* ---- Spacing (POS-optimized — tighter than web defaults) ---- */
+  --spacing-pos-xs: 0.25rem;   /* 4px */
+  --spacing-pos-sm: 0.5rem;    /* 8px */
+  --spacing-pos-md: 0.75rem;   /* 12px */
+  --spacing-pos-lg: 1rem;      /* 16px */
+  --spacing-pos-xl: 1.5rem;    /* 24px */
+
+  /* ---- Border radius ---- */
+  --radius-pos: 0.25rem;       /* 4px — interactive elements */
+
+  /* ---- Shadows (subtle — working surface, not marketing) ---- */
+  --shadow-pos-panel: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 0 0 1px rgb(0 0 0 / 0.04);
+  --shadow-pos-elevated: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+
+  /* ---- Sync pulse animation ---- */
+  --animate-sync-pulse: sync-pulse 3s ease-in-out infinite;
+  --animate-sync-drain: sync-drain 1.5s ease-in-out infinite;
+
+  @keyframes sync-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
+  @keyframes sync-drain {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1.0; }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Base layer — font loading, reduced-motion, global resets            */
+/* ------------------------------------------------------------------ */
+
+@layer base {
+  html {
+    font-family: var(--font-ui);
+    font-size: 16px; /* Browser default for rem calculations */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+    font-size: var(--text-body);
+    line-height: 1.5;
+    overflow: hidden; /* Tauri window — no body scroll */
+  }
+
+  /* ---- prefers-reduced-motion — disable all animations ---- */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    /* Override sync pulse to static color — no animation */
+    .sync-pulse-bar {
+      animation: none !important;
+    }
+  }
+
+  /* ---- Tabular figures — classes for numeric columns ---- */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Data face — applied to prices, quantities, lot codes ---- */
+  .font-data {
+    font-family: var(--font-data);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Focus visible — WCAG 2.1 keyboard navigation ---- */
+  :focus-visible {
+    outline: 2px solid var(--color-pharma);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* ---- Selection ---- */
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-pharma) 20%, transparent);
+    color: var(--color-ink);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Sync pulse — the signature element                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The Ambient Sync Pulse bar. Rendered as a 2px-tall full-width element
+ * directly below the cash-shift header on every screen.
+ *
+ * States are applied via data attributes:
+ *   data-sync-state="online"    → static, pharma teal, low opacity
+ *   data-sync-state="offline"   → animate-sync-pulse, sync slate
+ *   data-sync-state="draining"  → animate-sync-drain, sync slate
+ */
+.sync-pulse-bar {
+  height: 2px;
+  width: 100%;
+  transition: background-color 400ms ease;
+
+  &[data-sync-state="online"] {
+    background-color: var(--color-pharma);
+    opacity: 0.6;
+  }
+
+  &[data-sync-state="offline"] {
+    background-color: var(--color-sync);
+    animation: var(--animate-sync-pulse);
+  }
+
+  &[data-sync-state="draining"] {
+    background-color: var(--color-sync);
+    animation: var(--animate-sync-drain);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Component primitives (Phase 2)                                      */
+/* ------------------------------------------------------------------ */
+
+@layer components {
+  .pos-panel {
+    background-color: var(--color-panel);
+    border-radius: var(--radius-pos);
+    box-shadow: var(--shadow-pos-panel);
+  }
+
+  .pos-input {
+    width: 100%;
+    padding: var(--spacing-pos-sm) var(--spacing-pos-md);
+    font-family: var(--font-ui);
+    font-size: var(--text-body);
+    color: var(--color-ink);
+    background-color: var(--color-panel);
+    border: 1px solid color-mix(in srgb, var(--color-ink) 15%, transparent);
+    border-radius: var(--radius-pos);
+    outline: none;
+
+    &::placeholder {
+      color: color-mix(in srgb, var(--color-ink) 40%, transparent);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-pharma);
+      outline-offset: 2px;
+    }
+  }
+
+  .pos-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-pos-xs);
+    padding: var(--spacing-pos-sm) var(--spacing-pos-md);
+    font-family: var(--font-ui);
+    font-size: var(--text-body);
+    font-weight: var(--font-weight-semibold);
+    border-radius: var(--radius-pos);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: filter 150ms ease, background-color 150ms ease;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+
+  .pos-button-primary {
+    background-color: var(--color-pharma);
+    color: var(--color-panel);
+
+    &:hover:not(:disabled) {
+      filter: brightness(1.05);
+    }
+  }
+
+  .pos-button-secondary {
+    background-color: var(--color-panel);
+    color: var(--color-ink);
+    border-color: color-mix(in srgb, var(--color-ink) 15%, transparent);
+
+    &:hover:not(:disabled) {
+      background-color: var(--color-surface);
+    }
+  }
+
+  .pos-button-restrict {
+    background-color: var(--color-restrict);
+    color: var(--color-panel);
+
+    &:hover:not(:disabled) {
+      filter: brightness(1.05);
+    }
+  }
+
+  .pos-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-pos-xs);
+    padding: 0.125rem 0.375rem;
+    font-family: var(--font-ui);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-radius: var(--radius-pos);
+  }
+
+  .pos-badge-urgency {
+    background-color: var(--color-urgency-surface);
+    color: var(--color-urgency);
+  }
+
+  .pos-badge-restrict {
+    background-color: var(--color-restrict-surface);
+    color: var(--color-restrict);
+  }
+
+  .pos-divider {
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Token reference page styles (dev only — remove before production)   */
+/* ------------------------------------------------------------------ */
+
+.token-reference {
+  padding: 2rem;
+  max-width: 960px;
+  margin: 0 auto;
+  font-family: var(--font-ui);
+}
+
+.token-reference h1 {
+  font-size: var(--text-heading);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-ink);
+  margin-bottom: 2rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--color-pharma);
+}
+
+.token-reference h2 {
+  font-size: var(--text-ui);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-ink);
+  margin: 2rem 0 1rem;
+}
+
+.token-reference section {
+  margin-bottom: 3rem;
+}
+
+/* Swatch grid */
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.swatch-card {
+  border-radius: var(--radius-pos);
+  overflow: hidden;
+  box-shadow: var(--shadow-pos-panel);
+  background: white;
+}
+
+.swatch-color {
+  height: 80px;
+}
+
+.swatch-info {
+  padding: 0.75rem;
+}
+
+.swatch-name {
+  font-size: var(--text-body);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-ink);
+  margin: 0 0 0.25rem;
+}
+
+.swatch-hex {
+  font-family: var(--font-data);
+  font-size: var(--text-caption);
+  color: color-mix(in srgb, var(--color-ink) 60%, transparent);
+  margin: 0 0 0.25rem;
+}
+
+.swatch-role {
+  font-size: var(--text-caption);
+  color: color-mix(in srgb, var(--color-ink) 50%, transparent);
+  margin: 0;
+}
+
+/* Type specimen */
+.type-specimen {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: white;
+  border-radius: var(--radius-pos);
+  box-shadow: var(--shadow-pos-panel);
+}
+
+.type-label {
+  font-size: var(--text-caption);
+  font-weight: var(--font-weight-medium);
+  color: color-mix(in srgb, var(--color-ink) 50%, transparent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.type-sample {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.type-sample-ui {
+  font-family: var(--font-ui);
+}
+
+.type-sample-data {
+  font-family: var(--font-data);
+}
+
+/* Numeric table for tabular figures verification */
+.numeric-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-data);
+  font-size: var(--text-ui);
+  background: white;
+  border-radius: var(--radius-pos);
+  overflow: hidden;
+  box-shadow: var(--shadow-pos-panel);
+}
+
+.numeric-table th,
+.numeric-table td {
+  padding: 0.625rem 1rem;
+  text-align: right;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+}
+
+.numeric-table th {
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--color-ink) 50%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 80%, white);
+}
+
+.numeric-table td {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+
+.numeric-table .total-row td {
+  font-weight: var(--font-weight-bold);
+  border-top: 2px solid var(--color-ink);
+  border-bottom: none;
+  font-size: var(--text-price);
+}

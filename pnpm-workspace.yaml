@@ -7,6 +7,7 @@ allowBuilds:
   '@prisma/engines': true
   '@scarf/scarf': true
   argon2: true
+  esbuild: true
   msgpackr-extract: true
   prisma: true
   unrs-resolver: set this to true or false
