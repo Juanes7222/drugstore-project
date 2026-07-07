@@ -1,5 +1,3 @@
-import { TaxSchemeType } from '@pharmacy/shared-types';
-
 export class TaxSummaryResponseDto {
   reportPeriod!: {
     dateFrom: string;
@@ -8,9 +6,8 @@ export class TaxSummaryResponseDto {
   totalDocuments!: number;
   totalTaxableBase!: string;
   totalTaxAmount!: string;
-  breakdownByTaxScheme!: Array<{
-    taxSchemeType: TaxSchemeType;
-    rate: string;
+  breakdownByTaxRate!: Array<{
+    taxRate: string;
     taxableBase: string;
     taxAmount: string;
     documentCount: number;

@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 import { ReportDateRangeQueryDto } from '../dto/report-date-range.query.dto';
 import { ReportInvalidDateRangeException } from '../exceptions/report-invalid-date-range.exception';
 import { SaleType } from '@pharmacy/shared-types';
@@ -72,9 +71,43 @@ export class ReportsService {
     return { valuationDate: asOfDate.toISOString(), ...valuation };
   }
 
-  /** Deferred until fiscal-dian module has business logic. */
-  async getTaxSummary(_query: ReportDateRangeQueryDto): Promise<any> {
-    throw new NotImplementedForPhaseException('reports', 'getTaxSummary');
+  /**
+   * Aggregates subtotal and taxAmount for items belonging to CONFIRMED sales
+   * whose VALIDATED INVOICE fiscal document has updatedAt (proxy for validatedAt)
+   * within the requested range, grouped by the stored taxRate.
+   *
+   * Important: This report counts VALIDATED INVOICEs but does NOT net out
+   * CREDIT_NOTEs issued against those same sales in the same period.  Proper
+   * credit-note netting is deferred to a later refinement.
+   */
+  async getTaxSummary(query: ReportDateRangeQueryDto): Promise<any> {
+    assertValidDateRange(query.dateFrom, query.dateTo);
+
+    const dateFrom = new Date(query.dateFrom);
+    const dateTo = new Date(query.dateTo);
+
+    const fiscalDocs = await this.fetchTaxSummaryFiscalDocs(dateFrom, dateTo);
+    const { breakdown, totalDocuments } = aggregateByTaxRate(fiscalDocs);
+
+    const totalTaxableBase = breakdown.reduce(
+      (sum, b) => sum.plus(b.taxableBase), new Prisma.Decimal(0),
+    );
+    const totalTaxAmount = breakdown.reduce(
+      (sum, b) => sum.plus(b.taxAmount), new Prisma.Decimal(0),
+    );
+
+    return {
+      reportPeriod: { dateFrom: query.dateFrom, dateTo: query.dateTo },
+      totalDocuments,
+      totalTaxableBase: totalTaxableBase.toFixed(2),
+      totalTaxAmount: totalTaxAmount.toFixed(2),
+      breakdownByTaxRate: breakdown.map((b) => ({
+        taxRate: b.taxRate,
+        taxableBase: b.taxableBase.toFixed(2),
+        taxAmount: b.taxAmount.toFixed(2),
+        documentCount: b.documentCount,
+      })),
+    };
   }
 
   // ── Private database-access helpers ──────────────────────────────
@@ -103,6 +136,38 @@ export class ReportsService {
     return (this.prisma.sale as any).findMany({
       where: { cashShiftId: { in: shiftIds }, operationalState: 'CONFIRMED' },
       include: { payments: { include: { paymentMethod: { select: { category: true } } } } },
+    });
+  }
+
+  /**
+   * Returns validated INVOICE fiscal documents (with their Sale items) whose
+   * updatedAt falls within [dateFrom, dateTo].
+   *
+   * Note: The schema has no validatedAt column, so updatedAt is the closest
+   * proxy for when the document reached VALIDATED state.
+   */
+  private async fetchTaxSummaryFiscalDocs(dateFrom: Date, dateTo: Date): Promise<any[]> {
+    return (this.prisma.fiscalDocument as any).findMany({
+      where: {
+        documentType: 'INVOICE',
+        fiscalState: 'VALIDATED',
+        updatedAt: { gte: dateFrom, lte: dateTo },
+        sale: { operationalState: 'CONFIRMED' },
+      },
+      select: {
+        id: true,
+        sale: {
+          select: {
+            items: {
+              select: {
+                taxRate: true,
+                subtotal: true,
+                taxAmount: true,
+              },
+            },
+          },
+        },
+      },
     });
   }
 }
@@ -177,6 +242,53 @@ function formatPaymentEntries(sales: any[]): any[] {
     totalAmount: e.totalAmount.toFixed(2),
     averageAmount: e.count > 0 ? e.totalAmount.dividedBy(e.count).toFixed(2) : '0.00',
   }));
+}
+
+/**
+ * Aggregates SaleItem subtotal and taxAmount from validated INVOICE fiscal
+ * documents, grouped by the stored taxRate at the time of sale.
+ *
+ * Important: This function counts VALIDATED INVOICEs but does not net out
+ * CREDIT_NOTEs issued against the same sales — that is deferred to a later
+ * refinement.
+ *
+ * The function is kept as a single block because splitting it would force
+ * jumping across helper-only sub-steps that make the aggregation flow
+ * harder to read.
+ */
+function aggregateByTaxRate(
+  fiscalDocs: any[],
+): { breakdown: Array<{ taxRate: string; taxableBase: Prisma.Decimal; taxAmount: Prisma.Decimal; documentCount: number }>; totalDocuments: number } {
+  const rateBuckets = new Map<string, { taxableBase: Prisma.Decimal; taxAmount: Prisma.Decimal; documentIds: Set<string> }>();
+  let totalDocuments = 0;
+
+  for (const fd of fiscalDocs) {
+    totalDocuments++;
+    const sale = fd.sale;
+    if (!sale?.items) continue;
+    for (const item of sale.items) {
+      const rateKey = item.taxRate.toFixed(4);
+      let bucket = rateBuckets.get(rateKey);
+      if (!bucket) {
+        bucket = { taxableBase: new Prisma.Decimal(0), taxAmount: new Prisma.Decimal(0), documentIds: new Set<string>() };
+        rateBuckets.set(rateKey, bucket);
+      }
+      bucket.taxableBase = bucket.taxableBase.plus(item.subtotal ?? 0);
+      bucket.taxAmount = bucket.taxAmount.plus(item.taxAmount ?? 0);
+      bucket.documentIds.add(fd.id);
+    }
+  }
+
+  const breakdown = Array.from(rateBuckets.entries())
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([taxRate, bucket]) => ({
+      taxRate,
+      taxableBase: bucket.taxableBase,
+      taxAmount: bucket.taxAmount,
+      documentCount: bucket.documentIds.size,
+    }));
+
+  return { breakdown, totalDocuments };
 }
 
 function computeLotValuation(lots: any[], threshold: Date) {
