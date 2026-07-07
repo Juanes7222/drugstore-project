@@ -220,9 +220,9 @@ so the next session has accurate information.
 ## Target environment constraints
 
 - Desktop app: Tauri 2, Vite, pnpm 11
-- Language: TypeScript 5.5+ with strict mode
+- Language: TypeScript 6+ with strict mode
   (noImplicitAny, strictNullChecks, noUnusedLocals, noUnusedParameters)
-- UI framework: React 18, functional components only, hooks for state
+- UI framework: React 19, functional components only, hooks for state
 - State management: Redux Toolkit (or Zustand if specified)
 - Local storage: SQLite (via better-sqlite3 in Tauri) or IndexedDB
 - Styling: Tailwind CSS or styled-components (project‑agreed)
