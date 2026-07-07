@@ -6,7 +6,7 @@
     "baseUrl": "./",
     "isolatedModules": false,
     "skipLibCheck": true,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "paths": {
       "@/*": ["./src/*"],
       "@prisma/client": ["./generated/client"],

@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 export const UserLoginSchema = z.object({
-  email: z
+  username: z
     .string()
-    .email("Correo electronico invalido")
-    .min(1, "El correo es obligatorio"),
+    .min(1, "El usuario es obligatorio")
+    .max(100),
   password: z
     .string()
     .min(8, "La contrasena debe tener al menos 8 caracteres")

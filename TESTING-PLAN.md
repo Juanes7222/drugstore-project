@@ -112,10 +112,10 @@ pharmacy-system/
 ### Issues encontrados durante el diagnóstico
 
 1. ~~**`PrismaService` no tipado**~~ → **RESUELTO**: `PrismaService` ahora extiende `PrismaClient` directamente. Todos los modelos tienen typing completo. Ya no hay casts `(as any)` en los servicios.
-2. **Divergencia shared-validation vs local DTOs**: El schema `ProductSchema` en `shared-validation` difiere del `CreateProductSchema` local en `catalog/dto/`. El controller legacy usa el shared, el products controller usa el local.
-3. **Divergencia de enums**: `shared-types` tiene `ELECTRONIC_WALLET` y `TRANSFER`; Prisma tiene `DIGITAL_WALLET` y `BANK_TRANSFER`. Pendiente de resolver.
-4. **`LoginDto` tiene campo `email`** pero passport-local usa `username` por defecto. El schema valida `email`.
-5. **`noImplicitAny` deshabilitado** en `apps/server/tsconfig.json` (desviación del strict mode documentado). Sigue sin corregir.
+2. ~~**Divergencia shared-validation vs local DTOs**~~ → **RESUELTO**: `catalog.controller.ts` ahora usa `CreateProductSchema` del DTO local en lugar de `ProductSchema` de shared-validation, alineándose con `products.controller.ts`. El schema obsoleto `ProductSchema` en shared-validation queda como candidato a deprecación.
+3. ~~**Divergencia de enums**~~ → **RESUELTO**: `shared-types` `PaymentMethodCategory` actualizado: `TRANSFER→BANK_TRANSFER`, `ELECTRONIC_WALLET→DIGITAL_WALLET`, `CREDIT_LINE→CREDIT`. Coincide exactamente con Prisma.
+4. ~~**`LoginDto` tiene campo `email`**~~ → **RESUELTO**: `UserLoginSchema` y `LoginDto` ahora usan `username` (no `email`), alineados con `local.strategy.ts` (que usa `usernameField: 'username'` por defecto) y con el campo único `username` en el modelo Prisma `User`.
+5. ~~**`noImplicitAny` deshabilitado**~~ → **RESUELTO**: Corregido a `true` en `apps/server/tsconfig.json`, cumpliendo con el strict mode documentado.
 
 ---
 
@@ -516,17 +516,16 @@ packages/shared-validation/src/
 
 | ID | Escenario | Entrada | Esperado |
 |----|-----------|---------|----------|
-| SHV-L01 | Credenciales válidas | `{ email: "admin@farmacia.com", password: "secret123" }` | Parse exitoso |
-| SHV-L02 | `email` inválido (sin @) | `email: "notanemail"` | `ZodError` |
-| SHV-L03 | `email` vacío | `email: ""` | `ZodError` |
-| SHV-L04 | `password` < 8 caracteres | `password: "1234567"` | `ZodError` (min 8) |
-| SHV-L05 | `password` vacío | `password: ""` | `ZodError` |
-| SHV-L06 | `password` mínimo exacto | `password: "12345678"` | Parse exitoso |
-| SHV-L07 | `email` ausente | Solo `password` | `ZodError` |
-| SHV-L08 | `password` ausente | Solo `email` | `ZodError` |
-| SHV-L09 | Objeto vacío | `{}` | `ZodError` |
+| SHV-L01 | Credenciales válidas | `{ username: "admin", password: "secret123" }` | Parse exitoso |
+| SHV-L02 | `username` vacío | `username: ""` | `ZodError` |
+| SHV-L03 | `password` < 8 caracteres | `password: "1234567"` | `ZodError` (min 8) |
+| SHV-L04 | `password` vacío | `password: ""` | `ZodError` |
+| SHV-L05 | `password` mínimo exacto | `password: "12345678"` | Parse exitoso |
+| SHV-L06 | `username` ausente | Solo `password` | `ZodError` |
+| SHV-L07 | `password` ausente | Solo `username` | `ZodError` |
+| SHV-L08 | Objeto vacío | `{}` | `ZodError` |
 
-> **Nota:** El schema real exige password `min(8)` (no `min(1)` como en el diseño original).
+> **Nota:** El schema real exige password `min(8)` (no `min(1)` como en el diseño original). El campo `username` reemplazó a `email` para alinearse con el modelo Prisma (`username` es único) y con passport-local (usa `usernameField: 'username'` por defecto).
 
 ### 5.2 shared-types — Enums e Interfaces
 
@@ -547,7 +546,7 @@ packages/shared-types/src/
 | SHT-E01 | `RoleType` coincide con Prisma | Todos los valores de `RoleType` existen en el enum Prisma `RoleType` | ✅ Coinciden |
 | SHT-E02 | `SaleOperationalState` coincide con Prisma | Subconjunto de Prisma `SaleOperationalState` | ✅ Coinciden |
 | SHT-E03 | `FiscalDocumentType` coincide con Prisma | Subconjunto de Prisma `FiscalDocumentType` | ✅ Coinciden |
-| SHT-E04 | `PaymentMethodCategory` coincide con Prisma | Mapeo 1:1 | ❌ **`ELECTRONIC_WALLET`** (shared) vs **`DIGITAL_WALLET`** (Prisma). **`TRANSFER`** (shared) vs **`BANK_TRANSFER`** (Prisma) |
+| SHT-E04 | `PaymentMethodCategory` coincide con Prisma | Mapeo 1:1 | ✅ **RESUELTO**: `TRANSFER→BANK_TRANSFER`, `ELECTRONIC_WALLET→DIGITAL_WALLET`, `CREDIT_LINE→CREDIT` |
 | SHT-E05 | `SaleType` coincide con Prisma | Subconjunto de Prisma `SaleType` | ✅ Coinciden |
 | SHT-E06 | `IdentificationType` coincide con Prisma | Subconjunto de Prisma `IdentificationType` | ✅ Coinciden |
 | SHT-E07 | `FiscalDocumentState` coincide con Prisma | Subconjunto de Prisma `FiscalDocumentState` | (verificar) |
@@ -555,7 +554,7 @@ packages/shared-types/src/
 | SHT-E09 | `AuditAction` coincide con Prisma | Subconjunto de Prisma `AuditAction` | (verificar) |
 | SHT-E10 | `TaxSchemeType` coincide con Prisma | Subconjunto de Prisma `TaxSchemeType` | (verificar) |
 
-**Nota:** Estos tests **no requieren** acceso a Prisma client. Se implementan comparando strings de los valores de los enums directamente. El test SHT-E04 debe fallar explícitamente para documentar las divergencias conocidas de `PaymentMethodCategory`.
+**Nota:** Estos tests **no requieren** acceso a Prisma client. Se implementan comparando strings de los valores de los enums directamente. El test SHT-E04 ahora debe pasar: la divergencia de `PaymentMethodCategory` fue resuelta alineando `shared-types` con Prisma (`TRANSFER→BANK_TRANSFER`, `ELECTRONIC_WALLET→DIGITAL_WALLET`, `CREDIT_LINE→CREDIT`).
 
 ---
 
@@ -599,7 +598,7 @@ El pipe recibe un `ZodSchema` en el constructor y valida/transforma el body de l
 
 | ID | Escenario | Entrada | Esperado |
 |----|-----------|---------|----------|
-| ZVP-01 | Input válido — objeto completo | `{ email: "test@test.com", password: "123" }` con `UserLoginSchema` | Retorna el objeto sin cambios |
+| ZVP-01 | Input válido — objeto completo | `{ username: "test", password: "12345678" }` con `UserLoginSchema` | Retorna el objeto sin cambios |
 | ZVP-02 | Input inválido — campo faltante | `{ email: "test@test.com" }` con `UserLoginSchema` (falta password) | Lanza `BadRequestException` con `{ message: 'Validation failed', errors: [...] }` |
 | ZVP-03 | Input inválido — tipo incorrecto | `{ email: 123, password: "abc" }` | Lanza `BadRequestException` con errores estructurados |
 | ZVP-04 | Input inválido — string vacío | `{ email: "", password: "123" }` | Lanza `BadRequestException` |
@@ -973,7 +972,7 @@ apps/server/src/modules/<module>/services/
 |----|-----------|-------|----------|
 | LOC-01 | Validación exitosa | `username: 'admin'`, `password: 'secret'` | Retorna resultado de `authService.validateCredentials('admin', 'secret')` |
 | LOC-02 | Credenciales inválidas | `authService.validateCredentials` lanza `InvalidCredentialsException` | Propaga la excepción |
-| LOC-03 | `usernameField` configurado como `email` | Revisar que el campo esperado es `email`, no `username` | (Verificar contra configuración real del PassportStrategy) |
+| LOC-03 | `usernameField` configurado como `username` | `super({ usernameField: 'username', passwordField: 'password' })` | El campo esperado es `username`, alineado con `UserLoginSchema` y `LoginDto` que ahora usan `username` |
 
 ### 7.6 ProductsService
 
@@ -1495,18 +1494,18 @@ Precondición: Login como ADMIN, obtener token
 ```
 Precondición: Usuario de test con password conocido
 
-1. POST /auth/login { email: "user@test.com", password: "WRONG" }
+1. POST /auth/login { username: "user@test.com", password: "WRONG" }
    → 401 InvalidCredentialsException (intento 1)
 
 2. Repetir × 4 más (total 5 intentos fallidos)
 
-3. POST /auth/login { email: "user@test.com", password: "CORRECT" }
+3. POST /auth/login { username: "user@test.com", password: "CORRECT" }
    → 403 AccountLockedException
 
 4. Esperar 15 minutos (o manipular lockedUntil en BD)
    → El lock expira
 
-5. POST /auth/login { email: "user@test.com", password: "CORRECT" }
+5. POST /auth/login { username: "user@test.com", password: "CORRECT" }
    → 201, login exitoso (failedLoginAttempts reseteado a 0)
 ```
 
@@ -2005,13 +2004,11 @@ prismaMock.$transaction.mockImplementation(
 - Opción B: Escribir tests mínimos para los stubs (verificar que lanzan `NotImplementedForPhaseException`).
 - Opción C: Implementar la lógica pendiente antes o en paralelo con el plan de testing.
 
-### Riesgo 7: Divergencias de tipos entre shared-types y Prisma
+### Riesgo 7: ~~Divergencias de tipos entre shared-types y Prisma~~ → **RESUELTO**
 
-**Problema:** Ya se detectó divergencia entre `shared-types` (`ELECTRONIC_WALLET`) y Prisma (`DIGITAL_WALLET`) en `PaymentMethodCategory`. Puede haber más.
+**Estado:** ✅ **Corregido** — `shared-types` `PaymentMethodCategory` se actualizó para coincidir con Prisma: `TRANSFER→BANK_TRANSFER`, `ELECTRONIC_WALLET→DIGITAL_WALLET`, `CREDIT_LINE→CREDIT`. Los tests de consistencia de enums (SHT-E01 a SHT-E04) ahora deben pasar sin divergencias conocidas.
 
-**Impacto:** Los tests que cruzan la frontera entre shared-types y Prisma pueden tener valores de enum inconsistentes.
-
-**Mitigación:** Los tests de consistencia de enums en Fase 1 (SHT-E01 a SHT-E04) deben detectar estas divergencias temprano.
+**Riesgo remanente:** Pueden aparecer nuevas divergencias si se agregan valores a un lado pero no al otro. Los tests de enums en `enums.spec.ts` están diseñados para detectar esto temprano.
 
 ---
 

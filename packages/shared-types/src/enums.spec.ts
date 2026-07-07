@@ -19,7 +19,7 @@ const PRISMA_ENUMS = {
   TaxSchemeType: ['IVA', 'INC', 'RETEFUENTE', 'RETEICA', 'IMPOCONSUMO'] as const,
   PaymentMethodCategory: [
     'CASH', 'DEBIT_CARD', 'CREDIT_CARD', 'BANK_TRANSFER',
-    'DIGITAL_WALLET', 'CHECK', 'CREDIT_LINE', 'OTHER',
+    'DIGITAL_WALLET', 'CHECK', 'CREDIT', 'OTHER',
   ] as const,
   IdentificationType: ['CC', 'NIT', 'CE', 'PASSPORT', 'TI', 'PEP'] as const,
   FiscalDocumentState: [
@@ -85,34 +85,16 @@ describe('Enum consistency: shared-types vs Prisma schema', () => {
     });
   });
 
-  // TRANSFER vs BANK_TRANSFER and ELECTRONIC_WALLET vs DIGITAL_WALLET
-  // are known naming inconsistencies that need manual resolution.
+  // RESOLVED: TRANSFER→BANK_TRANSFER, ELECTRONIC_WALLET→DIGITAL_WALLET, CREDIT_LINE→CREDIT
+  // names now match Prisma schema exactly.
   describe('PaymentMethodCategory', () => {
-    // eslint-disable-next-line jest/no-disabled-tests
-    test.skip('TRANSFER/ELECTRONIC_WALLET names diverge from Prisma', () => {
+    it('values match Prisma exactly (BANK_TRANSFER, DIGITAL_WALLET, CREDIT)', () => {
       const shared = enumValues(PaymentMethodCategory);
       const prisma = [...PRISMA_ENUMS.PaymentMethodCategory];
       const onlyInShared = shared.filter((v) => !prisma.includes(v));
       const onlyInPrisma = prisma.filter((v) => !shared.includes(v));
       expect(onlyInShared).toEqual([]);
       expect(onlyInPrisma).toEqual([]);
-    });
-
-    it('warns about pending divergence without failing', () => {
-      const shared = enumValues(PaymentMethodCategory);
-      const prisma = [...PRISMA_ENUMS.PaymentMethodCategory];
-      const onlyInShared = shared.filter((v) => !prisma.includes(v));
-      const onlyInPrisma = prisma.filter((v) => !shared.includes(v));
-
-      if (onlyInShared.length > 0 || onlyInPrisma.length > 0) {
-        console.warn(
-          'PaymentMethodCategory divergence:\n' +
-          `  shared-types only: ${onlyInShared}\n` +
-          `  Prisma only:       ${onlyInPrisma}\n` +
-          '  Align names (BANK_TRANSFER / DIGITAL_WALLET)',
-        );
-      }
-      expect(true).toBe(true);
     });
   });
 

@@ -2,30 +2,21 @@ import { UserLoginSchema } from './user-login-schema';
 
 describe('UserLoginSchema', () => {
   describe('when input is valid', () => {
-    it('should accept a valid email and password', () => {
+    it('should accept a valid username and password', () => {
       const result = UserLoginSchema.parse({
-        email: 'admin@farmacia.com',
+        username: 'admin',
         password: 'secret123',
       });
-      expect(result.email).toBe('admin@farmacia.com');
+      expect(result.username).toBe('admin');
       expect(result.password).toBe('secret123');
     });
   });
 
-  describe('when email is invalid', () => {
-    it('should reject missing @ symbol', () => {
+  describe('when username is invalid', () => {
+    it('should reject empty username', () => {
       expect(() =>
         UserLoginSchema.parse({
-          email: 'notanemail',
-          password: 'secret123',
-        }),
-      ).toThrow();
-    });
-
-    it('should reject empty email', () => {
-      expect(() =>
-        UserLoginSchema.parse({
-          email: '',
+          username: '',
           password: 'secret123',
         }),
       ).toThrow();
@@ -36,7 +27,7 @@ describe('UserLoginSchema', () => {
     it('should reject password shorter than 8 characters', () => {
       expect(() =>
         UserLoginSchema.parse({
-          email: 'admin@farmacia.com',
+          username: 'admin',
           password: '1234567',
         }),
       ).toThrow();
@@ -45,7 +36,7 @@ describe('UserLoginSchema', () => {
     it('should reject empty password', () => {
       expect(() =>
         UserLoginSchema.parse({
-          email: 'admin@farmacia.com',
+          username: 'admin',
           password: '',
         }),
       ).toThrow();
@@ -53,7 +44,7 @@ describe('UserLoginSchema', () => {
 
     it('should accept password exactly 8 characters', () => {
       const result = UserLoginSchema.parse({
-        email: 'admin@farmacia.com',
+        username: 'admin',
         password: '12345678',
       });
       expect(result.password).toBe('12345678');
@@ -61,7 +52,7 @@ describe('UserLoginSchema', () => {
   });
 
   describe('when fields are missing', () => {
-    it('should reject missing email', () => {
+    it('should reject missing username', () => {
       expect(() =>
         UserLoginSchema.parse({ password: 'secret123' }),
       ).toThrow();
@@ -69,7 +60,7 @@ describe('UserLoginSchema', () => {
 
     it('should reject missing password', () => {
       expect(() =>
-        UserLoginSchema.parse({ email: 'admin@farmacia.com' }),
+        UserLoginSchema.parse({ username: 'admin' }),
       ).toThrow();
     });
 

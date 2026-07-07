@@ -10,7 +10,7 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
-import { CreateProductDto } from './dto/create-product.dto';
+import { CreateProductDto, CreateProductSchema } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { QueryProductDto } from './dto/query-product.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
@@ -19,7 +19,6 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { AuditAction, SystemModule, RoleType } from '@pharmacy/shared-types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
-import { ProductSchema } from '@pharmacy/shared-validation';
 
 @Controller('catalog')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -47,7 +46,7 @@ export class CatalogController {
     entityType: 'Product',
   })
   async createProduct(
-    @Body(new ZodValidationPipe(ProductSchema))
+    @Body(new ZodValidationPipe(CreateProductSchema))
     createDto: CreateProductDto,
   ): Promise<any> {
     return this.catalogService.createProduct(createDto);
