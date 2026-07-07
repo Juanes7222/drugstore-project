@@ -3,10 +3,14 @@
  */
 import { configureStore } from "@reduxjs/toolkit";
 import { salesSlice } from "./slices/sales-slice";
+import { paymentSlice } from "./slices/payment-slice";
+import { uiSlice } from "./slices/ui-slice";
 
 export const store = configureStore({
   reducer: {
     sales: salesSlice.reducer,
+    payment: paymentSlice.reducer,
+    ui: uiSlice.reducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

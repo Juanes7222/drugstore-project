@@ -267,3 +267,13 @@ The Ambient Sync Pulse is the single committed signature element. It is not one 
 1.  Originally considered a serif display face for the drugstore name on receipts — rejected as too marketing-like. The drugstore name uses Inter Bold instead; the identity comes from the content, not the typeface.
 2.  Originally considered a separate "error red" in the core palette — deferred to a later phase. The core palette must cover the states a cashier sees every few minutes: trust, urgency, offline, restricted. True errors (shift discrepancies, print failures) are rarer and deserve their own design treatment later.
 3.  Confirmed the sync pulse is the **only** recurring animated element. Removed a secondary idea about a cart badge animation — that would dilute the signature and add motion clutter to a high-throughput workflow.
+
+---
+
+## Motion budget (added in Phase 3)
+
+Motion is reserved for the sale-completing handoff, not for the high-throughput search/scan/add-to-cart path.
+
+- **Search, scan, add-to-cart, and payment entry:** No orchestrated animation. Feedback is a single crisp state change (button press, input update, status badge).
+- **Sale completion:** A coordinated two-screen transition. Payment initiates the exit choreography and sets the `saleCompletionPhase` to `"initiating"`. After the initiating beat, control passes to Receipt via `"completing"`, where Receipt plays the entry choreography and dispatches `"completed"`. `prefers-reduced-motion` collapses both phases to an opacity-only or instant transition.
+- **Card/transfer authorization pending state:** A small CSS spinner inside the status badge is acceptable because it is a local, functional loading indicator, not a decorative flourish.

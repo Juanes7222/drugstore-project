@@ -286,6 +286,18 @@
     border: 0;
     border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
   }
+
+  /* Hide number-input spinners — the POS uses explicit +/- controls elsewhere. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
 }
 
 /* ------------------------------------------------------------------ */

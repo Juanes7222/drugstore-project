@@ -6,9 +6,10 @@
  * confirmation before an item enters the cart.
  */
 import { type FC, useCallback, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { addItem } from "@/store/slices/sales-slice";
-import { useAppDispatch } from "@/store/hooks";
+import { addItem, selectTotalCents } from "@/store/slices/sales-slice";
+import { initializePayment } from "@/store/slices/payment-slice";
+import { setActiveScreen } from "@/store/slices/ui-slice";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   CatalogItem,
   CatalogService,
@@ -21,8 +22,8 @@ import { CartPanel } from "./cart-panel";
 import { RestrictedConfirmationDialog } from "./restricted-confirmation-dialog";
 
 export const SalesTransaction: FC = () => {
-  const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const totalDue = useAppSelector(selectTotalCents);
 
   // The service instance is memoized so the component renders with the same
   // implementation throughout its lifecycle. Replace `createMockCatalogService`
@@ -81,11 +82,9 @@ export const SalesTransaction: FC = () => {
   }, []);
 
   const handleCheckout = useCallback(() => {
-    // Phase 2 ends at the COBRAR button. Navigation to the Payment screen
-    // will be implemented in a later phase.
-    // eslint-disable-next-line no-console
-    console.log(t("sales.cart.checkout"));
-  }, [t]);
+    dispatch(initializePayment({ totalCents: totalDue }));
+    dispatch(setActiveScreen("payment"));
+  }, [dispatch, totalDue]);
 
   return (
     <div className="grid h-full grid-cols-[60%_40%] gap-pos-md p-pos-md">

@@ -55,5 +55,45 @@
       "confirm": "Confirm restricted sale",
       "cancel": "Cancel"
     }
+  },
+  "payment": {
+    "title": "Payment",
+    "total_due": "Total due",
+    "methods_title": "Payment methods",
+    "method_label": "Method {{number}}",
+    "amount_label": "Amount",
+    "remove_method": "Remove payment method",
+    "add_method": "+ Add method",
+    "total_paid": "Total received",
+    "difference_label": "Difference",
+    "difference_missing": "Missing: {{amount}}",
+    "difference_excess": "Excess: {{amount}}",
+    "difference_balanced": "Balanced",
+    "difference_balanced_auth_pending": "Balanced — verify electronic methods",
+    "received": "Received",
+    "change": "Change",
+    "confirm": "Confirm payment",
+    "confirming": "Processing payment...",
+    "ready": "Ready to confirm",
+    "method": {
+      "cash": "Cash",
+      "card": "Card",
+      "transfer": "Transfer",
+      "nequi": "Nequi"
+    },
+    "status": {
+      "idle": "Pending verification",
+      "pending": "Processing",
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "authorize": "Verify payment",
+    "retry": "Retry",
+    "reference": "Ref."
+  },
+  "receipt": {
+    "title": "Payment confirmed",
+    "placeholder_message": "Sale recorded. Phase 4 will show the receipt, print, and email options here.",
+    "new_sale": "New sale"
   }
 }

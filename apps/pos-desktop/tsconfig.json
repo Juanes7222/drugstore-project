@@ -14,7 +14,7 @@
       "@pharmacy/shared-validation": ["../../packages/shared-validation/src/index.ts"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "vitest.setup.ts"],
   "exclude": ["node_modules", "dist", "src-tauri"],
   "references": [
     { "path": "./tsconfig.node.json" }

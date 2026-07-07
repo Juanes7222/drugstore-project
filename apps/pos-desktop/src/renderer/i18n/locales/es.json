@@ -55,5 +55,45 @@
       "confirm": "Confirmar venta restringida",
       "cancel": "Cancelar"
     }
+  },
+  "payment": {
+    "title": "Pago",
+    "total_due": "Total a pagar",
+    "methods_title": "Métodos de pago",
+    "method_label": "Método {{number}}",
+    "amount_label": "Valor",
+    "remove_method": "Eliminar método de pago",
+    "add_method": "+ Agregar método",
+    "total_paid": "Total recibido",
+    "difference_label": "Diferencia",
+    "difference_missing": "Faltan: {{amount}}",
+    "difference_excess": "Sobran: {{amount}}",
+    "difference_balanced": "Cuadra exacta",
+    "difference_balanced_auth_pending": "Cuadra exacta — verifique medios electrónicos",
+    "received": "Recibido",
+    "change": "Cambio",
+    "confirm": "Confirmar pago",
+    "confirming": "Procesando pago...",
+    "ready": "Listo para confirmar",
+    "method": {
+      "cash": "Efectivo",
+      "card": "Tarjeta",
+      "transfer": "Transferencia",
+      "nequi": "Nequi"
+    },
+    "status": {
+      "idle": "Pendiente de verificación",
+      "pending": "Procesando",
+      "approved": "Aprobado",
+      "rejected": "Rechazado"
+    },
+    "authorize": "Verificar pago",
+    "retry": "Reintentar",
+    "reference": "Ref."
+  },
+  "receipt": {
+    "title": "Pago confirmado",
+    "placeholder_message": "La venta se registró. En la fase 4 aquí se mostrará el recibo, impresión y envío por email.",
+    "new_sale": "Nueva venta"
   }
 }
