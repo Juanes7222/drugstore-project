@@ -12,6 +12,14 @@ export default defineConfig(() => ({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src/renderer"),
+      "@pharmacy/shared-types": resolve(
+        __dirname,
+        "../../packages/shared-types/src/index.ts",
+      ),
+      "@pharmacy/shared-validation": resolve(
+        __dirname,
+        "../../packages/shared-validation/src/index.ts",
+      ),
     },
   },
 

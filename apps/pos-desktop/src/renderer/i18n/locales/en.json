@@ -1,0 +1,59 @@
+{
+  "common": {
+    "app_name": "Pharmacy POS",
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "close": "Close",
+    "add": "Add",
+    "remove": "Remove",
+    "search": "Search",
+    "total": "TOTAL"
+  },
+  "cash_shift": {
+    "label": "Shift",
+    "opening_balance": "Opening",
+    "active": "active",
+    "cashier": "Cashier"
+  },
+  "sync": {
+    "state_online": "Online",
+    "state_offline": "Offline",
+    "state_draining": "Syncing",
+    "queue_items": "{{count}} queued"
+  },
+  "sales": {
+    "search": {
+      "placeholder": "Search product by name or barcode...",
+      "results": "Results",
+      "no_results": "No products found"
+    },
+    "cart": {
+      "title": "Cart",
+      "title_with_count": "Cart ({{count}} items)",
+      "empty": "The cart is empty",
+      "checkout": "PAY",
+      "subtotal": "Subtotal",
+      "tax": "VAT (19%)",
+      "total": "TOTAL"
+    },
+    "product": {
+      "stock": "Stock",
+      "low_stock": "LOW STOCK",
+      "price": "Price",
+      "lot": "Lot",
+      "expires": "Exp",
+      "invima": "INVIMA",
+      "unit": "unit",
+      "near_expiry": "EXPIRES SOON",
+      "restricted": "RESTRICTED SALE"
+    },
+    "restricted": {
+      "title": "Confirm restricted sale",
+      "description": "{{name}} is a controlled-sale product. Verify the prescription or medical formula before continuing.",
+      "warning": "INVIMA: {{invima}} — Sale type: {{saleType}}",
+      "confirm": "Confirm restricted sale",
+      "cancel": "Cancel"
+    }
+  }
+}

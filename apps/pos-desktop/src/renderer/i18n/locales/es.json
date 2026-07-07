@@ -1,0 +1,59 @@
+{
+  "common": {
+    "app_name": "Pharmacy POS",
+    "loading": "Cargando...",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "add": "Agregar",
+    "remove": "Eliminar",
+    "search": "Buscar",
+    "total": "TOTAL"
+  },
+  "cash_shift": {
+    "label": "Turno",
+    "opening_balance": "Apertura",
+    "active": "activo",
+    "cashier": "Cajero"
+  },
+  "sync": {
+    "state_online": "En línea",
+    "state_offline": "Sin conexión",
+    "state_draining": "Sincronizando",
+    "queue_items": "{{count}} en cola"
+  },
+  "sales": {
+    "search": {
+      "placeholder": "Buscar producto por nombre o código de barras...",
+      "results": "Resultados",
+      "no_results": "No se encontraron productos"
+    },
+    "cart": {
+      "title": "Carrito",
+      "title_with_count": "Carrito ({{count}} items)",
+      "empty": "El carrito está vacío",
+      "checkout": "COBRAR",
+      "subtotal": "Subtotal",
+      "tax": "IVA (19%)",
+      "total": "TOTAL"
+    },
+    "product": {
+      "stock": "Stock",
+      "low_stock": "STOCK BAJO",
+      "price": "Precio",
+      "lot": "Lote",
+      "expires": "Vence",
+      "invima": "INVIMA",
+      "unit": "und",
+      "near_expiry": "VENCE PRONTO",
+      "restricted": "VENTA RESTRINGIDA"
+    },
+    "restricted": {
+      "title": "Confirmar venta restringida",
+      "description": "{{name}} es un producto de venta controlada. Verifique la fórmula o prescripción médica antes de continuar.",
+      "warning": "INVIMA: {{invima}} — Tipo de venta: {{saleType}}",
+      "confirm": "Confirmar venta restringida",
+      "cancel": "Cancelar"
+    }
+  }
+}
