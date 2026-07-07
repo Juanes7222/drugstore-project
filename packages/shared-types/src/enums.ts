@@ -91,6 +91,11 @@ export enum PaymentMethodCategory {
   OTHER = "OTHER",
 }
 
+export enum CashCountType {
+  PARTIAL = "PARTIAL",
+  CLOSING = "CLOSING",
+}
+
 export enum TaxSchemeType {
   IVA = "IVA",
   INC = "INC",
