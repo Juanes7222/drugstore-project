@@ -84,10 +84,10 @@ describe('CashShiftController (integration)', () => {
       service.openShift.mockResolvedValue(shift);
 
       const user = buildMockUser();
-      const result = await controller.openShift(openDto, user as any);
+      const result = await controller.openShift(openDto, user as any, 'ws-1');
 
       expect(service.openShift).toHaveBeenCalledWith(
-        user.lastLoginWorkstationId,
+        'ws-1',
         user.id,
         openDto,
       );

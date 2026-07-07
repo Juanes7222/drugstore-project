@@ -154,12 +154,12 @@ describe('SalesController (integration)', () => {
       service.create.mockResolvedValue(created);
 
       const user = buildMockUser();
-      const result = await controller.create(createDto, user as any);
+      const result = await controller.create(createDto, user as any, 'ws-1');
 
       expect(service.create).toHaveBeenCalledWith(
         createDto,
         user.id,
-        user.workstationId,
+        'ws-1',
       );
       expect(result).toEqual(created);
     });

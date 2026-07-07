@@ -27,8 +27,9 @@ export class ClientsService {
           createdById: userId,
         },
       });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err.code === 'P2002') {
         throw new DuplicateClientIdentificationException(dto.identificationType, dto.identificationNumber);
       }
       throw error;
@@ -42,8 +43,9 @@ export class ClientsService {
         where: { id },
         data: { ...dto, updatedById: userId },
       });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err.code === 'P2002') {
         throw new DuplicateClientIdentificationException(dto.identificationType || '', dto.identificationNumber || '');
       }
       throw error;

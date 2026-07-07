@@ -41,8 +41,12 @@ export class InventoryAdjustmentsService {
   async findAll(query: QueryInventoryAdjustmentDto): Promise<any> {
     const where: Prisma.InventoryAdjustmentDocumentWhereInput = {};
     if (query.state) where.state = query.state as AdjustmentState;
-    if (query.createdAtFrom) where.createdAt = { gte: new Date(query.createdAtFrom) };
-    if (query.createdAtTo) where.createdAt = { ...(where.createdAt || {}), lte: new Date(query.createdAtTo) };
+    if (query.createdAtFrom || query.createdAtTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (query.createdAtFrom) dateFilter.gte = new Date(query.createdAtFrom);
+      if (query.createdAtTo) dateFilter.lte = new Date(query.createdAtTo);
+      where.createdAt = dateFilter;
+    }
 
     const [docs, total] = await this.prisma.$transaction([
       this.prisma.inventoryAdjustmentDocument.findMany({

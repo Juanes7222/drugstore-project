@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
   HttpCode,
+  Headers,
 } from '@nestjs/common';
 import { SalesService } from '../services/sales.service';
 import { CreateSaleDto } from '../dto/create-sale.dto';
@@ -45,8 +46,9 @@ export class SalesController {
   async create(
     @Body(new ZodValidationPipe(CreateSaleSchema)) createDto: CreateSaleDto,
     @CurrentUser() user: User,
+    @Headers('x-workstation-id') workstationId?: string,
   ): Promise<any> {
-    return this.salesService.create(createDto, user.id, user.workstationId);
+    return this.salesService.create(createDto, user.id, workstationId || '');
   }
 
   @Post(':id/confirm')

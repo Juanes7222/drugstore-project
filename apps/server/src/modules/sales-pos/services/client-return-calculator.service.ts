@@ -20,8 +20,8 @@ interface SaleItemWithRelations {
   quantity: number;
   unitPrice: Prisma.Decimal;
   product: {
-    currentPrice: { price: Prisma.Decimal } | null;
-    currentTaxHistory: { taxScheme: { rate: Prisma.Decimal } } | null;
+    priceHistories: Array<{ price: Prisma.Decimal }>;
+    taxHistories: Array<{ taxScheme: { rate: Prisma.Decimal } }>;
   } | null;
   lots: Array<{ lotId: string; quantity: number }>;
 }
@@ -43,7 +43,10 @@ export class ClientReturnCalculatorService {
       where: { id: saleItemId },
       include: {
         product: {
-          include: { currentPrice: true, currentTaxHistory: { include: { taxScheme: true } } },
+          include: {
+            priceHistories: { take: 1, orderBy: { effectiveFrom: 'desc' } },
+            taxHistories: { include: { taxScheme: true }, take: 1, orderBy: { effectiveFrom: 'desc' } },
+          },
         },
         lots: true,
       },
@@ -69,8 +72,10 @@ export class ClientReturnCalculatorService {
     totalAmount: Prisma.Decimal;
   } {
     const unitPriceAtSale = saleItem.unitPrice;
-    const unitPriceAtReturn = saleItem.product?.currentPrice?.price || new Prisma.Decimal(0);
-    const taxRate = saleItem.product?.currentTaxHistory?.taxScheme?.rate || new Prisma.Decimal(0);
+    const priceHist = saleItem.product?.priceHistories?.[0];
+    const taxHist = saleItem.product?.taxHistories?.[0];
+    const unitPriceAtReturn = priceHist?.price || new Prisma.Decimal(0);
+    const taxRate = taxHist?.taxScheme?.rate || new Prisma.Decimal(0);
     const decQty = new Prisma.Decimal(quantity);
     const grossAmount = unitPriceAtReturn.times(decQty);
     const taxAmount = grossAmount.times(taxRate.dividedBy(100));

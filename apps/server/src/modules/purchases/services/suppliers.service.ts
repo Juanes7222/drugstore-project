@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { Prisma, SupplierIdentificationType } from '@prisma/client';
+import * as crypto from 'crypto';
 import { CreateSupplierDto } from '../dto/create-supplier.dto';
 import { UpdateSupplierDto } from '../dto/update-supplier.dto';
 import { DuplicateSupplierIdentificationException } from '../exceptions/duplicate-supplier-identification.exception';
@@ -46,12 +47,14 @@ export class SuppliersService {
     try {
       return await this.prisma.supplier.create({
         data: {
+          id: crypto.randomUUID(),
           ...createDto,
           createdById: userId,
         },
       });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err.code === 'P2002') {
         throw new DuplicateSupplierIdentificationException(createDto.identificationType, createDto.identificationNumber);
       }
       throw error;
@@ -65,8 +68,9 @@ export class SuppliersService {
         where: { id },
         data: updateDto,
       });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err.code === 'P2002') {
         throw new DuplicateSupplierIdentificationException(updateDto.identificationType || '', updateDto.identificationNumber || '');
       }
       throw error;

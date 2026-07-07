@@ -28,8 +28,12 @@ export class LotsService {
     const where: Prisma.LotWhereInput = {};
     if (query.productId) where.productId = query.productId;
     if (query.state) where.state = query.state as LotState;
-    if (query.expiresAtFrom) where.expirationDate = { gte: new Date(query.expiresAtFrom) };
-    if (query.expiresAtTo) where.expirationDate = { ...where.expirationDate, lte: new Date(query.expiresAtTo) };
+    if (query.expiresAtFrom || query.expiresAtTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (query.expiresAtFrom) dateFilter.gte = new Date(query.expiresAtFrom);
+      if (query.expiresAtTo) dateFilter.lte = new Date(query.expiresAtTo);
+      where.expirationDate = dateFilter;
+    }
 
     const [lots, total] = await this.prisma.$transaction([
       this.prisma.lot.findMany({
@@ -99,8 +103,12 @@ export class LotsService {
     const where: Prisma.InventoryMovementWhereInput = {};
     if (query.lotId) where.lotId = query.lotId;
     if (query.movementType) where.movementType = query.movementType as MovementType;
-    if (query.createdAtFrom) where.createdAt = { gte: new Date(query.createdAtFrom) };
-    if (query.createdAtTo) where.createdAt = { ...where.createdAt, lte: new Date(query.createdAtTo) };
+    if (query.createdAtFrom || query.createdAtTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (query.createdAtFrom) dateFilter.gte = new Date(query.createdAtFrom);
+      if (query.createdAtTo) dateFilter.lte = new Date(query.createdAtTo);
+      where.createdAt = dateFilter;
+    }
 
     const [movements, total] = await this.prisma.$transaction([
       this.prisma.inventoryMovement.findMany({
@@ -356,7 +364,8 @@ export class LotsService {
       quantity: data.quantity,
       previousStock: data.previousStock,
       resultingStock: data.resultingStock,
-      createdBy: { connect: { id: data.createdById } },
+      createdAt: new Date(),
+      createdByUser: { connect: { id: data.createdById } },
       reason: data.reason,
     };
 

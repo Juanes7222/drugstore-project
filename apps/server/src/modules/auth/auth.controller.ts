@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   Headers,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { JwtService } from '@nestjs/jwt';
@@ -61,6 +62,9 @@ export class AuthController {
     // verified the token signature and expiration, so we only decode it here
     // to obtain the current tokenHash for session lookup.
     const rawToken = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+    if (!rawToken) {
+      throw new UnauthorizedException('Missing or malformed authorization header');
+    }
     const payload = this.jwtService.decode(rawToken) as {
       sub: string;
       tokenHash: string;
@@ -76,6 +80,9 @@ export class AuthController {
   @ApiOperation({ summary: 'Logout and revoke current session' })
   async logout(@Req() req: any): Promise<void> {
     const rawToken = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
+    if (!rawToken) {
+      throw new UnauthorizedException('Missing or malformed authorization header');
+    }
     const payload = this.jwtService.decode(rawToken) as {
       sub: string;
       tokenHash: string;

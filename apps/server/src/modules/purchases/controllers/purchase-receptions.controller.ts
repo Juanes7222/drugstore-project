@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
   HttpCode,
+  Headers,
 } from '@nestjs/common';
 import { PurchaseReceptionsService } from '../services/purchase-receptions.service';
 import { CreatePurchaseReceptionDto, CreatePurchaseReceptionSchema } from '../dto/create-purchase-reception.dto';
@@ -53,8 +54,9 @@ export class PurchaseReceptionsController {
   async confirm(
     @Param('id') id: string,
     @CurrentUser() user: User,
+    @Headers('x-workstation-id') workstationId?: string,
   ): Promise<any> {
-    return this.purchaseReceptionsService.confirm(id, user.id, user.workstationId);
+    return this.purchaseReceptionsService.confirm(id, user.id, workstationId || '');
   }
 
   @Post(':id/annul')

@@ -28,6 +28,8 @@ jest.mock('@prisma/client', () => ({
       plus(o: any): Decimal { return new Decimal(this.value + (o instanceof Decimal ? o.value : Number(o))); }
       minus(o: any): Decimal { return new Decimal(this.value - (o instanceof Decimal ? o.value : Number(o))); }
       toNumber(): number { return this.value; }
+      valueOf(): number { return this.value; }
+      toString(): string { return String(this.value); }
       equals(o: any): boolean { return this.value === (o instanceof Decimal ? o.value : Number(o)); }
       greaterThan(o: any): boolean { return this.value > (o instanceof Decimal ? o.value : Number(o)); }
     },
@@ -77,8 +79,8 @@ describe('SalesService', () => {
     concentration: '500mg',
     saleType: 'FREE_SALE',
     requiresPrescription: false,
-    currentPrice: { price: new Prisma.Decimal(5000) },
-    currentTaxHistory: { taxScheme: { rate: new Prisma.Decimal(19) } },
+    priceHistories: [{ price: new Prisma.Decimal(5000) }],
+    taxHistories: [{ taxScheme: { rate: new Prisma.Decimal(19) } }],
   };
 
   const mockSaleItem = {
@@ -239,8 +241,8 @@ describe('SalesService', () => {
       (prisma.sale.findFirst as jest.Mock).mockResolvedValue(null);
       const mockProductWithPrice = {
         ...mockProduct,
-        currentPrice: { price: new Prisma.Decimal(10000) },
-        currentTaxHistory: { taxScheme: { rate: new Prisma.Decimal(19) } },
+        priceHistories: [{ price: new Prisma.Decimal(10000) }],
+        taxHistories: [{ taxScheme: { rate: new Prisma.Decimal(19) } }],
       };
       (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProductWithPrice);
       let createdSaleData: any;

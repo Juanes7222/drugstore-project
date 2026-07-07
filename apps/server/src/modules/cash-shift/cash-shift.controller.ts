@@ -6,6 +6,7 @@ import {
   Body,
   UseGuards,
   HttpCode,
+  Headers,
 } from '@nestjs/common';
 import { CashShiftService } from './cash-shift.service';
 import { OpenCashShiftDto, OpenCashShiftSchema } from './dto/open-cash-shift.dto';
@@ -43,9 +44,10 @@ export class CashShiftController {
     @Body(new ZodValidationPipe(OpenCashShiftSchema))
     dto: OpenCashShiftDto,
     @CurrentUser() user: User,
+    @Headers('x-workstation-id') workstationId?: string,
   ): Promise<any> {
     return this.cashShiftService.openShift(
-      user.lastLoginWorkstationId || '',
+      workstationId || '',
       user.id,
       dto,
     );

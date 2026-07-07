@@ -2,9 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { Prisma, SaleOperationalState, SaleType, ShiftState, IdentificationType, ClientType, AuditAction, SystemModule } from '@prisma/client';
 import * as crypto from 'crypto';
-import { CreateSaleDto } from '../dto/create-sale.dto';
+import { CreateSaleDto, CreateSaleItemDto } from '../dto/create-sale.dto';
 import { QuerySaleDto } from '../dto/query-sale.dto';
 import { ConfirmSaleDto, PaymentInputSchema } from '../dto/confirm-sale.dto';
+import { z } from 'zod';
 import { SaleNotFoundException } from '../exceptions/sale-not-found.exception';
 import { CashShiftNotOpenForWorkstationException } from '../exceptions/cash-shift-not-open-for-workstation.exception';
 import { PrescriptionRequiredNotSupportedException } from '../exceptions/prescription-required-not-supported.exception';
@@ -30,6 +31,8 @@ interface SaleItemCalculations {
   total: Prisma.Decimal;
 }
 
+type SaleItemTotals = { subtotal: Prisma.Decimal; discountAmount: Prisma.Decimal; taxAmount: Prisma.Decimal; total: Prisma.Decimal };
+
 @Injectable()
 export class SalesService {
   constructor(
@@ -44,8 +47,12 @@ export class SalesService {
     if (query.operationalState) where.operationalState = query.operationalState as SaleOperationalState;
     if (query.cashShiftId) where.cashShiftId = query.cashShiftId;
     if (query.workstationId) where.workstationId = query.workstationId;
-    if (query.confirmedAtFrom) where.confirmedAt = { gte: new Date(query.confirmedAtFrom) };
-    if (query.confirmedAtTo) where.confirmedAt = { ...where.confirmedAt, lte: new Date(query.confirmedAtTo) };
+    if (query.confirmedAtFrom || query.confirmedAtTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (query.confirmedAtFrom) dateFilter.gte = new Date(query.confirmedAtFrom);
+      if (query.confirmedAtTo) dateFilter.lte = new Date(query.confirmedAtTo);
+      where.confirmedAt = dateFilter;
+    }
 
     const [sales, total] = await this.prisma.$transaction([
       this.prisma.sale.findMany({
@@ -73,9 +80,9 @@ export class SalesService {
     return this.prisma.$transaction(async (tx) => {
       const cashShift = await this.getOpenCashShift(tx, userId, workstationId);
       const clientData = createDto.clientId ? await this.getClientSnapshot(tx, createDto.clientId) : null;
-      const saleItems = await Promise.all(createDto.items.map(item => this.buildSaleItemFromRequest(tx, item, clientData?.clientClassification?.discountPercentage)));
+      const saleItems = await Promise.all(createDto.items.map(item => this.buildSaleItemFromRequest(tx, item, clientData?.classification?.discountPercentage)));
 
-      const totalCalculations = this.calculateSaleTotals(saleItems);
+      const totalCalculations = this.calculateSaleTotals(saleItems as unknown as SaleItemTotals[]);
 
       let localNumber: bigint;
       for (let i = 0; i < 5; i++) { // Retry logic for unique constraint
@@ -96,8 +103,8 @@ export class SalesService {
               clientIdentificationNumberSnapshot: clientData?.identificationNumber || null,
               clientNameSnapshot: clientData?.fullName || null,
               clientId: clientData?.id || null,
-              clientClassificationIdSnapshot: clientData?.clientClassification?.id || null,
-              clientTypeSnapshot: clientData?.clientType || null,
+              clientClassificationIdSnapshot: clientData?.classification?.id || null,
+              clientTypeSnapshot: clientData?.classification?.type || null,
               subtotal: totalCalculations.subtotal,
               totalDiscount: totalCalculations.totalDiscount,
               totalTax: totalCalculations.totalTax,
@@ -106,8 +113,9 @@ export class SalesService {
             },
           });
           return sale;
-        } catch (error) {
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && error.meta?.target === 'ux_sale_local_per_ws') {
+        } catch (error: unknown) {
+          const err = error as { code?: string; meta?: Record<string, unknown> };
+          if (err.code === 'P2002' && err.meta?.target === 'ux_sale_local_per_ws') {
             // Unique constraint violation, retry
             continue;
           }
@@ -132,7 +140,7 @@ export class SalesService {
         throw new SaleNotInProgressException(saleId);
       }
 
-      const totalPaid = confirmDto.payments.reduce((sum, p) => sum + p.amount.toNumber(), 0);
+      const totalPaid = confirmDto.payments.reduce((sum, p) => sum + p.amount, 0);
       if (totalPaid < sale.totalAmount.toNumber()) {
         throw new PaymentAmountMismatchException(sale.totalAmount.toNumber(), totalPaid);
       }
@@ -145,7 +153,6 @@ export class SalesService {
         }
       }
 
-      const saleItemLots: Prisma.SaleItemLotCreateManySaleItemInput[] = [];
       for (const item of sale.items) {
         const consumedLots = await this.lotsService.consumeStockForSale({
           productId: item.productId,
@@ -158,14 +165,18 @@ export class SalesService {
           where: { id: item.id },
           data: { unitCost: weightedUnitCost },
         });
-        saleItemLots.push(...consumedLots.map(cl => ({
-          saleItemId: item.id,
-          lotId: cl.lotId,
-          quantity: cl.quantity,
-          unitCostAtSale: cl.unitCostAtSale,
-        })));
+        for (const cl of consumedLots) {
+          await tx.saleItemLot.create({
+            data: {
+              id: crypto.randomUUID(),
+              saleItemId: item.id,
+              lotId: cl.lotId,
+              quantity: cl.quantity,
+              unitCostAtSale: cl.unitCostAtSale,
+            },
+          });
+        }
       }
-      await tx.saleItemLot.createMany({ data: saleItemLots });
 
       await tx.salePayment.createMany({
         data: confirmDto.payments.map(p => ({
@@ -250,7 +261,7 @@ export class SalesService {
   private async getClientSnapshot(tx: Prisma.TransactionClient, clientId: string): Promise<any> {
     return tx.client.findUnique({
       where: { id: clientId },
-      include: { clientClassification: true },
+      include: { classification: true },
     });
   }
 
@@ -262,8 +273,8 @@ export class SalesService {
     const product = await tx.product.findUnique({
       where: { id: itemDto.productId },
       include: {
-        currentPrice: true,
-        currentTaxHistory: { include: { taxScheme: true } },
+        priceHistories: { take: 1, orderBy: { effectiveFrom: 'desc' } },
+        taxHistories: { include: { taxScheme: true }, take: 1, orderBy: { effectiveFrom: 'desc' } },
       },
     });
 
@@ -272,8 +283,10 @@ export class SalesService {
       throw new PrescriptionRequiredNotSupportedException(itemDto.productId);
     }
 
-    const unitPrice = product.currentPrice?.price || new Prisma.Decimal(0);
-    const taxRate = product.currentTaxHistory?.taxScheme?.rate || new Prisma.Decimal(0);
+    const priceHist = product.priceHistories?.[0];
+    const taxHist = product.taxHistories?.[0];
+    const unitPrice = priceHist?.price || new Prisma.Decimal(0);
+    const taxRate = taxHist?.taxScheme?.rate || new Prisma.Decimal(0);
 
     const quantity = new Prisma.Decimal(itemDto.quantity);
     const itemSubtotal = unitPrice.times(quantity);
@@ -290,7 +303,7 @@ export class SalesService {
 
     return {
       id: crypto.randomUUID(),
-      productId: itemDto.productId,
+      product: { connect: { id: itemDto.productId } },
       productInternalCodeSnapshot: product.internalCode,
       productCommercialNameSnapshot: product.commercialName,
       productGenericNameSnapshot: product.genericName,
@@ -308,7 +321,9 @@ export class SalesService {
     };
   }
 
-  private calculateSaleTotals(saleItems: Prisma.SaleItemCreateWithoutSaleInput[]): {
+  private calculateSaleTotals(
+    saleItems: SaleItemTotals[],
+  ): {
     subtotal: Prisma.Decimal;
     totalDiscount: Prisma.Decimal;
     totalTax: Prisma.Decimal;
@@ -330,7 +345,7 @@ export class SalesService {
     return latestSale ? latestSale.localNumber + 1n : 1n;
   }
 
-  private async hasCashPaymentMethod(tx: Prisma.TransactionClient, payments: typeof PaymentInputSchema._type[]): Promise<boolean> {
+  private async hasCashPaymentMethod(tx: Prisma.TransactionClient, payments: z.infer<typeof PaymentInputSchema>[]): Promise<boolean> {
     for (const payment of payments) {
       const paymentMethod = await tx.paymentMethod.findUnique({
         where: { id: payment.paymentMethodId },

@@ -17,8 +17,12 @@ export class PurchaseOrdersService {
     const where: Prisma.PurchaseOrderWhereInput = {};
     if (query.supplierId) where.supplierId = query.supplierId;
     if (query.state) where.state = query.state as PurchaseOrderState;
-    if (query.createdAtFrom) where.createdAt = { gte: new Date(query.createdAtFrom) };
-    if (query.createdAtTo) where.createdAt = { ...where.createdAt, lte: new Date(query.createdAtTo) };
+    if (query.createdAtFrom || query.createdAtTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (query.createdAtFrom) dateFilter.gte = new Date(query.createdAtFrom);
+      if (query.createdAtTo) dateFilter.lte = new Date(query.createdAtTo);
+      where.createdAt = dateFilter;
+    }
 
     const [purchaseOrders, total] = await this.prisma.$transaction([
       this.prisma.purchaseOrder.findMany({

@@ -28,8 +28,12 @@ export class PurchaseReceptionsService {
     if (query.supplierId) where.supplierId = query.supplierId;
     if (query.purchaseOrderId) where.purchaseOrderId = query.purchaseOrderId;
     if (query.state) where.state = query.state as PurchaseReceptionState;
-    if (query.receivedAtFrom) where.receivedAt = { gte: new Date(query.receivedAtFrom) };
-    if (query.receivedAtTo) where.receivedAt = { ...where.receivedAt, lte: new Date(query.receivedAtTo) };
+    if (query.receivedAtFrom || query.receivedAtTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (query.receivedAtFrom) dateFilter.gte = new Date(query.receivedAtFrom);
+      if (query.receivedAtTo) dateFilter.lte = new Date(query.receivedAtTo);
+      where.receivedAt = dateFilter;
+    }
 
     const [receptions, total] = await this.prisma.$transaction([
       this.prisma.purchaseReception.findMany({
@@ -151,19 +155,23 @@ export class PurchaseReceptionsService {
       }
 
       for (const item of reception.items) {
+        if (!item.expirationDate) {
+          throw new Error(`Item ${item.id} is missing expiration date`);
+        }
         const lot = await this.lotsService.receiveStock({
           productId: item.productId,
           quantity: item.receivedQuantity,
-          unitCost: item.realUnitCost,
-          lotNumber: item.lotNumber,
+          unitCost: item.realUnitCost as unknown as Prisma.Decimal,
+          batchNumber: item.lotNumber || 'UNKNOWN',
           expirationDate: item.expirationDate,
+          locationCode: undefined,
           purchaseReceptionId: reception.id,
           tx,
         });
 
         await tx.purchaseReceptionItem.update({
           where: { id: item.id },
-          data: { lotId: lot.id },
+          data: { lotId: lot.lotId },
         });
 
         if (item.purchaseOrderItemId) {
@@ -229,14 +237,19 @@ export class PurchaseReceptionsService {
     throw new Error('Annulment not implemented for this phase.');
   }
 
-  private calculateReceptionTotals(items: Prisma.PurchaseReceptionItemCreateManyPurchaseReceptionInput[]): {
+  private calculateReceptionTotals(
+    items: Array<{ receivedQuantity: number; realUnitCost: Prisma.Decimal; discountAmount: Prisma.Decimal; taxRate: Prisma.Decimal }>,
+  ): {
     subtotal: Prisma.Decimal;
     totalTax: Prisma.Decimal;
     totalAmount: Prisma.Decimal;
   } {
-    const subtotal = items.reduce((sum, item) => sum.plus(new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost).minus(item.discountAmount || 0)), new Prisma.Decimal(0));
+    const subtotal = items.reduce(
+      (sum, item) => sum.plus(new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost).minus(item.discountAmount)),
+      new Prisma.Decimal(0),
+    );
     const totalTax = items.reduce((sum, item) => {
-      const itemSubtotal = new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost).minus(item.discountAmount || 0);
+      const itemSubtotal = new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost).minus(item.discountAmount);
       return sum.plus(itemSubtotal.times(item.taxRate).dividedBy(100));
     }, new Prisma.Decimal(0));
     const totalAmount = subtotal.plus(totalTax);

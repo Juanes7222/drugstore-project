@@ -41,8 +41,8 @@ describe('ClientReturnCalculatorService', () => {
     quantity: 10,
     unitPrice: new Prisma.Decimal(5000),
     product: {
-      currentPrice: { price: new Prisma.Decimal(5500) },
-      currentTaxHistory: { taxScheme: { rate: new Prisma.Decimal(19) } },
+      priceHistories: [{ price: new Prisma.Decimal(5500) }],
+      taxHistories: [{ taxScheme: { rate: new Prisma.Decimal(19) } }],
     },
     lots: [
       { lotId: 'lot-1', quantity: 6 },

@@ -1,6 +1,7 @@
 {
   "name": "@pharmacy/server",
   "version": "0.1.0",
+  "type": "module",
   "description": "NestJS backend server for pharmacy POS system",
   "main": "dist/main.js",
   "scripts": {
@@ -19,18 +20,19 @@
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.1.27",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.27",
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.1.27",
-    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/swagger": "^11.4.5",
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
-    "bullmq": "^5.79.3",
     "argon2": "^0.44.0",
+    "bullmq": "^5.79.3",
     "compression": "^1.8.1",
     "helmet": "^8.2.0",
     "passport": "^0.7.0",
@@ -50,6 +52,7 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/passport-local": "^1.0.38",
     "@types/supertest": "^6.0.3",
+    "dotenv": "^17.4.2",
     "jest": "^30.2.0",
     "jest-mock-extended": "^4.0.1",
     "prisma": "^7.8.0",

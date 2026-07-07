@@ -8,6 +8,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // url is now configured in prisma.config.ts
 }
 
 // Enums for Auth & Catalog domains
