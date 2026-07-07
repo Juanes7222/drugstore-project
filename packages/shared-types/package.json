@@ -13,14 +13,14 @@
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "jest --passWithNoTests --forceExit --detectOpenHandles",
+    "test": "jest --forceExit --detectOpenHandles",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage --forceExit --detectOpenHandles"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "jest": "^30.2.0",
-    "ts-jest": "^29.3.4",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
   }
 }

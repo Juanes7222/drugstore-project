@@ -10,3 +10,14 @@ allowBuilds:
   msgpackr-extract: true
   prisma: true
   unrs-resolver: set this to true or false
+minimumReleaseAgeExclude:
+  - '@turbo/darwin-64@2.10.4'
+  - '@turbo/darwin-arm64@2.10.4'
+  - '@turbo/linux-64@2.10.4'
+  - '@turbo/linux-arm64@2.10.4'
+  - '@turbo/windows-64@2.10.4'
+  - '@turbo/windows-arm64@2.10.4'
+  - bullmq@5.79.3
+  - turbo@2.10.4
+overrides:
+  typescript: ^6.0.3
