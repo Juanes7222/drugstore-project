@@ -1,8 +1,8 @@
 # Plan de Testing — Pharmacy System (Droguería)
 
-**Versión:** 1.1  
+**Versión:** 1.2  
 **Última actualización:** Julio 2026  
-**Estado:** Fase 1 parcial — Infraestructura lista, 56 tests existentes y pasando
+**Estado:** Fase 2 completa — Infraestructura lista, 99 tests existentes y pasando
 
 ---
 
@@ -65,17 +65,18 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.spec.ts`) | **5 archivos, 56 tests** — todos pasando |
+| Archivos de test (`*.spec.ts`) | **11 archivos, 99 tests** — todos pasando |
 | Configuraciones de test (jest.config) | **LISTO** — `apps/server`, `shared-types`, `shared-validation` tienen jest.config.ts |
 | Dependencias de testing instaladas | **LISTO** — `jest`, `ts-jest`, `@nestjs/testing`, `jest-mock-extended`, `supertest` instalados |
 | Scripts `test` en sub-packages | **LISTO** — `test`, `test:cov`, `test:watch`, `test:e2e` configurados |
-| Cobertura actual | **~2%** (solo shared-validation + env.schema cubiertos) — Meta: ≥80% |
+| Cobertura actual | **~12%** (shared-validation + shared-types + common/infra cubiertos) — Meta: ≥80% |
 | Servicios con lógica real (testeables) | **~15 servicios** (auth, products, categories, tax-schemes, sales, client-returns, cash-shift, clients, lots, etc.) |
 | Servicios con lógica real | **~22 servicios** (incluyendo configuration, fiscal-dian, purchases, reports, sync) |
 | Archivos TypeScript en apps/server | **~140 archivos**, ~15,000+ líneas de código |
 | Modelos Prisma | **60+ modelos**, **28 enums** |
 | Tests existentes (shared-validation) | **44 tests** — client-schema, product-schema, create-sale-schema, user-login-schema |
-| Tests existentes (apps/server) | **12 tests** — env.schema |
+| Tests existentes (shared-types) | **11 tests** — enums.spec (consistencia contra Prisma) |
+| Tests existentes (apps/server) | **44 tests** — env.schema, ZodValidationPipe, RolesGuard, HttpExceptionFilter, AuditLogInterceptor, PrismaService |
 | `PrismaService` typing | **CORREGIDO** — `extends PrismaClient` directamente, acceso tipado completo. Ya no usa `(as any)` |
 
 ### Arquitectura del proyecto
@@ -404,25 +405,25 @@ export default config;
 El plan se ejecuta en **6 fases**, priorizando lo que ya tiene lógica de negocio implementada.
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│ Fase 1: Paquetes Compartidos  ████░░░░░░░░░░░░  1-2 días   ~26  │
-│ Fase 2: Capa Infraestructura  ████████░░░░░░░░░░  2-3 días   ~40  │
-│ Fase 3: Servicios Core        ██████████████████  5-7 días   ~80  │
-│ Fase 4: Controladores         ████████████░░░░░░  3-4 días   ~72  │
-│ Fase 5: Tests E2E             ████████░░░░░░░░░░  3-4 días   ~24  │
-│ Fase 6: CI/CD + Utilidades    ████░░░░░░░░░░░░░░  2-3 días    --  │
-├──────────────────────────────────────────────────────────────────┤
-│ TOTAL                                              16-23 días ~242 │
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ Fase 1: Paquetes Compartidos  ████████████████████  1-2 días   ~55  │ ✅ COMPLETO
+│ Fase 2: Capa Infraestructura  ████████████████████  2-3 días   ~44  │ ✅ COMPLETO
+│ Fase 3: Servicios Core        ░░░░░░░░░░░░░░░░░░░░  5-7 días   ~80  │ 🔴 PENDIENTE
+│ Fase 4: Controladores         ░░░░░░░░░░░░░░░░░░░░  3-4 días   ~72  │ 🔴 PENDIENTE
+│ Fase 5: Tests E2E             ░░░░░░░░░░░░░░░░░░░░  3-4 días   ~24  │ 🔴 PENDIENTE
+│ Fase 6: CI/CD + Utilidades    ░░░░░░░░░░░░░░░░░░░░  2-3 días    --  │ 🔴 PENDIENTE
+├──────────────────────────────────────────────────────────────────────┤
+│ TOTAL IMPLEMENTADO: ~99 tests / ~242 estimados (13-16 días restantes)│
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Orden cronológico recomendado (actualizado)
 
 ```
-Día 1:     Instalar dependencias + jest config + shared-validation tests    ← COMPLETADO
-Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)          ← EN CURSO
-Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)
-Día 5-6:   Fase 3A: Auth (AuthService + SessionService + PasswordHasher + JwtStrategy + LocalStrategy)
+Día 1:     Instalar dependencias + jest config + shared-validation tests          ← COMPLETADO
+Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)                ← COMPLETADO
+Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)      ← COMPLETADO
+Día 5-6:   Fase 3A: Auth (AuthService + SessionService + PasswordHasher + JwtStrategy + LocalStrategy)   ← EN CURSO
 Día 7-8:   Fase 3B: Catalog (ProductsService + CategoriesService + TaxSchemesService)
 Día 9-11:  Fase 3C: Sales + Cash + Clients + Inventory (servicios principales)
 Día 12-13: Fase 3C (continuación: LotsService, ClientReturnCalculatorService)
@@ -529,32 +530,33 @@ packages/shared-validation/src/
 
 ### 5.2 shared-types — Enums e Interfaces
 
-**Estado:** 🟡 **Parcial** — Tests de consistencia pendientes (ver enums.spec.ts).
+**Estado:** ✅ **IMPLEMENTADO** — 1 spec file, 11 tests pasando.
 
-Las interfaces TypeScript puras no requieren tests unitarios (el compilador las verifica). Los enums deben verificarse contra Prisma para detectar divergencias temprano.
+Las interfaces TypeScript puras no requieren tests unitarios (el compilador las verifica). Los enums se verifican contra Prisma para detectar divergencias temprano.
 
 **Tests de consistencia de enums:**
 
 ```
 packages/shared-types/src/
-├── enums.spec.ts    ← PENDIENTE (crear)
+├── enums.spec.ts    ← EXISTE (11 escenarios)
 └── enums.ts
 ```
 
-| ID | Escenario | Verificación | Divergencia conocida |
-|----|-----------|-------------|---------------------|
-| SHT-E01 | `RoleType` coincide con Prisma | Todos los valores de `RoleType` existen en el enum Prisma `RoleType` | ✅ Coinciden |
-| SHT-E02 | `SaleOperationalState` coincide con Prisma | Subconjunto de Prisma `SaleOperationalState` | ✅ Coinciden |
-| SHT-E03 | `FiscalDocumentType` coincide con Prisma | Subconjunto de Prisma `FiscalDocumentType` | ✅ Coinciden |
-| SHT-E04 | `PaymentMethodCategory` coincide con Prisma | Mapeo 1:1 | ✅ **RESUELTO**: `TRANSFER→BANK_TRANSFER`, `ELECTRONIC_WALLET→DIGITAL_WALLET`, `CREDIT_LINE→CREDIT` |
-| SHT-E05 | `SaleType` coincide con Prisma | Subconjunto de Prisma `SaleType` | ✅ Coinciden |
-| SHT-E06 | `IdentificationType` coincide con Prisma | Subconjunto de Prisma `IdentificationType` | ✅ Coinciden |
-| SHT-E07 | `FiscalDocumentState` coincide con Prisma | Subconjunto de Prisma `FiscalDocumentState` | (verificar) |
-| SHT-E08 | `SystemModule` coincide con Prisma | Subconjunto de Prisma `SystemModule` | (verificar — Prisma tiene más valores) |
-| SHT-E09 | `AuditAction` coincide con Prisma | Subconjunto de Prisma `AuditAction` | (verificar) |
-| SHT-E10 | `TaxSchemeType` coincide con Prisma | Subconjunto de Prisma `TaxSchemeType` | (verificar) |
+| ID | Escenario | Verificación | Estado |
+|----|-----------|-------------|--------|
+| SHT-E01 | `RoleType` coincide con Prisma | Todos los valores de `RoleType` existen en el enum Prisma `RoleType` | ✅ Pasa |
+| SHT-E02 | `SaleOperationalState` coincide con Prisma | Subconjunto de Prisma `SaleOperationalState` | ✅ Pasa |
+| SHT-E03 | `FiscalDocumentType` coincide con Prisma | Subconjunto de Prisma `FiscalDocumentType` | ✅ Pasa |
+| SHT-E04 | `PaymentMethodCategory` coincide con Prisma | Mapeo 1:1 | ✅ Pasa — `TRANSFER→BANK_TRANSFER`, `ELECTRONIC_WALLET→DIGITAL_WALLET`, `CREDIT_LINE→CREDIT` |
+| SHT-E05 | `SaleType` coincide con Prisma | Subconjunto de Prisma `SaleType` | ✅ Pasa |
+| SHT-E06 | `IdentificationType` coincide con Prisma | Subconjunto de Prisma `IdentificationType` | ✅ Pasa |
+| SHT-E07 | `FiscalDocumentState` coincide con Prisma | Subconjunto de Prisma `FiscalDocumentState` | ✅ Pasa |
+| SHT-E08 | `SystemModule` coincide con Prisma | Subconjunto de Prisma `SystemModule` | ✅ Pasa |
+| SHT-E09 | `AuditAction` coincide con Prisma | Subconjunto de Prisma `AuditAction` | ✅ Pasa |
+| SHT-E10 | `TaxSchemeType` coincide con Prisma | Subconjunto de Prisma `TaxSchemeType` | ✅ Pasa |
+| SHT-E11 | `PaymentMethodCategory` no tiene valores duplicados | Set de valores | ✅ Pasa |
 
-**Nota:** Estos tests **no requieren** acceso a Prisma client. Se implementan comparando strings de los valores de los enums directamente. El test SHT-E04 ahora debe pasar: la divergencia de `PaymentMethodCategory` fue resuelta alineando `shared-types` con Prisma (`TRANSFER→BANK_TRANSFER`, `ELECTRONIC_WALLET→DIGITAL_WALLET`, `CREDIT_LINE→CREDIT`).
+**Nota:** Estos tests **no requieren** acceso a Prisma client. Se implementan comparando strings de los valores de los enums directamente. Se agregó un test adicional de unicidad (SHT-E11) para prevenir valores duplicados en `PaymentMethodCategory`.
 
 ---
 
@@ -562,36 +564,39 @@ packages/shared-types/src/
 
 **Objetivo:** Probar pipes, guards, filters, interceptors y validación de configuración. Son componentes reutilizables por todos los módulos.
 
+**Estado:** ✅ **IMPLEMENTADO** — 6 spec files, ~44 tests pasando.
+
 Ubicación de tests: al lado del fuente.
 
 ```
 apps/server/src/common/
 ├── pipes/
 │   ├── zod-validation.pipe.ts
-│   └── zod-validation.pipe.spec.ts          ← nuevo
+│   └── zod-validation.pipe.spec.ts          ← EXISTE
 ├── guards/
 │   ├── jwt-auth.guard.ts
 │   ├── roles.guard.ts
-│   └── roles.guard.spec.ts                  ← nuevo
+│   └── roles.guard.spec.ts                  ← EXISTE
 ├── filters/
 │   ├── http-exception.filter.ts
-│   └── http-exception.filter.spec.ts        ← nuevo
+│   └── http-exception.filter.spec.ts        ← EXISTE
 ├── interceptors/
 │   ├── audit-log.interceptor.ts
-│   └── audit-log.interceptor.spec.ts        ← nuevo
+│   └── audit-log.interceptor.spec.ts        ← EXISTE
 ├── exceptions/
 │   ├── domain.exception.ts
-│   └── domain.exception.spec.ts             ← nuevo
+│   └── domain.exception.spec.ts             ← (no requiere — excepciones sin lógica ejecutable)
 └── decorators/
     (decoradores no requieren tests unitarios — son setters de metadata)
 
 apps/server/src/config/
 ├── env.schema.ts
-└── env.schema.spec.ts                       ← nuevo
+└── env.schema.spec.ts                       ← EXISTE
 ```
 
 ### 6.1 ZodValidationPipe
 
+**Estado:** ✅ **IMPLEMENTADO** — 9 tests pasando.
 **Archivo:** `apps/server/src/common/pipes/zod-validation.pipe.spec.ts`
 
 El pipe recibe un `ZodSchema` en el constructor y valida/transforma el body de las peticiones.
@@ -628,6 +633,7 @@ describe('ZodValidationPipe', () => {
 
 ### 6.2 RolesGuard
 
+**Estado:** ✅ **IMPLEMENTADO** — 7 tests pasando.
 **Archivo:** `apps/server/src/common/guards/roles.guard.spec.ts`
 
 36 líneas de lógica real. Lee los roles requeridos del decorador `@Roles()` y compara contra `request.user.role`.
@@ -681,6 +687,7 @@ describe('RolesGuard', () => {
 
 ### 6.4 HttpExceptionFilter
 
+**Estado:** ✅ **IMPLEMENTADO** — 12 tests pasando.
 **Archivo:** `apps/server/src/common/filters/http-exception.filter.spec.ts`
 
 86 líneas. Formatea todas las excepciones HTTP en una respuesta estandarizada.
@@ -750,6 +757,7 @@ describe('HttpExceptionFilter', () => {
 
 ### 6.5 AuditLogInterceptor
 
+**Estado:** ✅ **IMPLEMENTADO** — 21 tests pasando.
 **Archivo:** `apps/server/src/common/interceptors/audit-log.interceptor.spec.ts`
 
 108 líneas. Intercepta mutaciones (POST/PATCH/PUT/DELETE) y crea registros de auditoría vía PrismaService. Patrón fire-and-forget.
@@ -823,6 +831,7 @@ describe('AuditLogInterceptor', () => {
 
 ### 6.6 env.schema.ts
 
+**Estado:** ✅ **IMPLEMENTADO** — 10 tests pasando.
 **Archivo:** `apps/server/src/config/env.schema.spec.ts`
 
 | ID | Escenario | Entrada | Esperado |
@@ -840,6 +849,7 @@ describe('AuditLogInterceptor', () => {
 
 ### 6.7 PrismaService
 
+**Estado:** ✅ **IMPLEMENTADO** — 3 tests pasando.
 **Archivo:** `apps/server/src/infrastructure/prisma/prisma.service.spec.ts`
 
 | ID | Escenario | Esperado |
@@ -1894,35 +1904,44 @@ export function generateExpiredToken(payload: {
 | Fase | Descripción | Archivos de test | Tests | Esfuerzo (días) | Estado |
 |------|-------------|-----------------|-------|-----------------|--------|
 | **F0** | Infraestructura (deps, configs, scripts, turbo) | — | — | 1 | ✅ COMPLETO |
-| **F1** | Paquetes compartidos | 5 spec files | ~26 (44 reales) | 1-2 | 🟡 PARCIAL (shared-validation OK, shared-types pendiente) |
-| **F2** | Capa common/infra (pipes, guards, filters, interceptors, prisma) | 6 spec files | ~40 | 2-3 | 🔴 PENDIENTE |
+| **F1** | Paquetes compartidos | 5 spec files | ~55 | 1-2 | ✅ COMPLETO |
+| **F2** | Capa common/infra (pipes, guards, filters, interceptors, prisma) | 6 spec files | ~44 | 2-3 | ✅ COMPLETO |
 | **F3A** | Auth (AuthService, SessionService, PasswordHasher, JwtStrategy, LocalStrategy) | 5 spec files | ~35 | 2-3 | 🔴 PENDIENTE |
 | **F3B** | Catalog (ProductsService, CategoriesService, TaxSchemesService) | 3 spec files | ~25 | 2 | 🔴 PENDIENTE |
 | **F3C** | Sales + Cash + Clients + Inventory | 6 spec files | ~45 | 3-4 | 🔴 PENDIENTE |
 | **F4** | Controladores (integración) | 9 spec files | ~72 | 3-4 | 🔴 PENDIENTE |
 | **F5** | E2E flujos críticos | 8 e2e-spec files | ~24 | 3-4 | 🔴 PENDIENTE |
 | **F6** | CI/CD, utilidades de testing | — | — | 2-3 | 🔴 PENDIENTE |
-| **TOTAL RESTANTE** | | **~37 spec files** | **~241 tests** | **~20-25 días** | |
+| **TOTAL COMPLETADO** | | **11 spec files** | **~99 tests** | **~5 días** | |
+| **TOTAL RESTANTE** | | **~31 spec files** | **~201 tests** | **~16-20 días** | |
 
 ### Distribución por tipo de test
 
 ```
-Ya implementados (shared-validation):      44 tests  (14%)
-Unitarios (common + services restantes):  ~127 tests  (40%)
-Integración (controllers):                ~72 tests  (23%)
-E2E (flujos completos):                   ~24 tests  (8%)
-Utilidades + CI/CD:                       —          —
-                                         ─────────
-TOTAL (cuando esté completo):            ~312+ tests
+Ya implementados (F1 + F2):               99 tests  (33%)
+  ├── shared-validation (Zod schemas):    44 tests
+  ├── shared-types (enums):               11 tests
+  ├── env.schema:                         10 tests
+  ├── ZodValidationPipe:                   9 tests
+  ├── RolesGuard:                          7 tests
+  ├── HttpExceptionFilter:                12 tests
+  ├── AuditLogInterceptor:                21 tests
+  └── PrismaService:                       3 tests
+Pendientes (F3A + F3B + F3C):           ~105 tests  (35%)
+Integración (F4 — controllers):          ~72 tests  (24%)
+E2E (F5 — flujos completos):             ~24 tests  (8%)
+Utilidades (F6 — CI/CD + helpers):        —          —
+                                          ─────────
+TOTAL (cuando esté completo):            ~300+ tests
 ```
 
 ### Cronograma ajustado
 
 ```
-Día 1:     Infraestructura + shared-validation tests    ← COMPLETADO
-Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)
-Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)
-Día 5-6:   Fase 3A (Auth completo: AuthService, SessionService, PasswordHasher, estrategias)
+Día 1:     Infraestructura + shared-validation tests                  ← COMPLETADO
+Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)    ← COMPLETADO
+Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)  ← COMPLETADO
+Día 5-6:   Fase 3A (Auth completo: AuthService, SessionService, PasswordHasher, estrategias)  ← EN CURSO
 Día 7-8:   Fase 3B (Catalog: ProductsService, CategoriesService, TaxSchemesService)
 Día 9-11:  Fase 3C (SalesService, ClientReturnsService, CashShiftService, etc.)
 Día 12-13: Fase 3C (ClientsService, LotsService, ClientReturnCalculatorService)

@@ -15,6 +15,13 @@ import type { AuditAction as PrismaAuditAction, SystemModule as PrismaSystemModu
 import { AUDITABLE_KEY, AuditableMetadata } from '../decorators/auditable.decorator';
 import { User } from '@pharmacy/shared-types';
 
+// Extend Express Request to include Passport user
+declare module 'http' {
+  interface IncomingMessage {
+    user?: User;
+  }
+}
+
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
   private readonly logger = new Logger(AuditLogInterceptor.name);
