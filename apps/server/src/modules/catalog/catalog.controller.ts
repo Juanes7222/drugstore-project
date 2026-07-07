@@ -16,8 +16,9 @@ import { QueryProductDto } from './dto/query-product.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
-import { AuditAction, SystemModule, RoleType } from '@pharmacy/shared-types';
+import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 @Controller('catalog')
@@ -48,8 +49,9 @@ export class CatalogController {
   async createProduct(
     @Body(new ZodValidationPipe(CreateProductSchema))
     createDto: CreateProductDto,
+    @CurrentUser() user: User,
   ): Promise<any> {
-    return this.catalogService.createProduct(createDto);
+    return this.catalogService.createProduct(user.id, createDto);
   }
 
   @Patch('products/:id')
