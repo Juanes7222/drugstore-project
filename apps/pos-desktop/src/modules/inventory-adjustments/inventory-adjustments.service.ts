@@ -55,6 +55,23 @@ export interface CreateAdjustmentInput {
   reason?: string;
 }
 
+export interface LotSearchResult {
+  /** Lot UUID. */
+  id: string;
+  /** Product UUID. */
+  productId: string;
+  /** Commercial name from the Product table. */
+  productName: string;
+  /** Batch number (lot code). */
+  lotCode: string;
+  /** Current stock count. */
+  currentStock: number;
+  /** Expiration date as YYYY-MM-DD. */
+  expirationDate: string;
+  /** Physical location in the pharmacy (e.g. \"Estante A-12\"). */
+  location: string;
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -75,6 +92,59 @@ export class InventoryAdjustmentsService {
     private readonly prisma: PrismaClient,
     private readonly auth: AuthService,
   ) {}
+
+  /**
+   * Search for active lots by product name (commercial, generic, active
+   * principle) or batch number.
+   *
+   * ✅ Real Prisma query — no mock data, no fallback.
+   *
+   * Searches the Lot table joined with Product, filtering by:
+   * - `product.commercialName` (contains, case-insensitive)
+   * - `product.genericName` (contains, case-insensitive)
+   * - `product.activePrinciple` (contains, case-insensitive)
+   * - `lot.batchNumber` (contains, case-insensitive)
+   *
+   * Only returns lots in ACTIVE state.
+   *
+   * @returns An array of matching lots (empty if none found or query is empty).
+   */
+  async searchLots(query: string): Promise<LotSearchResult[]> {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+
+    const q = trimmed.toLowerCase();
+
+    const lots = await this.prisma.lot.findMany({
+      where: {
+        state: LotState.ACTIVE,
+        OR: [
+          { batchNumber: { contains: q, mode: 'insensitive' } },
+          { product: { commercialName: { contains: q, mode: 'insensitive' } } },
+          { product: { genericName: { contains: q, mode: 'insensitive' } } },
+          { product: { activePrinciple: { contains: q, mode: 'insensitive' } } },
+        ],
+      },
+      include: {
+        product: {
+          select: { commercialName: true },
+        },
+      },
+      orderBy: [
+        { expirationDate: 'asc' },
+      ],
+    });
+
+    return lots.map((lot) => ({
+      id: lot.id,
+      productId: lot.productId,
+      productName: lot.product.commercialName,
+      lotCode: lot.batchNumber,
+      currentStock: lot.currentStock,
+      expirationDate: lot.expirationDate.toISOString().split('T')[0],
+      location: lot.locationCode ?? '',
+    }));
+  }
 
   /**
    * Create an inventory adjustment document in DRAFT state.

@@ -16,7 +16,6 @@ import {
   type FC,
   useCallback,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -54,52 +53,8 @@ const ADJUSTMENT_REASONS = [
 
 type AdjustmentReason = (typeof ADJUSTMENT_REASONS)[number];
 
-// ---------------------------------------------------------------------------
-// Demo data — local product/lot cache
-//
-// TODO: Replace with a real query against the local Prisma Lot + Product
-//       tables once the service layer exposes a product-lot search method
-//       or the PrismaClient is exposed to the renderer.
-// ---------------------------------------------------------------------------
-
-const DEMO_LOTS: DisplayLot[] = [
-  {
-    id: "lot-001",
-    productId: "prod-001",
-    productName: "Amoxicilina 500mg",
-    lotCode: "LOT-AMX-001",
-    currentStock: 120,
-    expirationDate: "2027-03-15",
-    location: "Estante A-12",
-  },
-  {
-    id: "lot-002",
-    productId: "prod-002",
-    productName: "Ibuprofeno 400mg",
-    lotCode: "LOT-IBU-001",
-    currentStock: 85,
-    expirationDate: "2026-11-20",
-    location: "Estante B-04",
-  },
-  {
-    id: "lot-003",
-    productId: "prod-003",
-    productName: "Losartán 50mg",
-    lotCode: "LOT-LOS-001",
-    currentStock: 45,
-    expirationDate: "2026-09-01",
-    location: "Estante C-08",
-  },
-  {
-    id: "lot-004",
-    productId: "prod-001",
-    productName: "Amoxicilina 500mg",
-    lotCode: "LOT-AMX-002",
-    currentStock: 60,
-    expirationDate: "2027-06-10",
-    location: "Estante A-12",
-  },
-];
+// (No demo data — lots are fetched from the real local database via
+//  InventoryAdjustmentsService.searchLots().)
 
 // ---------------------------------------------------------------------------
 // Component
@@ -111,14 +66,11 @@ export const InventoryAdjustmentsPage: FC = () => {
   const isOnline = useOnlineStatus();
   const adjustmentsService = useInventoryAdjustmentsService();
 
-  // Search — will eventually query Prisma; currently filters DEMO_LOTS
+  // Search — fetches from the real local Lot + Product tables
   const [searchQuery, setSearchQuery] = useState("");
   const [lots, setLots] = useState<DisplayLot[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedLot, setSelectedLot] = useState<DisplayLot | null>(null);
-
-  // In-memory mutable copy so the UI reflects post-adjustment stock immediately
-  const lotsRef = useRef<DisplayLot[]>(DEMO_LOTS.map((l) => ({ ...l })));
 
   // Form
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("DECREASE");
@@ -148,14 +100,13 @@ export const InventoryAdjustmentsPage: FC = () => {
       return;
     }
 
-    const q = searchQuery.toLowerCase();
-    const results = lotsRef.current.filter(
-      (lot) =>
-        lot.productName.toLowerCase().includes(q) ||
-        lot.lotCode.toLowerCase().includes(q),
-    );
-    setLots(results);
-  }, [searchQuery]);
+    try {
+      const results = await adjustmentsService.searchLots(searchQuery.trim());
+      setLots(results);
+    } catch {
+      setLots([]);
+    }
+  }, [searchQuery, adjustmentsService]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -244,12 +195,15 @@ export const InventoryAdjustmentsPage: FC = () => {
 
       setIsProcessing(false);
 
-      // Update local display to reflect the new stock
+      // Update local display to reflect the new stock without re-querying
       const delta = adjustmentType === "INCREASE" ? quantity : -quantity;
-      const lotInRef = lotsRef.current.find((l) => l.id === selectedLot.id);
-      if (lotInRef) {
-        lotInRef.currentStock = Math.max(0, lotInRef.currentStock + delta);
-      }
+      setLots((prev) =>
+        prev.map((l) =>
+          l.id === selectedLot.id
+            ? { ...l, currentStock: Math.max(0, l.currentStock + delta) }
+            : l,
+        ),
+      );
       setSelectedLot((prev) =>
         prev
           ? { ...prev, currentStock: Math.max(0, prev.currentStock + delta) }

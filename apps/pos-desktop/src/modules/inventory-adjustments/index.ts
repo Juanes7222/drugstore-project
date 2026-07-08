@@ -3,6 +3,7 @@ export {
   InventoryAdjustmentsService,
   type AdjustmentItemInput,
   type CreateAdjustmentInput,
+  type LotSearchResult,
 } from './inventory-adjustments.service';
 
 export {

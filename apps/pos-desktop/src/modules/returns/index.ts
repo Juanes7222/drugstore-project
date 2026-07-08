@@ -4,6 +4,7 @@ export {
   type ReturnItemInput,
   type CreateReturnInput,
   type ConfirmReturnInput,
+  type SaleSearchResult,
 } from './returns.service';
 
 export {

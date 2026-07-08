@@ -122,50 +122,36 @@ export const ReturnsPage: FC = () => {
     }
 
     try {
-      let saleId = searchQuery.trim();
+      const result = await returnsService.searchSale(searchQuery.trim());
 
-      // If the query looks like a sequential number (digits only), try to
-      // convert to the local-stored format. The real service expects a UUID.
-      // For now we keep the mock lookup since the returns page needs the full
-      // service to be wired — the service will handle the lookup against
-      // the local Prisma DB.
-      //
-      // TODO: Once the POS service layer fully integrates, replace this with
-      //       a real Prisma query across the local Sale table.
-
-      // For Phase 5 the real ReturnsService.create() expects a sale UUID.
-      // In production the caller would obtain that UUID from the local
-      // SalesService (or from the cart flow).  Here we simulate a lookup
-      // that will be replaced once the sale-completion flow emits the UUID.
-      //
-      // The service's create() method will throw SaleForReturnNotFoundException
-      // if the sale UUID doesn't exist.
-      //
-      // For now we search the local DB ourselves via the existing
-      // local-database infrastructure.  When the sale is not found the UI
-      // falls back to the unverified flow.
-
-      // Since we don't have direct Prisma access in the renderer yet
-      // (the service abstraction is the right layer), and the ReturnsService
-      // does not expose a "searchSale" method, we attempt a direct lookup
-      // via the service's internal flow.  If it fails we show the fallback.
-      //
-      // For the purpose of this demo, attempt to call create with a minimal
-      // input and catch the "not found" exception.
-      try {
-        // The service.create validates the sale exists.  If it doesn't,
-        // an exception is thrown.  We temporarily skip the create and
-        // show the fallback to demonstrate the verified flow fails
-        // gracefully.
-        throw new Error("SALE_NOT_FOUND");
-      } catch {
+      if (result) {
+        setFoundSale({
+          id: result.id,
+          sequentialNumber: result.localNumber,
+          createdAt: result.createdAt,
+          clientName: result.clientName,
+          workstationName: result.workstationId,
+          items: result.items.map((item) => ({
+            id: item.id,
+            productId: item.productId,
+            productName: item.productName,
+            quantity: item.quantity,
+            unitPriceCents: item.unitPriceCents,
+            taxPercentage: item.taxRate,
+            totalCents: item.totalCents,
+            lotCode: item.lotCode,
+          })),
+          totalCents: result.totalCents,
+        });
+        setActiveTab("verified");
+      } else {
         setSearchError(t("returns.sale_not_found"));
         setActiveTab("unverified");
       }
     } catch {
       setSearchError(t("returns.search_error"));
     }
-  }, [searchQuery, t]);
+  }, [searchQuery, returnsService, t]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

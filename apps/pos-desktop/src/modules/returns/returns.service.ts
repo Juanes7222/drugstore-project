@@ -67,6 +67,40 @@ export interface ConfirmReturnInput {
 // Internal types
 // ---------------------------------------------------------------------------
 
+export interface SaleSearchResult {
+  /** Sale UUID. */
+  id: string;
+  /** Sequential sale number (localNumber). */
+  localNumber: number;
+  /** ISO-8601 creation timestamp. */
+  createdAt: string;
+  /** Client name from the snapshot at sale time. */
+  clientName: string;
+  /** The workstation that processed the sale. */
+  workstationId: string;
+  /** Sale line items (only those eligible for return). */
+  items: Array<{
+    /** SaleItem UUID. */
+    id: string;
+    /** Product UUID. */
+    productId: string;
+    /** Commercial name snapshot (what the label showed at sale time). */
+    productName: string;
+    /** Quantity sold. */
+    quantity: number;
+    /** Unit price in COP cents. */
+    unitPriceCents: number;
+    /** Tax rate as a decimal (e.g. 0.19 for 19 %). */
+    taxRate: number;
+    /** Line total in COP cents. */
+    totalCents: number;
+    /** Batch / lot code from the first lot consumed (for display). */
+    lotCode: string;
+  }>;
+  /** Sale total in COP cents. */
+  totalCents: number;
+}
+
 interface OriginalSaleWithItems {
   id: string;
   operationalState: string;
@@ -273,6 +307,81 @@ export class ReturnsService {
 
       return clientReturn;
     });
+  }
+
+  /**
+   * Search for a CONFIRMED sale by UUID or local sequential number.
+   *
+   * ✅ Real Prisma query — no mock data, no fallback.
+   *
+   * Accepts either:
+   * - A UUID string → matches `sale.id`
+   * - A numeric string → matches `sale.localNumber` (bigint)
+   *
+   * Only returns CONFIRMED sales (eligible for returns).
+   *
+   * @returns The sale with its items (capped fields) or `null` if not found /
+   *          query is empty / not a valid UUID or number.
+   */
+  async searchSale(query: string): Promise<SaleSearchResult | null> {
+    const trimmed = query.trim();
+    if (!trimmed) return null;
+
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      .test(trimmed);
+
+    const where: Prisma.SaleWhereInput = {
+      operationalState: 'CONFIRMED',
+    };
+
+    if (isUuid) {
+      where.id = trimmed;
+    } else {
+      try {
+        where.localNumber = BigInt(trimmed);
+      } catch {
+        // Not a valid UUID or integer
+        return null;
+      }
+    }
+
+    const sale = await this.prisma.sale.findFirst({
+      where,
+      include: {
+        items: {
+          include: {
+            lots: {
+              include: {
+                lot: {
+                  select: { batchNumber: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!sale) return null;
+
+    return {
+      id: sale.id,
+      localNumber: Number(sale.localNumber),
+      createdAt: sale.createdAt.toISOString(),
+      clientName: sale.clientNameSnapshot ?? '',
+      workstationId: sale.workstationId,
+      items: sale.items.map((item) => ({
+        id: item.id,
+        productId: item.productId,
+        productName: item.productCommercialNameSnapshot,
+        quantity: item.quantity,
+        unitPriceCents: Number(item.unitPrice.times(100).toFixed(0)),
+        taxRate: Number(item.taxRate),
+        totalCents: Number(item.total.times(100).toFixed(0)),
+        lotCode: item.lots[0]?.lot.batchNumber ?? '',
+      })),
+      totalCents: Number(sale.totalAmount.times(100).toFixed(0)),
+    };
   }
 
   /**
