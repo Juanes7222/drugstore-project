@@ -51,6 +51,13 @@ export class InventoryAdjustmentsController {
     return this.adjustmentsService.findById(id);
   }
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * Inventory adjustments are now sent through `POST /sync/batch` as an
+   * `INVENTORY_ADJUSTMENT` operation for offline-first synchronization.
+   * This endpoint is preserved **exclusively** for Backoffice administrative
+   * use and manual overrides from the web interface.
+   */
   @Post()
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @Auditable({

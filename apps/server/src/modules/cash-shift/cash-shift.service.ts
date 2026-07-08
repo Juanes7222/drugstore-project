@@ -127,6 +127,13 @@ export class CashShiftService {
     userId: string,
     dto: ForceCloseCashShiftDto,
   ): Promise<any> {
+    // Business validation: closing notes are required for force-close.
+    // Relocated from ForceCloseCashShiftSchema (HTTP DTO) to the service layer
+    // so that sync dispatcher replays are also protected.
+    if (!dto.closingNotes || dto.closingNotes.trim().length === 0) {
+      throw new Error('Closing notes are required for force close');
+    }
+
     const shift = await this.getOpenShift(shiftId);
 
     const closingCounts = await this.prisma.shiftCashCount.findMany({

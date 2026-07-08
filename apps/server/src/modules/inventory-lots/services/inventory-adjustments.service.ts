@@ -74,6 +74,13 @@ export class InventoryAdjustmentsService {
     userId: string,
     physicalCountId?: string,
   ): Promise<any> {
+    // Business validation: at least one adjustment item is required.
+    // Relocated from CreateInventoryAdjustmentSchema (HTTP DTO) to the service
+    // layer so that sync dispatcher replays are also protected.
+    if (!createDto.items || createDto.items.length === 0) {
+      throw new Error('At least one item is required for an inventory adjustment');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const itemsData = await this.prepareAdjustmentItems(tx, createDto.items);
       const sequentialNumber = await this.getNextSequentialNumber(tx);

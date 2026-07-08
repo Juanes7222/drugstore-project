@@ -11,8 +11,15 @@ export const PaymentInputSchema = z.object({
   processorResponseCode: z.string().max(100).optional(),
 });
 
+/**
+ * @deprecated The `.min(1)` constraint has been removed from the HTTP-level
+ * DTO because the POS now validates payments locally and submits sales via
+ * `POST /sync/batch`. The authoritative "at least one payment" validation
+ * has been relocated to `SalesService.confirm()` so that sync dispatcher
+ * replays are also protected.
+ */
 export const ConfirmSaleSchema = z.object({
-  payments: z.array(PaymentInputSchema).min(1, "Debe haber al menos un pago"),
+  payments: z.array(PaymentInputSchema),
 });
 
 export type ConfirmSaleDto = z.infer<typeof ConfirmSaleSchema>;

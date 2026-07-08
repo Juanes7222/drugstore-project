@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { SyncOperationDispatcherService } from '../sync-operation-dispatcher.service';
+import type { SyncQueueEntry } from '../entities/sync-queue-entry.entity';
 
 /**
  * Fixed delay between retries for FAILED entries, in seconds.
@@ -11,11 +12,11 @@ import { SyncOperationDispatcherService } from '../sync-operation-dispatcher.ser
 const RETRY_FIXED_DELAY_SECONDS = 60;
 
 /** Operation types that the cron job replays. */
-const SUPPORTED_TYPES = [
-  'SALE_CONFIRMATION' as const,
-  'SHIFT_CLOSURE' as const,
-  'CLIENT_CREATION' as const,
-  'INVENTORY_ADJUSTMENT' as const,
+const SUPPORTED_TYPES: SyncQueueEntry['operationType'][] = [
+  'SALE_CONFIRMATION',
+  'SHIFT_CLOSURE',
+  'CLIENT_CREATION',
+  'INVENTORY_ADJUSTMENT',
 ];
 
 @Injectable()
@@ -41,7 +42,7 @@ export class SyncProcessingJob {
   }
 
   /** Queries for supported entries that are ready to process. */
-  private async fetchSupportedEntries(): Promise<any[]> {
+  private async fetchSupportedEntries(): Promise<SyncQueueEntry[]> {
     return this.prisma.syncQueue.findMany({
       where: {
         operationType: { in: SUPPORTED_TYPES },
@@ -52,11 +53,11 @@ export class SyncProcessingJob {
       },
       orderBy: { receivedAt: 'asc' },
       take: 20,
-    });
+    }) as Promise<SyncQueueEntry[]>;
   }
 
   /** Dispatches a single entry and updates its status to COMPLETED. */
-  private async processEntry(entry: any): Promise<void> {
+  private async processEntry(entry: SyncQueueEntry): Promise<void> {
     try {
       await this.prisma.syncQueue.update({
         where: { id: entry.id },
@@ -69,30 +70,31 @@ export class SyncProcessingJob {
         where: { id: entry.id },
         data: { status: 'COMPLETED', processedAt: new Date() },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       await this.markFailed(entry, error);
     }
   }
 
   /** Marks an entry as FAILED, increments retry count, schedules next retry. */
-  private async markFailed(entry: any, error: any): Promise<void> {
+  private async markFailed(entry: SyncQueueEntry, error: unknown): Promise<void> {
     const retryCount = (entry.retryCount ?? 0) + 1;
     const nextRetryAt = new Date(
       Date.now() + RETRY_FIXED_DELAY_SECONDS * 1000,
     );
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
     await this.prisma.syncQueue.update({
       where: { id: entry.id },
       data: {
         status: 'FAILED',
         retryCount,
-        lastErrorMessage: error.message ?? 'Unknown error',
+        lastErrorMessage: errorMessage,
         nextRetryAt,
       },
     });
 
     this.logger.warn(
-      `Sync operation ${entry.id} (${entry.operationType}) failed: ${error.message}`,
+      `Sync operation ${entry.id} (${entry.operationType}) failed: ${errorMessage}`,
     );
   }
 }

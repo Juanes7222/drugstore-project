@@ -129,6 +129,13 @@ export class SalesService {
   async confirm(saleId: string, confirmDto: ConfirmSaleDto, userId: string): Promise<any> {
     let fiscalDocumentId: string | null = null;
 
+    // Business validation: at least one payment is required.
+    // Relocated from ConfirmSaleSchema (HTTP DTO) to the service layer
+    // so that sync dispatcher replays are also protected.
+    if (!confirmDto.payments || confirmDto.payments.length === 0) {
+      throw new PaymentAmountMismatchException(0, 0);
+    }
+
     const result = await this.prisma.$transaction(async (tx) => {
       const sale = await tx.sale.findUnique({
         where: { id: saleId },
@@ -229,6 +236,13 @@ export class SalesService {
       if (!sale) throw new SaleNotFoundException(id);
       if (sale.operationalState !== SaleOperationalState.CONFIRMED) {
         throw new SaleNotConfirmedException(id);
+      }
+
+      // Business validation: annulment reason is required.
+      // Relocated from AnnulSaleSchema (HTTP DTO) to the service layer
+      // so that sync dispatcher replays are also protected.
+      if (!dto.annulmentReason || dto.annulmentReason.trim().length === 0) {
+        throw new Error('Annulment reason is required');
       }
 
       // reverseStockForSale throws LotStateChangedSinceSaleException on EXPIRED/BLOCKED lots,

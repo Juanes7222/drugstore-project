@@ -32,6 +32,12 @@ import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 export class CashShiftController {
   constructor(private cashShiftService: CashShiftService) {}
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * Cash shift opening is now triggered through `POST /sync/batch` as a
+   * `SHIFT_CLOSURE` operation flow. This endpoint is preserved **exclusively**
+   * for Backoffice administrative use and manual overrides from the web interface.
+   */
   @Post()
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @HttpCode(201)
@@ -53,6 +59,12 @@ export class CashShiftController {
     );
   }
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * Cash counts are registered as part of the `SHIFT_CLOSURE` sync operation
+   * inside `POST /sync/batch`. This endpoint is preserved **exclusively**
+   * for Backoffice administrative use and manual overrides from the web interface.
+   */
   @Post(':id/cash-counts')
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @HttpCode(201)
@@ -76,6 +88,12 @@ export class CashShiftController {
     return (this.cashShiftService as any).listCashCounts(shiftId);
   }
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * Shift closure is now handled through `POST /sync/batch` as a
+   * `SHIFT_CLOSURE` operation. This endpoint is preserved **exclusively**
+   * for Backoffice administrative use and manual overrides from the web interface.
+   */
   @Post(':id/close')
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @Auditable({
@@ -92,6 +110,11 @@ export class CashShiftController {
     return this.cashShiftService.closeShift(shiftId, user.id, dto);
   }
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * Force-close is only used for Backoffice administrative overrides;
+   * the POS relies entirely on `POST /sync/batch` for normal closure.
+   */
   @Post(':id/force-close')
   @Roles(RoleType.ADMIN)
   @Auditable({

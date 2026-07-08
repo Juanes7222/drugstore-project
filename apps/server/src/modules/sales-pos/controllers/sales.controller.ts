@@ -40,6 +40,13 @@ export class SalesController {
     return this.salesService.findById(id);
   }
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * All write operations now go through `POST /sync/batch` for local-first
+   * offline synchronization. This endpoint is preserved **exclusively** for
+   * Backoffice administrative use and manual overrides from the web interface.
+   * It will be removed only after the Backoffice migration is complete.
+   */
   @Post()
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @Auditable({ action: AuditAction.CREATE, module: SystemModule.SALES, entityType: 'Sale' })
@@ -51,6 +58,13 @@ export class SalesController {
     return this.salesService.create(createDto, user.id, workstationId || '');
   }
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * Sale confirmations are now sent bundled inside `POST /sync/batch`
+   * as `SALE_CONFIRMATION` operations. This endpoint is preserved
+   * **exclusively** for Backoffice administrative use and manual overrides
+   * from the web interface.
+   */
   @Post(':id/confirm')
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @HttpCode(200)
@@ -63,6 +77,12 @@ export class SalesController {
     return this.salesService.confirm(id, confirmDto, user.id);
   }
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * Sale annulments are now sent bundled inside `POST /sync/batch`
+   * as part of sync operations. This endpoint is preserved **exclusively**
+   * for Backoffice administrative use and manual overrides from the web interface.
+   */
   @Post(':id/annul')
   @Roles(RoleType.ADMIN)
   @HttpCode(200)

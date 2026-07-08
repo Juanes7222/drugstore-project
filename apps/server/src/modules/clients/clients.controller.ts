@@ -52,6 +52,13 @@ export class ClientsController {
     return this.clientsService.findById(id);
   }
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * Client creation is now sent through `POST /sync/batch` as a
+   * `CLIENT_CREATION` operation to support offline-first synchronization.
+   * This endpoint is preserved **exclusively** for Backoffice administrative
+   * use and manual overrides from the web interface.
+   */
   @Post()
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @HttpCode(201)
@@ -63,6 +70,13 @@ export class ClientsController {
     return this.clientsService.create(dto, user.id);
   }
 
+  /**
+   * @deprecated The POS desktop no longer calls this endpoint directly.
+   * Client updates are now sent through `POST /sync/batch` as a
+   * `CLIENT_CREATION` operation (upsert semantics). This endpoint is
+   * preserved **exclusively** for Backoffice administrative use and manual
+   * overrides from the web interface.
+   */
   @Patch(':id')
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.CLIENTS, entityType: 'Client' })
