@@ -1,0 +1,28 @@
+{
+  "name": "@pharmacy/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared Prisma schema, generated client, and type re-exports for all apps",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "prisma": "^7.8.0",
+    "typescript": "^6.0.3"
+  }
+}

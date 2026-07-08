@@ -1,12 +1,12 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@pharmacy/database';
 import { PurchaseOrdersService } from './purchase-orders.service';
 import { PurchaseOrderNotFoundException } from '../exceptions/purchase-order-not-found.exception';
 import { PurchaseOrderNotDraftException } from '../exceptions/purchase-order-not-draft.exception';
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 
-jest.mock('@prisma/client', () => {
+jest.mock('@pharmacy/database', () => {
   class Decimal {
     constructor(private v: any) { /* mock */ }
     toString(): string { return String(this.v); }
@@ -53,9 +53,9 @@ describe('PurchaseOrdersService', () => {
     supplierId: 'supplier-1',
     expectedDeliveryDate: null,
     notes: 'Test order',
-    subtotal: new (jest.requireMock('@prisma/client').Prisma.Decimal)(50000),
-    totalTax: new (jest.requireMock('@prisma/client').Prisma.Decimal)(0),
-    totalAmount: new (jest.requireMock('@prisma/client').Prisma.Decimal)(50000),
+    subtotal: new (jest.requireMock('@pharmacy/database').Prisma.Decimal)(50000),
+    totalTax: new (jest.requireMock('@pharmacy/database').Prisma.Decimal)(0),
+    totalAmount: new (jest.requireMock('@pharmacy/database').Prisma.Decimal)(50000),
     createdById: 'user-1',
     confirmedAt: null,
     confirmedById: null,
@@ -70,7 +70,7 @@ describe('PurchaseOrdersService', () => {
     requestedQuantity: 10,
     receivedQuantity: 0,
     pendingQuantity: 10,
-    expectedUnitCost: new (jest.requireMock('@prisma/client').Prisma.Decimal)(5000),
+    expectedUnitCost: new (jest.requireMock('@pharmacy/database').Prisma.Decimal)(5000),
   };
 
   function setupTransactionMock(): void {

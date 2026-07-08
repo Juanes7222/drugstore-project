@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SupplierIdentificationType } from "@prisma/client";
+import { SupplierIdentificationType } from "@pharmacy/database";
 
 export const CreateSupplierSchema = z.object({
   identificationType: z.nativeEnum(SupplierIdentificationType),

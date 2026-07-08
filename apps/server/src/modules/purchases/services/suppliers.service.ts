@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma, SupplierIdentificationType } from '@prisma/client';
+import { Prisma, SupplierIdentificationType } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreateSupplierDto } from '../dto/create-supplier.dto';
 import { UpdateSupplierDto } from '../dto/update-supplier.dto';

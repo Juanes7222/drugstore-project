@@ -1,12 +1,12 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma } from '@pharmacy/database';
 import { ClientsService } from './clients.service';
 import { ClientNotFoundException } from './exceptions/client-not-found.exception';
 import { DuplicateClientIdentificationException } from './exceptions/duplicate-client-identification.exception';
 import { DataSubjectRequestAlreadyPendingException } from './exceptions/data-subject-request-already-pending.exception';
 import { NoPendingDataSubjectRequestException } from './exceptions/no-pending-data-subject-request.exception';
 
-jest.mock('@prisma/client', () => ({
+jest.mock('@pharmacy/database', () => ({
   PrismaClient: jest.fn(),
   Prisma: {
     PrismaClientKnownRequestError: class extends Error {

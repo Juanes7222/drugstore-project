@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
-import { Prisma, PurchaseReturnState } from '@prisma/client';
+import { Prisma, PurchaseReturnState } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreateSupplierReturnDto } from '../dto/create-supplier-return.dto';
 import { QuerySupplierReturnDto } from '../dto/query-supplier-return.dto';

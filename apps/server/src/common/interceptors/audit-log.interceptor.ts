@@ -11,7 +11,7 @@ import { tap } from 'rxjs/operators';
 import { Request } from 'express';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import type { AuditAction as PrismaAuditAction, SystemModule as PrismaSystemModule } from '@prisma/client';
+import type { AuditAction as PrismaAuditAction, SystemModule as PrismaSystemModule } from '@pharmacy/database';
 import { AUDITABLE_KEY, AuditableMetadata } from '../decorators/auditable.decorator';
 import { User } from '@pharmacy/shared-types';
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma, AdjustmentState, MovementType, LotState } from '@prisma/client';
+import { Prisma, AdjustmentState, MovementType, LotState } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import {
   CreateInventoryAdjustmentDto,

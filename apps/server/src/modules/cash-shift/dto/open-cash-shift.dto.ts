@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@pharmacy/database';
 
 export const OpenCashShiftSchema = z.object({
   openingBalance: z.string().transform((val) => new Prisma.Decimal(val)),

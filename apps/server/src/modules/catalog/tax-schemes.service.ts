@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@pharmacy/database';
 import { CreateTaxSchemeDto } from './dto/create-tax-scheme.dto';
 import { DuplicateActiveTaxSchemeException } from './exceptions/duplicate-active-tax-scheme.exception';
 import * as crypto from 'crypto';

@@ -7,15 +7,14 @@
     "isolatedModules": false,
     "skipLibCheck": true,
     "noImplicitAny": true,
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "types": ["node"],
     "paths": {
       "@/*": ["./src/*"],
-      "@prisma/client": ["../../node_modules/.prisma/client"],
       "@pharmacy/shared-types": ["../../packages/shared-types/src"],
-      "@pharmacy/shared-validation": ["../../packages/shared-validation/src"]
+      "@pharmacy/shared-validation": ["../../packages/shared-validation/src"],
+      "@pharmacy/database": ["../../packages/database/src"]
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.spec.ts", "**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "generated", "**/*.spec.ts", "**/*.test.ts"]
 }

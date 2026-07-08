@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { SessionRevocationReason } from '@prisma/client';
+import { SessionRevocationReason } from '@pharmacy/database';
 import * as crypto from 'crypto';
 
 @Injectable()

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@pharmacy/database';
 import { CashCountType } from '@pharmacy/shared-types';
 
 export const RegisterCashCountSchema = z.object({

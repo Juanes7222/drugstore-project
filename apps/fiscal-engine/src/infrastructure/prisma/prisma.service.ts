@@ -1,54 +1,19 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { PrismaClient } from '@pharmacy/database';
+import { PrismaPg } from '@prisma/adapter-pg';
 
-/**
- * Duplicated from apps/server/src/infrastructure/prisma/prisma.service.ts
- * for isolation; promoted to a shared package if cross-app reuse grows.
- */
 @Injectable()
-export class PrismaService implements OnModuleInit, OnModuleDestroy {
-  private prismaClient: any;
-
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor() {
-    this.prismaClient = null;
-  }
-
-  private getClient(): any {
-    if (!this.prismaClient) {
-      const { PrismaClient } = require('@prisma/client');
-      this.prismaClient = new PrismaClient();
-    }
-    return this.prismaClient;
-  }
-
-  get fiscalDocument(): any {
-    return this.getClient().fiscalDocument;
-  }
-
-  get sale(): any {
-    return this.getClient().sale;
-  }
-
-  get saleItem(): any {
-    return this.getClient().saleItem;
-  }
-
-  get client(): any {
-    return this.getClient().client;
-  }
-
-  get fiscalIssuerConfig(): any {
-    return this.getClient().fiscalIssuerConfig;
-  }
-
-  get fiscalResolution(): any {
-    return this.getClient().fiscalResolution;
+    const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+    super({ adapter });
   }
 
   async onModuleInit(): Promise<void> {
-    await this.getClient().$connect();
+    await this.$connect();
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.getClient().$disconnect();
+    await this.$disconnect();
   }
 }

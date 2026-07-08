@@ -3,9 +3,10 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "src",
-    "ignoreDeprecations": "6.0",
+    "types": ["node"],
     "baseUrl": "./",
     "paths": {
+      "@pharmacy/database": ["../../packages/database/src"],
       "@pharmacy/shared-types": ["../../packages/shared-types/src"],
       "@pharmacy/shared-validation": ["../../packages/shared-validation/src"]
     }

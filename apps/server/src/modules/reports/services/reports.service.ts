@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@pharmacy/database';
 import { ReportDateRangeQueryDto } from '../dto/report-date-range.query.dto';
 import { ReportInvalidDateRangeException } from '../exceptions/report-invalid-date-range.exception';
 import { SaleType } from '@pharmacy/shared-types';

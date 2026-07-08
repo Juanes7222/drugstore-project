@@ -1,5 +1,5 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma } from '@pharmacy/database';
 import { CashShiftService } from './cash-shift.service';
 import { ShiftAlreadyOpenException } from './exceptions/shift-already-open.exception';
 import { ShiftNotOpenException } from './exceptions/shift-not-open.exception';
@@ -7,7 +7,7 @@ import { MissingClosingCashCountsException } from './exceptions/missing-closing-
 import { InvalidCashCountForNonCashMethodException } from './exceptions/invalid-cash-count-for-non-cash-method.exception';
 import { PaymentMethodNotFoundException } from './exceptions/payment-method-not-found.exception';
 
-jest.mock('@prisma/client', () => {
+jest.mock('@pharmacy/database', () => {
   // eslint-disable-next-line @typescript-eslint/no-shadow
   const DecimalMock = jest.fn().mockImplementation((v: any) => ({
     toString: () => String(v),

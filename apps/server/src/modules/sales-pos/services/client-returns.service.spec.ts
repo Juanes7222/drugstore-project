@@ -1,5 +1,5 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma } from '@pharmacy/database';
 import { ClientReturnsService } from './client-returns.service';
 import { ClientReturnNotFoundException } from '../exceptions/client-return-not-found.exception';
 import { ClientReturnNotDraftException } from '../exceptions/client-return-not-draft.exception';
@@ -12,7 +12,7 @@ import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { ClientReturnCalculatorService } from './client-return-calculator.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
 
-jest.mock('@prisma/client', () => ({
+jest.mock('@pharmacy/database', () => ({
   PrismaClient: jest.fn(),
   ClientReturnState: { DRAFT: 'DRAFT', PENDING_PICKUP: 'PENDING_PICKUP', CONFIRMED: 'CONFIRMED', REJECTED: 'REJECTED', ANNULLED: 'ANNULLED' },
   ShiftState: { OPEN: 'OPEN', CLOSED: 'CLOSED' },

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma, LotState, MovementType } from '@prisma/client';
+import { Prisma, LotState, MovementType } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 import { QueryLotDto } from '../dto/query-lot.dto';

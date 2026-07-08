@@ -2,21 +2,22 @@
   "name": "@pharmacy/fiscal-engine",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Asynchronous microservice for DIAN electronic invoicing and fiscal processing",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc",
     "start": "node dist/main.js",
-    "typecheck": "tsc --noEmit",
-    "prisma:generate": "prisma generate"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.1.27",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.27",
+    "@pharmacy/database": "workspace:*",
     "@pharmacy/shared-types": "workspace:*",
-    "@prisma/client": "^7.8.0",
+    "@prisma/adapter-pg": "^7.8.0",
     "bullmq": "^5.79.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",

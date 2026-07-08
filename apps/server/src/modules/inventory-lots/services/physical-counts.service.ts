@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { InventoryAdjustmentsService } from './inventory-adjustments.service';
-import { Prisma, PhysicalCountState, AdjustmentState, MovementType } from '@prisma/client';
+import { Prisma, PhysicalCountState, AdjustmentState, MovementType } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { StartPhysicalCountDto } from '../dto/start-physical-count.dto';
 import { RegisterPhysicalCountLineDto } from '../dto/register-physical-count-line.dto';

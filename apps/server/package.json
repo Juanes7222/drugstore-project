@@ -1,7 +1,7 @@
 {
   "name": "@pharmacy/server",
   "version": "0.1.0",
-  "type": "commonjs",
+  "type": "module",
   "description": "NestJS backend server for pharmacy POS system",
   "main": "dist/apps/server/src/main.js",
   "scripts": {
@@ -14,11 +14,7 @@
     "test:watch": "jest --watch",
     "test:e2e": "jest --config jest.e2e.config.ts --forceExit --detectOpenHandles",
     "lint": "eslint src --ext .ts",
-    "typecheck": "tsc --noEmit",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate:dev": "prisma migrate dev",
-    "prisma:migrate:deploy": "prisma migrate deploy",
-    "prisma:studio": "prisma studio"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",
@@ -30,8 +26,8 @@
     "@nestjs/platform-express": "^11.1.27",
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/swagger": "^11.4.5",
+    "@pharmacy/database": "workspace:*",
     "@prisma/adapter-pg": "^7.8.0",
-    "@prisma/client": "^7.8.0",
     "argon2": "^0.44.0",
     "bullmq": "^5.79.3",
     "compression": "^1.8.1",

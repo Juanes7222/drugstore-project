@@ -1,16 +1,15 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Shared Prisma schema for @pharmacy/database — consumed by apps/server, apps/fiscal-engine, and (later) apps/pos-desktop.
+// All models, enums, and comments are unchanged from the original apps/server/prisma/schema.prisma.
+// Only the generator and datasource blocks were adapted for Prisma 7's driver-adapter + custom output requirement.
 
 generator client {
-  provider = "prisma-client-js"
-  // Output to the default location that @prisma/client v7 expects
-  // Path is relative from schema dir (apps/server/prisma/) to root node_modules
-  output   = "../../../node_modules/.prisma/client"
+  provider = "prisma-client"
+  output   = "../generated/client"
 }
 
 datasource db {
   provider = "postgresql"
-  // url is now configured in prisma.config.ts
+  // Connection URL is configured in packages/database/prisma.config.ts, not in this schema file.
 }
 
 // Enums for Auth & Catalog domains

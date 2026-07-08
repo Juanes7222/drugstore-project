@@ -1,5 +1,5 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma } from '@pharmacy/database';
 import { SalesService } from './sales.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
@@ -12,7 +12,7 @@ import { ChangeRequiresCashPaymentException } from '../exceptions/change-require
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 import { DiscountReasonRequiredException } from '@/modules/catalog/exceptions/discount-reason-required.exception';
 
-jest.mock('@prisma/client', () => ({
+jest.mock('@pharmacy/database', () => ({
   PrismaClient: jest.fn(),
   ShiftState: { OPEN: 'OPEN', CLOSED: 'CLOSED' },
   SaleOperationalState: { DRAFT: 'DRAFT', IN_PROGRESS: 'IN_PROGRESS', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED', ANNULLED: 'ANNULLED' },
@@ -266,7 +266,7 @@ describe('SalesService', () => {
 
     it('retries on P2002 unique constraint violation for localNumber', async () => {
       setupTransactionMock();
-      const Prisma = jest.requireMock('@prisma/client').Prisma;
+      const Prisma = jest.requireMock('@pharmacy/database').Prisma;
       const p2002Error = new Prisma.PrismaClientKnownRequestError(
         'Unique constraint',
         'P2002',

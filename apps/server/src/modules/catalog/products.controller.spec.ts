@@ -1,5 +1,5 @@
-// Mock @prisma/client before any imports that depend on it
-jest.mock('@prisma/client', () => {
+// Mock @pharmacy/database before any imports that depend on it
+jest.mock('@pharmacy/database', () => {
   class MockPrismaClient {
     $connect = jest.fn();
     $disconnect = jest.fn();

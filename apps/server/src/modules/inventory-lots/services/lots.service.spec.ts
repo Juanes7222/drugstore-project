@@ -1,5 +1,5 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient, Prisma, LotState, MovementType } from '@prisma/client';
+import { PrismaClient, Prisma, LotState, MovementType } from '@pharmacy/database';
 import { LotsService } from './lots.service';
 import { InsufficientStockException } from '../exceptions/insufficient-stock.exception';
 import { ConcurrentStockModificationException } from '../exceptions/concurrent-stock-modification.exception';
@@ -11,7 +11,7 @@ import { LotStateChangedSinceSaleException } from '../exceptions/lot-state-chang
 import { LotNotEligibleForReturnException } from '../exceptions/lot-not-eligible-for-return.exception';
 import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 
-jest.mock('@prisma/client', () => {
+jest.mock('@pharmacy/database', () => {
   const DecimalMock = jest.fn().mockImplementation((v: any) => ({
     toString: () => String(v),
     toNumber: () => Number(v),

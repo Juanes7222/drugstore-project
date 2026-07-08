@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma, PurchaseOrderState } from '@prisma/client';
+import { Prisma, PurchaseOrderState } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreatePurchaseOrderDto, CreatePurchaseOrderItemDto } from '../dto/create-purchase-order.dto';
 import { QueryPurchaseOrderDto } from '../dto/query-purchase-order.dto';

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@pharmacy/database';
 import { OpenCashShiftDto } from './dto/open-cash-shift.dto';
 import { RegisterCashCountDto } from './dto/register-cash-count.dto';
 import { CloseCashShiftDto } from './dto/close-cash-shift.dto';

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { $Enums } from '@prisma/client';
+import { $Enums } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { RoleType, User } from '@pharmacy/shared-types';
 import { SystemConfigValueSchema } from '../dto/system-config-value.schema';

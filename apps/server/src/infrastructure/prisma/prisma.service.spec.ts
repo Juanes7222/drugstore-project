@@ -1,8 +1,8 @@
-// Mock @prisma/client before any imports that depend on it
+// Mock @pharmacy/database before any imports that depend on it
 const mockConnect = jest.fn().mockResolvedValue(undefined);
 const mockDisconnect = jest.fn().mockResolvedValue(undefined);
 
-jest.mock('@prisma/client', () => {
+jest.mock('@pharmacy/database', () => {
   return {
     PrismaClient: class MockPrismaClient {
       $connect = mockConnect;

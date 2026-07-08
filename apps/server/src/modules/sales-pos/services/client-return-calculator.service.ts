@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma, ClientReturnState } from '@prisma/client';
+import { Prisma, ClientReturnState } from '@pharmacy/database';
 import { CreateClientReturnItemDto } from '../dto/create-client-return.dto';
 import { SaleItemNotFoundException } from '../exceptions/sale-item-not-found.exception';
 import { ReturnQuantityExceedsAvailableException } from '../exceptions/return-quantity-exceeds-available.exception';

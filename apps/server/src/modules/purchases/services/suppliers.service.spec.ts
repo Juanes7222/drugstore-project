@@ -1,10 +1,10 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@pharmacy/database';
 import { SuppliersService } from './suppliers.service';
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
 import { DuplicateSupplierIdentificationException } from '../exceptions/duplicate-supplier-identification.exception';
 
-jest.mock('@prisma/client', () => ({
+jest.mock('@pharmacy/database', () => ({
   PrismaClient: jest.fn(),
   SupplierIdentificationType: { NIT: 'NIT', CC: 'CC', CE: 'CE' },
   Prisma: {
@@ -184,7 +184,7 @@ describe('SuppliersService', () => {
     });
 
     it('throws DuplicateSupplierIdentificationException on Prisma P2002 error', async () => {
-      const Prisma = jest.requireMock('@prisma/client').Prisma;
+      const Prisma = jest.requireMock('@pharmacy/database').Prisma;
       const p2002Error = new Prisma.PrismaClientKnownRequestError(
         'Unique constraint violation',
         'P2002',
@@ -233,7 +233,7 @@ describe('SuppliersService', () => {
     });
 
     it('throws DuplicateSupplierIdentificationException on P2002 from update', async () => {
-      const Prisma = jest.requireMock('@prisma/client').Prisma;
+      const Prisma = jest.requireMock('@pharmacy/database').Prisma;
       const p2002Error = new Prisma.PrismaClientKnownRequestError(
         'Unique constraint',
         'P2002',

@@ -1,9 +1,9 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient, Prisma, MovementType } from '@prisma/client';
+import { PrismaClient, Prisma, MovementType } from '@pharmacy/database';
 import { InventoryMovementsService } from './inventory-movements.service';
 import { QueryInventoryMovementDto } from '../dto/query-inventory-movement.dto';
 
-jest.mock('@prisma/client', () => {
+jest.mock('@pharmacy/database', () => {
   const DecimalMock = jest.fn().mockImplementation((v: any) => ({
     toString: () => String(v),
     toNumber: () => Number(v),

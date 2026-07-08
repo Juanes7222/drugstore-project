@@ -1,10 +1,10 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma } from '@pharmacy/database';
 import { ClientReturnCalculatorService } from './client-return-calculator.service';
 import { SaleItemNotFoundException } from '../exceptions/sale-item-not-found.exception';
 import { ReturnQuantityExceedsAvailableException } from '../exceptions/return-quantity-exceeds-available.exception';
 
-jest.mock('@prisma/client', () => ({
+jest.mock('@pharmacy/database', () => ({
   PrismaClient: jest.fn(),
   ClientReturnState: { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' },
   Prisma: {

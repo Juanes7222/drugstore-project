@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@pharmacy/database';
 
 export interface ConsumeStockForSupplierReturnParams {
   lotId: string;

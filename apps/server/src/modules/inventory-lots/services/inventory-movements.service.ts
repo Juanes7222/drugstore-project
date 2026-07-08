@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma, MovementType } from '@prisma/client';
+import { Prisma, MovementType } from '@pharmacy/database';
 import { QueryInventoryMovementDto } from '../dto/query-inventory-movement.dto';
 
 /**
