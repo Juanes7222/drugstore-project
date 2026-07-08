@@ -8,6 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigurationService } from '../services/configuration.service';
+import { PosSettingsService } from '../services/pos-settings.service';
 import { UpsertSystemConfigDto } from '../dto/upsert-system-config.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -20,7 +21,22 @@ import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-type
 
 @Controller('configuration')
 export class ConfigurationController {
-  constructor(private configurationService: ConfigurationService) {}
+  constructor(
+    private configurationService: ConfigurationService,
+    private posSettingsService: PosSettingsService,
+  ) {}
+
+  /**
+   * Returns the structured POS settings payload.
+   *
+   * This endpoint is deliberately kept lightweight and unauthenticated
+   * (JWT-free) so the POS desktop can fetch it without possessing a user
+   * session.  It only returns non-sensitive, read-only data.
+   */
+  @Get('pos-settings')
+  async getPosSettings(): Promise<unknown> {
+    return this.posSettingsService.getPosSettings();
+  }
 
   /**
    * Returns all system configuration entries. Sensitive values are masked for

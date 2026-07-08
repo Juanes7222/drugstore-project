@@ -3,14 +3,17 @@
  *
  * Runs a full sync cycle on a fixed interval while the app is online:
  *
- * 1. **Push** — send pending (or retry-eligible) SyncQueue rows to the
- *    server's `POST /sync/batch` endpoint. On success, entries are marked
- *    `COMPLETED`; on transient failure, `retryCount` is incremented and a
- *    backoff `nextRetryAt` is set. Entries exhausting `MAX_RETRY_ATTEMPTS`
- *    are permanently marked `FAILED`.
- * 2. **Pull catalog** — refresh product, category, and form data.
- * 3. **Pull lots** — refresh inventory lot data (depends on product refs).
- * 4. **Pull clients** — download recently-updated clients from the server.
+ * 1. **Pull configuration** — fetch payment methods, discount limits,
+ *    alert thresholds, and sync defaults from the server; hydrate the
+ *    local Prisma PaymentMethod table and the persistent Zustand store.
+ * 2. **Push** — send pending (or retryable) SyncQueue rows to the
+ *    server's `POST /sync/batch` endpoint.
+ * 3. **Pull catalog** — refresh product, category, and form data.
+ * 4. **Pull lots** — refresh inventory lot data (depends on product refs).
+ * 5. **Pull clients** — download recently-updated clients from the server.
+ *
+ * Configuration is pulled *first* so that downstream steps (catalog, lots,
+ * clients) operate under the latest business rules.
  *
  * Each step catches its own errors so a single failure does not block the
  * rest of the cycle.  The interval is intentionally coarse (5 minutes by
@@ -40,6 +43,11 @@ import type {
   ClientPullConfig,
 } from '../clients/client-pull.service';
 import { createClientPullService } from '../clients/client-pull.service';
+import type {
+  ConfigSyncService,
+  ConfigSyncConfig,
+} from '../configuration/config-sync.service';
+import { createConfigSyncService } from '../configuration/config-sync.service';
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -57,6 +65,7 @@ export interface SyncSchedulerConfig {
   prisma: PrismaClient;
   /** Server base URL, e.g. "http://localhost:3000" */
   baseUrl: string;
+  config: ConfigSyncConfig;
   catalog: CatalogSyncConfig;
   lots: LotSyncConfig;
   clients: ClientPullConfig;
@@ -80,6 +89,7 @@ export class SyncScheduler {
   private readonly prisma: PrismaClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly configSync: ConfigSyncService;
   private readonly catalogSync: CatalogSyncService;
   private readonly lotSync: LotSyncService;
   private readonly clientPull: ClientPullService;
@@ -90,6 +100,7 @@ export class SyncScheduler {
     this.prisma = config.prisma;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
+    this.configSync = createConfigSyncService(config.prisma, config.config);
     this.catalogSync = createCatalogSyncService(config.prisma, config.catalog);
     this.lotSync = createLotSyncService(config.prisma, config.lots);
     this.clientPull = createClientPullService(config.prisma, config.clients);
@@ -141,12 +152,24 @@ export class SyncScheduler {
   // -----------------------------------------------------------------------
 
   /**
-   * Execute one full sync cycle: push → catalog → lots → clients.
-   * Each step swallows its own errors so a failure in one does not
-   * prevent the others from running on the same tick.
+   * Execute one full sync cycle: config → push → catalog → lots → clients.
+   *
+   * Configuration is pulled first so that payment methods, discount limits,
+   * and sync engine defaults are current before any other operation runs.
+   *
+   * Each step swallows its own errors so a failure in one does not prevent
+   * the others from running on the same tick.
    */
   private async tick(): Promise<void> {
     if (!isOnline()) return;
+
+    // 0. Configuration first — business rules (discounts, payment methods,
+    //    sync defaults) must be current before anything else runs.
+    try {
+      await this.configSync.pullConfiguration();
+    } catch {
+      // Logged downstream; continue to push regardless.
+    }
 
     // 1. Push pending local operations to the server
     try {
