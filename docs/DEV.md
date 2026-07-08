@@ -1,52 +1,91 @@
-Cómo usar — comandos simples
-Opción 1: One-command (recomendado para primera vez)
-# Desde la raíz del proyecto — hace TODO: Docker, dependencias, schema, seed
+# How to use - simple commands
+
+## Option 1: One-command (recommended for first time)
+
+```powershell
+# From the project root - does EVERYTHING: Docker, dependencies, schema, seed
 .\scripts\setup-dev.ps1
-Opción 2: Paso a paso (más control)
-# 1. Levantar bases de datos
+```
+
+## Option 2: Step by step (more control)
+
+```bash
+# 1. Start databases
 docker compose -f docker-compose.dev.yml up -d
 
-# 2. Instalar dependencias (solo primera vez)
+# 2. Install dependencies (only the first time)
 pnpm install
 
-# 3. Generar cliente Prisma
+# 3. Generate Prisma client
 pnpm db:generate
 
-# 4. Pushear schema
+# 4. Push schema
 pnpm dev:db:push
 
-# 5. Poblar datos de prueba
+# 5. Seed test data
 pnpm dev:db:seed
 
-# 6. Iniciar servidor
+# 6. Start server
 pnpm dev:start
-Opción 3: Todo desde root con un solo comando
-pnpm setup:dev     # instala + genera + infra + push + seed
-pnpm dev           # inicia server + pos-desktop en paralelo
-Datos de prueba incluidos en el seed (idempotente)
-Entidad	Cantidad
-Usuarios	5 (admin, cashier1, cashier2, inventory, accountant)
-Workstations	2 (Caja Principal, Caja Secundaria)
-Categorías	10 (ANALGÉSICOS, ANTIBIÓTICOS, etc.)
-Formas farmacéuticas	9 (TABLETA, CÁPSULA, JARABE, etc.)
-Esquemas de impuestos	3 (IVA 19%, IVA 5%, Exento)
-Métodos de pago	7 (Efectivo, Débito, Crédito, PSE, Nequi, Daviplata)
-Productos	25 (con precios, tax histories, y códigos de barras EAN13)
-Proveedores	3 (Disfarma, Colvan, Cruz Verde)
-Clientes	10 (8 particulares + 2 institucionales)
-Lotes de inventario	25 (con stock inicial y movimientos INITIAL_STOCK)
-Turnos de caja	2 (1 abierto hoy, 1 cerrado ayer con conteo)
-Credenciales de login
-admin      / Admin123!      → ADMIN
-cashier1   / Cashier123!    → CASHIER
-inventory  / Inventory123!  → INVENTORY_ASSISTANT
-accountant / Accountant123! → ACCOUNTANT
-Para el POS Desktop
-El POS desktop usa PGlite (PostgreSQL embebido) — no necesita Docker. Solo necesita que el servidor esté corriendo:
+```
+
+## Option 3: Everything from root with a single command
+
+```bash
+pnpm setup:dev     # install + generate + infra + push + seed
+pnpm dev           # start server + pos-desktop in parallel
+```
+
+---
+
+### Test data included in the seed (idempotent)
+
+| Entity | Quantity |
+|--------|----------|
+| Users | 5 (admin, cashier1, cashier2, inventory, accountant) |
+| Workstations | 2 (Main Cashier, Secondary Cashier) |
+| Categories | 10 (ANALGESICS, ANTIBIOTICS, etc.) |
+| Pharmaceutical forms | 9 (TABLET, CAPSULE, SYRUP, etc.) |
+| Tax schemes | 3 (VAT 19%, VAT 5%, Exempt) |
+| Payment methods | 7 (Cash, Debit, Credit, PSE, Nequi, Daviplata) |
+| Products | 25 (with prices, tax histories, and EAN13 barcodes) |
+| Suppliers | 3 (Disfarma, Colvan, Cruz Verde) |
+| Customers | 10 (8 individuals + 2 institutional) |
+| Inventory batches | 25 (with initial stock and INITIAL_STOCK movements) |
+| Cash shifts | 2 (1 open today, 1 closed yesterday with reconciliation) |
+
+---
+
+### Login credentials
+
+| Username | Password | Role |
+|----------|----------|------|
+| admin | Admin123! | ADMIN |
+| cashier1 | Cashier123! | CASHIER |
+| inventory | Inventory123! | INVENTORY_ASSISTANT |
+| accountant | Accountant123! | ACCOUNTANT |
+
+---
+
+### For the POS Desktop
+
+The POS desktop uses **PGlite** (embedded PostgreSQL) - it does not need Docker. It only needs the server to be running:
+
+```bash
 cd apps/pos-desktop
 pnpm dev
-El Vite dev server arranca en http://localhost:5174 y se conecta a la API del server en http://localhost:3000 (configurado en apps/pos-desktop/.env).
-Para tests E2E
-El script existente sigue funcionando igual:
+```
+
+The Vite dev server starts at `http://localhost:5174` and connects to the server API at `http://localhost:3000` (configured in `apps/pos-desktop/.env`).
+
+---
+
+### For E2E tests
+
+The existing script still works the same:
+
+```powershell
 .\scripts\test-e2e.ps1
-Usa docker-compose.test.yml (puertos 5433 y 6380, sin persistencia) y levanta/baja automáticamente
+```
+
+It uses `docker-compose.test.yml` (ports 5433 and 6380, no persistence) and starts/stops automatically.
