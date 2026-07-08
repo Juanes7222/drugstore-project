@@ -2,8 +2,10 @@
  * Redux Toolkit slice owning cross-screen UI state.
  *
  * Responsibilities:
- *   - Track the active POS screen (sales, payment, receipt).
+ *   - Track the active POS screen (sales, payment, receipt, returns, etc.).
  *   - Coordinate the sale-completing motion handoff between Payment and Receipt.
+ *   - Manage the prescription-interception flow that pauses payment when
+ *     cart items require a medical prescription.
  *
  * Motion handoff protocol:
  *   1. Payment dispatches `initiateSaleCompletion` → phase becomes "initiating".
@@ -17,11 +19,18 @@
  *      and the sale completion phase resets to "idle".
  */
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-import { PosScreen, SaleCompletionPhase, UiState } from "./ui-types";
+import { PosScreen, PrescriptionFlowState, SaleCompletionPhase, UiState } from "./ui-types";
+
+const initialPrescriptionFlow: PrescriptionFlowState = {
+  pendingSaleId: null,
+  pendingItemId: null,
+  incompleteItemIds: [],
+};
 
 const initialState: UiState = {
   activeScreen: "sales",
   saleCompletionPhase: "idle",
+  prescriptionFlow: initialPrescriptionFlow,
 };
 
 export const uiSlice = createSlice({
@@ -31,6 +40,30 @@ export const uiSlice = createSlice({
     setActiveScreen: (state, action: PayloadAction<PosScreen>) => {
       state.activeScreen = action.payload;
     },
+
+    /* ---- Navigation shorthands ---- */
+
+    navigateToReturns: (state) => {
+      state.activeScreen = "returns";
+    },
+
+    navigateToInventoryAdjustments: (state) => {
+      state.activeScreen = "inventory-adjustments";
+    },
+
+    navigateToPrescriptions: (state) => {
+      state.activeScreen = "prescriptions";
+    },
+
+    navigateToAdminMenu: (state) => {
+      state.activeScreen = "admin-menu";
+    },
+
+    navigateBackToSales: (state) => {
+      state.activeScreen = "sales";
+    },
+
+    /* ---- Sale completion handoff ---- */
 
     initiateSaleCompletion: (state) => {
       state.saleCompletionPhase = "initiating";
@@ -48,17 +81,59 @@ export const uiSlice = createSlice({
     resetSaleFlow: (state) => {
       state.activeScreen = "sales";
       state.saleCompletionPhase = "idle";
+      state.prescriptionFlow = initialPrescriptionFlow;
+    },
+
+    /* ---- Prescription interception flow ---- */
+
+    setPrescriptionFlow: (
+      state,
+      action: PayloadAction<PrescriptionFlowState>,
+    ) => {
+      state.prescriptionFlow = action.payload;
+      state.activeScreen = "prescriptions";
+    },
+
+    clearPrescriptionFlow: (state) => {
+      state.prescriptionFlow = initialPrescriptionFlow;
+    },
+
+    /**
+     * Remove the first item from the incomplete-item queue and advance
+     * `pendingItemId` to the next one, or set it to `null` when the queue
+     * is empty.
+     */
+    resolveNextPrescriptionItem: (state) => {
+      if (!state.prescriptionFlow) {
+        return;
+      }
+
+      const [, ...rest] = state.prescriptionFlow.incompleteItemIds;
+      state.prescriptionFlow.incompleteItemIds = rest;
+      state.prescriptionFlow.pendingItemId = rest.length > 0 ? rest[0] : null;
     },
   },
 });
 
 export const {
   setActiveScreen,
+  navigateToReturns,
+  navigateToInventoryAdjustments,
+  navigateToPrescriptions,
+  navigateToAdminMenu,
+  navigateBackToSales,
   initiateSaleCompletion,
   navigateToReceipt,
   completeSaleCompletion,
   resetSaleFlow,
+  setPrescriptionFlow,
+  clearPrescriptionFlow,
+  resolveNextPrescriptionItem,
 } = uiSlice.actions;
+
+/* ------------------------------------------------------------------ */
+/* Selectors                                                          */
+/* ------------------------------------------------------------------ */
 
 export const selectActiveScreen = (state: { ui: UiState }): PosScreen =>
   state.ui.activeScreen;
@@ -66,3 +141,7 @@ export const selectActiveScreen = (state: { ui: UiState }): PosScreen =>
 export const selectSaleCompletionPhase = (
   state: { ui: UiState },
 ): SaleCompletionPhase => state.ui.saleCompletionPhase;
+
+export const selectPrescriptionFlow = (
+  state: { ui: UiState },
+): PrescriptionFlowState => state.ui.prescriptionFlow;

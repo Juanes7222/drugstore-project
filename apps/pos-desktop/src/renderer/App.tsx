@@ -4,9 +4,9 @@
  * Renders the active screen inside the persistent AppShell and coordinates
  * the screen-to-screen motion handoff via the ui slice.
  *
- * NOTE: During the PGlite proof-of-concept phase, the DatabaseProof
- * component is rendered when VITE_DB_PROOF is set to "1".  This will be
- * removed once local-database integration is lifted into the real AppShell.
+ * Ownership of the local database and domain-service instances is held by
+ * the <ServiceProvider> wrapper so every page can call the real
+ * Prisma-backed services instead of hardcoded mocks.
  */
 import { type FC } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -15,25 +15,33 @@ import { DatabaseProof } from "@/components/DatabaseProof/database-proof";
 import { SalesTransaction } from "@/components/SalesTransaction/sales-transaction";
 import { PaymentProcessing } from "@/components/PaymentProcessing/payment-processing";
 import { Receipt } from "@/components/Receipt/receipt";
+import { NavigationSidebar } from "@/components/Navigation/navigation-sidebar";
+import { ReturnsPage } from "../modules/returns/returns.page";
+import { InventoryAdjustmentsPage } from "../modules/inventory-adjustments/inventory-adjustments.page";
+import { PrescriptionsPage } from "../modules/prescriptions/prescriptions.page";
+import { ServiceProvider } from "../infrastructure/service-context";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-
-// Mock active shift for Phase 3. This data will come from the cash-shift
-// service once the backend integration is complete.
-const ACTIVE_SHIFT = {
-  cashierName: "María Gómez",
-  openingBalanceCents: 200_000,
-  openedAt: new Date().toISOString(),
-};
+import { useLocalSessionStore } from "../modules/auth/local-session.store";
+import { useTranslation } from "react-i18next";
 
 const SCREEN_TRANSITION_DURATION_S = 0.3;
 const SHOW_DB_PROOF = import.meta.env.VITE_DB_PROOF === "1";
 
-export const App: FC = () => {
+// ---------------------------------------------------------------------------
+// InnerApp — the actual screen router, rendered once ServiceProvider is ready
+// ---------------------------------------------------------------------------
+
+const InnerApp: FC = () => {
+  const { t } = useTranslation();
   const activeScreen = useAppSelector(selectActiveScreen);
   const isOnline = useOnlineStatus();
   const shouldReduceMotion = useReducedMotion();
+
+  // Live session data from the Zustand store (populated at login).
+  // When there is no session yet we render a login fallback.
+  const session = useLocalSessionStore((s) => s.session);
 
   const variants = {
     initial: shouldReduceMotion
@@ -47,69 +55,211 @@ export const App: FC = () => {
       : { opacity: 0, x: -24, scale: 0.99 },
   };
 
+  if (!session) {
+    return (
+      <div
+        className="flex h-screen flex-col items-center justify-center p-pos-xl"
+        style={{ backgroundColor: "var(--color-surface)" }}
+      >
+        <div className="pos-panel max-w-md p-pos-xl text-center">
+          <h2
+            className="text-heading font-bold"
+            style={{ color: "var(--color-ink)" }}
+          >
+            {t("common.app_name")}
+          </h2>
+          <p
+            className="mt-pos-md text-body"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+            }}
+          >
+            No hay sesión activa. Inicie sesión para usar el POS.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <AppShell
+      cashierName={session.fullName}
+      openingBalanceCents={0}
+      openedAt={new Date().toISOString()}
+      initialSyncState={isOnline ? "online" : "offline"}
+    >
+      <div className="flex h-full">
+        <NavigationSidebar />
+
+        <div className="flex-1 overflow-hidden">
+          <AnimatePresence mode="wait" initial={false}>
+            {activeScreen === "sales" && (
+              <motion.div
+                key="sales"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <SalesTransaction />
+              </motion.div>
+            )}
+
+            {activeScreen === "payment" && (
+              <motion.div
+                key="payment"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <PaymentProcessing />
+              </motion.div>
+            )}
+
+            {activeScreen === "receipt" && (
+              <motion.div
+                key="receipt"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <Receipt />
+              </motion.div>
+            )}
+
+            {activeScreen === "returns" && (
+              <motion.div
+                key="returns"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <ReturnsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "inventory-adjustments" && (
+              <motion.div
+                key="inventory-adjustments"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <InventoryAdjustmentsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "prescriptions" && (
+              <motion.div
+                key="prescriptions"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <PrescriptionsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "admin-menu" && (
+              <motion.div
+                key="admin-menu"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <AdminPlaceholder />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </AppShell>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// App — entry point, wraps InnerApp with the database & services provider
+// ---------------------------------------------------------------------------
+
+export const App: FC = () => {
   if (SHOW_DB_PROOF) {
     return <DatabaseProof />;
   }
 
   return (
-    <AppShell
-      cashierName={ACTIVE_SHIFT.cashierName}
-      openingBalanceCents={ACTIVE_SHIFT.openingBalanceCents}
-      openedAt={ACTIVE_SHIFT.openedAt}
-      initialSyncState={isOnline ? "online" : "offline"}
-    >
-      <AnimatePresence mode="wait" initial={false}>
-        {activeScreen === "sales" && (
-          <motion.div
-            key="sales"
-            className="h-full"
-            variants={variants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{
-              duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
-              ease: "easeInOut",
-            }}
-          >
-            <SalesTransaction />
-          </motion.div>
-        )}
-
-        {activeScreen === "payment" && (
-          <motion.div
-            key="payment"
-            className="h-full"
-            variants={variants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{
-              duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
-              ease: "easeInOut",
-            }}
-          >
-            <PaymentProcessing />
-          </motion.div>
-        )}
-
-        {activeScreen === "receipt" && (
-          <motion.div
-            key="receipt"
-            className="h-full"
-            variants={variants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{
-              duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
-              ease: "easeInOut",
-            }}
-          >
-            <Receipt />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </AppShell>
+    <ServiceProvider>
+      <InnerApp />
+    </ServiceProvider>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Admin placeholder (beyond Phase 5)
+// ---------------------------------------------------------------------------
+
+const AdminPlaceholder: FC = () => (
+  <section
+    aria-label="Admin menu"
+    className="flex h-full flex-col items-center justify-center p-pos-md"
+    style={{ backgroundColor: "var(--color-surface)" }}
+  >
+    <div className="pos-panel max-w-md p-pos-xl text-center">
+      <h2
+        className="text-heading font-bold"
+        style={{ color: "var(--color-ink)" }}
+      >
+        Admin / Sync Status
+      </h2>
+      <p
+        className="mt-pos-sm text-body"
+        style={{
+          color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+        }}
+      >
+        Admin configuration and sync status will be available in a future
+        phase.
+      </p>
+    </div>
+  </section>
+);

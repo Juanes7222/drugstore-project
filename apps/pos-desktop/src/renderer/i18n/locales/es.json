@@ -8,7 +8,8 @@
     "add": "Agregar",
     "remove": "Eliminar",
     "search": "Buscar",
-    "total": "TOTAL"
+    "total": "TOTAL",
+    "back": "Volver"
   },
   "cash_shift": {
     "label": "Turno",
@@ -21,6 +22,13 @@
     "state_offline": "Sin conexión",
     "state_draining": "Sincronizando",
     "queue_items": "{{count}} en cola"
+  },
+  "navigation": {
+    "label": "Navegación principal",
+    "sales": "Ventas",
+    "returns": "Devoluciones",
+    "inventory_adjustments": "Ajustes Invent.",
+    "admin_menu": "Admin"
   },
   "sales": {
     "search": {
@@ -98,5 +106,108 @@
     "title": "Pago confirmado",
     "placeholder_message": "La venta se registró. En la fase 4 aquí se mostrará el recibo, impresión y envío por email.",
     "new_sale": "Nueva venta"
+  },
+  "returns": {
+    "title": "Devoluciones",
+    "flow_selector": "Tipo de devolución",
+    "verified_tab": "Devolución verificada",
+    "unverified_tab": "Devolución no verificada",
+    "search_label": "Buscar venta",
+    "search_placeholder": "Número de venta o UUID...",
+    "search_empty": "Ingrese un número de venta o UUID para buscar.",
+    "sale_not_found": "Venta no encontrada localmente. Cambie a devolución no verificada o verifique el número.",
+    "search_error": "No se pudo completar la búsqueda. Verifique la conectividad e intente de nuevo.",
+    "sale_number": "Venta",
+    "items_table": "Items en la venta",
+    "table_product": "Producto",
+    "table_lot": "Lote",
+    "table_qty": "Cant",
+    "table_price": "Precio unit.",
+    "table_refund": "Reembolso",
+    "select_item": "Seleccionar item:",
+    "process_return": "Procesar devolución",
+    "processing": "Procesando...",
+    "no_items_selected": "Seleccione al menos un item para devolver.",
+    "submit_error": "Error al procesar la devolución. Intente de nuevo.",
+    "unverified_notice": "Venta no encontrada localmente",
+    "unverified_description": "Ingrese los items devueltos manualmente. Esto requiere un PIN de gerente y será marcado como no verificado — el servidor lo reconciliará.",
+    "unverified_product": "Producto (nombre o código de barras)",
+    "unverified_product_placeholder": "Buscar producto...",
+    "unverified_lot": "Código de lote",
+    "unverified_lot_placeholder": "Lote de caché",
+    "items_to_return": "Items a devolver",
+    "manager_pin": "Confirmación PIN de gerente",
+    "pin_required": "Se requiere PIN de gerente para devoluciones no verificadas.",
+    "pin_invalid": "PIN inválido. Debe tener al menos 4 dígitos.",
+    "no_items_entered": "Agregue al menos un item antes de enviar.",
+    "submit_unverified": "Enviar devolución no verificada"
+  },
+  "inventory_adjustments": {
+    "title": "Ajustes de Inventario",
+    "search_label": "Buscar producto o lote",
+    "search_placeholder": "Nombre del producto o código de barras...",
+    "search_error": "No se pudieron buscar productos.",
+    "no_results": "No se encontraron productos o lotes.",
+    "no_lot_selected": "Seleccione un lote antes de enviar.",
+    "lot_code": "Lote",
+    "stock": "Stock",
+    "expires": "Vence",
+    "location": "Ubicación",
+    "projected": "Proyectado",
+    "selected_lot": "Lote seleccionado",
+    "adjustment_type": "Tipo de ajuste",
+    "decrease": "Disminuir",
+    "increase": "Aumentar",
+    "quantity": "Cantidad",
+    "quantity_invalid": "La cantidad debe ser mayor a 0.",
+    "reason": "Motivo",
+    "reason_damaged": "Dañado",
+    "reason_expired": "Vencido",
+    "reason_loss": "Pérdida",
+    "reason_found": "Hallazgo",
+    "reason_other": "Otro",
+    "custom_reason": "Motivo personalizado (requerido cuando se selecciona 'Otro')",
+    "notes": "Notas (opcional)",
+    "submit": "Aplicar ajuste",
+    "processing": "Procesando...",
+    "submit_error": "Error al aplicar el ajuste. Intente de nuevo."
+  },
+  "prescriptions": {
+    "title": "Adjuntar prescripción",
+    "no_pending": "No hay requisitos de prescripción pendientes.",
+    "items_left": "{{count}} items restantes",
+    "generic_name": "Genérico",
+    "physician_name": "Nombre completo del médico",
+    "physician_required": "El nombre del médico es obligatorio.",
+    "license_number": "Número de licencia médica",
+    "license_required": "El número de licencia médica es obligatorio.",
+    "prescription_date": "Fecha de prescripción",
+    "patient_id": "Número de identificación del paciente",
+    "patient_id_required": "El número de identificación del paciente es obligatorio.",
+    "controlled_substance": "Sustancia controlada (Decreto 780/2016)",
+    "book_entry": "Folio del libro",
+    "book_entry_required": "El folio del libro es obligatorio para sustancias controladas.",
+    "book_page": "Página del libro",
+    "book_page_required": "La página del libro es obligatoria para sustancias controladas.",
+    "submit_error": "Error al registrar la prescripción. Intente de nuevo.",
+    "processing": "Guardando...",
+    "submit_next": "Guardar y siguiente",
+    "submit_finish": "Guardar y continuar al pago"
+  },
+  "toast": {
+    "status_synced": "Operación sincronizada",
+    "status_queued": "Operación en cola para sincronizar",
+    "unverified_tag": "No verificado — el servidor reconciliará",
+    "operation_type": {
+      "CLIENT_RETURN": "Devolución",
+      "INVENTORY_ADJUSTMENT": "Ajuste de inventario",
+      "PRESCRIPTION_REGISTRATION": "Registro de prescripción"
+    }
+  },
+  "errors": {
+    "no_session": "No hay sesión activa. Inicie sesión nuevamente.",
+    "role_cashier_admin": "No tiene permiso para realizar esta acción. Se requiere rol de Cajero o Administrador.",
+    "role_inventory_admin": "No tiene permiso para realizar esta acción. Se requiere rol de Asistente de Inventario o Administrador.",
+    "role_admin": "No tiene permiso para realizar esta acción. Se requiere rol de Administrador."
   }
 }

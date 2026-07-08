@@ -1,0 +1,202 @@
+/**
+ * NavigationSidebar — slim left-hand navigation for the POS terminal.
+ *
+ * Collapsed (48 px) by default, expands to 200 px on hover or focus-within.
+ * Renders role-gated navigation items that dispatch screen-switching actions.
+ *
+ * Items are grouped and shown/hidden based on the current session role:
+ *   - Sales (CASHIER or above)
+ *   - Returns (CASHIER or above)
+ *   - Inventory Adjustments (INVENTORY_ASSISTANT or ADMIN)
+ *   - Admin / Sync (ADMIN only)
+ */
+import { type FC, useCallback, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { selectActiveScreen, setActiveScreen } from "@/store/slices/ui-slice";
+import type { PosScreen } from "@/store/slices/ui-types";
+import { useLocalSessionStore } from "../../../modules/auth/local-session.store";
+import { RoleType } from "@pharmacy/shared-types";
+
+interface NavItem {
+  screen: PosScreen;
+  labelKey: string;
+  roles: RoleType[];
+  icon: FC<{ className?: string }>;
+}
+
+const SalesIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+    <path d="M8 21h8" />
+    <path d="M12 17v4" />
+  </svg>
+);
+
+const ReturnsIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+    <polyline points="8 12 12 16 16 12" />
+    <line x1="12" y1="8" x2="12" y2="16" />
+  </svg>
+);
+
+const InventoryIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
+    <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+    <line x1="12" y1="22.08" x2="12" y2="12" />
+  </svg>
+);
+
+const AdminIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.32 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
+  </svg>
+);
+
+/**
+ * Check if the current session's role is among the allowed roles for a nav item.
+ */
+const hasAccess = (allowedRoles: RoleType[]): boolean => {
+  const session = useLocalSessionStore.getState().session;
+  if (!session) {
+    return false;
+  }
+  return allowedRoles.includes(session.role as RoleType);
+};
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    screen: "sales",
+    labelKey: "navigation.sales",
+    roles: [RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN, RoleType.ACCOUNTANT],
+    icon: SalesIcon,
+  },
+  {
+    screen: "returns",
+    labelKey: "navigation.returns",
+    roles: [RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN, RoleType.ACCOUNTANT],
+    icon: ReturnsIcon,
+  },
+  {
+    screen: "inventory-adjustments",
+    labelKey: "navigation.inventory_adjustments",
+    roles: [RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN],
+    icon: InventoryIcon,
+  },
+  {
+    screen: "admin-menu",
+    labelKey: "navigation.admin_menu",
+    roles: [RoleType.ADMIN],
+    icon: AdminIcon,
+  },
+];
+
+interface NavigationSidebarProps {
+  /** Optional override to always expand (e.g. for accessibility). */
+  alwaysExpanded?: boolean;
+}
+
+export const NavigationSidebar: FC<NavigationSidebarProps> = ({
+  alwaysExpanded = false,
+}) => {
+  const { t } = useTranslation();
+  const dispatch = useAppDispatch();
+  const activeScreen = useAppSelector(selectActiveScreen);
+  const [isHovered, setIsHovered] = useState(false);
+  const isExpanded = alwaysExpanded || isHovered;
+
+  const handleNav = useCallback(
+    (screen: PosScreen) => {
+      dispatch(setActiveScreen(screen));
+    },
+    [dispatch],
+  );
+
+  const visibleItems = NAV_ITEMS.filter((item) => hasAccess(item.roles));
+
+  return (
+    <nav
+      className="pos-sidebar"
+      data-expanded={isExpanded}
+      role="navigation"
+      aria-label={t("navigation.label")}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <ul className="pos-sidebar__list" role="menubar" aria-orientation="vertical">
+        {visibleItems.map((item) => {
+          const isActive = activeScreen === item.screen;
+          const Icon = item.icon;
+
+          return (
+            <li key={item.screen} role="none">
+              <button
+                type="button"
+                role="menuitem"
+                aria-current={isActive ? "page" : undefined}
+                aria-label={t(item.labelKey)}
+                className={`pos-sidebar__item ${isActive ? "pos-sidebar__item--active" : ""}`}
+                onClick={() => handleNav(item.screen)}
+              >
+                <Icon className="pos-sidebar__item-icon" />
+                <span
+                  className="pos-sidebar__item-label"
+                  data-visible={isExpanded}
+                >
+                  {t(item.labelKey)}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
+  );
+};

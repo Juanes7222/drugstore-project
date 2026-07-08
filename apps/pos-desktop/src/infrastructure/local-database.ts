@@ -27,6 +27,15 @@ import { PrismaPGlite } from 'pglite-prisma-adapter';
 import { PrismaClient } from '@pharmacy/database/local';
 import { LOCAL_SCHEMA_SQL } from '@pharmacy/database/local-schema';
 
+/**
+ * Detect whether the app is running inside a Tauri webview.
+ * Outside Tauri (e.g. browser dev server) we fall back to an in-memory PGlite
+ * database so the UI is still navigable during development.
+ */
+function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
 // ---------------------------------------------------------------------------
 // Module-level singleton state
 // ---------------------------------------------------------------------------
@@ -88,14 +97,21 @@ export async function getLocalDatabase(): Promise<{
 
   if (!initPromise) {
     initPromise = (async () => {
-      // Data directory: use a predictable sub-directory of the Tauri
-      // app-local-data folder so the database is namespaced to this app
-      // and cleaned up on uninstall.
-      const { appLocalDataDir } = await import('@tauri-apps/api/path');
-      const dataDir = await appLocalDataDir();
-      const dbPath = `${dataDir}/pglite-data`;
+      let client: PGlite;
 
-      const client = new PGlite(dbPath);
+      if (isTauri()) {
+        // Tauri environment: persist to the OS app-local-data directory.
+        const { appLocalDataDir } = await import('@tauri-apps/api/path');
+        const dataDir = await appLocalDataDir();
+        const dbPath = `${dataDir}/pglite-data`;
+        client = new PGlite(dbPath);
+      } else {
+        // Browser / dev-server environment: use an ephemeral in-memory database.
+        // Logged so developers know the data will not survive a page refresh.
+        // eslint-disable-next-line no-console
+        console.info('[local-database] Running outside Tauri — using ephemeral in-memory PGlite.');
+        client = new PGlite('memory://');
+      }
 
       // Check whether this is a fresh database
       const isEmpty = !(await tableExists(client, 'Client'));

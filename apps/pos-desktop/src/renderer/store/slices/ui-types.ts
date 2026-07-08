@@ -2,7 +2,14 @@
  * UI / navigation state types.
  */
 
-export type PosScreen = "sales" | "payment" | "receipt";
+export type PosScreen =
+  | "sales"
+  | "payment"
+  | "receipt"
+  | "returns"
+  | "inventory-adjustments"
+  | "prescriptions"
+  | "admin-menu";
 
 export type SaleCompletionPhase =
   | "idle"
@@ -10,7 +17,21 @@ export type SaleCompletionPhase =
   | "completing"
   | "completed";
 
+/**
+ * Tracks the prescription-interception flow that interrupts payment
+ * confirmation when one or more cart items require a prescription.
+ */
+export interface PrescriptionFlowState {
+  /** The sale ID being processed (generated locally during interception). */
+  pendingSaleId: string | null;
+  /** The specific sale-item ID the prescription form is currently showing. */
+  pendingItemId: string | null;
+  /** All item IDs that still need a prescription attached. */
+  incompleteItemIds: string[];
+}
+
 export interface UiState {
   activeScreen: PosScreen;
   saleCompletionPhase: SaleCompletionPhase;
+  prescriptionFlow: PrescriptionFlowState;
 }

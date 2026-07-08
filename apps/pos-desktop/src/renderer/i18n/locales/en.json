@@ -8,7 +8,8 @@
     "add": "Add",
     "remove": "Remove",
     "search": "Search",
-    "total": "TOTAL"
+    "total": "TOTAL",
+    "back": "Back"
   },
   "cash_shift": {
     "label": "Shift",
@@ -21,6 +22,13 @@
     "state_offline": "Offline",
     "state_draining": "Syncing",
     "queue_items": "{{count}} queued"
+  },
+  "navigation": {
+    "label": "Main navigation",
+    "sales": "Sales",
+    "returns": "Returns",
+    "inventory_adjustments": "Inventory Adj.",
+    "admin_menu": "Admin"
   },
   "sales": {
     "search": {
@@ -98,5 +106,108 @@
     "title": "Payment confirmed",
     "placeholder_message": "Sale recorded. Phase 4 will show the receipt, print, and email options here.",
     "new_sale": "New sale"
+  },
+  "returns": {
+    "title": "Returns",
+    "flow_selector": "Return flow type",
+    "verified_tab": "Verified return",
+    "unverified_tab": "Unverified return",
+    "search_label": "Search for sale",
+    "search_placeholder": "Sale number or UUID...",
+    "search_empty": "Enter a sale number or UUID to search.",
+    "sale_not_found": "Sale not found locally. Switch to unverified return or check the number.",
+    "search_error": "Could not complete the search. Check connectivity and try again.",
+    "sale_number": "Sale",
+    "items_table": "Items in sale",
+    "table_product": "Product",
+    "table_lot": "Lot",
+    "table_qty": "Qty",
+    "table_price": "Unit price",
+    "table_refund": "Refund amount",
+    "select_item": "Select item:",
+    "process_return": "Process Return",
+    "processing": "Processing...",
+    "no_items_selected": "Select at least one item to return.",
+    "submit_error": "Failed to process return. Try again.",
+    "unverified_notice": "Sale not found locally",
+    "unverified_description": "Enter the returned items manually. This requires a manager PIN and will be tagged as unverified — the server will reconcile it.",
+    "unverified_product": "Product (name or barcode)",
+    "unverified_product_placeholder": "Search product...",
+    "unverified_lot": "Lot code",
+    "unverified_lot_placeholder": "Lot from cache",
+    "items_to_return": "Items to return",
+    "manager_pin": "Manager PIN confirmation",
+    "pin_required": "Manager PIN is required for unverified returns.",
+    "pin_invalid": "Invalid PIN. Must be at least 4 digits.",
+    "no_items_entered": "Add at least one item before submitting.",
+    "submit_unverified": "Submit unverified return"
+  },
+  "inventory_adjustments": {
+    "title": "Inventory Adjustments",
+    "search_label": "Search product or lot",
+    "search_placeholder": "Product name or barcode...",
+    "search_error": "Could not search products.",
+    "no_results": "No products or lots found.",
+    "no_lot_selected": "Select a lot before submitting.",
+    "lot_code": "Lot",
+    "stock": "Stock",
+    "expires": "Expiry",
+    "location": "Location",
+    "projected": "Projected",
+    "selected_lot": "Selected lot",
+    "adjustment_type": "Adjustment type",
+    "decrease": "Decrease",
+    "increase": "Increase",
+    "quantity": "Quantity",
+    "quantity_invalid": "Quantity must be greater than 0.",
+    "reason": "Reason",
+    "reason_damaged": "Damaged",
+    "reason_expired": "Expired",
+    "reason_loss": "Loss",
+    "reason_found": "Found",
+    "reason_other": "Other",
+    "custom_reason": "Custom reason (required when 'Other' is selected)",
+    "notes": "Notes (optional)",
+    "submit": "Apply Adjustment",
+    "processing": "Processing...",
+    "submit_error": "Failed to apply adjustment. Try again."
+  },
+  "prescriptions": {
+    "title": "Attach Prescription",
+    "no_pending": "There are no pending prescription requirements.",
+    "items_left": "{{count}} items remaining",
+    "generic_name": "Generic",
+    "physician_name": "Physician full name",
+    "physician_required": "Physician name is required.",
+    "license_number": "Medical license number",
+    "license_required": "Medical license number is required.",
+    "prescription_date": "Prescription date",
+    "patient_id": "Patient identification number",
+    "patient_id_required": "Patient identification number is required.",
+    "controlled_substance": "Controlled substance (Decreto 780/2016)",
+    "book_entry": "Book entry",
+    "book_entry_required": "Book entry is required for controlled substances.",
+    "book_page": "Book page",
+    "book_page_required": "Book page is required for controlled substances.",
+    "submit_error": "Failed to register prescription. Try again.",
+    "processing": "Saving...",
+    "submit_next": "Save & Next",
+    "submit_finish": "Save & Continue to Payment"
+  },
+  "toast": {
+    "status_synced": "Operation synced",
+    "status_queued": "Operation queued for sync",
+    "unverified_tag": "Unverified — server will reconcile",
+    "operation_type": {
+      "CLIENT_RETURN": "Client return",
+      "INVENTORY_ADJUSTMENT": "Inventory adjustment",
+      "PRESCRIPTION_REGISTRATION": "Prescription registration"
+    }
+  },
+  "errors": {
+    "no_session": "No active session. Please log in again.",
+    "role_cashier_admin": "You do not have permission to perform this action. Cashier or Admin role required.",
+    "role_inventory_admin": "You do not have permission to perform this action. Inventory Assistant or Admin role required.",
+    "role_admin": "You do not have permission to perform this action. Admin role required."
   }
 }

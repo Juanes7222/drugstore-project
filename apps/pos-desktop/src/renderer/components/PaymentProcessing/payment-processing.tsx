@@ -39,11 +39,13 @@ import {
   selectPaymentTotalPaidCents,
   selectCashReceivedCents,
 } from "@/store/slices/payment-slice";
-import { selectTotalCents } from "@/store/slices/sales-slice";
+import { selectCartItems, selectTotalCents } from "@/store/slices/sales-slice";
+import { SaleType } from "@pharmacy/shared-types";
 import {
   initiateSaleCompletion,
   navigateToReceipt,
   setActiveScreen,
+  setPrescriptionFlow,
 } from "@/store/slices/ui-slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { formatCurrency } from "@/utils/format-currency";
@@ -154,8 +156,38 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     dispatch(setActiveScreen("sales"));
   }, [dispatch]);
 
+  const cartItems = useAppSelector(selectCartItems);
+
   const handleConfirm = useCallback(() => {
     if (!canConfirm) {
+      return;
+    }
+
+    // ---- Prescription interception ----
+    // Before initiating the sale completion, check every cart item for
+    // prescription requirements. Items with `requiresPrescription === true`
+    // and `saleType !== 'FREE_SALE'` must have a prescription attached.
+    const itemsNeedingPrescription = cartItems.filter(
+      (item) =>
+        item.requiresPrescription && item.saleType !== SaleType.FREE_SALE,
+    );
+
+    if (itemsNeedingPrescription.length > 0) {
+      const pendingSaleId = globalThis.crypto.randomUUID();
+      const incompleteItemIds = itemsNeedingPrescription.map(
+        (item) => item.id,
+      );
+
+      dispatch(
+        setPrescriptionFlow({
+          pendingSaleId,
+          pendingItemId: incompleteItemIds[0],
+          incompleteItemIds,
+        }),
+      );
+      // The ui-slice's setPrescriptionFlow action automatically sets
+      // activeScreen to "prescriptions", so the Payment screen will unmount
+      // and the PrescriptionsPage will mount.
       return;
     }
 
@@ -165,7 +197,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     timeoutRef.current = window.setTimeout(() => {
       dispatch(navigateToReceipt());
     }, SALE_COMPLETION_INITIATE_MS);
-  }, [canConfirm, dispatch]);
+  }, [canConfirm, cartItems, dispatch]);
 
   const differenceText = useMemo(() => {
     if (difference < 0) {
