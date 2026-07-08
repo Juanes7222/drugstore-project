@@ -3,10 +3,15 @@
  *
  * Renders the active screen inside the persistent AppShell and coordinates
  * the screen-to-screen motion handoff via the ui slice.
+ *
+ * NOTE: During the PGlite proof-of-concept phase, the DatabaseProof
+ * component is rendered when VITE_DB_PROOF is set to "1".  This will be
+ * removed once local-database integration is lifted into the real AppShell.
  */
 import { type FC } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AppShell } from "@/components/common/app-shell";
+import { DatabaseProof } from "@/components/DatabaseProof/database-proof";
 import { SalesTransaction } from "@/components/SalesTransaction/sales-transaction";
 import { PaymentProcessing } from "@/components/PaymentProcessing/payment-processing";
 import { Receipt } from "@/components/Receipt/receipt";
@@ -23,6 +28,7 @@ const ACTIVE_SHIFT = {
 };
 
 const SCREEN_TRANSITION_DURATION_S = 0.3;
+const SHOW_DB_PROOF = import.meta.env.VITE_DB_PROOF === "1";
 
 export const App: FC = () => {
   const activeScreen = useAppSelector(selectActiveScreen);
@@ -40,6 +46,10 @@ export const App: FC = () => {
       ? { opacity: 0 }
       : { opacity: 0, x: -24, scale: 0.99 },
   };
+
+  if (SHOW_DB_PROOF) {
+    return <DatabaseProof />;
+  }
 
   return (
     <AppShell

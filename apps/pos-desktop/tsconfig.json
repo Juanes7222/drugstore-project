@@ -10,6 +10,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/renderer/*"],
+      "@infra/*": ["./src/infrastructure/*"],
+      "@pharmacy/database": ["../../packages/database/src/index.ts"],
+      "@pharmacy/database/*": ["../../packages/database/src/*"],
       "@pharmacy/shared-types": ["../../packages/shared-types/src/index.ts"],
       "@pharmacy/shared-validation": ["../../packages/shared-validation/src/index.ts"]
     }

@@ -12,6 +12,19 @@ export default defineConfig(() => ({
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src/renderer"),
+      "@infra": resolve(__dirname, "./src/infrastructure"),
+      "@pharmacy/database": resolve(
+        __dirname,
+        "../../packages/database/src/index.ts",
+      ),
+      "@pharmacy/database/local": resolve(
+        __dirname,
+        "../../packages/database/src/local.ts",
+      ),
+      "@pharmacy/database/local-schema": resolve(
+        __dirname,
+        "../../packages/database/src/local-schema.ts",
+      ),
       "@pharmacy/shared-types": resolve(
         __dirname,
         "../../packages/shared-types/src/index.ts",

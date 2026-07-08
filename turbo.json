@@ -9,6 +9,10 @@
       "cache": false,
       "outputs": ["packages/database/generated/local-client/**"]
     },
+    "db:generate:local-sql": {
+      "cache": false,
+      "outputs": ["packages/database/prisma/generated/local-schema.sql"]
+    },
     "build": {
       "dependsOn": ["^build", "db:generate:full"],
       "outputs": ["dist/**"]
