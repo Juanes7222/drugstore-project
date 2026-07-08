@@ -127,8 +127,18 @@ export class LotsService {
     const availableLots = await tx.lot.findMany({
       where: { productId, state: LotState.ACTIVE, currentStock: { gt: 0 } },
       orderBy: { expirationDate: 'asc' },
-      include: { purchaseReceptionItems: { select: { realUnitCost: true } } },
     });
+
+    // Fetch cost data for all lots (PurchaseReceptionItem relation was flattened;
+    // explicit query replaces the previous Prisma include).
+    const lotIds = availableLots.map((l) => l.id);
+    const receptionItems = lotIds.length > 0
+      ? await tx.purchaseReceptionItem.findMany({
+          where: { lotId: { in: lotIds } },
+          select: { lotId: true, realUnitCost: true },
+        })
+      : [];
+    const costByLotId = new Map(receptionItems.map((r) => [r.lotId, r.realUnitCost]));
 
     let totalAvailable = availableLots.reduce((sum, lot) => sum + lot.currentStock, 0);
     if (totalAvailable < quantity) {
@@ -155,7 +165,7 @@ export class LotsService {
         throw new ConcurrentStockModificationException(lot.id);
       }
 
-      const unitCostAtSale = lot.purchaseReceptionItems[0]?.realUnitCost;
+      const unitCostAtSale = costByLotId.get(lot.id);
       if (!unitCostAtSale) {
         throw new LotCostUnavailableException(lot.id);
       }

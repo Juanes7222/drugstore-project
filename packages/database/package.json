@@ -10,9 +10,19 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
+    },
+    "./full": {
+      "types": "./dist/src/full.d.ts",
+      "import": "./dist/src/full.js"
+    },
+    "./local": {
+      "types": "./dist/src/local.d.ts",
+      "import": "./dist/src/local.js"
     }
   },
   "scripts": {
+    "db:generate:full": "node scripts/assemble-schema.mjs full && prisma generate --config prisma.full.config.ts",
+    "db:generate:local": "node scripts/assemble-schema.mjs local && prisma generate --config prisma.local.config.ts",
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --noEmit"
   },

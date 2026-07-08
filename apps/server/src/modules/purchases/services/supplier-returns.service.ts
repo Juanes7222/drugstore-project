@@ -72,11 +72,15 @@ export class SupplierReturnsService {
       for (const item of createDto.items) {
         const lot = await tx.lot.findUnique({
           where: { id: item.lotId },
-          include: { purchaseReceptionItems: { select: { realUnitCost: true }, take: 1 } },
         });
         if (!lot) throw new LotNotFoundException(item.lotId);
 
-        const unitCost = lot.purchaseReceptionItems[0]?.realUnitCost;
+        // PurchaseReceptionItem relation was flattened; explicit query replaces the previous Prisma include.
+        const receptionItem = await tx.purchaseReceptionItem.findFirst({
+          where: { lotId: lot.id },
+          select: { realUnitCost: true },
+        });
+        const unitCost = receptionItem?.realUnitCost;
         if (!unitCost) throw new SupplierReturnLotCostUnavailableException(item.lotId);
 
         itemsData.push({

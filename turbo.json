@@ -1,18 +1,22 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
-    "db:generate": {
+    "db:generate:full": {
       "cache": false,
-      "outputs": ["packages/database/generated/**"]
+      "outputs": ["packages/database/generated/full-client/**"]
+    },
+    "db:generate:local": {
+      "cache": false,
+      "outputs": ["packages/database/generated/local-client/**"]
     },
     "build": {
-      "dependsOn": ["^build", "db:generate"],
+      "dependsOn": ["^build", "db:generate:full"],
       "outputs": ["dist/**"]
     },
     "dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["db:generate"]
+      "dependsOn": ["db:generate:full"]
     },
     "lint": {
       "dependsOn": ["^build"]

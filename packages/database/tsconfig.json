@@ -7,6 +7,6 @@
     "declarationMap": true,
     "types": ["node"]
   },
-  "include": ["src/**/*", "generated/client/**/*"],
+  "include": ["src/**/*", "generated/**/*"],
   "exclude": ["node_modules", "dist"]
 }
