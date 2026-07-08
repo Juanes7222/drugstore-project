@@ -7,4 +7,6 @@ export class QueryClientDto {
   search?: string;
   municipality?: string;
   classificationId?: string;
+  /** ISO-8601 timestamp — only return clients updated after this point. */
+  since?: string;
 }

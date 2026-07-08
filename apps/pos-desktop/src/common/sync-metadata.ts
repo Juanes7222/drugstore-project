@@ -2,14 +2,15 @@
  * Persistent sync-timestamp store.
  *
  * Keeps the last-successful-sync timestamp for every pull-based sync
- * operation (catalog, inventory lots, …) in a single `localStorage` key
- * so a reader can query any field without caring about which module
+ * operation (catalog, inventory lots, clients, …) in a single `localStorage`
+ * key so a reader can query any field without caring about which module
  * does the writing.
  *
  * Fields
  * ------
  * - `catalogLastSyncedAt` – written by `CatalogSyncService.pullCatalog()`
  * - `lotsLastSyncedAt` – written by `LotSyncService.pullLots()`
+ * - `clientsLastSyncedAt` – written by `ClientPullService.pullClients()`
  */
 
 const STORAGE_KEY = 'pharmacy_sync_metadata';
@@ -17,11 +18,13 @@ const STORAGE_KEY = 'pharmacy_sync_metadata';
 interface SyncMetadataRecord {
   catalogLastSyncedAt: string | null;
   lotsLastSyncedAt: string | null;
+  clientsLastSyncedAt: string | null;
 }
 
 const DEFAULTS: SyncMetadataRecord = {
   catalogLastSyncedAt: null,
   lotsLastSyncedAt: null,
+  clientsLastSyncedAt: null,
 };
 
 /**
@@ -87,5 +90,22 @@ export const setCatalogLastSyncedAt = (iso: string): void => {
 export const setLotsLastSyncedAt = (iso: string): void => {
   const record = readSyncMetadata();
   record.lotsLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+/**
+ * Return the ISO-8601 timestamp of the last successful client pull,
+ * or `null` if it has never been performed.
+ */
+export const getClientsLastSyncedAt = (): string | null => {
+  return readSyncMetadata().clientsLastSyncedAt;
+};
+
+/**
+ * Persist a new top-of-sync timestamp for the client puller.
+ */
+export const setClientsLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.clientsLastSyncedAt = iso;
   writeSyncMetadata(record);
 };

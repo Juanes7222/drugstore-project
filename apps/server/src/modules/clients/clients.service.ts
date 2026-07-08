@@ -18,11 +18,27 @@ import { ClientNotFoundException } from './exceptions/client-not-found.exception
 export class ClientsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreateClientDto, userId: string): Promise<any> {
+  /**
+   * Create a client record.
+   *
+   * @param dto    Client data (without id — the id is generated server-side unless
+   *               `clientId` is provided, e.g. during sync replay).
+   * @param userId User performing the creation.
+   * @param clientId  Optional explicit UUID. When set, the creation uses this
+   *               value instead of generating a new one.  If the
+   *               `[identificationType, identificationNumber]` unique constraint
+   *               is violated and `clientId` is provided (sync replay scenario),
+   *               the existing record is **updated** instead of throwing —
+   *               the client workstation is treated as the source of truth for
+   *               the latest data.  This implements the basic conflict-resolution
+   *               strategy required by the offline-first sync design.
+   */
+  async create(dto: CreateClientDto, userId: string, clientId?: string): Promise<any> {
+    const recordId = clientId ?? crypto.randomUUID();
     try {
       return await this.prisma.client.create({
         data: {
-          id: crypto.randomUUID(),
+          id: recordId,
           ...dto,
           createdById: userId,
         },
@@ -30,6 +46,24 @@ export class ClientsService {
     } catch (error: unknown) {
       const err = error as { code?: string };
       if (err.code === 'P2002') {
+        // Sync-replay conflict resolution: the client already exists by
+        // identification.  Update the live record with the POS's latest data
+        // instead of discarding it — the client's own data is the freshest
+        // version available at this workstation.
+        if (clientId) {
+          return this.prisma.client.update({
+            where: {
+              identificationType_identificationNumber: {
+                identificationType: dto.identificationType,
+                identificationNumber: dto.identificationNumber,
+              },
+            },
+            data: {
+              ...dto,
+              updatedById: userId,
+            },
+          });
+        }
         throw new DuplicateClientIdentificationException(dto.identificationType, dto.identificationNumber);
       }
       throw error;
@@ -139,6 +173,40 @@ export class ClientsService {
 
   async findAll(query: QueryClientDto): Promise<any> {
     return this.prisma.client.findMany();
+  }
+
+  /**
+   * Paginated client query for pull-based sync.
+   *
+   * Returns clients ordered by `updatedAt DESC`, filtered by an optional
+   * `since` ISO timestamp so the POS desktop can incrementally refresh
+   * its local cache without re-downloading every record on every tick.
+   *
+   * This is intentionally a separate method from `findAll` to avoid
+   * changing the public API shape of the original endpoint.
+   */
+  async findSync(since?: string, page: number = 1, pageSize: number = 200): Promise<{
+    data: unknown[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
+    const where: Record<string, unknown> = {};
+    if (since) {
+      where.updatedAt = { gte: new Date(since) };
+    }
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.client.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { updatedAt: 'desc' },
+      }),
+      this.prisma.client.count({ where }),
+    ]);
+
+    return { data, total, page, pageSize };
   }
 
   async findAllClassifications(): Promise<any> {

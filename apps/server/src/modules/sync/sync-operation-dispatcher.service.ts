@@ -70,12 +70,22 @@ export class SyncOperationDispatcherService {
     });
   }
 
-  /** Replays a CLIENT_CREATION by creating the client server-side. */
+  /**
+   * Replays a CLIENT_CREATION by creating or updating the client server-side.
+   *
+   * The client's UUID from the POS is preserved (via `payload.metadata.localClientId`)
+   * so that future sync operations that reference this client by ID (e.g. sale
+   * confirmations) resolve correctly.  If the `[identificationType, identificationNumber]`
+   * unique constraint is violated, `clientsService.create` performs an upsert —
+   * the POS's data is treated as the latest version.
+   */
   private async handleClientCreation(entry: any): Promise<void> {
     const payload = JSON.parse(entry.payload);
+    const clientId: string | undefined = payload.metadata?.localClientId;
     await this.clientsService.create(
       payload.createClientDto,
       payload.userId,
+      clientId,
     );
   }
 

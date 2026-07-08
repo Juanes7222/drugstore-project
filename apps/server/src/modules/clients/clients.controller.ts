@@ -26,6 +26,20 @@ export class ClientsController {
     return this.clientsService.findAll(query);
   }
 
+  @Get('sync')
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  async findSync(
+    @Query('since') since?: string,
+    @Query('page') page: string = '1',
+    @Query('pageSize') pageSize: string = '200',
+  ): Promise<any> {
+    return this.clientsService.findSync(
+      since || undefined,
+      Number(page),
+      Number(pageSize),
+    );
+  }
+
   @Get('classifications/all')
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findAllClassifications(): Promise<any> {
