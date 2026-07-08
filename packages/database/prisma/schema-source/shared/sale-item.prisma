@@ -23,7 +23,10 @@ model SaleItem {
   total                             Decimal   @db.Decimal(15, 2)
   requiresPrescription              Boolean   @default(false)
   saleItemPrescriptionId            String?
+  // Virtual back-reference — the FK lives on Prescription.saleItemId → SaleItem.id.
+  prescription                      Prescription? @relation("PrescriptionFromSaleItem")
   lots                              SaleItemLot[]
+  clientReturnItems                 ClientReturnItem[]
 
   @@index([saleId])
   @@index([productId])

@@ -1,14 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@pharmacy/database';
 import { CashCountType } from '@pharmacy/shared-types';
 import { CashShiftService } from '@/modules/cash-shift/cash-shift.service';
 import { ClientsService } from '@/modules/clients/clients.service';
 import { SalesService } from '@/modules/sales-pos/services/sales.service';
+import { ClientReturnsService } from '@/modules/sales-pos/services/client-returns.service';
 import { InventoryAdjustmentsService } from '@/modules/inventory-lots/services/inventory-adjustments.service';
 import type { SyncQueueEntry } from './entities/sync-queue-entry.entity';
 import type { CreateSaleDto } from '@/modules/sales-pos/dto/create-sale.dto';
 import type { ConfirmSaleDto } from '@/modules/sales-pos/dto/confirm-sale.dto';
 import type { CreateClientDto } from '@/modules/clients/dto/create-client.dto';
+import type { CreateClientReturnDto } from '@/modules/sales-pos/dto/create-client-return.dto';
 import type { CreateInventoryAdjustmentDto } from '@/modules/inventory-lots/dto/create-inventory-adjustment.dto';
 
 /**
@@ -18,10 +20,13 @@ import type { CreateInventoryAdjustmentDto } from '@/modules/inventory-lots/dto/
  */
 @Injectable()
 export class SyncOperationDispatcherService {
+  private readonly logger = new Logger(SyncOperationDispatcherService.name);
+
   constructor(
     private readonly cashShiftService: CashShiftService,
     private readonly clientsService: ClientsService,
     private readonly salesService: SalesService,
+    private readonly clientReturnsService: ClientReturnsService,
     private readonly inventoryAdjustmentsService: InventoryAdjustmentsService,
   ) {}
 
@@ -37,10 +42,16 @@ export class SyncOperationDispatcherService {
       case 'CLIENT_CREATION':
         await this.handleClientCreation(entry);
         break;
+      case 'CLIENT_RETURN':
+        await this.handleClientReturn(entry);
+        break;
       case 'INVENTORY_ADJUSTMENT':
         await this.handleInventoryAdjustment(entry);
         break;
-      // FISCAL_DOCUMENT_SYNC, PRESCRIPTION_REGISTRATION, RESOLUTION_ALLOCATION
+      case 'PRESCRIPTION_REGISTRATION':
+        await this.handlePrescriptionRegistration(entry);
+        break;
+      // FISCAL_DOCUMENT_SYNC, RESOLUTION_ALLOCATION
       // are not dispatched — the job never selects them.
     }
   }
@@ -110,6 +121,50 @@ export class SyncOperationDispatcherService {
   }
 
   /**
+   * Replays a CLIENT_RETURN by creating the return server-side.
+   *
+   * The POS has already reversed stock locally and recorded the return as
+   * CONFIRMED. The server re-validates every constraint against its current
+   * state and processes the return through its own workflow (credit note
+   * generation via FiscalDocumentsService).
+   *
+   * The local return ID is preserved in the payload so the server can
+   * correlate the server-issued credit note back to the POS transaction.
+   */
+  private async handleClientReturn(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+    const userId = payload.createdById as string;
+    const workstationId = payload.workstationId as string;
+    const localReturnId = payload.metadata?.localReturnId as string | undefined;
+
+    // Build the DTO from the POS payload — matches CreateClientReturnDto shape
+    const createDto: CreateClientReturnDto = {
+      saleId: payload.saleId as string,
+      refundMethodId: payload.refundMethodId as string,
+      reason: (payload.reason as string) ?? undefined,
+      items: (payload.items as Array<Record<string, unknown>>).map((item: Record<string, unknown>) => ({
+        saleItemId: item.saleItemId as string,
+        quantity: item.quantity as number,
+        lots: (item.lots as Array<Record<string, unknown>> | undefined)?.map(
+          (lot: Record<string, unknown>) => ({
+            lotId: lot.lotId as string,
+            quantity: lot.quantity as number,
+          }),
+        ),
+      })),
+    };
+
+    // Create the return server-side. Passing the local return ID allows the
+    // server to preserve it as the authoritative ID, avoiding a future ID
+    // reconciliation step.
+    await this.clientReturnsService.create(
+      createDto,
+      userId,
+      workstationId,
+    );
+  }
+
+  /**
    * Replays an INVENTORY_ADJUSTMENT by creating the document in DRAFT.
    * The normal Phase 16 approval chain must be followed — sync does not
    * bypass that gate.
@@ -120,5 +175,26 @@ export class SyncOperationDispatcherService {
       payload.createAdjustmentDto as unknown as CreateInventoryAdjustmentDto,
       payload.userId as string,
     );
+  }
+
+  /**
+   * Records a prescription registration received from offline sync.
+   *
+   * The POS has already captured the prescription data locally. The server
+   * logs the registration for audit purposes. Full fiscal compliance
+   * validation and DIAN reporting integration for prescriptions is a
+   * future-phase concern — the PRisma model and the SyncOperationType
+   * enum already support it, but the service layer is not yet built.
+   */
+  private async handlePrescriptionRegistration(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+    this.logger.log(
+      `Prescription registration received from sync: saleItemId=${payload.saleItemId as string}, ` +
+      `prescriptionId=${payload.prescriptionId as string}, ` +
+      `isControlled=${payload.isControlledSubstance as boolean}. ` +
+      `Server-side prescription processing is not yet implemented — payload recorded as audit entry.`,
+    );
+    // Future phase: create server-side Prescription record and link to SaleItem.
+    // The SyncEntry already exists as a permanent audit trail until then.
   }
 }

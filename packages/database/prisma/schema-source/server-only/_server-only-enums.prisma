@@ -18,15 +18,6 @@ enum SessionRevocationReason {
   TOKEN_EXPIRATION
 }
 
-enum AdjustmentState {
-  DRAFT
-  PENDING_APPROVAL
-  APPROVED
-  REJECTED
-  APPLIED
-  ANNULLED
-}
-
 enum PhysicalCountState {
   OPEN
   COUNTED
@@ -62,20 +53,6 @@ enum PurchaseReturnState {
   CONFIRMED
   APPROVED
   ANNULLED
-}
-
-enum ClientReturnState {
-  DRAFT
-  PENDING_PICKUP
-  CONFIRMED
-  REJECTED
-  ANNULLED
-}
-
-enum RecipeType {
-  OFICIAL
-  PARTICULAR
-  INSTITUCIONAL
 }
 
 enum FiscalDocumentType {
