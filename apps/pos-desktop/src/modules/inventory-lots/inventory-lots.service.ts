@@ -1,0 +1,173 @@
+/**
+ * Local inventory-lot operations for the POS desktop app.
+ *
+ * Ported from the server-side `LotsService.consumeStockForSale()`.
+ * Only the primitives that the local POS needs as a single-writer authority
+ * are exposed here — stock reversal, receiving, and adjustment are
+ * server-authoritative operations not duplicated in this module.
+ *
+ * ## Architecture notes
+ *
+ * ### Single-writer assumption
+ * The local POS is the only consumer of its own PGlite database.  There are
+ * no concurrent backend services, no other POS instances writing to the same
+ * database, and no HTTP middleware creating race conditions.  Optimistic
+ * locking via the `version` column is therefore a correctness backstop, not
+ * a performance trade-off — it catches the unlikely case where a local async
+ * workflow (e.g. two sale confirmations enqueued back-to-back) races on the
+ * same lot row.  If that happens, the caller retries the entire sale.
+ *
+ * ### unitCostAtSale — provisional value
+ * `PurchaseReceptionItem` (the only place a lot's real cost lives) is a
+ * server-only model, deliberately excluded from the local schema.  A locally
+ * confirmed sale therefore cannot compute a real `unitCostAtSale`; it stores
+ * `0` here, clearly marked as provisional, purely so the sale can be
+ * completed and a receipt shown.  This is not a gap to route around:
+ * `sync`'s existing design already never trusts a locally computed outcome
+ * for a `SALE_CONFIRMATION` operation — it replays `create` and `confirm`
+ * against the real server-side services, which resolve the real cost through
+ * `PurchaseReceptionItem` exactly as before.  The provisional local figure
+ * is discarded and replaced once that replay happens; it was never meant to
+ * be authoritative.
+ */
+
+import { PrismaClient, Prisma, LotState, MovementType } from '@pharmacy/database/local';
+import { InsufficientStockException } from './exceptions';
+import { ConcurrentStockModificationException } from './exceptions';
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+export interface ConsumeStockForSaleParams {
+  productId: string;
+  quantity: number;
+  saleId: string;
+}
+
+export interface ConsumedLot {
+  lotId: string;
+  quantity: number;
+  /**
+   * Provisional zero — see the module-level comment for the rationale.
+   * This value is discarded when `sync` replays the sale against the server.
+   */
+  unitCostAtSale: Prisma.Decimal;
+}
+
+// ---------------------------------------------------------------------------
+// Factory
+// ---------------------------------------------------------------------------
+
+export const createInventoryLotsService = (
+  prisma: PrismaClient,
+): InventoryLotsService => {
+  return new InventoryLotsService(prisma);
+};
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+export class InventoryLotsService {
+  constructor(private readonly prisma: PrismaClient) {}
+
+  /**
+   * Consume stock for a sale using FEFO (First Expiry, First Out) ordering.
+   *
+   * Selects ACTIVE lots for the given product with stock remaining, ordered
+   * by `expirationDate ASC`, and decrements each in turn until the requested
+   * `quantity` is satisfied.  Each lot decrement is optimistically locked via
+   * the `version` column — if a concurrent modification is detected the
+   * entire operation is rolled back and `ConcurrentStockModificationException`
+   * is thrown.
+   *
+   * @throws InsufficientStockException      when total available stock < `quantity`
+   * @throws ConcurrentStockModificationException  when a version conflict is detected
+   */
+  async consumeStockForSale(params: ConsumeStockForSaleParams): Promise<ConsumedLot[]> {
+    const { productId, quantity, saleId } = params;
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Select active, non-empty lots in FEFO order
+      const availableLots = await tx.lot.findMany({
+        where: {
+          productId,
+          state: LotState.ACTIVE,
+          currentStock: { gt: 0 },
+        },
+        orderBy: { expirationDate: 'asc' },
+      });
+
+      // 2. Check total availability
+      const totalAvailable = availableLots.reduce(
+        (sum, lot) => sum + lot.currentStock,
+        0,
+      );
+
+      if (totalAvailable < quantity) {
+        throw new InsufficientStockException(productId, quantity, totalAvailable);
+      }
+
+      // 3. Consume across lots in FEFO order
+      let remainingToConsume = quantity;
+      const consumedLots: ConsumedLot[] = [];
+
+      for (const lot of availableLots) {
+        if (remainingToConsume === 0) break;
+
+        const consumeFromLot = Math.min(remainingToConsume, lot.currentStock);
+        const newStock = lot.currentStock - consumeFromLot;
+        const newVersion = lot.version + 1;
+        const newState: LotState =
+          newStock === 0 ? LotState.EXHAUSTED : lot.state;
+
+        // Optimistic-locked decrement — the `version` filter makes this
+        // safe against concurrent local writers.
+        const updated = await tx.lot.updateMany({
+          where: {
+            id: lot.id,
+            version: lot.version,
+            productId: lot.productId,
+          },
+          data: {
+            currentStock: newStock,
+            version: newVersion,
+            state: newState,
+          },
+        });
+
+        if (updated.count === 0) {
+          throw new ConcurrentStockModificationException(lot.id);
+        }
+
+        // unitCostAtSale is set to 0 because PurchaseReceptionItem is
+        // server-only.  See the module-level comment for the full rationale.
+        consumedLots.push({
+          lotId: lot.id,
+          quantity: consumeFromLot,
+          unitCostAtSale: new Prisma.Decimal(0),
+        });
+
+        // Write the immutable movement record
+        await tx.inventoryMovement.create({
+          data: {
+            id: globalThis.crypto.randomUUID(),
+            lotId: lot.id,
+            movementType: MovementType.SALE,
+            quantity: consumeFromLot,
+            previousStock: lot.currentStock,
+            resultingStock: newStock,
+            createdById: 'system',
+            createdAt: new Date(),
+            saleId,
+          },
+        });
+
+        remainingToConsume -= consumeFromLot;
+      }
+
+      return consumedLots;
+    });
+  }
+}
