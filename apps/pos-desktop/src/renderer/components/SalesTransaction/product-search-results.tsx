@@ -2,6 +2,9 @@
  * List of product search results rendered as selectable cards.
  *
  * Each result exposes keyboard navigation (Tab + Enter) and mouse selection.
+ * Results with incomplete server data (e.g. missing price/tax) are visible but
+ * cannot be added to the cart, because selling a product without a known price
+ * would be unsafe.
  */
 import { type FC, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
@@ -79,22 +82,35 @@ const ProductResultCard: FC<ProductResultCardProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  const handleClick = () => onSelect(item);
+  const isSelectable = item.hasCompleteData && item.unitPriceCents !== null;
+
+  const handleClick = () => {
+    if (isSelectable) {
+      onSelect(item);
+    }
+  };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      onSelect(item);
+      if (isSelectable) {
+        onSelect(item);
+      }
     }
   };
 
   return (
     <div
       role="option"
-      tabIndex={0}
+      tabIndex={isSelectable ? 0 : -1}
+      aria-disabled={!isSelectable}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className="cursor-pointer rounded-pos border border-ink/10 bg-panel p-pos-md transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
+      className={`rounded-pos border border-ink/10 bg-panel p-pos-md transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma ${
+        isSelectable
+          ? "cursor-pointer hover:bg-surface"
+          : "cursor-not-allowed opacity-70"
+      }`}
       style={{
         borderColor: "color-mix(in srgb, var(--color-ink) 10%, transparent)",
       }}
@@ -116,7 +132,9 @@ const ProductResultCard: FC<ProductResultCardProps> = ({
         </div>
         <div className="text-right">
           <p className="font-data text-price font-semibold tabular-nums">
-            {formatCurrency(parsePrice(item.sellingPrice))}
+            {item.unitPriceCents !== null
+              ? formatCurrency(item.unitPriceCents)
+              : t("sales.product.price_unavailable")}
           </p>
           <p
             className="text-caption"
@@ -134,8 +152,19 @@ const ProductResultCard: FC<ProductResultCardProps> = ({
           style={{ color: "color-mix(in srgb, var(--color-ink) 60%, transparent)" }}
         >
           {t("sales.product.stock")}:{" "}
-          <span className="font-data tabular-nums">{item.stock}</span>
+          <span className="font-data tabular-nums">{item.currentStock}</span>
         </span>
+        {!item.hasCompleteData && (
+          <span
+            className="pos-badge"
+            style={{
+              backgroundColor: "color-mix(in srgb, var(--color-sync) 12%, white)",
+              color: "var(--color-sync)",
+            }}
+          >
+            {t("sales.product.incomplete_data")}
+          </span>
+        )}
         {lowStock && (
           <span className="pos-badge pos-badge-urgency">
             {t("sales.product.low_stock")}
@@ -154,9 +183,4 @@ const ProductResultCard: FC<ProductResultCardProps> = ({
       </div>
     </div>
   );
-};
-
-const parsePrice = (price: string): number => {
-  const value = Number.parseInt(price.replace(/[^\d]/g, ""), 10);
-  return Number.isNaN(value) ? 0 : value;
 };

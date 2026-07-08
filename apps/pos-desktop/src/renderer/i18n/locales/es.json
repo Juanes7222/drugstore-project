@@ -26,7 +26,8 @@
     "search": {
       "placeholder": "Buscar producto por nombre o código de barras...",
       "results": "Resultados",
-      "no_results": "No se encontraron productos"
+      "no_results": "No se encontraron productos",
+      "error": "No se pudo consultar el catálogo"
     },
     "cart": {
       "title": "Carrito",
@@ -46,7 +47,9 @@
       "invima": "INVIMA",
       "unit": "und",
       "near_expiry": "VENCE PRONTO",
-      "restricted": "VENTA RESTRINGIDA"
+      "restricted": "VENTA RESTRINGIDA",
+      "price_unavailable": "Precio no disponible",
+      "incomplete_data": "Datos incompletos"
     },
     "restricted": {
       "title": "Confirmar venta restringida",

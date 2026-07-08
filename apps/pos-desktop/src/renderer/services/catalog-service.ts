@@ -3,26 +3,36 @@
  *
  * This is the boundary between the SalesTransaction UI and product data.
  * The component and the Redux slice depend only on this interface, never on
- * the concrete data source. Replacing the mock implementation below with a
- * Tauri-backed SQLite implementation is a drop-in change:
+ * the concrete data source. The real HTTP implementation is in
+ * `catalog-service.http.ts`; the mock implementation remains available for
+ * offline development and tests in `catalog-service.mock.ts`.
  *
- *   const catalogService = createTauriCatalogService();
- *
- * The returned object must simply satisfy the `CatalogService` interface.
+ * The `CatalogItem` shape is intentionally POS-specific: it contains exactly
+ * the fields the cart/totals code needs, mapped from whatever the server
+ * returns. If the server's response shape changes, only the mapper changes.
  */
-import { Product, SaleType } from "@pharmacy/shared-types";
+import { SaleType } from "@pharmacy/shared-types";
 
-/**
- * Local catalog item returned by the service.
- *
- * Extends the shared Product type with POS-specific lot information that the
- * shared package does not yet model. When `InventoryLot` is added to
- * `@pharmacy/shared-types`, this local type should be replaced by it.
- */
-export interface CatalogItem extends Product {
+const NEAR_EXPIRY_DAYS = 30;
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  genericName: string;
+  barcode: string;
+  invimaCertificate: string | null;
+  saleType: SaleType;
+  requiresPrescription: boolean;
+  isRestricted: boolean;
+  unitPriceCents: number | null;
+  taxPercentage: number;
+  currentStock: number;
+  minimumStock: number;
+  isActive: boolean;
   lotCode: string;
   lotExpirationDate: string;
-  stock: number;
+  /** True only when all POS-critical fields (price, tax, stock, lot) are present. */
+  hasCompleteData: boolean;
 }
 
 export interface CatalogService {
@@ -32,17 +42,6 @@ export interface CatalogService {
    */
   search(query: string): Promise<CatalogItem[]>;
 }
-
-const NEAR_EXPIRY_DAYS = 30;
-
-/**
- * Convert a price string (COP, no decimals) into an integer number of cents.
- */
-export const parsePriceToCents = (price: string): number => {
-  const normalized = price.replace(/[^\d]/g, "");
-  const value = Number.parseInt(normalized, 10);
-  return Number.isNaN(value) ? 0 : value;
-};
 
 /**
  * Determine whether a product requires the restricted-sale confirmation step.
@@ -67,4 +66,4 @@ export const isNearExpiry = (
  * Determine whether stock is below the configured minimum threshold.
  */
 export const isLowStock = (item: CatalogItem): boolean =>
-  item.stock <= item.minimumStock;
+  item.currentStock <= item.minimumStock;

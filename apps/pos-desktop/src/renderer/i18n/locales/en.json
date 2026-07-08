@@ -26,7 +26,8 @@
     "search": {
       "placeholder": "Search product by name or barcode...",
       "results": "Results",
-      "no_results": "No products found"
+      "no_results": "No products found",
+      "error": "Could not query catalog"
     },
     "cart": {
       "title": "Cart",
@@ -46,7 +47,9 @@
       "invima": "INVIMA",
       "unit": "unit",
       "near_expiry": "EXPIRES SOON",
-      "restricted": "RESTRICTED SALE"
+      "restricted": "RESTRICTED SALE",
+      "price_unavailable": "Price unavailable",
+      "incomplete_data": "Incomplete data"
     },
     "restricted": {
       "title": "Confirm restricted sale",

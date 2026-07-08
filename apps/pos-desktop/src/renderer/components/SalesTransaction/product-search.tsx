@@ -30,6 +30,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CatalogItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
 
@@ -39,22 +40,37 @@ export const ProductSearch: FC<ProductSearchProps> = ({
     if (trimmedQuery.length === 0) {
       setResults([]);
       setIsLoading(false);
+      setError(null);
       return undefined;
     }
 
     setIsLoading(true);
+    setError(null);
 
-    catalogService.search(trimmedQuery).then((items) => {
-      if (!cancelled) {
-        setResults(items);
-        setIsLoading(false);
-      }
-    });
+    catalogService
+      .search(trimmedQuery)
+      .then((items) => {
+        if (!cancelled) {
+          setResults(items);
+          setIsLoading(false);
+        }
+      })
+      .catch((searchError) => {
+        if (!cancelled) {
+          setResults([]);
+          setIsLoading(false);
+          setError(
+            searchError instanceof Error
+              ? searchError.message
+              : t("sales.search.error"),
+          );
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [trimmedQuery, catalogService]);
+  }, [trimmedQuery, catalogService, t]);
 
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     setQuery(event.target.value);
@@ -82,6 +98,19 @@ export const ProductSearch: FC<ProductSearchProps> = ({
         className="pos-input"
         autoFocus
       />
+
+      {error && (
+        <div
+          className="mt-pos-md rounded px-pos-md py-pos-sm text-body-sm"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--color-sync) 10%, white)",
+            color: "var(--color-sync)",
+          }}
+          role="alert"
+        >
+          {t("sales.search.error")}: {error}
+        </div>
+      )}
 
       <div className="mt-pos-md flex-1 overflow-y-auto">
         {isLoading ? (

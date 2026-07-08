@@ -14,22 +14,44 @@ import {
   CatalogItem,
   CatalogService,
   isCatalogItemRestricted,
-  parsePriceToCents,
 } from "@/services/catalog-service";
+import { createHttpCatalogService } from "@/services/catalog-service.http";
 import { createMockCatalogService } from "@/services/catalog-service.mock";
+import { createHttpClient } from "@/services/http-client";
+import { createLocalStorageAuthTokenProvider } from "@/services/auth-token-provider";
 import { ProductSearch } from "./product-search";
 import { CartPanel } from "./cart-panel";
 import { RestrictedConfirmationDialog } from "./restricted-confirmation-dialog";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined;
+
+const createCatalogService = (): CatalogService => {
+  if (!API_BASE_URL) {
+    // Fallback to the mock when no server URL is configured. This keeps the
+    // UI runnable in early development; production builds must set the env var.
+    // eslint-disable-next-line no-console
+    console.warn(
+      "VITE_API_BASE_URL is not set; falling back to mock catalog service.",
+    );
+    return createMockCatalogService();
+  }
+
+  const httpClient = createHttpClient(
+    API_BASE_URL,
+    createLocalStorageAuthTokenProvider(),
+  );
+
+  return createHttpCatalogService({ httpClient });
+};
 
 export const SalesTransaction: FC = () => {
   const dispatch = useAppDispatch();
   const totalDue = useAppSelector(selectTotalCents);
 
   // The service instance is memoized so the component renders with the same
-  // implementation throughout its lifecycle. Replace `createMockCatalogService`
-  // with the real Tauri-backed factory when the IPC layer is ready.
+  // implementation throughout its lifecycle.
   const catalogService = useMemo<CatalogService>(
-    () => createMockCatalogService(),
+    () => createCatalogService(),
     [],
   );
 
@@ -37,6 +59,10 @@ export const SalesTransaction: FC = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const handleSelect = useCallback((item: CatalogItem) => {
+    if (!item.hasCompleteData || item.unitPriceCents === null) {
+      return;
+    }
+
     if (isCatalogItemRestricted(item)) {
       setPendingItem(item);
       setIsDialogOpen(true);
@@ -47,20 +73,24 @@ export const SalesTransaction: FC = () => {
   }, []);
 
   const addToCart = useCallback((item: CatalogItem) => {
+    if (item.unitPriceCents === null) {
+      return;
+    }
+
     dispatch(
       addItem({
         id: `${item.id}::${item.lotCode}`,
         productId: item.id,
         name: item.name,
         genericName: item.genericName,
-        invimaCertificate: item.invimaCertificate,
+        invimaCertificate: item.invimaCertificate ?? "",
         saleType: item.saleType,
         requiresPrescription: item.requiresPrescription,
         isRestricted: isCatalogItemRestricted(item),
         lotCode: item.lotCode,
         lotExpirationDate: item.lotExpirationDate,
-        unitPriceCents: parsePriceToCents(item.sellingPrice),
-        taxPercentage: Number.parseFloat(item.taxPercentage) || 19,
+        unitPriceCents: item.unitPriceCents,
+        taxPercentage: item.taxPercentage,
         quantity: 1,
       }),
     );

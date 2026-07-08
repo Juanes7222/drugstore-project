@@ -25,11 +25,11 @@ export const RestrictedConfirmationDialog: FC<
 > = ({ item, open, onConfirm, onCancel }) => {
   const { t } = useTranslation();
 
-  if (!item) {
+  if (!item || item.unitPriceCents === null) {
     return null;
   }
 
-  const price = parsePrice(item.sellingPrice);
+  const price = item.unitPriceCents;
 
   return (
     <Dialog.Root open={open} onOpenChange={(isOpen) => !isOpen && onCancel()}>
@@ -115,9 +115,4 @@ export const RestrictedConfirmationDialog: FC<
       </Dialog.Portal>
     </Dialog.Root>
   );
-};
-
-const parsePrice = (price: string): number => {
-  const value = Number.parseInt(price.replace(/[^\d]/g, ""), 10);
-  return Number.isNaN(value) ? 0 : value;
 };

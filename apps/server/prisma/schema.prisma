@@ -3,7 +3,9 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/client"
+  // Output to the default location that @prisma/client v7 expects
+  // Path is relative from schema dir (apps/server/prisma/) to root node_modules
+  output   = "../../../node_modules/.prisma/client"
 }
 
 datasource db {

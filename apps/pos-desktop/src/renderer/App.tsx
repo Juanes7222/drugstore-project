@@ -12,6 +12,7 @@ import { PaymentProcessing } from "@/components/PaymentProcessing/payment-proces
 import { Receipt } from "@/components/Receipt/receipt";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 
 // Mock active shift for Phase 3. This data will come from the cash-shift
 // service once the backend integration is complete.
@@ -25,6 +26,7 @@ const SCREEN_TRANSITION_DURATION_S = 0.3;
 
 export const App: FC = () => {
   const activeScreen = useAppSelector(selectActiveScreen);
+  const isOnline = useOnlineStatus();
   const shouldReduceMotion = useReducedMotion();
 
   const variants = {
@@ -44,6 +46,7 @@ export const App: FC = () => {
       cashierName={ACTIVE_SHIFT.cashierName}
       openingBalanceCents={ACTIVE_SHIFT.openingBalanceCents}
       openedAt={ACTIVE_SHIFT.openedAt}
+      initialSyncState={isOnline ? "online" : "offline"}
     >
       <AnimatePresence mode="wait" initial={false}>
         {activeScreen === "sales" && (
