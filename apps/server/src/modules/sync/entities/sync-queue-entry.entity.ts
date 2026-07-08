@@ -8,10 +8,12 @@
  */
 export interface SyncQueueEntry {
   id: string;
+  operationUuid: string;
   operationType:
     | 'SALE_CONFIRMATION'
     | 'SHIFT_CLOSURE'
     | 'CLIENT_CREATION'
+    | 'CLIENT_RETURN'
     | 'INVENTORY_ADJUSTMENT'
     | 'FISCAL_DOCUMENT_SYNC'
     | 'PRESCRIPTION_REGISTRATION'

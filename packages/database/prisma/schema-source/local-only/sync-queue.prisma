@@ -1,0 +1,89 @@
+// LOCAL-ONLY schema fragment — only included in the local build (apps/pos-desktop).
+// This file OVERRIDES the shared sync-queue.prisma for local builds only.
+//
+// Adds local-only fields to SyncQueue (failureCategory, lastAttemptAt),
+// SyncAttempt (retry history per push attempt), and SyncRecoveryLog
+// (manager retry/discard audit). These models and fields do not exist in the
+// server build — the assembly script replaces shared files with local-only
+// files when target=local.
+//
+// TODO(90-day retention): SyncAttempt rows older than 90 days can be pruned
+// by a future maintenance task. The recovery log (SyncRecoveryLog) is never
+// pruned — discarded entries must remain auditable.
+
+enum SyncFailureCategory {
+  NETWORK
+  VALIDATION
+  CONFLICT
+  AUTH
+  BUSINESS_RULE
+  UNKNOWN
+}
+
+enum SyncAttemptOutcome {
+  ACCEPTED
+  ALREADY_ACCEPTED
+  REJECTED
+  NETWORK_ERROR
+}
+
+model SyncQueue {
+  id                    String    @id
+  operationUuid         String    @unique
+  operationType         SyncOperationType
+  payload               String    @db.Text
+  payloadHash              String
+  payloadSize           Int
+  versionSchema           Int       @default(1)
+  status                SyncStatus @default(PENDING)
+  retryCount            Int       @default(0)
+  lastErrorMessage      String?   @db.Text
+  failureCategory       SyncFailureCategory?
+  nextRetryAt           DateTime?
+  lastAttemptAt         DateTime?
+  sourceWorkstationId   String
+  sourceCreatedAt       DateTime
+  clientSequence        BigInt
+  receivedAt            DateTime?
+  processedAt           DateTime?
+  correlationId         String?
+  workstationId         String?
+
+  attempts    SyncAttempt[]
+  recoveryLog SyncRecoveryLog[]
+
+  @@index([status, nextRetryAt])
+  @@index([sourceWorkstationId, clientSequence])
+  @@index([operationType, status])
+  @@index([correlationId])
+  @@index([status, failureCategory])
+}
+
+model SyncAttempt {
+  id               String   @id
+  syncQueueEntryId String
+  attemptedAt      DateTime
+  outcome          SyncAttemptOutcome
+  httpStatus       Int?
+  failureCategory  SyncFailureCategory?
+  errorMessage     String?
+
+  entry SyncQueue @relation(fields: [syncQueueEntryId], references: [id], onDelete: Cascade)
+
+  @@index([syncQueueEntryId])
+  @@index([attemptedAt])
+}
+
+model SyncRecoveryLog {
+  id               String   @id
+  syncQueueEntryId String
+  action           String   // 'RETRY' | 'DISCARD'
+  reason           String?
+  actorUserId      String
+  at               DateTime
+
+  entry SyncQueue @relation(fields: [syncQueueEntryId], references: [id], onDelete: Cascade)
+
+  @@index([syncQueueEntryId])
+  @@index([at])
+}

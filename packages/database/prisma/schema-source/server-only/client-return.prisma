@@ -39,6 +39,7 @@ model ClientReturnItem {
   clientReturnId        String
   clientReturn          ClientReturn @relation(fields: [clientReturnId], references: [id])
   saleItemId            String
+  saleItem              SaleItem  @relation(fields: [saleItemId], references: [id])
   quantity              Int
   unitPriceAtSale       Decimal   @db.Decimal(15, 2) @default(0)
   unitPriceAtReturn     Decimal   @db.Decimal(15, 2) @default(0)

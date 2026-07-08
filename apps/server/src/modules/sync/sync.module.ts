@@ -6,6 +6,7 @@ import { SalesPosModule } from '@/modules/sales-pos/sales-pos.module';
 import { InventoryLotsModule } from '@/modules/inventory-lots/inventory-lots.module';
 import { SyncController } from './controllers/sync.controller';
 import { SyncService } from './services/sync.service';
+import { SyncHealthService } from './services/sync-health.service';
 import { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
 import { SyncProcessingJob } from './jobs/sync-processing.job';
 
@@ -18,7 +19,7 @@ import { SyncProcessingJob } from './jobs/sync-processing.job';
     InventoryLotsModule,
   ],
   controllers: [SyncController],
-  providers: [SyncService, SyncOperationDispatcherService, SyncProcessingJob],
-  exports: [SyncService],
+  providers: [SyncService, SyncHealthService, SyncOperationDispatcherService, SyncProcessingJob],
+  exports: [SyncService, SyncHealthService],
 })
 export class SyncModule {}

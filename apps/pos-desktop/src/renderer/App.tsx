@@ -19,6 +19,7 @@ import { NavigationSidebar } from "@/components/Navigation/navigation-sidebar";
 import { ReturnsPage } from "../modules/returns/returns.page";
 import { InventoryAdjustmentsPage } from "../modules/inventory-adjustments/inventory-adjustments.page";
 import { PrescriptionsPage } from "../modules/prescriptions/prescriptions.page";
+import { SyncHealthPage } from "../modules/sync/sync-health.page";
 import { ServiceProvider } from "../infrastructure/service-context";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
@@ -209,6 +210,23 @@ const InnerApp: FC = () => {
                 }}
               >
                 <AdminPlaceholder />
+              </motion.div>
+            )}
+
+            {activeScreen === "sync-health" && (
+              <motion.div
+                key="sync-health"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <SyncHealthPage />
               </motion.div>
             )}
           </AnimatePresence>

@@ -9,7 +9,8 @@ export type PosScreen =
   | "returns"
   | "inventory-adjustments"
   | "prescriptions"
-  | "admin-menu";
+  | "admin-menu"
+  | "sync-health";
 
 export type SaleCompletionPhase =
   | "idle"

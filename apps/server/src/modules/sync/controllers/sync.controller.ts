@@ -9,6 +9,7 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { SyncService } from '../services/sync.service';
+import { SyncHealthService } from '../services/sync-health.service';
 import { SyncBatchDto } from '../dto/sync-batch.dto';
 import { QuerySyncQueueDto } from '../dto/query-sync-queue.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
@@ -22,7 +23,10 @@ import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-type
 
 @Controller('sync')
 export class SyncController {
-  constructor(private syncService: SyncService) {}
+  constructor(
+    private syncService: SyncService,
+    private syncHealthService: SyncHealthService,
+  ) {}
 
   @Post('batch')
   @UseGuards(JwtAuthGuard)
@@ -68,5 +72,12 @@ export class SyncController {
   })
   async retryQueueEntry(@Param('id') id: string): Promise<any> {
     return this.syncService.retry(id);
+  }
+
+  @Get('health')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleType.ADMIN)
+  async getHealth(): Promise<any> {
+    return this.syncHealthService.getHealth(24);
   }
 }

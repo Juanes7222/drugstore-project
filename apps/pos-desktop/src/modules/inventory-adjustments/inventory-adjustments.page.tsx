@@ -625,7 +625,7 @@ export const InventoryAdjustmentsPage: FC = () => {
               </label>
               <textarea
                 id="adj-notes"
-                className="pos-input min-h-[64px] resize-y"
+                className="pos-input min-h-16 resize-y"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 disabled={isProcessing}

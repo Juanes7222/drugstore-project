@@ -114,6 +114,8 @@ enum SyncStatus {
   PROCESSING
   COMPLETED
   FAILED
+  PERMANENT_FAILURE
+  DISCARDED
 }
 
 enum ClientReturnState {

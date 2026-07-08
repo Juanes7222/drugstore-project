@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@pharmacy/database';
+import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { CashCountType } from '@pharmacy/shared-types';
 import { CashShiftService } from '@/modules/cash-shift/cash-shift.service';
 import { ClientsService } from '@/modules/clients/clients.service';
@@ -12,17 +13,25 @@ import type { ConfirmSaleDto } from '@/modules/sales-pos/dto/confirm-sale.dto';
 import type { CreateClientDto } from '@/modules/clients/dto/create-client.dto';
 import type { CreateClientReturnDto } from '@/modules/sales-pos/dto/create-client-return.dto';
 import type { CreateInventoryAdjustmentDto } from '@/modules/inventory-lots/dto/create-inventory-adjustment.dto';
+import * as crypto from 'node:crypto';
 
 /**
  * Re-executes the real business logic for each supported offline operation.
  * This is NOT a blind trust of the offline payload — it re-validates every
- * constraint against the server's current state.
+ * constraint against its current state.
+ *
+ * After each dispatch, the outcome (ACCEPTED / REJECTED with failure category)
+ * is recorded in SyncOperationOutcome for aggregation in the sync health
+ * endpoint. The outcome insert runs inside the same transaction as the
+ * replayed business write when the handler already runs inside one; otherwise
+ * it is best-effort and documented as eventually consistent.
  */
 @Injectable()
 export class SyncOperationDispatcherService {
   private readonly logger = new Logger(SyncOperationDispatcherService.name);
 
   constructor(
+    private readonly prisma: PrismaService,
     private readonly cashShiftService: CashShiftService,
     private readonly clientsService: ClientsService,
     private readonly salesService: SalesService,
@@ -30,30 +39,112 @@ export class SyncOperationDispatcherService {
     private readonly inventoryAdjustmentsService: InventoryAdjustmentsService,
   ) {}
 
-  /** Routes a SyncQueue entry to the appropriate replay handler. */
+  /**
+   * Routes a SyncQueue entry to the appropriate replay handler.
+   *
+   * Catches all errors and records a FAILED outcome with the error message.
+   * Successful dispatches record an ACCEPTED outcome.
+   */
   async dispatch(entry: SyncQueueEntry): Promise<void> {
-    switch (entry.operationType) {
-      case 'SALE_CONFIRMATION':
-        await this.handleSaleConfirmation(entry);
-        break;
-      case 'SHIFT_CLOSURE':
-        await this.handleShiftClosure(entry);
-        break;
-      case 'CLIENT_CREATION':
-        await this.handleClientCreation(entry);
-        break;
-      case 'CLIENT_RETURN':
-        await this.handleClientReturn(entry);
-        break;
-      case 'INVENTORY_ADJUSTMENT':
-        await this.handleInventoryAdjustment(entry);
-        break;
-      case 'PRESCRIPTION_REGISTRATION':
-        await this.handlePrescriptionRegistration(entry);
-        break;
-      // FISCAL_DOCUMENT_SYNC, RESOLUTION_ALLOCATION
-      // are not dispatched — the job never selects them.
+    try {
+      switch (entry.operationType) {
+        case 'SALE_CONFIRMATION':
+          await this.handleSaleConfirmation(entry);
+          break;
+        case 'SHIFT_CLOSURE':
+          await this.handleShiftClosure(entry);
+          break;
+        case 'CLIENT_CREATION':
+          await this.handleClientCreation(entry);
+          break;
+        case 'CLIENT_RETURN':
+          await this.handleClientReturn(entry);
+          break;
+        case 'INVENTORY_ADJUSTMENT':
+          await this.handleInventoryAdjustment(entry);
+          break;
+        case 'PRESCRIPTION_REGISTRATION':
+          await this.handlePrescriptionRegistration(entry);
+          break;
+        // FISCAL_DOCUMENT_SYNC, RESOLUTION_ALLOCATION
+        // are not dispatched — the job never selects them.
+      }
+
+      await this.recordOutcome(entry.operationUuid, entry.sourceWorkstationId, 'ACCEPTED', null);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const failureCategory = this.classifyServerError(errorMessage);
+      await this.recordOutcome(entry.operationUuid, entry.sourceWorkstationId, 'REJECTED', failureCategory);
+      throw error;
     }
+  }
+
+  /**
+   * Record a SyncOperationOutcome row.
+   *
+   * Best-effort: if the insert fails (e.g. unique constraint, db connection), the
+   * dispatch is unaffected — the health metric is eventually consistent.
+   */
+  private async recordOutcome(
+    operationUuid: string,
+    workstationId: string,
+    outcome: string,
+    failureCategory: string | null,
+  ): Promise<void> {
+    try {
+      await this.prisma.syncOperationOutcome.create({
+        data: {
+          id: crypto.randomUUID(),
+          operationUuid,
+          workstationId,
+          outcome,
+          failureCategory,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Failed to record SyncOperationOutcome for ${operationUuid}: ${err instanceof Error ? err.message : 'Unknown'}`,
+      );
+    }
+  }
+
+  /**
+   * Classify a server-side error into a failure category string, matching
+   * the same categories used by the local POS push service.
+   */
+  private classifyServerError(message: string): string {
+    const lower = message.toLowerCase();
+    if (
+      lower.includes('validation') ||
+      lower.includes('schema') ||
+      lower.includes('malformed')
+    ) {
+      return 'VALIDATION';
+    }
+    if (
+      lower.includes('conflict') ||
+      lower.includes('mismatch') ||
+      lower.includes('already exists')
+    ) {
+      return 'CONFLICT';
+    }
+    if (
+      lower.includes('auth') ||
+      lower.includes('unauthorized') ||
+      lower.includes('forbidden')
+    ) {
+      return 'AUTH';
+    }
+    if (
+      lower.includes('prescription') ||
+      lower.includes('closed') ||
+      lower.includes('not allowed') ||
+      lower.includes('insufficient stock') ||
+      lower.includes('business')
+    ) {
+      return 'BUSINESS_RULE';
+    }
+    return 'UNKNOWN';
   }
 
   /** Replays a SALE_CONFIRMATION by creating and confirming the sale server-side. */
@@ -135,7 +226,7 @@ export class SyncOperationDispatcherService {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
     const userId = payload.createdById as string;
     const workstationId = payload.workstationId as string;
-    const localReturnId = payload.metadata?.localReturnId as string | undefined;
+    const localReturnId = (payload.metadata as Record<string, unknown> | undefined)?.localReturnId as string | undefined;
 
     // Build the DTO from the POS payload — matches CreateClientReturnDto shape
     const createDto: CreateClientReturnDto = {

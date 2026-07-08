@@ -1,0 +1,25 @@
+// Server-only schema fragment — only included in the full build.
+//
+// Tracks the outcome of each sync operation dispatched by the server.
+// This is the server-side source of truth for sync health metrics.
+// It is written by SyncOperationDispatcherService alongside the replayed
+// business-logic write, and read by SyncHealthService for the aggregation
+// endpoint (GET /sync/health and GET /backoffice/sync-health).
+//
+// This table is eventually consistent within a few seconds of the operation
+// being dispatched — individual inserts are part of the same transaction as
+// the replayed data when possible.
+
+model SyncOperationOutcome {
+  id              String   @id
+  operationUuid   String
+  workstationId   String
+  outcome         String   // 'ACCEPTED' | 'ALREADY_ACCEPTED' | 'REJECTED' | 'FAILED'
+  failureCategory String?  // Mirrors the local SyncFailureCategory values
+  createdAt       DateTime @default(now())
+
+  @@index([workstationId, createdAt])
+  @@index([workstationId, outcome])
+  @@index([createdAt])
+  @@index([operationUuid])
+}

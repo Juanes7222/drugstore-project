@@ -59,6 +59,10 @@ export const uiSlice = createSlice({
       state.activeScreen = "admin-menu";
     },
 
+    navigateToSyncHealth: (state) => {
+      state.activeScreen = "sync-health";
+    },
+
     navigateBackToSales: (state) => {
       state.activeScreen = "sales";
     },
@@ -121,6 +125,7 @@ export const {
   navigateToInventoryAdjustments,
   navigateToPrescriptions,
   navigateToAdminMenu,
+  navigateToSyncHealth,
   navigateBackToSales,
   initiateSaleCompletion,
   navigateToReceipt,

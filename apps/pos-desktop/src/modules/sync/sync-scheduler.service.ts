@@ -7,7 +7,7 @@
  *    alert thresholds, and sync defaults from the server; hydrate the
  *    local Prisma PaymentMethod table and the persistent Zustand store.
  * 2. **Push** — send pending (or retryable) SyncQueue rows to the
- *    server's `POST /sync/batch` endpoint.
+ *    server's `POST /sync/batch` endpoint (delegated to SyncPushService).
  * 3. **Pull catalog** — refresh product, category, and form data.
  * 4. **Pull lots** — refresh inventory lot data (depends on product refs).
  * 5. **Pull clients** — download recently-updated clients from the server.
@@ -16,9 +16,8 @@
  * clients) operate under the latest business rules.
  *
  * Each step catches its own errors so a single failure does not block the
- * rest of the cycle.  The interval is intentionally coarse (5 minutes by
- * default) — the local database is already the single writer authority for
- * offline operations, so sub-minute freshness is not required.
+ * rest of the cycle.  After the cycle, metrics are emitted as a structured
+ * log line for operator visibility.
  *
  * ## Usage
  * Call `start()` once during app initialisation.  The scheduler will
@@ -48,14 +47,16 @@ import type {
   ConfigSyncConfig,
 } from '../configuration/config-sync.service';
 import { createConfigSyncService } from '../configuration/config-sync.service';
+import type { SyncPushService } from './sync-push.service';
+import { createSyncPushService } from './sync-push.service';
+import type { SyncMetricsService } from './sync-metrics.service';
+import { createSyncMetricsService } from './sync-metrics.service';
 
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const PUSH_BATCH_LIMIT = 10;
-const MAX_RETRY_ATTEMPTS = 10;
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -93,6 +94,8 @@ export class SyncScheduler {
   private readonly catalogSync: CatalogSyncService;
   private readonly lotSync: LotSyncService;
   private readonly clientPull: ClientPullService;
+  private readonly pushService: SyncPushService;
+  private readonly metricsService: SyncMetricsService;
   private readonly intervalMs: number;
   private timerId: ReturnType<typeof setInterval> | null = null;
 
@@ -104,6 +107,12 @@ export class SyncScheduler {
     this.catalogSync = createCatalogSyncService(config.prisma, config.catalog);
     this.lotSync = createLotSyncService(config.prisma, config.lots);
     this.clientPull = createClientPullService(config.prisma, config.clients);
+    this.pushService = createSyncPushService({
+      prisma: config.prisma,
+      baseUrl: config.baseUrl,
+      accessToken: config.accessToken,
+    });
+    this.metricsService = createSyncMetricsService(config.prisma);
     this.intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
   }
 
@@ -159,6 +168,9 @@ export class SyncScheduler {
    *
    * Each step swallows its own errors so a failure in one does not prevent
    * the others from running on the same tick.
+   *
+   * After the cycle, emits a structured log line with queue counts.
+   * Metrics are computed regardless of online status (offline-safe).
    */
   private async tick(): Promise<void> {
     if (!isOnline()) return;
@@ -171,9 +183,9 @@ export class SyncScheduler {
       // Logged downstream; continue to push regardless.
     }
 
-    // 1. Push pending local operations to the server
+    // 1. Push pending local operations (delegated to SyncPushService)
     try {
-      await this.pushPendingOperations();
+      await this.pushService.pushPending();
     } catch {
       // Logged downstream; continue to pulls regardless.
     }
@@ -198,178 +210,22 @@ export class SyncScheduler {
     } catch {
       // Logged downstream; continue.
     }
-  }
 
-  /**
-   * Push pending local operations from the SyncQueue to the server.
-   *
-   * Reads up to `PUSH_BATCH_LIMIT` rows that are either:
-   * - `PENDING` (not yet sent), or
-   * - `FAILED` with `retryCount < MAX_RETRY_ATTEMPTS` and
-   *   `nextRetryAt <= now` (ready for retry).
-   *
-   * On success (HTTP 2xx), marks entries as `COMPLETED` in the local
-   * queue for audit-trail purposes.
-   * On HTTP 4xx, marks entries as `FAILED` permanently.
-   * On HTTP 5xx or network error, increments `retryCount` and schedules
-   * a retry with exponential backoff; entries that exhaust
-   * `MAX_RETRY_ATTEMPTS` are permanently marked `FAILED`.
-   *
-   * Uses the default `fetch` API with an auth header when configured.
-   */
-  private async pushPendingOperations(): Promise<void> {
-    const now = new Date();
-    const pending = await this.prisma.syncQueue.findMany({
-      where: {
-        OR: [
-          { status: 'PENDING' },
-          {
-            status: 'FAILED',
-            retryCount: { lt: MAX_RETRY_ATTEMPTS },
-            nextRetryAt: { lte: now },
-          },
-        ],
-      },
-      orderBy: { clientSequence: 'asc' },
-      take: PUSH_BATCH_LIMIT,
-    });
-
-    if (pending.length === 0) return;
-
-    const operations = pending.map((entry) => ({
-      operationType: entry.operationType,
-      operationUuid: entry.operationUuid,
-      payload: JSON.parse(entry.payload) as Record<string, unknown>,
-      payloadHash: entry.payloadHash,
-      sourceCreatedAt: entry.sourceCreatedAt.toISOString(),
-      clientSequence: Number(entry.clientSequence),
-    }));
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`;
-    }
-
-    const entryIds = pending.map((e) => e.id);
-
-    // Send batch to server
-    let response: Response;
+    // 5. Emit metrics (always computed locally — offline-safe)
     try {
-      response = await fetch(`${this.baseUrl}/sync/batch`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(operations),
-      });
+      const counts = await this.metricsService.getQueueCounts();
+      // Structured log line for operator visibility
+      console.info(
+        JSON.stringify({
+          event: 'sync-cycle-complete',
+          pending: counts.pending,
+          failed: counts.failed,
+          permanentFailure: counts.permanentFailure,
+          completed24h: counts.completed24h,
+        }),
+      );
     } catch {
-      // Network error (DNS, connection refused, timeout) — schedule retry
-      await this.markPushRetry(
-        entryIds,
-        'Network error during sync push',
-      );
-      return;
-    }
-
-    if (response.ok) {
-      // Server accepted the batch — mark as COMPLETED, keeping the queue
-      // entry as an audit trail of what was synchronised.
-      await this.prisma.syncQueue.updateMany({
-        where: { id: { in: entryIds } },
-        data: { status: 'COMPLETED' },
-      });
-      return;
-    }
-
-    const body = await response.text().catch(() => '');
-    const statusCode = response.status;
-
-    if (statusCode >= 400 && statusCode < 500) {
-      // Client error (bad request, conflict, etc.) — permanent failure
-      await this.prisma.syncQueue.updateMany({
-        where: { id: { in: entryIds } },
-        data: {
-          status: 'FAILED',
-          lastErrorMessage:
-            `Server rejected batch (${statusCode}): ${body || response.statusText}`.slice(
-              0,
-              2000,
-            ),
-        },
-      });
-    } else {
-      // Server error (5xx) — retry with backoff
-      await this.markPushRetry(
-        entryIds,
-        `Server error (${statusCode}): ${body || response.statusText}`,
-      );
+      // Metrics are advisory; do not break the cycle.
     }
   }
-
-  /**
-   * Increment retry count and set next retry timestamp for a set of entries.
-   * If an entry has reached `MAX_RETRY_ATTEMPTS`, it is permanently marked
-   * FAILED with a descriptive error.
-   *
-   * Each entry is updated individually inside a transaction because
-   * `retryCount` values differ across rows.
-   */
-  private async markPushRetry(
-    entryIds: string[],
-    errorMessage?: string,
-  ): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      for (const id of entryIds) {
-        const entry = await tx.syncQueue.findUnique({ where: { id } });
-        if (!entry) continue;
-
-        const newRetryCount = entry.retryCount + 1;
-
-        const updateData: Record<string, unknown> = {
-          retryCount: newRetryCount,
-          nextRetryAt: new Date(
-            Date.now() + computeNextRetryDelay(newRetryCount),
-          ),
-        };
-
-        if (newRetryCount >= MAX_RETRY_ATTEMPTS) {
-          updateData.status = 'FAILED';
-          updateData.lastErrorMessage =
-            'Exceeded maximum retry attempts';
-        } else if (errorMessage) {
-          updateData.lastErrorMessage = errorMessage;
-        }
-
-        await tx.syncQueue.update({
-          where: { id },
-          data: updateData,
-        });
-      }
-    });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Compute the next retry delay in milliseconds using exponential backoff.
- *
- * | Retry count (post-increment) | Wait  |
- * |---|---|
- * | 1 | 30 seconds |
- * | 2 | 2 minutes  |
- * | 3 | 5 minutes  |
- * | 4 | 10 minutes |
- * | 5+ | 30 minutes (capped) |
- */
-function computeNextRetryDelay(retryCount: number): number {
-  const delays: Record<number, number> = {
-    1: 30_000,
-    2: 120_000,
-    3: 300_000,
-    4: 600_000,
-  };
-  return delays[retryCount] ?? 1_800_000;
 }

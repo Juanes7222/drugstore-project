@@ -67,10 +67,40 @@ function assemble(target) {
     }
   };
 
-  copySource(join(SOURCE_DIR, 'shared'));
+  // Collect filenames from local-only to know which shared files to skip
+  const localOnlyFiles = new Set(
+    isLocal && existsSync(join(SOURCE_DIR, 'local-only'))
+      ? readdirSync(join(SOURCE_DIR, 'local-only')).filter(
+          (f) => f.endsWith('.prisma') && f !== '_header.prisma'
+        )
+      : []
+  );
+
+  // Copy shared files, skipping any that have a local-only override
+  const sharedDir = join(SOURCE_DIR, 'shared');
+  if (existsSync(sharedDir)) {
+    const sharedFiles = readdirSync(sharedDir).filter(
+      (f) => f.endsWith('.prisma') && f !== '_header.prisma'
+    );
+    for (const file of sharedFiles) {
+      if (isLocal && localOnlyFiles.has(file)) {
+        console.log(`  ~ ${file} (overridden by local-only)`);
+        continue;
+      }
+      const src = join(sharedDir, file);
+      const dst = join(destDir, file);
+      writeFileSync(dst, readFileSync(src, 'utf-8'), 'utf-8');
+      console.log(`  + ${file}`);
+    }
+  }
 
   if (isFull) {
     copySource(join(SOURCE_DIR, 'server-only'));
+  }
+
+  // Local-only override files (copied after shared to take precedence)
+  if (isLocal) {
+    copySource(join(SOURCE_DIR, 'local-only'));
   }
 
   console.log(`Done — ${target} schema ready at ${destDir.replace(ROOT, '')}/\n`);

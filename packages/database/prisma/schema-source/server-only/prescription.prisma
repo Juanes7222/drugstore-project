@@ -4,6 +4,7 @@
 model Prescription {
   id                                String    @id
   saleItemId                        String    @unique
+  saleItem                          SaleItem  @relation("PrescriptionFromSaleItem", fields: [saleItemId], references: [id])
   prescriptionNumber                String?
   prescriberIdType                  IdentificationType?
   prescriberIdNumber                String?
