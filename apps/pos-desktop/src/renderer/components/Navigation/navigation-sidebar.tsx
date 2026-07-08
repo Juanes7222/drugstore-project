@@ -10,13 +10,15 @@
  *   - Inventory Adjustments (INVENTORY_ASSISTANT or ADMIN)
  *   - Admin / Sync (ADMIN only)
  */
-import { type FC, useCallback, useRef, useState } from "react";
+import { type FC, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { selectActiveScreen, setActiveScreen } from "@/store/slices/ui-slice";
 import type { PosScreen } from "@/store/slices/ui-types";
 import { useLocalSessionStore } from "../../../modules/auth/local-session.store";
 import { RoleType } from "@pharmacy/shared-types";
+import { getLocalDatabase } from "../../../infrastructure/local-database";
+import { createSyncMetricsService } from "../../../modules/sync/sync-metrics.service";
 
 interface NavItem {
   screen: PosScreen;
@@ -177,6 +179,40 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
   const activeScreen = useAppSelector(selectActiveScreen);
   const [isHovered, setIsHovered] = useState(false);
   const isExpanded = alwaysExpanded || isHovered;
+  const [badgeCount, setBadgeCount] = useState(0);
+
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const pollBadge = async () => {
+      try {
+        const { prisma } = await getLocalDatabase();
+        const counts = await createSyncMetricsService(prisma).getQueueCounts();
+        setBadgeCount(counts.permanentFailure);
+      } catch {
+        // Badge is advisory; do not surface errors.
+      }
+    };
+
+    void pollBadge();
+    intervalId = setInterval(pollBadge, 60_000);
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void pollBadge();
+        intervalId = setInterval(pollBadge, 60_000);
+      } else if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
 
   const handleNav = useCallback(
     (screen: PosScreen) => {
@@ -211,7 +247,17 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
                 className={`pos-sidebar__item ${isActive ? "pos-sidebar__item--active" : ""}`}
                 onClick={() => handleNav(item.screen)}
               >
-                <Icon className="pos-sidebar__item-icon" />
+                <div className="pos-sidebar__item-icon-wrapper">
+                  <Icon className="pos-sidebar__item-icon" />
+                  {item.screen === "sync-health" && badgeCount > 0 && (
+                    <span
+                      className="pos-sidebar__badge"
+                      aria-label={`${badgeCount > 99 ? "99+" : badgeCount} permanent failures`}
+                    >
+                      {badgeCount > 99 ? "99+" : badgeCount}
+                    </span>
+                  )}
+                </div>
                 <span
                   className="pos-sidebar__item-label"
                   data-visible={isExpanded}

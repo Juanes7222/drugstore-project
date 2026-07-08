@@ -1,0 +1,42 @@
+# Development infrastructure for pharmacy-system.
+# Start with: docker compose -f docker-compose.dev.yml up -d
+# Stop with:  docker compose -f docker-compose.dev.yml down
+# Reset DB:   docker compose -f docker-compose.dev.yml down -v
+
+services:
+  postgres-dev:
+    image: postgres:16-alpine
+    container_name: pharmacy-postgres-dev
+    environment:
+      POSTGRES_USER: pharmacy_dev
+      POSTGRES_PASSWORD: pharmacy_dev
+      POSTGRES_DB: pharmacy_dev_db
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pharmacy_dev -d pharmacy_dev_db']
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 3s
+
+  redis-dev:
+    image: redis:7-alpine
+    container_name: pharmacy-redis-dev
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-dev-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-dev-data:
+    name: pharmacy-postgres-dev-data
+  redis-dev-data:
+    name: pharmacy-redis-dev-data

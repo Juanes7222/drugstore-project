@@ -1,13 +1,14 @@
 /**
  * Application shell shared by every screen in the POS.
  *
- * Owns the persistent cash-shift header and the Ambient Sync Pulse. It renders
- * around the active screen content and has no knowledge of sales, payment, or
- * inventory logic.
+ * Owns the persistent cash-shift header, the Ambient Sync Pulse, and the
+ * SyncAttentionBanner. It renders around the active screen content and has
+ * no knowledge of sales, payment, or inventory logic.
  */
 import { type FC, type ReactNode, useState } from "react";
 import { CashShiftHeader } from "./cash-shift-header";
 import { SyncPulse, SyncState } from "./sync-pulse";
+import { SyncAttentionBanner } from "./sync-attention-banner";
 
 interface AppShellProps {
   cashierName: string;
@@ -39,6 +40,7 @@ export const AppShell: FC<AppShellProps> = ({
         onSyncStateChange={setSyncState}
       />
       <SyncPulse state={syncState} />
+      <SyncAttentionBanner />
       <main className="flex-1 overflow-hidden">{children}</main>
     </div>
   );

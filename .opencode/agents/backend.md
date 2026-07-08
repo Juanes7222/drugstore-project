@@ -328,3 +328,5 @@ Use bash only for:
 
 Do not use bash to explore directories with `ls` or `find`. Do not run
 long-running dev servers. Single, targeted commands only.
+
+If you need created a react component or any frontend component use frontend-pos agent

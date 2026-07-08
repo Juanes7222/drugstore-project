@@ -219,6 +219,7 @@ export class SyncScheduler {
         JSON.stringify({
           event: 'sync-cycle-complete',
           pending: counts.pending,
+          stalePending: counts.stalePending,
           failed: counts.failed,
           permanentFailure: counts.permanentFailure,
           completed24h: counts.completed24h,

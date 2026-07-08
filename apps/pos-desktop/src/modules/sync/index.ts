@@ -21,10 +21,16 @@ export {
   type PermanentFailureEntry,
   type HealthTimelineBucket,
   type PaginatedEntries,
+  type EntryFilter,
+  STALE_PENDING_THRESHOLD_MS,
+  EXPORT_ROW_LIMIT,
 } from './sync-metrics.service';
 export {
   createSyncRecoveryService,
   EntryNotInPermanentFailureException,
   EntryStateChangedException,
+  EntryNotReplayableException,
   type SyncRecoveryService,
+  type PayloadSnapshotGenerator,
+  type SyncRecoveryServiceConfig,
 } from './sync-recovery.service';
