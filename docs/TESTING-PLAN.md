@@ -1,8 +1,8 @@
 # Plan de Testing — Pharmacy System (Droguería)
 
-**Versión:** 2.1  
+**Versión:** 3.0  
 **Última actualización:** Julio 2026  
-**Estado:** Fase 4 completa + Fase 5 infraestructura lista. **401 tests, 30 suites, todos pasando**
+**Estado:** Fases 1-4 completas. Fase 5 infraestructura lista. Fase 3D (servicios faltantes) y Fase 4B (controladores faltantes) planificadas. **439 tests, 32 suites, todos pasando**
 
 ---
 
@@ -65,19 +65,22 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.spec.ts`) | **25 archivos, ~311 tests** — todos pasando |
+| Archivos de test (`*.spec.ts`) | **32 archivos, ~439 tests** — todos pasando |
 | Configuraciones de test (jest.config) | **LISTO** — `apps/server`, `shared-types`, `shared-validation` tienen jest.config.ts |
 | Dependencias de testing instaladas | **LISTO** — `jest`, `ts-jest`, `@nestjs/testing`, `jest-mock-extended`, `supertest` instalados |
 | Scripts `test` en sub-packages | **LISTO** — `test`, `test:cov`, `test:watch`, `test:e2e` configurados |
-| Cobertura actual | **~35%** (shared-validation + shared-types + common/infra + auth + catalog + sales + returns + cash-shift + clients + lots cubiertos) — Meta: ≥80% |
-| Servicios con lógica real (testeables) | **~22 servicios** (auth, products, categories, tax-schemes, sales, client-returns, cash-shift, clients, lots, configuration, fiscal-dian, purchases, reports, sync, etc.) |
-| Servicios con lógica real | **~22 servicios** (incluyendo configuration, fiscal-dian, purchases, reports, sync) |
-| Archivos TypeScript en apps/server | **~140 archivos**, ~15,000+ líneas de código |
+| Cobertura actual | **~40%** (shared-validation + shared-types + common/infra + auth + catalog + sales + returns + cash-shift + clients + lots + inventory-movements + prisma cubiertos) — Meta: ≥80% |
+| Servicios con lógica real (testeables) | **~26 servicios** (auth, products, categories, tax-schemes, sales, client-returns, cash-shift, clients, lots, inventory-movements, configuration, fiscal-dian, purchases, reports, sync, etc.) |
+| Servicios con lógica real | **~26 servicios** (incluyendo todos los módulos) |
+| Archivos TypeScript en apps/server | **~145 archivos**, ~16,000+ líneas de código |
 | Modelos Prisma | **60+ modelos**, **28 enums** |
 | Tests existentes (shared-validation) | **43 tests** — client-schema, product-schema, create-sale-schema, user-login-schema |
 | Tests existentes (shared-types) | **11 tests** — enums.spec (consistencia contra Prisma) |
-| Tests existentes (apps/server) | **~345 tests** — env.schema, ZodValidationPipe, RolesGuard, HttpExceptionFilter, AuditLogInterceptor, PrismaService, AuthService, SessionService, PasswordHasherService, JwtStrategy, LocalStrategy, ProductsService, CategoriesService, TaxSchemesService, ClientsService, LotsService, SalesService, ClientReturnsService, CashShiftService, + 9 controladores |
-| `PrismaService` typing | **CORREGIDO** — `extends PrismaClient` directamente, acceso tipado completo. Ya no usa `(as any)` |
+| Tests existentes (apps/server) | **~385 tests** — env.schema, ZodValidationPipe, RolesGuard, HttpExceptionFilter, AuditLogInterceptor, PrismaService, AuthService, SessionService, PasswordHasherService, JwtStrategy, LocalStrategy, ProductsService, CategoriesService, TaxSchemesService, ClientsService, LotsService, InventoryMovementsService, SalesService, ClientReturnsService, ClientReturnCalculatorService, CashShiftService, PurchaseOrdersService, SuppliersService, + 9 controladores |
+| Servicios SIN tests | **17 servicios** — catalog (facade), pharmaceutical-forms, configuration (2), fiscal-dian (5), inventory-adjustments, physical-counts, purchase-receptions, supplier-returns, reports, sync (3) |
+| Controladores SIN tests | **18 controladores** — catalog (2), pharmaceutical-forms, configuration, fiscal-dian (5), inventory-lots (3), purchases (4), reports, sync |
+| `moduleNameMapper` Jest | **CORREGIDO** — `@pharmacy/database` agregado a `jest.config.ts` y `jest.e2e.config.ts`. 27 suites destrabadas. |
+| PrismaService | **TIPADO** — extiende `PrismaClient` directamente. Test suite pasa. |
 
 ### Arquitectura del proyecto
 
@@ -96,19 +99,20 @@ pharmacy-system/
 
 ### Módulos del backend (apps/server)
 
-| Módulo | Estado de implementación | Archivos |
-|--------|-------------------------|----------|
-| `auth/` | **FULL** — Autenticación, sesiones, JWT, bloqueo de cuenta | 12 archivos |
-| `catalog/` | **MIXTO** — Products/Categories/TaxSchemes: FULL. Facade CatalogService: STUB | 20+ archivos |
-| `sales-pos/` | **FULL** — Venta, confirmación, anulación, devoluciones | 12 archivos |
-| `cash-shift/` | **FULL** — Apertura, cierre, conteo, force close | 8 archivos |
-| `clients/` | **FULL** — CRUD, consentimiento, Habeas Data, clasificación | 8 archivos |
-| `inventory-lots/` | **MIXTO** — Core de stock: FULL. Ajustes/Physical Count: STUB | 10 archivos |
-| `configuration/` | **FULL** — CRUD con sensitive mask, validación de tipos | 6 archivos |
-| `fiscal-dian/` | **FULL** — Documentos fiscales, resoluciones, issuer/tech-provider config | 10 archivos |
-| `purchases/` | **FULL** — Órdenes de compra, recepciones, devoluciones a proveedor, proveedores | 10 archivos |
-| `reports/` | **FULL** — Reportes de ventas, inventario, análisis por fechas | 6 archivos |
-| `sync/` | **FULL** — Sincronización offline con batches, hash validation, dispatcher | 8 archivos |
+| Módulo | Estado de implementación | Estado de tests |
+|--------|-------------------------|-----------------|
+| `auth/` | FULL | ✅ **CUBIERTO** — service, controller, session, password-hasher, ambas strategies |
+| `catalog/` | MIXTO — Products/Categories/TaxSchemes: FULL. Facade CatalogService + PharmaceuticalForms: SIN TESTS | 🟡 **PARCIAL** — 3 services + 3 controllers cubiertos; facade, pharmaceutical-forms, y catalog controller SIN tests |
+| `sales-pos/` | FULL | ✅ **CUBIERTO** — SalesService, ClientReturnsService, ClientReturnCalculatorService + 2 controllers |
+| `cash-shift/` | FULL | ✅ **CUBIERTO** — service + controller |
+| `clients/` | FULL | ✅ **CUBIERTO** — service + controller |
+| `inventory-lots/` | MIXTO — Core de stock: FULL. Ajustes/Physical Count: STUB | 🟡 **PARCIAL** — LotsService, InventoryMovementsService, LotsController cubiertos. InventoryAdjustmentsService, PhysicalCountsService, 3 controllers SIN tests |
+| `configuration/` | FULL | 🔴 **SIN TESTS** — 2 services + 1 controller sin spec |
+| `fiscal-dian/` | FULL | 🔴 **SIN TESTS** — 5 services + 5 controllers sin spec |
+| `purchases/` | FULL | 🟡 **PARCIAL** — PurchaseOrdersService, SuppliersService cubiertos. PurchaseReceptionsService, SupplierReturnsService, 4 controllers SIN tests |
+| `reports/` | FULL | 🔴 **SIN TESTS** — 1 service + 1 controller sin spec |
+| `sync/` | FULL | 🔴 **SIN TESTS** — 3 services + 1 controller sin spec |
+| `backoffice/` | FULL | 🔴 **SIN TESTS** — SyncHealthController sin spec |
 
 ### Bugs corregidos durante Fase 4
 
@@ -119,6 +123,10 @@ pharmacy-system/
 1. **Migración a Prisma 7 config**: `schema.prisma` ya no puede contener `url` en el bloque `datasource`. Se movió a `prisma.config.ts` (CLI) y al constructor de `PrismaService` (runtime). Los comandos `--skip-generate` y `--url` ya no existen en Prisma 7.
 
 2. **`@prisma/client` module resolution**: El custom `output = "../generated/client"` en el schema hacía que `@prisma/client` en node_modules no encontrara el cliente generado (busca en `.prisma/client/`). Se agregó `moduleNameMapper` para `@prisma/client` en `jest.e2e.config.ts` apuntando a `<rootDir>/generated/client`.
+
+3. **`@pharmacy/database` module resolution en Jest**: El `moduleNameMapper` de `jest.config.ts` y `jest.e2e.config.ts` no incluía el alias `@pharmacy/database` (aunque sí estaba en `tsconfig.json`). Esto causaba que **27 de 32 suites** fallaran con `Cannot find module '@pharmacy/database'`. Se agregó `'^@pharmacy/database$': '<rootDir>/../../packages/database/src/index.ts'` a ambos configs.
+
+4. **Mocks incompletos en 3 suites**: Los servicios `LotsService.consumeStockForSale`, `PurchaseOrdersService.findById`, y `ClientReturnsService.findOne` llamaban a `prisma.xyz.findMany(...)` sin que los specs configuraran un mock. El `mockDeep<PrismaClient>()` retorna `undefined` para métodos no configurados, causando `TypeError: Cannot read properties of undefined (reading 'map')`. Se agregaron `mockResolvedValue([...])` en los 6 tests afectados.
 
 ### Issues encontrados durante el diagnóstico
 
@@ -416,18 +424,20 @@ export default config;
 El plan se ejecuta en **6 fases**, priorizando lo que ya tiene lógica de negocio implementada.
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│ Fase 1: Paquetes Compartidos  ████████████████████  1-2 días   ~55  │ ✅ COMPLETO
-│ Fase 2: Capa Infraestructura  ████████████████████  2-3 días   ~44  │ ✅ COMPLETO
-│ Fase 3A: Auth                 ████████████████████  2-3 días   ~58  │ ✅ COMPLETO
-│ Fase 3B: Catalog              ████████████████████  2 días     ~58  │ ✅ COMPLETO
-│ Fase 3C: Resto servicios      ████████████████████  3-4 días   ~96  │ ✅ COMPLETO
-│ Fase 4: Controladores         ████████████████████  3-4 días   ~88  │ ✅ COMPLETO
-│ Fase 5: Tests E2E             ██░░░░░░░░░░░░░░░░░░  3-4 días   ~24  │ 🟡 EN PROGRESO (infraestructura lista, 2/24 tests)
-│ Fase 6: CI/CD + Utilidades    ░░░░░░░░░░░░░░░░░░░░  2-3 días    --  │ 🔴 PENDIENTE
-├──────────────────────────────────────────────────────────────────────┤
-│ TOTAL IMPLEMENTADO: ~401 tests / ~420+ estimados (8-13 días restantes)│
-└──────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ Fase 1: Paquetes Compartidos        ████████████████████  1-2 días   ~55  │ ✅ COMPLETO
+│ Fase 2: Capa Infraestructura        ████████████████████  2-3 días   ~44  │ ✅ COMPLETO
+│ Fase 3A: Auth                       ████████████████████  2-3 días   ~58  │ ✅ COMPLETO
+│ Fase 3B: Catalog                    ████████████████████  2 días     ~58  │ ✅ COMPLETO
+│ Fase 3C: Resto servicios            ████████████████████  3-4 días   ~96  │ ✅ COMPLETO
+│ Fase 3D: Servicios faltantes        ░░░░░░░░░░░░░░░░░░░░  6-8 días  ~180  │ 🔴 PENDIENTE
+│ Fase 4A: Controladores cubiertos    ████████████████████  3-4 días   ~88  │ ✅ COMPLETO
+│ Fase 4B: Controladores faltantes    ░░░░░░░░░░░░░░░░░░░░  5-7 días  ~140  │ 🔴 PENDIENTE
+│ Fase 5: Tests E2E                   ██░░░░░░░░░░░░░░░░░░  5-7 días  ~24  │ 🟡 EN PROGRESO (infraestructura lista, 2/8 flujos)
+│ Fase 6: CI/CD + Utilidades          ░░░░░░░░░░░░░░░░░░░░  2-3 días   --   │ 🔴 PENDIENTE
+├──────────────────────────────────────────────────────────────────────────────────────┤
+│ TOTAL IMPLEMENTADO: ~439 tests / ~760+ tests estimados (18-25 días restantes)        │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Orden cronológico recomendado (actualizado)
@@ -1261,6 +1271,303 @@ apps/server/src/modules/<module>/services/
 
 ---
 
+### 7.16 Incremento de fase: Servicios faltantes (Fase 3D)
+
+**Objetivo:** Completar la cobertura de tests unitarios para los 17 servicios que actualmente no tienen ningún spec.
+
+**Estado:** 🔴 **PENDIENTE** — 0 tests implementados de ~180 estimados.
+
+**Prioridad:** Los servicios de `fiscal-dian`, `sync` y `purchases` (receptions, returns) son críticos porque contienen lógica de negocio compleja (documentos fiscales, sincronización offline, recepción de stock). Los stubs de `inventory-adjustments` y `physical-counts` requieren tests mínimos para no arrastrar la cobertura.
+
+| Prioridad | Módulo | Servicios | Estimación tests |
+|-----------|--------|-----------|------------------|
+| **ALTA** | `fiscal-dian/` | FiscalDocumentsService, FiscalResolutionsService, FiscalIssuerConfigService, TechProviderConfigService, FiscalResolutionAllocationsService | ~50 |
+| **ALTA** | `sync/` | SyncService, SyncHealthService, SyncOperationDispatcherService | ~30 |
+| **ALTA** | `purchases/` | PurchaseReceptionsService, SupplierReturnsService | ~25 |
+| **MEDIA** | `reports/` | ReportsService | ~12 |
+| **MEDIA** | `configuration/` | ConfigurationService, PosSettingsService | ~15 |
+| **MEDIA** | `catalog/` | CatalogService (facade), PharmaceuticalFormsService | ~15 |
+| **BAJA** | `inventory-lots/` | InventoryAdjustmentsService (stub), PhysicalCountsService (stub) | ~10 |
+
+**TOTAL estimado Fase 3D: ~180 tests**
+
+#### 7.16.1 CatalogService (Facade)
+
+**Archivo:** `apps/server/src/modules/catalog/catalog.service.ts`
+**Dependencias a mockear:** ProductsService, CategoriesService, PharmaceuticalFormsService, TaxSchemesService
+
+Métodos: `findAllProducts()`, `findProductById()`, `createProduct()`, `updateProduct()`, `findAllCategories()`, `findAllPharmaceuticalForms()`, `findAllTaxSchemes()`
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| CATF-01 | `findAllProducts()` delega a ProductsService | `productsService.findAll = jest.fn().mockResolvedValue({ data: [], total: 0 })` | Retorna paginación del servicio |
+| CATF-02 | `findProductById()` delega a ProductsService | `productsService.findById = jest.fn().mockResolvedValue(mockProduct)` | Retorna producto |
+| CATF-03 | `findProductById()` not found | `productsService.findById` lanza `ProductNotFoundException` | Propaga la excepción |
+| CATF-04 | `createProduct()` delega a ProductsService | `productsService.createProduct = jest.fn().mockResolvedValue(mockProduct)` | Retorna producto creado |
+| CATF-05 | `findAllCategories()` delega a CategoriesService | `categoriesService.findAll()` | Retorna categorías |
+| CATF-06 | `findAllPharmaceuticalForms()` delega | `pharmaceuticalFormsService.findAll()` | Retorna formas farmacéuticas |
+| CATF-07 | `findAllTaxSchemes()` delega | `taxSchemesService.findAll()` | Retorna tax schemes |
+
+#### 7.16.2 PharmaceuticalFormsService
+
+**Archivo:** `apps/server/src/modules/catalog/pharmaceutical-forms.service.ts`
+**Dependencias a mockear:** PrismaService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| PHF-01 | `findAll()` | `prisma.pharmaceuticalForm.findMany → [{ id: 'f1', name: 'Tableta' }]` | Retorna lista |
+| PHF-02 | `findById()` encontrado | `prisma.pharmaceuticalForm.findUnique → mockForm` | Retorna el form |
+| PHF-03 | `findById()` no encontrado | `findUnique → null` | Lanza excepción de dominio |
+| PHF-04 | `create()` | `prisma.pharmaceuticalForm.create` | Crea y retorna |
+| PHF-05 | `update()` | `findUnique → mockForm`, `update → updatedForm` | Actualiza y retorna |
+
+#### 7.16.3 ConfigurationService
+
+**Archivo:** `apps/server/src/modules/configuration/services/configuration.service.ts`
+**Dependencias a mockear:** PrismaService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| CFG-01 | `findAll(user)` para ADMIN | `user.role = 'ADMIN'` | Retorna todas las configs con valores reales (sin mask) |
+| CFG-02 | `findAll(user)` para otro rol | `user.role = 'CASHIER'` | Retorna configs con valores sensibles enmascarados (`********`) |
+| CFG-03 | `findByKey()` existe | `prisma.systemConfig.findUnique → { key: 'APP_NAME', value: 'Droguería', ... }` | Retorna la config |
+| CFG-04 | `findByKey()` no existe | `findUnique → null` | Lanza `NotFoundException` |
+| CFG-05 | `upsertByKey()` crea nueva | `findUnique → null`, `upsert → nueva config` | Crea config |
+| CFG-06 | `upsertByKey()` actualiza existente | `findUnique → config existente` | Actualiza |
+| CFG-07 | `upsertByKey()` tipo inmutable | Intenta cambiar tipo de `STRING` a `NUMBER` | Lanza `ImmutableConfigFieldException` |
+| CFG-08 | `upsertByKey()` tipo no coincide | `valueType = 'NUMBER'`, `value = 'abc'` | Lanza `ConfigValueTypeMismatchException` |
+
+#### 7.16.4 PosSettingsService
+
+**Archivo:** `apps/server/src/modules/configuration/services/pos-settings.service.ts`
+**Dependencias a mockear:** PrismaService (paymentMethod, systemConfig)
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| POS-01 | `getPosSettings()` retorna estructura completa | Mocks para payment methods activos, configs por defecto | Retorna `{ paymentMethods, discountLimits, alertThresholds, syncDefaults }` |
+| POS-02 | `getPosSettings()` sin payment methods | `prisma.paymentMethod.findMany → []` | `paymentMethods: []` |
+| POS-03 | Valores por defecto cuando no hay config | `prisma.systemConfig.findMany → []` | Usa defaults hardcodeados para discount/alert/ sync |
+
+#### 7.16.5 FiscalDocumentsService
+
+**Archivo:** `apps/server/src/modules/fiscal-dian/services/fiscal-documents.service.ts`
+**Dependencias a mockear:** PrismaService, BullMQ Queue
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| FD-01 | `findAll()` | `prisma.fiscalDocument.findMany` con paginación | Retorna lista paginada |
+| FD-02 | `findById()` encontrado | `findUnique → doc` | Retorna documento |
+| FD-03 | `findById()` no encontrado | `findUnique → null` | Lanza excepción |
+| FD-04 | `retry()` documento en estado retryable | `fiscalState = 'FAILED_GENERATION'` | Regenera y encola |
+| FD-05 | `retry()` documento no retryable | `fiscalState = 'VALIDATED'` | Lanza `DocumentNotRetryableException` |
+| FD-06 | `createPendingDocumentForSale()` | Transacción: crea `FiscalDocument` tipo INVOICE | Retorna `{ id }` |
+| FD-07 | `createPendingDocumentForPurchaseReception()` | Transacción: crea `FiscalDocument` tipo SUPPORT_DOCUMENT | Retorna `{ id }` |
+| FD-08 | `createPendingDocumentForClientReturn()` | Transacción: crea `FiscalDocument` tipo CREDIT_NOTE | Retorna `{ id }` |
+| FD-09 | `createPendingDocumentForSale()` documento duplicado | P2002 en unique constraint | Lanza `DuplicateFiscalDocumentException` |
+| FD-10 | `enqueueGenerationJob()` | `queue.add('fiscal-documents', { fiscalDocumentId })` | BullMQ job encolado |
+
+#### 7.16.6 FiscalResolutionsService
+
+**Archivo:** `apps/server/src/modules/fiscal-dian/services/fiscal-resolutions.service.ts`
+**Dependencias a mockear:** PrismaService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| FR-01 | `findAll()` con filtros | `findMany` con paginación, filtro por `isActive` | Retorna lista paginada |
+| FR-02 | `findById()` | `findUnique → resolution` | Retorna resolución |
+| FR-03 | `findById()` no encontrado | `findUnique → null` | Lanza excepción |
+| FR-04 | `create()` con rango válido | `prefix + fromNumber + toNumber` válidos | Crea resolución |
+| FR-05 | `create()` rango solapado con activa | Ya existe resolución activa con mismo `prefix` y rango solapado | Lanza `OverlappingActiveResolutionException` |
+| FR-06 | `create()` rango inválido | `fromNumber > toNumber` | Lanza `InvalidResolutionRangeException` |
+
+#### 7.16.7 FiscalIssuerConfigService
+
+**Archivo:** `apps/server/src/modules/fiscal-dian/fiscal-issuer-config.service.ts`
+**Dependencias a mockear:** PrismaService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| FIC-01 | `find()` configurado | `prisma.fiscalIssuerConfig.findUnique → config` | Retorna config |
+| FIC-02 | `find()` no configurado | `findUnique → null` | Lanza `FiscalIssuerConfigNotSetException` |
+| FIC-03 | `upsert()` crea | `upsert` con ID singleton `FISCAL_ISSUER_CONFIG_ID` | Crea/actualiza config |
+| FIC-04 | `upsert()` actualiza existente | Ya existe registro | Actualiza campos |
+
+#### 7.16.8 TechProviderConfigService
+
+**Archivo:** `apps/server/src/modules/fiscal-dian/tech-provider-config.service.ts`
+**Dependencias a mockear:** PrismaService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| TPC-01 | `find()` configurado | `findUnique → config` | Retorna config |
+| TPC-02 | `find()` no configurado | `findUnique → null` | Lanza `TechProviderConfigNotSetException` |
+| TPC-03 | `upsert()` | `upsert` con ID singleton | Crea/actualiza config |
+
+#### 7.16.9 FiscalResolutionAllocationsService
+
+**Archivo:** `apps/server/src/modules/fiscal-dian/fiscal-resolution-allocations.service.ts`
+**Dependencias a mockear:** PrismaService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| FRA-01 | `findAll()` paginado | `findMany` + `count` | Retorna lista paginada |
+| FRA-02 | `findById()` | `findUnique → allocation` | Retorna asignación |
+| FRA-03 | `create()` exitoso | `findUnique` de `fiscalResolution` + `workstation` existen, `create` exitoso | Retorna asignación creada |
+| FRA-04 | `create()` resolución no existe | `fiscalResolution.findUnique → null` | Lanza excepción |
+| FRA-05 | `create()` rango inválido | `fromNumber > toNumber` en la asignación | Lanza `AllocationRangeInvalidException` |
+
+#### 7.16.10 PurchaseReceptionsService
+
+**Archivo:** `apps/server/src/modules/purchases/services/purchase-receptions.service.ts`
+**Dependencias a mockear:** PrismaService, LotsService, FiscalDocumentsService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| PREC-01 | `findAll()` paginado | `$transaction → [receptions, total]` | Retorna lista paginada |
+| PREC-02 | `findById()` encontrado | `findUnique → reception` | Retorna recepción |
+| PREC-03 | `findById()` no encontrado | `findUnique → null` | Lanza `PurchaseReceptionNotFoundException` |
+| PREC-04 | `create()` exitoso | Purchase order en estado `CONFIRMED`, items válidos | Crea recepción con items, `state: DRAFT` |
+| PREC-05 | `create()` purchase order no encontrada | `purchaseOrder.findUnique → null` | Lanza `PurchaseOrderNotFoundException` |
+| PREC-06 | `create()` cantidades exceden la orden | `receivedQuantity + dto.quantity > requestedQuantity` | Lanza `OverReceptionException` |
+| PREC-07 | `confirm()` exitoso | Transacción: actualiza `state: CONFIRMED`, llama `LotsService.receiveStock()` por cada item, crea `FiscalDocument` | Stock recibido, documento fiscal creado, job encolado |
+| PREC-08 | `confirm()` recepción no en DRAFT | `state = 'CONFIRMED'` | Lanza `PurchaseReceptionNotDraftException` |
+| PREC-09 | `annul()` | Deferred — lanza error de no implementado | Lanza error |
+
+#### 7.16.11 SupplierReturnsService
+
+**Archivo:** `apps/server/src/modules/purchases/services/supplier-returns.service.ts`
+**Dependencias a mockear:** PrismaService, LotsService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| SR-01 | `findAll()` paginado | `$transaction → [returns, total]` | Retorna lista paginada |
+| SR-02 | `findOne()` encontrado | `findUnique → return` | Retorna devolución |
+| SR-03 | `findOne()` no encontrado | `findUnique → null` | Lanza `SupplierReturnNotFoundException` |
+| SR-04 | `create()` exitoso | Purchase reception válida, lotes con stock | Crea devolución `state: DRAFT` |
+| SR-05 | `confirm()` exitoso | `state: DRAFT`, `LotsService.consumeStockForSupplierReturn()` exitoso | Stock consumido, `state: CONFIRMED` |
+| SR-06 | `confirm()` no en DRAFT | `state = 'CONFIRMED'` | Lanza `SupplierReturnNotDraftException` |
+| SR-07 | `approve()` exitoso | `state: CONFIRMED` → `state: APPROVED` | Estado actualizado |
+| SR-08 | `annul()` permitido | `state: DRAFT` | `state: ANNULLED` |
+| SR-09 | `annul()` no permitido | `state: CONFIRMED` | Lanza `SupplierReturnCannotBeAnnulledException` |
+
+#### 7.16.12 ReportsService
+
+**Archivo:** `apps/server/src/modules/reports/services/reports.service.ts`
+**Dependencias a mockear:** PrismaService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| RPT-01 | `getSalesSummary()` | `startDate`, `endDate` válidos | Agrega ventas por período: total, count, avg |
+| RPT-02 | `getSalesSummary()` rango inválido | `startDate > endDate` | Lanza `ReportInvalidDateRangeException` |
+| RPT-03 | `getCashShiftSummary()` | Rango válido | Retorna sumario de turnos de caja |
+| RPT-04 | `getInventoryValuation()` | Rango válido | Calcula valoración de inventario con costos |
+| RPT-05 | `getTaxSummary()` | Rango válido | Agrega impuestos por tipo/rate |
+
+#### 7.16.13 InventoryAdjustmentsService (STUB)
+
+**Archivo:** `apps/server/src/modules/inventory-lots/services/inventory-adjustments.service.ts`
+
+**Estado actual del servicio:** Todas las implementaciones lanzan `NotImplementedForPhaseException`.
+
+| ID | Escenario | Esperado |
+|----|-----------|----------|
+| IADJ-01 | `findAll()` | Lanza `NotImplementedForPhaseException` |
+| IADJ-02 | `findById()` | Lanza `NotImplementedForPhaseException` |
+| IADJ-03 | `create()` | Lanza `NotImplementedForPhaseException` |
+| IADJ-04 | `submit()` | Lanza `NotImplementedForPhaseException` |
+| IADJ-05 | `approve()` | Lanza `NotImplementedForPhaseException` |
+| IADJ-06 | `reject()` | Lanza `NotImplementedForPhaseException` |
+| IADJ-07 | `apply()` | Lanza `NotImplementedForPhaseException` |
+| IADJ-08 | `annul()` | Lanza `NotImplementedForPhaseException` |
+
+> **Nota:** Tests mínimos requeridos para que los stubs no arrastren la cobertura. Cuando se implemente la lógica real, expandir con casos de test completos equivalentes a SalesService.
+
+#### 7.16.14 PhysicalCountsService (STUB)
+
+**Archivo:** `apps/server/src/modules/inventory-lots/services/physical-counts.service.ts`
+
+**Estado actual del servicio:** Todas las implementaciones lanzan `NotImplementedForPhaseException`.
+
+| ID | Escenario | Esperado |
+|----|-----------|----------|
+| PCNT-01 | `findAll()` | Lanza `NotImplementedForPhaseException` |
+| PCNT-02 | `findOne()` | Lanza `NotImplementedForPhaseException` |
+| PCNT-03 | `start()` | Lanza `NotImplementedForPhaseException` |
+| PCNT-04 | `registerCount()` | Lanza `NotImplementedForPhaseException` |
+| PCNT-05 | `finish()` | Lanza `NotImplementedForPhaseException` |
+| PCNT-06 | `review()` | Lanza `NotImplementedForPhaseException` |
+| PCNT-07 | `approve()` | Lanza `NotImplementedForPhaseException` |
+| PCNT-08 | `apply()` | Lanza `NotImplementedForPhaseException` |
+| PCNT-09 | `annul()` | Lanza `NotImplementedForPhaseException` |
+
+#### 7.16.15 SyncService
+
+**Archivo:** `apps/server/src/modules/sync/services/sync.service.ts`
+**Dependencias a mockear:** PrismaService, SyncOperationDispatcherService, CashShiftService, ClientsService, SalesService, ClientReturnsService, LotsService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| SYNC-01 | `receiveBatch()` operaciones válidas | Batch con operaciones de venta, cliente, cash-shift | Procesa cada operación según `operationType`, retorna array de resultados |
+| SYNC-02 | `receiveBatch()` hash mismatch | `payloadHash` no coincide con hash calculado | Lanza `PayloadHashMismatchException` |
+| SYNC-03 | `receiveBatch()` con operación fallida | Una operación del batch falla | Marca entrada como `FAILED`, continúa con las demás |
+| SYNC-04 | `getStatus()` | `prisma.syncQueueEntry.findMany` para workstation | Retorna conteos por estado (PENDING, PROCESSED, FAILED) |
+| SYNC-05 | `findAll()` paginado | `$transaction → [entries, total]` | Retorna lista paginada |
+| SYNC-06 | `findOne()` encontrado | `findUnique → entry` | Retorna entrada |
+| SYNC-07 | `findOne()` no encontrado | `findUnique → null` | Lanza excepción |
+| SYNC-08 | `retry()` entrada en FAILED | `state = 'FAILED'` | Re-dispatch, actualiza `retryCount` |
+| SYNC-09 | `retry()` entrada no en FAILED | `state = 'PENDING'` | Lanza error (solo FAILED se reintenta) |
+
+#### 7.16.16 SyncHealthService
+
+**Archivo:** `apps/server/src/modules/sync/services/sync-health.service.ts`
+**Dependencias a mockear:** PrismaService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| SYNH-01 | `getHealth()` con datos | `prisma.syncQueueEntry.groupBy` retorna datos por workstation | Retorna `{ workstations: [...], totals: {...}, topFailures: [...] }` |
+| SYNH-02 | `getHealth()` sin datos | `groupBy → []` | Retorna estructura vacía sin errores |
+| SYNH-03 | `getHealth()` con window param | `windowHours = 1` | Filtra últimas 1 hora |
+
+#### 7.16.17 SyncOperationDispatcherService
+
+**Archivo:** `apps/server/src/modules/sync/sync-operation-dispatcher.service.ts`
+**Dependencias a mockear:** CashShiftService, ClientsService, SalesService, ClientReturnsService, LotsService
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| SYND-01 | `dispatch()` operación SALE | `operationType = 'SALE'` | Llama `salesService.create()` o método correspondiente |
+| SYND-02 | `dispatch()` operación CLIENT | `operationType = 'CLIENT'` | Llama `clientsService.create()` |
+| SYND-03 | `dispatch()` operación CASH_SHIFT | `operationType = 'CASH_SHIFT'` | Llama `cashShiftService.openShift()` |
+| SYND-04 | `dispatch()` operación CLIENT_RETURN | `operationType = 'CLIENT_RETURN'` | Llama `clientReturnsService.create()` |
+| SYND-05 | `dispatch()` operación desconocida | `operationType = 'INVALID'` | Lanza error |
+| SYND-06 | `dispatch()` transacción atómica | Verifica que se usa `prisma.$transaction` | Operación es atómica |
+
+---
+
+### 7.17 Guard faltante: JwtAuthGuard
+
+**Archivo:** `apps/server/src/common/guards/jwt-auth.guard.ts`
+
+El guard extiende `AuthGuard('jwt')` de Passport (5 líneas, sin lógica adicional). No requiere test unitario dedicado — se prueba indirectamente en los tests de integración de controladores y en E2E. Se incluye aquí para documentar la decisión explícita de no testearlo.
+
+---
+
+### 7.18 Jobs sin tests
+
+| Job | Archivo | Acción |
+|-----|---------|--------|
+| `ExtendedShiftAlertJob` | `cash-shift/jobs/extended-shift-alert.job.ts` | Planificar test que verifique que `@Cron` llama `cashShiftService.flagExtendedShifts()` |
+| `ResolutionExpirationAlertJob` | `fiscal-dian/jobs/resolution-expiration-alert.job.ts` | Planificar test que verifique que `@Cron` actualiza resoluciones a `EXPIRING`/`EXPIRED` |
+| `SyncProcessingJob` | `sync/jobs/sync-processing.job.ts` | Planificar test que verifique que `@Cron` procesa entradas `PENDING`/`FAILED` |
+
+| ID | Escenario | Esperado |
+|----|-----------|----------|
+| JOB-01 | `ExtendedShiftAlertJob` ejecuta `flagExtendedShifts` | `cashShiftService.flagExtendedShifts()` llamado |
+| JOB-02 | `ResolutionExpirationAlertJob` marca EXPIRING | Resoluciones con `validTo < now + 30d` → `EXPIRING` |
+| JOB-03 | `ResolutionExpirationAlertJob` marca EXPIRED | Resoluciones con `validTo < now` → `EXPIRED` |
+| JOB-04 | `SyncProcessingJob` procesa PENDING | Entradas `PENDING` → `SyncOperationDispatcherService.dispatch()` |
+| JOB-05 | `SyncProcessingJob` reintenta FAILED | Entradas `FAILED` con `retryCount < maxRetries` → re-dispatch |
+
 ## 8. Fase 4: Tests de Integración — Controladores
 
 **Objetivo:** Verificar que el controlador delega correctamente al servicio, pasando los argumentos correctos y manejando errores. Sin levantar servidor HTTP real.
@@ -1338,15 +1645,82 @@ describe('SomeController (integration)', () => {
 
 **Total tests de integración implementados: 88**
 
-### 8.3 Verificaciones cubiertas por los tests
+### 8.3 Controladores sin tests (Fase 4B)
 
-Cada test verifica:
+**Objetivo:** Completar tests de integración para los 18 controladores que actualmente no tienen spec.
 
-1. **Delegación correcta al servicio**: El controlador llama al método del servicio con los argumentos correctos.
-2. **Propagación de parámetros**: Los query params, path params y body se pasan correctamente al servicio.
-3. **Manejo de errores**: Las excepciones del servicio se propagan al llamante sin ser interceptadas.
-4. **Mapeo de respuestas**: El valor retornado por el servicio se devuelve directamente (los controladores son pasivos).
-5. **Casos edge**: Parámetros opcionales ausentes, transformación de tipos (string→number, string→boolean).
+**Estado:** 🔴 **PENDIENTE** — 0 tests implementados de ~140 estimados.
+
+**Estrategia:** Misma que Fase 4A — `Test.createTestingModule` con servicio mockeado, verificar delegación de parámetros y propagación de errores.
+
+#### 8.3.1 Catalog
+
+| Controlador | Archivo de test | Endpoints | Tests estimados |
+|-------------|----------------|-----------|-----------------|
+| `catalog.controller.ts` | `catalog.controller.spec.ts` | `GET /products`, `GET /products/:id`, `POST /products`, `PATCH /products/:id`, `GET /categories`, `GET /pharmaceutical-forms`, `GET /tax-schemes` | ~10 |
+| `pharmaceutical-forms.controller.ts` | `pharmaceutical-forms.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id` | ~6 |
+
+#### 8.3.2 Configuration
+
+| Controlador | Archivo de test | Endpoints | Tests estimados |
+|-------------|----------------|-----------|-----------------|
+| `configuration.controller.ts` | `configuration.controller.spec.ts` | `GET /pos-settings`, `GET /`, `GET /:key`, `PATCH /:key` | ~8 |
+
+#### 8.3.3 Fiscal DIAN
+
+| Controlador | Archivo de test | Endpoints | Tests estimados |
+|-------------|----------------|-----------|-----------------|
+| `fiscal-documents.controller.ts` | `fiscal-documents.controller.spec.ts` | `GET /`, `GET /:id`, `GET /:id/xml`, `POST /:id/retry` | ~7 |
+| `fiscal-resolutions.controller.ts` | `fiscal-resolutions.controller.spec.ts` | `GET /`, `GET /:id`, `POST /` | ~6 |
+| `fiscal-issuer-config.controller.ts` | `fiscal-issuer-config.controller.spec.ts` | `GET /`, `PATCH /` | ~4 |
+| `tech-provider-config.controller.ts` | `tech-provider-config.controller.spec.ts` | `GET /`, `PATCH /` | ~4 |
+| `fiscal-resolution-allocations.controller.ts` | `fiscal-resolution-allocations.controller.spec.ts` | `GET /`, `GET /:id`, `POST /` | ~6 |
+
+#### 8.3.4 Inventory Lots
+
+| Controlador | Archivo de test | Endpoints | Tests estimados |
+|-------------|----------------|-----------|-----------------|
+| `inventory-adjustments.controller.ts` | `inventory-adjustments.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/submit`, `POST /:id/approve`, `POST /:id/reject`, `POST /:id/apply`, `POST /:id/annul` | ~12 |
+| `inventory-movements.controller.ts` | `inventory-movements.controller.spec.ts` | `GET /` | ~3 |
+| `physical-counts.controller.ts` | `physical-counts.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/count-lines`, `POST /:id/finish`, `POST /:id/review`, `POST /:id/approve`, `POST /:id/apply`, `POST /:id/annul` | ~13 |
+
+#### 8.3.5 Purchases
+
+| Controlador | Archivo de test | Endpoints | Tests estimados |
+|-------------|----------------|-----------|-----------------|
+| `purchase-orders.controller.ts` | `purchase-orders.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/confirm`, `POST /:id/annul` | ~8 |
+| `purchase-receptions.controller.ts` | `purchase-receptions.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/confirm`, `POST /:id/annul` | ~8 |
+| `supplier-returns.controller.ts` | `supplier-returns.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/confirm`, `POST /:id/approve`, `POST /:id/annul` | ~9 |
+| `suppliers.controller.ts` | `suppliers.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id` | ~8 |
+
+#### 8.3.6 Reports
+
+| Controlador | Archivo de test | Endpoints | Tests estimados |
+|-------------|----------------|-----------|-----------------|
+| `reports.controller.ts` | `reports.controller.spec.ts` | `GET /sales-summary`, `GET /cash-shift-summary`, `GET /inventory-valuation`, `GET /tax-summary` | ~8 |
+
+#### 8.3.7 Sync
+
+| Controlador | Archivo de test | Endpoints | Tests estimados |
+|-------------|----------------|-----------|-----------------|
+| `sync.controller.ts` | `sync.controller.spec.ts` | `POST /batch`, `GET /status`, `GET /queue`, `GET /queue/:id`, `POST /queue/:id/retry`, `GET /health` | ~10 |
+
+#### 8.3.8 Backoffice
+
+| Controlador | Archivo de test | Endpoints | Tests estimados |
+|-------------|----------------|-----------|-----------------|
+| `sync-health.controller.ts` | `sync-health.controller.spec.ts` | `GET /sync-health`, `GET /permanent-failures` | ~5 |
+
+**TOTAL estimado Fase 4B: ~140 tests**
+
+#### 8.3.9 Verificaciones para cada controlador
+
+Cada test de integración de controlador verifica:
+
+1. **Delegación correcta**: El controlador llama al método del servicio con los argumentos correctos (query params, path params, body, headers).
+2. **Propagación de errores**: Las excepciones del servicio se propagan sin ser capturadas por el controlador.
+3. **Mapeo de respuestas**: El valor retornado se devuelve directamente.
+4. **Casos edge**: Parámetros opcionales ausentes, IDs inválidos, strings vacíos.
 
 ---
 
@@ -1962,7 +2336,7 @@ export function generateExpiredToken(payload: {
 
 ---
 
-## 11. Resumen de Estimaciones (Actualizado)
+## 11. Resumen de Estimaciones (Actualizado Julio 2026)
 
 | Fase | Descripción | Archivos de test | Tests | Esfuerzo (días) | Estado |
 |------|-------------|-----------------|-------|-----------------|--------|
@@ -1972,83 +2346,100 @@ export function generateExpiredToken(payload: {
 | **F3A** | Auth (AuthService, SessionService, PasswordHasher, JwtStrategy, LocalStrategy) | 5 spec files | ~58 | 2-3 | ✅ COMPLETO |
 | **F3B** | Catalog (ProductsService, CategoriesService, TaxSchemesService) | 3 spec files | ~58 | 2 | ✅ COMPLETO |
 | **F3C** | Sales + Cash + Clients + Inventory | 6 spec files | ~96 | 3-4 | ✅ COMPLETO |
-| **F4** | Controladores (integración) | 9 spec files | ~88 | 3-4 | ✅ COMPLETO |
-| **F5** | E2E flujos críticos | 8 e2e-spec files | ~24 | 3-4 | 🔴 PENDIENTE |
-| **F6** | CI/CD, utilidades de testing | — | — | 2-3 | 🔴 PENDIENTE |
-| **TOTAL COMPLETADO** | | **34 spec files** | **~399 tests** | **~16 días** | |
-| **TOTAL RESTANTE** | | **~8 spec files** | **~24 tests** | **~5-7 días** | |
+| **F3D** | Servicios faltantes (fiscal-dian, sync, purchases, reports, config, catalog-facade, stubs) | 17 spec files | ~180 | 6-8 | 🔴 PENDIENTE |
+| **F4A** | Controladores cubiertos (auth, products, categories, tax-schemes, sales, cash-shift, clients, lots, client-returns) | 9 spec files | ~88 | 3-4 | ✅ COMPLETO |
+| **F4B** | Controladores faltantes (catalog, config, fiscal-dian, inventory, purchases, reports, sync, backoffice) | 18 spec files | ~140 | 5-7 | 🔴 PENDIENTE |
+| **F5** | E2E flujos críticos (8 flujos: auth, sale-lifecycle, catalog, account-lockout, client-return, habeas-data, cash-shift, fifo-stock) | 8 e2e-spec files | ~24 | 5-7 | 🟡 PARCIAL (infraestructura lista, 2/8 implementados) |
+| **F6** | CI/CD, utilidades de testing, documentación | — | — | 2-3 | 🔴 PENDIENTE |
+| **TOTAL COMPLETADO** | | **34 spec files** | **~439 tests** | **~16 días** | |
+| **TOTAL RESTANTE** | | **~35 spec files** | **~324 tests** | **~18-25 días** | |
 
 ### Distribución por tipo de test
 
 ```
-Ya implementados (F1 + F2 + F3A + F3B + F3C + F4):   399 tests  (94%)
-  ├── shared-validation (Zod schemas):                 43 tests
-  ├── shared-types (enums):                            11 tests
-  ├── env.schema:                                      10 tests
-  ├── ZodValidationPipe:                                9 tests
-  ├── RolesGuard:                                       7 tests
-  ├── HttpExceptionFilter:                             12 tests
-  ├── AuditLogInterceptor:                             21 tests
-  ├── PrismaService:                                    3 tests
-  ├── PasswordHasherService:                            7 tests
-  ├── SessionService:                                  16 tests
-  ├── AuthService:                                     30 tests
-  ├── JwtStrategy:                                      3 tests
-  ├── LocalStrategy:                                    2 tests
-  ├── ProductsService:                                 32 tests
-  ├── CategoriesService:                               13 tests
-  ├── TaxSchemesService:                               13 tests
-  ├── SalesService:                                    24 tests
-  ├── ClientReturnsService:                            10 tests
-  ├── ClientReturnCalculatorService:                    8 tests
-  ├── CashShiftService:                                12 tests
-  ├── ClientsService:                                  15 tests
-  ├── LotsService:                                     27 tests
-  ├── AuthController (integración):                     7 tests ← NUEVO
-  ├── ProductsController (integración):                14 tests ← NUEVO
-  ├── CategoriesController (integración):                7 tests ← NUEVO
-  ├── TaxSchemesController (integración):                8 tests ← NUEVO
-  ├── SalesController (integración):                   10 tests ← NUEVO
-  ├── CashShiftController (integración):                 7 tests ← NUEVO
-  ├── ClientsController (integración):                 13 tests ← NUEVO
-  ├── LotsController (integración):                    10 tests ← NUEVO
-  └── ClientReturnsController (integración):            12 tests ← NUEVO
-E2E (F5 — flujos completos):                       ~24 tests  (6%)
-Utilidades (F6 — CI/CD + helpers):                  —          —
-                                                    ─────────
-TOTAL (cuando esté completo):                      ~420+ tests
+Ya implementados (F1 + F2 + F3A-C + F4A):                  439 tests  (57%)
+  ├── shared-validation (Zod schemas):                       43 tests
+  ├── shared-types (enums):                                  11 tests
+  ├── env.schema:                                            10 tests
+  ├── ZodValidationPipe:                                      9 tests
+  ├── RolesGuard:                                             7 tests
+  ├── HttpExceptionFilter:                                   12 tests
+  ├── AuditLogInterceptor:                                   21 tests
+  ├── PrismaService:                                          3 tests
+  ├── PasswordHasherService:                                  7 tests
+  ├── SessionService:                                        16 tests
+  ├── AuthService:                                           30 tests
+  ├── JwtStrategy:                                            3 tests
+  ├── LocalStrategy:                                          2 tests
+  ├── ProductsService:                                       32 tests
+  ├── CategoriesService:                                     13 tests
+  ├── TaxSchemesService:                                     13 tests
+  ├── SalesService:                                          24 tests
+  ├── ClientReturnsService:                                  10 tests
+  ├── ClientReturnCalculatorService:                          8 tests
+  ├── CashShiftService:                                      12 tests
+  ├── ClientsService:                                        15 tests
+  ├── LotsService:                                           27 tests
+  ├── InventoryMovementsService:                              4 tests
+  ├── PurchaseOrdersService:                                 15 tests
+  ├── SuppliersService:                                      12 tests
+  ├── AuthController (integración):                           7 tests
+  ├── ProductsController (integración):                      14 tests
+  ├── CategoriesController (integración):                     7 tests
+  ├── TaxSchemesController (integración):                     8 tests
+  ├── SalesController (integración):                         10 tests
+  ├── CashShiftController (integración):                      7 tests
+  ├── ClientsController (integración):                       13 tests
+  ├── LotsController (integración):                          10 tests
+  └── ClientReturnsController (integración):                 12 tests
+
+Pendientes (F3D + F4B + F5 + F6):                        ~324 tests  (43%)
+  ├── F3D Servicios faltantes (fiscal-dian, sync, purchases, etc.): ~180 tests
+  ├── F4B Controladores faltantes (catálogo, fiscal, inventory, etc.):  ~140 tests
+  └── F5 E2E (flujos críticos restantes):                   ~24 tests
+                                                            ─────────
+TOTAL (cuando esté completo):                              ~760+ tests
 ```
 
-### Cronograma ajustado
+### Resumen de cobertura por módulo
 
 ```
-Día 1:     Infraestructura + shared-validation tests                  ← COMPLETADO
-Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)    ← COMPLETADO
-Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)  ← COMPLETADO
-Día 5-6:   Fase 3A (Auth completo: AuthService, SessionService, PasswordHasher, estrategias)  ← COMPLETADO
-Día 7-8:   Fase 3B (Catalog: ProductsService, CategoriesService, TaxSchemesService)  ← COMPLETADO
-Día 9-11:  Fase 3C (SalesService, ClientReturnsService, CashShiftService, ClientsService, LotsService, ClientReturnCalculatorService)  ← COMPLETADO
-Día 12-13: Fase 3C (continuación: corner cases, ajustes post-review)  ← COMPLETADO
-Día 14-16: Fase 4 (Controladores: integración)                        ← COMPLETADO
-Día 17-18: Fase 5 (E2E: infraestructura + 1° flujo)
-Día 19-20: Fase 5 (E2E: flujos restantes)
-Día 21-22: Fase 6 (CI/CD, utilidades, documentación)
+auth/               ████████████████████ 100%   (6/6 specs)
+sales-pos/          ████████████████████ 100%   (5/5 specs)
+cash-shift/         ████████████████████ 100%   (2/2 specs)
+clients/            ████████████████████ 100%   (2/2 specs)
+catalog/            ████████████░░░░░░░░  60%   (6/10 specs — falta facade, pharm-forms, +2 ctrls)
+inventory-lots/     ████████░░░░░░░░░░░░  35%   (3/9 specs — falta adjustments, physical-counts, +3 ctrls)
+purchases/          ████████░░░░░░░░░░░░  25%   (2/8 specs — falta receptions, returns, +4 ctrls)
+configuration/      ░░░░░░░░░░░░░░░░░░░░   0%   (0/3 specs)
+fiscal-dian/        ░░░░░░░░░░░░░░░░░░░░   0%   (0/10 specs)
+reports/            ░░░░░░░░░░░░░░░░░░░░   0%   (0/2 specs)
+sync/               ░░░░░░░░░░░░░░░░░░░░   0%   (0/4 specs)
+backoffice/         ░░░░░░░░░░░░░░░░░░░░   0%   (0/1 specs)
+
+common + infra:     ████████████████████ 100%   (5/5 specs + jwt-auth-guard sin lógica)
 ```
 
-### Nuevo cronograma (post-infraestructura E2E)
+### Cronograma actualizado
 
 ```
-Día 1:     Infraestructura + shared-validation tests                  ← COMPLETADO
-Día 2:     enums.spec.ts + Fase 2 (ZodValidationPipe, RolesGuard)    ← COMPLETADO
-Día 3-4:   Fase 2 (HttpExceptionFilter, AuditLogInterceptor, PrismaService)  ← COMPLETADO
-Día 5-6:   Fase 3A (Auth completo)                                   ← COMPLETADO
-Día 7-8:   Fase 3B (Catalog: Products, Categories, TaxSchemes)       ← COMPLETADO
-Día 9-11:  Fase 3C (Sales, Returns, CashShift, Clients, Lots)        ← COMPLETADO
-Día 12-13: Fase 3C (continuación)                                     ← COMPLETADO
-Día 14-16: Fase 4 (Controladores: integración — 88 tests)             ← COMPLETADO
-Día 17-18: Fase 5 (E2E: infraestructura Docker + Prisma 7 config)     ← COMPLETADO
-Día 19-20: Fase 5 (E2E: flujos críticos restantes — ~22 tests pendientes)
-Día 21-22: Fase 6 (CI/CD, utilidades, documentación)
+Día 1-2:     Infraestructura + shared-validation tests                       ← COMPLETADO
+Día 3-4:     Fase 2 (pipes, guards, filters, interceptors, prisma, env)      ← COMPLETADO
+Día 5-6:     Fase 3A (Auth completo)                                         ← COMPLETADO
+Día 7-8:     Fase 3B (Catalog: Products, Categories, TaxSchemes)             ← COMPLETADO
+Día 9-11:    Fase 3C (Sales, Returns, CashShift, Clients, Lots)              ← COMPLETADO
+Día 12-13:   Fase 3C (continuación: InventoryMovements, PurchaseOrders, Suppliers) ← COMPLETADO
+Día 14-16:   Fase 4A (Controladores: integración — 88 tests)                 ← COMPLETADO
+Día 17:      Fase 5 (E2E: infraestructura Docker + Prisma 7 config)          ← COMPLETADO
+Día 18:      Corrección moduleNameMapper + mocks (lotes, purchase-orders, returns) ← COMPLETADO
+             ────────────────────────────────────────────────────────────────
+Día 19-21:   Fase 3D alta prioridad (FiscalDocumentsService, SyncService, PurchaseReceptionsService)  🟡
+Día 22-24:   Fase 3D media prioridad (Reports, Configuration, Catalog facade, PharmaceuticalForms)    🔴
+Día 25-26:   Fase 3D baja prioridad (InventoryAdjustments stub, PhysicalCounts stub, jobs)             🔴
+Día 27-29:   Fase 4B alta prioridad (fiscal-dian controllers, sync controller, purchases controllers)  🔴
+Día 30-33:   Fase 4B media prioridad (catalog, configuration, inventory, reports, backoffice)          🔴
+Día 34-38:   Fase 5 (E2E: 6 flujos críticos restantes)                                                🔴
+Día 39-40:   Fase 6 (CI/CD, utilidades, documentación, verificar threshold 80%)                        🔴
 ```
 
 ---
@@ -2117,12 +2508,17 @@ prismaMock.$transaction.mockImplementation(
 
 **Problema:** ~10 servicios son stubs que lanzan `NotImplementedForPhaseException`. Si se mide cobertura sobre TODO el código, estos stubs (sin tests) bajarán el porcentaje.
 
-**Impacto:** El threshold del 80% podría no alcanzarse hasta que esos stubs se implementen.
+**Impacto:** El threshold del 80% podría no alcanzarse hasta que esos stubs se implementen o se escriban tests mínimos.
+
+**Estado actual de los stubs:**
+- `LotsService`: ✅ Los métodos stub (`createInventoryAdjustment`, `approvePhysicalCount`, etc.) ya tienen tests mínimos que verifican que lanzan `NotImplementedForPhaseException` (18 tests).
+- `InventoryAdjustmentsService`: 🔴 Sin tests. La Fase 3D planifica 8 tests mínimos.
+- `PhysicalCountsService`: 🔴 Sin tests. La Fase 3D planifica 9 tests mínimos.
 
 **Mitigación:**
-- Opción A: Excluir temporalmente los archivos stub de `collectCoverageFrom` (agregar `!src/modules/sync/**`, `!src/modules/fiscal-dian/**`, etc.).
-- Opción B: Escribir tests mínimos para los stubs (verificar que lanzan `NotImplementedForPhaseException`).
-- Opción C: Implementar la lógica pendiente antes o en paralelo con el plan de testing.
+- Opción A (aplicada para LotsService): Tests mínimos que verifican `NotImplementedForPhaseException`.
+- Opción B (planificada): Escribir tests mínimos para InventoryAdjustmentsService y PhysicalCountsService.
+- Opción C (temporal): Excluir archivos stub si bloquean el threshold del 80%.
 
 ### Riesgo 7: ~~Divergencias de tipos entre shared-types y Prisma~~ → **RESUELTO**
 
