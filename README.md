@@ -67,10 +67,10 @@
 | **Runtime** | Node.js | 22 LTS | Server runtime |
 | **Package Manager** | pnpm | 11 | Monorepo package management |
 | **Monorepo Tool** | Turborepo | 2 | Build orchestration and caching |
-| **Language** | TypeScript | 5.5+ | Type-safe development |
+| **Language** | TypeScript | 6+ | Type-safe development |
 | **Framework** | NestJS | 11 | Backend framework |
 | **Database** | PostgreSQL | 16 | Primary data store |
-| **ORM** | Prisma | 6 | Type-safe database access |
+| **ORM** | Prisma | 7 | Type-safe database access |
 | **Validation** | Zod | 4 | Runtime schema validation |
 | **Authentication** | Passport.js | Latest | JWT-based auth |
 
