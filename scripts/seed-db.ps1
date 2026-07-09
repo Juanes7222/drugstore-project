@@ -16,7 +16,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
 
 if (-not $env:DATABASE_URL) {
     $env:DATABASE_URL = 'postgresql://pharmacy_dev:pharmacy_dev@localhost:5432/pharmacy_dev_db'
@@ -27,7 +27,7 @@ Push-Location (Join-Path $ProjectRoot 'apps/server')
 
 if ($Reset) {
     Write-Host 'Resetting database (force push + re-seed)...' -ForegroundColor Yellow
-    npx prisma db push --force-reset --schema ../../packages/database/prisma/schema/schema.prisma
+    npx prisma db push --force-reset --schema ../../packages/database/prisma/schema
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Reset failed!' -ForegroundColor Red
         Pop-Location
@@ -36,7 +36,9 @@ if ($Reset) {
 }
 
 Write-Host 'Seeding database...' -ForegroundColor Yellow
-npx tsx prisma/seed.ts
+$seedFile = Join-Path $ProjectRoot 'apps/server/seed/main.ts'
+
+npx tsx $seedFile
 $ExitCode = $LASTEXITCODE
 
 Pop-Location
