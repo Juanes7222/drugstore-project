@@ -17,13 +17,12 @@ import {
 } from "@/services/catalog-service";
 import { createHttpCatalogService } from "@/services/catalog-service.http";
 import { createMockCatalogService } from "@/services/catalog-service.mock";
-import { createHttpClient } from "@/services/http-client";
-import { createLocalStorageAuthTokenProvider } from "@/services/auth-token-provider";
+import { createHttpClient } from "@infra/http-client";
+import { createLocalStorageAuthTokenProvider } from "@infra/auth-token-provider";
+import { API_BASE_URL } from "@infra/config";
 import { ProductSearch } from "./product-search";
 import { CartPanel } from "./cart-panel";
 import { RestrictedConfirmationDialog } from "./restricted-confirmation-dialog";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined;
 
 const createCatalogService = (): CatalogService => {
   if (!API_BASE_URL) {

@@ -15,10 +15,10 @@ import { useTranslation } from "react-i18next";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { selectActiveScreen, setActiveScreen } from "@/store/slices/ui-slice";
 import type { PosScreen } from "@/store/slices/ui-types";
-import { useLocalSessionStore } from "../../../modules/auth/local-session.store";
+import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { RoleType } from "@pharmacy/shared-types";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
-import { createSyncMetricsService } from "../../../modules/sync/sync-metrics.service";
+import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
 
 interface NavItem {
   screen: PosScreen;

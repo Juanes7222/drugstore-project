@@ -6,11 +6,13 @@
  *
  * The product/lot search is populated from local state (eventually from the
  * local Prisma Lot table), while the submit action uses the real
- * InventoryAdjustmentsService from modules/ which validates and applies
+ * InventoryAdjustmentsService from domain/ which validates and applies
  * the adjustment against the authoritative local database.
  *
  * Role is re-checked on submit, not just on mount, to guard against session
  * changes while the form is being filled.
+ *
+ * @category Page
  */
 import {
   type FC,
@@ -21,11 +23,11 @@ import {
 import { useTranslation } from "react-i18next";
 import { useAppDispatch } from "@/store/hooks";
 import { navigateBackToSales } from "@/store/slices/ui-slice";
-import { useLocalSessionStore } from "../auth/local-session.store";
+import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { OperationQueuedToast } from "@/components/common/operation-queued-toast";
 import { RoleType } from "@pharmacy/shared-types";
-import { useInventoryAdjustmentsService } from "../../infrastructure/service-context";
+import { useInventoryAdjustmentsService } from "../common/service-context";
 
 // ---------------------------------------------------------------------------
 // Types

@@ -6,6 +6,8 @@
  * entries table with Retry/Discard actions, and an entry-detail drawer.
  *
  * Role-gated to ADMIN. Re-checks role on every action.
+ *
+ * @category Page
  */
 
 import {
@@ -17,16 +19,16 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { createSyncMetricsService } from "./sync-metrics.service";
+import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
 import {
   createSyncRecoveryService,
   EntryNotInPermanentFailureException,
   EntryStateChangedException,
   EntryNotReplayableException,
-} from "./sync-recovery.service";
-import { useLocalSessionStore } from "../auth/local-session.store";
+} from "../../../domain/sync/sync-recovery.service";
+import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { RoleType } from "@pharmacy/shared-types";
-import { getLocalDatabase } from "../../infrastructure/local-database";
+import { getLocalDatabase } from "../../../infrastructure/local-database";
 import type {
   QueueCounts,
   FailureBreakdownEntry,
@@ -34,8 +36,9 @@ import type {
   HealthTimelineBucket,
   PaginatedEntries,
   EntryFilter,
-} from "./sync-metrics.service";
-import { DomainError } from "../../common/domain-error";
+} from "../../../domain/sync/sync-metrics.service";
+import { DomainError } from "../../../common/domain-error";
+import { API_BASE_URL } from "@infra/config";
 
 const AUTO_REFRESH_MS = 30_000;
 const TIMELINE_HOURS = 24;
@@ -190,14 +193,13 @@ export const SyncHealthPage: FC = () => {
   const handleTestConnection = useCallback(async () => {
     setConnectionStatus({ type: "testing" });
     try {
-      const baseUrl = "http://localhost:3000";
       const session = useLocalSessionStore.getState().session;
       const headers: Record<string, string> = {};
       if (session?.userId) headers["Authorization"] = `Bearer ${session.userId}`;
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
-      const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/sync/status`, {
+      const response = await fetch(`${API_BASE_URL.replace(/\/+$/, "")}/sync/status`, {
         method: "GET", headers, signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -328,15 +330,14 @@ export const SyncHealthPage: FC = () => {
 
   const handleRunSyncNow = useCallback(async () => {
     try {
-      const { createSyncScheduler } = await import("./sync-scheduler.service");
+      const { createSyncScheduler } = await import("../../../domain/sync/sync-scheduler.service");
       const { prisma } = await getLocalDatabase();
-      const baseUrl = "http://localhost:3000";
       const scheduler = createSyncScheduler({
-        prisma, baseUrl,
-        config: { prisma, baseUrl },
-        catalog: { prisma, baseUrl },
-        lots: { prisma, baseUrl },
-        clients: { prisma, baseUrl },
+        prisma, baseUrl: API_BASE_URL,
+        config: { prisma, baseUrl: API_BASE_URL },
+        catalog: { prisma, baseUrl: API_BASE_URL },
+        lots: { prisma, baseUrl: API_BASE_URL },
+        clients: { prisma, baseUrl: API_BASE_URL },
       });
       await scheduler.syncNow();
       showToast("success", "Sync cycle completed");

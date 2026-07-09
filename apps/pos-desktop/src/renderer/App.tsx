@@ -16,19 +16,19 @@ import { SalesTransaction } from "@/components/SalesTransaction/sales-transactio
 import { PaymentProcessing } from "@/components/PaymentProcessing/payment-processing";
 import { Receipt } from "@/components/Receipt/receipt";
 import { NavigationSidebar } from "@/components/Navigation/navigation-sidebar";
-import { ReturnsPage } from "../modules/returns/returns.page";
-import { InventoryAdjustmentsPage } from "../modules/inventory-adjustments/inventory-adjustments.page";
-import { PrescriptionsPage } from "../modules/prescriptions/prescriptions.page";
-import { SyncHealthPage } from "../modules/sync/sync-health.page";
-import { ServiceProvider } from "../infrastructure/service-context";
+import { ReturnsPage } from "@/components/returns/returns.page";
+import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inventory-adjustments.page";
+import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
+import { SyncHealthPage } from "@/components/sync/sync-health.page";
+import { ServiceProvider } from "./components/common/service-context";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { useLocalSessionStore } from "../modules/auth/local-session.store";
+import { useLocalSessionStore } from "../domain/auth/local-session.store";
 import { useTranslation } from "react-i18next";
+import { DB_PROOF_ENABLED } from "@infra/config";
 
 const SCREEN_TRANSITION_DURATION_S = 0.3;
-const SHOW_DB_PROOF = import.meta.env.VITE_DB_PROOF === "1";
 
 // ---------------------------------------------------------------------------
 // InnerApp — the actual screen router, rendered once ServiceProvider is ready
@@ -241,7 +241,7 @@ const InnerApp: FC = () => {
 // ---------------------------------------------------------------------------
 
 export const App: FC = () => {
-  if (SHOW_DB_PROOF) {
+  if (DB_PROOF_ENABLED) {
     return <DatabaseProof />;
   }
 

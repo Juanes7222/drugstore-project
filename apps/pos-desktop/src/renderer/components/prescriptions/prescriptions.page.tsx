@@ -2,7 +2,7 @@
  * PrescriptionsPage — capture medical prescription data for sale items that
  * require one before the payment can be confirmed.
  *
- * The form is driven by the real PrescriptionsService from modules/ which
+ * The form is driven by the real PrescriptionsService from domain/ which
  * validates and persists the prescription to the local database and creates
  * the corresponding SyncQueue entry (PRESCRIPTION_REGISTRATION).
  *
@@ -10,6 +10,8 @@
  *   - Receives pendingItemId from the store
  *   - On success, advances to the next pending item (if any) or navigates
  *     back to the payment screen
+ *
+ * @category Page
  */
 import {
   type FC,
@@ -28,7 +30,7 @@ import {
 import { selectCartItems } from "@/store/slices/sales-slice";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { OperationQueuedToast } from "@/components/common/operation-queued-toast";
-import { usePrescriptionsService } from "../../infrastructure/service-context";
+import { usePrescriptionsService } from "../common/service-context";
 
 // ---------------------------------------------------------------------------
 // Component

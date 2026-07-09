@@ -1,6 +1,6 @@
 /**
  * Service-context — React context + provider that instantiates the real
- * domain services from src/modules/ with the local PGlite PrismaClient and
+ * domain services from src/domain/ with the local PGlite PrismaClient and
  * AuthService, and makes them available via hooks anywhere in the component
  * tree.
  *
@@ -35,17 +35,18 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { getLocalDatabase } from "./local-database";
-import { createReturnsService, ReturnsService } from "../modules/returns/returns.service";
+import { getLocalDatabase } from "../../../infrastructure/local-database";
+import { API_BASE_URL } from "@infra/config";
+import { createReturnsService, ReturnsService } from "../../../domain/returns/returns.service";
 import {
   createInventoryAdjustmentsService,
   InventoryAdjustmentsService,
-} from "../modules/inventory-adjustments/inventory-adjustments.service";
+} from "../../../domain/inventory-adjustments/inventory-adjustments.service";
 import {
   createPrescriptionsService,
   PrescriptionsService,
-} from "../modules/prescriptions/prescriptions.service";
-import { createAuthService, AuthService } from "../modules/auth/auth.service";
+} from "../../../domain/prescriptions/prescriptions.service";
+import { createAuthService, AuthService } from "../../../domain/auth/auth.service";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -111,7 +112,7 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
   const { t } = useTranslation();
   const [initState, setInitState] = useState<InitState>({ status: "loading" });
 
-  const baseUrl = apiBaseUrl ?? (import.meta.env.VITE_API_BASE_URL as string) ?? "";
+  const baseUrl = apiBaseUrl ?? API_BASE_URL;
 
   useEffect(() => {
     let cancelled = false;

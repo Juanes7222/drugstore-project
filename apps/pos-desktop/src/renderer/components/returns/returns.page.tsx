@@ -9,8 +9,10 @@
  *      role (manager override) and a PIN confirmation on submit.
  *
  * All data is read from the local PGlite database via the real ReturnsService
- * from modules/. Role re-check happens on submit, not just on mount, to guard
+ * from domain/. Role re-check happens on submit, not just on mount, to guard
  * against session changes while the form is being filled.
+ *
+ * @category Page
  */
 import {
   type FC,
@@ -21,11 +23,11 @@ import {
 import { useTranslation } from "react-i18next";
 import { useAppDispatch } from "@/store/hooks";
 import { navigateBackToSales } from "@/store/slices/ui-slice";
-import { useLocalSessionStore } from "../auth/local-session.store";
+import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { OperationQueuedToast } from "@/components/common/operation-queued-toast";
 import { RoleType } from "@pharmacy/shared-types";
-import { useReturnsService } from "../../infrastructure/service-context";
+import { useReturnsService } from "../common/service-context";
 
 // ---------------------------------------------------------------------------
 // Types

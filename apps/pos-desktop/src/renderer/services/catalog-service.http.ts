@@ -10,7 +10,7 @@
  * becomes false and the UI disables the add-to-cart action for that result.
  */
 import { SaleType } from "@pharmacy/shared-types";
-import { HttpClient } from "./http-client";
+import { HttpClient } from "@infra/http-client";
 import { CatalogItem, CatalogService } from "./catalog-service";
 
 interface ServerCatalogResponse {

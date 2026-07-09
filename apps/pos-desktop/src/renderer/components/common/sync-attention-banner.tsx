@@ -7,8 +7,8 @@
  */
 
 import { type FC, useCallback, useEffect, useRef, useState } from "react";
-import { getLocalDatabase } from "../../infrastructure/local-database";
-import { createSyncMetricsService } from "../../../modules/sync/sync-metrics.service";
+import { getLocalDatabase } from "../../../infrastructure/local-database";
+import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
 
 export const SyncAttentionBanner: FC = () => {
   const [visible, setVisible] = useState(false);
