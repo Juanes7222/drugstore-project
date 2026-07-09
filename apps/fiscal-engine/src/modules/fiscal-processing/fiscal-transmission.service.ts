@@ -1,10 +1,12 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import {
-  FiscalTransmissionPort,
   FISCAL_TRANSMISSION_PORT,
-  SecretReaderPort,
   SECRET_READER_PORT,
+} from './ports';
+import type {
+  FiscalTransmissionPort,
+  SecretReaderPort,
 } from './ports';
 import { FiscalTransmissionFailedException } from './exceptions/fiscal-transmission-failed.exception';
 import { FiscalDocumentRejectedException } from './exceptions/fiscal-document-rejected.exception';
@@ -147,8 +149,8 @@ export class FiscalTransmissionService {
     await this.prisma.fiscalDocument.update({
       where: { id: fiscalDocumentId },
       data: {
-        cufeCude: result.xmlDocumentKey,
-        signedXml: result.signedXml,
+        cufeCude: result.xmlDocumentKey ?? undefined,
+        signedXml: result.signedXml ?? undefined,
         fiscalState: 'VALIDATED',
         ptResponseCode: result.statusCode,
         ptResponseMessage: result.statusMessage,

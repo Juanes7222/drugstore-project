@@ -63,10 +63,15 @@ export class InventoryAdjustmentsService {
   async findById(id: string): Promise<any> {
     const doc = await this.prisma.inventoryAdjustmentDocument.findUnique({
       where: { id },
-      include: { movements: { include: { lot: true } } },
     });
     if (!doc) throw new AdjustmentNotFoundException(id);
-    return doc;
+    // Fetch movements separately: InventoryMovement has adjustmentDocumentId as a scalar
+    // with no Prisma-level relation declared.
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where: { adjustmentDocumentId: id },
+      include: { lot: true },
+    });
+    return { ...doc, movements };
   }
 
   async create(
@@ -84,7 +89,7 @@ export class InventoryAdjustmentsService {
     return this.prisma.$transaction(async (tx) => {
       const itemsData = await this.prepareAdjustmentItems(tx, createDto.items);
       const sequentialNumber = await this.getNextSequentialNumber(tx);
-      return tx.inventoryAdjustmentDocument.create({
+      const doc = await tx.inventoryAdjustmentDocument.create({
         data: {
           id: crypto.randomUUID(),
           sequentialNumber,
@@ -92,8 +97,14 @@ export class InventoryAdjustmentsService {
           notes: createDto.notes,
           createdByUserId: userId,
           physicalCountId: physicalCountId ?? null,
-          movements: {
-            create: itemsData.map((m) => ({
+        },
+      });
+      // Create movements separately: InventoryMovement has adjustmentDocumentId as a scalar
+      // with no Prisma-level relation declared.
+      const movements = await Promise.all(
+        itemsData.map((m) =>
+          tx.inventoryMovement.create({
+            data: {
               id: crypto.randomUUID(),
               lotId: m.lotId,
               movementType: m.movementType,
@@ -103,11 +114,12 @@ export class InventoryAdjustmentsService {
               createdById: userId,
               createdAt: new Date(),
               reason: m.reason,
-            })),
-          },
-        },
-        include: { movements: true },
-      });
+              adjustmentDocumentId: doc.id,
+            },
+          }),
+        ),
+      );
+      return { ...doc, movements };
     });
   }
 
@@ -165,13 +177,18 @@ export class InventoryAdjustmentsService {
     const executor = async (client: Prisma.TransactionClient) => {
       const doc = await client.inventoryAdjustmentDocument.findUnique({
         where: { id },
-        include: { movements: true },
       });
       if (!doc) throw new AdjustmentNotFoundException(id);
       if (doc.state !== AdjustmentState.APPROVED) throw new AdjustmentNotApprovedException(id);
 
+      // Fetch movements separately: InventoryMovement has adjustmentDocumentId as a scalar
+      // with no Prisma-level relation declared.
+      const movements = await client.inventoryMovement.findMany({
+        where: { adjustmentDocumentId: id },
+      });
+
       // Pre-flight: verify every lot matches its previousStock snapshot before mutating any
-      const lots = await this.verifyAndLoadLots(client, doc.id, doc.movements);
+      const lots = await this.verifyAndLoadLots(client, doc.id, movements);
 
       // All preconditions passed: apply every movement
       for (const { movement, lot } of lots) {

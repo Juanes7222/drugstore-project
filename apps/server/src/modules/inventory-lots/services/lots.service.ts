@@ -367,23 +367,23 @@ export class LotsService {
       reason?: string;
     },
   ): Promise<any> {
-    const movementData: Prisma.InventoryMovementCreateInput = {
+    // InventoryMovement uses scalar fields for most foreign keys (no Prisma-level
+    // relation declarations). Use UncheckedCreateInput to set scalar fields directly.
+    const movementData: Prisma.InventoryMovementUncheckedCreateInput = {
       id: crypto.randomUUID(),
-      lot: { connect: { id: data.lotId } },
+      lotId: data.lotId,
       movementType: data.movementType,
       quantity: data.quantity,
       previousStock: data.previousStock,
       resultingStock: data.resultingStock,
       createdAt: new Date(),
-      createdByUser: { connect: { id: data.createdById } },
+      createdById: data.createdById,
       reason: data.reason,
+      saleId: data.saleId,
+      purchaseReceptionId: data.purchaseReceptionId,
+      supplierReturnId: data.supplierReturnId,
+      clientReturnId: data.clientReturnId,
     };
-
-    // Enforce polymorphic source: only one of these should be set
-    if (data.saleId) movementData.sale = { connect: { id: data.saleId } };
-    if (data.purchaseReceptionId) movementData.purchaseReception = { connect: { id: data.purchaseReceptionId } };
-    if (data.supplierReturnId) movementData.supplierReturn = { connect: { id: data.supplierReturnId } };
-    if (data.clientReturnId) movementData.clientReturn = { connect: { id: data.clientReturnId } };
 
     return tx.inventoryMovement.create({ data: movementData });
   }

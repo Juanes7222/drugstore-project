@@ -45,10 +45,31 @@ export class SupplierReturnsService {
       include: {
         supplier: true,
         purchaseReception: true,
-        items: { include: { product: true, lot: true } },
+        items: true,
       },
     });
     if (!supplierReturn) throw new SupplierReturnNotFoundException(id);
+
+    // SupplierReturnItem has productId and lotId as scalars with no Prisma-level relations.
+    // Fetch related entities separately.
+    const itemProductIds = [...new Set(supplierReturn.items.map((i: any) => i.productId))];
+    const itemLotIds = [...new Set(supplierReturn.items.map((i: any) => i.lotId))];
+    const [products, lots] = await Promise.all([
+      itemProductIds.length > 0
+        ? this.prisma.product.findMany({ where: { id: { in: itemProductIds } } })
+        : Promise.resolve([]),
+      itemLotIds.length > 0
+        ? this.prisma.lot.findMany({ where: { id: { in: itemLotIds } } })
+        : Promise.resolve([]),
+    ]);
+    const productMap = new Map(products.map((p) => [p.id, p]));
+    const lotMap = new Map(lots.map((l) => [l.id, l]));
+    supplierReturn.items = supplierReturn.items.map((item: any) => ({
+      ...item,
+      product: productMap.get(item.productId) ?? null,
+      lot: lotMap.get(item.lotId) ?? null,
+    }));
+
     return supplierReturn;
   }
 

@@ -3,11 +3,10 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CufeCalculator } from './builders/cufe.calculator';
 import { UblInvoiceBuilder } from './builders/ubl-invoice.builder';
 import { FiscalDocumentGenerationFailedException } from './exceptions/fiscal-document-generation-failed.exception';
-import {
-  FiscalTransmissionPort,
-  FISCAL_TRANSMISSION_PORT,
-} from './ports/fiscal-transmission.port';
-import { SecretReaderPort, SECRET_READER_PORT } from './ports/secret-reader.port';
+import type { FiscalTransmissionPort } from './ports/fiscal-transmission.port';
+import { FISCAL_TRANSMISSION_PORT } from './ports/fiscal-transmission.port';
+import type { SecretReaderPort } from './ports/secret-reader.port';
+import { SECRET_READER_PORT } from './ports/secret-reader.port';
 
 /**
  * Orchestrates the generation of a fiscal document's UBL XML and CUFE.
@@ -62,7 +61,7 @@ export class FiscalDocumentsService {
 
     // ── Load related domain data ──
     const sale = await this.loadSale(doc.saleId, fiscalDocumentId);
-    const saleItems = await this.loadSaleItems(doc.saleId, fiscalDocumentId);
+    const saleItems = await this.loadSaleItems(doc.saleId ?? '', fiscalDocumentId);
     const issuerConfig = await this.loadIssuerConfig(fiscalDocumentId);
     const customer = await this.loadCustomer(sale, fiscalDocumentId);
 

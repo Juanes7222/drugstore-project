@@ -9,7 +9,7 @@ import {
   FISCAL_TRANSMISSION_PORT,
   SECRET_READER_PORT,
 } from './ports';
-import { DianSdkFiscalTransmissionAdapter } from './adapters/dian-sdk-fiscal-transmission.adapter';
+import { SoapFiscalTransmissionAdapter } from './adapters/soap-fiscal-transmission.adapter';
 import { FileSystemSecretReaderAdapter } from './adapters/file-system-secret-reader.adapter';
 
 @Module({
@@ -22,7 +22,7 @@ import { FileSystemSecretReaderAdapter } from './adapters/file-system-secret-rea
     UblInvoiceBuilder,
     {
       provide: FISCAL_TRANSMISSION_PORT,
-      useClass: DianSdkFiscalTransmissionAdapter,
+      useClass: SoapFiscalTransmissionAdapter,
     },
     {
       provide: SECRET_READER_PORT,

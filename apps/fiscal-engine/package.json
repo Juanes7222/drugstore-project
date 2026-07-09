@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "description": "Asynchronous microservice for DIAN electronic invoicing and fiscal processing",
-  "main": "dist/main.js",
+  "main": "dist/apps/fiscal-engine/src/main.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/main.js",
+    "start": "node dist/apps/fiscal-engine/src/main.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -18,17 +18,20 @@
     "@pharmacy/database": "workspace:*",
     "@pharmacy/shared-types": "workspace:*",
     "@prisma/adapter-pg": "^7.8.0",
+    "@xmldom/xmldom": "^0.9.10",
     "bullmq": "^5.79.2",
+    "fast-xml-parser": "^5.9.3",
+    "node-forge": "^1.4.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "xmlbuilder2": "^3.1.1",
+    "xml-crypto": "^6.1.2",
+    "xmlbuilder2": "^4.0.3",
     "zod": "^4.4.3"
-  },
-  "optionalDependencies": {
-    "dian-sdk-node": "^3.6.2"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
+    "@types/node-forge": "^1.3.14",
+    "@types/xml-crypto": "^1.4.6",
     "prisma": "^7.8.0",
     "typescript": "^6.0.3"
   }

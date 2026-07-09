@@ -40,9 +40,22 @@ export class ClientReturnsService {
   async findOne(id: string): Promise<any> {
     const ret = await this.prisma.clientReturn.findUnique({
       where: { id },
-      include: { sale: true, client: true, items: { include: { lots: { include: { lot: true } } } } },
+      include: { sale: true, client: true, items: { include: { lots: true } } },
     });
     if (!ret) throw new ClientReturnNotFoundException(id);
+
+    // ClientReturnItemLot has lotId as a scalar with no Prisma-level relation.
+    // Fetch lots separately.
+    const lotIds = [...new Set(ret.items.flatMap((i: any) => i.lots.map((l: any) => l.lotId)))];
+    const lots = lotIds.length > 0
+      ? await this.prisma.lot.findMany({ where: { id: { in: lotIds } } })
+      : [];
+    const lotMap = new Map(lots.map((l) => [l.id, l]));
+    ret.items = ret.items.map((item: any) => ({
+      ...item,
+      lots: item.lots.map((l: any) => ({ ...l, lot: lotMap.get(l.lotId) ?? null })),
+    }));
+
     return ret;
   }
 

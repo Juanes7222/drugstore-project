@@ -40,8 +40,21 @@ export class PurchaseOrdersService {
   async findById(id: string): Promise<any> {
     const purchaseOrder = await this.prisma.purchaseOrder.findUnique({
       where: { id },
-      include: { supplier: true, items: { include: { product: true } } },
+      include: { supplier: true, items: true },
     });
+    // PurchaseOrderItem has productId as a scalar with no Prisma-level relation declared.
+    // Fetch product details separately if needed.
+    if (purchaseOrder && purchaseOrder.items.length > 0) {
+      const productIds = [...new Set(purchaseOrder.items.map((i: any) => i.productId))];
+      const products = await this.prisma.product.findMany({
+        where: { id: { in: productIds } },
+      });
+      const productMap = new Map(products.map((p) => [p.id, p]));
+      purchaseOrder.items = purchaseOrder.items.map((item: any) => ({
+        ...item,
+        product: productMap.get(item.productId) ?? null,
+      }));
+    }
     if (!purchaseOrder) {
       throw new PurchaseOrderNotFoundException(id);
     }

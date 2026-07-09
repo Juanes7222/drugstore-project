@@ -41,10 +41,32 @@ export class PhysicalCountsService {
   async findOne(id: string): Promise<any> {
     const count = await this.prisma.physicalCount.findUnique({
       where: { id },
-      include: { adjustmentDocuments: { include: { movements: { include: { lot: true } } } } },
+      include: { adjustmentDocuments: true },
     });
     if (!count) throw new PhysicalCountNotFoundException(id);
-    return count;
+
+    // Fetch adjustment movements separately: InventoryMovement has adjustmentDocumentId as a
+    // scalar with no Prisma-level relation declared.
+    const adjustmentDocIds = count.adjustmentDocuments.map((d: any) => d.id);
+    const movements = adjustmentDocIds.length > 0
+      ? await this.prisma.inventoryMovement.findMany({
+          where: { adjustmentDocumentId: { in: adjustmentDocIds } },
+          include: { lot: true },
+        })
+      : [];
+    const movementsByDocId = new Map<string, any[]>();
+    for (const m of movements) {
+      const list = movementsByDocId.get(m.adjustmentDocumentId!) ?? [];
+      list.push(m);
+      movementsByDocId.set(m.adjustmentDocumentId!, list);
+    }
+    return {
+      ...count,
+      adjustmentDocuments: count.adjustmentDocuments.map((d: any) => ({
+        ...d,
+        movements: movementsByDocId.get(d.id) ?? [],
+      })),
+    };
   }
 
   async start(dto: StartPhysicalCountDto, userId: string): Promise<any> {
@@ -72,11 +94,18 @@ export class PhysicalCountsService {
     if (dto.countedQuantity === expected) return { matched: true };
 
     // Find and annul any existing DRAFT adjustment document for this lot
+    // Fetch the movement separately: InventoryMovement has adjustmentDocumentId as a scalar
+    // with no Prisma-level relation declared.
     const existingDoc = await this.prisma.inventoryAdjustmentDocument.findFirst({
       where: { physicalCountId: id, state: AdjustmentState.DRAFT },
-      include: { movements: { where: { lotId: dto.lotId }, take: 1 } },
     });
-    if (existingDoc && existingDoc.movements.length > 0) {
+    const existingMovements = existingDoc
+      ? await this.prisma.inventoryMovement.findMany({
+          where: { adjustmentDocumentId: existingDoc.id, lotId: dto.lotId },
+          take: 1,
+        })
+      : [];
+    if (existingDoc && existingMovements.length > 0) {
       await this.inventoryAdjustmentsService.annul(existingDoc.id, userId, {
         annulmentReason: 'Superseded by recount',
       });
