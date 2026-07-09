@@ -20,6 +20,7 @@ import { ReturnsPage } from "@/components/returns/returns.page";
 import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inventory-adjustments.page";
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
+import { RecoveryPage } from "../domain/recovery/recovery.page";
 import { ServiceProvider } from "./components/common/service-context";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
@@ -227,6 +228,23 @@ const InnerApp: FC = () => {
                 }}
               >
                 <SyncHealthPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "recovery" && (
+              <motion.div
+                key="recovery"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <RecoveryPage />
               </motion.div>
             )}
           </AnimatePresence>

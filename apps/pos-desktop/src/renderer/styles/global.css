@@ -1,4 +1,4 @@
-/**
+/*
  * Global styles — Pharmacy POS Terminal
  * Tailwind CSS v4 theme, design tokens, font loading, reduced-motion handling.
  *
@@ -670,4 +670,4 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-}
+

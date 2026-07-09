@@ -164,6 +164,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: [RoleType.ADMIN],
     icon: getHealthIcon(),
   },
+  {
+    screen: "recovery",
+    labelKey: "navigation.recovery",
+    roles: [RoleType.ADMIN],
+    icon: getHealthIcon(),
+  },
 ];
 
 interface NavigationSidebarProps {

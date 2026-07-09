@@ -11,16 +11,23 @@ import { getLocalDatabase } from "../../../infrastructure/local-database";
 import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
 
 export const SyncAttentionBanner: FC = () => {
-  const [visible, setVisible] = useState(false);
+  const [syncVisible, setSyncVisible] = useState(false);
+  const [backupCritical, setBackupCritical] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const checkMetrics = useCallback(async () => {
     try {
       const { prisma } = await getLocalDatabase();
-      const counts = await createSyncMetricsService(prisma).getQueueCounts();
-      setVisible(counts.permanentFailure > 0 || counts.stalePending > 0);
+      const metricsService = createSyncMetricsService(prisma);
+      const [counts, backupHealth] = await Promise.all([
+        metricsService.getQueueCounts(),
+        metricsService.getBackupHealth(),
+      ]);
+      setSyncVisible(counts.permanentFailure > 0 || counts.stalePending > 0);
+      setBackupCritical(backupHealth === 'CRITICAL');
     } catch {
-      setVisible(false);
+      setSyncVisible(false);
+      setBackupCritical(false);
     }
   }, []);
 
@@ -46,7 +53,20 @@ export const SyncAttentionBanner: FC = () => {
     };
   }, [checkMetrics]);
 
-  if (!visible) return null;
+  if (backupCritical) {
+    return (
+      <div
+        className="flex items-center justify-between bg-red-100 border-b border-red-500 text-red-900 px-4 py-2 text-sm"
+        role="alert"
+      >
+        <span>
+          <strong>Backup required</strong> — contact a manager.
+        </span>
+      </div>
+    );
+  }
+
+  if (!syncVisible) return null;
 
   return (
     <div

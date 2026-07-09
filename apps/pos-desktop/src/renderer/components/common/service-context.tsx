@@ -47,6 +47,9 @@ import {
   PrescriptionsService,
 } from "../../../domain/prescriptions/prescriptions.service";
 import { createAuthService, AuthService } from "../../../domain/auth/auth.service";
+import { createBackupService, BackupService } from "../../../domain/backup/backup.service";
+import { createRecoveryLogService, RecoveryLogService } from "../../../domain/backup/recovery-log.service";
+import type { PrismaClient } from "@pharmacy/database/local";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,6 +59,8 @@ interface Services {
   returnsService: ReturnsService;
   inventoryAdjustmentsService: InventoryAdjustmentsService;
   prescriptionsService: PrescriptionsService;
+  backupService: BackupService;
+  recoveryLogService: RecoveryLogService;
 }
 
 type InitState =
@@ -95,6 +100,13 @@ export const useInventoryAdjustmentsService = (): InventoryAdjustmentsService =>
 export const usePrescriptionsService = (): PrescriptionsService =>
   useServiceContext().prescriptionsService;
 
+/** Convenience hook — returns the BackupService instance. */
+export const useBackupService = (): BackupService => useServiceContext().backupService;
+
+/** Convenience hook — returns the RecoveryLogService instance. */
+export const useRecoveryLogService = (): RecoveryLogService =>
+  useServiceContext().recoveryLogService;
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -132,6 +144,8 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
           returnsService: createReturnsService(prisma, auth),
           inventoryAdjustmentsService: createInventoryAdjustmentsService(prisma, auth),
           prescriptionsService: createPrescriptionsService(prisma, auth),
+          backupService: createBackupService(),
+          recoveryLogService: createRecoveryLogService(prisma as PrismaClient),
         };
 
         setInitState({ status: "ready", services });

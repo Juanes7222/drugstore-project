@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { CashCountType } from '@pharmacy/shared-types';
@@ -31,12 +31,12 @@ export class SyncOperationDispatcherService {
   private readonly logger = new Logger(SyncOperationDispatcherService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly cashShiftService: CashShiftService,
-    private readonly clientsService: ClientsService,
-    private readonly salesService: SalesService,
-    private readonly clientReturnsService: ClientReturnsService,
-    private readonly inventoryAdjustmentsService: InventoryAdjustmentsService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(CashShiftService) private readonly cashShiftService: CashShiftService,
+    @Inject(ClientsService) private readonly clientsService: ClientsService,
+    @Inject(SalesService) private readonly salesService: SalesService,
+    @Inject(ClientReturnsService) private readonly clientReturnsService: ClientReturnsService,
+    @Inject(InventoryAdjustmentsService) private readonly inventoryAdjustmentsService: InventoryAdjustmentsService,
   ) {}
 
   /**

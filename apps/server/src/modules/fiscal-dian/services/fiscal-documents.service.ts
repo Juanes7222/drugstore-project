@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import * as crypto from 'crypto';
@@ -17,7 +17,7 @@ const PLACEHOLDER_CUFE_PREFIX = 'PENDING_';
 @Injectable()
 export class FiscalDocumentsService {
   constructor(
-    private prisma: PrismaService,
+    @Inject(PrismaService) private prisma: PrismaService,
     @InjectQueue('fiscal-documents') private queue: Queue,
   ) {}
 

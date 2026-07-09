@@ -18,6 +18,8 @@ const config: Config = {
       '<rootDir>/../../packages/shared-types/src/index.ts',
     '^@pharmacy/shared-validation$':
       '<rootDir>/../../packages/shared-validation/src/index.ts',
+    '^@pharmacy/database$':
+      '<rootDir>/../../packages/database/src/index.ts',
     '^@prisma/client$': '<rootDir>/generated/client',
   },
   setupFiles: ['./test/set-env.ts'],

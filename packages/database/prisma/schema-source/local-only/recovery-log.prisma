@@ -1,0 +1,27 @@
+// LOCAL-ONLY schema fragment — Recovery audit log for apps/pos-desktop.
+//
+// Records manager-facing recovery actions (backup, verify, restore, unclean
+// shutdown detection) on the terminal. This table is intentionally not
+// pruned automatically — retention is a future maintenance hook.
+
+enum RecoveryAction {
+  BACKUP_CREATED
+  BACKUP_VERIFIED
+  RESTORE_COMPLETED
+  RESTORE_ABORTED
+  UNHEALTHY_SHUTDOWN_DETECTED
+  INTEGRITY_FAILURE_DETECTED
+}
+
+model RecoveryLog {
+  id          String        @id
+  at          DateTime
+  actorUserId String
+  action      RecoveryAction
+  backupId    String?
+  details     Json?
+
+  @@index([at])
+  @@index([action])
+  @@index([backupId])
+}

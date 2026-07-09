@@ -179,6 +179,10 @@ describe('LotsService', () => {
       const lotA = { ...mockLot, id: 'lot-a', currentStock: 10, version: 1, purchaseReceptionItems: [{ realUnitCost: new Prisma.Decimal(2000) }] };
       const lotB = { ...mockLot, id: 'lot-b', currentStock: 5, version: 1, purchaseReceptionItems: [{ realUnitCost: new Prisma.Decimal(2500) }] };
       (prisma.lot.findMany as jest.Mock).mockResolvedValue([lotA, lotB]);
+      (prisma.purchaseReceptionItem.findMany as jest.Mock).mockResolvedValue([
+        { lotId: 'lot-a', realUnitCost: new Prisma.Decimal(2000) },
+        { lotId: 'lot-b', realUnitCost: new Prisma.Decimal(2500) },
+      ]);
       (prisma.lot.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
       (prisma.inventoryMovement.create as jest.Mock).mockResolvedValue({} as any);
 
@@ -197,6 +201,9 @@ describe('LotsService', () => {
 
     it('throws InsufficientStockException when total available is less than quantity', async () => {
       (prisma.lot.findMany as jest.Mock).mockResolvedValue([{ ...mockLot, currentStock: 5 }]);
+      (prisma.purchaseReceptionItem.findMany as jest.Mock).mockResolvedValue([
+        { lotId: 'lot-1', realUnitCost: new Prisma.Decimal(2500) },
+      ]);
 
       await expect(
         service.consumeStockForSale({ productId: 'prod-1', quantity: 99, saleId: 'sale-1', tx: prisma as any }),
@@ -205,6 +212,9 @@ describe('LotsService', () => {
 
     it('throws ConcurrentStockModificationException when updateMany returns 0', async () => {
       (prisma.lot.findMany as jest.Mock).mockResolvedValue([{ ...mockLot, currentStock: 10, purchaseReceptionItems: [{ realUnitCost: new Prisma.Decimal(2000) }] }]);
+      (prisma.purchaseReceptionItem.findMany as jest.Mock).mockResolvedValue([
+        { lotId: 'lot-1', realUnitCost: new Prisma.Decimal(2000) },
+      ]);
       (prisma.lot.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
 
       await expect(
@@ -214,6 +224,7 @@ describe('LotsService', () => {
 
     it('throws LotCostUnavailableException when realUnitCost is missing', async () => {
       (prisma.lot.findMany as jest.Mock).mockResolvedValue([{ ...mockLot, currentStock: 10, purchaseReceptionItems: [] }]);
+      (prisma.purchaseReceptionItem.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.lot.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
 
       await expect(

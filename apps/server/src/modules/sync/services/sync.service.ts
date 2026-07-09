@@ -40,6 +40,21 @@ export class SyncService {
     return { sourceWorkstationId, pending, failed };
   }
 
+  /**
+   * Returns the highest clientSequence persisted for a given source workstation,
+   * or null when the server has not received any operations from it yet.
+   */
+  async getMaxClientSequence(sourceWorkstationId: string): Promise<number | null> {
+    const aggregate = await this.prisma.syncQueue.aggregate({
+      _max: { clientSequence: true },
+      where: { sourceWorkstationId },
+    });
+
+    return aggregate._max.clientSequence === null
+      ? null
+      : Number(aggregate._max.clientSequence);
+  }
+
   /** Paginated queue listing, optionally filtered by status and operationType. */
   async findAll(query: QuerySyncQueueDto): Promise<any> {
     const where: any = {};

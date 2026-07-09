@@ -105,6 +105,7 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
         fullName: `${response.user.firstName} ${response.user.lastName}`.trim(),
         role: response.user.role,
         workstationId,
+        accessToken: response.accessToken,
       };
 
       useLocalSessionStore.getState().setSession(session);

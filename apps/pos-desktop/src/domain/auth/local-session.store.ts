@@ -24,6 +24,7 @@ export interface LocalSession {
   fullName: string;
   role: string;
   workstationId: string;
+  accessToken: string;
 }
 
 interface LocalSessionState {

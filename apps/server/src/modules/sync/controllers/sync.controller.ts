@@ -19,6 +19,7 @@ import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { SyncBatchSchema } from '../dto/sync-operation.schema';
+import { LocalNumberHintQuerySchema } from '../dto/local-number-hint-query.dto';
 import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
 
 @Controller('sync')
@@ -79,5 +80,17 @@ export class SyncController {
   @Roles(RoleType.ADMIN)
   async getHealth(): Promise<any> {
     return this.syncHealthService.getHealth(24);
+  }
+
+  @Get('local-number-hint')
+  @UseGuards(JwtAuthGuard)
+  async getLocalNumberHint(
+    @Query(new ZodValidationPipe(LocalNumberHintQuerySchema))
+    query: { workstationId: string },
+  ): Promise<{ workstationId: string; maxLocalNumber: number | null }> {
+    const maxLocalNumber = await this.syncService.getMaxClientSequence(
+      query.workstationId,
+    );
+    return { workstationId: query.workstationId, maxLocalNumber };
   }
 }

@@ -176,13 +176,14 @@ describe('PurchaseOrdersService', () => {
         items: [{ ...mockPurchaseOrderItem, product: mockProduct }],
       };
       (prisma.purchaseOrder.findUnique as jest.Mock).mockResolvedValue(fullOrder);
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([mockProduct]);
 
       const result = await service.findById('po-1');
 
       expect(result).toEqual(fullOrder);
       expect(prisma.purchaseOrder.findUnique).toHaveBeenCalledWith({
         where: { id: 'po-1' },
-        include: { supplier: true, items: { include: { product: true } } },
+        include: { supplier: true, items: true },
       });
     });
 

@@ -39,6 +39,8 @@ import type {
 } from "../../../domain/sync/sync-metrics.service";
 import { DomainError } from "../../../common/domain-error";
 import { API_BASE_URL } from "@infra/config";
+import { useAppDispatch } from "@/store/hooks";
+import { navigateToRecovery } from "@/store/slices/ui-slice";
 
 const AUTO_REFRESH_MS = 30_000;
 const TIMELINE_HOURS = 24;
@@ -57,6 +59,7 @@ interface ConnectionStatus {
 export const SyncHealthPage: FC = () => {
   const { t } = useTranslation();
   const session = useLocalSessionStore((s) => s.session);
+  const dispatch = useAppDispatch();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +67,10 @@ export const SyncHealthPage: FC = () => {
   const [breakdown, setBreakdown] = useState<FailureBreakdownEntry[]>([]);
   const [timeline, setTimeline] = useState<HealthTimelineBucket[]>([]);
   const [entries, setEntries] = useState<PaginatedEntries<PermanentFailureEntry> | null>(null);
+  const [backupSummary, setBackupSummary] = useState<{
+    lastBackupAt: string | null;
+    backupHealth: import('../../../domain/sync/sync-metrics.service').BackupHealthLevel;
+  } | null>(null);
 
   const [selectedFilterCategory, setSelectedFilterCategory] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("lastAttemptAt");
@@ -98,12 +105,14 @@ export const SyncHealthPage: FC = () => {
       const recoveryService = createSyncRecoveryService({ prisma });
       servicesRef.current = { metricsService, recoveryService };
 
-      const [c, b, tml, permanentFailures, stalePending] = await Promise.all([
+      const [c, b, tml, permanentFailures, stalePending, backupSummary, backupHealth] = await Promise.all([
         metricsService.getQueueCounts(),
         metricsService.getFailureBreakdown(new Date(Date.now() - 24 * 60 * 60 * 1000)),
         metricsService.getSyncHealthTimeline(TIMELINE_HOURS),
         metricsService.getPermanentFailureEntries({ limit: 20 }),
         metricsService.getStalePendingEntries({ limit: 5 }),
+        metricsService.getBackupSummary(),
+        metricsService.getBackupHealth(),
       ]);
 
       const combined = [...permanentFailures.data, ...stalePending.data];
@@ -115,6 +124,10 @@ export const SyncHealthPage: FC = () => {
         total: permanentFailures.total + stalePending.total,
         hasMore: permanentFailures.hasMore || stalePending.hasMore,
         cursor: permanentFailures.cursor ?? stalePending.cursor,
+      });
+      setBackupSummary({
+        lastBackupAt: backupSummary.lastBackupAt,
+        backupHealth,
       });
       setLoading(false);
     } catch (err) {
@@ -132,12 +145,15 @@ export const SyncHealthPage: FC = () => {
       const ms = servicesRef.current.metricsService;
       if (!ms) return;
       try {
-        const [c, b] = await Promise.all([
+        const [c, b, summary, health] = await Promise.all([
           ms.getQueueCounts(),
           ms.getFailureBreakdown(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+          ms.getBackupSummary(),
+          ms.getBackupHealth(),
         ]);
         setCounts(c);
         setBreakdown(b);
+        setBackupSummary({ lastBackupAt: summary.lastBackupAt, backupHealth: health });
       } catch { /* advisory */ }
     };
 
@@ -435,6 +451,19 @@ export const SyncHealthPage: FC = () => {
             value={successRateDisplay}
             accentColor={successRateColor}
           />
+          <KpiTile
+            label="Last Backup"
+            value={backupSummary?.lastBackupAt ? formatBackupAge(backupSummary.lastBackupAt) : "Never"}
+            accentColor={
+              backupSummary?.backupHealth === "HEALTHY"
+                ? "#22c55e"
+                : backupSummary?.backupHealth === "STALE"
+                  ? "#f59e0b"
+                  : "#ef4444"
+            }
+            subLabel={backupSummary?.backupHealth ?? undefined}
+            onClick={() => dispatch(navigateToRecovery())}
+          />
         </div>
 
         {/* Action row */}
@@ -662,10 +691,14 @@ export const SyncHealthPage: FC = () => {
 
 // ── Sub-components ─────────────────────────────────────────────────────
 
-const KpiTile: FC<{ label: string; value: string | number; accentColor: string; subLabel?: string }> = ({
-  label, value, accentColor, subLabel,
+const KpiTile: FC<{ label: string; value: string | number; accentColor: string; subLabel?: string; onClick?: () => void }> = ({
+  label, value, accentColor, subLabel, onClick,
 }) => (
-  <div className="rounded-lg border border-gray-200 bg-white p-4" style={{ borderLeft: `4px solid ${accentColor}` }}>
+  <div
+    className={`rounded-lg border border-gray-200 bg-white p-4 ${onClick ? "cursor-pointer hover:bg-gray-50" : ""}`}
+    style={{ borderLeft: `4px solid ${accentColor}` }}
+    onClick={onClick}
+  >
     <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
     <p className="mt-1 text-2xl font-bold" style={{ color: accentColor }}>
       {typeof value === "number" ? value.toLocaleString() : value}
@@ -957,6 +990,18 @@ const Th: FC<{ onClick: () => void; children: React.ReactNode }> = ({ onClick, c
 );
 
 // ── Helpers ────────────────────────────────────────────────────────────
+
+function formatBackupAge(isoString: string): string {
+  const date = new Date(isoString);
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / (60 * 1000));
+  const diffHours = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${diffDays}d ago`;
+}
 
 function formatRelativeTime(isoString: string): string {
   const date = new Date(isoString);

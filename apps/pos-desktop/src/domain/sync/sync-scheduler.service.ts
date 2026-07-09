@@ -27,6 +27,7 @@
 
 import { PrismaClient } from '@pharmacy/database/local';
 import { isOnline } from '../../common/is-online';
+import { useLocalSessionStore } from '../auth/local-session.store';
 import type {
   CatalogSyncService,
   CatalogSyncConfig,
@@ -51,6 +52,7 @@ import type { SyncPushService } from './sync-push.service';
 import { createSyncPushService } from './sync-push.service';
 import type { SyncMetricsService } from './sync-metrics.service';
 import { createSyncMetricsService } from './sync-metrics.service';
+import { createBackupService, type BackupService } from '../backup/backup.service';
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -96,6 +98,7 @@ export class SyncScheduler {
   private readonly clientPull: ClientPullService;
   private readonly pushService: SyncPushService;
   private readonly metricsService: SyncMetricsService;
+  private readonly backupService: BackupService;
   private readonly intervalMs: number;
   private timerId: ReturnType<typeof setInterval> | null = null;
 
@@ -113,6 +116,7 @@ export class SyncScheduler {
       accessToken: config.accessToken,
     });
     this.metricsService = createSyncMetricsService(config.prisma);
+    this.backupService = createBackupService();
     this.intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
   }
 
@@ -211,7 +215,31 @@ export class SyncScheduler {
       // Logged downstream; continue.
     }
 
-    // 5. Emit metrics (always computed locally — offline-safe)
+    // 5. Periodic background backup (offline-safe, runs regardless of online status)
+    try {
+      const summary = await this.metricsService.getBackupSummary();
+      if (this.backupService.shouldRunPeriodicBackup(summary.lastBackupAt)) {
+        const [pendingCount, failedCount, maxSeqRow] = await Promise.all([
+          this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
+          this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
+          this.prisma.syncQueue.aggregate({ _max: { clientSequence: true } }),
+        ]);
+        const session = useLocalSessionStore.getState().session;
+        await this.backupService.createBackup({
+          reason: 'PERIODIC',
+          workstationId: session?.workstationId ?? 'unknown',
+          dbSchemaVersion: 1,
+          pendingCount,
+          failedCount,
+          maxClientSequence: Number(maxSeqRow._max.clientSequence ?? 0n),
+        });
+      }
+    } catch {
+      // Backups are advisory on the sync cycle; failures are surfaced on the
+      // recovery page and via backup-health metrics.
+    }
+
+    // 6. Emit metrics (always computed locally — offline-safe)
     try {
       const counts = await this.metricsService.getQueueCounts();
       // Structured log line for operator visibility

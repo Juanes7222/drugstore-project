@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { SyncOperationDispatcherService } from '../sync-operation-dispatcher.service';
@@ -24,8 +24,8 @@ export class SyncProcessingJob {
   private readonly logger = new Logger(SyncProcessingJob.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly dispatcher: SyncOperationDispatcherService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(SyncOperationDispatcherService) private readonly dispatcher: SyncOperationDispatcherService,
   ) {}
 
   /**

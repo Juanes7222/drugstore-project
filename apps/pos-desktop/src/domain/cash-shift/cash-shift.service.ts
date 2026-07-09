@@ -34,6 +34,7 @@ import {
   PaymentMethodNotFoundException,
 } from './exceptions';
 import type { AuthService } from '../auth/auth.service';
+import { createBackupService, BackupFailedException } from '../backup';
 
 export const createCashShiftService = (
   prisma: PrismaClient,
@@ -172,6 +173,33 @@ export class CashShiftService {
       this.computeClosingTotals(closingCounts);
 
     const closingDifference = actualAmount.minus(expectedAmount);
+
+    // A backup is mandatory before a shift can be closed. If the backup fails,
+    // the shift remains open and the cashier is told to contact a manager.
+    const [pendingCount, failedCount, maxSeqRow] = await Promise.all([
+      this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
+      this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
+      this.prisma.syncQueue.aggregate({ _max: { clientSequence: true } }),
+    ]);
+
+    const backupService = createBackupService();
+    try {
+      await backupService.createBackup({
+        reason: 'SHIFT_CLOSE',
+        workstationId: session.workstationId,
+        dbSchemaVersion: 1,
+        pendingCount,
+        failedCount,
+        maxClientSequence: Number(maxSeqRow._max.clientSequence ?? 0n),
+      });
+    } catch (err) {
+      if (err instanceof BackupFailedException) {
+        throw err;
+      }
+      throw new BackupFailedException(
+        err instanceof Error ? err.message : 'Shift-close backup failed',
+      );
+    }
 
     return this.prisma.cashShift.update({
       where: { id: shiftId },

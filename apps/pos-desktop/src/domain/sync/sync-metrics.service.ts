@@ -66,6 +66,16 @@ export interface EntryFilter {
   until?: Date;
 }
 
+export type BackupHealthLevel = 'HEALTHY' | 'STALE' | 'CRITICAL';
+
+export interface BackupSummary {
+  lastBackupAt: string | null;
+  lastBackupReason: string | null;
+  totalBackups: number;
+  oldestBackupAt: string | null;
+  totalBackupSizeBytes: number;
+}
+
 export interface SyncMetricsService {
   getQueueCounts(): Promise<QueueCounts>;
   getFailureBreakdown(since: Date): Promise<FailureBreakdownEntry[]>;
@@ -78,6 +88,8 @@ export interface SyncMetricsService {
   getSyncHealthTimeline(hours: number): Promise<HealthTimelineBucket[]>;
   exportEntriesAsCsv(filter: EntryFilter): Promise<string>;
   exportEntriesAsJson(filter: EntryFilter): Promise<string>;
+  getBackupSummary(): Promise<BackupSummary>;
+  getBackupHealth(): Promise<BackupHealthLevel>;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +356,27 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
     }));
 
     return JSON.stringify(enriched, null, 2);
+  }
+
+  // -------------------------------------------------------------------
+  // Backup metrics
+  // -------------------------------------------------------------------
+
+  async getBackupSummary(): Promise<BackupSummary> {
+    const { createBackupService } = await import('../backup/backup.service');
+    const summary = await createBackupService().getBackupSummary();
+    return {
+      lastBackupAt: summary.lastBackupAt,
+      lastBackupReason: summary.lastBackupReason,
+      totalBackups: summary.totalBackups,
+      oldestBackupAt: summary.oldestBackupAt,
+      totalBackupSizeBytes: summary.totalBackupSizeBytes,
+    };
+  }
+
+  async getBackupHealth(): Promise<BackupHealthLevel> {
+    const { createBackupService } = await import('../backup/backup.service');
+    return createBackupService().getBackupHealth();
   }
 
   private async fetchFilteredEntries(

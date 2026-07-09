@@ -54,6 +54,8 @@ describe('ClientReturnsService', () => {
     state: 'OPEN',
   };
 
+  const mockLot_1 = { id: 'lot-1' };
+
   const mockReturn = {
     id: 'return-1',
     state: 'DRAFT',
@@ -68,6 +70,16 @@ describe('ClientReturnsService', () => {
         saleItemId: 'si-1',
         quantity: 3,
         lots: [{ id: 'ril-1', lotId: 'lot-1', quantity: 3 }],
+      },
+    ],
+  };
+
+  const mockReturnWithLot = {
+    ...mockReturn,
+    items: [
+      {
+        ...mockReturn.items[0],
+        lots: [{ ...mockReturn.items[0].lots[0], lot: mockLot_1 }],
       },
     ],
   };
@@ -114,10 +126,11 @@ describe('ClientReturnsService', () => {
   describe('findOne', () => {
     it('returns the client return when found', async () => {
       mockFindUniqueReturn(mockReturn);
+      (prisma.lot.findMany as jest.Mock).mockResolvedValue([mockLot_1]);
 
       const result = await service.findOne('return-1');
 
-      expect(result).toEqual(mockReturn);
+      expect(result).toEqual(mockReturnWithLot);
     });
 
     it('throws ClientReturnNotFoundException when not found', async () => {
