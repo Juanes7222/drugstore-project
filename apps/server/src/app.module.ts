@@ -13,6 +13,7 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
 import { SalesPosModule } from './modules/sales-pos/sales-pos.module';
 import { ConfigurationModule } from './modules/configuration/configuration.module';
 import { FiscalDianModule } from './modules/fiscal-dian/fiscal-dian.module';
+import { LicensingModule } from './modules/licensing/licensing.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SyncModule } from './modules/sync/sync.module';
 
@@ -31,6 +32,7 @@ import { SyncModule } from './modules/sync/sync.module';
     ConfigurationModule,
     FiscalDianModule,
     InventoryLotsModule,
+    LicensingModule,
     PurchasesModule,
     ReportsModule,
     SalesPosModule,

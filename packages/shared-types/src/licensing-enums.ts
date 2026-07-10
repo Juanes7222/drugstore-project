@@ -1,0 +1,63 @@
+export enum LicenseStatus {
+  UNACTIVATED = 'UNACTIVATED',
+  ACTIVE = 'ACTIVE',
+  GRACE_PERIOD = 'GRACE_PERIOD',
+  LOCKED = 'LOCKED',
+  REVOKED = 'REVOKED',
+}
+
+export enum PlanFeature {
+  MULTI_LOCATION = 'MULTI_LOCATION',
+  ADVANCED_REPORTS = 'ADVANCED_REPORTS',
+  MULTI_TERMINAL_SYNC = 'MULTI_TERMINAL_SYNC',
+  LABEL_PRINTING = 'LABEL_PRINTING',
+  CUSTOMER_DISPLAY = 'CUSTOMER_DISPLAY',
+  PRIORITY_SUPPORT = 'PRIORITY_SUPPORT',
+}
+
+export enum SubscriptionStatus {
+  TRIAL = 'TRIAL',
+  ACTIVE = 'ACTIVE',
+  PAST_DUE = 'PAST_DUE',
+  SUSPENDED = 'SUSPENDED',
+  CANCELLED = 'CANCELLED',
+  EXPIRED = 'EXPIRED',
+}
+
+export enum PricingModel {
+  FLAT = 'FLAT',
+  PER_LOCATION = 'PER_LOCATION',
+  PER_WORKSTATION = 'PER_WORKSTATION',
+  TIERED = 'TIERED',
+}
+
+export enum BillingPeriod {
+  MONTHLY = 'MONTHLY',
+  QUARTERLY = 'QUARTERLY',
+  ANNUAL = 'ANNUAL',
+}
+
+export enum ActivationCodeType {
+  SUBSCRIPTION = 'SUBSCRIPTION',
+  WORKSTATION = 'WORKSTATION',
+}
+
+export enum ActivationCodeStatus {
+  UNUSED = 'UNUSED',
+  USED = 'USED',
+  REVOKED = 'REVOKED',
+  EXPIRED = 'EXPIRED',
+}
+
+export enum FraudSeverity {
+  LOW = 'LOW',
+  MEDIUM = 'MEDIUM',
+  HIGH = 'HIGH',
+}
+
+export enum FraudAlertStatus {
+  OPEN = 'OPEN',
+  INVESTIGATING = 'INVESTIGATING',
+  DISMISSED = 'DISMISSED',
+  CONFIRMED_FRAUD = 'CONFIRMED_FRAUD',
+}

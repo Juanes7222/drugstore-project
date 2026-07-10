@@ -117,3 +117,61 @@ enum AuditAction {
   SECURITY_ALERT
   STATE_CHANGE
 }
+
+// ---------------------------------------------------------------------------
+// Licensing enums
+// ---------------------------------------------------------------------------
+
+enum PricingModel {
+  FLAT
+  PER_LOCATION
+  PER_WORKSTATION
+  TIERED
+}
+
+enum BillingPeriod {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+  EXPIRED
+}
+
+enum ActivationCodeType {
+  SUBSCRIPTION
+  WORKSTATION
+}
+
+enum ActivationCodeStatus {
+  UNUSED
+  USED
+  REVOKED
+  EXPIRED
+}
+
+enum FraudSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum FraudSignalAction {
+  LOG_ONLY
+  FLAG_REVIEW
+  RATE_LIMIT
+  REVOKE
+}
+
+enum FraudAlertStatus {
+  OPEN
+  INVESTIGATING
+  DISMISSED
+  CONFIRMED_FRAUD
+}

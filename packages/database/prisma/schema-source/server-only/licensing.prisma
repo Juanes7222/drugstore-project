@@ -1,0 +1,207 @@
+// Server-only schema fragment — only included in the full build.
+// SaaS licensing module: Plan → Subscription → Location → WorkstationActivation
+
+/// A Plan defines the entitlements (max locations, max workstations, features).
+/// Plans are the single source of truth for what a subscription includes.
+model Plan {
+  id                            String        @id
+  code                          String        @unique
+  name                          String
+  description                   String?
+  pricingModel                  PricingModel
+  basePriceCents                Int
+  currency                      String        @default("COP")
+  billingPeriod                 BillingPeriod @default(MONTHLY)
+  maxLocations                  Int           @default(1)
+  maxWorkstationsPerLocation    Int           @default(1)
+  includedWorkstations          Int           @default(1)
+  extraWorkstationPriceCents    Int?
+  features                      String[]      @default([])
+  displayOrder                  Int           @default(0)
+  isActive                      Boolean       @default(true)
+  isPublic                      Boolean       @default(false)
+  createdAt                     DateTime      @default(now())
+  updatedAt                     DateTime      @updatedAt
+
+  subscriptions                 Subscription[]
+
+  @@index([isActive, isPublic])
+  @@index([displayOrder])
+}
+
+/// A Subscription is an instance of a Plan purchased by a customer.
+model Subscription {
+  id                String             @id
+  planId            String
+  plan              Plan               @relation(fields: [planId], references: [id])
+  customerName      String
+  customerTaxId     String             // NIT
+  customerEmail     String?
+  customerPhone     String?
+  customerAddress   String?
+  status            SubscriptionStatus @default(TRIAL)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  trialEndsAt       DateTime?
+  cancelAtPeriodEnd Boolean            @default(false)
+  cancelledAt       DateTime?
+  paymentMethod     String?            // Tokenized reference
+  paymentReference  String?            // e.g., bank transfer ID
+  lastPaymentAt     DateTime?
+  nextPaymentDueAt  DateTime?
+  gracePeriodDays   Int                @default(7)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  locations         Location[]
+  activationCodes   ActivationCode[]
+  workstationActivations WorkstationActivation[]
+  licenseCheckIns   LicenseCheckIn[]
+  fraudAlerts       FraudAlert[]
+  paymentHistory    SubscriptionPaymentHistory[]
+
+  @@index([status])
+  @@index([customerTaxId])
+  @@index([customerEmail])
+  @@index([planId])
+}
+
+/// A physical drugstore location attached to a Subscription.
+model Location {
+  id              String    @id
+  subscriptionId  String
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id])
+  name            String
+  address         String?
+  city            String?
+  region          String?   // Department, e.g., "Bogotá D.C."
+  country         String    @default("CO")
+  taxId           String?   // For multi-tax-entity customers
+  phone           String?
+  email           String?
+  isActive        Boolean   @default(true)
+  latitude        Decimal?  @db.Decimal(10, 7)
+  longitude       Decimal?  @db.Decimal(10, 7)
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workstationActivations WorkstationActivation[]
+  activationCodes        ActivationCode[]
+
+  @@index([subscriptionId])
+  @@index([subscriptionId, isActive])
+}
+
+/// An activation code used to activate a workstation.
+model ActivationCode {
+  id              String               @id
+  subscriptionId  String
+  subscription    Subscription         @relation(fields: [subscriptionId], references: [id])
+  locationId      String?              // Assigned when the code targets a specific location
+  location        Location?            @relation(fields: [locationId], references: [id])
+  code            String               @unique
+  type            ActivationCodeType
+  status          ActivationCodeStatus @default(UNUSED)
+  usedAt          DateTime?
+  usedByActivationId String?            // FK to the WorkstationActivation that used this code
+  usedByActivation   WorkstationActivation? @relation("UsedCode")
+  expiresAt       DateTime
+  createdAt       DateTime             @default(now())
+
+  @@index([subscriptionId])
+  @@index([code, status])
+  @@index([type, status])
+}
+
+/// A single terminal (workstation) activation attached to a Location.
+model WorkstationActivation {
+  id                  String    @id
+  subscriptionId      String
+  subscription        Subscription @relation(fields: [subscriptionId], references: [id])
+  locationId          String
+  location            Location  @relation(fields: [locationId], references: [id])
+  hardwareFingerprint String
+  workstationName     String
+  activationCodeId    String?   @unique  // The code that was used to activate this workstation
+  activationCode      ActivationCode? @relation("UsedCode", fields: [activationCodeId], references: [id])
+  isActive            Boolean   @default(true)
+  activatedAt         DateTime  @default(now())
+  revokedAt           DateTime?
+  revokedReason       String?
+  lastCheckInAt       DateTime?
+  lastCheckInIp       String?
+  initialActivationIp String?
+  checkInCount        Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  licenseCheckIns     LicenseCheckIn[]
+  fraudAlerts         FraudAlert[]
+
+  @@index([subscriptionId])
+  @@index([locationId])
+  @@index([hardwareFingerprint])
+  @@index([hardwareFingerprint, isActive])
+  @@unique([subscriptionId, hardwareFingerprint])
+}
+
+/// A periodic check-in from a workstation.
+model LicenseCheckIn {
+  id                  String    @id
+  workstationActivationId String
+  workstationActivation   WorkstationActivation @relation(fields: [workstationActivationId], references: [id])
+  subscriptionId      String
+  subscription        Subscription @relation(fields: [subscriptionId], references: [id])
+  ipAddress           String?
+  userAgent           String?
+  hardwareFingerprint String
+  tokenExpiresAt      DateTime
+  checkedInAt         DateTime  @default(now())
+
+  @@index([workstationActivationId, checkedInAt])
+  @@index([subscriptionId, checkedInAt])
+  @@index([checkedInAt])
+}
+
+/// A fraud alert generated by the fraud detection service.
+model FraudAlert {
+  id                    String           @id
+  subscriptionId        String
+  subscription          Subscription    @relation(fields: [subscriptionId], references: [id])
+  workstationActivationId String?        // null if the alert is subscription-level
+  workstationActivation   WorkstationActivation? @relation(fields: [workstationActivationId], references: [id])
+  severity              FraudSeverity
+  suggestedAction       FraudSignalAction
+  status                FraudAlertStatus @default(OPEN)
+  detectorName          String           // e.g., "HardwareFingerprintCollisionDetector"
+  reason                String           @db.Text
+  details               Json?            // Detector-specific payload
+  detectedAt            DateTime         @default(now())
+  resolvedAt            DateTime?
+  resolvedById          String?
+  resolutionNotes       String?          @db.Text
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([subscriptionId])
+  @@index([status, severity])
+  @@index([detectedAt])
+}
+
+/// Payment history for a subscription (out-of-band payments recorded by admin).
+model SubscriptionPaymentHistory {
+  id              String    @id
+  subscriptionId  String
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id])
+  amountCents     Int
+  currency        String    @default("COP")
+  paymentMethod   String?   // Description, e.g., "Bank transfer - Bancolombia"
+  paymentReference String?  // e.g., Bank transfer ID or receipt number
+  notes           String?   @db.Text
+  recordedAt      DateTime  @default(now())
+  recordedById    String?
+  createdAt       DateTime  @default(now())
+
+  @@index([subscriptionId])
+}

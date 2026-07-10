@@ -2,6 +2,7 @@ use tauri::{Manager, RunEvent};
 
 mod backup;
 mod commands;
+mod hardware_fingerprint;
 
 use backup::{assess_startup_health, write_clean_shutdown_sentinel, BackupState};
 
@@ -28,6 +29,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            hardware_fingerprint::get_hardware_fingerprint,
             commands::backup::get_startup_health,
             commands::backup::acknowledge_clean_startup,
             commands::backup::report_integrity_failure,
