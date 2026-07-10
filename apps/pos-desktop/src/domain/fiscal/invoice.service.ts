@@ -18,6 +18,23 @@
  * 4. applyTransmissionResult() — called when the server returns an
  *    INVOICE_TRANSMISSION_RESULT, updating the local invoice with the
  *    official CUFE and DIAN response.
+ *
+ * ## @fiscal-immutable fields
+ *
+ * The following fields on the local Invoice model correspond to DIAN-regulated
+ * attributes and must NOT be modified outside InvoiceService and the
+ * conflict-resolution reversal handler:
+ *
+ * - `invoiceNumber`         — @fiscal-immutable
+ * - `cufeProvisional`       — @fiscal-immutable
+ * - `cufeOfficial`          — @fiscal-immutable
+ * - `issuedAt`              — @fiscal-immutable
+ * - `fullData.lineItems`    — @fiscal-immutable
+ * - `fullData.taxSummaries` — @fiscal-immutable
+ * - `fullData.totals`       — @fiscal-immutable
+ * - `fullData.payments`     — @fiscal-immutable  ← use LocalAdjustmentService to annotate operationally
+ * - `invoiceType`           — @fiscal-immutable
+ * - `status`                — @fiscal-immutable  (transitioned only by applyTransmissionResult / markInvoiceAsExpired / cancelInvoice)
  */
 
 import type { PrismaClient, Prisma } from '@pharmacy/database/local';
@@ -220,7 +237,8 @@ class InvoiceServiceImpl implements InvoiceService {
         now.getTime() + CONTINGENCY_TRANSMISSION_WINDOW_HOURS * 60 * 60 * 1000,
       );
 
-      const invoice = await tx.invoice.create({
+      // @fiscal-immutable: invoiceNumber, issuedAt, cufeProvisional, fullData — set once at creation, never modified
+    const invoice = await tx.invoice.create({
         data: {
           id: globalThis.crypto.randomUUID(),
           saleId,

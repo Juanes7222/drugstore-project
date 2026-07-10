@@ -6,11 +6,13 @@ export class ReportDateRangeQueryDto
 {
   dateFrom!: string;
   dateTo!: string;
+  view!: 'fiscal' | 'operational';
 
   constructor(data?: z.infer<typeof ReportDateRangeSchema>) {
     if (data) {
       this.dateFrom = data.dateFrom;
       this.dateTo = data.dateTo;
+      this.view = data.view;
     }
   }
 }

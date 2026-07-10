@@ -21,3 +21,4 @@ export type { SaleItem } from "./sale-item";
 export type { FiscalDocument } from "./fiscal-document";
 export type { SyncQueueEntry } from "./sync-queue-entry";
 export type { CashShift } from "./cash-shift";
+export type { ReportView } from "./report";

@@ -110,6 +110,84 @@ export class ReportsService {
     };
   }
 
+  /**
+   * Fiscal document activity report grouped by document type and fiscal state.
+   *
+   * The `view` parameter is accepted for API forward compatibility with POS
+   * terminals that resolve local invoice adjustments. On the server both
+   * `'fiscal'` and `'operational'` produce identical data because the
+   * `InvoiceLocalAdjustment` table is local-only to each terminal.
+   */
+  async getFiscalReport(query: ReportDateRangeQueryDto): Promise<any> {
+    assertValidDateRange(query.dateFrom, query.dateTo);
+
+    const dateFrom = new Date(query.dateFrom);
+    const dateTo = new Date(query.dateTo);
+
+    const docs = await this.fetchFiscalDocuments(dateFrom, dateTo);
+    const { breakdownByType, totalSubtotal, totalTax, totalAmount, totalDocuments } =
+      aggregateFiscalDocuments(docs);
+
+    return {
+      reportPeriod: { dateFrom: query.dateFrom, dateTo: query.dateTo },
+      view: query.view,
+      totalDocuments,
+      totalSubtotal: totalSubtotal.toFixed(2),
+      totalTax: totalTax.toFixed(2),
+      totalAmount: totalAmount.toFixed(2),
+      breakdownByType: breakdownByType.map((b) => ({
+        documentType: b.documentType,
+        count: b.count,
+        totalAmount: b.totalAmount.toFixed(2),
+        states: b.states.map((s) => ({ state: s.state, count: s.count })),
+      })),
+    };
+  }
+
+  /**
+   * Daily sales report — CONFIRMED sales aggregated per calendar day.
+   *
+   * The `view` parameter is accepted for API forward compatibility with POS
+   * terminals that resolve local invoice adjustments. On the server both
+   * `'fiscal'` and `'operational'` produce identical data because the
+   * `InvoiceLocalAdjustment` table is local-only to each terminal.
+   */
+  async getDailyReport(query: ReportDateRangeQueryDto): Promise<any> {
+    assertValidDateRange(query.dateFrom, query.dateTo);
+
+    const dateFrom = new Date(query.dateFrom);
+    const dateTo = new Date(query.dateTo);
+
+    const sales = await this.fetchConfirmedSalesForDaily(dateFrom, dateTo);
+    const dailyEntries = aggregateDailySales(sales);
+    const totals = computeDailyTotals(dailyEntries);
+
+    return {
+      reportPeriod: { dateFrom: query.dateFrom, dateTo: query.dateTo },
+      view: query.view,
+      totalDays: dailyEntries.length,
+      totals: {
+        totalSales: totals.totalSales,
+        totalAmount: totals.totalAmount.toFixed(2),
+        totalTax: totals.totalTax.toFixed(2),
+        totalQuantity: totals.totalQuantity,
+        averageTicket: totals.totalSales > 0
+          ? totals.totalAmount.dividedBy(totals.totalSales).toFixed(2)
+          : '0.00',
+      },
+      dailyEntries: dailyEntries.map((d) => ({
+        date: d.date,
+        salesCount: d.salesCount,
+        totalAmount: d.totalAmount.toFixed(2),
+        totalTax: d.totalTax.toFixed(2),
+        quantity: d.quantity,
+        averageTicket: d.salesCount > 0
+          ? d.totalAmount.dividedBy(d.salesCount).toFixed(2)
+          : '0.00',
+      })),
+    };
+  }
+
   // ── Private database-access helpers ──────────────────────────────
 
   private async fetchConfirmedSales(query: ReportDateRangeQueryDto): Promise<any[]> {
@@ -168,6 +246,51 @@ export class ReportsService {
           },
         },
       },
+    });
+  }
+
+  /**
+   * Returns all fiscal documents whose issueDate falls within [dateFrom, dateTo],
+   * with aggregated totals at the document level.
+   */
+  private async fetchFiscalDocuments(dateFrom: Date, dateTo: Date): Promise<any[]> {
+    return this.prisma.fiscalDocument.findMany({
+      where: {
+        issueDate: { gte: dateFrom, lte: dateTo },
+      },
+      select: {
+        id: true,
+        documentType: true,
+        fiscalState: true,
+        subtotal: true,
+        totalTax: true,
+        totalAmount: true,
+      },
+    });
+  }
+
+  /**
+   * Returns CONFIRMED sales whose confirmedAt falls within [dateFrom, dateTo],
+   * with item-level detail needed for daily aggregation.
+   */
+  private async fetchConfirmedSalesForDaily(dateFrom: Date, dateTo: Date): Promise<any[]> {
+    return this.prisma.sale.findMany({
+      where: {
+        operationalState: 'CONFIRMED',
+        confirmedAt: { gte: dateFrom, lte: dateTo },
+      },
+      select: {
+        id: true,
+        confirmedAt: true,
+        totalAmount: true,
+        totalTax: true,
+        items: {
+          select: {
+            quantity: true,
+          },
+        },
+      },
+      orderBy: { confirmedAt: 'asc' },
     });
   }
 }
@@ -337,4 +460,163 @@ function formatProductEntries(productMap: Map<string, any>): any[] {
     totalValue: e.value.toFixed(2),
     expiringLotCount: e.expCount,
   }));
+}
+
+// ── Fiscal report aggregation ─────────────────────────────────
+
+/**
+ * Aggregates fiscal documents by document type and fiscal state.
+ *
+ * Kept as a single block because splitting across helper-only sub-steps
+ * would make the two-level grouping flow harder to follow.
+ */
+function aggregateFiscalDocuments(
+  docs: any[],
+): {
+  breakdownByType: Array<{
+    documentType: string;
+    count: number;
+    totalAmount: Prisma.Decimal;
+    states: Array<{ state: string; count: number }>;
+  }>;
+  totalSubtotal: Prisma.Decimal;
+  totalTax: Prisma.Decimal;
+  totalAmount: Prisma.Decimal;
+  totalDocuments: number;
+} {
+  const typeBuckets = new Map<string, {
+    documentType: string;
+    count: number;
+    totalAmount: Prisma.Decimal;
+    stateBuckets: Map<string, { state: string; count: number }>;
+  }>();
+
+  let totalSubtotal = new Prisma.Decimal(0);
+  let totalTax = new Prisma.Decimal(0);
+  let totalAmount = new Prisma.Decimal(0);
+  let totalDocuments = 0;
+
+  for (const doc of docs) {
+    totalDocuments++;
+    totalSubtotal = totalSubtotal.plus(doc.subtotal ?? 0);
+    totalTax = totalTax.plus(doc.totalTax ?? 0);
+    totalAmount = totalAmount.plus(doc.totalAmount ?? 0);
+
+    const type = doc.documentType ?? 'UNKNOWN';
+    let bucket = typeBuckets.get(type);
+    if (!bucket) {
+      bucket = {
+        documentType: type,
+        count: 0,
+        totalAmount: new Prisma.Decimal(0),
+        stateBuckets: new Map(),
+      };
+      typeBuckets.set(type, bucket);
+    }
+    bucket.count++;
+    bucket.totalAmount = bucket.totalAmount.plus(doc.totalAmount ?? 0);
+
+    const state = doc.fiscalState ?? 'UNKNOWN';
+    let stateBucket = bucket.stateBuckets.get(state);
+    if (!stateBucket) {
+      stateBucket = { state, count: 0 };
+      bucket.stateBuckets.set(state, stateBucket);
+    }
+    stateBucket.count++;
+  }
+
+  const breakdownByType = Array.from(typeBuckets.values())
+    .sort((a, b) => a.documentType.localeCompare(b.documentType))
+    .map((b) => ({
+      documentType: b.documentType,
+      count: b.count,
+      totalAmount: b.totalAmount,
+      states: Array.from(b.stateBuckets.values())
+        .sort((a, s) => s.count - a.count),
+    }));
+
+  return { breakdownByType, totalSubtotal, totalTax, totalAmount, totalDocuments };
+}
+
+// ── Daily report aggregation ───────────────────────────────────
+
+/** Groups CONFIRMED sales by calendar day (YYYY-MM-DD). */
+function aggregateDailySales(
+  sales: any[],
+): Array<{
+  date: string;
+  salesCount: number;
+  totalAmount: Prisma.Decimal;
+  totalTax: Prisma.Decimal;
+  quantity: number;
+}> {
+  const dayMap = new Map<string, {
+    salesCount: number;
+    totalAmount: Prisma.Decimal;
+    totalTax: Prisma.Decimal;
+    quantity: number;
+  }>();
+
+  for (const sale of sales) {
+    if (!sale.confirmedAt) continue;
+    const dateKey = toDateString(sale.confirmedAt);
+    let entry = dayMap.get(dateKey);
+    if (!entry) {
+      entry = {
+        salesCount: 0,
+        totalAmount: new Prisma.Decimal(0),
+        totalTax: new Prisma.Decimal(0),
+        quantity: 0,
+      };
+      dayMap.set(dateKey, entry);
+    }
+    entry.salesCount++;
+    entry.totalAmount = entry.totalAmount.plus(sale.totalAmount ?? 0);
+    entry.totalTax = entry.totalTax.plus(sale.totalTax ?? 0);
+    for (const item of sale.items ?? []) {
+      entry.quantity += item.quantity ?? 0;
+    }
+  }
+
+  return Array.from(dayMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, entry]) => ({ date, ...entry }));
+}
+
+/** Computes roll-up totals from the daily entries array. */
+function computeDailyTotals(
+  entries: Array<{
+    salesCount: number;
+    totalAmount: Prisma.Decimal;
+    totalTax: Prisma.Decimal;
+    quantity: number;
+  }>,
+): {
+  totalSales: number;
+  totalAmount: Prisma.Decimal;
+  totalTax: Prisma.Decimal;
+  totalQuantity: number;
+} {
+  let totalSales = 0;
+  let totalAmount = new Prisma.Decimal(0);
+  let totalTax = new Prisma.Decimal(0);
+  let totalQuantity = 0;
+
+  for (const entry of entries) {
+    totalSales += entry.salesCount;
+    totalAmount = totalAmount.plus(entry.totalAmount);
+    totalTax = totalTax.plus(entry.totalTax);
+    totalQuantity += entry.quantity;
+  }
+
+  return { totalSales, totalAmount, totalTax, totalQuantity };
+}
+
+/** Formats a Date or ISO string as YYYY-MM-DD. */
+function toDateString(d: Date | string): string {
+  const date = typeof d === 'string' ? new Date(d) : d;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }

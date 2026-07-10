@@ -35,18 +35,21 @@ import {
 } from './exceptions';
 import type { AuthService } from '../auth/auth.service';
 import { createBackupService, BackupFailedException } from '../backup';
+import type { LocalAdjustmentService } from '../fiscal/local-adjustment.service';
 
 export const createCashShiftService = (
   prisma: PrismaClient,
   authService: AuthService,
+  adjustmentService?: LocalAdjustmentService,
 ): CashShiftService => {
-  return new CashShiftService(prisma, authService);
+  return new CashShiftService(prisma, authService, adjustmentService);
 };
 
 export class CashShiftService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly auth: AuthService,
+    private readonly adjustmentService?: LocalAdjustmentService,
   ) {}
 
   /**
@@ -213,6 +216,160 @@ export class CashShiftService {
         closingNotes: dto.closingNotes ?? null,
       },
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Operational-view-aware methods
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Compute expected totals per payment method using the operational view
+   * (which includes local adjustments like PAYMENT_METHOD_CHANGE).
+   *
+   * Uses `LocalAdjustmentService.resolveOperationalView()` to read payment
+   * methods rather than reading `Invoice.payments` directly.
+   *
+   * @param shiftId  The cash shift to compute totals for
+   * @returns A map of paymentMethodId → total expected amount
+   */
+  async computeExpectedTotalsByPaymentMethod(
+    shiftId: string,
+  ): Promise<Map<string, Prisma.Decimal>> {
+    if (!this.adjustmentService) {
+      throw new DomainError(
+        'ADJUSTMENT_SERVICE_NOT_CONFIGURED',
+        'LocalAdjustmentService is required to compute operational totals.',
+      );
+    }
+
+    const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+
+    // Find all confirmed sales in this shift
+    const sales = await this.prisma.sale.findMany({
+      where: {
+        cashShiftId: shiftId,
+        operationalState: 'CONFIRMED',
+      },
+      select: { id: true },
+    });
+
+    const saleIds = sales.map((s) => s.id);
+
+    // Find invoices for these sales
+    const invoices = await this.prisma.invoice.findMany({
+      where: { saleId: { in: saleIds } },
+      select: { id: true, saleId: true },
+    });
+
+    const totalsByMethod = new Map<string, Prisma.Decimal>();
+
+    for (const invoice of invoices) {
+      try {
+        const opView = await this.adjustmentService.resolveOperationalView(
+          invoice.id,
+        );
+        const operationalPayments = opView.operational.payments;
+
+        for (const pmt of operationalPayments) {
+          const current = totalsByMethod.get(pmt.paymentMethodId) ?? new Prisma.Decimal(0);
+          totalsByMethod.set(
+            pmt.paymentMethodId,
+            current.plus(new Prisma.Decimal(pmt.amount)),
+          );
+        }
+      } catch {
+        // If the invoice can't be resolved, skip — it shouldn't happen
+        // for normal invoices.
+        continue;
+      }
+    }
+
+    return totalsByMethod;
+  }
+
+  /**
+   * Detect "reconciliation drift" — invoices in a closed shift whose
+   * operational view payment methods differ from the fiscal view recorded
+   * at close time. This can happen when a manager applies a
+   * PAYMENT_METHOD_CHANGE adjustment after the shift was closed.
+   *
+   * Returns a list of affected invoice IDs and the drift details.
+   * Closed shifts are never retroactively edited.
+   */
+  async getReconciliationDrift(
+    shiftId: string,
+  ): Promise<Array<{
+    invoiceId: string;
+    invoiceNumber: string;
+    fiscalPaymentSummary: string;
+    operationalPaymentSummary: string;
+  }>> {
+    if (!this.adjustmentService) {
+      return [];
+    }
+
+    const shift = await this.prisma.cashShift.findUnique({
+      where: { id: shiftId },
+    });
+
+    if (!shift || shift.state !== 'CLOSED') {
+      return [];
+    }
+
+    const sales = await this.prisma.sale.findMany({
+      where: {
+        cashShiftId: shiftId,
+        operationalState: 'CONFIRMED',
+      },
+      select: { id: true },
+    });
+
+    const saleIds = sales.map((s) => s.id);
+    const invoices = await this.prisma.invoice.findMany({
+      where: { saleId: { in: saleIds } },
+      select: { id: true, invoiceNumber: true, fullData: true },
+    });
+
+    const drift: Array<{
+      invoiceId: string;
+      invoiceNumber: string;
+      fiscalPaymentSummary: string;
+      operationalPaymentSummary: string;
+    }> = [];
+
+    for (const invoice of invoices) {
+      try {
+        const opView = await this.adjustmentService.resolveOperationalView(
+          invoice.id,
+        );
+
+        if (!opView.operational.hasDifferences) continue;
+
+        const fiscalPayments = opView.fiscal.fullData.payments;
+        const operationalPayments = opView.operational.payments;
+
+        // Compare payment methods
+        const fiscalSummary = fiscalPayments
+          .map((p: { paymentMethodName: string; amount: string }) => `${p.paymentMethodName}:${p.amount}`)
+          .join(';');
+        const operationalSummary = operationalPayments
+          .map((p) => `${p.paymentMethodName}:${p.amount}`)
+          .join(';');
+
+        if (fiscalSummary !== operationalSummary) {
+          drift.push({
+            invoiceId: invoice.id,
+            invoiceNumber: invoice.invoiceNumber,
+            fiscalPaymentSummary: fiscalSummary,
+            operationalPaymentSummary: operationalSummary,
+          });
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return drift;
   }
 
   // ---------------------------------------------------------------------------

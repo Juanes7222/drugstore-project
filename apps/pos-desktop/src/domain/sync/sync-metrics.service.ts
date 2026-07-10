@@ -85,6 +85,13 @@ export interface FiscalSummary {
   rejectedLast24h: number;
 }
 
+export interface LocalAdjustmentSummary {
+  adjustmentsLast24h: number;
+  byType: Record<string, number>;
+  reversalsLast24h: number;
+  invoicesWithAdjustments: number;
+}
+
 export interface SyncMetricsService {
   getQueueCounts(): Promise<QueueCounts>;
   getFailureBreakdown(since: Date): Promise<FailureBreakdownEntry[]>;
@@ -100,6 +107,7 @@ export interface SyncMetricsService {
   getBackupSummary(): Promise<BackupSummary>;
   getBackupHealth(): Promise<BackupHealthLevel>;
   getFiscalSummary(): Promise<FiscalSummary>;
+  getLocalAdjustmentSummary(): Promise<LocalAdjustmentSummary>;
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +440,36 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
       }),
       transmittedLast24h,
       rejectedLast24h,
+    };
+  }
+
+  async getLocalAdjustmentSummary(): Promise<LocalAdjustmentSummary> {
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const recent = await this.prisma.invoiceLocalAdjustment.findMany({
+      where: { createdAt: { gte: twentyFourHoursAgo } },
+      select: { adjustmentType: true, invoiceId: true },
+    });
+
+    const byType: Record<string, number> = {};
+    let reversalsLast24h = 0;
+    const invoicesWithAdjustments = new Set<string>();
+
+    for (const adj of recent) {
+      const type = String(adj.adjustmentType);
+      byType[type] = (byType[type] ?? 0) + 1;
+      if (type === 'REVERSAL') {
+        reversalsLast24h++;
+      }
+      invoicesWithAdjustments.add(adj.invoiceId);
+    }
+
+    return {
+      adjustmentsLast24h: recent.length,
+      byType,
+      reversalsLast24h,
+      invoicesWithAdjustments: invoicesWithAdjustments.size,
     };
   }
 

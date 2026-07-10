@@ -68,3 +68,30 @@ export {
   SaleMissingForInvoiceException,
   ReturnMissingForCreditNoteException,
 } from './exceptions';
+
+// Local adjustment layer
+export { createLocalAdjustmentService } from './local-adjustment.service';
+export type { LocalAdjustmentService } from './local-adjustment.service';
+
+export type {
+  AdjustmentType,
+  AdjustmentRecord,
+  AdjustmentHistoryEntry,
+  OperationalInvoiceView,
+  OperationalNote,
+  OperationalContactInfo,
+  OperationalDeliveryInfo,
+  LocalAdjustmentSummary,
+  ReportView,
+  AdjustmentCsvRow,
+} from './local-adjustment.types';
+
+export {
+  AdjustmentAuthorizationException,
+  AdjustmentInvoiceNotFoundException,
+  AdjustmentNotAllowedForStatusException,
+  AdjustmentReasonTooShortException,
+  AdjustmentNotFoundException,
+  AdjustmentAlreadyReversedException,
+  AdjustmentConflictException,
+} from './local-adjustment.exceptions';

@@ -74,6 +74,59 @@ model ContingencyEvent {
   @@index([startedAt])
 }
 
+enum InvoiceAdjustmentType {
+  PAYMENT_METHOD_CHANGE
+  PAYMENT_SPLIT_CHANGE
+  INTERNAL_NOTE
+  CONTACT_UPDATE
+  DELIVERY_INFO
+  TAG_ADD
+  TAG_REMOVE
+  CUSTOM_FIELD_SET
+  CUSTOM_FIELD_CLEAR
+  REVERSAL
+}
+
+/// Local-only operational annotation layer alongside the immutable fiscal
+/// Invoice. These adjustments never sync to the server and never affect
+/// what DIAN sees — they only affect how the local POS interprets the
+/// invoice for operational purposes (cash shift reconciliation, internal
+/// reports, customer-facing reprints).
+model InvoiceLocalAdjustment {
+  id                        String                   @id
+  invoiceId                 String
+  createdAt                 DateTime
+  createdByUserId           String
+  /// Denormalized actor name for audit trail resilience — the User table is
+  /// server-only and may not be queryable locally during an audit.
+  createdByUserName         String
+  adjustmentType            InvoiceAdjustmentType
+  /// The previous value being changed (null for additions like TAG_ADD).
+  previousValue             Json?
+  /// The new value being applied (null for REVERSAL and TAG_REMOVE).
+  newValue                  Json?
+  /// Required reason for the adjustment (min 10 chars, validated at service
+  /// level).
+  reason                    String
+  /// Optimistic concurrency version: the 1-based index of this adjustment
+  /// within the invoice's non-reversed chain. Unique per invoice so concurrent
+  /// writes to the same invoice with the same version are rejected.
+  version                   Int
+  /// When adjustmentType = REVERSAL, this FK points to the original adjustment
+  /// being reversed.
+  reversalOfAdjustmentId    String?
+  /// When this adjustment is later reversed, this FK is populated with the id
+  /// of the reversal adjustment, enabling bidirectional chain traversal.
+  replacedByAdjustmentId    String?
+
+  @@unique([invoiceId, version])
+  @@index([invoiceId, createdAt])
+  @@index([createdByUserId])
+  @@index([adjustmentType])
+  @@index([reversalOfAdjustmentId])
+  @@index([replacedByAdjustmentId])
+}
+
 model FiscalCounter {
   id                     String      @id
   workstationId          String      @unique
