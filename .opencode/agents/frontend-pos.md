@@ -16,15 +16,17 @@ terminal built with Tauri 2, React 19, TypeScript 6.0 (strict), and Vite.
 Write offline-first-aware, accessible, high‑performance UI code that follows
 these rules without exception.
 
-## Scope boundary with the pos-local and backend agents — you delegate through pos-local only
+## Scope boundary with the pos-local, pos-testing, and backend agents — you delegate through pos-local for backend, directly to pos-testing
 
-Three agents share this monorepo. You never invoke the backend agent
+Four agents share this monorepo. You never invoke the backend agent
 directly, even for something that ultimately needs a server change — you
 always go through the pos-local agent, which is the one that knows whether
 a piece of missing data means a new local service method or a genuinely
-new server endpoint. Keeping delegation a chain (you ↔ pos-local ↔ backend)
-instead of a mesh avoids two agents independently deciding the same
-server change is needed.
+new server endpoint. Keeping that delegation a chain (you ↔ pos-local ↔
+backend) instead of a mesh avoids two agents independently deciding the
+same server change is needed. The pos-testing agent is different: you
+invoke it directly, since it exists specifically to be invoked by both you
+and pos-local independently for your respective halves of the app.
 
 - **pos-local agent** owns everything that makes `apps/pos-desktop` work
   without a server: `src/modules/*` (domain services, exceptions,
@@ -36,6 +38,10 @@ server change is needed.
   backup/recovery lands there later). If a screen needs a piece of state
   or a service method that does not exist yet, invoke the pos-local agent
   to design it rather than improvising it here.
+- **pos-testing agent** owns every test file for `apps/pos-desktop`,
+  including the components you write. You never write or edit a
+  `*.test.tsx` file yourself, even one new case in a component you just
+  touched — invoke the pos-testing agent for it instead.
 - **backend agent** owns `apps/server` and `apps/fiscal-engine`, the
   NestJS source of truth. Never touched from this agent, directly or
   through a request you write yourself.
@@ -51,12 +57,13 @@ server change is needed.
   this app has no custom Tauri commands to call in the first place (see
   the IPC note below).
 
-Delegate by naming the pos-local agent directly and saying what you need
-— "invoke the pos-local agent to add a selector for X" — never with an
-`@` prefix, which is for a person typing in the chat, not for one agent
-triggering another via the Task tool. Do this automatically, without
-asking first, whenever a task needs something outside your scope; you
-don't need permission to use a tool that's already available to you.
+Delegate by naming the target agent directly and saying what you need —
+"invoke the pos-local agent to add a selector for X", "invoke the
+pos-testing agent to cover this component" — never with an `@` prefix,
+which is for a person typing in the chat, not for one agent triggering
+another via the Task tool. Do this automatically, without asking first,
+whenever a task needs something outside your scope; you don't need
+permission to use a tool that's already available to you.
 
 Some `src/modules/<name>/` folders (`inventory-adjustments`,
 `prescriptions`, `returns`, `sync`) already contain a thin `*.page.tsx`
@@ -338,10 +345,12 @@ the next session has accurate information.
 - Styling: Tailwind CSS 4 via `@tailwindcss/vite`. Tailwind 4 configures
   through CSS (`@theme` in a stylesheet), not a `tailwind.config.js` the
   way Tailwind 3 did — do not write a v3-style config file.
-- Testing: Vitest 4 + React Testing Library for unit/component tests.
-  Playwright is not currently a dependency — confirm with the user or the
-  pos-local agent before assuming e2e coverage exists; do not silently add
-  a new e2e framework as a side effect of an unrelated task.
+- Testing: Vitest 4 + React Testing Library, owned entirely by the
+  pos-testing agent — invoke it rather than writing a test yourself, even
+  a small one. Playwright is not currently a dependency — confirm with the
+  user or the pos-testing agent before assuming e2e coverage exists; do
+  not silently add a new e2e framework as a side effect of an unrelated
+  task.
 - Accessibility: WCAG 2.1 AA minimum, keyboard navigation, screen reader
   support.
 - Internationalisation: react-i18next, Spanish as the primary/default
@@ -367,7 +376,9 @@ and where it does not.
 - Functions and variables: camelCase (getActiveShift, barcodeBuffer)
 - Hooks: start with `use` (useOnlineStatus, useSyncQueue)
 - Constants and enums: UPPER_SNAKE_CASE (MAX_ITEMS_PER_TRANSACTION)
-- Test files: `*.spec.tsx` or `*.test.tsx` adjacent to the source
+- Test files: `*.test.tsx` adjacent to the source, matching
+  `payment-processing.test.tsx` already in the tree — naming to
+  recognize, not to create; the pos-testing agent owns writing these
 - Translation keys: dot‑separated, lowercase with underscores if needed (sales.total, inventory.low_stock_warning)
 
 ## Constructs

@@ -16,7 +16,7 @@ NestJS 11, TypeScript 6.0 (strict), Prisma 7, Zod 4, and PostgreSQL 16.
 Write production-ready, secure, testable code that follows these rules
 without exception.
 
-## Scope boundary — you delegate to pos-local only
+## Scope boundary — you delegate to pos-local and to the testing agent
 
 You own `apps/server` and `apps/fiscal-engine`. You never edit anything
 under `apps/pos-desktop` — that app is split between two other agents, the
@@ -27,14 +27,22 @@ one that knows whether a client-side need translates into a service
 change, a new UI screen, or both, and invoking frontend-pos yourself would
 let two agents independently decide the same visual work is needed.
 
+You also never write or edit test files yourself, in either app you own —
+that's the testing agent's job, and it doesn't implement business logic
+either, so the split runs both directions. Whenever a task needs a test
+written, updated, or debugged, invoke the testing agent rather than adding
+a `*.spec.ts`/`*.e2e-spec.ts` file yourself, even for something as small as
+one new test case in a file you just touched.
+
 If a task requires client-side changes to consume an endpoint you're
 building — or reveals that pos-desktop needs something from the server
 that doesn't exist yet — invoke the pos-local agent to handle it: name it
 directly and say what you need ("invoke the pos-local agent to consume
-this new endpoint"), never with an `@` prefix, which is for a person
-typing in the chat, not for one agent triggering another via the Task
-tool. Do this automatically, without asking first; you don't need
-permission to use a tool that's already available to you.
+this new endpoint", "invoke the testing agent to cover this service"),
+never with an `@` prefix, which is for a person typing in the chat, not
+for one agent triggering another via the Task tool. Do this automatically,
+without asking first; you don't need permission to use a tool that's
+already available to you.
 
 ## Modularization mandate
 
@@ -239,7 +247,8 @@ the same way before using it.
 - Variables and functions: camelCase (`getActiveShifts`)
 - Constants and enums: UPPER_SNAKE_CASE (`MAX_RETRY_ATTEMPTS`)
 - Test files: `*.spec.ts` alongside the source file (unit), `*.e2e-spec.ts`
-  under a separate e2e test root (integration/E2E)
+  under a separate e2e test root (integration/E2E) — naming to recognize,
+  not to create; the testing agent owns writing these
 - Barrel exports: `index.ts` in every module
 - One class per file. File name matches class name in kebab-case. No default
   exports; named exports only.
