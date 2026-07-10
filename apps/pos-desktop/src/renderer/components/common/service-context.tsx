@@ -49,6 +49,20 @@ import {
 import { createAuthService, AuthService } from "../../../domain/auth/auth.service";
 import { createBackupService, BackupService } from "../../../domain/backup/backup.service";
 import { createRecoveryLogService, RecoveryLogService } from "../../../domain/backup/recovery-log.service";
+import { createInvoiceService, InvoiceService } from "../../../domain/fiscal/invoice.service";
+import {
+  createContingencyService,
+  ContingencyService,
+} from "../../../domain/fiscal/contingency.service";
+import {
+  createFiscalNumberingService,
+  FiscalNumberingService,
+} from "../../../domain/fiscal/numbering.service";
+import {
+  createFiscalScheduler,
+  FiscalScheduler,
+} from "../../../domain/fiscal/fiscal-scheduler.service";
+import { isContingencyTechKeyPlaceholder } from "../../../config/fiscal";
 import type { PrismaClient } from "@pharmacy/database/local";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +75,10 @@ interface Services {
   prescriptionsService: PrescriptionsService;
   backupService: BackupService;
   recoveryLogService: RecoveryLogService;
+  invoiceService: InvoiceService;
+  contingencyService: ContingencyService;
+  fiscalNumberingService: FiscalNumberingService;
+  fiscalScheduler: FiscalScheduler;
 }
 
 type InitState =
@@ -107,6 +125,18 @@ export const useBackupService = (): BackupService => useServiceContext().backupS
 export const useRecoveryLogService = (): RecoveryLogService =>
   useServiceContext().recoveryLogService;
 
+/** Convenience hook — returns the InvoiceService instance. */
+export const useInvoiceService = (): InvoiceService =>
+  useServiceContext().invoiceService;
+
+/** Convenience hook — returns the ContingencyService instance. */
+export const useContingencyService = (): ContingencyService =>
+  useServiceContext().contingencyService;
+
+/** Convenience hook — returns the FiscalNumberingService instance. */
+export const useFiscalNumberingService = (): FiscalNumberingService =>
+  useServiceContext().fiscalNumberingService;
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -136,16 +166,59 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
 
         if (cancelled) return;
 
-        // 2. Create AuthService (reads session from the Zustand store in memory)
+        // 2. Check contingency tech key — refuse to operate if still placeholder
+        if (isContingencyTechKeyPlaceholder()) {
+          throw new Error(
+            'La clave técnica de contingencia no ha sido configurada. ' +
+            'Configure VITE_CONTINGENCY_TECH_KEY en el entorno antes de usar el POS.',
+          );
+        }
+
+        // 3. Create AuthService (reads session from the Zustand store in memory)
         const auth: AuthService = createAuthService({ baseUrl });
 
-        // 3. Create domain services
+        // 4. Create fiscal services
+        const prismaClient = prisma as PrismaClient;
+        const session = (await import('../../../domain/auth/local-session.store'))
+          .useLocalSessionStore.getState().session;
+        const workstationId = session?.workstationId ?? 'unknown';
+
+        const fiscalNumberingService = createFiscalNumberingService({
+          prisma: prismaClient,
+          workstationId,
+        });
+
+        const contingencyService = createContingencyService({
+          prisma: prismaClient,
+          workstationId,
+        });
+
+        const invoiceService = createInvoiceService({
+          prisma: prismaClient,
+          workstationId,
+          numberingService: fiscalNumberingService,
+          contingencyService,
+        });
+
+        // Hydrate contingency store from DB
+        await contingencyService.hydrateStore();
+
+        const fiscalScheduler = createFiscalScheduler({
+          invoiceService,
+          contingencyService,
+        });
+
+        // 4. Create domain services (with fiscal service wired in)
         const services: Services = {
-          returnsService: createReturnsService(prisma, auth),
+          returnsService: createReturnsService(prismaClient, auth, invoiceService),
           inventoryAdjustmentsService: createInventoryAdjustmentsService(prisma, auth),
           prescriptionsService: createPrescriptionsService(prisma, auth),
           backupService: createBackupService(),
-          recoveryLogService: createRecoveryLogService(prisma as PrismaClient),
+          recoveryLogService: createRecoveryLogService(prismaClient),
+          invoiceService,
+          contingencyService,
+          fiscalNumberingService,
+          fiscalScheduler,
         };
 
         setInitState({ status: "ready", services });

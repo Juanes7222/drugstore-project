@@ -25,6 +25,7 @@
  */
 import { PrismaClient, Prisma, ClientReturnState, MovementType } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
+import type { InvoiceService, CreditNoteInput } from '../fiscal/invoice.service';
 import { RoleType } from '@pharmacy/shared-types';
 import {
   SaleForReturnNotFoundException,
@@ -135,8 +136,9 @@ interface OriginalSaleWithItems {
 export const createReturnsService = (
   prisma: PrismaClient,
   auth: AuthService,
+  invoiceService?: InvoiceService,
 ): ReturnsService => {
-  return new ReturnsService(prisma, auth);
+  return new ReturnsService(prisma, auth, invoiceService);
 };
 
 // ---------------------------------------------------------------------------
@@ -147,6 +149,7 @@ export class ReturnsService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly auth: AuthService,
+    private readonly invoiceService?: InvoiceService,
   ) {}
 
   /**
@@ -500,7 +503,39 @@ export class ReturnsService {
       // 5. Insert SyncQueue entry inside the same transaction
       await this.createSyncQueueEntry(tx, clientReturn, session, confirmedAt);
 
-      return updatedReturn;
+      // Build CreditNoteInput data for the invoice service
+      const creditNoteData: CreditNoteInput = {
+        saleId: clientReturn.saleId,
+        refundAmount: clientReturn.refundAmount.toString(),
+        subtotalReturned: clientReturn.subtotalReturned.toString(),
+        taxReturned: clientReturn.taxReturned.toString(),
+        reason: clientReturn.reason,
+        items: clientReturn.items.map((item) => ({
+          saleItemId: item.saleItemId,
+          quantity: item.quantity,
+          unitPriceAtReturn: item.unitPriceAtReturn.toString(),
+          taxAmount: item.taxAmount.toString(),
+          totalAmount: item.totalAmount.toString(),
+          unitPriceAtSale: item.unitPriceAtSale.toString(),
+        })),
+      };
+
+      return { updatedReturn, creditNoteData } as const;
+    }).then(async (result) => {
+      const creditNoteData: CreditNoteInput = (result as { creditNoteData: CreditNoteInput }).creditNoteData;
+
+      // 6. Generate credit note (fiscal document) after the return confirms.
+      if (this.invoiceService) {
+        try {
+          await this.invoiceService.generateCreditNoteForReturn(creditNoteData);
+        } catch (err) {
+          console.error(
+            `[ReturnsService] Credit note generation failed for return ${returnId}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+      return result;
     });
   }
 

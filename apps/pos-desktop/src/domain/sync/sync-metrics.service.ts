@@ -76,6 +76,15 @@ export interface BackupSummary {
   totalBackupSizeBytes: number;
 }
 
+export interface FiscalSummary {
+  contingencyActive: boolean;
+  pendingContingencyInvoices: number;
+  expiringWithin24h: number;
+  expiredContingencyInvoices: number;
+  transmittedLast24h: number;
+  rejectedLast24h: number;
+}
+
 export interface SyncMetricsService {
   getQueueCounts(): Promise<QueueCounts>;
   getFailureBreakdown(since: Date): Promise<FailureBreakdownEntry[]>;
@@ -90,6 +99,7 @@ export interface SyncMetricsService {
   exportEntriesAsJson(filter: EntryFilter): Promise<string>;
   getBackupSummary(): Promise<BackupSummary>;
   getBackupHealth(): Promise<BackupHealthLevel>;
+  getFiscalSummary(): Promise<FiscalSummary>;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +387,52 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
   async getBackupHealth(): Promise<BackupHealthLevel> {
     const { createBackupService } = await import('../backup/backup.service');
     return createBackupService().getBackupHealth();
+  }
+
+  async getFiscalSummary(): Promise<FiscalSummary> {
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const twentyFourHoursLater = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    const activeEvent = await this.prisma.contingencyEvent.findFirst({
+      where: { endedAt: null },
+    });
+
+    const [pendingContingencyInvoices, expiringWithin24h, transmittedLast24h, rejectedLast24h] =
+      await Promise.all([
+        this.prisma.invoice.count({
+          where: { status: 'CONTINGENCY_PENDING_TRANSMISSION' as any },
+        }),
+        this.prisma.invoice.count({
+          where: {
+            status: 'CONTINGENCY_PENDING_TRANSMISSION' as any,
+            expiresAt: { lte: twentyFourHoursLater, gte: now },
+          },
+        }),
+        this.prisma.invoice.count({
+          where: {
+            status: 'TRANSMITTED_AUTHORIZED' as any,
+            transmittedAt: { gte: twentyFourHoursAgo },
+          },
+        }),
+        this.prisma.invoice.count({
+          where: {
+            status: 'TRANSMITTED_REJECTED' as any,
+            transmittedAt: { gte: twentyFourHoursAgo },
+          },
+        }),
+      ]);
+
+    return {
+      contingencyActive: activeEvent !== null,
+      pendingContingencyInvoices,
+      expiringWithin24h,
+      expiredContingencyInvoices: await this.prisma.invoice.count({
+        where: { status: 'EXPIRED_CONTINGENCY' as any },
+      }),
+      transmittedLast24h,
+      rejectedLast24h,
+    };
   }
 
   private async fetchFilteredEntries(

@@ -25,6 +25,7 @@
 import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import type { InventoryLotsService, ConsumedLot } from '../inventory-lots/inventory-lots.service';
+import type { InvoiceService } from '../fiscal/invoice.service';
 import { RoleType } from '@pharmacy/shared-types';
 import {
   SaleNotInProgressException,
@@ -121,8 +122,9 @@ export const createSalesPosService = (
   prisma: PrismaClient,
   auth: AuthService,
   inventoryLots: InventoryLotsService,
+  invoiceService?: InvoiceService,
 ): SalesPosService => {
-  return new SalesPosService(prisma, auth, inventoryLots);
+  return new SalesPosService(prisma, auth, inventoryLots, invoiceService);
 };
 
 // ---------------------------------------------------------------------------
@@ -134,6 +136,7 @@ export class SalesPosService {
     private readonly prisma: PrismaClient,
     private readonly auth: AuthService,
     private readonly inventoryLots: InventoryLotsService,
+    private readonly invoiceService?: InvoiceService,
   ) {}
 
   // -----------------------------------------------------------------------
@@ -363,6 +366,22 @@ export class SalesPosService {
       await this.createSyncQueueEntry(tx, sale, input, session, confirmedAt);
 
       return updatedSale;
+    }).then(async (result) => {
+      // 7. Generate invoice (fiscal document) after the sale confirms.
+      //    This runs outside the main transaction so it doesn't block the
+      //    confirm with fiscal computation. If invoice generation fails, the
+      //    sale is still confirmed — the failure is logged.
+      if (this.invoiceService) {
+        try {
+          await this.invoiceService.generateInvoiceForSale(saleId);
+        } catch (err) {
+          console.error(
+            `[SalesPosService] Invoice generation failed for sale ${saleId}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+      return result;
     });
   }
 

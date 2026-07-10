@@ -1,0 +1,25 @@
+// Server-only schema fragment — only included in the full build.
+//
+// Stores the DIAN transmission result for offline-generated (contingency)
+// invoices so workstations can poll for their official CUFE, XML, and
+// acceptance status after the fiscal engine has completed transmission.
+//
+// Written by the fiscal engine processor after each transmission attempt,
+// read by the GET /sync/invoice-results endpoint that each workstation
+// polls after reconnecting.
+
+model SyncInvoiceResult {
+  id              String    @id
+  invoiceId       String
+  workstationId   String
+  status          String    // 'AUTHORIZED' | 'REJECTED'
+  cufeOfficial    String?
+  dianXml         String?   @db.Text
+  rejectionReason String?
+  authorizedAt    DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([workstationId, createdAt])
+  @@index([invoiceId])
+  @@index([workstationId, status])
+}

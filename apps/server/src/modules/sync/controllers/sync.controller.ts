@@ -10,8 +10,10 @@ import {
 } from '@nestjs/common';
 import { SyncService } from '../services/sync.service';
 import { SyncHealthService } from '../services/sync-health.service';
+import { InvoiceTransmissionResultService } from '../services/invoice-transmission-result.service';
 import { SyncBatchDto } from '../dto/sync-batch.dto';
 import { QuerySyncQueueDto } from '../dto/query-sync-queue.dto';
+import { InvoiceResultsQuerySchema } from '../dto/invoice-results-query.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -27,6 +29,7 @@ export class SyncController {
   constructor(
     private syncService: SyncService,
     private syncHealthService: SyncHealthService,
+    private invoiceTransmissionResultService: InvoiceTransmissionResultService,
   ) {}
 
   @Post('batch')
@@ -92,5 +95,43 @@ export class SyncController {
       query.workstationId,
     );
     return { workstationId: query.workstationId, maxLocalNumber };
+  }
+
+  /**
+   * Returns DIAN transmission results for offline-generated (contingency)
+   * invoices. Workstations poll this endpoint after reconnecting to retrieve
+   * the official CUFE, DIAN XML, and acceptance status for each invoice
+   * they created while offline.
+   *
+   * Query parameters:
+   * - workstationId (required): the workstation requesting its results.
+   * - since (optional, ISO-8601): return only results created after this time.
+   *   If omitted, defaults to the last 24 hours.
+   *
+   * Results are ordered by createdAt ascending (oldest first).
+   */
+  @Get('invoice-results')
+  // Note: uses the same JWT auth as other sync endpoints so the workstation
+  // authenticates with its user's session token, same as POST /sync/batch.
+  @UseGuards(JwtAuthGuard)
+  async getInvoiceResults(
+    @Query(new ZodValidationPipe(InvoiceResultsQuerySchema))
+    query: { workstationId: string; since?: string },
+  ): Promise<Array<{
+    id: string;
+    invoiceId: string;
+    workstationId: string;
+    status: string;
+    cufeOfficial: string | null;
+    dianXml: string | null;
+    rejectionReason: string | null;
+    authorizedAt: Date | null;
+    createdAt: Date;
+  }>> {
+    const since = query.since ? new Date(query.since) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return this.invoiceTransmissionResultService.findResultsForWorkstation(
+      query.workstationId,
+      since,
+    );
   }
 }

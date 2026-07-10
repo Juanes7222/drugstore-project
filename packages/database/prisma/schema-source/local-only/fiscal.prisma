@@ -1,0 +1,88 @@
+// LOCAL-ONLY schema fragment — Fiscal documents and contingency management
+// for apps/pos-desktop.
+//
+// These models are intentionally not propagated to the server schema. They
+// exist only on the terminal to support offline Colombian DIAN contingency
+// invoicing: provisional documents are generated locally while offline, then
+// queued for DIAN transmission when connectivity returns.
+
+enum InvoiceType {
+  ELECTRONIC_INVOICE
+  CREDIT_NOTE
+  DEBIT_NOTE
+  SUPPORT_DOCUMENT
+  CONTINGENCY_CANCELLATION
+}
+
+enum InvoiceStatus {
+  CONTINGENCY_PENDING_TRANSMISSION
+  TRANSMITTED_AUTHORIZED
+  TRANSMITTED_REJECTED
+  EXPIRED_CONTINGENCY
+  CANCELLED
+}
+
+enum ContingencyTrigger {
+  NETWORK_LOST
+  MANUAL_OVERRIDE
+  SERVER_UNREACHABLE
+}
+
+model Invoice {
+  id                String        @id
+  saleId            String
+  workstationId     String
+  invoiceType       InvoiceType
+  invoiceNumber     String
+  contingencyNumber String?
+  status            InvoiceStatus @default(CONTINGENCY_PENDING_TRANSMISSION)
+  cufeProvisional   String
+  cufeOfficial      String?
+  issuedAt          DateTime
+  transmittedAt     DateTime?
+  expiresAt         DateTime
+  fiscalXml         String?       @db.Text
+  fiscalPdfPath     String?
+  relatedInvoiceId  String?
+  relatedInvoice    Invoice?      @relation("RelatedInvoice", fields: [relatedInvoiceId], references: [id], onDelete: Restrict)
+  relatedTo         Invoice[]     @relation("RelatedInvoice")
+  contingencyEventId String?
+  techKeySnapshot   String
+  fullData          Json
+
+  @@unique([invoiceNumber, workstationId])
+  @@unique([contingencyNumber, workstationId])
+  @@index([saleId])
+  @@index([workstationId, status])
+  @@index([status, expiresAt])
+  @@index([contingencyEventId])
+}
+
+model ContingencyEvent {
+  id                   String            @id
+  startedAt            DateTime
+  endedAt              DateTime?
+  workstationId        String
+  trigger              ContingencyTrigger
+  triggerReason        String
+  invoicesGenerated    Int               @default(0)
+  invoicesTransmitted  Int               @default(0)
+  invoicesExpired      Int               @default(0)
+  notifiedDian         Boolean           @default(false)
+
+  @@index([workstationId, endedAt])
+  @@index([startedAt])
+}
+
+model FiscalCounter {
+  id                     String      @id
+  workstationId          String      @unique
+  currentRegularNumber   BigInt      @default(0)
+  currentContingencyNumber BigInt    @default(0)
+  resolutionPrefix       String      @default("FE")
+  contingencyPrefix      String      @default("CONT")
+  paddingLength          Int         @default(8)
+  authorizedStart        BigInt      @default(1)
+  authorizedEnd          BigInt      @default(99999999)
+  updatedAt              DateTime    @updatedAt
+}

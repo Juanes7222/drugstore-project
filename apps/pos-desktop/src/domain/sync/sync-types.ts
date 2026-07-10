@@ -133,3 +133,40 @@ export interface PrescriptionRegistrationPayload {
     createdAt: string;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Invoice transmission sync operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload for INVOICE_TRANSMISSION operations.
+ *
+ * Created by InvoiceService when a contingency document needs to be
+ * transmitted to DIAN. The server-side sync dispatcher validates the
+ * payload and enqueues it into the fiscal engine for DIAN transmission.
+ */
+export interface InvoiceTransmissionPayload {
+  invoiceId: string;
+  invoiceNumber: string;
+  contingencyNumber: string | null;
+  saleId: string;
+  provisionalCufe: string;
+  fullInvoiceData: Record<string, unknown>;
+  workstationId: string;
+}
+
+/**
+ * Payload for INVOICE_TRANSMISSION_RESULT operations.
+ *
+ * Sent from the server back to the POS desktop after DIAN transmission
+ * completes. The POS updates the local Invoice record with the official
+ * CUFE and DIAN's response.
+ */
+export interface InvoiceTransmissionResultPayload {
+  invoiceId: string;
+  status: 'AUTHORIZED' | 'REJECTED';
+  cufeOfficial?: string;
+  dianXml?: string;
+  rejectionReason?: string;
+  authorizedAt?: string;
+}

@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 export class SyncBatchDto implements z.infer<typeof SyncBatchSchema> {
   operations!: Array<{
-    operationType: 'SALE_CONFIRMATION' | 'SHIFT_CLOSURE' | 'CLIENT_CREATION' | 'INVENTORY_ADJUSTMENT' | 'FISCAL_DOCUMENT_SYNC' | 'PRESCRIPTION_REGISTRATION' | 'RESOLUTION_ALLOCATION';
+    operationType: 'SALE_CONFIRMATION' | 'SHIFT_CLOSURE' | 'CLIENT_CREATION' | 'CLIENT_RETURN' | 'INVENTORY_ADJUSTMENT' | 'FISCAL_DOCUMENT_SYNC' | 'PRESCRIPTION_REGISTRATION' | 'RESOLUTION_ALLOCATION' | 'INVOICE_TRANSMISSION';
     operationUuid: string;
     payload: Record<string, any>;
     payloadHash: string;

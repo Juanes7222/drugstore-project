@@ -23,6 +23,7 @@
 
 import crypto from 'node:crypto';
 import type { PrismaClient } from '@pharmacy/database/local';
+import type { InvoiceService } from '../fiscal/invoice.service';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -133,6 +134,7 @@ export interface SyncPushServiceConfig {
   prisma: PrismaClient;
   baseUrl: string;
   accessToken?: string;
+  invoiceService?: InvoiceService;
 }
 
 // ---------------------------------------------------------------------------
@@ -142,9 +144,9 @@ export interface SyncPushServiceConfig {
 export const createSyncPushService = (
   config: SyncPushServiceConfig,
 ): SyncPushService => {
-  const { prisma, baseUrl, accessToken } = config;
+  const { prisma, baseUrl, accessToken, invoiceService } = config;
   const normalizedBase = baseUrl.replace(/\/+$/, '');
-  return new SyncPushServiceImpl(prisma, normalizedBase, accessToken);
+  return new SyncPushServiceImpl(prisma, normalizedBase, accessToken, invoiceService);
 };
 
 // ---------------------------------------------------------------------------
@@ -176,15 +178,18 @@ class SyncPushServiceImpl implements SyncPushService {
   private readonly prisma: PrismaClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly invoiceService?: InvoiceService;
 
   constructor(
     prisma: PrismaClient,
     baseUrl: string,
     accessToken?: string,
+    invoiceService?: InvoiceService,
   ) {
     this.prisma = prisma;
     this.baseUrl = baseUrl;
     this.accessToken = accessToken;
+    this.invoiceService = invoiceService;
   }
 
   async pushPending(): Promise<{ pushed: number; accepted: number }> {
@@ -380,6 +385,29 @@ class SyncPushServiceImpl implements SyncPushService {
             errorMessage: result.error ?? null,
           },
         });
+
+        // If a SALE_CONFIRMATION was rejected, cancel any associated local
+        // invoices to prevent orphan fiscal documents.
+        if (entry.operationType === 'SALE_CONFIRMATION' && this.invoiceService) {
+          try {
+            const parsedPayload = JSON.parse(entry.payload) as { metadata?: { localSaleId?: string } };
+            const localSaleId = parsedPayload?.metadata?.localSaleId;
+            if (localSaleId) {
+              const invoices = await this.invoiceService.findBySaleId(localSaleId);
+              for (const inv of invoices) {
+                await this.invoiceService.cancelInvoice(
+                  inv.id,
+                  `Sale replay rejected: ${result.error ?? 'Server rejection'}`,
+                );
+              }
+            }
+          } catch (cancelErr) {
+            console.error(
+              `[SyncPush] Failed to cancel invoices for rejected sale:`,
+              cancelErr,
+            );
+          }
+        }
       }
     });
 

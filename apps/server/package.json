@@ -30,6 +30,7 @@
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/swagger": "^11.4.5",
     "@pharmacy/database": "workspace:*",
+    "@pharmacy/shared-validation": "workspace:*",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "argon2": "^0.44.0",

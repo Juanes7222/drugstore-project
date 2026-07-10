@@ -7,6 +7,8 @@ import { ClientsService } from '@/modules/clients/clients.service';
 import { SalesService } from '@/modules/sales-pos/services/sales.service';
 import { ClientReturnsService } from '@/modules/sales-pos/services/client-returns.service';
 import { InventoryAdjustmentsService } from '@/modules/inventory-lots/services/inventory-adjustments.service';
+import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
+import { InvoiceTransmissionPayloadSchema } from '@pharmacy/shared-validation';
 import type { SyncQueueEntry } from './entities/sync-queue-entry.entity';
 import type { CreateSaleDto } from '@/modules/sales-pos/dto/create-sale.dto';
 import type { ConfirmSaleDto } from '@/modules/sales-pos/dto/confirm-sale.dto';
@@ -37,6 +39,7 @@ export class SyncOperationDispatcherService {
     @Inject(SalesService) private readonly salesService: SalesService,
     @Inject(ClientReturnsService) private readonly clientReturnsService: ClientReturnsService,
     @Inject(InventoryAdjustmentsService) private readonly inventoryAdjustmentsService: InventoryAdjustmentsService,
+    @Inject(FiscalDocumentsService) private readonly fiscalDocumentsService: FiscalDocumentsService,
   ) {}
 
   /**
@@ -65,6 +68,9 @@ export class SyncOperationDispatcherService {
           break;
         case 'PRESCRIPTION_REGISTRATION':
           await this.handlePrescriptionRegistration(entry);
+          break;
+        case 'INVOICE_TRANSMISSION':
+          await this.handleInvoiceTransmission(entry);
           break;
         // FISCAL_DOCUMENT_SYNC, RESOLUTION_ALLOCATION
         // are not dispatched — the job never selects them.
@@ -287,5 +293,56 @@ export class SyncOperationDispatcherService {
     );
     // Future phase: create server-side Prescription record and link to SaleItem.
     // The SyncEntry already exists as a permanent audit trail until then.
+  }
+
+  /**
+   * Handles an INVOICE_TRANSMISSION operation from offline sync.
+   *
+   * The POS has already generated a provisional invoice with a local
+   * CUFE while operating in contingency mode. This handler:
+   *
+   * 1. Validates the payload against the shared InvoiceTransmissionPayloadSchema.
+   * 2. Creates a FiscalDocument in CONTINGENCY state linked to the sale,
+   *    allocating a consecutive number from the workstation's resolution.
+   * 3. Enqueues a job on the fiscal-documents BullMQ queue so the fiscal
+   *    engine can generate the UBL XML, compute the official CUFE, and
+   *    transmit to DIAN.
+   *
+   * The transmission result is later written to SyncInvoiceResult by the
+   * fiscal engine processor, and the workstation polls for it via
+   * GET /sync/invoice-results.
+   */
+  private async handleInvoiceTransmission(entry: SyncQueueEntry): Promise<void> {
+    const rawPayload = JSON.parse(entry.payload) as Record<string, unknown>;
+
+    // Step 1: Validate against the shared Zod schema
+    const parseResult = InvoiceTransmissionPayloadSchema.safeParse(rawPayload);
+    if (!parseResult.success) {
+      throw new Error(
+        `INVOICE_TRANSMISSION validation failed: ${parseResult.error.issues.map(
+          (i) => `${i.path.join('.')}: ${i.message}`,
+        ).join('; ')}`,
+      );
+    }
+    const payload = parseResult.data;
+
+    // Step 2: Create a FiscalDocument in CONTINGENCY state inside a transaction
+    const fiscalDoc = await this.prisma.$transaction(async (tx) => {
+      return this.fiscalDocumentsService.createPendingDocumentForContingency({
+        saleId: payload.saleId,
+        workstationId: entry.sourceWorkstationId,
+        provisionalCufe: payload.provisionalCufe,
+        tx,
+      });
+    });
+
+    // Step 3: Enqueue the generation+transmission job after the transaction commits
+    await this.fiscalDocumentsService.enqueueGenerationJob(fiscalDoc.id);
+
+    this.logger.log(
+      `INVOICE_TRANSMISSION processed: invoiceId=${payload.invoiceId}, ` +
+      `saleId=${payload.saleId}, fiscalDocumentId=${fiscalDoc.id}, ` +
+      `workstationId=${entry.sourceWorkstationId}`,
+    );
   }
 }

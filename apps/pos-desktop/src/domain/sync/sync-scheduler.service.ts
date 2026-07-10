@@ -53,6 +53,7 @@ import { createSyncPushService } from './sync-push.service';
 import type { SyncMetricsService } from './sync-metrics.service';
 import { createSyncMetricsService } from './sync-metrics.service';
 import { createBackupService, type BackupService } from '../backup/backup.service';
+import type { InvoiceService } from '../fiscal/invoice.service';
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -76,6 +77,8 @@ export interface SyncSchedulerConfig {
   accessToken?: string;
   /** Refresh interval in milliseconds (default: 5 minutes). */
   intervalMs?: number;
+  /** Invoice service for pulling fiscal transmission results. */
+  invoiceService?: InvoiceService;
 }
 
 export const createSyncScheduler = (
@@ -99,6 +102,7 @@ export class SyncScheduler {
   private readonly pushService: SyncPushService;
   private readonly metricsService: SyncMetricsService;
   private readonly backupService: BackupService;
+  private readonly invoiceService?: InvoiceService;
   private readonly intervalMs: number;
   private timerId: ReturnType<typeof setInterval> | null = null;
 
@@ -117,6 +121,7 @@ export class SyncScheduler {
     });
     this.metricsService = createSyncMetricsService(config.prisma);
     this.backupService = createBackupService();
+    this.invoiceService = config.invoiceService;
     this.intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
   }
 
@@ -215,7 +220,22 @@ export class SyncScheduler {
       // Logged downstream; continue.
     }
 
-    // 5. Periodic background backup (offline-safe, runs regardless of online status)
+    // 5. Pull invoice transmission results (only if the invoice service is available)
+    if (this.invoiceService) {
+      try {
+        const applied = await this.invoiceService.pullAndApplyResults(
+          this.baseUrl,
+          this.accessToken,
+        );
+        if (applied > 0) {
+          console.info(`[SyncScheduler] Applied ${applied} invoice transmission result(s).`);
+        }
+      } catch {
+        // Logged downstream; continue.
+      }
+    }
+
+    // 7. Periodic background backup (offline-safe, runs regardless of online status)
     try {
       const summary = await this.metricsService.getBackupSummary();
       if (this.backupService.shouldRunPeriodicBackup(summary.lastBackupAt)) {
@@ -239,7 +259,7 @@ export class SyncScheduler {
       // recovery page and via backup-health metrics.
     }
 
-    // 6. Emit metrics (always computed locally — offline-safe)
+    // 8. Emit metrics (always computed locally — offline-safe)
     try {
       const counts = await this.metricsService.getQueueCounts();
       // Structured log line for operator visibility
