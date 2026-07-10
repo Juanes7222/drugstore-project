@@ -1,8 +1,8 @@
 # Plan de Testing — Pharmacy System (Droguería)
 
-**Versión:** 3.1  
+**Versión:** 3.2  
 **Última actualización:** Julio 2026  
-**Estado:** Fases 1-4 completas. **Fase 3D completa (ALTA + MEDIA + BAJA).** Fase 5 infraestructura lista. Fase 4B controladores mayormente pendientes. **711 tests, 54 suites, todos pasando. Cobertura: 80.5% branches, 87.6% statements, 82.3% functions, 88.4% lines.**
+**Estado:** Fases 1-4 completas. **Fase 3D completa (ALTA + MEDIA + BAJA). Fase 4B completa (17 controladores nuevos).** Fase 5 infraestructura lista. **830 tests, 71 suites, todos pasando. Cobertura: 82.68% branches, 95.72% statements, 97.54% functions, 96.77% lines.**
 
 ---
 
@@ -65,19 +65,19 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.spec.ts`) | **54 archivos, ~711 tests** — todos pasando |
+| Archivos de test (`*.spec.ts`) | **71 archivos, ~830 tests** — todos pasando |
 | Configuraciones de test (jest.config) | **LISTO** — `apps/server`, `shared-types`, `shared-validation` tienen jest.config.ts |
 | Dependencias de testing instaladas | **LISTO** — `jest`, `ts-jest`, `@nestjs/testing`, `jest-mock-extended`, `supertest` instalados |
 | Scripts `test` en sub-packages | **LISTO** — `test`, `test:cov`, `test:watch`, `test:e2e` configurados |
-| Cobertura actual | **80.5% branches, 87.6% statements, 82.3% functions, 88.4% lines** — Meta: ≥80% **ALCANZADA** |
-| Servicios con lógica real (testeables) | **~30 servicios** — todos cubiertos excepto backoffice |
+| Cobertura actual | **82.68% branches, 95.72% statements, 97.54% functions, 96.77% lines** — Meta: ≥80% **ALCANZADA Y SUPERADA** |
+| Servicios con lógica real (testeables) | **~30 servicios** — todos cubiertos |
 | Archivos TypeScript en apps/server | **~145 archivos**, ~16,000+ líneas de código |
 | Modelos Prisma | **60+ modelos**, **28 enums** |
 | Tests existentes (shared-validation) | **43 tests** — client-schema, product-schema, create-sale-schema, user-login-schema |
 | Tests existentes (shared-types) | **11 tests** — enums.spec (consistencia contra Prisma) |
-| Tests existentes (apps/server) | **~657 tests** — todos los servicios core + Fase 3D completada + 10 controladores |
+| Tests existentes (apps/server) | **~776 tests** — todos los servicios core + Fase 3D + Fase 4A + Fase 4B completa |
 | Servicios SIN tests | **0 servicios** — Fase 3D completada al 100% |
-| Controladores SIN tests | **17 controladores** — catalog (2), pharmaceutical-forms, configuration, fiscal-dian (5), inventory-lots (3), purchases (4), reports, backoffice (1). Sync controller completado. |
+| Controladores SIN tests | **0 controladores** — Fase 4B completada al 100% (17 controladores nuevos con 114 tests) |
 | `moduleNameMapper` Jest | **CORREGIDO** — `@pharmacy/database` agregado a `jest.config.ts` y `jest.e2e.config.ts`. 27 suites destrabadas. |
 | PrismaService | **TIPADO** — extiende `PrismaClient` directamente. Test suite pasa. |
 
@@ -101,17 +101,17 @@ pharmacy-system/
 | Módulo | Estado de implementación | Estado de tests |
 |--------|-------------------------|-----------------|
 | `auth/` | FULL | ✅ **CUBIERTO** — service, controller, session, password-hasher, ambas strategies |
-| `catalog/` | FULL | ✅ **CUBIERTO** — ProductsService, CategoriesService, TaxSchemesService, CatalogService (facade), PharmaceuticalFormsService + 3 controllers |
+| `catalog/` | FULL | ✅ **CUBIERTO** — todos los servicios + catalog controller + pharmaceutical-forms controller |
 | `sales-pos/` | FULL | ✅ **CUBIERTO** — SalesService, ClientReturnsService, ClientReturnCalculatorService + 2 controllers |
 | `cash-shift/` | FULL | ✅ **CUBIERTO** — service + controller |
 | `clients/` | FULL | ✅ **CUBIERTO** — service + controller |
-| `inventory-lots/` | FULL | ✅ **CUBIERTO** — LotsService, InventoryMovementsService, InventoryAdjustmentsService, PhysicalCountsService + LotsController. 3 controllers sin tests. |
-| `configuration/` | FULL | ✅ **CUBIERTO** — ConfigurationService, PosSettingsService. Controller sin tests. |
-| `fiscal-dian/` | FULL | ✅ **CUBIERTO** — 5 services. 5 controllers sin tests. |
-| `purchases/` | FULL | ✅ **CUBIERTO** — PurchaseOrdersService, SuppliersService, PurchaseReceptionsService, SupplierReturnsService. 4 controllers sin tests. |
-| `reports/` | FULL | ✅ **CUBIERTO** — ReportsService. Controller sin tests. |
-| `sync/` | FULL | ✅ **CUBIERTO** — SyncService, SyncHealthService, SyncOperationDispatcherService, SyncProcessingJob + SyncController. SyncHealthController (backoffice) sin tests. |
-| `backoffice/` | FULL | 🔴 **SIN TESTS** — SyncHealthController sin spec |
+| `inventory-lots/` | FULL | ✅ **CUBIERTO** — todos los servicios + lots controller + inventory-movements controller + inventory-adjustments controller + physical-counts controller |
+| `configuration/` | FULL | ✅ **CUBIERTO** — ConfigurationService, PosSettingsService + configuration controller |
+| `fiscal-dian/` | FULL | ✅ **CUBIERTO** — 5 services + 5 controllers |
+| `purchases/` | FULL | ✅ **CUBIERTO** — todos los servicios + purchase-orders controller + purchase-receptions controller + supplier-returns controller + suppliers controller |
+| `reports/` | FULL | ✅ **CUBIERTO** — ReportsService + reports controller |
+| `sync/` | FULL | ✅ **CUBIERTO** — todos los servicios + SyncController + SyncHealthController (backoffice) |
+| `backoffice/` | FULL | ✅ **CUBIERTO** — SyncHealthController cubierto vía sync-health.controller.spec |
 
 ### Bugs corregidos durante Fase 4
 
@@ -431,11 +431,11 @@ El plan se ejecuta en **6 fases**, priorizando lo que ya tiene lógica de negoci
 │ Fase 3C: Resto servicios            ████████████████████  3-4 días   ~96  │ ✅ COMPLETO
 │ Fase 3D: Servicios faltantes        ████████████████████  6-8 días  ~272  │ ✅ COMPLETO
 │ Fase 4A: Controladores cubiertos    ████████████████████  3-4 días   ~88  │ ✅ COMPLETO
-│ Fase 4B: Controladores faltantes    ░░░░░░░░░░░░░░░░░░░░  5-7 días  ~128  │ 🟡 PARCIAL (1/17 completado)
+│ Fase 4B: Controladores faltantes    ████████████████████  5-7 días  ~128  │ ✅ COMPLETO (17/17, 114 tests)
 │ Fase 5: Tests E2E                   ██░░░░░░░░░░░░░░░░░░  5-7 días  ~24  │ 🟡 EN PROGRESO (infraestructura lista, 2/8 flujos)
 │ Fase 6: CI/CD + Utilidades          ░░░░░░░░░░░░░░░░░░░░  2-3 días   --   │ 🔴 PENDIENTE
 ├──────────────────────────────────────────────────────────────────────────────────────┤
-│ TOTAL IMPLEMENTADO: ~711 tests / ~760+ tests estimados (12-18 días restantes)        │
+│ TOTAL IMPLEMENTADO: ~830 tests / ~860+ tests estimados (7-12 días restantes)        │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1641,7 +1641,7 @@ El guard extiende `AuthGuard('jwt')` de Passport (5 líneas, sin lógica adicion
 
 **Estrategia:** `Test.createTestingModule` con el controlador y su servicio mockeado. Se instancia el controlador y se llama a sus métodos directamente. Los guards y pipes ya fueron testeados en Fase 2.
 
-**Estado:** ✅ **IMPLEMENTADO** — 9 spec files, **88 tests** pasando.
+**Estado:** ✅ **COMPLETO (Fase 4A + 4B)** — **26 spec files, ~202 tests** pasando (88 de Fase 4A + 114 de Fase 4B). Todos los controladores cubiertos.
 
 ### 8.1 Estructura base utilizada
 
@@ -1712,73 +1712,35 @@ describe('SomeController (integration)', () => {
 
 **Total tests de integración implementados: 88**
 
-### 8.3 Controladores sin tests (Fase 4B)
+### 8.3 Controladores completados (Fase 4B)
 
-**Objetivo:** Completar tests de integración para los 17 controladores que actualmente no tienen spec.
+**Objetivo:** Completar tests de integración para los 17 controladores que no tenían spec.
 
-**Estado:** 🟡 **PARCIAL** — SyncController completado (12 tests). Restan 16 controladores (~128 tests estimados).
+**Estado:** ✅ **COMPLETO** — **17 spec files, 114 tests** implementados y pasando.
 
 **Estrategia:** Misma que Fase 4A — `Test.createTestingModule` con servicio mockeado, verificar delegación de parámetros y propagación de errores.
 
-#### 8.3.1 Catalog
+| Módulo | Controlador | Archivo de test | Endpoints cubiertos | Tests | Resultado |
+|--------|-------------|-----------------|---------------------|-------|-----------|
+| **Catalog** | `catalog.controller.ts` | `catalog.controller.spec.ts` | `GET /products`, `GET /products/:id`, `POST /products`, `PATCH /products/:id`, `GET /categories`, `GET /pharmaceutical-forms`, `GET /tax-schemes` | 7 | ✅ |
+| | `pharmaceutical-forms.controller.ts` | `pharmaceutical-forms.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id` | 8 | ✅ |
+| **Configuration** | `configuration.controller.ts` | `configuration.controller.spec.ts` | `GET /pos-settings`, `GET /`, `GET /:key`, `PATCH /:key` | 9 | ✅ |
+| **Fiscal DIAN** | `fiscal-documents.controller.ts` | `fiscal-documents.controller.spec.ts` | `GET /`, `GET /:id`, `GET /:id/xml`, `POST /:id/retry` | 6 | ✅ |
+| | `fiscal-resolutions.controller.ts` | `fiscal-resolutions.controller.spec.ts` | `GET /`, `GET /:id`, `POST /` | 6 | ✅ |
+| | `fiscal-issuer-config.controller.ts` | `fiscal-issuer-config.controller.spec.ts` | `GET /`, `PATCH /` | 3 | ✅ |
+| | `tech-provider-config.controller.ts` | `tech-provider-config.controller.spec.ts` | `GET /`, `PATCH /` | 3 | ✅ |
+| | `fiscal-resolution-allocations.controller.ts` | `fiscal-resolution-allocations.controller.spec.ts` | `GET /`, `GET /:id`, `POST /` | 6 | ✅ |
+| **Inventory Lots** | `inventory-adjustments.controller.ts` | `inventory-adjustments.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/submit`, `POST /:id/approve`, `POST /:id/reject`, `POST /:id/apply`, `POST /:id/annul` | 10 | ✅ |
+| | `inventory-movements.controller.ts` | `inventory-movements.controller.spec.ts` | `GET /` | 2 | ✅ |
+| | `physical-counts.controller.ts` | `physical-counts.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/count-lines`, `POST /:id/finish`, `POST /:id/review`, `POST /:id/approve`, `POST /:id/apply`, `POST /:id/annul` | 13 | ✅ |
+| **Purchases** | `purchase-orders.controller.ts` | `purchase-orders.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/confirm`, `POST /:id/annul` | 7 | ✅ |
+| | `purchase-receptions.controller.ts` | `purchase-receptions.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/confirm`, `POST /:id/annul` | 7 | ✅ |
+| | `supplier-returns.controller.ts` | `supplier-returns.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/confirm`, `POST /:id/approve`, `POST /:id/annul` | 8 | ✅ |
+| | `suppliers.controller.ts` | `suppliers.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id` | 7 | ✅ |
+| **Reports** | `reports.controller.ts` | `reports.controller.spec.ts` | `GET /sales-summary`, `GET /cash-shift-summary`, `GET /inventory-valuation`, `GET /tax-summary` | 8 | ✅ |
+| **Backoffice** | `sync-health.controller.ts` | `sync-health.controller.spec.ts` | `GET /sync-health`, `GET /permanent-failures` | 7 | ✅ |
 
-| Controlador | Archivo de test | Endpoints | Tests estimados |
-|-------------|----------------|-----------|-----------------|
-| `catalog.controller.ts` | `catalog.controller.spec.ts` | `GET /products`, `GET /products/:id`, `POST /products`, `PATCH /products/:id`, `GET /categories`, `GET /pharmaceutical-forms`, `GET /tax-schemes` | ~10 |
-| `pharmaceutical-forms.controller.ts` | `pharmaceutical-forms.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id` | ~6 |
-
-#### 8.3.2 Configuration
-
-| Controlador | Archivo de test | Endpoints | Tests estimados |
-|-------------|----------------|-----------|-----------------|
-| `configuration.controller.ts` | `configuration.controller.spec.ts` | `GET /pos-settings`, `GET /`, `GET /:key`, `PATCH /:key` | ~8 |
-
-#### 8.3.3 Fiscal DIAN
-
-| Controlador | Archivo de test | Endpoints | Tests estimados |
-|-------------|----------------|-----------|-----------------|
-| `fiscal-documents.controller.ts` | `fiscal-documents.controller.spec.ts` | `GET /`, `GET /:id`, `GET /:id/xml`, `POST /:id/retry` | ~7 |
-| `fiscal-resolutions.controller.ts` | `fiscal-resolutions.controller.spec.ts` | `GET /`, `GET /:id`, `POST /` | ~6 |
-| `fiscal-issuer-config.controller.ts` | `fiscal-issuer-config.controller.spec.ts` | `GET /`, `PATCH /` | ~4 |
-| `tech-provider-config.controller.ts` | `tech-provider-config.controller.spec.ts` | `GET /`, `PATCH /` | ~4 |
-| `fiscal-resolution-allocations.controller.ts` | `fiscal-resolution-allocations.controller.spec.ts` | `GET /`, `GET /:id`, `POST /` | ~6 |
-
-#### 8.3.4 Inventory Lots
-
-| Controlador | Archivo de test | Endpoints | Tests estimados |
-|-------------|----------------|-----------|-----------------|
-| `inventory-adjustments.controller.ts` | `inventory-adjustments.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/submit`, `POST /:id/approve`, `POST /:id/reject`, `POST /:id/apply`, `POST /:id/annul` | ~12 |
-| `inventory-movements.controller.ts` | `inventory-movements.controller.spec.ts` | `GET /` | ~3 |
-| `physical-counts.controller.ts` | `physical-counts.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/count-lines`, `POST /:id/finish`, `POST /:id/review`, `POST /:id/approve`, `POST /:id/apply`, `POST /:id/annul` | ~13 |
-
-#### 8.3.5 Purchases
-
-| Controlador | Archivo de test | Endpoints | Tests estimados |
-|-------------|----------------|-----------|-----------------|
-| `purchase-orders.controller.ts` | `purchase-orders.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/confirm`, `POST /:id/annul` | ~8 |
-| `purchase-receptions.controller.ts` | `purchase-receptions.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/confirm`, `POST /:id/annul` | ~8 |
-| `supplier-returns.controller.ts` | `supplier-returns.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `POST /:id/confirm`, `POST /:id/approve`, `POST /:id/annul` | ~9 |
-| `suppliers.controller.ts` | `suppliers.controller.spec.ts` | `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id` | ~8 |
-
-#### 8.3.6 Reports
-
-| Controlador | Archivo de test | Endpoints | Tests estimados |
-|-------------|----------------|-----------|-----------------|
-| `reports.controller.ts` | `reports.controller.spec.ts` | `GET /sales-summary`, `GET /cash-shift-summary`, `GET /inventory-valuation`, `GET /tax-summary` | ~8 |
-
-#### 8.3.7 Sync
-
-| Controlador | Archivo de test | Endpoints | Tests implementados |
-|-------------|----------------|-----------|-------------------|
-| `sync.controller.ts` | `sync.controller.spec.ts` | `POST /batch`, `GET /status`, `GET /queue`, `GET /queue/:id`, `POST /queue/:id/retry`, `GET /health`, `GET /health/workstations`, `GET /health/permanent-failures` | **12 tests** ✅ COMPLETO |
-
-#### 8.3.8 Backoffice
-
-| Controlador | Archivo de test | Endpoints | Tests estimados |
-|-------------|----------------|-----------|-----------------|
-| `sync-health.controller.ts` | `sync-health.controller.spec.ts` | `GET /sync-health`, `GET /permanent-failures` | ~5 |
-
-**TOTAL estimado Fase 4B: ~140 tests**
+**TOTAL Fase 4B: 17 spec files, 114 tests**
 
 #### 8.3.9 Verificaciones para cada controlador
 
@@ -1788,6 +1750,12 @@ Cada test de integración de controlador verifica:
 2. **Propagación de errores**: Las excepciones del servicio se propagan sin ser capturadas por el controlador.
 3. **Mapeo de respuestas**: El valor retornado se devuelve directamente.
 4. **Casos edge**: Parámetros opcionales ausentes, IDs inválidos, strings vacíos.
+
+#### 8.3.10 Hallazgos durante Fase 4B
+
+1. **`@pharmacy/database` enum mocking**: Para controladores con DTOs que importan enums de `@pharmacy/database` (ej. `SupplierIdentificationType`), el `jest.mock('@pharmacy/database', ...)` debe exportar el enum para que `Zod.nativeEnum()` funcione en tiempo de evaluación del módulo.
+2. **`jest.mock` hoisting con `moduleNameMapper`**: Funciona correctamente para `@pharmacy/database` cuando el mock factory exporta todos los símbolos necesarios (incluyendo `Prisma.Decimal` y enums).
+3. **Patrón consistente**: Mock del servicio con `jest.fn()` methods, `Test.createTestingModule` solo con controller + service mock, llamar métodos del controller directamente con argumentos mock.
 
 ---
 
@@ -2415,16 +2383,16 @@ export function generateExpiredToken(payload: {
 | **F3C** | Sales + Cash + Clients + Inventory | 6 spec files | ~96 | 3-4 | ✅ COMPLETO |
 | **F3D** | Servicios faltantes (fiscal-dian, sync, purchases, reports, config, catalog-facade, inventory-adjustments, physical-counts) | 27 spec files (+10 jobs/controllers) | ~272 | 6-8 | ✅ COMPLETO |
 | **F4A** | Controladores cubiertos (auth, products, categories, tax-schemes, sales, cash-shift, clients, lots, client-returns) | 9 spec files | ~88 | 3-4 | ✅ COMPLETO |
-| **F4B** | Controladores faltantes (catalog, config, fiscal-dian, inventory, purchases, reports, backoffice) | 17 spec files | ~128 | 5-7 | 🟡 PARCIAL (1/17, sync completado) |
+| **F4B** | Controladores faltantes (catalog, config, fiscal-dian, inventory, purchases, reports, backoffice) | 17 spec files | 114 | 5-7 | ✅ COMPLETO (17/17) |
 | **F5** | E2E flujos críticos (8 flujos: auth, sale-lifecycle, catalog, account-lockout, client-return, habeas-data, cash-shift, fifo-stock) | 8 e2e-spec files | ~24 | 5-7 | 🟡 PARCIAL (infraestructura lista, 2/8 implementados) |
 | **F6** | CI/CD, utilidades de testing, documentación | — | — | 2-3 | 🔴 PENDIENTE |
-| **TOTAL COMPLETADO** | | **54 spec files** | **~711 tests** | **~22 días** | |
-| **TOTAL RESTANTE** | | **~17 spec files** | **~152 tests** | **~12-18 días** | |
+| **TOTAL COMPLETADO** | | **71 spec files** | **~830 tests** | **~30 días** | |
+| **TOTAL RESTANTE** | | **~8 spec files** | **~24 tests** | **~7-12 días** | |
 
 ### Distribución por tipo de test
 
 ```
-Ya implementados (F1 + F2 + F3A-D + F4A + parcial F4B):    711 tests  (79%)
+Ya implementados (F1 + F2 + F3A-D + F4A + F4B):             830 tests  (97%)
   ├── shared-validation (Zod schemas):                       43 tests
   ├── shared-types (enums):                                  11 tests
   ├── env.schema:                                            10 tests
@@ -2478,13 +2446,29 @@ Ya implementados (F1 + F2 + F3A-D + F4A + parcial F4B):    711 tests  (79%)
   ├── [F3D BAJA] InventoryAdjustmentsService:               24 tests
   ├── [F3D BAJA] PhysicalCountsService:                     24 tests
   ├── [F3D BAJA] SyncProcessingJob:                          3 tests
-  └── [F4B] SyncController (integración):                   12 tests
+  ├── [F4B] SyncController (integración):                   12 tests
+  ├── [F4B] CatalogController (integración):                 7 tests
+  ├── [F4B] PharmaceuticalFormsController (integración):     8 tests
+  ├── [F4B] ConfigurationController (integración):           9 tests
+  ├── [F4B] FiscalDocumentsController (integración):         6 tests
+  ├── [F4B] FiscalResolutionsController (integración):       6 tests
+  ├── [F4B] FiscalIssuerConfigController (integración):      3 tests
+  ├── [F4B] TechProviderConfigController (integración):      3 tests
+  ├── [F4B] FiscalResolutionAllocationsController (int.):    6 tests
+  ├── [F4B] InventoryAdjustmentsController (integración):   10 tests
+  ├── [F4B] InventoryMovementsController (integración):      2 tests
+  ├── [F4B] PhysicalCountsController (integración):         13 tests
+  ├── [F4B] PurchaseOrdersController (integración):          7 tests
+  ├── [F4B] PurchaseReceptionsController (integración):      7 tests
+  ├── [F4B] SupplierReturnsController (integración):         8 tests
+  ├── [F4B] SuppliersController (integración):               7 tests
+  ├── [F4B] ReportsController (integración):                 8 tests
+  └── [F4B] SyncHealthController (integración):              7 tests
 
-Pendientes (F4B + F5 + F6):                            ~152 tests  (21%)
-  ├── F4B Controladores faltantes:                         ~128 tests
+Pendientes (F5 + F6):                                    ~24 tests  (3%)
   ├── F5 E2E (flujos críticos restantes):                   ~24 tests
   └── F6 CI/CD + utilidades:                                  — tests
-                                                             ─────────
+                                                              ─────────
 TOTAL (cuando esté completo):                              ~860+ tests
 ```
 
@@ -2496,13 +2480,13 @@ sales-pos/          ████████████████████
 cash-shift/         ████████████████████ 100%   (2/2 specs)
 clients/            ████████████████████ 100%   (2/2 specs)
 catalog/            ████████████████████ 100%   (10/10 specs — facade + pharm-forms incluidos)
-inventory-lots/     ████████████████████ 100%   (6/9 specs — falta inventory-movements ctrl + 2 ctrls)
-purchases/          ████████████████████ 100%   (5/8 specs — falta 4 controllers, suppliers controller existente)
-configuration/      ████████████████████ 100%   (3/3 specs — services completos, falta controller)
-fiscal-dian/        ████████████████████ 100%   (6/10 specs — 5 services + controller pendientes)
-reports/            ████████████████████ 100%   (1/2 specs — service completo, falta controller)
-sync/               ████████████████████ 100%   (5/5 specs — services + job + controller completos)
-backoffice/         ░░░░░░░░░░░░░░░░░░░░   0%   (0/1 specs)
+inventory-lots/     ████████████████████ 100%   (9/9 specs — services + todos los controllers)
+purchases/          ████████████████████ 100%   (8/8 specs — todos los services + controllers)
+configuration/      ████████████████████ 100%   (4/4 specs — services + controller)
+fiscal-dian/        ████████████████████ 100%   (10/10 specs — 5 services + 5 controllers)
+reports/            ████████████████████ 100%   (2/2 specs — service + controller)
+sync/               ████████████████████ 100%   (6/6 specs — services + job + sync controller + backoffice health)
+backoffice/         ████████████████████ 100%   (1/1 specs — sync-health controller)
 
 common + infra:     ████████████████████ 100%   (5/5 specs + jwt-auth-guard sin lógica)
 ```
@@ -2519,12 +2503,11 @@ Día 12-13:   Fase 3C (continuación: InventoryMovements, PurchaseOrders, Suppli
 Día 14-16:   Fase 4A (Controladores: integración — 88 tests)                 ← COMPLETADO
 Día 17:      Fase 5 (E2E: infraestructura Docker + Prisma 7 config)          ← COMPLETADO
 Día 18:      Corrección moduleNameMapper + mocks (lotes, purchase-orders, returns) ← COMPLETADO
-             ────────────────────────────────────────────────────────────────
-Día 19-21:   Fase 3D alta prioridad (FiscalDocumentsService, SyncService, PurchaseReceptionsService)  ← COMPLETADO
+              ────────────────────────────────────────────────────────────────
+Día 19-21:   Fase 3D alta prioridad (fiscal-dian, sync, purchases)                                   ← COMPLETADO
 Día 22-24:   Fase 3D media prioridad (Reports, Configuration, Catalog facade, PharmaceuticalForms)    ← COMPLETADO
 Día 25-26:   Fase 3D baja prioridad (InventoryAdjustments, PhysicalCounts full, jobs)                 ← COMPLETADO
-Día 27-29:   Fase 4B alta prioridad (fiscal-dian controllers, sync controller completado, purchases controllers)  🟡 PARCIAL
-Día 30-33:   Fase 4B media prioridad (catalog, configuration, inventory, reports, backoffice)                    🔴 PENDIENTE
+Día 27-33:   Fase 4B (17 controladores completados — 114 tests)                                                  ✅ COMPLETO
 Día 34-38:   Fase 5 (E2E: 6 flujos críticos restantes)                                                          🔴 PENDIENTE
 Día 39-40:   Fase 6 (CI/CD, utilidades, documentación)                                                          🔴 PENDIENTE
 ```
