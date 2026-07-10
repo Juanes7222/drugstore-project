@@ -43,8 +43,8 @@ interface ActivatedStoreParams {
 function setActivatedStore(params: ActivatedStoreParams = {}): void {
   const {
     status = LicenseStatus.ACTIVE,
-    daysUntilExpiry = 45,
-    daysUntilGracePeriodEnd = null,
+    daysUntilExpiry,
+    daysUntilGracePeriodEnd,
     checkInsLast30Days = 12,
   } = params;
 
@@ -74,13 +74,11 @@ function setActivatedStore(params: ActivatedStoreParams = {}): void {
   // Override check-in count
   useLicenseStore.getState().updateCheckInCount(checkInsLast30Days);
 
-  // Override days if provided
-  if (daysUntilExpiry !== undefined) {
-    useLicenseStore.setState({ daysUntilExpiry });
-  }
-  if (daysUntilGracePeriodEnd !== null && daysUntilGracePeriodEnd !== undefined) {
-    useLicenseStore.setState({ daysUntilGracePeriodEnd });
-  }
+  // Override specific fields — write them after activation so they take effect
+  useLicenseStore.setState({
+    daysUntilExpiry,
+    daysUntilGracePeriodEnd,
+  });
 
   // Transition to the requested status if not ACTIVE
   if (status === LicenseStatus.GRACE_PERIOD) {
@@ -163,9 +161,10 @@ describe("LicenseStatusPage", () => {
       setActivatedStore({ status: LicenseStatus.GRACE_PERIOD, daysUntilGracePeriodEnd: 3 });
       render(<LicenseStatusPage />);
 
-      expect(
-        screen.getByText(/período de gracia/i),
-      ).toBeInTheDocument();
+      // Both the status badge and the grace section label contain "período de gracia"
+      const matches = screen.getAllByText(/período de gracia/i);
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+      expect(matches[0]).toBeVisible();
     });
 
     it("shows 'Bloqueada' for LOCKED status", () => {
@@ -262,7 +261,7 @@ describe("LicenseStatusPage", () => {
     });
 
     it("shows an em dash when daysUntilExpiry is null", () => {
-      setActivatedStore({ daysUntilExpiry: null! });
+      setActivatedStore({ daysUntilExpiry: undefined as unknown as number });
       render(<LicenseStatusPage />);
 
       // The value should show "—" which is the em dash rendered by formatDate

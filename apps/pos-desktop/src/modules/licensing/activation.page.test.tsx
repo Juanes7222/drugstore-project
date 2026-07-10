@@ -9,6 +9,10 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { LicenseStatus } from "@pharmacy/shared-types";
 import { useLicenseStore } from "../../domain/licensing/license.store";
 import { ActivationPage } from "./activation.page";
+import {
+  ActivationFailedException,
+  AlreadyActivatedException,
+} from "../../domain/licensing/exceptions";
 
 // ---------------------------------------------------------------------------
 // Mock dependencies
@@ -38,28 +42,34 @@ vi.mock("@/hooks/use-online-status", () => ({
 // ---------------------------------------------------------------------------
 
 function setLicenseStatus(status: LicenseStatus): void {
-  if (status === LicenseStatus.ACTIVE) {
-    useLicenseStore.getState().setActivated({
-      activationToken: "token",
-      expiresAt: "2027-01-01T00:00:00.000Z",
-      subscription: { id: "s-1", status: "ACTIVE", currentPeriodEnd: "2027-01-01T00:00:00.000Z", gracePeriodDays: 7 },
-      plan: { id: "p-1", code: "BASIC", name: "Basic", features: [], maxLocations: 1, maxWorkstationsPerLocation: 1 },
-      location: null,
-      workstationActivation: { id: "w-1", workstationName: "Caja-01", activatedAt: "2026-01-01T00:00:00.000Z" },
-      hardwareFingerprint: "fp-001",
-    });
-    return;
+  const baseData = {
+    activationToken: "token",
+    expiresAt: "2027-01-01T00:00:00.000Z",
+    subscription: { id: "s-1", status: "ACTIVE", currentPeriodEnd: "2027-01-01T00:00:00.000Z", gracePeriodDays: 7 },
+    plan: { id: "p-1", code: "BASIC", name: "Basic", features: [], maxLocations: 1, maxWorkstationsPerLocation: 1 },
+    location: null,
+    workstationActivation: { id: "w-1", workstationName: "Caja-01", activatedAt: "2026-01-01T00:00:00.000Z" },
+    hardwareFingerprint: "fp-001",
+  };
+
+  switch (status) {
+    case LicenseStatus.ACTIVE:
+      useLicenseStore.getState().setActivated(baseData);
+      return;
+    case LicenseStatus.GRACE_PERIOD:
+      useLicenseStore.getState().setActivated(baseData);
+      useLicenseStore.getState().setGracePeriod(5);
+      return;
+    case LicenseStatus.LOCKED:
+      useLicenseStore.getState().setLocked();
+      return;
+    case LicenseStatus.REVOKED:
+      useLicenseStore.getState().setRevoked();
+      return;
+    default:
+      // UNACTIVATED — already the default
+      useLicenseStore.getState().reset();
   }
-  if (status === LicenseStatus.LOCKED) {
-    useLicenseStore.getState().setLocked();
-    return;
-  }
-  if (status === LicenseStatus.REVOKED) {
-    useLicenseStore.getState().setRevoked();
-    return;
-  }
-  // UNACTIVATED — already the default
-  useLicenseStore.getState().reset();
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +255,7 @@ describe("ActivationPage", () => {
         expect(mockActivate).toHaveBeenCalledWith(
           "ABCDEFGH", // raw code without dashes
           "Caja-01",
-          expect.any(Object),
+          undefined, // no location data when fields are empty
         );
       });
     });
@@ -336,9 +346,7 @@ describe("ActivationPage", () => {
 
   describe("error handling", () => {
     it("shows the exception message when ActivationFailedException is thrown", async () => {
-      mockActivate.mockRejectedValue(
-        Object.assign(new Error("Código inválido"), { errorCode: "ACTIVATION_FAILED" }),
-      );
+      mockActivate.mockRejectedValue(new ActivationFailedException("Código inválido"));
 
       render(<ActivationPage />);
 
@@ -356,9 +364,7 @@ describe("ActivationPage", () => {
     });
 
     it("shows the exception message when AlreadyActivatedException is thrown", async () => {
-      mockActivate.mockRejectedValue(
-        Object.assign(new Error("Este punto de venta ya está activado."), { errorCode: "ALREADY_ACTIVATED" }),
-      );
+      mockActivate.mockRejectedValue(new AlreadyActivatedException());
 
       render(<ActivationPage />);
 
@@ -376,7 +382,7 @@ describe("ActivationPage", () => {
     });
 
     it("shows a generic error for unknown exceptions", async () => {
-      mockActivate.mockRejectedValue(new Error("Algo salió mal"));
+      mockActivate.mockRejectedValue(new DOMException("Algo salió mal"));
 
       render(<ActivationPage />);
 
@@ -394,9 +400,7 @@ describe("ActivationPage", () => {
     });
 
     it("clears the error when the user modifies the code input", async () => {
-      mockActivate.mockRejectedValue(
-        Object.assign(new Error("Código inválido"), { errorCode: "ACTIVATION_FAILED" }),
-      );
+      mockActivate.mockRejectedValue(new ActivationFailedException("Código inválido"));
 
       render(<ActivationPage />);
 
