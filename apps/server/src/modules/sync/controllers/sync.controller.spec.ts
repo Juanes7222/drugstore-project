@@ -12,6 +12,7 @@ import { BadRequestException } from '@nestjs/common';
 import { SyncController } from './sync.controller';
 import { SyncService } from '../services/sync.service';
 import { SyncHealthService } from '../services/sync-health.service';
+import { InvoiceTransmissionResultService } from '../services/invoice-transmission-result.service';
 import { LocalNumberHintQuerySchema } from '../dto/local-number-hint-query.dto';
 
 const mockSyncService = {
@@ -27,6 +28,11 @@ const mockSyncHealthService = {
   getHealth: jest.fn(),
 };
 
+const mockInvoiceTransmissionResultService = {
+  saveResult: jest.fn(),
+  findResultsForWorkstation: jest.fn(),
+};
+
 describe('SyncController', () => {
   let controller: SyncController;
   let service: jest.Mocked<typeof mockSyncService>;
@@ -39,6 +45,7 @@ describe('SyncController', () => {
       providers: [
         { provide: SyncService, useValue: mockSyncService },
         { provide: SyncHealthService, useValue: mockSyncHealthService },
+        { provide: InvoiceTransmissionResultService, useValue: mockInvoiceTransmissionResultService },
       ],
     }).compile();
 
