@@ -15,10 +15,33 @@ datasource db {
 // Enums for Auth & Catalog domains
 
 enum RoleType {
+  SAAS_ADMIN
+  OWNER
+  MANAGER
   CASHIER
   INVENTORY_ASSISTANT
   ADMIN
   ACCOUNTANT
+}
+
+enum UserStatus {
+  PENDING_SETUP
+  ACTIVE
+  DISABLED
+  LOCKED
+}
+
+enum AuthMethod {
+  PASSWORD_TOTP
+  PASSWORD_ONLY
+  PIN_ONLY
+  OAUTH_GOOGLE
+}
+
+enum SessionStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
 }
 
 enum SessionRevocationReason {
@@ -29,6 +52,21 @@ enum SessionRevocationReason {
   ADMIN_REVOCATION
   PASSWORD_CHANGED
   TOKEN_EXPIRATION
+  NEW_LOGIN_EVICT
+  SECURITY_ANOMALY
+  STEP_UP_EXPIRY
+}
+
+enum StepUpStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+}
+
+enum TwoFactorMethod {
+  TOTP
+  BACKUP_CODE
 }
 
 enum SaleType {
@@ -285,30 +323,49 @@ enum AuditAction {
 /// The `uuid` npm package is used at the service layer, not a Prisma-level default.
 model User {
   id                        String    @id
-  username                  String    @unique
-  fullName                  String
-  email                     String?
-  passwordHash              String
-  passwordAlgorithm         String
-  passwordChangedAt         DateTime?
-  passwordMustChangeNextLogin Boolean  @default(false)
+  subscriptionId            String?
   role                      RoleType
+  email                     String?   @unique
+  username                  String?
+  fullName                  String
+  displayName               String?
+  avatarUrl                 String?
+  avatarColor               String?
+  authMethod                AuthMethod @default(PASSWORD_ONLY)
+  passwordHash              String?
+  passwordAlgorithm         String?
+  pinHash                   String?
+  totpSecretEncrypted       String?   @db.Text
+  totpEnabled               Boolean   @default(false)
+  backupCodesHash           String?   @db.Text
+  passwordChangedAt         DateTime?
+  lastPasswordChangeAt      DateTime?
+  passwordMustChangeNextLogin Boolean @default(false)
+  status                    UserStatus @default(PENDING_SETUP)
   isActive                  Boolean   @default(true)
   failedLoginAttempts       Int       @default(0)
   lockedUntil               DateTime?
+  emailVerifiedAt           DateTime?
+  phoneVerifiedAt           DateTime?
   lastLoginAt               DateTime?
   lastLoginWorkstationId    String?
+  mustChangePassword        Boolean   @default(false)
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
   createdById               String?
   createdByUser             User?     @relation("CreatedByUser", fields: [createdById], references: [id], onDelete: NoAction)
   createdUsers              User[]    @relation("CreatedByUser")
   sessions                  UserSession[]
+  revokedSessions           UserSession[] @relation("RevokedByUser")
+  locationAccess            UserLocationAccess[]
+  stepUpRequests            StepUpRequest[] @relation("RequestingUser")
+  approvedStepUps           StepUpRequest[] @relation("ApprovingUser")
+  deniedStepUps             StepUpRequest[] @relation("DenyingUser")
+  loginAttempts             LoginAttempt[]
   taxSchemes                TaxScheme[]
   products                  Product[]
   productPriceHistories     ProductPriceHistory[]
   productTaxHistories       ProductTaxHistory[]
-  revokedSessions           UserSession[] @relation("RevokedByUser")
   createdClients            Client[] @relation("CreatedByUser")
   updatedClients            Client[] @relation("UpdatedByUser")
   lots                      Lot[]
@@ -344,29 +401,42 @@ model User {
   auditLogs                 AuditLog[]
 
   @@index([role])
+  @@index([subscriptionId, username])
+  @@index([subscriptionId, role])
+  @@index([status])
 }
 
 model UserSession {
-  id                String                  @id
-  userId            String
-  user              User                    @relation(fields: [userId], references: [id], onDelete: NoAction)
-  workstationId     String
-  workstation       Workstation             @relation(fields: [workstationId], references: [id])
-  tokenHash         String                  @unique
-  refreshTokenHash  String?
-  issuedAt          DateTime
-  lastActivityAt    DateTime
-  expiresAt         DateTime
-  revokedAt         DateTime?
-  revokedReason     SessionRevocationReason?
-  revokedByUserId   String?
-  revokedByUser     User?                   @relation("RevokedByUser", fields: [revokedByUserId], references: [id], onDelete: NoAction)
-  ipAddress         String?
-  userAgent         String?
-  auditLogs         AuditLog[]
+  id                      String                  @id
+  userId                  String
+  user                    User                    @relation(fields: [userId], references: [id], onDelete: NoAction)
+  workstationId           String
+  workstation             Workstation             @relation(fields: [workstationId], references: [id])
+  workstationFingerprint  String?
+  deviceInfo              String?
+  tokenHash               String                  @unique
+  refreshTokenHash        String?
+  accessTokenId           String?
+  refreshTokenId          String?
+  accessTokenExpiresAt    DateTime?
+  refreshTokenExpiresAt   DateTime?
+  issuedAt                DateTime
+  lastActiveAt            DateTime
+  expiresAt               DateTime
+  status                  SessionStatus           @default(ACTIVE)
+  revokedAt               DateTime?
+  revokedReason           SessionRevocationReason?
+  revokedByUserId         String?
+  revokedByUser           User?                   @relation("RevokedByUser", fields: [revokedByUserId], references: [id], onDelete: NoAction)
+  ipAddress               String?
+  userAgent               String?
+  geoCountry              String?
+  geoCity                 String?
+  auditLogs               AuditLog[]
 
-  @@index([userId, revokedAt])
+  @@index([userId, status])
   @@index([expiresAt])
+  @@index([tokenHash])
 }
 
 model Workstation {
@@ -390,6 +460,65 @@ model Workstation {
   syncQueueItems    SyncQueue[]
   syncQueueWorkstations SyncQueue[] @relation("SyncQueueWorkstation")
   auditLogs         AuditLog[]
+  stepUpRequests    StepUpRequest[]
+}
+
+/// Grants a user access to a specific location (for multi-location plans).
+/// OWNERs have implicit access to all locations in their subscription.
+/// MANAGERs are restricted to specific locations through this relation.
+model UserLocationAccess {
+  id          String    @id
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: NoAction)
+  locationId  String
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, locationId])
+  @@index([locationId])
+}
+
+/// Records a step-up authorization request for sensitive operations.
+model StepUpRequest {
+  id                String        @id
+  operationType     String
+  operationId       String?
+  requestingUserId  String
+  requestingUser    User          @relation("RequestingUser", fields: [requestingUserId], references: [id], onDelete: NoAction)
+  workstationId     String
+  requiredRole      RoleType
+  status            StepUpStatus  @default(PENDING)
+  method            String?
+  approvedByUserId  String?
+  approvedByUser    User?         @relation("ApprovingUser", fields: [approvedByUserId], references: [id], onDelete: NoAction)
+  deniedByUserId    String?
+  deniedByUser      User?         @relation("DenyingUser", fields: [deniedByUserId], references: [id], onDelete: NoAction)
+  denialReason      String?
+  approvalToken     String?       @unique
+  oneTimeCode       String?
+  expiresAt         DateTime
+  createdAt         DateTime      @default(now())
+
+  @@index([requestingUserId, status])
+  @@index([workstationId, status])
+  @@index([status, expiresAt])
+}
+
+/// Records every login attempt (success or failure) for audit and anomaly detection.
+model LoginAttempt {
+  id              String    @id
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id], onDelete: NoAction)
+  identifier      String
+  sessionType     String
+  workstationId   String?
+  ipAddress       String?
+  success         Boolean
+  failureReason   String?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([identifier, createdAt])
+  @@index([createdAt])
 }
 
 model Category {
