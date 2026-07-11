@@ -2,10 +2,10 @@ import { HttpStatus } from '@nestjs/common';
 import { DomainException } from '@/common/exceptions/domain.exception';
 
 export class AccountInactiveException extends DomainException {
-  constructor() {
+  constructor(message?: string) {
     super(
       'AUTH_ACCOUNT_INACTIVE',
-      'Account is inactive',
+      message ?? 'Account is inactive',
       HttpStatus.FORBIDDEN,
     );
   }

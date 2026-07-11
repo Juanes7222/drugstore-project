@@ -4,19 +4,15 @@ export class AuthResponseDto {
   accessToken!: string;
   refreshToken!: string;
   expiresAt!: Date;
-  user!: Omit<User, 'passwordHash' | 'passwordAlgorithm'>;
+  user!: Omit<User, 'passwordHash' | 'passwordAlgorithm' | 'pinHash'>;
+  sessionId?: string;
+  requiresTwoFactor?: boolean;
+  challengeToken?: string;
+  evictedSessionId?: string;
 
-  constructor(data?: {
-    accessToken: string;
-    refreshToken: string;
-    expiresAt: Date;
-    user: Omit<User, 'passwordHash' | 'passwordAlgorithm'>;
-  }) {
+  constructor(data?: Partial<AuthResponseDto>) {
     if (data) {
-      this.accessToken = data.accessToken;
-      this.refreshToken = data.refreshToken;
-      this.expiresAt = data.expiresAt;
-      this.user = data.user;
+      Object.assign(this, data);
     }
   }
 }

@@ -9,6 +9,10 @@ import { User } from '@pharmacy/shared-types';
 interface JwtPayload {
   sub: string;
   tokenHash: string;
+  jti?: string;
+  sessionId?: string;
+  role?: string;
+  subscriptionId?: string;
 }
 
 @Injectable()
@@ -29,6 +33,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // A valid JWT signature alone is not sufficient authorization in this system because
     // sessions can be revoked server-side (logout, inactivity, role change, admin revocation,
     // password change, token expiration) even before the JWT itself expires.
-    return this.authService.validateActiveSession(payload.sub, payload.tokenHash);
+    const user = await this.authService.validateActiveSession(
+      payload.sub,
+      payload.tokenHash,
+    );
+
+    // Attach additional JWT info to the user object for downstream use
+    (user as any).sessionId = payload.sessionId;
+    (user as any).subscriptionId = payload.subscriptionId || user.subscriptionId;
+
+    return user;
   }
 }

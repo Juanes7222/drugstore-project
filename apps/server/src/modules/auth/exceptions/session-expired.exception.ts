@@ -2,10 +2,10 @@ import { HttpStatus } from '@nestjs/common';
 import { DomainException } from '@/common/exceptions/domain.exception';
 
 export class SessionExpiredException extends DomainException {
-  constructor() {
+  constructor(message?: string) {
     super(
       'AUTH_SESSION_EXPIRED',
-      'Session has expired',
+      message ?? 'Session has expired',
       HttpStatus.UNAUTHORIZED,
     );
   }
