@@ -44,6 +44,19 @@ const PRINTER_TYPE_LABELS: Record<string, string> = {
   MULTIFUNCTION: 'Multifunción',
 };
 
+const PAPER_SIZE_LABELS: Record<string, string> = {
+  RECEIPT_80MM: '80 mm',
+  RECEIPT_58MM: '58 mm',
+  RECEIPT_76MM: '76 mm',
+  LETTER: 'Carta',
+  A4: 'A4',
+  LABEL_50X25: 'Etiqueta 50×25',
+  LABEL_62X29: 'Etiqueta 62×29',
+  LABEL_OTHER: 'Etiqueta',
+  CUSTOM: 'Personalizado',
+  UNKNOWN: 'Automático',
+};
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -90,6 +103,19 @@ export const SetupWizardStepFoundPrinters: FC<
         ...prev,
         friendlyNames: {
           ...prev.friendlyNames,
+          [systemName]: value,
+        },
+      }));
+    },
+    [setState],
+  );
+
+  const handlePaperSizeChange = useCallback(
+    (systemName: string, value: string) => {
+      setState((prev) => ({
+        ...prev,
+        paperSizes: {
+          ...prev.paperSizes,
           [systemName]: value,
         },
       }));
@@ -237,6 +263,134 @@ export const SetupWizardStepFoundPrinters: FC<
                         )}
                       </span>
                     )}
+                    {/* Paper size override */}
+                    <span
+                      className="relative inline-flex items-center gap-0.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <span className="relative">
+                        <select
+                          value={
+                            state.paperSizes[printer.systemName] ??
+                            'UNKNOWN'
+                          }
+                          onChange={(e) =>
+                            handlePaperSizeChange(
+                              printer.systemName,
+                              e.target.value,
+                            )
+                          }
+                          className="appearance-none rounded bg-gray-100 pl-1.5 pr-4 py-0.5 text-caption font-medium text-gray-600 cursor-pointer hover:bg-gray-200 focus:outline-none focus:ring-1 focus:ring-pharma"
+                          aria-label={t(
+                            'printing.wizard.found_printers.paper_size',
+                            'Tamaño de papel',
+                          )}
+                        >
+                          {Object.entries(PAPER_SIZE_LABELS).map(
+                            ([value, label]) => (
+                              <option key={value} value={value}>
+                                {label}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                        <svg
+                          className="pointer-events-none absolute right-0.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-gray-400"
+                          viewBox="0 0 10 6"
+                          fill="none"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d="M1 1l4 4 4-4"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                      {printer.detectionConfidence === 'high' && (
+                        <svg
+                          viewBox="0 0 14 14"
+                          fill="none"
+                          className="h-3 w-3 shrink-0 text-green-600"
+                          aria-label={t(
+                            'printing.wizard.found_printers.confidence_high',
+                            'Detección precisa',
+                          )}
+                        >
+                          <path
+                            d="M3 7L6 10L11 4"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                      {printer.detectionConfidence === 'low' && (
+                        <svg
+                          viewBox="0 0 14 14"
+                          fill="none"
+                          className="h-3 w-3 shrink-0 text-amber-500"
+                          aria-label={t(
+                            'printing.wizard.found_printers.confidence_low',
+                            'Detección incierta',
+                          )}
+                        >
+                          <circle
+                            cx="7"
+                            cy="7"
+                            r="6"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                          />
+                          <path
+                            d="M5.5 5.5a1.5 1.5 0 012.8-.8c.4.6.2 1.3-.3 1.6l-.5.3v1"
+                            stroke="currentColor"
+                            strokeWidth="1.3"
+                            strokeLinecap="round"
+                          />
+                          <circle
+                            cx="7"
+                            cy="10"
+                            r="0.5"
+                            fill="currentColor"
+                          />
+                        </svg>
+                      )}
+                      {printer.detectionConfidence === 'none' && (
+                        <svg
+                          viewBox="0 0 14 14"
+                          fill="none"
+                          className="h-3 w-3 shrink-0 text-red-400"
+                          aria-label={t(
+                            'printing.wizard.found_printers.confidence_none',
+                            'No detectado',
+                          )}
+                        >
+                          <path
+                            d="M7 1L1 13h12L7 1z"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M7 5v3.5"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                          />
+                          <circle
+                            cx="7"
+                            cy="10.5"
+                            r="0.75"
+                            fill="currentColor"
+                          />
+                        </svg>
+                      )}
+                    </span>
                   </div>
                 </motion.div>
               );

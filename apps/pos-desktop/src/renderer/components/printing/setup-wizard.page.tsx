@@ -46,6 +46,8 @@ export interface WizardState {
   selected: DiscoveredPrinter[];
   /** Friendly names assigned by the user. */
   friendlyNames: Record<string, string>;
+  /** Paper sizes per printer (auto-detected, overridable). */
+  paperSizes: Record<string, string>;
   /** Job type assignments per printer (indexed by systemName). */
   jobAssignments: Record<string, string[]>;
   /** Fallback printer ID per printer config ID. */
@@ -63,6 +65,7 @@ const INITIAL_STATE: WizardState = {
   discovered: [],
   selected: [],
   friendlyNames: {},
+  paperSizes: {},
   jobAssignments: {},
   fallbackConfig: {},
   testResults: {},
@@ -222,9 +225,17 @@ async function discoverPrinters(
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     const printers = await invoke<DiscoveredPrinter[]>('discover_printers');
+    // Populate paper sizes from auto-detection (user can override later)
+    const initialPaperSizes: Record<string, string> = {};
+    for (const p of printers) {
+      if (p.detectedPaperSize && p.detectedPaperSize !== 'UNKNOWN') {
+        initialPaperSizes[p.systemName] = p.detectedPaperSize;
+      }
+    }
     setState((prev) => ({
       ...prev,
       discovered: printers,
+      paperSizes: { ...prev.paperSizes, ...initialPaperSizes },
       isDiscovering: false,
     }));
   } catch {
@@ -242,7 +253,7 @@ async function saveConfiguration(
       systemName: printer.systemName,
       printerType: printer.printerType as any,
       connection: printer.connection as any,
-      paperSize: 'RECEIPT_80MM' as any,
+      paperSize: (state.paperSizes[printer.systemName] || 'RECEIPT_80MM') as any,
       supportsColor: printer.supportsColor,
       assignedJobs: state.jobAssignments[printer.systemName] ?? [],
       fallbackPrinterId: null,

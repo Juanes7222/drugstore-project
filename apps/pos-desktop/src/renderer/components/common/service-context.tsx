@@ -75,6 +75,10 @@ import {
   type ConfigExportService,
   createPrintingMetricsService,
   type PrintingMetricsService,
+  createCashDrawerService,
+  type CashDrawerService,
+  createCustomerDisplayService,
+  type CustomerDisplayService,
 } from "../../../domain/printing";
 import { isOnline } from "../../../common/is-online";
 
@@ -98,6 +102,8 @@ interface Services {
   printerHealthService: PrinterHealthService;
   configExportService: ConfigExportService;
   printingMetricsService: PrintingMetricsService;
+  cashDrawerService: CashDrawerService;
+  customerDisplayService: CustomerDisplayService;
 }
 
 type InitState =
@@ -179,6 +185,14 @@ export const useConfigExportService = (): ConfigExportService =>
 /** Convenience hook — returns the PrintingMetricsService instance. */
 export const usePrintingMetricsService = (): PrintingMetricsService =>
   useServiceContext().printingMetricsService;
+
+/** Convenience hook — returns the CashDrawerService instance. */
+export const useCashDrawerService = (): CashDrawerService =>
+  useServiceContext().cashDrawerService;
+
+/** Convenience hook — returns the CustomerDisplayService instance. */
+export const useCustomerDisplayService = (): CustomerDisplayService =>
+  useServiceContext().customerDisplayService;
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -305,6 +319,8 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
                 isDefault: boolean;
                 printerType: string;
                 supportsColor: boolean;
+                detectedPaperSize: string;
+                detectionConfidence: string;
               }>>('discover_printers');
               return discovered;
             } catch {
@@ -314,7 +330,11 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
         );
         const printingMetrics = createPrintingMetricsService(prismaClient);
 
-        // 4b. Create domain services (with fiscal service wired in)
+        // 4c. Create peripheral services
+        const cashDrawer = createCashDrawerService(printerConfig);
+        const customerDisplay = createCustomerDisplayService(printerConfig);
+
+        // 4d. Create domain services (with fiscal service wired in)
         const services: Services = {
           returnsService: createReturnsService(prismaClient, auth, invoiceService, printRouter),
           inventoryAdjustmentsService: createInventoryAdjustmentsService(prismaClient, auth),
@@ -331,6 +351,8 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
           printerHealthService: printerHealth,
           configExportService: configExport,
           printingMetricsService: printingMetrics,
+          cashDrawerService: cashDrawer,
+          customerDisplayService: customerDisplay,
         };
 
         // 5. Start the printer health check loop

@@ -1,10 +1,10 @@
-// LOCAL-ONLY schema fragment — Printer configuration and print job queue
-// for apps/pos-desktop.
+// LOCAL-ONLY schema fragment — Printer configuration, print job queue,
+// receipt templates, and peripheral device config for apps/pos-desktop.
 //
 // These models are intentionally not propagated to the server schema. They
 // exist only on the terminal to support local printer discovery, configuration,
-// and offline print queuing. Sync does not push PrinterConfig or PrintJob rows
-// — printing is entirely workstation-scoped.
+// peripheral control, and offline print queuing. Sync does not push any of
+// these rows — printing and peripherals are entirely workstation-scoped.
 
 enum PrinterType {
   THERMAL_RECEIPT
@@ -19,17 +19,21 @@ enum PrinterConnection {
   USB
   NETWORK
   BLUETOOTH
+  SERIAL
   SYSTEM_DEFAULT
 }
 
 enum PaperSize {
   RECEIPT_80MM
   RECEIPT_58MM
+  RECEIPT_76MM
   LETTER
   A4
   LABEL_50X25
+  LABEL_62X29
   LABEL_OTHER
   CUSTOM
+  UNKNOWN
 }
 
 enum PrinterStatus {
@@ -47,6 +51,7 @@ enum PrintJobType {
   CONTINGENCY_RECEIPT
   INVENTORY_REPORT
   SHIFT_CLOSE_REPORT
+  LABEL_PRINT
   TEST_PAGE
   OTHER
 }
@@ -56,6 +61,7 @@ enum PrintPayloadType {
   ESC_POS
   RAW
   HTML
+  LABEL_IMAGE
 }
 
 enum PrintJobStatus {
@@ -67,6 +73,19 @@ enum PrintJobStatus {
   RETRYING
 }
 
+enum TemplateFormat {
+  ESC_POS_LAYOUT
+  PDF_TEMPLATE
+  HTML_TEMPLATE
+}
+
+enum QRCodeContent {
+  INVOICE_NUMBER_AND_CUFE
+  CUFE_ONLY
+  INVOICE_URL
+  NONE
+}
+
 model PrinterConfig {
   id                     String          @id
   friendlyName           String
@@ -74,12 +93,19 @@ model PrinterConfig {
   printerType            PrinterType     @default(UNKNOWN)
   connection             PrinterConnection @default(USB)
   paperSize              PaperSize       @default(RECEIPT_80MM)
+  customPaperWidthMm     Float?
+  customPaperHeightMm    Float?
   supportsColor          Boolean         @default(false)
+  supportsDuplex         Boolean         @default(false)
   assignedJobs           String[]        @default([])
   fallbackPrinterId      String?
   fallbackPrinter        PrinterConfig?  @relation("FallbackChain", fields: [fallbackPrinterId], references: [id])
   fallbackFor            PrinterConfig[] @relation("FallbackChain")
   serverFallbackEnabled  Boolean         @default(false)
+  cashDrawerConfig       String?         @db.Text
+  customerDisplayConfig  String?         @db.Text
+  receiptTemplateId      String?
+  receiptTemplate        ReceiptTemplate? @relation(fields: [receiptTemplateId], references: [id])
   status                 PrinterStatus   @default(UNKNOWN)
   lastStatusCheck        DateTime?
   lastErrorMessage       String?
@@ -100,19 +126,42 @@ model PrintJob {
   printerConfig      PrinterConfig?  @relation(fields: [printerConfigId], references: [id])
   payloadPath        String
   payloadType        PrintPayloadType @default(PDF)
+  templateVariables  String?         @db.Text
   status             PrintJobStatus  @default(PENDING)
   attempts           Int             @default(0)
   lastError          String?
+  routingLog         String?         @db.Text
   nextRetryAt        DateTime?
   createdAt          DateTime        @default(now())
   completedAt        DateTime?
   createdBySaleId    String?
   createdByUserId    String?
-  routingLog         String?         @db.Text
 
   @@index([status, nextRetryAt])
   @@index([status, createdAt])
   @@index([printerConfigId])
   @@index([createdBySaleId])
   @@index([createdByUserId])
+}
+
+model ReceiptTemplate {
+  id                 String          @id
+  name               String
+  targetPrinterType  PrinterType
+  paperSize          PaperSize
+  templateFormat     TemplateFormat
+  templateBody       String          @db.Text
+  headerLines        String[]
+  footerLines        String[]
+  showQrCode         Boolean         @default(true)
+  qrCodeContent      QRCodeContent   @default(INVOICE_NUMBER_AND_CUFE)
+  showLogo           Boolean         @default(true)
+  logoPath           String?
+  isDefault          Boolean         @default(false)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  printerConfigs     PrinterConfig[] @relation("ReceiptTemplateAssignments")
+
+  @@index([targetPrinterType, paperSize])
 }

@@ -38,6 +38,12 @@ pub struct DiscoveredPrinter {
     pub printer_type: String,
     /// Whether the printer supports color output.
     pub supports_color: bool,
+    /// Best-guess paper size detected from printer model/name.
+    /// One of: RECEIPT_80MM, RECEIPT_58MM, RECEIPT_76MM, LETTER, A4,
+    /// LABEL_50X25, LABEL_62X29, LABEL_OTHER, UNKNOWN.
+    pub detected_paper_size: String,
+    /// Confidence level of the detection: "high", "medium", "low", "none".
+    pub detection_confidence: String,
 }
 
 /// Result of a test print operation.
@@ -91,6 +97,7 @@ pub fn discover_printers() -> Result<Vec<DiscoveredPrinter>, String> {
             let connection = detect_connection_type(&name, &location, &port_name, &uri);
             let printer_type = detect_printer_type(&name, &driver_name);
             let supports_color = detect_color_support(&driver_name, &description);
+            let (detected_size, detection_confidence) = detect_paper_size(&name, &driver_name, &printer_type);
 
             let friendly_name = if description.is_empty() {
                 name.clone()
@@ -105,6 +112,8 @@ pub fn discover_printers() -> Result<Vec<DiscoveredPrinter>, String> {
                 is_default,
                 printer_type,
                 supports_color,
+                detected_paper_size: detected_size,
+                detection_confidence,
             }
         })
         .collect();
@@ -153,6 +162,8 @@ pub async fn scan_network_printers(subnet: String) -> Result<Vec<DiscoveredPrint
                 _ => "UNKNOWN".to_string(),
             };
 
+            let (detected_size, detection_confidence) = detect_paper_size("", &printer_type, &printer_type);
+
             results.push(DiscoveredPrinter {
                 system_name: format!("network:{}:{}", candidate.ip, candidate.port),
                 friendly_name: format!("Impresora de red ({})", candidate.detected_protocol),
@@ -160,6 +171,8 @@ pub async fn scan_network_printers(subnet: String) -> Result<Vec<DiscoveredPrint
                 is_default: false,
                 printer_type,
                 supports_color: false,
+                detected_paper_size: detected_size,
+                detection_confidence,
             });
         }
     }
@@ -394,6 +407,181 @@ fn detect_color_support(driver_name: &str, description: &str) -> bool {
     }
 }
 
+/// Detect the most likely paper size for a printer based on model name,
+/// driver name, and detected type.
+///
+/// Returns `(paper_size_string, confidence)` where confidence is one of
+/// `"high"`, `"medium"`, `"low"`, or `"none"`.
+///
+/// ## How it works
+///
+/// 1. **Heuristic by model name** (high confidence): checks known model
+///    numbers against a database of ~50 common POS/office printers.
+/// 2. **Heuristic by type** (medium confidence): uses defaults by category
+///    (thermal receipt → 80mm, label → LABEL_OTHER, laser → LETTER/A4).
+/// 3. **Fallback** (low confidence): returns UNKNOWN.
+pub(crate) fn detect_paper_size(
+    name: &str,
+    driver_name: &str,
+    printer_type: &str,
+) -> (String, String) {
+    let combined = format!("{} {}", name, driver_name).to_lowercase();
+
+    // ---- High confidence matches: explicit model numbers ----
+
+    // --- 80mm thermal receipt (most common) ---
+    if combined.contains("tm-t20")
+        || combined.contains("tm-t88")
+        || combined.contains("tm-t70")
+        || combined.contains("tm-u220")
+        || combined.contains("tm-u230")
+        || combined.contains("tm-h6000")
+        || combined.contains("tsp100")
+        || combined.contains("tsp143")
+        || combined.contains("tsp650")
+        || combined.contains("tsp700")
+        || combined.contains("tsp800")
+        || combined.contains("pos-80")
+        || combined.contains("pos80")
+        || combined.contains("bematech mp-4200")
+        || combined.contains("bematech mp-4000")
+        || combined.contains("daruma dr800")
+        || combined.contains("daruma dr700")
+        || combined.contains("daruma fs-321")
+        || combined.contains("samsung srp-350")
+        || combined.contains("samsung srp-275")
+        || combined.contains("samsung srp-500")
+        || combined.contains("samsung srd-300")
+        || combined.contains("80mm")
+        || combined.contains("80 mm")
+    {
+        return ("RECEIPT_80MM".to_string(), "high".to_string());
+    }
+
+    // --- 58mm thermal receipt (smaller, portable/datáfono) ---
+    if combined.contains("tm-t20ii")
+        || combined.contains("tm-m30")
+        || combined.contains("tm-m50")
+        || combined.contains("pos-58")
+        || combined.contains("pos58")
+        || combined.contains("58mm")
+        || combined.contains("58 mm")
+        || combined.contains("57mm")
+        || combined.contains("57 mm")
+        || combined.contains("ingenico")
+        || combined.contains("verifone")
+        || combined.contains("bbpos")
+        || combined.contains("datecs")
+        || combined.contains("star tsp100ii") // some variants
+        || combined.contains("spp-r")
+        || combined.contains("bixolon srp-275ii") // sometimes 58mm
+    {
+        return ("RECEIPT_58MM".to_string(), "high".to_string());
+    }
+
+    // --- 76mm dot matrix / impact ---
+    if combined.contains("epson fx-")
+        || combined.contains("epson lq-")
+        || combined.contains("epson lx-")
+        || combined.contains("epson dfx-")
+        || combined.contains("panasonic kx-p")
+        || combined.contains("star nk")
+        || combined.contains("star np")
+        || combined.contains("okidata microline")
+        || combined.contains("okidata ml")
+        || combined.contains("ibm proprinter")
+        || combined.contains("72mm")
+        || combined.contains("76mm")
+        || combined.contains("matriz")
+        || combined.contains("dot matrix")
+        || combined.contains("impact printer")
+        || combined.contains("cartucho")
+        || combined.contains("cinta")
+    {
+        return ("RECEIPT_76MM".to_string(), "high".to_string());
+    }
+
+    // --- Label printers ---
+    if combined.contains("zebra gk")
+        || combined.contains("zebra gc")
+        || combined.contains("zebra gt")
+        || combined.contains("zebra zp")
+        || combined.contains("zebra zt")
+        || combined.contains("godex g500")
+        || combined.contains("godex g530")
+        || combined.contains("godex ezt")
+        || combined.contains("citizen clp")
+        || combined.contains("toshiba tec b")
+        || combined.contains("brady")
+        || combined.contains("label")
+        || combined.contains("etiqueta")
+    {
+        // Without knowing the specific label size, return LABEL_OTHER
+        return ("LABEL_OTHER".to_string(), "high".to_string());
+    }
+
+    // --- Laser printers ---
+    if combined.contains("laserjet")
+        || combined.contains("laser jet")
+        || combined.contains("pagewide")
+        || combined.contains("mfp")
+        || combined.contains("brother hl-")
+        || combined.contains("brother dcp-")
+        || combined.contains("canon imageclass")
+        || combined.contains("canon lbp")
+        || combined.contains("samsung ml-")
+        || combined.contains("samsung scx-")
+        || combined.contains("kyocera")
+        || combined.contains("ricoh")
+        || combined.contains("lexmark")
+    {
+        // Laser printers typically default to LETTER in the Americas
+        return ("LETTER".to_string(), "medium".to_string());
+    }
+
+    // ---- Medium confidence matches: by printer type default ----
+    match printer_type {
+        "THERMAL_RECEIPT" => {
+            // Most thermal receipt printers are 80mm; if not matched above,
+            // 80mm is the safest default
+            ("RECEIPT_80MM".to_string(), "medium".to_string())
+        }
+        "THERMAL_LABEL" => ("LABEL_OTHER".to_string(), "medium".to_string()),
+        "LASER" => ("LETTER".to_string(), "medium".to_string()),
+        "INKJET" => ("LETTER".to_string(), "low".to_string()),
+        "MULTIFUNCTION" => ("LETTER".to_string(), "low".to_string()),
+        _ => ("UNKNOWN".to_string(), "none".to_string()),
+    }
+}
+
+/// Return a human-readable description of the paper size for display in the UI.
+pub fn paper_size_description(paper_size: &str) -> &'static str {
+    match paper_size {
+        "RECEIPT_80MM" => "80 mm (estándar POS)",
+        "RECEIPT_58MM" => "57/58 mm (portátil / datáfono)",
+        "RECEIPT_76MM" => "76 mm (matriz de punto)",
+        "LETTER" => "Carta (216 × 279 mm)",
+        "A4" => "A4 (210 × 297 mm)",
+        "LABEL_50X25" => "Etiqueta 50 × 25 mm",
+        "LABEL_62X29" => "Etiqueta 62 × 29 mm",
+        "LABEL_OTHER" => "Etiqueta (otro tamaño)",
+        "CUSTOM" => "Personalizado",
+        _ => "Desconocido",
+    }
+}
+
+/// Return the character width (in monospace chars at 12CPI) for a paper size.
+pub fn paper_size_char_width(paper_size: &str) -> u32 {
+    match paper_size {
+        "RECEIPT_80MM" => 48,
+        "RECEIPT_58MM" => 32,
+        "RECEIPT_76MM" => 45,
+        "LETTER" => 80,
+        "A4" => 85,
+        _ => 48, // safe default
+    }
+}
+
 /// Send a test page using ESC/POS (for thermal receipt printers).
 fn send_escpos_test_sync(printer_name: &str) -> Result<(), String> {
     use escpos::driver::FileDriver;
@@ -517,6 +705,255 @@ async fn send_os_test(printer_name: &str) -> Result<TestPrintResult, String> {
             })
         }
     }
+}
+
+/// Represents the result of a print operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrintResult {
+    pub success: bool,
+    pub error_message: Option<String>,
+    pub raw_bytes_sent: Option<u32>,
+}
+
+/// Represents the result of a cash drawer operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrawerResult {
+    pub success: bool,
+    pub error_message: Option<String>,
+}
+
+/// Send raw ESC/POS bytes to a thermal receipt printer.
+///
+/// Unlike `print_file` which sends an OS-level print job, this function
+/// writes the raw bytes directly to the printer device. This is used
+/// for thermal receipt templates that are generated as ESC/POS commands.
+pub async fn print_escpos(
+    printer_system_name: String,
+    commands: Vec<u8>,
+) -> Result<PrintResult, String> {
+    // On Windows, write to the printer via the "print to file" approach
+    // using the `printers` crate's raw printing capability.
+    // If direct write fails, fall back to writing a temp file and printing
+    // that file via `print_file`.
+
+    let result = tokio::task::spawn_blocking(move || {
+        // Try 1: Use the escpos crate's FileDriver for direct write
+        match std::fs::write(&printer_system_name, &commands) {
+            Ok(_) => Ok(PrintResult {
+                success: true,
+                error_message: None,
+                raw_bytes_sent: Some(commands.len() as u32),
+            }),
+            Err(_e) => {
+                // Try 2: Write to temp file and use OS print
+                let temp_dir = tempfile::tempdir()
+                    .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+                let file_path = temp_dir.path().join("escpos-print.bin");
+                std::fs::write(&file_path, &commands)
+                    .map_err(|e| format!("Failed to write temp file: {}", e))?;
+
+                let printer = printers::get_printer_by_name(&printer_system_name)
+                    .ok_or_else(|| format!("Printer '{}' not found", printer_system_name))?;
+
+                let path_str = file_path
+                    .to_str()
+                    .ok_or_else(|| "Invalid temp file path".to_string())?;
+
+                let print_result = printer.print_file(path_str, PrinterJobOptions::none());
+                match print_result {
+                    Ok(_job_id) => Ok(PrintResult {
+                        success: true,
+                        error_message: None,
+                        raw_bytes_sent: Some(commands.len() as u32),
+                    }),
+                    Err(pe) => {
+                        let err_msg = format!("{:?}", pe);
+                        Ok(PrintResult {
+                            success: false,
+                            error_message: Some(err_msg),
+                            raw_bytes_sent: Some(commands.len() as u32),
+                        })
+                    }
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?;
+
+    result
+}
+
+/// Send a label image (or its HTML equivalent) to a label printer.
+///
+/// The `image_path` should point to an HTML file (generated by the TS
+/// label-formatter) which contains the label markup. The function writes
+/// the HTML to a temp file and sends it via the OS print system.
+pub async fn print_label_image(
+    printer_system_name: String,
+    image_path: String,
+) -> Result<PrintResult, String> {
+    // Verify the file exists
+    let path = std::path::Path::new(&image_path);
+    if !path.exists() {
+        return Ok(PrintResult {
+            success: false,
+            error_message: Some(format!("Label image file not found: {}", image_path)),
+            raw_bytes_sent: None,
+        });
+    }
+
+    let printer = printers::get_printer_by_name(&printer_system_name)
+        .ok_or_else(|| format!("Printer '{}' not found", printer_system_name))?;
+
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| "Invalid image path".to_string())?;
+
+    let result = printer.print_file(path_str, PrinterJobOptions::none());
+
+    match result {
+        Ok(_job_id) => Ok(PrintResult {
+            success: true,
+            error_message: None,
+            raw_bytes_sent: None,
+        }),
+        Err(e) => {
+            let err_msg = format!("{:?}", e);
+            Ok(PrintResult {
+                success: false,
+                error_message: Some(err_msg),
+                raw_bytes_sent: None,
+            })
+        }
+    }
+}
+
+/// Open the cash drawer connected to a thermal receipt printer.
+///
+/// Sends the standard ESC/POS cash drawer kick command
+/// (ESC p 0 50 250 = 0x1B 0x70 0x00 0x32 0xFA) to the printer.
+/// The optional `kick_command` bytes override the default if provided.
+pub async fn open_cash_drawer(
+    printer_system_name: String,
+    kick_command: Option<Vec<u8>>,
+) -> Result<DrawerResult, String> {
+    let default_kick = vec![0x1B, 0x70, 0x00, 0x32, 0xFA];
+    let cmd = kick_command.unwrap_or_else(|| default_kick.clone());
+
+    let result = tokio::task::spawn_blocking(move || {
+        // Try to write the kick command directly to the printer device
+        match std::fs::write(&printer_system_name, &cmd) {
+            Ok(_) => Ok(DrawerResult {
+                success: true,
+                error_message: None,
+            }),
+            Err(_outer_err) => {
+                // Fall back: write a temp file with just the kick command and print it
+                let temp_dir = match tempfile::tempdir() {
+                    Ok(d) => d,
+                    Err(e) => return Ok(DrawerResult {
+                        success: false,
+                        error_message: Some(format!("Failed to create temp dir: {}", e)),
+                    }),
+                };
+                let file_path = temp_dir.path().join("cash-drawer-kick.bin");
+                if let Err(e) = std::fs::write(&file_path, &cmd) {
+                    return Ok(DrawerResult {
+                        success: false,
+                        error_message: Some(format!("Failed to write kick command: {}", e)),
+                    });
+                }
+
+                let printer = match printers::get_printer_by_name(&printer_system_name) {
+                    Some(p) => p,
+                    None => return Ok(DrawerResult {
+                        success: false,
+                        error_message: Some(format!("Printer '{}' not found", printer_system_name)),
+                    }),
+                };
+
+                let path_str = match file_path.to_str() {
+                    Some(s) => s.to_string(),
+                    None => return Ok(DrawerResult {
+                        success: false,
+                        error_message: Some("Invalid temp file path".to_string()),
+                    }),
+                };
+
+                match printer.print_file(&path_str, PrinterJobOptions::none()) {
+                    Ok(_) => Ok(DrawerResult {
+                        success: true,
+                        error_message: None,
+                    }),
+                    Err(pe) => Ok(DrawerResult {
+                        success: false,
+                        error_message: Some(format!("{:?}", pe)),
+                    }),
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?;
+
+    result
+}
+
+/// Send text to a customer display connected via a printer's pass-through port.
+///
+/// Many customer displays accept simple text commands over a serial or
+/// pass-through connection. The text is sent as-is to the printer device.
+pub async fn customer_display_update(
+    printer_system_name: String,
+    text: String,
+    encoding: String,
+) -> Result<DrawerResult, String> {
+    // Clear display command for most pole displays
+    let clear_cmd: Vec<u8> = vec![0x0C]; // FF - clear display
+    let encoded_text = match encoding.as_str() {
+        "CP437" | "CP850" => {
+            // For CP437/850, use ASCII transliteration that was already done on TS side
+            text.as_bytes().to_vec()
+        }
+        _ => text.as_bytes().to_vec(),
+    };
+
+    let mut display_data = Vec::new();
+    display_data.extend_from_slice(&clear_cmd);
+    display_data.extend_from_slice(&encoded_text);
+
+    let result = tokio::task::spawn_blocking(move || {
+        match std::fs::write(&printer_system_name, &display_data) {
+            Ok(_) => Ok(DrawerResult {
+                success: true,
+                error_message: None,
+            }),
+            Err(_first_err) => {
+                // Some displays require carriage return + line feed
+                let mut alt_data = Vec::new();
+                alt_data.extend_from_slice(&clear_cmd);
+                alt_data.extend_from_slice(&encoded_text);
+                alt_data.push(0x0D); // CR
+                alt_data.push(0x0A); // LF
+
+                match std::fs::write(&printer_system_name, &alt_data) {
+                    Ok(_) => Ok(DrawerResult {
+                        success: true,
+                        error_message: None,
+                    }),
+                    Err(e2) => Ok(DrawerResult {
+                        success: false,
+                        error_message: Some(format!("Display write failed: {}", e2)),
+                    }),
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?;
+
+    result
 }
 
 #[cfg(test)]

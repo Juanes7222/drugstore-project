@@ -91,6 +91,21 @@ export interface PrinterConfigService {
    * Used during import to match exported configs to discovered printers.
    */
   findBySystemName(systemName: string): Promise<PrinterConfigRecord | null>;
+
+  /**
+   * Set the cash drawer configuration JSON for a printer.
+   */
+  setCashDrawerConfig(printerId: string, configJson: string): Promise<PrinterConfigRecord>;
+
+  /**
+   * Set the customer display configuration JSON for a printer.
+   */
+  setCustomerDisplayConfig(printerId: string, configJson: string): Promise<PrinterConfigRecord>;
+
+  /**
+   * Assign a receipt template to a printer.
+   */
+  setReceiptTemplate(printerId: string, templateId: string | null): Promise<PrinterConfigRecord>;
 }
 
 export const createPrinterConfigService = (
@@ -134,13 +149,16 @@ class PrinterConfigServiceImpl implements PrinterConfigService {
         printerType: input.printerType,
         connection: input.connection,
         paperSize: input.paperSize,
+        customPaperWidthMm: input.customPaperWidthMm ?? null,
+        customPaperHeightMm: input.customPaperHeightMm ?? null,
         supportsColor: input.supportsColor,
+        supportsDuplex: input.supportsDuplex ?? false,
         assignedJobs: input.assignedJobs,
         fallbackPrinterId: input.fallbackPrinterId ?? null,
         serverFallbackEnabled: input.serverFallbackEnabled ?? false,
         status: 'UNKNOWN',
       },
-    });
+    } as any);
     return printer as unknown as PrinterConfigRecord;
   }
 
@@ -181,7 +199,10 @@ class PrinterConfigServiceImpl implements PrinterConfigService {
     if (input.printerType !== undefined) updateData.printerType = input.printerType;
     if (input.connection !== undefined) updateData.connection = input.connection;
     if (input.paperSize !== undefined) updateData.paperSize = input.paperSize;
+    if (input.customPaperWidthMm !== undefined) updateData.customPaperWidthMm = input.customPaperWidthMm;
+    if (input.customPaperHeightMm !== undefined) updateData.customPaperHeightMm = input.customPaperHeightMm;
     if (input.supportsColor !== undefined) updateData.supportsColor = input.supportsColor;
+    if (input.supportsDuplex !== undefined) updateData.supportsDuplex = input.supportsDuplex;
     if (input.assignedJobs !== undefined) updateData.assignedJobs = input.assignedJobs;
     if (input.fallbackPrinterId !== undefined) updateData.fallbackPrinterId = input.fallbackPrinterId;
     if (input.serverFallbackEnabled !== undefined) updateData.serverFallbackEnabled = input.serverFallbackEnabled;
@@ -323,6 +344,33 @@ class PrinterConfigServiceImpl implements PrinterConfigService {
       where: { systemName },
     });
     return printer as unknown as PrinterConfigRecord | null;
+  }
+
+  async setCashDrawerConfig(printerId: string, configJson: string): Promise<PrinterConfigRecord> {
+    await this.getById(printerId); // Ensure exists
+    const printer = await this.prisma.printerConfig.update({
+      where: { id: printerId },
+      data: { cashDrawerConfig: configJson } as any,
+    });
+    return printer as unknown as PrinterConfigRecord;
+  }
+
+  async setCustomerDisplayConfig(printerId: string, configJson: string): Promise<PrinterConfigRecord> {
+    await this.getById(printerId); // Ensure exists
+    const printer = await this.prisma.printerConfig.update({
+      where: { id: printerId },
+      data: { customerDisplayConfig: configJson } as any,
+    });
+    return printer as unknown as PrinterConfigRecord;
+  }
+
+  async setReceiptTemplate(printerId: string, templateId: string | null): Promise<PrinterConfigRecord> {
+    await this.getById(printerId); // Ensure exists
+    const printer = await this.prisma.printerConfig.update({
+      where: { id: printerId },
+      data: { receiptTemplateId: templateId } as any,
+    });
+    return printer as unknown as PrinterConfigRecord;
   }
 
   // ---------------------------------------------------------------------------

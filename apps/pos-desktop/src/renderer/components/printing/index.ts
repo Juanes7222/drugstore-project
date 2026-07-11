@@ -37,3 +37,5 @@ export type { SetupWizardStepFallbackConfigProps } from './setup-wizard-step-fal
 
 export { SetupWizardStepSummary } from './setup-wizard-step-summary';
 export type { SetupWizardStepSummaryProps } from './setup-wizard-step-summary';
+
+export { PrintHealthTile } from './print-health-tile';

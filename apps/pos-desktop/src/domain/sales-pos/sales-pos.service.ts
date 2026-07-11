@@ -376,9 +376,11 @@ export class SalesPosService {
       //    This runs outside the main transaction so it doesn't block the
       //    confirm with fiscal computation. If invoice generation fails, the
       //    sale is still confirmed — the failure is logged.
+      let invoiceGenerated = false;
       if (this.invoiceService) {
         try {
           await this.invoiceService.generateInvoiceForSale(saleId);
+          invoiceGenerated = true;
         } catch (err) {
           console.error(
             `[SalesPosService] Invoice generation failed for sale ${saleId}:`,
@@ -420,6 +422,30 @@ export class SalesPosService {
             payloadType: PrintPayloadType.HTML,
             saleId,
           });
+
+          // 8b. If the invoice was generated, also enqueue the
+          //     ELECTRONIC_INVOICE print job (for laser/inkjet printers).
+          //     Fire-and-forget from the caller's perspective.
+          if (invoiceGenerated) {
+            try {
+              const invoicePath = await writePrintPayload(
+                `invoice-${saleId}.html`,
+                receiptHtml, // Reuse the receipt HTML; the actual fiscal PDF
+                              // is generated server-side and available later
+              );
+
+              await this.printRouter.print(PrintJobType.ELECTRONIC_INVOICE, {
+                payloadPath: invoicePath,
+                payloadType: PrintPayloadType.HTML,
+                saleId,
+              });
+            } catch (err) {
+              console.error(
+                `[SalesPosService] Electronic invoice print routing failed for sale ${saleId}:`,
+                err instanceof Error ? err.message : err,
+              );
+            }
+          }
         } catch (err) {
           console.error(
             `[SalesPosService] Print routing failed for sale ${saleId}:`,

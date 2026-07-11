@@ -34,6 +34,23 @@ export interface SetupWizardStepTestPrintsProps {
 }
 
 // ---------------------------------------------------------------------------
+// Paper size labels
+// ---------------------------------------------------------------------------
+
+const PAPER_SIZE_LABELS: Record<string, string> = {
+  RECEIPT_80MM: '80 mm',
+  RECEIPT_58MM: '58 mm',
+  RECEIPT_76MM: '76 mm',
+  LETTER: 'Carta',
+  A4: 'A4',
+  LABEL_50X25: 'Etiqueta 50×25',
+  LABEL_62X29: 'Etiqueta 62×29',
+  LABEL_OTHER: 'Etiqueta',
+  CUSTOM: 'Personalizado',
+  UNKNOWN: 'Automático',
+};
+
+// ---------------------------------------------------------------------------
 // Status legend
 // ---------------------------------------------------------------------------
 
@@ -158,6 +175,34 @@ export const SetupWizardStepTestPrints: FC<
                   <p className="truncate text-caption text-gray-400">
                     {printer.systemName}
                   </p>
+                  {/* Paper size label */}
+                  <span className="mt-0.5 inline-flex items-center gap-1 text-caption text-gray-500">
+                    <svg
+                      viewBox="0 0 14 14"
+                      fill="none"
+                      className="h-3 w-3"
+                      aria-hidden="true"
+                    >
+                      <rect
+                        x="1.5"
+                        y="2.5"
+                        width="11"
+                        height="9"
+                        rx="1"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                      />
+                      <path
+                        d="M4.5 5.5h5M4.5 7.5h3"
+                        stroke="currentColor"
+                        strokeWidth="1.2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    {PAPER_SIZE_LABELS[
+                      state.paperSizes[printer.systemName] ?? 'UNKNOWN'
+                    ] ?? 'Automático'}
+                  </span>
                 </div>
 
                 {/* Status indicator */}

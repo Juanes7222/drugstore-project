@@ -51,6 +51,11 @@ pub fn run() {
             commands::printer_discovery::test_print,
             commands::printer_discovery::get_printer_status,
             commands::printer_discovery::print_file,
+            commands::printer_discovery::print_escpos,
+            commands::printer_discovery::print_label_image,
+            commands::printer_discovery::open_cash_drawer,
+            commands::printer_discovery::customer_display_update,
+            commands::printer_discovery::detect_printer_paper_size,
             commands::printer_discovery::write_temp_file,
             commands::printer_discovery::file_exists,
         ])

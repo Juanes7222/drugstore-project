@@ -26,6 +26,29 @@ export type { PrintingMetricsService } from './printing-metrics.service';
 // Types
 export * from './printing-types';
 
+// Proactive notifications
+export { checkPrinterNotifications, PRINTER_NOTIFICATION_RULES } from './proactive-notifications';
+export type { PrinterNotification, PrinterNotificationRule } from './proactive-notifications';
+
+// Cash drawer and customer display
+export { createCashDrawerService } from './cash-drawer.service';
+export type { CashDrawerService } from './cash-drawer.service';
+
+export { createCustomerDisplayService } from './customer-display.service';
+export type { CustomerDisplayService } from './customer-display.service';
+
+// Formatters
+export { renderEscposReceipt, renderEscposTestPage, renderDrawerKickCommand } from './formatters/escpos-formatter';
+export type { EscposRenderInput } from './formatters/escpos-formatter';
+
+export { generatePdfHtml } from './formatters/pdf-formatter';
+export type { PdfRenderInput } from './formatters/pdf-formatter';
+
+export { generateLabelHtml, generateBatchLabelHtml } from './formatters/label-formatter';
+export type { LabelRenderInput, LabelRenderBatchInput } from './formatters/label-formatter';
+
+export { resolveTemplateVariables, resolveHeaderLines, resolveFooterLines, buildResolvedReceipt } from './formatters/template-engine';
+
 // Utility
 export { writePrintPayload } from './print-payload-writer';
 
