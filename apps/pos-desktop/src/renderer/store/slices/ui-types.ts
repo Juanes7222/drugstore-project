@@ -3,6 +3,7 @@
  */
 
 export type PosScreen =
+  | "login"
   | "sales"
   | "payment"
   | "receipt"
@@ -11,7 +12,12 @@ export type PosScreen =
   | "prescriptions"
   | "admin-menu"
   | "sync-health"
-  | "recovery";
+  | "recovery"
+  | "user-management"
+  | "audit-log"
+  | "forgot-password"
+  | "reset-password"
+  | "2fa-setup";
 
 export type SaleCompletionPhase =
   | "idle"

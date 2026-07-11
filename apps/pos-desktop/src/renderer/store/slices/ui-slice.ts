@@ -67,6 +67,26 @@ export const uiSlice = createSlice({
       state.activeScreen = "recovery";
     },
 
+    navigateToUserManagement: (state) => {
+      state.activeScreen = "user-management";
+    },
+
+    navigateToAuditLog: (state) => {
+      state.activeScreen = "audit-log";
+    },
+
+    navigateToLogin: (state) => {
+      state.activeScreen = "login";
+    },
+
+    navigateToForgotPassword: (state) => {
+      state.activeScreen = "forgot-password";
+    },
+
+    navigateToTwoFactorSetup: (state) => {
+      state.activeScreen = "2fa-setup";
+    },
+
     navigateBackToSales: (state) => {
       state.activeScreen = "sales";
     },
@@ -131,6 +151,11 @@ export const {
   navigateToAdminMenu,
   navigateToSyncHealth,
   navigateToRecovery,
+  navigateToUserManagement,
+  navigateToAuditLog,
+  navigateToLogin,
+  navigateToForgotPassword,
+  navigateToTwoFactorSetup,
   navigateBackToSales,
   initiateSaleCompletion,
   navigateToReceipt,
