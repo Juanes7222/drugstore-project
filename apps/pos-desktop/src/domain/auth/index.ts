@@ -1,5 +1,6 @@
 export {
   useLocalSessionStore,
+  hasMinRole,
   type LocalSession,
 } from './local-session.store';
 
@@ -7,8 +8,12 @@ export {
   createAuthService,
   type AuthService,
   type AuthServiceConfig,
-  type LoginHttpClient,
 } from './auth.service';
+
+export {
+  createAuthHttpClient,
+  type AuthHttpClient,
+} from './auth-http-client';
 
 export {
   InvalidCredentialsException,
