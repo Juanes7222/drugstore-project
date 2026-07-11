@@ -8,7 +8,7 @@
     "build": "nest build",
     "start": "tsx dist/apps/server/src/main.js",
     "start:watch": "concurrently -k -n \"tsc,node\" -c \"blue,green\" \"nest build --watch\" \"nodemon --watch dist/apps/server/src -e js --delay 2 --exec tsx dist/apps/server/src/main.js\"",
-    "dev": "nodemon --watch src -e ts --delay 2 --exec tsx src/main.ts",
+    "dev": "concurrently -k -n \"tsc,node\" -c \"blue,green\" \"nest build --watch\" \"nodemon --watch dist/apps/server/src -e js --delay 2 --exec tsx dist/apps/server/src/main.js\"",
     "db:push": "npx prisma db push --schema ../../packages/database/prisma/schema",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:reset": "npx prisma db push --force-reset --schema ../../packages/database/prisma/schema && npx tsx prisma/seed.ts",

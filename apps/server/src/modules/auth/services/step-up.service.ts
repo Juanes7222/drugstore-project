@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
   ConflictException,
+  Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
@@ -31,7 +32,7 @@ export class StepUpService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService<EnvConfig>,
+    @Inject(ConfigService) private readonly configService: ConfigService<EnvConfig>,
   ) {}
 
   /**

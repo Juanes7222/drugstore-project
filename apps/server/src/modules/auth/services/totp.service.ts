@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 import { EnvConfig } from '@/config/env.schema';
 
 /**
@@ -23,7 +23,9 @@ export class TotpService {
   private readonly issuer: string;
   private readonly encryptionKey: Buffer;
 
-  constructor(private configService: ConfigService<EnvConfig>) {
+  constructor(
+    @Inject(ConfigService) private configService: ConfigService<EnvConfig>,
+  ) {
     this.issuer = this.configService.get('TOTP_ISSUER') || 'PharmacyPOS';
     const key = this.configService.get('TOTP_ENCRYPTION_KEY');
     if (!key) {
