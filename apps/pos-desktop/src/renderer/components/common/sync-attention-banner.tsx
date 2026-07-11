@@ -8,6 +8,7 @@
 
 import { type FC, useCallback, useEffect, useRef, useState } from "react";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
+import type { PrismaClient } from "@pharmacy/database/local";
 import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
 
 export const SyncAttentionBanner: FC = () => {
@@ -17,8 +18,8 @@ export const SyncAttentionBanner: FC = () => {
 
   const checkMetrics = useCallback(async () => {
     try {
-      const { prisma } = await getLocalDatabase();
-      const metricsService = createSyncMetricsService(prisma);
+      const { prisma: rawPrisma } = await getLocalDatabase();
+      const metricsService = createSyncMetricsService(rawPrisma as PrismaClient);
       const [counts, backupHealth] = await Promise.all([
         metricsService.getQueueCounts(),
         metricsService.getBackupHealth(),

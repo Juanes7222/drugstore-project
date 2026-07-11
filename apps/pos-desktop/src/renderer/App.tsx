@@ -21,6 +21,11 @@ import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inv
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
 import { RecoveryPage } from "../domain/recovery/recovery.page";
+import { LoginPage } from "@/components/auth/login.page";
+import { ForgotPasswordPage } from "@/components/auth/forgot-password.page";
+import { ResetPasswordPage } from "@/components/auth/reset-password.page";
+import { UserManagementPage } from "@/components/auth/user-management.page";
+import { AuditLogView } from "@/components/auth/audit-log-view";
 import { ServiceProvider } from "./components/common/service-context";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
@@ -57,29 +62,56 @@ const InnerApp: FC = () => {
       : { opacity: 0, x: -24, scale: 0.99 },
   };
 
-  if (!session) {
+  if (!session && activeScreen !== "login" && activeScreen !== "forgot-password" && activeScreen !== "reset-password") {
+    return <LoginPage />;
+  }
+
+  // Render login/forgot-password/reset-password directly without app shell
+  if (activeScreen === "login") {
+    return <LoginPage />;
+  }
+
+  if (activeScreen === "forgot-password") {
+    return <ForgotPasswordPage />;
+  }
+
+  if (activeScreen === "reset-password") {
+    return <ResetPasswordPage />;
+  }
+
+  if (activeScreen === "user-management") {
     return (
-      <div
-        className="flex h-screen flex-col items-center justify-center p-pos-xl"
-        style={{ backgroundColor: "var(--color-surface)" }}
+      <AppShell
+        cashierName={session?.fullName || ""}
+        openingBalanceCents={0}
+        openedAt={new Date().toISOString()}
+        initialSyncState={isOnline ? "online" : "offline"}
       >
-        <div className="pos-panel max-w-md p-pos-xl text-center">
-          <h2
-            className="text-heading font-bold"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {t("common.app_name")}
-          </h2>
-          <p
-            className="mt-pos-md text-body"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-            }}
-          >
-            No hay sesión activa. Inicie sesión para usar el POS.
-          </p>
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <UserManagementPage />
+          </div>
         </div>
-      </div>
+      </AppShell>
+    );
+  }
+
+  if (activeScreen === "audit-log") {
+    return (
+      <AppShell
+        cashierName={session?.fullName || ""}
+        openingBalanceCents={0}
+        openedAt={new Date().toISOString()}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <AuditLogView />
+          </div>
+        </div>
+      </AppShell>
     );
   }
 

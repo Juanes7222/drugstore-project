@@ -1,19 +1,16 @@
 /**
- * InventoryAdjustmentsPage — manual stock correction screen.
+ * Inventory Adjustments page — thin wiring container.
  *
- * Allows INVENTORY_ASSISTANT and ADMIN roles to create positive (INCREASE)
- * or negative (DECREASE) stock adjustments against specific lots.
- *
- * The product/lot search is populated from local state (eventually from the
- * local Prisma Lot table), while the submit action uses the real
- * InventoryAdjustmentsService from domain/ which validates and applies
- * the adjustment against the authoritative local database.
+ * Owns all form state, validation, and submission orchestration for manual
+ * stock corrections.  Presentational sub-components are imported from sibling
+ * files so this file stays focused on wiring, not markup.
  *
  * Role is re-checked on submit, not just on mount, to guard against session
  * changes while the form is being filled.
  *
  * @category Page
  */
+
 import {
   type FC,
   useCallback,
@@ -25,27 +22,20 @@ import { useAppDispatch } from "@/store/hooks";
 import { navigateBackToSales } from "@/store/slices/ui-slice";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { OperationQueuedToast } from "@/components/common/operation-queued-toast";
 import { RoleType } from "@pharmacy/shared-types";
 import { useInventoryAdjustmentsService } from "../common/service-context";
+import type { DisplayLot, AdjustmentType, AdjustmentReason } from "./inventory-adjustments.types";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// ── Presentational components (provided by frontend-pos) ────────────────
+import { InventoryAdjustmentsHeader } from "./inventory-adjustments-header";
+import { LotSearchPanel } from "./lot-search-panel";
+import { AdjustmentForm } from "./adjustment-form";
+import { ErrorBanner } from "./error-banner";
+import { InventoryAdjustmentsToast } from "./inventory-adjustments-toast";
 
-type AdjustmentType = "INCREASE" | "DECREASE";
+// ── Constants ───────────────────────────────────────────────────────────
 
-interface DisplayLot {
-  id: string;
-  productId: string;
-  productName: string;
-  lotCode: string;
-  currentStock: number;
-  expirationDate: string;
-  location: string;
-}
-
-const ADJUSTMENT_REASONS = [
+export const ADJUSTMENT_REASONS = [
   "DAMAGED",
   "EXPIRED",
   "LOSS",
@@ -53,14 +43,7 @@ const ADJUSTMENT_REASONS = [
   "OTHER",
 ] as const;
 
-type AdjustmentReason = (typeof ADJUSTMENT_REASONS)[number];
-
-// (No demo data — lots are fetched from the real local database via
-//  InventoryAdjustmentsService.searchLots().)
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+// ── Page component ──────────────────────────────────────────────────────
 
 export const InventoryAdjustmentsPage: FC = () => {
   const { t } = useTranslation();
@@ -68,7 +51,7 @@ export const InventoryAdjustmentsPage: FC = () => {
   const isOnline = useOnlineStatus();
   const adjustmentsService = useInventoryAdjustmentsService();
 
-  // Search — fetches from the real local Lot + Product tables
+  // Search
   const [searchQuery, setSearchQuery] = useState("");
   const [lots, setLots] = useState<DisplayLot[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
@@ -90,9 +73,7 @@ export const InventoryAdjustmentsPage: FC = () => {
     isVerified: boolean;
   } | null>(null);
 
-  // -----------------------------------------------------------------------
-  // Handlers
-  // -----------------------------------------------------------------------
+  // ── Handlers ─────────────────────────────────────────────────────────
 
   const handleSearch = useCallback(async () => {
     setError(null);
@@ -113,7 +94,7 @@ export const InventoryAdjustmentsPage: FC = () => {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter") {
-        handleSearch();
+        void handleSearch();
       }
     },
     [handleSearch],
@@ -153,18 +134,17 @@ export const InventoryAdjustmentsPage: FC = () => {
       return;
     }
 
-    const effectiveReason = reason === "OTHER" && customReason.trim()
-      ? customReason.trim()
-      : reason;
+    const effectiveReason =
+      reason === "OTHER" && customReason.trim()
+        ? customReason.trim()
+        : reason;
 
     try {
       setIsProcessing(true);
 
-      // Build the signed quantity (positive = INCREASE, negative = DECREASE)
       const signedQuantity =
         adjustmentType === "INCREASE" ? quantity : -quantity;
 
-      // Call the real InventoryAdjustmentsService
       const draft = await adjustmentsService.create({
         items: [
           {
@@ -178,7 +158,6 @@ export const InventoryAdjustmentsPage: FC = () => {
         reason: effectiveReason,
       });
 
-      // Apply the adjustment (stock change + SyncQueue entry)
       const applied = await adjustmentsService.apply(
         (draft as { id: string }).id,
         {
@@ -197,7 +176,7 @@ export const InventoryAdjustmentsPage: FC = () => {
 
       setIsProcessing(false);
 
-      // Update local display to reflect the new stock without re-querying
+      // Optimistic local stock update
       const delta = adjustmentType === "INCREASE" ? quantity : -quantity;
       setLots((prev) =>
         prev.map((l) =>
@@ -213,8 +192,9 @@ export const InventoryAdjustmentsPage: FC = () => {
       );
 
       setToast({
-        operationUuid: (applied as { operationUuid?: string }).operationUuid
-          ?? (draft as { id: string }).id,
+        operationUuid:
+          (applied as { operationUuid?: string }).operationUuid ??
+          (draft as { id: string }).id,
         operationType: "INVENTORY_ADJUSTMENT",
         isVerified: true,
       });
@@ -245,9 +225,7 @@ export const InventoryAdjustmentsPage: FC = () => {
     setToast(null);
   }, []);
 
-  // -----------------------------------------------------------------------
-  // Derived
-  // -----------------------------------------------------------------------
+  // ── Derived ─────────────────────────────────────────────────────────
 
   const canSubmit = useMemo(
     () =>
@@ -264,9 +242,7 @@ export const InventoryAdjustmentsPage: FC = () => {
     ? Math.max(0, selectedLot.currentStock + adjustmentDelta)
     : 0;
 
-  // -----------------------------------------------------------------------
-  // Render
-  // -----------------------------------------------------------------------
+  // ── Render ─────────────────────────────────────────────────────────
 
   return (
     <section
@@ -274,443 +250,59 @@ export const InventoryAdjustmentsPage: FC = () => {
       className="flex h-full flex-col overflow-y-auto"
       style={{ backgroundColor: "var(--color-surface)" }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-pos-xl pt-pos-lg pb-pos-md">
-        <div className="flex items-center gap-pos-md">
-          <button
-            type="button"
-            onClick={handleBack}
-            className="pos-button pos-button-secondary"
-            aria-label={t("common.back")}
-          >
-            <BackIcon />
-          </button>
-          <h1
-            className="pos-page-title"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {t("inventory_adjustments.title")}
-          </h1>
-        </div>
-        <span
-          className="text-caption font-medium"
-          style={{
-            color: isOnline
-              ? "var(--color-pharma)"
-              : "var(--color-urgency)",
-          }}
-        >
-          {isOnline ? t("sync.state_online") : t("sync.state_offline")}
-        </span>
-      </div>
+      <InventoryAdjustmentsHeader
+        isOnline={isOnline}
+        onBack={handleBack}
+      />
 
       <div className="flex-1 px-pos-xl pb-pos-xl">
-        {/* Product / lot search */}
-        <div className="pos-panel p-pos-md mb-pos-lg">
-          <label
-            htmlFor="adj-product-search"
-            className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-            }}
-          >
-            {t("inventory_adjustments.search_label")}
-          </label>
-          <div className="flex gap-pos-sm">
-            <input
-              id="adj-product-search"
-              type="text"
-              className="pos-input"
-              placeholder={t("inventory_adjustments.search_placeholder")}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isProcessing}
-            />
-            <button
-              type="button"
-              onClick={handleSearch}
-              disabled={isProcessing || !searchQuery.trim()}
-              className="pos-button pos-button-primary"
-            >
-              {t("common.search")}
-            </button>
-          </div>
+        <LotSearchPanel
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onSearch={handleSearch}
+          onKeyDown={handleKeyDown}
+          isProcessing={isProcessing}
+          hasSearched={hasSearched}
+          lots={lots}
+          selectedLot={selectedLot}
+          onSelectLot={handleSelectLot}
+        />
 
-          {/* Search results */}
-          {hasSearched && lots.length === 0 && (
-            <p
-              className="mt-pos-sm text-caption"
-              style={{
-                color:
-                  "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-              }}
-            >
-              {t("inventory_adjustments.no_results")}
-            </p>
-          )}
-
-          {lots.length > 0 && (
-            <ul className="mt-pos-md flex flex-col gap-pos-xs">
-              {lots.map((lot) => {
-                const isSelected = selectedLot?.id === lot.id;
-                return (
-                  <li key={lot.id}>
-                    <button
-                      type="button"
-                      className={`w-full rounded px-pos-sm py-pos-xs text-left transition-colors ${
-                        isSelected
-                          ? ""
-                          : "hover:bg-[color-mix(in_srgb,var(--color-surface)_50%,white)]"
-                      }`}
-                      style={
-                        isSelected
-                          ? {
-                              backgroundColor:
-                                "color-mix(in srgb, var(--color-pharma) 10%, white)",
-                              borderLeft: "3px solid var(--color-pharma)",
-                            }
-                          : {
-                              borderLeft:
-                                "3px solid transparent",
-                            }
-                      }
-                      onClick={() => handleSelectLot(lot)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span
-                          className="text-body font-medium"
-                          style={{ color: "var(--color-ink)" }}
-                        >
-                          {lot.productName}
-                        </span>
-                        <span className="font-data tabular-nums text-body-sm">
-                          {t("inventory_adjustments.lot_code")}: {lot.lotCode}
-                        </span>
-                      </div>
-                      <div
-                        className="mt-pos-xs text-caption"
-                        style={{
-                          color:
-                            "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-                        }}
-                      >
-                        {t("inventory_adjustments.stock")}:{" "}
-                        <span
-                          className={`font-data tabular-nums ${
-                            lot.currentStock <= 10
-                              ? "font-semibold"
-                              : ""
-                          }`}
-                          style={
-                            lot.currentStock <= 10
-                              ? { color: "var(--color-urgency)" }
-                              : undefined
-                          }
-                        >
-                          {lot.currentStock}
-                        </span>
-                        {" | "}
-                        {t("inventory_adjustments.expires")}: {lot.expirationDate}
-                        {" | "}
-                        {lot.location}
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-        {/* Selected lot details + adjustment form */}
         {selectedLot && (
-          <div className="pos-panel p-pos-md mb-pos-lg">
-            <h2
-              className="text-ui font-semibold mb-pos-sm"
-              style={{ color: "var(--color-ink)" }}
-            >
-              {t("inventory_adjustments.selected_lot")}: {selectedLot.lotCode}
-            </h2>
-
-            <div className="grid grid-cols-4 gap-pos-md mb-pos-lg">
-              <div>
-                <span
-                  className="text-caption font-semibold uppercase tracking-wide"
-                  style={{
-                    color:
-                      "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                  }}
-                >
-                  {t("inventory_adjustments.stock")}
-                </span>
-                <p className="font-data tabular-nums text-price font-bold">
-                  {selectedLot.currentStock}
-                </p>
-              </div>
-              <div>
-                <span
-                  className="text-caption font-semibold uppercase tracking-wide"
-                  style={{
-                    color:
-                      "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                  }}
-                >
-                  {t("inventory_adjustments.expires")}
-                </span>
-                <p className="text-body font-medium">
-                  {selectedLot.expirationDate}
-                </p>
-              </div>
-              <div>
-                <span
-                  className="text-caption font-semibold uppercase tracking-wide"
-                  style={{
-                    color:
-                      "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                  }}
-                >
-                  {t("inventory_adjustments.location")}
-                </span>
-                <p className="text-body">{selectedLot.location}</p>
-              </div>
-              <div>
-                <span
-                  className="text-caption font-semibold uppercase tracking-wide"
-                  style={{
-                    color:
-                      "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                  }}
-                >
-                  {t("inventory_adjustments.projected")}
-                </span>
-                <p
-                  className={`font-data tabular-nums text-price font-bold`}
-                  style={{
-                    color:
-                      projectedStock < 0
-                        ? "var(--color-urgency)"
-                        : "var(--color-pharma)",
-                  }}
-                >
-                  {projectedStock}
-                </p>
-              </div>
-            </div>
-
-            {/* Type toggle */}
-            <div
-              className="mb-pos-md flex gap-pos-xs"
-              role="radiogroup"
-              aria-label={t("inventory_adjustments.adjustment_type")}
-            >
-              <button
-                type="button"
-                role="radio"
-                aria-checked={adjustmentType === "DECREASE"}
-                className={`pos-button flex-1 ${
-                  adjustmentType === "DECREASE"
-                    ? "pos-button-restrict"
-                    : "pos-button-secondary"
-                }`}
-                onClick={() => setAdjustmentType("DECREASE")}
-              >
-                {t("inventory_adjustments.decrease")}
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={adjustmentType === "INCREASE"}
-                className={`pos-button flex-1 ${
-                  adjustmentType === "INCREASE"
-                    ? "pos-button-primary"
-                    : "pos-button-secondary"
-                }`}
-                onClick={() => setAdjustmentType("INCREASE")}
-              >
-                {t("inventory_adjustments.increase")}
-              </button>
-            </div>
-
-            {/* Quantity */}
-            <div className="mb-pos-md">
-              <label
-                htmlFor="adj-quantity"
-                className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                style={{
-                  color:
-                    "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                }}
-              >
-                {t("inventory_adjustments.quantity")}
-              </label>
-              <input
-                id="adj-quantity"
-                type="number"
-                className="pos-input"
-                min={1}
-                value={quantity}
-                onChange={(e) =>
-                  setQuantity(Math.max(1, Number(e.target.value)))
-                }
-                disabled={isProcessing}
-              />
-            </div>
-
-            {/* Reason dropdown */}
-            <div className="mb-pos-md">
-              <label
-                htmlFor="adj-reason"
-                className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                style={{
-                  color:
-                    "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                }}
-              >
-                {t("inventory_adjustments.reason")}
-              </label>
-              <select
-                id="adj-reason"
-                className="pos-input"
-                value={reason}
-                onChange={(e) =>
-                  setReason(e.target.value as AdjustmentReason)
-                }
-                disabled={isProcessing}
-              >
-                {ADJUSTMENT_REASONS.map((r) => (
-                  <option key={r} value={r}>
-                    {t(`inventory_adjustments.reason_${r.toLowerCase()}`, {
-                      defaultValue: r,
-                    })}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Custom reason (when OTHER is selected) */}
-            {reason === "OTHER" && (
-              <div className="mb-pos-md">
-                <label
-                  htmlFor="adj-custom-reason"
-                  className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                  style={{
-                    color:
-                      "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                  }}
-                >
-                  {t("inventory_adjustments.custom_reason")}
-                </label>
-                <input
-                  id="adj-custom-reason"
-                  type="text"
-                  className="pos-input"
-                  value={customReason}
-                  onChange={(e) => setCustomReason(e.target.value)}
-                  disabled={isProcessing}
-                  maxLength={200}
-                />
-              </div>
-            )}
-
-            {/* Notes */}
-            <div className="mb-pos-md">
-              <label
-                htmlFor="adj-notes"
-                className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                style={{
-                  color:
-                    "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                }}
-              >
-                {t("inventory_adjustments.notes")}
-              </label>
-              <textarea
-                id="adj-notes"
-                className="pos-input min-h-16 resize-y"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                disabled={isProcessing}
-                maxLength={500}
-              />
-            </div>
-
-            {/* Submit error */}
-            {error && (
-              <div
-                className="mb-pos-md rounded px-pos-md py-pos-sm text-body font-medium"
-                role="alert"
-                style={{
-                  backgroundColor:
-                    "color-mix(in srgb, var(--color-urgency) 10%, transparent)",
-                  color: "var(--color-urgency)",
-                }}
-              >
-                {error}
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              className="pos-button pos-button-primary px-pos-xl w-full"
-            >
-              {isProcessing
-                ? t("inventory_adjustments.processing")
-                : t("inventory_adjustments.submit")}
-            </button>
-          </div>
+          <AdjustmentForm
+            selectedLot={selectedLot}
+            adjustmentType={adjustmentType}
+            onAdjustmentTypeChange={setAdjustmentType}
+            quantity={quantity}
+            onQuantityChange={(value: number) =>
+              setQuantity(Math.max(1, value))
+            }
+            reason={reason}
+            onReasonChange={(reason: string) => setReason(reason as AdjustmentReason)}
+            customReason={customReason}
+            onCustomReasonChange={setCustomReason}
+            notes={notes}
+            onNotesChange={setNotes}
+            error={error}
+            isProcessing={isProcessing}
+            canSubmit={canSubmit}
+            projectedStock={projectedStock}
+            onSubmit={handleSubmit}
+          />
         )}
 
-        {/* Generic error when no lot selected */}
-        {error && !selectedLot && (
-          <div
-            className="rounded px-pos-md py-pos-sm text-body font-medium"
-            role="alert"
-            style={{
-              backgroundColor:
-                "color-mix(in srgb, var(--color-urgency) 10%, transparent)",
-              color: "var(--color-urgency)",
-            }}
-          >
-            {error}
-          </div>
-        )}
+        {error && !selectedLot && <ErrorBanner message={error} />}
       </div>
 
-      {/* Toast */}
       {toast && (
-        <div className="fixed bottom-4 right-4 z-50">
-          <OperationQueuedToast
-            operationUuid={toast.operationUuid}
-            operationType={toast.operationType}
-            isVerified={toast.isVerified}
-            isOnline={isOnline}
-            onDismiss={handleDismissToast}
-          />
-        </div>
+        <InventoryAdjustmentsToast
+          operationUuid={toast.operationUuid}
+          operationType={toast.operationType}
+          isVerified={toast.isVerified}
+          isOnline={isOnline}
+          onDismiss={handleDismissToast}
+        />
       )}
     </section>
   );
 };
-
-// ---------------------------------------------------------------------------
-// Icon
-// ---------------------------------------------------------------------------
-
-const BackIcon: FC = () => (
-  <svg
-    width="18"
-    height="18"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M19 12H5M12 19l-7-7 7-7" />
-  </svg>
-);

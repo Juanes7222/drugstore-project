@@ -10,14 +10,15 @@
  *   - Inventory Adjustments (INVENTORY_ASSISTANT or ADMIN)
  *   - Admin / Sync (ADMIN only)
  */
-import { type FC, useCallback, useEffect, useRef, useState } from "react";
+import { type FC, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { selectActiveScreen, setActiveScreen } from "@/store/slices/ui-slice";
 import type { PosScreen } from "@/store/slices/ui-types";
-import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
+import { useLocalSessionStore, hasMinRole } from "../../../domain/auth/local-session.store";
 import { RoleType } from "@pharmacy/shared-types";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
+import type { PrismaClient } from "@pharmacy/database/local";
 import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
 
 interface NavItem {
@@ -130,44 +131,56 @@ const hasAccess = (allowedRoles: RoleType[]): boolean => {
   if (!session) {
     return false;
   }
-  return allowedRoles.includes(session.role as RoleType);
+  return allowedRoles.some((role) => hasMinRole(session, role));
 };
 
 const NAV_ITEMS: NavItem[] = [
   {
     screen: "sales",
     labelKey: "navigation.sales",
-    roles: [RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN, RoleType.ACCOUNTANT],
+    roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: SalesIcon,
   },
   {
     screen: "returns",
     labelKey: "navigation.returns",
-    roles: [RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN, RoleType.ACCOUNTANT],
+    roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: ReturnsIcon,
   },
   {
     screen: "inventory-adjustments",
     labelKey: "navigation.inventory_adjustments",
-    roles: [RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN],
+    roles: [RoleType.MANAGER, RoleType.OWNER],
     icon: InventoryIcon,
+  },
+  {
+    screen: "user-management",
+    labelKey: "navigation.user_management",
+    roles: [RoleType.MANAGER, RoleType.OWNER],
+    icon: AdminIcon,
+  },
+  {
+    screen: "audit-log",
+    labelKey: "navigation.audit_log",
+    roles: [RoleType.MANAGER, RoleType.OWNER],
+    icon: getHealthIcon(),
   },
   {
     screen: "admin-menu",
     labelKey: "navigation.admin_menu",
-    roles: [RoleType.ADMIN],
+    roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: AdminIcon,
   },
   {
     screen: "sync-health",
     labelKey: "navigation.sync_health",
-    roles: [RoleType.ADMIN],
+    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: getHealthIcon(),
   },
   {
     screen: "recovery",
     labelKey: "navigation.recovery",
-    roles: [RoleType.ADMIN],
+    roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: getHealthIcon(),
   },
 ];
@@ -193,7 +206,7 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
     const pollBadge = async () => {
       try {
         const { prisma } = await getLocalDatabase();
-        const counts = await createSyncMetricsService(prisma).getQueueCounts();
+        const counts = await createSyncMetricsService(prisma as PrismaClient).getQueueCounts();
         setBadgeCount(counts.permanentFailure);
       } catch {
         // Badge is advisory; do not surface errors.

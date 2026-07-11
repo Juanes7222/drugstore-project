@@ -28,10 +28,8 @@ import {
   createContext,
   type FC,
   type ReactNode,
-  useCallback,
   useContext,
   useEffect,
-  useMemo,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -211,8 +209,8 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
         // 4. Create domain services (with fiscal service wired in)
         const services: Services = {
           returnsService: createReturnsService(prismaClient, auth, invoiceService),
-          inventoryAdjustmentsService: createInventoryAdjustmentsService(prisma, auth),
-          prescriptionsService: createPrescriptionsService(prisma, auth),
+          inventoryAdjustmentsService: createInventoryAdjustmentsService(prismaClient, auth),
+          prescriptionsService: createPrescriptionsService(prismaClient, auth),
           backupService: createBackupService(),
           recoveryLogService: createRecoveryLogService(prismaClient),
           invoiceService,

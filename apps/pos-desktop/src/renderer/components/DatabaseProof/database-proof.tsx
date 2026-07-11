@@ -16,6 +16,7 @@
 
 import { useEffect, useState, type FC } from "react";
 import { getLocalDatabase } from "@infra/local-database";
+import type { PrismaClient } from "@pharmacy/database/local";
 
 interface ProofState {
   phase: "initializing" | "inserting" | "reading" | "done" | "error";
@@ -44,7 +45,8 @@ export const DatabaseProof: FC = () => {
       try {
         // ---- Phase 1: init ----
         setState({ phase: "initializing", clientData: null });
-        const { prisma } = await getLocalDatabase();
+        const { prisma: rawPrisma } = await getLocalDatabase();
+        const prisma = rawPrisma as PrismaClient;
         if (cancelled) return;
 
         // ---- Phase 2: insert ----
@@ -109,7 +111,7 @@ export const DatabaseProof: FC = () => {
       }}
     >
       <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "16px" }}>
-        🧪 Local Database — E2E Proof
+        Local Database — E2E Proof
       </h2>
 
       <PhaseLine phase="initializing" current={state.phase} label="Initialise PGlite + Prisma Client" />

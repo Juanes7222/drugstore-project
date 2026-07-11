@@ -1,10 +1,10 @@
 /**
- * PrescriptionsPage — capture medical prescription data for sale items that
- * require one before the payment can be confirmed.
+ * Prescriptions page — thin wiring container.
  *
- * The form is driven by the real PrescriptionsService from domain/ which
- * validates and persists the prescription to the local database and creates
- * the corresponding SyncQueue entry (PRESCRIPTION_REGISTRATION).
+ * Owns all form state, validation, and submission orchestration for medical
+ * prescription capture during checkout.  Presentational sub-components are
+ * imported from sibling files so this file stays focused on wiring, not
+ * markup.
  *
  * Navigation is driven by the Redux prescriptionFlow state:
  *   - Receives pendingItemId from the store
@@ -13,6 +13,7 @@
  *
  * @category Page
  */
+
 import {
   type FC,
   useCallback,
@@ -29,12 +30,16 @@ import {
 } from "@/store/slices/ui-slice";
 import { selectCartItems } from "@/store/slices/sales-slice";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { OperationQueuedToast } from "@/components/common/operation-queued-toast";
 import { usePrescriptionsService } from "../common/service-context";
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+// ── Presentational components (provided by frontend-pos) ────────────────
+import { PrescriptionsNoPending } from "./prescriptions-no-pending";
+import { PrescriptionsHeader } from "./prescriptions-header";
+import { PrescriptionItemInfo } from "./prescription-item-info";
+import { PrescriptionForm } from "./prescription-form";
+import { PrescriptionsToast } from "./prescriptions-toast";
+
+// ── Page component ──────────────────────────────────────────────────────
 
 export const PrescriptionsPage: FC = () => {
   const { t } = useTranslation();
@@ -73,9 +78,7 @@ export const PrescriptionsPage: FC = () => {
 
   const isLastItem = incompleteItemIds.length <= 1;
 
-  // -----------------------------------------------------------------------
-  // Validation
-  // -----------------------------------------------------------------------
+  // ── Validation ──────────────────────────────────────────────────────
 
   const validationError = useMemo((): string | null => {
     if (!physicianName.trim()) {
@@ -98,9 +101,7 @@ export const PrescriptionsPage: FC = () => {
     return null;
   }, [physicianName, licenseNumber, patientId, isControlledSubstance, bookEntry, bookPage, t]);
 
-  // -----------------------------------------------------------------------
-  // Handlers
-  // -----------------------------------------------------------------------
+  // ── Handlers ────────────────────────────────────────────────────────
 
   const resetForm = useCallback(() => {
     setPhysicianName("");
@@ -130,9 +131,6 @@ export const PrescriptionsPage: FC = () => {
     try {
       setIsProcessing(true);
 
-      // Call the real PrescriptionsService.create() which validates
-      // the sale item, checks for duplicates, creates the Prescription
-      // record, links it to the SaleItem, and inserts a SyncQueue row.
       await prescriptionsService.create({
         saleItemId: pendingItemId,
         prescriberName: physicianName.trim(),
@@ -177,54 +175,19 @@ export const PrescriptionsPage: FC = () => {
     setToast(null);
 
     if (isLastItem) {
-      // All prescriptions resolved — go back to payment
       dispatch(clearPrescriptionFlow());
       dispatch(setActiveScreen("payment"));
     } else {
-      // Advance to next item
       dispatch(resolveNextPrescriptionItem());
       resetForm();
     }
   }, [isLastItem, dispatch, resetForm]);
 
-  // -----------------------------------------------------------------------
-  // Render
-  // -----------------------------------------------------------------------
+  // ── Render ─────────────────────────────────────────────────────────
 
-  // If no pending item, show a fallback
   if (!pendingItemId || !currentCartItem) {
-    return (
-      <section
-        aria-label={t("prescriptions.title")}
-        className="flex h-full flex-col items-center justify-center"
-        style={{ backgroundColor: "var(--color-surface)" }}
-      >
-        <div className="pos-panel max-w-md p-pos-xl text-center">
-          <p
-            className="text-body"
-            style={{
-              color:
-                "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-            }}
-          >
-            {t("prescriptions.no_pending")}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              dispatch(clearPrescriptionFlow());
-              dispatch(setActiveScreen("payment"));
-            }}
-            className="pos-button pos-button-primary mt-pos-lg"
-          >
-            {t("common.back")}
-          </button>
-        </div>
-      </section>
-    );
+    return <PrescriptionsNoPending />;
   }
-
-  const itemsLeft = incompleteItemIds.length;
 
   return (
     <section
@@ -232,280 +195,50 @@ export const PrescriptionsPage: FC = () => {
       className="flex h-full flex-col overflow-y-auto"
       style={{ backgroundColor: "var(--color-surface)" }}
     >
-      <div className="px-pos-xl pt-pos-lg pb-pos-md">
-        <h1
-          className="pos-page-title"
-          style={{ color: "var(--color-ink)" }}
-        >
-          {t("prescriptions.title")}
-        </h1>
-
-        {itemsLeft > 1 && (
-          <p
-            className="mt-pos-xs text-caption font-medium"
-            style={{
-              color:
-                "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-            }}
-          >
-            {t("prescriptions.items_left", { count: itemsLeft })}
-          </p>
-        )}
-      </div>
+      <PrescriptionsHeader
+        itemsLeft={incompleteItemIds.length}
+      />
 
       <div className="flex-1 px-pos-xl pb-pos-xl max-w-2xl">
-        {/* Current item info */}
-        <div className="pos-panel p-pos-md mb-pos-lg">
-          <h2
-            className="text-ui font-semibold mb-pos-xs"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {currentCartItem.name}
-          </h2>
-          <div className="flex gap-pos-md text-caption">
-            <span
-              style={{
-                color:
-                  "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-              }}
-            >
-              {t("prescriptions.generic_name")}: {currentCartItem.genericName}
-            </span>
-            {currentCartItem.isRestricted && (
-              <span className="pos-badge pos-badge-restrict">
-                {t("sales.product.restricted")}
-              </span>
-            )}
-          </div>
-        </div>
+        {currentCartItem && (
+          <PrescriptionItemInfo item={currentCartItem} />
+        )}
 
-        {/* Form */}
-        <div className="pos-panel p-pos-md">
-          <div className="grid grid-cols-2 gap-pos-md mb-pos-md">
-            <div className="col-span-2">
-              <label
-                htmlFor="rx-physician-name"
-                className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                style={{
-                  color:
-                    "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                }}
-              >
-                {t("prescriptions.physician_name")}{" "}
-                <span style={{ color: "var(--color-urgency)" }}>*</span>
-              </label>
-              <input
-                id="rx-physician-name"
-                type="text"
-                className="pos-input"
-                value={physicianName}
-                onChange={(e) => setPhysicianName(e.target.value)}
-                disabled={isProcessing}
-                required
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="rx-license"
-                className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                style={{
-                  color:
-                    "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                }}
-              >
-                {t("prescriptions.license_number")}{" "}
-                <span style={{ color: "var(--color-urgency)" }}>*</span>
-              </label>
-              <input
-                id="rx-license"
-                type="text"
-                className="pos-input"
-                value={licenseNumber}
-                onChange={(e) => setLicenseNumber(e.target.value)}
-                disabled={isProcessing}
-                required
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="rx-date"
-                className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                style={{
-                  color:
-                    "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                }}
-              >
-                {t("prescriptions.prescription_date")}
-              </label>
-              <input
-                id="rx-date"
-                type="date"
-                className="pos-input"
-                value={prescriptionDate}
-                onChange={(e) => setPrescriptionDate(e.target.value)}
-                disabled={isProcessing}
-              />
-            </div>
-
-            <div className="col-span-2">
-              <label
-                htmlFor="rx-patient-id"
-                className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                style={{
-                  color:
-                    "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                }}
-              >
-                {t("prescriptions.patient_id")}{" "}
-                <span style={{ color: "var(--color-urgency)" }}>*</span>
-              </label>
-              <input
-                id="rx-patient-id"
-                type="text"
-                className="pos-input"
-                placeholder="CC / CE / NIT"
-                value={patientId}
-                onChange={(e) => setPatientId(e.target.value)}
-                disabled={isProcessing}
-                required
-              />
-            </div>
-          </div>
-
-          {/* Controlled substance toggle */}
-          <div className="mb-pos-md">
-            <label className="flex items-center gap-pos-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isControlledSubstance}
-                onChange={(e) => setIsControlledSubstance(e.target.checked)}
-                disabled={isProcessing}
-                className="h-4 w-4"
-                style={{
-                  accentColor: "var(--color-restrict)",
-                }}
-              />
-              <span
-                className="text-body font-medium"
-                style={{ color: "var(--color-restrict)" }}
-              >
-                {t("prescriptions.controlled_substance")}
-              </span>
-            </label>
-          </div>
-
-          {/* Conditional controlled-substance fields */}
-          {isControlledSubstance && (
-            <div className="grid grid-cols-2 gap-pos-md mb-pos-md p-pos-md rounded"
-              style={{
-                backgroundColor:
-                  "color-mix(in srgb, var(--color-restrict) 6%, white)",
-                border:
-                  "1px solid color-mix(in srgb, var(--color-restrict) 15%, transparent)",
-              }}
-            >
-              <div>
-                <label
-                  htmlFor="rx-book-entry"
-                  className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                  style={{
-                    color: "var(--color-restrict)",
-                  }}
-                >
-                  {t("prescriptions.book_entry")}{" "}
-                  <span style={{ color: "var(--color-urgency)" }}>*</span>
-                </label>
-                <input
-                  id="rx-book-entry"
-                  type="text"
-                  className="pos-input"
-                  value={bookEntry}
-                  onChange={(e) => setBookEntry(e.target.value)}
-                  disabled={isProcessing}
-                  required
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="rx-book-page"
-                  className="mb-pos-xs block text-caption font-semibold uppercase tracking-wide"
-                  style={{
-                    color: "var(--color-restrict)",
-                  }}
-                >
-                  {t("prescriptions.book_page")}{" "}
-                  <span style={{ color: "var(--color-urgency)" }}>*</span>
-                </label>
-                <input
-                  id="rx-book-page"
-                  type="text"
-                  className="pos-input"
-                  value={bookPage}
-                  onChange={(e) => setBookPage(e.target.value)}
-                  disabled={isProcessing}
-                  required
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Error */}
-          {error && (
-            <div
-              className="mb-pos-md rounded px-pos-md py-pos-sm text-body font-medium"
-              role="alert"
-              style={{
-                backgroundColor:
-                  "color-mix(in srgb, var(--color-urgency) 10%, transparent)",
-                color: "var(--color-urgency)",
-              }}
-            >
-              {error}
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex justify-end gap-pos-md pt-pos-sm">
-            <button
-              type="button"
-              onClick={() => {
-                dispatch(clearPrescriptionFlow());
-                dispatch(setActiveScreen("payment"));
-              }}
-              disabled={isProcessing}
-              className="pos-button pos-button-secondary px-pos-xl"
-            >
-              {t("common.cancel")}
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isProcessing || validationError !== null}
-              className="pos-button pos-button-restrict px-pos-xl"
-            >
-              {isProcessing
-                ? t("prescriptions.processing")
-                : isLastItem
-                  ? t("prescriptions.submit_finish")
-                  : t("prescriptions.submit_next")}
-            </button>
-          </div>
-        </div>
+        <PrescriptionForm
+          physicianName={physicianName}
+          onPhysicianNameChange={setPhysicianName}
+          licenseNumber={licenseNumber}
+          onLicenseNumberChange={setLicenseNumber}
+          prescriptionDate={prescriptionDate}
+          onPrescriptionDateChange={setPrescriptionDate}
+          patientId={patientId}
+          onPatientIdChange={setPatientId}
+          isControlledSubstance={isControlledSubstance}
+          onIsControlledSubstanceChange={setIsControlledSubstance}
+          bookEntry={bookEntry}
+          onBookEntryChange={setBookEntry}
+          bookPage={bookPage}
+          onBookPageChange={setBookPage}
+          error={error}
+          isProcessing={isProcessing}
+          canSubmit={validationError === null}
+          isLastItem={isLastItem}
+          onSubmit={handleSubmit}
+          onCancel={() => {
+            dispatch(clearPrescriptionFlow());
+            dispatch(setActiveScreen("payment"));
+          }}
+        />
       </div>
 
-      {/* Toast */}
       {toast && (
-        <div className="fixed bottom-4 right-4 z-50">
-          <OperationQueuedToast
-            operationUuid={toast.operationUuid}
-            operationType={toast.operationType}
-            isVerified={toast.isVerified}
-            isOnline={isOnline}
-            onDismiss={handleToastDismissed}
-          />
-        </div>
+        <PrescriptionsToast
+          operationUuid={toast.operationUuid}
+          operationType={toast.operationType}
+          isVerified={toast.isVerified}
+          isOnline={isOnline}
+          onDismiss={handleToastDismissed}
+        />
       )}
     </section>
   );
