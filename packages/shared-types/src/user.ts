@@ -1,18 +1,31 @@
-import { IdentificationType, RoleType } from "./enums";
+import { IdentificationType, RoleType, UserStatus, AuthMethod } from "./enums";
 
 export interface User {
   id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  identificationType: IdentificationType;
-  identificationNumber: string;
+  subscriptionId: string | null;
   role: RoleType;
+  email: string | null;
+  username: string | null;
+  displayName: string;
+  firstName?: string;
+  lastName?: string;
+  avatarUrl: string | null;
+  avatarColor: string | null;
+  authMethod: AuthMethod;
+  identificationType: IdentificationType | null;
+  identificationNumber: string | null;
   isActive: boolean;
-  failedLoginAttempts?: number;
-  lockedUntil?: Date | null;
+  totpEnabled: boolean;
+  failedLoginAttempts: number;
+  lockedUntil: Date | null;
   passwordHash?: string;
   passwordAlgorithm?: string;
+  emailVerifiedAt: Date | null;
+  lastLoginAt: Date | null;
+  lastPasswordChangeAt: Date | null;
+  status: UserStatus;
+  mustChangePassword: boolean;
+  createdByUserId: string | null;
   createdAt: string;
   updatedAt: string;
 }

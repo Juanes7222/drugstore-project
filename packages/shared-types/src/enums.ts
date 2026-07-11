@@ -1,8 +1,50 @@
 export enum RoleType {
+  SAAS_ADMIN = "SAAS_ADMIN",
+  OWNER = "OWNER",
+  MANAGER = "MANAGER",
   CASHIER = "CASHIER",
+  // Legacy roles — kept for backward compatibility
   INVENTORY_ASSISTANT = "INVENTORY_ASSISTANT",
   ADMIN = "ADMIN",
   ACCOUNTANT = "ACCOUNTANT",
+}
+
+export enum UserStatus {
+  PENDING_SETUP = "PENDING_SETUP",
+  ACTIVE = "ACTIVE",
+  DISABLED = "DISABLED",
+  LOCKED = "LOCKED",
+}
+
+export enum AuthMethod {
+  PASSWORD_TOTP = "PASSWORD_TOTP",
+  PASSWORD_ONLY = "PASSWORD_ONLY",
+  PIN_ONLY = "PIN_ONLY",
+  OAUTH_GOOGLE = "OAUTH_GOOGLE",
+}
+
+export enum SessionStatus {
+  ACTIVE = "ACTIVE",
+  REVOKED = "REVOKED",
+  EXPIRED = "EXPIRED",
+}
+
+export enum StepUpMethod {
+  PIN = "PIN",
+  REMOTE = "REMOTE",
+  CODE = "CODE",
+}
+
+export enum StepUpStatus {
+  PENDING = "PENDING",
+  APPROVED = "APPROVED",
+  DENIED = "DENIED",
+  EXPIRED = "EXPIRED",
+}
+
+export enum TwoFactorMethod {
+  TOTP = "TOTP",
+  BACKUP_CODE = "BACKUP_CODE",
 }
 
 export enum SaleType {

@@ -1,5 +1,11 @@
 export {
   RoleType,
+  UserStatus,
+  AuthMethod,
+  SessionStatus,
+  StepUpMethod,
+  StepUpStatus,
+  TwoFactorMethod,
   SaleType,
   SaleOperationalState,
   FiscalDocumentType,
@@ -35,3 +41,4 @@ export type { SyncQueueEntry } from "./sync-queue-entry";
 export type { CashShift } from "./cash-shift";
 export type { ReportView } from "./report";
 export type { Plan, Subscription, Location, WorkstationActivation, ActivationCode, FraudAlert, ActivationResult, CheckInResult, LicenseSummary } from "./licensing";
+export type { UserSession, StepUpRequest, AuditLogEntry, UserLocationAccess, LoginAttempt, DetailedUser } from "./auth-types";
