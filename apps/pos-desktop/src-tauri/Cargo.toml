@@ -27,7 +27,9 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 thiserror = "1"
 walkdir = "2"
-tokio = { version = "1", features = ["fs", "io-util"] }
+tokio = { version = "1", features = ["fs", "io-util", "net", "time"] }
+printers = "2.3"
+escpos = { version = "0.19", features = ["barcodes", "codes_2d"] }
 log = "0.4"
 rand = "0.8"
 hostname = "0.4"

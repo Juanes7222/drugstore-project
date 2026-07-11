@@ -26,6 +26,10 @@
 import { PrismaClient, Prisma, ClientReturnState, MovementType } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import type { InvoiceService, CreditNoteInput } from '../fiscal/invoice.service';
+import type { PrintRouter } from '../printing/print-router';
+import { PrintJobType, PrintPayloadType } from '../printing/printing-types';
+import { writePrintPayload } from '../printing/print-payload-writer';
+import { generateReceiptHtml } from '../fiscal/receipt-generator';
 import { RoleType } from '@pharmacy/shared-types';
 import {
   SaleForReturnNotFoundException,
@@ -137,8 +141,9 @@ export const createReturnsService = (
   prisma: PrismaClient,
   auth: AuthService,
   invoiceService?: InvoiceService,
+  printRouter?: PrintRouter,
 ): ReturnsService => {
-  return new ReturnsService(prisma, auth, invoiceService);
+  return new ReturnsService(prisma, auth, invoiceService, printRouter);
 };
 
 // ---------------------------------------------------------------------------
@@ -150,6 +155,7 @@ export class ReturnsService {
     private readonly prisma: PrismaClient,
     private readonly auth: AuthService,
     private readonly invoiceService?: InvoiceService,
+    private readonly printRouter?: PrintRouter,
   ) {}
 
   /**
@@ -525,9 +531,10 @@ export class ReturnsService {
       const creditNoteData: CreditNoteInput = (result as { creditNoteData: CreditNoteInput }).creditNoteData;
 
       // 6. Generate credit note (fiscal document) after the return confirms.
+      let creditNoteInvoice: unknown = null;
       if (this.invoiceService) {
         try {
-          await this.invoiceService.generateCreditNoteForReturn(creditNoteData);
+          creditNoteInvoice = await this.invoiceService.generateCreditNoteForReturn(creditNoteData);
         } catch (err) {
           console.error(
             `[ReturnsService] Credit note generation failed for return ${returnId}:`,
@@ -535,6 +542,41 @@ export class ReturnsService {
           );
         }
       }
+
+      // 7. Print the credit note receipt (fire-and-forget from the caller's
+      //    perspective). The print router handles routing, fallback, and
+      //    queueing. If the router is not configured, printing is skipped.
+      if (this.printRouter && creditNoteInvoice) {
+        try {
+          const inv = creditNoteInvoice as {
+            id: string;
+            invoiceNumber: string;
+            contingencyNumber: string | null;
+            invoiceType: string;
+            status: string;
+            cufeProvisional: string;
+            cufeOfficial: string | null;
+            issuedAt: Date | string;
+            fullData: unknown;
+          };
+          const receiptHtml = generateReceiptHtml(inv);
+          const receiptPath = await writePrintPayload(
+            `credit-note-${returnId}.html`,
+            receiptHtml,
+          );
+          await this.printRouter.print(PrintJobType.CREDIT_NOTE, {
+            payloadPath: receiptPath,
+            payloadType: PrintPayloadType.HTML,
+            saleId: creditNoteData.saleId,
+          });
+        } catch (err) {
+          console.error(
+            `[ReturnsService] Print routing failed for credit note ${returnId}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+
       return result;
     });
   }

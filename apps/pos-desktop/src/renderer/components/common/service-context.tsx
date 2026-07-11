@@ -62,6 +62,21 @@ import {
 } from "../../../domain/fiscal/fiscal-scheduler.service";
 import { isContingencyTechKeyPlaceholder } from "../../../config/fiscal";
 import type { PrismaClient } from "@pharmacy/database/local";
+import {
+  createPrinterConfigService,
+  type PrinterConfigService,
+  createPrintQueueService,
+  type PrintQueueService,
+  createPrintRouter,
+  type PrintRouter,
+  createPrinterHealthService,
+  type PrinterHealthService,
+  createConfigExportService,
+  type ConfigExportService,
+  createPrintingMetricsService,
+  type PrintingMetricsService,
+} from "../../../domain/printing";
+import { isOnline } from "../../../common/is-online";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -77,6 +92,12 @@ interface Services {
   contingencyService: ContingencyService;
   fiscalNumberingService: FiscalNumberingService;
   fiscalScheduler: FiscalScheduler;
+  printerConfigService: PrinterConfigService;
+  printQueueService: PrintQueueService;
+  printRouter: PrintRouter;
+  printerHealthService: PrinterHealthService;
+  configExportService: ConfigExportService;
+  printingMetricsService: PrintingMetricsService;
 }
 
 type InitState =
@@ -134,6 +155,30 @@ export const useContingencyService = (): ContingencyService =>
 /** Convenience hook — returns the FiscalNumberingService instance. */
 export const useFiscalNumberingService = (): FiscalNumberingService =>
   useServiceContext().fiscalNumberingService;
+
+/** Convenience hook — returns the PrinterConfigService instance. */
+export const usePrinterConfigService = (): PrinterConfigService =>
+  useServiceContext().printerConfigService;
+
+/** Convenience hook — returns the PrintQueueService instance. */
+export const usePrintQueueService = (): PrintQueueService =>
+  useServiceContext().printQueueService;
+
+/** Convenience hook — returns the PrintRouter instance. */
+export const usePrintRouter = (): PrintRouter =>
+  useServiceContext().printRouter;
+
+/** Convenience hook — returns the PrinterHealthService instance. */
+export const usePrinterHealthService = (): PrinterHealthService =>
+  useServiceContext().printerHealthService;
+
+/** Convenience hook — returns the ConfigExportService instance. */
+export const useConfigExportService = (): ConfigExportService =>
+  useServiceContext().configExportService;
+
+/** Convenience hook — returns the PrintingMetricsService instance. */
+export const usePrintingMetricsService = (): PrintingMetricsService =>
+  useServiceContext().printingMetricsService;
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -206,9 +251,72 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
           contingencyService,
         });
 
-        // 4. Create domain services (with fiscal service wired in)
+        // 4a. Create printing services (use temp vars to avoid scope issues)
+        const printerConfig = createPrinterConfigService(prismaClient);
+        const printQueue = createPrintQueueService(
+          prismaClient,
+          async (jobType) => {
+            try {
+              return await printerConfig.getPrinterForJobType(jobType);
+            } catch {
+              return null;
+            }
+          },
+          async (systemName, payloadPath, _payloadType) => {
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              const result = await invoke<{
+                success: boolean;
+                errorMessage?: string;
+                paperOut?: boolean;
+              }>('print_file', {
+                printerSystemName: systemName,
+                filePath: payloadPath,
+              });
+              return result;
+            } catch (err) {
+              return {
+                success: false,
+                errorMessage: err instanceof Error ? err.message : String(err),
+                paperOut: false,
+              };
+            }
+          },
+        );
+        const printRouter = createPrintRouter(
+          printerConfig,
+          printQueue,
+          { baseUrl, authToken: undefined },
+        );
+        const printerHealth = createPrinterHealthService(
+          printerConfig,
+          printQueue,
+          () => isOnline(),
+        );
+        const configExport = createConfigExportService(
+          printerConfig,
+          async () => {
+            try {
+              const { invoke } = await import('@tauri-apps/api/core');
+              const discovered = await invoke<Array<{
+                systemName: string;
+                friendlyName: string;
+                connection: string;
+                isDefault: boolean;
+                printerType: string;
+                supportsColor: boolean;
+              }>>('discover_printers');
+              return discovered;
+            } catch {
+              return [];
+            }
+          },
+        );
+        const printingMetrics = createPrintingMetricsService(prismaClient);
+
+        // 4b. Create domain services (with fiscal service wired in)
         const services: Services = {
-          returnsService: createReturnsService(prismaClient, auth, invoiceService),
+          returnsService: createReturnsService(prismaClient, auth, invoiceService, printRouter),
           inventoryAdjustmentsService: createInventoryAdjustmentsService(prismaClient, auth),
           prescriptionsService: createPrescriptionsService(prismaClient, auth),
           backupService: createBackupService(),
@@ -217,7 +325,16 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
           contingencyService,
           fiscalNumberingService,
           fiscalScheduler,
+          printerConfigService: printerConfig,
+          printQueueService: printQueue,
+          printRouter,
+          printerHealthService: printerHealth,
+          configExportService: configExport,
+          printingMetricsService: printingMetrics,
         };
+
+        // 5. Start the printer health check loop
+        printerHealth.start();
 
         setInitState({ status: "ready", services });
       } catch (err) {

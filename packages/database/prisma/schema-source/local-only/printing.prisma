@@ -1,0 +1,118 @@
+// LOCAL-ONLY schema fragment — Printer configuration and print job queue
+// for apps/pos-desktop.
+//
+// These models are intentionally not propagated to the server schema. They
+// exist only on the terminal to support local printer discovery, configuration,
+// and offline print queuing. Sync does not push PrinterConfig or PrintJob rows
+// — printing is entirely workstation-scoped.
+
+enum PrinterType {
+  THERMAL_RECEIPT
+  THERMAL_LABEL
+  LASER
+  INKJET
+  MULTIFUNCTION
+  UNKNOWN
+}
+
+enum PrinterConnection {
+  USB
+  NETWORK
+  BLUETOOTH
+  SYSTEM_DEFAULT
+}
+
+enum PaperSize {
+  RECEIPT_80MM
+  RECEIPT_58MM
+  LETTER
+  A4
+  LABEL_50X25
+  LABEL_OTHER
+  CUSTOM
+}
+
+enum PrinterStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+  NO_PAPER
+  UNKNOWN
+}
+
+enum PrintJobType {
+  SALE_RECEIPT
+  ELECTRONIC_INVOICE
+  CREDIT_NOTE
+  CONTINGENCY_RECEIPT
+  INVENTORY_REPORT
+  SHIFT_CLOSE_REPORT
+  TEST_PAGE
+  OTHER
+}
+
+enum PrintPayloadType {
+  PDF
+  ESC_POS
+  RAW
+  HTML
+}
+
+enum PrintJobStatus {
+  PENDING
+  PRINTING
+  COMPLETED
+  FAILED
+  DISCARDED
+  RETRYING
+}
+
+model PrinterConfig {
+  id                     String          @id
+  friendlyName           String
+  systemName             String
+  printerType            PrinterType     @default(UNKNOWN)
+  connection             PrinterConnection @default(USB)
+  paperSize              PaperSize       @default(RECEIPT_80MM)
+  supportsColor          Boolean         @default(false)
+  assignedJobs           String[]        @default([])
+  fallbackPrinterId      String?
+  fallbackPrinter        PrinterConfig?  @relation("FallbackChain", fields: [fallbackPrinterId], references: [id])
+  fallbackFor            PrinterConfig[] @relation("FallbackChain")
+  serverFallbackEnabled  Boolean         @default(false)
+  status                 PrinterStatus   @default(UNKNOWN)
+  lastStatusCheck        DateTime?
+  lastErrorMessage       String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  printJobs PrintJob[]
+
+  @@index([status])
+  @@index([systemName])
+  @@index([printerType])
+}
+
+model PrintJob {
+  id                 String          @id
+  jobType            PrintJobType
+  printerConfigId    String?
+  printerConfig      PrinterConfig?  @relation(fields: [printerConfigId], references: [id])
+  payloadPath        String
+  payloadType        PrintPayloadType @default(PDF)
+  status             PrintJobStatus  @default(PENDING)
+  attempts           Int             @default(0)
+  lastError          String?
+  nextRetryAt        DateTime?
+  createdAt          DateTime        @default(now())
+  completedAt        DateTime?
+  createdBySaleId    String?
+  createdByUserId    String?
+  routingLog         String?         @db.Text
+
+  @@index([status, nextRetryAt])
+  @@index([status, createdAt])
+  @@index([printerConfigId])
+  @@index([createdBySaleId])
+  @@index([createdByUserId])
+}

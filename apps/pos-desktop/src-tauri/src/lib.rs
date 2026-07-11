@@ -3,6 +3,7 @@ use tauri::{Manager, RunEvent};
 mod backup;
 mod commands;
 mod hardware_fingerprint;
+mod printer_discovery;
 
 use backup::{assess_startup_health, write_clean_shutdown_sentinel, BackupState};
 
@@ -45,6 +46,13 @@ pub fn run() {
             commands::backup::mark_backup_corrupt_command,
             commands::backup::copy_backup_to_temp_command,
             commands::backup::remove_temp_dir_command,
+            commands::printer_discovery::discover_printers,
+            commands::printer_discovery::scan_network_printers,
+            commands::printer_discovery::test_print,
+            commands::printer_discovery::get_printer_status,
+            commands::printer_discovery::print_file,
+            commands::printer_discovery::write_temp_file,
+            commands::printer_discovery::file_exists,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

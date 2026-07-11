@@ -33,16 +33,22 @@ import {
   InvalidCashCountForNonCashMethodException,
   PaymentMethodNotFoundException,
 } from './exceptions';
+import { DomainError } from '../../common/domain-error';
 import type { AuthService } from '../auth/auth.service';
 import { createBackupService, BackupFailedException } from '../backup';
 import type { LocalAdjustmentService } from '../fiscal/local-adjustment.service';
+import type { PrintRouter } from '../printing/print-router';
+import { PrintJobType, PrintPayloadType } from '../printing/printing-types';
+import { writePrintPayload } from '../printing/print-payload-writer';
+import { generateShiftCloseHtml } from './shift-close-html';
 
 export const createCashShiftService = (
   prisma: PrismaClient,
   authService: AuthService,
   adjustmentService?: LocalAdjustmentService,
+  printRouter?: PrintRouter,
 ): CashShiftService => {
-  return new CashShiftService(prisma, authService, adjustmentService);
+  return new CashShiftService(prisma, authService, adjustmentService, printRouter);
 };
 
 export class CashShiftService {
@@ -50,6 +56,7 @@ export class CashShiftService {
     private readonly prisma: PrismaClient,
     private readonly auth: AuthService,
     private readonly adjustmentService?: LocalAdjustmentService,
+    private readonly printRouter?: PrintRouter,
   ) {}
 
   /**
@@ -160,6 +167,11 @@ export class CashShiftService {
         cashShiftId: shiftId,
         countType: 'CLOSING',
       },
+      include: {
+        paymentMethod: {
+          select: { name: true },
+        },
+      },
     });
 
     const activePaymentMethods = await this.getActivePaymentMethods(shiftId);
@@ -204,18 +216,67 @@ export class CashShiftService {
       );
     }
 
-    return this.prisma.cashShift.update({
-      where: { id: shiftId },
-      data: {
-        state: 'CLOSED',
-        closedAt: new Date(),
-        closedByUserId: session.userId,
-        expectedClosingAmount: expectedAmount,
-        actualClosingAmount: actualAmount,
-        closingDifference,
-        closingNotes: dto.closingNotes ?? null,
-      },
-    });
+    return this.prisma.cashShift
+      .update({
+        where: { id: shiftId },
+        data: {
+          state: 'CLOSED',
+          closedAt: new Date(),
+          closedByUserId: session.userId,
+          expectedClosingAmount: expectedAmount,
+          actualClosingAmount: actualAmount,
+          closingDifference,
+          closingNotes: dto.closingNotes ?? null,
+        },
+        include: {
+          cashCounts: true,
+        },
+      })
+      .then(async (updatedShift) => {
+        // 6. Print the shift close report (fire-and-forget from the caller's
+        //    perspective). The print router handles routing, fallback, and
+        //    queueing. If the router is not configured, printing is skipped.
+        if (this.printRouter) {
+          try {
+            const closeHtml = generateShiftCloseHtml({
+              shiftId: updatedShift.id,
+              workstationId: session.workstationId,
+              cashierName: session.userId,
+              openedAt: updatedShift.openedAt,
+              closedAt: updatedShift.closedAt!,
+              openingBalance: updatedShift.openingBalance.toString(),
+              expectedClosingAmount: updatedShift.expectedClosingAmount.toString(),
+              actualClosingAmount: updatedShift.actualClosingAmount.toString(),
+              closingDifference: updatedShift.closingDifference.toString(),
+              closingNotes: updatedShift.closingNotes,
+              paymentMethodCounts: closingCounts.map((cc) => ({
+                methodName: (cc as typeof closingCounts[number] & { paymentMethod: { name: string } }).paymentMethod?.name ?? cc.paymentMethodId,
+                isCash: cc.paymentMethodIsCash,
+                expectedAmount: cc.expectedAmount.toString(),
+                declaredAmount: cc.declaredAmount.toString(),
+                difference: cc.difference.toString(),
+              })),
+            });
+
+            const closePath = await writePrintPayload(
+              `shift-close-${shiftId}.html`,
+              closeHtml,
+            );
+
+            await this.printRouter.print(PrintJobType.SHIFT_CLOSE_REPORT, {
+              payloadPath: closePath,
+              payloadType: PrintPayloadType.HTML,
+            });
+          } catch (err) {
+            console.error(
+              `[CashShiftService] Print routing failed for shift close ${shiftId}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }
+
+        return updatedShift;
+      });
   }
 
   // ---------------------------------------------------------------------------
@@ -242,7 +303,7 @@ export class CashShiftService {
       );
     }
 
-    const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+    this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
     // Find all confirmed sales in this shift
     const sales = await this.prisma.sale.findMany({

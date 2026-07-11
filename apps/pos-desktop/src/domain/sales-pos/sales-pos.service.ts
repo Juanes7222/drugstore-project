@@ -26,6 +26,9 @@ import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState } from
 import type { AuthService } from '../auth/auth.service';
 import type { InventoryLotsService, ConsumedLot } from '../inventory-lots/inventory-lots.service';
 import type { InvoiceService } from '../fiscal/invoice.service';
+import type { PrintRouter } from '../printing/print-router';
+import { PrintJobType, PrintPayloadType } from '../printing/printing-types';
+import { writePrintPayload } from '../printing/print-payload-writer';
 import { RoleType } from '@pharmacy/shared-types';
 import {
   SaleNotInProgressException,
@@ -123,8 +126,9 @@ export const createSalesPosService = (
   auth: AuthService,
   inventoryLots: InventoryLotsService,
   invoiceService?: InvoiceService,
+  printRouter?: PrintRouter,
 ): SalesPosService => {
-  return new SalesPosService(prisma, auth, inventoryLots, invoiceService);
+  return new SalesPosService(prisma, auth, inventoryLots, invoiceService, printRouter);
 };
 
 // ---------------------------------------------------------------------------
@@ -137,6 +141,7 @@ export class SalesPosService {
     private readonly auth: AuthService,
     private readonly inventoryLots: InventoryLotsService,
     private readonly invoiceService?: InvoiceService,
+    private readonly printRouter?: PrintRouter,
   ) {}
 
   // -----------------------------------------------------------------------
@@ -381,6 +386,48 @@ export class SalesPosService {
           );
         }
       }
+
+      // 8. Enqueue the receipt print job (fire-and-forget from the caller's
+      //    perspective). The print router handles the routing, fallback, and
+      //    queueing. If the router is not configured, printing is skipped.
+      if (this.printRouter) {
+        try {
+          const resultData = result as { id: string; localNumber: bigint };
+          // The receipt payload is generated as HTML for thermal printers.
+          // At this point the invoice may have been generated above with a
+          // fiscal PDF — we print the SALE_RECEIPT version.
+          const receiptHtml = (await import('../fiscal/receipt-generator'))
+            .generateReceiptHtml({
+              id: saleId,
+              invoiceNumber: `V${String(resultData.localNumber)}`,
+              contingencyNumber: null,
+              invoiceType: 'SALE_RECEIPT',
+              status: 'TRANSMITTED_AUTHORIZED',
+              cufeProvisional: '',
+              cufeOfficial: null,
+              issuedAt: new Date(),
+              fullData: null,
+            });
+
+          // Write receipt HTML to a temp file for the print router
+          const receiptPath = await writePrintPayload(
+            `receipt-${saleId}.html`,
+            receiptHtml,
+          );
+
+          await this.printRouter.print(PrintJobType.SALE_RECEIPT, {
+            payloadPath: receiptPath,
+            payloadType: PrintPayloadType.HTML,
+            saleId,
+          });
+        } catch (err) {
+          console.error(
+            `[SalesPosService] Print routing failed for sale ${saleId}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+
       return result;
     });
   }
