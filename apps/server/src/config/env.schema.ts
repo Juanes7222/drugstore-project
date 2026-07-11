@@ -12,6 +12,9 @@ export const envSchema = z.object({
   BACKUP_STORAGE_PATH: z.string().default('./storage').describe('Root directory for uploaded terminal backup files'),
   LICENSE_TOKEN_SECRET: z.string().min(32).default('dev-license-secret-change-in-prod-min-32-chars!!').describe('Secret for signing license tokens'),
   LICENSE_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(604800).describe('License token TTL in seconds (default 7 days)'),
+  TOTP_ISSUER: z.string().default('PharmacyPOS').describe('Issuer name for TOTP QR codes'),
+  TOTP_ENCRYPTION_KEY: z.string().min(32).optional().describe('32-byte hex key for encrypting TOTP secrets at rest'),
+  BOOTSTRAP_SAAS_ADMIN_EMAIL: z.email().optional().describe('Email for first SaaS admin auto-creation'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
