@@ -42,3 +42,25 @@ export type { CashShift } from "./cash-shift";
 export type { ReportView } from "./report";
 export type { Plan, Subscription, Location, WorkstationActivation, ActivationCode, FraudAlert, ActivationResult, CheckInResult, LicenseSummary } from "./licensing";
 export type { UserSession, StepUpRequest, AuditLogEntry, UserLocationAccess, LoginAttempt, DetailedUser } from "./auth-types";
+
+export {
+  UpdateType,
+  UpdateChannel,
+  RolloutStrategy,
+  UpdateStateMachine,
+  DownloadStatus,
+  InstallStatus,
+  UpdateOutcome,
+  UpdateVersionState,
+} from "./update-enums";
+
+export type {
+  UpdateVersion,
+  UpdateState,
+  UpdateAttempt,
+  UpdateCheckResponse,
+  UpdateTelemetryPayload,
+  RolloutScheduleStep,
+  MigrationStep,
+  MigrationLogEntry,
+} from "./update-types";

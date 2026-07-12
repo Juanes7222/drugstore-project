@@ -47,6 +47,7 @@ import {
 import { createAuthService, AuthService } from "../../../domain/auth/auth.service";
 import { createBackupService, BackupService } from "../../../domain/backup/backup.service";
 import { createRecoveryLogService, RecoveryLogService } from "../../../domain/backup/recovery-log.service";
+import { createUpdateService, UpdateService } from "../../../domain/updates/update.service";
 import { createInvoiceService, InvoiceService } from "../../../domain/fiscal/invoice.service";
 import {
   createContingencyService,
@@ -104,6 +105,7 @@ interface Services {
   printingMetricsService: PrintingMetricsService;
   cashDrawerService: CashDrawerService;
   customerDisplayService: CustomerDisplayService;
+  updateService: UpdateService;
 }
 
 type InitState =
@@ -193,6 +195,10 @@ export const useCashDrawerService = (): CashDrawerService =>
 /** Convenience hook — returns the CustomerDisplayService instance. */
 export const useCustomerDisplayService = (): CustomerDisplayService =>
   useServiceContext().customerDisplayService;
+
+/** Convenience hook — returns the UpdateService instance. */
+export const useUpdateService = (): UpdateService =>
+  useServiceContext().updateService;
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -334,12 +340,35 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
         const cashDrawer = createCashDrawerService(printerConfig);
         const customerDisplay = createCustomerDisplayService(printerConfig);
 
-        // 4d. Create domain services (with fiscal service wired in)
+        // 4d. Create backup service (needed by update service)
+        const backupService = createBackupService();
+
+        // 4e. Create update service (auto-update module)
+        const currentVersion = import.meta.env.VITE_APP_VERSION as string | undefined ?? '0.1.0';
+        const licenseId = (session as any)?.licenseId ?? 'unknown';
+        const updateService = createUpdateService({
+          prisma: prismaClient,
+          currentVersion,
+          workstationId,
+          licenseId,
+          accessToken: async () => (session as any)?.accessToken ?? null,
+          backupService,
+        });
+
+        // Hydrate the update store from the local DB
+        await import('../../../domain/updates/update.store').then((m) =>
+          m.useUpdateStore.getState().hydrateFromDb(prismaClient),
+        );
+
+        // Start telemetry flush cycle
+        updateService.startTelemetryFlush();
+
+        // 4g. Create domain services (with fiscal service wired in)
         const services: Services = {
           returnsService: createReturnsService(prismaClient, auth, invoiceService, printRouter),
           inventoryAdjustmentsService: createInventoryAdjustmentsService(prismaClient, auth),
           prescriptionsService: createPrescriptionsService(prismaClient, auth),
-          backupService: createBackupService(),
+          backupService,
           recoveryLogService: createRecoveryLogService(prismaClient),
           invoiceService,
           contingencyService,
@@ -353,6 +382,7 @@ export const ServiceProvider: FC<ServiceProviderProps> = ({
           printingMetricsService: printingMetrics,
           cashDrawerService: cashDrawer,
           customerDisplayService: customerDisplay,
+          updateService,
         };
 
         // 5. Start the printer health check loop

@@ -15,6 +15,9 @@ export const envSchema = z.object({
   TOTP_ISSUER: z.string().default('PharmacyPOS').describe('Issuer name for TOTP QR codes'),
   TOTP_ENCRYPTION_KEY: z.string().min(32).optional().describe('32-byte hex key for encrypting TOTP secrets at rest'),
   BOOTSTRAP_SAAS_ADMIN_EMAIL: z.email().optional().describe('Email for first SaaS admin auto-creation'),
+  UPDATE_STORAGE_PATH: z.string().default('./storage/updates').describe('Root directory for uploaded update binary files'),
+  UPDATE_PUBLIC_BASE_URL: z.string().default('http://localhost:3000').describe('Public base URL for constructing download URLs'),
+  UPDATE_TELEMETRY_HMAC_SECRET: z.string().min(32).default('dev-telemetry-hmac-secret-change-in-prod-32chars!!!').describe('HMAC secret for verifying telemetry signatures'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

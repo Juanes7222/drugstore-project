@@ -3,8 +3,14 @@
 //   node scripts/assemble-schema.mjs full   → prisma/schema/         (shared + server-only)
 //   node scripts/assemble-schema.mjs local  → prisma/schema-local/   (shared only)
 //
-// Each assembled directory gets a schema.prisma with the appropriate generator output path,
-// plus all .prisma files (except _header.prisma) from the source folders.
+// Each assembled directory gets:
+//   schema.prisma      — generator + datasource blocks only
+//   models/            — one file per source-fragment .prisma file
+//
+// Prisma 7 discovers models/ recursively when prisma.config.ts points
+// `schema` at the parent directory (e.g. "./prisma/schema").
+//
+// The config is at packages/database/prisma.config.ts.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import { readdirSync } from 'node:fs';
@@ -28,6 +34,20 @@ datasource db {
 }
 `;
 
+/// Collect .prisma files from a source directory, excluding _header.prisma.
+function collectPrismaFiles(sourceDir) {
+  if (!existsSync(sourceDir)) return [];
+  return readdirSync(sourceDir)
+    .filter((f) => f.endsWith('.prisma') && f !== '_header.prisma')
+    .sort(); // deterministic order
+}
+
+/// Read the content of a .prisma file and return it unchanged.
+function readPrismaFile(sourceDir, file) {
+  const src = join(sourceDir, file);
+  return readFileSync(src, 'utf-8');
+}
+
 function assemble(target) {
   const isFull = target === 'full';
   const isLocal = target === 'local';
@@ -50,57 +70,52 @@ function assemble(target) {
   }
   mkdirSync(destDir, { recursive: true });
 
-  // Write schema.prisma with the correct generator output
+  // Write schema.prisma — only generator + datasource blocks.
+  // Prisma 7 discovers models/ recursively when prisma.config.ts
+  // points schema at the parent directory.
   writeFileSync(join(destDir, 'schema.prisma'), SCHEMA_HEADER(outputDir), 'utf-8');
 
-  // Copy source .prisma files (excluding _header.prisma)
-  const copySource = (sourceDir) => {
-    if (!existsSync(sourceDir)) return;
-    const files = readdirSync(sourceDir).filter(
-      (f) => f.endsWith('.prisma') && f !== '_header.prisma'
-    );
-    for (const file of files) {
-      const src = join(sourceDir, file);
-      const dst = join(destDir, file);
-      writeFileSync(dst, readFileSync(src, 'utf-8'), 'utf-8');
-      console.log(`  + ${file}`);
-    }
-  };
+  // Create models/ subdirectory for all model/enum .prisma files
+  const modelsDir = join(destDir, 'models');
+  mkdirSync(modelsDir, { recursive: true });
 
   // Collect filenames from local-only to know which shared files to skip
   const localOnlyFiles = new Set(
-    isLocal && existsSync(join(SOURCE_DIR, 'local-only'))
-      ? readdirSync(join(SOURCE_DIR, 'local-only')).filter(
-          (f) => f.endsWith('.prisma') && f !== '_header.prisma'
-        )
+    isLocal
+      ? collectPrismaFiles(join(SOURCE_DIR, 'local-only'))
       : []
   );
 
-  // Copy shared files, skipping any that have a local-only override
+  // 1. Shared files (skipping overrides for local target)
   const sharedDir = join(SOURCE_DIR, 'shared');
-  if (existsSync(sharedDir)) {
-    const sharedFiles = readdirSync(sharedDir).filter(
-      (f) => f.endsWith('.prisma') && f !== '_header.prisma'
-    );
-    for (const file of sharedFiles) {
-      if (isLocal && localOnlyFiles.has(file)) {
-        console.log(`  ~ ${file} (overridden by local-only)`);
-        continue;
-      }
-      const src = join(sharedDir, file);
-      const dst = join(destDir, file);
-      writeFileSync(dst, readFileSync(src, 'utf-8'), 'utf-8');
-      console.log(`  + ${file}`);
+  for (const file of collectPrismaFiles(sharedDir)) {
+    if (isLocal && localOnlyFiles.has(file)) {
+      console.log(`  ~ ${file} (overridden by local-only)`);
+      continue;
+    }
+    const dst = join(modelsDir, file);
+    writeFileSync(dst, readPrismaFile(sharedDir, file), 'utf-8');
+    console.log(`  + models/${file}`);
+  }
+
+  // 2. Server-only files (full target only)
+  if (isFull) {
+    const serverOnlyDir = join(SOURCE_DIR, 'server-only');
+    for (const file of collectPrismaFiles(serverOnlyDir)) {
+      const dst = join(modelsDir, file);
+      writeFileSync(dst, readPrismaFile(serverOnlyDir, file), 'utf-8');
+      console.log(`  + models/${file}`);
     }
   }
 
-  if (isFull) {
-    copySource(join(SOURCE_DIR, 'server-only'));
-  }
-
-  // Local-only override files (copied after shared to take precedence)
+  // 3. Local-only override files (local target only)
   if (isLocal) {
-    copySource(join(SOURCE_DIR, 'local-only'));
+    const localOnlyDir = join(SOURCE_DIR, 'local-only');
+    for (const file of collectPrismaFiles(localOnlyDir)) {
+      const dst = join(modelsDir, file);
+      writeFileSync(dst, readPrismaFile(localOnlyDir, file), 'utf-8');
+      console.log(`  + models/${file}`);
+    }
   }
 
   console.log(`Done — ${target} schema ready at ${destDir.replace(ROOT, '')}/\n`);

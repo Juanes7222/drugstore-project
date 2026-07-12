@@ -75,6 +75,10 @@ export const uiSlice = createSlice({
       state.activeScreen = "audit-log";
     },
 
+    navigateToAbout: (state) => {
+      state.activeScreen = "about";
+    },
+
     navigateToLogin: (state) => {
       state.activeScreen = "login";
     },
@@ -153,6 +157,7 @@ export const {
   navigateToRecovery,
   navigateToUserManagement,
   navigateToAuditLog,
+  navigateToAbout,
   navigateToLogin,
   navigateToForgotPassword,
   navigateToTwoFactorSetup,

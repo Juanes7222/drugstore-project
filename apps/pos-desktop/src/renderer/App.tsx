@@ -21,6 +21,8 @@ import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inv
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
 import { RecoveryPage } from "../domain/recovery/recovery.page";
+import { AboutPage } from "@/components/update/about.page";
+import { UpdateCheckInterceptor } from "@/components/update/update-check-interceptor";
 import { LoginPage } from "@/components/auth/login.page";
 import { ForgotPasswordPage } from "@/components/auth/forgot-password.page";
 import { ResetPasswordPage } from "@/components/auth/reset-password.page";
@@ -31,7 +33,6 @@ import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useLocalSessionStore } from "../domain/auth/local-session.store";
-import { useTranslation } from "react-i18next";
 import { DB_PROOF_ENABLED } from "@infra/config";
 
 const SCREEN_TRANSITION_DURATION_S = 0.3;
@@ -41,7 +42,6 @@ const SCREEN_TRANSITION_DURATION_S = 0.3;
 // ---------------------------------------------------------------------------
 
 const InnerApp: FC = () => {
-  const { t } = useTranslation();
   const activeScreen = useAppSelector(selectActiveScreen);
   const isOnline = useOnlineStatus();
   const shouldReduceMotion = useReducedMotion();
@@ -117,7 +117,7 @@ const InnerApp: FC = () => {
 
   return (
     <AppShell
-      cashierName={session.fullName}
+      cashierName={session!.fullName}
       openingBalanceCents={0}
       openedAt={new Date().toISOString()}
       initialSyncState={isOnline ? "online" : "offline"}
@@ -279,9 +279,29 @@ const InnerApp: FC = () => {
                 <RecoveryPage />
               </motion.div>
             )}
+
+            {activeScreen === "about" && (
+              <motion.div
+                key="about"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <AboutPage />
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Overlay components: update-check interceptor renders toasts/modals */}
+      <UpdateCheckInterceptor />
     </AppShell>
   );
 };

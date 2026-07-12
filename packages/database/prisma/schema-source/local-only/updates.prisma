@@ -1,0 +1,110 @@
+// LOCAL-ONLY schema fragment — Auto-update state management for apps/pos-desktop.
+//
+// Singleton row tracking the local update lifecycle, plus an audit trail of
+// every check / download / install attempt, and a pending-telemetry queue
+// for offline scenarios.
+
+enum UpdateType {
+  CRITICAL
+  MANDATORY
+  OPTIONAL
+  HOTFIX
+}
+
+enum UpdateChannel {
+  STABLE
+  BETA
+}
+
+enum DownloadStatus {
+  NOT_DOWNLOADED
+  DOWNLOADING
+  DOWNLOADED
+  FAILED
+}
+
+enum InstallStatus {
+  NOT_INSTALLED
+  READY_TO_INSTALL
+  INSTALLING
+  INSTALLED_PENDING_RESTART
+  INSTALLED_VERIFIED
+  ROLLED_BACK
+}
+
+enum UpdateOutcome {
+  CHECK_OK
+  CHECK_NO_UPDATE
+  CHECK_FAILED
+  DOWNLOAD_STARTED
+  DOWNLOAD_COMPLETED
+  DOWNLOAD_FAILED
+  INSTALL_STARTED
+  INSTALL_COMPLETED
+  INSTALL_FAILED
+  MIGRATION_STARTED
+  MIGRATION_COMPLETED
+  MIGRATION_FAILED
+  RESTARTED_OK
+  ROLLED_BACK
+  TELEMETRY_SENT
+}
+
+/// Singleton row for local update state (id = 'singleton').
+model UpdateState {
+  id                      String         @id
+  currentVersion          String
+  lastCheckAt             DateTime?
+  lastAvailableVersion    String?
+  lastAvailableType       UpdateType?
+  lastAvailableChangelog  String?        @db.Text
+  lastAvailableDownloadUrl String?
+  lastAvailableSignature  String?
+  lastAvailableFileSize   Int?
+  downloadStatus          DownloadStatus?
+  downloadProgress        Int            @default(0)
+  installStatus           InstallStatus?
+  crashCount              Int            @default(0)
+  lastErrorMessage        String?        @db.Text
+  userDismissedVersion    String?
+  channel                 UpdateChannel  @default(STABLE)
+  autoDownload            Boolean        @default(true)
+  installOnClose          Boolean        @default(true)
+}
+
+/// Audit trail of every update attempt (check, download, install, etc.).
+model UpdateAttempt {
+  id            String        @id
+  at            DateTime
+  fromVersion   String
+  toVersion     String?
+  outcome       UpdateOutcome
+  errorMessage  String?       @db.Text
+  durationMs    Int?
+
+  @@index([at])
+  @@index([outcome])
+}
+
+/// Records every migration step applied to the local database.
+model MigrationLog {
+  id           String   @id
+  name         String   @unique
+  appliedAt    DateTime
+  success      Boolean
+  errorMessage String?  @db.Text
+
+  @@index([success])
+}
+
+/// Queue of telemetry events that haven't been sent to the server yet.
+model PendingTelemetry {
+  id         String   @id
+  endpoint   String
+  body       String   @db.Text
+  createdAt  DateTime
+  retryCount Int      @default(0)
+  lastError  String?  @db.Text
+
+  @@index([createdAt])
+}

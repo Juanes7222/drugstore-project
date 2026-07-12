@@ -15,6 +15,7 @@ export type PosScreen =
   | "recovery"
   | "user-management"
   | "audit-log"
+  | "about"
   | "forgot-password"
   | "reset-password"
   | "2fa-setup";

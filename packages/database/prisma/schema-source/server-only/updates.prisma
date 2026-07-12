@@ -1,0 +1,114 @@
+// Server-only schema fragment — auto-update system models.
+//
+// Manages published update versions, rollout configuration, and telemetry
+// aggregation for the pharma-POS auto-update infrastructure.
+
+enum UpdateType {
+  CRITICAL
+  MANDATORY
+  OPTIONAL
+  HOTFIX
+}
+
+enum UpdateChannel {
+  STABLE
+  BETA
+}
+
+enum RolloutStrategy {
+  PHASED
+  INSTANT
+}
+
+enum UpdateVersionState {
+  DRAFT
+  ROLLING_OUT
+  PAUSED
+  FULLY_DEPLOYED
+  ROLLED_BACK
+}
+
+enum UpdateOutcome {
+  CHECK_OK
+  CHECK_NO_UPDATE
+  CHECK_FAILED
+  DOWNLOAD_STARTED
+  DOWNLOAD_COMPLETED
+  DOWNLOAD_FAILED
+  INSTALL_STARTED
+  INSTALL_COMPLETED
+  INSTALL_FAILED
+  MIGRATION_STARTED
+  MIGRATION_COMPLETED
+  MIGRATION_FAILED
+  RESTARTED_OK
+  ROLLED_BACK
+  TELEMETRY_SENT
+}
+
+/// A published update version. One version per (channel, version) pair.
+model UpdateVersion {
+  id                 String           @id
+  version            String
+  channel            UpdateChannel    @default(STABLE)
+  downloadUrl        String
+  signature          String
+  fileSize           Int
+  fileHash           String
+  releaseNotes       String           @db.Text
+  releaseDate        DateTime
+  updateType         UpdateType
+  state              UpdateVersionState @default(DRAFT)
+  mandatoryFrom      DateTime?
+  rolloutStrategy    RolloutStrategy  @default(PHASED)
+  rolloutStartDate   DateTime         @default(now())
+  rolloutSchedule    Json             @default("[{\"percent\":5,\"afterDays\":0},{\"percent\":25,\"afterDays\":3},{\"percent\":50,\"afterDays\":7},{\"percent\":100,\"afterDays\":14}]")
+  minAppVersion      String?
+  maxAppVersion      String?
+  requiredPlanFeatures String[]       @default([])
+  minPlan            String?
+  isActive           Boolean          @default(false)
+  isPaused           Boolean          @default(false)
+  pausedReason       String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  attempts           UpdateAttemptLog[]
+
+  @@unique([version, channel])
+  @@index([channel, isActive, state])
+  @@index([state])
+  @@index([releaseDate])
+}
+
+/// Telemetry / audit log for every update attempt reported by clients.
+model UpdateAttemptLog {
+  id            String       @id
+  versionId     String
+  version       UpdateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  workstationId String
+  licenseId     String
+  fromVersion   String
+  toVersion     String?
+  outcome       UpdateOutcome
+  errorMessage  String?      @db.Text
+  durationMs    Int?
+  occurredAt    DateTime
+  createdAt     DateTime     @default(now())
+
+  @@index([versionId, outcome])
+  @@index([workstationId])
+  @@index([occurredAt])
+  @@index([outcome, occurredAt])
+}
+
+/// Per-workstation or per-location channel opt-in override.
+/// When a location opts into BETA, all its workstations get beta versions.
+model UpdateChannelConfig {
+  id            String       @id
+  locationId    String       @unique
+  channel       UpdateChannel @default(STABLE)
+  optedInAt     DateTime     @default(now())
+  optedInByUserId String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
