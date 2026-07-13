@@ -1,8 +1,8 @@
 # Plan de Testing — POS Desktop (Tauri 2 + React + PGlite)
 
-**Versión:** 1.2
+**Versión:** 1.3
 **Última actualización:** Julio 2026
-**Estado:** Fases 0, 1, 2 y 3 completadas. **~408 tests en 39 archivos**. **~239 tests nuevos** (utilidades, hooks, common, dominio, Redux slices). ~100 archivos pendientes de cobertura.
+**Estado:** Fases 0, 1, 2, 3 y 4 completadas. **~460 tests en 44 archivos**. **~291 tests nuevos** (utilidades, hooks, common, dominio, Redux slices, componentes flujo venta). ~85 archivos pendientes de cobertura.
 
 ---
 
@@ -27,7 +27,7 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.test.ts`, `*.test.tsx`) | **39 archivos, ~408 tests** — todos pasando ✅ |
+| Archivos de test (`*.test.ts`, `*.test.tsx`) | **44 archivos, ~460 tests** — todos pasando ✅ |
 | Configuración de Vitest | **LISTO** — inline en `vite.config.ts` con coverage (v8, 80% thresholds) |
 | `vitest.setup.ts` | **LISTO** — jest-dom matchers + i18n init |
 | Dependencias instaladas | **LISTO** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom`, `@testing-library/user-event`, `@vitest/coverage-v8` |
@@ -36,7 +36,7 @@
 | Cobertura actual | **~25%** (subiendo desde <2%) — Meta: ≥80% |
 | Servicios de dominio | **17 servicios** — todos testeados ✅ |
 | Redux slices | **3 slices** — 3 testeados ✅ (payment: 10 tests, sales: 22 tests, ui: 27 tests) |
-| Componentes React | **18+ componentes** — 4 testeados (payment-processing, activation-page, license-banner, license-status-page), 15 pendientes |
+| Componentes React | **18+ componentes** — 10 testeados ✅ (payment-processing, activation-page, license-banner, license-status-page, totals-summary, cart-panel, product-search, receipt, currency-input, operation-queued-toast), ~8 pendientes |
 | Hooks React | **3 hooks** — 2 testeados (use-elapsed-time, use-online-status), 1 pendiente (use-global-shortcuts) |
 | Utilidades puras | **6 archivos** — 6 testeados ✅ (format-currency, format-date, sync-metadata, domain-error, is-online, time-format) |
 | Archivos totales TypeScript/TSX | **~108 archivos** |
@@ -231,11 +231,11 @@ El plan se ejecuta en **6 fases**, ordenadas por relación costo/beneficio: prim
 │ Fase 1: Utilidades, Hooks, Common     ████████████████████  0.5 días   44 tests   │ ✅ COMPLETADA
 │ Fase 2: Servicios de Dominio          ████████████████████  5-7 días  ~140 tests  │ ✅ COMPLETADA
 │ Fase 3: Redux Slices Faltantes        ████████████████████  1 día     ~49 tests   │ ✅ COMPLETADA
-│ Fase 4: Componentes — Flujo de Venta  ░░░░░░░░░░░░░░░░░░░░  2 días    ~45 tests   │ 🔴 PENDIENTE
+│ Fase 4: Componentes — Flujo de Venta  ████████████████████  2 días    ~52 tests   │ ✅ COMPLETADA
 │ Fase 5: Componentes — Páginas y Nav   ░░░░░░░░░░░░░░░░░░░░  3 días    ~65 tests   │ 🔴 PENDIENTE
 │ Fase 6: E2E con Playwright            ░░░░░░░░░░░░░░░░░░░░  2-3 días  ~15 tests   │ 🔴 PENDIENTE
 ├──────────────────────────────────────────────────────────────────────────────────────┤
-│ TOTAL COMPLETADO: ~190 tests (F1+F2) — restante ~135 tests (F3-F6)                    │
+│ TOTAL COMPLETADO: ~291 tests (F1-F4) — restante ~80 tests (F5-F6)                     │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -607,7 +607,7 @@ Selectors: `selectActiveScreen`, `selectSaleCompletionPhase`, `selectPrescriptio
 
 **Objetivo:** Testear los componentes del flujo principal de venta (SalesTransaction → PaymentProcessing → Receipt). Verificar renderizado, interacciones de usuario, y estados.
 
-**Estado:** 🟡 **PARCIAL** — 4 tests en `payment-processing.test.tsx`. ~45 tests adicionales planificados.
+**Estado:** ✅ **COMPLETADA** — **52 tests nuevos** en 6 archivos. Todos pasando.
 
 **Herramientas:** `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom`.
 
