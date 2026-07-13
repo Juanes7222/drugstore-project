@@ -90,7 +90,7 @@ describe("LicenseBanner", () => {
       const alert = screen.getByRole("alert");
       expect(alert).toBeVisible();
       expect(alert).toHaveTextContent(/Suscripción vencida/i);
-      expect(alert).toHaveTextContent(/Contacta a tu proveedor/i);
+      expect(alert).toHaveTextContent(/Contacte a su proveedor/i);
     });
   });
 
@@ -106,7 +106,7 @@ describe("LicenseBanner", () => {
       const alert = screen.getByRole("alert");
       expect(alert).toBeVisible();
       expect(alert).toHaveTextContent(/licencia fue revocada/i);
-      expect(alert).toHaveTextContent(/Contacta a tu proveedor/i);
+      expect(alert).toHaveTextContent(/Contacte a su proveedor/i);
     });
   });
 
@@ -139,7 +139,7 @@ describe("LicenseBanner", () => {
 
       const alert = screen.getByRole("alert");
       expect(alert).toHaveTextContent(/Suscripción pendiente de pago/i);
-      expect(alert).toHaveTextContent(/Contacta a tu proveedor/i);
+      expect(alert).toHaveTextContent(/Contacte a su proveedor/i);
     });
   });
 

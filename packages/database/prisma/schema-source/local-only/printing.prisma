@@ -105,7 +105,7 @@ model PrinterConfig {
   cashDrawerConfig       String?         @db.Text
   customerDisplayConfig  String?         @db.Text
   receiptTemplateId      String?
-  receiptTemplate        ReceiptTemplate? @relation(fields: [receiptTemplateId], references: [id])
+  receiptTemplate        ReceiptTemplate? @relation("ReceiptTemplateAssignments", fields: [receiptTemplateId], references: [id])
   status                 PrinterStatus   @default(UNKNOWN)
   lastStatusCheck        DateTime?
   lastErrorMessage       String?

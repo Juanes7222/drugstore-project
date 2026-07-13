@@ -5,18 +5,18 @@
  * renders a compact full-width banner below the sync pulse:
  *
  *   - ACTIVE & token within 7 days of expiry & online:
- *       "Tu suscripción se renueva el {date}. Verificá que el pago esté al día."
+ *       "Su suscripción se renueva el {date}. Verifique que el pago esté al día."
  *
  *   - GRACE_PERIOD:
  *       Yellow persistent banner: "Suscripción pendiente de pago. La app sigue
- *       funcionando. Tenés hasta {date} para renovar."
+ *       funcionando. Tiene hasta {date} para renovar."
  *
  *   - LOCKED:
- *       Red persistent banner: "Suscripción vencida. Contacta a tu proveedor
- *       para renovar. Podés seguir viendo tus datos y exportarlos."
+ *       Red persistent banner: "Suscripción vencida. Contacte a su proveedor
+ *       para renovar. Puede seguir viendo sus datos y exportarlos."
  *
  *   - REVOKED:
- *       Red persistent banner: "Tu licencia fue revocada. Contacta a tu
+ *       Red persistent banner: "Su licencia fue revocada. Contacte a su
  *       proveedor."
  *
  *   - UNACTIVATED: No banner (the activation page takes over the full screen).

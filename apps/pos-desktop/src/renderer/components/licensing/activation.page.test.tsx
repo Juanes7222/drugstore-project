@@ -21,7 +21,7 @@ import {
 const mockActivate = vi.hoisted(() => vi.fn());
 const mockUseOnlineStatus = vi.hoisted(() => vi.fn(() => true));
 
-vi.mock("../../domain/licensing/license.service", () => ({
+vi.mock("../../../domain/licensing/license.service", () => ({
   createLicenseService: vi.fn(() => ({
     activate: mockActivate,
     checkIn: vi.fn(),
@@ -120,7 +120,7 @@ describe("ActivationPage", () => {
       render(<ActivationPage />);
 
       expect(
-        screen.getByRole("heading", { name: /Active tu punto de venta/i }),
+        screen.getByRole("heading", { name: /Active su punto de venta/i }),
       ).toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: /ACTIVAR/i }),
@@ -216,7 +216,7 @@ describe("ActivationPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/Necesitás conexión a internet/i),
+          screen.getByText(/Necesita conexión a internet/i),
         ).toBeInTheDocument();
       });
 

@@ -17,7 +17,7 @@ import { LicenseStatusPage } from "./license-status.page";
 
 const mockCheckIn = vi.hoisted(() => vi.fn());
 
-vi.mock("../../domain/licensing/license.service", () => ({
+vi.mock("../../../domain/licensing/license.service", () => ({
   createLicenseService: vi.fn(() => ({
     activate: vi.fn(),
     checkIn: mockCheckIn,
