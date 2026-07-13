@@ -19,7 +19,7 @@ Si ves la pantalla con el mensaje "Suscripción vencida" o "Suscripción bloquea
 
 ## Pasos para resolverlo
 
-1. **Contactá a tu proveedor** para regularizar el pago.
+1. **Contacta a tu proveedor** para regularizar el pago.
 2. **El proveedor registra el pago** y reactiva la suscripción.
 3. **El sistema se actualiza automáticamente** en el próximo check-in (cada 24 horas).
 4. **También podés forzar la actualización** desde la pantalla de estado de licencia → "Renovar ahora".

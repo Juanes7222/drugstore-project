@@ -27,4 +27,4 @@ Las actualizaciones se instalan de forma automática, pero es importante entende
 
 - Verificá que todo funcione correctamente.
 - La primera carga puede ser un poco más lenta mientras se reconstruyen índices.
-- Si ves algún comportamiento anómalo, contactá a soporte.
+- Si ves algún comportamiento anómalo, Contacta a soporte.

@@ -11,7 +11,7 @@ export class LicenseInvalidException extends DomainError {
   constructor() {
     super(
       'LICENSE_INVALID',
-      'La suscripción está vencida. Contactá a tu proveedor para renovar.',
+      'La suscripción está vencida. Contacta a tu proveedor para renovar.',
     );
   }
 }

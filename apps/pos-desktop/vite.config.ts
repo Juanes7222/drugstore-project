@@ -81,13 +81,6 @@ export default defineConfig(() => ({
     ],
   },
 
-  ssr: {
-    noExternal: [
-      "@pharmacy/database",
-      "@pharmacy/database/local",
-    ],
-  },
-
   // Vite options tailored for Tauri development
   clearScreen: false,
   server: {
@@ -122,5 +115,25 @@ port: 5173,
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.spec.{ts,tsx}",
+        "src/renderer/dev/**",
+        "src/renderer/styles/**",
+        "src/renderer/i18n/locales/**",
+        "src-tauri/**",
+      ],
+      thresholds: {
+        branches: 80,
+        functions: 80,
+        lines: 80,
+        statements: 80,
+      },
+    },
+    css: true,
   },
 }));

@@ -12,11 +12,11 @@
  *       funcionando. Tenés hasta {date} para renovar."
  *
  *   - LOCKED:
- *       Red persistent banner: "Suscripción vencida. Contactá a tu proveedor
+ *       Red persistent banner: "Suscripción vencida. Contacta a tu proveedor
  *       para renovar. Podés seguir viendo tus datos y exportarlos."
  *
  *   - REVOKED:
- *       Red persistent banner: "Tu licencia fue revocada. Contactá a tu
+ *       Red persistent banner: "Tu licencia fue revocada. Contacta a tu
  *       proveedor."
  *
  *   - UNACTIVATED: No banner (the activation page takes over the full screen).

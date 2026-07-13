@@ -30,7 +30,7 @@ Para empezar a usar el sistema POS, necesitás activar cada puesto de trabajo co
 - **"Código ya usado"**: Ese código ya fue utilizado. Pedile uno nuevo a tu proveedor.
 - **"Código expirado"**: El código tiene fecha de vencimiento. Solicitá uno nuevo.
 - **"Sin conexión"**: Necesitás internet para activar por primera vez. Conectate e intentá de nuevo.
-- **"Límite de puestos alcanzado"**: Tu plan no permite más puestos en este local. Contactá a tu proveedor para ampliar.
+- **"Límite de puestos alcanzado"**: Tu plan no permite más puestos en este local. Contacta a tu proveedor para ampliar.
 
 ## Cambio de equipo
 

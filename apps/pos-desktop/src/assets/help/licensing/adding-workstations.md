@@ -10,7 +10,7 @@ En la pantalla de estado de licencia podés ver:
 
 ## Agregar un puesto nuevo
 
-1. Contactá a tu proveedor y solicitá un código de activación adicional para el puesto.
+1. Contacta a tu proveedor y solicitá un código de activación adicional para el puesto.
 2. En el nuevo equipo, abrí el programa.
 3. En la pantalla de activación, ingresá el código provisto y el nombre del puesto.
 4. El puesto se activa automáticamente.

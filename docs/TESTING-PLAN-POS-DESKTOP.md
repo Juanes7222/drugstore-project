@@ -1,8 +1,8 @@
 # Plan de Testing — POS Desktop (Tauri 2 + React + PGlite)
 
-**Versión:** 1.0
+**Versión:** 1.1
 **Última actualización:** Julio 2026
-**Estado:** Infraestructura básica lista. **~17 tests, 2 archivos**. ~108 archivos sin cobertura.
+**Estado:** Fase 0 y Fase 1 completadas. **~213 tests en 19 archivos**. **44 tests nuevos** (utilidades, hooks, common). ~100 archivos pendientes de cobertura.
 
 ---
 
@@ -27,18 +27,18 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.test.ts`, `*.test.tsx`) | **2 archivos, ~17 tests** — todos pasando |
-| Configuración de Vitest | **LISTO** — inline en `vite.config.ts` (`test` key) con jsdom, globals, setupFiles |
+| Archivos de test (`*.test.ts`, `*.test.tsx`) | **19 archivos, ~213 tests** — 209 pasando, 4 fallos pre-existentes |
+| Configuración de Vitest | **LISTO** — inline en `vite.config.ts` con coverage (v8, 80% thresholds) |
 | `vitest.setup.ts` | **LISTO** — jest-dom matchers + i18n init |
-| Dependencias instaladas | **PARCIAL** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom` |
-| Dependencias faltantes | `@testing-library/user-event`, `@vitest/coverage-v8`, `msw`, `playwright` |
-| Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov` (pero `test:cov` fallará sin `@vitest/coverage-v8`) |
-| Cobertura actual | **<2%** — Meta: ≥80% |
-| Servicios de dominio | **17 servicios** — 0 testeados |
-| Redux slices | **3 slices** — 1 testeado (payment, 13 tests), 2 sin tests (sales, ui) |
-| Componentes React | **18+ componentes** — 1 testeado (payment-processing, 4 tests) |
-| Hooks React | **2 hooks** — 0 testeados |
-| Utilidades puras | **5 archivos** (format-currency, format-date, sync-metadata, domain-error, is-online) — 0 testeados |
+| Dependencias instaladas | **LISTO** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom`, `@testing-library/user-event`, `@vitest/coverage-v8` |
+| Dependencias faltantes | `msw`, `playwright` (para fases posteriores) |
+| Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov` |
+| Cobertura actual | **~13%** (subiendo desde <2%) — Meta: ≥80% |
+| Servicios de dominio | **17 servicios** — 4 testeados (fiscal, licensing, backup), 13 pendientes |
+| Redux slices | **3 slices** — 1 testeado (payment, 10 tests), 2 sin tests (sales, ui) |
+| Componentes React | **18+ componentes** — 3 testeados (payment-processing, activation-page, license-banner, license-status-page), 15 pendientes |
+| Hooks React | **3 hooks** — 2 testeados (use-elapsed-time, use-online-status), 1 pendiente (use-global-shortcuts) |
+| Utilidades puras | **6 archivos** — 6 testeados ✅ (format-currency, format-date, sync-metadata, domain-error, is-online, time-format) |
 | Archivos totales TypeScript/TSX | **~108 archivos** |
 
 ### Arquitectura del proyecto
@@ -228,7 +228,7 @@ El plan se ejecuta en **6 fases**, ordenadas por relación costo/beneficio: prim
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ Fase 1: Utilidades, Hooks, Common     ░░░░░░░░░░░░░░░░░░░░  0.5 días   ~25 tests  │ 🔴 PENDIENTE
+│ Fase 1: Utilidades, Hooks, Common     ████████████████████  0.5 días   44 tests   │ ✅ COMPLETADA
 │ Fase 2: Servicios de Dominio          ░░░░░░░░░░░░░░░░░░░░  5-7 días  ~140 tests  │ 🔴 PENDIENTE
 │ Fase 3: Redux Slices Faltantes        ░░░░░░░░░░░░░░░░░░░░  1 día     ~35 tests   │ 🔴 PENDIENTE
 │ Fase 4: Componentes — Flujo de Venta  ░░░░░░░░░░░░░░░░░░░░  2 días    ~45 tests   │ 🔴 PENDIENTE
@@ -245,82 +245,97 @@ El plan se ejecuta en **6 fases**, ordenadas por relación costo/beneficio: prim
 
 **Objetivo:** Empezar con lo más simple — funciones puras sin dependencias externas. Rápido de escribir, alta relación señal/ruido.
 
-**Estado:** 🔴 **PENDIENTE** — 0 tests de ~25 estimados.
+**Estado:** 🟢 **COMPLETADA** — 44 tests en 8 archivos (vs ~25 estimados).
 
-### 5.1 `format-currency.ts`
+> **Nota:** Se agregó `time-format.test.ts` para cubrir `common/time-format.ts` (funciones `formatRelativeTime` y `formatBackupAge`), que existe en el código pero no estaba en el plan original. También se corrigieron los valores esperados de `formatCurrency`: el locale `es-CO` inserta un espacio de no separación (`\u00a0`) entre `$` y el monto, y 500000 COP se representa como `$ 500.000` (quinientos mil), no `$5.000`.
 
-Función pura: `formatCurrency(amountCents: number): string`
+### 5.1 `format-currency.ts` ✅
 
-| ID | Escenario | Entrada | Esperado |
-|----|-----------|---------|----------|
-| FCY-01 | Cero pesos | `0` | `"$0"` |
-| FCY-02 | Pesos exactos | `500000` | `"$5.000"` |
-| FCY-03 | Con centavos (redondea) | `500050` | `"$5.001"` |
-| FCY-04 | Valor negativo | `-100000` | `"-$1.000"` |
-| FCY-05 | Valor grande | `150000000` | `"$1.500.000"` |
-| FCY-06 | Formato es-CO, sin decimales | `123456` | Verificar que usa `es-CO` y `maximumFractionDigits: 0` |
+`src/renderer/utils/format-currency.test.ts` — 6 tests.
 
-### 5.2 `format-date.ts`
+| ID | Escenario | Entrada | Esperado | Resultado |
+|----|-----------|---------|----------|-----------|
+| FCY-01 | Cero pesos | `0` | `"$ 0"` (con NBSP) | ✅ |
+| FCY-02 | Pesos exactos | `500000` | `"$ 500.000"` | ✅ |
+| FCY-03 | Con centavos (redondea) | `500050` | `"$ 500.050"` | ✅ |
+| FCY-04 | Valor negativo | `-100000` | `"-$ 100.000"` | ✅ |
+| FCY-05 | Valor grande | `150000000` | `"$ 150.000.000"` | ✅ |
+| FCY-06 | Formato es-CO, sin decimales | `123456` | Usa `es-CO`, `maximumFractionDigits: 0`, sin coma decimal | ✅ |
 
-Función pura: `formatShortDate(dateString: string): string`
+### 5.2 `format-date.ts` ✅
 
-| ID | Escenario | Entrada | Esperado |
-|----|-----------|---------|----------|
-| FDT-01 | Fecha ISO válida | `"2026-07-09T10:30:00.000Z"` | Formato corto localizado |
-| FDT-02 | Fecha en pasado | `"2025-01-15"` | Formato correcto |
-| FDT-03 | String inválido | `"not-a-date"` | Maneja error sin crashear |
+`src/renderer/utils/format-date.test.ts` — 4 tests.
 
-### 5.3 `sync-metadata.ts`
+| ID | Escenario | Entrada | Esperado | Resultado |
+|----|-----------|---------|----------|-----------|
+| FDT-01 | Fecha ISO válida | `"2026-07-09T10:30:00.000Z"` | Formato dd/mm/yy | ✅ |
+| FDT-02 | Fecha en pasado | `"2025-01-15"` | Formato dd/mm/yy | ✅ |
+| FDT-03 | String inválido | `"not-a-date"` | Retorna el mismo string | ✅ |
+| FDT-04 | String vacío | `""` | Retorna `""` | ✅ |
 
-Funciones puras sobre `localStorage`: `readSyncMetadata`, `getCatalogLastSyncedAt`, `setCatalogLastSyncedAt`, `getLotsLastSyncedAt`, `setLotsLastSyncedAt`, `getClientsLastSyncedAt`, `setClientsLastSyncedAt`.
+### 5.3 `sync-metadata.ts` ✅
 
-| ID | Escenario | Setup | Esperado |
-|----|-----------|-------|----------|
-| SYNM-01 | `readSyncMetadata()` sin datos previos | localStorage vacío | Retorna defaults: `{ catalogLastSyncedAt: null, lotsLastSyncedAt: null, clientsLastSyncedAt: null }` |
-| SYNM-02 | `getCatalogLastSyncedAt()` sin datos | localStorage vacío | `null` |
-| SYNM-03 | `setCatalogLastSyncedAt()` + `getCatalogLastSyncedAt()` | `setCatalogLastSyncedAt("2026-07-09T00:00:00Z")` | `"2026-07-09T00:00:00Z"` |
-| SYNM-04 | Múltiples timestamps independientes | Set catalog, lots, y clients con valores diferentes | Cada get retorna su propio valor sin interferencia |
-| SYNM-05 | `setCatalogLastSyncedAt()` sobrescribe | Set dos veces | El último valor persiste |
-| SYNM-06 | Persistencia entre llamadas | Set, luego llamar `get` dos veces | Mismo valor en ambas lecturas |
+`src/common/sync-metadata.test.ts` — 11 tests.
 
-### 5.4 `domain-error.ts`
+| ID | Escenario | Setup | Esperado | Resultado |
+|----|-----------|-------|----------|-----------|
+| SYNM-01 | `readSyncMetadata()` sin datos previos | localStorage vacío | Defaults con todos `null` | ✅ |
+| *extra* | `readSyncMetadata()` con JSON malformado | `localStorage` con `"not-json"` | Defaults (no crashea) | ✅ |
+| SYNM-02 | `getCatalogLastSyncedAt()` sin datos | localStorage vacío | `null` | ✅ |
+| SYNM-03 | `setCatalogLastSyncedAt()` + get | Set timestamp | Mismo timestamp | ✅ |
+| SYNM-05 | `setCatalogLastSyncedAt()` sobrescribe | Set dos veces | Último valor persiste | ✅ |
+| SYNM-06 | Persistencia entre llamadas | Set, get dos veces | Mismo valor | ✅ |
+| *extra* | `getLotsLastSyncedAt()` sin datos | — | `null` | ✅ |
+| *extra* | `setLotsLastSyncedAt()` + get | Set timestamp | Mismo timestamp | ✅ |
+| *extra* | `getClientsLastSyncedAt()` sin datos | — | `null` | ✅ |
+| *extra* | `setClientsLastSyncedAt()` + get | Set timestamp | Mismo timestamp | ✅ |
+| SYNM-04 | Múltiples timestamps independientes | catalog, lots, clients diferentes | Cada uno retorna su valor sin interferencia | ✅ |
 
-Clase base: `new DomainError(code, message)`
+### 5.4 `domain-error.ts` ✅
 
-| ID | Escenario | Esperado |
-|----|-----------|----------|
-| DERR-01 | Constructor setea `errorCode` y `message` | `error.errorCode === 'TEST_CODE'`, `error.message === 'test message'` |
-| DERR-02 | `DomainError` es instancia de `Error` | `error instanceof Error === true` |
-| DERR-03 | `DomainError` tiene stack trace | `error.stack` no es undefined |
+`src/common/domain-error.test.ts` — 4 tests.
 
-### 5.5 `is-online.ts`
+| ID | Escenario | Esperado | Resultado |
+|----|-----------|----------|-----------|
+| DERR-01 | Constructor setea `errorCode` y `message` | `errorCode === 'SHIFT_ALREADY_OPEN'`, `message` personalizado | ✅ |
+| DERR-02 | `DomainError` es instancia de `Error` | `instanceof Error === true` | ✅ |
+| *extra* | `name` es el nombre del constructor | `name === 'DomainError'` | ✅ |
+| DERR-03 | `DomainError` tiene stack trace | `stack` contiene "DomainError" | ✅ |
 
-| ID | Escenario | Setup | Esperado |
-|----|-----------|-------|----------|
-| ONL-01 | Navegador online | `Object.defineProperty(navigator, 'onLine', { value: true })` | `true` |
-| ONL-02 | Navegador offline | `Object.defineProperty(navigator, 'onLine', { value: false })` | `false` |
+### 5.5 `is-online.ts` ✅
 
-### 5.6 Hooks React
+`src/common/is-online.test.ts` — 2 tests.
 
-#### `use-elapsed-time.ts`
+| ID | Escenario | Setup | Esperado | Resultado |
+|----|-----------|-------|----------|-----------|
+| ONL-01 | Navegador online | `navigator.onLine = true` | `true` | ✅ |
+| ONL-02 | Navegador offline | `navigator.onLine = false` | `false` | ✅ |
 
-| ID | Escenario | Esperado |
-|----|-----------|----------|
-| UET-01 | Tiempo transcurrido desde apertura | Renderiza `"00:00"` inicialmente cuando `openedAt` es ahora |
-| UET-02 | Tiempo con 1 hora de diferencia | `openedAt` = hace 1 hora, `isRunning = true` → renderiza `"01:00"` |
-| UET-03 | Turno cerrado (`isRunning = false`) | No avanza el temporizador |
-| UET-04 | Timer se actualiza cada 60s | Avanza 1 minuto tras intervalo |
+### 5.6 Hooks React ✅
 
-> **Nota:** Usar `vi.useFakeTimers()` para controlar `setInterval`.
+#### `use-elapsed-time.ts` — `src/renderer/hooks/use-elapsed-time.test.tsx` (4 tests)
 
-#### `use-online-status.ts`
+| ID | Escenario | Esperado | Resultado |
+|----|-----------|----------|-----------|
+| UET-01 | Tiempo desde apertura (ahora) | `"00:00"` | ✅ |
+| UET-02 | 1 hora de diferencia | `"01:00"` | ✅ |
+| UET-03 | Turno cerrado (`isRunning = false`) | No avanza el timer | ✅ |
+| UET-04 | Timer se actualiza cada 60s | Avanza a `"01:01"` tras intervalo | ✅ |
 
-| ID | Escenario | Esperado |
-|----|-----------|----------|
-| UOS-01 | Estado inicial | Retorna valor de `navigator.onLine` |
-| UOS-02 | Evento `online` | Tras `window.dispatchEvent(new Event('online'))`, retorna `true` |
-| UOS-03 | Evento `offline` | Tras `window.dispatchEvent(new Event('offline'))`, retorna `false` |
-| UOS-04 | Cleanup al desmontar | El listener se remueve al unmount |
+#### `use-online-status.ts` — `src/renderer/hooks/use-online-status.test.tsx` (4 tests)
+
+| ID | Escenario | Esperado | Resultado |
+|----|-----------|----------|-----------|
+| UOS-01 | Estado inicial online | `"online"` | ✅ |
+| UOS-02 | Evento `online` (desde offline) | Cambia a `"online"` | ✅ |
+| UOS-03 | Evento `offline` | Cambia a `"offline"` | ✅ |
+| UOS-04 | Cleanup al desmontar | Listener removido (no hay fuga) | ✅ |
+
+### 5.7 Extra: `time-format.ts` ✅
+
+`src/common/time-format.test.ts` — 9 tests. No estaba en el plan original pero se agregó porque `common/time-format.ts` existe en el código.
+
+Cubre `formatRelativeTime` (5 tests: "just now", "5m ago", "3h ago", "2d ago", fecha localizada >7d) y `formatBackupAge` (4 tests: "just now", "15m ago", "6h ago", "3d ago") usando `vi.useFakeTimers()` para determinismo.
 
 ---
 
@@ -817,33 +832,35 @@ Ya existen 4 tests. Agregar:
 
 | Fase | Descripción | Archivos de test | Tests est. | Esfuerzo (días) |
 |------|-------------|-----------------|-----------|-----------------|
-| **F0** | Infraestructura (user-event, coverage-v8, config) | — | — | 0.5 |
-| **F1** | Utilidades, hooks, common | 8 archivos | ~25 | 0.5 |
+| ~~**F0**~~ | ~~Infraestructura (user-event, coverage-v8, config)~~ | ~~—~~ | ~~—~~ | ~~0.5~~ | ✅ |
+| ~~**F1**~~ | ~~Utilidades, hooks, common~~ | ~~8 archivos~~ | ~~44 tests~~ | ~~0.5~~ | ✅ |
 | **F2** | Servicios de dominio (17 servicios) | 17 archivos | ~140 | 5-7 |
 | **F3** | Redux slices faltantes (sales, ui) | 2 archivos | ~35 | 1 |
 | **F4** | Componentes — flujo de venta | 7 archivos | ~45 | 2 |
 | **F5** | Componentes — páginas y navegación | 8 archivos | ~65 | 3 |
 | **F6** | E2E con Playwright | 5 archivos | ~15 | 2-3 |
-| **TOTAL** | | **~47 archivos** | **~325 tests** | **14-17 días** |
+| **TOTAL (restante)** | | **~39 archivos** | **~281 tests** | **~13-16 días** |
 
 ### Distribución por tipo de test
 
 ```
-Utilidades/hooks/common:     25 tests   (8%)
-Servicios de dominio:       140 tests  (43%)  ← mayor valor
-Redux slices:                35 tests  (11%)
-Componentes React:          110 tests  (34%)
-E2E Playwright:              15 tests   (5%)
+Utilidades/hooks/common:     44 tests  (14%)  ✅ COMPLETADO
+Servicios de dominio:       140 tests  (43%)  ← mayor valor (pendiente)
+Redux slices:                35 tests  (11%)  (pendiente)
+Componentes React:          110 tests  (34%)  (pendiente)
+E2E Playwright:              15 tests   (5%)  (pendiente)
                              ─────────
 TOTAL:                      ~325 tests
+COMPLETADO:                   44 tests
+PENDIENTE:                  ~281 tests
 ```
 
 ### Orden cronológico recomendado
 
 ```
-Día 1 (mañana):   F0 — Instalar dependencias, configurar coverage
-Día 1 (tarde):    F1 — Utilidades, hooks, common (~25 tests)
-Día 2-3:          F2 — AuthService, SalesPosService, InventoryLotsService
+✅ F0 — Instalar dependencias, configurar coverage
+✅ F1 — Utilidades, hooks, common (44 tests)
+⬜ Día 2-3:          F2 — AuthService, SalesPosService, InventoryLotsService
 Día 4-5:          F2 — CashShiftService, ReturnsService, ClientsService
 Día 6-7:          F2 — Sync (push, metrics, recovery, scheduler)
 Día 8:            F2 — Servicios restantes (prescriptions, catalog-sync, etc.)

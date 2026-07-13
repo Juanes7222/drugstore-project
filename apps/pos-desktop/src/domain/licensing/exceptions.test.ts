@@ -23,7 +23,7 @@ describe("LicenseInvalidException", () => {
   it("has the default Spanish message", () => {
     const error = new LicenseInvalidException();
     expect(error.message).toBe(
-      "La suscripción está vencida. Contactá a tu proveedor para renovar.",
+      "La suscripción está vencida. Contacta a tu proveedor para renovar.",
     );
   });
 

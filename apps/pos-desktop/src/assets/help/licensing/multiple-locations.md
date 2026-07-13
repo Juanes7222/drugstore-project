@@ -26,7 +26,7 @@ Si tenés un plan multi-local, podés gestionar varias sucursales desde una mism
 
 - Cada plan multi-local tiene un máximo de locales permitidos.
 - Cada local tiene un máximo de puestos permitidos.
-- Si necesitás más locales o puestos, contactá a tu proveedor para evaluar un plan superior.
+- Si necesitás más locales o puestos, Contacta a tu proveedor para evaluar un plan superior.
 
 ## Ejemplo
 

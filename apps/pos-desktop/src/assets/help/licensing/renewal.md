@@ -9,7 +9,7 @@ La suscripción al sistema POS funciona por períodos (mensual, trimestral o anu
 
 ## Proceso de renovación
 
-1. Contactá a tu proveedor para realizar el pago.
+1. Contacta a tu proveedor para realizar el pago.
    - Los pagos se realizan por transferencia bancaria, depósito o efectivo.
    - No hay proceso de pago automático desde el sistema.
 2. El proveedor registra el pago y extiende tu período de suscripción.
@@ -30,4 +30,4 @@ Si la suscripción se vence:
 - El sistema entra en modo bloqueado.
 - Podés ver todos los datos y exportarlos.
 - No podés crear nuevas ventas, devoluciones, ajustes de inventario ni abrir/cerrar turnos.
-- Contactá a tu proveedor para reactivar.
+- Contacta a tu proveedor para reactivar.
