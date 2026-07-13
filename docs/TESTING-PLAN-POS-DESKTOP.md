@@ -1,8 +1,8 @@
 # Plan de Testing — POS Desktop (Tauri 2 + React + PGlite)
 
-**Versión:** 1.4
+**Versión:** 1.5
 **Última actualización:** Julio 2026
-**Estado:** Fases 0-5 completadas. **~555 tests en 52 archivos**. **~386 tests nuevos** (utilidades, hooks, common, dominio, Redux slices, componentes flujo venta, páginas y navegación). ~56 archivos pendientes de cobertura.
+**Estado:** Fases 0-6 completadas. **~567 tests en 57 archivos** (52 unitarios + 5 E2E). **~398 tests nuevos** (utilidades, hooks, common, dominio, Redux slices, componentes flujo venta, páginas y navegación, E2E). ~56 archivos pendientes de cobertura.
 
 ---
 
@@ -233,9 +233,9 @@ El plan se ejecuta en **6 fases**, ordenadas por relación costo/beneficio: prim
 │ Fase 3: Redux Slices Faltantes        ████████████████████  1 día     ~49 tests   │ ✅ COMPLETADA
 │ Fase 4: Componentes — Flujo de Venta  ████████████████████  2 días    ~52 tests   │ ✅ COMPLETADA
 │ Fase 5: Componentes — Páginas y Nav   ████████████████████  3 días    ~99 tests   │ ✅ COMPLETADA
-│ Fase 6: E2E con Playwright            ░░░░░░░░░░░░░░░░░░░░  2-3 días  ~15 tests   │ 🔴 PENDIENTE
+│ Fase 6: E2E con Playwright            ████████████████████  1 día      ~12 tests  │ ✅ COMPLETADA
 ├──────────────────────────────────────────────────────────────────────────────────────┤
-│ TOTAL COMPLETADO: ~540 tests (F1-F5) — restante ~15 tests (F6)                        │
+│ TOTAL COMPLETADO: ~567 tests (F1-F6)                                                    │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -800,79 +800,83 @@ Ya existen 4 tests. Agregar:
 
 **Objetivo:** Probar flujos completos de usuario en un navegador real. Estos tests validan la integración real entre React, Redux, PGlite, y los servicios de dominio.
 
-**Estado:** 🔴 **PENDIENTE** — ~15 tests estimados.
+**Estado:** 🟢 **COMPLETADA** — **12 tests en 5 archivos** (sales-flow: 5, returns-flow: 2, inventory-flow: 1, offline-flow: 2, admin-flow: 2).
 
 **Herramientas:** Playwright (`@playwright/test`).
 
-**Infraestructura necesaria:**
-- Instalar `@playwright/test`: `pnpm --filter @pharmacy/pos-desktop add -D @playwright/test`
-- Configurar `playwright.config.ts` con `webServer` apuntando a `vite dev`
+**Infraestructura creada:**
+- `@playwright/test` instalado como devDependency
+- `playwright.config.ts` con `webServer` apuntando a `vite dev` (puerto 5173)
 - Tests en `apps/pos-desktop/e2e/`
+- Scripts npm: `test:e2e`, `test:e2e:headed`, `test:e2e:ui`
 
-### 10.1 Flujo de venta completo (sales-flow.spec.ts)
+**Mock de Tauri IPC:** Las pruebas inyectan un shim de `window.__TAURI_INTERNALS__` vía `page.addInitScript()` para que los imports dinámicos en `service-context.tsx` no fallen en el navegador. Las llamadas a comandos nativos (`print_file`, `discover_printers`) devuelven respuestas no-op.
 
-| ID | Escenario | Pasos |
-|----|-----------|-------|
-| E2E-S01 | Login → buscar producto → agregar → cobrar → recibo | 1. Login con credenciales. 2. Buscar "acetaminofén". 3. Click en resultado. 4. Ver producto en carrito. 5. Click "Cobrar". 6. Ingresar efectivo recibido. 7. Click "Confirmar". 8. Ver pantalla de recibo con éxito. 9. Click "Nueva venta" — vuelve a sales. |
-| E2E-S02 | Venta con múltiples items | Agregar 2 productos diferentes, ver totales actualizados, confirmar |
-| E2E-S03 | Venta con cambio | Total: $45.000, efectivo: $50.000 → cambio: $5.000 visible |
-| E2E-S04 | Venta con pago electrónico | Agregar tarjeta débito, ver autorización, confirmar |
-| E2E-S05 | Venta con cliente | Buscar cliente por cédula, asignar a venta, ver snapshot |
+**Limitación conocida:** El modo dev (navegador) de `local-database.ts` usa un proxy PrismaClient que retorna `undefined` para todos los accesos a modelos, causando que `contingencyService.hydrateStore()` falle. Hasta que ese path se endurezca, los tests E2E requieren que las rutas de API estén mockeadas a nivel de Playwright y no ejercitan los servicios de dominio reales (PGlite). Para pruebas completas contra PGlite real, ejecutar contra un build de Tauri.
 
-### 10.2 Flujo de devolución (returns-flow.spec.ts)
+### 10.1 Flujo de venta completo (`e2e/sales-flow.spec.ts`) ✅
 
-| ID | Escenario | Pasos |
-|----|-----------|-------|
-| E2E-R01 | Devolución verificada | 1. Ir a Devoluciones. 2. Buscar venta por número. 3. Ver items. 4. Ingresar cantidad a devolver. 5. Confirmar devolución. 6. Ver confirmación. |
-| E2E-R02 | Devolución no verificada | 1. Tab "No verificada". 2. Ingresar datos manualmente. 3. Ingresar PIN de manager. 4. Confirmar. |
+| ID | Escenario | Pasos | Resultado |
+|----|-----------|-------|-----------|
+| E2E-S01 | Login → buscar producto → agregar → cobrar → recibo | 1. Login con credenciales. 2. Buscar "acetaminofén". 3. Click en resultado. 4. Ver producto en carrito. 5. Click "Cobrar". 6. Ingresar efectivo recibido. 7. Click "Confirmar". 8. Ver pantalla de recibo con éxito. 9. Click "Nueva venta" — vuelve a sales. | ✅ |
+| E2E-S02 | Venta con múltiples items | Agregar 2 productos diferentes, ver totales actualizados, confirmar | ✅ |
+| E2E-S03 | Venta con cambio | Total: $45.000, efectivo: $50.000 → cambio: $5.000 visible | ✅ |
+| E2E-S04 | Venta con pago electrónico | Agregar tarjeta débito, ver autorización, confirmar | ✅ |
+| E2E-S05 | Venta con cliente | Buscar cliente por cédula, asignar a venta, ver snapshot | ✅ |
 
-### 10.3 Flujo de ajuste de inventario (inventory-flow.spec.ts)
+### 10.2 Flujo de devolución (`e2e/returns-flow.spec.ts`) ✅
 
-| ID | Escenario | Pasos |
-|----|-----------|-------|
-| E2E-I01 | Ajuste positivo | 1. Ir a Inventario. 2. Buscar lote. 3. Seleccionar. 4. Tipo "Aumentar", cantidad 10. 5. Aplicar. 6. Ver stock actualizado. |
+| ID | Escenario | Pasos | Resultado |
+|----|-----------|-------|-----------|
+| E2E-R01 | Devolución verificada | 1. Ir a Devoluciones. 2. Buscar venta por número. 3. Ver items. 4. Ingresar cantidad a devolver. 5. Confirmar devolución. 6. Ver confirmación. | ✅ |
+| E2E-R02 | Devolución no verificada | 1. Tab "No verificada". 2. Ingresar datos manualmente. 3. Ingresar PIN de manager. 4. Confirmar. | ✅ |
 
-### 10.4 Flujo offline → online (offline-flow.spec.ts)
+### 10.3 Flujo de ajuste de inventario (`e2e/inventory-flow.spec.ts`) ✅
 
-| ID | Escenario | Pasos |
-|----|-----------|-------|
-| E2E-O01 | Venta offline → sync al reconectar | 1. Simular offline (Playwright route interception). 2. Crear venta. 3. Ver toast "En cola". 4. Restaurar online. 5. Esperar sync. 6. Ver toast "Sincronizado". |
-| E2E-O02 | Múltiples operaciones offline | 3 ventas + 1 devolución offline. Reconectar. Ver todas sincronizadas. |
+| ID | Escenario | Pasos | Resultado |
+|----|-----------|-------|-----------|
+| E2E-I01 | Ajuste positivo | 1. Ir a Inventario. 2. Buscar lote. 3. Seleccionar. 4. Tipo "Aumentar", cantidad 10. 5. Aplicar. 6. Ver stock actualizado. | ✅ |
 
-### 10.5 Flujo de sync health (admin-flow.spec.ts)
+### 10.4 Flujo offline → online (`e2e/offline-flow.spec.ts`) ✅
 
-| ID | Escenario | Pasos |
-|----|-----------|-------|
-| E2E-A01 | Admin ve sync health | 1. Login como ADMIN. 2. Navegar a Sync Health. 3. Ver KPIs. 4. Ver timeline. 5. Click "Run Sync Now". |
-| E2E-A02 | Retry entrada fallida | 1. Ver entrada PERMANENT_FAILURE. 2. Click Retry. 3. Ver estado cambiar a PENDING. |
+| ID | Escenario | Pasos | Resultado |
+|----|-----------|-------|-----------|
+| E2E-O01 | Venta offline → sync al reconectar | 1. Simular offline (Playwright route interception). 2. Crear venta. 3. Ver toast "En cola". 4. Restaurar online. 5. Esperar sync. 6. Ver toast "Sincronizado". | ✅ |
+| E2E-O02 | Múltiples operaciones offline | 3 ventas + 1 devolución offline. Reconectar. Ver todas sincronizadas. | ✅ |
+
+### 10.5 Flujo de sync health (`e2e/admin-flow.spec.ts`) ✅
+
+| ID | Escenario | Pasos | Resultado |
+|----|-----------|-------|-----------|
+| E2E-A01 | Admin ve sync health | 1. Login como ADMIN. 2. Navegar a Sync Health. 3. Ver KPIs. 4. Ver timeline. 5. Click "Run Sync Now". | ✅ |
+| E2E-A02 | Retry entrada fallida | 1. Ver entrada PERMANENT_FAILURE. 2. Click Retry. 3. Ver estado cambiar a PENDING. | ✅ |
 
 ---
 
 ## 11. Resumen de Estimaciones
 
-| Fase | Descripción | Archivos de test | Tests est. | Esfuerzo (días) |
-|------|-------------|-----------------|-----------|-----------------|
+| Fase | Descripción | Archivos de test | Tests | Esfuerzo (días) |
+|------|-------------|-----------------|-------|-----------------|
 | ~~**F0**~~ | ~~Infraestructura (user-event, coverage-v8, config)~~ | ~~—~~ | ~~—~~ | ~~0.5~~ | ✅ |
 | ~~**F1**~~ | ~~Utilidades, hooks, common~~ | ~~8 archivos~~ | ~~44 tests~~ | ~~0.5~~ | ✅ |
 | ~~**F2**~~ | ~~Servicios de dominio (17 servicios)~~ | ~~17 archivos~~ | ~~~146 tests~~ | ~~5-7~~ | ✅ |
 | ~~**F3**~~ | ~~Redux slices faltantes (sales, ui)~~ | ~~2 archivos~~ | ~~~49 tests~~ | ~~1~~ | ✅ |
 | ~~**F4**~~ | ~~Componentes — flujo de venta~~ | ~~7 archivos~~ | ~~~56 tests~~ | ~~2~~ | ✅ |
 | ~~**F5**~~ | ~~Componentes — páginas y navegación~~ | ~~8 archivos~~ | ~~~99 tests~~ | ~~3~~ | ✅ |
-| **F6** | E2E con Playwright | 5 archivos | ~15 | 2-3 |
-| **TOTAL (restante)** | | **~5 archivos** | **~15 tests** | **~2-3 días** |
+| ~~**F6**~~ | ~~E2E con Playwright~~ | ~~5 archivos~~ | ~~~12 tests~~ | ~~1~~ | ✅ |
+| **TOTAL** | | **~57 archivos** | **~567 tests** | **~15 días** | ✅ |
 
 ### Distribución por tipo de test
 
 ```
 Utilidades/hooks/common:     44 tests   (8%)  ✅ COMPLETADO
-Servicios de dominio:       245 tests  (44%)  ✅ COMPLETADO
-Redux slices:                59 tests  (11%)  ✅ COMPLETADO
+Servicios de dominio:       245 tests  (43%)  ✅ COMPLETADO
+Redux slices:                59 tests  (10%)  ✅ COMPLETADO
 Componentes React:          207 tests  (37%)  ✅ COMPLETADO
-E2E Playwright:              15 tests   (3%)  🔴 PENDIENTE
-                              ─────────
-TOTAL:                      ~570 tests
-COMPLETADO:                 ~555 tests
-PENDIENTE:                   ~15 tests
+E2E Playwright:              12 tests   (2%)  ✅ COMPLETADO
+                               ─────────
+TOTAL:                      ~567 tests
+COMPLETADO:                 ~567 tests (100%)
 ```
 
 ### Orden cronológico recomendado
@@ -884,7 +888,7 @@ PENDIENTE:                   ~15 tests
 ✅ F3 — Redux slices (sales, ui) (59 tests)
 ✅ F4 — Componentes de flujo de venta (56 tests)
 ✅ F5 — Páginas y navegación (99 tests)
-⬜ F6 — E2E con Playwright (~15 tests)
+✅ F6 — E2E con Playwright (~12 tests)
 ```
 
 ---
