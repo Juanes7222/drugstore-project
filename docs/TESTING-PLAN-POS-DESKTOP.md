@@ -1,8 +1,8 @@
 # Plan de Testing — POS Desktop (Tauri 2 + React + PGlite)
 
-**Versión:** 1.1
+**Versión:** 1.2
 **Última actualización:** Julio 2026
-**Estado:** Fases 0, 1, y 2 completadas. **~359 tests en 37 archivos**. **~190 tests nuevos** (utilidades, hooks, common, dominio). ~100 archivos pendientes de cobertura.
+**Estado:** Fases 0, 1, 2 y 3 completadas. **~408 tests en 39 archivos**. **~239 tests nuevos** (utilidades, hooks, common, dominio, Redux slices). ~100 archivos pendientes de cobertura.
 
 ---
 
@@ -27,15 +27,15 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.test.ts`, `*.test.tsx`) | **37 archivos, ~359 tests** — todos pasando ✅ |
+| Archivos de test (`*.test.ts`, `*.test.tsx`) | **39 archivos, ~408 tests** — todos pasando ✅ |
 | Configuración de Vitest | **LISTO** — inline en `vite.config.ts` con coverage (v8, 80% thresholds) |
 | `vitest.setup.ts` | **LISTO** — jest-dom matchers + i18n init |
 | Dependencias instaladas | **LISTO** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom`, `@testing-library/user-event`, `@vitest/coverage-v8` |
 | Dependencias faltantes | `msw`, `playwright` (para fases posteriores) |
 | Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov` |
-| Cobertura actual | **~20%** (subiendo desde <2%) — Meta: ≥80% |
+| Cobertura actual | **~25%** (subiendo desde <2%) — Meta: ≥80% |
 | Servicios de dominio | **17 servicios** — todos testeados ✅ |
-| Redux slices | **3 slices** — 1 testeado (payment, 10 tests), 2 sin tests (sales, ui) |
+| Redux slices | **3 slices** — 3 testeados ✅ (payment: 10 tests, sales: 22 tests, ui: 27 tests) |
 | Componentes React | **18+ componentes** — 4 testeados (payment-processing, activation-page, license-banner, license-status-page), 15 pendientes |
 | Hooks React | **3 hooks** — 2 testeados (use-elapsed-time, use-online-status), 1 pendiente (use-global-shortcuts) |
 | Utilidades puras | **6 archivos** — 6 testeados ✅ (format-currency, format-date, sync-metadata, domain-error, is-online, time-format) |
@@ -230,7 +230,7 @@ El plan se ejecuta en **6 fases**, ordenadas por relación costo/beneficio: prim
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │ Fase 1: Utilidades, Hooks, Common     ████████████████████  0.5 días   44 tests   │ ✅ COMPLETADA
 │ Fase 2: Servicios de Dominio          ████████████████████  5-7 días  ~140 tests  │ ✅ COMPLETADA
-│ Fase 3: Redux Slices Faltantes        ░░░░░░░░░░░░░░░░░░░░  1 día     ~35 tests   │ 🔴 PENDIENTE
+│ Fase 3: Redux Slices Faltantes        ████████████████████  1 día     ~49 tests   │ ✅ COMPLETADA
 │ Fase 4: Componentes — Flujo de Venta  ░░░░░░░░░░░░░░░░░░░░  2 días    ~45 tests   │ 🔴 PENDIENTE
 │ Fase 5: Componentes — Páginas y Nav   ░░░░░░░░░░░░░░░░░░░░  3 días    ~65 tests   │ 🔴 PENDIENTE
 │ Fase 6: E2E con Playwright            ░░░░░░░░░░░░░░░░░░░░  2-3 días  ~15 tests   │ 🔴 PENDIENTE
@@ -555,7 +555,9 @@ Cubre `formatRelativeTime` (5 tests: "just now", "5m ago", "3h ago", "2d ago", f
 
 **Objetivo:** Completar tests de todos los slices de Redux. `payment-slice` ya está cubierto (13 tests). Faltan `sales-slice` y `ui-slice`.
 
-**Estado:** 🔴 **PENDIENTE** — 0 tests de ~35 estimados.
+**Estado:** 🟢 **COMPLETADA** — **49 tests en 2 archivos** (sales-slice: 22 tests, ui-slice: 27 tests).
+
+> **Nota:** `sales-slice.addItem` agrupa por `id` (no por `productId`), así que SS-04 del plan original no aplica — se reemplazó por dos tests: merge cuando `id` coincide y líneas separadas cuando `id` difiere. `taxPercentage` del item no se usa individualmente; el IVA es fijo al 19% vía `TAX_RATE` en el slice.
 
 **Estrategia:** Tests puros de slice — no requieren React ni DOM. Se testea el reducer directamente con acciones y se verifican selectores.
 
@@ -835,24 +837,24 @@ Ya existen 4 tests. Agregar:
 | ~~**F0**~~ | ~~Infraestructura (user-event, coverage-v8, config)~~ | ~~—~~ | ~~—~~ | ~~0.5~~ | ✅ |
 | ~~**F1**~~ | ~~Utilidades, hooks, common~~ | ~~8 archivos~~ | ~~44 tests~~ | ~~0.5~~ | ✅ |
 | ~~**F2**~~ | ~~Servicios de dominio (17 servicios)~~ | ~~17 archivos~~ | ~~~146 tests~~ | ~~5-7~~ | ✅ |
-| **F3** | Redux slices faltantes (sales, ui) | 2 archivos | ~35 | 1 |
+| ~~**F3**~~ | ~~Redux slices faltantes (sales, ui)~~ | ~~2 archivos~~ | ~~~49 tests~~ | ~~1~~ | ✅ |
 | **F4** | Componentes — flujo de venta | 7 archivos | ~45 | 2 |
 | **F5** | Componentes — páginas y navegación | 8 archivos | ~65 | 3 |
 | **F6** | E2E con Playwright | 5 archivos | ~15 | 2-3 |
-| **TOTAL (restante)** | | **~15 archivos** | **~135 tests** | **~8-11 días** |
+| **TOTAL (restante)** | | **~13 archivos** | **~110 tests** | **~7-10 días** |
 
 ### Distribución por tipo de test
 
 ```
 Utilidades/hooks/common:     44 tests  (14%)  ✅ COMPLETADO
 Servicios de dominio:       146 tests  (45%)  ✅ COMPLETADO
-Redux slices:                35 tests  (11%)  (pendiente)
-Componentes React:          110 tests  (34%)  (pendiente)
-E2E Playwright:              15 tests   (5%)  (pendiente)
+Redux slices:                49 tests  (13%)  ✅ COMPLETADO
+Componentes React:          110 tests  (30%)  (pendiente)
+E2E Playwright:              15 tests   (4%)  (pendiente)
                              ─────────
-TOTAL:                      ~350 tests
-COMPLETADO:                 ~190 tests
-PENDIENTE:                  ~160 tests
+TOTAL:                      ~374 tests
+COMPLETADO:                 ~239 tests
+PENDIENTE:                  ~135 tests
 ```
 
 ### Orden cronológico recomendado
@@ -861,7 +863,7 @@ PENDIENTE:                  ~160 tests
 ✅ F0 — Instalar dependencias, configurar coverage
 ✅ F1 — Utilidades, hooks, common (44 tests)
 ✅ F2 — Servicios de dominio completos (~146 tests)
-⬜ Día 9:            F3 — Redux slices (sales, ui)
+✅ Día 9:            F3 — Redux slices (sales, ui)
 Día 10-11:        F4 — Componentes de flujo de venta
 Día 12-14:        F5 — Páginas y navegación
 Día 15-17:        F6 — E2E con Playwright
