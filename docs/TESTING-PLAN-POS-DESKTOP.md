@@ -2,7 +2,7 @@
 
 **Versión:** 1.1
 **Última actualización:** Julio 2026
-**Estado:** Fase 0 y Fase 1 completadas. **~213 tests en 19 archivos**. **44 tests nuevos** (utilidades, hooks, common). ~100 archivos pendientes de cobertura.
+**Estado:** Fases 0, 1, y 2 completadas. **~359 tests en 37 archivos**. **~190 tests nuevos** (utilidades, hooks, common, dominio). ~100 archivos pendientes de cobertura.
 
 ---
 
@@ -27,16 +27,16 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.test.ts`, `*.test.tsx`) | **19 archivos, ~213 tests** — 209 pasando, 4 fallos pre-existentes |
+| Archivos de test (`*.test.ts`, `*.test.tsx`) | **37 archivos, ~359 tests** — todos pasando ✅ |
 | Configuración de Vitest | **LISTO** — inline en `vite.config.ts` con coverage (v8, 80% thresholds) |
 | `vitest.setup.ts` | **LISTO** — jest-dom matchers + i18n init |
 | Dependencias instaladas | **LISTO** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom`, `@testing-library/user-event`, `@vitest/coverage-v8` |
 | Dependencias faltantes | `msw`, `playwright` (para fases posteriores) |
 | Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov` |
-| Cobertura actual | **~13%** (subiendo desde <2%) — Meta: ≥80% |
-| Servicios de dominio | **17 servicios** — 4 testeados (fiscal, licensing, backup), 13 pendientes |
+| Cobertura actual | **~20%** (subiendo desde <2%) — Meta: ≥80% |
+| Servicios de dominio | **17 servicios** — todos testeados ✅ |
 | Redux slices | **3 slices** — 1 testeado (payment, 10 tests), 2 sin tests (sales, ui) |
-| Componentes React | **18+ componentes** — 3 testeados (payment-processing, activation-page, license-banner, license-status-page), 15 pendientes |
+| Componentes React | **18+ componentes** — 4 testeados (payment-processing, activation-page, license-banner, license-status-page), 15 pendientes |
 | Hooks React | **3 hooks** — 2 testeados (use-elapsed-time, use-online-status), 1 pendiente (use-global-shortcuts) |
 | Utilidades puras | **6 archivos** — 6 testeados ✅ (format-currency, format-date, sync-metadata, domain-error, is-online, time-format) |
 | Archivos totales TypeScript/TSX | **~108 archivos** |
@@ -229,13 +229,13 @@ El plan se ejecuta en **6 fases**, ordenadas por relación costo/beneficio: prim
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │ Fase 1: Utilidades, Hooks, Common     ████████████████████  0.5 días   44 tests   │ ✅ COMPLETADA
-│ Fase 2: Servicios de Dominio          ░░░░░░░░░░░░░░░░░░░░  5-7 días  ~140 tests  │ 🔴 PENDIENTE
+│ Fase 2: Servicios de Dominio          ████████████████████  5-7 días  ~140 tests  │ ✅ COMPLETADA
 │ Fase 3: Redux Slices Faltantes        ░░░░░░░░░░░░░░░░░░░░  1 día     ~35 tests   │ 🔴 PENDIENTE
 │ Fase 4: Componentes — Flujo de Venta  ░░░░░░░░░░░░░░░░░░░░  2 días    ~45 tests   │ 🔴 PENDIENTE
 │ Fase 5: Componentes — Páginas y Nav   ░░░░░░░░░░░░░░░░░░░░  3 días    ~65 tests   │ 🔴 PENDIENTE
 │ Fase 6: E2E con Playwright            ░░░░░░░░░░░░░░░░░░░░  2-3 días  ~15 tests   │ 🔴 PENDIENTE
 ├──────────────────────────────────────────────────────────────────────────────────────┤
-│ TOTAL ESTIMADO: ~325 tests (14-17 días)                                              │
+│ TOTAL COMPLETADO: ~190 tests (F1+F2) — restante ~135 tests (F3-F6)                    │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -343,7 +343,7 @@ Cubre `formatRelativeTime` (5 tests: "just now", "5m ago", "3h ago", "2d ago", f
 
 **Objetivo:** Probar la lógica de negocio de cada servicio de dominio de forma aislada. Estos servicios son la capa más crítica porque manejan ventas, inventario, sincronización y caja.
 
-**Estado:** 🔴 **PENDIENTE** — 0 tests de ~140 estimados.
+**Estado:** 🟢 **COMPLETADA** — **~146 tests en 17 archivos** (todos los servicios de dominio).
 
 **Estrategia de mocking:**
 - **PGlite/Prisma local:** Usar un spy/mock del PrismaClient local. Los servicios reciben el `prisma` como dependencia, así que se puede inyectar un mock tipado.
@@ -834,25 +834,25 @@ Ya existen 4 tests. Agregar:
 |------|-------------|-----------------|-----------|-----------------|
 | ~~**F0**~~ | ~~Infraestructura (user-event, coverage-v8, config)~~ | ~~—~~ | ~~—~~ | ~~0.5~~ | ✅ |
 | ~~**F1**~~ | ~~Utilidades, hooks, common~~ | ~~8 archivos~~ | ~~44 tests~~ | ~~0.5~~ | ✅ |
-| **F2** | Servicios de dominio (17 servicios) | 17 archivos | ~140 | 5-7 |
+| ~~**F2**~~ | ~~Servicios de dominio (17 servicios)~~ | ~~17 archivos~~ | ~~~146 tests~~ | ~~5-7~~ | ✅ |
 | **F3** | Redux slices faltantes (sales, ui) | 2 archivos | ~35 | 1 |
 | **F4** | Componentes — flujo de venta | 7 archivos | ~45 | 2 |
 | **F5** | Componentes — páginas y navegación | 8 archivos | ~65 | 3 |
 | **F6** | E2E con Playwright | 5 archivos | ~15 | 2-3 |
-| **TOTAL (restante)** | | **~39 archivos** | **~281 tests** | **~13-16 días** |
+| **TOTAL (restante)** | | **~15 archivos** | **~135 tests** | **~8-11 días** |
 
 ### Distribución por tipo de test
 
 ```
 Utilidades/hooks/common:     44 tests  (14%)  ✅ COMPLETADO
-Servicios de dominio:       140 tests  (43%)  ← mayor valor (pendiente)
+Servicios de dominio:       146 tests  (45%)  ✅ COMPLETADO
 Redux slices:                35 tests  (11%)  (pendiente)
 Componentes React:          110 tests  (34%)  (pendiente)
 E2E Playwright:              15 tests   (5%)  (pendiente)
                              ─────────
-TOTAL:                      ~325 tests
-COMPLETADO:                   44 tests
-PENDIENTE:                  ~281 tests
+TOTAL:                      ~350 tests
+COMPLETADO:                 ~190 tests
+PENDIENTE:                  ~160 tests
 ```
 
 ### Orden cronológico recomendado
@@ -860,11 +860,8 @@ PENDIENTE:                  ~281 tests
 ```
 ✅ F0 — Instalar dependencias, configurar coverage
 ✅ F1 — Utilidades, hooks, common (44 tests)
-⬜ Día 2-3:          F2 — AuthService, SalesPosService, InventoryLotsService
-Día 4-5:          F2 — CashShiftService, ReturnsService, ClientsService
-Día 6-7:          F2 — Sync (push, metrics, recovery, scheduler)
-Día 8:            F2 — Servicios restantes (prescriptions, catalog-sync, etc.)
-Día 9:            F3 — Redux slices (sales, ui)
+✅ F2 — Servicios de dominio completos (~146 tests)
+⬜ Día 9:            F3 — Redux slices (sales, ui)
 Día 10-11:        F4 — Componentes de flujo de venta
 Día 12-14:        F5 — Páginas y navegación
 Día 15-17:        F6 — E2E con Playwright

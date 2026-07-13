@@ -1,0 +1,337 @@
+/**
+ * Unit tests for CashShiftService — open, close, and cash counts.
+ */
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { CashShiftService, createCashShiftService } from "./cash-shift.service";
+import { ShiftAlreadyOpenException, ShiftNotOpenException, MissingClosingCashCountsException, InvalidCashCountForNonCashMethodException, PaymentMethodNotFoundException } from "./exceptions";
+import { Prisma } from "@pharmacy/database/local";
+import { RoleType } from "@pharmacy/shared-types";
+import { DomainError } from "../../common/domain-error";
+
+// Mock Tauri's invoke for the backup service created during closeShift.
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: vi.fn().mockResolvedValue({
+    id: "backup-1",
+    createdAt: new Date().toISOString(),
+    workstationId: "ws-1",
+    appVersion: "0.1.0",
+    dbSchemaVersion: 1,
+    sizeBytes: 1000,
+    sha256: "abc123",
+    reason: "SHIFT_CLOSE",
+    containsUnpushedOperations: false,
+    pendingCount: 0,
+    failedCount: 0,
+    maxClientSequence: 0,
+    note: null,
+    clockSkewSeconds: null,
+    status: "HEALTHY",
+  }),
+}));
+
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+
+const makeMockPrisma = () => {
+  const tx: any = {
+    cashShift: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+    },
+    shiftCashCount: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
+    salePayment: {
+      findMany: vi.fn(),
+    },
+    paymentMethod: {
+      findUnique: vi.fn(),
+    },
+    sale: { findMany: vi.fn() },
+    invoice: { findMany: vi.fn() },
+    syncQueue: {
+      count: vi.fn(),
+      aggregate: vi.fn(),
+    },
+    inventoryAdjustmentDocument: { findFirst: vi.fn() },
+  };
+
+  const transaction = vi.fn(async (cb: (t: any) => unknown) => cb(tx));
+
+  const prisma = {
+    $transaction: transaction,
+    cashShift: tx.cashShift,
+    shiftCashCount: tx.shiftCashCount,
+    salePayment: tx.salePayment,
+    paymentMethod: tx.paymentMethod,
+    sale: tx.sale,
+    invoice: tx.invoice,
+    syncQueue: tx.syncQueue,
+  } as any;
+
+  return { prisma, tx };
+};
+
+const makeMockAuth = () => ({
+  requireRole: vi.fn(),
+  getCurrentSession: vi.fn(),
+  login: vi.fn(),
+  logout: vi.fn(),
+  completeTwoFactor: vi.fn(),
+  refreshSession: vi.fn(),
+  requestStepUp: vi.fn(),
+  approveStepUp: vi.fn(),
+  verifyStepUp: vi.fn(),
+  changePassword: vi.fn(),
+  changePin: vi.fn(),
+  forgotPassword: vi.fn(),
+  resetPassword: vi.fn(),
+  createUser: vi.fn(),
+  listUsers: vi.fn(),
+  getPendingStepUpRequests: vi.fn(),
+  getAuditLogs: vi.fn(),
+});
+
+const makeMockSession = () => ({
+  userId: "user-1",
+  username: "cajero1",
+  fullName: "Cajero Uno",
+  displayName: "Cajero Uno",
+  email: null,
+  role: "CASHIER",
+  subscriptionId: null,
+  workstationId: "ws-1",
+  accessToken: "token",
+  refreshToken: "refresh",
+  expiresAt: new Date("2099-12-31"),
+  sessionId: "sess-1",
+  totpEnabled: false,
+  avatarUrl: null,
+  avatarColor: null,
+  mustChangePassword: false,
+});
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("CashShiftService", () => {
+  let prisma: any;
+  let tx: any;
+  let auth: ReturnType<typeof makeMockAuth>;
+  let service: CashShiftService;
+
+  beforeEach(() => {
+    const mocks = makeMockPrisma();
+    prisma = mocks.prisma;
+    tx = mocks.tx;
+    auth = makeMockAuth();
+    service = createCashShiftService(prisma, auth as any);
+  });
+
+  describe("openShift", () => {
+    it("creates a shift with OPEN state when no shift is already open", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(null); // no open shift
+      tx.cashShift.create.mockResolvedValue({
+        id: "shift-1",
+        workstationId: "ws-1",
+        userId: "user-1",
+        openingBalance: new Prisma.Decimal(500000),
+        state: "OPEN",
+        openedAt: new Date(),
+      });
+
+      const result = await service.openShift({
+        openingBalance: new Prisma.Decimal(500000),
+      });
+
+      expect(auth.requireRole).toHaveBeenCalledWith("CASHIER", "ADMIN");
+      expect(tx.cashShift.create).toHaveBeenCalled();
+      expect(result.state).toBe("OPEN");
+    });
+
+    it("throws ShiftAlreadyOpenException when a shift is already open", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue({
+        id: "existing-shift",
+        state: "OPEN",
+        workstationId: "ws-1",
+      });
+
+      await expect(
+        service.openShift({ openingBalance: new Prisma.Decimal(100000) }),
+      ).rejects.toThrow(ShiftAlreadyOpenException);
+    });
+  });
+
+  describe("registerCashCount", () => {
+    it("creates a PARTIAL cash count for a cash payment method", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN",
+      });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash", isCash: true, name: "Efectivo",
+      });
+      tx.shiftCashCount.create.mockResolvedValue({
+        id: "count-1",
+        countType: "PARTIAL",
+      });
+
+      const result = await service.registerCashCount("shift-1", {
+        countType: "PARTIAL",
+        paymentMethodId: "pm-cash",
+        expectedAmount: new Prisma.Decimal(500000),
+        declaredAmount: new Prisma.Decimal(510000),
+      });
+
+      expect(tx.shiftCashCount.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            countType: "PARTIAL",
+            paymentMethodId: "pm-cash",
+          }),
+        }),
+      );
+      expect(result.countType).toBe("PARTIAL");
+    });
+
+    it("creates a CLOSING cash count", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN",
+      });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash", isCash: true, name: "Efectivo",
+      });
+      tx.shiftCashCount.create.mockResolvedValue({
+        id: "count-2",
+        countType: "CLOSING",
+      });
+
+      const result = await service.registerCashCount("shift-1", {
+        countType: "CLOSING",
+        paymentMethodId: "pm-cash",
+        expectedAmount: new Prisma.Decimal(500000),
+        declaredAmount: new Prisma.Decimal(505000),
+      });
+
+      expect(result.countType).toBe("CLOSING");
+    });
+
+    it("throws PaymentMethodNotFoundException when the payment method does not exist", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN",
+      });
+      tx.paymentMethod.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.registerCashCount("shift-1", {
+          countType: "PARTIAL",
+          paymentMethodId: "nonexistent",
+          expectedAmount: new Prisma.Decimal(0),
+          declaredAmount: new Prisma.Decimal(0),
+        }),
+      ).rejects.toThrow(PaymentMethodNotFoundException);
+    });
+
+    it("throws InvalidCashCountForNonCashMethodException when denominations are provided for non-cash method", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN",
+      });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-card", isCash: false, name: "Tarjeta",
+      });
+
+      await expect(
+        service.registerCashCount("shift-1", {
+          countType: "PARTIAL",
+          paymentMethodId: "pm-card",
+          expectedAmount: new Prisma.Decimal(200000),
+          declaredAmount: new Prisma.Decimal(200000),
+          denominationsBreakdown: { "50000": 4 },
+        }),
+      ).rejects.toThrow(InvalidCashCountForNonCashMethodException);
+    });
+  });
+
+  describe("closeShift", () => {
+    it("closes the shift when CLOSING counts exist for all active methods", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN", userId: "user-1",
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(0),
+        actualClosingAmount: new Prisma.Decimal(0),
+        closingDifference: new Prisma.Decimal(0),
+      });
+      tx.shiftCashCount.findMany.mockResolvedValue([
+        {
+          paymentMethodId: "pm-cash",
+          countType: "CLOSING",
+          expectedAmount: new Prisma.Decimal(500000),
+          declaredAmount: new Prisma.Decimal(510000),
+          difference: new Prisma.Decimal(10000),
+          paymentMethodIsCash: true,
+          paymentMethod: { name: "Efectivo" },
+        },
+      ]);
+      tx.salePayment.findMany.mockResolvedValue([
+        { paymentMethodId: "pm-cash" },
+      ]);
+      tx.syncQueue.count.mockResolvedValue(0);
+      tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
+      tx.cashShift.update.mockResolvedValue({
+        id: "shift-1",
+        state: "CLOSED",
+        closedAt: new Date(),
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(500000),
+        actualClosingAmount: new Prisma.Decimal(510000),
+        closingDifference: new Prisma.Decimal(10000),
+        closingNotes: null,
+      });
+
+      const result = await service.closeShift("shift-1", {});
+
+      expect(result.state).toBe("CLOSED");
+      expect(tx.cashShift.update).toHaveBeenCalled();
+    });
+
+    it("throws MissingClosingCashCountsException when active methods have no CLOSING count", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN",
+      });
+      tx.shiftCashCount.findMany.mockResolvedValue([]); // no closing counts
+      tx.salePayment.findMany.mockResolvedValue([
+        { paymentMethodId: "pm-cash" },
+        { paymentMethodId: "pm-card" },
+      ]);
+
+      await expect(
+        service.closeShift("shift-1", {}),
+      ).rejects.toThrow(MissingClosingCashCountsException);
+    });
+
+    it("throws ShiftNotOpenException when the shift is already closed", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "CLOSED",
+      });
+
+      await expect(
+        service.closeShift("shift-1", {}),
+      ).rejects.toThrow(ShiftNotOpenException);
+    });
+  });
+});
