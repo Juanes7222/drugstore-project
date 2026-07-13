@@ -13,7 +13,7 @@ Si tenés un plan multi-local, podés gestionar varias sucursales desde una mism
 
 1. El administrador del sistema (tu proveedor) agrega el nuevo local a tu suscripción.
 2. Te genera un código de activación para el primer puesto del nuevo local.
-3. En el equipo del nuevo local, activás con ese código.
+3. En el equipo del nuevo local, Actives con ese código.
 4. El sistema te va a pedir los datos del local (nombre, dirección, ciudad).
 
 ## Gestionar múltiples locales

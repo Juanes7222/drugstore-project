@@ -26,7 +26,7 @@
 import { type FC, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { LicenseStatus } from "@pharmacy/shared-types";
-import { useLicenseStore } from "../../domain/licensing/license.store";
+import { useLicenseStore } from "../../../domain/licensing/license.store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 
 // ---------------------------------------------------------------------------

@@ -37,4 +37,4 @@ Para empezar a usar el sistema POS, necesitás activar cada puesto de trabajo co
 Si necesitás reemplazar el equipo (por robo, daño, etc.):
 1. Informá a tu proveedor, quien va a revocar la activación del equipo anterior.
 2. Tu proveedor te va a dar un nuevo código de activación.
-3. Activá el nuevo equipo siguiendo los pasos de arriba.
+3. Active el nuevo equipo siguiendo los pasos de arriba.

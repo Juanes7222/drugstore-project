@@ -7,12 +7,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { LicenseStatus } from "@pharmacy/shared-types";
-import { useLicenseStore } from "../../domain/licensing/license.store";
+import { useLicenseStore } from "../../../domain/licensing/license.store";
 import { ActivationPage } from "./activation.page";
 import {
   ActivationFailedException,
   AlreadyActivatedException,
-} from "../../domain/licensing/exceptions";
+} from "../../../domain/licensing/exceptions";
 
 // ---------------------------------------------------------------------------
 // Mock dependencies
@@ -120,7 +120,7 @@ describe("ActivationPage", () => {
       render(<ActivationPage />);
 
       expect(
-        screen.getByRole("heading", { name: /Activá tu punto de venta/i }),
+        screen.getByRole("heading", { name: /Active tu punto de venta/i }),
       ).toBeInTheDocument();
       expect(
         screen.getByRole("button", { name: /ACTIVAR/i }),

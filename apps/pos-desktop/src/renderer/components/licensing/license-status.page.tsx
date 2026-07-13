@@ -18,8 +18,8 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { LicenseStatus } from "@pharmacy/shared-types";
-import { useLicenseStore } from "../../domain/licensing/license.store";
-import { createLicenseService } from "../../domain/licensing/license.service";
+import { useLicenseStore } from "../../../domain/licensing/license.store";
+import { createLicenseService } from "../../../domain/licensing/license.service";
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -8,7 +8,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { LicenseStatus } from "@pharmacy/shared-types";
-import { useLicenseStore } from "../../domain/licensing/license.store";
+import { useLicenseStore } from "../../../domain/licensing/license.store";
 import { LicenseStatusPage } from "./license-status.page";
 
 // ---------------------------------------------------------------------------

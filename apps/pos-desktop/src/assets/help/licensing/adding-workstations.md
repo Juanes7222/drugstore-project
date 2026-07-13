@@ -26,4 +26,4 @@ En la pantalla de estado de licencia podés ver:
 Si querés mover un puesto de un local a otro:
 1. Informá a tu proveedor, quien va a revocar la activación del puesto original.
 2. Te van a dar un nuevo código de activación.
-3. Activá el puesto en el nuevo local.
+3. Active el puesto en el nuevo local.

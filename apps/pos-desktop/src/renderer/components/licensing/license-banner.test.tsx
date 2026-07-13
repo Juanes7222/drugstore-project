@@ -8,7 +8,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { LicenseStatus } from "@pharmacy/shared-types";
-import { useLicenseStore } from "../../domain/licensing/license.store";
+import { useLicenseStore } from "../../../domain/licensing/license.store";
 import { LicenseBanner } from "./license-banner";
 
 // ---------------------------------------------------------------------------
