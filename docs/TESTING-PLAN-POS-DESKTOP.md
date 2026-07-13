@@ -1,8 +1,8 @@
 # Plan de Testing — POS Desktop (Tauri 2 + React + PGlite)
 
-**Versión:** 1.5
+**Versión:** 1.6
 **Última actualización:** Julio 2026
-**Estado:** Fases 0-6 completadas. **~567 tests en 57 archivos** (52 unitarios + 5 E2E). **~398 tests nuevos** (utilidades, hooks, common, dominio, Redux slices, componentes flujo venta, páginas y navegación, E2E). ~56 archivos pendientes de cobertura.
+**Estado:** Fases 0-6 completadas (**57 archivos de test, ~567 tests**). **Quedan ~199 archivos fuente sin cobertura** distribuidos en módulos nuevos que no existían cuando se creó el plan original: asistente, backup, fiscal, licencias, impresión, recuperación, actualizaciones, stores de Zustand, infraestructura, y componentes UI. Ver Fase 7 y Fase 8.
 
 ---
 
@@ -18,8 +18,10 @@
 8. [Fase 4: Componentes React — Flujo de Venta](#8-fase-4-componentes-react--flujo-de-venta)
 9. [Fase 5: Componentes React — Páginas y Navegación](#9-fase-5-componentes-react--páginas-y-navegación)
 10. [Fase 6: E2E con Playwright](#10-fase-6-e2e-con-playwright)
-11. [Resumen de Estimaciones](#11-resumen-de-estimaciones)
-12. [Riesgos Identificados](#12-riesgos-identificados)
+11. [Fase 7: Módulos de Dominio Restantes, Stores e Infraestructura](#11-fase-7-módulos-de-dominio-restantes-stores-e-infraestructura)
+12. [Fase 8: Componentes React No Cubiertos](#12-fase-8-componentes-react-no-cubiertos)
+13. [Resumen de Estimaciones](#13-resumen-de-estimaciones)
+14. [Riesgos Identificados](#14-riesgos-identificados)
 
 ---
 
@@ -27,56 +29,103 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.test.ts`, `*.test.tsx`) | **52 archivos, ~555 tests** — todos pasando ✅ |
+| Archivos de test (`*.test.ts`, `*.test.tsx`) | **33 `.test.ts` + 19 `.test.tsx` = 52 archivos** — todos pasando ✅ |
+| Archivos E2E (`*.spec.ts`) | **5 archivos** — todos pasando ✅ |
 | Configuración de Vitest | **LISTO** — inline en `vite.config.ts` con coverage (v8, 80% thresholds) |
 | `vitest.setup.ts` | **LISTO** — jest-dom matchers + i18n init |
-| Dependencias instaladas | **LISTO** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom`, `@testing-library/user-event`, `@vitest/coverage-v8` |
-| Dependencias faltantes | `msw`, `playwright` (para E2E) |
-| Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov` |
-| Cobertura actual | **~38%** (subiendo desde <2%) — Meta: ≥80% |
-| Servicios de dominio | **24 servicios/stores** — todos testeados ✅ (245 tests) |
-| Redux slices | **3 slices** — 3 testeados ✅ (payment: 10, sales: 22, ui: 27) |
-| Componentes React | **17 componentes** — todos testeados ✅ (207 tests) |
+| Dependencias instaladas | **LISTO** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom`, `@testing-library/user-event`, `@vitest/coverage-v8`, `@playwright/test` |
+| Dependencias faltantes | `msw` (Mock Service Worker) — aún no instalado |
+| Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov`, `test:e2e` |
+| Cobertura actual | **~38%** — Meta: ≥80% |
+| Servicios de dominio testeados | **21 servicios/stores** ✅ (~245 tests) — ver detalle abajo |
+| Dominios SIN cobertura | **5 dominios**: `assistant/`, `printing/`, `updates/`, `fiscal/` (parcial), `backup/` (parcial) |
+| Redux slices | **3 slices** — 3 testeados ✅ (payment: ~10, sales: ~22, ui: ~27) |
+| Componentes React testeados | **17 componentes** en 10 directorios ✅ (~207 tests) |
+| Componentes SIN cobertura | **~53 componentes** en 8 directorios (auth, assistant, cash-shift, fiscal, printing, recovery, update, DatabaseProof) |
 | Hooks React | **2 hooks** — 2 testeados ✅ (use-elapsed-time, use-online-status) |
-| Utilidades puras | **6 archivos** — 6 testeados ✅ (format-currency, format-date, sync-metadata, domain-error, is-online, time-format) |
-| Archivos totales TypeScript/TSX | **~108 archivos** |
+| Utilidades puras | **7 archivos** — 6 testeados ✅; `common/download.ts` pendiente |
+| Zustand stores (globales) | **2 stores** (`assistant.store.ts`, `user-preferences.store.ts`) — **SIN cobertura** |
+| Archivos totales TypeScript/TSX (excluyendo tests) | **~256 archivos** |
+| Archivos con cobertura de test | **~57 archivos** (~22%) |
+| Archivos pendientes de cobertura | **~199 archivos** (~78%) |
 
 ### Arquitectura del proyecto
 
 ```
 apps/pos-desktop/src/
-├── common/                          # 3 archivos — utilidades sin framework
-│   ├── domain-error.ts              # Clase base de error
-│   ├── is-online.ts                 # Detección de conectividad
-│   └── sync-metadata.ts            # Timestamps de sync en localStorage
+├── common/                          # 4 archivos — utilidades sin framework
+│   ├── domain-error.ts             # Clase base de error ✅
+│   ├── download.ts                 # Descarga de blobs (CSV/JSON) 🔴
+│   ├── is-online.ts                # Detección de conectividad ✅
+│   ├── sync-metadata.ts            # Timestamps de sync en localStorage ✅
+│   └── time-format.ts              # formatRelativeTime, formatBackupAge ✅
 │
-├── domain/                          # 14 servicios + 7 excepciones + 3 stores
-│   ├── auth/                        # Login, sesión, guard de roles
-│   ├── cash-shift/                  # Apertura/cierre de caja, conteos
-│   ├── catalog/                     # Pull de catálogo + payment methods
-│   ├── clients/                     # Búsqueda local + creación offline-first
-│   ├── configuration/               # Store Zustand de config local
-│   ├── inventory-adjustments/       # Ajustes de inventario (aumentar/disminuir)
-│   ├── inventory-lots/              # Consumo FEFO con optimistic locking
-│   ├── prescriptions/               # Registro de fórmula médica
-│   ├── returns/                     # Devoluciones de cliente
-│   ├── sales-pos/                   # Crear/confirmar ventas, consumir stock
-│   └── sync/                        # Push, metrics, recovery, scheduler
+├── config/                          # 1 archivo
+│   └── fiscal.ts                   # Constantes fiscales (tech key, timezone) 🔴
 │
-├── infrastructure/                  # 5 archivos
-│   ├── local-database.ts           # Singleton PGlite + PrismaClient
-│   ├── http-client.ts              # Fetch wrapper con auth token
-│   ├── auth-token-provider.ts      # Abstracción de localStorage
-│   └── config.ts                   # Variables de entorno
+├── stores/                          # 2 Zustand stores globales
+│   ├── assistant.store.ts          # Estado del overlay de asistente 🔴
+│   └── user-preferences.store.ts   # Preferencias de usuario persistidas 🔴
 │
-└── renderer/                        # React frontend (~60 archivos)
-    ├── components/                  # 18+ componentes (Sales, Payment, Returns, etc.)
-    ├── hooks/                       # 2 hooks (useElapsedTime, useOnlineStatus)
-    ├── services/                    # CatalogService (interfaz + HTTP + mock), PaymentGateway
-    ├── store/                       # Redux: 3 slices (sales, payment, ui)
-    ├── utils/                       # formatCurrency, formatDate
+├── domain/                          # 18 módulos (10 originales + 8 nuevos)
+│   ├── auth/                        # Login, sesión, guard de roles ✅
+│   ├── cash-shift/                  # Apertura/cierre de caja, conteos ✅
+│   ├── catalog/                     # Pull de catálogo + payment methods ✅
+│   ├── clients/                     # Búsqueda local + creación offline-first ✅
+│   ├── configuration/               # Store Zustand de config local ✅
+│   ├── inventory-adjustments/       # Ajustes de inventario ✅
+│   ├── inventory-lots/              # Consumo FEFO con optimistic locking ✅
+│   ├── prescriptions/               # Registro de fórmula médica ✅
+│   ├── returns/                     # Devoluciones de cliente ✅
+│   ├── sales-pos/                   # Crear/confirmar ventas, consumir stock ✅
+│   ├── sync/                        # Push, metrics, recovery, scheduler ✅
+│   │
+│   ├── assistant/                   # [NUEVO] Paleta de comandos, sugerencias, help 🔴
+│   ├── backup/                      # [NUEVO] Backup y recovery log ⚠️ (parcial)
+│   ├── fiscal/                      # [NUEVO] Facturación electrónica DIAN ⚠️ (parcial)
+│   ├── licensing/                   # [NUEVO] Licencias y activación ✅ (4 tests)
+│   ├── printing/                    # [NUEVO] Servicios de impresión ESC/POS 🔴
+│   ├── recovery/                    # [NUEVO] Página de recuperación 🔴
+│   └── updates/                     # [NUEVO] Auto-actualizaciones 🔴
+│
+├── infrastructure/                  # 6 archivos
+│   ├── local-database.ts           # Singleton PGlite + PrismaClient 🔴
+│   ├── http-client.ts              # Fetch wrapper con auth token 🔴
+│   ├── auth-token-provider.ts      # Abstracción de localStorage 🔴
+│   ├── config.ts                   # Variables de entorno 🔴
+│   └── startup-health.ts           # Health checks de inicio 🔴
+│
+├── modules/                         # (vacio — reservado)
+│
+└── renderer/                        # React frontend (~100+ archivos)
+    ├── components/                  # 18 directorios de componentes
+    │   ├── SalesTransaction/        # ✅ (3 tests: cart-panel, product-search, totals-summary)
+    │   ├── PaymentProcessing/       # ✅ (1 test: payment-processing)
+    │   ├── Receipt/                 # ✅ (1 test: receipt)
+    │   ├── returns/                 # ✅ (1 test: returns.page)
+    │   ├── inventory-adjustments/   # ✅ (1 test)
+    │   ├── prescriptions/           # ✅ (1 test)
+    │   ├── sync/                    # ✅ (1 test: sync-health.page)
+    │   ├── Navigation/              # ✅ (1 test: navigation-sidebar)
+    │   ├── common/                  # ✅ (4 tests: app-shell, currency-input, operation-queued-toast, sync-pulse)
+    │   ├── licensing/               # ✅ (3 tests: activation.page, license-banner, license-status.page)
+    │   ├── assistant/               # 🔴 6 componentes (command-palette, help-viewer, etc.)
+    │   ├── auth/                    # 🔴 15 componentes (login, pin-keypad, role-guard, etc.)
+    │   ├── cash-shift/              # 🔴 3 componentes
+    │   ├── DatabaseProof/           # 🔴 1 componente
+    │   ├── fiscal/                  # 🔴 7 componentes
+    │   ├── printing/                # 🔴 16 componentes (printers, setup-wizard, queue, etc.)
+    │   ├── recovery/                # 🔴 2 componentes
+    │   └── update/                  # 🔴 6 componentes
+    ├── hooks/                       # ✅ 2 hooks (use-elapsed-time, use-online-status)
+    ├── services/                    # 🔴 5 archivos (catalog-service.*, payment-gateway-service.*)
+    ├── commands/                    # 🔴 1 archivo (printing-commands.ts)
+    ├── store/                       # Redux: 3 slices ✅ (sales, payment, ui)
+    ├── utils/                       # ✅ formatCurrency, formatDate
     ├── i18n/                        # i18next: español + inglés
     └── styles/                      # Tailwind v4 + design tokens
+
+Leyenda: ✅ Con cobertura | ⚠️ Cobertura parcial | 🔴 Sin cobertura
 ```
 
 ---
@@ -101,13 +150,17 @@ apps/pos-desktop/src/
 
 Antes de escribir cualquier test, completar la infraestructura:
 
-### 3.1 Dependencias a instalar
+### 3.1 Dependencias instaladas
 
 ```bash
 pnpm --filter @pharmacy/pos-desktop add -D @testing-library/user-event @vitest/coverage-v8
-# Para Fase 6 (E2E):
 pnpm --filter @pharmacy/pos-desktop add -D @playwright/test
+pnpm exec playwright install
 ```
+
+**Estado:** ✅ Todo instalado.
+
+**Pendiente:** `msw` (Mock Service Worker) — útil para mockear llamadas HTTP en tests de componentes y servicios sin tocar `fetch` real. No es crítico pero facilitaría los tests del módulo fiscal y sync.
 
 ### 3.2 Configuración de Vitest en `vite.config.ts` (expandir sección `test`)
 
@@ -549,6 +602,51 @@ Cubre `formatRelativeTime` (5 tests: "just now", "5m ago", "3h ago", "2d ago", f
 | `client-pull.service.ts` | ~4 | Pull de clientes del server, incremental, upsert local |
 | `payment-method-sync.service.ts` | ~3 | Upsert de métodos de pago desde payload del server |
 
+### 6.13 Módulos testeados NO documentados en el plan original
+
+Los siguientes módulos fueron implementados por el equipo de desarrollo *después* de escribir el plan original pero ya cuentan con cobertura de tests. Se documentan aquí para que el plan refleje el estado real del proyecto.
+
+#### Licensing (dominio + componentes UI)
+
+**Archivos:** `src/domain/licensing/` (4 tests) + `src/renderer/components/licensing/` (3 tests)
+
+| Archivo | Tests | Escenarios clave |
+|---------|-------|-----------------|
+| `license.service.test.ts` | ~8 | Validación de licencia, expiración, refresh, offline mode |
+| `license.store.test.ts` | ~5 | Estado inicial, setLicense, clearLicense, persist |
+| `license-check-in-scheduler.test.ts` | ~4 | Inicio/parada de intervalo, check-in periódico |
+| `exceptions.test.ts` | ~3 | Constructores de excepciones de licencia |
+| `activation.page.test.tsx` | ~6 | Formulario de activación, validación, éxito/error |
+| `license-banner.test.tsx` | ~4 | Banner de advertencia según estado de licencia |
+| `license-status.page.test.tsx` | ~6 | Panel de estado, fecha de expiración, acción de refresh |
+
+**Total:** ~36 tests
+
+#### Backup / Recovery Log
+
+**Archivo:** `src/domain/backup/recovery-log.service.test.ts`
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| BKP-01 | `logRecovery()` crea entrada | Backup exitoso | `recoveryLog.create` llamado con tipo, fecha, metadata |
+| BKP-02 | `listRecentRecoveries()` | 3 entradas en BD | Retorna lista ordenada por fecha descendente |
+| BKP-03 | `listRecentRecoveries()` sin datos | BD vacía | Retorna `[]` |
+| BKP-04 | `getLastSuccessfulRecovery()` | 2 exitosas, 1 fallida | Retorna la más reciente exitosa |
+
+**Nota:** `backup.service.ts` (el servicio principal de backup) **no tiene tests** — solo se testea el log.
+
+#### Fiscal — Local Adjustment Service
+
+**Archivo:** `src/domain/fiscal/local-adjustment.service.test.ts`
+
+| ID | Escenario | Setup | Esperado |
+|----|-----------|-------|----------|
+| FADJ-01 | `createAdjustment()` exitoso | Invoice existe, reason válido | Crea adjustment record, lo asocia a invoice |
+| FADJ-02 | `createAdjustment()` invoice no encontrada | `findUnique → null` | Lanza `AdjustmentInvoiceNotFoundException` |
+| FADJ-03 | `reverseAdjustment()` | Adjustment existe | Crea registro de reversión |
+
+**Nota:** El resto del módulo fiscal (contingency, invoice, numbering, cufe, scheduler, receipt-generator) **no tiene cobertura**.
+
 ---
 
 ## 7. Fase 3: Redux Slices Faltantes
@@ -853,49 +951,320 @@ Ya existen 4 tests. Agregar:
 
 ---
 
-## 11. Resumen de Estimaciones
+## 11. Fase 7: Módulos de Dominio Restantes, Stores e Infraestructura
 
-| Fase | Descripción | Archivos de test | Tests | Esfuerzo (días) |
-|------|-------------|-----------------|-------|-----------------|
-| ~~**F0**~~ | ~~Infraestructura (user-event, coverage-v8, config)~~ | ~~—~~ | ~~—~~ | ~~0.5~~ | ✅ |
+**Objetivo:** Cubrir los módulos de dominio que se implementaron después del plan original y que actualmente no tienen tests. También las stores globales de Zustand y la infraestructura.
+
+**Estado:** 🔴 **NO INICIADA** — ~58 archivos, ~290-350 tests estimados.
+
+### 11.1 Assistant Module (10 archivos)
+
+**Archivos:** `src/domain/assistant/*.ts`
+
+Módulo completo del asistente en-app: paleta de comandos, motor de sugerencias, índice de búsqueda, gestor de atajos, memoria de formularios, métricas.
+
+| Servicio | Tests est. | Escenarios clave |
+|----------|-----------|-----------------|
+| `search-index.service.ts` | ~10 | Build index inicial, búsqueda fuzzy, actualización incremental, rebuild, pages/products/clients/commands, worker threshold |
+| `suggestion-engine.service.ts` | ~8 | Evaluación de reglas, periodic evaluation, debounce, MAX_VISIBLE_SUGGESTIONS, empty state |
+| `suggestion-rules.ts` | ~6 | Cada regla (low-stock, shift-aging, pending-sync, etc.), prioridades, combinación |
+| `shortcut-manager.ts` | ~6 | Registro, conflictos, context-scoping, cleanup, override |
+| `form-memory.service.ts` | ~5 | Save/load entries, opt-out, persistence error |
+| `commands.ts` | ~3 | `getCommandsForRole()` según rol CASHIER/ADMIN, filtrado |
+| `assistant-metrics.service.ts` | ~4 | Log de eventos (palette open, query, suggestion, help view), daily metrics, query sin eventos |
+| `assistant-types.ts` | ~2 | Validación de tipos (interfaces existentes) |
+| `exceptions.ts` | ~2 | Constructores de excepciones |
+
+**Total:** ~46 tests
+
+### 11.2 Printing Module (14 archivos + 4 formatters)
+
+**Archivos:** `src/domain/printing/*.ts`
+
+Módulo de impresión completo: ESC/POS, PDF, labels, template engine, queue, router, health, metrics, cash drawer, customer display.
+
+| Servicio | Tests est. | Escenarios clave |
+|----------|-----------|-----------------|
+| `print-queue.service.ts` | ~8 | Enqueue, dequeue, estado de jobs, cancelación, prioridades |
+| `print-router.ts` | ~6 | Ruteo por tipo de documento, fallback, default printer |
+| `printer-config.service.ts` | ~6 | CRUD de impresoras, validación, configuración por defecto |
+| `printer-health.service.ts` | ~5 | Health check, report, timeout, printer no encontrada |
+| `printing-metrics.service.ts` | ~4 | Conteo por impresora, tasa de fallo, jobs completados |
+| `cash-drawer.service.ts` | ~3 | Abrir cajón, comando ESC/POS |
+| `customer-display.service.ts` | ~3 | Mostrar texto en display cliente |
+| `config-export.service.ts` | ~3 | Exportar configuración de impresoras |
+| `proactive-notifications.ts` | ~4 | Notificaciones según reglas (bajo toner, atascos) |
+| `print-payload-writer.ts` | ~3 | Serializar payload de impresión |
+| `exceptions.ts` | ~2 | Excepciones de impresión |
+| `formatters/escpos-formatter.ts` | ~6 | Renderizado de recibo ESC/POS, test page, drawer kick |
+| `formatters/pdf-formatter.ts` | ~4 | Generación de HTML para PDF |
+| `formatters/label-formatter.ts` | ~4 | Labels individuales y por batch |
+| `formatters/template-engine.ts` | ~6 | Resolución de variables, header/footer, receipt completo |
+
+**Total:** ~67 tests
+
+### 11.3 Updates Module (11 archivos)
+
+**Archivos:** `src/domain/updates/*.ts`
+
+Módulo de auto-actualizaciones: state machine, check strategy, download manager, install orchestrator, migration, rollback, telemetry.
+
+| Servicio | Tests est. | Escenarios clave |
+|----------|-----------|-----------------|
+| `state-machine.ts` | ~10 | Transiciones válidas/inválidas, IllegalStateTransitionException, estados: IDLE→CHECKING→DOWNLOADING→READY→INSTALLING→DONE |
+| `update.service.ts` | ~6 | Check de actualización, integración con todos los sub-servicios, error propagation |
+| `check-strategy.ts` | ~4 | Estrategias: manual, periodic, on-idle; intervalo mínimo; configuración |
+| `download-manager.ts` | ~8 | Descarga con progreso, pausa/reanudación, fallo de red, resume parcial, estado DOWNLOADING/PAUSED/FAILED/COMPLETED |
+| `install-orchestrator.ts` | ~6 | Pre-checks (espacio, batería), instalación, post-install, rollback |
+| `migration-runner.ts` | ~5 | Ejecución de migraciones, fallo, rollback de migración |
+| `rollback-detector.ts` | ~4 | Detección de rollback post-instalación, excepción |
+| `telemetry.service.ts` | ~4 | Eventos, configuración, persistencia |
+| `update.store.ts` | ~4 | Estado del store Zustand, acciones, selectores |
+| `exceptions.ts` | ~1 | Excepciones del módulo |
+
+**Total:** ~52 tests
+
+### 11.4 Fiscal Module (restante — 7 archivos sin cobertura)
+
+**Archivos** (los ya cubiertos `local-adjustment.service` no se incluyen): `src/domain/fiscal/*.ts`
+
+| Servicio | Tests est. | Escenarios clave |
+|----------|-----------|-----------------|
+| `cufe.ts` | ~6 | `calculateProvisionalCufe()` con datos válidos, tech key placeholder, valores nulos, consistencia |
+| `invoice.service.ts` | ~8 | Crear factura desde venta, listar facturas, cancelar, crédito, errores: SaleMissing, InvoiceNotCancellable |
+| `contingency.service.ts` | ~8 | Entrar/salir de contingencia, hydratar store, transmisión pendiente, network debounce |
+| `contingency.store.ts` | ~5 | Estado inicial, set/reset contingencia, selectores |
+| `numbering.service.ts` | ~6 | Inicializar contadores, asignar siguiente número, rango agotado, persistencia |
+| `fiscal-scheduler.service.ts` | ~4 | Schedule de check fiscal, periodicidad, resultado OK/ERROR |
+| `receipt-generator.ts` | ~5 | Generar HTML de recibo, print, blob URL |
+
+**Total:** ~42 tests
+
+### 11.5 Backup Module (1 archivo principal sin cobertura)
+
+**Archivos:** `src/domain/backup/backup.service.ts` (ya existe test para `recovery-log.service.ts`)
+
+| Servicio | Tests est. | Escenarios clave |
+|----------|-----------|-----------------|
+| `backup.service.ts` | ~6 | Crear backup, restaurar, listar backups, fallo de backup, integridad |
+
+**Total:** ~6 tests
+
+### 11.6 Zustand Stores Globales (2 archivos)
+
+**Archivos:** `src/stores/assistant.store.ts`, `src/stores/user-preferences.store.ts`
+
+| Store | Tests est. | Escenarios clave |
+|-------|-----------|-----------------|
+| `assistant.store.ts` | ~14 | `openPalette()`/`closePalette()`, `setPaletteQuery()`, `openHelp()` con/sin topicId, `closeAll()`, mutual exclusion (palette cierra help, help cierra cheatsheet, etc.), `setSuggestions()`, `setIsIndexBuilding()` |
+| `user-preferences.store.ts` | ~16 | `dismissSuggestion()` + shouldShowSuggestion, auto-dismiss threshold, `setCustomShortcut()`/`removeCustomShortcut()`/`getCustomShortcut()`, `addPaletteRecentItem()` con límite 20, `recordHelpPageView()`/`wasHelpPageViewedRecently()`, `optOutFormField()`/`isFormFieldOptedOut()`, `incrementPaletteUsage()`/`incrementShortcutUsage()`, persistencia parcial |
+
+**Total:** ~30 tests
+
+### 11.7 Infraestructura (5 archivos)
+
+**Archivos:** `src/infrastructure/*.ts`
+
+| Archivo | Tests est. | Escenarios clave |
+|---------|-----------|-----------------|
+| `http-client.ts` | ~8 | GET con/sin token, query params, error HTTP (4xx, 5xx), error de red (fetch lanza), HttpError class |
+| `local-database.ts` | ~8 | Singleton, init concurrente, `closeLocalDatabase()`, Tauri vs browser mode, schema aplicado en fresh DB, dev Prisma shim |
+| `startup-health.ts` | ~6 | `getStartupHealth()`, `acknowledgeCleanStartup()`, `reportIntegrityFailure()`, `runLocalDatabaseIntegrityCheck()` con tablas correctas/faltantes, error de query |
+| `auth-token-provider.ts` | ~4 | Get/set/clear token, localStorage fallback |
+| `config.ts` | ~2 | Variables de entorno con defaults |
+
+**Total:** ~28 tests
+
+### 11.8 Utilidades Faltantes + Renderer Services + Commands (7 archivos)
+
+**Archivos:** `src/common/download.ts`, `src/config/fiscal.ts`, `src/renderer/services/*.ts`, `src/renderer/commands/printing-commands.ts`
+
+| Archivo | Tests est. | Escenarios clave |
+|---------|-----------|-----------------|
+| `common/download.ts` | ~4 | `downloadBlob()` con CSV, JSON, filename especial, MIME type |
+| `config/fiscal.ts` | ~5 | Valores default vs environment, `isContingencyTechKeyPlaceholder()`, placeholder detection |
+| `renderer/services/catalog-service.ts` | ~4 | `createCatalogService()` factory, interfaz base |
+| `renderer/services/payment-gateway-service.ts` | ~4 | Mock/real factory, authorize, confirm |
+| `renderer/commands/printing-commands.ts` | ~2 | Definiciones de comandos |
+
+**Total:** ~19 tests
+
+---
+
+## 12. Fase 8: Componentes React No Cubiertos
+
+**Objetivo:** Testear los componentes UI que se implementaron sin cobertura. Organizados por módulo, priorizando los de mayor impacto (auth, fiscal, printing).
+
+**Estado:** 🔴 **NO INICIADA** — ~53 componentes, ~180-250 tests estimados.
+
+### 12.1 Componentes de Auth (15 componentes)
+
+**Archivo:** `src/renderer/components/auth/`
+
+| Componente | Tests est. | Escenarios clave |
+|------------|-----------|-----------------|
+| `login.page.tsx` | ~6 | Formulario con campos, submit, error de credenciales, loading state, navegación post-login |
+| `pin-keypad.component.tsx` | ~5 | Renderizado numérico, entrada de PIN, submit, limpiar, max length |
+| `two-factor-modal.tsx` | ~4 | Modal 2FA, ingreso de código, verificación, error, resend |
+| `forgot-password.page.tsx` | ~3 | Formulario, validación email, confirmación envío |
+| `reset-password.page.tsx` | ~4 | Token válido/expirado, confirmación, error de validación |
+| `user-management.page.tsx` | ~6 | Lista de usuarios, creación, edición, cambio de rol, búsqueda |
+| `role-guard.tsx` | ~3 | Render children si rol autorizado, redirect si no, null si no session |
+| `step-up-modal.tsx` | ~3 | Modal de step-up auth, PIN requerido, éxito/fallo |
+| `quick-switch.component.tsx` | ~3 | Switch de usuario rápido, confirmación |
+| `avatar.component.tsx` | ~2 | Iniciales, imagen, tamaño |
+| `audit-log-view.tsx` | ~3 | Lista de eventos, filtro por tipo, paginación |
+| `auth-redirect.tsx` | ~2 | Redirect si no autenticado, redirect si ya autenticado |
+
+**Total:** ~44 tests
+
+### 12.2 Componentes de Printing (16 componentes)
+
+**Archivo:** `src/renderer/components/printing/`
+
+| Componente | Tests est. | Escenarios clave |
+|------------|-----------|-----------------|
+| `print-queue.page.tsx` | ~6 | Lista de jobs, estados (pending/printing/done/failed), cancelar, reimprimir |
+| `printers.page.tsx` | ~5 | Lista de impresoras, estado (online/offline/error), test print |
+| `setup-wizard.page.tsx` | ~8 | Flujo completo del wizard: 7 pasos, navegación adelante/atrás, validación por paso |
+| `setup-wizard-step-discovery.tsx` | ~3 | Escaneo de impresoras en red, loading, resultados |
+| `setup-wizard-step-found-printers.tsx` | ~2 | Selección de impresoras encontradas |
+| `setup-wizard-step-fallback-config.tsx` | ~2 | Configuración manual de fallback |
+| `setup-wizard-step-job-assignment.tsx` | ~3 | Asignación de tipos de documento a impresoras |
+| `setup-wizard-step-test-prints.tsx` | ~3 | Impresión de prueba, feedback visual |
+| `setup-wizard-step-summary.tsx` | ~2 | Resumen de configuración antes de finalizar |
+| `setup-wizard-step-welcome.tsx` | ~1 | Pantalla de bienvenida |
+| `printer-card.tsx` | ~3 | Nombre, estado, health info, acciones |
+| `printer-status-badge.tsx` | ~2 | Badge online/offline/error con color y texto |
+| `print-health-tile.tsx` | ~3 | Indicadores de salud: uptime, jobs, errores |
+| `print-job-row.tsx` | ~3 | Documento, estado, timestamp, acciones por fila |
+| `queue-summary-bar.tsx` | ~2 | Resumen: total jobs, pending, failed |
+
+**Total:** ~50 tests
+
+### 12.3 Componentes de Fiscal (7 componentes)
+
+**Archivo:** `src/renderer/components/fiscal/`
+
+| Componente | Tests est. | Escenarios clave |
+|------------|-----------|-----------------|
+| `cashier-operational-view.tsx` | ~5 | Vista de operaciones fiscales, toggle contingencia, estado actual |
+| `invoice-list-view.tsx` | ~4 | Lista de facturas, filtros, paginación, detalle |
+| `fiscal-invoice-detail-panel.tsx` | ~4 | Detalle de factura, PDF, acciones de cancelación |
+| `operational-invoice-detail-panel.tsx` | ~3 | Vista operativa de factura, ajustes, notas |
+| `adjustment-history-panel.tsx` | ~3 | Historial de ajustes, reversiones |
+| `contingency-history-view.tsx` | ~3 | Eventos de contingencia, timeline |
+| `index.ts` | ~1 | Barrel exports |
+
+**Total:** ~23 tests
+
+### 12.4 Componentes de Assistant (6 componentes)
+
+**Archivo:** `src/renderer/components/assistant/`
+
+| Componente | Tests est. | Escenarios clave |
+|------------|-----------|-----------------|
+| `command-palette.tsx` | ~6 | Abrir/cerrar con atajo, búsqueda fuzzy, navegación con teclado, selección, empty state |
+| `suggestion-banner.tsx` | ~4 | Render sugerencias activas, expandir/colapsar, dismiss individual, empty |
+| `help-viewer.tsx` | ~4 | Carga de contenido markdown, navegación entre temas, búsqueda, error de carga |
+| `shortcut-cheatsheet.tsx` | ~3 | Lista de atajos por contexto, atajos custom vs default |
+| `form-memory-autocomplete.tsx` | ~3 | Dropdown de autocompletado, selección, opt-out |
+| `assistant-layer.tsx` | ~2 | Orquestación de overlays, tecla Escape cierra todos |
+
+**Total:** ~22 tests
+
+### 12.5 Componentes de Update (6 componentes)
+
+**Archivo:** `src/renderer/components/update/`
+
+| Componente | Tests est. | Escenarios clave |
+|------------|-----------|-----------------|
+| `update-modal.tsx` | ~4 | Modal con progreso, versión actual/nueva, confirmar/botón cancelar |
+| `update-progress.tsx` | ~3 | Barra de progreso, estados: downloading/installing/done/error |
+| `update-toast.tsx` | ~3 | Toast de notificación, auto-dismiss, click para ir a update |
+| `update-check-interceptor.tsx` | ~2 | Interceptor de check periódico, renderiza children |
+| `update-settings.section.tsx` | ~3 | Configuración de canal, periodicidad, check now |
+| `about.page.tsx` | ~3 | Versión, fecha de build, checker de actualización |
+
+**Total:** ~18 tests
+
+### 12.6 Componentes Restantes (9 componentes)
+
+**Archivos:** `cash-shift/`, `DatabaseProof/`, `recovery/`
+
+| Componente | Tests est. | Escenarios clave |
+|------------|-----------|-----------------|
+| `cash-shift/operational-drift-banner.tsx` | ~3 | Banner de desviación operacional, dismiss, valores |
+| `cash-shift/reconciliation-view.tsx` | ~4 | Conteo de cierre, diferencias, confirmar |
+| `DatabaseProof/database-proof.tsx` | ~2 | Badge de "prueba de base de datos", toggle |
+| `recovery/recovery-page-view.tsx` | ~3 | Vista de recuperación, selección de backup, restaurar |
+| `recovery/index.ts` | ~1 | Barrel export |
+
+**Total:** ~13 tests
+
+---
+
+## 13. Resumen de Estimaciones
+
+| Fase | Descripción | Archivos de test | Tests | Esfuerzo (días) | Estado |
+|------|-------------|-----------------|-------|-----------------|--------|
+| ~~**F0**~~ | ~~Infraestructura~~ | ~~—~~ | ~~—~~ | ~~0.5~~ | ✅ |
 | ~~**F1**~~ | ~~Utilidades, hooks, common~~ | ~~8 archivos~~ | ~~44 tests~~ | ~~0.5~~ | ✅ |
-| ~~**F2**~~ | ~~Servicios de dominio (17 servicios)~~ | ~~17 archivos~~ | ~~~146 tests~~ | ~~5-7~~ | ✅ |
-| ~~**F3**~~ | ~~Redux slices faltantes (sales, ui)~~ | ~~2 archivos~~ | ~~~49 tests~~ | ~~1~~ | ✅ |
+| ~~**F2**~~ | ~~Servicios de dominio (originales)~~ | ~~17 archivos~~ | ~~~146 tests~~ | ~~5–7~~ | ✅ |
+| | *Subtotal: módulos no documentados (licensing, backup, fiscal adj.)* | *+4 archivos* | *+~50 tests* | *—* | *✅* |
+| ~~**F3**~~ | ~~Redux slices (sales, ui)~~ | ~~2 archivos~~ | ~~~49 tests~~ | ~~1~~ | ✅ |
 | ~~**F4**~~ | ~~Componentes — flujo de venta~~ | ~~7 archivos~~ | ~~~56 tests~~ | ~~2~~ | ✅ |
 | ~~**F5**~~ | ~~Componentes — páginas y navegación~~ | ~~8 archivos~~ | ~~~99 tests~~ | ~~3~~ | ✅ |
 | ~~**F6**~~ | ~~E2E con Playwright~~ | ~~5 archivos~~ | ~~~12 tests~~ | ~~1~~ | ✅ |
-| **TOTAL** | | **~57 archivos** | **~567 tests** | **~15 días** | ✅ |
+| | **Total completado (F0–F6)** | **~57 archivos** | **~567 tests** | **~15 días** | **✅** |
+| **F7** | **Dominio restante + stores + infraestructura** | **~58 archivos** | **~290–350 tests** | **8–10 días** | **🔴 PENDIENTE** |
+| **F8** | **Componentes React nuevos (auth, printing, fiscal, etc.)** | **~53 archivos** | **~180–250 tests** | **6–8 días** | **🔴 PENDIENTE** |
+| | **TOTAL GENERAL (F0–F8)** | **~168 archivos** | **~1.037–1.167 tests** | **~29–33 días** | |
 
-### Distribución por tipo de test
+### Distribución por tipo de test (completado + planificado)
 
 ```
-Utilidades/hooks/common:     44 tests   (8%)  ✅ COMPLETADO
-Servicios de dominio:       245 tests  (43%)  ✅ COMPLETADO
-Redux slices:                59 tests  (10%)  ✅ COMPLETADO
-Componentes React:          207 tests  (37%)  ✅ COMPLETADO
-E2E Playwright:              12 tests   (2%)  ✅ COMPLETADO
-                               ─────────
-TOTAL:                      ~567 tests
-COMPLETADO:                 ~567 tests (100%)
+Utilidades/hooks/common:         44 tests   (4-5%)   ✅ COMPLETADO
+Servicios de dominio:           245 tests  (21-24%)  ✅ COMPLETADO
+Redux slices:                    59 tests   (5-6%)   ✅ COMPLETADO
+Componentes React existentes:   207 tests  (18-20%)  ✅ COMPLETADO
+E2E Playwright:                  12 tests   (1%)     ✅ COMPLETADO
+                                     ─────────
+Nuevos dominios (F7):         ~290-350 tests (28-30%) 🔴 PENDIENTE
+Nuevos componentes (F8):      ~180-250 tests (17-24%) 🔴 PENDIENTE
+                                     ─────────
+TOTAL estimado:              ~1.037-1.167 tests
+COMPLETADO:                         567 tests (49-55%)
+PENDIENTE:                     ~470-600 tests (45-51%)
 ```
 
-### Orden cronológico recomendado
+### Orden cronológico recomendado (actualizado)
 
 ```
 ✅ F0 — Instalar dependencias, configurar coverage
 ✅ F1 — Utilidades, hooks, common (44 tests)
-✅ F2 — Servicios de dominio completos (245 tests)
-✅ F3 — Redux slices (sales, ui) (59 tests)
+✅ F2 — Servicios de dominio originales (196 tests)
+✅ F3 — Redux slices (sales, ui) (49 tests)
 ✅ F4 — Componentes de flujo de venta (56 tests)
 ✅ F5 — Páginas y navegación (99 tests)
 ✅ F6 — E2E con Playwright (~12 tests)
+🔴 F7 — Módulos de dominio restantes + stores + infraestructura (~290-350 tests)
+🔴 F8 — Componentes React nuevos (~180-250 tests)
 ```
 
 ---
 
-## 12. Riesgos Identificados
+## 14. Riesgos Identificados
 
-### Riesgo 1: PGlite en tests
+### Riesgo 1: Volumen de código nuevo sin cobertura
+
+**Problema:** ~199 archivos fuente (~78%) no tienen tests. La mayoría son módulos completos (printing, assistant, updates, fiscal, componentes de auth) que son complejos y de alto riesgo.
+
+**Impacto:** Sin cobertura, los cambios en estos módulos pueden romper funcionalidad sin ser detectados. Impresión y fiscal son particularmente críticos porque involucran hardware y cumplimiento normativo.
+
+**Mitigación:** Priorizar F7 y F8 por riesgo: primero printing y fiscal (hardware + compliance), luego assistant y updates (experiencia de usuario), luego componentes UI.
+
+### Riesgo 2: PGlite en tests
 
 **Problema:** Los servicios de dominio dependen de PGlite (`@electric-sql/pglite`) que corre WASM en el navegador. Los tests de Vitest con `jsdom` pueden no tener soporte para WASM.
 
@@ -906,7 +1275,7 @@ COMPLETADO:                 ~567 tests (100%)
 - Para tests de componentes: no usan PGlite directamente; usan Redux y context providers que se pueden mockear.
 - Para E2E con Playwright: se corre en navegador real con WASM — PGlite funciona.
 
-### Riesgo 2: Transacciones en servicios de dominio
+### Riesgo 3: Transacciones en servicios de dominio
 
 **Problema:** Varios servicios usan `prisma.$transaction(async (tx) => { ... })`. El mock debe ejecutar el callback pasándole el mismo mock.
 
@@ -918,7 +1287,7 @@ prisma.$transaction.mockImplementation(async (cb: any) => {
 });
 ```
 
-### Riesgo 3: Zustand stores con persistencia
+### Riesgo 4: Zustand stores con persistencia
 
 **Problema:** `local-config.store.ts` usa Zustand con `persist`. `local-session.store.ts` es solo en memoria.
 
@@ -926,39 +1295,35 @@ prisma.$transaction.mockImplementation(async (cb: any) => {
 
 **Mitigación:** `beforeEach(() => store.setState(initialState))` para cada test.
 
-### Riesgo 4: i18next en tests de componentes
+### Riesgo 5: i18next en tests de componentes
 
 **Problema:** Los componentes usan `useTranslation()`. Sin inicialización, crashean.
 
 **Mitigación:** `vitest.setup.ts` ya importa `@/i18n` que inicializa i18next. Pero los textos aparecerán en español (default) — usar `getByText()` con strings en español.
 
-### Riesgo 5: `@testing-library/user-event` no instalado
+### Riesgo 6: Complejidad del módulo printing
 
-**Problema:** Sin `user-event`, solo se pueden disparar eventos DOM crudos (`fireEvent.click`, `fireEvent.change`), que no simulan interacciones reales (focus, blur, teclado).
+**Problema:** El módulo de impresión tiene 18 archivos + 4 formatters que interactúan con hardware real (impresoras ESC/POS, cajón de dinero, display cliente). Los tests unitarios no pueden validar la comunicación real con el hardware.
 
-**Mitigación:** Instalar antes de empezar Fase 4 (componentes). Es un `pnpm add -D` de 30 segundos.
+**Impacto:** Se requiere mocking extensivo de los servicios de Tauri/IPC para simular la comunicación con el hardware.
 
-### Riesgo 6: Coverage sin provider instalado
+**Mitigación:** Usar los mocks existentes de `service-context.tsx` para los comandos Tauri. Probar la lógica de negocio (ruteo, cola, estado de jobs) con mocks, y dejar la validación con hardware para tests manuales o de integración con Tauri.
 
-**Problema:** El script `test:cov` referencia `--coverage` pero `@vitest/coverage-v8` no está instalado. Vitest 4 requiere un provider explícito.
+### Riesgo 7: Dependencia de Tauri IPC en componentes
 
-**Mitigación:** Instalar `@vitest/coverage-v8` en Fase 0. Sin esto, `pnpm test:cov` fallará.
+**Problema:** Componentes como los de printing, update, y startup-health invocan comandos de Tauri (`invoke('print_file')`, `invoke('get_startup_health')`). En tests de Vitest con jsdom, `@tauri-apps/api/core.invoke` no está disponible y lanza error.
 
-### Riesgo 7: Playwright requiere binarios de navegador
+**Impacto:** Los tests fallan al importar o ejecutar componentes que usan `invoke()` directamente.
 
-**Problema:** `@playwright/test` necesita `npx playwright install` para descargar Chromium/Firefox/WebKit.
-
-**Mitigación:** Documentar en el README que `pnpm exec playwright install` es un paso de setup. En CI/CD, usar la acción `playwright` de GitHub Actions.
+**Mitigación:** Usar `vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))` a nivel de setup o por test. Ya existe un patrón en `e2e/setup.ts` que puede adaptarse.
 
 ---
 
 ## Apéndice A: Comandos útiles
 
 ```bash
-# Instalar dependencias faltantes
-pnpm --filter @pharmacy/pos-desktop add -D @testing-library/user-event @vitest/coverage-v8
-pnpm --filter @pharmacy/pos-desktop add -D @playwright/test
-npx playwright install
+# Instalar dependencias (ya instaladas — solo si falta msw)
+pnpm --filter @pharmacy/pos-desktop add -D msw
 
 # Ejecutar todos los tests
 pnpm --filter @pharmacy/pos-desktop test
@@ -972,8 +1337,14 @@ pnpm --filter @pharmacy/pos-desktop test:watch
 # Ejecutar un archivo específico
 pnpm --filter @pharmacy/pos-desktop test -- sales-pos.service.test.ts
 
+# Ejecutar tests de un módulo específico
+pnpm --filter @pharmacy/pos-desktop test -- src/domain/assistant/
+
 # Ejecutar tests E2E
 pnpm --filter @pharmacy/pos-desktop exec playwright test
+
+# Ejecutar tests E2E con UI
+pnpm --filter @pharmacy/pos-desktop exec playwright test --ui
 
 # Ver coverage report
 pnpm --filter @pharmacy/pos-desktop exec vite preview --outDir coverage
