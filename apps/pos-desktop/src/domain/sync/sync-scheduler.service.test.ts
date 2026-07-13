@@ -8,40 +8,6 @@ import { createSyncScheduler, SyncScheduler } from "./sync-scheduler.service";
 // Mocks
 // ---------------------------------------------------------------------------
 
-const makeMockSyncService = () => ({
-  pullConfiguration: vi.fn().mockResolvedValue(undefined),
-  pullCatalog: vi.fn().mockResolvedValue(undefined),
-  pullLots: vi.fn().mockResolvedValue(undefined),
-  pullClients: vi.fn().mockResolvedValue(undefined),
-});
-
-const makeMockPushService = () => ({
-  pushPending: vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 }),
-});
-
-const makeMockMetricsService = () => ({
-  getQueueCounts: vi.fn().mockResolvedValue({
-    pending: 0, stalePending: 0, failed: 0,
-    permanentFailure: 0, completed24h: 0, completedTotal: 0,
-  }),
-  getBackupSummary: vi.fn().mockResolvedValue({
-    lastBackupAt: null, lastBackupReason: null,
-    totalBackups: 0, oldestBackupAt: null,
-    totalBackupSizeBytes: 0,
-  }),
-});
-
-const makeMockBackupService = () => ({
-  createBackup: vi.fn().mockResolvedValue(undefined),
-  shouldRunPeriodicBackup: vi.fn().mockReturnValue(false),
-  getBackupSummary: vi.fn().mockResolvedValue({
-    lastBackupAt: null, lastBackupReason: null,
-    totalBackups: 0, oldestBackupAt: null,
-    totalBackupSizeBytes: 0,
-  }),
-  getBackupHealth: vi.fn().mockResolvedValue("HEALTHY"),
-});
-
 const makeMockPrisma = () => ({
   $transaction: vi.fn(),
   syncQueue: {

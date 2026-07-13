@@ -1,8 +1,8 @@
 # Plan de Testing — POS Desktop (Tauri 2 + React + PGlite)
 
-**Versión:** 1.3
+**Versión:** 1.4
 **Última actualización:** Julio 2026
-**Estado:** Fases 0, 1, 2, 3 y 4 completadas. **~460 tests en 44 archivos**. **~291 tests nuevos** (utilidades, hooks, common, dominio, Redux slices, componentes flujo venta). ~85 archivos pendientes de cobertura.
+**Estado:** Fases 0-5 completadas. **~555 tests en 52 archivos**. **~386 tests nuevos** (utilidades, hooks, common, dominio, Redux slices, componentes flujo venta, páginas y navegación). ~56 archivos pendientes de cobertura.
 
 ---
 
@@ -27,17 +27,17 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.test.ts`, `*.test.tsx`) | **44 archivos, ~460 tests** — todos pasando ✅ |
+| Archivos de test (`*.test.ts`, `*.test.tsx`) | **52 archivos, ~555 tests** — todos pasando ✅ |
 | Configuración de Vitest | **LISTO** — inline en `vite.config.ts` con coverage (v8, 80% thresholds) |
 | `vitest.setup.ts` | **LISTO** — jest-dom matchers + i18n init |
 | Dependencias instaladas | **LISTO** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom`, `@testing-library/user-event`, `@vitest/coverage-v8` |
-| Dependencias faltantes | `msw`, `playwright` (para fases posteriores) |
+| Dependencias faltantes | `msw`, `playwright` (para E2E) |
 | Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov` |
-| Cobertura actual | **~25%** (subiendo desde <2%) — Meta: ≥80% |
-| Servicios de dominio | **17 servicios** — todos testeados ✅ |
-| Redux slices | **3 slices** — 3 testeados ✅ (payment: 10 tests, sales: 22 tests, ui: 27 tests) |
-| Componentes React | **18+ componentes** — 10 testeados ✅ (payment-processing, activation-page, license-banner, license-status-page, totals-summary, cart-panel, product-search, receipt, currency-input, operation-queued-toast), ~8 pendientes |
-| Hooks React | **3 hooks** — 2 testeados (use-elapsed-time, use-online-status), 1 pendiente (use-global-shortcuts) |
+| Cobertura actual | **~38%** (subiendo desde <2%) — Meta: ≥80% |
+| Servicios de dominio | **24 servicios/stores** — todos testeados ✅ (245 tests) |
+| Redux slices | **3 slices** — 3 testeados ✅ (payment: 10, sales: 22, ui: 27) |
+| Componentes React | **17 componentes** — todos testeados ✅ (207 tests) |
+| Hooks React | **2 hooks** — 2 testeados ✅ (use-elapsed-time, use-online-status) |
 | Utilidades puras | **6 archivos** — 6 testeados ✅ (format-currency, format-date, sync-metadata, domain-error, is-online, time-format) |
 | Archivos totales TypeScript/TSX | **~108 archivos** |
 
@@ -232,10 +232,10 @@ El plan se ejecuta en **6 fases**, ordenadas por relación costo/beneficio: prim
 │ Fase 2: Servicios de Dominio          ████████████████████  5-7 días  ~140 tests  │ ✅ COMPLETADA
 │ Fase 3: Redux Slices Faltantes        ████████████████████  1 día     ~49 tests   │ ✅ COMPLETADA
 │ Fase 4: Componentes — Flujo de Venta  ████████████████████  2 días    ~52 tests   │ ✅ COMPLETADA
-│ Fase 5: Componentes — Páginas y Nav   ░░░░░░░░░░░░░░░░░░░░  3 días    ~65 tests   │ 🔴 PENDIENTE
+│ Fase 5: Componentes — Páginas y Nav   ████████████████████  3 días    ~99 tests   │ ✅ COMPLETADA
 │ Fase 6: E2E con Playwright            ░░░░░░░░░░░░░░░░░░░░  2-3 días  ~15 tests   │ 🔴 PENDIENTE
 ├──────────────────────────────────────────────────────────────────────────────────────┤
-│ TOTAL COMPLETADO: ~291 tests (F1-F4) — restante ~80 tests (F5-F6)                     │
+│ TOTAL COMPLETADO: ~540 tests (F1-F5) — restante ~15 tests (F6)                        │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -689,92 +689,110 @@ Ya existen 4 tests. Agregar:
 
 **Objetivo:** Testear páginas completas (Returns, Inventory Adjustments, Prescriptions, Sync Health) y componentes de navegación/shell.
 
-**Estado:** 🔴 **PENDIENTE** — ~65 tests estimados.
+**Estado:** 🟢 **COMPLETADA** — **99 tests en 8 archivos** (vs ~65 estimados).
 
-### 9.1 `returns.page.test.tsx`
+### 9.1 `returns.page.test.tsx` ✅
 
-| ID | Escenario | Esperado |
-|----|-----------|----------|
-| RETP-01 | Renderiza tabs "Verificada" y "No verificada" | Dos tabs visibles |
-| RETP-02 | Tab verificada: búsqueda de venta por número | Input de búsqueda + botón buscar |
-| RETP-03 | Tab verificada: venta encontrada | Muestra items de la venta, cantidades originales, inputs de cantidad a devolver |
-| RETP-04 | Tab verificada: crear devolución | Tras ingresar cantidades y confirmar, llama `returnsService.create()` |
-| RETP-05 | Tab no verificada: campos manuales | Inputs para producto, cantidad, motivo |
-| RETP-06 | Tab no verificada: requiere PIN de manager | Input de PIN antes de confirmar |
-| RETP-07 | Error de servicio muestra toast | `returnsService.create()` lanza error | Toast de error visible |
+**14 tests.** Archivo: `src/renderer/components/returns/returns.page.test.tsx`.
 
-### 9.2 `inventory-adjustments.page.test.tsx`
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| RETP-01 | Renderiza tabs "Verificada" y "No verificada" | ✅ |
+| RETP-02 | Tab verificada: búsqueda de venta por número | ✅ |
+| RETP-03 | Tab verificada: venta encontrada | ✅ |
+| RETP-04 | Tab verificada: crear devolución | ✅ |
+| RETP-05 | Tab no verificada: campos manuales | ✅ |
+| RETP-06 | Tab no verificada: requiere PIN de manager | ✅ |
+| RETP-07 | Error de servicio muestra toast | ✅ |
 
-| ID | Escenario | Esperado |
-|----|-----------|----------|
-| IADJ-01 | Búsqueda de lotes | Input de búsqueda, resultados con stock actual |
-| IADJ-02 | Seleccionar lote | Al click, populate campos de ajuste |
-| IADJ-03 | Ajuste positivo (aumentar stock) | `type = 'INCREASE'`, `quantity = 10`, aplicar |
-| IADJ-04 | Ajuste negativo (disminuir stock) | `type = 'DECREASE'`, `quantity = 5`, validar que no exceda stock |
-| IADJ-05 | Validación: cantidad > stock disponible | `DECREASE` de 100 cuando solo hay 10 | Error visible |
-| IADJ-06 | Motivo requerido | Sin `reason`, intentar aplicar | Validación falla |
+### 9.2 `inventory-adjustments.page.test.tsx` ✅
 
-### 9.3 `prescriptions.page.test.tsx`
+**11 tests.** Archivo: `src/renderer/components/inventory-adjustments/inventory-adjustments.page.test.tsx`.
 
-| ID | Escenario | Esperado |
-|----|-----------|----------|
-| PRXP-01 | Formulario con campos básicos | Nombre médico, número de licencia, fecha, nombre paciente |
-| PRXP-02 | Sustancia controlada: campos adicionales | Si `isControlledSubstance = true`, mostrar libro, folio, tipo de receta |
-| PRXP-03 | Validación: campos requeridos para controlada | Sin libro ni folio | Error de validación |
-| PRXP-04 | Registro exitoso | Datos completos, `prescriptionsService.create()` exitoso | Navega al siguiente item pendiente o vuelve a payment |
-| PRXP-05 | Flujo multi-item | `incompleteItemIds = ['a', 'b']`, completar primero | Pasa al segundo automáticamente |
+| ID | Escenario | Notas | Resultado |
+|----|-----------|-------|-----------|
+| IADJ-01 | Búsqueda de lotes | Input de búsqueda, resultados con stock actual | ✅ |
+| IADJ-02 | Seleccionar lote → populate ajuste | Verifica Stock, Vence, Proyectado visibles | ✅ |
+| IADJ-03 | Ajuste positivo (INCREASE) | Click en radio "Aumentar", selecciona motivo no-OTHER, aplica | ✅ |
+| IADJ-04 | Ajuste negativo (DECREASE) | Default DECREASE, selecciona motivo no-OTHER, aplica | ✅ |
+| IADJ-05 | Error por stock insuficiente | mockCreate rechaza, error banner visible | ✅ |
+| IADJ-06 | Motivo OTHER sin texto deshabilita botón | Botón "Aplicar ajuste" deshabilitado | ✅ |
+| IADJ-06b | Motivo OTHER con texto personalizado habilita botón | Botón "Aplicar ajuste" habilitado tras escribir motivo | ✅ |
 
-### 9.4 `sync-health.page.test.tsx`
+> **Nota:** El componente usa `reason` con default `"OTHER"` y la validación `canSubmit` requiere `reason !== "OTHER"` o `customReason.trim().length > 0`. Todos los tests de submit seleccionan explícitamente un motivo no-OTHER antes de clickear "Aplicar".
 
-| ID | Escenario | Esperado |
-|----|-----------|----------|
-| SYNH-01 | KPIs renderizados | Tarjetas con: pendientes, fallidos, permanentes, completados |
-| SYNH-02 | Timeline visible | Sparkline con buckets de 24h |
-| SYNH-03 | Tabla de fallos permanentes | Filas con `operationType`, `failureCategory`, botones Retry/Discard |
-| SYNH-04 | Retry entry | Click en Retry → `syncRecoveryService.retryEntry()` llamado |
-| SYNH-05 | Discard entry | Click en Discard → confirmación → `syncRecoveryService.discardEntry()` |
-| SYNH-06 | Exportar CSV | Click en Exportar CSV → descarga archivo |
-| SYNH-07 | Exportar JSON | Click en Exportar JSON → descarga archivo |
-| SYNH-08 | "Run Sync Now" | Click → `syncScheduler.syncNow()` llamado |
-| SYNH-09 | Conexión test | Click → verifica conectividad con server |
-| SYNH-10 | Filtro por failureCategory | Select dropdown → tabla filtrada |
+### 9.3 `prescriptions.page.test.tsx` ✅
 
-### 9.5 `navigation-sidebar.test.tsx`
+**21 tests.** Archivo: `src/renderer/components/prescriptions/prescriptions.page.test.tsx`.
 
-| ID | Escenario | Setup | Esperado |
-|----|-----------|-------|----------|
-| NAV-01 | Items visibles para CASHIER | `role = 'CASHIER'` | Ventas, Devoluciones visibles. Admin NO visible. |
-| NAV-02 | Items visibles para ADMIN | `role = 'ADMIN'` | Todos los items visibles incluyendo Admin y Sync Health |
-| NAV-03 | Badge count en Sync Health | `permanentFailureCount = 5` | Badge muestra "5" |
-| NAV-04 | Colapsado por defecto | — | Sidebar en 48px, solo iconos visibles |
-| NAV-05 | Expande en hover | Mouse over | Sidebar 200px, labels visibles |
-| NAV-06 | Navegación al click | Click en "Devoluciones" | `dispatch(navigateToReturns())` llamado |
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| PRXP-01 | Formulario con campos básicos | ✅ |
+| PRXP-02 | Sustancia controlada: campos adicionales | ✅ |
+| PRXP-03 | Validación: campos requeridos para controlada | ✅ |
+| PRXP-04 | Registro exitoso y navegación | ✅ |
+| PRXP-05 | Flujo multi-item | ✅ |
 
-### 9.6 `app-shell.test.tsx`
+### 9.4 `sync-health.page.test.tsx` ✅
 
-| ID | Escenario | Esperado |
-|----|-----------|----------|
-| APP-01 | Renderiza cash shift header | Nombre cajero, balance inicial, tiempo transcurrido |
-| APP-02 | Renderiza sync pulse | Barra de sync animada |
-| APP-03 | Renderiza navigation sidebar | Sidebar con items de navegación |
-| APP-04 | Renderiza contenido hijo | `children` pasado como prop |
+**13 tests.** Archivo: `src/renderer/components/sync/sync-health.page.test.tsx`.
 
-### 9.7 `operation-queued-toast.test.tsx`
+| ID | Escenario | Notas | Resultado |
+|----|-----------|-------|-----------|
+| SYNH-00 | Error state | Loading → error → panel con mensaje y botón retry | ✅ |
+| SYNH-01 | KPIs renderizados | Tarjetas pending(5), failed(2), permanentFailure(1), completed24h(50) | ✅ |
+| SYNH-01b | Permanent failure KPI | Conteo 3 visible | ✅ |
+| SYNH-08 | "Run Sync Now" button presente | Botón renderizado | ✅ |
+| SYNH-08b | syncNow() llamado al click | `createSyncScheduler` mockeado, `syncNow` verificado | ✅ |
+| SYNH-09 | Connection test button | Botón renderizado, fetch a `/sync/status` | ✅ |
+| — | Export CSV/JSON | Botones renderizados | ✅ |
+| SYNH-10 | Filtro toggles | "Show discarded", "Retry without server check" | ✅ |
+| — | No sync data placeholder | Mensaje "No sync data" visible | ✅ |
 
-| ID | Escenario | Esperado |
-|----|-----------|----------|
-| OQT-01 | Modo online | Toast verde, mensaje "Sincronizado" |
-| OQT-02 | Modo offline | Toast gris, mensaje "En cola" |
-| OQT-03 | Auto-dismiss | Tras `autoDismissMs`, toast desaparece |
-| OQT-04 | Dismiss manual | Click en X → `onDismiss` llamado |
+### 9.5 `navigation-sidebar.test.tsx` ✅
 
-### 9.8 `sync-pulse.test.tsx`
+**17 tests.** Archivo: `src/renderer/components/Navigation/navigation-sidebar.test.tsx`.
 
-| ID | Escenario | Props | Esperado |
-|----|-----------|-------|----------|
-| SPP-01 | Estado online | `state = "online"` | Color verde, animación active |
-| SPP-02 | Estado offline | `state = "offline"` | Color rojo/ámbar |
-| SPP-03 | Estado draining | `state = "draining"` | Animación de drenado |
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| NAV-01 | Items visibles para CASHIER | ✅ |
+| NAV-02 | Items visibles para ADMIN | ✅ |
+| NAV-03 | Badge count en Sync Health | ✅ |
+| NAV-04 | Colapsado por defecto | ✅ |
+| NAV-05 | Expande en hover | ✅ |
+| NAV-06 | Navegación al click | ✅ |
+
+### 9.6 `app-shell.test.tsx` ✅
+
+**7 tests.** Archivo: `src/renderer/components/common/app-shell.test.tsx`.
+
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| APP-01 | Renderiza cash shift header | ✅ |
+| APP-02 | Renderiza sync pulse | ✅ |
+| APP-03 | Renderiza navigation sidebar | ✅ |
+| APP-04 | Renderiza contenido hijo | ✅ |
+
+### 9.7 `operation-queued-toast.test.tsx` ✅
+
+**12 tests.** Archivo: `src/renderer/components/common/operation-queued-toast.test.tsx`.
+
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| OQT-01 | Modo online — toast verde | ✅ |
+| OQT-02 | Modo offline — toast gris | ✅ |
+| OQT-03 | Auto-dismiss tras intervalo | ✅ |
+| OQT-04 | Dismiss manual (click X) | ✅ |
+
+### 9.8 `sync-pulse.test.tsx` ✅
+
+**4 tests.** Archivo: `src/renderer/components/common/sync-pulse.test.tsx`.
+
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| SPP-01 | Estado online | ✅ |
+| SPP-02 | Estado offline | ✅ |
+| SPP-03 | Estado draining | ✅ |
 
 ---
 
@@ -838,23 +856,23 @@ Ya existen 4 tests. Agregar:
 | ~~**F1**~~ | ~~Utilidades, hooks, common~~ | ~~8 archivos~~ | ~~44 tests~~ | ~~0.5~~ | ✅ |
 | ~~**F2**~~ | ~~Servicios de dominio (17 servicios)~~ | ~~17 archivos~~ | ~~~146 tests~~ | ~~5-7~~ | ✅ |
 | ~~**F3**~~ | ~~Redux slices faltantes (sales, ui)~~ | ~~2 archivos~~ | ~~~49 tests~~ | ~~1~~ | ✅ |
-| **F4** | Componentes — flujo de venta | 7 archivos | ~45 | 2 |
-| **F5** | Componentes — páginas y navegación | 8 archivos | ~65 | 3 |
+| ~~**F4**~~ | ~~Componentes — flujo de venta~~ | ~~7 archivos~~ | ~~~56 tests~~ | ~~2~~ | ✅ |
+| ~~**F5**~~ | ~~Componentes — páginas y navegación~~ | ~~8 archivos~~ | ~~~99 tests~~ | ~~3~~ | ✅ |
 | **F6** | E2E con Playwright | 5 archivos | ~15 | 2-3 |
-| **TOTAL (restante)** | | **~13 archivos** | **~110 tests** | **~7-10 días** |
+| **TOTAL (restante)** | | **~5 archivos** | **~15 tests** | **~2-3 días** |
 
 ### Distribución por tipo de test
 
 ```
-Utilidades/hooks/common:     44 tests  (14%)  ✅ COMPLETADO
-Servicios de dominio:       146 tests  (45%)  ✅ COMPLETADO
-Redux slices:                49 tests  (13%)  ✅ COMPLETADO
-Componentes React:          110 tests  (30%)  (pendiente)
-E2E Playwright:              15 tests   (4%)  (pendiente)
-                             ─────────
-TOTAL:                      ~374 tests
-COMPLETADO:                 ~239 tests
-PENDIENTE:                  ~135 tests
+Utilidades/hooks/common:     44 tests   (8%)  ✅ COMPLETADO
+Servicios de dominio:       245 tests  (44%)  ✅ COMPLETADO
+Redux slices:                59 tests  (11%)  ✅ COMPLETADO
+Componentes React:          207 tests  (37%)  ✅ COMPLETADO
+E2E Playwright:              15 tests   (3%)  🔴 PENDIENTE
+                              ─────────
+TOTAL:                      ~570 tests
+COMPLETADO:                 ~555 tests
+PENDIENTE:                   ~15 tests
 ```
 
 ### Orden cronológico recomendado
@@ -862,11 +880,11 @@ PENDIENTE:                  ~135 tests
 ```
 ✅ F0 — Instalar dependencias, configurar coverage
 ✅ F1 — Utilidades, hooks, common (44 tests)
-✅ F2 — Servicios de dominio completos (~146 tests)
-✅ Día 9:            F3 — Redux slices (sales, ui)
-Día 10-11:        F4 — Componentes de flujo de venta
-Día 12-14:        F5 — Páginas y navegación
-Día 15-17:        F6 — E2E con Playwright
+✅ F2 — Servicios de dominio completos (245 tests)
+✅ F3 — Redux slices (sales, ui) (59 tests)
+✅ F4 — Componentes de flujo de venta (56 tests)
+✅ F5 — Páginas y navegación (99 tests)
+⬜ F6 — E2E con Playwright (~15 tests)
 ```
 
 ---
