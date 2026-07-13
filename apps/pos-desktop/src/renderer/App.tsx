@@ -29,6 +29,7 @@ import { ResetPasswordPage } from "@/components/auth/reset-password.page";
 import { UserManagementPage } from "@/components/auth/user-management.page";
 import { AuditLogView } from "@/components/auth/audit-log-view";
 import { ServiceProvider } from "./components/common/service-context";
+import { AssistantLayer } from "./components/assistant/assistant-layer";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
 import { useOnlineStatus } from "@/hooks/use-online-status";
@@ -45,6 +46,10 @@ const InnerApp: FC = () => {
   const activeScreen = useAppSelector(selectActiveScreen);
   const isOnline = useOnlineStatus();
   const shouldReduceMotion = useReducedMotion();
+
+  // Assistant layer renders overlays and registers global shortcuts.
+  // Must be mounted at this level (inside ServiceProvider, outside screen router).
+  const assistantLayer = <AssistantLayer />;
 
   // Live session data from the Zustand store (populated at login).
   // When there is no session yet we render a login fallback.
@@ -68,15 +73,30 @@ const InnerApp: FC = () => {
 
   // Render login/forgot-password/reset-password directly without app shell
   if (activeScreen === "login") {
-    return <LoginPage />;
+    return (
+      <>
+        <LoginPage />
+        {assistantLayer}
+      </>
+    );
   }
 
   if (activeScreen === "forgot-password") {
-    return <ForgotPasswordPage />;
+    return (
+      <>
+        <ForgotPasswordPage />
+        {assistantLayer}
+      </>
+    );
   }
 
   if (activeScreen === "reset-password") {
-    return <ResetPasswordPage />;
+    return (
+      <>
+        <ResetPasswordPage />
+        {assistantLayer}
+      </>
+    );
   }
 
   if (activeScreen === "user-management") {
@@ -93,6 +113,7 @@ const InnerApp: FC = () => {
             <UserManagementPage />
           </div>
         </div>
+        {assistantLayer}
       </AppShell>
     );
   }
@@ -111,6 +132,7 @@ const InnerApp: FC = () => {
             <AuditLogView />
           </div>
         </div>
+        {assistantLayer}
       </AppShell>
     );
   }
@@ -302,6 +324,9 @@ const InnerApp: FC = () => {
 
       {/* Overlay components: update-check interceptor renders toasts/modals */}
       <UpdateCheckInterceptor />
+
+      {/* Assistant overlays: command palette, suggestions, help, shortcuts */}
+      {assistantLayer}
     </AppShell>
   );
 };

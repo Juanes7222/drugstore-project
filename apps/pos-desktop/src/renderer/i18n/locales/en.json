@@ -288,6 +288,52 @@
     "numeric_keypad_aria": "Numeric keypad",
     "delete_key_aria": "Delete"
   },
+  "assistant": {
+    "suggestion": {
+      "label": "Contextual suggestions",
+      "more": "+{{count}} more",
+      "showLess": "Show less"
+    },
+    "shortcuts": {
+      "title": "Keyboard shortcuts",
+      "search": "Search shortcut…",
+      "edit": "Edit",
+      "custom": "Custom",
+      "default": "Restore default",
+      "capture": "Press a key…",
+      "conflict": "This shortcut is already assigned to {command}",
+      "empty": "No shortcuts found for '{query}'",
+      "footer": "Changes are saved automatically on this terminal",
+      "close": "Close",
+      "group_GLOBAL": "Global",
+      "group_SALE_FLOW": "Sales",
+      "group_SHIFT_OPEN": "Shift",
+      "group_MANAGER_ONLY": "Manager only",
+      "group_TEXT_INPUT": "Text fields",
+      "group_MODAL_OPEN": "Modals"
+    },
+    "formMemory": {
+      "noSuggestions": "No suggestions found",
+      "optOut": "Don't show suggestions",
+      "recent": "Recent"
+    },
+    "help": {
+      "title": "Help",
+      "search": "Search help…",
+      "notFound": "Topic not found",
+      "index": "Help index",
+      "screens": "Screens",
+      "procedures": "Procedures",
+      "general": "General",
+      "lastUpdated": "Last updated: {date}",
+      "outdated": "This content has not been updated since {date} — it may be out of date",
+      "emptySearch": "No topics found for '{query}'",
+      "fallback": "Press F1 again to go to the index.",
+      "step": "Step",
+      "stepsCompleted": "completed",
+      "selectTopic": "Select a help topic from the list to get started."
+    }
+  },
   "roles": {
     "cashier": "Cashier",
     "manager": "Manager",

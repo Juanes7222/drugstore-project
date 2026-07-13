@@ -27,6 +27,7 @@
     "@reduxjs/toolkit": "^2.7.0",
     "@tauri-apps/api": "^2.5.0",
     "@tauri-apps/plugin-shell": "^2.3.5",
+    "fuse.js": "^7.4.2",
     "i18next": "^26.3.4",
     "motion": "^12.42.2",
     "pglite-prisma-adapter": "^0.7.2",

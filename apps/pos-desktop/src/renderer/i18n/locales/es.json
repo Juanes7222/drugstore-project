@@ -288,6 +288,66 @@
     "numeric_keypad_aria": "Teclado numérico",
     "delete_key_aria": "Borrar"
   },
+  "assistant": {
+    "suggestion": {
+      "label": "Sugerencias contextuales",
+      "more": "+{{count}} más",
+      "showLess": "Mostrar menos"
+    },
+    "palette": {
+      "placeholder": "Buscar páginas, comandos, productos...",
+      "building_index": "Construyendo índice...",
+      "no_results": "No encontramos nada para '{query}'. Prueba con menos palabras o revisa la ayuda.",
+      "footer_hints": "↑↓ navegar · ↵ seleccionar · esc cerrar",
+      "group_recent": "Recientes",
+      "group_suggested": "Sugerido",
+      "group_pages": "Páginas",
+      "group_commands": "Comandos",
+      "group_sales": "Ventas",
+      "group_clients": "Clientes",
+      "group_products": "Productos",
+      "group_help": "Ayuda"
+    },
+    "shortcuts": {
+      "title": "Atajos de teclado",
+      "search": "Buscar atajo…",
+      "edit": "Editar",
+      "custom": "Personalizado",
+      "default": "Restaurar predeterminado",
+      "capture": "Presiona una tecla…",
+      "conflict": "Este atajo ya está asignado a {command}",
+      "empty": "No se encontraron atajos para '{query}'",
+      "footer": "Los cambios se guardan automáticamente en este terminal",
+      "close": "Cerrar",
+      "group_GLOBAL": "Globales",
+      "group_SALE_FLOW": "Ventas",
+      "group_SHIFT_OPEN": "Turno",
+      "group_MANAGER_ONLY": "Solo manager",
+      "group_TEXT_INPUT": "Campos de texto",
+      "group_MODAL_OPEN": "Modales"
+    },
+    "formMemory": {
+      "noSuggestions": "No se encontraron sugerencias",
+      "optOut": "No mostrar sugerencias",
+      "recent": "Recientes"
+    },
+    "help": {
+      "title": "Ayuda",
+      "search": "Buscar en la ayuda…",
+      "notFound": "Tema no encontrado",
+      "index": "Índice de ayuda",
+      "screens": "Pantallas",
+      "procedures": "Procedimientos",
+      "general": "General",
+      "lastUpdated": "Última actualización: {date}",
+      "outdated": "Este contenido no se ha actualizado desde {date} - puede estar desactualizado",
+      "emptySearch": "No se encontraron temas para '{query}'",
+      "fallback": "Presiona F1 de nuevo para ir al índice.",
+      "step": "Paso",
+      "stepsCompleted": "completados",
+      "selectTopic": "Selecciona un tema de ayuda de la lista para comenzar."
+    }
+  },
   "roles": {
     "cashier": "Cajero",
     "manager": "Manager",
