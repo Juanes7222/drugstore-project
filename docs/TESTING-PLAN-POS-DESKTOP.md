@@ -1,8 +1,8 @@
 # Plan de Testing — POS Desktop (Tauri 2 + React + PGlite)
 
-**Versión:** 2.0
+**Versión:** 2.1
 **Última actualización:** Julio 2026
-**Estado:** **FASES 0-8 COMPLETADAS** 🎉 — 152 archivos de test, **1.702 tests** — todos pasando. Cobertura completa de UI components (auth, printing, fiscal, assistant, update, cash-shift, DatabaseProof, recovery). Quedan ~29 archivos fuente sin cobertura (principalmente barrel exports, stubs, y componentes legacy).
+**Estado:** **FASES 0-8 COMPLETADAS, FASE 9 EN CURSO** — 166 archivos de test, **1.813 tests** — todos pasando. Cobertura real: **68.49% lines** (threshold 80% no alcanzado). Se agregaron tests para auth-http-client, shift-close-html, catalog-service.http, use-global-shortcuts, store/hooks/store, y excepciones de todos los dominios. Quedan pendientes componentes grandes (login, service-context, assistant, recovery, sales-transaction) para alcanzar el 80%.
 
 ---
 
@@ -20,8 +20,9 @@
 10. [Fase 6: E2E con Playwright](#10-fase-6-e2e-con-playwright)
 11. [Fase 7: Módulos de Dominio Restantes, Stores e Infraestructura](#11-fase-7-módulos-de-dominio-restantes-stores-e-infraestructura)
 12. [Fase 8: Componentes React No Cubiertos](#12-fase-8-componentes-react-no-cubiertos)
-13. [Resumen de Estimaciones](#13-resumen-de-estimaciones)
-14. [Riesgos Identificados](#14-riesgos-identificados)
+13. [Fase 9: Cobertura Complementaria y Excepciones](#13-fase-9-cobertura-complementaria-y-excepciones)
+14. [Resumen de Estimaciones](#14-resumen-de-estimaciones)
+15. [Riesgos Identificados](#15-riesgos-identificados)
 
 ---
 
@@ -29,25 +30,26 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.test.ts`, `*.test.tsx`) | **152 archivos** — **1.702 tests** **todos pasando** ✅ |
+| Archivos de test (`*.test.ts`, `*.test.tsx`) | **166 archivos** — **1.813 tests** **todos pasando** ✅ |
 | Archivos E2E (`*.spec.ts`) | **5 archivos** — todos pasando ✅ |
 | Configuración de Vitest | **LISTO** — inline en `vite.config.ts` con coverage (v8, 80% thresholds) |
 | `vitest.setup.ts` | **LISTO** — jest-dom matchers + i18n init |
 | Dependencias instaladas | **LISTO** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom`, `@testing-library/user-event`, `@vitest/coverage-v8`, `@playwright/test` |
 | Dependencias faltantes | `msw` (Mock Service Worker) — aún no instalado |
 | Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov`, `test:e2e` |
-| Cobertura actual | **~87%** (estimado) — Meta: ≥80% ✅ **SUPERADA** |
+| Cobertura actual (real) | **Lines: 68.49%**, Functions: 69.03%, Branches: 59.65%, Statements: 67.34% — Meta: ≥80% ❌ **NO ALCANZADA** |
+| Cobertura previa reportada | **~87%** (era una estimación que no consideró archivos nuevos agregados después del plan original) |
 | Servicios de dominio testeados | **Todos los servicios** ✅ (~800+ tests en fiscal, backup, updates, printing formatters, más pre-existentes) |
-| Dominios restantes sin cobertura total | **Todos los dominios con cobertura completa** ✅ |
+| Dominios restantes sin cobertura total | **Cobertura parcial** ⚠️ — auth (50.9%), cash-shift (50%), backup (48.97%), fiscal (63.45%), recovery (0%) |
 | Redux slices | **3 slices** — 3 testeados ✅ (payment: ~10, sales: ~22, ui: ~27) |
 | Componentes React testeados | **~63 componentes** en 18 directorios ✅ (~439 nuevos tests en Fase 8) |
-| Componentes SIN cobertura | **~9 componentes** residuales (stubs o barrel exports) |
-| Hooks React | **2 hooks** — 2 testeados ✅ (use-elapsed-time, use-online-status) |
+| Componentes SIN cobertura | **~8 componentes** sin cobertura total (login, service-context, command-palette, help-viewer, shortcut-cheatsheet, sales-transaction, selection-dialog, assistant-layer) |
+| Hooks React | **3 hooks** — 3 testeados ✅ (use-elapsed-time, use-online-status, **use-global-shortcuts**) |
 | Utilidades puras | **9 archivos** — 9 testeados ✅ |
 | Zustand stores (globales) | **2 stores** (`assistant.store.ts`, `user-preferences.store.ts`) — **CON COBERTURA** ✅ (57 tests) |
-| Archivos totales TypeScript/TSX (excluyendo tests) | **~256 archivos** |
-| Archivos con cobertura de test | **~227 archivos** (~89%) |
-| Archivos pendientes de cobertura | **~29 archivos** (~11%) |
+| Archivos totales TypeScript/TSX (excluyendo tests) | **~210 archivos** (excluyendo barrel exports, types, mock files) |
+| Archivos con cobertura de test | **~185 archivos** (~88%) |
+| Archivos pendientes de cobertura | **~25 archivos** (~12%) — principalmente componentes grandes con dependencias complejas (Tauri IPC, service-context) |
 
 ### Arquitectura del proyecto
 
@@ -1346,7 +1348,7 @@ Cubre: creación de ajustes, validación de roles (CASHIER/ADMIN/ACCOUNTANT), va
 
 ---
 
-## 13. Resumen de Estimaciones
+## 14. Resumen de Estimaciones
 
 | Fase | Descripción | Archivos de test | Tests | Esfuerzo (días) | Estado |
 |------|-------------|-----------------|-------|-----------------|--------|
@@ -1360,20 +1362,22 @@ Cubre: creación de ajustes, validación de roles (CASHIER/ADMIN/ACCOUNTANT), va
 | | **Total completado (F0–F6)** | **~67 archivos** | **~567 tests** | **~15 días** | **✅** |
 | **F7** | **Dominio restante + stores + infraestructura** | **~39 archivos nuevos** | **~696 tests nuevos** | **6–8 días** | **🟢 COMPLETADA** |
 | **F8** | **Componentes React nuevos (auth, printing, fiscal, etc.)** | **~46 archivos nuevos** | **~439 tests nuevos** | **6–8 días** | **🟢 COMPLETADA** |
-| | **TOTAL GENERAL (F0–F8)** | **~152 archivos** | **~1.702 tests** | **~32 días** | **✅ COMPLETADO** |
+| **F9** | **Cobertura complementaria + excepciones + utilidades** | **~14 archivos nuevos** | **~111 tests nuevos** | **2–3 días** | **🟡 EN CURSO** |
+| | **TOTAL GENERAL (F0–F9)** | **~166 archivos** | **~1.813 tests** | **~34 días** | **🟡 EN CURSO** |
 
 ### Distribución por tipo de test (completado)
 
 ```
-Utilidades/hooks/common:         44 tests   (3%)     ✅ COMPLETADO
-Servicios de dominio:           696 tests  (41%)     ✅ COMPLETADO (F7)
+Utilidades/hooks/common:         44 tests   (2%)     ✅ COMPLETADO
+Servicios de dominio:           696 tests  (38%)     ✅ COMPLETADO (F7)
 Redux slices:                    59 tests   (3%)     ✅ COMPLETADO
 Componentes React existentes:   207 tests  (12%)     ✅ COMPLETADO (F4-F5)
-Componentes React nuevos:       439 tests  (26%)     ✅ COMPLETADO (F8)
+Componentes React nuevos:       439 tests  (24%)     ✅ COMPLETADO (F8)
 E2E Playwright:                  12 tests   (1%)     ✅ COMPLETADO
-Nuevos dominios F7:             245 tests  (14%)     ✅ COMPLETADO (F7)
-                                     ─────────
-TOTAL:                         1.702 tests (100%)    ✅ COMPLETADO
+Nuevos dominios F7:             245 tests  (13%)     ✅ COMPLETADO (F7)
+F9 complementaria:              111 tests   (6%)     🟡 EN CURSO (F9)
+                                      ─────────
+TOTAL:                         1.813 tests (100%)    🟡 EN CURSO
 ```
 
 ### Orden cronológico recomendado (actualizado)
@@ -1408,24 +1412,41 @@ TOTAL:                         1.702 tests (100%)    ✅ COMPLETADO
       ✅ Cash-shift (2 archivos, 14 tests)
       ✅ DatabaseProof (1 archivo, 4 tests)
       ✅ Recovery (1 archivo, 23 tests)
+🟡 F9 — Cobertura complementaria (14 archivos, 111 tests) — EN CURSO
+      ✅ auth-http-client.test.ts (13 tests)
+      ✅ shift-close-html.test.ts (15 tests)
+      ✅ use-global-shortcuts.test.tsx (14 tests)
+      ✅ store.test.ts + hooks.test.tsx (9 tests)
+      ✅ catalog-service.http.test.ts (17 tests)
+      ✅ auth/exceptions.test.ts, cash-shift/exceptions.test.ts (11 tests)
+      ✅ inventory-adjustments/exceptions.test.ts, inventory-lots/exceptions.test.ts (7 tests)
+      ✅ prescriptions/exceptions.test.ts, returns/exceptions.test.ts, sales-pos/exceptions.test.ts (16 tests)
+      ✅ local-adjustment.exceptions.test.ts (7 tests)
+      ⬜ Agregadas exclusiones de coverage para barrel exports, types, mock files
+      ⬜ Cobertura real: Statements 67.34%, Lines 68.49%, Functions 69.03%, Branches 59.65%
+      ⬜ **Pendiente para 80%:** login.page, service-context, assistant components, sales-transaction, recovery.page, backup.service, cash-shift.service
 ```
 
 ---
 
-## 14. Riesgos Identificados
+## 15. Riesgos Identificados
 
-### Riesgo 1 (RESUELTO): Volumen de código nuevo sin cobertura
+### Riesgo 1 (ACTUALIZADO): Volumen de código nuevo sin cobertura
 
-**Estado:** ✅ **RESUELTO** — Fases 7 y 8 completadas. **152 archivos de test, 1.702 tests** cubren todos los módulos de dominio, stores, infraestructura, y componentes React. Solo quedan ~29 archivos (~11%) sin cobertura directa, principalmente barrel exports y stubs.
+**Estado:** 🟡 **EN PROGRESO** — Fases 0–8 completadas (1.702 tests), Fase 9 en curso (111 tests adicionales). **166 archivos de test, 1.813 tests** — todos pasando. La cobertura real es ~68.49% lines, por debajo del threshold de 80%.
 
 **Problema original:** ~191 archivos fuente (~75%) sin tests.
 
-**Mitigación aplicada:**
-- **Fase 7 completada:** ~696 tests nuevos cubriendo fiscal (contingencia, CUFE, numeración, facturación, recibos, scheduler), backup, updates (state machine, download, install, telemetry), stores Zustand, infraestructura, printing formatters, assistant y printing dominios.
-- **Fase 8 completada:** ~439 tests nuevos cubriendo todos los componentes UI (auth: 116, printing: 174, fiscal: 50, assistant: 14, update: 44, cash-shift: 14, DatabaseProof: 4, recovery: 23).
-- **37 fallos corregidos** durante F7 (21 assistant/printing dominios, 16 componentes React).
+**Mitigación aplicada (F0–F8):**
+- Fases 1–8 completadas con **1.702 tests** cubriendo todos los módulos de dominio, infraestructura, Redux slices, stores Zustand, y componentes React.
+- **37 fallos corregidos** durante F7/F8.
 
-**Riesgo residual:** Los ~29 archivos restantes son de bajo riesgo (stubs, barrel re-exports, index.ts). La cobertura general supera el 80%.
+**Mitigación en curso (F9):**
+- **111 tests nuevos** cubriendo auth-http-client, shift-close-html, catalog-service.http, use-global-shortcuts, store/hooks, y excepciones de todos los dominios.
+- Exclusiones de coverage agregadas para barrel exports, archivos de tipos, mocks, y dev polyfills.
+- Cobertura real: Lines 68.49%, Functions 69.03%, Branches 59.65%, Statements 67.34%.
+
+**Riesgo residual:** Para alcanzar el 80% threshold, se requieren tests para componentes grandes con dependencias complejas: login.page (~400 líneas), service-context (~345 líneas), command-palette (~650 líneas), help-viewer (~1170 líneas), shortcut-cheatsheet (~640 líneas), sales-transaction (~130 líneas). Estos componentes dependen de Tauri IPC y service-context, lo que requiere mocking extensivo.
 
 ### Riesgo 2: PGlite en tests
 
@@ -1479,6 +1500,158 @@ prisma.$transaction.mockImplementation(async (cb: any) => {
 **Impacto:** Los tests fallan al importar o ejecutar componentes que usan `invoke()` directamente.
 
 **Mitigación:** Usar `vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))` a nivel de setup o por test. Ya existe un patrón en `e2e/setup.ts` que puede adaptarse.
+
+---
+
+## 13. Fase 9: Cobertura Complementaria y Excepciones
+
+**Objetivo:** Cerrar brechas de cobertura en archivos de utilidad, stores, y excepciones; preparar la infraestructura para alcanzar el threshold de 80%.
+
+**Estado:** 🟡 **EN CURSO** — **111 tests en 14 archivos nuevos**. Cobertura real: 68.49% lines (threshold 80% no alcanzado).
+
+### 13.1 Test suites agregadas
+
+#### HTTP/Services ✅ (13 tests)
+
+**Archivo:** `src/domain/auth/auth-http-client.test.ts`
+
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| AHC-01 | `post()` exitoso — retorna JSON parseado | ✅ |
+| AHC-02 | `post()` error 4xx — lanza `InvalidCredentialsException` | ✅ |
+| AHC-03 | `post()` error sin mensaje — lanza `InvalidCredentialsException` | ✅ |
+| AHC-04 | `post()` error de parseo — lanza `InvalidCredentialsException` | ✅ |
+| AHC-05 | `post()` error de red (TypeError) | ✅ |
+| AHC-06 | `postWithAuth()` exitoso — incluye Authorization header | ✅ |
+| AHC-07 | `postWithAuth()` error genérico — lanza Error | ✅ |
+| AHC-08 | `postWithAuth()` con mensaje del servidor | ✅ |
+| AHC-09 | `postWithAuth()` error de red | ✅ |
+| AHC-10 | `getWithAuth()` exitoso — incluye Authorization header | ✅ |
+| AHC-11 | `getWithAuth()` error genérico — lanza Error | ✅ |
+| AHC-12 | `getWithAuth()` con mensaje del servidor | ✅ |
+| AHC-13 | `getWithAuth()` error de red | ✅ |
+
+#### Shift Close HTML ✅ (15 tests)
+
+**Archivo:** `src/domain/cash-shift/shift-close-html.test.ts`
+
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| SCH-01 | Document title incluye shift ID fragment | ✅ |
+| SCH-02 | Header incluye workstation y cajero | ✅ |
+| SCH-03 | Renderiza horarios de apertura/cierre | ✅ |
+| SCH-04 | Tabla de métodos de pago con valores formateados | ✅ |
+| SCH-05 | Formato es-CO (separador miles `.`, decimal `,`) | ✅ |
+| SCH-06 | Diferencias negativas con clase `negative` | ✅ |
+| SCH-07 | Diferencia total mostrada correctamente | ✅ |
+| SCH-08 | Sección de notas cuando hay notas | ✅ |
+| SCH-09 | Omite notas cuando son null | ✅ |
+| SCH-10 | Escapa HTML en strings del usuario | ✅ |
+| SCH-11 | Footer con timestamp de generación | ✅ |
+| SCH-12 | Documento empieza con `<!DOCTYPE html>` | ✅ |
+| SCH-13 | Diferencia cero sin clase negative | ✅ |
+| SCH-14 | Diferencia positiva con signo `+` | ✅ |
+| SCH-15 | Tabla vacía de métodos de pago | ✅ |
+
+#### Global Shortcuts Hook ✅ (14 tests)
+
+**Archivo:** `src/renderer/hooks/use-global-shortcuts.test.tsx`
+
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| USH-01 | Cmd+K → onOpenPalette | ✅ |
+| USH-02 | Ctrl+K → onOpenPalette | ✅ |
+| USH-03 | Escape → onCloseOverlay | ✅ |
+| USH-04 | F1 → onContextHelp | ✅ |
+| USH-05 | Cmd+/ → onOpenHelp (fuera de input) | ✅ |
+| USH-06 | Cmd+/ en input → no activa | ✅ |
+| USH-07 | `?` solo → onShowCheatsheet | ✅ |
+| USH-08 | `?` con meta → no activa | ✅ |
+| USH-09 | Cmd+N en sales → onNewSale | ✅ |
+| USH-10 | Cmd+N en returns con modal → no activa | ✅ |
+| USH-11 | Cmd+Shift+S → onSyncNow | ✅ |
+| USH-12 | IME compuesto → no activa | ✅ |
+| USH-13 | Cleanup al desmontar | ✅ |
+| USH-14 | textarea no activa shortcuts de input | ✅ |
+
+#### Catalog Service HTTP ✅ (17 tests)
+
+**Archivo:** `src/renderer/services/catalog-service.http.test.ts`
+
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| CSH-01 | Query vacía → `[]` | ✅ |
+| CSH-02 | Whitespace → `[]` | ✅ |
+| CSH-03 | Server sin resultados → `[]` | ✅ |
+| CSH-04 | Producto con lotes → CatalogItem completo | ✅ |
+| CSH-05 | Barcode primario resuelto | ✅ |
+| CSH-06 | Fallback al primer barcode | ✅ |
+| CSH-07 | Sin barcodes → string vacío | ✅ |
+| CSH-08 | `saleType = PRESCRIPTION` → requiresPrescription | ✅ |
+| CSH-09 | `saleType = CONTROLLED_SUBSTANCE` → isRestricted | ✅ |
+| CSH-10 | Sin precio → hasCompleteData = false | ✅ |
+| CSH-11 | Stock cero → hasCompleteData = false | ✅ |
+| CSH-12 | Sin lotes activos → hasCompleteData = false | ✅ |
+| CSH-13 | Producto inactivo → hasCompleteData = false | ✅ |
+| CSH-14 | Tax nulo → default 19% | ✅ |
+| CSH-15 | Precio/tax como strings → parsea correctamente | ✅ |
+| CSH-16 | Múltiples productos → mapea todos | ✅ |
+| CSH-17 | Query parameters correctos en GET | ✅ |
+
+#### Store y Hooks ✅ (9 tests)
+
+**Archivos:** `src/renderer/store/store.test.ts`, `src/renderer/store/hooks.test.tsx`
+
+| ID | Escenario | Resultado |
+|----|-----------|-----------|
+| STO-01 | Store creada con slices sales/payment/ui | ✅ |
+| STO-02 | Sales initial state vacío | ✅ |
+| STO-03 | Payment initial state vacío | ✅ |
+| STO-04 | UI initial state sales/idle | ✅ |
+| STO-05 | Dispatch actualiza estado | ✅ |
+| HDK-01 | useAppDispatch retorna función | ✅ |
+| HDK-02 | Dispatch con hook actualiza estado | ✅ |
+| HDK-03 | useAppSelector lee estado | ✅ |
+| HDK-04 | Selector re-renderiza tras cambio | ✅ |
+
+#### Exceptions (dominios sin cobertura previa) ✅
+
+**Archivos:** 7 archivos de test, 49 tests total.
+
+| Archivo | Tests | Dominio |
+|---------|-------|---------|
+| `domain/auth/exceptions.test.ts` | 7 | InvalidCredentials, NoActiveSession, InsufficientRole |
+| `domain/cash-shift/exceptions.test.ts` | 5 | ShiftAlreadyOpen, ShiftNotOpen, MissingClosingCashCounts, InvalidCashCount, PaymentMethodNotFound |
+| `domain/inventory-adjustments/exceptions.test.ts` | 5 | AdjustmentNotFound, AdjustmentNotInDraft, NoLotsForProduct, AdjustmentExceedsStock, AdjustmentLotConflict |
+| `domain/inventory-lots/exceptions.test.ts` | 2 | InsufficientStock, ConcurrentStockModification |
+| `domain/prescriptions/exceptions.test.ts` | 4 | PrescriptionSaleItemNotFound, PrescriptionNotFound, ControlledSubstanceFieldsRequired, PrescriptionAlreadyExists |
+| `domain/returns/exceptions.test.ts` | 7 | SaleForReturnNotFound, SaleNotConfirmed, ReturnQuantityExceeds, ReturnSaleItemNotFound, ReturnNotInDraft, ReturnNotFound, ReturnStockReversalFailed |
+| `domain/sales-pos/exceptions.test.ts` | 5 | SaleNotInProgress, PrescriptionRequiredNotSupported, PaymentAmountMismatch, ChangeRequiresCash, SaleNotFound |
+| `domain/fiscal/local-adjustment.exceptions.test.ts` | 7 | AdjustmentAuthorization, AdjustmentInvoiceNotFound, AdjustmentNotAllowedForStatus, AdjustmentReasonTooShort, AdjustmentNotFound, AdjustmentAlreadyReversed, AdjustmentConflict |
+
+### 13.2 Infraestructura de coverage
+
+Se actualizó `vite.config.ts` para excluir del reporte de coverage los archivos que no requieren tests unitarios:
+
+- `**/index.ts` — barrel re-exports
+- `**/*.types.ts` — definiciones de tipos
+- `**/*.mock.ts` — mocks de servicios
+- `src/renderer/main.tsx` — entry point de Vite
+- `src/help-content/**` — contenido de ayuda (build-time glob)
+
+### 13.3 Pendiente para alcanzar 80%
+
+| Archivo | Líneas | Dificultad | Impacto |
+|---------|--------|------------|---------|
+| `renderer/components/auth/login.page.tsx` | ~400 | Alta (Tauri IPC, service-context) | Alto |
+| `renderer/components/common/service-context.tsx` | ~345 | Alta (múltiples servicios, PGlite) | Alto |
+| `renderer/components/assistant/command-palette.tsx` | ~650 | Muy alta (Tauri IPC, search index) | Alto |
+| `renderer/components/assistant/help-viewer.tsx` | ~1170 | Muy alta (Markdown render, Tauri) | Alto |
+| `renderer/components/assistant/shortcut-cheatsheet.tsx` | ~640 | Alta (Zustand store, atajos) | Medio |
+| `renderer/components/assistant/assistant-layer.tsx` | ~150 | Alta (Zustand, Tauri) | Medio |
+| `renderer/components/SalesTransaction/sales-transaction.tsx` | ~130 | Media (Redux, CatalogService) | Medio |
+| `domain/recovery/recovery.page.tsx` | ~240 | Alta (backup service, startup health) | Medio |
+| `infrastructure/local-database.ts` | ~80 (restante) | Muy alta (PGlite WASM) | Medio |
 
 ---
 
