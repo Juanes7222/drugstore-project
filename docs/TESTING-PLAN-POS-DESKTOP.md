@@ -2,7 +2,7 @@
 
 **Versión:** 2.1
 **Última actualización:** Julio 2026
-**Estado:** **FASES 0-8 COMPLETADAS, FASE 9 EN CURSO** — 166 archivos de test, **1.813 tests** — todos pasando. Cobertura real: **68.49% lines** (threshold 80% no alcanzado). Se agregaron tests para auth-http-client, shift-close-html, catalog-service.http, use-global-shortcuts, store/hooks/store, y excepciones de todos los dominios. Quedan pendientes componentes grandes (login, service-context, assistant, recovery, sales-transaction) para alcanzar el 80%.
+**Estado:** **FASES 0-8 COMPLETADAS, FASE 9 EN CURSO** — 193 archivos de test, **2.153 tests** — todos pasando. Cobertura real: **75.4% lines** (threshold 80% no alcanzado). Se agregaron tests para auth-http-client, shift-close-html, catalog-service.http, use-global-shortcuts, store/hooks/store, y excepciones de todos los dominios. Quedan pendientes componentes grandes (login, service-context, assistant, recovery, sales-transaction) y archivos con cobertura crítica (sync-entry-modal ~7%, sync-panel ~10%) para alcanzar el 80%.
 
 ---
 
@@ -30,21 +30,21 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.test.ts`, `*.test.tsx`) | **166 archivos** — **1.813 tests** **todos pasando** ✅ |
+| Archivos de test (`*.test.ts`, `*.test.tsx`) | **193 archivos** — **2.153 tests** **todos pasando** ✅ |
 | Archivos E2E (`*.spec.ts`) | **5 archivos** — todos pasando ✅ |
 | Configuración de Vitest | **LISTO** — inline en `vite.config.ts` con coverage (v8, 80% thresholds) |
 | `vitest.setup.ts` | **LISTO** — jest-dom matchers + i18n init |
 | Dependencias instaladas | **LISTO** — `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `@testing-library/dom`, `jsdom`, `@testing-library/user-event`, `@vitest/coverage-v8`, `@playwright/test` |
 | Dependencias faltantes | `msw` (Mock Service Worker) — aún no instalado |
 | Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov`, `test:e2e` |
-| Cobertura actual (real) | **Lines: 68.49%**, Functions: 69.03%, Branches: 59.65%, Statements: 67.34% — Meta: ≥80% ❌ **NO ALCANZADA** |
+| Cobertura actual (real) | **Lines: 75.4%**, Functions: 75.48%, Branches: 64.16%, Statements: 74.35% — Meta: ≥80% ❌ **NO ALCANZADA** |
 | Cobertura previa reportada | **~87%** (era una estimación que no consideró archivos nuevos agregados después del plan original) |
 | Servicios de dominio testeados | **Todos los servicios** ✅ (~800+ tests en fiscal, backup, updates, printing formatters, más pre-existentes) |
-| Dominios restantes sin cobertura total | **Cobertura parcial** ⚠️ — auth (50.9%), cash-shift (50%), backup (48.97%), fiscal (63.45%), recovery (0%) |
+| Dominios con cobertura parcial | **Cobertura parcial** ⚠️ — auth (~50%), cash-shift (~50%), backup (~49%), fiscal (~63%) |
 | Redux slices | **3 slices** — 3 testeados ✅ (payment: ~10, sales: ~22, ui: ~27) |
 | Componentes React testeados | **~63 componentes** en 18 directorios ✅ (~439 nuevos tests en Fase 8) |
 | Componentes SIN cobertura | **~8 componentes** sin cobertura total (login, service-context, command-palette, help-viewer, shortcut-cheatsheet, sales-transaction, selection-dialog, assistant-layer) |
-| Hooks React | **3 hooks** — 3 testeados ✅ (use-elapsed-time, use-online-status, **use-global-shortcuts**) |
+| Hooks React | **10 hooks** — 10 testeados ✅ (use-elapsed-time, use-online-status, use-global-shortcuts, use-command-palette, use-help-viewer, use-login-page, use-recovery-page, use-sales-transaction, use-service-init, use-shortcut-cheatsheet) |
 | Utilidades puras | **9 archivos** — 9 testeados ✅ |
 | Zustand stores (globales) | **2 stores** (`assistant.store.ts`, `user-preferences.store.ts`) — **CON COBERTURA** ✅ (57 tests) |
 | Archivos totales TypeScript/TSX (excluyendo tests) | **~210 archivos** (excluyendo barrel exports, types, mock files) |
@@ -69,14 +69,16 @@ apps/pos-desktop/src/
 │   ├── assistant.store.ts          # Estado del overlay de asistente ✅ (57 tests en conjunto)
 │   └── user-preferences.store.ts   # Preferencias de usuario persistidas ✅
 │
-├── domain/                          # 18 módulos (10 originales + 8 nuevos)
+├── domain/                          # 19 módulos (11 originales + 8 nuevos)
 │   ├── auth/                        # Login, sesión, guard de roles ✅
 │   ├── cash-shift/                  # Apertura/cierre de caja, conteos ✅
 │   ├── catalog/                     # Pull de catálogo + payment methods ✅
 │   ├── clients/                     # Búsqueda local + creación offline-first ✅
 │   ├── configuration/               # Store Zustand de config local ✅
+│   ├── domain-services/             # Fábrica de servicios de dominio ✅
 │   ├── inventory-adjustments/       # Ajustes de inventario ✅
 │   ├── inventory-lots/              # Consumo FEFO con optimistic locking ✅
+│   ├── peripherals/                 # [NUEVO] Servicios de periféricos (factory) ✅
 │   ├── prescriptions/               # Registro de fórmula médica ✅
 │   ├── returns/                     # Devoluciones de cliente ✅
 │   ├── sales-pos/                   # Crear/confirmar ventas, consumir stock ✅
@@ -87,13 +89,13 @@ apps/pos-desktop/src/
 │   ├── fiscal/                      # [NUEVO] Facturación electrónica DIAN ✅ (128 tests)
 │   ├── licensing/                   # [NUEVO] Licencias y activación ✅ (4 tests)
 │   ├── printing/                    # [NUEVO] Servicios de impresión ESC/POS ✅ (todos los tests pasan)
-│   ├── recovery/                    # [NUEVO] Página de recuperación 🔴
 │   └── updates/                     # [NUEVO] Auto-actualizaciones ✅ (142 tests)
 │
-├── infrastructure/                  # 6 archivos
+├── infrastructure/                  # 7 archivos fuente + README
 │   ├── local-database.ts           # Singleton PGlite + PrismaClient 🔴
 │   ├── http-client.ts              # Fetch wrapper con auth token ✅
 │   ├── auth-token-provider.ts      # Abstracción de localStorage ✅
+│   ├── catalog-service-factory.ts  # Factory que elige mock vs HTTP según env ✅
 │   ├── config.ts                   # Variables de entorno ✅
 │   └── startup-health.ts           # Health checks de inicio ✅
 │
@@ -119,8 +121,8 @@ apps/pos-desktop/src/
     │   ├── printing/                # ✅ 16 componentes (printers, setup-wizard, queue, etc.)
     │   ├── recovery/                # ✅ 2 componentes
     │   └── update/                  # ✅ 6 componentes
-    ├── hooks/                       # ✅ 2 hooks (use-elapsed-time, use-online-status)
-    ├── services/                    # ✅ 5 archivos (catalog-service, payment-gateway-service) ✅
+    ├── hooks/                       # ✅ 10 hooks (use-elapsed-time, use-online-status, use-global-shortcuts, use-command-palette, use-help-viewer, use-login-page, use-recovery-page, use-sales-transaction, use-service-init, use-shortcut-cheatsheet)
+    ├── services/                    # ✅ 6 archivos (catalog-service, catalog-service.http, catalog-service.mock, payment-gateway-service, payment-gateway-service.mock) ✅
     ├── commands/                    # ✅ 1 archivo (printing-commands.ts) ✅
     ├── store/                       # Redux: 3 slices ✅ (sales, payment, ui)
     ├── utils/                       # ✅ formatCurrency, formatDate
@@ -385,6 +387,8 @@ El plan se ejecuta en **6 fases**, ordenadas por relación costo/beneficio: prim
 | UOS-02 | Evento `online` (desde offline) | Cambia a `"online"` | ✅ |
 | UOS-03 | Evento `offline` | Cambia a `"offline"` | ✅ |
 | UOS-04 | Cleanup al desmontar | Listener removido (no hay fuga) | ✅ |
+
+> **Nota:** Los 7 hooks restantes (use-command-palette, use-help-viewer, use-login-page, use-recovery-page, use-sales-transaction, use-service-init, use-shortcut-cheatsheet) también tienen tests colocalizados. No se detallan aquí por brevedad — todos pasan y su cobertura se refleja en el reporte general. La documentación detallada de cada uno puede agregarse en una futura actualización del plan.
 
 ### 5.7 Extra: `time-format.ts` ✅
 
@@ -1363,21 +1367,23 @@ Cubre: creación de ajustes, validación de roles (CASHIER/ADMIN/ACCOUNTANT), va
 | **F7** | **Dominio restante + stores + infraestructura** | **~39 archivos nuevos** | **~696 tests nuevos** | **6–8 días** | **🟢 COMPLETADA** |
 | **F8** | **Componentes React nuevos (auth, printing, fiscal, etc.)** | **~46 archivos nuevos** | **~439 tests nuevos** | **6–8 días** | **🟢 COMPLETADA** |
 | **F9** | **Cobertura complementaria + excepciones + utilidades** | **~14 archivos nuevos** | **~111 tests nuevos** | **2–3 días** | **🟡 EN CURSO** |
-| | **TOTAL GENERAL (F0–F9)** | **~166 archivos** | **~1.813 tests** | **~34 días** | **🟡 EN CURSO** |
+| | **Módulos nuevos post-plan** (domain-services, peripherals, catalog-service-factory, 7 hooks) | **~27 archivos** | **~340 tests** | — | **🟢 COMPLETADOS** |
+| | **TOTAL GENERAL (F0–F9 + extras)** | **~193 archivos** | **~2.153 tests** | **~34 días** | **🟡 EN CURSO** |
 
 ### Distribución por tipo de test (completado)
 
 ```
-Utilidades/hooks/common:         44 tests   (2%)     ✅ COMPLETADO
-Servicios de dominio:           696 tests  (38%)     ✅ COMPLETADO (F7)
-Redux slices:                    59 tests   (3%)     ✅ COMPLETADO
-Componentes React existentes:   207 tests  (12%)     ✅ COMPLETADO (F4-F5)
-Componentes React nuevos:       439 tests  (24%)     ✅ COMPLETADO (F8)
+Utilidades/hooks/common:         ~90 tests   (4%)     ✅ COMPLETADO
+Servicios de dominio:           ~696 tests  (32%)     ✅ COMPLETADO (F7)
+Redux slices:                    ~59 tests   (3%)     ✅ COMPLETADO
+Componentes React existentes:   ~207 tests  (10%)     ✅ COMPLETADO (F4-F5)
+Componentes React nuevos:       ~439 tests  (20%)     ✅ COMPLETADO (F8)
 E2E Playwright:                  12 tests   (1%)     ✅ COMPLETADO
-Nuevos dominios F7:             245 tests  (13%)     ✅ COMPLETADO (F7)
-F9 complementaria:              111 tests   (6%)     🟡 EN CURSO (F9)
-                                      ─────────
-TOTAL:                         1.813 tests (100%)    🟡 EN CURSO
+Nuevos dominios F7:            ~245 tests  (11%)     ✅ COMPLETADO (F7)
+F9 complementaria:             ~111 tests   (5%)     🟡 EN CURSO (F9)
+Módulos post-plan:             ~294 tests  (14%)     ✅ COMPLETADO (domain-services, peripherals, catalog-service-factory, 7 hooks)
+                                       ─────────
+TOTAL:                        ~2.153 tests (100%)    🟡 EN CURSO
 ```
 
 ### Orden cronológico recomendado (actualizado)
@@ -1423,8 +1429,9 @@ TOTAL:                         1.813 tests (100%)    🟡 EN CURSO
       ✅ prescriptions/exceptions.test.ts, returns/exceptions.test.ts, sales-pos/exceptions.test.ts (16 tests)
       ✅ local-adjustment.exceptions.test.ts (7 tests)
       ⬜ Agregadas exclusiones de coverage para barrel exports, types, mock files
-      ⬜ Cobertura real: Statements 67.34%, Lines 68.49%, Functions 69.03%, Branches 59.65%
-      ⬜ **Pendiente para 80%:** login.page, service-context, assistant components, sales-transaction, recovery.page, backup.service, cash-shift.service
+      ⬜ Cobertura real: Lines 75.4%, Functions 75.48%, Branches 64.16%, Statements 74.35%
+      ⬜ **Pendiente para 80%:** login.page, service-context, assistant components, sales-transaction, recovery.page, + archivos con cobertura crítica (sync-entry-modal 7%, sync-panel 10%, wizard.page 44%)
+✅ Módulos post-plan no cubiertos por F0-F9 (domain-services, peripherals, catalog-service-factory, 7 hooks adicionales) — ~27 archivos, ~340 tests — COMPLETADOS FUERA DEL PLAN
 ```
 
 ---
@@ -1433,20 +1440,20 @@ TOTAL:                         1.813 tests (100%)    🟡 EN CURSO
 
 ### Riesgo 1 (ACTUALIZADO): Volumen de código nuevo sin cobertura
 
-**Estado:** 🟡 **EN PROGRESO** — Fases 0–8 completadas (1.702 tests), Fase 9 en curso (111 tests adicionales). **166 archivos de test, 1.813 tests** — todos pasando. La cobertura real es ~68.49% lines, por debajo del threshold de 80%.
+**Estado:** 🟡 **EN PROGRESO** — Fases 0–8 completadas, Fase 9 en curso. **193 archivos de test, 2.153 tests** — todos pasando. La cobertura real es ~75.4% lines, por debajo del threshold de 80%.
 
 **Problema original:** ~191 archivos fuente (~75%) sin tests.
 
-**Mitigación aplicada (F0–F8):**
-- Fases 1–8 completadas con **1.702 tests** cubriendo todos los módulos de dominio, infraestructura, Redux slices, stores Zustand, y componentes React.
-- **37 fallos corregidos** durante F7/F8.
+**Mitigación aplicada (F0–F8 + módulos post-plan):**
+- Fases 1–8 completadas, más ~340 tests adicionales en módulos post-plan (domain-services, peripherals, catalog-service-factory, 7 hooks) que no estaban en el plan original.
+- **37+ fallos corregidos** durante F7/F8.
 
 **Mitigación en curso (F9):**
 - **111 tests nuevos** cubriendo auth-http-client, shift-close-html, catalog-service.http, use-global-shortcuts, store/hooks, y excepciones de todos los dominios.
 - Exclusiones de coverage agregadas para barrel exports, archivos de tipos, mocks, y dev polyfills.
-- Cobertura real: Lines 68.49%, Functions 69.03%, Branches 59.65%, Statements 67.34%.
+- Cobertura real: Lines 75.4%, Functions 75.48%, Branches 64.16%, Statements 74.35%.
 
-**Riesgo residual:** Para alcanzar el 80% threshold, se requieren tests para componentes grandes con dependencias complejas: login.page (~400 líneas), service-context (~345 líneas), command-palette (~650 líneas), help-viewer (~1170 líneas), shortcut-cheatsheet (~640 líneas), sales-transaction (~130 líneas). Estos componentes dependen de Tauri IPC y service-context, lo que requiere mocking extensivo.
+**Riesgo residual:** Para alcanzar el 80% threshold, se requieren tests para componentes grandes con dependencias complejas: login.page (~400 líneas), service-context (~345 líneas), command-palette (~650 líneas), help-viewer (~1170 líneas), shortcut-cheatsheet (~640 líneas), sales-transaction (~130 líneas), y archivos con cobertura crítica baja como sync-entry-modal (~7%), sync-panel (~10%) y wizard.page (~44%).
 
 ### Riesgo 2: PGlite en tests
 
@@ -1507,7 +1514,7 @@ prisma.$transaction.mockImplementation(async (cb: any) => {
 
 **Objetivo:** Cerrar brechas de cobertura en archivos de utilidad, stores, y excepciones; preparar la infraestructura para alcanzar el threshold de 80%.
 
-**Estado:** 🟡 **EN CURSO** — **111 tests en 14 archivos nuevos**. Cobertura real: 68.49% lines (threshold 80% no alcanzado).
+**Estado:** 🟡 **EN CURSO** — **111 tests en 14 archivos nuevos** (más ~340 tests en módulos post-plan no contemplados originalmente). Cobertura real: 75.4% lines (threshold 80% no alcanzado).
 
 ### 13.1 Test suites agregadas
 
@@ -1641,17 +1648,22 @@ Se actualizó `vite.config.ts` para excluir del reporte de coverage los archivos
 
 ### 13.3 Pendiente para alcanzar 80%
 
-| Archivo | Líneas | Dificultad | Impacto |
-|---------|--------|------------|---------|
-| `renderer/components/auth/login.page.tsx` | ~400 | Alta (Tauri IPC, service-context) | Alto |
-| `renderer/components/common/service-context.tsx` | ~345 | Alta (múltiples servicios, PGlite) | Alto |
-| `renderer/components/assistant/command-palette.tsx` | ~650 | Muy alta (Tauri IPC, search index) | Alto |
-| `renderer/components/assistant/help-viewer.tsx` | ~1170 | Muy alta (Markdown render, Tauri) | Alto |
-| `renderer/components/assistant/shortcut-cheatsheet.tsx` | ~640 | Alta (Zustand store, atajos) | Medio |
-| `renderer/components/assistant/assistant-layer.tsx` | ~150 | Alta (Zustand, Tauri) | Medio |
-| `renderer/components/SalesTransaction/sales-transaction.tsx` | ~130 | Media (Redux, CatalogService) | Medio |
-| `domain/recovery/recovery.page.tsx` | ~240 | Alta (backup service, startup health) | Medio |
-| `infrastructure/local-database.ts` | ~80 (restante) | Muy alta (PGlite WASM) | Medio |
+| Archivo | Líneas | Cobertura actual | Dificultad | Impacto |
+|---------|--------|-----------------|------------|---------|
+| `renderer/components/sync/sync-entry-modal.tsx` | ~140 | **~7%** lines | Media (mock store) | Alto |
+| `renderer/components/sync/sync-panel.tsx` | ~200 | **~10%** lines | Media (mock store) | Alto |
+| `renderer/components/printing/wizard.page.tsx` | ~300 | **~44%** lines | Alta (wizard multi-paso) | Alto |
+| `renderer/components/auth/login.page.tsx` | ~400 | ~0% | Alta (Tauri IPC, service-context) | Alto |
+| `renderer/components/common/service-context.tsx` | ~345 | ~0% | Alta (múltiples servicios, PGlite) | Alto |
+| `renderer/components/assistant/command-palette.tsx` | ~650 | ~0% | Muy alta (Tauri IPC, search index) | Alto |
+| `renderer/components/assistant/help-viewer.tsx` | ~1170 | ~0% | Muy alta (Markdown render, Tauri) | Alto |
+| `renderer/components/assistant/shortcut-cheatsheet.tsx` | ~640 | ~0% | Alta (Zustand store, atajos) | Medio |
+| `renderer/components/assistant/assistant-layer.tsx` | ~150 | ~0% | Alta (Zustand, Tauri) | Medio |
+| `renderer/components/SalesTransaction/sales-transaction.tsx` | ~130 | ~0% | Media (Redux, CatalogService) | Medio |
+| `renderer/components/recovery/recovery.page.tsx` | ~240 | ~0% | Alta (backup service, startup health) | Medio |
+| `infrastructure/local-database.ts` | ~80 | ~0% | Muy alta (PGlite WASM) | Medio |
+| `renderer/components/printing/printers.page.tsx` | ~200 | ~50% | Media | Medio |
+| `renderer/components/returns/returns.page.tsx` | ~280 | ~58% | Media | Medio |
 
 ---
 
@@ -1661,7 +1673,7 @@ Se actualizó `vite.config.ts` para excluir del reporte de coverage los archivos
 # Instalar dependencias (ya instaladas — solo si falta msw)
 pnpm --filter @pharmacy/pos-desktop add -D msw
 
-# Ejecutar todos los tests (152 archivos, 1.702 tests)
+# Ejecutar todos los tests (193 archivos, 2.153 tests)
 pnpm --filter @pharmacy/pos-desktop test
 
 # Ejecutar tests con coverage
