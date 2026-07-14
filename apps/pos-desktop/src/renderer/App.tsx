@@ -20,7 +20,7 @@ import { ReturnsPage } from "@/components/returns/returns.page";
 import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inventory-adjustments.page";
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
-import { RecoveryPage } from "../domain/recovery/recovery.page";
+import { RecoveryPage } from "@/components/recovery/recovery.page";
 import { AboutPage } from "@/components/update/about.page";
 import { UpdateCheckInterceptor } from "@/components/update/update-check-interceptor";
 import { LoginPage } from "@/components/auth/login.page";
