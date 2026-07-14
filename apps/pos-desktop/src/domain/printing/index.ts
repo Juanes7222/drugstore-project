@@ -28,6 +28,10 @@ export * from './printing-types';
 
 // Proactive notifications
 export { checkPrinterNotifications, PRINTER_NOTIFICATION_RULES } from './proactive-notifications';
+
+// Printing service factory (composite)
+export { createPrintingServices } from './printing-service.factory';
+export type { PrintingServices, PrintingIoCallbacks, PrintingServiceFactoryInput } from './printing-service.factory';
 export type { PrinterNotification, PrinterNotificationRule } from './proactive-notifications';
 
 // Cash drawer and customer display

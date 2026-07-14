@@ -19,7 +19,8 @@
     "actions": "Acciones",
     "all_roles": "Todos los roles",
     "all_status": "Todos los estados",
-    "no_permission": "No tienes permisos para ver esta página."
+    "no_permission": "No tienes permisos para ver esta página.",
+    "retry": "Reintentar"
   },
   "cash_shift": {
     "label": "Turno",

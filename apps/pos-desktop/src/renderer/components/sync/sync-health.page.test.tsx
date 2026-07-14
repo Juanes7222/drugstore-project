@@ -205,7 +205,7 @@ describe("SyncHealthPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /retry/i }),
+          screen.getByRole("button", { name: /Reintentar|Retry/i }),
         ).toBeInTheDocument();
       });
     });

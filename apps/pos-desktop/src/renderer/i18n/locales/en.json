@@ -19,7 +19,8 @@
     "actions": "Actions",
     "all_roles": "All roles",
     "all_status": "All statuses",
-    "no_permission": "You do not have permission to view this page."
+    "no_permission": "You do not have permission to view this page.",
+    "retry": "Retry"
   },
   "cash_shift": {
     "label": "Shift",
