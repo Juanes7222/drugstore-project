@@ -1,8 +1,8 @@
 # Plan de Testing — POS Desktop (Tauri 2 + React + PGlite)
 
-**Versión:** 1.8
+**Versión:** 1.9
 **Última actualización:** Julio 2026
-**Estado:** Fases 0-6 completadas + **Fase 7 (Módulos de dominio restantes, Stores, Infraestructura) completada** (**106 archivos de test, ~1.254 tests** — 1.217 pasando, 37 fallos pre-existentes). **Quedan ~75 archivos fuente sin cobertura** de los ~191 originales. Ver Fase 7 y Fase 8.
+**Estado:** Fases 0-6 completadas + **Fase 7 (Módulos de dominio restantes, Stores, Infraestructura) completada** + **37 fallos corregidos** (**106 archivos de test, 1.263 tests** — todos pasando). **Quedan ~75 archivos fuente sin cobertura** de los ~191 originales. Ver Fase 7 y Fase 8.
 
 ---
 
@@ -29,7 +29,7 @@
 
 | Aspecto | Estado |
 |---------|--------|
-| Archivos de test (`*.test.ts`, `*.test.tsx`) | **~106 archivos** — 1.217 pasando, 37 fallos pre-existentes ✅ |
+| Archivos de test (`*.test.ts`, `*.test.tsx`) | **106 archivos** — 1.263 tests **todos pasando** ✅ |
 | Archivos E2E (`*.spec.ts`) | **5 archivos** — todos pasando ✅ |
 | Configuración de Vitest | **LISTO** — inline en `vite.config.ts` con coverage (v8, 80% thresholds) |
 | `vitest.setup.ts` | **LISTO** — jest-dom matchers + i18n init |
@@ -38,7 +38,7 @@
 | Scripts `test` | **LISTO** — `test`, `test:watch`, `test:cov`, `test:e2e` |
 | Cobertura actual | **~65%** (estimado) — Meta: ≥80% |
 | Servicios de dominio testeados | **Todos los servicios** ✅ (~800+ tests en fiscal, backup, updates, printing formatters, más pre-existentes) |
-| Dominios restantes sin cobertura total | **2 dominios**: `assistant/` (parcial, 9 fallos pre-existentes), `printing/` (non-formatter services, 12 fallos pre-existentes) |
+| Dominios restantes sin cobertura total | **Todos los dominios con cobertura completa** ✅ (los 21 fallos pre-existentes en assistant y printing fueron corregidos) |
 | Redux slices | **3 slices** — 3 testeados ✅ (payment: ~10, sales: ~22, ui: ~27) |
 | Componentes React testeados | **17 componentes** en 10 directorios ✅ (~207 tests) |
 | Componentes SIN cobertura | **~46 componentes** en 7 directorios (auth, assistant, cash-shift, printing, recovery, update, DatabaseProof) |
@@ -80,11 +80,11 @@ apps/pos-desktop/src/
 │   ├── sales-pos/                   # Crear/confirmar ventas, consumir stock ✅
 │   ├── sync/                        # Push, metrics, recovery, scheduler ✅
 │   │
-│   ├── assistant/                   # [NUEVO] Paleta de comandos, sugerencias, help ⚠️ (9 fallos pre-existentes)
+│   ├── assistant/                   # [NUEVO] Paleta de comandos, sugerencias, help ✅ (todos los tests pasan)
 │   ├── backup/                      # [NUEVO] Backup y recovery log ✅ (24 tests)
 │   ├── fiscal/                      # [NUEVO] Facturación electrónica DIAN ✅ (128 tests)
 │   ├── licensing/                   # [NUEVO] Licencias y activación ✅ (4 tests)
-│   ├── printing/                    # [NUEVO] Servicios de impresión ESC/POS ⚠️ (formatters ✅, resto: 12 fallos pre-existentes)
+│   ├── printing/                    # [NUEVO] Servicios de impresión ESC/POS ✅ (todos los tests pasan)
 │   ├── recovery/                    # [NUEVO] Página de recuperación 🔴
 │   └── updates/                     # [NUEVO] Auto-actualizaciones ✅ (142 tests)
 │
@@ -955,7 +955,7 @@ Ya existen 4 tests. Agregar:
 
 **Objetivo:** Cubrir los módulos de dominio que se implementaron después del plan original y que actualmente no tienen tests. También las stores globales de Zustand y la infraestructura.
 
-**Estado:** 🟢 **COMPLETADA** — **Fiscal Module (88 tests, 9 archivos), Backup (24 tests, 3 archivos), Updates (142 tests, 5 archivos), Zustand Stores (57 tests, 2 archivos), Infraestructura (24 tests, 4 archivos), Utilidades Faltantes (38 tests, 5 archivos), Printing Formatters (68 tests, 4 archivos).** **Total F7: ~292 nuevos tests.** Restan ~75 archivos fuente sin cobertura (assistant, printing non-formatter, recovery, y componentes UI — estos últimos se abordan en F8).
+**Estado:** 🟢 **COMPLETADA** — **Fiscal Module (88 tests, 9 archivos), Backup (24 tests, 3 archivos), Updates (142 tests, 5 archivos), Zustand Stores (57 tests, 2 archivos), Infraestructura (24 tests, 4 archivos), Utilidades Faltantes (38 tests, 5 archivos), Printing Formatters (68 tests, 4 archivos).** **Total F7: ~292 nuevos tests.** Todos los 21 fallos pre-existentes en assistant y printing non-formatter fueron corregidos posteriormente. Restan ~75 archivos fuente sin cobertura (componentes UI — se abordan en F8).
 
 ### 11.1 Assistant Module (10 archivos)
 
@@ -1362,7 +1362,7 @@ Cubre: creación de ajustes, validación de roles (CASHIER/ADMIN/ACCOUNTANT), va
 | | **Total completado (F0–F6)** | **~57 archivos** | **~567 tests** | **~15 días** | **✅** |
 | **F7** | **Dominio restante + stores + infraestructura** | **~27 archivos nuevos** | **~292 tests nuevos** | **6–8 días** | **🟢 COMPLETADA** |
 | **F8** | **Componentes React nuevos (auth, printing, fiscal, etc.)** | **~53 archivos** | **~180–250 tests** | **6–8 días** | **🔴 PENDIENTE** |
-| | **TOTAL GENERAL (F0–F8)** | **~168 archivos** | **~1.037–1.167 tests** | **~29–33 días** | |
+| | **TOTAL GENERAL (F0–F8)** | **~168 archivos** | **~1.046–1.296 tests** | **~29–33 días** | |
 
 ### Distribución por tipo de test (completado + planificado)
 
@@ -1376,8 +1376,8 @@ Nuevos dominios F7:             292 tests  (25%)     ✅ COMPLETADO
                                      ─────────
 Nuevos componentes (F8):      ~180-250 tests (13-22%) 🔴 PENDIENTE
                                      ─────────
-TOTAL actual:                   1.254 tests (ejecutados)
-COMPLETADO (sin F8):          ~1.037 tests (83-100%)
+TOTAL actual:                   1.263 tests (ejecutados)
+COMPLETADO (sin F8):          ~1.046 tests (83-100%)
 PENDIENTE (F8):               ~180-250 tests (13-22%)
 ```
 
@@ -1399,8 +1399,8 @@ PENDIENTE (F8):               ~180-250 tests (13-22%)
       ✅ Infraestructura (24 tests en 4 archivos)
       ✅ Utilidades faltantes + config + renderer services (38 tests en 5 archivos)
       ✅ Printing Formatters (68 tests en 4 archivos)
-      ⚠️ Assistant (9 fallos pre-existentes — no abordados en F7)
-      ⚠️ Printing non-formatter (12 fallos pre-existentes — no abordados en F7)
+      ✅ Assistant (9 fallos corregidos)
+      ✅ Printing non-formatter (12 fallos corregidos)
 🔴 F8 — Componentes React nuevos (~180-250 tests)
 ```
 
@@ -1415,6 +1415,8 @@ PENDIENTE (F8):               ~180-250 tests (13-22%)
 **Impacto:** Sin cobertura, los cambios en estos módulos pueden romper funcionalidad sin ser detectados. Impresión es particularmente crítico porque involucra hardware.
 
 **Mitigación:** Priorizar F7 y F8 por riesgo: primero printing (hardware), luego assistant y updates (experiencia de usuario), luego componentes UI. **Fase 7 completada** — ~292 nuevos tests cubren fiscal (excepciones, CUFE, numeración, contingencia, facturación, recibos, scheduler), backup, updates (state machine, download, install, telemetry), stores Zustand, infraestructura, printing formatters, y utilidades faltantes.
+
+**Nota:** Los 37 fallos pre-existentes identificados durante F7 fueron corregidos posteriormente (21 de dominios assistant y printing, 16 de componentes React).
 
 ### Riesgo 2: PGlite en tests
 
