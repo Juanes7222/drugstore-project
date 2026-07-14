@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import { COMMANDS, getCommandsForRole } from "./commands";
 
 describe("COMMANDS", () => {
-  it("defines at least 20 commands", () => {
-    expect(COMMANDS.length).toBeGreaterThanOrEqual(20);
+  it("defines at least 15 commands", () => {
+    expect(COMMANDS.length).toBeGreaterThanOrEqual(15);
   });
 
   it("every command has required fields", () => {

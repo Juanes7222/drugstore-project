@@ -161,13 +161,12 @@ class AssistantMetricsServiceImpl implements AssistantMetricsService {
 
   async getDailyMetrics(days = 30): Promise<DailyMetrics[]> {
     const now = Date.now();
-    const startDate = new Date(now - days * 24 * 60 * 60 * 1000);
 
     const dailyMap = new Map<string, DailyMetrics>();
 
-    // Initialize all days in range
+    // Initialize all days in range (includes today, goes back days-1 days)
     for (let i = 0; i < days; i++) {
-      const d = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+      const d = new Date(now - i * 24 * 60 * 60 * 1000);
       const dateKey = d.toISOString().slice(0, 10);
       dailyMap.set(dateKey, this.createEmptyDaily(dateKey));
     }

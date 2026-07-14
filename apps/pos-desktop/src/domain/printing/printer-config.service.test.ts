@@ -29,8 +29,11 @@ function createMockPrisma() {
           ) ?? null;
         }
         if (args?.where?.assignedJobs?.has) {
+          const excludeId = args?.where?.id?.not;
           return Array.from(store.values()).find(
-            (p) => p.assignedJobs?.includes(args.where.assignedJobs.has),
+            (p) =>
+              p.assignedJobs?.includes(args.where.assignedJobs.has) &&
+              p.id !== excludeId,
           ) ?? null;
         }
         return Array.from(store.values())[0] ?? null;

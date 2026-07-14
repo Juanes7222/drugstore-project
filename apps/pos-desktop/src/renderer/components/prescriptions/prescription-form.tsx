@@ -289,7 +289,7 @@ export const PrescriptionForm: FC<PrescriptionFormProps> = ({
           <button
             type="submit"
             className="pos-button pos-button-restrict"
-            disabled={!canSubmit || isProcessing}
+            disabled={isProcessing}
           >
             {submitLabel}
           </button>

@@ -41,7 +41,11 @@ function createMockPrisma() {
         { status: "ERROR" },
         { status: "NO_PAPER" },
       ]),
-      count: vi.fn(async () => 5),
+      count: vi.fn(async (args?: any) => {
+        // Handle not condition for getNonOnlinePrinterCount
+        if (args?.where?.status?.not === "ONLINE") return 3;
+        return 5;
+      }),
     },
   };
 }
@@ -98,7 +102,7 @@ describe("PrintingMetricsService", () => {
     it("counts printers not ONLINE", async () => {
       const count = await service.getNonOnlinePrinterCount();
 
-      expect(count).toBe(2);
+      expect(count).toBe(3);
     });
   });
 

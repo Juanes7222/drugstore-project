@@ -21,7 +21,7 @@ describe("OperationQueuedToast", () => {
   });
 
   afterEach(() => {
-    vi.restoreAllTimers();
+    vi.useRealTimers();
     vi.clearAllMocks();
   });
 
@@ -29,7 +29,7 @@ describe("OperationQueuedToast", () => {
     it("shows the synced status label when online", () => {
       render(<OperationQueuedToast {...defaultProps} isOnline={true} />);
 
-      expect(screen.getByText("Sincronizado")).toBeInTheDocument();
+      expect(screen.getByText("Operación sincronizada")).toBeInTheDocument();
     });
   });
 
@@ -37,7 +37,7 @@ describe("OperationQueuedToast", () => {
     it("shows the queued status label when offline", () => {
       render(<OperationQueuedToast {...defaultProps} isOnline={false} />);
 
-      expect(screen.getByText("En cola")).toBeInTheDocument();
+      expect(screen.getByText("Operación en cola para sincronizar")).toBeInTheDocument();
     });
   });
 
@@ -58,6 +58,11 @@ describe("OperationQueuedToast", () => {
         vi.advanceTimersByTime(5_000);
       });
 
+      // handleClose schedules a second setTimeout(onDismiss, 200) for exit animation
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+
       expect(onDismiss).toHaveBeenCalledOnce();
     });
 
@@ -73,6 +78,11 @@ describe("OperationQueuedToast", () => {
 
       act(() => {
         vi.advanceTimersByTime(2_000);
+      });
+
+      // handleClose schedules a second setTimeout(onDismiss, 200) for exit animation
+      act(() => {
+        vi.advanceTimersByTime(200);
       });
 
       expect(onDismiss).toHaveBeenCalledOnce();
@@ -123,7 +133,7 @@ describe("OperationQueuedToast", () => {
         />,
       );
 
-      expect(screen.getByText("No verificada")).toBeInTheDocument();
+      expect(screen.getByText("No verificado - el servidor reconciliará")).toBeInTheDocument();
     });
 
     it("does not render the warning label when isVerified is true", () => {
@@ -134,7 +144,7 @@ describe("OperationQueuedToast", () => {
         />,
       );
 
-      expect(screen.queryByText("No verificada")).not.toBeInTheDocument();
+      expect(screen.queryByText("No verificado - el servidor reconciliará")).not.toBeInTheDocument();
     });
   });
 
@@ -171,6 +181,6 @@ describe("OperationQueuedToast", () => {
   it("renders the operation type label from i18n", () => {
     render(<OperationQueuedToast {...defaultProps} />);
 
-    expect(screen.getByText("Devolución")).toBeInTheDocument();
+    expect(screen.getByText("Devolución", { exact: false })).toBeInTheDocument();
   });
 });

@@ -36,6 +36,9 @@ function createMockPrisma() {
         } else if (args?.where?.status) {
           jobs = jobs.filter((j) => j.status === args.where.status);
         }
+        if (args?.where?.jobType) {
+          jobs = jobs.filter((j) => j.jobType === args.where.jobType);
+        }
         return jobs;
       }),
       update: vi.fn(async ({ where: { id }, data }: any) => {
@@ -49,6 +52,11 @@ function createMockPrisma() {
         let jobs = Array.from(jobStore.values());
         if (args?.where?.status === "PENDING") {
           jobs = jobs.filter((j) => j.status === "PENDING");
+        } else if (args?.where?.status) {
+          jobs = jobs.filter((j) => j.status === args.where.status);
+        }
+        if (args?.where?.jobType) {
+          jobs = jobs.filter((j) => j.jobType === args.where.jobType);
         }
         return jobs.length;
       }),

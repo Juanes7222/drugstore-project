@@ -122,11 +122,16 @@ describe("UpdateStateMachine", () => {
   describe("DOWNLOAD_FAILED", () => {
     it("retries to DOWNLOADING", () => {
       const fsm = new UpdateStateMachine();
-      fsm.enterStateForTest("DOWNLOAD_FAILED"); // shortcut
-
-      // Use legal transition
+      // Reach DOWNLOAD_FAILED via legal transitions
       fsm.startCheck();
-      expect(fsm.state).toBe("CHECKING");
+      fsm.updateAvailable();
+      fsm.startDownload();
+      fsm.downloadFailed();
+      expect(fsm.state).toBe("DOWNLOAD_FAILED");
+
+      // Retry download from DOWNLOAD_FAILED
+      fsm.retryDownload();
+      expect(fsm.state).toBe("DOWNLOADING");
     });
 
     it("can reset to IDLE", () => {

@@ -137,13 +137,13 @@ describe("CustomerDisplayService", () => {
   });
 
   describe("hasDisplayFailed / resetFailureFlag", () => {
-    it("tracks display failures", () => {
+    it("tracks display failures", async () => {
       expect(service.hasDisplayFailed("printer-1")).toBe(false);
 
       // Simulate a failure by making getById throw
       mockPrinterConfigService.getById = vi.fn().mockRejectedValue(new Error("DB error"));
 
-      service.updateDisplay("printer-1", { message: "test" });
+       await service.updateDisplay("printer-1", { message: "test" });
 
       // The failure should be tracked
       expect(service.hasDisplayFailed("printer-1")).toBe(true);

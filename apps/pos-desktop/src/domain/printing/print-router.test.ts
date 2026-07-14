@@ -19,7 +19,7 @@ describe("PrintRouter", () => {
 
     mockPrintQueueService = {
       enqueueJob: vi.fn(),
-      processNextJob: vi.fn(),
+      processNextJob: vi.fn().mockResolvedValue(undefined),
     };
 
     router = createPrintRouter(
