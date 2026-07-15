@@ -270,6 +270,56 @@ The Ambient Sync Pulse is the single committed signature element. It is not one 
 
 ---
 
+## Sileo toast theming (added in Phase 5 — 2026-07-15)
+
+Notifications are rendered by [Sileo](https://github.com/hiaaryan/sileo), a
+physics‑based toast library. The `<Toaster>` is rendered once at the
+`App.tsx` root and configured via CSS custom properties that map to the
+core palette.
+
+### Palette mapping
+
+| Sileo state   | CSS var                  | Hex       | Domain role                          |
+|---------------|--------------------------|-----------|--------------------------------------|
+| `success`     | `--sileo-state-success`  | `#0B6E6B` | Pharma Teal — sale confirmed, synced |
+| `error`       | `--sileo-state-error`    | `#D32F2F` | Reserved red — discrepancy, failure  |
+| `warning`     | `--sileo-state-warning`  | `#E8780A` | Urgency Amber — low stock, expiring  |
+| `info`        | `--sileo-state-info`     | `#4A6572` | Sync Slate — offline mode, syncing   |
+| `loading`     | `--sileo-state-loading`  | `#4A6572` | Sync Slate — pending operation       |
+| `action`      | `--sileo-state-action`   | `#5B3E96` | Restrict Violet — verification step  |
+
+### Convenience API
+
+Components and thunks call a typed `notify` utility rather than importing
+`sileo` directly:
+
+```ts
+import { notify } from "@/utils/notify";
+
+notify.success({ title: t("sales.complete") });
+notify.error({ title: t("print.failed") });
+notify.warning({ title: t("inventory.low_stock"), description });
+notify.info({ title: t("sync.offline_queueing") });
+notify.action({
+  title: t("restricted.confirm"),
+  action: { title: t("common.verify"), onClick: handleVerify },
+});
+notify.dismiss(id);
+```
+
+Each method pre‑configures a sensible default duration (4 s success/info,
+6 s warning, 8 s error, persistent for loading/action). Pass `duration: null`
+to make any toast persistent.
+
+### Placement
+
+The `<Toaster position="bottom-right" />` sits inside `<ServiceProvider>`
+in `App.tsx`, so toasts are available on every screen including auth pages.
+Bottom‑right keeps notifications clear of the cart panel (right 40%) and
+the product search area (left 60%).
+
+---
+
 ## Motion budget (added in Phase 3)
 
 Motion is reserved for the sale-completing handoff, not for the high-throughput search/scan/add-to-cart path.

@@ -708,5 +708,14 @@
       "locked": "Suscripción vencida. Contacte a su proveedor para renovar. Puede seguir viendo sus datos y exportarlos.",
       "revoked": "Su licencia fue revocada. Contacte a su proveedor."
     }
+  },
+  "update": {
+    "toast": {
+      "optional_available": "Actualización v{{version}} disponible",
+      "hotfix_available": "Actualización crítica v{{version}} disponible",
+      "install_on_close": "Se instalará al cerrar la app",
+      "view_details": "Ver detalles",
+      "dismiss": "Ahora no"
+    }
   }
 }

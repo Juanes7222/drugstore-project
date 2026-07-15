@@ -10,6 +10,7 @@
  */
 import { type FC } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { Toaster } from "sileo";
 import { AppShell } from "@/components/common/app-shell";
 import { DatabaseProof } from "@/components/DatabaseProof/database-proof";
 import { SalesTransaction } from "@/components/SalesTransaction/sales-transaction";
@@ -345,6 +346,7 @@ export const App: FC = () => {
   return (
     <ServiceProvider>
       <InnerApp />
+      <Toaster position="bottom-right" />
     </ServiceProvider>
   );
 };

@@ -33,12 +33,14 @@
     "buffer": "^6.0.3",
     "fuse.js": "^7.4.2",
     "i18next": "^26.3.4",
+    "lucide-react": "^1.24.0",
     "motion": "^12.42.2",
     "pglite-prisma-adapter": "^0.7.2",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-i18next": "^17.0.8",
     "react-redux": "^9.3.0",
+    "sileo": "^0.1.5",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

@@ -15,11 +15,13 @@
  */
 
 import { type FC, useEffect, useState, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Package, AlertTriangle } from 'lucide-react';
 import { useUpdateService } from '../common/service-context';
 import { useUpdateStore } from '../../../domain/updates/update.store';
 import { getLocalDatabase } from '../../../infrastructure/local-database';
 import { isOnline } from '../../../common/is-online';
-import { UpdateToast } from './update-toast';
+import { notify } from '@/utils/notify';
 import { UpdateModal } from './update-modal';
 import { UpdateProgress } from './update-progress';
 import { UpdateType } from '@pharmacy/shared-types';
@@ -29,17 +31,15 @@ import { UpdateType } from '@pharmacy/shared-types';
 // ---------------------------------------------------------------------------
 
 export const UpdateCheckInterceptor: FC = () => {
+  const { t } = useTranslation();
   const updateService = useUpdateService();
 
   // Store state
   const storeState = useUpdateStore();
 
   // UI state
-  const [showToast, setShowToast] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
-  const [toastVersion, setToastVersion] = useState('');
-  const [toastType, setToastType] = useState<string>('OPTIONAL');
   const [modalVersion, setModalVersion] = useState('');
   const [modalType, setModalType] = useState<string>('MANDATORY');
   const [modalReleaseNotes, setModalReleaseNotes] = useState<string | undefined>();
@@ -111,17 +111,47 @@ export const UpdateCheckInterceptor: FC = () => {
           });
 
           // Show appropriate UX
+          const version = result.version;
           if (updateType === UpdateType.CRITICAL || updateType === UpdateType.MANDATORY) {
-            setModalVersion(result.version);
+            setModalVersion(version);
             setModalType(updateType);
             setModalReleaseNotes(result.releaseNotes);
             setModalMandatoryFrom(result.mandatoryFrom);
             setShowModal(true);
+          } else if (updateType === UpdateType.HOTFIX) {
+            notify.action({
+              title: t('update.toast.hotfix_available', { version }),
+              description: t('update.toast.install_on_close'),
+              icon: <AlertTriangle size={20} />,
+              duration: null,
+              action: {
+                title: t('update.toast.view_details'),
+                onClick: () => {
+                  setModalVersion(version);
+                  setModalType(updateType);
+                  setModalReleaseNotes(result.releaseNotes);
+                  setShowModal(true);
+                },
+              },
+            });
           } else {
-            // OPTIONAL or HOTFIX
-            setToastVersion(result.version);
-            setToastType(updateType);
-            setShowToast(true);
+            // OPTIONAL — auto-dismissing info toast with action
+            notify.show({
+              type: 'info',
+              icon: <Package size={20} />,
+              title: t('update.toast.optional_available', { version }),
+              description: t('update.toast.install_on_close'),
+              duration: 8000,
+              button: {
+                title: t('update.toast.view_details'),
+                onClick: () => {
+                  setModalVersion(version);
+                  setModalType(updateType);
+                  setModalReleaseNotes(result.releaseNotes);
+                  setShowModal(true);
+                },
+              },
+            });
           }
         }
       } catch {
@@ -143,7 +173,6 @@ export const UpdateCheckInterceptor: FC = () => {
 
   const handleInstallNow = useCallback(async () => {
     setShowModal(false);
-    setShowToast(false);
     setShowProgress(true);
     setProgressError(undefined);
 
@@ -217,21 +246,6 @@ export const UpdateCheckInterceptor: FC = () => {
     }
   }, [updateService]);
 
-  const handleDismissToast = useCallback(() => {
-    setShowToast(false);
-  }, []);
-
-  const handleViewDetails = useCallback(() => {
-    setShowToast(false);
-    const storeSnapshot = useUpdateStore.getState();
-    if (storeSnapshot.lastAvailableVersion) {
-      setModalVersion(storeSnapshot.lastAvailableVersion);
-      setModalType(storeSnapshot.lastAvailableType ?? 'OPTIONAL');
-      setModalReleaseNotes(storeSnapshot.lastAvailableChangelog ?? undefined);
-      setShowModal(true);
-    }
-  }, []);
-
   const handleRemindLater = useCallback(async () => {
     setShowModal(false);
     // The periodic checker will show the modal again after 4 hours.
@@ -254,15 +268,7 @@ export const UpdateCheckInterceptor: FC = () => {
 
   return (
     <>
-      {/* Toast for OPTIONAL / HOTFIX updates */}
-      {showToast && (
-        <UpdateToast
-          version={toastVersion}
-          updateType={toastType}
-          onViewDetails={handleViewDetails}
-          onDismiss={handleDismissToast}
-        />
-      )}
+      {/* Toast for OPTIONAL / HOTFIX updates — shown via notify() in startup effect */}
 
       {/* Modal for CRITICAL / MANDATORY updates */}
       {showModal && (

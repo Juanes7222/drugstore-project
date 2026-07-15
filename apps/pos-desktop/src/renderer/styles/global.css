@@ -300,9 +300,37 @@
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* Token reference page styles (dev only — remove before production)   */
-/* ------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------ */
+  /* Sileo toast theming — maps app palette to notification states       */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Sileo (sileo.xyz) physics-based toast notifications.
+   * CSS custom properties documented at https://github.com/hiaaryan/sileo
+   *
+   * Palette mapping:
+   *   success → Pharma Teal (#0B6E6B) — sale confirmed, sync complete
+   *   loading → Sync Slate  (#4A6572) — queue draining, auth pending
+   *   error   → #D32F2F              — shift discrepancy, print failure
+   *   warning → Urgency Amber (#E8780A) — low stock, near-expiry
+   *   info    → Sync Slate  (#4A6572) — sync events, offline status
+   *   action  → Restrict Violet (#5B3E96) — restricted-sale confirmation
+   */
+  :root {
+    --sileo-width: 360px;
+    --sileo-duration: 400ms;
+
+    --sileo-state-success: #0B6E6B;
+    --sileo-state-loading: #4A6572;
+    --sileo-state-error: #D32F2F;
+    --sileo-state-warning: #E8780A;
+    --sileo-state-info: #4A6572;
+    --sileo-state-action: #5B3E96;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Token reference page styles (dev only — remove before production)   */
+  /* ------------------------------------------------------------------ */
 
 .token-reference {
   padding: 2rem;

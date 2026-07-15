@@ -693,5 +693,14 @@
       "locked": "Subscription expired. Contact your provider to renew. You can still view and export your data.",
       "revoked": "Your license has been revoked. Contact your provider."
     }
+  },
+  "update": {
+    "toast": {
+      "optional_available": "Update v{{version}} available",
+      "hotfix_available": "Critical update v{{version}} available",
+      "install_on_close": "Will install on app close",
+      "view_details": "View details",
+      "dismiss": "Not now"
+    }
   }
 }
