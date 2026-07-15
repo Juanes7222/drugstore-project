@@ -1,7 +1,16 @@
 /**
  * Minimal polyfill for `node:path` so Prisma generated client can be bundled
  * in a browser / Tauri-webview environment.
+ *
+ * Must export `sep` and `posix` as top-level named exports because Prisma
+ * uses both `import * as path from "node:path"` and
+ * `import jt from "node:path"` (default), then reads `sep`, `posix.sep`,
+ * and calls `dirname()`.
  */
+
+export const sep = '/';
+export const posix = { sep: '/' };
+export const win32 = { sep: '\\' };
 
 export function dirname(p: string): string {
   const i = p.lastIndexOf('/');
@@ -40,4 +49,9 @@ export function normalize(p: string): string {
   return p.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
-export default { dirname, basename, extname, join, resolve, isAbsolute, normalize };
+/**
+ * Default export for `import p from "node:path"` consumers.
+ * Prisma runtime uses this via `import jt from "node:path"` and reads
+ * `jt.sep`, `jt.posix.sep`, `jt.dirname(...)`.
+ */
+export default { sep, posix, win32, dirname, basename, extname, join, resolve, isAbsolute, normalize };

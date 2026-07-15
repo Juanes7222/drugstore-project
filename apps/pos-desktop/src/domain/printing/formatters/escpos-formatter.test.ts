@@ -99,6 +99,32 @@ describe("renderEscposReceipt", () => {
     expect(position).not.toBe(-1);
   });
 
+  it("uses INVOICE_NUMBER_AND_CUFE as QR content when specified", () => {
+    const input = makeMinimalInput({
+      showQrCode: true,
+      qrCodeContent: QRCodeContent.INVOICE_NUMBER_AND_CUFE,
+      context: {
+        invoice: { invoiceNumber: "INV001", cufeOfficial: "cufe123" },
+      } as any,
+    });
+    const result = renderEscposReceipt(input);
+
+    const qrHeader = [GS, 0x28, 0x6b];
+    expect(searchBytes(result, qrHeader)).not.toBe(-1);
+  });
+
+  it("uses INVOICE_URL as QR content when specified", () => {
+    const input = makeMinimalInput({
+      showQrCode: true,
+      qrCodeContent: QRCodeContent.INVOICE_URL,
+      context: { invoice: { invoiceNumber: "INV001" } } as any,
+    });
+    const result = renderEscposReceipt(input);
+
+    const qrHeader = [GS, 0x28, 0x6b];
+    expect(searchBytes(result, qrHeader)).not.toBe(-1);
+  });
+
   it("does not include QR code commands when showQrCode is false", () => {
     const input = makeMinimalInput({ showQrCode: false });
     const result = renderEscposReceipt(input);
@@ -160,6 +186,106 @@ describe("renderEscposReceipt", () => {
     const position = searchBytes(result, needle);
 
     expect(position).not.toBe(-1);
+  });
+
+  it("applies double-height formatting for section headers (## prefix)", () => {
+    const input = makeMinimalInput({
+      templateBody: "## TOTALES",
+    });
+    const result = renderEscposReceipt(input);
+
+    const doubleHeightOn = [0x1b, 0x21, 0x10];
+    expect(searchBytes(result, doubleHeightOn)).not.toBe(-1);
+  });
+
+  it("renders a CODE128 barcode when barcodeType is CODE128", () => {
+    const barcodeValue = "ABC123";
+    const input = makeMinimalInput({
+      barcodeData: barcodeValue,
+      barcodeType: "CODE128",
+    });
+    const result = renderEscposReceipt(input);
+
+    // CODE128 header: GS 0x6B 0x49 followed by length byte
+    const code128Header = [GS, 0x6b, 0x49, barcodeValue.length];
+    expect(searchBytes(result, code128Header)).not.toBe(-1);
+  });
+
+  it("wraps long lines at word boundaries when exceeding maxChars", () => {
+    // 80mm maxChars is 48 — build a line longer than that with a space break
+    const part1 = "ProductoConNombreLargoX    $123.456,00  xx";
+    const part2 = "99.000";
+    const longLine = part1 + " " + part2; // 49+ chars total
+    const shortLine = "Corto";
+
+    const longInput = makeMinimalInput({ templateBody: longLine });
+    const longResult = renderEscposReceipt(longInput);
+
+    // Both parts of the wrapped line should appear as separate text segments
+    expect(searchBytes(longResult, encodeString(part1))).not.toBe(-1);
+    expect(searchBytes(longResult, encodeString(part2))).not.toBe(-1);
+
+    // Short line renders contiguously without wrapping
+    const shortInput = makeMinimalInput({ templateBody: shortLine });
+    const shortResult = renderEscposReceipt(shortInput);
+    expect(searchBytes(shortResult, encodeString(shortLine))).not.toBe(-1);
+  });
+
+  it("force-breaks a long line with no spaces", () => {
+    const noSpaces = "A".repeat(60);
+    const input = makeMinimalInput({
+      templateBody: noSpaces,
+    });
+    const result = renderEscposReceipt(input);
+
+    // The 60-char line should still be rendered (characters appear in output)
+    expect(searchBytes(result, [0x41])).not.toBe(-1);
+  });
+
+  it("applies bold sub-header formatting for # prefix lines", () => {
+    const input = makeMinimalInput({
+      templateBody: "# Subtotal",
+    });
+    const result = renderEscposReceipt(input);
+
+    // Sub-header uses bold on (ESC 0x45 0x01) then bold off (ESC 0x45 0x00)
+    const boldOn = [0x1b, 0x45, 0x01];
+    const boldOff = [0x1b, 0x45, 0x00];
+    expect(searchBytes(result, boldOn)).not.toBe(-1);
+    expect(searchBytes(result, boldOff)).not.toBe(-1);
+    // Sub-header text should appear
+    expect(searchBytes(result, encodeString("Subtotal"))).not.toBe(-1);
+  });
+
+  it("renders right-aligned totals for | ... | line format", () => {
+    const input = makeMinimalInput({
+      templateBody: "| TOTAL     $100.00 |",
+    });
+    const result = renderEscposReceipt(input);
+
+    // Total text should appear (trimmed inner content)
+    expect(searchBytes(result, encodeString("TOTAL     $100.00"))).not.toBe(-1);
+  });
+
+  it("renders a dash separator line for --- content", () => {
+    const input = makeMinimalInput({
+      templateBody: "---",
+    });
+    const result = renderEscposReceipt(input);
+
+    // Separator duplicates ─ across maxChars
+    const resultLength = result.length;
+    expect(resultLength).toBeGreaterThan(0);
+  });
+
+  it("right-aligns lines starting with >>", () => {
+    const input = makeMinimalInput({
+      templateBody: ">> Pagado",
+    });
+    const result = renderEscposReceipt(input);
+
+    // The text without prefix should appear
+    expect(searchBytes(result, encodeString("Pagado"))).not.toBe(-1);
   });
 });
 

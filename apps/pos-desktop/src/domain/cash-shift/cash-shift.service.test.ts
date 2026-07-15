@@ -1,12 +1,21 @@
 /**
  * Unit tests for CashShiftService — open, close, and cash counts.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { CashShiftService, createCashShiftService } from "./cash-shift.service";
 import { ShiftAlreadyOpenException, ShiftNotOpenException, MissingClosingCashCountsException, InvalidCashCountForNonCashMethodException, PaymentMethodNotFoundException } from "./exceptions";
+import { BackupFailedException } from "../backup/exceptions";
 import { Prisma } from "@pharmacy/database/local";
 import { RoleType } from "@pharmacy/shared-types";
 import { DomainError } from "../../common/domain-error";
+
+// Mock shift-close-html and print-payload-writer for printRouter tests
+vi.mock("./shift-close-html", () => ({
+  generateShiftCloseHtml: vi.fn(() => "<html>shift close</html>"),
+}));
+vi.mock("../printing/print-payload-writer", () => ({
+  writePrintPayload: vi.fn(() => "/tmp/shift-close-xxx.html"),
+}));
 
 // Mock Tauri's invoke for the backup service created during closeShift.
 vi.mock('@tauri-apps/api/core', () => ({
@@ -332,6 +341,311 @@ describe("CashShiftService", () => {
       await expect(
         service.closeShift("shift-1", {}),
       ).rejects.toThrow(ShiftNotOpenException);
+    });
+
+    it("throws BackupFailedException when the mandatory backup fails", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN",
+      });
+      tx.shiftCashCount.findMany.mockResolvedValue([
+        {
+          paymentMethodId: "pm-cash",
+          countType: "CLOSING",
+          expectedAmount: new Prisma.Decimal(500000),
+          declaredAmount: new Prisma.Decimal(510000),
+          difference: new Prisma.Decimal(10000),
+          paymentMethodIsCash: true,
+          paymentMethod: { name: "Efectivo" },
+        },
+      ]);
+      tx.salePayment.findMany.mockResolvedValue([
+        { paymentMethodId: "pm-cash" },
+      ]);
+      tx.syncQueue.count.mockResolvedValue(0);
+      tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
+
+      // Override the default invoke mock to reject
+      const { invoke } = await import("@tauri-apps/api/core");
+      vi.mocked(invoke).mockRejectedValueOnce(new BackupFailedException("Backup failed"));
+
+      await expect(
+        service.closeShift("shift-1", {}),
+      ).rejects.toThrow(BackupFailedException);
+    });
+  });
+
+  describe("closeShift with printRouter", () => {
+    it("prints the shift close report when printRouter is configured", async () => {
+      const printRouter = { print: vi.fn().mockResolvedValue(undefined) };
+      service = createCashShiftService(prisma, auth as any, undefined, printRouter as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN", userId: "user-1",
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(0),
+        actualClosingAmount: new Prisma.Decimal(0),
+        closingDifference: new Prisma.Decimal(0),
+      });
+      tx.shiftCashCount.findMany.mockResolvedValue([
+        {
+          paymentMethodId: "pm-cash",
+          countType: "CLOSING",
+          expectedAmount: new Prisma.Decimal(500000),
+          declaredAmount: new Prisma.Decimal(510000),
+          difference: new Prisma.Decimal(10000),
+          paymentMethodIsCash: true,
+          paymentMethod: { name: "Efectivo" },
+        },
+      ]);
+      tx.salePayment.findMany.mockResolvedValue([
+        { paymentMethodId: "pm-cash" },
+      ]);
+      tx.syncQueue.count.mockResolvedValue(0);
+      tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
+      tx.cashShift.update.mockResolvedValue({
+        id: "shift-1",
+        state: "CLOSED",
+        closedAt: new Date(),
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(500000),
+        actualClosingAmount: new Prisma.Decimal(510000),
+        closingDifference: new Prisma.Decimal(10000),
+        closingNotes: null,
+      });
+
+      const result = await service.closeShift("shift-1", { closingNotes: "Test" });
+
+      expect(result.state).toBe("CLOSED");
+      expect(printRouter.print).toHaveBeenCalledWith(
+        "SHIFT_CLOSE_REPORT",
+        expect.objectContaining({
+          payloadType: "HTML",
+        }),
+      );
+    });
+  });
+
+  describe("registerCashCount (edge cases)", () => {
+    it("stores denominationsBreakdown for cash payment methods", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN",
+      });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash", isCash: true, name: "Efectivo",
+      });
+      tx.shiftCashCount.create.mockResolvedValue({
+        id: "count-1", countType: "CLOSING",
+      });
+
+      await service.registerCashCount("shift-1", {
+        countType: "CLOSING",
+        paymentMethodId: "pm-cash",
+        expectedAmount: new Prisma.Decimal(500000),
+        declaredAmount: new Prisma.Decimal(510000),
+        denominationsBreakdown: { "50000": 10, "20000": 1 },
+      });
+
+      expect(tx.shiftCashCount.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            denominationsBreakdown: { "50000": 10, "20000": 1 },
+          }),
+        }),
+      );
+    });
+
+    it("stores Prisma.DbNull for non-cash methods even without denominations", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN",
+      });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-card", isCash: false, name: "Tarjeta",
+      });
+      tx.shiftCashCount.create.mockResolvedValue({
+        id: "count-2", countType: "CLOSING",
+      });
+
+      await service.registerCashCount("shift-1", {
+        countType: "CLOSING",
+        paymentMethodId: "pm-card",
+        expectedAmount: new Prisma.Decimal(200000),
+        declaredAmount: new Prisma.Decimal(200000),
+      });
+
+      expect(tx.shiftCashCount.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            denominationsBreakdown: Prisma.DbNull,
+          }),
+        }),
+      );
+    });
+  });
+
+  describe("computeExpectedTotalsByPaymentMethod", () => {
+    it("throws DomainError when adjustmentService is not configured", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+
+      await expect(
+        service.computeExpectedTotalsByPaymentMethod("shift-1"),
+      ).rejects.toThrow(DomainError);
+    });
+
+    it("returns aggregated totals per payment method from operational view", async () => {
+      const adjustmentService = {
+        resolveOperationalView: vi.fn(),
+      };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+
+      tx.sale.findMany.mockResolvedValue([
+        { id: "sale-1" },
+        { id: "sale-2" },
+      ]);
+      tx.invoice.findMany.mockResolvedValue([
+        { id: "inv-1", saleId: "sale-1" },
+        { id: "inv-2", saleId: "sale-2" },
+      ]);
+
+      adjustmentService.resolveOperationalView
+        .mockResolvedValueOnce({
+          operational: {
+            payments: [
+              { paymentMethodId: "pm-cash", paymentMethodName: "Efectivo", amount: "50000" },
+            ],
+          },
+        })
+        .mockResolvedValueOnce({
+          operational: {
+            payments: [
+              { paymentMethodId: "pm-cash", paymentMethodName: "Efectivo", amount: "30000" },
+              { paymentMethodId: "pm-card", paymentMethodName: "Tarjeta", amount: "75000" },
+            ],
+          },
+        });
+
+      const result = await service.computeExpectedTotalsByPaymentMethod("shift-1");
+
+      expect(result.get("pm-cash")!.toString()).toBe("80000");
+      expect(result.get("pm-card")!.toString()).toBe("75000");
+    });
+
+    it("skips invoices that fail to resolve", async () => {
+      const adjustmentService = {
+        resolveOperationalView: vi.fn(),
+      };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+
+      tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
+      tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
+
+      adjustmentService.resolveOperationalView.mockRejectedValueOnce(
+        new Error("Invoice not found"),
+      );
+
+      const result = await service.computeExpectedTotalsByPaymentMethod("shift-1");
+
+      expect(result.size).toBe(0);
+    });
+  });
+
+  describe("getReconciliationDrift", () => {
+    it("returns empty array when adjustmentService is not configured", async () => {
+      const result = await service.getReconciliationDrift("shift-1");
+
+      expect(result).toEqual([]);
+    });
+
+    it("returns empty array when shift is not CLOSED", async () => {
+      const adjustmentService = { resolveOperationalView: vi.fn() };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN",
+      });
+
+      const result = await service.getReconciliationDrift("shift-1");
+
+      expect(result).toEqual([]);
+    });
+
+    it("returns empty array when no fiscal-operational differences exist", async () => {
+      const adjustmentService = {
+        resolveOperationalView: vi.fn(),
+      };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "CLOSED",
+      });
+      tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
+      tx.invoice.findMany.mockResolvedValue([{
+        id: "inv-1",
+        saleId: "sale-1",
+        invoiceNumber: "INV-001",
+        fullData: { payments: [{ paymentMethodName: "Efectivo", amount: "50000" }] },
+      }]);
+
+      adjustmentService.resolveOperationalView.mockResolvedValue({
+        fiscal: { fullData: { payments: {} } },
+        operational: {
+          hasDifferences: false,
+          payments: [],
+        },
+      });
+
+      const result = await service.getReconciliationDrift("shift-1");
+
+      expect(result).toEqual([]);
+    });
+
+    it("returns drift entries when fiscal and operational payment summaries differ", async () => {
+      const adjustmentService = {
+        resolveOperationalView: vi.fn(),
+      };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "CLOSED",
+      });
+      tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
+      tx.invoice.findMany.mockResolvedValue([{
+        id: "inv-1",
+        saleId: "sale-1",
+        invoiceNumber: "INV-001",
+        fullData: {
+          payments: [{ paymentMethodName: "Efectivo", amount: "50000" }],
+        },
+      }]);
+
+      adjustmentService.resolveOperationalView.mockResolvedValue({
+        fiscal: {
+          fullData: {
+            payments: [{ paymentMethodName: "Efectivo", amount: "50000" }],
+          },
+        },
+        operational: {
+          hasDifferences: true,
+          payments: [
+            { paymentMethodName: "Tarjeta", paymentMethodName: "Tarjeta", amount: "50000" },
+          ],
+        },
+      });
+
+      const result = await service.getReconciliationDrift("shift-1");
+
+      expect(result).toHaveLength(1);
+      expect(result[0].invoiceId).toBe("inv-1");
+      expect(result[0].invoiceNumber).toBe("INV-001");
     });
   });
 });

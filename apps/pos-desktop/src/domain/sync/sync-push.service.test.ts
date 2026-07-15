@@ -299,5 +299,146 @@ describe("SyncPushService", () => {
       expect(classifyFailure(500, "Internal server error")).toBe("NETWORK");
       expect(classifyFailure(503, "Service unavailable")).toBe("NETWORK");
     });
+
+    it("returns CONFLICT for 422/400 with conflict or mismatch keywords", () => {
+      expect(classifyFailure(422, "conflict detected")).toBe("CONFLICT");
+      expect(classifyFailure(400, "data mismatch")).toBe("CONFLICT");
+    });
+
+    it("returns BUSINESS_RULE for 422/400 with business keywords like prescription, closed, not allowed", () => {
+      expect(classifyFailure(422, "prescription not found")).toBe("BUSINESS_RULE");
+      expect(classifyFailure(400, "shift closed")).toBe("BUSINESS_RULE");
+      expect(classifyFailure(422, "operation not allowed")).toBe("BUSINESS_RULE");
+    });
+
+    it("returns CONFLICT for 4xx with already or mismatch keywords", () => {
+      expect(classifyFailure(418, "resource already exists")).toBe("CONFLICT");
+      expect(classifyFailure(422, "version mismatch")).toBe("CONFLICT");
+    });
+
+    it("returns BUSINESS_RULE for 4xx with stock or insufficient keywords", () => {
+      expect(classifyFailure(412, "insufficient stock")).toBe("BUSINESS_RULE");
+      expect(classifyFailure(418, "business rule violation")).toBe("BUSINESS_RULE");
+    });
+  });
+
+  describe("pushPending (invalid JSON response)", () => {
+    it("treats entries as ACCEPTED when server returns non-JSON body with ok:true", async () => {
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue("not valid json"),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({ prisma, baseUrl: "http://localhost:3000" });
+
+      const result = await service.pushPending();
+
+      // When parseBatchResults returns [], resultMap is empty,
+      // so entries fall into `!result` branch and are treated as ACCEPTED
+      expect(result).toEqual({ pushed: 1, accepted: 1 });
+      expect(tx.syncQueue.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "COMPLETED" }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+  });
+
+  describe("pushPending (server error paths)", () => {
+    it("records NETWORK failure when server returns 5xx", async () => {
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        statusText: "Bad Gateway",
+        text: vi.fn().mockResolvedValue(""),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({ prisma, baseUrl: "http://localhost:3000" });
+
+      const result = await service.pushPending();
+
+      expect(result).toEqual({ pushed: 1, accepted: 0 });
+      expect(tx.syncQueue.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ failureCategory: "NETWORK" }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("records classified failure when server returns 4xx", async () => {
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        statusText: "Unprocessable",
+        text: vi.fn().mockResolvedValue("validation error: schema mismatch"),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({ prisma, baseUrl: "http://localhost:3000" });
+
+      const result = await service.pushPending();
+
+      expect(result).toEqual({ pushed: 1, accepted: 0 });
+      expect(tx.syncQueue.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ failureCategory: "VALIDATION" }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+  });
+
+  describe("handleOkResponse (rejected operations)", () => {
+    it("marks entries as PERMANENT_FAILURE when server returns REJECTED status", async () => {
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{ operationUuid: "uuid-1", status: "REJECTED", error: "Stock insufficient" }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({ prisma, baseUrl: "http://localhost:3000" });
+
+      const result = await service.pushPending();
+
+      expect(result).toEqual({ pushed: 1, accepted: 0 });
+      expect(tx.syncQueue.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "PERMANENT_FAILURE" }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
   });
 });

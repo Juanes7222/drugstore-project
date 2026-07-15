@@ -144,5 +144,33 @@ describe("MigrationRunner", () => {
       expect(results).toHaveLength(1);
       expect(results[0].success).toBe(true);
     });
+
+    it("applies PRISMA type migrations via $executeRawUnsafe", async () => {
+      const runner = createMigrationRunner({
+        prisma: mockPrisma as any,
+        migrations: [
+          { name: "001-prisma", type: "PRISMA", payload: "ALTER TABLE test ADD COLUMN c TEXT" },
+        ],
+      });
+
+      const results = await runner.runPending();
+
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(true);
+      expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+        "ALTER TABLE test ADD COLUMN c TEXT",
+      );
+    });
+
+    it("throws MigrationFailedException when PRISMA payload is empty", async () => {
+      const runner = createMigrationRunner({
+        prisma: mockPrisma as any,
+        migrations: [
+          { name: "001-empty", type: "PRISMA", payload: "" },
+        ],
+      });
+
+      await expect(runner.runPending()).rejects.toThrow(MigrationFailedException);
+    });
   });
 });

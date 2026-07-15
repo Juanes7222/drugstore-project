@@ -293,4 +293,29 @@ describe("UpdateStateMachine", () => {
       expect(() => fsm.startCheck()).not.toThrow();
     });
   });
+
+  describe("reCheck", () => {
+    it("transitions to CHECKING from IDLE", () => {
+      const fsm = new UpdateStateMachine();
+      fsm.reCheck("CHECKING");
+
+      expect(fsm.state).toBe("CHECKING");
+    });
+
+    it("transitions to IDLE from CHECK_FAILED", () => {
+      const fsm = new UpdateStateMachine();
+      fsm.startCheck();
+      fsm.checkFailed();
+
+      fsm.reCheck("IDLE");
+
+      expect(fsm.state).toBe("IDLE");
+    });
+
+    it("throws IllegalStateTransitionException on invalid target", () => {
+      const fsm = new UpdateStateMachine();
+
+      expect(() => fsm.reCheck("DOWNLOADING")).toThrow(IllegalStateTransitionException);
+    });
+  });
 });

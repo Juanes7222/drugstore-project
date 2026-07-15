@@ -12,6 +12,7 @@ import {
   selectCashOwedCents,
   selectPaymentChangeCents,
   selectPaymentDifferenceCents,
+  selectHasRejectedElectronicMethods,
   selectPaymentTotalPaidCents,
   setAuthorizationStatus,
   setCashReceived,
@@ -226,5 +227,94 @@ describe("payment selectors", () => {
     const method = root.payment.methods.find((m) => m.id === cardId);
     expect(method?.authorizationStatus).toBe("idle");
     expect(method?.reference).toBeUndefined();
+  });
+
+  it("does nothing when updating amount for a non-existent method id", () => {
+    const root = createRootState(66_164);
+    const next = applyPaymentAction(
+      root,
+      updatePaymentMethodAmount({ id: "nonexistent", amountCents: 50_000 }),
+    );
+
+    expect(next.payment.methods).toEqual(root.payment.methods);
+  });
+
+  it("does nothing when setting authorization for a non-existent method id", () => {
+    const root = createRootState(66_164);
+    const next = applyPaymentAction(
+      root,
+      setAuthorizationStatus({
+        id: "nonexistent",
+        status: "approved",
+        reference: "R",
+      }),
+    );
+
+    expect(next.payment.methods).toEqual(root.payment.methods);
+  });
+
+  it("detects rejected electronic methods", () => {
+    let root = createRootState(66_164);
+    root = applyPaymentAction(root, addPaymentMethod());
+    const cardId = root.payment.methods[1]?.id as string;
+
+    root = applyPaymentAction(
+      root,
+      updatePaymentMethodAmount({ id: cardId, amountCents: 26_164 }),
+    );
+    root = applyPaymentAction(
+      root,
+      setAuthorizationStatus({
+        id: cardId,
+        status: "rejected",
+        rejectionReason: "insufficient funds",
+      }),
+    );
+
+    expect(selectHasRejectedElectronicMethods(root)).toBe(true);
+  });
+
+  it("removes a method when there are multiple methods", () => {
+    let root = createRootState(66_164);
+    root = applyPaymentAction(root, addPaymentMethod());
+    const cashId = root.payment.methods[0]?.id as string;
+
+    root = applyPaymentAction(root, removePaymentMethod(cashId));
+
+    expect(root.payment.methods).toHaveLength(1);
+    expect(root.payment.methods[0]?.type).toBe(PaymentMethodType.CARD);
+  });
+
+  it("does nothing when updating payment method type for a non-existent id", () => {
+    const root = createRootState(66_164);
+    const next = applyPaymentAction(
+      root,
+      updatePaymentMethodType({
+        id: "nonexistent",
+        type: PaymentMethodType.CARD,
+      }),
+    );
+
+    expect(next.payment.methods).toEqual(root.payment.methods);
+  });
+
+  it("adds a cash method when no cash method exists", () => {
+    const state = paymentSlice.reducer(
+      {
+        methods: [
+          {
+            id: "pm-1",
+            type: PaymentMethodType.CARD,
+            amountCents: 0,
+            authorizationStatus: "idle" as const,
+          },
+        ],
+        cashReceivedCents: 0,
+      },
+      addPaymentMethod(),
+    );
+
+    expect(state.methods).toHaveLength(2);
+    expect(state.methods[1]?.type).toBe(PaymentMethodType.CASH);
   });
 });

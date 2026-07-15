@@ -468,6 +468,120 @@ describe("DownloadManager", () => {
 
       expect(goodSpy).toHaveBeenCalled();
     });
+
+    it("swallows errors from progress listeners during retry progress emission", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "fetch").mockRejectedValue(
+        new Error("Network error"),
+      );
+
+      manager = createDownloadManager(makeConfig());
+      const progressSpy = vi.fn();
+      manager.onProgress(() => {
+        throw new Error("Progress listener crashed");
+      });
+      manager.onProgress(progressSpy);
+
+      const prom = manager.start();
+      const assertion = expect(prom).rejects.toThrow(DownloadFailedException);
+
+      // Retry delays: 5s, 30s, 300s — each triggers emitProgressUpdate
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(30000);
+      await vi.advanceTimersByTimeAsync(300000);
+
+      await assertion;
+      expect(manager.state.status).toBe("failed");
+      // The good progress listener should have been called despite the
+      // throwing listener, proving the catch block swallows errors.
+      expect(progressSpy).toHaveBeenCalled();
+
+      // Direct call to emitProgressUpdate also exercises the same lines
+      manager.onProgress(() => {
+        throw new Error("Another crash");
+      });
+      manager.onProgress(progressSpy);
+
+      (manager as any).emitProgressUpdate({
+        totalBytes: 100,
+        receivedBytes: 50,
+        percent: 50,
+        bytesPerSecond: 0,
+        etaMs: Infinity,
+      });
+
+      expect(progressSpy).toHaveBeenCalledTimes(5);
+      vi.useRealTimers();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Dev fallback (non-Tauri mode)
+  // -----------------------------------------------------------------------
+
+  describe("dev fallback (non-Tauri mode)", () => {
+    beforeEach(() => {
+      delete (globalThis as any).__TAURI_INTERNALS__;
+    });
+
+    it("uses Web Crypto digiest for SHA-256 when Tauri env is unavailable", async () => {
+      const fakeData = new Uint8Array([1, 2, 3, 4]);
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(fakeData, { status: 200 }),
+      );
+
+      const manager = createDownloadManager(makeConfig({ expectedHash: "" }));
+
+      const hash = await (manager as any).computeSha256Hex(
+        "file:///dev-fallback-path",
+      );
+
+      expect(typeof hash).toBe("string");
+      expect(hash.length).toBe(64);
+      // Verify fetch was called with the file path (not Tauri invoke)
+      expect(globalThis.fetch).toHaveBeenCalledWith("file:///dev-fallback-path");
+    });
+
+    it("downloads successfully via dev fallback when __TAURI_INTERNALS__ is absent", async () => {
+      const chunk = new Uint8Array(256);
+      const reader = createSyncReader([chunk]);
+      vi.spyOn(globalThis, "fetch").mockImplementation(
+        async (url: string) => {
+          if (url.startsWith("blob:")) {
+            return new Response(chunk, { status: 200 });
+          }
+          return makeMockResponse(reader, 256);
+        },
+      );
+
+      // Spy on URL.createObjectURL for the dev fallback writeBinaryToStorage
+      vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock-dev-url");
+
+      // Compute the expected SHA-256 hash for the chunk so the integrity
+      // check passes without mocking crypto.subtle.digest.
+      const expectedHashBytes = await crypto.subtle.digest("SHA-256", chunk);
+      const expectedHashArr = Array.from(new Uint8Array(expectedHashBytes));
+      const expectedHash = expectedHashArr
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      const manager = createDownloadManager(
+        makeConfig({
+          expectedSize: 256,
+          expectedHash,
+        }),
+      );
+
+      const filePath = await manager.start();
+
+      expect(filePath).toBe("blob:mock-dev-url");
+      expect(manager.state).toMatchObject({
+        status: "completed",
+        filePath: "blob:mock-dev-url",
+      });
+      // Tauri invoke should NOT be called since __TAURI_INTERNALS__ is absent
+      expect(mockInvoke).not.toHaveBeenCalled();
+    });
   });
 });
 

@@ -157,6 +157,17 @@ describe("InventoryAdjustmentsService", () => {
         }),
       ).rejects.toThrow(AdjustmentExceedsAvailableStockException);
     });
+
+    it("throws AdjustmentExceedsAvailableStockException when specific lot cannot cover negative quantity", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.lot.findUnique.mockResolvedValue({ currentStock: 3 });
+
+      await expect(
+        service.create({
+          items: [{ productId: "prod-1", quantity: -5, lotId: "lot-1" }],
+        }),
+      ).rejects.toThrow(AdjustmentExceedsAvailableStockException);
+    });
   });
 
   describe("apply", () => {
@@ -270,6 +281,137 @@ describe("InventoryAdjustmentsService", () => {
           }),
         }),
       );
+    });
+
+    it("throws NoLotsForProductException when no ACTIVE lot exists for a positive adjustment", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.inventoryAdjustmentDocument.findUnique.mockResolvedValue({
+        id: "adj-1", state: "DRAFT",
+      });
+      tx.lot.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.apply("adj-1", validInput),
+      ).rejects.toThrow(NoLotsForProductException);
+    });
+
+    it("applies a negative adjustment to a specific lot", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.inventoryAdjustmentDocument.findUnique.mockResolvedValue({
+        id: "adj-1", state: "DRAFT",
+      });
+      tx.lot.findUnique.mockResolvedValue({
+        id: "lot-1",
+        productId: "prod-1",
+        currentStock: 20,
+        version: 1,
+        state: "ACTIVE",
+      });
+      tx.lot.updateMany.mockResolvedValue({ count: 1 });
+      tx.inventoryMovement.create.mockResolvedValue({});
+      tx.inventoryAdjustmentDocument.update.mockResolvedValue({
+        id: "adj-1", state: "APPLIED",
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      const result = await service.apply("adj-1", {
+        items: [{ productId: "prod-1", quantity: -5, lotId: "lot-1" }],
+      });
+
+      expect(result.state).toBe("APPLIED");
+      expect(tx.lot.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "lot-1", version: 1 },
+          data: expect.objectContaining({ currentStock: 15 }),
+        }),
+      );
+      expect(tx.inventoryMovement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            movementType: "NEGATIVE_ADJUSTMENT",
+            quantity: 5,
+          }),
+        }),
+      );
+    });
+
+    it("throws AdjustmentExceedsAvailableStockException when specific lot lacks stock for a negative adjustment", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.inventoryAdjustmentDocument.findUnique.mockResolvedValue({
+        id: "adj-1", state: "DRAFT",
+      });
+      tx.lot.findUnique.mockResolvedValue({
+        id: "lot-1", productId: "prod-1", currentStock: 3, version: 1, state: "ACTIVE",
+      });
+
+      await expect(
+        service.apply("adj-1", {
+          items: [{ productId: "prod-1", quantity: -10, lotId: "lot-1" }],
+        }),
+      ).rejects.toThrow(AdjustmentExceedsAvailableStockException);
+    });
+
+    it("applies a negative adjustment in FEFO order across multiple lots", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.inventoryAdjustmentDocument.findUnique.mockResolvedValue({
+        id: "adj-1", state: "DRAFT",
+      });
+      tx.lot.findMany.mockResolvedValue([
+        { id: "lot-1", productId: "prod-1", currentStock: 10, version: 1, state: "ACTIVE", expirationDate: new Date("2025-01-01") },
+        { id: "lot-2", productId: "prod-1", currentStock: 20, version: 2, state: "ACTIVE", expirationDate: new Date("2025-06-01") },
+      ]);
+      // First updateMany succeeds
+      tx.lot.updateMany.mockResolvedValue({ count: 1 });
+      tx.inventoryMovement.create.mockResolvedValue({});
+      tx.inventoryAdjustmentDocument.update.mockResolvedValue({
+        id: "adj-1", state: "APPLIED",
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      const result = await service.apply("adj-1", {
+        items: [{ productId: "prod-1", quantity: -25 }],
+      });
+
+      expect(result.state).toBe("APPLIED");
+      // First lot should be fully consumed (10), second lot partially (15)
+      expect(tx.lot.updateMany).toHaveBeenCalledTimes(2);
+      expect(tx.inventoryMovement.create).toHaveBeenCalledTimes(2);
+    });
+
+    it("throws AdjustmentExceedsAvailableStockException when FEFO lots cannot cover the full quantity", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.inventoryAdjustmentDocument.findUnique.mockResolvedValue({
+        id: "adj-1", state: "DRAFT",
+      });
+      tx.lot.findMany.mockResolvedValue([
+        { id: "lot-1", productId: "prod-1", currentStock: 5, version: 1, state: "ACTIVE" },
+      ]);
+
+      await expect(
+        service.apply("adj-1", {
+          items: [{ productId: "prod-1", quantity: -10 }],
+        }),
+      ).rejects.toThrow(AdjustmentExceedsAvailableStockException);
+    });
+
+    it("throws AdjustmentLotConflictException on version conflict during FEFO negative adjustment", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.inventoryAdjustmentDocument.findUnique.mockResolvedValue({
+        id: "adj-1", state: "DRAFT",
+      });
+      tx.lot.findMany.mockResolvedValue([
+        { id: "lot-1", productId: "prod-1", currentStock: 10, version: 1, state: "ACTIVE" },
+      ]);
+      // Optimistic lock fails
+      tx.lot.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.apply("adj-1", {
+          items: [{ productId: "prod-1", quantity: -5 }],
+        }),
+      ).rejects.toThrow(AdjustmentLotConflictException);
     });
   });
 });

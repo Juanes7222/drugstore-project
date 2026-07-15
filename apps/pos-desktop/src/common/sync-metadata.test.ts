@@ -46,6 +46,22 @@ describe("sync-metadata", () => {
         clientsLastSyncedAt: null,
       });
     });
+
+    it("returns defaults when localStorage is undefined", () => {
+      const originalLocalStorage = (globalThis as any).localStorage;
+      delete (globalThis as any).localStorage;
+      try {
+        const meta = readSyncMetadata();
+
+        expect(meta).toEqual({
+          catalogLastSyncedAt: null,
+          lotsLastSyncedAt: null,
+          clientsLastSyncedAt: null,
+        });
+      } finally {
+        (globalThis as any).localStorage = originalLocalStorage;
+      }
+    });
   });
 
   describe("getCatalogLastSyncedAt", () => {
@@ -55,6 +71,18 @@ describe("sync-metadata", () => {
   });
 
   describe("setCatalogLastSyncedAt + getCatalogLastSyncedAt", () => {
+    it("does not throw when localStorage is undefined", () => {
+      const originalLocalStorage = (globalThis as any).localStorage;
+      delete (globalThis as any).localStorage;
+      try {
+        expect(() => {
+          setCatalogLastSyncedAt("2026-07-10T12:00:00Z");
+        }).not.toThrow();
+      } finally {
+        (globalThis as any).localStorage = originalLocalStorage;
+      }
+    });
+
     it("persists and retrieves a timestamp", () => {
       setCatalogLastSyncedAt("2026-07-09T00:00:00Z");
 

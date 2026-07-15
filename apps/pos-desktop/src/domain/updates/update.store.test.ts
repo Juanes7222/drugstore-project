@@ -2,7 +2,7 @@
  * Tests for the update Zustand store.
  */
 import { describe, expect, it, beforeEach } from "vitest";
-import { useUpdateStore } from "./update.store";
+import { useUpdateStore, getUpdateStoreState } from "./update.store";
 
 beforeEach(() => {
   useUpdateStore.setState({
@@ -130,5 +130,139 @@ describe("setInstallStatus", () => {
     useUpdateStore.getState().setInstallStatus("INSTALLING");
 
     expect(useUpdateStore.getState().installStatus).toBe("INSTALLING");
+  });
+});
+
+describe("hydrateFromDb", () => {
+  it("swallows error and logs warning when DB query fails", async () => {
+    const mockPrisma = {
+      updateState: {
+        findUnique: vi.fn().mockRejectedValue(new Error("DB down")),
+        create: vi.fn(),
+      },
+    };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await useUpdateStore.getState().hydrateFromDb(mockPrisma);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[update.store] Failed to hydrate from DB:",
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+
+  it("creates default singleton row when no row exists in DB", async () => {
+    const mockPrisma = {
+      updateState: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({}),
+      },
+    };
+
+    await useUpdateStore.getState().hydrateFromDb(mockPrisma);
+
+    expect(mockPrisma.updateState.findUnique).toHaveBeenCalledWith({
+      where: { id: "singleton" },
+    });
+    expect(mockPrisma.updateState.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ id: "singleton" }),
+    });
+  });
+
+  it("hydrates store state from existing DB row", async () => {
+    const dbRow = {
+      currentVersion: "2.0.0",
+      lastCheckAt: new Date("2026-01-01"),
+      lastAvailableVersion: "3.0.0",
+      lastAvailableType: "MAJOR",
+      lastAvailableChangelog: "Big update",
+      lastAvailableDownloadUrl: "https://example.com/update.bin",
+      lastAvailableFileSize: 1024000,
+      downloadStatus: "DOWNLOADED",
+      downloadProgress: 100,
+      installStatus: "INSTALLED",
+      lastErrorMessage: null,
+      userDismissedVersion: null,
+      channel: "BETA",
+      autoDownload: false,
+      installOnClose: false,
+    };
+
+    const mockPrisma = {
+      updateState: {
+        findUnique: vi.fn().mockResolvedValue(dbRow),
+        create: vi.fn(),
+      },
+    };
+
+    await useUpdateStore.getState().hydrateFromDb(mockPrisma);
+
+    expect(mockPrisma.updateState.create).not.toHaveBeenCalled();
+    expect(useUpdateStore.getState().currentVersion).toBe("2.0.0");
+    expect(useUpdateStore.getState().channel).toBe("BETA");
+  });
+});
+
+describe("persistToDb", () => {
+  it("calls upsert with current store state", async () => {
+    const mockPrisma = {
+      updateState: {
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+    };
+
+    await useUpdateStore.getState().persistToDb(mockPrisma);
+
+    expect(mockPrisma.updateState.upsert).toHaveBeenCalledWith({
+      where: { id: "singleton" },
+      update: expect.objectContaining({ currentVersion: "0.0.0" }),
+      create: expect.objectContaining({ id: "singleton" }),
+    });
+  });
+});
+
+describe("updateAndPersist", () => {
+  it("updates state and persists to DB", async () => {
+    const mockPrisma = {
+      updateState: {
+        upsert: vi.fn().mockResolvedValue({}),
+      },
+    };
+
+    await useUpdateStore
+      .getState()
+      .updateAndPersist(mockPrisma, { currentVersion: "2.0.0" });
+
+    expect(useUpdateStore.getState().currentVersion).toBe("2.0.0");
+    expect(mockPrisma.updateState.upsert).toHaveBeenCalled();
+  });
+
+  it("swallows DB error and logs warning", async () => {
+    const mockPrisma = {
+      updateState: {
+        upsert: vi.fn().mockRejectedValue(new Error("DB fail")),
+      },
+    };
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await useUpdateStore
+      .getState()
+      .updateAndPersist(mockPrisma, { currentVersion: "3.0.0" });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[update.store] Failed to persist to DB:",
+      expect.any(Error),
+    );
+    warnSpy.mockRestore();
+  });
+});
+
+describe("getUpdateStoreState", () => {
+  it("returns current store state", () => {
+    const state = getUpdateStoreState();
+
+    expect(state).toHaveProperty("currentVersion");
+    expect(state).toHaveProperty("stateMachineState", "IDLE");
   });
 });

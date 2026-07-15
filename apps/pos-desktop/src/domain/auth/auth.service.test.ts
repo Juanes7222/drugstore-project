@@ -314,4 +314,339 @@ describe("AuthService", () => {
       expect(result.message).toBe("Reset link sent");
     });
   });
+
+  describe("resetPassword", () => {
+    it("calls the HTTP endpoint with token and new password", async () => {
+      vi.mocked(http.post).mockResolvedValue(undefined);
+
+      await auth.resetPassword("reset-token-abc", "new-secure-pass");
+
+      expect(http.post).toHaveBeenCalledWith("/auth/reset-password", {
+        token: "reset-token-abc",
+        newPassword: "new-secure-pass",
+      });
+    });
+
+    it("throws when the HTTP client returns an error", async () => {
+      vi.mocked(http.post).mockRejectedValue(new Error("Token expired or invalid"));
+
+      await expect(
+        auth.resetPassword("bad-token", "new-pass"),
+      ).rejects.toThrow("Token expired or invalid");
+    });
+  });
+
+  describe("requestStepUp", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(
+        auth.requestStepUp({
+          operationType: "CLOSE_SHIFT",
+          workstationId: "ws-1",
+          requiredRole: "MANAGER",
+        }),
+      ).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("calls the HTTP endpoint when a session exists", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({
+        requestId: "stepup-1",
+        status: "PENDING",
+      });
+
+      const result = await auth.requestStepUp({
+        operationType: "CLOSE_SHIFT",
+        workstationId: "ws-1",
+        requiredRole: "MANAGER",
+      });
+
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/auth/step-up/request",
+        {
+          operationType: "CLOSE_SHIFT",
+          workstationId: "ws-1",
+          requiredRole: "MANAGER",
+        },
+        "access-token-abc",
+      );
+      expect(result.requestId).toBe("stepup-1");
+    });
+
+    it("passes optional operationId and method", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({ requestId: "stepup-2" });
+
+      await auth.requestStepUp({
+        operationType: "VOID_INVOICE",
+        operationId: "inv-1",
+        workstationId: "ws-1",
+        requiredRole: "MANAGER",
+        method: "PIN",
+      });
+
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/auth/step-up/request",
+        {
+          operationType: "VOID_INVOICE",
+          operationId: "inv-1",
+          workstationId: "ws-1",
+          requiredRole: "MANAGER",
+          method: "PIN",
+        },
+        "access-token-abc",
+      );
+    });
+  });
+
+  describe("approveStepUp", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(
+        auth.approveStepUp("req-1", "PIN"),
+      ).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("calls the HTTP endpoint when a session exists", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({
+        approvalToken: "approval-token-xyz",
+      });
+
+      const result = await auth.approveStepUp("req-1", "PIN");
+
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/auth/step-up/approve",
+        { requestId: "req-1", method: "PIN" },
+        "access-token-abc",
+      );
+      expect(result.approvalToken).toBe("approval-token-xyz");
+    });
+  });
+
+  describe("verifyStepUp", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(
+        auth.verifyStepUp("approval-token-xyz"),
+      ).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("returns true when the server confirms the token is valid", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({ valid: true });
+
+      const result = await auth.verifyStepUp("approval-token-xyz");
+
+      expect(result).toBe(true);
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/auth/step-up/verify",
+        { approvalToken: "approval-token-xyz", operationType: undefined },
+        "access-token-abc",
+      );
+    });
+
+    it("returns false when the server rejects the token", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({ valid: false });
+
+      const result = await auth.verifyStepUp("bad-token");
+
+      expect(result).toBe(false);
+    });
+
+    it("passes operationType when provided", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({ valid: true });
+
+      await auth.verifyStepUp("approval-token-xyz", "VOID_INVOICE");
+
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/auth/step-up/verify",
+        { approvalToken: "approval-token-xyz", operationType: "VOID_INVOICE" },
+        "access-token-abc",
+      );
+    });
+  });
+
+  describe("completeTwoFactor (backup code)", () => {
+    it("accepts a backup code as an alternative to TOTP", async () => {
+      vi.mocked(http.post).mockResolvedValue({
+        accessToken: "token-backup",
+        refreshToken: "refresh-backup",
+        expiresAt: "2099-12-31T23:59:59Z",
+        sessionId: "sess-backup",
+        user: {
+          id: "user-1",
+          role: "MANAGER",
+          email: "manager@pharmacy.com",
+          username: "manager1",
+          displayName: "Manager Backup",
+          subscriptionId: "sub-1",
+          totpEnabled: true,
+          avatarUrl: null,
+          avatarColor: null,
+          mustChangePassword: false,
+        },
+      });
+
+      const session = await auth.completeTwoFactor("challenge-abc", undefined, "backup-code-123");
+
+      expect(session.accessToken).toBe("token-backup");
+      expect(http.post).toHaveBeenCalledWith("/auth/login/2fa", {
+        challengeToken: "challenge-abc",
+        totpCode: undefined,
+        backupCode: "backup-code-123",
+      });
+
+      const stored = useLocalSessionStore.getState().session;
+      expect(stored?.accessToken).toBe("token-backup");
+    });
+  });
+
+  describe("refreshSession (edge cases)", () => {
+    it("returns null when the session has no refreshToken", async () => {
+      useLocalSessionStore.getState().setSession(
+        makeLocalSession({ refreshToken: "" }),
+      );
+
+      const result = await auth.refreshSession();
+
+      expect(result).toBeNull();
+      expect(http.postWithAuth).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("createUser", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(
+        auth.createUser({ displayName: "New User", role: "CASHIER" }),
+      ).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("calls the HTTP endpoint when a session exists", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({ id: "new-user-1" });
+
+      const result = await auth.createUser({
+        displayName: "Nuevo Cajero",
+        username: "cajero2",
+        email: "cajero2@pharmacy.com",
+        role: "CASHIER",
+        initialPin: "1234",
+        locationIds: ["loc-1"],
+      });
+
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/users",
+        {
+          displayName: "Nuevo Cajero",
+          username: "cajero2",
+          email: "cajero2@pharmacy.com",
+          role: "CASHIER",
+          initialPin: "1234",
+          locationIds: ["loc-1"],
+        },
+        "access-token-abc",
+      );
+      expect(result.id).toBe("new-user-1");
+    });
+  });
+
+  describe("listUsers", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(auth.listUsers()).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("returns users without filters", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.getWithAuth).mockResolvedValue({
+        users: [{ id: "u1", displayName: "User One" }],
+        total: 1,
+      });
+
+      const result = await auth.listUsers();
+
+      expect(result.users).toHaveLength(1);
+      expect(http.getWithAuth).toHaveBeenCalledWith("/users?", "access-token-abc");
+    });
+
+    it("passes query parameters when filters are provided", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.getWithAuth).mockResolvedValue({ users: [], total: 0 });
+
+      await auth.listUsers({ role: "CASHIER", status: "ACTIVE", limit: 20, offset: 5 });
+
+      expect(http.getWithAuth).toHaveBeenCalledWith(
+        "/users?role=CASHIER&status=ACTIVE&limit=20&offset=5",
+        "access-token-abc",
+      );
+    });
+
+    it("passes locationId filter when provided", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.getWithAuth).mockResolvedValue({ users: [], total: 0 });
+
+      await auth.listUsers({ locationId: "loc-1" });
+
+      expect(http.getWithAuth).toHaveBeenCalledWith(
+        "/users?locationId=loc-1",
+        "access-token-abc",
+      );
+    });
+  });
+
+  describe("getPendingStepUpRequests", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(auth.getPendingStepUpRequests()).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("returns pending requests from the server", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.getWithAuth).mockResolvedValue([
+        { requestId: "req-1", operationType: "CLOSE_SHIFT" },
+      ]);
+
+      const result = await auth.getPendingStepUpRequests();
+
+      expect(result).toHaveLength(1);
+      expect(result[0].requestId).toBe("req-1");
+      expect(http.getWithAuth).toHaveBeenCalledWith(
+        "/auth/step-up/pending",
+        "access-token-abc",
+      );
+    });
+  });
+
+  describe("getAuditLogs", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(auth.getAuditLogs()).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("returns audit logs without filters", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.getWithAuth).mockResolvedValue({ entries: [], total: 0 });
+
+      const result = await auth.getAuditLogs();
+
+      expect(http.getWithAuth).toHaveBeenCalledWith("/audit?", "access-token-abc");
+      expect(result.total).toBe(0);
+    });
+
+    it("passes query parameters when filters are provided", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.getWithAuth).mockResolvedValue({ entries: [], total: 0 });
+
+      await auth.getAuditLogs({
+        event: "LOGIN",
+        actorId: "user-1",
+        fromDate: "2026-01-01",
+        toDate: "2026-07-14",
+        limit: 50,
+        offset: 10,
+      });
+
+      expect(http.getWithAuth).toHaveBeenCalledWith(
+        "/audit?event=LOGIN&actorId=user-1&fromDate=2026-01-01&toDate=2026-07-14&limit=50&offset=10",
+        "access-token-abc",
+      );
+    });
+  });
 });

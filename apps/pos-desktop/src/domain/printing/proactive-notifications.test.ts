@@ -123,4 +123,89 @@ describe("checkPrinterNotifications", () => {
     expect(failed).toBeDefined();
     expect(failed!.severity).toBe("error");
   });
+
+  it("returns cash-drawer-possible-issue when printer has drawer config and is in ERROR/OFFLINE", async () => {
+    mockPrinterConfigService.listAll = vi.fn().mockResolvedValue([
+      {
+        friendlyName: "Main",
+        status: "OFFLINE",
+        cashDrawerConfig: JSON.stringify({ hasDrawer: true, port: "COM1" }),
+      },
+      {
+        friendlyName: "Backup",
+        status: "ERROR",
+        cashDrawerConfig: JSON.stringify({ hasDrawer: true }),
+      },
+      {
+        friendlyName: "Kitchen",
+        status: "ONLINE",
+        cashDrawerConfig: JSON.stringify({ hasDrawer: true }),
+      },
+    ]);
+
+    const notifications = await checkPrinterNotifications(
+      mockPrinterConfigService as PrinterConfigService,
+      mockPrintQueueService as PrintQueueService,
+      mockCashDrawerService as CashDrawerService,
+    );
+
+    const drawerIssues = notifications.filter((n) => n.ruleId === "cash-drawer-possible-issue");
+    // Two printers have hasDrawer + problematic status (OFFLINE + ERROR)
+    expect(drawerIssues).toHaveLength(2);
+    expect(drawerIssues[0].printerName).toBe("Main");
+    expect(drawerIssues[0].severity).toBe("warning");
+    expect(drawerIssues[1].printerName).toBe("Backup");
+    // Kitchen is ONLINE so it should NOT generate a drawer issue
+    expect(drawerIssues.some((n) => n.printerName === "Kitchen")).toBe(false);
+  });
+
+  it("skips cash-drawer check when cashDrawerConfig is null", async () => {
+    mockPrinterConfigService.listAll = vi.fn().mockResolvedValue([
+      { friendlyName: "Main", status: "OFFLINE", cashDrawerConfig: null },
+    ]);
+
+    const notifications = await checkPrinterNotifications(
+      mockPrinterConfigService as PrinterConfigService,
+      mockPrintQueueService as PrintQueueService,
+      mockCashDrawerService as CashDrawerService,
+    );
+
+    // The printer is OFFLINE but has no drawer config, so no drawer notification
+    const drawerIssues = notifications.filter((n) => n.ruleId === "cash-drawer-possible-issue");
+    expect(drawerIssues).toHaveLength(0);
+    // But it should still get the standard printer-offline notification
+    const offline = notifications.find((n) => n.ruleId === "printer-offline");
+    expect(offline).toBeDefined();
+  });
+
+  it("skips cash-drawer check when cashDrawerConfig has hasDrawer: false", async () => {
+    mockPrinterConfigService.listAll = vi.fn().mockResolvedValue([
+      { friendlyName: "Main", status: "OFFLINE", cashDrawerConfig: JSON.stringify({ hasDrawer: false }) },
+    ]);
+
+    const notifications = await checkPrinterNotifications(
+      mockPrinterConfigService as PrinterConfigService,
+      mockPrintQueueService as PrintQueueService,
+      mockCashDrawerService as CashDrawerService,
+    );
+
+    const drawerIssues = notifications.filter((n) => n.ruleId === "cash-drawer-possible-issue");
+    expect(drawerIssues).toHaveLength(0);
+  });
+
+  it("skips cash-drawer check when cashDrawerConfig has invalid JSON", async () => {
+    mockPrinterConfigService.listAll = vi.fn().mockResolvedValue([
+      { friendlyName: "Main", status: "OFFLINE", cashDrawerConfig: "not-valid-json" },
+    ]);
+
+    const notifications = await checkPrinterNotifications(
+      mockPrinterConfigService as PrinterConfigService,
+      mockPrintQueueService as PrintQueueService,
+      mockCashDrawerService as CashDrawerService,
+    );
+
+    // Invalid JSON is caught and silently skipped, no crash
+    const drawerIssues = notifications.filter((n) => n.ruleId === "cash-drawer-possible-issue");
+    expect(drawerIssues).toHaveLength(0);
+  });
 });

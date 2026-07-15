@@ -256,20 +256,29 @@ describe("ui slice — prescription interception flow", () => {
     expect(state.prescriptionFlow.incompleteItemIds).toEqual([]);
   });
 
-  it("resolveNextPrescriptionItem is a no-op when prescriptionFlow is null", () => {
-    // When state.prescriptionFlow is the default (all nulls),
-    // the guard at the top of the reducer returns early.
+  it("resolveNextPrescriptionItem is a no-op when incompleteItemIds is empty", () => {
+    // When the queue is already empty, destructuring produces an empty
+    // rest array and pendingItemId stays null — state is unchanged.
     const state = uiSlice.reducer(
       uiSlice.getInitialState(),
       resolveNextPrescriptionItem(),
     );
 
-    // State unchanged from initial
     expect(state.prescriptionFlow).toEqual({
       pendingSaleId: null,
       pendingItemId: null,
       incompleteItemIds: [],
     });
+  });
+
+  it("returns early when prescriptionFlow is null", () => {
+    // The guard at the top of the reducer checks for a falsy value.
+    const state = uiSlice.reducer(
+      { ...uiSlice.getInitialState(), prescriptionFlow: null as any },
+      resolveNextPrescriptionItem(),
+    );
+
+    expect(state.prescriptionFlow).toBeNull();
   });
 });
 

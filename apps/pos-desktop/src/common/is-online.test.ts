@@ -28,4 +28,14 @@ describe("isOnline", () => {
 
     expect(isOnline()).toBe(false);
   });
+
+  it("returns false when navigator is undefined (non-browser context)", () => {
+    const originalNavigator = (globalThis as any).navigator;
+    delete (globalThis as any).navigator;
+    try {
+      expect(isOnline()).toBe(false);
+    } finally {
+      (globalThis as any).navigator = originalNavigator;
+    }
+  });
 });

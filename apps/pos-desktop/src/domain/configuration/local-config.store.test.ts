@@ -2,7 +2,7 @@
  * Unit tests for the local configuration Zustand store.
  */
 import { describe, expect, it, beforeEach } from "vitest";
-import { useLocalConfigStore, type HydratePayload } from "./local-config.store";
+import { useLocalConfigStore, getLocalConfigState, type HydratePayload } from "./local-config.store";
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -51,6 +51,17 @@ describe("LocalConfigStore", () => {
 
     it("has lastSyncedAt as null initially", () => {
       const state = useLocalConfigStore.getState();
+      expect(state.lastSyncedAt).toBeNull();
+    });
+  });
+
+  describe("getLocalConfigState", () => {
+    it("returns the current store state", () => {
+      const state = getLocalConfigState();
+
+      expect(state).toHaveProperty("discountLimits");
+      expect(state).toHaveProperty("alertThresholds");
+      expect(state).toHaveProperty("syncDefaults");
       expect(state.lastSyncedAt).toBeNull();
     });
   });
