@@ -337,9 +337,11 @@ const InnerApp: FC = () => {
 
 export const App: FC = () => {
   if (DB_PROOF_ENABLED) {
+    console.log("DB_PROOF_ENABLED is true, rendering DatabaseProof component instead of the full app.");
     return <DatabaseProof />;
   }
 
+  console.log("DB_PROOF_ENABLED is false, rendering the full app.");
   return (
     <ServiceProvider>
       <InnerApp />

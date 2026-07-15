@@ -14,6 +14,59 @@
  */
 
 // ---------------------------------------------------------------------------
+// Patch the global `process` object (belt & suspenders — the HTML-injected
+// script in vite.config.ts and the `define` options should already have
+// handled this, but PGlite accesses the GLOBAL process directly, not through
+// an ESM import of "node:process", so we double-patch here in case this
+// module loads before any Emscripten `process.binding` call).
+// ---------------------------------------------------------------------------
+(function patchGlobalProcess(): void {
+  try {
+    const p = (typeof globalThis !== "undefined" && (globalThis as any).process) as any;
+    if (!p) return;
+
+    // Prevent Emscripten from seeing versions.node as a string
+    if (p.versions) {
+      try {
+        Object.defineProperty(p.versions, "node", {
+          get: () => undefined,
+          set: () => {},
+          configurable: false,
+          enumerable: true,
+        });
+      } catch {
+        // If the property is already non-configurable, just delete+reset
+        try { delete p.versions.node; } catch { /* ignore */ }
+        p.versions.node = undefined;
+      }
+    }
+
+    // Provide a throwing process.binding so Emscripten falls back to MEMFS
+    if (typeof p.binding !== "function") {
+      p.binding = (name: string) => {
+        throw new Error("process.binding(" + name + ") polyfilled (global patch)");
+      };
+    }
+  } catch {
+    // Silently ignore if process is not accessible
+  }
+})();
+
+// Import sister polyfills so we can register them in the CommonJS
+// require() cache used by PGlite's Emscripten runtime (which obtains a
+// require function via `require("module").createRequire(...)` then calls
+// `require("fs")`, `require("path")`, etc.).
+//
+// The default export of each sister polyfill mirrors the shape of the
+// Node.js builtin's module.exports object, which is what CJS consumers
+// expect.
+import * as _fs from "./fs-polyfill.ts";
+import * as _path from "./path-polyfill.ts";
+import * as _buffer from "./buffer-polyfill.ts";
+import * as _url from "./empty-url-polyfill.ts";
+// node:os is inlined below — no separate polyfill file for it.
+
+// ---------------------------------------------------------------------------
 // node:async_hooks — Prisma runtime uses AsyncResource
 // ---------------------------------------------------------------------------
 
@@ -141,20 +194,57 @@ registerRequireModule('node:crypto', {
   default: { webcrypto: crypto, randomUUID: crypto.randomUUID, randomBytes: () => new Uint8Array(0), randomFillSync: () => new Uint8Array(0) },
 });
 
+// ---------------------------------------------------------------------------
+// Pre-register the sister polyfills so PGlite's Emscripten runtime can load
+// them via `require()` (obtained through `require("module").createRequire`).
+// Both the bare name (e.g. "fs") and the `node:` prefix variant are
+// registered so either spelling works.
+// ---------------------------------------------------------------------------
+
+registerRequireModule('fs', _fs.default);
+registerRequireModule('node:fs', _fs.default);
+
+registerRequireModule('path', _path.default);
+registerRequireModule('node:path', _path.default);
+
+registerRequireModule('buffer', _buffer.default);
+registerRequireModule('node:buffer', _buffer.default);
+
+// node:os stubs (defined inline since there's no separate os polyfill file).
+const osStubs = {
+  freemem: () => 0,
+  totalmem: () => 0,
+  platform: () => 'browser',
+  type: () => 'Browser',
+  release: () => '',
+  hostname: () => '',
+  arch: () => 'wasm',
+  tmpdir: () => '/tmp',
+  EOL: '\n',
+};
+registerRequireModule('os', osStubs);
+registerRequireModule('node:os', osStubs);
+
+registerRequireModule('url', _url.default);
+registerRequireModule('node:url', _url.default);
+
 /**
  * Create a CommonJS require function for a given file URL.
  *
  * In the browser/webview, most CJS modules are unavailable.  We support a
  * pre-registered set of `node:*` polyfills (see registerRequireModule).
+ * Unknown modules return an empty object rather than throwing — this keeps
+ * Emscripten's module probe-and-fallback pattern (try require('fs'), if it
+ * doesn't work use MEMFS) from crashing.
  */
 export const createRequire =
   (): ((id: string) => unknown) =>
   (id: string): unknown => {
     const cached = requireModuleCache.get(id);
     if (cached !== undefined) return cached;
-    throw new Error(
-      `require('${id}') is not available in browser/Tauri-webview context`,
-    );
+    // Return empty object so Emscripten's runtime probes (e.g. `require('fs')`
+    // from within a try/catch) succeed with a stub instead of throwing.
+    return {};
   };
 
 // ---------------------------------------------------------------------------
@@ -194,7 +284,22 @@ export function on(_event: string, _listener: (...args: unknown[]) => void): obj
 export const stdout: { isTTY?: boolean; write: (msg: string) => void } | undefined = undefined;
 
 export const version = 'v22.0.0';
-export const versions: { node: string } = { node: '22.0.0' };
+
+/**
+ * Intentionally omit `versions.node`.
+ *
+ * PGlite 0.5.x checks `typeof process.versions.node === "string"` to decide
+ * whether it runs in Node.js.  If we set it (even to a realistic string),
+ * PGlite selects its Node.js filesystem backend and calls
+ * `fs/promises.readFile()` — which is unavailable in the Tauri webview and
+ * crashes the app.  By leaving `process.versions.node` undefined, PGlite
+ * correctly falls through to the `fetch()`-based WASM loader.
+ *
+ * See https://github.com/electric-sql/pglite — the IN_NODE flag in
+ * chunk-VVBUWNGP.js.
+ */
+export const versions: Record<string, string> = {};
+
 
 export const platformName = 'browser';
 export const archName = 'wasm';

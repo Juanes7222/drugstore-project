@@ -15,6 +15,45 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      Node.js global polyfills — MUST run before the module script
+      so the Prisma runtime (loaded via @pharmacy/database) doesn't throw
+      "Buffer is not defined" or "process is not defined" when it accesses
+      them as bare globals (not just via node:* imports).
+    -->
+    <script>
+      // ---- Buffer ----
+      globalThis.Buffer ??= {
+        alloc(s, f) { const b = new Uint8Array(s); if (f !== undefined) b.fill(f); return b; },
+        allocUnsafe(s) { return new Uint8Array(s); },
+        from(d, e) { return typeof d === 'string' ? new TextEncoder().encode(d) : new Uint8Array(d); },
+        concat(l) { let t=0; for (const b of l) t+=b.length; const r=new Uint8Array(t); let o=0; for (const b of l) { r.set(b,o); o+=b.length; } return r; },
+        isBuffer() { return false; },
+        byteLength(s) { return new TextEncoder().encode(s).length; },
+      };
+
+      // ---- process ----
+      globalThis.process ??= {
+        env: {},
+        version: '22.0.0',
+        versions: { node: '22.0.0' },
+        arch: 'wasm',
+        platform: 'browser',
+        cwd: () => '/',
+        pid: 0,
+        nextTick: (fn) => Promise.resolve().then(() => fn()),
+        stdout: { isTTY: false, write: () => {} },
+        argv: [],
+        exit: () => {},
+        on: () => {},
+        emit: () => {},
+      };
+
+      // ---- global & __dirname ----
+      globalThis.global ??= globalThis;
+      globalThis.__dirname ??= '/';
+      globalThis.__filename ??= '/index.js';
+    </script>
     <script type="module" src="/src/renderer/main.tsx"></script>
   </body>
 </html>

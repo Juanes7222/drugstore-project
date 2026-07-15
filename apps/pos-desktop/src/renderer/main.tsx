@@ -1,20 +1,21 @@
 /**
  * Entry point for the React renderer process.
  * Mounts the root component into the DOM and wires global providers.
+ *
+ * ⚠ Side-effect imports (polyfills) must come FIRST — before React, Redux,
+ * or any domain module — so that globalThis stubs (Buffer, process, etc.)
+ * are in place before the Prisma runtime or PGlite initialise.
  */
+import "./dev/buffer-polyfill";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { Provider } from "react-redux";
-console.log("Starting POS Desktop Renderer Process...");
 import "./i18n";
-console.log("i18n initialized.");
 import { store } from "./store/store";
 import { App } from "./App";
 import "./styles/global.css";
-console.log("Global styles loaded.");
 
 const rootElement = document.getElementById("root");
-console.log("Root element found.", rootElement);
 
 if (!rootElement) {
   throw new Error(

@@ -52,7 +52,6 @@ pub fn get_hardware_fingerprint(app_handle: AppHandle) -> Result<String, String>
 fn get_machine_id() -> io::Result<String> {
     #[cfg(target_os = "windows")]
     {
-        use std::ptr;
         use winreg::enums::*;
         use winreg::RegKey;
 

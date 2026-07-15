@@ -104,6 +104,68 @@ async function applySchema(client: PGlite): Promise<void> {
  * a bare-PGlite wrapper with a subset of the PrismaClient API so the UI
  * remains navigable during development.
  */
+/**
+ * Fetch PGlite WASM and data files from the `/pglite/` path served by the
+ * Vite dev-server middleware (dev) or from the copied dist/pglite/ directory
+ * (Tauri production build).
+ *
+ * PGlite normally resolves these files relative to its own module URL via
+ * `new URL('./pglite.wasm', import.meta.url)`.  In Tauri's custom protocol
+ * environment this URL resolution can fail, or the file may be served with
+ * a wrong content type.  Providing the compiled modules explicitly bypasses
+ * the URL-resolution path entirely.
+ */
+async function loadPgliteAssets(): Promise<{
+  pgliteWasmModule: WebAssembly.Module;
+  initdbWasmModule: WebAssembly.Module;
+  fsBundle: Blob;
+}> {
+  /**
+   * Fetch a URL and return the raw ArrayBuffer, throwing on non-OK responses
+   * with a message that includes the HTTP status and the first bytes of the
+   * body so we can diagnose content-type mismatches.
+   */
+  async function fetchBuffer(url: string): Promise<ArrayBuffer> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch ${url}: ${response.status} ${response.statusText}` +
+          ` (Content-Type: ${response.headers.get('content-type') ?? 'none'})`,
+      );
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    const buffer = await response.arrayBuffer();
+    const preview = Array.from(new Uint8Array(buffer.slice(0, 8)))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join(' ');
+    console.log(
+      `[local-database] Fetched ${url}: ${buffer.byteLength} bytes,` +
+        ` Content-Type: ${contentType}, magic: 0x${preview}`,
+    );
+    return buffer;
+  }
+
+  // Fetch raw buffers first, then compile.  This gives us a chance to inspect
+  // the response before WebAssembly.compileStreaming fails on bad content.
+  const [pgliteWasmBuffer, initdbWasmBuffer, fsBundleResponse] = await Promise.all([
+    fetchBuffer('/pglite/pglite.wasm'),
+    fetchBuffer('/pglite/initdb.wasm'),
+    fetch('/pglite/pglite.data').then((r) => {
+      if (!r.ok)
+        throw new Error(
+          `Failed to fetch /pglite/pglite.data: ${r.status} ${r.statusText}`,
+        );
+      return r.blob();
+    }),
+  ]);
+
+  const pgliteWasmModule = await WebAssembly.compile(pgliteWasmBuffer);
+  const initdbWasmModule = await WebAssembly.compile(initdbWasmBuffer);
+  const fsBundle = fsBundleResponse;
+
+  return { pgliteWasmModule, initdbWasmModule, fsBundle };
+}
+
 export async function getLocalDatabase(): Promise<{
   client: PGlite;
   prisma: unknown;
@@ -114,19 +176,122 @@ export async function getLocalDatabase(): Promise<{
     initPromise = (async () => {
       let client: PGlite;
 
-      if (isTauri()) {
-        // Tauri environment: persist to the OS app-local-data directory.
-        const dataDir = await getAppLocalDataDir();
-        const dbPath = `${dataDir}/pglite-data`;
-        // relaxedDurability: false ensures PGlite flushes storage on commit,
-        // matching the durability expectations of an offline-first POS.
-        client = new PGlite(dbPath, { relaxedDurability: false });
-      } else {
-        // Browser / dev-server environment: use an ephemeral in-memory database.
-        // Logged so developers know the data will not survive a page refresh.
-        // eslint-disable-next-line no-console
-        console.info('[local-database] Running outside Tauri — using ephemeral in-memory PGlite.');
-        client = new PGlite('memory://');
+      // ---- Step 0: install fetch monkey-patch for PGlite asset requests ----
+      // PGlite's internal Emscripten runtime and WASM loader use `fetch()` to
+      // load .wasm and .data files from URLs relative to `import.meta.url`.
+      // In Tauri's webview with Vite dev server, those URLs go through Vite's
+      // static-file middleware which may serve .wasm files with a base64-wrapped
+      // response instead of raw binary (because Vite's module transform can
+      // rewrite .wasm imports).  Our Vite catch-all middleware runs *after*
+      // Vite's static server in the Connect stack and never sees these requests.
+      //
+      // This patch intercepts any fetch whose URL ends with a PGlite asset
+      // filename and redirects it to our known-good `/pglite/` URL prefix,
+      // which is served with correct binary content by the Vite middleware.
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.href
+              : (input as Request).url;
+        const filename = url.split('/').pop()?.split('?')[0] ?? '';
+        if (
+          filename === 'pglite.wasm' ||
+          filename === 'initdb.wasm' ||
+          filename === 'pglite.data'
+        ) {
+          const mappedUrl = `/pglite/${filename}`;
+          // eslint-disable-next-line no-console
+          console.log(
+            `[local-database] fetch redirect: "${url}" → "${mappedUrl}"`,
+          );
+          return originalFetch(mappedUrl, init);
+        }
+        return originalFetch(input, init);
+      };
+
+      // ---- Step 1: load WASM assets via fetch ----
+      // eslint-disable-next-line no-console
+      console.log('[local-database] Loading PGlite WASM assets...');
+      let pgliteWasmModule: WebAssembly.Module;
+      let initdbWasmModule: WebAssembly.Module;
+      let fsBundle: Blob;
+      try {
+        const assets = await loadPgliteAssets();
+        pgliteWasmModule = assets.pgliteWasmModule;
+        initdbWasmModule = assets.initdbWasmModule;
+        fsBundle = assets.fsBundle;
+      } catch (assetsError) {
+        console.error(
+          '[local-database] FAILED to load PGlite WASM assets:',
+          assetsError,
+        );
+        throw assetsError;
+      }
+
+      // ---- Step 2: create PGlite instance with pre-compiled modules ----
+      // Install a one-shot handler to catch async errors thrown from inside
+      // PGlite's internal initdb worker flow that aren't surfaced through the
+      // returned promise (e.g. unhandled rejections in Emscripten's WASM init).
+      const onRejection = (event: PromiseRejectionEvent) => {
+        console.error(
+          '[local-database] UNHANDLED REJECTION during PGlite init:',
+          event.reason?.constructor?.name ?? typeof event.reason,
+          event.reason,
+        );
+        if (event.reason?.stack) console.error('[local-database] Stack:', event.reason.stack);
+        if (event.reason?.cause) console.error('[local-database] Cause:', event.reason.cause);
+      };
+      window.addEventListener('unhandledrejection', onRejection);
+      try {
+        if (isTauri()) {
+          // Tauri environment: persist via PGlite's IdbFs (IndexedDB-backed
+          // filesystem) using an `idb://` prefix.  Bare filesystem paths
+          // (e.g. `C:\Users\...`) cause PGlite to select its NodeFS backend,
+          // which requires real OS filesystem access unavailable in the
+          // webview and triggers crashes via fs.lstat / fs.lstatSync.
+          // See: https://github.com/electric-sql/pglite/issues/...
+          // relaxedDurability: false ensures PGlite flushes storage on commit,
+          // matching the durability expectations of an offline-first POS.
+          //
+          // Provide explicit WASM modules to avoid URL-resolution failures in
+          // Tauri's custom-protocol webview.
+          // eslint-disable-next-line no-console
+          console.log('[local-database] Creating PGlite (Tauri mode: idb://pglite-data)...');
+          client = await PGlite.create('idb://pglite-data', {
+            relaxedDurability: false,
+            pgliteWasmModule,
+            initdbWasmModule,
+            fsBundle,
+          });
+          console.log('[local-database] PGlite created successfully.');
+        } else {
+          // Browser / dev-server environment: use an ephemeral in-memory database.
+          // Logged so developers know the data will not survive a page refresh.
+          // eslint-disable-next-line no-console
+          console.info('[local-database] Outside Tauri — using in-memory PGlite.');
+          client = await PGlite.create('memory://', {
+            pgliteWasmModule,
+            initdbWasmModule,
+            fsBundle,
+          });
+        }
+        window.removeEventListener('unhandledrejection', onRejection);
+      } catch (pgliteError) {
+        window.removeEventListener('unhandledrejection', onRejection);
+        console.error(
+          '[local-database] FAILED to create PGlite instance:',
+          pgliteError?.constructor?.name ?? typeof pgliteError,
+          pgliteError,
+        );
+        if (pgliteError instanceof Error) {
+          console.error('[local-database]   message:', pgliteError.message);
+          console.error('[local-database]   stack:', pgliteError.stack);
+          if ((pgliteError as any).cause) console.error('[local-database]   cause:', (pgliteError as any).cause);
+        }
+        throw pgliteError;
       }
 
       // Check whether this is a fresh database

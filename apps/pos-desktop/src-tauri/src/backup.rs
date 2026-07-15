@@ -51,6 +51,7 @@ const ENCRYPTION_SALT_PREFIX: &str = "pos-backup-v1";
 
 #[derive(Error, Debug, Serialize)]
 #[serde(tag = "code", content = "message")]
+#[allow(dead_code)]
 pub enum BackupError {
     #[error("Failed to access app data directory: {0}")]
     AppDirAccess(String),
@@ -92,6 +93,7 @@ impl From<io::Error> for BackupError {
 
 #[derive(Error, Debug, Serialize)]
 #[serde(tag = "code", content = "message")]
+#[allow(dead_code)]
 pub enum RestoreError {
     #[error("Backup {0} not found")]
     BackupNotFound(String),
@@ -234,6 +236,7 @@ impl Default for RetentionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct UploadReceipt {
     pub upload_id: String,
     pub workstation_id: String,
@@ -290,6 +293,7 @@ impl BackupState {
         *self.startup_status.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    #[allow(dead_code)]
     pub fn set_status(&self, status: StartupHealthStatus) {
         if let Ok(mut guard) = self.startup_status.lock() {
             *guard = status;

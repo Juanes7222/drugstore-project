@@ -321,10 +321,11 @@ export function useServiceInit(options: UseServiceInitOptions = {}): InitState {
         }
       } catch (err) {
         if (!cancelled) {
-          setInitState({
-            status: 'error',
-            error: err instanceof Error ? err : new Error(String(err)),
-          });
+          const normalized = err instanceof Error ? err : new Error(String(err));
+          // Log to console for debugging — this catch previously masked the
+          // error from DevTools while displaying it on screen via ServiceErrorPanel.
+          console.error('[use-service-init] Service initialization failed:', normalized);
+          setInitState({ status: 'error', error: normalized });
         }
       }
     })();
