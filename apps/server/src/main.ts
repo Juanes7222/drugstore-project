@@ -12,6 +12,13 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService<EnvConfig>);
 
+  app.enableCors({
+    origin: configService.get('CORS_ORIGIN', 'http://localhost:5173'),
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    credentials: true,
+  });
+
   app.use(helmet() as any);
   app.use(compression() as any);
 

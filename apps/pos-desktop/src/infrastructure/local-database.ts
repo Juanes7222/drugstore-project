@@ -73,8 +73,41 @@ async function tableExists(client: PGlite, tableName: string): Promise<boolean> 
 }
 
 /**
- * Apply the full local-schema DDL.  Runs inside a single multi-statement
- * execution; PGlite treats them as one implicit transaction.
+ * Split a multi-statement SQL string into individual statements.
+ *
+ * Splits on `;\n` or `;` followed by whitespace and a `--` comment line,
+ * which is the pattern used by Prisma's generated DDL.  Keeps the delimiter
+ * attached to each fragment so the caller can pass it to `client.exec()`.
+ */
+function splitSqlStatements(sql: string): string[] {
+  const fragments: string[] = [];
+  // Match statement boundaries: a semicolon followed by optional whitespace
+  // and either end-of-string or a new comment line (-- or \n).
+  // This avoids splitting inside multi-line column constraint definitions.
+  const raw = sql.split(/;(?:\s*\n|$)/);
+
+  for (const stmt of raw) {
+    const trimmed = stmt.trim();
+    if (!trimmed) continue;
+    // Re-attach the delimiter unless this is the last fragment
+    fragments.push(trimmed.endsWith(';') ? trimmed : `${trimmed};`);
+  }
+
+  // If the split produced only one fragment it means no delimiter was found
+  // — return the original SQL as one statement.
+  if (fragments.length === 0) return [sql];
+  return fragments;
+}
+
+/**
+ * Apply any missing schema objects (enums, tables, indexes, foreign keys)
+ * to an existing database, ignoring "already exists" errors.
+ *
+ * For a fresh database the full schema is applied in a single batch.
+ * For an existing database that may be missing objects added in later
+ * schema versions (e.g. the `UpdateState` table), each DDL statement is
+ * attempted individually and expected "already exists" errors are silently
+ * skipped.
  */
 async function applySchema(client: PGlite): Promise<void> {
   // Discard the leading "CREATE SCHEMA IF NOT EXISTS "public";" —
@@ -86,6 +119,48 @@ async function applySchema(client: PGlite): Promise<void> {
   if (!sql) return;
 
   await client.exec(sql);
+}
+
+/**
+ * Apply missing schema objects to an existing database.
+ *
+ * Runs each DDL statement individually and ignores errors for objects
+ * that already exist.  This allows existing databases created with an
+ * older schema version to pick up new tables, enums, and indexes that
+ * were added later (e.g. the `UpdateState` table).
+ */
+async function applyMissingSchema(client: PGlite): Promise<void> {
+  const sql = LOCAL_SCHEMA_SQL
+    .replace(/^--\s*CreateSchema[\s\S]*?CREATE SCHEMA IF NOT EXISTS "public";\s*/m, '')
+    .trim();
+
+  if (!sql) return;
+
+  const statements = splitSqlStatements(sql);
+
+  for (const stmt of statements) {
+    try {
+      await client.exec(stmt);
+    } catch (err: unknown) {
+      // PostgreSQL error codes for "already exists":
+      //   42710 — duplicate_object (enum value, schema)
+      //   42P07 — duplicate_table
+      //   42701 — duplicate_column (unique index on existing column)
+      //   Also catch string-based matching for PGlite compatibility.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        msg.includes('already exists') ||
+        msg.includes('duplicate key') ||
+        msg.includes('duplicate table') ||
+        msg.includes('duplicate object')
+      ) {
+        // Object already exists — skip silently.
+        continue;
+      }
+      // Re-throw unexpected errors so they surface during startup.
+      throw err;
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -298,7 +373,15 @@ export async function getLocalDatabase(): Promise<{
       const isEmpty = !(await tableExists(client, 'Client'));
 
       if (isEmpty) {
+        // Fresh database — apply the full schema in one batch.
         await applySchema(client);
+      } else {
+        // Existing database — apply any missing objects (tables, enums,
+        // indexes) that were added in schema versions after the initial
+        // creation.  This handles the case where the full DDL has been
+        // regenerated with new models (e.g. `UpdateState`) but the
+        // running database was created from an older version of the DDL.
+        await applyMissingSchema(client);
       }
 
       let prisma: unknown;
