@@ -97,7 +97,6 @@ export class OfflineTokenService {
       typ: 'offline' as const,
       jti,
       iat: now,
-      exp,
     };
 
     const token = this.jwtService.sign(payload, {

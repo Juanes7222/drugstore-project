@@ -16,20 +16,20 @@ import type { LocalUserInfo } from "../../../domain/auth/local-users";
 
 const users: LocalUserInfo[] = [
   {
-    id: "owner-1",
-    displayName: "Juan Pérez",
-    role: RoleType.OWNER,
+    id: "user_admin",
+    displayName: "Administrador del Sistema",
+    role: RoleType.ADMIN,
     avatarUrl: null,
     avatarColor: "#4F46E5",
-    username: "juan.perez",
+    username: "admin",
   },
   {
-    id: "cashier-1",
-    displayName: "Carlos López",
+    id: "user_cashier1",
+    displayName: "María Rodríguez",
     role: RoleType.CASHIER,
     avatarUrl: null,
     avatarColor: "#D97706",
-    username: "carlos.lopez",
+    username: "cashier1",
   },
 ];
 
@@ -51,9 +51,9 @@ describe("AvatarGrid", () => {
   it("renders all users with their display names and translated roles", () => {
     render(<AvatarGrid {...defaultProps} />);
 
-    expect(screen.getByText("Juan Pérez")).toBeInTheDocument();
-    expect(screen.getByText("Carlos López")).toBeInTheDocument();
-    expect(screen.getByText("Dueño")).toBeInTheDocument();
+    expect(screen.getByText("Administrador del Sistema")).toBeInTheDocument();
+    expect(screen.getByText("María Rodríguez")).toBeInTheDocument();
+    expect(screen.getByText("ADMIN")).toBeInTheDocument();
     expect(screen.getByText("Cajero")).toBeInTheDocument();
   });
 
@@ -63,10 +63,10 @@ describe("AvatarGrid", () => {
       <AvatarGrid {...defaultProps} onSelect={onSelect} />,
     );
 
-    fireEvent.click(screen.getByText("Juan Pérez"));
+    fireEvent.click(screen.getByText("Administrador del Sistema"));
     expect(onSelect).toHaveBeenCalledWith(users[0]);
 
-    fireEvent.click(screen.getByText("Carlos López"));
+    fireEvent.click(screen.getByText("María Rodríguez"));
     expect(onSelect).toHaveBeenCalledWith(users[1]);
   });
 

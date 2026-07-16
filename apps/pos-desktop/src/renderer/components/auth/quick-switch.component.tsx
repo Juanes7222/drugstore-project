@@ -64,14 +64,10 @@ export const QuickSwitch: FC = () => {
     setError(null);
     setPassword('');
 
-    if (
-      user.role === RoleType.CASHIER ||
-      user.role === RoleType.MANAGER
-    ) {
-      setSwitchState('pin');
-    } else {
-      setSwitchState('password');
-    }
+    // Always use password input for now. PIN keypad can be enabled once
+    // PIN credentials are configured server-side (the current seed data
+    // only has password hashes, no PIN hashes).
+    setSwitchState('password');
   }, []);
 
   const handleSwitchComplete = useCallback(async () => {
@@ -141,38 +137,50 @@ export const QuickSwitch: FC = () => {
     [selectedUser, authService, session.workstationId],
   );
 
+  /**
+   * Matches the server seed data in `apps/server/seed/seed/users.ts`.
+   * In production this list is fetched from the server.
+   */
   const placeholderUsers: QuickUser[] = [
     {
-      id: 'owner-1',
-      displayName: 'Juan Pérez',
-      role: RoleType.OWNER,
+      id: 'user_admin',
+      displayName: 'Administrador del Sistema',
+      role: RoleType.ADMIN,
       avatarUrl: null,
       avatarColor: '#4F46E5',
-      username: 'juan.perez',
+      username: 'admin',
     },
     {
-      id: 'manager-1',
-      displayName: 'María García',
-      role: RoleType.MANAGER,
-      avatarUrl: null,
-      avatarColor: '#059669',
-      username: 'maria.garcia',
-    },
-    {
-      id: 'cashier-1',
-      displayName: 'Carlos López',
+      id: 'user_cashier1',
+      displayName: 'María Rodríguez',
       role: RoleType.CASHIER,
       avatarUrl: null,
       avatarColor: '#D97706',
-      username: 'carlos.lopez',
+      username: 'cashier1',
     },
     {
-      id: 'cashier-2',
-      displayName: 'Ana Martínez',
+      id: 'user_cashier2',
+      displayName: 'Carlos Méndez',
       role: RoleType.CASHIER,
       avatarUrl: null,
       avatarColor: '#DC2626',
-      username: 'ana.martinez',
+      username: 'cashier2',
+    },
+    {
+      id: 'user_inventory',
+      displayName: 'Luisa García',
+      role: RoleType.INVENTORY_ASSISTANT,
+      avatarUrl: null,
+      avatarColor: '#059669',
+      username: 'inventory',
+    },
+    {
+      id: 'user_accountant',
+      displayName: 'Pedro Contreras',
+      role: RoleType.ACCOUNTANT,
+      avatarUrl: null,
+      avatarColor: '#8B5CF6',
+      username: 'accountant',
     },
   ];
 
@@ -230,7 +238,7 @@ export const QuickSwitch: FC = () => {
       {/* Dropdown */}
       {isOpen && (
         <div
-          className="pos-panel absolute right-0 top-full mt-1 z-50 min-w-[200px]"
+          className="pos-panel absolute right-0 top-full mt-1 z-50 min-w-50"
           style={{
             backgroundColor: 'var(--color-surface)',
             border: '1px solid var(--color-border)',

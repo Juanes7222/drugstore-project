@@ -66,8 +66,18 @@ export const SelectedUserCredential: FC<SelectedUserCredentialProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  const isPinUser =
-    user.role === RoleType.CASHIER || user.role === RoleType.MANAGER;
+  /**
+   * Whether to show a PIN keypad instead of a password input.
+   *
+   * Currently disabled by default because the server seed data only
+   * configures passwords for dev users (no PIN hashes are seeded).
+   * Set to `true` once PIN credentials are provisioned server-side.
+   *
+   * TODO: make this configurable per-user after fetching user profile
+   * from the server, so the POS knows the available auth methods before
+   * prompting for credentials.
+   */
+  const isPinUser = false;
 
   const accentColor = getRoleAccent(user.role);
 
@@ -155,7 +165,8 @@ export const SelectedUserCredential: FC<SelectedUserCredentialProps> = ({
       >
         {isPinUser ? (
           <PinKeypad
-            length={6}
+            maxLength={6}
+            minLength={4}
             onComplete={onPinComplete}
             onCancel={onChangeUser}
             error={error}

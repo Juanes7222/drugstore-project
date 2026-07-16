@@ -134,7 +134,7 @@ export const LoginPage: FC = () => {
                 viewBox="0 0 16 16"
                 fill="none"
                 aria-hidden="true"
-                className="flex-shrink-0"
+                className="shrink-0"
               >
                 <path
                   d="M1 10.5a5 5 0 0 1 7.5-4.3m-3 8.3A5 5 0 0 1 8 3c2.1 0 3.9 1.3 4.7 3.1M13 13a3 3 0 1 0-6 0m6 0a3 3 0 0 0-6 0"
@@ -147,7 +147,7 @@ export const LoginPage: FC = () => {
               <span>
                 {t(
                   'offline_login.banner',
-                  'Sin conexión — el inicio de sesión usará credenciales locales.',
+                  'Sin conexión - el inicio de sesión usará credenciales locales.',
                 )}
               </span>
             </motion.div>
@@ -178,7 +178,7 @@ export const LoginPage: FC = () => {
         </AnimatePresence>
 
         {/* Animated content area */}
-        <div className="w-full min-h-[320px] flex flex-col items-center justify-center">
+        <div className="w-full min-h-80 flex flex-col items-center justify-center">
           <AnimatePresence mode="wait">
             <motion.div
               key={contentKey}

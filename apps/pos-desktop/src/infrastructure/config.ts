@@ -37,6 +37,22 @@ export const API_BASE_URL: string =
   "http://localhost:3000";
 
 // ---------------------------------------------------------------------------
+// Workstation
+// ---------------------------------------------------------------------------
+
+/**
+ * Local workstation identifier sent with every auth request.
+ *
+ * Must match one of the seeded workstations (`ws_principal`, `ws_secundaria`)
+ * in `apps/server/seed/seed/workstation.ts`, or a workstation registered in
+ * the production database.
+ *
+ * Falls back to `"ws_principal"` for local development.
+ */
+export const WORKSTATION_ID: string =
+  (import.meta.env.VITE_WORKSTATION_ID as string | undefined) ?? "ws_principal";
+
+// ---------------------------------------------------------------------------
 // Feature flags
 // ---------------------------------------------------------------------------
 

@@ -61,7 +61,7 @@ export class BlessingResponseDto
       accessToken: string;
       refreshToken: string;
       offlineToken: string;
-      expiresAt: Date;
+      expiresAt: string;
     };
   }>;
 }

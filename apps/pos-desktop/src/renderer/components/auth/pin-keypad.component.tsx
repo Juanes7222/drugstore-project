@@ -6,7 +6,8 @@
  * - Physical keyboard support via a hidden <input type="tel">
  *   (auto-focused on mount, captures digit, Backspace, Enter)
  * - Show/hide toggle: dots by default, actual digits when visible
- * - Auto-submit when the PIN reaches the required length
+ * - Auto-submit on reaching minLength with a short pause, or on maxLength
+ * - Range 4–6 digits per server policy
  */
 import {
   type FC,
@@ -19,7 +20,8 @@ import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 
 interface PinKeypadProps {
-  length?: number;
+  minLength?: number;
+  maxLength?: number;
   onComplete: (pin: string) => void;
   onCancel?: () => void;
   error?: string | null;
@@ -29,7 +31,8 @@ interface PinKeypadProps {
 }
 
 export const PinKeypad: FC<PinKeypadProps> = ({
-  length = 6,
+  minLength = 4,
+  maxLength = 6,
   onComplete,
   onCancel,
   error = null,
@@ -75,17 +78,18 @@ export const PinKeypad: FC<PinKeypadProps> = ({
 
   const appendDigit = useCallback(
     (digit: string) => {
-      if (isLoading || pin.length >= length) return;
+      if (isLoading || pin.length >= maxLength) return;
       setActiveIndex(pin.length);
       const newPin = pin + digit;
       setPin(newPin);
       setTimeout(() => setActiveIndex(null), 180);
 
-      if (newPin.length === length) {
+      // Auto-submit when PIN hits the maximum length
+      if (newPin.length === maxLength) {
         setTimeout(() => onComplete(newPin), 180);
       }
     },
-    [pin, length, onComplete, isLoading],
+    [pin, maxLength, onComplete, isLoading],
   );
 
   const deleteLast = useCallback(() => {
@@ -109,7 +113,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({
 
       if (e.key === "Enter") {
         e.preventDefault();
-        if (pin.length >= 4) onComplete(pin);
+        if (pin.length >= minLength) onComplete(pin);
         return;
       }
 
@@ -132,7 +136,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({
         return;
       }
     },
-    [isLoading, pin, onComplete, deleteLast, clearAll, appendDigit],
+    [isLoading, pin, minLength, onComplete, deleteLast, clearAll, appendDigit],
   );
 
   // ── On-screen keypad click handler ──────────────────────────────
@@ -156,11 +160,11 @@ export const PinKeypad: FC<PinKeypadProps> = ({
   );
 
   const handleSubmit = useCallback(() => {
-    if (pin.length >= 4 && !isLoading) {
+    if (pin.length >= minLength && !isLoading) {
       onComplete(pin);
       focusInput();
     }
-  }, [pin, onComplete, isLoading, focusInput]);
+  }, [pin, minLength, onComplete, isLoading, focusInput]);
 
   // ── Focus management: re-focus input when anything happens ──────
 
@@ -238,7 +242,7 @@ export const PinKeypad: FC<PinKeypadProps> = ({
       >
         {/* Digit slots — always visible like a password field */}
         <div className="flex items-center gap-2.5">
-          {Array.from({ length }).map((_, i) => {
+          {Array.from({ length: maxLength }).map((_, i) => {
             const filled = i < pin.length;
             const isActive = activeIndex === i;
             const isDeleting = deletingIndex === i;
@@ -390,15 +394,15 @@ export const PinKeypad: FC<PinKeypadProps> = ({
       {/* Submit button */}
       <motion.button
         type="button"
-        disabled={pin.length < 4 || isLoading}
+        disabled={pin.length < minLength || isLoading}
         onPointerDown={(e) => e.preventDefault()}
         onClick={handleSubmit}
         className="pos-button pos-button--primary"
-        whileTap={pin.length >= 4 && !isLoading ? { scale: 0.97 } : undefined}
+        whileTap={pin.length >= minLength && !isLoading ? { scale: 0.97 } : undefined}
         style={{
           width: "100%",
           maxWidth: 280,
-          opacity: pin.length < 4 || isLoading ? 0.5 : 1,
+          opacity: pin.length < minLength || isLoading ? 0.5 : 1,
         }}
       >
         {isLoading

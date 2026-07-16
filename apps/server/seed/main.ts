@@ -22,11 +22,22 @@ async function main(): Promise<void> {
   await seedCashShifts();
 
   console.log('\nSeed completed successfully!');
-  console.log('   Login: admin / Admin123!  (role: ADMIN)');
-  console.log('   Login: cashier1 / 1234  (role: CASHIER)');
-  console.log('   Login: cashier2 / 1234  (role: CASHIER)');
-  console.log('   Login: inventory / 1234  (role: INVENTORY_ASSISTANT)');
-  console.log('   Login: accountant / 1234  (role: ACCOUNTANT)');
+  console.log('');
+  console.log('━━━━ Usuarios ━━━━');
+  console.log('   admin       / Admin123!   (ADMIN)');
+  console.log('   cashier1    / 1234        (CASHIER)');
+  console.log('   cashier2    / 1234        (CASHIER)');
+  console.log('   inventory   / 1234        (INVENTORY_ASSISTANT)');
+  console.log('   accountant  / 1234        (ACCOUNTANT)');
+  console.log('');
+  console.log('━━━━ Estaciones de trabajo (workstationId) ━━━━');
+  console.log('   ws_principal   → Caja Principal  (código WS-001)');
+  console.log('   ws_secundaria  → Caja Secundaria (código WS-002)');
+  console.log('');
+  console.log('Para hacer login, usa con curl:');
+  console.log('   curl -s -X POST http://localhost:3000/auth/login \\');
+  console.log('     -H "Content-Type: application/json" \\');
+  console.log('     -d \'{"identifier":"admin","secret":"Admin123!","sessionType":"PASSWORD","workstationId":"ws_principal"}\'');
 }
 
 main()

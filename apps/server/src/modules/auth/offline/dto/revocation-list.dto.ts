@@ -23,9 +23,9 @@ export const RevocationListQuerySchema = z.object({
 export class RevocationListQueryDto
   implements z.infer<typeof RevocationListQuerySchema>
 {
-  since?: Date;
-  limit?: number;
-  offset?: number;
+  since: Date | undefined;
+  limit!: number;
+  offset!: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ export class RevocationListResponseDto
 {
   entries!: Array<{
     jti: string;
-    revokedAt: Date;
+    revokedAt: string;
     reason: string;
   }>;
   total!: number;

@@ -16,30 +16,21 @@ import type { LocalUserInfo } from "../../../domain/auth/local-users";
 // ---------------------------------------------------------------------------
 
 const cashierUser: LocalUserInfo = {
-  id: "cashier-1",
-  displayName: "Carlos López",
+  id: "user_cashier1",
+  displayName: "María Rodríguez",
   role: RoleType.CASHIER,
   avatarUrl: null,
   avatarColor: "#D97706",
-  username: "carlos.lopez",
+  username: "cashier1",
 };
 
-const managerUser: LocalUserInfo = {
-  id: "manager-1",
-  displayName: "María García",
-  role: RoleType.MANAGER,
-  avatarUrl: null,
-  avatarColor: "#059669",
-  username: "maria.garcia",
-};
-
-const ownerUser: LocalUserInfo = {
-  id: "owner-1",
-  displayName: "Juan Pérez",
-  role: RoleType.OWNER,
+const adminUser: LocalUserInfo = {
+  id: "user_admin",
+  displayName: "Administrador del Sistema",
+  role: RoleType.ADMIN,
   avatarUrl: null,
   avatarColor: "#4F46E5",
-  username: "juan.perez",
+  username: "admin",
 };
 
 const defaultProps = {
@@ -67,7 +58,7 @@ describe("SelectedUserCredential", () => {
   it("renders the selected user's display name and translated role", () => {
     render(<SelectedUserCredential {...defaultProps} />);
 
-    expect(screen.getByText("Carlos López")).toBeInTheDocument();
+    expect(screen.getByText("María Rodríguez")).toBeInTheDocument();
     expect(screen.getByText("Cajero")).toBeInTheDocument();
   });
 
@@ -89,66 +80,12 @@ describe("SelectedUserCredential", () => {
     expect(onChangeUser).toHaveBeenCalledOnce();
   });
 
-  describe("for CASHIER or MANAGER", () => {
-    it("renders PinKeypad for a CASHIER user", () => {
+  describe("password entry (all roles)", () => {
+    it("renders password input with label for CASHIER", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
           user={cashierUser}
-        />,
-      );
-
-      // PinKeypad renders the label from translation
-      expect(
-        screen.getByText("Ingrese su PIN"),
-      ).toBeInTheDocument();
-    });
-
-    it("renders PinKeypad with manager label for a MANAGER user", () => {
-      render(
-        <SelectedUserCredential
-          {...defaultProps}
-          user={managerUser}
-        />,
-      );
-
-      expect(
-        screen.getByText("Ingrese su PIN de manager"),
-      ).toBeInTheDocument();
-    });
-
-    it("renders the pin error when error is provided", () => {
-      render(
-        <SelectedUserCredential
-          {...defaultProps}
-          user={cashierUser}
-          error="PIN incorrecto"
-        />,
-      );
-
-      expect(screen.getByText("PIN incorrecto")).toBeInTheDocument();
-    });
-
-    it("does not render password-specific elements", () => {
-      render(
-        <SelectedUserCredential
-          {...defaultProps}
-          user={cashierUser}
-        />,
-      );
-
-      expect(
-        screen.queryByText("Olvidé mi contraseña"),
-      ).not.toBeInTheDocument();
-    });
-  });
-
-  describe("for OWNER (password entry)", () => {
-    it("renders password input with label from translation", () => {
-      render(
-        <SelectedUserCredential
-          {...defaultProps}
-          user={ownerUser}
         />,
       );
 
@@ -163,7 +100,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={ownerUser}
+          user={cashierUser}
           onPasswordChange={onPasswordChange}
         />,
       );
@@ -179,7 +116,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={ownerUser}
+          user={cashierUser}
           onPasswordSubmit={onPasswordSubmit}
         />,
       );
@@ -195,7 +132,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={ownerUser}
+          user={cashierUser}
           onForgotPassword={onForgotPassword}
         />,
       );
@@ -211,7 +148,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={ownerUser}
+          user={cashierUser}
           password=""
         />,
       );
@@ -225,7 +162,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={ownerUser}
+          user={cashierUser}
           password="secret"
         />,
       );
@@ -239,7 +176,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={ownerUser}
+          user={cashierUser}
           password="secret"
           isLoading
         />,
@@ -255,7 +192,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={ownerUser}
+          user={cashierUser}
           error="Usuario o contraseña incorrectos."
         />,
       );
@@ -269,7 +206,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={ownerUser}
+          user={cashierUser}
           password="secret"
           countdown={125}
         />,

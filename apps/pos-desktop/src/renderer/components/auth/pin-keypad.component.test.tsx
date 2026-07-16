@@ -50,7 +50,7 @@ describe("PinKeypad", () => {
     });
 
     it("renders the submit button disabled until at least 4 digits are entered", () => {
-      render(<PinKeypad {...defaultProps} length={6} />);
+      render(<PinKeypad {...defaultProps} maxLength={6} />);
 
       const submit = screen.getByRole("button", { name: /ingresar|submit/i });
       expect(submit).toBeDisabled();
@@ -70,7 +70,7 @@ describe("PinKeypad", () => {
   describe("PIN dots", () => {
     it("shows the correct number of PIN dot indicators", () => {
       const { container } = render(
-        <PinKeypad {...defaultProps} length={6} />,
+        <PinKeypad {...defaultProps} maxLength={6} />,
       );
 
       // Each dot is a div inside the PIN display row
@@ -82,7 +82,7 @@ describe("PinKeypad", () => {
 
     it("fills dots as digits are entered", () => {
       const { container } = render(
-        <PinKeypad {...defaultProps} length={4} />,
+        <PinKeypad {...defaultProps} maxLength={4} />,
       );
 
       // Motion's animate prop (backgroundColor) isn't reflected as inline
@@ -122,7 +122,7 @@ describe("PinKeypad", () => {
 
   describe("digit entry", () => {
     it("appends a digit when a key is pressed", () => {
-      render(<PinKeypad {...defaultProps} length={4} />);
+      render(<PinKeypad {...defaultProps} maxLength={4} />);
 
       const submit = screen.getByRole("button", { name: /ingresar|submit/i });
 
@@ -140,7 +140,7 @@ describe("PinKeypad", () => {
     it("does not append beyond the length limit", () => {
       vi.useFakeTimers();
       const onComplete = vi.fn();
-      render(<PinKeypad length={3} onComplete={onComplete} />);
+      render(<PinKeypad maxLength={3} onComplete={onComplete} />);
 
       fireEvent.click(screen.getByRole("button", { name: "1" }));
       fireEvent.click(screen.getByRole("button", { name: "2" }));
@@ -168,7 +168,7 @@ describe("PinKeypad", () => {
 
     it("auto-submits after 180ms when PIN reaches the required length", () => {
       const onComplete = vi.fn();
-      render(<PinKeypad length={4} onComplete={onComplete} />);
+      render(<PinKeypad maxLength={4} onComplete={onComplete} />);
 
       fireEvent.click(screen.getByRole("button", { name: "1" }));
       fireEvent.click(screen.getByRole("button", { name: "2" }));
@@ -188,7 +188,7 @@ describe("PinKeypad", () => {
   describe("submit button", () => {
     it("calls onComplete with the PIN when submit is clicked", () => {
       const onComplete = vi.fn();
-      render(<PinKeypad length={6} onComplete={onComplete} />);
+      render(<PinKeypad maxLength={6} onComplete={onComplete} />);
 
       fireEvent.click(screen.getByRole("button", { name: "1" }));
       fireEvent.click(screen.getByRole("button", { name: "2" }));
@@ -230,7 +230,7 @@ describe("PinKeypad", () => {
 
     it("ignores keypress events during loading (does not append digits)", () => {
       const onComplete = vi.fn();
-      render(<PinKeypad length={4} onComplete={onComplete} isLoading />);
+      render(<PinKeypad maxLength={4} onComplete={onComplete} isLoading />);
 
       fireEvent.click(screen.getByRole("button", { name: "1" }));
       fireEvent.click(screen.getByRole("button", { name: "2" }));
@@ -246,7 +246,7 @@ describe("PinKeypad", () => {
   describe("backspace", () => {
     it("removes the last digit when backspace is pressed", () => {
       const { container } = render(
-        <PinKeypad {...defaultProps} length={4} />,
+        <PinKeypad {...defaultProps} maxLength={4} />,
       );
 
       fireEvent.click(screen.getByRole("button", { name: "1" }));

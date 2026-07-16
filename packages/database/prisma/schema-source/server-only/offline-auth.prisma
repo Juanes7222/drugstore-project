@@ -10,8 +10,10 @@ model OfflineSessionBlessing {
   id                      String    @id
   localSessionId          String
   userId                  String
+  user                    User      @relation(fields: [userId], references: [id])
   subscriptionId          String?
   workstationId           String
+  workstation             Workstation @relation(fields: [workstationId], references: [id])
   offlineTokenJwt         String    @db.Text
   workstationFingerprint  String
   status                  OfflineBlessingStatus @default(PENDING)
@@ -56,7 +58,9 @@ model OfflineTokenRevocation {
   id              String    @id
   jti             String    @unique
   userId          String?
+  user            User?     @relation(fields: [userId], references: [id])
   workstationId   String?
+  workstation     Workstation? @relation(fields: [workstationId], references: [id])
   reason          OfflineTokenRevocationReason
   reasonDetail    String?   @db.Text
   revokedAt       DateTime  @default(now())

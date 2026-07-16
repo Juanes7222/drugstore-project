@@ -69,21 +69,12 @@ vi.mock("@infra/config", () => ({
 // ---------------------------------------------------------------------------
 
 const cashierUser: LocalUserInfo = {
-  id: "cashier-1",
-  displayName: "Carlos López",
+  id: "user_cashier1",
+  displayName: "María Rodríguez",
   role: RoleType.CASHIER,
   avatarUrl: null,
   avatarColor: "#D97706",
-  username: "carlos.lopez",
-};
-
-const ownerUser: LocalUserInfo = {
-  id: "owner-1",
-  displayName: "Juan Pérez",
-  role: RoleType.OWNER,
-  avatarUrl: null,
-  avatarColor: "#4F46E5",
-  username: "juan.perez",
+  username: "cashier1",
 };
 
 const fakeLocalSession: LocalSession = {
@@ -165,7 +156,7 @@ describe("useLoginPage", () => {
         cashierUser.username,
         "123456",
         "PIN",
-        "local-workstation",
+        "ws_principal",
         undefined,
         "pos-desktop",
       );
@@ -237,7 +228,7 @@ describe("useLoginPage", () => {
       const { result } = renderHook(() => useLoginPage());
 
       act(() => {
-        result.current.setIdentifier("juan.perez");
+        result.current.setIdentifier("admin");
         result.current.setPassword("secret123");
       });
 
@@ -246,10 +237,10 @@ describe("useLoginPage", () => {
       });
 
       expect(mockAuthService.login).toHaveBeenCalledWith(
-        "juan.perez",
+        "admin",
         "secret123",
         "PASSWORD",
-        "local-workstation",
+        "ws_principal",
         undefined,
         "pos-desktop",
       );
@@ -276,7 +267,7 @@ describe("useLoginPage", () => {
       const { result } = renderHook(() => useLoginPage());
 
       act(() => {
-        result.current.setIdentifier("juan.perez");
+        result.current.setIdentifier("admin");
         result.current.setPassword("secret123");
       });
 
@@ -297,7 +288,7 @@ describe("useLoginPage", () => {
       const { result } = renderHook(() => useLoginPage());
 
       act(() => {
-        result.current.setIdentifier("juan.perez");
+        result.current.setIdentifier("admin");
         result.current.setPassword("wrong");
       });
 
@@ -318,7 +309,7 @@ describe("useLoginPage", () => {
       const { result } = renderHook(() => useLoginPage());
 
       act(() => {
-        result.current.setIdentifier("juan.perez");
+        result.current.setIdentifier("admin");
         result.current.setPassword("secret123");
       });
 

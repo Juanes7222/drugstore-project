@@ -78,7 +78,7 @@ export class BlessingController {
     const response = new RevocationListResponseDto();
     response.entries = result.entries.map((e) => ({
       jti: e.jti,
-      revokedAt: e.revokedAt,
+      revokedAt: e.revokedAt.toISOString(),
       reason: e.reason,
     }));
     response.total = result.total;

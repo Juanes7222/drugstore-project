@@ -22,7 +22,7 @@ import {
   OfflineCredentialsExpiredException,
   OfflineTokenRevokedException,
 } from '../../domain/auth/offline';
-import { API_BASE_URL } from '@infra/config';
+import { API_BASE_URL, WORKSTATION_ID } from '@infra/config';
 import type { LocalUserInfo } from '../../domain/auth/local-users';
 import { useOfflineAuth } from './use-offline-auth';
 
@@ -183,7 +183,7 @@ export function useLoginPage(): UseLoginPageReturn {
           selectedUser.username,
           pin,
           'PIN',
-          'local-workstation',
+          WORKSTATION_ID,
           undefined,
           'pos-desktop',
         );
@@ -263,7 +263,7 @@ export function useLoginPage(): UseLoginPageReturn {
         identifier,
         password,
         'PASSWORD',
-        'local-workstation',
+        WORKSTATION_ID,
         undefined,
         'pos-desktop',
       );
