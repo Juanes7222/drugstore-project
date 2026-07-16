@@ -23,6 +23,15 @@ const { mockSessionState, mockAuthService } = vi.hoisted(() => {
     session: null,
     isInitialized: true,
   };
+
+  // Pre-built user list matching the names the tests assert on.
+  const mockUsers = [
+    { id: "admin-1", displayName: "Administrador del Sistema", fullName: "Administrador del Sistema", role: "ADMIN", avatarUrl: null, avatarColor: "#1E40AF", username: "admin" },
+    { id: "cashier-2", displayName: "Carlos Méndez", fullName: "Carlos Méndez", role: "CASHIER", avatarUrl: null, avatarColor: "#7C3AED", username: "cmendez" },
+    { id: "cashier-3", displayName: "Luisa García", fullName: "Luisa García", role: "CASHIER", avatarUrl: null, avatarColor: "#059669", username: "lgarcia" },
+    { id: "cashier-4", displayName: "Pedro Contreras", fullName: "Pedro Contreras", role: "CASHIER", avatarUrl: null, avatarColor: "#D97706", username: "pcontreras" },
+  ];
+
   return {
     mockSessionState: state,
     mockAuthService: {
@@ -40,7 +49,7 @@ const { mockSessionState, mockAuthService } = vi.hoisted(() => {
       requireRole: vi.fn(),
       logout: vi.fn(),
       createUser: vi.fn(),
-      listUsers: vi.fn(),
+      listUsers: vi.fn().mockResolvedValue({ users: mockUsers }),
       getPendingStepUpRequests: vi.fn(),
       getAuditLogs: vi.fn(),
     },
@@ -117,7 +126,7 @@ describe("QuickSwitch", () => {
     expect(screen.getByText(/cambiar de usuario|cambiar usuario|switch user/i)).toBeInTheDocument();
   });
 
-  it("lists other users (excluding the current session user)", () => {
+  it("lists other users (excluding the current session user)", async () => {
     mockSessionState.session = cashierSession;
 
     render(<QuickSwitch />);
@@ -126,14 +135,15 @@ describe("QuickSwitch", () => {
       screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
     );
 
+    // Wait for the async listUsers effect to resolve
     // Current user (María Rodríguez / cashier1) should NOT appear in the list
-    expect(screen.getByText("Administrador del Sistema")).toBeInTheDocument();
-    expect(screen.getByText("Carlos Méndez")).toBeInTheDocument();
-    expect(screen.getByText("Luisa García")).toBeInTheDocument();
-    expect(screen.getByText("Pedro Contreras")).toBeInTheDocument();
+    expect(await screen.findByText("Administrador del Sistema")).toBeInTheDocument();
+    expect(await screen.findByText("Carlos Méndez")).toBeInTheDocument();
+    expect(await screen.findByText("Luisa García")).toBeInTheDocument();
+    expect(await screen.findByText("Pedro Contreras")).toBeInTheDocument();
   });
 
-  it("shows password input for any selected user (ALL roles use password)", () => {
+  it("shows password input for any selected user (ALL roles use password)", async () => {
     mockSessionState.session = cashierSession;
 
     render(<QuickSwitch />);
@@ -142,12 +152,12 @@ describe("QuickSwitch", () => {
       screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
     );
 
-    // Select another cashier (Carlos Méndez / cashier2)
-    fireEvent.click(screen.getByText("Carlos Méndez"));
+    // Wait for the async listUsers effect to resolve, then select a user
+    fireEvent.click(await screen.findByText("Carlos Méndez"));
 
     // Password input should be shown (no PIN keypad)
     expect(
-      screen.getByPlaceholderText(/contrase.a|password/i),
+      await screen.findByPlaceholderText(/contrase.a|password/i),
     ).toBeInTheDocument();
   });
 
@@ -169,9 +179,10 @@ describe("QuickSwitch", () => {
       screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
     );
 
-    fireEvent.click(screen.getByText("Administrador del Sistema"));
+    // Wait for listUsers to resolve before selecting a user
+    fireEvent.click(await screen.findByText("Administrador del Sistema"));
 
-    const passwordInput = screen.getByPlaceholderText(/contrase.a|password/i);
+    const passwordInput = await screen.findByPlaceholderText(/contrase.a|password/i);
     fireEvent.change(passwordInput, { target: { value: "secret123" } });
 
     fireEvent.click(
@@ -190,7 +201,7 @@ describe("QuickSwitch", () => {
     });
   });
 
-  it("closes the dropdown on outside click", () => {
+  it("closes the dropdown on outside click", async () => {
     mockSessionState.session = cashierSession;
 
     render(
@@ -205,8 +216,8 @@ describe("QuickSwitch", () => {
       screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
     );
 
-    // Dropdown should be open (user list visible)
-    expect(screen.getByText("Carlos Méndez")).toBeInTheDocument();
+    // Wait for listUsers to resolve (user list visible)
+    expect(await screen.findByText("Carlos Méndez")).toBeInTheDocument();
 
     // Click outside
     fireEvent.mouseDown(document.body);

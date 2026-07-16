@@ -17,7 +17,10 @@ const makeMockPrisma = () => {
       findUnique: vi.fn(),
       updateMany: vi.fn(),
     },
-    inventoryMovement: { create: vi.fn() },
+    inventoryMovement: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+    },
     inventoryAdjustmentDocument: {
       findFirst: vi.fn(),
       create: vi.fn(),
@@ -190,6 +193,12 @@ describe("InventoryAdjustmentsService", () => {
       }]);
       tx.lot.updateMany.mockResolvedValue({ count: 1 });
       tx.inventoryMovement.create.mockResolvedValue({});
+      tx.inventoryMovement.findMany.mockResolvedValue([{
+        lotId: "lot-1",
+        movementType: "POSITIVE_ADJUSTMENT",
+        quantity: 10,
+        reason: null,
+      }]);
       tx.inventoryAdjustmentDocument.update.mockResolvedValue({
         id: "adj-1",
         state: "APPLIED",
@@ -249,7 +258,7 @@ describe("InventoryAdjustmentsService", () => {
       ).rejects.toThrow(AdjustmentLotConflictException);
     });
 
-    it("creates a SyncQueue entry on successful apply", async () => {
+    it("creates a SyncQueue entry on successful apply with the correct payload shape", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.inventoryAdjustmentDocument.findUnique.mockResolvedValue({
         id: "adj-1",
@@ -264,6 +273,13 @@ describe("InventoryAdjustmentsService", () => {
       }]);
       tx.lot.updateMany.mockResolvedValue({ count: 1 });
       tx.inventoryMovement.create.mockResolvedValue({});
+      // Mock read-back of the movement that createSyncQueueEntry queries
+      tx.inventoryMovement.findMany.mockResolvedValue([{
+        lotId: "lot-1",
+        movementType: "POSITIVE_ADJUSTMENT",
+        quantity: 10,
+        reason: null,
+      }]);
       tx.inventoryAdjustmentDocument.update.mockResolvedValue({
         id: "adj-1",
         state: "APPLIED",
@@ -281,6 +297,18 @@ describe("InventoryAdjustmentsService", () => {
           }),
         }),
       );
+
+      // Verify the payload carries the server-expected keys
+      const callArg = tx.syncQueue.create.mock.calls[0][0];
+      const payload = JSON.parse(callArg.data.payload);
+      expect(payload).toHaveProperty("userId", "user-1");
+      expect(payload).toHaveProperty("createAdjustmentDto");
+      expect(payload.createAdjustmentDto).toHaveProperty("items");
+      expect(payload.createAdjustmentDto.items[0]).toHaveProperty("lotId", "lot-1");
+      expect(payload.createAdjustmentDto.items[0]).toHaveProperty("movementType", "POSITIVE_ADJUSTMENT");
+      expect(payload.createAdjustmentDto.items[0]).toHaveProperty("quantity", 10);
+      expect(payload).toHaveProperty("metadata");
+      expect(payload.metadata).toHaveProperty("adjustmentId", "adj-1");
     });
 
     it("throws NoLotsForProductException when no ACTIVE lot exists for a positive adjustment", async () => {
@@ -309,6 +337,12 @@ describe("InventoryAdjustmentsService", () => {
       });
       tx.lot.updateMany.mockResolvedValue({ count: 1 });
       tx.inventoryMovement.create.mockResolvedValue({});
+      tx.inventoryMovement.findMany.mockResolvedValue([{
+        lotId: "lot-1",
+        movementType: "NEGATIVE_ADJUSTMENT",
+        quantity: 5,
+        reason: null,
+      }]);
       tx.inventoryAdjustmentDocument.update.mockResolvedValue({
         id: "adj-1", state: "APPLIED",
       });
@@ -364,6 +398,10 @@ describe("InventoryAdjustmentsService", () => {
       // First updateMany succeeds
       tx.lot.updateMany.mockResolvedValue({ count: 1 });
       tx.inventoryMovement.create.mockResolvedValue({});
+      tx.inventoryMovement.findMany.mockResolvedValue([
+        { lotId: "lot-1", movementType: "NEGATIVE_ADJUSTMENT", quantity: 10, reason: null },
+        { lotId: "lot-2", movementType: "NEGATIVE_ADJUSTMENT", quantity: 15, reason: null },
+      ]);
       tx.inventoryAdjustmentDocument.update.mockResolvedValue({
         id: "adj-1", state: "APPLIED",
       });

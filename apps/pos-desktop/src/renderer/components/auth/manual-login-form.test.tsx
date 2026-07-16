@@ -50,7 +50,7 @@ describe("ManualLoginForm", () => {
     const identifierInput = screen.getByPlaceholderText("usuario@ejemplo.com");
     expect(identifierInput).toHaveValue("test@example.com");
 
-    const passwordInput = screen.getByPlaceholderText("••••••••");
+    const passwordInput = screen.getByPlaceholderText("********");
     expect(passwordInput).toHaveValue("s3cret");
   });
 
@@ -78,7 +78,7 @@ describe("ManualLoginForm", () => {
       />,
     );
 
-    fireEvent.change(screen.getByPlaceholderText("••••••••"), {
+    fireEvent.change(screen.getByPlaceholderText("********"), {
       target: { value: "mypassword" },
     });
     expect(onPasswordChange).toHaveBeenCalledWith("mypassword");
@@ -110,7 +110,7 @@ describe("ManualLoginForm", () => {
       />,
     );
 
-    const passwordInput = screen.getByPlaceholderText("••••••••");
+    const passwordInput = screen.getByPlaceholderText("********");
     fireEvent.keyDown(passwordInput, { key: "Enter" });
     expect(onSubmit).toHaveBeenCalledOnce();
   });

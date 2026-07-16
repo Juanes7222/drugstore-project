@@ -49,6 +49,16 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/store/hooks", () => ({
   useAppDispatch: () => dispatch,
+  useAppSelector: (selector: (state: Record<string, unknown>) => unknown) => {
+    const rootState = {
+      offlineAuth: {
+        connectionState: "ONLINE",
+        blessingProgress: { total: 0, completed: 0, failed: 0 },
+        isBlessingInProgress: false,
+      },
+    };
+    return selector(rootState as any);
+  },
 }));
 
 vi.mock("../../domain/auth/local-session.store", () => ({
@@ -56,12 +66,20 @@ vi.mock("../../domain/auth/local-session.store", () => ({
     selector({ session: mockSessionRef.current }),
 }));
 
+vi.mock("./use-offline-auth", () => ({
+  useOfflineAuth: () => ({
+    connectionState: "ONLINE" as const,
+    attemptOfflineLogin: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
 vi.mock("../../domain/auth/auth.service", () => ({
-  createAuthService: vi.fn(() => mockAuthService),
+  createAuthService: () => mockAuthService,
 }));
 
 vi.mock("@infra/config", () => ({
   API_BASE_URL: "http://test",
+  WORKSTATION_ID: "ws_principal",
 }));
 
 // ---------------------------------------------------------------------------

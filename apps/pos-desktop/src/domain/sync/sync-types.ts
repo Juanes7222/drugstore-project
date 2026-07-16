@@ -12,7 +12,8 @@
 
 /** @see sales-pos.service.ts createSyncQueueEntry */
 export interface SaleConfirmationPayload {
-  createInput: {
+  userId: string;
+  createSaleDto: {
     saleType: string;
     cashShiftId: string;
     clientId: string | null;
@@ -20,12 +21,12 @@ export interface SaleConfirmationPayload {
       productId: string;
       quantity: number;
       unitPrice: string;
-      discountPercentage: number;
+      discount: string;
       discountReason: string | null;
     }>;
     prescriptionNumber: string | null;
   };
-  confirmInput: {
+  confirmSaleDto: {
     payments: Array<{
       paymentMethodId: string;
       amount: number;
@@ -95,20 +96,27 @@ export interface ClientReturnPayload {
  *
  * Created by InventoryAdjustmentsService.apply() and dispatched server-side
  * for re-validation and processing through the approval chain.
+ *
+ * The payload is structured to match the server's CreateInventoryAdjustmentDto
+ * inside a `createAdjustmentDto` key, following the same pattern as
+ * SALE_CONFIRMATION's `createSaleDto`/`confirmSaleDto`.  The server handler
+ * reads `payload.createAdjustmentDto` + `payload.userId` directly.
  */
 export interface InventoryAdjustmentPayload {
-  adjustmentId: string;
-  sequentialNumber: number;
-  reason: string | null;
-  notes: string | null;
-  items: Array<{
-    productId: string;
-    quantity: number;
-    lotId: string | null;
+  userId: string;
+  createAdjustmentDto: {
     reason: string | null;
-  }>;
+    notes: string | null;
+    items: Array<{
+      lotId: string;
+      movementType: 'POSITIVE_ADJUSTMENT' | 'NEGATIVE_ADJUSTMENT';
+      quantity: number;
+      reason?: string;
+    }>;
+  };
   metadata: {
-    userId: string;
+    adjustmentId: string;
+    sequentialNumber: number;
     workstationId: string;
     appliedAt: string;
   };

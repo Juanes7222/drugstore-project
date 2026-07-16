@@ -36,8 +36,9 @@ const makePendingEntry = (overrides: any = {}) => ({
   operationUuid: "uuid-1",
   operationType: "SALE_CONFIRMATION",
   payload: JSON.stringify({
-    createInput: { saleType: "FREE_SALE", items: [] },
-    confirmInput: { payments: [] },
+    userId: "user-001",
+    createSaleDto: { saleType: "FREE_SALE", cashShiftId: "00000000-0000-0000-0000-000000000001", items: [] },
+    confirmSaleDto: { payments: [] },
     metadata: { localSaleId: "sale-1" },
   }),
   payloadHash: "abc123",

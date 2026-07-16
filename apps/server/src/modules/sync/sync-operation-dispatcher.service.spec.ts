@@ -333,10 +333,18 @@ describe('SyncOperationDispatcherService', () => {
   describe('INVENTORY_ADJUSTMENT', () => {
     const adjPayload = JSON.stringify({
       userId: 'u-1',
-      createAdjustmentDto: { productId: 'p1', quantity: 10, reason: 'Count correction' },
+      createAdjustmentDto: {
+        reason: 'Count correction',
+        notes: null,
+        items: [{
+          lotId: 'lot-1',
+          movementType: 'POSITIVE_ADJUSTMENT' as const,
+          quantity: 10,
+        }],
+      },
     });
 
-    it('calls inventoryAdjustmentsService.create', async () => {
+    it('calls inventoryAdjustmentsService.create with the DTO built from the POS payload', async () => {
       mockInventoryAdjustmentsService.create.mockResolvedValue({ id: 'adj-1' });
       mockSyncOperationOutcome.create.mockResolvedValue({});
 
@@ -346,9 +354,36 @@ describe('SyncOperationDispatcherService', () => {
       }));
 
       expect(mockInventoryAdjustmentsService.create).toHaveBeenCalledWith(
-        expect.objectContaining({ productId: 'p1' }),
+        expect.objectContaining({
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              lotId: 'lot-1',
+              movementType: 'POSITIVE_ADJUSTMENT',
+              quantity: 10,
+            }),
+          ]),
+        }),
         'u-1',
       );
+    });
+
+    it('rejects with VALIDATION category when the service throws', async () => {
+      mockInventoryAdjustmentsService.create.mockRejectedValue(new Error('validation: insufficient stock'));
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(buildEntry({
+          operationType: 'INVENTORY_ADJUSTMENT',
+          payload: adjPayload,
+        })),
+      ).rejects.toThrow('insufficient stock');
+
+      expect(mockSyncOperationOutcome.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          outcome: 'REJECTED',
+          failureCategory: 'VALIDATION',
+        }),
+      });
     });
   });
 

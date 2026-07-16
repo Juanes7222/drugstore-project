@@ -452,11 +452,12 @@ describe("PGlite data integrity", () => {
       ).rejects.toThrow();
     });
 
-    it("stores and retrieves JSON payload", async () => {
+    it("stores and retrieves JSON payload with the correct server-expected keys", async () => {
       const now = new Date().toISOString();
       const payload = JSON.stringify({
-        createInput: { saleType: "FREE_SALE", items: [] },
-        confirmInput: { payments: [] },
+        userId: "user-cashier-01",
+        createSaleDto: { saleType: "FREE_SALE", cashShiftId: crypto.randomUUID(), items: [] },
+        confirmSaleDto: { payments: [] },
         metadata: { localSaleId: crypto.randomUUID(), localNumber: 1 },
       });
 
@@ -473,8 +474,84 @@ describe("PGlite data integrity", () => {
       const stored = JSON.parse(
         (result.rows[0] as Record<string, unknown>).payload as string,
       ) as Record<string, unknown>;
-      expect(stored).toHaveProperty("createInput");
+
+      // Server-side dispatcher reads these exact keys (no transformation needed):
+      //   handleSaleConfirmation() reads payload.userId,
+      //   payload.createSaleDto, payload.confirmSaleDto
+      expect(stored).toHaveProperty("userId");
+      expect(stored).toHaveProperty("createSaleDto");
+      expect(stored).toHaveProperty("confirmSaleDto");
       expect(stored).toHaveProperty("metadata");
+      expect((stored.metadata as Record<string, unknown>).localNumber).toBe(1);
+    });
+
+    it("stores and retrieves a full realistic payload matching server expectations", async () => {
+      const now = new Date().toISOString();
+      const payload = JSON.stringify({
+        userId: "user-cashier-01",
+        createSaleDto: {
+          saleType: "FREE_SALE",
+          cashShiftId: crypto.randomUUID(),
+          clientId: null,
+          items: [
+            {
+              productId: crypto.randomUUID(),
+              quantity: 2,
+              unitPrice: "5000.00",
+              discount: "0",
+              discountReason: null,
+            },
+          ],
+          prescriptionNumber: null,
+        },
+        confirmSaleDto: {
+          payments: [
+            {
+              paymentMethodId: crypto.randomUUID(),
+              amount: 11900,
+              transactionReference: null,
+              authorizationCode: null,
+              cardBrand: null,
+              cardLastFour: null,
+              batchNumber: null,
+              processorResponseCode: null,
+            },
+          ],
+        },
+        metadata: {
+          localSaleId: crypto.randomUUID(),
+          localNumber: 1,
+          workstationId: "ws-001",
+          sourceWorkstationId: "ws-001",
+          startedAt: now,
+          confirmedAt: now,
+        },
+      });
+
+      await pg.exec(`
+        INSERT INTO "SyncQueue" (id, "operationUuid", "operationType", payload, "payloadHash", "payloadSize",
+          "sourceWorkstationId", "sourceCreatedAt", "clientSequence", status)
+        VALUES ('${crypto.randomUUID()}', '${crypto.randomUUID()}', 'SALE_CONFIRMATION', '${payload.replace(/'/g, "''")}', 'def456', ${payload.length},
+          'ws-001', '${now}', 2, 'PENDING');
+      `);
+
+      const result = await pg.query(
+        `SELECT payload FROM "SyncQueue" WHERE "clientSequence" = 2`,
+      );
+      const stored = JSON.parse(
+        (result.rows[0] as Record<string, unknown>).payload as string,
+      ) as Record<string, unknown>;
+
+      // Full shape verification matching what the server's
+      // handleSaleConfirmation expects
+      expect(typeof stored.userId).toBe("string");
+      expect((stored.createSaleDto as Record<string, unknown>).saleType).toBe("FREE_SALE");
+      expect(
+        Array.isArray((stored.createSaleDto as Record<string, unknown>).items),
+      ).toBe(true);
+      expect(
+        Array.isArray((stored.confirmSaleDto as Record<string, unknown>).payments),
+      ).toBe(true);
       expect((stored.metadata as Record<string, unknown>).localNumber).toBe(1);
     });
 
@@ -520,6 +597,352 @@ describe("PGlite data integrity", () => {
       await expect(
         pg.exec(`DELETE FROM "Product" WHERE id = '${seeds.productId}'`),
       ).rejects.toThrow();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Business-flow scenarios — real transaction patterns
+  // ---------------------------------------------------------------------------
+
+  describe("Sale with multiple payment methods", () => {
+    it("records two payments (cash + card) for one sale with correct totals", async () => {
+      const sale = await insertSale(pg, seeds);
+
+      // Add a second payment method (card), then insert split payments
+      const cardMethodId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await pg.exec(`
+        INSERT INTO "PaymentMethod" (id, "internalCode", "name", "category",
+          "isActive", "isCash", "createdAt", "updatedAt")
+        VALUES ('${cardMethodId}', 'CARD01', 'Tarjeta Débito', 'DEBIT_CARD',
+          true, false, '${now}', '${now}');
+      `);
+
+      // Split payment: 5000 cash + 6900 card = 11900 total
+      await pg.exec(`
+        INSERT INTO "SalePayment" (id, "saleId", "paymentMethodId", "amount")
+        VALUES ('${crypto.randomUUID()}', '${sale.id as string}', '${seeds.paymentMethodId}', 5000);
+      `);
+      await pg.exec(`
+        INSERT INTO "SalePayment" (id, "saleId", "paymentMethodId", "amount")
+        VALUES ('${crypto.randomUUID()}', '${sale.id as string}', '${cardMethodId}', 6900);
+      `);
+
+      // Verify sum of payments equals the sale totalAmount
+      const paymentsResult = await pg.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total FROM "SalePayment" WHERE "saleId" = $1`,
+        [sale.id as string],
+      );
+      const paymentSum = Number(
+        (paymentsResult.rows[0] as Record<string, unknown>).total,
+      );
+
+      const saleResult = await pg.query(
+        `SELECT "totalAmount" FROM "Sale" WHERE id = $1`,
+        [sale.id as string],
+      );
+      const saleTotal = Number(
+        (saleResult.rows[0] as Record<string, unknown>).totalAmount,
+      );
+
+      expect(paymentSum).toBe(11900);
+      expect(paymentSum).toBe(saleTotal);
+    });
+
+    it("rejects payment with unknown payment method (FK enforcement)", async () => {
+      const sale = await insertSale(pg, seeds);
+      const unknownPmId = crypto.randomUUID();
+
+      await expect(
+        pg.exec(`
+          INSERT INTO "SalePayment" (id, "saleId", "paymentMethodId", "amount")
+          VALUES ('${crypto.randomUUID()}', '${sale.id as string}', '${unknownPmId}', 5000);
+        `),
+      ).rejects.toThrow(/foreign key|violates foreign/i);
+    });
+  });
+
+  describe("Prescription-controlled sale", () => {
+    it("stores a prescription-controlled sale with prescription reference", async () => {
+      const saleId = crypto.randomUUID();
+      const itemId = crypto.randomUUID();
+      const now = new Date().toISOString();
+
+      // Create a controlled-substance product requiring prescription
+      const controlledProductId = crypto.randomUUID();
+      await pg.exec(`
+        INSERT INTO "Product" (id, "internalCode", "commercialName", "genericName",
+          "activePrinciple", "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
+        VALUES ('${controlledProductId}', 'P-RES-001', 'Tramadol 50mg', 'Tramadol',
+          'Tramadol', 'Lab Pharma', 'CONTROLLED_SUBSTANCE', true, '${seeds.userId}', '${now}', '${now}');
+      `);
+
+      await pg.exec(`
+        INSERT INTO "Sale" (id, "localNumber", "operationalState",
+          "startedAt", "lastModifiedAt", "cashShiftId", "workstationId",
+          "sourceWorkstationId", "userId", "subtotal", "totalTax", "totalAmount")
+        VALUES ('${saleId}', 100, 'IN_PROGRESS',
+          '${now}', '${now}',
+          '${seeds.cashShiftId}', '${seeds.workstationId}', '${seeds.workstationId}', '${seeds.userId}',
+          5000.00, 950.00, 5950.00);
+      `);
+
+      await pg.exec(`
+        INSERT INTO "SaleItem" (id, "saleId", "productId",
+          "productInternalCodeSnapshot", "productCommercialNameSnapshot", "productGenericNameSnapshot",
+          "quantity", "unitPrice", "unitCost", "taxRate", "taxAmount",
+          "subtotal", "total", "requiresPrescription", "saleItemPrescriptionId")
+        VALUES ('${itemId}', '${saleId}', '${controlledProductId}',
+          'P-RES-001', 'Tramadol 50mg', 'Tramadol',
+          1, 5000.00, 3000.00, 19, 950.00,
+          5000.00, 5950.00, true, 'RX-2024-001234');
+      `);
+
+      // Verify prescription data was stored
+      const itemResult = await pg.query(
+        `SELECT "requiresPrescription", "saleItemPrescriptionId" FROM "SaleItem" WHERE id = $1`,
+        [itemId],
+      );
+      const itemRow = itemResult.rows[0] as Record<string, unknown>;
+      expect(itemRow.requiresPrescription).toBe(true);
+      expect(itemRow.saleItemPrescriptionId).toBe("RX-2024-001234");
+    });
+
+    it("enforces Product saleType enum value must be one of the defined types", async () => {
+      const now = new Date().toISOString();
+
+      await expect(
+        pg.exec(`
+          INSERT INTO "Product" (id, "internalCode", "commercialName", "genericName",
+            "activePrinciple", "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
+          VALUES ('${crypto.randomUUID()}', 'P-INVALID', 'Invalid', 'Invalid',
+            'Invalid', 'Lab', 'INVALID_TYPE', true, '${seeds.userId}', '${now}', '${now}');
+        `),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("SyncQueue status lifecycle", () => {
+    it("transitions from PENDING to PROCESSING to COMPLETED", async () => {
+      const operationUuid = crypto.randomUUID();
+      const now = new Date().toISOString();
+
+      await pg.exec(`
+        INSERT INTO "SyncQueue" (id, "operationUuid", "operationType", payload, "payloadHash", "payloadSize",
+          "sourceWorkstationId", "sourceCreatedAt", "clientSequence", status)
+        VALUES ('${crypto.randomUUID()}', '${operationUuid}', 'SALE_CONFIRMATION', '{}', 'abc', 2,
+          'ws-001', '${now}', 1, 'PENDING');
+      `);
+
+      // Transition to PROCESSING
+      await pg.exec(`
+        UPDATE "SyncQueue" SET status = 'PROCESSING'::"SyncStatus"
+        WHERE "operationUuid" = '${operationUuid}';
+      `);
+
+      let statusResult = await pg.query(
+        `SELECT status FROM "SyncQueue" WHERE "operationUuid" = $1`,
+        [operationUuid],
+      );
+      expect(
+        (statusResult.rows[0] as Record<string, unknown>).status,
+      ).toBe("PROCESSING");
+
+      // Transition to COMPLETED
+      await pg.exec(`
+        UPDATE "SyncQueue" SET status = 'COMPLETED'::"SyncStatus"
+        WHERE "operationUuid" = '${operationUuid}';
+      `);
+
+      statusResult = await pg.query(
+        `SELECT status FROM "SyncQueue" WHERE "operationUuid" = $1`,
+        [operationUuid],
+      );
+      expect(
+        (statusResult.rows[0] as Record<string, unknown>).status,
+      ).toBe("COMPLETED");
+    });
+
+    it("transitions from PENDING to FAILED with error details", async () => {
+      const operationUuid = crypto.randomUUID();
+      const now = new Date().toISOString();
+
+      await pg.exec(`
+        INSERT INTO "SyncQueue" (id, "operationUuid", "operationType", payload, "payloadHash", "payloadSize",
+          "sourceWorkstationId", "sourceCreatedAt", "clientSequence", status)
+        VALUES ('${crypto.randomUUID()}', '${operationUuid}', 'SALE_CONFIRMATION', '{}', 'abc', 2,
+          'ws-001', '${now}', 2, 'PENDING');
+      `);
+
+      await pg.exec(`
+        UPDATE "SyncQueue" SET status = 'FAILED'::"SyncStatus",
+          "lastErrorMessage" = 'Server returned 409 Conflict',
+          "retryCount" = 3
+        WHERE "operationUuid" = '${operationUuid}';
+      `);
+
+      const result = await pg.query(
+        `SELECT status, "lastErrorMessage", "retryCount" FROM "SyncQueue" WHERE "operationUuid" = $1`,
+        [operationUuid],
+      );
+      const row = result.rows[0] as Record<string, unknown>;
+      expect(row.status).toBe("FAILED");
+      expect(row.lastErrorMessage).toBe("Server returned 409 Conflict");
+      expect(Number(row.retryCount)).toBe(3);
+    });
+
+    it("rejects invalid SyncStatus enum values", async () => {
+      const now = new Date().toISOString();
+
+      await expect(
+        pg.exec(`
+          INSERT INTO "SyncQueue" (id, "operationUuid", "operationType", payload, "payloadHash", "payloadSize",
+            "sourceWorkstationId", "sourceCreatedAt", "clientSequence", status)
+          VALUES ('${crypto.randomUUID()}', '${crypto.randomUUID()}', 'SALE_CONFIRMATION', '{}', 'abc', 2,
+            'ws-001', '${now}', 3, 'INVALID_STATUS');
+        `),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe("SaleItemLot — inventory lot tracking", () => {
+    it("associates a lot with a sale item and enforces FK constraints", async () => {
+      const sale = await insertSale(pg, seeds);
+
+      // Create a lot for the product
+      const lotId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await pg.exec(`
+        INSERT INTO "Lot" (id, "productId", "batchNumber", "expirationDate",
+          "currentStock", "entryDate", "state",
+          "createdAt", "updatedAt")
+        VALUES ('${lotId}', '${seeds.productId}', 'LOT-2024-001', '2026-12-31',
+          50, '${now}', 'ACTIVE',
+          '${now}', '${now}');
+      `);
+
+      // Link the sale item to the lot
+      await pg.exec(`
+        INSERT INTO "SaleItemLot" (id, "saleItemId", "lotId", "quantity", "unitCostAtSale")
+        VALUES ('${crypto.randomUUID()}', '${sale.itemId as string}', '${lotId}', 2, 3000.00);
+      `);
+
+      const result = await pg.query(
+        `SELECT sl.quantity FROM "SaleItemLot" sl
+         JOIN "SaleItem" si ON si.id = sl."saleItemId"
+         WHERE si.id = $1`,
+        [sale.itemId as string],
+      );
+      expect(result.rows).toHaveLength(1);
+      expect(
+        Number((result.rows[0] as Record<string, unknown>).quantity),
+      ).toBe(2);
+    });
+
+    it("rejects SaleItemLot with non-existent lot (FK enforcement)", async () => {
+      const sale = await insertSale(pg, seeds);
+      const fakeLotId = crypto.randomUUID();
+
+      await expect(
+        pg.exec(`
+          INSERT INTO "SaleItemLot" (id, "saleItemId", "lotId", "quantity", "unitCostAtSale")
+          VALUES ('${crypto.randomUUID()}', '${sale.itemId as string}', '${fakeLotId}', 1, 3000.00);
+        `),
+      ).rejects.toThrow(/foreign key|violates foreign/i);
+    });
+  });
+
+  describe("Sale operational state lifecycle", () => {
+    it("transitions IN_PROGRESS → CONFIRMED → ANNULLED", async () => {
+      const sale = await insertSale(pg, seeds);
+
+      const transitions = ["CONFIRMED", "ANNULLED"] as const;
+      for (const state of transitions) {
+        await pg.exec(`
+          UPDATE "Sale" SET "operationalState" = '${state}'::"SaleOperationalState",
+            "lastModifiedAt" = '${new Date().toISOString()}'
+          WHERE id = '${sale.id as string}';
+        `);
+      }
+
+      const result = await pg.query(
+        `SELECT "operationalState" FROM "Sale" WHERE id = $1`,
+        [sale.id as string],
+      );
+      expect(
+        (result.rows[0] as Record<string, unknown>).operationalState,
+      ).toBe("ANNULLED");
+    });
+
+    it("allows direct transition to ABANDONED from IN_PROGRESS — DB schema does not enforce ordering", async () => {
+      // Note: the DB schema does NOT enforce state ordering via CHECK
+      // constraints.  The application (SalesPosService) is responsible for
+      // enforcing valid transitions.  This test documents that ABANDONED is
+      // a valid enum value and can be set at the schema level.
+      const sale = await insertSale(pg, seeds);
+
+      await pg.exec(`
+        UPDATE "Sale" SET "operationalState" = 'ABANDONED',
+          "lastModifiedAt" = '${new Date().toISOString()}'
+        WHERE id = '${sale.id as string}';
+      `);
+
+      const result = await pg.query(
+        `SELECT "operationalState" FROM "Sale" WHERE id = $1`,
+        [sale.id as string],
+      );
+      expect(
+        (result.rows[0] as Record<string, unknown>).operationalState,
+      ).toBe("ABANDONED");
+    });
+  });
+
+  describe("Invoice linked to Sale", () => {
+    it("creates an invoice for a confirmed sale", async () => {
+      const sale = await insertSale(pg, seeds);
+      const invoiceId = crypto.randomUUID();
+      const now = new Date().toISOString();
+
+      await pg.exec(`
+        INSERT INTO "Invoice" (id, "saleId", "workstationId", "invoiceType",
+          "invoiceNumber", "cufeProvisional", "issuedAt", "expiresAt",
+          "techKeySnapshot", "fullData")
+        VALUES ('${invoiceId}', '${sale.id as string}', '${seeds.workstationId}',
+          'ELECTRONIC_INVOICE', 'INV-2024-00001',
+          'CUFE-abc123def456', '${now}', '${now}',
+          'tech-key-001', '{}');
+      `);
+
+      const result = await pg.query(
+        `SELECT i."invoiceNumber", i."cufeProvisional", s."totalAmount"
+         FROM "Invoice" i
+         JOIN "Sale" s ON s.id = i."saleId"
+         WHERE i.id = $1`,
+        [invoiceId],
+      );
+      const row = result.rows[0] as Record<string, unknown>;
+      expect(row.invoiceNumber).toBe("INV-2024-00001");
+      expect(row.cufeProvisional).toBe("CUFE-abc123def456");
+      expect(Number(row.totalAmount)).toBe(11900);
+    });
+
+    it("enforces foreign key on relatedInvoiceId (self-referencing FK)", async () => {
+      const sale = await insertSale(pg, seeds);
+      const now = new Date().toISOString();
+      const fakeInvoiceId = crypto.randomUUID();
+
+      await expect(
+        pg.exec(`
+          INSERT INTO "Invoice" (id, "saleId", "workstationId", "invoiceType",
+            "invoiceNumber", "cufeProvisional", "issuedAt", "expiresAt",
+            "techKeySnapshot", "fullData", "relatedInvoiceId")
+          VALUES ('${crypto.randomUUID()}', '${sale.id as string}', '${seeds.workstationId}',
+            'ELECTRONIC_INVOICE', 'INV-FK-TEST',
+            'CUFE-fk', '${now}', '${now}',
+            'tech-key-fk', '{}',
+            '${fakeInvoiceId}');
+        `),
+      ).rejects.toThrow(/foreign key|violates foreign/i);
     });
   });
 });

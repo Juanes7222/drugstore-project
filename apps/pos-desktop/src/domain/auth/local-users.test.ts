@@ -1,49 +1,98 @@
 /**
- * Unit tests for local-users module — PLACEHOLDER_USERS fixture.
+ * Unit tests for local-users module — mapServerUserToLocalUserInfo.
  */
 import { describe, expect, it } from "vitest";
-import { RoleType } from "@pharmacy/shared-types";
-import { PLACEHOLDER_USERS } from "./local-users";
+import { mapServerUserToLocalUserInfo } from "./local-users";
 
-describe("PLACEHOLDER_USERS", () => {
-  it("contains exactly 4 entries", () => {
-    expect(PLACEHOLDER_USERS).toHaveLength(4);
+describe("mapServerUserToLocalUserInfo", () => {
+  it("maps displayName when present", () => {
+    const result = mapServerUserToLocalUserInfo({
+      id: "u-1",
+      displayName: "Juan Pérez",
+      role: "CASHIER",
+    });
+
+    expect(result).toEqual({
+      id: "u-1",
+      displayName: "Juan Pérez",
+      role: "CASHIER",
+      avatarUrl: null,
+      avatarColor: null,
+      username: "",
+    });
   });
 
-  it("has one OWNER, one MANAGER, and two CASHIERs", () => {
-    const owners = PLACEHOLDER_USERS.filter((u) => u.role === RoleType.OWNER);
-    const managers = PLACEHOLDER_USERS.filter((u) => u.role === RoleType.MANAGER);
-    const cashiers = PLACEHOLDER_USERS.filter((u) => u.role === RoleType.CASHIER);
+  it("falls back to fullName when displayName is absent", () => {
+    const result = mapServerUserToLocalUserInfo({
+      id: "u-2",
+      fullName: "María Rodríguez",
+      role: "MANAGER",
+    });
 
-    expect(owners).toHaveLength(1);
-    expect(managers).toHaveLength(1);
-    expect(cashiers).toHaveLength(2);
+    expect(result.displayName).toBe("María Rodríguez");
   });
 
-  it("every entry has all required fields populated", () => {
-    for (const user of PLACEHOLDER_USERS) {
-      expect(user.id).toBeTruthy();
-      expect(user.displayName).toBeTruthy();
-      expect(user.username).toBeTruthy();
-      expect(user.role).toBeDefined();
-      // avatarUrl and avatarColor can be null, but avatarColor must exist
-      expect(user.avatarColor).toBeTruthy();
-    }
+  it("defaults displayName to empty string when both displayName and fullName are absent", () => {
+    const result = mapServerUserToLocalUserInfo({
+      id: "u-3",
+      role: "OWNER",
+    });
+
+    expect(result.displayName).toBe("");
   });
 
-  it("no two users share the same id", () => {
-    const ids = PLACEHOLDER_USERS.map((u) => u.id);
-    expect(new Set(ids).size).toBe(ids.length);
+  it("passes through avatarUrl and avatarColor", () => {
+    const result = mapServerUserToLocalUserInfo({
+      id: "u-4",
+      displayName: "Carlos",
+      role: "CASHIER",
+      avatarUrl: "https://example.com/avatar.png",
+      avatarColor: "#FF5733",
+    });
+
+    expect(result.avatarUrl).toBe("https://example.com/avatar.png");
+    expect(result.avatarColor).toBe("#FF5733");
   });
 
-  it("users have expected ids matching their roles", () => {
-    const owner = PLACEHOLDER_USERS.find((u) => u.role === RoleType.OWNER);
-    expect(owner?.id).toBe("owner-1");
+  it("maps username when present", () => {
+    const result = mapServerUserToLocalUserInfo({
+      id: "u-5",
+      displayName: "Luisa",
+      role: "CASHIER",
+      username: "luisa.garcia",
+    });
 
-    const manager = PLACEHOLDER_USERS.find((u) => u.role === RoleType.MANAGER);
-    expect(manager?.id).toBe("manager-1");
+    expect(result.username).toBe("luisa.garcia");
+  });
 
-    const cashiers = PLACEHOLDER_USERS.filter((u) => u.role === RoleType.CASHIER);
-    expect(cashiers.map((c) => c.id).sort()).toEqual(["cashier-1", "cashier-2"]);
+  it("defaults username to empty string when absent", () => {
+    const result = mapServerUserToLocalUserInfo({
+      id: "u-6",
+      displayName: "Pedro",
+      role: "CASHIER",
+    });
+
+    expect(result.username).toBe("");
+  });
+
+  it("coerces role as-is (caller must validate against RoleType)", () => {
+    const result = mapServerUserToLocalUserInfo({
+      id: "u-7",
+      displayName: "Admin",
+      role: "ADMIN",
+    });
+
+    expect(result.role).toBe("ADMIN");
+  });
+
+  it("defaults avatarUrl and avatarColor to null when absent", () => {
+    const result = mapServerUserToLocalUserInfo({
+      id: "u-8",
+      displayName: "Test",
+      role: "CASHIER",
+    });
+
+    expect(result.avatarUrl).toBeNull();
+    expect(result.avatarColor).toBeNull();
   });
 });

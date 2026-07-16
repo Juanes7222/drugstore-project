@@ -1,12 +1,12 @@
 /**
- * Component tests for LoginPage — the thin wiring container.
+ * Unit tests for LoginPage — the thin wiring container.
  *
  * Covers: all render paths (already-logged-in, 2FA, avatar grid,
  * manual input, selected-user credential, error banner) by mocking
  * the useLoginPage hook and all child components.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { LoginPage } from "./login.page";
 import { RoleType } from "@pharmacy/shared-types";
 import type { LocalUserInfo } from "../../../domain/auth/local-users";
@@ -17,9 +17,29 @@ import type { AuthService } from "../../../domain/auth/auth.service";
 // vi.mock calls.
 // ---------------------------------------------------------------------------
 
-const { mockSessionRef } = vi.hoisted(() => {
+const { mockSessionRef, mockCachedUsers } = vi.hoisted(() => {
   const mockSessionRef: { current: unknown } = { current: null };
-  return { mockSessionRef };
+  const mockCachedUsers: { current: Array<Record<string, unknown>> } = {
+    current: [
+      {
+        id: "owner-1",
+        displayName: "Administrador del Sistema",
+        role: "OWNER",
+        avatarUrl: null,
+        avatarColor: "#1E40AF",
+        username: "admin",
+      },
+      {
+        id: "cashier-1",
+        displayName: "María Rodríguez",
+        role: "CASHIER",
+        avatarUrl: null,
+        avatarColor: "#7C3AED",
+        username: "cashier1",
+      },
+    ],
+  };
+  return { mockSessionRef, mockCachedUsers };
 });
 
 // ---------------------------------------------------------------------------
@@ -30,6 +50,17 @@ vi.mock("../../../domain/auth/local-session.store", () => ({
   useLocalSessionStore: (
     selector: (s: { session: unknown }) => unknown,
   ) => selector({ session: mockSessionRef.current }),
+}));
+
+// ---------------------------------------------------------------------------
+// Mock loadCachedUsers — the component calls it in a useEffect on mount.
+// Without this mock the promise never resolves in the test environment,
+// leaving cachedUsers === null and rendering "Cargando..." instead of
+// the avatar grid or manual form.
+// ---------------------------------------------------------------------------
+
+vi.mock("../../../domain/auth/local-user-cache", () => ({
+  loadCachedUsers: () => Promise.resolve(mockCachedUsers.current),
 }));
 
 // ---------------------------------------------------------------------------
@@ -163,11 +194,13 @@ describe("LoginPage", () => {
 
   // ── Avatar grid (default state) ──────────────────────────────────────
 
-  it("renders LoginHeader and AvatarGrid by default", () => {
+  it("renders LoginHeader and AvatarGrid by default", async () => {
     render(<LoginPage />);
 
-    expect(screen.getByTestId("login-header")).toBeInTheDocument();
-    expect(screen.getByTestId("avatar-grid")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("login-header")).toBeInTheDocument();
+      expect(screen.getByTestId("avatar-grid")).toBeInTheDocument();
+    });
     expect(
       screen.queryByTestId("manual-login-form"),
     ).not.toBeInTheDocument();
@@ -178,12 +211,14 @@ describe("LoginPage", () => {
 
   // ── Manual input mode ────────────────────────────────────────────────
 
-  it("renders ManualLoginForm when showManualInput is true", () => {
+  it("renders ManualLoginForm when showManualInput is true", async () => {
     mockLoginPageReturn.showManualInput = true;
 
     render(<LoginPage />);
 
-    expect(screen.getByTestId("manual-login-form")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("manual-login-form")).toBeInTheDocument();
+    });
     expect(
       screen.queryByTestId("avatar-grid"),
     ).not.toBeInTheDocument();
@@ -193,12 +228,14 @@ describe("LoginPage", () => {
   });
 
   // Avatar grid is hidden when manual input is shown
-  it("hides AvatarGrid when manual input is shown", () => {
+  it("hides AvatarGrid when manual input is shown", async () => {
     mockLoginPageReturn.showManualInput = true;
 
     render(<LoginPage />);
 
-    expect(screen.getByTestId("manual-login-form")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("manual-login-form")).toBeInTheDocument();
+    });
     expect(
       screen.queryByTestId("avatar-grid"),
     ).not.toBeInTheDocument();
@@ -206,7 +243,7 @@ describe("LoginPage", () => {
 
   // ── Selected user ────────────────────────────────────────────────────
 
-  it("renders SelectedUserCredential when a user is selected", () => {
+  it("renders SelectedUserCredential when a user is selected", async () => {
     mockLoginPageReturn.selectedUser = {
       id: "user-1",
       username: "jperez",
@@ -218,11 +255,17 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("selected-user-credential"),
+      ).toBeInTheDocument();
+    });
+    // When a user is selected, the credential replaces the avatar grid
+    expect(screen.queryByTestId("avatar-grid")).not.toBeInTheDocument();
+    // Manual login form is not shown either
     expect(
-      screen.getByTestId("selected-user-credential"),
-    ).toBeInTheDocument();
-    // Avatar grid is still visible alongside the credential
-    expect(screen.getByTestId("avatar-grid")).toBeInTheDocument();
+      screen.queryByTestId("manual-login-form"),
+    ).not.toBeInTheDocument();
   });
 
   it("hides manual form when user is selected", () => {

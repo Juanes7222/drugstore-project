@@ -81,7 +81,7 @@ describe("SyncRecoveryService", () => {
 
     it("uses snapshot generator for SALE_CONFIRMATION re-snapshot", async () => {
       const snapshotGenerator: PayloadSnapshotGenerator = vi.fn().mockResolvedValue({
-        payload: { createInput: {}, confirmInput: {}, metadata: {} },
+        payload: { userId: "user-001", createSaleDto: {}, confirmSaleDto: {}, metadata: {} },
         payloadHash: "new-hash",
       });
 

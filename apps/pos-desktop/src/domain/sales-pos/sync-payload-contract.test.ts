@@ -11,7 +11,8 @@
  * each mocking the other side.  This means a payload-shape drift between the
  * two is not caught by either test suite.  This file is the bridge: it
  * documents the server's expected payload structure and verifies the POS
- * produces it.  No Zod dependency — uses plain Vitest matchers.
+ * produces it directly (no transformation layer needed).  No Zod dependency
+ * — uses plain Vitest matchers.
  *
  * ## Server-side reference
  *
@@ -51,6 +52,8 @@ function assertValidCreateSaleDto(value: unknown): void {
     expect(item.productId).toMatch(UUID_RE);
     expect(typeof item.quantity).toBe("number");
     expect(item.unitPrice).toMatch(DECIMAL_RE);
+    expect(typeof item.discount).toBe("string");
+    expect(item.discount).toMatch(DECIMAL_RE);
   }
   expect(
     obj.prescriptionNumber === null ||
@@ -119,7 +122,7 @@ interface PosItemInput {
   productId: string;
   quantity: number;
   unitPrice: string;
-  discountPercentage?: number;
+  discount: string;
   discountReason?: string | null;
 }
 
@@ -144,62 +147,18 @@ interface PosMetadata {
 }
 
 interface PosSyncPayload {
-  createInput: {
+  userId: string;
+  createSaleDto: {
     saleType: string;
     cashShiftId: string;
     clientId: string | null;
     items: PosItemInput[];
     prescriptionNumber: string | null;
   };
-  confirmInput: {
+  confirmSaleDto: {
     payments: PosPaymentInput[];
   };
   metadata: PosMetadata;
-}
-
-// ---------------------------------------------------------------------------
-// Converter: POS payload → server-expected shape
-// ---------------------------------------------------------------------------
-
-/**
- * Transform a POS-generated payload into the server-expected shape.
- * This is what a future adapter/migration layer would need to do, and it is
- * documented here so the transformation is visible in the test suite.
- *
- * Server expects keys: createSaleDto, confirmSaleDto, userId
- * POS produces keys:   createInput, confirmInput, metadata
- */
-function toServerPayload(pos: PosSyncPayload, userId: string): Record<string, unknown> {
-  return {
-    userId,
-    createSaleDto: {
-      saleType: pos.createInput.saleType,
-      cashShiftId: pos.createInput.cashShiftId,
-      clientId: pos.createInput.clientId ?? null,
-      items: pos.createInput.items.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        // Server expects `discount` (string), POS has discountPercentage (number)
-        discount: item.discountPercentage
-          ? String(item.discountPercentage)
-          : undefined,
-      })),
-      prescriptionNumber: pos.createInput.prescriptionNumber,
-    },
-    confirmSaleDto: {
-      payments: pos.confirmInput.payments.map((p) => ({
-        paymentMethodId: p.paymentMethodId,
-        amount: p.amount,
-        transactionReference: p.transactionReference ?? undefined,
-        authorizationCode: p.authorizationCode ?? undefined,
-        cardBrand: p.cardBrand ?? undefined,
-        cardLastFour: p.cardLastFour ?? undefined,
-        batchNumber: p.batchNumber ?? undefined,
-        processorResponseCode: p.processorResponseCode ?? undefined,
-      })),
-    },
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +167,8 @@ function toServerPayload(pos: PosSyncPayload, userId: string): Record<string, un
 
 function makePosSyncPayload(overrides?: Partial<PosSyncPayload>): PosSyncPayload {
   return {
-    createInput: {
+    userId: "user-001",
+    createSaleDto: {
       saleType: "FREE_SALE",
       cashShiftId: "b1f3c2a4-5d6e-7f89-0a1b-2c3d4e5f6a7b",
       clientId: null,
@@ -217,13 +177,13 @@ function makePosSyncPayload(overrides?: Partial<PosSyncPayload>): PosSyncPayload
           productId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
           quantity: 2,
           unitPrice: "5000.00",
-          discountPercentage: 0,
+          discount: "0",
           discountReason: null,
         },
       ],
       prescriptionNumber: null,
     },
-    confirmInput: {
+    confirmSaleDto: {
       payments: [
         {
           paymentMethodId: "c4a5b6c7-d8e9-0123-f456-789abcdef012",
@@ -255,98 +215,77 @@ function makePosSyncPayload(overrides?: Partial<PosSyncPayload>): PosSyncPayload
 
 describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
   // -------------------------------------------------------------------
-  // Gap documentation
+  // Direct shape validation — no transformation needed
   // -------------------------------------------------------------------
 
-  describe("POS → Server key-name gap (documented)", () => {
-    it("exposes the property-name mismatch between POS and server", () => {
-      // This test documents the Gap — both sides must agree on property
-      // names for the sync replay to work.
-      const pos = makePosSyncPayload();
-      const posKeys = Object.keys(pos);
+  describe("POS payload matches server-expected shape directly", () => {
+    it("includes all server-expected keys at the top level", () => {
+      const payload = makePosSyncPayload();
+      const keys = Object.keys(payload);
 
-      // POS sends "createInput", "confirmInput", "metadata"
-      expect(posKeys).toContain("createInput");
-      expect(posKeys).toContain("confirmInput");
-      expect(posKeys).toContain("metadata");
-
-      // Server expects "createSaleDto", "confirmSaleDto", "userId"
-      // The POS currently does NOT include any of these.
-      // TODO: Fix when either side aligns the key names.
-      expect(posKeys).not.toContain("createSaleDto");
-      expect(posKeys).not.toContain("confirmSaleDto");
-      expect(posKeys).not.toContain("userId");
+      expect(keys).toContain("userId");
+      expect(keys).toContain("createSaleDto");
+      expect(keys).toContain("confirmSaleDto");
+      expect(keys).toContain("metadata");
     });
 
-    it("can be transformed to match the server-expected shape", () => {
-      const pos = makePosSyncPayload();
-      const serverPayload = toServerPayload(pos, "user-001");
+    it("passes server-side validation without transformation", () => {
+      const payload = makePosSyncPayload();
 
-      expect(() => assertValidSaleConfirmationPayload(serverPayload)).not.toThrow();
+      expect(() => assertValidSaleConfirmationPayload(payload)).not.toThrow();
     });
   });
 
   // -------------------------------------------------------------------
-  // createInput structure
+  // createSaleDto structure
   // -------------------------------------------------------------------
 
-  describe("createInput → createSaleDto mapping", () => {
-    it("matches CreateSaleDto schema after field renaming", () => {
-      const pos = makePosSyncPayload();
-      const serverPayload = toServerPayload(pos, "user-001");
+  describe("createSaleDto structure", () => {
+    it("matches CreateSaleDto schema", () => {
+      const payload = makePosSyncPayload();
 
       expect(() =>
-        assertValidCreateSaleDto(serverPayload.createSaleDto),
+        assertValidCreateSaleDto(payload.createSaleDto),
       ).not.toThrow();
     });
 
-    it("includes discount fields the server maps differently", () => {
-      const pos = makePosSyncPayload({
-        createInput: {
-          ...makePosSyncPayload().createInput,
+    it("includes discount as string and discountReason", () => {
+      const payload = makePosSyncPayload({
+        createSaleDto: {
+          ...makePosSyncPayload().createSaleDto,
           items: [
             {
               productId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
               quantity: 1,
               unitPrice: "5000.00",
-              discountPercentage: 10,
+              discount: "10",
               discountReason: "Promoción del día",
             },
           ],
         },
       });
 
-      // POS shape has discountPercentage + discountReason
-      expect(pos.createInput.items[0]?.discountPercentage).toBe(10);
-      expect(pos.createInput.items[0]?.discountReason).toBe("Promoción del día");
-
-      // After transform to server shape, discount becomes a string
-      const serverPayload = toServerPayload(pos, "user-001");
-      const createSaleDto = serverPayload.createSaleDto as Record<string, unknown>;
-      const items = createSaleDto.items as Array<Record<string, unknown>>;
-
-      expect(items[0]?.discount).toBe("10");
-      // Server does not have discountReason at item level
+      expect(payload.createSaleDto.items[0]?.discount).toBe("10");
+      expect(payload.createSaleDto.items[0]?.discountReason).toBe("Promoción del día");
     });
   });
 
   // -------------------------------------------------------------------
-  // confirmInput structure
+  // confirmSaleDto structure
   // -------------------------------------------------------------------
 
-  describe("confirmInput → confirmSaleDto mapping", () => {
-    it("matches ConfirmSaleDto schema after field renaming", () => {
-      const pos = makePosSyncPayload();
-      const serverPayload = toServerPayload(pos, "user-001");
+  describe("confirmSaleDto structure", () => {
+    it("matches ConfirmSaleDto schema", () => {
+      const payload = makePosSyncPayload();
 
       expect(() =>
-        assertValidConfirmSaleDto(serverPayload.confirmSaleDto),
+        assertValidConfirmSaleDto(payload.confirmSaleDto),
       ).not.toThrow();
     });
 
     it("preserves optional payment fields when present", () => {
-      const pos = makePosSyncPayload({
-        confirmInput: {
+      const payload = makePosSyncPayload({
+        confirmSaleDto: {
           payments: [
             {
               paymentMethodId: "c4a5b6c7-d8e9-0123-f456-789abcdef012",
@@ -362,9 +301,26 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
         },
       });
 
-      expect(pos.confirmInput.payments[0]?.transactionReference).toBe("TXN-001");
-      expect(pos.confirmInput.payments[0]?.cardBrand).toBe("VISA");
-      expect(pos.confirmInput.payments[0]?.cardLastFour).toBe("1234");
+      expect(payload.confirmSaleDto.payments[0]?.transactionReference).toBe("TXN-001");
+      expect(payload.confirmSaleDto.payments[0]?.cardBrand).toBe("VISA");
+      expect(payload.confirmSaleDto.payments[0]?.cardLastFour).toBe("1234");
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // userId — operator identity
+  // -------------------------------------------------------------------
+
+  describe("userId", () => {
+    it("is a non-empty string identifying the confirming operator", () => {
+      const payload = makePosSyncPayload();
+      expect(typeof payload.userId).toBe("string");
+      expect(payload.userId.length).toBeGreaterThan(0);
+    });
+
+    it("is exposed at the top-level of the payload", () => {
+      const payload = makePosSyncPayload();
+      expect(payload.userId).toBe("user-001");
     });
   });
 
@@ -374,25 +330,25 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
 
   describe("metadata — local audit data", () => {
     it("includes localSaleId for correlating server replay results", () => {
-      const pos = makePosSyncPayload();
-      expect(pos.metadata.localSaleId).toMatch(UUID_RE);
+      const payload = makePosSyncPayload();
+      expect(payload.metadata.localSaleId).toMatch(UUID_RE);
     });
 
     it("includes timestamps in ISO-8601 format", () => {
-      const pos = makePosSyncPayload();
-      expect(pos.metadata.startedAt).toMatch(ISO_DATETIME_RE);
-      expect(pos.metadata.confirmedAt).toMatch(ISO_DATETIME_RE);
+      const payload = makePosSyncPayload();
+      expect(payload.metadata.startedAt).toMatch(ISO_DATETIME_RE);
+      expect(payload.metadata.confirmedAt).toMatch(ISO_DATETIME_RE);
     });
 
     it("includes workstation identifiers", () => {
-      const pos = makePosSyncPayload();
-      expect(pos.metadata.workstationId).toBe("ws-001");
-      expect(pos.metadata.sourceWorkstationId).toBe(pos.metadata.workstationId);
+      const payload = makePosSyncPayload();
+      expect(payload.metadata.workstationId).toBe("ws-001");
+      expect(payload.metadata.sourceWorkstationId).toBe(payload.metadata.workstationId);
     });
 
     it("includes the sequential local number", () => {
-      const pos = makePosSyncPayload();
-      expect(pos.metadata.localNumber).toBeGreaterThanOrEqual(1);
+      const payload = makePosSyncPayload();
+      expect(payload.metadata.localNumber).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -404,11 +360,10 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
     /**
      * The outer envelope is validated server-side by SyncOperationSchema
      * (apps/server/src/modules/sync/dto/sync-operation.schema.ts).
-     * Even though the payload key names inside differ, the envelope fields
-     * (operationType, operationUuid, payload, payloadHash, sourceCreatedAt,
-     * clientSequence) are checked by Zod before the dispatcher sees the
-     * payload.  These tests document the envelope fields the POS must
-     * provide, mirrored inline here.
+     * The envelope fields (operationType, operationUuid, payload,
+     * payloadHash, sourceCreatedAt, clientSequence) are checked by Zod
+     * before the dispatcher sees the payload.  These tests document the
+     * envelope fields the POS must provide, mirrored inline here.
      */
     it("conforms to the server's envelope format", () => {
       const envelope = {
@@ -476,11 +431,6 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
 // SalesPosService.computePayloadHash() in sync with the actual serialised
 // payload.
 //
-// Current known gap (as of Jul 2026):
-//   POS sends:   { createInput, confirmInput, metadata }
-//   Server expects: { createSaleDto, confirmSaleDto, userId }
-//   Fix needed in either:
-//     a) POS's createSyncQueueEntry to emit the server-expected keys, OR
-//     b) Server's handleSaleConfirmation to read the POS keys
-//   The transformation in toServerPayload() shows what the mapping looks
-//   like once a decision is made.
+// As of Jul 2026, the POS emits the server-expected keys directly:
+//   { userId, createSaleDto, confirmSaleDto, metadata }
+// No transformation layer is needed.  Both sides agree on the field names.

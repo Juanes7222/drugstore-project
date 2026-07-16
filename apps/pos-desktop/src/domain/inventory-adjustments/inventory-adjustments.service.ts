@@ -497,19 +497,34 @@ export class InventoryAdjustmentsService {
     session: { userId: string; workstationId: string },
     appliedAt: Date,
   ): Promise<void> {
+    // Read the actual inventory movements created during this transaction
+    // so that the payload carries the resolved lotId and movementType that
+    // the server's CreateInventoryAdjustmentDto requires (not just productId).
+    const movements = await tx.inventoryMovement.findMany({
+      where: { adjustmentDocumentId: adjustment.id },
+      select: {
+        lotId: true,
+        movementType: true,
+        quantity: true,
+        reason: true,
+      },
+    });
+
     const payloadObj = {
-      adjustmentId: adjustment.id,
-      sequentialNumber: adjustment.sequentialNumber,
-      reason: adjustment.reason,
-      notes: adjustment.notes,
-      items: input.items.map((item) => ({
-        productId: item.productId,
-        quantity: item.quantity,
-        lotId: item.lotId ?? null,
-        reason: item.reason ?? null,
-      })),
+      userId: session.userId,
+      createAdjustmentDto: {
+        reason: adjustment.reason,
+        notes: adjustment.notes,
+        items: movements.map((m) => ({
+          lotId: m.lotId,
+          movementType: m.movementType,
+          quantity: m.quantity,
+          reason: m.reason ?? undefined,
+        })),
+      },
       metadata: {
-        userId: session.userId,
+        adjustmentId: adjustment.id,
+        sequentialNumber: adjustment.sequentialNumber,
         workstationId: session.workstationId,
         appliedAt: appliedAt.toISOString(),
       },

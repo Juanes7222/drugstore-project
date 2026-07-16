@@ -699,9 +699,9 @@ export class SalesPosService {
   /**
    * Build and insert a SyncQueue row for a confirmed sale.
    *
-   * The payload contains everything the server-side `create` and `confirm`
-   * endpoints need to replay this sale for real: the create input (items,
-   * quantities, prices), the confirm input (payments), and metadata about
+   * The payload contains everything the server-side `handleSaleConfirmation`
+   * needs to replay this sale: the userId, the createSaleDto (items,
+   * quantities, prices), the confirmSaleDto (payments), and metadata about
    * the local operation (timestamps, workstation, local number).
    *
    * This runs inside the same transaction as the sale confirmation, so
@@ -728,10 +728,12 @@ export class SalesPosService {
     session: { userId: string; workstationId: string },
     confirmedAt: Date,
   ): Promise<void> {
-    // Build the structured payload — the exact shape the server-side replay
-    // processor will deserialise for SALE_CONFIRMATION operations.
+    // Build the structured payload matching the server-side dispatcher's
+    // expectations: userId, createSaleDto, confirmSaleDto. Metadata is
+    // included for local audit but is not consumed server-side.
     const payloadObj = {
-      createInput: {
+      userId: session.userId,
+      createSaleDto: {
         saleType: 'FREE_SALE',
         cashShiftId: sale.cashShiftId,
         clientId: sale.clientId,
@@ -739,12 +741,12 @@ export class SalesPosService {
           productId: item.productId,
           quantity: item.quantity,
           unitPrice: item.unitPrice.toString(),
-          discountPercentage: Number(item.discountPercentage.toString()),
+          discount: item.discountPercentage.toString(),
           discountReason: item.discountReason,
         })),
         prescriptionNumber: null,
       },
-      confirmInput: {
+      confirmSaleDto: {
         payments: input.payments.map((p) => ({
           paymentMethodId: p.paymentMethodId,
           amount: p.amount,
