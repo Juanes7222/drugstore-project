@@ -29,6 +29,9 @@ import { ForgotPasswordPage } from "@/components/auth/forgot-password.page";
 import { ResetPasswordPage } from "@/components/auth/reset-password.page";
 import { UserManagementPage } from "@/components/auth/user-management.page";
 import { AuditLogView } from "@/components/auth/audit-log-view";
+import { SessionView } from "@/components/auth/sessions/session-view";
+import { OfflineModeBanner } from "@/components/auth/offline/offline-mode-banner";
+import { PendingBlessingModal } from "@/components/auth/offline/pending-blessing-modal";
 import { ServiceProvider } from "./components/common/service-context";
 import { AssistantLayer } from "./components/assistant/assistant-layer";
 import { useAppSelector } from "@/store/hooks";
@@ -108,12 +111,14 @@ const InnerApp: FC = () => {
         openedAt={new Date().toISOString()}
         initialSyncState={isOnline ? "online" : "offline"}
       >
+        <OfflineModeBanner />
         <div className="flex h-full">
           <NavigationSidebar />
           <div className="flex-1 overflow-hidden">
             <UserManagementPage />
           </div>
         </div>
+        <PendingBlessingModal />
         {assistantLayer}
       </AppShell>
     );
@@ -127,12 +132,35 @@ const InnerApp: FC = () => {
         openedAt={new Date().toISOString()}
         initialSyncState={isOnline ? "online" : "offline"}
       >
+        <OfflineModeBanner />
         <div className="flex h-full">
           <NavigationSidebar />
           <div className="flex-1 overflow-hidden">
             <AuditLogView />
           </div>
         </div>
+        <PendingBlessingModal />
+        {assistantLayer}
+      </AppShell>
+    );
+  }
+
+  if (activeScreen === "offline-sessions") {
+    return (
+      <AppShell
+        cashierName={session?.fullName || ""}
+        openingBalanceCents={0}
+        openedAt={new Date().toISOString()}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <OfflineModeBanner />
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <SessionView />
+          </div>
+        </div>
+        <PendingBlessingModal />
         {assistantLayer}
       </AppShell>
     );
@@ -145,6 +173,8 @@ const InnerApp: FC = () => {
       openedAt={new Date().toISOString()}
       initialSyncState={isOnline ? "online" : "offline"}
     >
+      <OfflineModeBanner />
+
       <div className="flex h-full">
         <NavigationSidebar />
 
@@ -325,6 +355,9 @@ const InnerApp: FC = () => {
 
       {/* Overlay components: update-check interceptor renders toasts/modals */}
       <UpdateCheckInterceptor />
+
+      {/* Offline blessing modal — auto-manages visibility */}
+      <PendingBlessingModal />
 
       {/* Assistant overlays: command palette, suggestions, help, shortcuts */}
       {assistantLayer}

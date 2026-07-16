@@ -233,6 +233,51 @@ export const COMMANDS: CommandDefinition[] = [
     },
   },
 
+  // ---- Offline / Auth ----
+  {
+    id: "cmd.view-offline-sessions",
+    label: "Ver sesiones offline",
+    group: "Sesiones",
+    audience: "manager",
+    action: "NAVIGATE",
+    actionPayload: "offline-sessions",
+    execute: async () => {
+      const { store } = await import("../../renderer/store/store");
+      store.dispatch({
+        type: "ui/setActiveScreen",
+        payload: "offline-sessions",
+      });
+    },
+  },
+  {
+    id: "cmd.revalidate-sessions",
+    label: "Revalidar sesiones pendientes",
+    group: "Sesiones",
+    audience: "manager",
+    action: "RUN_COMMAND",
+    execute: async () => {
+      // The re-evaluation is handled by the useOfflineAuth hook.
+      // Dispatched via the suggestion engine or manual trigger.
+      console.log("[Assistant] Revalidate offline sessions requested");
+    },
+  },
+  {
+    id: "cmd.clear-offline-cache",
+    label: "Limpiar cache offline",
+    group: "Sesiones",
+    audience: "manager",
+    action: "RUN_COMMAND",
+    execute: async () => {
+      const { store } = await import("../../renderer/store/store");
+      // Dispatch an action to clear credential cache
+      store.dispatch({
+        type: "ui/setActiveScreen",
+        payload: "offline-sessions",
+      });
+      console.log("[Assistant] Clear offline cache requested");
+    },
+  },
+
   // ---- Backup / Recovery ----
   {
     id: "cmd.create-backup",

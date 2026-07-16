@@ -4,6 +4,10 @@
  * Extracted from the monolithic login.page.tsx so the logic can be
  * unit-tested without rendering the full dialog tree, and to keep the
  * page component as a thin wiring container.
+ *
+ * Extended with offline login support: when the browser is offline,
+ * the hook routes through the offline auth service instead of the
+ * regular server-based login, and adjusts 2FA behaviour accordingly.
  */
 
 import { useState, useCallback, useEffect } from 'react';
@@ -13,8 +17,14 @@ import { setActiveScreen } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../domain/auth/local-session.store';
 import { createAuthService, type AuthService } from '../../domain/auth/auth.service';
 import { InvalidCredentialsException } from '../../domain/auth/exceptions';
+import {
+  NoOfflineCredentialsException,
+  OfflineCredentialsExpiredException,
+  OfflineTokenRevokedException,
+} from '../../domain/auth/offline';
 import { API_BASE_URL } from '@infra/config';
 import type { LocalUserInfo } from '../../domain/auth/local-users';
+import { useOfflineAuth } from './use-offline-auth';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,6 +76,17 @@ export interface UseLoginPageReturn {
   setIdentifier: (id: string) => void;
   /** Set the password field value. */
   setPassword: (pw: string) => void;
+
+  // ---- Offline extensions ----
+
+  /** Whether the application is currently in strict offline mode. */
+  isOfflineMode: boolean;
+  /** User-visible offline error message, or null. */
+  offlineErrorMessage: string | null;
+  /** Whether 2FA was skipped because the app is offline. */
+  offlineLoginSkipped2fa: boolean;
+  /** Clear the offline error message. */
+  handleOfflineDismiss: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +97,13 @@ export function useLoginPage(): UseLoginPageReturn {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const session = useLocalSessionStore((s) => s.session);
+
+  // Offline auth hook
+  const { connectionState, attemptOfflineLogin } = useOfflineAuth();
+
+  // Strict offline check: only use offline login when truly disconnected,
+  // not during the RECONNECTING transition (where the browser IS online).
+  const isStrictlyOffline = connectionState === 'OFFLINE';
 
   // Auth service — created once via lazy initializer.
   const [authService] = useState<AuthService>(() =>
@@ -93,6 +121,8 @@ export function useLoginPage(): UseLoginPageReturn {
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [lockoutUntil, setLockoutUntil] = useState<Date | null>(null);
   const [countdown, setCountdown] = useState(0);
+  const [offlineLoginSkipped2fa, setOfflineLoginSkipped2fa] = useState(false);
+  const [offlineErrorMessage, setOfflineErrorMessage] = useState<string | null>(null);
 
   // Redirect to sales if already logged in
   useEffect(() => {
@@ -134,7 +164,21 @@ export function useLoginPage(): UseLoginPageReturn {
       if (!selectedUser) return;
       setIsLoading(true);
       setError(null);
+
       try {
+        if (isStrictlyOffline) {
+          // Offline login — skip server call
+          await attemptOfflineLogin(
+            selectedUser.id,
+            pin,
+            'PIN',
+          );
+          setOfflineLoginSkipped2fa(false);
+          dispatch(setActiveScreen('sales'));
+          return;
+        }
+
+        // Online login — normal flow
         const result = await authService.login(
           selectedUser.username,
           pin,
@@ -154,6 +198,36 @@ export function useLoginPage(): UseLoginPageReturn {
       } catch (err) {
         if (err instanceof InvalidCredentialsException) {
           setError(t('auth.pin_incorrect'));
+        } else if (err instanceof NoOfflineCredentialsException) {
+          setError(
+            t(
+              'offline_login.no_credentials',
+              'No podés entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+            ),
+          );
+          setOfflineErrorMessage(
+            'No podés entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+          );
+        } else if (err instanceof OfflineCredentialsExpiredException) {
+          setError(
+            t(
+              'offline_login.credentials_expired',
+              'Tu acceso offline expiró. Conectate a internet para renovar.',
+            ),
+          );
+          setOfflineErrorMessage(
+            'Tu acceso offline expiró. Conectate a internet para renovar.',
+          );
+        } else if (err instanceof OfflineTokenRevokedException) {
+          setError(
+            t(
+              'offline_login.token_revoked',
+              'Esta cuenta fue deshabilitada. Contactá al manager.',
+            ),
+          );
+          setOfflineErrorMessage(
+            'Esta cuenta fue deshabilitada. Contactá al manager.',
+          );
         } else if ((err as Error).message?.includes('locked')) {
           setError(t('auth.too_many_attempts'));
         } else {
@@ -163,14 +237,28 @@ export function useLoginPage(): UseLoginPageReturn {
         setIsLoading(false);
       }
     },
-    [selectedUser, authService, dispatch, t],
+    [selectedUser, authService, dispatch, t, isStrictlyOffline, attemptOfflineLogin],
   );
 
   const handlePasswordLogin = useCallback(async () => {
     if (!identifier || !password) return;
     setIsLoading(true);
     setError(null);
+
     try {
+      if (isStrictlyOffline) {
+        // Offline login — attempt via offline auth
+        await attemptOfflineLogin(
+          selectedUser?.id ?? identifier,
+          password,
+          'PASSWORD',
+        );
+        setOfflineLoginSkipped2fa(false);
+        dispatch(setActiveScreen('sales'));
+        return;
+      }
+
+      // Online login — normal flow
       const result = await authService.login(
         identifier,
         password,
@@ -190,6 +278,36 @@ export function useLoginPage(): UseLoginPageReturn {
     } catch (err) {
       if (err instanceof InvalidCredentialsException) {
         setError(t('auth.password_incorrect'));
+      } else if (err instanceof NoOfflineCredentialsException) {
+        setError(
+          t(
+            'offline_login.no_credentials',
+            'No podés entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+          ),
+        );
+        setOfflineErrorMessage(
+          'No podés entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+        );
+      } else if (err instanceof OfflineCredentialsExpiredException) {
+        setError(
+          t(
+            'offline_login.credentials_expired',
+            'Tu acceso offline expiró. Conectate a internet para renovar.',
+          ),
+        );
+        setOfflineErrorMessage(
+          'Tu acceso offline expiró. Conectate a internet para renovar.',
+        );
+      } else if (err instanceof OfflineTokenRevokedException) {
+        setError(
+          t(
+            'offline_login.token_revoked',
+            'Esta cuenta fue deshabilitada. Contactá al manager.',
+          ),
+        );
+        setOfflineErrorMessage(
+          'Esta cuenta fue deshabilitada. Contactá al manager.',
+        );
       } else if ((err as Error).message?.includes('locked')) {
         setLockoutUntil(new Date(Date.now() + 5 * 60 * 1000));
         setError(t('auth.too_many_attempts_minutes'));
@@ -199,7 +317,16 @@ export function useLoginPage(): UseLoginPageReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [identifier, password, authService, dispatch, t]);
+  }, [
+    identifier,
+    password,
+    selectedUser,
+    authService,
+    dispatch,
+    t,
+    isStrictlyOffline,
+    attemptOfflineLogin,
+  ]);
 
   const handleTwoFactorComplete = useCallback(() => {
     setRequiresTwoFactor(false);
@@ -215,6 +342,10 @@ export function useLoginPage(): UseLoginPageReturn {
   const handleForgotPassword = useCallback(() => {
     dispatch(setActiveScreen('forgot-password'));
   }, [dispatch]);
+
+  const handleOfflineDismiss = useCallback(() => {
+    setOfflineErrorMessage(null);
+  }, []);
 
   return {
     selectedUser,
@@ -238,5 +369,11 @@ export function useLoginPage(): UseLoginPageReturn {
     setShowManualInput,
     setIdentifier,
     setPassword,
+
+    // Offline extensions
+    isOfflineMode: isStrictlyOffline,
+    offlineErrorMessage,
+    offlineLoginSkipped2fa,
+    handleOfflineDismiss,
   };
 }

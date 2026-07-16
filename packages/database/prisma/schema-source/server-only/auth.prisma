@@ -66,6 +66,8 @@ model User {
   resolutionAllocations     FiscalResolutionAllocation[]
   systemConfigs             SystemConfig[]
   auditLogs                 AuditLog[]
+  offlineSessionBlessings   OfflineSessionBlessing[]
+  offlineTokenRevocations   OfflineTokenRevocation[]
 
   @@index([role])
   @@index([subscriptionId, username])
@@ -122,6 +124,8 @@ model Workstation {
   clientReturns ClientReturn[]
   fiscalResolutions           FiscalResolution[]
   resolutionAllocations       FiscalResolutionAllocation[]
+  offlineSessionBlessings     OfflineSessionBlessing[]
+  offlineTokenRevocations     OfflineTokenRevocation[]
 }
 
 /// Grants a user access to a specific location (for multi-location plans).

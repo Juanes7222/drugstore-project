@@ -14,6 +14,8 @@ import { RoleType } from '@pharmacy/shared-types';
 import { useLocalSessionStore, LocalSession } from './local-session.store';
 import { InvalidCredentialsException, NoActiveSessionException, InsufficientRoleException } from './exceptions';
 import { createAuthHttpClient, AuthHttpClient } from './auth-http-client';
+import { createSecureStorage } from '../../infrastructure/secure-storage';
+import { createOfflineAuthService } from '../../renderer/services/auth/offline/offline-auth-service';
 
 /**
  * Shape the server's POST /auth/login endpoint returns.
@@ -38,6 +40,10 @@ interface ServerAuthResponse {
     avatarColor: string | null;
     mustChangePassword: boolean;
   };
+  /** Offline JWT token for offline-first authentication, returned when the server supports it. */
+  offlineToken?: { token: string; expiresAt: string };
+  /** Encrypted credential verification key for offline PIN/password validation. */
+  credentialVerificationKey?: { encryptedBlob: string; keyFingerprint: string; version: number };
 }
 
 interface ServerRefreshResponse {
@@ -91,6 +97,15 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
         identifier,
       );
       useLocalSessionStore.getState().setSession(session);
+
+      // Cache offline credentials for future offline-first logins.
+      // Non-fatal: failure does not block login.
+      if (response.offlineToken || response.credentialVerificationKey) {
+        cacheOfflineCredentials(config.baseUrl, response, workstationId).catch((err) => {
+          console.warn('Failed to cache offline credentials:', err);
+        });
+      }
+
       return { session };
     },
 
@@ -114,6 +129,15 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
         '',
       );
       useLocalSessionStore.getState().setSession(session);
+
+      // Cache offline credentials for future offline-first logins.
+      // Non-fatal: failure does not block login.
+      if (response.offlineToken || response.credentialVerificationKey) {
+        cacheOfflineCredentials(config.baseUrl, response, '').catch((err) => {
+          console.warn('Failed to cache offline credentials after 2FA:', err);
+        });
+      }
+
       return session;
     },
 
@@ -444,4 +468,20 @@ function mapServerResponseToSession(
     avatarColor: response.user.avatarColor,
     mustChangePassword: response.user.mustChangePassword,
   };
+}
+
+/**
+ * Attempt to cache offline credentials after a successful online login.
+ *
+ * This is a best-effort operation — failure is intentionally swallowed
+ * because offline caching is non-critical for the primary login flow.
+ */
+async function cacheOfflineCredentials(
+  baseUrl: string,
+  response: Pick<ServerAuthResponse, 'offlineToken' | 'credentialVerificationKey'>,
+  workstationId: string,
+): Promise<void> {
+  const secureStorage = await createSecureStorage();
+  const offlineService = createOfflineAuthService({ baseUrl, secureStorage });
+  await offlineService.updateCachedCredentials(response, workstationId);
 }

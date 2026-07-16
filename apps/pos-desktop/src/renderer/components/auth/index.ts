@@ -15,3 +15,8 @@ export { RoleGuard, withRoleGuard } from './role-guard';
 export { AuthRedirect, withAuth } from './auth-redirect';
 export { LicenseRedirect } from './license-redirect';
 export { ActivationRedirect } from './activation-redirect';
+
+// Offline auth components
+export { OfflineModeBanner } from './offline/offline-mode-banner';
+export { PendingBlessingModal } from './offline/pending-blessing-modal';
+export { SessionView } from './sessions/session-view';

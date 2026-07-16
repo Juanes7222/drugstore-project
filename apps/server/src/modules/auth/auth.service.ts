@@ -17,6 +17,8 @@ import { TotpService } from './services/totp.service';
 import { BackupCodesService } from './services/backup-codes.service';
 import { SessionService } from './services/session.service';
 import { AuditService, AuditEvent } from './services/audit.service';
+import { OfflineTokenService } from './offline/offline-token.service';
+import { CredentialCacheService } from './offline/credential-cache.service';
 import { InvalidCredentialsException } from './exceptions/invalid-credentials.exception';
 import { AccountLockedException } from './exceptions/account-locked.exception';
 import { AccountInactiveException } from './exceptions/account-inactive.exception';
@@ -39,6 +41,15 @@ export interface AuthResponseData {
   requiresTwoFactor?: boolean;
   challengeToken?: string;
   evictedSessionId?: string;
+  offlineToken?: {
+    token: string;
+    expiresAt: Date;
+  };
+  credentialVerificationKey?: {
+    encryptedBlob: string;
+    keyFingerprint: string;
+    version: number;
+  };
 }
 
 interface CreateSessionParams {
@@ -88,6 +99,8 @@ export class AuthService {
     private readonly backupCodesService: BackupCodesService,
     private readonly sessionService: SessionService,
     private readonly auditService: AuditService,
+    private readonly offlineTokenService: OfflineTokenService,
+    private readonly credentialCacheService: CredentialCacheService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -700,6 +713,37 @@ export class AuthService {
 
     const userDto = this.toSafeUser(user);
 
+    // ------------------------------------------------------------------
+    // Offline token & credential verification key (CVK) issuance
+    // ------------------------------------------------------------------
+
+    // Fetch user's location access for the offline token claims
+    const locationAccess = await this.prisma.userLocationAccess.findMany({
+      where: { userId: user.id },
+      select: { locationId: true },
+    });
+    const locationIds = locationAccess.map((la) => la.locationId);
+
+    // Issue offline token (long-lived JWT bound to workstation)
+    const offlineToken = await this.offlineTokenService.issueToken({
+      userId: user.id,
+      role: user.role,
+      subscriptionId: user.subscriptionId,
+      locationIds,
+      workstationId: params.workstationId,
+      workstationFingerprint: params.hardwareFingerprint ?? '',
+      sessionId: session.id,
+    });
+
+    // Generate credential verification key (encrypted credential blob)
+    const cvk = await this.credentialCacheService.generateCvk({
+      userId: user.id,
+      passwordHash: user.passwordHash,
+      pinHash: user.pinHash,
+      workstationFingerprint: params.hardwareFingerprint ?? '',
+      expiresAt: offlineToken.expiresAt,
+    });
+
     await this.auditService.log(AuditEvent.LOGIN_SUCCESS, {
       actorId: user.id,
       actorRole: user.role,
@@ -707,9 +751,22 @@ export class AuthService {
       ipAddress: params.ipAddress,
       userAgent: params.userAgent,
       sessionId: session.id,
-      details: evictedSessionId
-        ? { evictedSessionId, sessionLimit }
-        : undefined,
+      details: {
+        ...(evictedSessionId ? { evictedSessionId, sessionLimit } : {}),
+        offlineTokenIssued: true,
+        offlineTokenExpiresAt: offlineToken.expiresAt.toISOString(),
+      },
+    });
+
+    await this.auditService.log(AuditEvent.OFFLINE_CREDENTIALS_CACHED, {
+      actorId: user.id,
+      actorRole: user.role,
+      workstationId: params.workstationId,
+      sessionId: session.id,
+      details: {
+        cvkVersion: cvk.version,
+        expiresAt: offlineToken.expiresAt.toISOString(),
+      },
     });
 
     return {
@@ -719,6 +776,15 @@ export class AuthService {
       user: userDto,
       sessionId: session.id,
       evictedSessionId: evictedSessionId ?? undefined,
+      offlineToken: {
+        token: offlineToken.token,
+        expiresAt: offlineToken.expiresAt,
+      },
+      credentialVerificationKey: {
+        encryptedBlob: cvk.encryptedBlob,
+        keyFingerprint: cvk.keyFingerprint,
+        version: cvk.version,
+      },
     };
   }
 

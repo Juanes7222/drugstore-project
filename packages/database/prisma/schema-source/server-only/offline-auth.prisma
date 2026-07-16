@@ -1,0 +1,79 @@
+// Server-only schema fragment — only included in the full build.
+// Offline session blessing and token revocation tracking.
+// See apps/server/src/modules/auth/offline/ for the service implementation.
+
+/// Records a blessing request for an offline session.
+/// The server validates offline sessions when the workstation reconnects
+/// and blesses or rejects each pending session. The result is recorded here
+/// for audit and analytics.
+model OfflineSessionBlessing {
+  id                      String    @id
+  localSessionId          String
+  userId                  String
+  subscriptionId          String?
+  workstationId           String
+  offlineTokenJwt         String    @db.Text
+  workstationFingerprint  String
+  status                  OfflineBlessingStatus @default(PENDING)
+  rejectedReason          OfflineBlessingRejectionReason?
+  rejectedReasonDetail    String?   @db.Text
+  accessToken             String?   // Issued if blessed
+  refreshToken            String?   // Issued if blessed
+  offlineToken            String?   // Fresh offline token if blessed
+  createdAt               DateTime  @default(now())
+  blessedAt               DateTime?
+  rejectedAt              DateTime?
+
+  @@index([userId, status])
+  @@index([workstationId, status])
+  @@index([localSessionId])
+  @@index([createdAt])
+}
+
+enum OfflineBlessingStatus {
+  PENDING
+  BLESSED
+  REJECTED
+}
+
+enum OfflineBlessingRejectionReason {
+  USER_DISABLED
+  USER_LOCKED
+  USER_NOT_FOUND
+  WORKSTATION_REVOKED
+  WORKSTATION_NOT_FOUND
+  LOCATION_ACCESS_REVOKED
+  TOKEN_EXPIRED
+  TOKEN_SIGNATURE_INVALID
+  TOKEN_REVOKED
+  FRAUD_DETECTED
+  WORKSTATION_FINGERPRINT_MISMATCH
+}
+
+/// Tracks revoked offline tokens (by jti claim).
+/// The POS downloads this list periodically to invalidate offline sessions.
+model OfflineTokenRevocation {
+  id              String    @id
+  jti             String    @unique
+  userId          String?
+  workstationId   String?
+  reason          OfflineTokenRevocationReason
+  reasonDetail    String?   @db.Text
+  revokedAt       DateTime  @default(now())
+
+  @@index([revokedAt])
+  @@index([userId])
+}
+
+enum OfflineTokenRevocationReason {
+  USER_DISABLED
+  USER_LOCKED
+  PASSWORD_CHANGED
+  PIN_CHANGED
+  WORKSTATION_REVOKED
+  ADMIN_REVOCATION
+  FRAUD_DETECTED
+  TOKEN_EXPIRED
+  SESSION_LIMIT_EXCEEDED
+  SECURITY_ANOMALY
+}

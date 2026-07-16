@@ -1,5 +1,16 @@
 import { User } from '@pharmacy/shared-types';
 
+export interface OfflineTokenDto {
+  token: string;
+  expiresAt: Date;
+}
+
+export interface CredentialVerificationKeyDto {
+  encryptedBlob: string;
+  keyFingerprint: string;
+  version: number;
+}
+
 export class AuthResponseDto {
   accessToken!: string;
   refreshToken!: string;
@@ -9,6 +20,8 @@ export class AuthResponseDto {
   requiresTwoFactor?: boolean;
   challengeToken?: string;
   evictedSessionId?: string;
+  offlineToken?: OfflineTokenDto;
+  credentialVerificationKey?: CredentialVerificationKeyDto;
 
   constructor(data?: Partial<AuthResponseDto>) {
     if (data) {

@@ -17,6 +17,11 @@ import { BackupCodesService } from './services/backup-codes.service';
 import { SessionService } from './services/session.service';
 import { StepUpService } from './services/step-up.service';
 import { AuditService } from './services/audit.service';
+import { OfflineTokenService } from './offline/offline-token.service';
+import { CredentialCacheService } from './offline/credential-cache.service';
+import { BlessingService } from './offline/blessing.service';
+import { BlessingController } from './offline/blessing.controller';
+import { RevocationListService } from './offline/revocation-list.service';
 import { EnvConfig } from '@/config/env.schema';
 
 @Module({
@@ -32,7 +37,14 @@ import { EnvConfig } from '@/config/env.schema';
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController, UsersController, StepUpController, TotpController, AuditController],
+  controllers: [
+    AuthController,
+    UsersController,
+    StepUpController,
+    TotpController,
+    AuditController,
+    BlessingController,
+  ],
   providers: [
     AuthService,
     LocalStrategy,
@@ -44,7 +56,20 @@ import { EnvConfig } from '@/config/env.schema';
     SessionService,
     StepUpService,
     AuditService,
+    OfflineTokenService,
+    CredentialCacheService,
+    BlessingService,
+    RevocationListService,
   ],
-  exports: [AuthService, SessionService, AuditService, StepUpService],
+  exports: [
+    AuthService,
+    SessionService,
+    AuditService,
+    StepUpService,
+    OfflineTokenService,
+    CredentialCacheService,
+    BlessingService,
+    RevocationListService,
+  ],
 })
 export class AuthModule {}

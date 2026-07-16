@@ -20,3 +20,14 @@ export {
   NoActiveSessionException,
   InsufficientRoleException,
 } from './exceptions';
+
+// Auth guards
+export {
+  isAuthenticated,
+  canPerformOperation,
+  isOfflineSessionUsable,
+  type AuthGuardResult,
+} from './auth-guards';
+
+// Offline auth sub-domain
+export * from './offline';

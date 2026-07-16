@@ -26,6 +26,11 @@ interface FraudSignal {
 
 const mockPrisma = mockDeep<PrismaClient>();
 
+// Add mock delegates for models not in the generated client
+(mockPrisma as any).offlineSessionBlessing = {
+  count: jest.fn(),
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -522,6 +527,240 @@ describe('FraudDetectionService', () => {
       const signals = await service.runCheckInChecks(buildCheckInContext());
 
       expect(signals).toEqual([]);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // checkExcessiveOfflineLogins
+  // -----------------------------------------------------------------------
+  describe('checkExcessiveOfflineLogins', () => {
+    it('returns a LOW severity signal when >10 logins per hour', async () => {
+      mockPrisma.offlineSessionBlessing.count.mockResolvedValue(11);
+
+      const signal = await service.checkExcessiveOfflineLogins(
+        'fp-abc123def456',
+        'sub-uuid-1',
+      );
+
+      expect(signal).not.toBeNull();
+      expect(signal!.severity).toBe('LOW');
+      expect(signal!.detectorName).toBe('ExcessiveOfflineLoginsDetector');
+      expect(signal!.suggestedAction).toBe('LOG_ONLY');
+      expect(signal!.reason).toContain('11');
+    });
+
+    it('returns null when under the limit (10 or fewer logins per hour)', async () => {
+      mockPrisma.offlineSessionBlessing.count.mockResolvedValue(5);
+
+      const signal = await service.checkExcessiveOfflineLogins(
+        'fp-abc123def456',
+        'sub-uuid-1',
+      );
+
+      expect(signal).toBeNull();
+    });
+
+    it('returns null at exactly 10 logins per hour', async () => {
+      mockPrisma.offlineSessionBlessing.count.mockResolvedValue(10);
+
+      const signal = await service.checkExcessiveOfflineLogins(
+        'fp-abc123def456',
+        'sub-uuid-1',
+      );
+
+      expect(signal).toBeNull();
+    });
+
+    it('writes a fraud alert when threshold exceeded', async () => {
+      mockPrisma.offlineSessionBlessing.count.mockResolvedValue(12);
+      mockPrisma.fraudAlert.create.mockResolvedValue({} as any);
+
+      const signal = await service.checkExcessiveOfflineLogins(
+        'fp-abc123def456',
+        'sub-uuid-1',
+      );
+
+      expect(mockPrisma.fraudAlert.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            subscriptionId: 'sub-uuid-1',
+            severity: 'LOW',
+            detectorName: 'ExcessiveOfflineLoginsDetector',
+          }),
+        }),
+      );
+    });
+
+    it('queries offlineSessionBlessing by workstationFingerprint in the last hour', async () => {
+      mockPrisma.offlineSessionBlessing.count.mockResolvedValue(0);
+
+      await service.checkExcessiveOfflineLogins('fp-unique', 'sub-uuid-1');
+
+      expect(mockPrisma.offlineSessionBlessing.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            workstationFingerprint: 'fp-unique',
+            createdAt: { gte: expect.any(Date) },
+          }),
+        }),
+      );
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // reportOfflineLoginOfDisabledUser
+  // -----------------------------------------------------------------------
+  describe('reportOfflineLoginOfDisabledUser', () => {
+    it('creates a HIGH severity fraud alert', async () => {
+      mockPrisma.fraudAlert.create.mockResolvedValue({} as any);
+
+      const signal = await service.reportOfflineLoginOfDisabledUser({
+        userId: 'user-uuid-1',
+        userRole: 'CASHIER',
+        workstationFingerprint: 'fp-abc123def456',
+        subscriptionId: 'sub-uuid-1',
+        localSessionId: 'local-session-uuid-1',
+        jti: 'jti-uuid-1',
+      });
+
+      expect(signal.severity).toBe('HIGH');
+      expect(signal.detectorName).toBe('OfflineDisabledUserDetector');
+      expect(signal.suggestedAction).toBe('REVOKE');
+
+      expect(mockPrisma.fraudAlert.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            subscriptionId: 'sub-uuid-1',
+            severity: 'HIGH',
+            suggestedAction: 'REVOKE',
+            detectorName: 'OfflineDisabledUserDetector',
+          }),
+        }),
+      );
+    });
+
+    it('returns the fraud signal', async () => {
+      mockPrisma.fraudAlert.create.mockResolvedValue({} as any);
+
+      const signal = await service.reportOfflineLoginOfDisabledUser({
+        userId: 'user-uuid-1',
+        userRole: 'CASHIER',
+        workstationFingerprint: 'fp-abc123def456',
+        subscriptionId: 'sub-uuid-1',
+        localSessionId: 'local-session-uuid-1',
+        jti: 'jti-uuid-1',
+      });
+
+      expect(signal).toMatchObject({
+        severity: 'HIGH',
+        detectorName: 'OfflineDisabledUserDetector',
+      });
+      expect(signal.reason).toContain('user-uuid-1');
+      expect(signal.reason).toContain('CASHIER');
+    });
+
+    it('handles writeAlert failure gracefully', async () => {
+      mockPrisma.fraudAlert.create.mockRejectedValue(new Error('DB error'));
+
+      const signal = await service.reportOfflineLoginOfDisabledUser({
+        userId: 'user-uuid-1',
+        userRole: 'MANAGER',
+        workstationFingerprint: 'fp-abc123def456',
+        subscriptionId: 'sub-uuid-1',
+        localSessionId: 'local-session-uuid-1',
+        jti: 'jti-uuid-1',
+      });
+
+      // writeAlert catches the error internally, method doesn't throw
+      expect(signal).toMatchObject({
+        severity: 'HIGH',
+        detectorName: 'OfflineDisabledUserDetector',
+      });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // reportOfflineTokenWorkstationMismatch
+  // -----------------------------------------------------------------------
+  describe('reportOfflineTokenWorkstationMismatch', () => {
+    it('creates a HIGH severity fraud alert', async () => {
+      mockPrisma.fraudAlert.create.mockResolvedValue({} as any);
+
+      const signal = await service.reportOfflineTokenWorkstationMismatch({
+        userId: 'user-uuid-1',
+        userRole: 'CASHIER',
+        expectedFingerprint: 'fp-expected123456',
+        receivedFingerprint: 'fp-received789012',
+        subscriptionId: 'sub-uuid-1',
+        jti: 'jti-uuid-1',
+      });
+
+      expect(signal.severity).toBe('HIGH');
+      expect(signal.detectorName).toBe('OfflineTokenWorkstationMismatchDetector');
+      expect(signal.suggestedAction).toBe('REVOKE');
+
+      expect(mockPrisma.fraudAlert.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            subscriptionId: 'sub-uuid-1',
+            severity: 'HIGH',
+            suggestedAction: 'REVOKE',
+            detectorName: 'OfflineTokenWorkstationMismatchDetector',
+          }),
+        }),
+      );
+    });
+
+    it('includes fingerprint details in the alert reason', async () => {
+      mockPrisma.fraudAlert.create.mockResolvedValue({} as any);
+
+      const signal = await service.reportOfflineTokenWorkstationMismatch({
+        userId: 'user-uuid-1',
+        userRole: 'OWNER',
+        expectedFingerprint: 'fp-expected-abcdef',
+        receivedFingerprint: 'fp-received-ghijkl',
+        subscriptionId: 'sub-uuid-1',
+        jti: 'jti-uuid-1',
+      });
+
+      expect(signal.reason).toContain('fp-expe');
+      expect(signal.reason).toContain('fp-rece');
+    });
+
+    it('returns the fraud signal with correct structure', async () => {
+      mockPrisma.fraudAlert.create.mockResolvedValue({} as any);
+
+      const signal = await service.reportOfflineTokenWorkstationMismatch({
+        userId: 'user-uuid-1',
+        userRole: 'MANAGER',
+        expectedFingerprint: 'fp-expected123456',
+        receivedFingerprint: 'fp-received789012',
+        subscriptionId: 'sub-uuid-1',
+        jti: 'jti-uuid-1',
+      });
+
+      expect(signal).toMatchObject({
+        severity: 'HIGH',
+        detectorName: 'OfflineTokenWorkstationMismatchDetector',
+      });
+      expect(signal.details!.expectedFingerprint).toBe('fp-expected12345');
+      expect(signal.details!.receivedFingerprint).toBe('fp-received78901');
+    });
+
+    it('handles writeAlert failure gracefully', async () => {
+      mockPrisma.fraudAlert.create.mockRejectedValue(new Error('DB error'));
+
+      const signal = await service.reportOfflineTokenWorkstationMismatch({
+        userId: 'user-uuid-1',
+        userRole: 'CASHIER',
+        expectedFingerprint: 'fp-expected123456',
+        receivedFingerprint: 'fp-received789012',
+        subscriptionId: 'sub-uuid-1',
+        jti: 'jti-uuid-1',
+      });
+
+      // writeAlert catches the error internally; method still returns the signal
+      expect(signal.severity).toBe('HIGH');
     });
   });
 

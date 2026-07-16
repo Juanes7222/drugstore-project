@@ -205,6 +205,75 @@ export const SUGGESTION_RULES: SuggestionRule[] = [
       },
     },
   },
+
+  // ======================================================================
+  // Offline-mode rules
+  // ======================================================================
+
+  {
+    id: "suggestion.info.offline-mode",
+    title: "Modo offline activo",
+    description:
+      "Estás en modo offline. Algunas funciones no están disponibles.",
+    severity: "INFO",
+    audience: "both",
+    dismissable: true,
+    cooldownMs: 120_000, // 2 minutes
+    condition: (state: AppState) =>
+      !state.isOnline,
+    action: {
+      label: "Ver sesiones offline",
+      execute: async () => {
+        const { store } = await import("../../renderer/store/store");
+        store.dispatch({
+          type: "ui/setActiveScreen",
+          payload: "offline-sessions",
+        });
+      },
+    },
+  },
+
+  {
+    id: "suggestion.warn.pending-blessings",
+    title: "Sesiones pendientes de validar",
+    description:
+      "Tenés {{count}} sesiones offline pendientes de validar por el servidor.",
+    severity: "WARN",
+    audience: "manager",
+    dismissable: true,
+    cooldownMs: 300_000, // 5 minutes
+    condition: (state: AppState) =>
+      state.pendingOfflineSessions > 0,
+    action: {
+      label: "Validar ahora",
+      execute: async () => {
+        console.log("[Assistant] Trigger blessing flow");
+        // The blessing flow runs via reEvaluateBlessings in the hook
+      },
+    },
+  },
+
+  {
+    id: "suggestion.critical.rejected-blessing",
+    title: "Sesión offline rechazada",
+    description:
+      "Una sesión offline fue rechazada por el servidor. Revisá las sesiones.",
+    severity: "CRITICAL",
+    audience: "manager",
+    dismissable: false,
+    condition: (state: AppState) =>
+      state.rejectedOfflineSessions > 0,
+    action: {
+      label: "Ver sesiones",
+      execute: async () => {
+        const { store } = await import("../../renderer/store/store");
+        store.dispatch({
+          type: "ui/setActiveScreen",
+          payload: "offline-sessions",
+        });
+      },
+    },
+  },
 ];
 
 /**

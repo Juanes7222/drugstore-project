@@ -100,6 +100,9 @@ export interface AppState {
   currentShiftDurationHours: number;
   isSyncing: boolean;
   isOnline: boolean;
+  pendingOfflineSessions: number;
+  rejectedOfflineSessions: number;
+  isOfflineBlessingInProgress: boolean;
   lastConfirmedSaleId: string | null;
   lastConfirmedSaleNumber: number | null;
 }

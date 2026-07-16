@@ -11,20 +11,24 @@
  *   Owner/Admin). A "Change user" link returns to Step 1.
  *
  * Both steps share a common background, header, and 2FA overlay.
+ * When offline, the flow adapts: 2FA is bypassed and an informative
+ * message is shown.
  */
-import { type FC } from "react";
-import { AnimatePresence, motion } from "motion/react";
-import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
-import { PLACEHOLDER_USERS } from "../../../domain/auth/local-users";
-import { useLoginPage } from "../../hooks/use-login-page";
-import { LoginHeader } from "./login-header";
-import { AvatarGrid } from "./avatar-grid";
-import { ManualLoginForm } from "./manual-login-form";
-import { SelectedUserCredential } from "./selected-user-credential";
-import { ErrorBanner } from "./error-banner";
-import { TwoFactorModal } from "./two-factor-modal";
+import { type FC } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
+import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
+import { PLACEHOLDER_USERS } from '../../../domain/auth/local-users';
+import { useLoginPage } from '../../hooks/use-login-page';
+import { LoginHeader } from './login-header';
+import { AvatarGrid } from './avatar-grid';
+import { ManualLoginForm } from './manual-login-form';
+import { SelectedUserCredential } from './selected-user-credential';
+import { ErrorBanner } from './error-banner';
+import { TwoFactorModal } from './two-factor-modal';
 
 export const LoginPage: FC = () => {
+  const { t } = useTranslation();
   const session = useLocalSessionStore((s) => s.session);
   const {
     selectedUser,
@@ -47,12 +51,17 @@ export const LoginPage: FC = () => {
     setIdentifier,
     setPassword,
     setSelectedUser,
+
+    // Offline extensions
+    isOfflineMode,
+    offlineErrorMessage,
+    offlineLoginSkipped2fa,
   } = useLoginPage();
 
   // Already logged in — redirect handled by the hook
   if (session) return null;
 
-  // 2FA modal takes over the full screen
+  // 2FA modal takes over the full screen (only shown when online)
   if (requiresTwoFactor && challengeToken) {
     return (
       <TwoFactorModal
@@ -66,15 +75,15 @@ export const LoginPage: FC = () => {
 
   // Determine which content to show — memoized key for AnimatePresence
   const contentKey = showManualInput
-    ? "manual"
+    ? 'manual'
     : selectedUser
       ? `credential-${selectedUser.id}`
-      : "selection";
+      : 'selection';
 
   return (
     <div
       className="flex h-screen flex-col items-center justify-center overflow-hidden"
-      style={{ backgroundColor: "var(--color-surface)" }}
+      style={{ backgroundColor: 'var(--color-surface)' }}
     >
       {/* Background decorative elements */}
       <div
@@ -85,16 +94,16 @@ export const LoginPage: FC = () => {
         <div
           className="absolute -top-24 -right-24 w-96 h-96 rounded-full opacity-[0.03]"
           style={{
-            backgroundColor: "var(--color-pharma)",
-            filter: "blur(80px)",
+            backgroundColor: 'var(--color-pharma)',
+            filter: 'blur(80px)',
           }}
         />
         {/* Subtle bottom-left gradient blob */}
         <div
           className="absolute -bottom-24 -left-24 w-80 h-80 rounded-full opacity-[0.02]"
           style={{
-            backgroundColor: "var(--color-restrict)",
-            filter: "blur(80px)",
+            backgroundColor: 'var(--color-restrict)',
+            filter: 'blur(80px)',
           }}
         />
       </div>
@@ -103,6 +112,70 @@ export const LoginPage: FC = () => {
       <div className="relative z-10 w-full max-w-sm flex flex-col items-center gap-5 px-pos-lg">
         {/* Header — always visible */}
         <LoginHeader />
+
+        {/* Offline mode indicator */}
+        <AnimatePresence>
+          {isOfflineMode && (
+            <motion.div
+              className="w-full px-3 py-2 rounded-lg text-sm flex items-center gap-2"
+              style={{
+                backgroundColor: 'var(--color-offline-bg, #FEF3C7)',
+                color: 'var(--color-warning-text, #92400E)',
+                border: '1px solid var(--color-warning-border, #F59E0B)',
+              }}
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden="true"
+                className="flex-shrink-0"
+              >
+                <path
+                  d="M1 10.5a5 5 0 0 1 7.5-4.3m-3 8.3A5 5 0 0 1 8 3c2.1 0 3.9 1.3 4.7 3.1M13 13a3 3 0 1 0-6 0m6 0a3 3 0 0 0-6 0"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <span>
+                {t(
+                  'offline_login.banner',
+                  'Sin conexión — el inicio de sesión usará credenciales locales.',
+                )}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* 2FA skipped notification */}
+        <AnimatePresence>
+          {offlineLoginSkipped2fa && (
+            <motion.div
+              className="w-full px-3 py-2 rounded-lg text-sm"
+              style={{
+                backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                color: '#1D4ED8',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+              }}
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              {t(
+                'offline_login.skipped_2fa_info',
+                'Estás sin conexión. El 2FA se requerirá cuando vuelvas a tener internet.',
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Animated content area */}
         <div className="w-full min-h-[320px] flex flex-col items-center justify-center">
@@ -115,7 +188,7 @@ export const LoginPage: FC = () => {
               exit={{ opacity: 0, y: -12, scale: 0.98 }}
               transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
             >
-              {contentKey === "selection" && (
+              {contentKey === 'selection' && (
                 <AvatarGrid
                   users={PLACEHOLDER_USERS}
                   onSelect={handleUserSelect}
@@ -123,7 +196,7 @@ export const LoginPage: FC = () => {
                 />
               )}
 
-              {contentKey === "manual" && (
+              {contentKey === 'manual' && (
                 <ManualLoginForm
                   identifier={identifier}
                   password={password}
@@ -135,11 +208,11 @@ export const LoginPage: FC = () => {
                 />
               )}
 
-              {selectedUser && contentKey.startsWith("credential") && (
+              {selectedUser && contentKey.startsWith('credential') && (
                 <SelectedUserCredential
                   user={selectedUser}
                   password={password}
-                  error={error}
+                  error={error || offlineErrorMessage}
                   isLoading={isLoading}
                   countdown={countdown}
                   onPasswordChange={setPassword}
@@ -165,7 +238,7 @@ export const LoginPage: FC = () => {
       <motion.p
         className="absolute bottom-6 text-caption"
         style={{
-          color: "color-mix(in srgb, var(--color-ink) 30%, transparent)",
+          color: 'color-mix(in srgb, var(--color-ink) 30%, transparent)',
         }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

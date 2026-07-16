@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import * as crypto from 'node:crypto';
 
 interface ActivationContext {
   code: string;
@@ -305,6 +306,138 @@ export class FraudDetectionService {
     }
 
     return null;
+  }
+
+  // -----------------------------------------------------------------------
+  // Offline auth fraud detection
+  // -----------------------------------------------------------------------
+
+  /**
+   * Check for excessive offline logins from the same workstation.
+   * More than 10 offline logins in 1 hour is suspicious.
+   * Severity: LOW. Action: log for analytics.
+   */
+  async checkExcessiveOfflineLogins(
+    workstationFingerprint: string,
+    subscriptionId: string,
+  ): Promise<FraudSignal | null> {
+    const oneHourAgo = new Date(Date.now() - 3600000);
+
+    // Count offline blessings for this workstation in the last hour
+    const recentBlessings = await this.prisma.offlineSessionBlessing.count({
+      where: {
+        workstationFingerprint,
+        createdAt: { gte: oneHourAgo },
+      },
+    });
+
+    if (recentBlessings > 10) {
+      const signal: FraudSignal = {
+        severity: 'LOW',
+        detectorName: 'ExcessiveOfflineLoginsDetector',
+        reason: `Workstation ${workstationFingerprint.substring(0, 8)}... had ${recentBlessings} offline logins in the last hour (limit: 10).`,
+        suggestedAction: 'LOG_ONLY',
+        details: {
+          workstationFingerprint: workstationFingerprint.substring(0, 16),
+          recentBlessings,
+          limit: 10,
+          windowHours: 1,
+        },
+      };
+
+      await this.writeAlert(subscriptionId, null, signal);
+      return signal;
+    }
+
+    return null;
+  }
+
+  /**
+   * Report that an offline login attempt was made for a user who has since
+   * been disabled. Severity: HIGH. Action: revoke all sessions.
+   */
+  async reportOfflineLoginOfDisabledUser(params: {
+    userId: string;
+    userRole: string;
+    workstationFingerprint: string;
+    subscriptionId: string;
+    localSessionId: string;
+    jti: string;
+  }): Promise<FraudSignal> {
+    const signal: FraudSignal = {
+      severity: 'HIGH',
+      detectorName: 'OfflineDisabledUserDetector',
+      reason: `User ${params.userId} (${params.userRole}) used an offline session after being disabled. Local session: ${params.localSessionId.substring(0, 8)}..., token: ${params.jti.substring(0, 8)}...`,
+      suggestedAction: 'REVOKE',
+      details: {
+        userId: params.userId,
+        userRole: params.userRole,
+        workstationFingerprint: params.workstationFingerprint.substring(0, 16),
+        localSessionId: params.localSessionId,
+        jti: params.jti,
+      },
+    };
+
+    await this.writeAlert(params.subscriptionId, null, signal);
+    return signal;
+  }
+
+  /**
+   * Report that an offline token was used from a different workstation
+   * during the blessing request. Severity: CRITICAL. Action: revoke token,
+   * lock user, alert.
+   */
+  async reportOfflineTokenWorkstationMismatch(params: {
+    userId: string;
+    userRole: string;
+    expectedFingerprint: string;
+    receivedFingerprint: string;
+    subscriptionId: string;
+    jti: string;
+  }): Promise<FraudSignal> {
+    const signal: FraudSignal = {
+      severity: 'HIGH',
+      detectorName: 'OfflineTokenWorkstationMismatchDetector',
+      reason: `Offline token for user ${params.userId} was issued for workstation ${params.expectedFingerprint.substring(0, 8)}... but blessing request came from ${params.receivedFingerprint.substring(0, 8)}... Possible token theft.`,
+      suggestedAction: 'REVOKE',
+      details: {
+        userId: params.userId,
+        userRole: params.userRole,
+        expectedFingerprint: params.expectedFingerprint.substring(0, 16),
+        receivedFingerprint: params.receivedFingerprint.substring(0, 16),
+        jti: params.jti,
+      },
+    };
+
+    await this.writeAlert(params.subscriptionId, null, signal);
+    return signal;
+  }
+
+  /**
+   * Report that a user's credentials were updated online while an offline
+   * session was active. This is not a fraud signal but is logged for audit.
+   */
+  async reportOfflineCredentialUpdate(params: {
+    userId: string;
+    userRole: string;
+    subscriptionId: string;
+    previousVersion: number;
+    newVersion: number;
+  }): Promise<void> {
+    const signal: FraudSignal = {
+      severity: 'LOW',
+      detectorName: 'OfflineCredentialUpdateDetector',
+      reason: `User ${params.userId} credentials updated online (v${params.previousVersion} → v${params.newVersion}) while offline session was active.`,
+      suggestedAction: 'LOG_ONLY',
+      details: {
+        userId: params.userId,
+        userRole: params.userRole,
+        previousVersion: params.previousVersion,
+        newVersion: params.newVersion,
+      },
+    };
+
+    await this.writeAlert(params.subscriptionId, null, signal);
   }
 
   // -----------------------------------------------------------------------

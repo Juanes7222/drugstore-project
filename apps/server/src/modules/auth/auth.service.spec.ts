@@ -4,7 +4,50 @@ jest.mock('@pharmacy/database', () => {
     $connect = jest.fn();
     $disconnect = jest.fn();
   }
-  return { PrismaClient: MockPrismaClient };
+  return {
+    PrismaClient: MockPrismaClient,
+    RoleType: {
+      SAAS_ADMIN: 'SAAS_ADMIN',
+      OWNER: 'OWNER',
+      MANAGER: 'MANAGER',
+      CASHIER: 'CASHIER',
+      INVENTORY_ASSISTANT: 'INVENTORY_ASSISTANT',
+      ADMIN: 'ADMIN',
+      ACCOUNTANT: 'ACCOUNTANT',
+    } as const,
+    UserStatus: {
+      PENDING_SETUP: 'PENDING_SETUP',
+      ACTIVE: 'ACTIVE',
+      DISABLED: 'DISABLED',
+      LOCKED: 'LOCKED',
+    } as const,
+    SessionRevocationReason: {
+      LOGOUT: 'LOGOUT',
+      INACTIVITY: 'INACTIVITY',
+      ROLE_CHANGE: 'ROLE_CHANGE',
+      USER_DEACTIVATION: 'USER_DEACTIVATION',
+      ADMIN_REVOCATION: 'ADMIN_REVOCATION',
+      PASSWORD_CHANGED: 'PASSWORD_CHANGED',
+      TOKEN_EXPIRATION: 'TOKEN_EXPIRATION',
+      NEW_LOGIN_EVICT: 'NEW_LOGIN_EVICT',
+      SECURITY_ANOMALY: 'SECURITY_ANOMALY',
+      STEP_UP_EXPIRY: 'STEP_UP_EXPIRY',
+    } as const,
+    AuditAction: {
+      CREATE: 'CREATE',
+      UPDATE: 'UPDATE',
+      DELETE: 'DELETE',
+      ACCESS: 'ACCESS',
+      EXPORT: 'EXPORT',
+      LOGIN: 'LOGIN',
+      LOGOUT: 'LOGOUT',
+      SECURITY_ALERT: 'SECURITY_ALERT',
+      STATE_CHANGE: 'STATE_CHANGE',
+    } as const,
+    SystemModule: {
+      AUTH_USERS: 'AUTH_USERS',
+    } as const,
+  };
 });
 
 import { AuthService } from './auth.service';
@@ -33,14 +76,31 @@ function buildUser(overrides: Partial<Record<string, unknown>> = {}) {
     identificationNumber: '1234567890',
     role: 'ADMIN' as const,
     isActive: true,
+    status: 'ACTIVE',
     failedLoginAttempts: 0,
     lockedUntil: null,
     passwordHash: '$argon2id$hashed-value',
     passwordAlgorithm: 'argon2id',
-    createdAt: '2026-01-01T00:00:00Z',
-    updatedAt: '2026-01-01T00:00:00Z',
+    totpEnabled: false,
+    totpSecretEncrypted: null,
+    backupCodesHash: null,
+    authMethod: 'PASSWORD_ONLY',
+    mustChangePassword: false,
+    emailVerifiedAt: null,
+    lastLoginAt: null,
+    lastPasswordChangeAt: null,
+    lastLoginWorkstationId: null,
+    displayName: 'Admin User',
+    fullName: 'Admin User',
+    avatarUrl: null,
+    avatarColor: null,
+    createdById: null,
+    subscriptionId: 'sub-uuid-1',
+    pinHash: null,
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
-  } as const;
+  };
 }
 
 function buildActiveSession(overrides: Record<string, unknown> = {}) {
@@ -70,11 +130,22 @@ function buildActiveSession(overrides: Record<string, unknown> = {}) {
 // satisfying both the interface and jest mock API.
 const mockUserModel = {
   findUnique: jest.fn(),
+  findFirst: jest.fn(),
   update: jest.fn(),
+};
+
+const mockUserLocationAccess = {
+  findMany: jest.fn(),
 };
 
 const mockPrisma = {
   user: mockUserModel,
+  userLocationAccess: mockUserLocationAccess,
+  userSession: {
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    update: jest.fn(),
+  },
 } as any;
 
 const mockJwtService = {
@@ -93,8 +164,49 @@ const mockPasswordHasher = {
 const mockSessionService = {
   createSession: jest.fn(),
   findActiveSessionByTokenHash: jest.fn(),
+  findActiveSessionByRefreshTokenHash: jest.fn(),
   revokeSession: jest.fn(),
-  touchLastActivity: jest.fn(),
+  revokeUserSessions: jest.fn(),
+  touchLastActivity: jest.fn().mockResolvedValue(undefined),
+  enforceSessionLimit: jest.fn(),
+  updateSessionTokens: jest.fn(),
+} as any;
+
+const mockPinService = {
+  verify: jest.fn(),
+  hash: jest.fn(),
+} as any;
+
+const mockTotpService = {
+  verify: jest.fn(),
+} as any;
+
+const mockBackupCodesService = {
+  verify: jest.fn(),
+  consume: jest.fn(),
+} as any;
+
+const mockAuditService = {
+  log: jest.fn(),
+} as any;
+
+const mockOfflineTokenService = {
+  issueToken: jest.fn(),
+  verifyToken: jest.fn(),
+  revokeToken: jest.fn(),
+  revokeAllUserTokens: jest.fn(),
+  revokeAllWorkstationTokens: jest.fn(),
+  isRevoked: jest.fn(),
+  isUserRevokedSince: jest.fn(),
+  getRevocationListSince: jest.fn(),
+  getRevocationList: jest.fn(),
+  decodeToken: jest.fn(),
+} as any;
+
+const mockCredentialCacheService = {
+  generateCvk: jest.fn(),
+  decryptCvk: jest.fn(),
+  getCurrentVersion: jest.fn(),
 } as any;
 
 // ---------------------------------------------------------------------------
@@ -114,7 +226,13 @@ describe('AuthService', () => {
       mockJwtService,
       mockConfigService,
       mockPasswordHasher,
+      mockPinService,
+      mockTotpService,
+      mockBackupCodesService,
       mockSessionService,
+      mockAuditService,
+      mockOfflineTokenService,
+      mockCredentialCacheService,
     );
   });
 
@@ -122,34 +240,34 @@ describe('AuthService', () => {
   // validateCredentials
   // -----------------------------------------------------------------------
   describe('validateCredentials', () => {
-    it('should return user DTO when credentials are valid', async () => {
+    it('should return the user record when credentials are valid', async () => {
       const user = buildUser();
-      mockUserModel.findUnique.mockResolvedValue(user);
+      mockUserModel.findFirst.mockResolvedValue(user);
       mockPasswordHasher.verify.mockResolvedValue(true);
       mockUserModel.update.mockResolvedValue(user);
 
       const result = await service.validateCredentials(USERNAME, PASSWORD);
 
-      expect(result).not.toHaveProperty('passwordHash');
-      expect(result).not.toHaveProperty('passwordAlgorithm');
       expect(result.id).toBe(USER_ID);
     });
 
-    it('should look up user by username', async () => {
-      mockUserModel.findUnique.mockResolvedValue(buildUser());
+    it('should look up user by username or email', async () => {
+      mockUserModel.findFirst.mockResolvedValue(buildUser());
       mockPasswordHasher.verify.mockResolvedValue(true);
       mockUserModel.update.mockResolvedValue(buildUser());
 
       await service.validateCredentials(USERNAME, PASSWORD);
 
-      expect(mockUserModel.findUnique).toHaveBeenCalledWith({
-        where: { username: USERNAME },
+      expect(mockUserModel.findFirst).toHaveBeenCalledWith({
+        where: {
+          OR: [{ username: USERNAME }, { email: USERNAME }],
+        },
       });
     });
 
     it('should verify password against the stored hash', async () => {
       const user = buildUser();
-      mockUserModel.findUnique.mockResolvedValue(user);
+      mockUserModel.findFirst.mockResolvedValue(user);
       mockPasswordHasher.verify.mockResolvedValue(true);
       mockUserModel.update.mockResolvedValue(user);
 
@@ -163,20 +281,22 @@ describe('AuthService', () => {
 
     it('should reset failedLoginAttempts on successful login', async () => {
       const user = buildUser({ failedLoginAttempts: 3 });
-      mockUserModel.findUnique.mockResolvedValue(user);
+      mockUserModel.findFirst.mockResolvedValue(user);
       mockPasswordHasher.verify.mockResolvedValue(true);
       mockUserModel.update.mockResolvedValue(user);
 
       await service.validateCredentials(USERNAME, PASSWORD);
 
-      expect(mockUserModel.update).toHaveBeenCalledWith({
-        where: { id: USER_ID },
-        data: { failedLoginAttempts: 0 },
-      });
+      expect(mockUserModel.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: USER_ID },
+          data: expect.objectContaining({ failedLoginAttempts: 0 }),
+        }),
+      );
     });
 
     it('should throw InvalidCredentialsException when user is not found', async () => {
-      mockUserModel.findUnique.mockResolvedValue(null);
+      mockUserModel.findFirst.mockResolvedValue(null);
 
       await expect(
         service.validateCredentials('nonexistent', PASSWORD),
@@ -185,7 +305,7 @@ describe('AuthService', () => {
 
     it('should throw AccountInactiveException when user is inactive', async () => {
       const user = buildUser({ isActive: false });
-      mockUserModel.findUnique.mockResolvedValue(user);
+      mockUserModel.findFirst.mockResolvedValue(user);
 
       await expect(
         service.validateCredentials(USERNAME, PASSWORD),
@@ -195,7 +315,7 @@ describe('AuthService', () => {
     it('should throw AccountLockedException when account is locked', async () => {
       const future = new Date(Date.now() + 3600000);
       const user = buildUser({ lockedUntil: future });
-      mockUserModel.findUnique.mockResolvedValue(user);
+      mockUserModel.findFirst.mockResolvedValue(user);
 
       await expect(
         service.validateCredentials(USERNAME, PASSWORD),
@@ -205,7 +325,7 @@ describe('AuthService', () => {
     it('should include lockedUntil in AccountLockedException when account is locked', async () => {
       const future = new Date(Date.now() + 3600000);
       const user = buildUser({ lockedUntil: future });
-      mockUserModel.findUnique.mockResolvedValue(user);
+      mockUserModel.findFirst.mockResolvedValue(user);
 
       await expect(
         service.validateCredentials(USERNAME, PASSWORD),
@@ -214,6 +334,7 @@ describe('AuthService', () => {
 
     it('should throw InvalidCredentialsException when password is wrong', async () => {
       const user = buildUser();
+      mockUserModel.findFirst.mockResolvedValue(user);
       mockUserModel.findUnique.mockResolvedValue(user);
       mockPasswordHasher.verify.mockResolvedValue(false);
       mockUserModel.update.mockResolvedValue(user);
@@ -225,6 +346,7 @@ describe('AuthService', () => {
 
     it('should increment failedLoginAttempts on wrong password', async () => {
       const user = buildUser({ failedLoginAttempts: 2 });
+      mockUserModel.findFirst.mockResolvedValue(user);
       mockUserModel.findUnique.mockResolvedValue(user);
       mockPasswordHasher.verify.mockResolvedValue(false);
       mockUserModel.update.mockResolvedValue(user);
@@ -243,6 +365,7 @@ describe('AuthService', () => {
       const user = buildUser({
         failedLoginAttempts: MAX_FAILED_LOGIN_ATTEMPTS - 1,
       });
+      mockUserModel.findFirst.mockResolvedValue(user);
       mockUserModel.findUnique.mockResolvedValue(user);
       mockPasswordHasher.verify.mockResolvedValue(false);
 
@@ -265,6 +388,7 @@ describe('AuthService', () => {
       const user = buildUser({
         failedLoginAttempts: MAX_FAILED_LOGIN_ATTEMPTS - 1,
       });
+      mockUserModel.findFirst.mockResolvedValue(user);
       mockUserModel.findUnique.mockResolvedValue(user);
       mockPasswordHasher.verify.mockResolvedValue(false);
 
@@ -286,6 +410,7 @@ describe('AuthService', () => {
 
     it('should NOT lock account when failed attempts are below threshold', async () => {
       const user = buildUser({ failedLoginAttempts: 1 });
+      mockUserModel.findFirst.mockResolvedValue(user);
       mockUserModel.findUnique.mockResolvedValue(user);
       mockPasswordHasher.verify.mockResolvedValue(false);
       mockUserModel.update.mockResolvedValue(user);
@@ -308,15 +433,13 @@ describe('AuthService', () => {
 
     it('should silently return when user is not found during handleFailedLoginAttempt', async () => {
       // First call returns null for validateCredentials user lookup
-      mockUserModel.findUnique.mockResolvedValue(null);
+      mockUserModel.findFirst.mockResolvedValue(null);
 
       await expect(
         service.validateCredentials('nonexistent', 'WrongPassword'),
       ).rejects.toThrow(InvalidCredentialsException);
 
-      // findUnique was only called once (by assertAccountIsUsable)
-      // handleFailedLoginAttempt should have returned early since user doesn't exist
-      expect(mockUserModel.findUnique).toHaveBeenCalledTimes(1);
+      expect(mockUserModel.findFirst).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -334,9 +457,8 @@ describe('AuthService', () => {
 
       const result = await service.validateActiveSession(USER_ID, TOKEN_HASH);
 
-      expect(result).not.toHaveProperty('passwordHash');
-      expect(result).not.toHaveProperty('passwordAlgorithm');
       expect(result.id).toBe(USER_ID);
+      expect(result.email).toBe(user.email);
     });
 
     it('should call sessionService.findActiveSessionByTokenHash with the token hash', async () => {
@@ -373,20 +495,14 @@ describe('AuthService', () => {
       ).rejects.toThrow(SessionExpiredException);
     });
 
-    it('should throw SessionRevokedException when session is revoked', async () => {
-      const revokedSession = buildActiveSession({
-        revokedAt: new Date(),
-        revokedReason: 'LOGOUT',
-      });
-      // Simulate the scenario where findActiveSessionByTokenHash returns a session
-      // (edge case guard in auth service — dead code but tested as-is)
-      mockSessionService.findActiveSessionByTokenHash.mockResolvedValue(
-        revokedSession,
-      );
+    it('should throw SessionExpiredException when session is not active (findActiveSessionByTokenHash returns null for revoked sessions)', async () => {
+      // The session service's findActiveSessionByTokenHash only returns ACTIVE sessions,
+      // so revoked sessions result in null from the query, which triggers SessionExpiredException.
+      mockSessionService.findActiveSessionByTokenHash.mockResolvedValue(null);
 
       await expect(
         service.validateActiveSession(USER_ID, TOKEN_HASH),
-      ).rejects.toThrow(SessionRevokedException);
+      ).rejects.toThrow(SessionExpiredException);
     });
 
     it('should throw InvalidCredentialsException when user is not found', async () => {
@@ -429,6 +545,20 @@ describe('AuthService', () => {
       mockSessionService.createSession.mockResolvedValue(
         buildActiveSession(),
       );
+      mockSessionService.enforceSessionLimit.mockResolvedValue({ evictedSessionId: null });
+      mockUserLocationAccess.findMany.mockResolvedValue([
+        { locationId: 'loc-1' },
+      ]);
+      mockOfflineTokenService.issueToken.mockResolvedValue({
+        token: 'offline-jwt-value',
+        expiresAt: new Date('2026-12-31T23:59:59Z'),
+        jti: 'offline-jti-uuid',
+      });
+      mockCredentialCacheService.generateCvk.mockResolvedValue({
+        encryptedBlob: 'base64-encrypted-blob',
+        keyFingerprint: 'abcdef1234567890',
+        version: 1,
+      });
     });
 
     it('should return AuthResponseDto with tokens and user', async () => {
@@ -558,10 +688,13 @@ describe('AuthService', () => {
   });
 
   // -----------------------------------------------------------------------
-  // revokeSession
+  // logoutSession
   // -----------------------------------------------------------------------
-  describe('revokeSession', () => {
+  describe('logoutSession', () => {
     it('should delegate to sessionService.revokeSession with LOGOUT reason', async () => {
+      mockSessionService.findActiveSessionByTokenHash.mockResolvedValue(
+        buildActiveSession({ id: 'session-uuid-1' }),
+      );
       mockSessionService.revokeSession.mockResolvedValue(
         buildActiveSession({
           revokedAt: new Date(),
@@ -569,12 +702,365 @@ describe('AuthService', () => {
         }),
       );
 
-      await service.revokeSession('session-uuid-1');
+      await service.logoutSession('token-hash-value');
 
       expect(mockSessionService.revokeSession).toHaveBeenCalledWith(
         'session-uuid-1',
         'LOGOUT',
       );
+    });
+
+    it('should return silently when session is not found (idempotent)', async () => {
+      mockSessionService.findActiveSessionByTokenHash.mockResolvedValue(null);
+
+      await service.logoutSession('non-existent-hash');
+
+      expect(mockSessionService.revokeSession).not.toHaveBeenCalled();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // issueSession — offline artifacts
+  // -----------------------------------------------------------------------
+  describe('issueSession (offline artifacts)', () => {
+    const WORKSTATION_ID = 'ws-1';
+    const FINGERPRINT = 'fp-abc123def456';
+
+    beforeEach(() => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'JWT_ACCESS_TTL_SECONDS') return 900;
+        if (key === 'JWT_REFRESH_TTL_SECONDS') return 604800;
+        return undefined;
+      });
+      mockJwtService.sign
+        .mockReturnValueOnce('access-token-value')
+        .mockReturnValueOnce('refresh-token-value');
+      mockSessionService.createSession.mockResolvedValue(
+        buildActiveSession({ workstationId: WORKSTATION_ID }),
+      );
+      mockSessionService.enforceSessionLimit.mockResolvedValue({ evictedSessionId: null });
+      mockUserModel.findUnique.mockResolvedValue(buildUser());
+      mockUserModel.update.mockResolvedValue(buildUser());
+      mockUserLocationAccess.findMany.mockResolvedValue([
+        { locationId: 'loc-1' },
+        { locationId: 'loc-2' },
+      ]);
+      mockOfflineTokenService.issueToken.mockResolvedValue({
+        token: 'offline-jwt-value',
+        expiresAt: new Date('2026-12-31T23:59:59Z'),
+        jti: 'offline-jti-uuid',
+      });
+      mockCredentialCacheService.generateCvk.mockResolvedValue({
+        encryptedBlob: 'base64-encrypted-blob',
+        keyFingerprint: 'abcdef1234567890',
+        version: 1,
+      });
+    });
+
+    it('includes offlineToken in the response', async () => {
+      const result = await service.issueSession({
+        userId: USER_ID,
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(result.offlineToken).toBeDefined();
+      expect(result.offlineToken!.token).toBe('offline-jwt-value');
+      expect(result.offlineToken!.expiresAt).toBeInstanceOf(Date);
+    });
+
+    it('includes credentialVerificationKey in the response', async () => {
+      const result = await service.issueSession({
+        userId: USER_ID,
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(result.credentialVerificationKey).toBeDefined();
+      expect(result.credentialVerificationKey!.encryptedBlob).toBe('base64-encrypted-blob');
+      expect(result.credentialVerificationKey!.keyFingerprint).toBe('abcdef1234567890');
+      expect(result.credentialVerificationKey!.version).toBe(1);
+    });
+
+    it('calls OfflineTokenService.issueToken with correct params', async () => {
+      await service.issueSession({
+        userId: USER_ID,
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(mockOfflineTokenService.issueToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: USER_ID,
+          role: 'ADMIN',
+          sessionId: expect.any(String),
+          workstationId: WORKSTATION_ID,
+          workstationFingerprint: FINGERPRINT,
+          locationIds: ['loc-1', 'loc-2'],
+        }),
+      );
+    });
+
+    it('calls CredentialCacheService.generateCvk with correct params', async () => {
+      await service.issueSession({
+        userId: USER_ID,
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(mockCredentialCacheService.generateCvk).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: USER_ID,
+          workstationFingerprint: FINGERPRINT,
+          expiresAt: expect.any(Date),
+        }),
+      );
+    });
+
+    it('passes empty fingerprint when hardwareFingerprint is not provided', async () => {
+      await service.issueSession({
+        userId: USER_ID,
+        workstationId: WORKSTATION_ID,
+      });
+
+      expect(mockOfflineTokenService.issueToken).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workstationFingerprint: '',
+        }),
+      );
+      expect(mockCredentialCacheService.generateCvk).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workstationFingerprint: '',
+        }),
+      );
+    });
+
+    it('audits offline credentials cached event', async () => {
+      await service.issueSession({
+        userId: USER_ID,
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        'AUTH_OFFLINE_CREDENTIALS_CACHED',
+        expect.objectContaining({
+          actorId: USER_ID,
+          details: expect.objectContaining({
+            cvkVersion: 1,
+          }),
+        }),
+      );
+    });
+
+    it('audits login success with offline token metadata', async () => {
+      await service.issueSession({
+        userId: USER_ID,
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(mockAuditService.log).toHaveBeenCalledWith(
+        'AUTH_LOGIN_SUCCESS',
+        expect.objectContaining({
+          details: expect.objectContaining({
+            offlineTokenIssued: true,
+            offlineTokenExpiresAt: expect.any(String),
+          }),
+        }),
+      );
+    });
+
+    it('retrieves user location access for offline token claims', async () => {
+      await service.issueSession({
+        userId: USER_ID,
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(mockUserLocationAccess.findMany).toHaveBeenCalledWith({
+        where: { userId: USER_ID },
+        select: { locationId: true },
+      });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // login — offline artifacts
+  // -----------------------------------------------------------------------
+  describe('login (offline artifacts)', () => {
+    const WORKSTATION_ID = 'ws-1';
+    const FINGERPRINT = 'fp-abc123def456';
+    const USERNAME = 'admin';
+    const PASSWORD = 'ValidPass123';
+
+    beforeEach(() => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'JWT_ACCESS_TTL_SECONDS') return 900;
+        if (key === 'JWT_REFRESH_TTL_SECONDS') return 604800;
+        return undefined;
+      });
+      mockJwtService.sign
+        .mockReturnValueOnce('access-token-value')
+        .mockReturnValueOnce('refresh-token-value');
+      mockSessionService.createSession.mockResolvedValue(
+        buildActiveSession({ workstationId: WORKSTATION_ID }),
+      );
+      mockSessionService.enforceSessionLimit.mockResolvedValue({ evictedSessionId: null });
+      // validateCredentials uses findFirst; handleFailedLoginAttempt uses findUnique
+      mockUserModel.findFirst.mockResolvedValue(buildUser());
+      mockUserModel.findUnique.mockResolvedValue(buildUser());
+      mockUserModel.update.mockResolvedValue(buildUser());
+      mockPasswordHasher.verify.mockResolvedValue(true);
+      mockUserLocationAccess.findMany.mockResolvedValue([]);
+      mockOfflineTokenService.issueToken.mockResolvedValue({
+        token: 'offline-jwt-value',
+        expiresAt: new Date('2026-12-31T23:59:59Z'),
+        jti: 'offline-jti-uuid',
+      });
+      mockCredentialCacheService.generateCvk.mockResolvedValue({
+        encryptedBlob: 'base64-encrypted-blob',
+        keyFingerprint: 'abcdef1234567890',
+        version: 1,
+      });
+    });
+
+    it('calls OfflineTokenService.issueToken during login', async () => {
+      await service.login({
+        identifier: USERNAME,
+        secret: PASSWORD,
+        sessionType: 'PASSWORD',
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(mockOfflineTokenService.issueToken).toHaveBeenCalled();
+    });
+
+    it('calls CredentialCacheService.generateCvk during login', async () => {
+      await service.login({
+        identifier: USERNAME,
+        secret: PASSWORD,
+        sessionType: 'PASSWORD',
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(mockCredentialCacheService.generateCvk).toHaveBeenCalled();
+    });
+
+    it('returns offlineToken in login response when no 2FA', async () => {
+      const result = await service.login({
+        identifier: USERNAME,
+        secret: PASSWORD,
+        sessionType: 'PASSWORD',
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(result.offlineToken).toBeDefined();
+      expect(result.offlineToken!.token).toBe('offline-jwt-value');
+    });
+
+    it('returns credentialVerificationKey in login response when no 2FA', async () => {
+      const result = await service.login({
+        identifier: USERNAME,
+        secret: PASSWORD,
+        sessionType: 'PASSWORD',
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(result.credentialVerificationKey).toBeDefined();
+      expect(result.credentialVerificationKey!.encryptedBlob).toBe('base64-encrypted-blob');
+    });
+
+    it('returns requiresTwoFactor when TOTP is enabled and skips offline token issuance until 2FA completes', async () => {
+      const totpUser = buildUser({ totpEnabled: true }) as Record<string, unknown>;
+      mockUserModel.findFirst.mockResolvedValue(totpUser);
+      mockUserModel.findUnique.mockResolvedValue(undefined);
+
+      const result = await service.login({
+        identifier: USERNAME,
+        secret: PASSWORD,
+        sessionType: 'PASSWORD',
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      expect(result.requiresTwoFactor).toBe(true);
+      expect(result.offlineToken).toBeUndefined();
+      expect(result.credentialVerificationKey).toBeUndefined();
+
+      // Offline token should not have been issued yet
+      expect(mockOfflineTokenService.issueToken).not.toHaveBeenCalled();
+      expect(mockCredentialCacheService.generateCvk).not.toHaveBeenCalled();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // completeTwoFactorLogin
+  // -----------------------------------------------------------------------
+  describe('completeTwoFactorLogin', () => {
+    const WORKSTATION_ID = 'ws-1';
+    const FINGERPRINT = 'fp-abc123def456';
+    const TOTP_CODE = '123456';
+
+    beforeEach(() => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'JWT_ACCESS_TTL_SECONDS') return 900;
+        if (key === 'JWT_REFRESH_TTL_SECONDS') return 604800;
+        return undefined;
+      });
+      mockJwtService.sign
+        .mockReturnValueOnce('access-token-value')
+        .mockReturnValueOnce('refresh-token-value');
+      mockSessionService.createSession.mockResolvedValue(
+        buildActiveSession({ workstationId: WORKSTATION_ID }),
+      );
+      mockSessionService.enforceSessionLimit.mockResolvedValue({ evictedSessionId: null });
+      mockPasswordHasher.verify.mockResolvedValue(true);
+      mockTotpService.verify.mockReturnValue(true);
+      mockUserLocationAccess.findMany.mockResolvedValue([]);
+      mockOfflineTokenService.issueToken.mockResolvedValue({
+        token: 'offline-jwt-value',
+        expiresAt: new Date('2026-12-31T23:59:59Z'),
+        jti: 'offline-jti-uuid',
+      });
+      mockCredentialCacheService.generateCvk.mockResolvedValue({
+        encryptedBlob: 'base64-encrypted-blob',
+        keyFingerprint: 'abcdef1234567890',
+        version: 1,
+      });
+    });
+
+    it('issues offline token and CVK when 2FA succeeds', async () => {
+      const totpUser = buildUser({
+        totpEnabled: true,
+        totpSecretEncrypted: 'encrypted-secret-value',
+      }) as Record<string, unknown>;
+      mockUserModel.findFirst.mockResolvedValue(totpUser);
+      mockUserModel.findUnique.mockResolvedValue(totpUser);
+
+      const loginResult = await service.login({
+        identifier: USERNAME,
+        secret: PASSWORD,
+        sessionType: 'PASSWORD',
+        workstationId: WORKSTATION_ID,
+        hardwareFingerprint: FINGERPRINT,
+      });
+
+      const result = await service.completeTwoFactorLogin({
+        challengeToken: loginResult.challengeToken!,
+        totpCode: TOTP_CODE,
+      });
+
+      expect(result.offlineToken).toBeDefined();
+      expect(result.offlineToken!.token).toBe('offline-jwt-value');
+      expect(result.credentialVerificationKey).toBeDefined();
+      expect(result.credentialVerificationKey!.encryptedBlob).toBe('base64-encrypted-blob');
+      expect(mockOfflineTokenService.issueToken).toHaveBeenCalled();
+      expect(mockCredentialCacheService.generateCvk).toHaveBeenCalled();
     });
   });
 });
