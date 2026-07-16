@@ -27,7 +27,7 @@ Push-Location (Join-Path $ProjectRoot 'apps/server')
 
 if ($Reset) {
     Write-Host 'Resetting database (force push + re-seed)...' -ForegroundColor Yellow
-    npx prisma db push --force-reset --schema ../../packages/database/prisma/schema
+    npx prisma db push --force-reset --schema ../../packages/database/prisma/schema --config ../../packages/database/prisma.full.config.ts
     if ($LASTEXITCODE -ne 0) {
         Write-Host 'Reset failed!' -ForegroundColor Red
         Pop-Location

@@ -85,14 +85,30 @@ describe("PinKeypad", () => {
         <PinKeypad {...defaultProps} length={4} />,
       );
 
-      const getFilledDots = () =>
-        Array.from(
-          container.querySelectorAll('[style*="border-radius: 50%"]'),
-        ).filter(
-          (el) =>
-            (el as HTMLElement).style.backgroundColor !== "" &&
-            !(el as HTMLElement).style.backgroundColor.includes("border"),
+      // Motion's animate prop (backgroundColor) isn't reflected as inline
+      // styles in jsdom, so we can't distinguish filled from unfilled dots
+      // by their appearance.  Instead we toggle PIN visibility (click the
+      // show/hide button) and count <span> elements containing digits.
+      const getFilledDots = () => {
+        const pinBtn = container.querySelector(
+          'button[aria-label*="PIN" i]',
+        ) as HTMLButtonElement | null;
+        if (!pinBtn) return [];
+
+        // Toggle visibility ON — filled dots become <span> with digit text
+        fireEvent.click(pinBtn);
+
+        // Collect spans that contain a single digit
+        const allSpans = pinBtn.querySelectorAll("span");
+        const digitSpans = Array.from(allSpans).filter(
+          (s) => /^\d$/.test(s.textContent ?? ""),
         );
+
+        // Toggle visibility OFF to restore original state
+        fireEvent.click(pinBtn);
+
+        return digitSpans;
+      };
 
       expect(getFilledDots()).toHaveLength(0);
 
@@ -130,9 +146,9 @@ describe("PinKeypad", () => {
       fireEvent.click(screen.getByRole("button", { name: "2" }));
       fireEvent.click(screen.getByRole("button", { name: "3" }));
 
-      // Auto-submit fires after 150ms
+      // Auto-submit fires after 180ms (component's internal delay)
       act(() => {
-        vi.advanceTimersByTime(150);
+        vi.advanceTimersByTime(200);
       });
 
       expect(onComplete).toHaveBeenCalledWith("123");
@@ -150,7 +166,7 @@ describe("PinKeypad", () => {
       vi.useFakeTimers();
     });
 
-    it("auto-submits after 150ms when PIN reaches the required length", () => {
+    it("auto-submits after 180ms when PIN reaches the required length", () => {
       const onComplete = vi.fn();
       render(<PinKeypad length={4} onComplete={onComplete} />);
 
@@ -162,7 +178,7 @@ describe("PinKeypad", () => {
       expect(onComplete).not.toHaveBeenCalled();
 
       act(() => {
-        vi.advanceTimersByTime(150);
+        vi.advanceTimersByTime(200);
       });
 
       expect(onComplete).toHaveBeenCalledWith("1234");
@@ -237,14 +253,25 @@ describe("PinKeypad", () => {
       fireEvent.click(screen.getByRole("button", { name: "2" }));
       fireEvent.click(screen.getByRole("button", { name: "3" }));
 
-      const getFilledDots = () =>
-        Array.from(
-          container.querySelectorAll('[style*="border-radius: 50%"]'),
-        ).filter(
-          (el) =>
-            (el as HTMLElement).style.backgroundColor !== "" &&
-            !(el as HTMLElement).style.backgroundColor.includes("border"),
+      // Motion's animate prop (backgroundColor) isn't reflected as inline
+      // styles in jsdom, so toggle PIN visibility to count digit <span>s.
+      const getFilledDots = () => {
+        const pinBtn = container.querySelector(
+          'button[aria-label*="PIN" i]',
+        ) as HTMLButtonElement | null;
+        if (!pinBtn) return [];
+
+        fireEvent.click(pinBtn);
+
+        const allSpans = pinBtn.querySelectorAll("span");
+        const digitSpans = Array.from(allSpans).filter(
+          (s) => /^\d$/.test(s.textContent ?? ""),
         );
+
+        fireEvent.click(pinBtn);
+
+        return digitSpans;
+      };
 
       expect(getFilledDots()).toHaveLength(3);
 

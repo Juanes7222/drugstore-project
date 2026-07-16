@@ -4,7 +4,7 @@
  * Covers: TOTP mode, backup code mode, input validation, verify button,
  * success/error paths, cancel button.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { TwoFactorModal } from "./two-factor-modal";
 import type { AuthService } from "../../../domain/auth/auth.service";
@@ -15,7 +15,7 @@ import type { AuthService } from "../../../domain/auth/auth.service";
 
 describe("TwoFactorModal", () => {
   const mockAuthService = {
-    completeTwoFactor: vi.fn(),
+    completeTwoFactor: vi.fn() as any,
   } as unknown as AuthService;
 
   const defaultProps = {
@@ -109,7 +109,7 @@ describe("TwoFactorModal", () => {
   });
 
   it("calls authService.completeTwoFactor with TOTP code on verify", async () => {
-    mockAuthService.completeTwoFactor = vi.fn().mockResolvedValue({});
+    mockAuthService.completeTwoFactor = vi.fn() as any;
 
     render(<TwoFactorModal {...defaultProps} />);
 
@@ -132,7 +132,7 @@ describe("TwoFactorModal", () => {
   });
 
   it("calls authService.completeTwoFactor with backup code on verify", async () => {
-    mockAuthService.completeTwoFactor = vi.fn().mockResolvedValue({});
+    mockAuthService.completeTwoFactor = vi.fn() as any;
 
     render(<TwoFactorModal {...defaultProps} />);
 
@@ -159,9 +159,7 @@ describe("TwoFactorModal", () => {
   });
 
   it("shows an error message when verification fails", async () => {
-    mockAuthService.completeTwoFactor = vi
-      .fn()
-      .mockRejectedValue(new Error("Código inválido"));
+    mockAuthService.completeTwoFactor = vi.fn().mockRejectedValue(new Error("Código inválido")) as any;
 
     render(<TwoFactorModal {...defaultProps} />);
 
@@ -190,7 +188,7 @@ describe("TwoFactorModal", () => {
   it("shows loading state (verifying) on the verify button during verification", async () => {
     mockAuthService.completeTwoFactor = vi.fn(
       () => new Promise(() => {}), // never resolves
-    );
+    ) as any;
 
     render(<TwoFactorModal {...defaultProps} />);
 

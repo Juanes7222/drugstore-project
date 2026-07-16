@@ -7,6 +7,7 @@
  */
 import { type FC, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { motion } from 'motion/react';
 import { AuthService } from '../../../domain/auth/auth.service';
 
 interface TwoFactorModalProps {
@@ -54,13 +55,21 @@ export const TwoFactorModal: FC<TwoFactorModalProps> = ({
   }, [challengeToken, code, backupCode, mode, authService, onComplete]);
 
   return (
-    <div
+    <motion.div
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
     >
-      <div
+      <motion.div
         className="pos-panel max-w-sm w-full p-pos-xl"
         style={{ backgroundColor: 'var(--color-surface)' }}
+        initial={{ opacity: 0, scale: 0.95, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: -8 }}
+        transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
       >
         <h2
           className="text-heading font-bold mb-2"
@@ -174,7 +183,7 @@ export const TwoFactorModal: FC<TwoFactorModalProps> = ({
             {isLoading ? t('auth.verifying') : t('auth.verify')}
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };

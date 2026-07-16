@@ -35,7 +35,6 @@ const users: LocalUserInfo[] = [
 
 const defaultProps = {
   users,
-  selectedUserId: null,
   onSelect: vi.fn(),
   onOtherAccount: vi.fn(),
 };
@@ -82,18 +81,6 @@ describe("AvatarGrid", () => {
 
     fireEvent.click(otherAccountButton);
     expect(onOtherAccount).toHaveBeenCalledOnce();
-  });
-
-  it("applies a selected border to the matching user", () => {
-    const { container } = render(
-      <AvatarGrid {...defaultProps} selectedUserId="cashier-1" />,
-    );
-
-    // The selected user's button should have a border matching --color-primary
-    const userButtons = container.querySelectorAll("button");
-    // First two buttons are users, third is "other account"
-    const selectedButton = userButtons[1]; // cashier-1 is second
-    expect(selectedButton.style.border).toContain("solid");
   });
 
   it("renders the group with an aria-label from translation", () => {

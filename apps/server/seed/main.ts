@@ -11,9 +11,10 @@ import { seedCashShifts } from './seed/cash-shifts';
 async function main(): Promise<void> {
   console.log('Starting pharmacy-system seed...\n');
 
-  await seedReferenceData();
-  await seedWorkstations();
+  // Users first so reference data can reference them (e.g. TaxScheme.createdById)
   await seedUsers();
+  await seedWorkstations();
+  await seedReferenceData();
   await seedProducts();
   await seedSuppliers();
   await seedClients();
@@ -22,8 +23,10 @@ async function main(): Promise<void> {
 
   console.log('\nSeed completed successfully!');
   console.log('   Login: admin / Admin123!  (role: ADMIN)');
-  console.log('   Login: cashier1 / Cashier123!  (role: CASHIER)');
-  console.log('   Login: inventory / Inventory123!  (role: INVENTORY_ASSISTANT)');
+  console.log('   Login: cashier1 / 1234  (role: CASHIER)');
+  console.log('   Login: cashier2 / 1234  (role: CASHIER)');
+  console.log('   Login: inventory / 1234  (role: INVENTORY_ASSISTANT)');
+  console.log('   Login: accountant / 1234  (role: ACCOUNTANT)');
 }
 
 main()

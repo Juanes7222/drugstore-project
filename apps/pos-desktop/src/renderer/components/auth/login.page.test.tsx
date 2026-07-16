@@ -8,6 +8,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { LoginPage } from "./login.page";
+import { RoleType } from "@pharmacy/shared-types";
+import type { LocalUserInfo } from "../../../domain/auth/local-users";
+import type { AuthService } from "../../../domain/auth/auth.service";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks — use vi.hoisted so the ref is available before hoisted
@@ -34,16 +37,16 @@ vi.mock("../../../domain/auth/local-session.store", () => ({
 // ---------------------------------------------------------------------------
 
 const createMockReturn = (overrides?: Record<string, unknown>) => ({
-  selectedUser: null,
+  selectedUser: null as LocalUserInfo | null,
   showManualInput: false,
   identifier: "",
   password: "",
-  error: null,
+  error: null as string | null,
   isLoading: false,
   requiresTwoFactor: false,
-  challengeToken: null,
+  challengeToken: null as string | null,
   countdown: 0,
-  authService: { login: vi.fn(), verifyTwoFactor: vi.fn() },
+  authService: { login: vi.fn(), completeTwoFactor: vi.fn() } as unknown as AuthService,
   setSelectedUser: vi.fn(),
   handleUserSelect: vi.fn(),
   handlePinComplete: vi.fn(),
@@ -115,7 +118,7 @@ describe("LoginPage", () => {
       fullName: "Test User",
       displayName: "Test User",
       email: null,
-      role: "CASHIER",
+      role: RoleType.CASHIER,
       subscriptionId: null,
       workstationId: "ws-1",
       accessToken: "token-123",
@@ -208,7 +211,7 @@ describe("LoginPage", () => {
       id: "user-1",
       username: "jperez",
       displayName: "Juan Pérez",
-      role: "CASHIER",
+      role: RoleType.CASHIER,
       avatarColor: "#2196F3",
       avatarUrl: null,
     };
@@ -227,7 +230,7 @@ describe("LoginPage", () => {
       id: "user-1",
       username: "jperez",
       displayName: "Juan Pérez",
-      role: "CASHIER",
+      role: RoleType.CASHIER,
       avatarColor: "#2196F3",
       avatarUrl: null,
     };
@@ -255,7 +258,7 @@ describe("LoginPage", () => {
       id: "user-1",
       username: "jperez",
       displayName: "Juan Pérez",
-      role: "CASHIER",
+      role: RoleType.CASHIER,
       avatarColor: "#2196F3",
       avatarUrl: null,
     };
