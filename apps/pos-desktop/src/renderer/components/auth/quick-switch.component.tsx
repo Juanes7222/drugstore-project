@@ -36,6 +36,12 @@ export const QuickSwitch: FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Users loaded from the server (or local cache as fallback)
+  const [users, setUsers] = useState<QuickUser[]>([]);
+  const [isFetchingUsers, setIsFetchingUsers] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [authService] = useState(() =>
     createAuthService({
@@ -56,6 +62,79 @@ export const QuickSwitch: FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Fetch users when the dropdown opens
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+
+    async function loadUsers() {
+      setIsFetchingUsers(true);
+      setFetchError(null);
+
+      try {
+        // 1. Try the server (requires OWNER/MANAGER role)
+        const result = await authService.listUsers({ limit: 50 });
+        if (cancelled) return;
+
+        const mapped: QuickUser[] = (result.users ?? []).map(
+          (u: { id: string; displayName?: string; fullName?: string; role: string; avatarUrl?: string | null; avatarColor?: string | null; username?: string }) => ({
+            id: u.id,
+            displayName: u.displayName ?? u.fullName ?? '',
+            role: u.role as RoleType,
+            avatarUrl: u.avatarUrl ?? null,
+            avatarColor: u.avatarColor ?? null,
+            username: u.username ?? '',
+          }),
+        );
+        setUsers(mapped);
+        setIsFetchingUsers(false);
+
+        // Update local cache for offline fallback
+        const { cacheUsers } = await import('../../../domain/auth/local-user-cache');
+        const { mapServerUserToLocalUserInfo } = await import('../../../domain/auth/local-users');
+        await cacheUsers(mapped.map((u) => mapServerUserToLocalUserInfo(u)));
+      } catch (err) {
+        if (cancelled) return;
+
+        // 2. Permission denied or network error — fall back to local cache
+        try {
+          const { loadCachedUsers } = await import('../../../domain/auth/local-user-cache');
+          const cached = await loadCachedUsers();
+          if (cancelled) return;
+
+          if (cached.length > 0) {
+            setUsers(
+              cached.map((u) => ({
+                id: u.id,
+                displayName: u.displayName,
+                role: u.role as RoleType,
+                avatarUrl: u.avatarUrl,
+                avatarColor: u.avatarColor,
+                username: u.username,
+              })),
+            );
+          } else {
+            setUsers([]);
+            setFetchError(
+              (err as Error)?.message?.includes('403')
+                ? t('auth.no_permission_list_users', 'No tenés permisos para listar usuarios')
+                : t('auth.connection_error'),
+            );
+          }
+        } catch {
+          if (cancelled) return;
+          setUsers([]);
+          setFetchError(t('auth.connection_error'));
+        } finally {
+          setIsFetchingUsers(false);
+        }
+      }
+    }
+
+    void loadUsers();
+    return () => { cancelled = true; };
+  }, [isOpen, authService, t]);
 
   if (!session) return null;
 
@@ -137,53 +216,6 @@ export const QuickSwitch: FC = () => {
     [selectedUser, authService, session.workstationId],
   );
 
-  /**
-   * Matches the server seed data in `apps/server/seed/seed/users.ts`.
-   * In production this list is fetched from the server.
-   */
-  const placeholderUsers: QuickUser[] = [
-    {
-      id: 'user_admin',
-      displayName: 'Administrador del Sistema',
-      role: RoleType.ADMIN,
-      avatarUrl: null,
-      avatarColor: '#4F46E5',
-      username: 'admin',
-    },
-    {
-      id: 'user_cashier1',
-      displayName: 'María Rodríguez',
-      role: RoleType.CASHIER,
-      avatarUrl: null,
-      avatarColor: '#D97706',
-      username: 'cashier1',
-    },
-    {
-      id: 'user_cashier2',
-      displayName: 'Carlos Méndez',
-      role: RoleType.CASHIER,
-      avatarUrl: null,
-      avatarColor: '#DC2626',
-      username: 'cashier2',
-    },
-    {
-      id: 'user_inventory',
-      displayName: 'Luisa García',
-      role: RoleType.INVENTORY_ASSISTANT,
-      avatarUrl: null,
-      avatarColor: '#059669',
-      username: 'inventory',
-    },
-    {
-      id: 'user_accountant',
-      displayName: 'Pedro Contreras',
-      role: RoleType.ACCOUNTANT,
-      avatarUrl: null,
-      avatarColor: '#8B5CF6',
-      username: 'accountant',
-    },
-  ];
-
   return (
     <div ref={dropdownRef} className="relative">
       {/* Current user button */}
@@ -253,7 +285,51 @@ export const QuickSwitch: FC = () => {
               >
                 {t('auth.switch_user')}
               </p>
-              {placeholderUsers
+
+              {/* Loading state */}
+              {isFetchingUsers && (
+                <div className="px-3 py-4 flex items-center justify-center">
+                  <span
+                    className="text-sm"
+                    style={{ color: 'var(--color-ink-muted)' }}
+                  >
+                    {t('common.loading')}
+                  </span>
+                </div>
+              )}
+
+              {/* Fetch error — no users available */}
+              {!isFetchingUsers && fetchError && users.length === 0 && (
+                <div className="px-3 py-4">
+                  <p
+                    className="text-sm text-center"
+                    style={{ color: 'var(--color-ink-muted)' }}
+                  >
+                    {fetchError}
+                  </p>
+                  <p
+                    className="text-xs text-center mt-1"
+                    style={{ color: 'var(--color-ink-muted)' }}
+                  >
+                    {t('auth.use_manual_login', 'Usá el inicio de sesión manual')}
+                  </p>
+                </div>
+              )}
+
+              {/* Empty state — loaded successfully but no users */}
+              {!isFetchingUsers && !fetchError && users.length === 0 && (
+                <div className="px-3 py-4">
+                  <p
+                    className="text-sm text-center"
+                    style={{ color: 'var(--color-ink-muted)' }}
+                  >
+                    {t('auth.no_users_available', 'No hay usuarios disponibles')}
+                  </p>
+                </div>
+              )}
+
+              {/* User list — loaded from server or cache */}
+              {!isFetchingUsers && users.length > 0 && users
                 .filter((u) => u.id !== session.userId)
                 .map((user) => (
                   <button

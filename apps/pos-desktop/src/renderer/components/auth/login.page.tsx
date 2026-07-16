@@ -14,11 +14,12 @@
  * When offline, the flow adapts: 2FA is bypassed and an informative
  * message is shown.
  */
-import { type FC } from 'react';
+import { type FC, useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
-import { PLACEHOLDER_USERS } from '../../../domain/auth/local-users';
+import type { LocalUserInfo } from '../../../domain/auth/local-users';
+import { loadCachedUsers } from '../../../domain/auth/local-user-cache';
 import { useLoginPage } from '../../hooks/use-login-page';
 import { LoginHeader } from './login-header';
 import { AvatarGrid } from './avatar-grid';
@@ -30,6 +31,24 @@ import { TwoFactorModal } from './two-factor-modal';
 export const LoginPage: FC = () => {
   const { t } = useTranslation();
   const session = useLocalSessionStore((s) => s.session);
+
+  // Load cached users on mount for the avatar grid.
+  // The cache is empty on first ever use (no user has logged in on this
+  // device yet). In that case the selection screen shows a prompt to use
+  // the manual login form instead of an empty grid.
+  const [cachedUsers, setCachedUsers] = useState<LocalUserInfo[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadCachedUsers()
+      .then((users) => {
+        if (!cancelled) setCachedUsers(users);
+      })
+      .catch(() => {
+        if (!cancelled) setCachedUsers([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   const {
     selectedUser,
     showManualInput,
@@ -74,7 +93,10 @@ export const LoginPage: FC = () => {
   }
 
   // Determine which content to show — memoized key for AnimatePresence
-  const contentKey = showManualInput
+  // If cachedUsers is null the cache is still loading; if it is an empty
+  // array no user has ever logged in on this device, so default to manual.
+  const showManual = showManualInput || (cachedUsers !== null && cachedUsers.length === 0 && !selectedUser);
+  const contentKey = showManual
     ? 'manual'
     : selectedUser
       ? `credential-${selectedUser.id}`
@@ -188,15 +210,27 @@ export const LoginPage: FC = () => {
               exit={{ opacity: 0, y: -12, scale: 0.98 }}
               transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
             >
-              {contentKey === 'selection' && (
+              {/* Loading cache — neither grid nor form ready yet */}
+              {cachedUsers === null && (
+                <div className="flex items-center justify-center py-8">
+                  <span
+                    className="text-sm"
+                    style={{ color: 'var(--color-ink-muted)' }}
+                  >
+                    {t('common.loading')}
+                  </span>
+                </div>
+              )}
+
+              {contentKey === 'selection' && cachedUsers !== null && (
                 <AvatarGrid
-                  users={PLACEHOLDER_USERS}
+                  users={cachedUsers}
                   onSelect={handleUserSelect}
                   onOtherAccount={() => setShowManualInput(true)}
                 />
               )}
 
-              {contentKey === 'manual' && (
+              {contentKey === 'manual' && cachedUsers !== null && (
                 <ManualLoginForm
                   identifier={identifier}
                   password={password}

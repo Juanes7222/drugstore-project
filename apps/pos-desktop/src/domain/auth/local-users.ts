@@ -1,12 +1,16 @@
 /**
- * Local user seed data for the login page avatar grid.
+ * Local user info types and server-response mappers.
  *
- * In production, this list is fetched from the server. The placeholder
- * data provides a realistic development experience without requiring
- * network connectivity.
+ * The actual user data is now loaded from:
+ * - The local user cache (`local-user-cache.ts`) when offline
+ * - The server via `authService.listUsers()` when a session exists
+ *
+ * No hardcoded seed data lives here. The login page falls back to the
+ * manual form when the cache is empty, which happens only on first-ever
+ * use of the app on a device.
  */
 
-import { RoleType } from '@pharmacy/shared-types';
+import type { RoleType } from '@pharmacy/shared-types';
 
 export interface LocalUserInfo {
   id: string;
@@ -18,52 +22,30 @@ export interface LocalUserInfo {
 }
 
 /**
- * Matches the server seed data in `apps/server/seed/seed/users.ts`.
+ * Map a user object from a server API response to the POS `LocalUserInfo`
+ * shape expected by `AvatarGrid` and `QuickSwitch`.
  *
- * - Username / password pairs match the seeded development users exactly,
- *   so the login flow works out of the box against a freshly seeded server.
- * - In production this list is replaced by server-fetched users; this
- *   placeholder data exists solely for the dev avatar grid UX.
+ * Works with:
+ * - `/users` response items (full user list)
+ * - `/auth/login` response's `user` field (single authenticated user)
  */
-export const PLACEHOLDER_USERS: LocalUserInfo[] = [
-  {
-    id: 'user_admin',
-    displayName: 'Administrador del Sistema',
-    role: RoleType.ADMIN,
-    avatarUrl: null,
-    avatarColor: '#4F46E5',
-    username: 'admin',
+export function mapServerUserToLocalUserInfo(
+  serverUser: {
+    id: string;
+    displayName?: string;
+    fullName?: string;
+    role: string;
+    avatarUrl?: string | null;
+    avatarColor?: string | null;
+    username?: string;
   },
-  {
-    id: 'user_cashier1',
-    displayName: 'María Rodríguez',
-    role: RoleType.CASHIER,
-    avatarUrl: null,
-    avatarColor: '#D97706',
-    username: 'cashier1',
-  },
-  {
-    id: 'user_cashier2',
-    displayName: 'Carlos Méndez',
-    role: RoleType.CASHIER,
-    avatarUrl: null,
-    avatarColor: '#DC2626',
-    username: 'cashier2',
-  },
-  {
-    id: 'user_inventory',
-    displayName: 'Luisa García',
-    role: RoleType.INVENTORY_ASSISTANT,
-    avatarUrl: null,
-    avatarColor: '#059669',
-    username: 'inventory',
-  },
-  {
-    id: 'user_accountant',
-    displayName: 'Pedro Contreras',
-    role: RoleType.ACCOUNTANT,
-    avatarUrl: null,
-    avatarColor: '#8B5CF6',
-    username: 'accountant',
-  },
-];
+): LocalUserInfo {
+  return {
+    id: serverUser.id,
+    displayName: serverUser.displayName ?? serverUser.fullName ?? '',
+    role: serverUser.role as RoleType,
+    avatarUrl: serverUser.avatarUrl ?? null,
+    avatarColor: serverUser.avatarColor ?? null,
+    username: serverUser.username ?? '',
+  };
+}

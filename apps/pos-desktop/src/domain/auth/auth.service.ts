@@ -98,6 +98,19 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
       );
       useLocalSessionStore.getState().setSession(session);
 
+      // Cache the authenticated user's profile for the login avatar grid
+      // and QuickSwitch offline fallback. Non-fatal.
+      import('./local-user-cache')
+        .then(({ cacheUser }) => cacheUser({
+          id: response.user.id,
+          displayName: response.user.displayName,
+          role: response.user.role as RoleType,
+          avatarUrl: response.user.avatarUrl ?? null,
+          avatarColor: response.user.avatarColor ?? null,
+          username: response.user.username,
+        }))
+        .catch(() => { /* non-fatal */ });
+
       // Cache offline credentials for future offline-first logins.
       // Non-fatal: failure does not block login.
       if (response.offlineToken || response.credentialVerificationKey) {
@@ -129,6 +142,18 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
         '',
       );
       useLocalSessionStore.getState().setSession(session);
+
+      // Cache the authenticated user's profile. Non-fatal.
+      import('./local-user-cache')
+        .then(({ cacheUser }) => cacheUser({
+          id: response.user.id,
+          displayName: response.user.displayName,
+          role: response.user.role as RoleType,
+          avatarUrl: response.user.avatarUrl ?? null,
+          avatarColor: response.user.avatarColor ?? null,
+          username: response.user.username,
+        }))
+        .catch(() => { /* non-fatal */ });
 
       // Cache offline credentials for future offline-first logins.
       // Non-fatal: failure does not block login.
