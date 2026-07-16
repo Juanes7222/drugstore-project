@@ -50,9 +50,11 @@ describe("Auth flow: create user + login", () => {
   afterAll(async () => {
     client.clearToken();
     if (db) {
-      if (process.env.TEST_SKIP_CLEANUP !== "1") {
-        await db.truncateAll();
-      }
+      // NOTE: we do NOT call truncateAll here because globalSetup already
+      // truncates all tables at the start of the test run, and other test
+      // files (running with isolate: false) depend on the seeded admin user
+      // persisting across the suite.  Individual data cleanup is handled by
+      // each test file's own cleanup logic.
       await db.close();
     }
   });

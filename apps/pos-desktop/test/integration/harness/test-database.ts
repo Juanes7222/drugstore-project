@@ -471,6 +471,34 @@ export class TestDatabase {
   }
 
   /**
+   * Find sync queue entries matching the given filters.
+   */
+  async findSyncQueueEntries(params: {
+    status?: string;
+    operationType?: string;
+    limit?: number;
+  }) {
+    const where: Record<string, unknown> = {};
+    if (params.status) where.status = params.status;
+    if (params.operationType) where.operationType = params.operationType;
+    return this.prisma.syncQueue.findMany({
+      where: where as any,
+      orderBy: { receivedAt: 'desc' },
+      take: params.limit ?? 10,
+    });
+  }
+
+  /**
+   * Find confirmed sales by cash shift ID.
+   */
+  async findSalesByCashShift(cashShiftId: string) {
+    return this.prisma.sale.findMany({
+      where: { cashShiftId },
+      orderBy: { startedAt: 'desc' },
+    });
+  }
+
+  /**
    * Get the current stock for a lot.
    */
   async getLotStock(lotId: string): Promise<number> {

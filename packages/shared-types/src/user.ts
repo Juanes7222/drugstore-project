@@ -22,6 +22,7 @@ export interface User {
   passwordAlgorithm?: string;
   emailVerifiedAt: Date | null;
   lastLoginAt: Date | null;
+  lastLoginWorkstationId: string | null;
   lastPasswordChangeAt: Date | null;
   status: UserStatus;
   mustChangePassword: boolean;

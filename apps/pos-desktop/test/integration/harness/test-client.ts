@@ -186,6 +186,44 @@ export interface BlockLotRequest {
   reason: string;
 }
 
+// ---------------------------------------------------------------------------
+// Sync types
+// ---------------------------------------------------------------------------
+
+export interface SyncOperation {
+  operationType:
+    | "SALE_CONFIRMATION"
+    | "SHIFT_CLOSURE"
+    | "CLIENT_CREATION"
+    | "CLIENT_RETURN"
+    | "INVENTORY_ADJUSTMENT"
+    | "FISCAL_DOCUMENT_SYNC"
+    | "PRESCRIPTION_REGISTRATION"
+    | "RESOLUTION_ALLOCATION"
+    | "INVOICE_TRANSMISSION";
+  operationUuid: string;
+  payload: Record<string, unknown>;
+  payloadHash: string;
+  sourceCreatedAt: string;
+  clientSequence: number;
+}
+
+export interface SyncBatchRequest {
+  operations: SyncOperation[];
+}
+
+export interface SyncBatchResponse {
+  operationUuid: string;
+  status: "ACCEPTED" | "ALREADY_ACCEPTED" | "REJECTED";
+  error?: string;
+}
+
+export interface SyncStatusResponse {
+  sourceWorkstationId: string;
+  pending: number;
+  failed: number;
+}
+
 export interface HealthResponse {
   /** True if the server returned any HTTP response. */
   reachable: boolean;
@@ -502,6 +540,57 @@ export class TestClient {
   async unblockLot(lotId: string): Promise<Record<string, unknown>> {
     return this.request<Record<string, unknown>>("POST", `/inventory-lots/lots/${lotId}/unblock`);
   }
+
+  // -----------------------------------------------------------------------
+  // Sync
+  // -----------------------------------------------------------------------
+
+  /**
+   * Send a batch of offline operations for sync processing.
+   * Requires JWT auth (any authenticated user).
+   * Returns HTTP 202 with per-operation ACCEPTED/REJECTED status.
+   */
+  async sendSyncBatch(data: SyncBatchRequest): Promise<SyncBatchResponse[]> {
+    return this.request<SyncBatchResponse[]>("POST", "/sync/batch", data);
+  }
+
+  /**
+   * Get the sync queue status for the current workstation.
+   * Requires JWT auth.
+   */
+  async getSyncStatus(): Promise<SyncStatusResponse> {
+    return this.request<SyncStatusResponse>("GET", "/sync/status");
+  }
+
+  /**
+   * List sync queue entries (requires ADMIN role).
+   * Returns paginated: { data, total, page, pageSize }.
+   */
+  async listSyncQueue(params?: {
+    status?: string;
+    operationType?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<Record<string, unknown>> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    if (params?.operationType) query.set("operationType", params.operationType);
+    if (params?.page) query.set("page", String(params.page));
+    if (params?.pageSize) query.set("pageSize", String(params.pageSize));
+    if (!query.has("page")) query.set("page", "1");
+    if (!query.has("pageSize")) query.set("pageSize", "50");
+    const qs = query.toString();
+    return this.request<Record<string, unknown>>("GET", `/sync/queue${qs ? `?${qs}` : ""}`);
+  }
+
+  /**
+   * Retry a failed sync queue entry (requires ADMIN role).
+   * Resets status from FAILED back to PENDING.
+   */
+  async retrySyncEntry(entryId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", `/sync/queue/${entryId}/retry`);
+  }
+
 }
 
 // ---------------------------------------------------------------------------
