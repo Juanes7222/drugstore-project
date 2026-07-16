@@ -100,14 +100,7 @@ function splitSqlStatements(sql: string): string[] {
 }
 
 /**
- * Apply any missing schema objects (enums, tables, indexes, foreign keys)
- * to an existing database, ignoring "already exists" errors.
- *
- * For a fresh database the full schema is applied in a single batch.
- * For an existing database that may be missing objects added in later
- * schema versions (e.g. the `UpdateState` table), each DDL statement is
- * attempted individually and expected "already exists" errors are silently
- * skipped.
+ * Apply the full DDL to a fresh database in a single batch.
  */
 async function applySchema(client: PGlite): Promise<void> {
   // Discard the leading "CREATE SCHEMA IF NOT EXISTS "public";" —
@@ -122,12 +115,90 @@ async function applySchema(client: PGlite): Promise<void> {
 }
 
 /**
+ * Parse a `CREATE TABLE "Name" (...)` DDL statement, extracting the table
+ * name and a map of column-name → column-definition fragment.
+ *
+ * Constraint-only lines (CONSTRAINT, PRIMARY KEY, FOREIGN KEY, UNIQUE, INDEX,
+ * CHECK) are excluded — they are not column definitions.
+ */
+function parseCreateTableColumns(stmt: string): { tableName: string; columnDefs: Map<string, string> } | null {
+  const tableMatch = stmt.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"([^"]+)"\s*\(/i);
+  if (!tableMatch) return null;
+
+  const tableName = tableMatch[1];
+
+  // Extract the body between the first `(` and the last `)`.
+  const bodyStart = stmt.indexOf('(');
+  const bodyEnd = stmt.lastIndexOf(')');
+  if (bodyStart === -1 || bodyEnd === -1 || bodyEnd <= bodyStart) return null;
+  const body = stmt.slice(bodyStart + 1, bodyEnd);
+
+  const columnDefs = new Map<string, string>();
+  const lines = body.split('\n');
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    // Skip table-level constraints
+    if (/^(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|INDEX|CHECK)\b/i.test(trimmed)) continue;
+    // Only process lines that start a column definition
+    if (trimmed.startsWith('"')) {
+      const colDef = trimmed.replace(/,$/, '');
+      const colNameMatch = colDef.match(/^"([^"]+)"/);
+      if (colNameMatch) {
+        columnDefs.set(colNameMatch[1], colDef);
+      }
+    }
+  }
+
+  return { tableName, columnDefs };
+}
+
+/**
+ * Query `information_schema.columns` for every column on every table listed
+ * in the DDL, returning a Set of `"tableName"."columnName"` keys already
+ * present in the database.
+ */
+async function getExistingColumnKeys(
+  client: PGlite,
+  tableNames: string[],
+): Promise<Set<string>> {
+  if (tableNames.length === 0) return new Set();
+
+  // Build a parameterised IN-list of table names
+  const placeholders = tableNames.map((_, i) => `$${i + 1}`).join(', ');
+  const result = await client.query<{ tableName: string; columnName: string }>(
+    `SELECT table_name AS "tableName", column_name AS "columnName"
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name IN (${placeholders})`,
+    tableNames,
+  );
+  const keys = new Set<string>();
+  for (const row of result.rows) {
+    keys.add(`"${row.tableName}"."${row.columnName}"`);
+  }
+  return keys;
+}
+
+/**
  * Apply missing schema objects to an existing database.
  *
- * Runs each DDL statement individually and ignores errors for objects
- * that already exist.  This allows existing databases created with an
- * older schema version to pick up new tables, enums, and indexes that
- * were added later (e.g. the `UpdateState` table).
+ * Strategy (instead of fighting with Prisma's generated DDL line-by-line):
+ *
+ *  1. Parse every `CREATE TABLE "Name" (...)` from the DDL to build a map
+ *     of expected columns.
+ *  2. Query `information_schema.columns` to learn what already exists.
+ *  3. For any column the DDL declares but the live table lacks, issue
+ *     `ALTER TABLE ADD COLUMN` first — this is safe and idempotent.
+ *  4. Then execute each DDL statement individually, silently skipping
+ *     "already exists" errors.  Because all columns are already in place,
+ *     the `ALTER TABLE ADD CONSTRAINT ... FOREIGN KEY` statements will no
+ *     longer fail with "referenced column does not exist".
+ *
+ * This handles any schema evolution where columns are added to an
+ * already-deployed table — not just `receiptTemplateId`, but any future
+ * addition as well.
  */
 async function applyMissingSchema(client: PGlite): Promise<void> {
   const sql = LOCAL_SCHEMA_SQL
@@ -138,15 +209,95 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
 
   const statements = splitSqlStatements(sql);
 
-  for (const stmt of statements) {
+  // ---- Phase 1: introspect and backfill missing columns ----
+  const expectedColumns = new Map<string, Map<string, string>>();
+  for (const [i, stmt] of statements.entries()) {
+    // NOTE: statements after splitSqlStatements often start with a
+    // `-- CreateTable` comment.  The `^` anchor would reject them, so we
+    // search for "CREATE TABLE" anywhere in the statement.
+    if (!stmt.includes('CREATE TABLE')) {
+      continue;
+    }
+    const parsed = parseCreateTableColumns(stmt);
+    if (parsed) {
+      // eslint-disable-next-line no-console
+      console.log(`[local-database] Phase 1 [${i}]: parsed table "${parsed.tableName}" with ${parsed.columnDefs.size} columns`);
+      expectedColumns.set(parsed.tableName, parsed.columnDefs);
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(`[local-database] Phase 1 [${i}]: FAILED to parse CREATE TABLE statement (first 120 chars): "${stmt.slice(0, 120).replace(/\n/g, '\\n')}"`);
+    }
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[local-database] Phase 1: ${expectedColumns.size} tables in DDL, checking information_schema...`,
+  );
+
+  if (expectedColumns.size > 0) {
+    let existingKeys: Set<string>;
+    try {
+      existingKeys = await getExistingColumnKeys(client, [...expectedColumns.keys()]);
+      // eslint-disable-next-line no-console
+      console.log(`[local-database] Phase 1: found ${existingKeys.size} existing column keys in information_schema`);
+    } catch (infoErr: unknown) {
+      // eslint-disable-next-line no-console
+      console.error('[local-database] Phase 1: FAILED to query information_schema.columns:', infoErr);
+      throw infoErr;
+    }
+
+    for (const [tableName, cols] of expectedColumns) {
+      for (const [colName, colDef] of cols) {
+        const key = `"${tableName}"."${colName}"`;
+        if (existingKeys.has(key)) continue; // Column already present.
+
+        // eslint-disable-next-line no-console
+        console.log(
+          `[local-database] Backfilling column "${colName}" on "${tableName}"...`,
+        );
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await client.exec(`ALTER TABLE "${tableName}" ADD COLUMN ${colDef};`);
+        } catch (backfillErr: unknown) {
+          const bMsg = backfillErr instanceof Error ? backfillErr.message : String(backfillErr);
+          // "already exists" / "duplicate column" can occur in a race where
+          // the column was added between our query and our ALTER.
+          if (
+            bMsg.includes('already exists') ||
+            bMsg.includes('duplicate column')
+          ) {
+            continue;
+          }
+          // Unexpected error — surface during startup.
+          throw backfillErr;
+        }
+      }
+    }
+  }
+
+  // ---- Phase 2: apply the DDL statements individually ----
+  // All missing columns are now in place, so FK ALTER TABLE statements
+  // should succeed.  We still skip "already exists" for tables, enums,
+  // indexes, and constraints that are already present.
+  // eslint-disable-next-line no-console
+  console.log(`[local-database] Phase 2: executing ${statements.length} DDL statements...`);
+  for (const [i, stmt] of statements.entries()) {
+    const isFk = /ALTER\s+TABLE.*ADD\s+CONSTRAINT.*FOREIGN\s+KEY/i.test(stmt);
+    if (isFk) {
+      // eslint-disable-next-line no-console
+      console.log(`[local-database] Phase 2 [${i}/${statements.length}] FK: ${stmt.slice(0, 120)}...`);
+    }
     try {
       await client.exec(stmt);
+      if (isFk) {
+        // eslint-disable-next-line no-console
+        console.log(`[local-database] Phase 2 [${i}/${statements.length}] FK succeeded.`);
+      }
     } catch (err: unknown) {
-      // PostgreSQL error codes for "already exists":
-      //   42710 — duplicate_object (enum value, schema)
-      //   42P07 — duplicate_table
-      //   42701 — duplicate_column (unique index on existing column)
-      //   Also catch string-based matching for PGlite compatibility.
+      if (isFk) {
+        // eslint-disable-next-line no-console
+        console.error(`[local-database] Phase 2 [${i}/${statements.length}] FK FAILED:`, err);
+      }
       const msg = err instanceof Error ? err.message : String(err);
       if (
         msg.includes('already exists') ||
@@ -157,7 +308,7 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
         // Object already exists — skip silently.
         continue;
       }
-      // Re-throw unexpected errors so they surface during startup.
+      // Unexpected error — surface during startup.
       throw err;
     }
   }
@@ -371,17 +522,27 @@ export async function getLocalDatabase(): Promise<{
 
       // Check whether this is a fresh database
       const isEmpty = !(await tableExists(client, 'Client'));
+      // eslint-disable-next-line no-console
+      console.log(`[local-database] isEmpty=${isEmpty} (Client table exists=${!isEmpty})`);
 
       if (isEmpty) {
         // Fresh database — apply the full schema in one batch.
+        // eslint-disable-next-line no-console
+        console.log('[local-database] Fresh database — applying full schema...');
         await applySchema(client);
+        // eslint-disable-next-line no-console
+        console.log('[local-database] Full schema applied.');
       } else {
         // Existing database — apply any missing objects (tables, enums,
         // indexes) that were added in schema versions after the initial
         // creation.  This handles the case where the full DDL has been
         // regenerated with new models (e.g. `UpdateState`) but the
         // running database was created from an older version of the DDL.
+        // eslint-disable-next-line no-console
+        console.log('[local-database] Existing database — applying missing schema...');
         await applyMissingSchema(client);
+        // eslint-disable-next-line no-console
+        console.log('[local-database] Missing schema applied successfully.');
       }
 
       let prisma: unknown;
