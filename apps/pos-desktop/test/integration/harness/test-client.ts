@@ -69,6 +69,123 @@ export interface CreateUserResponse {
   mustChangePassword: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Sale / Cash-shift types
+// ---------------------------------------------------------------------------
+
+export interface OpenShiftRequest {
+  openingBalance: string;
+  openingNotes?: string;
+}
+
+export interface OpenShiftResponse {
+  id: string;
+  state: string;
+  openingBalance: string;
+  workstationId: string;
+  openedAt: string;
+}
+
+export interface CreateSaleRequest {
+  saleType: "FREE_SALE" | "PRESCRIPTION" | "CONTROLLED_SUBSTANCE";
+  cashShiftId: string;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    unitPrice: string;
+  }>;
+  clientId?: string | null;
+}
+
+export interface CreateSaleResponse {
+  id: string;
+  operationalState: string;
+  cashShiftId: string;
+  totalAmount: string;
+  items: Array<{
+    productId: string;
+    quantity: number;
+    unitPrice: string;
+  }>;
+}
+
+export interface ConfirmSaleRequest {
+  payments: Array<{
+    paymentMethodId: string;
+    amount: number;
+  }>;
+}
+
+export interface ConfirmSaleResponse {
+  id: string;
+  operationalState: string;
+  confirmedAt: string;
+  payments: Array<{
+    paymentMethodId: string;
+    amount: number;
+  }>;
+}
+
+export interface RegisterCashCountRequest {
+  countType: "PARTIAL" | "CLOSING";
+  paymentMethodId: string;
+  expectedAmount: string;
+  declaredAmount: string;
+}
+
+export interface CloseShiftRequest {
+  closingNotes?: string;
+}
+
+export interface AnnulSaleRequest {
+  annulmentReason: string;
+  annulmentNotes?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Catalog / Product types
+// ---------------------------------------------------------------------------
+
+export interface CreateProductRequest {
+  internalCode: string;
+  commercialName: string;
+  genericName: string;
+  activePrinciple: string;
+  laboratory: string;
+  saleType: "FREE_SALE" | "PRESCRIPTION" | "CONTROLLED_SUBSTANCE";
+  initialPrice: string;
+  initialTaxSchemeId: string;
+  concentration?: string;
+  concentrationUnit?: string;
+  minimumStock?: number;
+  invimaRegistry?: string;
+  atcCode?: string;
+  categoryId?: string;
+  pharmaceuticalFormId?: string;
+}
+
+export interface RegisterPriceRequest {
+  price: string;
+  effectiveFrom?: string;
+  changeReason?: string;
+}
+
+export interface AssignTaxSchemeRequest {
+  taxSchemeId: string;
+  effectiveFrom?: string;
+  changeReason?: string;
+}
+
+export interface AddBarcodeRequest {
+  barcode: string;
+  barcodeType: "EAN13" | "EAN14" | "GTIN" | "INTERNAL" | "DATAMATRIX";
+  isPrimary?: boolean;
+}
+
+export interface BlockLotRequest {
+  reason: string;
+}
+
 export interface HealthResponse {
   /** True if the server returned any HTTP response. */
   reachable: boolean;
@@ -258,6 +375,132 @@ export class TestClient {
     if (params?.offset) query.set("offset", String(params.offset));
     const qs = query.toString();
     return this.request<Array<Record<string, unknown>>>("GET", `/users${qs ? `?${qs}` : ""}`);
+  }
+
+  // -----------------------------------------------------------------------
+  // Cash shifts
+  // -----------------------------------------------------------------------
+
+  /**
+   * Open a cash shift (requires CASHIER or ADMIN role).
+   */
+  async openShift(data: OpenShiftRequest): Promise<OpenShiftResponse> {
+    return this.request<OpenShiftResponse>("POST", "/cash-shifts", data);
+  }
+
+  /**
+   * Register a cash count for a shift (requires CASHIER or ADMIN role).
+   */
+  async registerCashCount(
+    shiftId: string,
+    data: RegisterCashCountRequest,
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", `/cash-shifts/${shiftId}/cash-counts`, data);
+  }
+
+  /**
+   * Close a cash shift (requires CASHIER or ADMIN role).
+   */
+  async closeShift(shiftId: string, data: CloseShiftRequest): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", `/cash-shifts/${shiftId}/close`, data);
+  }
+
+  // -----------------------------------------------------------------------
+  // Sales
+  // -----------------------------------------------------------------------
+
+  /**
+   * Create a sale (requires CASHIER or ADMIN role).
+   */
+  async createSale(data: CreateSaleRequest): Promise<CreateSaleResponse> {
+    return this.request<CreateSaleResponse>("POST", "/sales-pos", data);
+  }
+
+  /**
+   * Confirm a sale (requires CASHIER or ADMIN role).
+   */
+  async confirmSale(saleId: string, data: ConfirmSaleRequest): Promise<ConfirmSaleResponse> {
+    return this.request<ConfirmSaleResponse>("POST", `/sales-pos/${saleId}/confirm`, data);
+  }
+
+  /**
+   * Annul a sale (requires ADMIN role).
+   */
+  async annulSale(saleId: string, data: AnnulSaleRequest): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", `/sales-pos/${saleId}/annul`, data);
+  }
+
+  // -----------------------------------------------------------------------
+  // Catalog / Products
+  // -----------------------------------------------------------------------
+
+  /**
+   * Create a product (requires INVENTORY_ASSISTANT or ADMIN role).
+   */
+  async createProduct(data: CreateProductRequest): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", "/products", data);
+  }
+
+  /**
+   * Get a product by ID (requires INVENTORY_ASSISTANT or ADMIN role).
+   */
+  async getProduct(productId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("GET", `/products/${productId}`);
+  }
+
+  /**
+   * Register a price for a product (requires ADMIN role).
+   */
+  async registerProductPrice(
+    productId: string,
+    data: RegisterPriceRequest,
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", `/products/${productId}/price`, data);
+  }
+
+  /**
+   * Assign a tax scheme to a product (requires ADMIN role).
+   */
+  async assignProductTaxScheme(
+    productId: string,
+    data: AssignTaxSchemeRequest,
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", `/products/${productId}/tax-scheme`, data);
+  }
+
+  /**
+   * Add a barcode to a product (requires INVENTORY_ASSISTANT or ADMIN role).
+   */
+  async addProductBarcode(
+    productId: string,
+    data: AddBarcodeRequest,
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", `/products/${productId}/barcodes`, data);
+  }
+
+  // -----------------------------------------------------------------------
+  // Inventory / Lots
+  // -----------------------------------------------------------------------
+
+  /**
+   * Get a lot by ID (requires CASHIER, INVENTORY_ASSISTANT, or ADMIN role).
+   */
+  async getLot(lotId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("GET", `/inventory-lots/lots/${lotId}`);
+  }
+
+  /**
+   * Block a lot (requires ADMIN role).
+   */
+  async blockLot(lotId: string, data: BlockLotRequest): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", `/inventory-lots/lots/${lotId}/block`, data);
+  }
+
+  /**
+   * Unblock a lot (requires ADMIN role).
+   */
+  async unblockLot(lotId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("POST", `/inventory-lots/lots/${lotId}/unblock`);
   }
 }
 

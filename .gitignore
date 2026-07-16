@@ -155,3 +155,6 @@ TODO.md
 
 target/
 prompts/
+
+.agents/
+.kiro/

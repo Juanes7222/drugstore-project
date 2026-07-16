@@ -111,6 +111,7 @@ export class SalesService {
               totalAmount: totalCalculations.totalAmount,
               items: { create: saleItems.map(item => ({ ...item, saleItemPrescriptionId: null })) },
             },
+            include: { items: true },
           });
           return sale;
         } catch (error: unknown) {
@@ -208,6 +209,7 @@ export class SalesService {
           lastModifiedAt: new Date(),
           changeAmount,
         },
+        include: { payments: true },
       });
 
       // Fiscal document created inside the same transaction — if it fails,
