@@ -364,14 +364,24 @@ export class AuthService {
   async refreshSession(
     refreshTokenHash: string,
   ): Promise<{ accessToken: string; expiresAt: Date; refreshToken: string }> {
-    const session = await this.sessionService.findActiveSessionByRefreshTokenHash(
+    // The controller extracts tokenHash from the access JWT payload,
+    // which is the session's access token hash (tokenHash), NOT the
+    // refresh token hash.  Use findActiveSessionByTokenHash to match.
+    const session = await this.sessionService.findActiveSessionByTokenHash(
       refreshTokenHash,
     );
 
     if (!session) {
-      // Check if the refresh token was already used (reuse detection)
+      // Check if the refresh token was already used (reuse detection).
+      // The controller sends tokenHash from the access JWT, which is the
+      // session's access token hash (stored in both tokenHash and, during
+      // a prior refresh, may have been replaced with a new hash).  Search
+      // by both fields to catch the reuse regardless of which hash column
+      // the old token's hash ends up matching.
       const reusedSession = await this.prisma.userSession.findFirst({
-        where: { refreshTokenHash },
+        where: {
+          OR: [{ refreshTokenHash }, { tokenHash: refreshTokenHash }],
+        },
       });
 
       if (reusedSession && reusedSession.status === 'REVOKED') {

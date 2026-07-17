@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
+import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -28,6 +29,12 @@ async function bootstrap(): Promise<void> {
   app.use(compression() as any);
 
   app.useGlobalFilters(new HttpExceptionFilter());
+
+  // Global ValidationPipe with transform enables the `@Type(() => Number)`
+  // decorators in query DTOs to convert string query params to numbers.
+  // We intentionally do NOT enable enableImplicitConversion to avoid
+  // class-transformer's surprising boolean coercion (": false" → true).
+  app.useGlobalPipes(new ValidationPipe({ transform: true }));
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Pharmacy POS API')

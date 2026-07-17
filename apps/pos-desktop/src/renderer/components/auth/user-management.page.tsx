@@ -138,20 +138,26 @@ export const UserManagementPage: FC = () => {
     try {
       const currentSession = useLocalSessionStore.getState().session;
       if (!currentSession) return;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (authService as any).disableUser?.(userId);
-      setActionResult(t('user_management.user_disabled'));
+      // If the user is currently active, disable them; otherwise enable
+      const target = users.find((u) => u.id === userId);
+      if (target?.isActive) {
+        await authService.disableUser(userId);
+        setActionResult(t('user_management.user_disabled'));
+      } else {
+        await authService.enableUser(userId);
+        setActionResult(t('user_management.user_enabled'));
+      }
       void fetchUsers();
     } catch {
       setError(t('user_management.disable_error'));
     }
   };
 
-  const handleResetPin = async (_userId: string) => {
+  const handleResetPin = async (userId: string) => {
     try {
       const currentSession = useLocalSessionStore.getState().session;
       if (!currentSession) return;
-      await authService.changePin('000000', '000000');
+      await authService.resetUserPin(userId);
       setActionResult(t('user_management.pin_reset'));
       void fetchUsers();
     } catch {

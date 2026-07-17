@@ -117,7 +117,7 @@ export const QuickSwitch: FC = () => {
           } else {
             setUsers([]);
             setFetchError(
-              (err as Error)?.message?.includes('403')
+              (err as Error)?.message?.includes('[403]')
                 ? t('auth.no_permission_list_users', 'No tenés permisos para listar usuarios')
                 : t('auth.connection_error'),
             );

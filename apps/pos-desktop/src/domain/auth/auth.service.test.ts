@@ -591,6 +591,110 @@ describe("AuthService", () => {
         "access-token-abc",
       );
     });
+
+    it("propagates 403 error from the server when a CASHIER tries to list", async () => {
+      useLocalSessionStore.getState().setSession(
+        makeLocalSession({ role: "CASHIER" }),
+      );
+      vi.mocked(http.getWithAuth).mockRejectedValue(
+        new Error("[403] Insufficient permissions for this action"),
+      );
+
+      await expect(auth.listUsers()).rejects.toThrow("[403]");
+    });
+
+    it("propagates network errors from the HTTP client", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.getWithAuth).mockRejectedValue(
+        new Error("Failed to fetch"),
+      );
+
+      await expect(auth.listUsers()).rejects.toThrow("Failed to fetch");
+    });
+  });
+
+  describe("disableUser", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(auth.disableUser("user-2")).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("calls POST /users/:id/disable when a session exists", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({ message: "User disabled" });
+
+      const result = await auth.disableUser("user-2");
+
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/users/user-2/disable",
+        {},
+        "access-token-abc",
+      );
+      expect(result.message).toBe("User disabled");
+    });
+  });
+
+  describe("enableUser", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(auth.enableUser("user-2")).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("calls POST /users/:id/enable when a session exists", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({ message: "User enabled" });
+
+      const result = await auth.enableUser("user-2");
+
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/users/user-2/enable",
+        {},
+        "access-token-abc",
+      );
+      expect(result.message).toBe("User enabled");
+    });
+  });
+
+  describe("unlockUser", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(auth.unlockUser("user-2")).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("calls POST /users/:id/unlock when a session exists", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({ message: "Account unlocked" });
+
+      const result = await auth.unlockUser("user-2");
+
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/users/user-2/unlock",
+        {},
+        "access-token-abc",
+      );
+      expect(result.message).toBe("Account unlocked");
+    });
+  });
+
+  describe("resetUserPin", () => {
+    it("throws NoActiveSessionException when not logged in", async () => {
+      await expect(auth.resetUserPin("user-2")).rejects.toThrow(NoActiveSessionException);
+    });
+
+    it("calls POST /users/:id/reset-pin when a session exists", async () => {
+      useLocalSessionStore.getState().setSession(makeLocalSession());
+      vi.mocked(http.postWithAuth).mockResolvedValue({
+        newPin: "123456",
+        message: "PIN has been reset",
+      });
+
+      const result = await auth.resetUserPin("user-2");
+
+      expect(http.postWithAuth).toHaveBeenCalledWith(
+        "/users/user-2/reset-pin",
+        {},
+        "access-token-abc",
+      );
+      expect(result.newPin).toBe("123456");
+      expect(result.message).toBe("PIN has been reset");
+    });
   });
 
   describe("getPendingStepUpRequests", () => {

@@ -46,9 +46,12 @@ export function createAuthHttpClient(baseUrl: string): AuthHttpClient {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
+        const errorBody = await response.json().catch(() => ({}));
+        const serverMessage = (errorBody as any).message;
         throw new Error(
-          (error as any).message || `HTTP ${response.status}: ${response.statusText}`,
+          serverMessage
+            ? `[${response.status}] ${serverMessage}`
+            : `[${response.status}] ${response.statusText}`,
         );
       }
 
@@ -67,9 +70,12 @@ export function createAuthHttpClient(baseUrl: string): AuthHttpClient {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
+        const errorBody = await response.json().catch(() => ({}));
+        const serverMessage = (errorBody as any).message;
         throw new Error(
-          (error as any).message || `HTTP ${response.status}: ${response.statusText}`,
+          serverMessage
+            ? `[${response.status}] ${serverMessage}`
+            : `[${response.status}] ${response.statusText}`,
         );
       }
 

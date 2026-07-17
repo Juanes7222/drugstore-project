@@ -1,9 +1,13 @@
 // Query DTO for pagination and filtering
-// Note: Validation is handled by query parameter parsing in NestJS
+import { Type } from 'class-transformer';
 
 export class QueryCashShiftDto {
+  @Type(() => Number)
   page: number = 1;
+
+  @Type(() => Number)
   pageSize: number = 20;
+
   state?: string;
   openedAtFrom?: string;
   openedAtTo?: string;

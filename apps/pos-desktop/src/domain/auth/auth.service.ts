@@ -334,7 +334,7 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
     },
 
     /**
-     * List users.
+     * List users (OWNER/MANAGER only — server enforces this via RolesGuard).
      */
     listUsers: async (filters?: {
       role?: string;
@@ -354,6 +354,58 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
       if (filters?.offset) params.set('offset', String(filters.offset));
 
       return http.getWithAuth(`/users?${params.toString()}`, currentSession.accessToken);
+    },
+
+    /**
+     * Disable a user (OWNER/MANAGER only).
+     */
+    disableUser: async (userId: string): Promise<{ message: string }> => {
+      const currentSession = useLocalSessionStore.getState().session;
+      if (!currentSession) throw new NoActiveSessionException();
+      return http.postWithAuth<{ message: string }>(
+        `/users/${userId}/disable`,
+        {},
+        currentSession.accessToken,
+      );
+    },
+
+    /**
+     * Enable a disabled user (OWNER/MANAGER only).
+     */
+    enableUser: async (userId: string): Promise<{ message: string }> => {
+      const currentSession = useLocalSessionStore.getState().session;
+      if (!currentSession) throw new NoActiveSessionException();
+      return http.postWithAuth<{ message: string }>(
+        `/users/${userId}/enable`,
+        {},
+        currentSession.accessToken,
+      );
+    },
+
+    /**
+     * Unlock a locked user account (OWNER/MANAGER only).
+     */
+    unlockUser: async (userId: string): Promise<{ message: string }> => {
+      const currentSession = useLocalSessionStore.getState().session;
+      if (!currentSession) throw new NoActiveSessionException();
+      return http.postWithAuth<{ message: string }>(
+        `/users/${userId}/unlock`,
+        {},
+        currentSession.accessToken,
+      );
+    },
+
+    /**
+     * Reset a user's PIN (OWNER/MANAGER only). Returns the new PIN.
+     */
+    resetUserPin: async (userId: string): Promise<{ newPin: string; message: string }> => {
+      const currentSession = useLocalSessionStore.getState().session;
+      if (!currentSession) throw new NoActiveSessionException();
+      return http.postWithAuth<{ newPin: string; message: string }>(
+        `/users/${userId}/reset-pin`,
+        {},
+        currentSession.accessToken,
+      );
     },
 
     /**
@@ -453,6 +505,14 @@ export interface AuthService {
     limit?: number;
     offset?: number;
   }): Promise<{ users: any[]; total: number }>;
+
+  disableUser(userId: string): Promise<{ message: string }>;
+
+  enableUser(userId: string): Promise<{ message: string }>;
+
+  unlockUser(userId: string): Promise<{ message: string }>;
+
+  resetUserPin(userId: string): Promise<{ newPin: string; message: string }>;
 
   getPendingStepUpRequests(): Promise<any[]>;
 

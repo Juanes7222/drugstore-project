@@ -69,6 +69,27 @@ vi.mock("../../../domain/auth/auth.service", () => ({
   createAuthService: vi.fn(() => mockAuthService),
 }));
 
+// Mock local-user-cache so the dynamic import inside loadUsers works.
+// Default loadCachedUsers returns [] so tests that don't explicitly set it
+// (e.g. success-path tests) avoid crashing on `cached.length > 0`.
+vi.mock("../../../domain/auth/local-user-cache", () => ({
+  loadCachedUsers: vi.fn().mockResolvedValue([]),
+  cacheUsers: vi.fn(),
+  resetUserCache: vi.fn(),
+}));
+
+// Mock local-users so the dynamic import inside loadUsers works
+vi.mock("../../../domain/auth/local-users", () => ({
+  mapServerUserToLocalUserInfo: vi.fn((u: any) => ({
+    id: u.id,
+    displayName: u.displayName,
+    role: u.role,
+    avatarUrl: u.avatarUrl ?? null,
+    avatarColor: u.avatarColor ?? null,
+    username: u.username ?? '',
+  })),
+}));
+
 const cashierSession: LocalSession = {
   userId: "u-1",
   username: "cashier1",
@@ -224,5 +245,156 @@ describe("QuickSwitch", () => {
 
     // Dropdown should close
     expect(screen.queryByText("Carlos Méndez")).not.toBeInTheDocument();
+  });
+
+  // -----------------------------------------------------------------------
+  // Error handling — 403, network errors, empty results
+  // -----------------------------------------------------------------------
+
+  it("shows 'no permission' message on 403 when local cache is empty", async () => {
+    mockSessionState.session = cashierSession;
+    mockAuthService.listUsers = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("[403] Insufficient permissions for this action"),
+      );
+
+    // Mock the dynamic import of local-user-cache to return empty cache
+    const { loadCachedUsers } = await import(
+      "../../../domain/auth/local-user-cache"
+    );
+    vi.mocked(loadCachedUsers).mockResolvedValue([]);
+
+    render(<QuickSwitch />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/no tenés permisos|no permission|permisos para listar/i),
+      ).toBeInTheDocument();
+    });
+
+    // Also shows the fallback hint to use manual login
+    expect(
+      screen.getByText(/inicio de sesión manual|manual login|manual/i),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to cached users on 403 when local cache has data", async () => {
+    mockSessionState.session = cashierSession;
+    mockAuthService.listUsers = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("[403] Insufficient permissions for this action"),
+      );
+
+    // Mock the dynamic import of local-user-cache to return cached users
+    const { loadCachedUsers } = await import(
+      "../../../domain/auth/local-user-cache"
+    );
+    vi.mocked(loadCachedUsers).mockResolvedValue([
+      {
+        id: "cached-1",
+        displayName: "Cached User One",
+        role: RoleType.CASHIER,
+        avatarUrl: null,
+        avatarColor: null,
+        username: "cached1",
+      },
+      {
+        id: "cached-2",
+        displayName: "Cached User Two",
+        role: RoleType.MANAGER,
+        avatarUrl: null,
+        avatarColor: null,
+        username: "cached2",
+      },
+    ]);
+
+    render(<QuickSwitch />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
+    );
+
+    // Should show cached users instead of the permission error
+    expect(await screen.findByText("Cached User One")).toBeInTheDocument();
+    expect(await screen.findByText("Cached User Two")).toBeInTheDocument();
+
+    // Should NOT show the permission error message
+    expect(
+      screen.queryByText(/no tenés permisos|no permission/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows generic error message on network error when cache is empty", async () => {
+    mockSessionState.session = cashierSession;
+    mockAuthService.listUsers = vi
+      .fn()
+      .mockRejectedValue(new Error("Failed to fetch"));
+
+    // Empty cache
+    const { loadCachedUsers } = await import(
+      "../../../domain/auth/local-user-cache"
+    );
+    vi.mocked(loadCachedUsers).mockResolvedValue([]);
+
+    render(<QuickSwitch />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
+    );
+
+    await waitFor(() => {
+      // Should show generic connection error, NOT the permission-specific one
+      expect(
+        screen.getByText(/error de conexión|connection error/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(/no tenés permisos|no permission|permisos para listar/i),
+      ).not.toBeInTheDocument();
+    });
+
+    // Should mention manual login fallback
+    expect(
+      screen.getByText(/inicio de sesión manual|manual login|manual/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows loading state while fetching users", () => {
+    mockSessionState.session = cashierSession;
+    // Never-resolving promise
+    mockAuthService.listUsers = vi.fn(() => new Promise(() => {}));
+
+    render(<QuickSwitch />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
+    );
+
+    expect(screen.getByText(/cargando|loading/i)).toBeInTheDocument();
+  });
+
+  it("shows 'no users available' when server returns an empty list", async () => {
+    mockSessionState.session = cashierSession;
+    mockAuthService.listUsers = vi.fn().mockResolvedValue({
+      users: [],
+      total: 0,
+    });
+
+    render(<QuickSwitch />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/no hay usuarios disponibles|no users available/i),
+      ).toBeInTheDocument();
+    });
   });
 });

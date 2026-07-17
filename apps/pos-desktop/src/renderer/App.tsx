@@ -32,6 +32,7 @@ import { AuditLogView } from "@/components/auth/audit-log-view";
 import { SessionView } from "@/components/auth/sessions/session-view";
 import { OfflineModeBanner } from "@/components/auth/offline/offline-mode-banner";
 import { PendingBlessingModal } from "@/components/auth/offline/pending-blessing-modal";
+import { ErrorBoundary } from "./components/common/error-boundary";
 import { ServiceProvider } from "./components/common/service-context";
 import { AssistantLayer } from "./components/assistant/assistant-layer";
 import { useAppSelector } from "@/store/hooks";
@@ -378,7 +379,9 @@ export const App: FC = () => {
   console.log("DB_PROOF_ENABLED is false, rendering the full app.");
   return (
     <ServiceProvider>
-      <InnerApp />
+      <ErrorBoundary>
+        <InnerApp />
+      </ErrorBoundary>
       <Toaster position="bottom-right" />
     </ServiceProvider>
   );

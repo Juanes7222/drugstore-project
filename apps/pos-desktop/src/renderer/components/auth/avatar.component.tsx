@@ -7,7 +7,7 @@
 import { type FC } from 'react';
 
 interface AvatarProps {
-  displayName: string;
+  displayName: string | null | undefined;
   avatarUrl?: string | null;
   avatarColor?: string | null;
   userId?: string;
@@ -41,7 +41,8 @@ function getColorFromId(userId: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-function getInitials(name: string): string {
+function getInitials(name: string | null | undefined): string {
+  if (!name) return '?';
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) {
     return parts[0].charAt(0).toUpperCase();
@@ -57,8 +58,9 @@ export const Avatar: FC<AvatarProps> = ({
   size = 40,
   className = '',
 }) => {
+  const safeName = displayName ?? '';
   const bgColor = avatarColor || (userId ? getColorFromId(userId) : '#6366F1');
-  const initials = getInitials(displayName);
+  const initials = getInitials(safeName);
 
   if (avatarUrl) {
     return (

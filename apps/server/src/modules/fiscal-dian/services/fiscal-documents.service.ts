@@ -194,7 +194,12 @@ export class FiscalDocumentsService {
       data: { currentConsecutive: { increment: 1 } },
     });
 
-    if (updated.currentConsecutive > updated.rangeTo) {
+    // The actual document consecutive is computed relative to rangeFrom,
+    // not just the raw counter.  For a range [100001..200000] the first
+    // document gets 100001, the second 100002, etc.
+    const consecutiveNumber = allocation.rangeFrom + updated.currentConsecutive - 1;
+
+    if (consecutiveNumber > updated.rangeTo) {
       await tx.fiscalResolutionAllocation.update({
         where: { id: allocation.id },
         data: { exhaustedAt: new Date() },
@@ -205,7 +210,7 @@ export class FiscalDocumentsService {
     return {
       allocation,
       resolution: allocation.resolution,
-      consecutiveNumber: updated.currentConsecutive,
+      consecutiveNumber,
     };
   }
 

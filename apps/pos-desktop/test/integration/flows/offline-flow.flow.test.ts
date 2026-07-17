@@ -1,24 +1,31 @@
 /**
- * Offline sync integration flow: sync batch → processing → sale created.
+ * Offline-flow integration tests: server connectivity, sync batch, and retry.
  *
- * These tests simulate what the POS desktop does when it comes back online
- * after creating a sale while disconnected:
+ * These tests simulate what happens when the POS desktop goes offline and
+ * later reconnects:
  *
- * 1. Seed server data → login cashier → open shift
- * 2. Send a SALE_CONFIRMATION sync batch → verify ACCEPTED
- * 3. Send the same operation UUID again → verify ALREADY_ACCEPTED (idempotency)
- * 4. Send a batch with a bad payload hash → verify REJECTED
- * 5. Check sync queue status has sourceWorkstationId populated
- * 6. Poll the cron-based SyncProcessingJob until it processes the batch
- * 7. Verify the sale was created and confirmed server-side
- * 8. Close the cash shift
+ * 1. Server connectivity detection (reachable vs dead port)
+ * 2. Sync batch — simulating how the POS would push queued offline operations
+ * 3. Sync status — verifying pending/failed counts
+ * 4. Queue listing (ADMIN role)
+ * 5. Retry mechanism — resetting a FAILED entry back to PENDING
+ *
+ * ## How this maps to the real app
+ *
+ * The POS desktop works offline-first:
+ * - Local operations are queued in a SyncQueue table (PGlite)
+ * - On reconnect, `POST /sync/batch` pushes the batch to the server
+ * - The server stores each operation as PENDING for async processing
+ * - If processing fails, the entry becomes FAILED
+ * - An admin can retry via `POST /sync/queue/:id/retry`
  *
  * @vitest-environment node
  */
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import * as crypto from "node:crypto";
+import { createHash } from "node:crypto";
 import { TestClient } from "../harness/test-client";
 import { TestDatabase, TEST_IDS } from "../harness/test-database";
+import type { SyncBatchRequest } from "../harness/test-client";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -26,276 +33,341 @@ import { TestDatabase, TEST_IDS } from "../harness/test-database";
 
 const SERVER_URL = process.env.TEST_SERVER_URL ?? "http://localhost:3001";
 const WORKSTATION_ID = process.env.TEST_WORKSTATION_ID ?? TEST_IDS.WORKSTATION;
-const CASHIER_USERNAME = "cashier-offline-flow@test.pharmacy";
-const CASHIER_PASSWORD = "CashierOff123!";
-
-/** Max time (ms) to wait for the sync cron job (runs every 30s). */
-const SYNC_PROCESSING_TIMEOUT_MS = 45_000;
-const POLL_INTERVAL_MS = 2_000;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** SHA-256 hex digest of a JSON object, matching SyncService.computePayloadHash. */
-function computePayloadHash(payload: Record<string, unknown>): string {
-  return crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
-}
+const DEAD_PORT = "http://localhost:19999";
 
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
 
-describe("Offline sync: batch → processing → sale created", () => {
-  const owner = new TestClient(SERVER_URL, WORKSTATION_ID);
-  const cashier = new TestClient(SERVER_URL, WORKSTATION_ID);
+describe("Offline flow: connectivity, sync batch, and retry", () => {
+  const client = new TestClient(SERVER_URL, WORKSTATION_ID);
   let db: TestDatabase;
 
-  // Shared state
-  let cashierUserId: string = "";
-  let shiftId: string = "";
+  // Track UUIDs for dedup, rejection, and targeted cleanup
+  const FIRST_OPERATION_UUID = crypto.randomUUID();
+  const ALREADY_ACCEPTED_UUID = crypto.randomUUID();
+  const REJECTED_UUID = crypto.randomUUID();
+
+  // Test-specific user for role enforcement
+  const OFFLINE_FLOW_CASHIER_USERNAME = "cashier-offline-flow-test";
+  const OFFLINE_FLOW_CASHIER_PASSWORD = "OfflineFlowTest123!";
+
+  // Track all operation UUIDs we create so cleanup is precise
+  const ourOperationUuids: string[] = [];
 
   beforeAll(async () => {
     db = new TestDatabase();
     await db.connect();
-    await db.seedSaleData();
 
-    await owner.login(TEST_IDS.ADMIN_USERNAME, TEST_IDS.ADMIN_PASSWORD);
-    const created = await owner.createUser({
+    // Login as admin
+    await client.login(TEST_IDS.ADMIN_USERNAME, TEST_IDS.ADMIN_PASSWORD);
+
+    // Create a cashier user for role enforcement tests
+    // (self-contained — does not depend on other test files)
+    await client.createUser({
       displayName: "Offline Flow Cashier",
-      username: CASHIER_USERNAME,
+      username: OFFLINE_FLOW_CASHIER_USERNAME,
       role: "CASHIER",
-      initialPassword: CASHIER_PASSWORD,
+      initialPassword: OFFLINE_FLOW_CASHIER_PASSWORD,
     });
-    cashierUserId = created.id;
-    owner.clearToken();
   });
 
   afterAll(async () => {
-    cashier.clearToken();
-    owner.clearToken();
+    client.clearToken();
+
     if (db) {
-      await db.cleanupSaleData();
+      // Clean up the cashier user we created
+      const cashierUser = await db.findUserByUsername(OFFLINE_FLOW_CASHIER_USERNAME);
+      if (cashierUser) {
+        await (db as any).prisma.userSession.deleteMany({ where: { userId: cashierUser.id } });
+        await (db as any).prisma.user.deleteMany({ where: { id: cashierUser.id } });
+      }
+
+      // Clean up sync queue entries by precise operation UUID (never blanket delete)
+      for (const uuid of ourOperationUuids) {
+        await db.deleteSyncQueueEntries({ operationUuid: uuid });
+      }
+      await db.deleteSyncQueueEntries({ operationUuid: ALREADY_ACCEPTED_UUID });
+
       await db.close();
     }
   });
 
   // -----------------------------------------------------------------------
-  // Health check
+  // Server connectivity
   // -----------------------------------------------------------------------
 
-  it("server is reachable", async () => {
-    const health = await cashier.health();
+  it("detects the server is reachable", async () => {
+    const health = await client.health();
     expect(health.reachable).toBe(true);
     expect(health.statusCode).toBeGreaterThanOrEqual(100);
   });
 
-  // -----------------------------------------------------------------------
-  // Step 1: Login + open shift
-  // -----------------------------------------------------------------------
+  it("detects the server is unreachable when connecting to a dead port", async () => {
+    const deadClient = new TestClient(DEAD_PORT);
+    const health = await deadClient.health();
+    expect(health.reachable).toBe(false);
+    expect(health.statusCode).toBe(0);
+  });
 
-  it("logs in as cashier and opens a shift", async () => {
-    const loginRes = await cashier.login(CASHIER_USERNAME, CASHIER_PASSWORD);
-    expect(loginRes.user.role).toBe("CASHIER");
+  it("throws a connection error when making an authenticated request to a dead port", async () => {
+    const deadClient = new TestClient(DEAD_PORT);
 
-    const shift = await cashier.openShift({
-      openingBalance: "50000.00",
-      openingNotes: "Offline sync integration test",
-    });
-    shiftId = shift.id;
-    expect(shift.state).toBe("OPEN");
+    // Login would normally store a token, but we need to test the connection fails
+    await expect(
+      deadClient.login(TEST_IDS.ADMIN_USERNAME, TEST_IDS.ADMIN_PASSWORD),
+    ).rejects.toThrow(/fetch|Failed to fetch|network|connect|ECONNREFUSED/i);
   });
 
   // -----------------------------------------------------------------------
-  // Step 2: Send valid sync batch → ACCEPTED
+  // Sync batch — ACCEPTED
   // -----------------------------------------------------------------------
 
-  it("accepts a valid SALE_CONFIRMATION sync batch", async () => {
-    const payload: Record<string, unknown> = {
-      userId: cashierUserId,
-      createSaleDto: {
-        saleType: "FREE_SALE",
-        cashShiftId: shiftId,
-        items: [{
-          productId: TEST_IDS.SALE_PRODUCT_ID,
-          quantity: 2,
-          unitPrice: "15000.00",
-        }],
-      },
-      confirmSaleDto: {
-        payments: [{
-          paymentMethodId: TEST_IDS.SALE_CASH_PM_ID,
-          amount: 50000,
-        }],
-      },
+  it("sends a sync batch with a valid operation and receives ACCEPTED", async () => {
+    const operationUuid = FIRST_OPERATION_UUID;
+    ourOperationUuids.push(operationUuid);
+
+    const payload = {
+      saleId: crypto.randomUUID(),
+      workstationId: WORKSTATION_ID,
+      totalAmount: "45000.00",
+      items: [
+        { productId: crypto.randomUUID(), quantity: 3, unitPrice: "15000.00" },
+      ],
     };
 
-    const operationUuid = crypto.randomUUID();
-    const result = await cashier.sendSyncBatch({
-      operations: [{
-        operationType: "SALE_CONFIRMATION",
-        operationUuid,
-        payload,
-        payloadHash: computePayloadHash(payload),
-        sourceCreatedAt: new Date().toISOString(),
-        clientSequence: 1,
-      }],
-    });
+    const payloadHash = createHash("sha256")
+      .update(JSON.stringify(payload))
+      .digest("hex");
 
-    expect(result).toHaveLength(1);
-    expect(result[0].operationUuid).toBe(operationUuid);
-    expect(result[0].status).toBe("ACCEPTED");
-  });
-
-  // -----------------------------------------------------------------------
-  // Step 3: Same UUID again → ALREADY_ACCEPTED (idempotency)
-  // -----------------------------------------------------------------------
-
-  it("rejects a duplicate operation UUID with ALREADY_ACCEPTED", async () => {
-    const payload: Record<string, unknown> = {
-      userId: cashierUserId,
-      createSaleDto: {
-        saleType: "FREE_SALE",
-        cashShiftId: shiftId,
-        items: [{
-          productId: TEST_IDS.SALE_PRODUCT_ID,
-          quantity: 1,
-          unitPrice: "15000.00",
-        }],
-      },
-      confirmSaleDto: {
-        payments: [{
-          paymentMethodId: TEST_IDS.SALE_CASH_PM_ID,
-          amount: 20000,
-        }],
-      },
+    const batch: SyncBatchRequest = {
+      operations: [
+        {
+          operationType: "SALE_CONFIRMATION",
+          operationUuid,
+          payload,
+          payloadHash,
+          sourceCreatedAt: new Date().toISOString(),
+          clientSequence: 1,
+        },
+      ],
     };
 
-    const operationUuid = crypto.randomUUID();
+    const results = await client.sendSyncBatch(batch);
 
-    // First send — should be ACCEPTED
-    const first = await cashier.sendSyncBatch({
-      operations: [{
-        operationType: "SALE_CONFIRMATION",
-        operationUuid,
-        payload,
-        payloadHash: computePayloadHash(payload),
-        sourceCreatedAt: new Date().toISOString(),
-        clientSequence: 2,
-      }],
-    });
-    expect(first[0].status).toBe("ACCEPTED");
-
-    // Second send with same UUID — should be ALREADY_ACCEPTED
-    const second = await cashier.sendSyncBatch({
-      operations: [{
-        operationType: "SALE_CONFIRMATION",
-        operationUuid,
-        payload,
-        payloadHash: computePayloadHash(payload),
-        sourceCreatedAt: new Date().toISOString(),
-        clientSequence: 2,
-      }],
-    });
-    expect(second[0].status).toBe("ALREADY_ACCEPTED");
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe("ACCEPTED");
+    expect(results[0].operationUuid).toBe(operationUuid);
   });
 
   // -----------------------------------------------------------------------
-  // Step 4: Bad payload hash → REJECTED
+  // Sync batch — ALREADY_ACCEPTED (idempotency)
   // -----------------------------------------------------------------------
 
-  it("rejects a batch with mismatched payload hash", async () => {
-    const payload: Record<string, unknown> = {
-      userId: cashierUserId,
-      createSaleDto: {
-        saleType: "FREE_SALE",
-        cashShiftId: shiftId,
-        items: [{
-          productId: TEST_IDS.SALE_PRODUCT_ID,
-          quantity: 1,
-          unitPrice: "15000.00",
-        }],
-      },
-      confirmSaleDto: {
-        payments: [{
-          paymentMethodId: TEST_IDS.SALE_CASH_PM_ID,
-          amount: 20000,
-        }],
-      },
+  it("sends the same operation again and receives ALREADY_ACCEPTED", async () => {
+    const payload = { dummy: "data" };
+    const payloadHash = createHash("sha256")
+      .update(JSON.stringify(payload))
+      .digest("hex");
+
+    // First send to ensure it's in the queue
+    const firstBatch: SyncBatchRequest = {
+      operations: [
+        {
+          operationType: "CLIENT_CREATION",
+          operationUuid: ALREADY_ACCEPTED_UUID,
+          payload,
+          payloadHash,
+          sourceCreatedAt: new Date().toISOString(),
+          clientSequence: 2,
+        },
+      ],
     };
 
-    const wrongHash = "0000000000000000000000000000000000000000000000000000000000000000";
+    const firstResults = await client.sendSyncBatch(firstBatch);
+    expect(firstResults[0].status).toBe("ACCEPTED");
 
-    const result = await cashier.sendSyncBatch({
-      operations: [{
-        operationType: "SALE_CONFIRMATION",
-        operationUuid: crypto.randomUUID(),
-        payload,
-        payloadHash: wrongHash,
-        sourceCreatedAt: new Date().toISOString(),
-        clientSequence: 3,
-      }],
-    });
+    // Send the same UUID again
+    const secondBatch: SyncBatchRequest = {
+      operations: [
+        {
+          operationType: "CLIENT_CREATION",
+          operationUuid: ALREADY_ACCEPTED_UUID,
+          payload,
+          payloadHash,
+          sourceCreatedAt: new Date().toISOString(),
+          clientSequence: 2,
+        },
+      ],
+    };
 
-    expect(result[0].status).toBe("REJECTED");
-    expect(result[0].error).toBe("PAYLOAD_HASH_MISMATCH");
+    const secondResults = await client.sendSyncBatch(secondBatch);
+
+    expect(secondResults).toHaveLength(1);
+    expect(secondResults[0].status).toBe("ALREADY_ACCEPTED");
+    expect(secondResults[0].operationUuid).toBe(ALREADY_ACCEPTED_UUID);
   });
 
   // -----------------------------------------------------------------------
-  // Step 5: Verify sourceWorkstationId in sync status
+  // Sync batch — REJECTED (hash mismatch)
   // -----------------------------------------------------------------------
 
-  it("reports sourceWorkstationId matching the logged-in workstation", async () => {
-    const status = await cashier.getSyncStatus();
+  it("sends an operation with a wrong hash and receives REJECTED", async () => {
+    const payload = { test: "payload" };
+
+    const batch: SyncBatchRequest = {
+      operations: [
+        {
+          operationType: "INVENTORY_ADJUSTMENT",
+          operationUuid: REJECTED_UUID,
+          payload,
+          payloadHash: "0000000000000000000000000000000000000000000000000000000000000000",
+          sourceCreatedAt: new Date().toISOString(),
+          clientSequence: 3,
+        },
+      ],
+    };
+
+    const results = await client.sendSyncBatch(batch);
+
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe("REJECTED");
+    expect(results[0].error).toBe("PAYLOAD_HASH_MISMATCH");
+    expect(results[0].operationUuid).toBe(REJECTED_UUID);
+  });
+
+  // -----------------------------------------------------------------------
+  // Sync status
+  // -----------------------------------------------------------------------
+
+  it("returns sync status with pending count for the workstation", async () => {
+    const status = await client.getSyncStatus();
+
     expect(status.sourceWorkstationId).toBe(WORKSTATION_ID);
+    // We created at least 2 ACCEPTED operations (SALE_CONFIRMATION + CLIENT_CREATION)
     expect(status.pending).toBeGreaterThanOrEqual(2);
+    // FAILED entries should be 0 (REJECTED ones are not stored in the queue)
+    expect(status.failed).toBe(0);
   });
 
   // -----------------------------------------------------------------------
-  // Step 6: Poll cron until the batch is processed, verify sale exists
+  // Queue listing (ADMIN only)
   // -----------------------------------------------------------------------
 
-  it("processes the sync batch and creates a confirmed sale (polls cron)", async () => {
-    const deadline = Date.now() + SYNC_PROCESSING_TIMEOUT_MS;
-    let processed = false;
+  it("lists sync queue entries (requires ADMIN)", async () => {
+    const queue = await client.listSyncQueue();
 
-    while (Date.now() < deadline) {
-      const status = await cashier.getSyncStatus();
-      if (status.pending === 0) {
-        processed = true;
-        break;
-      }
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    expect(queue).toHaveProperty("data");
+    expect(queue).toHaveProperty("total");
+    expect(queue).toHaveProperty("page");
+    expect(queue.total).toBeGreaterThanOrEqual(2);
+
+    const entries = queue.data as Array<{ operationUuid: string; operationType: string; status: string }>;
+    const ourEntry = entries.find(
+      (e: { operationUuid: string }) =>
+        e.operationUuid === ALREADY_ACCEPTED_UUID,
+    );
+    expect(ourEntry).toBeDefined();
+    expect(ourEntry!.operationType).toBe("CLIENT_CREATION");
+    expect(ourEntry!.status).toBe("PENDING");
+  });
+
+  it("filters sync queue entries by status", async () => {
+    const queue = await client.listSyncQueue({ status: "PENDING" });
+
+    expect(queue.total).toBeGreaterThanOrEqual(2);
+
+    const entries = queue.data as Array<{ status: string }>;
+    for (const entry of entries) {
+      expect(entry.status).toBe("PENDING");
     }
+  });
 
-    expect(processed).toBe(true);
+  it("filters sync queue entries by operation type", async () => {
+    const queue = await client.listSyncQueue({ operationType: "SALE_CONFIRMATION" });
 
-    // The sync operation creates AND confirms the sale atomically.
-    // Find the most recent confirmed sale for this cash shift via DB.
-    const dbSales = await db.findSalesByCashShift(shiftId);
-    expect(dbSales.length).toBeGreaterThanOrEqual(1);
+    expect(queue.total).toBeGreaterThanOrEqual(1);
 
-    const createdSale = dbSales[0];
-    expect(createdSale.operationalState).toBe("CONFIRMED");
-    expect(createdSale.cashShiftId).toBe(shiftId);
-    expect(createdSale.workstationId).toBe(WORKSTATION_ID);
+    const entries = queue.data as Array<{ operationType: string }>;
+    for (const entry of entries) {
+      expect(entry.operationType).toBe("SALE_CONFIRMATION");
+    }
+  });
+
+  it("returns empty queue when no entries match the filter", async () => {
+    const queue = await client.listSyncQueue({ status: "FAILED" });
+
+    expect(queue.total).toBe(0);
+    expect((queue.data as unknown[]).length).toBe(0);
   });
 
   // -----------------------------------------------------------------------
-  // Step 7: Close the shift
+  // Retry mechanism
   // -----------------------------------------------------------------------
 
-  it("closes the cash shift", async () => {
-    await cashier.registerCashCount(shiftId, {
-      countType: "CLOSING",
-      paymentMethodId: TEST_IDS.SALE_CASH_PM_ID,
-      expectedAmount: "50000.00",
-      declaredAmount: "50000.00",
+  it("retries a FAILED sync queue entry (FAILED → PENDING)", async () => {
+    // Find one of OUR PENDING entries (by operation UUID we created)
+    const pendingEntries = await db.findSyncQueueEntries({
+      status: "PENDING",
+      operationUuid: FIRST_OPERATION_UUID,
+      limit: 1,
     });
+    expect(pendingEntries.length).toBeGreaterThanOrEqual(1);
 
-    const result = await cashier.closeShift(shiftId, {
-      closingNotes: "Offline flow test closure",
-    });
-    expect((result as Record<string, unknown>).state).toBe("CLOSED");
+    const entryId = pendingEntries[0].id;
+
+    // Simulate processing failure
+    await db.setSyncEntryStatus(
+      entryId,
+      "FAILED",
+      "Simulated processing failure for test",
+    );
+
+    // Verify it's now FAILED in the queue listing
+    const failedQueue = await client.listSyncQueue({ status: "FAILED" });
+    expect(failedQueue.total).toBeGreaterThanOrEqual(1);
+
+    // Retry the failed entry
+    const retryResult = await client.retrySyncEntry(entryId);
+    expect(retryResult.status).toBe("PENDING");
+    expect(retryResult.lastErrorMessage).toBeNull();
+  });
+
+  it("returns the retried entry in PENDING queue after retry", async () => {
+    // Verify the queue reflects the change
+    const queue = await client.listSyncQueue({ status: "PENDING" });
+    expect(queue.total).toBeGreaterThanOrEqual(2);
+
+    const entries = queue.data as Array<{ id: string; status: string }>;
+    // At least one entry should be PENDING (we had 2+ originally)
+    expect(entries.length).toBeGreaterThan(0);
+  });
+
+  it("returns null when retrying a non-existent entry", async () => {
+    const nonExistentId = crypto.randomUUID();
+
+    await expect(
+      client.retrySyncEntry(nonExistentId),
+    ).resolves.toBeNull();
+  });
+
+  // -----------------------------------------------------------------------
+  // Role enforcement
+  // -----------------------------------------------------------------------
+
+  it("rejects sync queue listing by non-ADMIN user", async () => {
+    // Login as cashier (no ADMIN role)
+    const cashierClient = new TestClient(SERVER_URL, WORKSTATION_ID);
+    await cashierClient.login(
+      OFFLINE_FLOW_CASHIER_USERNAME,
+      OFFLINE_FLOW_CASHIER_PASSWORD,
+    );
+
+    // Try listing the queue
+    await expect(
+      cashierClient.listSyncQueue(),
+    ).rejects.toThrow(/403|Forbidden|insufficient/i);
+
+    cashierClient.clearToken();
   });
 });

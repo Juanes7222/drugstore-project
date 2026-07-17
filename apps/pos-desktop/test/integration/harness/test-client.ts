@@ -58,6 +58,7 @@ export interface CreateUserRequest {
   role: "MANAGER" | "CASHIER";
   initialPassword?: string;
   initialPin?: string;
+  locationIds?: string[];
 }
 
 export interface CreateUserResponse {
@@ -382,6 +383,24 @@ export class TestClient {
   }
 
   /**
+   * Refresh the current session (exchange access token for new tokens).
+   * Updates the internal access token on success.
+   */
+  async refreshSession(): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: string;
+  }> {
+    const response = await this.request<{
+      accessToken: string;
+      refreshToken: string;
+      expiresAt: string;
+    }>("POST", "/auth/refresh");
+    this._accessToken = response.accessToken;
+    return response;
+  }
+
+  /**
    * Get current user info.
    */
   async me(): Promise<LoginResponse["user"]> {
@@ -400,19 +419,100 @@ export class TestClient {
   }
 
   /**
+   * Update a user (requires MANAGER or OWNER role).
+   * Accepts partial fields: displayName, role, isActive, locationIds.
+   */
+  async updateUser(
+    userId: string,
+    data: {
+      displayName?: string;
+      role?: "MANAGER" | "CASHIER";
+      isActive?: boolean;
+      locationIds?: string[];
+    },
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("PATCH", `/users/${userId}`, data);
+  }
+
+  /**
+   * Disable a user (requires MANAGER or OWNER role).
+   */
+  async disableUser(userId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>("POST", `/users/${userId}/disable`);
+  }
+
+  /**
+   * Enable a disabled user (requires MANAGER or OWNER role).
+   */
+  async enableUser(userId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>("POST", `/users/${userId}/enable`);
+  }
+
+  /**
+   * Unlock a locked user account (requires MANAGER or OWNER role).
+   */
+  async unlockUser(userId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>("POST", `/users/${userId}/unlock`);
+  }
+
+  /**
+   * Reset a user's PIN (requires MANAGER or OWNER role).
+   * Returns the new PIN.
+   */
+  async resetUserPin(userId: string): Promise<{ newPin: string; message: string }> {
+    return this.request<{ newPin: string; message: string }>("POST", `/users/${userId}/reset-pin`);
+  }
+
+  // -----------------------------------------------------------------------
+  // Sessions
+  // -----------------------------------------------------------------------
+
+  /**
+   * List the current user's active sessions.
+   */
+  async listMySessions(): Promise<Array<Record<string, unknown>>> {
+    return this.request<Array<Record<string, unknown>>>("GET", "/auth/sessions");
+  }
+
+  /**
+   * Revoke one of the current user's sessions.
+   */
+  async revokeMySession(sessionId: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>("POST", `/auth/sessions/${sessionId}/revoke`);
+  }
+
+  /**
+   * Get a user by ID (requires MANAGER or OWNER role).
+   * Includes locationAccess in the response.
+   */
+  async getUser(userId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>("GET", `/users/${userId}`);
+  }
+
+  /**
    * List users (requires MANAGER or OWNER role).
+   *
+   * Server returns `{ users: [...], total: number }` — the POS desktop
+   * calls this via `authService.listUsers()` and expects paginated format.
    */
   async listUsers(params?: {
     role?: string;
+    status?: string;
+    locationId?: string;
     limit?: number;
     offset?: number;
-  }): Promise<Array<Record<string, unknown>>> {
+  }): Promise<{ users: Array<Record<string, unknown>>; total: number }> {
     const query = new URLSearchParams();
     if (params?.role) query.set("role", params.role);
+    if (params?.status) query.set("status", params.status);
+    if (params?.locationId) query.set("locationId", params.locationId);
     if (params?.limit) query.set("limit", String(params.limit));
     if (params?.offset) query.set("offset", String(params.offset));
     const qs = query.toString();
-    return this.request<Array<Record<string, unknown>>>("GET", `/users${qs ? `?${qs}` : ""}`);
+    return this.request<{ users: Array<Record<string, unknown>>; total: number }>(
+      "GET",
+      `/users${qs ? `?${qs}` : ""}`,
+    );
   }
 
   // -----------------------------------------------------------------------

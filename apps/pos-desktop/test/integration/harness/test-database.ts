@@ -202,6 +202,44 @@ export class TestDatabase {
   }
 
   /**
+   * Delete a workstation by ID (deletes related records in FK order).
+   *
+   * Prisma 7 does not support nested relation filters in `deleteMany`,
+   * so we collect scalar IDs first then use `in` filters.
+   */
+  async cleanupWorkstation(id: string): Promise<void> {
+    // Collect sale IDs for this workstation
+    const saleIds = (await this.prisma.sale.findMany({
+      where: { workstationId: id },
+      select: { id: true },
+    })).map(s => s.id);
+
+    if (saleIds.length > 0) {
+      await this.prisma.fiscalDocument.deleteMany({ where: { saleId: { in: saleIds } } });
+
+      // SaleItemLot → SaleItem → saleId: collect SaleItem IDs first
+      const saleItemIds = (await this.prisma.saleItem.findMany({
+        where: { saleId: { in: saleIds } },
+        select: { id: true },
+      })).map(si => si.id);
+      if (saleItemIds.length > 0) {
+        await this.prisma.saleItemLot.deleteMany({ where: { saleItemId: { in: saleItemIds } } });
+      }
+
+      await this.prisma.salePayment.deleteMany({ where: { saleId: { in: saleIds } } });
+      await this.prisma.saleItem.deleteMany({ where: { saleId: { in: saleIds } } });
+    }
+    await this.prisma.sale.deleteMany({ where: { workstationId: id } });
+    await this.prisma.shiftCashCount.deleteMany({ where: { cashShift: { workstationId: id } } });
+    await this.prisma.cashShift.deleteMany({ where: { workstationId: id } });
+    await this.prisma.fiscalResolutionAllocation.deleteMany({ where: { workstationId: id } });
+    // Delete audit logs and user sessions referencing this workstation
+    await this.prisma.auditLog.deleteMany({ where: { workstationId: id } });
+    await this.prisma.userSession.deleteMany({ where: { workstationId: id } });
+    await this.prisma.workstation.deleteMany({ where: { id } });
+  }
+
+  /**
    * Seed the default admin user and workstation.
    *
    * Convenience wrapper — calls both `seedWorkstation()` and `seedUser()`
@@ -476,11 +514,13 @@ export class TestDatabase {
   async findSyncQueueEntries(params: {
     status?: string;
     operationType?: string;
+    operationUuid?: string;
     limit?: number;
   }) {
     const where: Record<string, unknown> = {};
     if (params.status) where.status = params.status;
     if (params.operationType) where.operationType = params.operationType;
+    if (params.operationUuid) where.operationUuid = params.operationUuid;
     return this.prisma.syncQueue.findMany({
       where: where as any,
       orderBy: { receivedAt: 'desc' },
@@ -639,5 +679,93 @@ export class TestDatabase {
     await this.prisma.productTaxHistory.deleteMany({ where: { taxSchemeId: id } });
     await this.prisma.purchaseReceptionItem.deleteMany({ where: { taxSchemeId: id } });
     await this.prisma.taxScheme.deleteMany({ where: { id } });
+  }
+
+  // -----------------------------------------------------------------------
+  // Fiscal resolution helpers
+  // -----------------------------------------------------------------------
+
+  /**
+   * Seed a fiscal resolution allocation for the given workstation.
+   *
+   * Uses the existing fiscal resolution (TEST_IDS.SALE_FISCAL_RESOLUTION_ID)
+   * so the caller must ensure seedSaleData() has been called first.
+   * Each workstation must get a non-overlapping range to avoid unique
+   * constraint violations on (consecutiveNumber, resolutionId).
+   * Returns the allocation ID so the caller can reference it later.
+   */
+  async seedFiscalAllocation(
+    workstationId: string,
+    overrides?: { rangeFrom?: number; rangeTo?: number },
+  ): Promise<string> {
+    const rangeFrom = overrides?.rangeFrom ?? 1;
+    const id = crypto.randomUUID();
+    await this.prisma.fiscalResolutionAllocation.create({
+      data: {
+        id,
+        resolutionId: TEST_IDS.SALE_FISCAL_RESOLUTION_ID,
+        workstationId,
+        rangeFrom,
+        rangeTo: overrides?.rangeTo ?? 999999,
+        allocatedAt: new Date("2024-01-01"),
+        allocatedByUserId: TEST_IDS.ADMIN_USER,
+      },
+    });
+    return id;
+  }
+
+  // -----------------------------------------------------------------------
+  // Sync queue helpers
+  // -----------------------------------------------------------------------
+
+  /**
+   * Update a sync queue entry's status and optional error message.
+   * Used to simulate processing failures for retry tests.
+   */
+  async setSyncEntryStatus(
+    entryId: string,
+    status: string,
+    lastErrorMessage?: string,
+  ): Promise<void> {
+    await this.prisma.syncQueue.update({
+      where: { id: entryId },
+      data: { status, lastErrorMessage: lastErrorMessage ?? null },
+    });
+  }
+
+  /**
+   * Delete sync queue entries matching the given filters.
+   */
+  async deleteSyncQueueEntries(params: {
+    status?: string;
+    operationType?: string;
+    operationUuid?: string;
+  }): Promise<void> {
+    const where: Record<string, unknown> = {};
+    if (params.status) where.status = params.status;
+    if (params.operationType) where.operationType = params.operationType;
+    if (params.operationUuid) where.operationUuid = params.operationUuid;
+    await this.prisma.syncQueue.deleteMany({ where: where as any });
+  }
+
+  /**
+   * Delete all fiscal resolution allocations for a given workstation.
+   * Also deletes fiscal documents that reference those allocations.
+   */
+  async cleanupFiscalAllocation(workstationId: string): Promise<void> {
+    const allocations = await this.prisma.fiscalResolutionAllocation.findMany({
+      where: { workstationId },
+      select: { id: true },
+    });
+    const allocIds = allocations.map(a => a.id);
+
+    if (allocIds.length > 0) {
+      await this.prisma.fiscalDocument.deleteMany({
+        where: { allocationId: { in: allocIds } },
+      });
+      await this.prisma.fiscalResolutionAllocation.deleteMany({
+        where: { id: { in: allocIds } },
+      });
+    }
   }
 }
