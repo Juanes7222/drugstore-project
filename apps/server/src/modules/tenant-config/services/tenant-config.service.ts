@@ -4,13 +4,16 @@
 // and rollback.
 // ---------------------------------------------------------------------------
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { ConfigValidationService } from './config-validation.service';
 import { ConfigVersionConflictException } from '../exceptions/config-version-conflict.exception';
 import { ConfigValidationException } from '../exceptions/config-validation.exception';
 import { PresetNotFoundException } from '../exceptions/preset-not-found.exception';
+import {
+  RoleType,
+} from '@pharmacy/shared-types';
 import type {
   TenantConfig,
   StrictnessConfig,
@@ -20,6 +23,7 @@ import type {
   CustomStrictnessToggle,
   ConfigChangelogEntry,
   TenantConfigSyncPayload,
+  WorkstationConfig,
   PresetDefinition,
   PresetCode,
 } from '@pharmacy/shared-types';
@@ -209,6 +213,30 @@ export class TenantConfigService {
 
   // -- Create default ------------------------------------------------------
 
+  /**
+   * Return a computed default TenantConfig when no DB record exists yet.
+   * Does NOT persist — allows the POS frontend to render its config screen
+   * during initial refresh() without requiring a prior POST or explicit init.
+   */
+  private buildDefaultEntity(subscriptionId: string): TenantConfig {
+    const preset = PRESETS['BALANCED'];
+
+    return {
+      id: '',
+      subscriptionId,
+      activePresetCode: 'BALANCED',
+      strictness: preset.strictness as StrictnessConfig,
+      fiscal: this.emptyFiscalConfig(),
+      workflow: preset.workflow as WorkflowConfig,
+      customCompanyFields: [],
+      customStrictnessToggles: [],
+      configVersion: 1,
+      lastModifiedByUserId: '',
+      lastModifiedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    };
+  }
+
   async createDefault(
     subscriptionId: string,
     actorUserId?: string,
@@ -221,29 +249,6 @@ export class TenantConfigService {
     }
 
     const preset = PRESETS['BALANCED'];
-    const emptyFiscal: FiscalConfig = {
-      companyName: '',
-      nit: '',
-      address: '',
-      city: '',
-      phone: '',
-      email: '',
-      logoPath: null,
-      taxRegime: 'RESPONSABLE_IVA',
-      defaultTaxRate: 19,
-      additionalTaxes: [],
-      invoiceHeader: '',
-      invoiceFooter: '',
-      dianResolutionNumber: '',
-      dianResolutionDate: '',
-      dianResolutionPrefix: '',
-      dianTechnicalKey: '',
-      invoiceNumberFormat: '',
-      showLogoOnReceipt: false,
-      showQrOnReceipt: false,
-      qrContent: 'INVOICE_URL',
-      qrCustomContent: null,
-    };
 
     const config = await this.prisma.tenantConfig.create({
       data: {
@@ -251,7 +256,7 @@ export class TenantConfigService {
         subscriptionId,
         activePresetCode: 'BALANCED',
         strictness: this.json(preset.strictness),
-        fiscal: this.json(emptyFiscal),
+        fiscal: this.json(this.emptyFiscalConfig()),
         workflow: this.json(preset.workflow),
         customCompanyFields: [],
         customStrictnessToggles: [],
@@ -278,33 +283,64 @@ export class TenantConfigService {
 
   // -- Full update ---------------------------------------------------------
 
+  /**
+   * System-level strictness keys that only OWNER/SAAS_ADMIN can modify.
+   * MANAGER role can only update workstation-level fields.
+   */
+  private readonly SYSTEM_STRICTNESS_KEYS: ReadonlySet<string> = new Set([
+    'lots',
+    'expiryDates',
+    'stockValidation',
+    'clientRequired',
+    'clientRequiredThreshold',
+    'prescriptionEnforcement',
+    'prescriptionExpiryDays',
+    'returnsRequireOriginalSale',
+  ]);
+
   async update(
     subscriptionId: string,
     dto: {
-      strictness: StrictnessConfig;
-      fiscal: FiscalConfig;
-      workflow: WorkflowConfig;
+      strictness?: StrictnessConfig;
+      fiscal?: FiscalConfig;
+      workflow?: WorkflowConfig;
       expectedConfigVersion: number;
     },
     actorUserId: string,
+    actorRole?: string,
   ): Promise<TenantConfig> {
+    // Auto-create a default config if none exists yet — allows the POS to
+    // save its first config without requiring a prior init call.
     const current = await this.prisma.tenantConfig.findUnique({
       where: { subscriptionId },
     });
     if (!current) {
-      throw new NotFoundException(
-        `Tenant configuration not found for subscription "${subscriptionId}".`,
-      );
+      return this.createDefaultAndUpdate(subscriptionId, dto, actorUserId);
     }
 
     if (current.configVersion !== dto.expectedConfigVersion) {
       throw new ConfigVersionConflictException(current.configVersion);
     }
 
+    // Merge partial update with current config from DB
+    const mergedStrictness = dto.strictness ?? (current.strictness as unknown as StrictnessConfig);
+    const mergedFiscal = dto.fiscal ?? (current.fiscal as unknown as FiscalConfig);
+    const mergedWorkflow = dto.workflow ?? (current.workflow as unknown as WorkflowConfig);
+
+    // RBAC: MANAGER role cannot modify system-level fields
+    if (actorRole === RoleType.MANAGER) {
+      this.assertNoSystemFieldChanges(
+        current.strictness as unknown as StrictnessConfig,
+        mergedStrictness,
+        current.fiscal as unknown as FiscalConfig,
+        mergedFiscal,
+      );
+    }
+
     const validationErrors = this.validationService.validate({
-      strictness: dto.strictness,
-      fiscal: dto.fiscal,
-      workflow: dto.workflow,
+      strictness: mergedStrictness,
+      fiscal: mergedFiscal,
+      workflow: mergedWorkflow,
     });
     if (validationErrors.length > 0) {
       throw new ConfigValidationException(validationErrors);
@@ -313,15 +349,12 @@ export class TenantConfigService {
     const now = new Date();
     const newVersion = current.configVersion + 1;
 
-    const sections: Array<{
-      key: string;
-      currentValue: unknown;
-      newValue: unknown;
-    }> = [
-      { key: 'strictness', currentValue: current.strictness, newValue: dto.strictness },
-      { key: 'fiscal', currentValue: current.fiscal, newValue: dto.fiscal },
-      { key: 'workflow', currentValue: current.workflow, newValue: dto.workflow },
-    ];
+    // Build update data — only include sections that actually changed
+    const updateData: Record<string, unknown> = {
+      configVersion: newVersion,
+      lastModifiedById: actorUserId,
+      lastModifiedAt: now,
+    };
 
     const changes: Array<{
       fieldPath: string;
@@ -329,26 +362,40 @@ export class TenantConfigService {
       afterValue: unknown;
     }> = [];
 
-    for (const section of sections) {
-      if (!this.deepEqual(section.currentValue, section.newValue)) {
+    if (dto.strictness) {
+      if (!this.deepEqual(current.strictness, mergedStrictness)) {
         changes.push({
-          fieldPath: section.key,
-          beforeValue: section.currentValue,
-          afterValue: section.newValue,
+          fieldPath: 'strictness',
+          beforeValue: current.strictness,
+          afterValue: mergedStrictness,
         });
       }
+      updateData.strictness = this.json(mergedStrictness);
+    }
+    if (dto.fiscal) {
+      if (!this.deepEqual(current.fiscal, mergedFiscal)) {
+        changes.push({
+          fieldPath: 'fiscal',
+          beforeValue: current.fiscal,
+          afterValue: mergedFiscal,
+        });
+      }
+      updateData.fiscal = this.json(mergedFiscal);
+    }
+    if (dto.workflow) {
+      if (!this.deepEqual(current.workflow, mergedWorkflow)) {
+        changes.push({
+          fieldPath: 'workflow',
+          beforeValue: current.workflow,
+          afterValue: mergedWorkflow,
+        });
+      }
+      updateData.workflow = this.json(mergedWorkflow);
     }
 
     const updated = await this.prisma.tenantConfig.update({
       where: { id: current.id },
-      data: {
-        strictness: this.json(dto.strictness),
-        fiscal: this.json(dto.fiscal),
-        workflow: this.json(dto.workflow),
-        configVersion: newVersion,
-        lastModifiedById: actorUserId,
-        lastModifiedAt: now,
-      },
+      data: updateData as any,
     });
 
     if (changes.length > 0) {
@@ -711,9 +758,33 @@ export class TenantConfigService {
 
   // -- Sync payload --------------------------------------------------------
 
-  async getSyncPayload(subscriptionId: string): Promise<TenantConfigSyncPayload> {
+  async getSyncPayload(
+    subscriptionId: string,
+    workstationId?: string,
+  ): Promise<TenantConfigSyncPayload> {
     const config = await this.getBySubscription(subscriptionId);
-    return { config, presets: this.getAllPresetDefinitions() };
+
+    let workstationConfig: WorkstationConfig | undefined;
+    if (workstationId) {
+      const key = `ws_config:${subscriptionId}:${workstationId}`;
+      const row = await this.prisma.systemConfig.findUnique({
+        where: { key },
+      });
+      if (row) {
+        const val = row.value as Record<string, unknown>;
+        workstationConfig = {
+          id: key,
+          subscriptionId,
+          workstationId,
+          workflow: ((val.workflow ?? {}) as unknown) as Partial<WorkflowConfig>,
+          strictness: ((val.strictness ?? {}) as unknown) as Partial<StrictnessConfig>,
+          createdAt: (val.createdAt as string) ?? new Date().toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+        };
+      }
+    }
+
+    return { config, presets: this.getAllPresetDefinitions(), workstationConfig };
   }
 
   // -- Preset definitions --------------------------------------------------
@@ -922,6 +993,153 @@ export class TenantConfigService {
     return this.toEntity(updated);
   }
 
+  /**
+   * Create a default config and immediately apply the partial update on top.
+   * Called when PUT /tenant-config is invoked before any config exists.
+   */
+  private async createDefaultAndUpdate(
+    subscriptionId: string,
+    dto: {
+      strictness?: StrictnessConfig;
+      fiscal?: FiscalConfig;
+      workflow?: WorkflowConfig;
+      expectedConfigVersion: number;
+    },
+    actorUserId: string,
+  ): Promise<TenantConfig> {
+    // Create default config first
+    const defaults = await this.createDefault(subscriptionId, actorUserId);
+
+    // Apply partial update on top, ignoring expectedConfigVersion mismatch
+    // since the newly-created config already has version 1.
+    const mergedStrictness = dto.strictness ?? (defaults.strictness as StrictnessConfig);
+    const mergedFiscal = dto.fiscal ?? (defaults.fiscal as FiscalConfig);
+    const mergedWorkflow = dto.workflow ?? (defaults.workflow as WorkflowConfig);
+
+    // Validate the merged config before persisting
+    const validationErrors = this.validationService.validate({
+      strictness: mergedStrictness,
+      fiscal: mergedFiscal,
+      workflow: mergedWorkflow,
+    });
+    if (validationErrors.length > 0) {
+      throw new ConfigValidationException(validationErrors);
+    }
+
+    const now = new Date();
+    const newVersion = defaults.configVersion + 1;
+
+    const updateData: Record<string, unknown> = {
+      configVersion: newVersion,
+      lastModifiedById: actorUserId,
+      lastModifiedAt: now,
+    };
+
+    const changes: Array<{
+      fieldPath: string;
+      beforeValue: unknown;
+      afterValue: unknown;
+    }> = [];
+
+    if (dto.strictness) {
+      if (!this.deepEqual(defaults.strictness, mergedStrictness)) {
+        changes.push({
+          fieldPath: 'strictness',
+          beforeValue: defaults.strictness,
+          afterValue: mergedStrictness,
+        });
+      }
+      updateData.strictness = this.json(mergedStrictness);
+    }
+    if (dto.fiscal) {
+      if (!this.deepEqual(defaults.fiscal, mergedFiscal)) {
+        changes.push({
+          fieldPath: 'fiscal',
+          beforeValue: defaults.fiscal,
+          afterValue: mergedFiscal,
+        });
+      }
+      updateData.fiscal = this.json(mergedFiscal);
+    }
+    if (dto.workflow) {
+      if (!this.deepEqual(defaults.workflow, mergedWorkflow)) {
+        changes.push({
+          fieldPath: 'workflow',
+          beforeValue: defaults.workflow,
+          afterValue: mergedWorkflow,
+        });
+      }
+      updateData.workflow = this.json(mergedWorkflow);
+    }
+
+    // Only persist if there are changes beyond the defaults
+    if (Object.keys(updateData).length > 3) {
+      const raw = await this.prisma.tenantConfig.findUnique({
+        where: { subscriptionId },
+      });
+      if (raw) {
+        const updated = await this.prisma.tenantConfig.update({
+          where: { id: raw.id },
+          data: updateData as any,
+        });
+
+        if (changes.length > 0) {
+          for (const c of changes) {
+            await this.prisma.configChangelog.create({
+              data: {
+                id: this.genId(),
+                tenantConfigId: raw.id,
+                configVersion: newVersion,
+                changeType: 'FIELD_UPDATED',
+                fieldPath: c.fieldPath,
+                beforeValue: this.json(c.beforeValue),
+                afterValue: this.json(c.afterValue),
+                actorUserId,
+                createdAt: now,
+              },
+            });
+          }
+        }
+
+        return this.toEntity(updated);
+      }
+    }
+
+    return defaults;
+  }
+
+  /**
+   * Assert that a MANAGER role is not attempting to modify system-level
+   * fiscal or strictness fields. Throws ForbiddenException if detected.
+   */
+  private assertNoSystemFieldChanges(
+    currentStrictness: StrictnessConfig,
+    newStrictness: StrictnessConfig,
+    currentFiscal: FiscalConfig,
+    newFiscal: FiscalConfig,
+  ): void {
+    // MANAGER cannot touch fiscal at all
+    const fiscalChanged = !this.deepEqual(currentFiscal, newFiscal);
+    if (fiscalChanged) {
+      throw new ForbiddenException(
+        'MANAGER role cannot modify fiscal settings. Only OWNER can change tax, ' +
+        'company, and DIAN configuration.',
+      );
+    }
+
+    // Check system-level strictness fields
+    for (const key of this.SYSTEM_STRICTNESS_KEYS) {
+      const currentVal = (currentStrictness as unknown as Record<string, unknown>)[key];
+      const newVal = (newStrictness as unknown as Record<string, unknown>)[key];
+      if (currentVal !== undefined && !this.deepEqual(currentVal, newVal)) {
+        throw new ForbiddenException(
+          `MANAGER role cannot modify system-level strictness field "${key}". ` +
+          'Only OWNER can change compliance and regulatory settings.',
+        );
+      }
+    }
+  }
+
   // -- Private helpers -----------------------------------------------------
 
   private async getRawOrThrow(subscriptionId: string): Promise<any> {
@@ -998,6 +1216,32 @@ export class TenantConfigService {
         raw.createdAt instanceof Date
           ? raw.createdAt.toISOString()
           : String(raw.createdAt),
+    };
+  }
+
+  private emptyFiscalConfig(): FiscalConfig {
+    return {
+      companyName: '',
+      nit: '',
+      address: '',
+      city: '',
+      phone: '',
+      email: '',
+      logoPath: null,
+      taxRegime: 'RESPONSABLE_IVA',
+      defaultTaxRate: 19,
+      additionalTaxes: [],
+      invoiceHeader: '',
+      invoiceFooter: '',
+      dianResolutionNumber: '',
+      dianResolutionDate: '',
+      dianResolutionPrefix: '',
+      dianTechnicalKey: '',
+      invoiceNumberFormat: '',
+      showLogoOnReceipt: false,
+      showQrOnReceipt: false,
+      qrContent: 'INVOICE_URL',
+      qrCustomContent: null,
     };
   }
 

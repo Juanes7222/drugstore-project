@@ -13,6 +13,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
@@ -67,8 +68,10 @@ export class TenantConfigController {
   }
 
   /**
-   * Full config update. OWNER can update all sections; MANAGER can update
-   * non-fiscal sections. Uses optimistic concurrency via expectedConfigVersion.
+   * Full config update. OWNER can update all sections; MANAGER is restricted
+   * to workstation-level fields (system/fiscal/compliance fields are blocked
+   * via RBAC in the service). Uses optimistic concurrency via
+   * expectedConfigVersion.
    */
   @Put()
   @Roles(RoleType.MANAGER, RoleType.OWNER)
@@ -86,6 +89,7 @@ export class TenantConfigController {
       user.subscriptionId ?? '',
       dto,
       user.id,
+      user.role,
     );
   }
 
@@ -287,13 +291,19 @@ export class TenantConfigController {
   // -- Sync endpoint -------------------------------------------------------
 
   /**
-   * Returns config + preset definitions for POS sync.
+   * Returns config + preset definitions + workstation overrides for POS sync.
    * Accessible to any authenticated user (the POS sync agent).
+   * The optional `workstationId` query parameter includes per-workstation
+   * overrides in the response.
    */
   @Get('sync')
-  async getSyncPayload(@CurrentUser() user: User): Promise<unknown> {
+  async getSyncPayload(
+    @CurrentUser() user: User,
+    @Query('workstationId') workstationId?: string,
+  ): Promise<unknown> {
     return this.tenantConfigService.getSyncPayload(
       user.subscriptionId ?? '',
+      workstationId || (user as any).lastLoginWorkstationId,
     );
   }
 }

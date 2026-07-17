@@ -199,6 +199,26 @@ export interface ConfigChangelogEntry {
   createdAt: string;
 }
 
+// --- Workstation-specific config overrides ---
+
+/**
+ * Per-workstation overrides for workflow and non-system strictness fields.
+ * Allows workstations to differ in operational preferences (print, drawer,
+ * timeouts) while system-level settings (fiscal, tax, compliance) remain
+ * global via TenantConfig.
+ */
+export interface WorkstationConfig {
+  id: string;
+  subscriptionId: string;
+  workstationId: string;
+  /** Workstation-level workflow overrides (partial). */
+  workflow: Partial<WorkflowConfig>;
+  /** Workstation-level strictness overrides (partial, non-system fields only). */
+  strictness: Partial<StrictnessConfig>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // --- Sync payload ---
 
 export interface TenantConfigSyncPayload {
@@ -206,6 +226,12 @@ export interface TenantConfigSyncPayload {
   // The sync payload also includes current preset definitions so the POS
   // can always compute effective config without a round-trip
   presets: PresetDefinition[];
+  /**
+   * Per-workstation config overrides for the requesting workstation.
+   * The POS merges these on top of the global config to compute the
+   * effective runtime configuration.
+   */
+  workstationConfig?: WorkstationConfig;
 }
 
 // --- User preferences (workstation-local, not synced) ---

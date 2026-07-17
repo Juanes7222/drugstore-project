@@ -7,7 +7,7 @@
 
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { TenantConfig, EffectiveConfig, OverrideMap } from './types';
+import type { TenantConfig, EffectiveConfig, OverrideMap, WorkstationConfig } from './types';
 import { computeEffectiveConfig, getOverriddenFields, hasOverrides } from './effective-config';
 import { PRESET_LIST } from './presets';
 
@@ -43,13 +43,16 @@ export interface TenantConfigState {
   /** Available presets (fetched or local). */
   presets: Array<{ code: string; name: string; description: string }>;
 
+  /** Per-workstation config overrides (from sync payload). */
+  workstationConfig: WorkstationConfig | null;
+
   // ---- Actions ----
 
-  /** Replace the entire config with server data. */
-  setConfig(config: TenantConfig): void;
+  /** Replace the entire config with server data and optional workstation overrides. */
+  setConfig(config: TenantConfig, workstationConfig?: WorkstationConfig): void;
 
   /** Update the config after a successful save. */
-  updateConfig(config: TenantConfig): void;
+  updateConfig(config: TenantConfig, workstationConfig?: WorkstationConfig): void;
 
   /** Clear config (e.g., on logout). */
   clearConfig(): void;
@@ -87,11 +90,16 @@ export const useTenantConfigStore: StoreApi<TenantConfigState> =
           name: p.name,
           description: p.description,
         })),
+        workstationConfig: null,
 
-        setConfig(config: TenantConfig) {
-          const effective = computeEffectiveConfig(config);
-          set({
+        setConfig(config: TenantConfig, workstationConfig?: WorkstationConfig) {
+          const effective = computeEffectiveConfig(config, workstationConfig);
+          set((state) => ({
             config,
+            workstationConfig:
+              workstationConfig !== undefined
+                ? workstationConfig
+                : state.workstationConfig,
             effectiveConfig: effective,
             isCustomized: hasOverrides(config),
             overrides: getOverriddenFields(config),
@@ -99,26 +107,31 @@ export const useTenantConfigStore: StoreApi<TenantConfigState> =
             lastSyncedAt: new Date().toISOString(),
             isLoading: false,
             error: null,
-          });
+          }));
         },
 
-        updateConfig(config: TenantConfig) {
-          const effective = computeEffectiveConfig(config);
-          set({
+        updateConfig(config: TenantConfig, workstationConfig?: WorkstationConfig) {
+          const effective = computeEffectiveConfig(config, workstationConfig);
+          set((state) => ({
             config,
+            workstationConfig:
+              workstationConfig !== undefined
+                ? workstationConfig
+                : state.workstationConfig,
             effectiveConfig: effective,
             isCustomized: hasOverrides(config),
             overrides: getOverriddenFields(config),
             configVersion: config.configVersion,
             lastSyncedAt: new Date().toISOString(),
             error: null,
-          });
+          }));
         },
 
         clearConfig() {
           set({
             config: null,
             effectiveConfig: null,
+            workstationConfig: null,
             isCustomized: false,
             overrides: {},
             configVersion: 0,

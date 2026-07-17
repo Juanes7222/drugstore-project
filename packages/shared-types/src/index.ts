@@ -95,6 +95,7 @@ export type {
   CustomStrictnessToggle,
   PresetDefinition,
   TenantConfig,
+  WorkstationConfig,
   NamedPreset,
   ConfigChangelogEntry,
   TenantConfigSyncPayload,

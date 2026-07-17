@@ -8,7 +8,7 @@ import {
   hasOverrides,
   isFieldOverridden,
 } from "./effective-config";
-import type { TenantConfig, PresetCode, StrictnessConfig, FiscalConfig, WorkflowConfig, CustomCompanyField, CustomStrictnessToggle } from "./types";
+import type { TenantConfig, PresetCode, StrictnessConfig, FiscalConfig, WorkflowConfig, CustomCompanyField, CustomStrictnessToggle, WorkstationConfig } from "./types";
 import { PRESET_BALANCED } from "./presets";
 import {
   DEFAULT_STRICTNESS,
@@ -329,5 +329,141 @@ describe("isFieldOverridden", () => {
     const config = makeTenantConfig();
 
     expect(isFieldOverridden(config, "strictness.nonexistent")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests — computeEffectiveConfig with workstationConfig
+// ---------------------------------------------------------------------------
+
+describe("computeEffectiveConfig with workstationConfig", () => {
+  const testWorkstationConfig: WorkstationConfig = {
+    id: "ws-config-1",
+    subscriptionId: "sub-1",
+    workstationId: "ws-1",
+    strictness: {
+      cashShiftRequired: false,
+      receiptPrintRequired: "OPTIONAL",
+      autoOpenDrawer: "MANUAL",
+    },
+    workflow: {
+      autoPrintOnConfirm: false,
+      printDuplicateReceipt: true,
+      sessionIdleTimeoutSeconds: 1200,
+    },
+    createdAt: "2026-07-17T00:00:00Z",
+    updatedAt: "2026-07-17T00:00:00Z",
+  };
+
+  it("overrides strictness fields with workstation values", () => {
+    const config = makeTenantConfig();
+    // Global config has cashShiftRequired = true (from BALANCED preset)
+    // Workstation should override it to false
+
+    const result = computeEffectiveConfig(config, testWorkstationConfig);
+
+    expect(result.strictness.cashShiftRequired).toBe(false);
+    expect(result.strictness.autoOpenDrawer).toBe("MANUAL");
+  });
+
+  it("overrides workflow fields with workstation values", () => {
+    const config = makeTenantConfig();
+
+    const result = computeEffectiveConfig(config, testWorkstationConfig);
+
+    expect(result.workflow.printDuplicateReceipt).toBe(true);
+    expect(result.workflow.sessionIdleTimeoutSeconds).toBe(1200);
+  });
+
+  it("workstation strictness overrides global stored values", () => {
+    const config = makeTenantConfig({
+      strictness: { cashShiftRequired: true },
+    });
+
+    const result = computeEffectiveConfig(config, testWorkstationConfig);
+
+    // Workstation overrides even the global stored value
+    expect(result.strictness.cashShiftRequired).toBe(false);
+  });
+
+  it("does not affect fiscal config (system-level)", () => {
+    const config = makeTenantConfig();
+
+    const result = computeEffectiveConfig(config, testWorkstationConfig);
+
+    // Fiscal is system-level — workstation config should NOT touch it
+    expect(result.fiscal.companyName).toBe(DEFAULT_FISCAL.companyName);
+    expect(result.fiscal.defaultTaxRate).toBe(DEFAULT_FISCAL.defaultTaxRate);
+  });
+
+  it("does not affect system-level strictness fields (lots, expiry, tax, compliance)", () => {
+    const config = makeTenantConfig();
+
+    const result = computeEffectiveConfig(config, testWorkstationConfig);
+
+    // These are system-level and NOT in the testWorkstationConfig
+    expect(result.strictness.lots).toBe("OPTIONAL");
+    expect(result.strictness.expiryDates).toBe("OPTIONAL");
+    expect(result.strictness.prescriptionEnforcement).toBe("STRICT");
+    expect(result.strictness.returnsRequireOriginalSale).toBe("STRICT");
+  });
+
+  it("returns same result as without workstationConfig when undefined", () => {
+    const config = makeTenantConfig();
+
+    const without = computeEffectiveConfig(config);
+    const withUndefined = computeEffectiveConfig(config, undefined);
+
+    expect(withUndefined).toEqual(without);
+  });
+
+  it("works with CUSTOM preset and workstation overrides", () => {
+    const config = makeTenantConfig({
+      activePresetCode: "CUSTOM" as PresetCode,
+      strictness: { lots: "STRICT", cashShiftRequired: true },
+    });
+
+    const result = computeEffectiveConfig(config, testWorkstationConfig);
+
+    // System-level still uses CUSTOM values
+    expect(result.strictness.lots).toBe("STRICT");
+    // Workstation overrides operational field
+    expect(result.strictness.cashShiftRequired).toBe(false);
+  });
+
+  it("works without a preset (null activePresetCode) and workstation overrides", () => {
+    const config = makeTenantConfig({
+      activePresetCode: null,
+      strictness: { cashShiftRequired: true },
+    });
+
+    const result = computeEffectiveConfig(config, testWorkstationConfig);
+
+    expect(result.strictness.cashShiftRequired).toBe(false);
+  });
+
+  it("merges partial workstation overrides without affecting other fields", () => {
+    const partialWsConfig: WorkstationConfig = {
+      id: "ws-config-2",
+      subscriptionId: "sub-1",
+      workstationId: "ws-2",
+      strictness: { cashShiftRequired: false },
+      workflow: {},
+      createdAt: "2026-07-17T00:00:00Z",
+      updatedAt: "2026-07-17T00:00:00Z",
+    };
+    const config = makeTenantConfig();
+
+    const result = computeEffectiveConfig(config, partialWsConfig);
+
+    // Only cashShiftRequired should change
+    expect(result.strictness.cashShiftRequired).toBe(false);
+    // Other workstation-level fields remain from global config
+    expect(result.strictness.autoOpenDrawer).toBe(
+      PRESET_BALANCED.strictness.autoOpenDrawer,
+    );
+    expect(result.workflow.autoPrintOnConfirm).toBe(
+      PRESET_BALANCED.workflow.autoPrintOnConfirm,
+    );
   });
 });

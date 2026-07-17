@@ -10,6 +10,7 @@
 import { isOnline } from '../../common/is-online';
 import type { TenantConfigSyncPayload } from './types';
 import { useTenantConfigStore } from './tenant-config.store';
+import { useLocalSessionStore } from '../auth/local-session.store';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,14 +72,20 @@ export function createTenantConfigSyncService(
 
       try {
         const headers = buildHeaders();
+
+        // Include the current workstation ID so the server returns
+        // per-workstation config overrides in the response.
+        const session = useLocalSessionStore.getState().session;
+        const wsId = session?.workstationId ?? '';
+
         const payload = await http.get<TenantConfigSyncPayload>(
-          `${baseUrl}/tenant-config/sync`,
+          `${baseUrl}/tenant-config/sync?workstationId=${encodeURIComponent(wsId)}`,
           headers,
         );
 
-        // Hydrate the Zustand store with the full config
+        // Hydrate the Zustand store with the full config + workstation overrides
         const store = useTenantConfigStore;
-        store.getState().setConfig(payload.config);
+        store.getState().setConfig(payload.config, payload.workstationConfig);
 
         // Update presets list if provided
         if (payload.presets && payload.presets.length > 0) {

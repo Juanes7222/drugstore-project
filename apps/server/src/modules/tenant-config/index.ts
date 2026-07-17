@@ -2,6 +2,7 @@ export { TenantConfigModule } from './tenant-config.module';
 export { TenantConfigService } from './services/tenant-config.service';
 export { ConfigValidationService } from './services/config-validation.service';
 export { ConfigSyncService } from './services/config-sync.service';
+export { WorkstationConfigService } from './services/workstation-config.service';
 
 // Exceptions
 export { ConfigVersionConflictException } from './exceptions/config-version-conflict.exception';

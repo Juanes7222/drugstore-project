@@ -74,11 +74,15 @@ export const FiscalConfigSchema = z.object({
 });
 
 // --- Main update schema ---
+//
+// All sections are optional — the POS sends partial updates (only fields
+// that changed). The service merges the payload with the current config
+// from the database before saving.
 
 export const UpdateTenantConfigSchema = z.object({
-  strictness: StrictnessConfigSchema,
-  fiscal: FiscalConfigSchema,
-  workflow: WorkflowConfigSchema,
+  strictness: StrictnessConfigSchema.optional(),
+  fiscal: FiscalConfigSchema.optional(),
+  workflow: WorkflowConfigSchema.optional(),
   expectedConfigVersion: z.number().int().min(0),
 });
 

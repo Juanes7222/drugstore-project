@@ -59,6 +59,24 @@ export class AdminConfigController {
   }
 
   /**
+   * Force-initialize default tenant config for a subscription.
+   * Idempotent — if a config already exists, returns it unchanged.
+   * Uses BALANCED preset as the starting template.
+   */
+  @Post('subscription/:subscriptionId/init')
+  @Auditable({
+    action: AuditAction.CREATE,
+    module: SystemModule.CONFIG,
+    entityType: 'TenantConfig',
+  })
+  async initDefault(
+    @Param('subscriptionId') subscriptionId: string,
+    @CurrentUser() user: User,
+  ): Promise<unknown> {
+    return this.tenantConfigService.createDefault(subscriptionId, user.id);
+  }
+
+  /**
    * List all built-in preset definitions.
    */
   @Get('preset-definitions')

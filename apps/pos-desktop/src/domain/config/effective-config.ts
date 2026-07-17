@@ -7,7 +7,7 @@
  * - Custom strictness toggles are always appended.
  */
 
-import type { TenantConfig, EffectiveConfig, OverrideMap } from './types';
+import type { TenantConfig, EffectiveConfig, OverrideMap, WorkstationConfig } from './types';
 import { getPreset } from './presets';
 import {
   DEFAULT_STRICTNESS,
@@ -22,14 +22,19 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the effective config from a tenant config.
+ * Compute the effective config from a tenant config and optional workstation
+ * overrides.
  *
  * The effective config merges:
  * 1. The active preset's values (if any)
  * 2. The actual stored values (which override the preset's)
- * 3. Custom fields and toggles (always additive)
+ * 3. Per-workstation overrides (highest precedence — only non-system fields)
+ * 4. Custom fields and toggles (always additive)
  */
-export function computeEffectiveConfig(config: TenantConfig): EffectiveConfig {
+export function computeEffectiveConfig(
+  config: TenantConfig,
+  workstationConfig?: WorkstationConfig,
+): EffectiveConfig {
   const isCustom = config.activePresetCode === 'CUSTOM';
   const preset = config.activePresetCode && !isCustom
     ? getPreset(config.activePresetCode)
@@ -52,6 +57,18 @@ export function computeEffectiveConfig(config: TenantConfig): EffectiveConfig {
   const mergedStrictness = { ...baseStrictness, ...config.strictness };
   const mergedFiscal = { ...baseFiscal, ...config.fiscal };
   const mergedWorkflow = { ...baseWorkflow, ...config.workflow };
+
+  // Merge per-workstation overrides on top (highest precedence)
+  // Server already strips system-level fields, so only non-system
+  // operational preferences reach this point.
+  if (workstationConfig) {
+    if (workstationConfig.strictness) {
+      Object.assign(mergedStrictness, workstationConfig.strictness);
+    }
+    if (workstationConfig.workflow) {
+      Object.assign(mergedWorkflow, workstationConfig.workflow);
+    }
+  }
 
   return {
     strictness: mergedStrictness,
