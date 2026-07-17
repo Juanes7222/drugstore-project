@@ -94,12 +94,12 @@ export const createSyncScheduler = (
 export class SyncScheduler {
   private readonly prisma: PrismaClient;
   private readonly baseUrl: string;
-  private readonly accessToken?: string;
-  private readonly configSync: ConfigSyncService;
-  private readonly catalogSync: CatalogSyncService;
-  private readonly lotSync: LotSyncService;
-  private readonly clientPull: ClientPullService;
-  private readonly pushService: SyncPushService;
+  private accessToken?: string;
+  private configSync: ConfigSyncService;
+  private catalogSync: CatalogSyncService;
+  private lotSync: LotSyncService;
+  private clientPull: ClientPullService;
+  private pushService: SyncPushService;
   private readonly metricsService: SyncMetricsService;
   private readonly backupService: BackupService;
   private readonly invoiceService?: InvoiceService;
@@ -110,10 +110,22 @@ export class SyncScheduler {
     this.prisma = config.prisma;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
-    this.configSync = createConfigSyncService(config.prisma, config.config);
-    this.catalogSync = createCatalogSyncService(config.prisma, config.catalog);
-    this.lotSync = createLotSyncService(config.prisma, config.lots);
-    this.clientPull = createClientPullService(config.prisma, config.clients);
+    this.configSync = createConfigSyncService(config.prisma, {
+      ...config.config,
+      accessToken: config.accessToken ?? config.config.accessToken,
+    });
+    this.catalogSync = createCatalogSyncService(config.prisma, {
+      ...config.catalog,
+      accessToken: config.accessToken ?? config.catalog.accessToken,
+    });
+    this.lotSync = createLotSyncService(config.prisma, {
+      ...config.lots,
+      accessToken: config.accessToken ?? config.lots.accessToken,
+    });
+    this.clientPull = createClientPullService(config.prisma, {
+      ...config.clients,
+      accessToken: config.accessToken ?? config.clients.accessToken,
+    });
     this.pushService = createSyncPushService({
       prisma: config.prisma,
       baseUrl: config.baseUrl,
@@ -123,6 +135,26 @@ export class SyncScheduler {
     this.backupService = createBackupService();
     this.invoiceService = config.invoiceService;
     this.intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
+  }
+
+  /**
+   * Update the access token after the user logs in, so that subsequent sync
+   * requests authenticate correctly.  Sub-services are re-created with the
+   * new token.
+   */
+  updateAccessToken(token: string): void {
+    this.accessToken = token;
+    const baseConfig = { baseUrl: this.baseUrl, accessToken: token };
+    this.configSync = createConfigSyncService(this.prisma, baseConfig);
+    this.catalogSync = createCatalogSyncService(this.prisma, baseConfig);
+    this.lotSync = createLotSyncService(this.prisma, baseConfig);
+    this.clientPull = createClientPullService(this.prisma, baseConfig);
+    this.pushService = createSyncPushService({
+      prisma: this.prisma,
+      baseUrl: this.baseUrl,
+      accessToken: token,
+      invoiceService: this.invoiceService,
+    });
   }
 
   // -----------------------------------------------------------------------

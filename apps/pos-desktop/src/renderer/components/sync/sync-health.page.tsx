@@ -379,13 +379,17 @@ export const SyncHealthPage: FC = () => {
       const { createSyncScheduler } = await import("../../../domain/sync/sync-scheduler.service");
       const { prisma: rawPrisma } = await getLocalDatabase();
       const prisma = rawPrisma as PrismaClient;
+      const session = useLocalSessionStore.getState().session;
+      const accessToken = session?.accessToken;
+      const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
       const scheduler = createSyncScheduler({
         prisma,
-        baseUrl: import.meta.env.VITE_API_BASE_URL ?? "",
-        config: { baseUrl: import.meta.env.VITE_API_BASE_URL ?? "" },
-        catalog: { baseUrl: import.meta.env.VITE_API_BASE_URL ?? "" },
-        lots: { baseUrl: import.meta.env.VITE_API_BASE_URL ?? "" },
-        clients: { baseUrl: import.meta.env.VITE_API_BASE_URL ?? "" },
+        baseUrl,
+        accessToken,
+        config: { baseUrl, accessToken },
+        catalog: { baseUrl, accessToken },
+        lots: { baseUrl, accessToken },
+        clients: { baseUrl, accessToken },
       });
       await scheduler.syncNow();
       showToast("success", "Sync cycle completed");

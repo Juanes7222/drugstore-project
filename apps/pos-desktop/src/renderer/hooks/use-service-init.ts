@@ -45,6 +45,7 @@ import { createPrintingServices } from '../../domain/printing/printing-service.f
 import { createPeripheralServices } from '../../domain/peripherals/peripheral-service.factory';
 import { createDomainServices } from '../../domain/domain-services/domain-service.factory';
 import { createBackupService } from '../../domain/backup/backup.service';
+import { createSyncScheduler, type SyncScheduler } from '../../domain/sync/sync-scheduler.service';
 import { createUpdateService } from '../../domain/updates/update.service';
 import type { UpdateService, UpdateServiceConfig } from '../../domain/updates/update.service';
 import type { PrintPayloadType, DiscoveredPrinter } from '../../domain/printing/printing-types';
@@ -58,6 +59,7 @@ import type { ServerPrintConfig } from '../../domain/printing/print-router';
 import type { ReturnsService } from '../../domain/returns/returns.service';
 import type { InventoryAdjustmentsService } from '../../domain/inventory-adjustments/inventory-adjustments.service';
 import type { PrescriptionsService } from '../../domain/prescriptions/prescriptions.service';
+import type { ProductService } from '../../domain/catalog/product.service';
 import type { BackupService } from '../../domain/backup/backup.service';
 import type { RecoveryLogService } from '../../domain/backup/recovery-log.service';
 import type { InvoiceService } from '../../domain/fiscal/invoice.service';
@@ -85,6 +87,7 @@ export interface Services {
   returnsService: ReturnsService;
   inventoryAdjustmentsService: InventoryAdjustmentsService;
   prescriptionsService: PrescriptionsService;
+  productService: ProductService;
   backupService: BackupService;
   recoveryLogService: RecoveryLogService;
   invoiceService: InvoiceService;
@@ -99,6 +102,7 @@ export interface Services {
   printingMetricsService: PrintingMetricsService;
   cashDrawerService: CashDrawerService;
   customerDisplayService: CustomerDisplayService;
+  syncScheduler: SyncScheduler;
   updateService: UpdateService;
 }
 
@@ -201,6 +205,9 @@ export async function initializeServices(
   // 3. Read session for workstationId
   const session = getSession().session ?? null;
   const workstationId = session?.workstationId ?? 'unknown';
+  // licenseId and accessToken are optional session fields not present on the
+  // LocalSession type; cast to access them (same pattern as original code).
+  const sessionExt = session as { licenseId?: string; accessToken?: string } | null;
 
   // 4. Create fiscal services (interdependent — created together)
   const fiscalServices = createFiscalServices({
@@ -217,7 +224,7 @@ export async function initializeServices(
 
   const serverPrintConfig: ServerPrintConfig = {
     baseUrl: apiBaseUrl,
-    authToken: undefined,
+    authToken: sessionExt?.accessToken,
   };
 
   const printingServices = createPrintingServices({
@@ -239,9 +246,6 @@ export async function initializeServices(
   const backupService = createBackupService();
 
   // 8. Create update service
-  // licenseId and accessToken are optional session fields not present on the
-  // LocalSession type; cast to access them (same pattern as the original code).
-  const sessionExt = session as { licenseId?: string; accessToken?: string } | null;
   const licenseId = sessionExt?.licenseId ?? 'unknown';
 
   const updateServiceConfig: UpdateServiceConfig = {
@@ -275,11 +279,26 @@ export async function initializeServices(
   // 10. Start printer health check loop
   printingServices.printerHealth.start();
 
+  // 11. Create sync scheduler (not started yet — needs a valid accessToken
+  //     from the session, which may not exist on first launch.  InnerApp
+  //     will start it when the session becomes available.)
+  const syncScheduler = createSyncScheduler({
+    prisma: prismaClient,
+    baseUrl: apiBaseUrl,
+    config: { baseUrl: apiBaseUrl },
+    catalog: { baseUrl: apiBaseUrl },
+    lots: { baseUrl: apiBaseUrl },
+    clients: { baseUrl: apiBaseUrl },
+    accessToken: sessionExt?.accessToken ?? undefined,
+    invoiceService: fiscalServices.invoiceService,
+  });
+
   // Flatten into the services interface consumers expect
   return {
     returnsService: domainServices.returnsService,
     inventoryAdjustmentsService: domainServices.inventoryAdjustmentsService,
     prescriptionsService: domainServices.prescriptionsService,
+    productService: domainServices.productService,
     backupService,
     recoveryLogService: domainServices.recoveryLogService,
     invoiceService: fiscalServices.invoiceService,
@@ -289,6 +308,7 @@ export async function initializeServices(
     printerConfigService: printingServices.printerConfig,
     printQueueService: printingServices.printQueue,
     printRouter: printingServices.printRouter,
+    syncScheduler,
     printerHealthService: printingServices.printerHealth,
     configExportService: printingServices.configExport,
     printingMetricsService: printingServices.printingMetrics,

@@ -163,6 +163,110 @@ export interface InvoiceTransmissionPayload {
   workstationId: string;
 }
 
+// ---------------------------------------------------------------------------
+// Product sync operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload for PRODUCT_CREATION operations.
+ *
+ * Created by ProductService.createProduct() and dispatched server-side
+ * to create the product authoritatively. The server assigns a real
+ * sequential `internalCode` and reflects it back on sync completion.
+ */
+export interface ProductCreationPayload {
+  operationType: 'PRODUCT_CREATION';
+  userId: string;
+  createProductDto: {
+    internalCode: string;
+    commercialName: string;
+    genericName: string;
+    activePrinciple: string;
+    concentration?: string;
+    concentrationUnit?: string;
+    laboratory: string;
+    saleType: string;
+    minimumStock: number;
+    invimaRegistry?: string;
+    atcCode?: string;
+    therapeuticIndication?: string;
+    storageConditions?: string;
+    internalNotes?: string;
+    categoryId?: string;
+    pharmaceuticalFormId?: string;
+    barcodes: Array<{
+      barcode: string;
+      barcodeType: string;
+      isPrimary: boolean;
+    }>;
+    price: {
+      price: string;
+      effectiveFrom: string;
+    };
+    tax: {
+      taxSchemeId: string;
+      effectiveFrom: string;
+    };
+  };
+  metadata: {
+    productId: string;
+    workstationId: string;
+    createdAt: string;
+  };
+}
+
+/**
+ * Payload for PRODUCT_UPDATE operations.
+ *
+ * Created by ProductService.updateProduct() (and softDeleteProduct) and
+ * dispatched server-side to apply the same changes to the server record.
+ * Only includes fields that actually changed.
+ */
+export interface ProductUpdatePayload {
+  operationType: 'PRODUCT_UPDATE';
+  userId: string;
+  updateProductDto: {
+    internalCode: string;
+    commercialName?: string;
+    genericName?: string;
+    activePrinciple?: string;
+    concentration?: string | null;
+    concentrationUnit?: string | null;
+    laboratory?: string;
+    saleType?: string;
+    minimumStock?: number;
+    isActive?: boolean;
+    discontinuationReason?: string;
+    invimaRegistry?: string | null;
+    atcCode?: string | null;
+    therapeuticIndication?: string | null;
+    storageConditions?: string | null;
+    internalNotes?: string | null;
+    categoryId?: string | null;
+    pharmaceuticalFormId?: string | null;
+    barcodes?: Array<{
+      barcode: string;
+      barcodeType: string;
+      isPrimary: boolean;
+    }>;
+    price?: {
+      price: string;
+      effectiveFrom: string;
+      changeReason?: string | null;
+    };
+    tax?: {
+      taxSchemeId: string;
+      effectiveFrom: string;
+      changeReason?: string | null;
+    };
+  };
+  metadata: {
+    productId: string;
+    workstationId: string;
+    updatedAt: string;
+  };
+}
+
 /**
  * Payload for INVOICE_TRANSMISSION_RESULT operations.
  *

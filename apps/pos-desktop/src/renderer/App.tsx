@@ -8,7 +8,7 @@
  * the <ServiceProvider> wrapper so every page can call the real
  * Prisma-backed services instead of hardcoded mocks.
  */
-import { type FC } from "react";
+import { type FC, useEffect, useRef } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Toaster } from "sileo";
 import { AppShell } from "@/components/common/app-shell";
@@ -33,7 +33,7 @@ import { SessionView } from "@/components/auth/sessions/session-view";
 import { OfflineModeBanner } from "@/components/auth/offline/offline-mode-banner";
 import { PendingBlessingModal } from "@/components/auth/offline/pending-blessing-modal";
 import { ErrorBoundary } from "./components/common/error-boundary";
-import { ServiceProvider } from "./components/common/service-context";
+import { ServiceProvider, useServiceContext } from "./components/common/service-context";
 import { AssistantLayer } from "./components/assistant/assistant-layer";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
@@ -59,6 +59,20 @@ const InnerApp: FC = () => {
   // Live session data from the Zustand store (populated at login).
   // When there is no session yet we render a login fallback.
   const session = useLocalSessionStore((s) => s.session);
+
+  // Start the sync scheduler once we have a valid authenticated session.
+  // Created in initializeServices() without a token (first launch), then
+  // wired up here so that seed data (products, lots, etc.) is pulled from
+  // the server immediately after login.
+  const svc = useServiceContext();
+  const isSyncStarted = useRef(false);
+  useEffect(() => {
+    if (session?.accessToken && !isSyncStarted.current) {
+      isSyncStarted.current = true;
+      svc.syncScheduler.updateAccessToken(session.accessToken);
+      svc.syncScheduler.start();
+    }
+  }, [session?.accessToken, svc]);
 
   const variants = {
     initial: shouldReduceMotion
