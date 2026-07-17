@@ -60,7 +60,7 @@ export class CatalogService {
     const pageSize = Math.min(Math.max(query.pageSize || 20, 1), 100);
     const skip = (page - 1) * pageSize;
 
-    const [items, total] = await Promise.all([
+    const [rawItems, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
         skip,
@@ -69,11 +69,32 @@ export class CatalogService {
           category: true,
           pharmaceuticalForm: true,
           barcodes: { where: { isPrimary: true }, take: 1 },
+          priceHistories: {
+            orderBy: { effectiveFrom: 'desc' },
+            take: 1,
+          },
+          taxHistories: {
+            include: { taxScheme: true },
+            orderBy: { effectiveFrom: 'desc' },
+            take: 1,
+          },
         },
         orderBy: { commercialName: 'asc' },
       }),
       this.prisma.product.count({ where }),
     ]);
+
+    // Transform: expose currentPrice/currentTax as derived fields
+    // matching the shape the frontend expects (currentPrice.price,
+    // currentTax.taxScheme.rate). The price/tax history arrays are
+    // replaced by the single active record, or null when none exists.
+    const items = rawItems.map((item) => ({
+      ...item,
+      currentPrice: item.priceHistories[0] ?? null,
+      currentTax: item.taxHistories[0] ?? null,
+      priceHistories: undefined,
+      taxHistories: undefined,
+    }));
 
     return {
       items,
@@ -94,6 +115,15 @@ export class CatalogService {
         category: true,
         pharmaceuticalForm: true,
         barcodes: { orderBy: { isPrimary: 'desc' } },
+        priceHistories: {
+          orderBy: { effectiveFrom: 'desc' },
+          take: 1,
+        },
+        taxHistories: {
+          include: { taxScheme: true },
+          orderBy: { effectiveFrom: 'desc' },
+          take: 1,
+        },
       },
     });
 
@@ -101,7 +131,14 @@ export class CatalogService {
       throw new ProductNotFoundException(id);
     }
 
-    return product;
+    // Transform to expose currentPrice/currentTax
+    return {
+      ...product,
+      currentPrice: product.priceHistories[0] ?? null,
+      currentTax: product.taxHistories[0] ?? null,
+      priceHistories: undefined,
+      taxHistories: undefined,
+    };
   }
 
   /**

@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { RoleType } from '@pharmacy/shared-types';
-import { useLocalSessionStore } from '../../domain/auth/local-session.store';
+import { useLocalSessionStore, hasMinRole } from '../../domain/auth/local-session.store';
 import {
   useBackupService,
   useRecoveryLogService,
@@ -113,7 +113,7 @@ export function useRecoveryPage(): UseRecoveryPageReturn {
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [gapHint, setGapHint] = useState<number | null>(null);
 
-  const hasAccess = session !== null && session.role === RoleType.ADMIN;
+  const hasAccess = session !== null && hasMinRole(session, RoleType.ADMIN);
 
   // -- Data loading --
 

@@ -16,7 +16,7 @@ import { useAppDispatch } from '@/store/hooks';
 import { setActiveScreen } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../domain/auth/local-session.store';
 import { createAuthService, type AuthService } from '../../domain/auth/auth.service';
-import { InvalidCredentialsException } from '../../domain/auth/exceptions';
+import { InvalidCredentialsException, NetworkErrorException } from '../../domain/auth/exceptions';
 import {
   NoOfflineCredentialsException,
   OfflineCredentialsExpiredException,
@@ -198,15 +198,58 @@ export function useLoginPage(): UseLoginPageReturn {
       } catch (err) {
         if (err instanceof InvalidCredentialsException) {
           setError(t('auth.pin_incorrect'));
+        } else if (err instanceof NetworkErrorException) {
+          // Server unreachable — attempt offline fallback with the same PIN.
+          // This covers the case where the browser reports as online but the
+          // server is actually down (connection refused, DNS failure, timeout).
+          try {
+            await attemptOfflineLogin(selectedUser.id, pin, 'PIN');
+            setOfflineLoginSkipped2fa(false);
+            dispatch(setActiveScreen('sales'));
+          } catch (offlineErr) {
+            if (offlineErr instanceof NoOfflineCredentialsException) {
+              setError(
+                t(
+                  'offline_login.no_credentials',
+                  'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+                ),
+              );
+              setOfflineErrorMessage(
+                'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+              );
+            } else if (offlineErr instanceof OfflineCredentialsExpiredException) {
+              setError(
+                t(
+                  'offline_login.credentials_expired',
+                  'Tu acceso offline expiró. Conectate a internet para renovar.',
+                ),
+              );
+              setOfflineErrorMessage(
+                'Tu acceso offline expiró. Conectate a internet para renovar.',
+              );
+            } else if (offlineErr instanceof OfflineTokenRevokedException) {
+              setError(
+                t(
+                  'offline_login.token_revoked',
+                  'Esta cuenta fue deshabilitada. Contactá al manager.',
+                ),
+              );
+              setOfflineErrorMessage(
+                'Esta cuenta fue deshabilitada. Contactá al manager.',
+              );
+            } else {
+              setError(t('auth.connection_error'));
+            }
+          }
         } else if (err instanceof NoOfflineCredentialsException) {
           setError(
             t(
               'offline_login.no_credentials',
-              'No podés entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+              'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
             ),
           );
           setOfflineErrorMessage(
-            'No podés entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+            'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
           );
         } else if (err instanceof OfflineCredentialsExpiredException) {
           setError(
@@ -226,7 +269,7 @@ export function useLoginPage(): UseLoginPageReturn {
             ),
           );
           setOfflineErrorMessage(
-            'Esta cuenta fue deshabilitada. Contactá al manager.',
+            'Esta cuenta fue deshabilitada. Contacta al manager.',
           );
         } else if ((err as Error).message?.includes('locked')) {
           setError(t('auth.too_many_attempts'));
@@ -278,15 +321,63 @@ export function useLoginPage(): UseLoginPageReturn {
     } catch (err) {
       if (err instanceof InvalidCredentialsException) {
         setError(t('auth.password_incorrect'));
+      } else if (err instanceof NetworkErrorException) {
+        // Server unreachable — attempt offline fallback with the same
+        // password.  Uses selectedUser.id when available (avatar grid
+        // flow), otherwise falls back to identifier (manual form) which
+        // matches the existing offline-branch behaviour.
+        try {
+          await attemptOfflineLogin(
+            selectedUser?.id ?? identifier,
+            password,
+            'PASSWORD',
+          );
+          setOfflineLoginSkipped2fa(false);
+          dispatch(setActiveScreen('sales'));
+        } catch (offlineErr) {
+          if (offlineErr instanceof NoOfflineCredentialsException) {
+            setError(
+              t(
+                'offline_login.no_credentials',
+                'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+              ),
+            );
+            setOfflineErrorMessage(
+              'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+            );
+          } else if (offlineErr instanceof OfflineCredentialsExpiredException) {
+            setError(
+              t(
+                'offline_login.credentials_expired',
+                'Tu acceso offline expiró. Conectate a internet para renovar.',
+              ),
+            );
+            setOfflineErrorMessage(
+              'Tu acceso offline expiró. Conectate a internet para renovar.',
+            );
+          } else if (offlineErr instanceof OfflineTokenRevokedException) {
+            setError(
+              t(
+                'offline_login.token_revoked',
+                'Esta cuenta fue deshabilitada. Contacta al manager.',
+              ),
+            );
+            setOfflineErrorMessage(
+              'Esta cuenta fue deshabilitada. Contacta al manager.',
+            );
+          } else {
+            setError(t('auth.connection_error'));
+          }
+        }
       } else if (err instanceof NoOfflineCredentialsException) {
         setError(
           t(
             'offline_login.no_credentials',
-            'No podés entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+            'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
           ),
         );
         setOfflineErrorMessage(
-          'No podés entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
+          'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
         );
       } else if (err instanceof OfflineCredentialsExpiredException) {
         setError(
@@ -302,11 +393,11 @@ export function useLoginPage(): UseLoginPageReturn {
         setError(
           t(
             'offline_login.token_revoked',
-            'Esta cuenta fue deshabilitada. Contactá al manager.',
+            'Esta cuenta fue deshabilitada. Contacta al manager.',
           ),
         );
         setOfflineErrorMessage(
-          'Esta cuenta fue deshabilitada. Contactá al manager.',
+          'Esta cuenta fue deshabilitada. Contacta al manager.',
         );
       } else if ((err as Error).message?.includes('locked')) {
         setLockoutUntil(new Date(Date.now() + 5 * 60 * 1000));

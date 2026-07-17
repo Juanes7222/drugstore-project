@@ -14,6 +14,80 @@ import * as crypto from 'crypto';
 export class ProductsService {
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * List products with optional filtering and search.
+   * Used by ProductsController (GET /products).
+   */
+  async findAll(
+    filters: Record<string, unknown>,
+    search?: string,
+  ): Promise<unknown[]> {
+    const where: Prisma.ProductWhereInput = { ...filters };
+
+    if (search) {
+      where.OR = [
+        { commercialName: { contains: search, mode: 'insensitive' } },
+        { internalCode: { contains: search, mode: 'insensitive' } },
+        { genericName: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const items = await this.prisma.product.findMany({
+      where,
+      include: {
+        category: true,
+        pharmaceuticalForm: true,
+        barcodes: { where: { isPrimary: true }, take: 1 },
+        priceHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
+        taxHistories: {
+          include: { taxScheme: true },
+          orderBy: { effectiveFrom: 'desc' },
+          take: 1,
+        },
+      },
+      orderBy: { commercialName: 'asc' },
+    });
+
+    return items.map((item) => ({
+      ...item,
+      currentPrice: item.priceHistories[0] ?? null,
+      currentTax: item.taxHistories[0] ?? null,
+      priceHistories: undefined,
+      taxHistories: undefined,
+    }));
+  }
+
+  /**
+   * Find a single product by ID.
+   * Used by ProductsController (GET /products/:id).
+   */
+  async findById(id: string): Promise<unknown> {
+    const item = await this.prisma.product.findUnique({
+      where: { id },
+      include: {
+        category: true,
+        pharmaceuticalForm: true,
+        barcodes: { orderBy: { isPrimary: 'desc' } },
+        priceHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
+        taxHistories: {
+          include: { taxScheme: true },
+          orderBy: { effectiveFrom: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!item) return null;
+
+    return {
+      ...item,
+      currentPrice: item.priceHistories[0] ?? null,
+      currentTax: item.taxHistories[0] ?? null,
+      priceHistories: undefined,
+      taxHistories: undefined,
+    };
+  }
+
   async createProduct(
     userId: string,
     dto: CreateProductDto,

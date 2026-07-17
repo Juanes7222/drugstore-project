@@ -147,6 +147,41 @@ export class InventoryAdjustmentsService {
   }
 
   /**
+   * List ALL active lots ordered by product commercialName ASC, then
+   * expirationDate ASC.
+   *
+   * Unlike {@link searchLots}, this returns every active lot with no search
+   * query — intended as a default "full inventory" view that the user can
+   * optionally filter down.
+   *
+   * @returns Every active lot; empty array if none exist.
+   */
+  async listAllLots(): Promise<LotSearchResult[]> {
+    const lots = await this.prisma.lot.findMany({
+      where: { state: LotState.ACTIVE },
+      include: {
+        product: {
+          select: { commercialName: true },
+        },
+      },
+      orderBy: [
+        { product: { commercialName: 'asc' } },
+        { expirationDate: 'asc' },
+      ],
+    });
+
+    return lots.map((lot) => ({
+      id: lot.id,
+      productId: lot.productId,
+      productName: lot.product.commercialName,
+      lotCode: lot.batchNumber,
+      currentStock: lot.currentStock,
+      expirationDate: lot.expirationDate.toISOString().split('T')[0],
+      location: lot.locationCode ?? '',
+    }));
+  }
+
+  /**
    * Create an inventory adjustment document in DRAFT state.
    *
    * Requires INVENTORY_ASSISTANT or ADMIN role.

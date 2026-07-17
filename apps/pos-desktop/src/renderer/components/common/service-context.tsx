@@ -63,7 +63,10 @@ const ServiceContext = createContext<Services | null>(null);
 // Hook
 // ---------------------------------------------------------------------------
 
-function useServiceContext(): Services {
+/** Read the full Services object from context.  Throws if called outside
+ *  <ServiceProvider>.  Exported for advanced use cases such as starting the
+ *  sync scheduler after login. */
+export function useServiceContext(): Services {
   const ctx = useContext(ServiceContext);
   if (!ctx) {
     throw new Error(
@@ -145,6 +148,10 @@ export const useCustomerDisplayService = (): Services['customerDisplayService'] 
 /** Convenience hook — returns the UpdateService instance. */
 export const useUpdateService = (): Services['updateService'] =>
   useServiceContext().updateService;
+
+/** Convenience hook — returns the SyncScheduler instance. */
+export const useSyncSchedulerService = (): Services['syncScheduler'] =>
+  useServiceContext().syncScheduler;
 
 // ---------------------------------------------------------------------------
 // Provider

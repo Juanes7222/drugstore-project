@@ -1,12 +1,10 @@
 /**
- * Inventory Adjustments page — thin wiring container.
+ * Inventory Adjustments page — full inventory view with adjustment form.
  *
- * Owns all form state, validation, and submission orchestration for manual
- * stock corrections.  Presentational sub-components are imported from sibling
- * files so this file stays focused on wiring, not markup.
- *
- * Role is re-checked on submit, not just on mount, to guard against session
- * changes while the form is being filled.
+ * Loads all active lots on mount so the user sees inventory immediately
+ * without requiring a search.  Search/filter narrows the shown list.
+ * Left panel: scrollable lot list.  Right panel: adjustment form for
+ * the selected lot.
  *
  * @category Page
  */
@@ -14,6 +12,7 @@
 import {
   type FC,
   useCallback,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -26,22 +25,11 @@ import { RoleType } from "@pharmacy/shared-types";
 import { useInventoryAdjustmentsService } from "../common/service-context";
 import type { DisplayLot, AdjustmentType, AdjustmentReason } from "./inventory-adjustments.types";
 
-// ── Presentational components (provided by frontend-pos) ────────────────
 import { InventoryAdjustmentsHeader } from "./inventory-adjustments-header";
 import { LotSearchPanel } from "./lot-search-panel";
 import { AdjustmentForm } from "./adjustment-form";
 import { ErrorBanner } from "./error-banner";
 import { InventoryAdjustmentsToast } from "./inventory-adjustments-toast";
-
-// ── Constants ───────────────────────────────────────────────────────────
-
-export const ADJUSTMENT_REASONS = [
-  "DAMAGED",
-  "EXPIRED",
-  "LOSS",
-  "FOUND",
-  "OTHER",
-] as const;
 
 // ── Page component ──────────────────────────────────────────────────────
 
@@ -51,20 +39,21 @@ export const InventoryAdjustmentsPage: FC = () => {
   const isOnline = useOnlineStatus();
   const adjustmentsService = useInventoryAdjustmentsService();
 
-  // Search
+  // Search / list state
   const [searchQuery, setSearchQuery] = useState("");
-  const [lots, setLots] = useState<DisplayLot[]>([]);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [allLots, setAllLots] = useState<DisplayLot[]>([]);
+  const [filteredLots, setFilteredLots] = useState<DisplayLot[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedLot, setSelectedLot] = useState<DisplayLot | null>(null);
 
-  // Form
+  // Form state
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("DECREASE");
   const [quantity, setQuantity] = useState(1);
   const [reason, setReason] = useState<AdjustmentReason>("OTHER");
   const [customReason, setCustomReason] = useState("");
   const [notes, setNotes] = useState("");
 
-  // State
+  // Processing / error / toast
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{
@@ -73,32 +62,65 @@ export const InventoryAdjustmentsPage: FC = () => {
     isVerified: boolean;
   } | null>(null);
 
-  // ── Handlers ─────────────────────────────────────────────────────────
+  // ── Load all lots on mount ────────────────────────────────────────────
 
-  const handleSearch = useCallback(async () => {
-    setError(null);
-    setHasSearched(true);
-    if (!searchQuery.trim()) {
-      setLots([]);
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setIsLoading(true);
+        const lots = await adjustmentsService.listAllLots();
+        if (!cancelled) {
+          setAllLots(lots);
+          setFilteredLots(lots);
+        }
+      } catch {
+        if (!cancelled) setError(t("inventory_adjustments.load_error"));
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+
+    void load();
+    return () => { cancelled = true; };
+  }, [adjustmentsService, t]);
+
+  // ── Filter lots when searchQuery changes ──────────────────────────────
+
+  useEffect(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) {
+      setFilteredLots(allLots);
       return;
     }
 
-    try {
-      const results = await adjustmentsService.searchLots(searchQuery.trim());
-      setLots(results);
-    } catch {
-      setLots([]);
-    }
-  }, [searchQuery, adjustmentsService]);
+    // Filter locally first — faster than a service call
+    const filtered = allLots.filter(
+      (lot) =>
+        lot.productName.toLowerCase().includes(q) ||
+        lot.lotCode.toLowerCase().includes(q) ||
+        lot.location.toLowerCase().includes(q),
+    );
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        void handleSearch();
-      }
-    },
-    [handleSearch],
-  );
+    // If no local match, fall back to service searchLots for DB-fresh results
+    if (filtered.length === 0 && searchQuery.trim()) {
+      const doSearch = async () => {
+        try {
+          const results = await adjustmentsService.searchLots(searchQuery.trim());
+          setFilteredLots(results);
+        } catch {
+          setFilteredLots([]);
+        }
+      };
+      void doSearch();
+      return;
+    }
+
+    setFilteredLots(filtered);
+  }, [searchQuery, allLots, adjustmentsService]);
+
+  // ── Handlers ──────────────────────────────────────────────────────────
 
   const handleSelectLot = useCallback((lot: DisplayLot) => {
     setSelectedLot(lot);
@@ -178,13 +200,12 @@ export const InventoryAdjustmentsPage: FC = () => {
 
       // Optimistic local stock update
       const delta = adjustmentType === "INCREASE" ? quantity : -quantity;
-      setLots((prev) =>
-        prev.map((l) =>
-          l.id === selectedLot.id
-            ? { ...l, currentStock: Math.max(0, l.currentStock + delta) }
-            : l,
-        ),
+      const updatedLots = allLots.map((l) =>
+        l.id === selectedLot.id
+          ? { ...l, currentStock: Math.max(0, l.currentStock + delta) }
+          : l,
       );
+      setAllLots(updatedLots);
       setSelectedLot((prev) =>
         prev
           ? { ...prev, currentStock: Math.max(0, prev.currentStock + delta) }
@@ -217,6 +238,7 @@ export const InventoryAdjustmentsPage: FC = () => {
     reason,
     customReason,
     notes,
+    allLots,
     adjustmentsService,
     t,
   ]);
@@ -225,7 +247,7 @@ export const InventoryAdjustmentsPage: FC = () => {
     setToast(null);
   }, []);
 
-  // ── Derived ─────────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────
 
   const canSubmit = useMemo(
     () =>
@@ -242,12 +264,12 @@ export const InventoryAdjustmentsPage: FC = () => {
     ? Math.max(0, selectedLot.currentStock + adjustmentDelta)
     : 0;
 
-  // ── Render ─────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────
 
   return (
     <section
       aria-label={t("inventory_adjustments.title")}
-      className="flex h-full flex-col overflow-y-auto"
+      className="flex h-full flex-col"
       style={{ backgroundColor: "var(--color-surface)" }}
     >
       <InventoryAdjustmentsHeader
@@ -255,43 +277,77 @@ export const InventoryAdjustmentsPage: FC = () => {
         onBack={handleBack}
       />
 
-      <div className="flex-1 px-pos-xl pb-pos-xl">
-        <LotSearchPanel
-          searchQuery={searchQuery}
-          onSearchQueryChange={setSearchQuery}
-          onSearch={handleSearch}
-          onKeyDown={handleKeyDown}
-          isProcessing={isProcessing}
-          hasSearched={hasSearched}
-          lots={lots}
-          selectedLot={selectedLot}
-          onSelectLot={handleSelectLot}
-        />
-
-        {selectedLot && (
-          <AdjustmentForm
+      {/* ── Two-column body ─────────────────────────────────────────── */}
+      <div className="flex min-h-0 flex-1 gap-pos-lg px-pos-xl pb-pos-xl">
+        {/* Left: scrollable lot list */}
+        <div className="flex w-3/5 flex-col overflow-hidden">
+          <LotSearchPanel
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            isProcessing={isProcessing || isLoading}
+            lots={filteredLots}
             selectedLot={selectedLot}
-            adjustmentType={adjustmentType}
-            onAdjustmentTypeChange={setAdjustmentType}
-            quantity={quantity}
-            onQuantityChange={(value: number) =>
-              setQuantity(Math.max(1, value))
-            }
-            reason={reason}
-            onReasonChange={(reason: string) => setReason(reason as AdjustmentReason)}
-            customReason={customReason}
-            onCustomReasonChange={setCustomReason}
-            notes={notes}
-            onNotesChange={setNotes}
-            error={error}
-            isProcessing={isProcessing}
-            canSubmit={canSubmit}
-            projectedStock={projectedStock}
-            onSubmit={handleSubmit}
+            onSelectLot={handleSelectLot}
           />
-        )}
+        </div>
 
-        {error && !selectedLot && <ErrorBanner message={error} />}
+        {/* Right: adjustment form (shown when lot selected) */}
+        <div className="w-2/5 overflow-y-auto">
+          {isLoading && (
+            <div className="pos-panel flex items-center justify-center p-pos-xl">
+              <p
+                className="text-body-sm"
+                style={{
+                  color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                }}
+              >
+                {t("common.loading")}
+              </p>
+            </div>
+          )}
+
+          {!isLoading && selectedLot && (
+            <AdjustmentForm
+              selectedLot={selectedLot}
+              adjustmentType={adjustmentType}
+              onAdjustmentTypeChange={setAdjustmentType}
+              quantity={quantity}
+              onQuantityChange={(value: number) =>
+                setQuantity(Math.max(1, value))
+              }
+              reason={reason}
+              onReasonChange={(reason: string) => setReason(reason as AdjustmentReason)}
+              customReason={customReason}
+              onCustomReasonChange={setCustomReason}
+              notes={notes}
+              onNotesChange={setNotes}
+              error={error}
+              isProcessing={isProcessing}
+              canSubmit={canSubmit}
+              projectedStock={projectedStock}
+              onSubmit={handleSubmit}
+            />
+          )}
+
+          {!isLoading && !selectedLot && (
+            <div className="pos-panel flex items-center justify-center p-pos-xl">
+              <p
+                className="text-body-sm text-center"
+                style={{
+                  color: "color-mix(in srgb, var(--color-ink) 40%, transparent)",
+                }}
+              >
+                {t("inventory_adjustments.select_lot_hint")}
+              </p>
+            </div>
+          )}
+
+          {error && !selectedLot && (
+            <div className="mt-pos-md">
+              <ErrorBanner message={error} />
+            </div>
+          )}
+        </div>
       </div>
 
       {toast && (

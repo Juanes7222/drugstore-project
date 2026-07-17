@@ -18,6 +18,8 @@ import { createPrescriptionsService } from '../prescriptions/prescriptions.servi
 import type { PrescriptionsService } from '../prescriptions/prescriptions.service';
 import { createRecoveryLogService } from '../backup/recovery-log.service';
 import type { RecoveryLogService } from '../backup/recovery-log.service';
+import { createProductService } from '../catalog/product.service';
+import type { ProductService } from '../catalog/product.service';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,6 +30,7 @@ export interface DomainServices {
   inventoryAdjustmentsService: InventoryAdjustmentsService;
   prescriptionsService: PrescriptionsService;
   recoveryLogService: RecoveryLogService;
+  productService: ProductService;
 }
 
 export interface DomainServiceFactoryInput {
@@ -59,5 +62,6 @@ export function createDomainServices(
     inventoryAdjustmentsService: createInventoryAdjustmentsService(prisma, auth),
     prescriptionsService: createPrescriptionsService(prisma, auth),
     recoveryLogService: createRecoveryLogService(prisma),
+    productService: createProductService(prisma, auth),
   };
 }

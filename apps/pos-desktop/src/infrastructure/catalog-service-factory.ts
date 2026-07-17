@@ -10,8 +10,21 @@ import { type CatalogService } from '../renderer/services/catalog-service';
 import { createHttpCatalogService } from '../renderer/services/catalog-service.http';
 import { createMockCatalogService } from '../renderer/services/catalog-service.mock';
 import { createHttpClient } from './http-client';
-import { createLocalStorageAuthTokenProvider } from './auth-token-provider';
 import { API_BASE_URL } from './config';
+
+/**
+ * AuthTokenProvider that reads the session's access token from the Zustand
+ * in-memory store — the single source of truth for auth state.  This replaces
+ * the localStorage-based provider that was never written to.
+ */
+const createZustandAuthTokenProvider = () => ({
+  getAccessToken: async (): Promise<string | null> => {
+    const { useLocalSessionStore } = await import(
+      '../domain/auth/local-session.store'
+    );
+    return useLocalSessionStore.getState().session?.accessToken ?? null;
+  },
+});
 
 export function createCatalogService(): CatalogService {
   if (!API_BASE_URL) {
@@ -24,7 +37,7 @@ export function createCatalogService(): CatalogService {
 
   const httpClient = createHttpClient(
     API_BASE_URL,
-    createLocalStorageAuthTokenProvider(),
+    createZustandAuthTokenProvider(),
   );
 
   return createHttpCatalogService({ httpClient });

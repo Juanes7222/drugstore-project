@@ -28,6 +28,12 @@ import { PGlite } from '@electric-sql/pglite';
 import { LOCAL_SCHEMA_SQL } from '@pharmacy/database/local-schema';
 
 /**
+ * Schema version — bump this when LOCAL_SCHEMA_SQL changes.
+ * applyMissingSchema runs only when stored version differs.
+ */
+const SCHEMA_VERSION = 1;
+
+/**
  * Detect whether the app is running inside a Tauri webview.
  * Outside Tauri (e.g. browser dev server) we fall back to an in-memory PGlite
  * database so the UI is still navigable during development.
@@ -179,6 +185,50 @@ async function getExistingColumnKeys(
     keys.add(`"${row.tableName}"."${row.columnName}"`);
   }
   return keys;
+}
+
+// ---------------------------------------------------------------------------
+// Schema-version tracking
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensure the _SchemaMeta key-value table exists.
+ */
+async function ensureSchemaMetaTable(client: PGlite): Promise<void> {
+  await client.exec(`
+    CREATE TABLE IF NOT EXISTS "_SchemaMeta" (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `);
+}
+
+/**
+ * Read the stored schema version, or null if never set.
+ */
+async function getStoredSchemaVersion(client: PGlite): Promise<number | null> {
+  try {
+    const result = await client.query<{ value: string }>(
+      `SELECT value FROM "_SchemaMeta" WHERE key = 'schema_version'`,
+    );
+    return result.rows.length > 0 ? Number(result.rows[0].value) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Write (upsert) the current schema version so subsequent startups can skip
+ * `applyMissingSchema` when nothing changed.
+ */
+async function storeSchemaVersion(client: PGlite, version: number): Promise<void> {
+  // DELETE + INSERT is simpler than ON CONFLICT and avoids any PGlite
+  // compatibility risk with PostgreSQL upsert syntax.
+  await client.query(`DELETE FROM "_SchemaMeta" WHERE key = 'schema_version'`);
+  await client.query(
+    `INSERT INTO "_SchemaMeta" (key, value) VALUES ('schema_version', $1)`,
+    [String(version)],
+  );
 }
 
 /**
@@ -520,29 +570,36 @@ export async function getLocalDatabase(): Promise<{
         throw pgliteError;
       }
 
-      // Check whether this is a fresh database
+      // ---- Schema init / upgrade check ----
+      await ensureSchemaMetaTable(client);
       const isEmpty = !(await tableExists(client, 'Client'));
-      // eslint-disable-next-line no-console
-      console.log(`[local-database] isEmpty=${isEmpty} (Client table exists=${!isEmpty})`);
 
       if (isEmpty) {
-        // Fresh database — apply the full schema in one batch.
+        // Fresh database — apply full schema, store version.
         // eslint-disable-next-line no-console
         console.log('[local-database] Fresh database — applying full schema...');
         await applySchema(client);
+        await storeSchemaVersion(client, SCHEMA_VERSION);
         // eslint-disable-next-line no-console
-        console.log('[local-database] Full schema applied.');
+        console.log(`[local-database] Database initialized (schema v${SCHEMA_VERSION}).`);
       } else {
-        // Existing database — apply any missing objects (tables, enums,
-        // indexes) that were added in schema versions after the initial
-        // creation.  This handles the case where the full DDL has been
-        // regenerated with new models (e.g. `UpdateState`) but the
-        // running database was created from an older version of the DDL.
-        // eslint-disable-next-line no-console
-        console.log('[local-database] Existing database — applying missing schema...');
-        await applyMissingSchema(client);
-        // eslint-disable-next-line no-console
-        console.log('[local-database] Missing schema applied successfully.');
+        const storedVersion = await getStoredSchemaVersion(client);
+
+        if (storedVersion === SCHEMA_VERSION) {
+          // Schema is current — skip schema work entirely.  Single-line OK.
+          // eslint-disable-next-line no-console
+          console.log(`[local-database] Database ready (schema v${SCHEMA_VERSION}).`);
+        } else {
+          // Version mismatch (null, older, or newer) — apply missing schema.
+          // eslint-disable-next-line no-console
+          console.log(
+            `[local-database] Schema version change: v${storedVersion ?? '?'} → v${SCHEMA_VERSION}. Applying missing schema...`,
+          );
+          await applyMissingSchema(client);
+          await storeSchemaVersion(client, SCHEMA_VERSION);
+          // eslint-disable-next-line no-console
+          console.log(`[local-database] Schema upgraded to v${SCHEMA_VERSION}.`);
+        }
       }
 
       let prisma: unknown;

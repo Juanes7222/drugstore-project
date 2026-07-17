@@ -36,19 +36,19 @@ export class ProductsController {
     @Query('saleType') saleType?: string,
     @Query('search') search?: string,
   ): Promise<any> {
-    const filters: any = {};
+    const filters: Record<string, unknown> = {};
 
     if (categoryId) filters.categoryId = categoryId;
     if (isActive !== undefined) filters.isActive = isActive === 'true';
     if (saleType) filters.saleType = saleType;
 
-    return (this.productsService as any).findAll(filters, search);
+    return this.productsService.findAll(filters, search);
   }
 
   @Get(':id')
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findById(@Param('id') id: string): Promise<any> {
-    return (this.productsService as any).findById(id);
+    return this.productsService.findById(id);
   }
 
   @Post()
