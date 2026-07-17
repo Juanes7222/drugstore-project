@@ -14,6 +14,14 @@ beforeEach(() => {
     formMemoryOptOuts: [],
     paletteUsageCount: 0,
     shortcutUsageCount: 0,
+    theme: "LIGHT",
+    language: "es",
+    dateFormat: "DD/MM/YYYY",
+    timeFormat: "24H",
+    soundEnabled: true,
+    receiptFontSize: 10,
+    keyboardLayout: "STANDARD",
+    quickButtons: [],
   });
 });
 
@@ -214,5 +222,192 @@ describe("incrementShortcutUsage", () => {
   it("increments shortcut usage count by 1", () => {
     useUserPreferencesStore.getState().incrementShortcutUsage();
     expect(useUserPreferencesStore.getState().shortcutUsageCount).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// UI preference actions
+// ---------------------------------------------------------------------------
+
+describe("setTheme", () => {
+  it("sets theme to DARK", () => {
+    useUserPreferencesStore.getState().setTheme("DARK");
+
+    expect(useUserPreferencesStore.getState().theme).toBe("DARK");
+  });
+
+  it("sets theme to SYSTEM", () => {
+    useUserPreferencesStore.getState().setTheme("SYSTEM");
+
+    expect(useUserPreferencesStore.getState().theme).toBe("SYSTEM");
+  });
+
+  it("resets theme to LIGHT", () => {
+    useUserPreferencesStore.getState().setTheme("DARK");
+    useUserPreferencesStore.getState().setTheme("LIGHT");
+
+    expect(useUserPreferencesStore.getState().theme).toBe("LIGHT");
+  });
+});
+
+describe("setLanguage", () => {
+  it("sets language to en", () => {
+    useUserPreferencesStore.getState().setLanguage("en");
+
+    expect(useUserPreferencesStore.getState().language).toBe("en");
+  });
+
+  it("sets language to es", () => {
+    useUserPreferencesStore.getState().setLanguage("es");
+
+    expect(useUserPreferencesStore.getState().language).toBe("es");
+  });
+});
+
+describe("setDateFormat", () => {
+  it("sets date format to YYYY-MM-DD", () => {
+    useUserPreferencesStore.getState().setDateFormat("YYYY-MM-DD");
+
+    expect(useUserPreferencesStore.getState().dateFormat).toBe("YYYY-MM-DD");
+  });
+
+  it("sets date format to DD/MM/YYYY", () => {
+    useUserPreferencesStore.getState().setDateFormat("DD/MM/YYYY");
+
+    expect(useUserPreferencesStore.getState().dateFormat).toBe("DD/MM/YYYY");
+  });
+});
+
+describe("setTimeFormat", () => {
+  it("sets time format to 12H", () => {
+    useUserPreferencesStore.getState().setTimeFormat("12H");
+
+    expect(useUserPreferencesStore.getState().timeFormat).toBe("12H");
+  });
+
+  it("sets time format to 24H", () => {
+    useUserPreferencesStore.getState().setTimeFormat("24H");
+
+    expect(useUserPreferencesStore.getState().timeFormat).toBe("24H");
+  });
+});
+
+describe("setSoundEnabled", () => {
+  it("disables sound", () => {
+    useUserPreferencesStore.getState().setSoundEnabled(false);
+
+    expect(useUserPreferencesStore.getState().soundEnabled).toBe(false);
+  });
+
+  it("enables sound", () => {
+    useUserPreferencesStore.getState().setSoundEnabled(false);
+    useUserPreferencesStore.getState().setSoundEnabled(true);
+
+    expect(useUserPreferencesStore.getState().soundEnabled).toBe(true);
+  });
+});
+
+describe("setReceiptFontSize", () => {
+  it("sets the receipt font size", () => {
+    useUserPreferencesStore.getState().setReceiptFontSize(12);
+
+    expect(useUserPreferencesStore.getState().receiptFontSize).toBe(12);
+  });
+
+  it("clamps font size to minimum 8", () => {
+    useUserPreferencesStore.getState().setReceiptFontSize(4);
+
+    expect(useUserPreferencesStore.getState().receiptFontSize).toBe(8);
+  });
+
+  it("clamps font size to maximum 20", () => {
+    useUserPreferencesStore.getState().setReceiptFontSize(24);
+
+    expect(useUserPreferencesStore.getState().receiptFontSize).toBe(20);
+  });
+});
+
+describe("setKeyboardLayout", () => {
+  it("sets keyboard layout to COMPACT", () => {
+    useUserPreferencesStore.getState().setKeyboardLayout("COMPACT");
+
+    expect(useUserPreferencesStore.getState().keyboardLayout).toBe("COMPACT");
+  });
+
+  it("sets keyboard layout to STANDARD", () => {
+    useUserPreferencesStore.getState().setKeyboardLayout("COMPACT");
+    useUserPreferencesStore.getState().setKeyboardLayout("STANDARD");
+
+    expect(useUserPreferencesStore.getState().keyboardLayout).toBe("STANDARD");
+  });
+});
+
+describe("addQuickButton", () => {
+  it("adds a product to quick buttons", () => {
+    useUserPreferencesStore.getState().addQuickButton("prod-1");
+
+    expect(useUserPreferencesStore.getState().quickButtons).toContain("prod-1");
+  });
+
+  it("does not duplicate existing product ids", () => {
+    useUserPreferencesStore.getState().addQuickButton("prod-1");
+    useUserPreferencesStore.getState().addQuickButton("prod-1");
+
+    expect(useUserPreferencesStore.getState().quickButtons).toEqual(["prod-1"]);
+  });
+
+  it("appends multiple products", () => {
+    useUserPreferencesStore.getState().addQuickButton("prod-1");
+    useUserPreferencesStore.getState().addQuickButton("prod-2");
+    useUserPreferencesStore.getState().addQuickButton("prod-3");
+
+    expect(useUserPreferencesStore.getState().quickButtons).toEqual([
+      "prod-1",
+      "prod-2",
+      "prod-3",
+    ]);
+  });
+});
+
+describe("removeQuickButton", () => {
+  it("removes an existing product", () => {
+    useUserPreferencesStore.getState().addQuickButton("prod-1");
+    useUserPreferencesStore.getState().addQuickButton("prod-2");
+    useUserPreferencesStore.getState().removeQuickButton("prod-1");
+
+    expect(useUserPreferencesStore.getState().quickButtons).toEqual(["prod-2"]);
+  });
+
+  it("does nothing when removing a non-existent product", () => {
+    useUserPreferencesStore.getState().addQuickButton("prod-1");
+    useUserPreferencesStore.getState().removeQuickButton("prod-nonexistent");
+
+    expect(useUserPreferencesStore.getState().quickButtons).toEqual(["prod-1"]);
+  });
+
+  it("leaves the list empty when all products are removed", () => {
+    useUserPreferencesStore.getState().addQuickButton("prod-1");
+    useUserPreferencesStore.getState().removeQuickButton("prod-1");
+
+    expect(useUserPreferencesStore.getState().quickButtons).toEqual([]);
+  });
+});
+
+describe("setQuickButtons", () => {
+  it("replaces all quick buttons with a new list", () => {
+    useUserPreferencesStore.getState().addQuickButton("prod-1");
+    useUserPreferencesStore.getState().setQuickButtons(["prod-a", "prod-b"]);
+
+    expect(useUserPreferencesStore.getState().quickButtons).toEqual([
+      "prod-a",
+      "prod-b",
+    ]);
+  });
+
+  it("replaces with empty list", () => {
+    useUserPreferencesStore.getState().addQuickButton("prod-1");
+    useUserPreferencesStore.getState().setQuickButtons([]);
+
+    expect(useUserPreferencesStore.getState().quickButtons).toEqual([]);
   });
 });

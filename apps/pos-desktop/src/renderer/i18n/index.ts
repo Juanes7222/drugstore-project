@@ -1,6 +1,10 @@
 /**
  * i18n configuration — Pharmacy POS Terminal.
  * Spanish by default, English available.
+ *
+ * Single translation namespace. All keys are accessed through the
+ * full path — e.g. t('config.tabs.company'), t('common.cancel').
+ * Components never use a custom namespace (no useTranslation('config')).
  */
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";

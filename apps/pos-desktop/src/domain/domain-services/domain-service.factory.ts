@@ -20,6 +20,8 @@ import { createRecoveryLogService } from '../backup/recovery-log.service';
 import type { RecoveryLogService } from '../backup/recovery-log.service';
 import { createProductService } from '../catalog/product.service';
 import type { ProductService } from '../catalog/product.service';
+import { getTenantConfigState } from '../config/tenant-config.store';
+import type { EffectiveConfig } from '../config/types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,6 +40,17 @@ export interface DomainServiceFactoryInput {
   auth: AuthService;
   invoiceService?: InvoiceService;
   printRouter?: PrintRouter;
+}
+
+/**
+ * Get the current effective tenant config.
+ *
+ * Services that need to check field requirements or workflow preferences
+ * call this function rather than importing the store directly.
+ * Returns null if no config has been loaded yet.
+ */
+export function getEffectiveConfig(): EffectiveConfig | null {
+  return getTenantConfigState().effectiveConfig;
 }
 
 // ---------------------------------------------------------------------------

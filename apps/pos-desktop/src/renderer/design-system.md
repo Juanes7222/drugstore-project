@@ -320,6 +320,59 @@ the product search area (left 60%).
 
 ---
 
+---
+
+## Home Dashboard — Role-Based Landing Page (added 2026-07-17)
+
+The Home screen replaces "sales" as the default post-login destination. It is a
+role-aware dashboard that greets the user by name and surfaces the most relevant
+actions and information for their role.
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Hola, María                               [Role: Cajera]         │
+│  Listo para atender                                               │
+│                                                                   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐            │
+│  │ 🛒 Nueva │ │ 🔄 Devol │ │ 📦 Invent│ │ 🔍 Buscar│            │
+│  │   Venta  │ │          │ │          │ │          │            │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘            │
+│                                                                   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────────┐ │
+│  │ Stats    │ │ Shift    │ │ Sync     │ │ [ Nueva Venta ]     │ │
+│  │ Ventas   │ │ —        │ │ Online   │ │ (CTA primary button) │ │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Role sections
+
+| Role | Quick Actions | Stats / Info |
+|------|--------------|--------------|
+| Cashier | New Sale, Return, Search Product | Today's sales count, shift status, sync status + CTA to start sale |
+| Inventory Asst. | Inventory Adjustments | Low stock alerts, near-expiry count, pending adjustments |
+| Manager / Owner | Users, Audit, Config, Sync | Active users, sync health, recent activity |
+| Accountant | (same quick nav as manager) | Fiscal panel, sync status, DIAN status |
+| Owner+ | All of the above | Full admin overview |
+
+### Motion treatment
+
+Per the motion budget, only the initial staggered entrance uses animation
+(6 staggered groups, 60ms apart, 0.3s fade-up each). After that the Home
+page has no periodic or decorative motion — it is a launchpad, not a
+live-ticking dashboard. `prefers-reduced-motion` collapses all entrance
+animations to opacity-only.
+
+### Icon strategy
+
+Every quick-action button uses a `lucide-react` icon (already a project
+dependency). Icons are decorative (`aria-hidden="true"`) and use Pharma
+Teal at 28px with `strokeWidth={1.5}` for a precise, non-heavy look.
+
+---
+
 ## Motion budget (added in Phase 3)
 
 Motion is reserved for the sale-completing handoff, not for the high-throughput search/scan/add-to-cart path.

@@ -84,7 +84,7 @@ export const AvatarGrid: FC<AvatarGridProps> = ({
               minWidth: 120,
               borderRadius: "var(--radius-pos)",
               backgroundColor: "var(--color-panel)",
-              border: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
+              border: "1px solid rgba(23, 22, 20, 0.08)",
               cursor: "pointer",
               outline: "none",
             }}
@@ -117,7 +117,7 @@ export const AvatarGrid: FC<AvatarGridProps> = ({
             }}
             onBlur={(e) => {
               e.currentTarget.style.borderColor =
-                "color-mix(in srgb, var(--color-ink) 8%, transparent)";
+                "rgba(23, 22, 20, 0.08)";
               e.currentTarget.style.boxShadow = "none";
             }}
           >

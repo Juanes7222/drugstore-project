@@ -1,0 +1,92 @@
+// Server-only schema fragment — Tenant Configuration module.
+// One config per subscription; named presets for reuse across locations.
+// Fields ending in "Id" (subscriptionId, lastModifiedById, etc.) are plain
+// scalar references — the module enforces referential integrity at the
+// application layer rather than through Prisma relations, avoiding the need
+// for reverse-relation fields on the User and Subscription models.
+
+/// Per-subscription tenant configuration.
+/// Created on first subscription activation, defaults to Balanced preset.
+model TenantConfig {
+  id                String   @id
+  subscriptionId    String   @unique
+  // subscription — app-level ref, no Prisma relation
+
+  /// Active preset code: SIMPLE | BALANCED | STRICT | null (null = Custom mode)
+  activePresetCode  String?
+
+  /// Json: StrictnessConfig — all known strictness toggles
+  strictness        Json
+
+  /// Json: FiscalConfig — fiscal/DIAN settings
+  fiscal            Json
+
+  /// Json: WorkflowConfig — workflow preferences
+  workflow          Json
+
+  /// Json: CustomCompanyField[] — user-added company info fields
+  customCompanyFields Json   @default("[]")
+
+  /// Json: CustomStrictnessToggle[] — user-added strictness toggles
+  customStrictnessToggles Json @default("[]")
+
+  /// Optimistic concurrency — increments on every save
+  configVersion     Int      @default(1)
+
+  lastModifiedById  String?
+  // lastModifiedBy — app-level ref
+  lastModifiedAt    DateTime @updatedAt
+  createdAt         DateTime @default(now())
+
+  changelog         ConfigChangelog[]
+
+  @@index([subscriptionId])
+}
+
+/// Saved custom configurations that can be reapplied or shared across locations.
+model NamedPreset {
+  id                String   @id
+  subscriptionId    String
+  // subscription — app-level ref
+  name              String
+  description       String?  @db.Text
+
+  /// Json: StrictnessConfig
+  strictness        Json
+  /// Json: FiscalConfig
+  fiscal            Json
+  /// Json: WorkflowConfig
+  workflow          Json
+  /// Json: CustomCompanyField[]
+  customCompanyFields Json   @default("[]")
+  /// Json: CustomStrictnessToggle[]
+  customStrictnessToggles Json @default("[]")
+
+  isShared          Boolean  @default(false)
+  createdById       String?
+  // createdBy — app-level ref
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([subscriptionId])
+  @@index([subscriptionId, isShared])
+}
+
+/// Audit trail of all tenant config changes.
+model ConfigChangelog {
+  id                String   @id
+  tenantConfigId    String
+  tenantConfig      TenantConfig @relation(fields: [tenantConfigId], references: [id])
+  configVersion     Int
+  changeType        String   // PRESET_APPLIED | FIELD_UPDATED | CUSTOM_FIELD_ADDED | ...
+  fieldPath         String?  // e.g., "strictness.lots"
+  beforeValue       Json?
+  afterValue        Json?
+  actorUserId       String?
+  // actor — app-level ref
+  createdAt         DateTime @default(now())
+
+  @@index([tenantConfigId, configVersion])
+  @@index([tenantConfigId, createdAt])
+  @@index([changeType, createdAt])
+}

@@ -206,40 +206,14 @@ export function useLoginPage(): UseLoginPageReturn {
             await attemptOfflineLogin(selectedUser.id, pin, 'PIN');
             setOfflineLoginSkipped2fa(false);
             dispatch(setActiveScreen('sales'));
-          } catch (offlineErr) {
-            if (offlineErr instanceof NoOfflineCredentialsException) {
-              setError(
-                t(
-                  'offline_login.no_credentials',
-                  'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
-                ),
-              );
-              setOfflineErrorMessage(
-                'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
-              );
-            } else if (offlineErr instanceof OfflineCredentialsExpiredException) {
-              setError(
-                t(
-                  'offline_login.credentials_expired',
-                  'Tu acceso offline expiró. Conectate a internet para renovar.',
-                ),
-              );
-              setOfflineErrorMessage(
-                'Tu acceso offline expiró. Conectate a internet para renovar.',
-              );
-            } else if (offlineErr instanceof OfflineTokenRevokedException) {
-              setError(
-                t(
-                  'offline_login.token_revoked',
-                  'Esta cuenta fue deshabilitada. Contactá al manager.',
-                ),
-              );
-              setOfflineErrorMessage(
-                'Esta cuenta fue deshabilitada. Contactá al manager.',
-              );
-            } else {
-              setError(t('auth.connection_error'));
-            }
+          } catch (_offlineErr) {
+            // Server is down AND offline fallback also failed.  The primary
+            // problem is connectivity — show a connection error regardless
+            // of the specific offline failure (no credentials, expired,
+            // token revoked, etc.).  Those details are only meaningful when
+            // the user explicitly chose offline mode via isStrictlyOffline.
+            setError(t('auth.connection_error'));
+            setOfflineErrorMessage(t('auth.connection_error'));
           }
         } else if (err instanceof NoOfflineCredentialsException) {
           setError(
@@ -334,40 +308,11 @@ export function useLoginPage(): UseLoginPageReturn {
           );
           setOfflineLoginSkipped2fa(false);
           dispatch(setActiveScreen('sales'));
-        } catch (offlineErr) {
-          if (offlineErr instanceof NoOfflineCredentialsException) {
-            setError(
-              t(
-                'offline_login.no_credentials',
-                'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
-              ),
-            );
-            setOfflineErrorMessage(
-              'No puedes entrar sin conexión. Conectate a internet la primera vez que uses este dispositivo.',
-            );
-          } else if (offlineErr instanceof OfflineCredentialsExpiredException) {
-            setError(
-              t(
-                'offline_login.credentials_expired',
-                'Tu acceso offline expiró. Conectate a internet para renovar.',
-              ),
-            );
-            setOfflineErrorMessage(
-              'Tu acceso offline expiró. Conectate a internet para renovar.',
-            );
-          } else if (offlineErr instanceof OfflineTokenRevokedException) {
-            setError(
-              t(
-                'offline_login.token_revoked',
-                'Esta cuenta fue deshabilitada. Contacta al manager.',
-              ),
-            );
-            setOfflineErrorMessage(
-              'Esta cuenta fue deshabilitada. Contacta al manager.',
-            );
-          } else {
-            setError(t('auth.connection_error'));
-          }
+        } catch (_offlineErr) {
+          // Server is down AND offline fallback also failed.  Show a
+          // connectivity error regardless of why offline login failed.
+          setError(t('auth.connection_error'));
+          setOfflineErrorMessage(t('auth.connection_error'));
         }
       } else if (err instanceof NoOfflineCredentialsException) {
         setError(

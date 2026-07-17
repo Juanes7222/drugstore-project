@@ -13,6 +13,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Toaster } from "sileo";
 import { AppShell } from "@/components/common/app-shell";
 import { DatabaseProof } from "@/components/DatabaseProof/database-proof";
+import { Home } from "@/components/Home/home";
 import { SalesTransaction } from "@/components/SalesTransaction/sales-transaction";
 import { PaymentProcessing } from "@/components/PaymentProcessing/payment-processing";
 import { Receipt } from "@/components/Receipt/receipt";
@@ -23,6 +24,7 @@ import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
 import { RecoveryPage } from "@/components/recovery/recovery.page";
 import { AboutPage } from "@/components/update/about.page";
+import { TenantConfigPage } from "@/components/config/tenant-config.page";
 import { UpdateCheckInterceptor } from "@/components/update/update-check-interceptor";
 import { LoginPage } from "@/components/auth/login.page";
 import { ForgotPasswordPage } from "@/components/auth/forgot-password.page";
@@ -195,6 +197,23 @@ const InnerApp: FC = () => {
 
         <div className="flex-1 overflow-hidden">
           <AnimatePresence mode="wait" initial={false}>
+            {activeScreen === "home" && (
+              <motion.div
+                key="home"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <Home />
+              </motion.div>
+            )}
+
             {activeScreen === "sales" && (
               <motion.div
                 key="sales"
@@ -310,7 +329,7 @@ const InnerApp: FC = () => {
                   ease: "easeInOut",
                 }}
               >
-                <AdminPlaceholder />
+                <TenantConfigPage />
               </motion.div>
             )}
 
@@ -401,32 +420,4 @@ export const App: FC = () => {
   );
 };
 
-// ---------------------------------------------------------------------------
-// Admin placeholder (beyond Phase 5)
-// ---------------------------------------------------------------------------
 
-const AdminPlaceholder: FC = () => (
-  <section
-    aria-label="Admin menu"
-    className="flex h-full flex-col items-center justify-center p-pos-md"
-    style={{ backgroundColor: "var(--color-surface)" }}
-  >
-    <div className="pos-panel max-w-md p-pos-xl text-center">
-      <h2
-        className="text-heading font-bold"
-        style={{ color: "var(--color-ink)" }}
-      >
-        Admin / Sync Status
-      </h2>
-      <p
-        className="mt-pos-sm text-body"
-        style={{
-          color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-        }}
-      >
-        Admin configuration and sync status will be available in a future
-        phase.
-      </p>
-    </div>
-  </section>
-);

@@ -54,6 +54,11 @@ import type { SyncMetricsService } from './sync-metrics.service';
 import { createSyncMetricsService } from './sync-metrics.service';
 import { createBackupService, type BackupService } from '../backup/backup.service';
 import type { InvoiceService } from '../fiscal/invoice.service';
+import {
+  createTenantConfigSyncService,
+  type TenantConfigSyncService,
+  type TenantConfigSyncConfig,
+} from '../config/config-sync.service';
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -73,6 +78,8 @@ export interface SyncSchedulerConfig {
   catalog: CatalogSyncConfig;
   lots: LotSyncConfig;
   clients: ClientPullConfig;
+  /** Config for tenant config sync (optional). */
+  tenantConfig?: TenantConfigSyncConfig;
   /** Optional auth token for protected endpoints. */
   accessToken?: string;
   /** Refresh interval in milliseconds (default: 5 minutes). */
@@ -96,6 +103,7 @@ export class SyncScheduler {
   private readonly baseUrl: string;
   private accessToken?: string;
   private configSync: ConfigSyncService;
+  private tenantConfigSync?: TenantConfigSyncService;
   private catalogSync: CatalogSyncService;
   private lotSync: LotSyncService;
   private clientPull: ClientPullService;
@@ -135,6 +143,13 @@ export class SyncScheduler {
     this.backupService = createBackupService();
     this.invoiceService = config.invoiceService;
     this.intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
+
+    if (config.tenantConfig) {
+      this.tenantConfigSync = createTenantConfigSyncService({
+        ...config.tenantConfig,
+        accessToken: config.accessToken ?? config.tenantConfig.accessToken,
+      });
+    }
   }
 
   /**
@@ -154,6 +169,11 @@ export class SyncScheduler {
       baseUrl: this.baseUrl,
       accessToken: token,
       invoiceService: this.invoiceService,
+    });
+    // Also recreate tenant config sync with new token
+    this.tenantConfigSync = createTenantConfigSyncService({
+      baseUrl: this.baseUrl,
+      accessToken: token,
     });
   }
 
@@ -222,6 +242,16 @@ export class SyncScheduler {
       await this.configSync.pullConfiguration();
     } catch {
       // Logged downstream; continue to push regardless.
+    }
+
+    // 0.5. Tenant config — the effective config drives field requirements
+    //       and workflow decisions for downstream operations.
+    if (this.tenantConfigSync) {
+      try {
+        await this.tenantConfigSync.pullTenantConfig();
+      } catch {
+        // Swallow — the store keeps the last known config.
+      }
     }
 
     // 1. Push pending local operations (delegated to SyncPushService)

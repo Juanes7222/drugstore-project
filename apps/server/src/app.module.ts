@@ -17,6 +17,7 @@ import { LicensingModule } from './modules/licensing/licensing.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { UpdatesModule } from './modules/updates/updates.module';
+import { TenantConfigModule } from './modules/tenant-config/tenant-config.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { UpdatesModule } from './modules/updates/updates.module';
     SalesPosModule,
     SyncModule,
     UpdatesModule,
+    TenantConfigModule,
     PrismaModule,
   ],
 })

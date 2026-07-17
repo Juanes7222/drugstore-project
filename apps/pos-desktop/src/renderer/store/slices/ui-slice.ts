@@ -28,7 +28,7 @@ const initialPrescriptionFlow: PrescriptionFlowState = {
 };
 
 const initialState: UiState = {
-  activeScreen: "sales",
+  activeScreen: "home",
   saleCompletionPhase: "idle",
   prescriptionFlow: initialPrescriptionFlow,
 };
@@ -75,12 +75,20 @@ export const uiSlice = createSlice({
       state.activeScreen = "audit-log";
     },
 
+    navigateToHome: (state) => {
+      state.activeScreen = "home";
+    },
+
     navigateToAbout: (state) => {
       state.activeScreen = "about";
     },
 
     navigateToLogin: (state) => {
       state.activeScreen = "login";
+    },
+
+    navigateToSales: (state) => {
+      state.activeScreen = "sales";
     },
 
     navigateToForgotPassword: (state) => {
@@ -157,8 +165,10 @@ export const {
   navigateToRecovery,
   navigateToUserManagement,
   navigateToAuditLog,
+  navigateToHome,
   navigateToAbout,
   navigateToLogin,
+  navigateToSales,
   navigateToForgotPassword,
   navigateToTwoFactorSetup,
   navigateBackToSales,

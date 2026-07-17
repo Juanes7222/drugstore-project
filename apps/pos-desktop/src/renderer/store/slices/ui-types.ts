@@ -3,6 +3,7 @@
  */
 
 export type PosScreen =
+  | "home"
   | "login"
   | "sales"
   | "payment"

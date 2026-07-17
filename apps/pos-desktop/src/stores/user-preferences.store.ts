@@ -9,6 +9,14 @@
  * - `formMemoryOptOuts`: field IDs where auto-complete is disabled
  * - `paletteUsageCount`: number of times palette was opened
  * - `shortcutUsageCount`: number of times shortcuts were used
+ * - `theme`: UI theme preference (LIGHT | DARK | SYSTEM)
+ * - `language`: UI language
+ * - `dateFormat`: date display format
+ * - `timeFormat`: time display format (12H | 24H)
+ * - `soundEnabled`: sound effects toggle
+ * - `receiptFontSize`: receipt print font size
+ * - `keyboardLayout`: keyboard layout preference
+ * - `quickButtons`: product IDs for quick-select buttons
  */
 
 import { create } from "zustand";
@@ -17,6 +25,12 @@ import { persist } from "zustand/middleware";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export type UserTheme = 'LIGHT' | 'DARK' | 'SYSTEM';
+export type DateFormat = 'DD/MM/YYYY' | 'YYYY-MM-DD' | 'MM/DD/YYYY';
+export type TimeFormat = '12H' | '24H';
+export type Language = 'es' | 'en';
+export type KeyboardLayout = 'STANDARD' | 'COMPACT';
 
 export interface UserPreferences {
   /** Suggestion IDs the user has dismissed (persistent across restarts). */
@@ -40,6 +54,32 @@ export interface UserPreferences {
   /** Aggregate counters. */
   paletteUsageCount: number;
   shortcutUsageCount: number;
+
+  // ---- UI Preferences ----
+
+  /** UI theme. */
+  theme: UserTheme;
+
+  /** UI language. */
+  language: Language;
+
+  /** Date display format. */
+  dateFormat: DateFormat;
+
+  /** Time display format. */
+  timeFormat: TimeFormat;
+
+  /** Enable sound effects. */
+  soundEnabled: boolean;
+
+  /** Receipt print font size in points. */
+  receiptFontSize: number;
+
+  /** Keyboard layout preference. */
+  keyboardLayout: KeyboardLayout;
+
+  /** Product IDs for quick-select buttons on the sales screen. */
+  quickButtons: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +132,38 @@ interface UserPreferencesStore extends UserPreferences {
 
   /** Increment shortcut usage counter. */
   incrementShortcutUsage: () => void;
+
+  // ---- UI preference actions ----
+
+  /** Set the UI theme. */
+  setTheme: (theme: UserTheme) => void;
+
+  /** Set the UI language. */
+  setLanguage: (language: Language) => void;
+
+  /** Set the date format. */
+  setDateFormat: (format: DateFormat) => void;
+
+  /** Set the time format. */
+  setTimeFormat: (format: TimeFormat) => void;
+
+  /** Toggle sound effects. */
+  setSoundEnabled: (enabled: boolean) => void;
+
+  /** Set the receipt font size. */
+  setReceiptFontSize: (size: number) => void;
+
+  /** Set the keyboard layout. */
+  setKeyboardLayout: (layout: KeyboardLayout) => void;
+
+  /** Add a product to quick buttons. */
+  addQuickButton: (productId: string) => void;
+
+  /** Remove a product from quick buttons. */
+  removeQuickButton: (productId: string) => void;
+
+  /** Replace all quick buttons. */
+  setQuickButtons: (productIds: string[]) => void;
 }
 
 export const useUserPreferencesStore = create<UserPreferencesStore>()(
@@ -106,6 +178,14 @@ export const useUserPreferencesStore = create<UserPreferencesStore>()(
       formMemoryOptOuts: [],
       paletteUsageCount: 0,
       shortcutUsageCount: 0,
+      theme: 'LIGHT' as UserTheme,
+      language: 'es' as Language,
+      dateFormat: 'DD/MM/YYYY' as DateFormat,
+      timeFormat: '24H' as TimeFormat,
+      soundEnabled: true,
+      receiptFontSize: 10,
+      keyboardLayout: 'STANDARD' as KeyboardLayout,
+      quickButtons: [],
 
       // ---- Actions ----
 
@@ -210,6 +290,54 @@ export const useUserPreferencesStore = create<UserPreferencesStore>()(
           shortcutUsageCount: state.shortcutUsageCount + 1,
         }));
       },
+
+      // ---- UI preference actions ----
+
+      setTheme: (theme: UserTheme) => {
+        set({ theme });
+      },
+
+      setLanguage: (language: Language) => {
+        set({ language });
+      },
+
+      setDateFormat: (format: DateFormat) => {
+        set({ dateFormat: format });
+      },
+
+      setTimeFormat: (format: TimeFormat) => {
+        set({ timeFormat: format });
+      },
+
+      setSoundEnabled: (enabled: boolean) => {
+        set({ soundEnabled: enabled });
+      },
+
+      setReceiptFontSize: (size: number) => {
+        const clamped = Math.max(8, Math.min(20, size));
+        set({ receiptFontSize: clamped });
+      },
+
+      setKeyboardLayout: (layout: KeyboardLayout) => {
+        set({ keyboardLayout: layout });
+      },
+
+      addQuickButton: (productId: string) => {
+        set((state) => {
+          if (state.quickButtons.includes(productId)) return state;
+          return { quickButtons: [...state.quickButtons, productId] };
+        });
+      },
+
+      removeQuickButton: (productId: string) => {
+        set((state) => ({
+          quickButtons: state.quickButtons.filter((id) => id !== productId),
+        }));
+      },
+
+      setQuickButtons: (productIds: string[]) => {
+        set({ quickButtons: productIds });
+      },
     }),
     {
       name: "pos-user-preferences",
@@ -223,6 +351,14 @@ export const useUserPreferencesStore = create<UserPreferencesStore>()(
         formMemoryOptOuts: state.formMemoryOptOuts,
         paletteUsageCount: state.paletteUsageCount,
         shortcutUsageCount: state.shortcutUsageCount,
+        theme: state.theme,
+        language: state.language,
+        dateFormat: state.dateFormat,
+        timeFormat: state.timeFormat,
+        soundEnabled: state.soundEnabled,
+        receiptFontSize: state.receiptFontSize,
+        keyboardLayout: state.keyboardLayout,
+        quickButtons: state.quickButtons,
       }),
     },
   ),
