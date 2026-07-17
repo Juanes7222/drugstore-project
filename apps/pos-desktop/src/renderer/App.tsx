@@ -20,6 +20,7 @@ import { Receipt } from "@/components/Receipt/receipt";
 import { NavigationSidebar } from "@/components/Navigation/navigation-sidebar";
 import { ReturnsPage } from "@/components/returns/returns.page";
 import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inventory-adjustments.page";
+import { ProductsPage } from "@/components/products/products.page";
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
 import { RecoveryPage } from "@/components/recovery/recovery.page";
@@ -66,12 +67,26 @@ const InnerApp: FC = () => {
   // Created in initializeServices() without a token (first launch), then
   // wired up here so that seed data (products, lots, etc.) is pulled from
   // the server immediately after login.
+  //
+  // The token is refreshed on EVERY session change, not just the first one,
+  // so that re-login after token expiry propagates the new token to all
+  // sub-services.  start() is called only once (guarded by isSyncStarted).
   const svc = useServiceContext();
   const isSyncStarted = useRef(false);
+  const prevTokenRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (session?.accessToken && !isSyncStarted.current) {
-      isSyncStarted.current = true;
+    if (!session?.accessToken) return;
+
+    // Update the token in sub-services every time it changes
+    // (including the initial login AND subsequent re-logins).
+    if (session.accessToken !== prevTokenRef.current) {
+      prevTokenRef.current = session.accessToken;
       svc.syncScheduler.updateAccessToken(session.accessToken);
+    }
+
+    // Start the scheduler only once (not on re-login)
+    if (!isSyncStarted.current) {
+      isSyncStarted.current = true;
       svc.syncScheduler.start();
     }
   }, [session?.accessToken, svc]);
@@ -296,6 +311,23 @@ const InnerApp: FC = () => {
                 }}
               >
                 <InventoryAdjustmentsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "products" && (
+              <motion.div
+                key="products"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <ProductsPage />
               </motion.div>
             )}
 

@@ -204,3 +204,4 @@ export interface OfflineLoginResult {
   /** The locally-established offline session. */
   session: OfflineSession;
 }
+

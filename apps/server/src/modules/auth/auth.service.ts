@@ -23,6 +23,7 @@ import { InvalidCredentialsException } from './exceptions/invalid-credentials.ex
 import { AccountLockedException } from './exceptions/account-locked.exception';
 import { AccountInactiveException } from './exceptions/account-inactive.exception';
 import { SessionExpiredException } from './exceptions/session-expired.exception';
+import { UnauthorizedException } from '@nestjs/common';
 import {
   MAX_FAILED_LOGIN_ATTEMPTS,
   ACCOUNT_LOCK_DURATION_MINUTES,
@@ -450,6 +451,165 @@ export class AuthService {
     });
 
     return { accessToken, refreshToken, expiresAt };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Offline token exchange
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Exchange an offline token for fresh credentials.
+   *
+   * This is the fallback mechanism for the SyncScheduler when the access
+   * token has already expired (the standard `POST /auth/refresh` fails
+   * because JwtAuthGuard rejects the expired token).
+   *
+   * The offline token is a long-lived JWT (14–30 days) that this endpoint
+   * validates directly — without requiring a currently-valid access token.
+   * If valid, both access and refresh tokens are rotated, the session's
+   * token hashes are updated in the database, a new offline token is issued
+   * (the old one is revoked for rotation), and the fresh credentials are
+   * returned to the caller.
+   */
+  async exchangeOfflineToken(
+    offlineTokenJwt: string,
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: Date;
+    offlineToken: { token: string; expiresAt: Date };
+  }> {
+    // 1. Verify the offline token signature and claims
+    const claims = this.offlineTokenService.verifyToken(offlineTokenJwt);
+    if (!claims) {
+      throw new UnauthorizedException('Invalid offline token');
+    }
+
+    // 2. Check the revocation list
+    const isRevoked = await this.offlineTokenService.isRevoked(claims.jti);
+    if (isRevoked) {
+      throw new UnauthorizedException('Offline token has been revoked');
+    }
+
+    // 3. Verify user is still active
+    const user = await this.prisma.user.findUnique({
+      where: { id: claims.sub },
+      select: { id: true, isActive: true, status: true, role: true, subscriptionId: true, lockedUntil: true },
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    if (!user.isActive || user.status === 'DISABLED') {
+      await this.offlineTokenService.revokeToken({
+        jti: claims.jti,
+        userId: user.id,
+        reason: 'USER_DISABLED',
+        reasonDetail: 'User account is not active during token exchange',
+      });
+      throw new UnauthorizedException('User account is not active');
+    }
+    const now = new Date();
+    if (user.lockedUntil && user.lockedUntil > now) {
+      throw new UnauthorizedException('User account is locked');
+    }
+
+    // 4. Check user-level revocation since token issuance
+    const tokenIssuedAt = new Date(claims.iat * 1000);
+    const userRevoked = await this.offlineTokenService.isUserRevokedSince(
+      user.id,
+      tokenIssuedAt,
+    );
+    if (userRevoked) {
+      throw new UnauthorizedException('User credentials have been revoked');
+    }
+
+    // 5. Issue fresh tokens
+    const accessTokenTtl = this.configService.get('JWT_ACCESS_TTL_SECONDS')!;
+    const refreshTokenTtl = this.configService.get('JWT_REFRESH_TTL_SECONDS')!;
+
+    const newTokenHash = this.hashToken(crypto.randomBytes(32).toString('hex'));
+    const newRefreshTokenHash = this.hashToken(
+      crypto.randomBytes(32).toString('hex'),
+    );
+
+    const accessExpiresAt = new Date(now.getTime() + accessTokenTtl * 1000);
+    const refreshExpiresAt = new Date(now.getTime() + refreshTokenTtl * 1000);
+
+    const accessToken = this.jwtService.sign(
+      {
+        sub: user.id,
+        tokenHash: newTokenHash,
+        jti: crypto.randomUUID(),
+        role: user.role,
+        subscriptionId: user.subscriptionId,
+      },
+      { expiresIn: accessTokenTtl },
+    );
+
+    const refreshToken = this.jwtService.sign(
+      {
+        sub: user.id,
+        refreshTokenHash: newRefreshTokenHash,
+        jti: crypto.randomUUID(),
+      },
+      { expiresIn: refreshTokenTtl },
+    );
+
+    // 6. Update the existing session's token hashes (find by sessionId from claims)
+    const existingSession = await this.prisma.userSession.findFirst({
+      where: {
+        id: claims.sid,
+        status: 'ACTIVE',
+      },
+    });
+
+    if (existingSession) {
+      await this.sessionService.updateSessionTokens(
+        existingSession.id,
+        newTokenHash,
+        newRefreshTokenHash,
+        accessExpiresAt,
+      );
+    }
+
+    // 7. Issue a new offline token (rotation)
+    const locationAccess = await this.prisma.userLocationAccess.findMany({
+      where: { userId: user.id },
+      select: { locationId: true },
+    });
+    const locationIds = locationAccess.map((la) => la.locationId);
+
+    const newOfflineToken = await this.offlineTokenService.issueToken({
+      userId: user.id,
+      role: user.role,
+      subscriptionId: user.subscriptionId,
+      locationIds,
+      workstationId: existingSession?.workstationId ?? '',
+      workstationFingerprint: claims.wfp,
+      sessionId: existingSession?.id ?? crypto.randomUUID(),
+    });
+
+    // 8. Revoke the old offline token (it's been replaced)
+    await this.offlineTokenService.revokeToken({
+      jti: claims.jti,
+      userId: user.id,
+      reason: 'SECURITY_ANOMALY',
+      reasonDetail: 'Replaced by token exchange',
+    });
+
+    this.logger.log(
+      `Offline token exchanged for user ${user.id} (${user.role}), new token expires in ${accessTokenTtl}s`,
+    );
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresAt: accessExpiresAt,
+      offlineToken: {
+        token: newOfflineToken.token,
+        expiresAt: newOfflineToken.expiresAt,
+      },
+    };
   }
 
   // ---------------------------------------------------------------------------

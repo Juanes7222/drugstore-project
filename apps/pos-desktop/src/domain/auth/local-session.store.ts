@@ -34,6 +34,8 @@ export interface LocalSession {
   avatarColor: string | null;
   mustChangePassword: boolean;
   locationIds?: string[];
+  /** Long-lived offline JWT for credential recovery when the access token expires. */
+  offlineToken?: string;
 }
 
 interface LocalSessionState {

@@ -11,6 +11,7 @@ export type PosScreen =
   | "returns"
   | "inventory-adjustments"
   | "prescriptions"
+  | "products"
   | "admin-menu"
   | "sync-health"
   | "recovery"

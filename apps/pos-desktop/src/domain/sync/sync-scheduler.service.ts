@@ -53,6 +53,7 @@ import { createSyncPushService } from './sync-push.service';
 import type { SyncMetricsService } from './sync-metrics.service';
 import { createSyncMetricsService } from './sync-metrics.service';
 import { createBackupService, type BackupService } from '../backup/backup.service';
+import { useSyncAuthStatusStore } from './sync-auth-status.store';
 import type { InvoiceService } from '../fiscal/invoice.service';
 import {
   createTenantConfigSyncService,
@@ -184,15 +185,36 @@ export class SyncScheduler {
   /**
    * Start the periodic sync cycle.
    *
-   * Fires a full cycle immediately, then repeats on `intervalMs`.
+   * 1. Immediately refreshes the access token if needed (before any sync
+   *    operations attempt to use it).
+   * 2. Fires a full cycle immediately.
+   * 3. Repeats on `intervalMs`.
+   *
    * Safe to call multiple times — subsequent calls are no-ops.
    */
   start(): void {
     if (this.timerId !== null) return;
 
-    // Fire immediately (no delay before first tick)
+    // 1. Ensure the token is valid before any sync operations run.
+    //    This is especially important when the session was restored from
+    //    local storage with an expired or near-expiry token — waiting
+    //    for the next scheduled tick could leave the app without a valid
+    //    auth credential for several minutes.
+    if (isOnline()) {
+      // Fire-and-forget; errors are non-fatal (tick will retry).
+      this.refreshAccessToken().catch(() => {
+        /* swallow — the per-step error handling in tick() covers this */
+      });
+    }
+
+    // 2. Fire immediately (no delay before first tick).
+    //    tick() also calls refreshAccessToken as its first step, so the
+    //    call above is a speculative early refresh — if it succeeded the
+    //    tick's own refresh call is a no-op (token is still fresh); if it
+    //    failed the tick retries.
     void this.tick();
 
+    // 3. Schedule periodic repeats.
     this.timerId = setInterval(() => {
       void this.tick();
     }, this.intervalMs);
@@ -222,6 +244,154 @@ export class SyncScheduler {
   // -----------------------------------------------------------------------
 
   /**
+   * Refresh the access token if it is expired or about to expire within the
+   * next sync interval.
+   *
+   * **Primary path:** Tries `POST /auth/refresh` with the current access
+   * token (standard refresh).  This works as long as the access token has
+   * not yet expired — JwtAuthGuard on the server validates it.
+   *
+   * **Fallback path:** If the primary path fails (likely because the access
+   * token has already expired), this falls back to `POST /auth/token/exchange`
+   * using the **offline token** (a long-lived JWT, 14–30 day TTL).  The
+   * exchange endpoint validates the offline token directly without requiring
+   * a valid access token.
+   *
+   * If either path succeeds, the Zustand session store is updated and all
+   * sub-services are re-created with the new token via `updateAccessToken`.
+   * If both fail (e.g., offline token also expired, server unreachable), the
+   * existing (expired) token is kept and individual sync requests will get
+   * 401 — the per-step try/catch in `tick()` handles that gracefully.
+   *
+   * @returns `true` if the token was freshly verified (either still valid
+   *          or successfully refreshed), `false` if no session exists.
+   */
+  private async refreshAccessToken(): Promise<boolean> {
+    const session = useLocalSessionStore.getState().session;
+    if (!session?.refreshToken || !session?.accessToken) {
+      useSyncAuthStatusStore.getState().setNoSession();
+      return false;
+    }
+
+    // Check if the token is still valid for at least one more interval.
+    const msUntilExpiry = session.expiresAt.getTime() - Date.now();
+    const bufferMs = this.intervalMs * 2; // 2x interval as safety margin
+    if (msUntilExpiry > bufferMs) {
+      useSyncAuthStatusStore.getState().setFresh();
+      return true; // Still fresh
+    }
+
+    // ---------------------------------------------------------
+    // Path 1: Standard refresh via POST /auth/refresh
+    // ---------------------------------------------------------
+    try {
+      const response = await fetch(`${this.baseUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({}),
+      });
+
+      if (response.ok) {
+        const data = (await response.json()) as {
+          accessToken: string;
+          refreshToken: string;
+          expiresAt: string;
+        };
+
+        // Update the Zustand store so other parts of the app also see the
+        // new credentials (e.g., the HTTP client in catalog-service-factory).
+        useLocalSessionStore.getState().updateSession({
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+          expiresAt: new Date(data.expiresAt),
+        });
+
+        // Recreate all sub-services with the fresh token.
+        this.updateAccessToken(data.accessToken);
+
+        // Publish auth status for the sync health UI.
+        useSyncAuthStatusStore.getState().setRefreshed();
+
+        return true;
+      } else {
+        // Standard refresh rejected — likely 401 (expired token).
+        useSyncAuthStatusStore.getState().setFailed(
+          `Standard refresh rejected (HTTP ${response.status})`,
+        );
+      }
+    } catch {
+      // Network error — fall through to offline token exchange.
+      useSyncAuthStatusStore.getState().setFailed(
+        'Standard refresh failed (network error) — trying offline exchange',
+      );
+    }
+
+    // ---------------------------------------------------------
+    // Path 2: Fallback — offline token exchange
+    // POST /auth/token/exchange with the long-lived offline token.
+    // ---------------------------------------------------------
+    if (!session.offlineToken) {
+      // No offline token available — nothing more we can do.
+      return false;
+    }
+
+    try {
+      const exchangeResponse = await fetch(
+        `${this.baseUrl}/auth/token/exchange`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ offlineToken: session.offlineToken }),
+        },
+      );
+
+      if (!exchangeResponse.ok) {
+        // Offline token also rejected — user must re-login manually.
+        useSyncAuthStatusStore.getState().setFailed(
+          `Offline token exchange rejected (HTTP ${exchangeResponse.status})`,
+        );
+        return false;
+      }
+
+      type ExchangeResponse = {
+        accessToken: string;
+        refreshToken: string;
+        expiresAt: string;
+        offlineToken: { token: string; expiresAt: string };
+      };
+      const exchangeData =
+        (await exchangeResponse.json()) as ExchangeResponse;
+
+      // Update the Zustand store with fresh credentials (includes new
+      // offline token for future exchanges).
+      useLocalSessionStore.getState().updateSession({
+        accessToken: exchangeData.accessToken,
+        refreshToken: exchangeData.refreshToken,
+        expiresAt: new Date(exchangeData.expiresAt),
+        offlineToken: exchangeData.offlineToken.token,
+      });
+
+      // Recreate all sub-services with the fresh access token.
+      this.updateAccessToken(exchangeData.accessToken);
+
+      // Publish auth status for the sync health UI.
+      useSyncAuthStatusStore.getState().setExchanged();
+
+      return true;
+    } catch {
+      // Network error or server unreachable — the per-step try/catch in
+      // tick() handles 401 responses for individual requests.
+      useSyncAuthStatusStore.getState().setFailed(
+        'Offline token exchange failed (network error)',
+      );
+      return false;
+    }
+  }
+
+  /**
    * Execute one full sync cycle: config → push → catalog → lots → clients.
    *
    * Configuration is pulled first so that payment methods, discount limits,
@@ -235,6 +405,16 @@ export class SyncScheduler {
    */
   private async tick(): Promise<void> {
     if (!isOnline()) return;
+
+    // Refresh the access token if needed before running any sync operations.
+    // If the token could not be refreshed (offline, server error) the
+    // existing token is kept — individual requests will fail with 401 and
+    // be swallowed by their per-step try/catch.
+    try {
+      await this.refreshAccessToken();
+    } catch {
+      // Non-fatal; continue with the current token.
+    }
 
     // 0. Configuration first — business rules (discounts, payment methods,
     //    sync defaults) must be current before anything else runs.

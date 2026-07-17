@@ -572,6 +572,7 @@ function mapServerResponseToSession(
     avatarUrl: response.user.avatarUrl,
     avatarColor: response.user.avatarColor,
     mustChangePassword: response.user.mustChangePassword,
+    offlineToken: response.offlineToken?.token,
   };
 }
 

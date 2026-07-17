@@ -153,6 +153,10 @@ export const useUpdateService = (): Services['updateService'] =>
 export const useClientsService = (): Services['clientsService'] =>
   useServiceContext().clientsService;
 
+/** Convenience hook — returns the ProductService instance. */
+export const useProductService = (): Services['productService'] =>
+  useServiceContext().productService;
+
 /** Convenience hook — returns the SyncScheduler instance. */
 export const useSyncSchedulerService = (): Services['syncScheduler'] =>
   useServiceContext().syncScheduler;

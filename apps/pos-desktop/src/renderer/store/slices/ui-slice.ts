@@ -51,6 +51,10 @@ export const uiSlice = createSlice({
       state.activeScreen = "inventory-adjustments";
     },
 
+    navigateToProducts: (state) => {
+      state.activeScreen = "products";
+    },
+
     navigateToPrescriptions: (state) => {
       state.activeScreen = "prescriptions";
     },
@@ -159,6 +163,7 @@ export const {
   setActiveScreen,
   navigateToReturns,
   navigateToInventoryAdjustments,
+  navigateToProducts,
   navigateToPrescriptions,
   navigateToAdminMenu,
   navigateToSyncHealth,

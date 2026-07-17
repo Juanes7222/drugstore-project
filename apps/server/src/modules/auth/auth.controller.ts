@@ -100,6 +100,30 @@ export class AuthController {
     return this.authService.refreshSession(payload.tokenHash);
   }
 
+  @Post('token/exchange')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Exchange an offline token for fresh credentials (no valid access token required)' })
+  async exchangeOfflineToken(
+    @Body() dto: { offlineToken: string },
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: string;
+    offlineToken: { token: string; expiresAt: string };
+  }> {
+    const result = await this.authService.exchangeOfflineToken(dto.offlineToken);
+
+    return {
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresAt: result.expiresAt.toISOString(),
+      offlineToken: {
+        token: result.offlineToken.token,
+        expiresAt: result.offlineToken.expiresAt.toISOString(),
+      },
+    };
+  }
+
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.NO_CONTENT)

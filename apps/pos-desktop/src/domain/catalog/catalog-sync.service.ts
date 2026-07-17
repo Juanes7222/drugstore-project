@@ -12,15 +12,16 @@
  * records its completion in the shared `sync-metadata` store.
  *
  * ## What it caches
- * - Products (including their barcodes)
+ * - Products (including their barcodes, active price history, and active tax history)
  * - Categories
  * - Pharmaceutical forms
+ * - Tax schemes
  *
- * Price and tax histories are excluded from the local cache; the POS
- * reads the server's authoritative price for every sale confirmation.
+ * Price and tax histories are synced from the server's `currentPrice` and
+ * `currentTax` fields so the POS can display prices and taxes while offline.
  */
 
-import { PrismaClient } from '@pharmacy/database/local';
+import { PrismaClient, Prisma } from '@pharmacy/database/local';
 import { isOnline } from '../../common/is-online';
 import {
   setCatalogLastSyncedAt,
@@ -89,23 +90,30 @@ export class CatalogSyncService {
   /**
    * Pull the full product catalog from the server into the local database.
    *
-   * - Fetches categories, pharmaceutical forms, and paginated products.
+   * - Fetches categories, pharmaceutical forms, tax schemes, and paginated
+   *   products.
    * - Upserts every row inside a single local transaction (all-or-nothing).
    * - Records `catalogLastSyncedAt` on success.
    *
    * Safe to call when offline — returns early without throwing.
    * Safe to call concurrently — conflicts are handled by the single
    * transaction wrapping all upserts.
+   *
+   * Tax schemes are seeded in the local database at init time
+   * (`local-database.ts`) so the app works fully offline.  This sync step
+   * overwrites seed rows with the server's authoritative data (matched by
+   * id).  If the server endpoint is unreachable the seed data survives.
    */
   async pullCatalog(): Promise<void> {
     if (!isOnline()) return;
 
     const authHeaders = this.buildAuthHeaders();
 
-    // Fetch reference data (categories + forms) in parallel
-    const [categories, pharmaceuticalForms] = await Promise.all([
+    // Fetch reference data (categories + forms + tax schemes) in parallel
+    const [categories, pharmaceuticalForms, taxSchemes] = await Promise.all([
       this.http.get<unknown[]>(`${this.baseUrl}/catalog/categories`, authHeaders),
       this.http.get<unknown[]>(`${this.baseUrl}/catalog/pharmaceutical-forms`, authHeaders),
+      this.fetchTaxSchemes(authHeaders),
     ]);
 
     // Fetch all products — paginate through the server
@@ -128,6 +136,15 @@ export class CatalogSyncService {
           where: { id: form.id },
           create: mapPharmaceuticalFormForCreate(form),
           update: mapPharmaceuticalFormForUpdate(form),
+        });
+      }
+
+      // Upsert tax schemes
+      for (const ts of taxSchemes as TaxSchemeRow[]) {
+        await tx.taxScheme.upsert({
+          where: { id: ts.id },
+          create: mapTaxSchemeForCreate(ts),
+          update: mapTaxSchemeForUpdate(ts),
         });
       }
 
@@ -155,10 +172,67 @@ export class CatalogSyncService {
             });
           }
         }
+
+        // Sync active price history (two-step: create history, then point to it)
+        if (prod.currentPrice) {
+          await tx.productPriceHistory.upsert({
+            where: { id: prod.currentPrice.id },
+            create: mapPriceHistoryForCreate(prod.currentPrice),
+            update: mapPriceHistoryForUpdate(prod.currentPrice),
+          });
+          await tx.product.update({
+            where: { id: prod.id },
+            data: { currentPriceId: prod.currentPrice.id },
+          });
+        }
+
+        // Sync active tax history (two-step: create history, then point to it)
+        // Assumes the referenced TaxScheme was already upserted earlier in
+        // this same transaction (from the taxSchemes fetch).  If fetchTaxSchemes
+        // returned empty but a product references a scheme, the FK constraint
+        // will cause the transaction to roll back — which is the correct
+        // outcome for inconsistent server data.
+        if (prod.currentTax) {
+          await tx.productTaxHistory.upsert({
+            where: { id: prod.currentTax.id },
+            create: mapTaxHistoryForCreate(prod.currentTax),
+            update: mapTaxHistoryForUpdate(prod.currentTax),
+          });
+          await tx.product.update({
+            where: { id: prod.id },
+            data: { currentTaxHistoryId: prod.currentTax.id },
+          });
+        }
       }
     });
 
     setCatalogLastSyncedAt(new Date().toISOString());
+  }
+
+  /**
+   * Pull tax schemes from the server.
+   *
+   * Fetches `GET /catalog/tax-schemes` and upserts every row locally.
+   * If the endpoint is unreachable or returns no data, no rows are written
+   * — the local seed data (inserted at database init time) stays in place.
+   */
+  async pullTaxSchemes(): Promise<void> {
+    if (!isOnline()) return;
+
+    const authHeaders = this.buildAuthHeaders();
+    const schemes = await this.fetchTaxSchemes(authHeaders);
+
+    if (schemes.length === 0) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const ts of schemes as TaxSchemeRow[]) {
+        await tx.taxScheme.upsert({
+          where: { id: ts.id },
+          create: mapTaxSchemeForCreate(ts),
+          update: mapTaxSchemeForUpdate(ts),
+        });
+      }
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -170,6 +244,28 @@ export class CatalogSyncService {
       return { Authorization: `Bearer ${this.accessToken}` };
     }
     return {};
+  }
+
+  /**
+   * Fetch tax schemes from the server.
+   * Returns an empty array when the endpoint is unreachable or returns
+   * a non-OK status — no fallback seed data.
+   */
+  private async fetchTaxSchemes(
+    authHeaders: Record<string, string>,
+  ): Promise<unknown[]> {
+    try {
+      const response = await fetch(
+        `${this.baseUrl}/catalog/tax-schemes`,
+        { headers: authHeaders },
+      );
+      if (response.ok) {
+        return (await response.json()) as unknown[];
+      }
+    } catch {
+      // Server unreachable — return empty; table keeps last known state.
+    }
+    return [];
   }
 
   /**
@@ -266,6 +362,10 @@ interface ProductRow {
   updatedAt: string;
   createdById: string;
   barcodes?: BarcodeRow[];
+  /** Active price history record from the server (or null). */
+  currentPrice: PriceHistoryRow | null;
+  /** Active tax history record from the server (or null). */
+  currentTax: TaxHistoryRow | null;
 }
 
 interface BarcodeRow {
@@ -273,6 +373,47 @@ interface BarcodeRow {
   barcode: string;
   barcodeType: string;
   isPrimary: boolean;
+}
+
+/** Minimal shape of the server's `currentPrice` embedded in each product. */
+interface PriceHistoryRow {
+  id: string;
+  productId: string;
+  price: string | number;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  changedById: string;
+  changedAt: string;
+  changeReason: string | null;
+  previousPriceHistoryId: string | null;
+}
+
+/** Minimal shape of the server's `currentTax` embedded in each product. */
+interface TaxHistoryRow {
+  id: string;
+  productId: string;
+  taxSchemeId: string;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  changedById: string;
+  changedAt: string;
+  changeReason: string | null;
+  previousTaxHistoryId: string | null;
+}
+
+/** Minimal shape for tax scheme rows returned by the server. */
+interface TaxSchemeRow {
+  id: string;
+  code: string;
+  name: string;
+  taxType: string;
+  rate: number;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdById: string;
 }
 
 // Mapping helpers — keep Prisma create/update args separate so a schema
@@ -300,6 +441,71 @@ const mapPharmaceuticalFormForCreate = (form: PharmaceuticalFormRow): any => ({
 const mapPharmaceuticalFormForUpdate = (form: PharmaceuticalFormRow): any => ({
   name: form.name,
   sortOrder: form.sortOrder,
+});
+
+const mapTaxSchemeForCreate = (ts: TaxSchemeRow): any => ({
+  id: ts.id,
+  code: ts.code,
+  name: ts.name,
+  taxType: ts.taxType,
+  rate: ts.rate,
+  effectiveFrom: new Date(ts.effectiveFrom),
+  effectiveTo: ts.effectiveTo ? new Date(ts.effectiveTo) : null,
+  isActive: ts.isActive,
+  createdAt: new Date(ts.createdAt),
+  updatedAt: new Date(ts.updatedAt),
+  createdById: ts.createdById,
+});
+
+const mapTaxSchemeForUpdate = (ts: TaxSchemeRow): any => ({
+  code: ts.code,
+  name: ts.name,
+  taxType: ts.taxType,
+  rate: ts.rate,
+  effectiveFrom: new Date(ts.effectiveFrom),
+  effectiveTo: ts.effectiveTo ? new Date(ts.effectiveTo) : null,
+  isActive: ts.isActive,
+  updatedAt: new Date(ts.updatedAt),
+});
+
+const mapPriceHistoryForCreate = (price: PriceHistoryRow): any => ({
+  id: price.id,
+  productId: price.productId,
+  price: new Prisma.Decimal(price.price),
+  effectiveFrom: new Date(price.effectiveFrom),
+  effectiveTo: price.effectiveTo ? new Date(price.effectiveTo) : null,
+  changedById: price.changedById,
+  changedAt: new Date(price.changedAt),
+  changeReason: price.changeReason,
+  previousPriceHistoryId: price.previousPriceHistoryId,
+});
+
+const mapPriceHistoryForUpdate = (price: PriceHistoryRow): any => ({
+  price: new Prisma.Decimal(price.price),
+  effectiveFrom: new Date(price.effectiveFrom),
+  effectiveTo: price.effectiveTo ? new Date(price.effectiveTo) : null,
+  changedAt: new Date(price.changedAt),
+  changeReason: price.changeReason,
+});
+
+const mapTaxHistoryForCreate = (tax: TaxHistoryRow): any => ({
+  id: tax.id,
+  productId: tax.productId,
+  taxSchemeId: tax.taxSchemeId,
+  effectiveFrom: new Date(tax.effectiveFrom),
+  effectiveTo: tax.effectiveTo ? new Date(tax.effectiveTo) : null,
+  changedById: tax.changedById,
+  changedAt: new Date(tax.changedAt),
+  changeReason: tax.changeReason,
+  previousTaxHistoryId: tax.previousTaxHistoryId,
+});
+
+const mapTaxHistoryForUpdate = (tax: TaxHistoryRow): any => ({
+  taxSchemeId: tax.taxSchemeId,
+  effectiveFrom: new Date(tax.effectiveFrom),
+  effectiveTo: tax.effectiveTo ? new Date(tax.effectiveTo) : null,
+  changedAt: new Date(tax.changedAt),
+  changeReason: tax.changeReason,
 });
 
 const mapProductForCreate = (prod: ProductRow): any => ({

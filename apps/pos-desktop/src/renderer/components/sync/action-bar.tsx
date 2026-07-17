@@ -11,6 +11,7 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { ConnectionStatus } from "./sync-health.types";
+import { AuthStatusBadge } from "./auth-status-badge";
 
 interface ActionBarProps {
   connectionStatus: ConnectionStatus;
@@ -73,6 +74,9 @@ export const ActionBar: FC<ActionBarProps> = ({
 
   return (
     <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+      {/* Auth status badge — shows token refresh state from the SyncScheduler */}
+      <AuthStatusBadge />
+
       {/* Test connection button */}
       <button
         type="button"

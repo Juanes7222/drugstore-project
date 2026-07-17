@@ -365,6 +365,85 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Seed data for offline-first operation
+// ---------------------------------------------------------------------------
+
+/**
+ * Colombian tax schemes — seeded locally so the app works fully offline.
+ * Overwritten by server data when sync runs.
+ */
+const DEFAULT_TAX_SCHEMES = [
+  {
+    id: 'seed-iva-19',
+    code: 'IVA',
+    name: 'IVA 19%',
+    taxType: 'IVA',
+    rate: 0.19,
+  },
+  {
+    id: 'seed-iva-5',
+    code: 'IVA',
+    name: 'IVA 5%',
+    taxType: 'IVA',
+    rate: 0.05,
+  },
+  {
+    id: 'seed-exento',
+    code: 'EXENTO',
+    name: 'Exento',
+    taxType: 'EXENTO',
+    rate: 0.0,
+  },
+  {
+    id: 'seed-inc',
+    code: 'INC',
+    name: 'Impuesto al Consumo (INC)',
+    taxType: 'IMPOCONSUMO',
+    rate: 0.08,
+  },
+] as const;
+
+/**
+ * Insert default tax schemes into the local TaxScheme table if it is empty.
+ *
+ * This runs once on first app startup (or first startup after this code is
+ * deployed) so the product form always has tax scheme options even when
+ * offline.  Server sync later upserts authoritative data by id, overwriting
+ * these seed rows without creating duplicates.
+ */
+async function seedTaxSchemesIfEmpty(client: PGlite): Promise<void> {
+  const hasRows = await client.query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM "TaxScheme"`,
+  );
+  if ((hasRows.rows[0]?.count ?? 0) > 0) return;
+
+  const now = new Date().toISOString();
+
+  for (const scheme of DEFAULT_TAX_SCHEMES) {
+    await client.query(
+      `INSERT INTO "TaxScheme" ("id", "code", "name", "taxType", "rate", "effectiveFrom", "isActive", "createdAt", "updatedAt", "createdById")
+       VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, 'system')
+       ON CONFLICT ("id") DO NOTHING`,
+      [
+        scheme.id,
+        scheme.code,
+        scheme.name,
+        scheme.taxType,
+        scheme.rate,
+        now,
+        now,
+        now,
+      ],
+    );
+  }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[local-database] Seeded ${DEFAULT_TAX_SCHEMES.length} default tax schemes.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -601,6 +680,11 @@ export async function getLocalDatabase(): Promise<{
           console.log(`[local-database] Schema upgraded to v${SCHEMA_VERSION}.`);
         }
       }
+
+      // ---- Seed reference data for offline-first operation ----
+      // Seed tax schemes so the product form works without a server.
+      // Server sync later overwrites these with authoritative data.
+      await seedTaxSchemesIfEmpty(client);
 
       let prisma: unknown;
 

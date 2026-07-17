@@ -178,6 +178,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: InventoryIcon,
   },
   {
+    screen: "products",
+    labelKey: "navigation.products",
+    roles: [RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.OWNER, RoleType.ADMIN],
+    icon: InventoryIcon,
+  },
+  {
     screen: "user-management",
     labelKey: "navigation.user_management",
     roles: [RoleType.MANAGER, RoleType.OWNER],
