@@ -39,6 +39,9 @@ const METADATA_FILE: &str = "metadata.json";
 const CLEAN_SHUTDOWN_SENTINEL: &str = ".clean-shutdown";
 const INTEGRITY_FAILURE_MARKER: &str = ".integrity-failed";
 const DATA_DIR_NAME: &str = "pglite-data";
+/// File name for the JSON data dump written by TypeScript before backup.
+/// Public so the commands module can reference it.
+pub const DUMP_FILE_NAME: &str = "db-dump.json";
 const DEFAULT_RETENTION_DAYS: i64 = 14;
 const DEFAULT_RETENTION_COUNT: usize = 30;
 const DEFAULT_STORAGE_LIMIT_BYTES: u64 = 5 * 1024 * 1024 * 1024; // 5 GiB
@@ -317,6 +320,56 @@ fn data_dir(app: &AppHandle) -> Result<PathBuf, BackupError> {
 
 fn backups_dir(app: &AppHandle) -> Result<PathBuf, BackupError> {
     Ok(app_data_dir(app)?.join(BACKUPS_DIR))
+}
+
+/// Create the data directory if it does not exist.
+pub fn ensure_data_dir(app: &AppHandle) -> Result<PathBuf, BackupError> {
+    let dir = data_dir(app)?;
+    if !dir.exists() {
+        fs::create_dir_all(&dir)
+            .map_err(|e| BackupError::Io(format!("create data dir: {e}")))?;
+    }
+    Ok(dir)
+}
+
+/// Write a file inside the data directory.
+pub fn write_data_dir_file(
+    app: &AppHandle,
+    file_name: &str,
+    contents: &str,
+) -> Result<(), BackupError> {
+    let dir = ensure_data_dir(app)?;
+    let path = dir.join(file_name);
+    fs::write(&path, contents)
+        .map_err(|e| BackupError::Io(format!("write {}: {e}", path.display())))?;
+    log::info!("wrote data-dir file {}", file_name);
+    Ok(())
+}
+
+/// Read a file from the data directory.
+pub fn read_data_dir_file(app: &AppHandle, file_name: &str) -> Result<String, BackupError> {
+    let dir = data_dir(app)?;
+    let path = dir.join(file_name);
+    let contents = fs::read_to_string(&path)
+        .map_err(|e| {
+            if e.kind() == io::ErrorKind::NotFound {
+                BackupError::SourceNotFound(path.display().to_string())
+            } else {
+                BackupError::Io(format!("read {}: {e}", path.display()))
+            }
+        })?;
+    Ok(contents)
+}
+
+/// Delete a file from the data directory. Succeeds if the file does not exist.
+pub fn delete_data_dir_file(app: &AppHandle, file_name: &str) -> Result<(), BackupError> {
+    let dir = data_dir(app)?;
+    let path = dir.join(file_name);
+    if path.exists() {
+        fs::remove_file(&path)
+            .map_err(|e| BackupError::Io(format!("delete {}: {e}", path.display())))?;
+    }
+    Ok(())
 }
 
 fn backup_root(app: &AppHandle, id: &str) -> Result<PathBuf, BackupError> {
@@ -928,6 +981,21 @@ fn create_tar_gz(source_dir: &Path, output_path: &Path) -> Result<(), BackupErro
     tar.append_dir_all(".", source_dir)?;
     tar.finish()?;
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Backup-dump read — verify reads the JSON dump from a stored backup.
+// ---------------------------------------------------------------------------
+
+/// Read the JSON data dump from a stored backup.
+pub fn read_backup_dump(app: &AppHandle, id: &str) -> Result<String, BackupError> {
+    let data_dir = backup_data_dir(app, id)?;
+    let dump_path = data_dir.join(DUMP_FILE_NAME);
+    if !dump_path.exists() {
+        return Err(BackupError::SourceNotFound(dump_path.display().to_string()));
+    }
+    fs::read_to_string(&dump_path)
+        .map_err(|e| BackupError::Io(format!("read backup dump {}: {e}", dump_path.display())))
 }
 
 // ---------------------------------------------------------------------------

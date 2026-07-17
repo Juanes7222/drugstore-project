@@ -8,12 +8,13 @@ use std::path::PathBuf;
 use tauri::{command, AppHandle, State};
 
 use crate::backup::{
-    clear_startup_sentinel, copy_backup_to_temp, create_backup, decrypt_backup, encrypt_backup,
-    get_backup_health, get_backup_summary, list_backups, mark_backup_corrupt, mark_integrity_failure,
-    prune_backups, remove_temp_dir, restore_backup, verify_backup, BackupError, BackupHealthLevel,
-    BackupMetadata, BackupReason, BackupState, BackupSummary, QueueState, RestoreError,
-    RestoreOptions, RestoreReport, RetentionPolicy, StartupHealth, StartupHealthStatus,
-    TempCopyResult, UploadError, VerificationReport,
+    clear_startup_sentinel, copy_backup_to_temp, create_backup, decrypt_backup,
+    delete_data_dir_file, encrypt_backup, get_backup_health, get_backup_summary, list_backups,
+    mark_backup_corrupt, mark_integrity_failure, prune_backups, read_backup_dump, read_data_dir_file,
+    remove_temp_dir, restore_backup, verify_backup, write_data_dir_file, BackupError,
+    BackupHealthLevel, BackupMetadata, BackupReason, BackupState, BackupSummary, QueueState,
+    RestoreError, RestoreOptions, RestoreReport, RetentionPolicy, StartupHealth,
+    StartupHealthStatus, TempCopyResult, UploadError, VerificationReport,
 };
 
 // ---------------------------------------------------------------------------
@@ -182,4 +183,41 @@ pub fn copy_backup_to_temp_command(
 #[command]
 pub fn remove_temp_dir_command(path: String) -> Result<(), BackupError> {
     remove_temp_dir(path)
+}
+
+// ---------------------------------------------------------------------------
+// Data-dir file access (bridge between IndexedDB-backed PGlite and Rust)
+// ---------------------------------------------------------------------------
+
+#[command]
+pub fn write_data_dir_file_command(
+    app: AppHandle,
+    file_name: String,
+    contents: String,
+) -> Result<(), BackupError> {
+    write_data_dir_file(&app, &file_name, &contents)
+}
+
+#[command]
+pub fn read_data_dir_file_command(
+    app: AppHandle,
+    file_name: String,
+) -> Result<String, BackupError> {
+    read_data_dir_file(&app, &file_name)
+}
+
+#[command]
+pub fn delete_data_dir_file_command(
+    app: AppHandle,
+    file_name: String,
+) -> Result<(), BackupError> {
+    delete_data_dir_file(&app, &file_name)
+}
+
+#[command]
+pub fn read_backup_dump_command(
+    app: AppHandle,
+    id: String,
+) -> Result<String, BackupError> {
+    read_backup_dump(&app, &id)
 }
