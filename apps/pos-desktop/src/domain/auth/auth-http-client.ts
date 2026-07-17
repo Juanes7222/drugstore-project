@@ -15,11 +15,21 @@ export function createAuthHttpClient(baseUrl: string): AuthHttpClient {
 
   return {
     post: async <TRes>(path: string, body: unknown): Promise<TRes> => {
-      const response = await fetch(`${apiBase}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${apiBase}${path}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        // fetch threw because the server is unreachable (connection refused,
+        // DNS failure, timeout).  Throw a typed error so the UI can fall
+        // back to offline credentials.
+        throw new NetworkErrorException(
+          err instanceof Error ? err.message : undefined,
+        );
+      }
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
@@ -84,4 +94,4 @@ export function createAuthHttpClient(baseUrl: string): AuthHttpClient {
   };
 }
 
-import { InvalidCredentialsException } from './exceptions';
+import { InvalidCredentialsException, NetworkErrorException } from './exceptions';

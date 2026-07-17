@@ -29,3 +29,19 @@ export class InsufficientRoleException extends DomainError {
     );
   }
 }
+
+/**
+ * Thrown when the server cannot be reached (connection refused, DNS failure,
+ * timeout).  Callers should use this as a signal to attempt offline fallback
+ * rather than showing a generic error.
+ */
+export class NetworkErrorException extends DomainError {
+  constructor(cause?: string) {
+    super(
+      'NETWORK_ERROR',
+      cause
+        ? `Server unreachable — ${cause}`
+        : 'Server unreachable',
+    );
+  }
+}

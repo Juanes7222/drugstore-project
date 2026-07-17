@@ -294,7 +294,27 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
       }
 
       const sessionRole = session.role as RoleType;
-      if (!allowedRoles.includes(sessionRole)) {
+
+      // Direct match
+      if (allowedRoles.includes(sessionRole)) {
+        return session;
+      }
+
+      // Role supersession: higher-level roles implicitly satisfy lower checks.
+      // Matches the server's roles.guard.ts logic.
+      const ROLE_SUPERSEDES: Partial<Record<RoleType, RoleType[]>> = {
+        [RoleType.OWNER]: [RoleType.ADMIN, RoleType.MANAGER, RoleType.ACCOUNTANT, RoleType.INVENTORY_ASSISTANT],
+        [RoleType.SAAS_ADMIN]: [
+          RoleType.OWNER, RoleType.ADMIN, RoleType.MANAGER,
+          RoleType.ACCOUNTANT, RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT,
+        ],
+      };
+
+      const hasRole = allowedRoles.some((required) =>
+        ROLE_SUPERSEDES[sessionRole]?.includes(required) ?? false,
+      );
+
+      if (!hasRole) {
         throw new InsufficientRoleException(allowedRoles.join(' or '));
       }
 

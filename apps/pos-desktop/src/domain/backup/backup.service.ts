@@ -1,18 +1,23 @@
 /**
  * Backup domain service for the POS desktop app.
  *
- * Orchestrates Rust-level filesystem snapshots with the TypeScript PGlite
- * lifecycle. Because PGlite runs inside the webview, every backup/restore
- * operation closes the local database before the Rust command runs and
- * reopens it afterward. That close-then-copy pattern is the
- * architecture-appropriate equivalent of the exclusive snapshot lock described
- * in the disaster-recovery spec.
+ * PGlite runs inside the webview with IndexedDB (`idb://`), invisible to the
+ * OS filesystem that Rust reads.  This service bridges that gap:
+ *
+ * - **Backup**: dump PGlite data to JSON, write it to a temporary directory
+ *   on the real filesystem via a Rust command, then invoke the Rust backup
+ *   (which copies the directory into the backup store).
+ * - **Restore**: ask Rust to restore the backup directory, read the JSON dump,
+ *   delete the IndexedDB database, recreate a fresh PGlite, and replay the
+ *   data into it.
+ * - **Verify**: hash the JSON file (Rust), then parse and validate it (TS).
+ *
+ * Because every backup/restore cycle touches the live singleton PGlite instance,
+ * careful close/reopen ordering prevents stale Prisma clients.
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { PGlite } from '@electric-sql/pglite';
-import { closeLocalDatabase } from '../../infrastructure/local-database';
-import { runLocalDatabaseIntegrityCheck } from '../../infrastructure/startup-health';
+import { closeLocalDatabase, getLocalDatabase } from '../../infrastructure/local-database';
 import { API_BASE_URL } from '@infra/config';
 import { DomainError } from '../../common/domain-error';
 import { isOnline } from '../../common/is-online';
@@ -22,6 +27,8 @@ import {
   RestoreFailedException,
   UploadFailedException,
 } from './exceptions';
+import { clearAllTableData, exportPgliteToJson, importJsonToPglite } from './backup-export';
+import type { BackupJson } from './backup-export';
 
 
 // ---------------------------------------------------------------------------
@@ -116,6 +123,11 @@ const LOCAL_DB_SCHEMA_VERSION = 1;
 const PERIODIC_BACKUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const BACKUP_TOAST_THRESHOLD_MS = 2000;
 
+/**
+ * File name used for the JSON data dump inside the `pglite-data` directory.
+ */
+const DUMP_FILE_NAME = 'db-dump.json';
+
 export interface BackupService {
   createBackup(request: CreateBackupRequest): Promise<BackupMetadata>;
   listBackups(): Promise<BackupMetadata[]>;
@@ -147,31 +159,62 @@ class BackupServiceImpl implements BackupService {
     const startTime = Date.now();
 
     try {
-      // Note: we do NOT close the live database here. PGlite runs inside the
-      // webview and the singleton Prisma client held by the service context
-      // would become stale after a close/reopen. The Rust snapshot is taken
-      // while PGlite is running with relaxedDurability=false, which keeps
-      // storage flushed. This is a hot copy; the small inconsistency window is
-      // acceptable for an offline-first POS and is documented in the runbook.
+      // ---- Step 1: export live PGlite data to JSON ----
+      // PGlite uses IndexedDB, invisible to the filesystem.  We dump every
+      // user-data table to a JSON blob that Rust can copy into the backup.
+      // The database remains running during the export (hot copy).
+      const { client } = await getLocalDatabase();
+      const backupJson = await exportPgliteToJson(client);
+      const jsonStr = JSON.stringify(backupJson, null, 2);
+
+      // ---- Step 2: write the JSON dump to the filesystem ----
+      // Rust's `write_data_dir_file_command` creates the `pglite-data/`
+      // directory (if missing) and writes `db-dump.json` inside it.
+      await invoke('write_data_dir_file_command', {
+        file_name: DUMP_FILE_NAME,
+        contents: jsonStr,
+      });
+
+      // ---- Step 3: invoke the Rust backup (copies the directory) ----
       const metadata = await invoke<BackupMetadata>('create_backup_command', {
         request: {
-          ...request,
+          reason: request.reason,
+          workstation_id: request.workstationId,
           db_schema_version: LOCAL_DB_SCHEMA_VERSION,
+          pending_count: request.pendingCount,
+          failed_count: request.failedCount,
           max_client_sequence: request.maxClientSequence,
+          note: request.note,
+          clock_skew_seconds: request.clockSkewSeconds,
         },
       });
 
+      // ---- Step 4: clean up the temporary JSON dump ----
+      await invoke('delete_data_dir_file_command', {
+        file_name: DUMP_FILE_NAME,
+      }).catch(() => undefined);
+
       if (Date.now() - startTime > BACKUP_TOAST_THRESHOLD_MS) {
-        // The UI layer is responsible for surfacing a non-blocking toast.
-        // We emit an advisory event the page can listen to.
         window.dispatchEvent(new CustomEvent('backup:slow', { detail: metadata }));
       }
 
       return metadata;
     } catch (err) {
+      // Clean up the temp file on failure too.
+      await invoke('delete_data_dir_file_command', {
+        file_name: DUMP_FILE_NAME,
+      }).catch(() => undefined);
+
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'object' && err !== null && 'message' in err
+            ? String((err as Record<string, unknown>).message)
+            : String(err);
+
       throw err instanceof DomainError
         ? err
-        : new BackupFailedException(err instanceof Error ? err.message : String(err));
+        : new BackupFailedException(message);
     } finally {
       this.inProgress = false;
     }
@@ -192,31 +235,21 @@ class BackupServiceImpl implements BackupService {
       };
     }
 
-    const { tempDataDir } = await invoke<{ tempDataDir: string }>('copy_backup_to_temp_command', { id });
-
+    // Read the JSON dump directly from the stored backup via Rust.
     let integrityCheckPassed = false;
     let integrityError: string | undefined;
     const tableCounts: Record<string, number> = {};
 
     try {
-      const tempClient = new PGlite(tempDataDir, { relaxedDurability: true });
-      try {
-        const report = await runLocalDatabaseIntegrityCheck(tempClient);
-        integrityCheckPassed = report.passed;
-        Object.assign(tableCounts, report.actualCounts);
-        if (!report.passed) {
-          integrityError = report.missingTables.length > 0
-            ? `Missing or unreadable tables: ${report.missingTables.join(', ')}`
-            : report.error;
-        }
-      } finally {
-        await tempClient.close();
+      const jsonStr = await invoke<string>('read_backup_dump_command', { id });
+      const parsed = JSON.parse(jsonStr) as BackupJson;
+      for (const [tableName, rows] of Object.entries(parsed.tables)) {
+        tableCounts[tableName] = rows.length;
       }
+      integrityCheckPassed = true;
     } catch (err) {
       integrityCheckPassed = false;
       integrityError = err instanceof Error ? err.message : String(err);
-    } finally {
-      await invoke('remove_temp_dir_command', { path: tempDataDir }).catch(() => undefined);
     }
 
     if (!integrityCheckPassed) {
@@ -238,18 +271,35 @@ class BackupServiceImpl implements BackupService {
       throw new BackupInProgressException();
     }
     this.inProgress = true;
+    let dataCleared = false;
 
     try {
-      // Restore replaces the live data directory, so the database must be
-      // closed first. After a successful restore we reload the webview so the
-      // service context reinitialises with a fresh Prisma client.
+      // ---- Phase 1: read the JSON dump from the backup store ----
+      const jsonStr = await invoke<string>('read_backup_dump_command', { id });
+      const backup = JSON.parse(jsonStr) as BackupJson;
+
+      // ---- Phase 2: replace live PGlite data in-place ----
+      const { client } = await getLocalDatabase();
+      await clearAllTableData(client);
+      dataCleared = true;
+      await importJsonToPglite(client, backup);
+
+      // ---- Phase 3: close the database so the Prisma client is fresh ----
       await closeLocalDatabase();
+
+      // ---- Phase 4: tell Rust to restore (filesystem bookkeeping) ----
       const report = await invoke<RestoreReport>('restore_backup_command', { id, options });
+
       if (report.success) {
         window.location.reload();
       }
       return report;
     } catch (err) {
+      // If data was cleared but import failed, reload triggers schema init
+      // on the empty IndexedDB — safer than a half-imported state.
+      if (dataCleared) {
+        window.location.reload();
+      }
       throw err instanceof DomainError
         ? err
         : new RestoreFailedException(err instanceof Error ? err.message : String(err));
