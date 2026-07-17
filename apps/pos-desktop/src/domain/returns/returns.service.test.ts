@@ -4,7 +4,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { ReturnsService, createReturnsService, type CreateReturnInput } from "./returns.service";
 import { SaleForReturnNotFoundException, SaleNotConfirmedForReturnException, ReturnQuantityExceedsSaleException, ReturnSaleItemNotFoundException, ReturnNotInDraftException, ReturnNotFoundException, ReturnStockReversalFailedException } from "./exceptions";
-import { RoleType } from "@pharmacy/shared-types";
 import { Prisma } from "@pharmacy/database/local";
 
 // ---------------------------------------------------------------------------
@@ -168,7 +167,7 @@ describe("ReturnsService", () => {
         items: [{ lots: [] }],
       });
 
-      const result = await service.create(validCreateInput);
+      const result = await service.create(validCreateInput) as { state: string };
 
       expect(auth.requireRole).toHaveBeenCalledWith("CASHIER", "ADMIN");
       expect(result.state).toBe("DRAFT");

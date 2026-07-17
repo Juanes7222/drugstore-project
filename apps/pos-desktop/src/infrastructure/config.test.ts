@@ -6,7 +6,7 @@
  * and `vi.resetModules()` to force re-evaluation of the module on each
  * import, so each test can verify the correct default or overridden value.
  */
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 
 describe("config", () => {
   beforeEach(() => {

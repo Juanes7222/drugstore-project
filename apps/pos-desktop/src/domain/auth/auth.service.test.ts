@@ -6,6 +6,7 @@ import { createAuthService, type AuthService } from "./auth.service";
 import { useLocalSessionStore, type LocalSession } from "./local-session.store";
 import { InvalidCredentialsException, NoActiveSessionException, InsufficientRoleException } from "./exceptions";
 import type { AuthHttpClient } from "./auth-http-client";
+import { RoleType } from "@pharmacy/shared-types";
 
 // ---------------------------------------------------------------------------
 // Factory helpers
@@ -217,13 +218,13 @@ describe("AuthService", () => {
         makeLocalSession({ role: "ADMIN" }),
       );
 
-      const session = auth.requireRole("ADMIN", "MANAGER");
+      const session = auth.requireRole(RoleType.ADMIN, RoleType.MANAGER);
 
       expect(session.role).toBe("ADMIN");
     });
 
     it("throws NoActiveSessionException when there is no session", () => {
-      expect(() => auth.requireRole("CASHIER")).toThrow(NoActiveSessionException);
+      expect(() => auth.requireRole(RoleType.CASHIER)).toThrow(NoActiveSessionException);
     });
 
     it("throws InsufficientRoleException when the role is not in the allowed list", () => {
@@ -231,7 +232,7 @@ describe("AuthService", () => {
         makeLocalSession({ role: "CASHIER" }),
       );
 
-      expect(() => auth.requireRole("ADMIN")).toThrow(InsufficientRoleException);
+      expect(() => auth.requireRole(RoleType.ADMIN)).toThrow(InsufficientRoleException);
     });
   });
 
@@ -342,7 +343,7 @@ describe("AuthService", () => {
         auth.requestStepUp({
           operationType: "CLOSE_SHIFT",
           workstationId: "ws-1",
-          requiredRole: "MANAGER",
+          requiredRole: RoleType.MANAGER,
         }),
       ).rejects.toThrow(NoActiveSessionException);
     });
@@ -357,7 +358,7 @@ describe("AuthService", () => {
       const result = await auth.requestStepUp({
         operationType: "CLOSE_SHIFT",
         workstationId: "ws-1",
-        requiredRole: "MANAGER",
+        requiredRole: RoleType.MANAGER,
       });
 
       expect(http.postWithAuth).toHaveBeenCalledWith(
@@ -380,7 +381,7 @@ describe("AuthService", () => {
         operationType: "VOID_INVOICE",
         operationId: "inv-1",
         workstationId: "ws-1",
-        requiredRole: "MANAGER",
+        requiredRole: RoleType.MANAGER,
         method: "PIN",
       });
 

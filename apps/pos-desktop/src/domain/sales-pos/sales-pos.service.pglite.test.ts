@@ -167,7 +167,7 @@ describe("PGlite schema bootstrapping", () => {
       ORDER BY table_name;
     `);
     const tables = result.rows.map(
-      (r: Record<string, unknown>) => r.table_name as string,
+      (r: unknown) => (r as Record<string, unknown>).table_name as string,
     );
 
     expect(tables).toContain("Sale");
@@ -200,7 +200,7 @@ describe("PGlite schema bootstrapping", () => {
       ORDER BY t.typname;
     `);
     const enums = result.rows.map(
-      (r: Record<string, unknown>) => r.enum_name as string,
+      (r: unknown) => (r as Record<string, unknown>).enum_name as string,
     );
 
     expect(enums).toContain("SaleOperationalState");
@@ -401,8 +401,6 @@ describe("PGlite data integrity", () => {
     it("creates payment records linked to a sale", async () => {
       const sale = await insertSale(pg, seeds);
       const paymentId = crypto.randomUUID();
-      const now = new Date().toISOString();
-
       await pg.exec(`
         INSERT INTO "SalePayment" (id, "saleId", "paymentMethodId", "amount")
         VALUES ('${paymentId}', '${sale.id as string}', '${seeds.paymentMethodId}', 11900);

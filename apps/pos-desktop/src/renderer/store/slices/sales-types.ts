@@ -22,6 +22,13 @@ export interface CartItem {
   quantity: number;
 }
 
+export interface SelectedClient {
+  id: string;
+  name: string;
+  identification: string;
+}
+
 export interface SalesState {
   items: CartItem[];
+  selectedClient: SelectedClient | null;
 }

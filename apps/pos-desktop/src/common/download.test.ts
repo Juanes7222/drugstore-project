@@ -16,8 +16,8 @@ describe("downloadBlob", () => {
     click = vi.fn();
     mockAnchor = { href: "", download: "", click };
 
-    global.URL.createObjectURL = createObjectURL;
-    global.URL.revokeObjectURL = revokeObjectURL;
+    (globalThis as any).URL.createObjectURL = createObjectURL;
+    (globalThis as any).URL.revokeObjectURL = revokeObjectURL;
 
     document.createElement = vi.fn((tagName: string) => {
       if (tagName === "a") {

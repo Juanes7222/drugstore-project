@@ -9,13 +9,7 @@ import {
   MAX_RECENT_ITEMS,
   type SearchIndexService,
 } from "./search-index.service";
-import type {
-  IndexableItem,
-  IndexablePage,
-  IndexableProduct,
-  IndexableClient,
-  IndexableCommand,
-} from "./assistant-types";
+import type { IndexablePage } from "./assistant-types";
 
 // We'll supply a simple mock for the DB calls the service makes internally
 vi.mock("../../infrastructure/local-database", () => ({
@@ -114,7 +108,7 @@ describe("SearchIndexService", () => {
       // Build as cashier — should exclude manager commands
       await service.build("CASHIER");
 
-      const results = service.search("devolver");
+      service.search("devolver");
       // Cashier shouldn't see manager-only commands
       expect(service.isBuilt).toBe(true);
     });

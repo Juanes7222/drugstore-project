@@ -77,32 +77,6 @@ function createSyncReader(chunks: Uint8Array[]): ReadableStreamDefaultReader<Uin
   } as unknown as ReadableStreamDefaultReader<Uint8Array>;
 }
 
-/**
- * A reader that blocks on a gate promise — useful for pause/cancel tests.
- */
-function createGateReader(
-  chunks: Uint8Array[],
-  gate: { promise: Promise<void>; resolve: () => void },
-): ReadableStreamDefaultReader<Uint8Array> {
-  let index = 0;
-  let gatePassed = false;
-  return {
-    read: vi.fn().mockImplementation(async () => {
-      if (!gatePassed) {
-        gatePassed = true;
-        await gate.promise;
-      }
-      if (index < chunks.length) {
-        return { done: false, value: chunks[index++] };
-      }
-      return { done: true, value: undefined };
-    }),
-    cancel: vi.fn().mockResolvedValue(undefined),
-    releaseLock: vi.fn(),
-    closed: Promise.resolve(undefined),
-  } as unknown as ReadableStreamDefaultReader<Uint8Array>;
-}
-
 function makeEmptyBodyResponse(status: number, statusText: string): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -546,7 +520,8 @@ describe("DownloadManager", () => {
       const chunk = new Uint8Array(256);
       const reader = createSyncReader([chunk]);
       vi.spyOn(globalThis, "fetch").mockImplementation(
-        async (url: string) => {
+        async (input: RequestInfo | URL) => {
+          const url = typeof input === "string" ? input : input.toString();
           if (url.startsWith("blob:")) {
             return new Response(chunk, { status: 200 });
           }
@@ -588,14 +563,6 @@ describe("DownloadManager", () => {
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------
-
-function createGate(): { promise: Promise<void>; resolve: () => void } {
-  let resolve: () => void = () => {};
-  const promise = new Promise<void>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
 
 function makeProgress() {
   return {

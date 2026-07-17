@@ -118,7 +118,7 @@ describe("PrintRouter", () => {
         { baseUrl: "http://server:3000", authToken: "token-123" },
       );
 
-      global.fetch = vi.fn().mockResolvedValueOnce({ ok: true });
+      (globalThis as any).fetch = vi.fn().mockResolvedValueOnce({ ok: true });
 
       const result = await routerWithServer.tryServerFallback(
         PrintJobType.SALE_RECEIPT,
@@ -126,7 +126,7 @@ describe("PrintRouter", () => {
       );
 
       expect(result).toBe(true);
-      expect(global.fetch).toHaveBeenCalledWith(
+      expect((globalThis as any).fetch).toHaveBeenCalledWith(
         "http://server:3000/print/fallback",
         expect.objectContaining({
           method: "POST",
@@ -144,7 +144,7 @@ describe("PrintRouter", () => {
         { baseUrl: "http://server:3000" },
       );
 
-      global.fetch = vi.fn().mockRejectedValueOnce(new Error("Network error"));
+      (globalThis as any).fetch = vi.fn().mockRejectedValueOnce(new Error("Network error"));
 
       const result = await routerWithServer.tryServerFallback(
         PrintJobType.SALE_RECEIPT,

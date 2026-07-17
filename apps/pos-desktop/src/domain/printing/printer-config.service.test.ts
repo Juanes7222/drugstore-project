@@ -11,14 +11,14 @@ import {
   JobTypeAlreadyAssignedException,
   FallbackCycleException,
 } from "./exceptions";
-import { PrinterType, PrinterConnection, PaperSize, type PrinterConfigInput } from "./printing-types";
+import { PrinterType, PrinterConnection, PaperSize, PrintJobType, PrinterStatusCode, type PrinterConfigInput } from "./printing-types";
 
 function createMockPrisma() {
   const store = new Map<string, any>();
 
   return {
     printerConfig: {
-      findMany: vi.fn(async (args?: any) => Array.from(store.values())),
+      findMany: vi.fn(async (_args?: any) => Array.from(store.values())),
       findUnique: vi.fn(async ({ where: { id } }: { where: { id: string } }) =>
         store.get(id) ?? null,
       ),
@@ -191,13 +191,13 @@ describe("PrinterConfigService", () => {
     it("returns the printer assigned to a job type", async () => {
       await service.create(validInput);
 
-      const printer = await service.getPrinterForJobType("SALE_RECEIPT");
+      const printer = await service.getPrinterForJobType(PrintJobType.SALE_RECEIPT);
       expect(printer).not.toBeNull();
-      expect(printer!.assignedJobs).toContain("SALE_RECEIPT");
+      expect(printer!.assignedJobs).toContain(PrintJobType.SALE_RECEIPT);
     });
 
     it("returns null when no printer is assigned", async () => {
-      const printer = await service.getPrinterForJobType("LABEL_PRINT");
+      const printer = await service.getPrinterForJobType(PrintJobType.LABEL_PRINT);
       expect(printer).toBeNull();
     });
   });
@@ -206,7 +206,7 @@ describe("PrinterConfigService", () => {
     it("returns the primary printer without fallback when online", async () => {
       const created = await service.create(validInput);
 
-      const result = await service.resolvePrinterWithFallback("SALE_RECEIPT", [
+      const result = await service.resolvePrinterWithFallback(PrintJobType.SALE_RECEIPT, [
         created.id,
       ]);
       expect(result).not.toBeNull();
@@ -215,7 +215,7 @@ describe("PrinterConfigService", () => {
     });
 
     it("returns null when no printer configured for job type", async () => {
-      const result = await service.resolvePrinterWithFallback("LABEL_PRINT");
+      const result = await service.resolvePrinterWithFallback(PrintJobType.LABEL_PRINT);
       expect(result).toBeNull();
     });
   });
@@ -224,16 +224,16 @@ describe("PrinterConfigService", () => {
     it("updates the printer status", async () => {
       const created = await service.create(validInput);
 
-      await service.updateStatus(created.id, "ONLINE");
+      await service.updateStatus(created.id, PrinterStatusCode.ONLINE);
 
       const printer = await service.getById(created.id);
-      expect(printer.status).toBe("ONLINE");
+      expect(printer.status).toBe(PrinterStatusCode.ONLINE);
     });
 
     it("sets lastErrorMessage when provided", async () => {
       const created = await service.create(validInput);
 
-      await service.updateStatus(created.id, "ERROR", "Paper jam");
+      await service.updateStatus(created.id, PrinterStatusCode.ERROR, "Paper jam");
 
       const printer = await service.getById(created.id);
       expect(printer.lastErrorMessage).toBe("Paper jam");

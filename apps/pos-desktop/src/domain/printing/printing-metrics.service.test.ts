@@ -34,7 +34,7 @@ function createMockPrisma() {
       }),
     },
     printerConfig: {
-      findMany: vi.fn(async (args?: any) => [
+      findMany: vi.fn(async (_args?: any) => [
         { status: "ONLINE" },
         { status: "ONLINE" },
         { status: "OFFLINE" },

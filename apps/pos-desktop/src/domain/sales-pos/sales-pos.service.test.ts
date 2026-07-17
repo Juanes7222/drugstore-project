@@ -4,7 +4,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { SalesPosService, createSalesPosService, type CreateSaleInput, type ConfirmSaleInput } from "./sales-pos.service";
 import { SaleNotInProgressException, PrescriptionRequiredNotSupportedException, PaymentAmountMismatchException, ChangeRequiresCashPaymentException, SaleNotFoundException } from "./exceptions";
-import { RoleType } from "@pharmacy/shared-types";
 import { Prisma } from "@pharmacy/database/local";
 
 // ---------------------------------------------------------------------------
@@ -163,7 +162,7 @@ describe("SalesPosService", () => {
         items: [{ id: "item-1", productId: "prod-1", quantity: 2 }],
       });
 
-      const result = await service.create(validInput);
+      const result = await service.create(validInput) as { localNumber: bigint };
 
       expect(auth.requireRole).toHaveBeenCalledWith("CASHIER", "ADMIN");
       expect(tx.sale.create).toHaveBeenCalled();
@@ -244,7 +243,7 @@ describe("SalesPosService", () => {
         .mockRejectedValueOnce({ code: "P2002", meta: { target: "ux_sale_local_per_ws" } })
         .mockResolvedValueOnce({ id: "sale-2", localNumber: 2n, items: [] });
 
-      const result = await service.create({ items: [{ productId: "prod-1", quantity: 1 }] });
+      const result = await service.create({ items: [{ productId: "prod-1", quantity: 1 }] }) as { localNumber: bigint };
 
       expect(result.localNumber).toBe(2n);
     });
@@ -313,7 +312,7 @@ describe("SalesPosService", () => {
 
       const result = await service.create({
         items: [{ productId: "prod-1", quantity: 1 }],
-      });
+      }) as { id: string };
 
       // Verify the service generated UUIDs that were passed to sale.create
       expect(tx.sale.create).toHaveBeenCalledWith(
@@ -403,7 +402,7 @@ describe("SalesPosService", () => {
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
 
-      const result = await service.confirm("sale-1", validConfirmInput);
+      const result = await service.confirm("sale-1", validConfirmInput) as { operationalState: string };
 
       expect(result.operationalState).toBe("CONFIRMED");
       expect(inventoryLots.consumeStockForSale).toHaveBeenCalledWith({
@@ -448,7 +447,7 @@ describe("SalesPosService", () => {
     it("throws ChangeRequiresCashPaymentException when change is due but no cash method", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       const sale = makeSale();
-      sale.totalAmount = 10000;
+      sale.totalAmount = new Prisma.Decimal(10000);
       tx.sale.findUnique.mockResolvedValue(sale);
       tx.paymentMethod.findUnique.mockResolvedValue({
         id: "pm-card", isCash: false,

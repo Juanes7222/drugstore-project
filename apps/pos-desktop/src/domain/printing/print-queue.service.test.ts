@@ -6,7 +6,7 @@ import {
   createPrintQueueService,
   type PrintQueueService,
 } from "./print-queue.service";
-import { PrintPayloadType, PrintJobStatus, type PrintJobType, type PrintJobInput } from "./printing-types";
+import { PrintPayloadType, type PrintJobType, type PrintJobInput } from "./printing-types";
 import { PrintPayloadNotFoundException, PrintJobNotFoundException } from "./exceptions";
 
 function createMockPrisma() {
@@ -94,7 +94,7 @@ describe("PrintQueueService", () => {
 
     service = createPrintQueueService(
       mockPrisma as any,
-      resolvePrinterMock,
+      resolvePrinterMock as unknown as (jobType: PrintJobType) => Promise<any>,
       executePrintMock,
     );
   });

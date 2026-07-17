@@ -124,10 +124,10 @@ export function useLoginPage(): UseLoginPageReturn {
   const [offlineLoginSkipped2fa, setOfflineLoginSkipped2fa] = useState(false);
   const [offlineErrorMessage, setOfflineErrorMessage] = useState<string | null>(null);
 
-  // Redirect to sales if already logged in
+  // Redirect to home dashboard after login
   useEffect(() => {
     if (session) {
-      dispatch(setActiveScreen('sales'));
+      dispatch(setActiveScreen('home'));
     }
   }, [session, dispatch]);
 
@@ -174,7 +174,7 @@ export function useLoginPage(): UseLoginPageReturn {
             'PIN',
           );
           setOfflineLoginSkipped2fa(false);
-          dispatch(setActiveScreen('sales'));
+          dispatch(setActiveScreen('home'));
           return;
         }
 
@@ -194,7 +194,7 @@ export function useLoginPage(): UseLoginPageReturn {
           return;
         }
 
-        dispatch(setActiveScreen('sales'));
+        dispatch(setActiveScreen('home'));
       } catch (err) {
         if (err instanceof InvalidCredentialsException) {
           setError(t('auth.pin_incorrect'));
@@ -205,7 +205,7 @@ export function useLoginPage(): UseLoginPageReturn {
           try {
             await attemptOfflineLogin(selectedUser.id, pin, 'PIN');
             setOfflineLoginSkipped2fa(false);
-            dispatch(setActiveScreen('sales'));
+            dispatch(setActiveScreen('home'));
           } catch (_offlineErr) {
             // Server is down AND offline fallback also failed.  The primary
             // problem is connectivity — show a connection error regardless
@@ -271,7 +271,7 @@ export function useLoginPage(): UseLoginPageReturn {
           'PASSWORD',
         );
         setOfflineLoginSkipped2fa(false);
-        dispatch(setActiveScreen('sales'));
+        dispatch(setActiveScreen('home'));
         return;
       }
 
@@ -291,7 +291,7 @@ export function useLoginPage(): UseLoginPageReturn {
         return;
       }
 
-      dispatch(setActiveScreen('sales'));
+      dispatch(setActiveScreen('home'));
     } catch (err) {
       if (err instanceof InvalidCredentialsException) {
         setError(t('auth.password_incorrect'));
@@ -307,7 +307,7 @@ export function useLoginPage(): UseLoginPageReturn {
             'PASSWORD',
           );
           setOfflineLoginSkipped2fa(false);
-          dispatch(setActiveScreen('sales'));
+          dispatch(setActiveScreen('home'));
         } catch (_offlineErr) {
           // Server is down AND offline fallback also failed.  Show a
           // connectivity error regardless of why offline login failed.
@@ -367,7 +367,7 @@ export function useLoginPage(): UseLoginPageReturn {
   const handleTwoFactorComplete = useCallback(() => {
     setRequiresTwoFactor(false);
     setChallengeToken(null);
-    dispatch(setActiveScreen('sales'));
+    dispatch(setActiveScreen('home'));
   }, [dispatch]);
 
   const handleTwoFactorCancel = useCallback(() => {

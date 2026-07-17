@@ -9,7 +9,7 @@ import {
   MAX_VISIBLE_SUGGESTIONS,
   type SuggestionEngine,
 } from "./suggestion-engine.service";
-import type { AppState, ActiveSuggestion } from "./assistant-types";
+import type { AppState } from "./assistant-types";
 import { useUserPreferencesStore } from "../../stores/user-preferences.store";
 
 describe("SuggestionEngine", () => {
@@ -44,6 +44,9 @@ describe("SuggestionEngine", () => {
       currentShiftDurationHours: 0,
       isSyncing: false,
       isOnline: true,
+      pendingOfflineSessions: 0,
+      rejectedOfflineSessions: 0,
+      isOfflineBlessingInProgress: false,
       lastConfirmedSaleId: null,
       lastConfirmedSaleNumber: null,
     };

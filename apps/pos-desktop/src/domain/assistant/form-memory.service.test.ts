@@ -1,7 +1,7 @@
 /**
  * Tests for the form memory service.
  */
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createFormMemoryService, type FormMemoryService } from "./form-memory.service";
 import { useUserPreferencesStore } from "../../stores/user-preferences.store";
 

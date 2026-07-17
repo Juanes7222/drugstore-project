@@ -1,7 +1,7 @@
 /**
  * Tests for the assistant metrics service.
  */
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
   createAssistantMetricsService,
   type AssistantMetricsService,

@@ -49,6 +49,14 @@ function createFakePrisma(overrides: {
 function createFakeBackupService() {
   return {
     createBackup: vi.fn().mockResolvedValue({
+    listBackups: vi.fn().mockResolvedValue([]),
+    verifyBackup: vi.fn().mockResolvedValue({ isValid: true }),
+    restoreBackup: vi.fn().mockResolvedValue(undefined),
+    pruneBackups: vi.fn().mockResolvedValue(undefined),
+    getPendingCount: vi.fn().mockResolvedValue(0),
+    getFailedCount: vi.fn().mockResolvedValue(0),
+    getMaxClientSequence: vi.fn().mockResolvedValue(0),
+    getContainsUnpushedOperations: vi.fn().mockResolvedValue(false),
       id: "backup-1",
       createdAt: "2026-07-13T12:00:00Z",
       workstationId: "ws-1",

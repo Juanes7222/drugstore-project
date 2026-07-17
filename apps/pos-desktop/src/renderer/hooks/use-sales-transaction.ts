@@ -7,7 +7,12 @@
  */
 
 import { useCallback, useMemo, useState } from 'react';
-import { addItem, selectTotalCents } from '@/store/slices/sales-slice';
+import {
+  addItem,
+  selectSelectedClient,
+  selectTotalCents,
+  setClient,
+} from '@/store/slices/sales-slice';
 import { initializePayment } from '@/store/slices/payment-slice';
 import { setActiveScreen } from '@/store/slices/ui-slice';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -22,6 +27,12 @@ import { createCatalogService } from '@infra/catalog-service-factory';
 // Types
 // ---------------------------------------------------------------------------
 
+export interface ClientSelection {
+  id: string;
+  name: string;
+  identification: string;
+}
+
 export interface UseSalesTransactionReturn {
   /** The memoised catalog service instance. */
   catalogService: CatalogService;
@@ -29,6 +40,8 @@ export interface UseSalesTransactionReturn {
   pendingItem: CatalogItem | null;
   /** Whether the restricted-item confirmation dialog is open. */
   isDialogOpen: boolean;
+  /** Client selected for the current sale, or null. */
+  selectedClient: ClientSelection | null;
   /** Called when a product is selected from the search results. */
   handleSelect: (item: CatalogItem) => void;
   /** Confirm the restricted-item dialog and add to cart. */
@@ -37,6 +50,10 @@ export interface UseSalesTransactionReturn {
   handleCancelRestricted: () => void;
   /** Transition to the payment screen. */
   handleCheckout: () => void;
+  /** Assign a client to the current sale. */
+  handleSelectClient: (client: ClientSelection) => void;
+  /** Clear the selected client. */
+  handleClearClient: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -46,6 +63,7 @@ export interface UseSalesTransactionReturn {
 export function useSalesTransaction(): UseSalesTransactionReturn {
   const dispatch = useAppDispatch();
   const totalDue = useAppSelector(selectTotalCents);
+  const selectedClient = useAppSelector(selectSelectedClient);
 
   const catalogService = useMemo<CatalogService>(() => createCatalogService(), []);
 
@@ -105,6 +123,17 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     setIsDialogOpen(false);
   }, []);
 
+  const handleSelectClient = useCallback(
+    (client: ClientSelection) => {
+      dispatch(setClient(client));
+    },
+    [dispatch],
+  );
+
+  const handleClearClient = useCallback(() => {
+    dispatch(setClient(null));
+  }, [dispatch]);
+
   const handleCheckout = useCallback(() => {
     dispatch(initializePayment({ totalCents: totalDue }));
     dispatch(setActiveScreen('payment'));
@@ -114,9 +143,12 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     catalogService,
     pendingItem,
     isDialogOpen,
+    selectedClient,
     handleSelect,
     handleConfirmRestricted,
     handleCancelRestricted,
     handleCheckout,
+    handleSelectClient,
+    handleClearClient,
   };
 }

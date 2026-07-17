@@ -34,7 +34,7 @@ describe("createHttpClient", () => {
 
   beforeEach(() => {
     fetchMock = vi.fn();
-    global.fetch = fetchMock;
+    (globalThis as any).fetch = fetchMock;
   });
 
   afterEach(() => {
@@ -78,7 +78,6 @@ describe("createHttpClient", () => {
     await client.get("/api/products", {
       page: 1,
       query: undefined,
-      filter: null,
       sort: "",
     });
 

@@ -56,6 +56,9 @@ describe("evaluateRules", () => {
     currentShiftDurationHours: 0,
     isSyncing: false,
     isOnline: true,
+    pendingOfflineSessions: 0,
+    rejectedOfflineSessions: 0,
+    isOfflineBlessingInProgress: false,
     lastConfirmedSaleId: null,
     lastConfirmedSaleNumber: null,
   };

@@ -11,7 +11,7 @@ import {
   type UpdateService,
   type UpdateServiceConfig,
 } from "./update.service";
-import { UpdateStateMachine } from "./state-machine";
+// import { UpdateStateMachine } from "./state-machine";
 import {
   UpdateCheckFailedException,
   DownloadFailedException,
@@ -112,6 +112,14 @@ function createFakePrisma() {
 function createFakeBackupService() {
   return {
     createBackup: vi.fn().mockResolvedValue({ id: "backup-1" }),
+    listBackups: vi.fn().mockResolvedValue([]),
+    verifyBackup: vi.fn().mockResolvedValue({ isValid: true }),
+    restoreBackup: vi.fn().mockResolvedValue(undefined),
+    pruneBackups: vi.fn().mockResolvedValue(undefined),
+    getPendingCount: vi.fn().mockResolvedValue(0),
+    getFailedCount: vi.fn().mockResolvedValue(0),
+    getMaxClientSequence: vi.fn().mockResolvedValue(0),
+    getContainsUnpushedOperations: vi.fn().mockResolvedValue(false),
   };
 }
 

@@ -3,7 +3,7 @@
  * Since this service depends heavily on Tauri IPC and external hardware,
  * tests focus on the domain logic boundaries by mocking dependencies.
  */
-import { describe, expect, it, beforeEach, vi } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import {
   createPrinterHealthService,
   type PrinterHealthService,

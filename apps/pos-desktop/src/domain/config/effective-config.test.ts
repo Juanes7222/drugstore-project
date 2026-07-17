@@ -8,7 +8,7 @@ import {
   hasOverrides,
   isFieldOverridden,
 } from "./effective-config";
-import type { TenantConfig, EffectiveConfig, PresetCode } from "./types";
+import type { TenantConfig, PresetCode, StrictnessConfig, FiscalConfig, WorkflowConfig, CustomCompanyField, CustomStrictnessToggle } from "./types";
 import { PRESET_BALANCED } from "./presets";
 import {
   DEFAULT_STRICTNESS,
@@ -21,17 +21,22 @@ import {
 // ---------------------------------------------------------------------------
 
 function makeTenantConfig(
-  overrides?: Partial<TenantConfig>,
+  overrides?: Record<string, unknown>,
 ): TenantConfig {
+  const ov = overrides ?? {};
   return {
-    activePresetCode: "BALANCED" as PresetCode,
-    strictness: {},
-    fiscal: {},
-    workflow: {},
-    customCompanyFields: [],
-    customStrictnessToggles: [],
-    configVersion: 1,
-    ...overrides,
+    id: "test-config-id",
+    subscriptionId: "sub-1",
+    activePresetCode: (ov.activePresetCode as PresetCode) ?? ("BALANCED" as PresetCode),
+    strictness: { ...DEFAULT_STRICTNESS, ...(ov.strictness as Partial<StrictnessConfig>) } as StrictnessConfig,
+    fiscal: { ...DEFAULT_FISCAL, ...(ov.fiscal as Partial<FiscalConfig>) } as FiscalConfig,
+    workflow: { ...DEFAULT_WORKFLOW, ...(ov.workflow as Partial<WorkflowConfig>) } as WorkflowConfig,
+    customCompanyFields: (ov.customCompanyFields as CustomCompanyField[]) ?? [],
+    customStrictnessToggles: (ov.customStrictnessToggles as CustomStrictnessToggle[]) ?? [],
+    configVersion: (ov.configVersion as number) ?? 1,
+    lastModifiedByUserId: (ov.lastModifiedByUserId as string) ?? "user-1",
+    lastModifiedAt: (ov.lastModifiedAt as string) ?? "2026-07-17T00:00:00Z",
+    createdAt: (ov.createdAt as string) ?? "2026-01-01T00:00:00Z",
   };
 }
 
@@ -52,7 +57,7 @@ describe("computeEffectiveConfig", () => {
 
   it("overrides preset values with stored overrides", () => {
     const config = makeTenantConfig();
-    config.strictness = { lots: "STRICT" };
+    config.strictness = { ...DEFAULT_STRICTNESS, lots: "STRICT" };
 
     const result = computeEffectiveConfig(config);
 
@@ -106,8 +111,8 @@ describe("computeEffectiveConfig", () => {
   });
 
   it("preserves customCompanyFields in the effective config", () => {
-    const fields = [
-      { key: "licencia", name: "Licencia", type: "TEXT" as const, order: 1 },
+    const fields: CustomCompanyField[] = [
+      { id: "field-1", key: "licencia", name: "Licencia", type: "TEXT", value: "", required: false, showOnInvoice: false, showOnReport: false, order: 1 },
     ];
     const config = makeTenantConfig({ customCompanyFields: fields });
 
@@ -117,14 +122,8 @@ describe("computeEffectiveConfig", () => {
   });
 
   it("preserves customStrictnessToggles in the effective config", () => {
-    const toggles = [
-      {
-        key: "requireDoctorId",
-        type: "BOOLEAN" as const,
-        label: "Requiere ID del doctor",
-        appliesTo: "SALE" as const,
-        defaultValue: false,
-      },
+    const toggles: CustomStrictnessToggle[] = [
+      { id: "toggle-1", key: "requireDoctorId", name: "Requiere ID del doctor", description: "", type: "BOOLEAN", appliesTo: "SALE", defaultValue: false, isAdvisory: false },
     ];
     const config = makeTenantConfig({ customStrictnessToggles: toggles });
 

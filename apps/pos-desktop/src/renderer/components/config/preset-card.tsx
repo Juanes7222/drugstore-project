@@ -44,6 +44,11 @@ export const PresetCard: FC<PresetCardProps> = ({
     }
   };
 
+  const displayName = preset.nameI18nKey ? t(preset.nameI18nKey) : preset.name;
+  const displayDescription = preset.descriptionI18nKey
+    ? t(preset.descriptionI18nKey)
+    : preset.description;
+
   return (
     <motion.button
       type="button"
@@ -51,7 +56,7 @@ export const PresetCard: FC<PresetCardProps> = ({
       onKeyDown={handleKeyDown}
       disabled={disabled}
       aria-pressed={isActive}
-      aria-label={`${preset.name}${isActive ? ` - ${t('config.presets.active')}` : ''}`}
+      aria-label={`${displayName}${isActive ? ` - ${t('config.presets.active')}` : ''}`}
       className={`
         relative flex w-full flex-col gap-2 rounded-lg border-2 p-4 text-left
         transition-colors
@@ -88,12 +93,12 @@ export const PresetCard: FC<PresetCardProps> = ({
 
       {/* Name */}
       <h3 className="text-sm font-semibold text-ink dark:text-gray-100">
-        {preset.name}
+        {displayName}
       </h3>
 
       {/* Description */}
       <p className="text-xs text-ink-muted dark:text-gray-400 line-clamp-2">
-        {preset.description}
+        {displayDescription}
       </p>
     </motion.button>
   );

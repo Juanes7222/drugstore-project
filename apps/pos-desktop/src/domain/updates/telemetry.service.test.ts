@@ -162,7 +162,6 @@ describe("TelemetryService", () => {
     });
 
     it("uses crypto.randomUUID for the row id", async () => {
-      const randomUUID = globalThis.crypto.randomUUID;
       const uuidSpy = vi.fn(() => "custom-uuid");
       Object.defineProperty(globalThis.crypto, "randomUUID", {
         value: uuidSpy,

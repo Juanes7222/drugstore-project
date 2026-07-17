@@ -44,7 +44,7 @@ describe("ConfigExportService", () => {
 
     service = createConfigExportService(
       mockPrinterConfigService as PrinterConfigService,
-      mockDiscover,
+      mockDiscover as unknown as (timeout?: number) => Promise<any[]>,
     );
   });
 

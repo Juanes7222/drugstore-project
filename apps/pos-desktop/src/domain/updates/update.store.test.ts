@@ -1,8 +1,8 @@
 /**
  * Tests for the update Zustand store.
  */
-import { describe, expect, it, beforeEach } from "vitest";
-import { useUpdateStore, getUpdateStoreState } from "./update.store";
+import { describe, expect, it, beforeEach, vi } from "vitest";
+import { useUpdateStore, getUpdateStoreState, DownloadStatus, InstallStatus } from "./update.store";
 
 beforeEach(() => {
   useUpdateStore.setState({
@@ -119,17 +119,17 @@ describe("setDownloadProgress", () => {
 
 describe("setDownloadStatus", () => {
   it("sets the download status", () => {
-    useUpdateStore.getState().setDownloadStatus("DOWNLOADING");
+    useUpdateStore.getState().setDownloadStatus(DownloadStatus.DOWNLOADING);
 
-    expect(useUpdateStore.getState().downloadStatus).toBe("DOWNLOADING");
+    expect(useUpdateStore.getState().downloadStatus).toBe(DownloadStatus.DOWNLOADING);
   });
 });
 
 describe("setInstallStatus", () => {
   it("sets the install status", () => {
-    useUpdateStore.getState().setInstallStatus("INSTALLING");
+    useUpdateStore.getState().setInstallStatus(InstallStatus.INSTALLING);
 
-    expect(useUpdateStore.getState().installStatus).toBe("INSTALLING");
+    expect(useUpdateStore.getState().installStatus).toBe(InstallStatus.INSTALLING);
   });
 });
 

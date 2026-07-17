@@ -11,7 +11,12 @@ import {
   type ConfigService,
   type ConfigHttpClient,
 } from "./config.service";
-import type { TenantConfig, PresetCode, CustomCompanyField } from "./types";
+import type { TenantConfig, PresetCode, CustomCompanyField, CustomStrictnessToggle } from "./types";
+import {
+  DEFAULT_STRICTNESS,
+  DEFAULT_FISCAL,
+  DEFAULT_WORKFLOW,
+} from "./defaults";
 
 // ---------------------------------------------------------------------------
 // Mock HTTP client factory
@@ -35,13 +40,18 @@ function makeTenantConfig(
   overrides?: Partial<TenantConfig>,
 ): TenantConfig {
   return {
+    id: "test-config-id",
+    subscriptionId: "sub-1",
     activePresetCode: "BALANCED" as PresetCode,
-    strictness: {},
-    fiscal: {},
-    workflow: {},
+    strictness: { ...DEFAULT_STRICTNESS },
+    fiscal: { ...DEFAULT_FISCAL },
+    workflow: { ...DEFAULT_WORKFLOW },
     customCompanyFields: [],
     customStrictnessToggles: [],
     configVersion: 1,
+    lastModifiedByUserId: "user-1",
+    lastModifiedAt: "2026-07-17T00:00:00Z",
+    createdAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
 }
@@ -74,7 +84,7 @@ describe("ConfigService", () => {
   describe("update", () => {
     it("calls PUT /tenant-config with expectedConfigVersion", async () => {
       const expected = makeTenantConfig({ configVersion: 2 });
-      const updates = { strictness: { lots: "STRICT" } };
+      const updates = { strictness: { ...DEFAULT_STRICTNESS, lots: "STRICT" as const } };
       vi.mocked(http.put).mockResolvedValue(expected);
 
       const result = await service.update(updates, 1);
@@ -119,9 +129,14 @@ describe("ConfigService", () => {
   describe("addCustomField", () => {
     it("calls POST /tenant-config/custom-fields with the field body", async () => {
       const field: CustomCompanyField = {
+        id: "field-1",
         key: "licencia",
         name: "Licencia",
         type: "TEXT",
+        value: "",
+        required: false,
+        showOnInvoice: false,
+        showOnReport: false,
         order: 1,
       };
       const expected = makeTenantConfig({
@@ -171,12 +186,15 @@ describe("ConfigService", () => {
 
   describe("addCustomToggle", () => {
     it("calls POST /tenant-config/custom-toggles", async () => {
-      const toggle = {
+      const toggle: CustomStrictnessToggle = {
+        id: "toggle-1",
         key: "requireDoctorId",
-        type: "BOOLEAN" as const,
-        label: "Requiere ID Doctor",
-        appliesTo: "SALE" as const,
+        name: "Requiere ID Doctor",
+        description: "",
+        type: "BOOLEAN",
+        appliesTo: "SALE",
         defaultValue: false,
+        isAdvisory: false,
       };
       const expected = makeTenantConfig();
       vi.mocked(http.post).mockResolvedValue(expected);
@@ -197,7 +215,7 @@ describe("ConfigService", () => {
       vi.mocked(http.patch).mockResolvedValue(expected);
 
       const result = await service.updateCustomToggle("toggle-1", {
-        label: "Updated",
+        name: "Updated",
       });
 
       expect(http.patch).toHaveBeenCalledWith(

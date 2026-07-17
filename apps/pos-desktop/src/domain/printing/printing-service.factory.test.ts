@@ -9,7 +9,7 @@
  * 4. The printerHealth receives the isOnline callback.
  * 5. The printQueue is created with the executePrint callback.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock service objects
