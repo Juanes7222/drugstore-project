@@ -8,15 +8,17 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
-import {
-  addItem,
-  salesSlice,
-} from "@/store/slices/sales-slice";
+import { salesSlice } from "@/store/slices/sales-slice";
 import { paymentSlice } from "@/store/slices/payment-slice";
 import { uiSlice } from "@/store/slices/ui-slice";
 import { SaleType } from "@pharmacy/shared-types";
 import { CartPanel } from "./cart-panel";
 import type { CartItem } from "@/store/slices/sales-types";
+
+// Mock ClientSelector since it requires ServiceContext not needed here
+vi.mock("./client-selector", () => ({
+  ClientSelector: () => <div data-testid="client-selector" />,
+}));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -47,7 +49,7 @@ const createTestStore = (items: CartItem[]) =>
       ui: uiSlice.reducer,
     },
     preloadedState: {
-      sales: { items },
+      sales: { items, selectedClient: null },
       payment: paymentSlice.reducer(
         paymentSlice.getInitialState(),
         { type: "unknown" },
@@ -62,10 +64,16 @@ const createTestStore = (items: CartItem[]) =>
 const renderCartPanel = (
   store: ReturnType<typeof createTestStore>,
   onCheckout = vi.fn(),
+  onSelectClient = vi.fn(),
+  onClearClient = vi.fn(),
 ) =>
   render(
     <Provider store={store}>
-      <CartPanel onCheckout={onCheckout} />
+      <CartPanel
+        onCheckout={onCheckout}
+        onSelectClient={onSelectClient}
+        onClearClient={onClearClient}
+      />
     </Provider>,
   );
 

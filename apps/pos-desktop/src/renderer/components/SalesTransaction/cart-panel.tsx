@@ -1,7 +1,9 @@
 /**
- * Cart panel: title, line items table, totals, and checkout action.
+ * Cart panel: client selection, line items, totals, and checkout action.
  *
  * Reads cart state from Redux and dispatches quantity/remove updates.
+ * Integrates the ClientSelector for customer selection during a sale.
+ * Respects tenant config for whether client is required/optional/hidden.
  */
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
@@ -12,17 +14,26 @@ import {
   selectSubtotalCents,
   selectTaxCents,
   selectTotalCents,
+  selectSelectedClient,
   updateQuantity,
 } from "@/store/slices/sales-slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { ClientSelector } from "./client-selector";
 import { CartLineItem } from "./cart-line-item";
 import { TotalsSummary } from "./totals-summary";
+import type { ClientSelection } from "../../hooks/use-sales-transaction";
 
 interface CartPanelProps {
   onCheckout: () => void;
+  onSelectClient: (client: ClientSelection) => void;
+  onClearClient: () => void;
 }
 
-export const CartPanel: FC<CartPanelProps> = ({ onCheckout }) => {
+export const CartPanel: FC<CartPanelProps> = ({
+  onCheckout,
+  onSelectClient,
+  onClearClient,
+}) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
 
@@ -31,6 +42,7 @@ export const CartPanel: FC<CartPanelProps> = ({ onCheckout }) => {
   const subtotal = useAppSelector(selectSubtotalCents);
   const tax = useAppSelector(selectTaxCents);
   const total = useAppSelector(selectTotalCents);
+  const selectedClient = useAppSelector(selectSelectedClient);
 
   const handleUpdateQuantity = (id: string, quantity: number) => {
     dispatch(updateQuantity({ id, quantity }));
@@ -43,7 +55,24 @@ export const CartPanel: FC<CartPanelProps> = ({ onCheckout }) => {
   const isEmpty = items.length === 0;
 
   return (
-    <section className="pos-panel flex h-full flex-col p-pos-md">
+    <section className="pos-panel flex min-h-0 flex-col p-pos-md">
+      {/* Client selector — always at top, config-aware */}
+      <ClientSelector
+        selectedClient={selectedClient}
+        onSelectClient={onSelectClient}
+        onClearClient={onClearClient}
+      />
+
+      {/* Divider after client */}
+      <div
+        className="mb-pos-md mt-pos-sm"
+        style={{
+          borderTop: "1px solid",
+          borderColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
+        }}
+      />
+
+      {/* Cart header with item count */}
       <h2
         className="text-ui font-semibold"
         style={{ color: "var(--color-ink)" }}
@@ -51,55 +80,75 @@ export const CartPanel: FC<CartPanelProps> = ({ onCheckout }) => {
         {t("sales.cart.title_with_count", { count })}
       </h2>
 
-      {isEmpty ? (
-        <p
-          className="mt-pos-md text-body"
-          style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}
-        >
-          {t("sales.cart.empty")}
-        </p>
-      ) : (
-        <>
-          <div className="mt-pos-md flex-1 overflow-y-auto">
-            <table className="w-full border-collapse">
-              <thead className="sr-only">
-                <tr>
-                  <th>{t("sales.cart.title")}</th>
-                  <th>{t("sales.product.stock")}</th>
-                  <th>{t("sales.product.price")}</th>
-                  <th>{t("sales.cart.total")}</th>
-                  <th>{t("common.remove")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <CartLineItem
-                    key={item.id}
-                    item={item}
-                    onUpdateQuantity={handleUpdateQuantity}
-                    onRemove={handleRemove}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* Cart items area — scrollable */}
+      <div className="mt-pos-sm min-h-0 flex-1 overflow-y-auto">
+        {isEmpty ? (
+          <p
+            className="mt-pos-md text-body"
+            style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}
+          >
+            {t("sales.cart.empty")}
+          </p>
+        ) : (
+          <table className="w-full border-collapse">
+            <thead className="sr-only">
+              <tr>
+                <th>{t("sales.cart.title")}</th>
+                <th>{t("sales.product.stock")}</th>
+                <th>{t("sales.product.price")}</th>
+                <th>{t("sales.cart.total")}</th>
+                <th>{t("common.remove")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <CartLineItem
+                  key={item.id}
+                  item={item}
+                  onUpdateQuantity={handleUpdateQuantity}
+                  onRemove={handleRemove}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
+      {/* Totals & checkout — always at bottom */}
+      {!isEmpty && (
+        <>
           <TotalsSummary
             subtotalCents={subtotal}
             taxCents={tax}
             totalCents={total}
           />
+
+          <button
+            type="button"
+            onClick={onCheckout}
+            className="pos-button pos-button-primary mt-pos-md w-full text-ui py-pos-md"
+          >
+            <span className="flex items-center justify-center gap-2">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
+                <path d="M3 6h18" />
+                <path d="M16 10a4 4 0 0 1-8 0" />
+              </svg>
+              {t("sales.cart.checkout")}
+            </span>
+          </button>
         </>
       )}
-
-      <button
-        type="button"
-        onClick={onCheckout}
-        disabled={isEmpty}
-        className="pos-button pos-button-primary mt-pos-md w-full text-ui py-pos-md"
-      >
-        {t("sales.cart.checkout")}
-      </button>
     </section>
   );
 };

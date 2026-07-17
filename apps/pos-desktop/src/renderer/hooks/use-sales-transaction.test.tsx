@@ -8,7 +8,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useSalesTransaction } from "./use-sales-transaction";
-import { addItem } from "@/store/slices/sales-slice";
+import { addItem, setClient } from "@/store/slices/sales-slice";
 import { initializePayment } from "@/store/slices/payment-slice";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import { SaleType } from "@pharmacy/shared-types";
@@ -98,6 +98,8 @@ describe("useSalesTransaction", () => {
       expect(result.current.catalogService).toBe(mockCatalogService);
       expect(result.current.pendingItem).toBeNull();
       expect(result.current.isDialogOpen).toBe(false);
+      // selectedClient depends on useAppSelector mock which returns
+      // mockTotalCents for any selector — not asserted here.
     });
   });
 
@@ -122,7 +124,7 @@ describe("useSalesTransaction", () => {
           isRestricted: false,
           lotCode: unrestrictedItem.lotCode,
           lotExpirationDate: unrestrictedItem.lotExpirationDate,
-          unitPriceCents: unrestrictedItem.unitPriceCents,
+          unitPriceCents: unrestrictedItem.unitPriceCents!,
           taxPercentage: unrestrictedItem.taxPercentage,
           quantity: 1,
         }),
@@ -183,7 +185,7 @@ describe("useSalesTransaction", () => {
           isRestricted: true,
           lotCode: restrictedItem.lotCode,
           lotExpirationDate: restrictedItem.lotExpirationDate,
-          unitPriceCents: restrictedItem.unitPriceCents,
+          unitPriceCents: restrictedItem.unitPriceCents!,
           taxPercentage: restrictedItem.taxPercentage,
           quantity: 1,
         }),
@@ -238,6 +240,35 @@ describe("useSalesTransaction", () => {
         initializePayment({ totalCents: 50_000 }),
       );
       expect(mockDispatch).toHaveBeenCalledWith(setActiveScreen("payment"));
+    });
+  });
+
+  describe("handleSelectClient", () => {
+    it("dispatches setClient with the given client", () => {
+      const { result } = renderHook(() => useSalesTransaction());
+      const client = {
+        id: "c-001",
+        name: "Juan Pérez",
+        identification: "CC-123456789",
+      };
+
+      act(() => {
+        result.current.handleSelectClient(client);
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(setClient(client));
+    });
+  });
+
+  describe("handleClearClient", () => {
+    it("dispatches setClient with null", () => {
+      const { result } = renderHook(() => useSalesTransaction());
+
+      act(() => {
+        result.current.handleClearClient();
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(setClient(null));
     });
   });
 });

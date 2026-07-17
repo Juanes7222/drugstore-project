@@ -20,16 +20,21 @@ const mockHandleSelect = vi.fn();
 const mockHandleConfirmRestricted = vi.fn();
 const mockHandleCancelRestricted = vi.fn();
 const mockHandleCheckout = vi.fn();
+const mockHandleSelectClient = vi.fn();
+const mockHandleClearClient = vi.fn();
 
 vi.mock("../../hooks/use-sales-transaction", () => ({
   useSalesTransaction: () => ({
     catalogService: mockCatalogService,
     pendingItem: null,
     isDialogOpen: false,
+    selectedClient: null,
     handleSelect: mockHandleSelect,
     handleConfirmRestricted: mockHandleConfirmRestricted,
     handleCancelRestricted: mockHandleCancelRestricted,
     handleCheckout: mockHandleCheckout,
+    handleSelectClient: mockHandleSelectClient,
+    handleClearClient: mockHandleClearClient,
   }),
 }));
 
@@ -38,24 +43,19 @@ vi.mock("../../hooks/use-sales-transaction", () => ({
 // ---------------------------------------------------------------------------
 
 vi.mock("./product-search", () => ({
-  ProductSearch: ({ catalogService, onSelect }: Record<string, unknown>) => (
+  ProductSearch: (_props: Record<string, unknown>) => (
     <div data-testid="product-search" />
   ),
 }));
 
 vi.mock("./cart-panel", () => ({
-  CartPanel: ({ onCheckout }: Record<string, unknown>) => (
+  CartPanel: (_props: Record<string, unknown>) => (
     <div data-testid="cart-panel" />
   ),
 }));
 
 vi.mock("./restricted-confirmation-dialog", () => ({
-  RestrictedConfirmationDialog: ({
-    item,
-    open,
-    onConfirm,
-    onCancel,
-  }: Record<string, unknown>) => (
+  RestrictedConfirmationDialog: (_props: Record<string, unknown>) => (
     <div data-testid="restricted-confirmation-dialog" />
   ),
 }));

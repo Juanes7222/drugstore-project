@@ -8,9 +8,11 @@ export {
 export {
   useLocalConfigStore,
   getLocalConfigState,
+  getTenantInfo,
   type LocalConfigState,
   type DiscountLimits,
   type AlertThresholds,
   type SyncDefaults,
   type RoleDiscountLimit,
+  type TenantInfo,
 } from './local-config.store';

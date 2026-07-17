@@ -380,3 +380,70 @@ Motion is reserved for the sale-completing handoff, not for the high-throughput 
 - **Search, scan, add-to-cart, and payment entry:** No orchestrated animation. Feedback is a single crisp state change (button press, input update, status badge).
 - **Sale completion:** A coordinated two-screen transition. Payment initiates the exit choreography and sets the `saleCompletionPhase` to `"initiating"`. After the initiating beat, control passes to Receipt via `"completing"`, where Receipt plays the entry choreography and dispatches `"completed"`. `prefers-reduced-motion` collapses both phases to an opacity-only or instant transition.
 - **Card/transfer authorization pending state:** A small CSS spinner inside the status badge is acceptable because it is a local, functional loading indicator, not a decorative flourish.
+
+---
+
+## Client selector (added 2026-07-17)
+
+A searchable dropdown for selecting a client during a sale, composed in the
+cart panel. Behaviour depends on the tenant config's `clientRequired` field:
+
+| Config value   | Component behaviour                          |
+|----------------|----------------------------------------------|
+| `ALWAYS`       | Prominent search visible, pharma teal border |
+| `ABOVE_AMOUNT` | Same as ALWAYS when total ≥ threshold        |
+| `NEVER`        | Hidden entirely                              |
+
+### States
+
+1. **Collapsed (no client selected):** Dashed-border button reading "Cliente
+   (opcional)" or "Cliente requerido para esta venta" depending on config.
+2. **Search open:** Input with icon, results dropdown below, keyboard
+   navigable (ArrowUp/Down/Enter/Escape).
+3. **Client selected:** Compact chip with user icon, client name + ID, and
+   an × button to clear.
+4. **Empty results:** "No se encontraron clientes" message.
+5. **Loading:** "Cargando..." message in result area.
+
+### Integration
+
+- Reads `ClientsService` from service context (domain layer).
+- Reads `clientRequired` field requirement from `useFieldRequirementFor()`.
+- Dispatches `setClient` / `clearCart` on Redux `sales-slice`.
+
+---
+
+## Help bar (added 2026-07-17)
+
+A low-visibility strip below the search input that exposes three keyboard
+shortcuts as clickable buttons:
+
+| Button      | Shortcut | Action                          |
+|-------------|----------|---------------------------------|
+| Command     | ⌘K       | Opens command palette           |
+| Help        | F1       | Contextual help for current screen |
+| Shortcuts   | ?        | Opens shortcut cheatsheet       |
+
+Styled at `12px` (caption size) with muted ink at 45% opacity. Uses the
+`assistant.store` Zustand store directly to call overlay actions. Always
+visible on the sales screen — designed to be ignorable during fast scanning
+but discoverable when needed.
+
+---
+
+## "Added to cart" confirmation (added 2026-07-17)
+
+When a cashier clicks a product in search results, the card briefly shows
+an "AGREGADO" badge (pharma teal, uppercase, 1.2s) and a subtle scale-down
+(`scale(0.99)`) before returning to normal. This gives tactile confirmation
+that the item entered the cart without requiring a toast or modal — both
+would interrupt the high-throughput scan rhythm.
+
+### Motion treatment
+
+- Entry: 200ms ease-out (badge opacity + card border color).
+- Exit: 200ms ease (badge opacity → 0).
+- No animation on keyboard-initiated selection (respects Emil's principle
+  that keyboard actions at 100+/day should be instant).
+- Respects `prefers-reduced-motion`: only the opacity transition remains,
+  no scale/border change.

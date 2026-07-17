@@ -128,6 +128,22 @@
       "warning": "INVIMA: {{invima}} - Tipo de venta: {{saleType}}",
       "confirm": "Confirmar venta restringida",
       "cancel": "Cancelar"
+    },
+    "added_to_cart": "{{name}} agregado al carrito",
+    "added": "AGREGADO",
+    "client": {
+      "label": "Cliente",
+      "search_placeholder": "Buscar cliente por nombre o documento...",
+      "no_results": "No se encontraron clientes",
+      "select": "Seleccionar cliente",
+      "selected": "Cliente: {{name}}",
+      "change": "Cambiar cliente",
+      "clear": "Quitar cliente",
+      "required": "Cliente requerido para esta venta",
+      "optional": "Cliente (opcional)",
+      "identification": "{{type}}: {{number}}",
+      "create_new": "Crear nuevo cliente",
+      "quick_add": "Cliente rápido"
     }
   },
   "payment": {
@@ -167,8 +183,21 @@
   },
   "receipt": {
     "title": "Pago confirmado",
-    "placeholder_message": "La venta se registró. En la fase 4 aquí se mostrará el recibo, impresión y envío por email.",
-    "new_sale": "Nueva venta"
+    "new_sale": "Nueva venta",
+    "print": "Imprimir",
+    "invoice_number": "Factura",
+    "date": "Fecha",
+    "client": "Cliente",
+    "identification": "Identificación",
+    "product": "Producto",
+    "qty": "Cant",
+    "subtotal": "Subtotal",
+    "tax": "IVA (19%)",
+    "total_due": "TOTAL",
+    "payment_methods": "Pago",
+    "change": "Cambio",
+    "no_items": "No hay items en esta venta",
+    "paid_with": "Pagado con"
   },
   "returns": {
     "title": "Devoluciones",
@@ -764,6 +793,14 @@
       "view_details": "Ver detalles",
       "dismiss": "Ahora no"
     }
+  },
+  "help_bar": {
+    "cmd_palette": "Cmd+K — Buscar páginas, comandos y productos",
+    "help": "F1 — Ayuda contextual",
+    "shortcuts": "? — Atajos de teclado",
+    "tooltip_palette": "Abrir paleta de comandos",
+    "tooltip_help": "Abrir ayuda",
+    "tooltip_shortcuts": "Abrir atajos"
   },
   "config": {
     "title": "Configuración del sistema",

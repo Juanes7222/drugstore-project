@@ -20,6 +20,8 @@ import { createRecoveryLogService } from '../backup/recovery-log.service';
 import type { RecoveryLogService } from '../backup/recovery-log.service';
 import { createProductService } from '../catalog/product.service';
 import type { ProductService } from '../catalog/product.service';
+import { createClientsService } from '../clients/clients.service';
+import type { ClientsService } from '../clients/clients.service';
 import { getTenantConfigState } from '../config/tenant-config.store';
 import type { EffectiveConfig } from '../config/types';
 
@@ -33,6 +35,7 @@ export interface DomainServices {
   prescriptionsService: PrescriptionsService;
   recoveryLogService: RecoveryLogService;
   productService: ProductService;
+  clientsService: ClientsService;
 }
 
 export interface DomainServiceFactoryInput {
@@ -58,12 +61,14 @@ export function getEffectiveConfig(): EffectiveConfig | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Create the four domain services.
+ * Create all domain services.
  *
- *   ReturnsService           (depends on prisma + auth + invoice + printRouter)
+ *   ReturnsService              (depends on prisma + auth + invoice + printRouter)
  *   InventoryAdjustmentsService (depends on prisma + auth)
- *   PrescriptionsService     (depends on prisma + auth)
- *   RecoveryLogService       (depends on prisma)
+ *   PrescriptionsService        (depends on prisma + auth)
+ *   RecoveryLogService          (depends on prisma)
+ *   ProductService              (depends on prisma + auth)
+ *   ClientsService              (depends on prisma + auth)
  */
 export function createDomainServices(
   input: DomainServiceFactoryInput,
@@ -76,5 +81,6 @@ export function createDomainServices(
     prescriptionsService: createPrescriptionsService(prisma, auth),
     recoveryLogService: createRecoveryLogService(prisma),
     productService: createProductService(prisma, auth),
+    clientsService: createClientsService(prisma, auth),
   };
 }

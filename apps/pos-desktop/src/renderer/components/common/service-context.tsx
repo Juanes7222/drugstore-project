@@ -13,7 +13,7 @@
  * 2. Renders a loading spinner or error panel while initialising.
  * 3. Wraps children in `ServiceContext.Provider` with the resulting
  *    `Services` object.
- * 4. Exports seventeen convenience hooks so consumers never touch the
+ * 4. Exports convenience hooks so consumers never touch the
  *    context directly.
  *
  * ## Usage
@@ -148,6 +148,10 @@ export const useCustomerDisplayService = (): Services['customerDisplayService'] 
 /** Convenience hook — returns the UpdateService instance. */
 export const useUpdateService = (): Services['updateService'] =>
   useServiceContext().updateService;
+
+/** Convenience hook — returns the ClientsService instance. */
+export const useClientsService = (): Services['clientsService'] =>
+  useServiceContext().clientsService;
 
 /** Convenience hook — returns the SyncScheduler instance. */
 export const useSyncSchedulerService = (): Services['syncScheduler'] =>

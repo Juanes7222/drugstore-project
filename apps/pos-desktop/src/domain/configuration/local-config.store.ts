@@ -7,11 +7,13 @@
  * - `discountLimits` — maximum discount percentages per role
  * - `alertThresholds` — global alert settings (expiry, low-stock)
  * - `syncDefaults` — sync-engine tuning parameters
+ * - `sellerInfo` — pharmacy/tenant identity for receipts and invoices
  *
  * ## Safe defaults
  * Every value has a hardcoded fallback so the POS can launch with no
  * prior sync and never crash.  Cashier discount limits are intentionally
  * conservative (10 % item / 5 % global) to prevent accidental overrides.
+ * Seller info defaults to "Farmacia" / empty NIT — override via sync.
  *
  * ## Usage
  * ```ts
@@ -19,6 +21,7 @@
  *
  * const limits = useLocalConfigStore.getState().discountLimits;
  * const cashierItemMax = limits.cashier.itemMaxPercent;  // 10 by default
+ * const seller = useLocalConfigStore.getState().sellerInfo;
  * ```
  */
 
@@ -52,16 +55,34 @@ export interface SyncDefaults {
   retryDelaysSeconds: number[];
 }
 
+/**
+ * Seller/tenant identity displayed on receipts and invoices.
+ * Matches the InvoiceSeller shape from fiscal-types for consistency.
+ */
+export interface TenantInfo {
+  nit: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  resolutionNumber: string | null;
+  resolutionDate: string | null;
+  resolutionPrefix: string;
+}
+
 export interface HydratePayload {
   discountLimits: DiscountLimits;
   alertThresholds: AlertThresholds;
   syncDefaults: SyncDefaults;
+  /** Optional seller/tenant info to persist locally. */
+  sellerInfo?: TenantInfo;
 }
 
 export interface LocalConfigState {
   discountLimits: DiscountLimits;
   alertThresholds: AlertThresholds;
   syncDefaults: SyncDefaults;
+  /** Pharmacy/tenant identity for receipts and invoices. */
+  sellerInfo: TenantInfo;
   /** ISO-8601 timestamp of the last successful configuration pull. */
   lastSyncedAt: string | null;
 
@@ -91,6 +112,16 @@ const DEFAULT_SYNC_DEFAULTS: SyncDefaults = {
   retryDelaysSeconds: [30, 120, 300, 600, 1800],
 };
 
+const DEFAULT_SELLER_INFO: TenantInfo = {
+  nit: '000.000.000-0',
+  name: 'Farmacia',
+  address: null,
+  phone: null,
+  resolutionNumber: null,
+  resolutionDate: null,
+  resolutionPrefix: 'FE',
+};
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -105,6 +136,7 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
       discountLimits: { ...DEFAULT_DISCOUNT_LIMITS },
       alertThresholds: { ...DEFAULT_ALERT_THRESHOLDS },
       syncDefaults: { ...DEFAULT_SYNC_DEFAULTS },
+      sellerInfo: { ...DEFAULT_SELLER_INFO },
       lastSyncedAt: null,
 
       hydrateFromServer(payload) {
@@ -112,6 +144,7 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
           discountLimits: payload.discountLimits,
           alertThresholds: payload.alertThresholds,
           syncDefaults: payload.syncDefaults,
+          sellerInfo: payload.sellerInfo ?? { ...DEFAULT_SELLER_INFO },
           lastSyncedAt: new Date().toISOString(),
         });
       },
@@ -129,3 +162,7 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
  */
 export const getLocalConfigState = (): LocalConfigState =>
   useLocalConfigStore.getState();
+
+/** Convenience accessor for the seller/tenant identity block. */
+export const getTenantInfo = (): TenantInfo =>
+  useLocalConfigStore.getState().sellerInfo;

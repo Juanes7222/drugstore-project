@@ -1,9 +1,11 @@
 /**
  * Currency input for Colombian peso amounts.
  *
- * Accepts whole numbers only (COP has no decimal subdivision) and reports the
- * value back to callers as an integer number of cents. The data/mono face with
- * tabular figures is used so amounts align with the rest of the POS.
+ * Accepts whole numbers only (COP has no decimal subdivision). The input
+ * displays and accepts values in **pesos** (e.g. "23800" for $23,800) and
+ * reports the value back to callers as an integer number of **cents**.
+ * The data/mono face with tabular figures is used so amounts align with
+ * the rest of the POS.
  */
 import {
   type ChangeEvent,
@@ -11,6 +13,7 @@ import {
   type InputHTMLAttributes,
   useCallback,
   useId,
+  useMemo,
 } from "react";
 
 interface CurrencyInputProps
@@ -18,7 +21,9 @@ interface CurrencyInputProps
     InputHTMLAttributes<HTMLInputElement>,
     "type" | "value" | "onChange"
   > {
+  /** Amount in **cents** (e.g. 2380000 for $23,800). Displayed as pesos. */
   value: number;
+  /** Reports the new amount in **cents**. */
   onChange: (amountCents: number) => void;
   label?: string;
 }
@@ -33,6 +38,13 @@ export const CurrencyInput: FC<CurrencyInputProps> = ({
 }) => {
   const generatedId = useId();
   const id = idProp ?? generatedId;
+
+  // Convert cents → pesos for display
+  const displayValue = useMemo(
+    () => (value === 0 ? "" : Math.round(value / 100)),
+    [value],
+  );
+
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const raw = event.target.value;
@@ -43,7 +55,9 @@ export const CurrencyInput: FC<CurrencyInputProps> = ({
       }
 
       const parsed = Number.parseInt(raw, 10);
-      onChange(Number.isNaN(parsed) ? 0 : Math.max(0, parsed));
+      const pesos = Number.isNaN(parsed) ? 0 : Math.max(0, parsed);
+      // Convert pesos → cents
+      onChange(pesos * 100);
     },
     [onChange],
   );
@@ -74,7 +88,7 @@ export const CurrencyInput: FC<CurrencyInputProps> = ({
           type="number"
           min={0}
           step={1}
-          value={value === 0 ? "" : value}
+          value={displayValue}
           onChange={handleChange}
           disabled={disabled}
           className="pos-input pl-pos-xl font-data tabular-nums"

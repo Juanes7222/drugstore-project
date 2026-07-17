@@ -376,13 +376,14 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
 
         <TextField
           label={t('config.fiscal.default_tax_rate')}
-          value={(config?.fiscal.defaultTaxRate ?? 0.19).toString()}
-          onChange={(v) => handleFieldChange('fiscal', 'defaultTaxRate', parseFloat(v) || 0)}
-          disabled={readOnly}
+          value={((config?.fiscal.defaultTaxRate ?? 0.19) * 100).toString()}
+          onChange={(v) => handleFieldChange('fiscal', 'defaultTaxRate', (parseFloat(v) || 0) / 100)}
+          disabled={readOnly || config?.fiscal.taxRegime === 'NO_RESPONSABLE'}
           type="number"
           step="0.01"
           min="0"
-          max="1"
+          max="100"
+          suffix="%"
         />
       </div>
 
@@ -499,32 +500,6 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
           checked={config?.workflow.suggestionEngineEnabled ?? true}
           onChange={(v) => handleFieldChange('workflow', 'suggestionEngineEnabled', v)}
           disabled={readOnly}
-        />
-        <TextField
-          label={t('config.workflow.max_offline_login_days')}
-          value={(config?.workflow.maxOfflineLoginDays ?? 30).toString()}
-          onChange={(v) =>
-            handleFieldChange('workflow', 'maxOfflineLoginDays', parseInt(v, 10) || 30)
-          }
-          disabled={readOnly}
-          type="number"
-          min={1}
-          max={365}
-        />
-        <TextField
-          label={t('config.workflow.session_idle_timeout')}
-          value={(config?.workflow.sessionIdleTimeoutSeconds ?? 600).toString()}
-          onChange={(v) =>
-            handleFieldChange(
-              'workflow',
-              'sessionIdleTimeoutSeconds',
-              parseInt(v, 10) || 600,
-            )
-          }
-          disabled={readOnly}
-          type="number"
-          min={60}
-          max={86400}
         />
       </div>
     </div>
@@ -689,6 +664,7 @@ interface TextFieldProps {
   min?: string | number;
   max?: string | number;
   placeholder?: string;
+  suffix?: string;
 }
 
 const TextField: FC<TextFieldProps> = ({
@@ -702,22 +678,30 @@ const TextField: FC<TextFieldProps> = ({
   min,
   max,
   placeholder,
+  suffix,
 }) => (
   <label className={`block ${className}`}>
     <span className="text-sm font-medium text-ink dark:text-gray-300">
       {label}
     </span>
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      step={step}
-      min={min}
-      max={max}
-      placeholder={placeholder}
-      className="mt-1 block w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma disabled:cursor-not-allowed disabled:bg-surface-variant disabled:text-ink-muted dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-    />
+    <div className="relative mt-1">
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        step={step}
+        min={min}
+        max={max}
+        placeholder={placeholder}
+        className={`block w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma disabled:cursor-not-allowed disabled:bg-surface-variant disabled:text-ink-muted dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 ${suffix ? 'pr-8' : ''}`}
+      />
+      {suffix && (
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-ink-muted">
+          {suffix}
+        </span>
+      )}
+    </div>
   </label>
 );
 

@@ -28,6 +28,12 @@ export interface SelectedClient {
   identification: string;
 }
 
+export const GENERIC_CLIENT: SelectedClient = {
+  id: "generic-consumidor-final",
+  name: "CONSUMIDOR FINAL",
+  identification: "0000000000-0",
+};
+
 export interface SalesState {
   items: CartItem[];
   selectedClient: SelectedClient | null;

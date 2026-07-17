@@ -9,7 +9,12 @@
  * already-shaped CartItem objects from components/services.
  */
 import { createSelector, createSlice, PayloadAction } from "@reduxjs/toolkit";
-import { CartItem, SalesState, SelectedClient } from "./sales-types";
+import {
+  CartItem,
+  GENERIC_CLIENT,
+  SalesState,
+  SelectedClient,
+} from "./sales-types";
 
 const TAX_RATE = 0.19;
 
@@ -109,4 +114,9 @@ export const selectTotalCents = createSelector(
 export const selectSelectedClient = createSelector(
   [selectSalesState],
   (sales) => sales.selectedClient,
+);
+
+export const selectEffectiveClient = createSelector(
+  [selectSelectedClient],
+  (selected) => selected ?? GENERIC_CLIENT,
 );

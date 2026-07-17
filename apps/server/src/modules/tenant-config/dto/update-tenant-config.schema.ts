@@ -79,7 +79,7 @@ export const UpdateTenantConfigSchema = z.object({
   strictness: StrictnessConfigSchema,
   fiscal: FiscalConfigSchema,
   workflow: WorkflowConfigSchema,
-  expectedConfigVersion: z.number().int().positive(),
+  expectedConfigVersion: z.number().int().min(0),
 });
 
 export type UpdateTenantConfigInput = z.infer<typeof UpdateTenantConfigSchema>;

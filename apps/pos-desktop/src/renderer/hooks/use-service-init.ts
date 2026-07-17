@@ -60,6 +60,7 @@ import type { ReturnsService } from '../../domain/returns/returns.service';
 import type { InventoryAdjustmentsService } from '../../domain/inventory-adjustments/inventory-adjustments.service';
 import type { PrescriptionsService } from '../../domain/prescriptions/prescriptions.service';
 import type { ProductService } from '../../domain/catalog/product.service';
+import type { ClientsService } from '../../domain/clients/clients.service';
 import type { BackupService } from '../../domain/backup/backup.service';
 import type { RecoveryLogService } from '../../domain/backup/recovery-log.service';
 import type { InvoiceService } from '../../domain/fiscal/invoice.service';
@@ -81,13 +82,14 @@ import type { CustomerDisplayService } from '../../domain/printing/customer-disp
 
 /**
  * Flat Services interface matching the original service-context.tsx shape.
- * All 17 individual services are directly accessible.
+ * All 18 individual services are directly accessible.
  */
 export interface Services {
   returnsService: ReturnsService;
   inventoryAdjustmentsService: InventoryAdjustmentsService;
   prescriptionsService: PrescriptionsService;
   productService: ProductService;
+  clientsService: ClientsService;
   backupService: BackupService;
   recoveryLogService: RecoveryLogService;
   invoiceService: InvoiceService;
@@ -299,6 +301,7 @@ export async function initializeServices(
     inventoryAdjustmentsService: domainServices.inventoryAdjustmentsService,
     prescriptionsService: domainServices.prescriptionsService,
     productService: domainServices.productService,
+    clientsService: domainServices.clientsService,
     backupService,
     recoveryLogService: domainServices.recoveryLogService,
     invoiceService: fiscalServices.invoiceService,

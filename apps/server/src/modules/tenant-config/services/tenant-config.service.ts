@@ -199,10 +199,10 @@ export class TenantConfigService {
       where: { subscriptionId },
     });
     if (!raw) {
-      throw new NotFoundException(
-        `Tenant configuration not found for subscription "${subscriptionId}". ` +
-          'Call createDefault first.',
-      );
+      // Return a computed default when no record exists yet — allows the
+      // POS frontend to render its config screen during initial refresh()
+      // without requiring a prior POST or an explicit init step.
+      return this.buildDefaultEntity(subscriptionId);
     }
     return this.toEntity(raw);
   }

@@ -14,7 +14,7 @@ import {
   selectTotalCents,
   updateQuantity,
 } from "./sales-slice";
-import { CartItem } from "./sales-types";
+import { CartItem, SelectedClient } from "./sales-types";
 import { SaleType } from "@pharmacy/shared-types";
 
 const baseItem = (
@@ -37,11 +37,11 @@ const baseItem = (
 });
 
 interface RootState {
-  sales: { items: CartItem[] };
+  sales: { items: CartItem[]; selectedClient: SelectedClient | null };
 }
 
 const buildRoot = (items: CartItem[]): RootState => ({
-  sales: { items },
+  sales: { items, selectedClient: null },
 });
 
 describe("sales slice — reducers", () => {
