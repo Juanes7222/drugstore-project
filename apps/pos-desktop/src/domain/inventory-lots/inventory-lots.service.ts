@@ -56,6 +56,32 @@ export interface ConsumedLot {
 }
 
 // ---------------------------------------------------------------------------
+// Movement query types
+// ---------------------------------------------------------------------------
+
+/**
+ * A single inventory movement record, formatted for display in a UI table.
+ *
+ * The `createdByName` field is `null` in the local-only context because the
+ * `User` model is not included in the local Prisma schema — it exists only
+ * in the server schema.  A future sync-layer enhancement could resolve
+ * `createdById` via a cached local User table if one is added.
+ */
+export interface LotMovementRecord {
+  id: string;
+  movementType: string;
+  quantity: number;
+  previousStock: number;
+  resultingStock: number;
+  /** ISO-8601 string of the movement timestamp. */
+  createdAt: string;
+  reason: string | null;
+  createdByName: string | null;
+  adjustmentDocumentId: string | null;
+  saleId: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -273,5 +299,33 @@ export class InventoryLotsService {
 
       return consumedLots;
     });
+  }
+
+  /**
+   * Retrieve all inventory movements for a given lot, most recent first.
+   *
+   * Returns plain objects with ISO date strings, ready for direct
+   * consumption by a UI table.  The `createdByName` field is always
+   * `null` because the `User` model is not available in the local
+   * PGlite schema — see `LotMovementRecord` for details.
+   */
+  async getMovementsForLot(lotId: string): Promise<LotMovementRecord[]> {
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where: { lotId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return movements.map((m) => ({
+      id: m.id,
+      movementType: m.movementType,
+      quantity: m.quantity,
+      previousStock: m.previousStock,
+      resultingStock: m.resultingStock,
+      createdAt: m.createdAt.toISOString(),
+      reason: m.reason,
+      createdByName: null,
+      adjustmentDocumentId: m.adjustmentDocumentId,
+      saleId: m.saleId,
+    }));
   }
 }

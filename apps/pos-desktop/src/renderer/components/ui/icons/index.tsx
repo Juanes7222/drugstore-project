@@ -25,7 +25,13 @@ import { motion, useReducedMotion } from "motion/react";
 // Icon name registry
 // ---------------------------------------------------------------------------
 
-export type IconName = "star" | "sparkles";
+export type IconName =
+  | "star"
+  | "sparkles"
+  | "minus"
+  | "plus"
+  | "arrow-left"
+  | "search";
 
 /** Maps each icon name to its JSX path(s). */
 const ICON_PATHS: Record<IconName, ReactNode> = {
@@ -37,6 +43,15 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
       <path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" />
       <path d="M20 2v4m2-2h-4" />
       <circle cx="4" cy="20" r="2" />
+    </>
+  ),
+  minus: <path d="M5 12h14" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  "arrow-left": <path d="M19 12H5M12 19l-7-7 7-7" />,
+  search: (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
     </>
   ),
 };
@@ -54,6 +69,8 @@ export interface IconProps {
   className?: string;
   /** Stroke color. Default "currentColor". */
   color?: string;
+  /** Stroke width. Default 2. */
+  strokeWidth?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +82,7 @@ export const Icon: FC<IconProps> = ({
   size = 14,
   className,
   color,
+  strokeWidth = 2,
 }) => {
   const prefersReducedMotion = useReducedMotion();
 
@@ -75,7 +93,7 @@ export const Icon: FC<IconProps> = ({
       viewBox="0 0 24 24"
       fill="none"
       stroke={color ?? "currentColor"}
-      strokeWidth={2}
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -101,4 +119,24 @@ export const StarIcon: FC<Omit<IconProps, "name">> = (props) => (
 /** Indicates a field where the system suggests a value. */
 export const SparklesIcon: FC<Omit<IconProps, "name">> = (props) => (
   <Icon name="sparkles" {...props} />
+);
+
+/** Minus / decrease icon. */
+export const MinusIcon: FC<Omit<IconProps, "name">> = (props) => (
+  <Icon name="minus" {...props} />
+);
+
+/** Plus / increase icon. */
+export const PlusIcon: FC<Omit<IconProps, "name">> = (props) => (
+  <Icon name="plus" {...props} />
+);
+
+/** Arrow left / back icon. */
+export const ArrowLeftIcon: FC<Omit<IconProps, "name">> = (props) => (
+  <Icon name="arrow-left" {...props} />
+);
+
+/** Search / magnifier icon. */
+export const SearchIcon: FC<Omit<IconProps, "name">> = (props) => (
+  <Icon name="search" {...props} />
 );

@@ -30,7 +30,7 @@ import {
   createLocalAdjustmentService,
   type LocalAdjustmentService,
 } from './local-adjustment.service';
-import type { OperationalInvoiceView, AdjustmentHistoryEntry } from './local-adjustment.types';
+import type { AdjustmentType, OperationalInvoiceView, AdjustmentHistoryEntry } from './local-adjustment.types';
 
 // Presentational components
 import { InvoiceListView } from '../../renderer/components/fiscal/invoice-list-view';
@@ -38,6 +38,7 @@ import { ContingencyHistoryView } from '../../renderer/components/fiscal/conting
 import { FiscalInvoiceDetailPanel } from '../../renderer/components/fiscal/fiscal-invoice-detail-panel';
 import { OperationalInvoiceDetailPanel } from '../../renderer/components/fiscal/operational-invoice-detail-panel';
 import { AdjustmentHistoryPanel } from '../../renderer/components/fiscal/adjustment-history-panel';
+import { AdjustmentCreationModal } from '../../renderer/components/fiscal/adjustment-creation-modal';
 
 const AUTO_REFRESH_MS = 30_000;
 
@@ -61,6 +62,12 @@ export const FiscalPage: FC = () => {
 
   // Detail panel sub-tab: 'fiscal' shows only fiscal panel, 'dual' shows both
   const [detailView, setDetailView] = useState<'fiscal' | 'dual'>('fiscal');
+
+  // Adjustment creation modal state
+  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+  const [adjustmentModalLoading, setAdjustmentModalLoading] = useState(false);
+  const [adjustmentModalError, setAdjustmentModalError] = useState<string | null>(null);
+  const [allowedAdjustmentTypes, setAllowedAdjustmentTypes] = useState<AdjustmentType[]>([]);
 
   const servicesRef = useRef<{
     invoiceService: InvoiceService | null;
@@ -266,6 +273,67 @@ export const FiscalPage: FC = () => {
     }
   }, [selectedInvoice]);
 
+  // Adjustment creation modal handlers
+  const handleOpenAdjustmentModal = useCallback(async () => {
+    if (!selectedInvoice || !servicesRef.current.adjustmentService) return;
+    try {
+      const types = await servicesRef.current.adjustmentService.getAllowableAdjustmentTypes(
+        selectedInvoice.id,
+      );
+      setAllowedAdjustmentTypes(types);
+      setAdjustmentModalError(null);
+      setShowAdjustmentModal(true);
+    } catch {
+      setAdjustmentModalError('Error al cargar tipos de ajuste permitidos');
+      setShowAdjustmentModal(true);
+    }
+  }, [selectedInvoice]);
+
+  const handleCloseAdjustmentModal = useCallback(() => {
+    setShowAdjustmentModal(false);
+    setAdjustmentModalError(null);
+    setAdjustmentModalLoading(false);
+  }, []);
+
+  const handleApplyAdjustment = useCallback(
+    async (type: AdjustmentType, newValue: unknown, reason: string) => {
+      if (!selectedInvoice || !servicesRef.current.adjustmentService) return;
+      setAdjustmentModalLoading(true);
+      setAdjustmentModalError(null);
+      try {
+        await servicesRef.current.adjustmentService.applyAdjustment(
+          selectedInvoice.id,
+          type,
+          newValue,
+          reason,
+        );
+        // Refresh operational view and history after successful creation
+        const adjSvc = servicesRef.current.adjustmentService;
+        if (adjSvc) {
+          const [opView, adjHist] = await Promise.all([
+            adjSvc.resolveOperationalView(selectedInvoice.id),
+            adjSvc.getAdjustmentHistory(selectedInvoice.id),
+          ]);
+          setOperationalView(opView);
+          setAdjustmentHistory(adjHist);
+          if (opView.operational.hasDifferences) {
+            setDetailView('dual');
+          }
+        }
+        setShowAdjustmentModal(false);
+      } catch (err) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : 'Error al aplicar el ajuste';
+        setAdjustmentModalError(msg);
+      } finally {
+        setAdjustmentModalLoading(false);
+      }
+    },
+    [selectedInvoice],
+  );
+
   // Role check
   const role = session?.role as RoleType | undefined;
   const isAdmin = role === RoleType.ADMIN;
@@ -433,6 +501,7 @@ export const FiscalPage: FC = () => {
                     operationalView={operationalView}
                     adjustmentCount={adjustmentHistory.length}
                     isLoading={operationalLoading}
+                    onCreateAdjustment={handleOpenAdjustmentModal}
                   />
 
                   {/* Adjustment history within the dual panel */}
@@ -451,6 +520,22 @@ export const FiscalPage: FC = () => {
           </aside>
         )}
       </div>
+
+      {/* Adjustment creation modal */}
+      {selectedInvoice && (
+        <AdjustmentCreationModal
+          visible={showAdjustmentModal}
+          invoiceId={selectedInvoice.id}
+          invoiceStatus={selectedInvoice.status}
+          invoiceType={selectedInvoice.invoiceType}
+          operationalView={operationalView}
+          allowedTypes={allowedAdjustmentTypes}
+          loading={adjustmentModalLoading}
+          error={adjustmentModalError}
+          onSubmit={handleApplyAdjustment}
+          onClose={handleCloseAdjustmentModal}
+        />
+      )}
     </section>
   );
 };

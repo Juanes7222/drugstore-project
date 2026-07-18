@@ -4,6 +4,7 @@
  */
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
+import { ArrowLeftIcon } from "@/components/ui/icons";
 
 interface InventoryAdjustmentsHeaderProps {
   isOnline: boolean;
@@ -28,22 +29,10 @@ export const InventoryAdjustmentsHeader: FC<InventoryAdjustmentsHeaderProps> = (
       <button
         type="button"
         onClick={onBack}
-        className="pos-button pos-button-secondary flex-shrink-0"
+        className="pos-button pos-button-secondary shrink-0"
         aria-label={t("common.back")}
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M19 12H5M12 19l-7-7 7-7" />
-        </svg>
+        <ArrowLeftIcon size={16} />
       </button>
 
       {/* Title */}

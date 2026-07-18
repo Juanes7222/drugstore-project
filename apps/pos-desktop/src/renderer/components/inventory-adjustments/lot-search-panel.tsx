@@ -9,6 +9,7 @@
 
 import { type FC, useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { SearchIcon } from "@/components/ui/icons";
 import type { DisplayLot } from "./inventory-adjustments.types";
 
 interface LotSearchPanelProps {
@@ -81,29 +82,19 @@ export const LotSearchPanel: FC<LotSearchPanelProps> = ({
             aria-describedby="lot-search-hint"
           />
           {/* Search icon */}
-          <svg
+          <span
             className="absolute left-pos-sm top-1/2 -translate-y-1/2"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
             style={{
               color: "color-mix(in srgb, var(--color-ink) 40%, transparent)",
             }}
           >
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
+            <SearchIcon />
+          </span>
         </div>
 
         {/* Lot count chip */}
         <span
-          className="flex-shrink-0 rounded-full px-pos-sm py-pos-xs font-data text-caption tabular-nums"
+          className="shrink-0 rounded-full px-pos-sm py-pos-xs font-data text-caption tabular-nums"
           style={{
             backgroundColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
             color: "color-mix(in srgb, var(--color-ink) 55%, transparent)",
@@ -188,7 +179,7 @@ export const LotSearchPanel: FC<LotSearchPanelProps> = ({
                 {/* Low-stock badge */}
                 {lowStock && (
                   <span
-                    className="flex-shrink-0 rounded px-pos-xs py-0.5 font-data text-caption font-semibold tabular-nums"
+                    className="shrink-0 rounded px-pos-xs py-0.5 font-data text-caption font-semibold tabular-nums"
                     style={{
                       backgroundColor: "color-mix(in srgb, var(--color-urgency) 12%, transparent)",
                       color: "var(--color-urgency)",
@@ -201,7 +192,7 @@ export const LotSearchPanel: FC<LotSearchPanelProps> = ({
                 {/* Near-expiry badge */}
                 {nearExpiry && !lowStock && (
                   <span
-                    className="flex-shrink-0 rounded px-pos-xs py-0.5 font-data text-caption font-semibold tabular-nums"
+                    className="shrink-0 rounded px-pos-xs py-0.5 font-data text-caption font-semibold tabular-nums"
                     style={{
                       backgroundColor: "color-mix(in srgb, var(--color-warning) 12%, transparent)",
                       color: "var(--color-warning)",

@@ -15,7 +15,7 @@ export const StrictnessConfigSchema = z.object({
   clientRequired: z.enum(['ALWAYS', 'ABOVE_AMOUNT', 'NEVER']),
   clientRequiredThreshold: z.number().min(0),
   prescriptionEnforcement: z.enum(['STRICT', 'WARN', 'OFF']),
-  inventoryAdjustmentReason: z.enum(['REQUIRED', 'OPTIONAL']),
+  inventoryAdjustmentReason: z.enum(['STRICT', 'OPTIONAL', 'OFF']),
   returnsRequireOriginalSale: z.enum(['STRICT', 'WITH_MANAGER_AUTH', 'OFF']),
   cashShiftRequired: z.boolean(),
   receiptPrintRequired: z.enum(['STRICT', 'OPTIONAL', 'OFF']),

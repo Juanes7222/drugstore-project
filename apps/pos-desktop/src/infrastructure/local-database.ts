@@ -20,18 +20,35 @@
  *   context where our polyfills apply) and all domain services work
  *   through the full type-safe Prisma API.
  *
- * Schema-upgrade-on-existing-install is deliberately unsolved here; see
- * README in this module for the open question.
+ * Schema-upgrade-on-existing-install uses automatic hash-based detection:
+ * `computeSchemaHash` produces a deterministic hash of the processed DDL.
+ * On startup the stored hash is compared to the current hash; if they
+ * differ, `applyMissingSchema` introspects `information_schema` to find
+ * exactly what changed and applies only the missing objects — no manual
+ * version bump needed, no "already exists" errors.
  */
 
 import { PGlite } from '@electric-sql/pglite';
 import { LOCAL_SCHEMA_SQL } from '@pharmacy/database/local-schema';
 
 /**
- * Schema version — bump this when LOCAL_SCHEMA_SQL changes.
- * applyMissingSchema runs only when stored version differs.
+ * Compute a deterministic 32-bit hash of the processed schema SQL.
+ *
+ * Used to detect schema changes automatically — no manual version bump needed.
+ * The hash changes when `LOCAL_SCHEMA_SQL` changes (which is auto-generated
+ * from the Prisma schema by `generate-local-sql.mjs`), which triggers
+ * `applyMissingSchema` on next startup.
  */
-const SCHEMA_VERSION = 1;
+function computeSchemaHash(sql: string): string {
+  // DJB2 variant — fast, deterministic, no external API needed.
+  let hash = 0;
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0; // Coerce to 32-bit integer
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
 
 /**
  * Detect whether the app is running inside a Tauri webview.
@@ -161,6 +178,44 @@ function parseCreateTableColumns(stmt: string): { tableName: string; columnDefs:
 }
 
 /**
+ * Extract the constraint name from an `ALTER TABLE … ADD CONSTRAINT "name" …` statement.
+ */
+function parseConstraintName(stmt: string): string | null {
+  const match = stmt.match(
+    /ALTER\s+TABLE\s+"[^"]+"\s+ADD\s+CONSTRAINT\s+"([^"]+)"/i,
+  );
+  return match?.[1] ?? null;
+}
+
+/**
+ * Extract the index name from a `CREATE INDEX "name" ON …` statement.
+ */
+function parseIndexName(stmt: string): string | null {
+  const match = stmt.match(
+    /CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?([^"\s(]+)"?\s+ON/i,
+  );
+  return match?.[2] ?? null;
+}
+
+/**
+ * Extract the type name from a `CREATE TYPE "name" AS ENUM (…)` statement.
+ */
+function parseEnumTypeName(stmt: string): string | null {
+  const match = stmt.match(/CREATE\s+TYPE\s+"([^"]+)"\s+AS\s+ENUM/i);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Extract the table name from a `CREATE TABLE "name" (…)` statement.
+ */
+function parseTableName(stmt: string): string | null {
+  const match = stmt.match(
+    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"([^"]+)"/i,
+  );
+  return match?.[1] ?? null;
+}
+
+/**
  * Query `information_schema.columns` for every column on every table listed
  * in the DDL, returning a Set of `"tableName"."columnName"` keys already
  * present in the database.
@@ -188,7 +243,62 @@ async function getExistingColumnKeys(
 }
 
 // ---------------------------------------------------------------------------
-// Schema-version tracking
+// Pre-check helpers — query what already exists so we avoid "already exists"
+// errors instead of catching them.
+// ---------------------------------------------------------------------------
+
+/**
+ * Query `information_schema.table_constraints` for every FOREIGN KEY
+ * constraint name already present in the database.
+ */
+async function getExistingForeignKeyNames(
+  client: PGlite,
+): Promise<Set<string>> {
+  const result = await client.query<{ constraintName: string }>(
+    `SELECT tc.constraint_name AS "constraintName"
+       FROM information_schema.table_constraints tc
+      WHERE tc.constraint_type = 'FOREIGN KEY'
+        AND tc.table_schema = 'public'`,
+  );
+  return new Set(result.rows.map((r) => r.constraintName));
+}
+
+/**
+ * Query `pg_indexes` for every index name already present.
+ */
+async function getExistingIndexNames(client: PGlite): Promise<Set<string>> {
+  const result = await client.query<{ indexname: string }>(
+    `SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`,
+  );
+  return new Set(result.rows.map((r) => r.indexname));
+}
+
+/**
+ * Query `pg_type` for every enum type name already present.
+ */
+async function getExistingEnumTypeNames(
+  client: PGlite,
+): Promise<Set<string>> {
+  const result = await client.query<{ typname: string }>(
+    `SELECT typname FROM pg_type WHERE typtype = 'e'`,
+  );
+  return new Set(result.rows.map((r) => r.typname));
+}
+
+/**
+ * Query `information_schema.tables` for every table name already present.
+ */
+async function getExistingTableNames(client: PGlite): Promise<Set<string>> {
+  const result = await client.query<{ tableName: string }>(
+    `SELECT table_name AS "tableName"
+       FROM information_schema.tables
+      WHERE table_schema = 'public'`,
+  );
+  return new Set(result.rows.map((r) => r.tableName));
+}
+
+// ---------------------------------------------------------------------------
+// Schema-hash tracking
 // ---------------------------------------------------------------------------
 
 /**
@@ -204,51 +314,68 @@ async function ensureSchemaMetaTable(client: PGlite): Promise<void> {
 }
 
 /**
- * Read the stored schema version, or null if never set.
+ * Read the stored schema hash, or null if never set.
+ * Accepts both the new `schema_hash` key and the legacy `schema_version` key
+ * so existing databases upgrade gracefully without re-applying unchanged DDL.
  */
-async function getStoredSchemaVersion(client: PGlite): Promise<number | null> {
+async function getStoredSchemaHash(client: PGlite): Promise<string | null> {
   try {
     const result = await client.query<{ value: string }>(
+      `SELECT value FROM "_SchemaMeta" WHERE key = 'schema_hash'`,
+    );
+    if (result.rows.length > 0) return result.rows[0].value;
+
+    // Fallback: migrate from legacy schema_version key
+    const legacy = await client.query<{ value: string }>(
       `SELECT value FROM "_SchemaMeta" WHERE key = 'schema_version'`,
     );
-    return result.rows.length > 0 ? Number(result.rows[0].value) : null;
+    if (legacy.rows.length > 0) {
+      // Return the value so applyMissingSchema runs; the new hash will be
+      // written afterwards, replacing the legacy key on first upgrade.
+      return legacy.rows[0].value;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
 /**
- * Write (upsert) the current schema version so subsequent startups can skip
- * `applyMissingSchema` when nothing changed.
+ * Write (upsert) the current schema hash so subsequent startups can skip
+ * `applyMissingSchema` when nothing changed.  Cleans up the legacy
+ * `schema_version` key if it still exists.
  */
-async function storeSchemaVersion(client: PGlite, version: number): Promise<void> {
-  // DELETE + INSERT is simpler than ON CONFLICT and avoids any PGlite
-  // compatibility risk with PostgreSQL upsert syntax.
-  await client.query(`DELETE FROM "_SchemaMeta" WHERE key = 'schema_version'`);
+async function storeSchemaHash(
+  client: PGlite,
+  hash: string,
+): Promise<void> {
+  // Clean up legacy key in the same transaction
   await client.query(
-    `INSERT INTO "_SchemaMeta" (key, value) VALUES ('schema_version', $1)`,
-    [String(version)],
+    `DELETE FROM "_SchemaMeta" WHERE key IN ('schema_version', 'schema_hash')`,
+  );
+  await client.query(
+    `INSERT INTO "_SchemaMeta" (key, value) VALUES ('schema_hash', $1)`,
+    [hash],
   );
 }
 
 /**
  * Apply missing schema objects to an existing database.
  *
- * Strategy (instead of fighting with Prisma's generated DDL line-by-line):
+ * Strategy (pre-check-then-execute, not catch-and-skip):
  *
- *  1. Parse every `CREATE TABLE "Name" (...)` from the DDL to build a map
- *     of expected columns.
- *  2. Query `information_schema.columns` to learn what already exists.
- *  3. For any column the DDL declares but the live table lacks, issue
- *     `ALTER TABLE ADD COLUMN` first — this is safe and idempotent.
- *  4. Then execute each DDL statement individually, silently skipping
- *     "already exists" errors.  Because all columns are already in place,
- *     the `ALTER TABLE ADD CONSTRAINT ... FOREIGN KEY` statements will no
- *     longer fail with "referenced column does not exist".
+ *  1. Parse all expected objects from the DDL — tables, columns, enums,
+ *     indexes, foreign keys.
+ *  2. Query `information_schema` / `pg_type` / `pg_indexes` once to
+ *     learn what already exists in the live database.
+ *  3. Skip every object that already exists; execute DDL only for
+ *     genuinely missing objects.
+ *  4. Phase 1: backfill missing columns via `ALTER TABLE ADD COLUMN`.
+ *  5. Phase 2: execute all remaining DDL statements that still have
+ *     work to do (new tables, new enums, new indexes, new FKs).
  *
- * This handles any schema evolution where columns are added to an
- * already-deployed table — not just `receiptTemplateId`, but any future
- * addition as well.
+ * This is entirely automatic — no manual version bump or migration script
+ * is needed.  The caller decides when to run based on a schema-hash change.
  */
 async function applyMissingSchema(client: PGlite): Promise<void> {
   const sql = LOCAL_SCHEMA_SQL
@@ -259,12 +386,18 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
 
   const statements = splitSqlStatements(sql);
 
+  // ---- Pre-query: what already exists in the live database? ----
+  const [existingFks, existingIndexes, existingEnums, existingTables] =
+    await Promise.all([
+      getExistingForeignKeyNames(client),
+      getExistingIndexNames(client),
+      getExistingEnumTypeNames(client),
+      getExistingTableNames(client),
+    ]);
+
   // ---- Phase 1: introspect and backfill missing columns ----
   const expectedColumns = new Map<string, Map<string, string>>();
   for (const [i, stmt] of statements.entries()) {
-    // NOTE: statements after splitSqlStatements often start with a
-    // `-- CreateTable` comment.  The `^` anchor would reject them, so we
-    // search for "CREATE TABLE" anywhere in the statement.
     if (!stmt.includes('CREATE TABLE')) {
       continue;
     }
@@ -281,7 +414,7 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
 
   // eslint-disable-next-line no-console
   console.log(
-    `[local-database] Phase 1: ${expectedColumns.size} tables in DDL, checking information_schema...`,
+    `[local-database] Phase 1: ${expectedColumns.size} tables in DDL, checking information_schema.columns...`,
   );
 
   if (expectedColumns.size > 0) {
@@ -289,7 +422,7 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
     try {
       existingKeys = await getExistingColumnKeys(client, [...expectedColumns.keys()]);
       // eslint-disable-next-line no-console
-      console.log(`[local-database] Phase 1: found ${existingKeys.size} existing column keys in information_schema`);
+      console.log(`[local-database] Phase 1: found ${existingKeys.size} existing column keys in information_schema.columns`);
     } catch (infoErr: unknown) {
       // eslint-disable-next-line no-console
       console.error('[local-database] Phase 1: FAILED to query information_schema.columns:', infoErr);
@@ -297,9 +430,18 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
     }
 
     for (const [tableName, cols] of expectedColumns) {
+      // Skip tables that do not exist yet — Phase 2 creates them.
+      if (!existingTables.has(tableName)) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[local-database] Phase 1: skipping backfill for new table "${tableName}" (will be created in Phase 2)`,
+        );
+        continue;
+      }
+
       for (const [colName, colDef] of cols) {
         const key = `"${tableName}"."${colName}"`;
-        if (existingKeys.has(key)) continue; // Column already present.
+        if (existingKeys.has(key)) continue;
 
         // eslint-disable-next-line no-console
         console.log(
@@ -310,58 +452,81 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
           await client.exec(`ALTER TABLE "${tableName}" ADD COLUMN ${colDef};`);
         } catch (backfillErr: unknown) {
           const bMsg = backfillErr instanceof Error ? backfillErr.message : String(backfillErr);
-          // "already exists" / "duplicate column" can occur in a race where
-          // the column was added between our query and our ALTER.
           if (
             bMsg.includes('already exists') ||
             bMsg.includes('duplicate column')
           ) {
             continue;
           }
-          // Unexpected error — surface during startup.
           throw backfillErr;
         }
       }
     }
   }
 
-  // ---- Phase 2: apply the DDL statements individually ----
-  // All missing columns are now in place, so FK ALTER TABLE statements
-  // should succeed.  We still skip "already exists" for tables, enums,
-  // indexes, and constraints that are already present.
+  // ---- Phase 2: apply DDL statements for genuinely missing objects ----
+  // Build a skip-list per statement type so we never attempt to create
+  // something that already exists.  This avoids noisy "already exists"
+  // errors and wasted startup time.
   // eslint-disable-next-line no-console
-  console.log(`[local-database] Phase 2: executing ${statements.length} DDL statements...`);
-  for (const [i, stmt] of statements.entries()) {
-    const isFk = /ALTER\s+TABLE.*ADD\s+CONSTRAINT.*FOREIGN\s+KEY/i.test(stmt);
-    if (isFk) {
-      // eslint-disable-next-line no-console
-      console.log(`[local-database] Phase 2 [${i}/${statements.length}] FK: ${stmt.slice(0, 120)}...`);
-    }
-    try {
-      await client.exec(stmt);
-      if (isFk) {
-        // eslint-disable-next-line no-console
-        console.log(`[local-database] Phase 2 [${i}/${statements.length}] FK succeeded.`);
+  console.log(
+    `[local-database] Phase 2: checking ${statements.length} DDL statements against existing schema...`,
+  );
+
+  let executedCount = 0;
+  for (const stmt of statements) {
+    // Determine whether this statement is needed based on what exists.
+    const shouldSkip = ((): boolean => {
+      // Tables
+      if (stmt.includes('CREATE TABLE')) {
+        const name = parseTableName(stmt);
+        return name !== null && existingTables.has(name);
       }
-    } catch (err: unknown) {
-      if (isFk) {
-        // eslint-disable-next-line no-console
-        console.error(`[local-database] Phase 2 [${i}/${statements.length}] FK FAILED:`, err);
+
+      // Enums
+      if (stmt.includes('CREATE TYPE') && stmt.includes('AS ENUM')) {
+        const name = parseEnumTypeName(stmt);
+        return name !== null && existingEnums.has(name);
       }
-      const msg = err instanceof Error ? err.message : String(err);
+
+      // Indexes
       if (
-        msg.includes('already exists') ||
-        msg.includes('duplicate key') ||
-        msg.includes('duplicate table') ||
-        msg.includes('duplicate object')
+        stmt.includes('CREATE INDEX') ||
+        stmt.includes('CREATE UNIQUE INDEX')
       ) {
-        // Object already exists — skip silently.
-        continue;
+        const name = parseIndexName(stmt);
+        // PostgreSQL auto-creates indexes for UNIQUE and PK constraints,
+        // so the index may exist even though we never explicitly created
+        // it.  Check by name.
+        return name !== null && existingIndexes.has(name);
       }
-      // Unexpected error — surface during startup.
-      throw err;
+
+      // Foreign keys
+      if (
+        stmt.includes('ALTER TABLE') &&
+        stmt.includes('ADD CONSTRAINT') &&
+        stmt.includes('FOREIGN KEY')
+      ) {
+        const name = parseConstraintName(stmt);
+        return name !== null && existingFks.has(name);
+      }
+
+      return false;
+    })();
+
+    if (shouldSkip) {
+      continue;
     }
+
+    // eslint-disable-next-line no-await-in-loop
+    await client.exec(stmt);
+    executedCount++;
   }
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[local-database] Phase 2: executed ${executedCount} of ${statements.length} statements (${statements.length - executedCount} skipped).`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -650,34 +815,40 @@ export async function getLocalDatabase(): Promise<{
       }
 
       // ---- Schema init / upgrade check ----
+      // The schema SQL is auto-generated from the Prisma schema, so we use a
+      // deterministic hash to detect changes — no manual version bump needed.
       await ensureSchemaMetaTable(client);
+      const processedSql = LOCAL_SCHEMA_SQL
+        .replace(/^--\s*CreateSchema[\s\S]*?CREATE SCHEMA IF NOT EXISTS "public";\s*/m, '')
+        .trim();
+      const currentHash = computeSchemaHash(processedSql);
       const isEmpty = !(await tableExists(client, 'Client'));
 
       if (isEmpty) {
-        // Fresh database — apply full schema, store version.
+        // Fresh database — apply full schema, store hash.
         // eslint-disable-next-line no-console
         console.log('[local-database] Fresh database — applying full schema...');
         await applySchema(client);
-        await storeSchemaVersion(client, SCHEMA_VERSION);
+        await storeSchemaHash(client, currentHash);
         // eslint-disable-next-line no-console
-        console.log(`[local-database] Database initialized (schema v${SCHEMA_VERSION}).`);
+        console.log(`[local-database] Database initialized (hash=${currentHash}).`);
       } else {
-        const storedVersion = await getStoredSchemaVersion(client);
+        const storedHash = await getStoredSchemaHash(client);
 
-        if (storedVersion === SCHEMA_VERSION) {
-          // Schema is current — skip schema work entirely.  Single-line OK.
+        if (storedHash === currentHash) {
+          // Schema is current — skip schema work entirely.
           // eslint-disable-next-line no-console
-          console.log(`[local-database] Database ready (schema v${SCHEMA_VERSION}).`);
+          console.log(`[local-database] Database ready (hash=${currentHash}).`);
         } else {
-          // Version mismatch (null, older, or newer) — apply missing schema.
+          // Hash mismatch — schema changed since last startup.
           // eslint-disable-next-line no-console
           console.log(
-            `[local-database] Schema version change: v${storedVersion ?? '?'} → v${SCHEMA_VERSION}. Applying missing schema...`,
+            `[local-database] Schema hash change: "${storedHash ?? '?'}" → "${currentHash}". Applying missing schema...`,
           );
           await applyMissingSchema(client);
-          await storeSchemaVersion(client, SCHEMA_VERSION);
+          await storeSchemaHash(client, currentHash);
           // eslint-disable-next-line no-console
-          console.log(`[local-database] Schema upgraded to v${SCHEMA_VERSION}.`);
+          console.log(`[local-database] Schema upgraded (hash=${currentHash}).`);
         }
       }
 

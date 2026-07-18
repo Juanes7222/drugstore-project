@@ -3,6 +3,7 @@ export {
   InventoryLotsService,
   type ConsumeStockForSaleParams,
   type ConsumedLot,
+  type LotMovementRecord,
 } from './inventory-lots.service';
 
 export {

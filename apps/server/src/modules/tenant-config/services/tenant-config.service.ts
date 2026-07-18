@@ -143,7 +143,7 @@ const PRESETS: Record<string, PresetData> = {
       clientRequired: 'ALWAYS',
       clientRequiredThreshold: 0,
       prescriptionEnforcement: 'STRICT',
-      inventoryAdjustmentReason: 'REQUIRED',
+      inventoryAdjustmentReason: 'STRICT',
       returnsRequireOriginalSale: 'STRICT',
       cashShiftRequired: true,
       receiptPrintRequired: 'STRICT',

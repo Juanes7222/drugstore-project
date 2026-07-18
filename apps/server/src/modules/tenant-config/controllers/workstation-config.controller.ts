@@ -54,7 +54,7 @@ const UpsertWorkstationConfigSchema = z.object({
     .optional(),
   strictness: z
     .object({
-      inventoryAdjustmentReason: z.enum(['REQUIRED', 'OPTIONAL']).optional(),
+      inventoryAdjustmentReason: z.enum(['STRICT', 'OPTIONAL', 'OFF']).optional(),
       cashShiftRequired: z.boolean().optional(),
       receiptPrintRequired: z.enum(['STRICT', 'OPTIONAL', 'OFF']).optional(),
       autoOpenDrawer: z.enum(['ALWAYS', 'CASH_ONLY', 'MANUAL']).optional(),

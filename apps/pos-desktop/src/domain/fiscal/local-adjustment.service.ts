@@ -182,6 +182,12 @@ export interface LocalAdjustmentService {
   ): Promise<boolean>;
 
   /**
+   * Get all adjustment types currently allowed for the specified invoice.
+   * Used by the UI to populate the type picker.
+   */
+  getAllowableAdjustmentTypes(invoiceId: string): Promise<AdjustmentType[]>;
+
+  /**
    * Export the full adjustment log for a single invoice as CSV rows.
    */
   exportAdjustmentLogAsCsv(invoiceId: string): Promise<string>;
@@ -589,6 +595,25 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
       String(invoice.status),
       String(invoice.invoiceType),
     );
+  }
+
+  async getAllowableAdjustmentTypes(invoiceId: string): Promise<AdjustmentType[]> {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { status: true, invoiceType: true },
+    });
+
+    if (!invoice) return [];
+
+    const status = String(invoice.status);
+    const invoiceType = String(invoice.invoiceType);
+
+    if (isContingencyCancellation(invoiceType)) return [];
+
+    const allowed = ALLOWED_ADJUSTMENTS_BY_STATUS[status];
+    if (!allowed) return [];
+
+    return allowed.filter((t) => t !== 'REVERSAL');
   }
 
   async exportAdjustmentLogAsCsv(invoiceId: string): Promise<string> {

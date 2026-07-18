@@ -1,18 +1,25 @@
 /**
  * AdjustmentForm — card with selected lot info, type toggle, quantity,
  * reason dropdown, custom reason, notes, error banner, and submit button.
+ *
+ * Adapts to tenant config:
+ * - reasonRequirement=HIDDEN → reason field not rendered
+ * - reasonRequirement=OPTIONAL → reason shown but not required
+ * - reasonRequirement=REQUIRED → reason must be selected to submit
  */
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import type { DisplayLot, AdjustmentType } from "./inventory-adjustments.types";
+import type { FieldRequirement } from "../../../domain/config/types";
 import { ErrorBanner } from "./error-banner";
+import { MinusIcon, PlusIcon } from "@/components/ui/icons";
 
 interface AdjustmentFormProps {
   selectedLot: DisplayLot;
   adjustmentType: AdjustmentType;
   onAdjustmentTypeChange: (type: AdjustmentType) => void;
-  quantity: number;
-  onQuantityChange: (value: number) => void;
+  quantityStr: string;
+  onQuantityChange: (value: string) => void;
   reason: string;
   onReasonChange: (reason: string) => void;
   customReason: string;
@@ -23,6 +30,7 @@ interface AdjustmentFormProps {
   isProcessing: boolean;
   canSubmit: boolean;
   projectedStock: number;
+  reasonRequirement: FieldRequirement;
   onSubmit: () => void;
 }
 
@@ -38,7 +46,7 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
   selectedLot,
   adjustmentType,
   onAdjustmentTypeChange,
-  quantity,
+  quantityStr,
   onQuantityChange,
   reason,
   onReasonChange,
@@ -50,12 +58,14 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
   isProcessing,
   canSubmit,
   projectedStock,
+  reasonRequirement,
   onSubmit,
 }) => {
   const { t } = useTranslation();
 
   const isDecrease = adjustmentType === "DECREASE";
   const projectedIsNegative = projectedStock <= 0;
+  const showReason = reasonRequirement !== "HIDDEN";
 
   return (
     <section className="pos-panel mt-pos-lg p-pos-md">
@@ -159,19 +169,7 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
               onChange={() => onAdjustmentTypeChange("DECREASE")}
               className="sr-only"
             />
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M5 12h14" />
-            </svg>
+            <MinusIcon strokeWidth={2.5} />
             {t("inventory_adjustments.decrease")}
           </label>
 
@@ -199,19 +197,7 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
               onChange={() => onAdjustmentTypeChange("INCREASE")}
               className="sr-only"
             />
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2.5}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
+            <PlusIcon strokeWidth={2.5} />
             {t("inventory_adjustments.increase")}
           </label>
         </div>
@@ -230,56 +216,64 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
           id="adjustment-quantity"
           type="number"
           min={1}
-          value={quantity}
-          onChange={(e) => onQuantityChange(Number(e.target.value))}
+          value={quantityStr}
+          onChange={(e) => onQuantityChange(e.target.value)}
           disabled={isProcessing}
+          placeholder="1"
           className="pos-input w-32 font-data tabular-nums"
         />
       </div>
 
-      {/* Reason dropdown */}
-      <div className="mt-pos-md">
-        <label
-          htmlFor="adjustment-reason"
-          className="mb-pos-xs block text-body-sm font-semibold"
-          style={{ color: "var(--color-ink)" }}
-        >
-          {t("inventory_adjustments.reason")}
-        </label>
-        <select
-          id="adjustment-reason"
-          value={reason}
-          onChange={(e) => onReasonChange(e.target.value)}
-          disabled={isProcessing}
-          className="pos-input"
-        >
-          {Object.entries(ADJUSTMENT_REASON_KEYS).map(([value, key]) => (
-            <option key={value} value={value}>
-              {t(key)}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* Reason dropdown — hidden when config says OFF */}
+      {showReason && (
+        <>
+          <div className="mt-pos-md">
+            <label
+              htmlFor="adjustment-reason"
+              className="mb-pos-xs block text-body-sm font-semibold"
+              style={{ color: "var(--color-ink)" }}
+            >
+              {t("inventory_adjustments.reason")}
+              {reasonRequirement === "REQUIRED" && (
+                <span className="ml-pos-xs" style={{ color: "var(--color-urgency)" }}>*</span>
+              )}
+            </label>
+            <select
+              id="adjustment-reason"
+              value={reason}
+              onChange={(e) => onReasonChange(e.target.value)}
+              disabled={isProcessing}
+              className="pos-input"
+            >
+              {Object.entries(ADJUSTMENT_REASON_KEYS).map(([value, key]) => (
+                <option key={value} value={value}>
+                  {t(key)}
+                </option>
+              ))}
+            </select>
+          </div>
 
-      {/* Custom reason (only when OTHER) */}
-      {reason === "OTHER" && (
-        <div className="mt-pos-md">
-          <label
-            htmlFor="adjustment-custom-reason"
-            className="mb-pos-xs block text-body-sm font-semibold"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {t("inventory_adjustments.custom_reason")}
-          </label>
-          <input
-            id="adjustment-custom-reason"
-            type="text"
-            value={customReason}
-            onChange={(e) => onCustomReasonChange(e.target.value)}
-            disabled={isProcessing}
-            className="pos-input"
-          />
-        </div>
+          {/* Custom reason (only when OTHER) */}
+          {reason === "OTHER" && (
+            <div className="mt-pos-md">
+              <label
+                htmlFor="adjustment-custom-reason"
+                className="mb-pos-xs block text-body-sm font-semibold"
+                style={{ color: "var(--color-ink)" }}
+              >
+                {t("inventory_adjustments.custom_reason")}
+              </label>
+              <input
+                id="adjustment-custom-reason"
+                type="text"
+                value={customReason}
+                onChange={(e) => onCustomReasonChange(e.target.value)}
+                disabled={isProcessing}
+                className="pos-input"
+              />
+            </div>
+          )}
+        </>
       )}
 
       {/* Notes */}

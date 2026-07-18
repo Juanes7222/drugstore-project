@@ -21,15 +21,16 @@ import { useAppDispatch } from "@/store/hooks";
 import { navigateBackToSales } from "@/store/slices/ui-slice";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { RoleType } from "@pharmacy/shared-types";
 import { useInventoryAdjustmentsService } from "../common/service-context";
+import { useFieldRequirementFor } from "../../../domain/config/use-field-requirement";
+import type { FieldRequirement } from "../../../domain/config/types";
 import type { DisplayLot, AdjustmentType, AdjustmentReason } from "./inventory-adjustments.types";
 
 import { InventoryAdjustmentsHeader } from "./inventory-adjustments-header";
 import { LotSearchPanel } from "./lot-search-panel";
 import { AdjustmentForm } from "./adjustment-form";
 import { ErrorBanner } from "./error-banner";
-import { InventoryAdjustmentsToast } from "./inventory-adjustments-toast";
+import { notify } from "@/utils/notify";
 
 // ── Page component ──────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ export const InventoryAdjustmentsPage: FC = () => {
   const dispatch = useAppDispatch();
   const isOnline = useOnlineStatus();
   const adjustmentsService = useInventoryAdjustmentsService();
+  const reasonRequirement: FieldRequirement = useFieldRequirementFor("inventoryAdjustmentReason");
 
   // Search / list state
   const [searchQuery, setSearchQuery] = useState("");
@@ -48,19 +50,17 @@ export const InventoryAdjustmentsPage: FC = () => {
 
   // Form state
   const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>("DECREASE");
-  const [quantity, setQuantity] = useState(1);
+  const [quantityStr, setQuantityStr] = useState("1");
   const [reason, setReason] = useState<AdjustmentReason>("OTHER");
   const [customReason, setCustomReason] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Processing / error / toast
+  // Derived numeric quantity from input string
+  const quantity = Number(quantityStr) || 0;
+
+  // Processing / error
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{
-    operationUuid: string;
-    operationType: string;
-    isVerified: boolean;
-  } | null>(null);
 
   // ── Load all lots on mount ────────────────────────────────────────────
 
@@ -134,15 +134,12 @@ export const InventoryAdjustmentsPage: FC = () => {
   const handleSubmit = useCallback(async () => {
     setError(null);
 
-    // Re-check role at submit time
+    // Session guard — quick check before calling the service.
+    // Role enforcement is done by the service's requireRole, which handles
+    // supersession (OWNER/SAAS_ADMIN implicitly satisfy ADMIN/INVENTORY_ASSISTANT).
     const currentSession = useLocalSessionStore.getState().session;
     if (!currentSession) {
       setError(t("errors.no_session"));
-      return;
-    }
-    const role = currentSession.role as RoleType;
-    if (role !== RoleType.INVENTORY_ASSISTANT && role !== RoleType.ADMIN) {
-      setError(t("errors.role_inventory_admin"));
       return;
     }
 
@@ -212,24 +209,42 @@ export const InventoryAdjustmentsPage: FC = () => {
           : null,
       );
 
-      setToast({
-        operationUuid:
-          (applied as { operationUuid?: string }).operationUuid ??
-          (draft as { id: string }).id,
-        operationType: "INVENTORY_ADJUSTMENT",
-        isVerified: true,
+      // Notify via sileo toast
+      const operationUuid =
+        (applied as { operationUuid?: string }).operationUuid ??
+        (draft as { id: string }).id;
+      const truncatedUuid =
+        operationUuid.length > 8
+          ? `${operationUuid.slice(0, 8)}...`
+          : operationUuid;
+      notify.success({
+        title: isOnline
+          ? t("toast.status_synced")
+          : t("toast.status_queued"),
+        description: `${t("toast.operation_type.INVENTORY_ADJUSTMENT")} — ${truncatedUuid}`,
       });
 
       // Reset form
-      setQuantity(1);
+      setQuantityStr("1");
       setReason("OTHER");
       setCustomReason("");
       setNotes("");
     } catch (err) {
       setIsProcessing(false);
-      setError(
-        err instanceof Error ? err.message : t("inventory_adjustments.submit_error"),
-      );
+
+      // Map known error codes to localized messages
+      if (
+        err &&
+        typeof err === "object" &&
+        "errorCode" in err &&
+        (err as { errorCode: string }).errorCode === "INSUFFICIENT_ROLE"
+      ) {
+        setError(t("errors.role_inventory_admin"));
+      } else {
+        setError(
+          err instanceof Error ? err.message : t("inventory_adjustments.submit_error"),
+        );
+      }
     }
   }, [
     selectedLot,
@@ -243,19 +258,19 @@ export const InventoryAdjustmentsPage: FC = () => {
     t,
   ]);
 
-  const handleDismissToast = useCallback(() => {
-    setToast(null);
-  }, []);
-
   // ── Derived ───────────────────────────────────────────────────────────
 
   const canSubmit = useMemo(
-    () =>
-      selectedLot !== null &&
-      quantity > 0 &&
-      !isProcessing &&
-      (reason !== "OTHER" || customReason.trim().length > 0),
-    [selectedLot, quantity, isProcessing, reason, customReason],
+    () => {
+      if (!selectedLot || quantity <= 0 || isProcessing) return false;
+
+      // When reason is HIDDEN/OPTIONAL, no reason validation needed
+      if (reasonRequirement !== "REQUIRED") return true;
+
+      // When REQUIRED, enforce reason selection
+      return reason !== "OTHER" || customReason.trim().length > 0;
+    },
+    [selectedLot, quantity, isProcessing, reasonRequirement, reason, customReason],
   );
 
   const adjustmentDelta =
@@ -311,10 +326,8 @@ export const InventoryAdjustmentsPage: FC = () => {
               selectedLot={selectedLot}
               adjustmentType={adjustmentType}
               onAdjustmentTypeChange={setAdjustmentType}
-              quantity={quantity}
-              onQuantityChange={(value: number) =>
-                setQuantity(Math.max(1, value))
-              }
+              quantityStr={quantityStr}
+              onQuantityChange={setQuantityStr}
               reason={reason}
               onReasonChange={(reason: string) => setReason(reason as AdjustmentReason)}
               customReason={customReason}
@@ -325,6 +338,7 @@ export const InventoryAdjustmentsPage: FC = () => {
               isProcessing={isProcessing}
               canSubmit={canSubmit}
               projectedStock={projectedStock}
+              reasonRequirement={reasonRequirement}
               onSubmit={handleSubmit}
             />
           )}
@@ -350,15 +364,6 @@ export const InventoryAdjustmentsPage: FC = () => {
         </div>
       </div>
 
-      {toast && (
-        <InventoryAdjustmentsToast
-          operationUuid={toast.operationUuid}
-          operationType={toast.operationType}
-          isVerified={toast.isVerified}
-          isOnline={isOnline}
-          onDismiss={handleDismissToast}
-        />
-      )}
     </section>
   );
 };

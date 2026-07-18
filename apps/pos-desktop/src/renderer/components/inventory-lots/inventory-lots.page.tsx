@@ -11,6 +11,7 @@
  */
 import {
   type FC,
+  Fragment,
   useCallback,
   useEffect,
   useState,
@@ -19,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { LotState } from '@pharmacy/database/local';
 import { useInventoryLotsService } from '../common/service-context';
 import type { LotWithProduct } from '../../../domain/inventory-lots/inventory-lots.service';
+import { LotMovementHistory } from './lot-movement-history';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,6 +71,7 @@ export const InventoryLotsPage: FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [stateFilter, setStateFilter] = useState<LotState | 'ALL'>('ALL');
   const [isLoading, setIsLoading] = useState(true);
+  const [openMovementLotId, setOpenMovementLotId] = useState<string | null>(null);
   const [summary, setSummary] = useState<{
     expiringSoon: number;
     expired: number;
@@ -219,6 +222,7 @@ export const InventoryLotsPage: FC = () => {
                 <th className="px-pos-sm py-pos-xs text-right font-medium">{t('inventory_lots.stock')}</th>
                 <th className="px-pos-sm py-pos-xs text-right font-medium">{t('inventory_lots.expiry')}</th>
                 <th className="px-pos-sm py-pos-xs text-center font-medium">{t('inventory_lots.state')}</th>
+                <th className="px-pos-sm py-pos-xs text-center font-medium">{t('inventory_lots.audit')}</th>
               </tr>
             </thead>
             <tbody>
@@ -235,8 +239,8 @@ export const InventoryLotsPage: FC = () => {
                         : 'color-mix(in srgb, var(--color-ink) 2%, transparent)';
 
                 return (
+                  <Fragment key={lot.id}>
                   <tr
-                    key={lot.id}
                     style={{
                       backgroundColor: rowBg,
                       borderBottom: '1px solid color-mix(in srgb, var(--color-ink) 4%, transparent)',
@@ -292,7 +296,40 @@ export const InventoryLotsPage: FC = () => {
                         {t(stateLabelKey(lot.state))}
                       </span>
                     </td>
+                    <td className="px-pos-sm py-pos-xs text-center">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenMovementLotId(
+                            openMovementLotId === lot.id ? null : lot.id,
+                          )
+                        }
+                        className="rounded-pos px-pos-xs py-0.5 text-caption font-medium outline-none transition-colors duration-75"
+                        style={{
+                          color:
+                            openMovementLotId === lot.id
+                              ? "var(--color-pharma)"
+                              : "var(--color-ink-muted)",
+                          backgroundColor:
+                            openMovementLotId === lot.id
+                              ? "color-mix(in srgb, var(--color-pharma) 10%, transparent)"
+                              : "color-mix(in srgb, var(--color-ink) 6%, transparent)",
+                        }}
+                        aria-label={t("inventory_lots.view_movements")}
+                      >
+                        {openMovementLotId === lot.id
+                          ? t("common.close")
+                          : t("inventory_lots.audit")}
+                      </button>
+                    </td>
                   </tr>
+                  <LotMovementHistory
+                    lotId={lot.id}
+                    lotCode={lot.batchNumber}
+                    isOpen={openMovementLotId === lot.id}
+                    onClose={() => setOpenMovementLotId(null)}
+                  />
+                  </Fragment>
                 );
               })}
             </tbody>

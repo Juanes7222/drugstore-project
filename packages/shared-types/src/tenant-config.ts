@@ -23,7 +23,7 @@ export interface StrictnessConfig {
   clientRequired: ClientRequirement;
   clientRequiredThreshold: number; // COP cents
   prescriptionEnforcement: PrescriptionEnforcement;
-  inventoryAdjustmentReason: 'REQUIRED' | 'OPTIONAL';
+  inventoryAdjustmentReason: StrictnessLevel;
   returnsRequireOriginalSale: ReturnsOriginalSaleRequirement;
   cashShiftRequired: boolean;
   receiptPrintRequired: ReceiptPrintRequirement;

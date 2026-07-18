@@ -16,6 +16,9 @@ interface OperationalInvoiceDetailPanelProps {
   operationalView: OperationalInvoiceView;
   adjustmentCount: number;
   isLoading?: boolean;
+  /** Opens the adjustment creation modal. When provided, a "Crear ajuste"
+   *  button appears in the panel header. */
+  onCreateAdjustment?: () => void;
 }
 
 const formatAmount = (amount: string): string =>
@@ -27,6 +30,7 @@ export const OperationalInvoiceDetailPanel: FC<OperationalInvoiceDetailPanelProp
   operationalView,
   adjustmentCount,
   isLoading = false,
+  onCreateAdjustment,
 }) => {
   const { t } = useTranslation();
   const { fiscal, operational } = operationalView;
@@ -59,16 +63,31 @@ export const OperationalInvoiceDetailPanel: FC<OperationalInvoiceDetailPanelProp
         <h2 className="text-ui font-semibold" style={{ color: "var(--color-ink)" }}>
           {t("fiscal.operational_title")}
         </h2>
-        <span
-          className="pos-badge text-caption"
-          style={{
-            backgroundColor: adjustmentCount > 0 ? "var(--color-urgency-surface)" : "color-mix(in srgb, var(--color-pharma) 8%, white)",
-            color: adjustmentCount > 0 ? "var(--color-urgency)" : "var(--color-pharma)",
-          }}
-          aria-label={`${adjustmentCount} ${t("fiscal.operational_adjustments")}`}
-        >
-          {adjustmentCount} {t("fiscal.operational_adjustments")}
-        </span>
+        <div className="flex items-center gap-2">
+          {onCreateAdjustment && (
+            <button
+              className="rounded-pos px-2 py-1 text-caption font-medium transition-colors hover:opacity-80"
+              style={{
+                backgroundColor: "color-mix(in srgb, var(--color-pharma) 10%, white)",
+                color: "var(--color-pharma)",
+              }}
+              onClick={onCreateAdjustment}
+              type="button"
+            >
+              + {t("fiscal.operational_create_adjustment")}
+            </button>
+          )}
+          <span
+            className="pos-badge text-caption"
+            style={{
+              backgroundColor: adjustmentCount > 0 ? "var(--color-urgency-surface)" : "color-mix(in srgb, var(--color-pharma) 8%, white)",
+              color: adjustmentCount > 0 ? "var(--color-urgency)" : "var(--color-pharma)",
+            }}
+            aria-label={`${adjustmentCount} ${t("fiscal.operational_adjustments")}`}
+          >
+            {adjustmentCount} {t("fiscal.operational_adjustments")}
+          </span>
+        </div>
       </div>
 
       {/* Differences banner */}

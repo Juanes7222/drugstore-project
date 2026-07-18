@@ -126,7 +126,7 @@ export function getAdjustmentReasonRequirement(
   strictness: StrictnessConfig | EffectiveConfig,
 ): FieldRequirement {
   const s = 'strictness' in strictness ? strictness.strictness : strictness;
-  return s.inventoryAdjustmentReason === 'REQUIRED' ? 'REQUIRED' : 'OPTIONAL';
+  return strictnessToRequirement(s.inventoryAdjustmentReason);
 }
 
 /**
