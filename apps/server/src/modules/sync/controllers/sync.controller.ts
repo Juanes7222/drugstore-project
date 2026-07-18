@@ -12,6 +12,7 @@ import { SyncService } from '../services/sync.service';
 import { SyncHealthService } from '../services/sync-health.service';
 import { InvoiceTransmissionResultService } from '../services/invoice-transmission-result.service';
 import { SyncBatchDto } from '../dto/sync-batch.dto';
+import { SyncOperationInput } from '../dto/sync-operation.schema';
 import { QuerySyncQueueDto } from '../dto/query-sync-queue.dto';
 import { InvoiceResultsQuerySchema } from '../dto/invoice-results-query.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
@@ -32,16 +33,24 @@ export class SyncController {
     private invoiceTransmissionResultService: InvoiceTransmissionResultService,
   ) {}
 
+  /**
+   * Receives a batch of offline operations.
+   * Body is a JSON array of operations (no wrapper object).
+   * Each operation is validated against SyncOperationSchema.
+   */
   @Post('batch')
   @UseGuards(JwtAuthGuard)
   @HttpCode(202)
   async receiveBatch(
     @Body(new ZodValidationPipe(SyncBatchSchema))
-    batchDto: SyncBatchDto,
+    operations: SyncOperationInput[],
     @CurrentUser() user: User,
   ): Promise<any> {
     const sourceWorkstationId = (user as any).lastLoginWorkstationId ?? '';
-    return this.syncService.receiveBatch(batchDto, sourceWorkstationId);
+    return this.syncService.receiveBatch(
+      new SyncBatchDto(operations),
+      sourceWorkstationId,
+    );
   }
 
   @Get('status')

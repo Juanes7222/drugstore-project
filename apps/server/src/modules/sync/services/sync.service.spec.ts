@@ -179,14 +179,16 @@ describe('SyncService', () => {
   // ── receiveBatch ──────────────────────────────────────────────────────
 
   describe('receiveBatch', () => {
+    const VALID_HASH = '4d4bbe59c6aad22442cde199a6a8a5f034405fcd78fb5a81c24ef249de1c45f1';
+
     it('accepts operations with valid hash', async () => {
       const batchDto = {
         operations: [
           {
             operationUuid: 'op-1',
-            operationType: 'SALE',
+            operationType: 'SALE_CONFIRMATION',
             payload: { amount: 100 },
-            payloadHash: '4d4bbe59c6aad22442cde199a6a8a5f034405fcd78fb5a81c24ef249de1c45f1',
+            payloadHash: VALID_HASH,
             clientSequence: 1,
             sourceCreatedAt: '2024-01-01T00:00:00Z',
           },
@@ -207,7 +209,7 @@ describe('SyncService', () => {
         operations: [
           {
             operationUuid: 'op-bad',
-            operationType: 'SALE',
+            operationType: 'SALE_CONFIRMATION',
             payload: { amount: 100 },
             payloadHash: 'invalid-hash',
             clientSequence: 1,
@@ -231,9 +233,9 @@ describe('SyncService', () => {
         operations: [
           {
             operationUuid: 'op-dup',
-            operationType: 'SALE',
+            operationType: 'SALE_CONFIRMATION',
             payload: { amount: 100 },
-            payloadHash: '4d4bbe59c6aad22442cde199a6a8a5f034405fcd78fb5a81c24ef249de1c45f1',
+            payloadHash: VALID_HASH,
             clientSequence: 2,
             sourceCreatedAt: '2024-01-01T00:00:00Z',
           },
@@ -254,15 +256,15 @@ describe('SyncService', () => {
         operations: [
           {
             operationUuid: 'op-ok',
-            operationType: 'SALE',
+            operationType: 'SALE_CONFIRMATION',
             payload: { amount: 100 },
-            payloadHash: '4d4bbe59c6aad22442cde199a6a8a5f034405fcd78fb5a81c24ef249de1c45f1',
+            payloadHash: VALID_HASH,
             clientSequence: 1,
             sourceCreatedAt: '2024-01-01T00:00:00Z',
           },
           {
             operationUuid: 'op-bad-hash',
-            operationType: 'CLIENT',
+            operationType: 'CLIENT_CREATION',
             payload: { name: 'test' },
             payloadHash: 'wrong',
             clientSequence: 2,
@@ -285,9 +287,9 @@ describe('SyncService', () => {
         operations: [
           {
             operationUuid: 'op-db-error',
-            operationType: 'SALE',
+            operationType: 'SALE_CONFIRMATION',
             payload: { amount: 100 },
-            payloadHash: '4d4bbe59c6aad22442cde199a6a8a5f034405fcd78fb5a81c24ef249de1c45f1',
+            payloadHash: VALID_HASH,
             clientSequence: 3,
             sourceCreatedAt: '2024-01-01T00:00:00Z',
           },
@@ -304,6 +306,133 @@ describe('SyncService', () => {
         status: 'REJECTED',
         error: 'Connection refused',
       });
+    });
+
+    // ── New operation type coverage ─────────────────────────────────────
+
+    it('NEWTYPE-001: accepts INVOICE_TRANSMISSION_RESULT operation', async () => {
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'op-inv-res',
+            operationType: 'INVOICE_TRANSMISSION_RESULT',
+            payload: { amount: 100 },
+            payloadHash: VALID_HASH,
+            clientSequence: 10,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      mockSyncQueue.create.mockResolvedValue({ id: 'entry-inv-res' });
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results[0]).toEqual({ operationUuid: 'op-inv-res', status: 'ACCEPTED' });
+      expect(mockSyncQueue.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            operationType: 'INVOICE_TRANSMISSION_RESULT',
+            clientSequence: 10,
+          }),
+        }),
+      );
+    });
+
+    it('NEWTYPE-002: accepts PRODUCT_CREATION operation', async () => {
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'op-prod-c',
+            operationType: 'PRODUCT_CREATION',
+            payload: { amount: 100 },
+            payloadHash: VALID_HASH,
+            clientSequence: 11,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      mockSyncQueue.create.mockResolvedValue({ id: 'entry-prod-c' });
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results[0]).toEqual({ operationUuid: 'op-prod-c', status: 'ACCEPTED' });
+      expect(mockSyncQueue.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            operationType: 'PRODUCT_CREATION',
+            sourceWorkstationId: 'ws-1',
+          }),
+        }),
+      );
+    });
+
+    it('NEWTYPE-003: accepts PRODUCT_UPDATE operation', async () => {
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'op-prod-u',
+            operationType: 'PRODUCT_UPDATE',
+            payload: { amount: 100 },
+            payloadHash: VALID_HASH,
+            clientSequence: 12,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      mockSyncQueue.create.mockResolvedValue({ id: 'entry-prod-u' });
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results[0]).toEqual({ operationUuid: 'op-prod-u', status: 'ACCEPTED' });
+      expect(mockSyncQueue.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            operationType: 'PRODUCT_UPDATE',
+          }),
+        }),
+      );
+    });
+
+    it('NEWTYPE-004: all three new operation types in one batch', async () => {
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'a',
+            operationType: 'INVOICE_TRANSMISSION_RESULT',
+            payload: { amount: 100 },
+            payloadHash: VALID_HASH,
+            clientSequence: 20,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+          {
+            operationUuid: 'b',
+            operationType: 'PRODUCT_CREATION',
+            payload: { amount: 100 },
+            payloadHash: VALID_HASH,
+            clientSequence: 21,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+          {
+            operationUuid: 'c',
+            operationType: 'PRODUCT_UPDATE',
+            payload: { amount: 100 },
+            payloadHash: VALID_HASH,
+            clientSequence: 22,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      mockSyncQueue.create.mockResolvedValue({ id: 'entry' });
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results).toHaveLength(3);
+      expect(results.every((r) => r.status === 'ACCEPTED')).toBe(true);
+      expect(mockSyncQueue.create).toHaveBeenCalledTimes(3);
     });
   });
 });

@@ -8,12 +8,13 @@ jest.mock('@pharmacy/database', () => {
 });
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
 import { SyncController } from './sync.controller';
 import { SyncService } from '../services/sync.service';
 import { SyncHealthService } from '../services/sync-health.service';
 import { InvoiceTransmissionResultService } from '../services/invoice-transmission-result.service';
 import { LocalNumberHintQuerySchema } from '../dto/local-number-hint-query.dto';
+import { SyncBatchDto } from '../dto/sync-batch.dto';
+import { SyncBatchSchema, SyncOperationSchema } from '../dto/sync-operation.schema';
 
 const mockSyncService = {
   receiveBatch: jest.fn(),
@@ -61,20 +62,23 @@ describe('SyncController', () => {
 
   describe('POST /sync/batch', () => {
     it('receives a batch and returns the result', async () => {
-      const batchDto = { operations: [] };
+      const operations: any[] = [];
       const result = { queued: 0, errors: [] };
       service.receiveBatch.mockResolvedValue(result);
 
-      const response = await controller.receiveBatch(batchDto as any, mockUser());
+      const response = await controller.receiveBatch(operations, mockUser());
 
       expect(response).toEqual(result);
-      expect(service.receiveBatch).toHaveBeenCalledWith(batchDto, 'ws-1');
+      expect(service.receiveBatch).toHaveBeenCalledWith(
+        expect.any(SyncBatchDto),
+        'ws-1',
+      );
     });
 
     it('uses empty string as fallback workstationId when not set on user', async () => {
       service.receiveBatch.mockResolvedValue({ queued: 0, errors: [] });
 
-      await controller.receiveBatch({ operations: [] } as any, mockUser({ lastLoginWorkstationId: undefined }));
+      await controller.receiveBatch([], mockUser({ lastLoginWorkstationId: undefined }));
 
       expect(service.receiveBatch).toHaveBeenCalledWith(expect.any(Object), '');
     });
@@ -209,6 +213,113 @@ describe('SyncController', () => {
 
       expect(mockInvoiceTransmissionResultService.findResultsForWorkstation)
         .toHaveBeenCalledWith('ws-1', expect.any(Date));
+    });
+  });
+
+  // ── Zod schema validation for SyncBatchSchema ─────────────────────────
+
+  describe('SyncBatchSchema validation', () => {
+    function validOperation(overrides = {}) {
+      return {
+        operationUuid: '550e8400-e29b-41d4-a716-446655440000',
+        operationType: 'SALE_CONFIRMATION',
+        payload: { amount: 100 },
+        payloadHash: '4d4bbe59c6aad22442cde199a6a8a5f034405fcd78fb5a81c24ef249de1c45f1',
+        sourceCreatedAt: '2024-01-01T00:00:00Z',
+        clientSequence: 1,
+        ...overrides,
+      };
+    }
+
+    it('SYNCBATCH-001: accepts a plain array of operations (no wrapper object)', () => {
+      const result = SyncBatchSchema.safeParse([validOperation()]);
+      expect(result.success).toBe(true);
+    });
+
+    it('SYNCBATCH-002: rejects { operations: [...] } wrapper object', () => {
+      const result = SyncBatchSchema.safeParse({ operations: [validOperation()] });
+      expect(result.success).toBe(false);
+    });
+
+    it('SYNCBATCH-003: rejects empty array', () => {
+      const result = SyncBatchSchema.safeParse([]);
+      expect(result.success).toBe(false);
+    });
+
+    it('SYNCBATCH-004: rejects unknown operationType', () => {
+      const result = SyncOperationSchema.safeParse(validOperation({ operationType: 'UNKNOWN_TYPE' }));
+      expect(result.success).toBe(false);
+    });
+
+    it('SYNCBATCH-005: rejects missing required fields', () => {
+      const result = SyncOperationSchema.safeParse({});
+      expect(result.success).toBe(false);
+    });
+
+    it('SYNCBATCH-006: rejects invalid UUID format', () => {
+      const result = SyncOperationSchema.safeParse(validOperation({ operationUuid: 'not-a-uuid' }));
+      expect(result.success).toBe(false);
+    });
+  });
+
+  // ── New operation type validation ─────────────────────────────────
+
+  describe('new operation types in SyncBatchSchema', () => {
+    function buildOp(operationType: string) {
+      return {
+        operationUuid: '550e8400-e29b-41d4-a716-446655440000',
+        operationType,
+        payload: {},
+        payloadHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+        sourceCreatedAt: '2024-01-01T00:00:00Z',
+        clientSequence: 1,
+      };
+    }
+
+    it('NEWTYPE-001: accepts INVOICE_TRANSMISSION_RESULT', () => {
+      const result = SyncOperationSchema.safeParse(buildOp('INVOICE_TRANSMISSION_RESULT'));
+      expect(result.success).toBe(true);
+    });
+
+    it('NEWTYPE-002: accepts PRODUCT_CREATION', () => {
+      const result = SyncOperationSchema.safeParse(buildOp('PRODUCT_CREATION'));
+      expect(result.success).toBe(true);
+    });
+
+    it('NEWTYPE-003: accepts PRODUCT_UPDATE', () => {
+      const result = SyncOperationSchema.safeParse(buildOp('PRODUCT_UPDATE'));
+      expect(result.success).toBe(true);
+    });
+
+    it('NEWTYPE-004: all new operation types are accepted via SyncBatchSchema array', () => {
+      const ops = [
+        buildOp('INVOICE_TRANSMISSION_RESULT'),
+        buildOp('PRODUCT_CREATION'),
+        buildOp('PRODUCT_UPDATE'),
+      ];
+      const result = SyncBatchSchema.safeParse(ops);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toHaveLength(3);
+      }
+    });
+
+    it('NEWTYPE-005: original existing operation types still accepted', () => {
+      const existingTypes = [
+        'SALE_CONFIRMATION',
+        'SHIFT_CLOSURE',
+        'CLIENT_CREATION',
+        'CLIENT_RETURN',
+        'INVENTORY_ADJUSTMENT',
+        'FISCAL_DOCUMENT_SYNC',
+        'PRESCRIPTION_REGISTRATION',
+        'RESOLUTION_ALLOCATION',
+        'INVOICE_TRANSMISSION',
+      ];
+      for (const t of existingTypes) {
+        const result = SyncOperationSchema.safeParse(buildOp(t));
+        expect(result.success).toBe(true);
+      }
     });
   });
 });

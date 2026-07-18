@@ -109,8 +109,11 @@ export class LotSyncService {
             expirationDate: new Date(lot.expirationDate),
             entryDate: new Date(lot.entryDate),
             state: lot.state as LotState,
-            currentStock: lot.currentStock,
-            version: lot.version,
+            // IMPORTANT: Do NOT overwrite currentStock or version.
+            // Local inventory adjustments and sales change stock
+            // independently.  The server's stock value is stale until
+            // the sync queue replays local operations against it.
+            // Overwriting would silently revert local mutations.
             productId: lot.productId,
             locationCode: lot.locationCode ?? null,
             updatedAt: new Date(lot.updatedAt),

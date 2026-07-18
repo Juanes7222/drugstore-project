@@ -1,19 +1,15 @@
-import { SyncBatchSchema } from './sync-operation.schema';
+import { SyncBatchSchema, SyncOperationInput } from './sync-operation.schema';
 import { z } from 'zod';
 
-export class SyncBatchDto implements z.infer<typeof SyncBatchSchema> {
-  operations!: Array<{
-    operationType: 'SALE_CONFIRMATION' | 'SHIFT_CLOSURE' | 'CLIENT_CREATION' | 'CLIENT_RETURN' | 'INVENTORY_ADJUSTMENT' | 'FISCAL_DOCUMENT_SYNC' | 'PRESCRIPTION_REGISTRATION' | 'RESOLUTION_ALLOCATION' | 'INVOICE_TRANSMISSION';
-    operationUuid: string;
-    payload: Record<string, any>;
-    payloadHash: string;
-    sourceCreatedAt: string;
-    clientSequence: number;
-  }>;
+/**
+ * Wrapper around the validated array. The ZodValidationPipe validates against
+ * SyncBatchSchema (a plain array), then the controller constructs this DTO
+ * to pass into SyncService.
+ */
+export class SyncBatchDto {
+  operations: SyncOperationInput[];
 
-  constructor(data?: z.infer<typeof SyncBatchSchema>) {
-    if (data) {
-      this.operations = data.operations;
-    }
+  constructor(data: z.infer<typeof SyncBatchSchema>) {
+    this.operations = data;
   }
 }
