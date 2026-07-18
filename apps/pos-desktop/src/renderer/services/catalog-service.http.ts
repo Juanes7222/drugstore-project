@@ -81,6 +81,11 @@ const toTaxPercentage = (
     return null;
   }
 
+  // Defensive: the server contract says `rate` is a decimal (e.g. 0.19 for
+  // 19%), but some environments may send it as a percentage integer (e.g. 19).
+  // Values > 1 are already percentages — don't double-multiply.
+  if (numeric > 1) return Math.round(numeric);
+
   return Math.round(numeric * 100);
 };
 

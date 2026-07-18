@@ -9,11 +9,30 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
 import { uiSlice, resetSaleFlow, completeSaleCompletion } from "@/store/slices/ui-slice";
+import { salesSlice } from "@/store/slices/sales-slice";
+import { paymentSlice } from "@/store/slices/payment-slice";
 import { Receipt } from "./receipt";
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
+
+vi.mock("../../../domain/fiscal/receipt-generator", () => ({
+  generateReceiptHtml: vi.fn(() => "<div>mock receipt</div>"),
+  printReceipt: vi.fn(),
+}));
+
+vi.mock("../../../domain/configuration/local-config.store", () => ({
+  getTenantInfo: () => ({
+    nit: "000.000.000-0",
+    name: "Farmacia Test",
+    address: "Calle 123",
+    phone: "555-0000",
+    resolutionNumber: "RES-001",
+    resolutionDate: "2025-01-01",
+    resolutionPrefix: "FE",
+  }),
+}));
 
 vi.mock("motion/react", () => ({
   motion: {
@@ -43,7 +62,11 @@ vi.mock("motion/react", () => ({
 
 const createTestStore = (phase: "idle" | "initiating" | "completing" | "completed") =>
   configureStore({
-    reducer: { ui: uiSlice.reducer },
+    reducer: {
+      ui: uiSlice.reducer,
+      sales: salesSlice.reducer,
+      payment: paymentSlice.reducer,
+    },
     preloadedState: {
       ui: {
         activeScreen: "receipt" as const,
@@ -53,6 +76,14 @@ const createTestStore = (phase: "idle" | "initiating" | "completing" | "complete
           pendingItemId: null,
           incompleteItemIds: [],
         },
+      },
+      sales: {
+        items: [],
+        selectedClient: null,
+      },
+      payment: {
+        methods: [],
+        cashReceivedCents: 0,
       },
     },
   });
@@ -73,18 +104,12 @@ describe("Receipt", () => {
     vi.clearAllTimers();
   });
 
-  it("renders the success title and placeholder message", () => {
+  it("renders the success title", () => {
     const store = createTestStore("completing");
     renderReceipt(store);
 
-    // The es-CO locale renders receipt.title as "Pago confirmado"
-    // and receipt.placeholder_message as the message below.
+    // The es-CO locale renders receipt.title as "Pago confirmado".
     expect(screen.getByText("Pago confirmado")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "La venta se registró. En la fase 4 aquí se mostrará el recibo, impresión y envío por email.",
-      ),
-    ).toBeInTheDocument();
   });
 
   it("renders a 'Nueva venta' button", () => {

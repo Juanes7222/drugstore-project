@@ -13,8 +13,10 @@ import { QuickSwitch } from "../auth/quick-switch.component";
 
 interface AppShellProps {
   cashierName: string;
-  openingBalanceCents: number;
-  openedAt: string;
+  /** Optional: falls back to current open shift from the cash-shift store. */
+  openingBalanceCents?: number;
+  /** Optional: falls back to current open shift from the cash-shift store. */
+  openedAt?: string;
   initialSyncState?: SyncState;
   children: ReactNode;
 }

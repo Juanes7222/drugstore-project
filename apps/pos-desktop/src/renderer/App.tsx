@@ -18,13 +18,21 @@ import { SalesTransaction } from "@/components/SalesTransaction/sales-transactio
 import { PaymentProcessing } from "@/components/PaymentProcessing/payment-processing";
 import { Receipt } from "@/components/Receipt/receipt";
 import { NavigationSidebar } from "@/components/Navigation/navigation-sidebar";
+import { CashShiftPage } from "@/components/cash-shift/cash-shift.page";
+import { ClientsPage } from "@/components/clients/clients.page";
+import { FiscalPage } from "../domain/fiscal/fiscal.page";
 import { ReturnsPage } from "@/components/returns/returns.page";
 import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inventory-adjustments.page";
+import { InventoryLotsPage } from "@/components/inventory-lots/inventory-lots.page";
 import { ProductsPage } from "@/components/products/products.page";
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
 import { RecoveryPage } from "@/components/recovery/recovery.page";
 import { AboutPage } from "@/components/update/about.page";
+import { LicenseStatusPage } from "@/components/licensing/license-status.page";
+import { PrintersPage } from "@/components/printing/printers.page";
+import { PrintQueuePage } from "@/components/printing/print-queue.page";
+import { SetupWizardPage } from "@/components/printing/setup-wizard.page";
 import { TenantConfigPage } from "@/components/config/tenant-config.page";
 import { UpdateCheckInterceptor } from "@/components/update/update-check-interceptor";
 import { LoginPage } from "@/components/auth/login.page";
@@ -139,8 +147,6 @@ const InnerApp: FC = () => {
     return (
       <AppShell
         cashierName={session?.fullName || ""}
-        openingBalanceCents={0}
-        openedAt={new Date().toISOString()}
         initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
@@ -160,8 +166,6 @@ const InnerApp: FC = () => {
     return (
       <AppShell
         cashierName={session?.fullName || ""}
-        openingBalanceCents={0}
-        openedAt={new Date().toISOString()}
         initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
@@ -177,12 +181,86 @@ const InnerApp: FC = () => {
     );
   }
 
+  if (activeScreen === "license-status") {
+    return (
+      <AppShell
+        cashierName={session?.fullName || ""}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <OfflineModeBanner />
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <LicenseStatusPage />
+          </div>
+        </div>
+        <PendingBlessingModal />
+        {assistantLayer}
+      </AppShell>
+    );
+  }
+
+  if (activeScreen === "printers") {
+    return (
+      <AppShell
+        cashierName={session?.fullName || ""}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <OfflineModeBanner />
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <PrintersPage />
+          </div>
+        </div>
+        <PendingBlessingModal />
+        {assistantLayer}
+      </AppShell>
+    );
+  }
+
+  if (activeScreen === "print-queue") {
+    return (
+      <AppShell
+        cashierName={session?.fullName || ""}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <OfflineModeBanner />
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <PrintQueuePage />
+          </div>
+        </div>
+        <PendingBlessingModal />
+        {assistantLayer}
+      </AppShell>
+    );
+  }
+
+  if (activeScreen === "setup-wizard") {
+    return (
+      <AppShell
+        cashierName={session?.fullName || ""}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <OfflineModeBanner />
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <SetupWizardPage />
+          </div>
+        </div>
+        <PendingBlessingModal />
+        {assistantLayer}
+      </AppShell>
+    );
+  }
+
   if (activeScreen === "offline-sessions") {
     return (
       <AppShell
         cashierName={session?.fullName || ""}
-        openingBalanceCents={0}
-        openedAt={new Date().toISOString()}
         initialSyncState={isOnline ? "online" : "offline"}
       >
         <OfflineModeBanner />
@@ -201,8 +279,6 @@ const InnerApp: FC = () => {
   return (
     <AppShell
       cashierName={session!.fullName}
-      openingBalanceCents={0}
-      openedAt={new Date().toISOString()}
       initialSyncState={isOnline ? "online" : "offline"}
     >
       <OfflineModeBanner />
@@ -280,6 +356,40 @@ const InnerApp: FC = () => {
               </motion.div>
             )}
 
+            {activeScreen === "cash-shift" && (
+              <motion.div
+                key="cash-shift"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <CashShiftPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "clients" && (
+              <motion.div
+                key="clients"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <ClientsPage />
+              </motion.div>
+            )}
+
             {activeScreen === "returns" && (
               <motion.div
                 key="returns"
@@ -311,6 +421,23 @@ const InnerApp: FC = () => {
                 }}
               >
                 <InventoryAdjustmentsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "inventory-lots" && (
+              <motion.div
+                key="inventory-lots"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <InventoryLotsPage />
               </motion.div>
             )}
 
@@ -362,6 +489,23 @@ const InnerApp: FC = () => {
                 }}
               >
                 <TenantConfigPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "fiscal" && (
+              <motion.div
+                key="fiscal"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <FiscalPage />
               </motion.div>
             )}
 

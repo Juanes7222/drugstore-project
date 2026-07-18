@@ -43,6 +43,7 @@ import { isOnline } from '../../common/is-online';
 import { createFiscalServices } from '../../domain/fiscal/fiscal-service.factory';
 import { createPrintingServices } from '../../domain/printing/printing-service.factory';
 import { createPeripheralServices } from '../../domain/peripherals/peripheral-service.factory';
+import { createLocalAdjustmentService } from '../../domain/fiscal/local-adjustment.service';
 import { createDomainServices } from '../../domain/domain-services/domain-service.factory';
 import { createBackupService } from '../../domain/backup/backup.service';
 import { createSyncScheduler, type SyncScheduler } from '../../domain/sync/sync-scheduler.service';
@@ -59,6 +60,9 @@ import type { ServerPrintConfig } from '../../domain/printing/print-router';
 import type { ReturnsService } from '../../domain/returns/returns.service';
 import type { InventoryAdjustmentsService } from '../../domain/inventory-adjustments/inventory-adjustments.service';
 import type { PrescriptionsService } from '../../domain/prescriptions/prescriptions.service';
+import { createCashShiftService, type CashShiftService } from '../../domain/cash-shift/cash-shift.service';
+import { useCashShiftStore } from '../../domain/cash-shift/cash-shift.store';
+import { createInventoryLotsService, type InventoryLotsService } from '../../domain/inventory-lots/inventory-lots.service';
 import type { ProductService } from '../../domain/catalog/product.service';
 import type { ClientsService } from '../../domain/clients/clients.service';
 import type { BackupService } from '../../domain/backup/backup.service';
@@ -88,6 +92,8 @@ export interface Services {
   returnsService: ReturnsService;
   inventoryAdjustmentsService: InventoryAdjustmentsService;
   prescriptionsService: PrescriptionsService;
+  cashShiftService: CashShiftService;
+  inventoryLotsService: InventoryLotsService;
   productService: ProductService;
   clientsService: ClientsService;
   backupService: BackupService;
@@ -271,12 +277,28 @@ export async function initializeServices(
   updateService.startTelemetryFlush();
 
   // 9. Create domain services
+  const authService = createAuthService({ baseUrl: apiBaseUrl });
   const domainServices = createDomainServices({
     prisma: prismaClient,
-    auth: createAuthService({ baseUrl: apiBaseUrl }),
+    auth: authService,
     invoiceService: fiscalServices.invoiceService,
     printRouter: printingServices.printRouter,
   });
+
+  // 9b. Create local adjustment service (needed by cash-shift for operational totals)
+  const localAdjustmentService = createLocalAdjustmentService(prismaClient, authService);
+
+  // 9c. Create inventory-lots service
+  const inventoryLotsService = createInventoryLotsService(prismaClient);
+
+  // 9d. Create cash-shift service and hydrate the current shift store
+  const cashShiftService = createCashShiftService(
+    prismaClient,
+    authService,
+    localAdjustmentService,
+    printingServices.printRouter,
+  );
+  await useCashShiftStore.getState().hydrateFromDb(prismaClient, workstationId);
 
   // 10. Start printer health check loop
   printingServices.printerHealth.start();
@@ -300,6 +322,8 @@ export async function initializeServices(
     returnsService: domainServices.returnsService,
     inventoryAdjustmentsService: domainServices.inventoryAdjustmentsService,
     prescriptionsService: domainServices.prescriptionsService,
+    cashShiftService,
+    inventoryLotsService,
     productService: domainServices.productService,
     clientsService: domainServices.clientsService,
     backupService,

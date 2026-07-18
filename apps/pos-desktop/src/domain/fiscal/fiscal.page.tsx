@@ -94,8 +94,8 @@ export const FiscalPage: FC = () => {
     const fiscalScheduler = createFiscalScheduler({ invoiceService, contingencyService });
     // Auth service wrapper using the local session store (no server dependency needed
     // for the read-only requireRole calls that LocalAdjustmentService uses).
-    const authService: AuthService = {
-      requireRole: (...allowedRoles) => {
+    const authService = {
+      requireRole: (...allowedRoles: RoleType[]) => {
         const s = useLocalSessionStore.getState().session;
         if (!s) throw new Error('No active session');
         const sessionRole = s.role as RoleType;
@@ -105,9 +105,45 @@ export const FiscalPage: FC = () => {
         return s;
       },
       getCurrentSession: () => useLocalSessionStore.getState().session,
-      login: async () => { throw new Error('login() not available from fiscal page'); },
-      logout: () => useLocalSessionStore.getState().clearSession(),
-    };
+
+      login: async () => {
+        throw new Error('login() not available from fiscal page');
+      },
+      completeTwoFactor: async () => {
+        throw new Error('Not available from fiscal page');
+      },
+      refreshSession: async () => null,
+      requestStepUp: async () => {
+        throw new Error('Not available from fiscal page');
+      },
+      approveStepUp: async () => {
+        throw new Error('Not available from fiscal page');
+      },
+      verifyStepUp: async (): Promise<boolean> => false,
+      changePassword: async () => {
+        throw new Error('Not available from fiscal page');
+      },
+      changePin: async () => {
+        throw new Error('Not available from fiscal page');
+      },
+      forgotPassword: async () => ({ message: 'Not available' }),
+      resetPassword: async () => {
+        throw new Error('Not available from fiscal page');
+      },
+      logout: async () => {
+        useLocalSessionStore.getState().clearSession();
+      },
+      createUser: async () => {
+        throw new Error('Not available from fiscal page');
+      },
+      listUsers: async () => ({ users: [], total: 0 }),
+      disableUser: async () => ({ message: 'Not available' }),
+      enableUser: async () => ({ message: 'Not available' }),
+      unlockUser: async () => ({ message: 'Not available' }),
+      resetUserPin: async () => ({ newPin: '', message: 'Not available' }),
+      getPendingStepUpRequests: async (): Promise<any[]> => [],
+      getAuditLogs: async () => ({}),
+    } satisfies AuthService;
     const adjustmentService = createLocalAdjustmentService(prismaClient, authService);
 
     servicesRef.current = {

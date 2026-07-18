@@ -80,6 +80,10 @@ export function useServiceContext(): Services {
 // Convenience hooks — one per service, stable names to match existing imports
 // ---------------------------------------------------------------------------
 
+/** Convenience hook — returns the CashShiftService instance. */
+export const useCashShiftService = (): Services['cashShiftService'] =>
+  useServiceContext().cashShiftService;
+
 /** Convenience hook — returns the ReturnsService instance. */
 export const useReturnsService = (): Services['returnsService'] =>
   useServiceContext().returnsService;
@@ -152,6 +156,10 @@ export const useUpdateService = (): Services['updateService'] =>
 /** Convenience hook — returns the ClientsService instance. */
 export const useClientsService = (): Services['clientsService'] =>
   useServiceContext().clientsService;
+
+/** Convenience hook — returns the InventoryLotsService instance. */
+export const useInventoryLotsService = (): Services['inventoryLotsService'] =>
+  useServiceContext().inventoryLotsService;
 
 /** Convenience hook — returns the ProductService instance. */
 export const useProductService = (): Services['productService'] =>

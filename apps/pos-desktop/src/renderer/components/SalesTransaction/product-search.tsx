@@ -2,8 +2,10 @@
  * Product search input and results list.
  *
  * Supports three keyboard interaction patterns:
- * 1. **Type-to-search** — any printable character keypress on the panel
- *    auto-focuses the search input (unless another input/textarea is focused).
+ * 1. **Type-to-search** — a global `window` keydown listener captures any
+ *    printable character keypress anywhere on the page and auto-focuses the
+ *    search input (unless another input/textarea/select is already focused).
+ *    This ensures barcode scanners work regardless of where focus currently is.
  * 2. **ArrowDown** from the input moves focus into the results list.
  * 3. **Escape** in results returns focus to the search input.
  *
@@ -84,35 +86,43 @@ export const ProductSearch: FC<ProductSearchProps> = ({
     };
   }, [trimmedQuery, catalogService, t]);
 
-  // ---- Focus the search input when the user starts typing anywhere on the panel
-  const handlePanelKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      // Ignore if already typing in an input or textarea
-      const tag = (event.target as HTMLElement).tagName;
+  // ---- Focus the search input when the user types anywhere on the page
+  // Captures keyboard input globally (including from barcode scanners) and
+  // redirects focus to the search input unless focus is already in a form
+  // control or the key is a navigation/modifier key.
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: Event) => {
+      const ke = event as globalThis.KeyboardEvent;
+
+      // Ignore if already typing in an input, textarea, or select
+      const tag = (ke.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
 
       // Ignore control keys, meta keys
-      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (ke.ctrlKey || ke.metaKey || ke.altKey) return;
       if (
-        event.key === "Tab" ||
-        event.key === "Escape" ||
-        event.key === "Enter" ||
-        event.key === "ArrowUp" ||
-        event.key === "ArrowDown" ||
-        event.key === "ArrowLeft" ||
-        event.key === "ArrowRight"
+        ke.key === "Tab" ||
+        ke.key === "Escape" ||
+        ke.key === "Enter" ||
+        ke.key === "ArrowUp" ||
+        ke.key === "ArrowDown" ||
+        ke.key === "ArrowLeft" ||
+        ke.key === "ArrowRight"
       ) {
         return;
       }
 
-      // Only auto-focus for printable characters
-      if (PRINTABLE_KEY_RE.test(event.key)) {
+      // Only auto-focus for printable characters (covers barcode scanners
+      // which simulate rapid keyboard input)
+      if (PRINTABLE_KEY_RE.test(ke.key)) {
         inputRef.current?.focus();
         // Don't preventDefault — let the character reach the input
       }
-    },
-    [],
-  );
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
 
   // ---- Handle keys on the search input
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
@@ -146,7 +156,6 @@ export const ProductSearch: FC<ProductSearchProps> = ({
     <section
       role="search"
       className="pos-panel flex min-h-0 flex-col p-pos-md"
-      onKeyDown={handlePanelKeyDown}
     >
       {/* Search input row */}
       <div className="flex items-center gap-pos-sm">

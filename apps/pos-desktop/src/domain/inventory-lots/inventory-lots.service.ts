@@ -69,8 +69,112 @@ export const createInventoryLotsService = (
 // Service
 // ---------------------------------------------------------------------------
 
+export type LotWithProduct = Prisma.LotGetPayload<{
+  include: { product: { select: { commercialName: true; genericName: true; internalCode: true } } };
+}>;
+
 export class InventoryLotsService {
   constructor(private readonly prisma: PrismaClient) {}
+
+  /**
+   * List all lots ordered by expiration date (ascending — nearest expiry first).
+   * Optionally filtered by product ID or search query.
+   */
+  async getLots(params?: {
+    productId?: string;
+    search?: string;
+    state?: LotState;
+  }): Promise<LotWithProduct[]> {
+    const where: Prisma.LotWhereInput = {};
+
+    if (params?.productId) {
+      where.productId = params.productId;
+    }
+
+    if (params?.state) {
+      where.state = params.state;
+    }
+
+    if (params?.search) {
+      const q = params.search;
+      where.OR = [
+        { batchNumber: { contains: q, mode: 'insensitive' } },
+        { product: { commercialName: { contains: q, mode: 'insensitive' } } },
+        { product: { genericName: { contains: q, mode: 'insensitive' } } },
+        { product: { internalCode: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    return this.prisma.lot.findMany({
+      where,
+      include: {
+        product: {
+          select: {
+            commercialName: true,
+            genericName: true,
+            internalCode: true,
+          },
+        },
+      },
+      orderBy: [{ expirationDate: 'asc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  /**
+   * Get a single lot by ID with full product info.
+   */
+  async getLotById(id: string): Promise<LotWithProduct | null> {
+    return this.prisma.lot.findUnique({
+      where: { id },
+      include: {
+        product: {
+          select: {
+            commercialName: true,
+            genericName: true,
+            internalCode: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get expiry summary: count of lots expiring within N days.
+   */
+  async getExpirySummary(days: number): Promise<{
+    expiringSoon: number;
+    expired: number;
+    active: number;
+    totalStock: number;
+  }> {
+    const now = new Date();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + days);
+
+    const [allLots, expiringLots, expiredLots] = await Promise.all([
+      this.prisma.lot.findMany({
+        where: { state: LotState.ACTIVE },
+        select: { currentStock: true },
+      }),
+      this.prisma.lot.findMany({
+        where: {
+          state: LotState.ACTIVE,
+          expirationDate: { lte: cutoff, gt: now },
+        },
+        select: { id: true },
+      }),
+      this.prisma.lot.count({
+        where: { expirationDate: { lte: now } },
+      }),
+    ]);
+
+    return {
+      expiringSoon: expiringLots.length,
+      expired: expiredLots,
+      active: allLots.length,
+      totalStock: allLots.reduce((sum, l) => sum + l.currentStock, 0),
+    };
+  }
 
   /**
    * Consume stock for a sale using FEFO (First Expiry, First Out) ordering.

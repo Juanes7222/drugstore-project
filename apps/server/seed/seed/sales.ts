@@ -295,7 +295,7 @@ async function seedSaleOpen001(): Promise<void> {
     update: {},
     create: {
       id: saleId,
-      localNumber: BigInt(1),
+      localNumber: BigInt(3),
       operationalState: 'CONFIRMED',
       startedAt,
       confirmedAt,

@@ -123,6 +123,44 @@ const getHealthIcon = (): FC<{ className?: string }> => {
   return HealthIcon;
 };
 
+const ClientsIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+
+const CashShiftIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <line x1="12" y1="1" x2="12" y2="23" />
+    <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+  </svg>
+);
+
 const AdminIcon: FC<{ className?: string }> = ({ className }) => (
   <svg
     className={className}
@@ -178,15 +216,57 @@ const NAV_ITEMS: NavItem[] = [
     icon: InventoryIcon,
   },
   {
+    screen: "cash-shift",
+    labelKey: "navigation.cash_shift",
+    roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER],
+    icon: CashShiftIcon,
+  },
+  {
+    screen: "inventory-lots",
+    labelKey: "navigation.inventory_lots",
+    roles: [RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
+    icon: InventoryIcon,
+  },
+  {
     screen: "products",
     labelKey: "navigation.products",
-    roles: [RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.OWNER, RoleType.ADMIN],
+    roles: [RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: InventoryIcon,
+  },
+  {
+    screen: "clients",
+    labelKey: "navigation.clients",
+    roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
+    icon: ClientsIcon,
   },
   {
     screen: "user-management",
     labelKey: "navigation.user_management",
     roles: [RoleType.MANAGER, RoleType.OWNER],
+    icon: AdminIcon,
+  },
+  {
+    screen: "license-status",
+    labelKey: "navigation.license_status",
+    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
+    icon: AdminIcon,
+  },
+  {
+    screen: "print-queue",
+    labelKey: "navigation.print_queue",
+    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
+    icon: AdminIcon,
+  },
+  {
+    screen: "printers",
+    labelKey: "navigation.printers",
+    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
+    icon: AdminIcon,
+  },
+  {
+    screen: "fiscal",
+    labelKey: "navigation.fiscal",
+    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: AdminIcon,
   },
   {

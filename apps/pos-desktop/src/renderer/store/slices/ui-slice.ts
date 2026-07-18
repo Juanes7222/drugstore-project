@@ -47,8 +47,16 @@ export const uiSlice = createSlice({
       state.activeScreen = "returns";
     },
 
+    navigateToCashShift: (state) => {
+      state.activeScreen = "cash-shift";
+    },
+
     navigateToInventoryAdjustments: (state) => {
       state.activeScreen = "inventory-adjustments";
+    },
+
+    navigateToInventoryLots: (state) => {
+      state.activeScreen = "inventory-lots";
     },
 
     navigateToProducts: (state) => {
@@ -61,6 +69,10 @@ export const uiSlice = createSlice({
 
     navigateToAdminMenu: (state) => {
       state.activeScreen = "admin-menu";
+    },
+
+    navigateToFiscal: (state) => {
+      state.activeScreen = "fiscal";
     },
 
     navigateToSyncHealth: (state) => {
@@ -77,6 +89,26 @@ export const uiSlice = createSlice({
 
     navigateToAuditLog: (state) => {
       state.activeScreen = "audit-log";
+    },
+
+    navigateToClients: (state) => {
+      state.activeScreen = "clients";
+    },
+
+    navigateToLicenseStatus: (state) => {
+      state.activeScreen = "license-status";
+    },
+
+    navigateToPrinters: (state) => {
+      state.activeScreen = "printers";
+    },
+
+    navigateToPrintQueue: (state) => {
+      state.activeScreen = "print-queue";
+    },
+
+    navigateToSetupWizard: (state) => {
+      state.activeScreen = "setup-wizard";
     },
 
     navigateToHome: (state) => {
@@ -162,7 +194,9 @@ export const uiSlice = createSlice({
 export const {
   setActiveScreen,
   navigateToReturns,
+  navigateToCashShift,
   navigateToInventoryAdjustments,
+  navigateToInventoryLots,
   navigateToProducts,
   navigateToPrescriptions,
   navigateToAdminMenu,
@@ -170,8 +204,14 @@ export const {
   navigateToRecovery,
   navigateToUserManagement,
   navigateToAuditLog,
+  navigateToClients,
+  navigateToLicenseStatus,
+  navigateToPrinters,
+  navigateToPrintQueue,
+  navigateToSetupWizard,
   navigateToHome,
   navigateToAbout,
+  navigateToFiscal,
   navigateToLogin,
   navigateToSales,
   navigateToForgotPassword,

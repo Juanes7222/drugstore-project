@@ -1,20 +1,29 @@
 /**
  * Persistent cash-shift header displayed on every POS screen.
  *
- * Shows cashier name, opening balance, elapsed active time, and a small
- * sync-state control (dev-only) so reviewers can verify all three Ambient
- * Sync Pulse states without leaving the screen.
+ * Shows cashier name, opening balance (from props or from the cash-shift
+ * store), elapsed active time, and a small sync-state control (dev-only) so
+ * reviewers can verify all three Ambient Sync Pulse states without leaving
+ * the screen.
+ *
+ * When the props are omitted (undefined) the component falls back to the
+ * current open shift from the cash-shift Zustand store — meaning most
+ * callers in App.tsx can simply omit openingBalanceCents / openedAt and
+ * get real data automatically.
  */
-import { type FC } from "react";
+import { type FC, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { useElapsedTime } from "@/hooks/use-elapsed-time";
 import { formatCurrency } from "@/utils/format-currency";
 import { SyncState } from "./sync-pulse";
+import { useCashShiftStore } from "../../../domain/cash-shift/cash-shift.store";
 
 interface CashShiftHeaderProps {
   cashierName: string;
-  openingBalanceCents: number;
-  openedAt: string;
+  /** Optional: fallback to current open shift from the store. */
+  openingBalanceCents?: number;
+  /** Optional: fallback to current open shift from the store. */
+  openedAt?: string;
   syncState: SyncState;
   onSyncStateChange?: (state: SyncState) => void;
 }
@@ -23,12 +32,27 @@ const SYNC_STATES: SyncState[] = ["online", "offline", "draining"];
 
 export const CashShiftHeader: FC<CashShiftHeaderProps> = ({
   cashierName,
-  openingBalanceCents,
-  openedAt,
+  openingBalanceCents: openingBalanceCentsProp,
+  openedAt: openedAtProp,
   syncState,
   onSyncStateChange,
 }) => {
   const { t } = useTranslation();
+
+  // Read current open shift from store as fallback (vanilla zustand)
+  const cashShiftState = useSyncExternalStore(
+    useCashShiftStore.subscribe,
+    () => useCashShiftStore.getState(),
+  );
+  const currentShift = cashShiftState.currentShift;
+
+  const openingBalanceCents =
+    openingBalanceCentsProp ??
+    (currentShift ? Number(currentShift.openingBalance) * 100 : 0);
+
+  const openedAt =
+    openedAtProp ?? (currentShift?.openedAt?.toISOString() ?? new Date().toISOString());
+
   const elapsed = useElapsedTime(openedAt, true);
 
   return (
