@@ -4,7 +4,11 @@ jest.mock('@pharmacy/database', () => {
     $connect = jest.fn();
     $disconnect = jest.fn();
   }
-  return { PrismaClient: MockPrismaClient };
+  return {
+    PrismaClient: MockPrismaClient,
+    SessionStatus: { ACTIVE: 'ACTIVE', REVOKED: 'REVOKED', EXPIRED: 'EXPIRED' },
+    SessionRevocationReason: { LOGOUT: 'LOGOUT' },
+  };
 });
 
 import { SessionService } from './session.service';
@@ -13,6 +17,7 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 const mockUserSession = {
   create: jest.fn(),
   findUnique: jest.fn(),
+  findFirst: jest.fn(),
   update: jest.fn(),
 };
 
@@ -129,29 +134,30 @@ describe('SessionService', () => {
   describe('findActiveSessionByTokenHash', () => {
     it('should return the session when it is active and not expired', async () => {
       const session = buildActiveSession();
-      mockUserSession.findUnique.mockResolvedValue(session);
+      mockUserSession.findFirst.mockResolvedValue(session);
 
       const result = await service.findActiveSessionByTokenHash('abc123hash');
 
       expect(result).toEqual(session);
     });
 
-    it('should call findUnique with the provided tokenHash', async () => {
-      mockUserSession.findUnique.mockResolvedValue(buildActiveSession());
+    it('should call findFirst with the provided tokenHash and active status', async () => {
+      mockUserSession.findFirst.mockResolvedValue(buildActiveSession());
 
       await service.findActiveSessionByTokenHash('abc123hash');
 
-      expect(mockUserSession.findUnique).toHaveBeenCalledWith({
-        where: { tokenHash: 'abc123hash' },
+      expect(mockUserSession.findFirst).toHaveBeenCalledWith({
+        where: {
+          tokenHash: 'abc123hash',
+          status: 'ACTIVE',
+          revokedAt: null,
+          expiresAt: { gt: expect.any(Date) },
+        },
       });
     });
 
     it('should return null when session is revoked', async () => {
-      const session = buildActiveSession({
-        revokedAt: new Date(),
-        revokedReason: 'LOGOUT',
-      });
-      mockUserSession.findUnique.mockResolvedValue(session);
+      mockUserSession.findFirst.mockResolvedValue(null);
 
       const result = await service.findActiveSessionByTokenHash('abc123hash');
 
@@ -159,9 +165,7 @@ describe('SessionService', () => {
     });
 
     it('should return null when session is expired', async () => {
-      const past = new Date(Date.now() - 3600000);
-      const session = buildActiveSession({ expiresAt: past });
-      mockUserSession.findUnique.mockResolvedValue(session);
+      mockUserSession.findFirst.mockResolvedValue(null);
 
       const result = await service.findActiveSessionByTokenHash('abc123hash');
 
@@ -169,7 +173,7 @@ describe('SessionService', () => {
     });
 
     it('should return null when session is not found', async () => {
-      mockUserSession.findUnique.mockResolvedValue(null);
+      mockUserSession.findFirst.mockResolvedValue(null);
 
       const result = await service.findActiveSessionByTokenHash('nonexistent');
 
@@ -177,13 +181,7 @@ describe('SessionService', () => {
     });
 
     it('should return null when session is both expired and revoked', async () => {
-      const past = new Date(Date.now() - 3600000);
-      const session = buildActiveSession({
-        revokedAt: new Date(),
-        expiresAt: past,
-        revokedReason: 'LOGOUT',
-      });
-      mockUserSession.findUnique.mockResolvedValue(session);
+      mockUserSession.findFirst.mockResolvedValue(null);
 
       const result = await service.findActiveSessionByTokenHash('abc123hash');
 
@@ -214,8 +212,10 @@ describe('SessionService', () => {
       expect(mockUserSession.update).toHaveBeenCalledWith({
         where: { id: 'session-uuid-1' },
         data: {
+          status: 'REVOKED',
           revokedAt: expect.any(Date),
           revokedReason: 'LOGOUT',
+          revokedByUserId: null,
         },
       });
     });

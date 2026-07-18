@@ -3,10 +3,10 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 import { QueryFiscalDocumentsDto } from '../dto/query-fiscal-documents.dto';
 import { DocumentNotRetryableException } from '../exceptions/document-not-retryable.exception';
 import { DuplicateFiscalDocumentException } from '../exceptions/duplicate-fiscal-document.exception';
+import { FiscalDocumentNotFoundException } from '../exceptions/fiscal-document-not-found.exception';
 import { NoActiveResolutionForWorkstationException } from '../exceptions/no-active-resolution-for-workstation.exception';
 import { NoValidatedInvoiceForCreditNoteException } from '../exceptions/no-validated-invoice-for-credit-note.exception';
 import { ResolutionExhaustedException } from '../exceptions/resolution-exhausted.exception';
@@ -22,15 +22,61 @@ export class FiscalDocumentsService {
   ) {}
 
   async findAll(query: QueryFiscalDocumentsDto): Promise<any> {
-    throw new NotImplementedForPhaseException('fiscal-dian', 'findAll');
+    const where: any = {};
+    if (query.state) where.fiscalState = query.state;
+    if (query.documentType) where.documentType = query.documentType;
+    if (query.createdAtFrom || query.createdAtTo) {
+      const dateFilter: any = {};
+      if (query.createdAtFrom) dateFilter.gte = new Date(query.createdAtFrom);
+      if (query.createdAtTo) dateFilter.lte = new Date(query.createdAtTo);
+      where.issueDate = dateFilter;
+    }
+
+    const [docs, total] = await this.prisma.$transaction([
+      this.prisma.fiscalDocument.findMany({
+        where,
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+        orderBy: { issueDate: 'desc' },
+        include: {
+          resolution: { select: { prefix: true, resolutionNumber: true } },
+          allocation: { select: { workstationId: true } },
+        },
+      }),
+      this.prisma.fiscalDocument.count({ where }),
+    ]);
+    return { data: docs, total, page: query.page, pageSize: query.pageSize };
   }
 
   async findById(id: string): Promise<any> {
-    throw new NotImplementedForPhaseException('fiscal-dian', 'findById');
+    const doc = await this.prisma.fiscalDocument.findUnique({
+      where: { id },
+      include: {
+        resolution: true,
+        allocation: { include: { workstation: true } },
+        referenceDocument: { select: { id: true, fullNumber: true, documentType: true, fiscalState: true } },
+      },
+    });
+    if (!doc) {
+      throw new FiscalDocumentNotFoundException(id);
+    }
+    return doc;
   }
 
   async getXmlPayload(id: string): Promise<any> {
-    throw new NotImplementedForPhaseException('fiscal-dian', 'getXmlPayload');
+    const doc = await this.prisma.fiscalDocument.findUnique({
+      where: { id },
+      select: { id: true, xmlPayload: true, signedXml: true, fiscalState: true },
+    });
+    if (!doc) {
+      throw new FiscalDocumentNotFoundException(id);
+    }
+    return {
+      id: doc.id,
+      fiscalState: doc.fiscalState,
+      xmlPayload: doc.xmlPayload,
+      signedXml: doc.signedXml,
+    };
   }
 
   /**

@@ -23,8 +23,10 @@ jest.mock('@pharmacy/database', () => {
   return {
     PrismaClient: MockPrismaClient,
     Prisma: { Decimal: MockDecimal },
-    PurchaseReceptionState: { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED' },
-    PurchaseOrderState: { CONFIRMED: 'CONFIRMED', PARTIALLY_RECEIVED: 'PARTIALLY_RECEIVED', FULLY_RECEIVED: 'FULLY_RECEIVED' },
+    PurchaseReceptionState: { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', ANNULLED: 'ANNULLED' },
+    PurchaseOrderState: { CONFIRMED: 'CONFIRMED', PARTIALLY_RECEIVED: 'PARTIALLY_RECEIVED', FULLY_RECEIVED: 'FULLY_RECEIVED', ANNULLED: 'ANNULLED' },
+    MovementType: { NEGATIVE_ADJUSTMENT: 'NEGATIVE_ADJUSTMENT' },
+    LotState: { ACTIVE: 'ACTIVE', EXHAUSTED: 'EXHAUSTED' },
   };
 });
 
@@ -43,8 +45,9 @@ function createTxMock() {
     purchaseOrderItem: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn() },
     purchaseReception: { findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
     purchaseReceptionItem: { findFirst: jest.fn(), update: jest.fn() },
-    lot: { findUnique: jest.fn() },
-    fiscalDocument: { create: jest.fn() },
+    lot: { findUnique: jest.fn(), updateMany: jest.fn() },
+    inventoryMovement: { create: jest.fn() },
+    fiscalDocument: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     invoiceTransmissionAttempt: { create: jest.fn() },
     receptionCreatedEvent: { create: jest.fn() },
   };
@@ -382,8 +385,305 @@ describe('PurchaseReceptionsService', () => {
   // ── annul ────────────────────────────────────────────────────────────
 
   describe('annul', () => {
-    it('throws Error as annulment is not implemented', async () => {
-      await expect(service.annul('r1')).rejects.toThrow('Annulment not implemented for this phase.');
+    function configureAnnulMocks(overrides: Record<string, unknown> = {}) {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue({
+          id: 'r1',
+          state: 'CONFIRMED',
+          items: [
+            {
+              id: 'item-1',
+              productId: UUID,
+              receivedQuantity: 10,
+              lotId: 'lot-1',
+              purchaseOrderItemId: 'poi-1',
+              purchaseOrderItem: {
+                id: 'poi-1',
+                requestedQuantity: 20,
+                receivedQuantity: 10,
+                pendingQuantity: 0,
+              },
+            },
+          ],
+          purchaseOrder: {
+            id: 'po-1',
+            state: 'PARTIALLY_RECEIVED',
+            items: [{ id: 'poi-1', requestedQuantity: 20, receivedQuantity: 10, pendingQuantity: 0 }],
+          },
+          ...overrides,
+        });
+        mockTx.lot.findUnique.mockResolvedValue({
+          id: 'lot-1',
+          currentStock: 10,
+          version: 1,
+          state: 'ACTIVE',
+        });
+        mockTx.lot.updateMany.mockResolvedValue({ count: 1 });
+        mockTx.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' });
+        mockTx.purchaseOrderItem.update.mockResolvedValue({});
+        mockTx.purchaseOrderItem.findMany.mockResolvedValue([{ receivedQuantity: 0 }]);
+        mockTx.purchaseOrder.update.mockResolvedValue({});
+        mockTx.fiscalDocument.findFirst.mockResolvedValue(null);
+        mockTx.purchaseReception.update.mockResolvedValue({ id: 'r1', state: 'ANNULLED' });
+        return cb(mockTx);
+      });
+    }
+
+    it('annuls CONFIRMED reception, reverses stock, creates movement, reverts PO items', async () => {
+      configureAnnulMocks();
+
+      const result = await service.annul('r1', 'user-1');
+
+      expect(result).toEqual({ id: 'r1', state: 'ANNULLED' });
+      expect(mockTx.lot.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'lot-1', version: 1 },
+          data: expect.objectContaining({
+            currentStock: 0,
+            state: 'EXHAUSTED',
+          }),
+        }),
+      );
+      expect(mockTx.inventoryMovement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            movementType: 'NEGATIVE_ADJUSTMENT',
+            quantity: 10,
+            purchaseReceptionId: 'r1',
+            createdById: 'user-1',
+          }),
+        }),
+      );
+      expect(mockTx.purchaseOrderItem.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'poi-1' },
+          data: {
+            receivedQuantity: { decrement: 10 },
+            pendingQuantity: { increment: 10 },
+          },
+        }),
+      );
+      expect(mockTx.purchaseReception.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'r1' },
+          data: { state: 'ANNULLED' },
+        }),
+      );
+    });
+
+    it('throws PurchaseReceptionNotFoundException when reception does not exist', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue(null);
+        return cb(mockTx);
+      });
+
+      await expect(service.annul('missing', 'user-1')).rejects.toThrow(/Purchase reception.*not found/);
+    });
+
+    it('throws PurchaseReceptionNotConfirmedException when not in CONFIRMED state', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue({
+          id: 'r1',
+          state: 'DRAFT',
+          items: [],
+          purchaseOrder: null,
+        });
+        return cb(mockTx);
+      });
+
+      await expect(service.annul('r1', 'user-1')).rejects.toThrow(/not in CONFIRMED/);
+    });
+
+    it('skips stock reversal when item has no lotId', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue({
+          id: 'r1',
+          state: 'CONFIRMED',
+          items: [
+            {
+              id: 'item-1',
+              productId: UUID,
+              receivedQuantity: 5,
+              lotId: null,
+              purchaseOrderItemId: null,
+            },
+          ],
+          purchaseOrder: null,
+        });
+        mockTx.purchaseReception.update.mockResolvedValue({ id: 'r1', state: 'ANNULLED' });
+        return cb(mockTx);
+      });
+
+      await service.annul('r1', 'user-1');
+
+      expect(mockTx.lot.findUnique).not.toHaveBeenCalled();
+      expect(mockTx.lot.updateMany).not.toHaveBeenCalled();
+      expect(mockTx.inventoryMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('throws Error on concurrent stock modification (updateMany count = 0)', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue({
+          id: 'r1',
+          state: 'CONFIRMED',
+          items: [
+            {
+              id: 'item-1',
+              productId: UUID,
+              receivedQuantity: 10,
+              lotId: 'lot-1',
+              purchaseOrderItemId: null,
+            },
+          ],
+          purchaseOrder: null,
+        });
+        mockTx.lot.findUnique.mockResolvedValue({
+          id: 'lot-1',
+          currentStock: 10,
+          version: 1,
+          state: 'ACTIVE',
+        });
+        mockTx.lot.updateMany.mockResolvedValue({ count: 0 });
+        return cb(mockTx);
+      });
+
+      await expect(service.annul('r1', 'user-1')).rejects.toThrow('Concurrent stock modification');
+    });
+
+    it('annuls associated fiscal document when one exists', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue({
+          id: 'r1',
+          state: 'CONFIRMED',
+          items: [],
+          purchaseOrder: null,
+        });
+        mockTx.fiscalDocument.findFirst.mockResolvedValue({ id: 'fd-1' });
+        mockTx.fiscalDocument.update.mockResolvedValue({});
+        mockTx.purchaseReception.update.mockResolvedValue({ id: 'r1', state: 'ANNULLED' });
+        return cb(mockTx);
+      });
+
+      await service.annul('r1', 'user-1');
+
+      expect(mockTx.fiscalDocument.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'fd-1' },
+          data: { fiscalState: 'ANNULLED' },
+        }),
+      );
+    });
+
+    it('skips fiscal document annulment when none exists', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue({
+          id: 'r1',
+          state: 'CONFIRMED',
+          items: [],
+          purchaseOrder: null,
+        });
+        mockTx.fiscalDocument.findFirst.mockResolvedValue(null);
+        mockTx.purchaseReception.update.mockResolvedValue({ id: 'r1', state: 'ANNULLED' });
+        return cb(mockTx);
+      });
+
+      await service.annul('r1', 'user-1');
+
+      expect(mockTx.fiscalDocument.findFirst).toHaveBeenCalledWith({
+        where: { purchaseReceptionId: 'r1', fiscalState: { notIn: ['ANNULLED'] } },
+        select: { id: true },
+      });
+      expect(mockTx.fiscalDocument.update).not.toHaveBeenCalled();
+    });
+
+    it('reverts purchase order state to CONFIRMED when no items remain received', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue({
+          id: 'r1',
+          state: 'CONFIRMED',
+          items: [
+            {
+              id: 'item-1',
+              productId: UUID,
+              receivedQuantity: 10,
+              lotId: null,
+              purchaseOrderItemId: null,
+            },
+          ],
+          purchaseOrder: { id: 'po-1', state: 'PARTIALLY_RECEIVED', items: [] },
+        });
+        mockTx.purchaseOrderItem.findMany.mockResolvedValue([{ receivedQuantity: 0 }]);
+        mockTx.purchaseOrder.update.mockResolvedValue({});
+        mockTx.purchaseReception.update.mockResolvedValue({ id: 'r1', state: 'ANNULLED' });
+        return cb(mockTx);
+      });
+
+      await service.annul('r1', 'user-1');
+
+      expect(mockTx.purchaseOrder.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'po-1' },
+          data: { state: 'CONFIRMED' },
+        }),
+      );
+    });
+
+    it('reverts purchase order state to PARTIALLY_RECEIVED when items still remain received', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue({
+          id: 'r1',
+          state: 'CONFIRMED',
+          items: [
+            {
+              id: 'item-1',
+              productId: UUID,
+              receivedQuantity: 10,
+              lotId: null,
+              purchaseOrderItemId: null,
+            },
+          ],
+          purchaseOrder: { id: 'po-1', state: 'FULLY_RECEIVED', items: [] },
+        });
+        mockTx.purchaseOrderItem.findMany.mockResolvedValue([{ receivedQuantity: 5 }]);
+        mockTx.purchaseOrder.update.mockResolvedValue({});
+        mockTx.purchaseReception.update.mockResolvedValue({ id: 'r1', state: 'ANNULLED' });
+        return cb(mockTx);
+      });
+
+      await service.annul('r1', 'user-1');
+
+      expect(mockTx.purchaseOrder.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'po-1' },
+          data: { state: 'PARTIALLY_RECEIVED' },
+        }),
+      );
+    });
+
+    it('skips purchase order update when state is already correct', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findUnique.mockResolvedValue({
+          id: 'r1',
+          state: 'CONFIRMED',
+          items: [
+            {
+              id: 'item-1',
+              productId: UUID,
+              receivedQuantity: 10,
+              lotId: null,
+              purchaseOrderItemId: null,
+            },
+          ],
+          purchaseOrder: { id: 'po-1', state: 'PARTIALLY_RECEIVED', items: [] },
+        });
+        mockTx.purchaseOrderItem.findMany.mockResolvedValue([{ receivedQuantity: 5 }]);
+        mockTx.purchaseReception.update.mockResolvedValue({ id: 'r1', state: 'ANNULLED' });
+        return cb(mockTx);
+      });
+
+      await service.annul('r1', 'user-1');
+
+      expect(mockTx.purchaseOrder.update).not.toHaveBeenCalled();
     });
   });
 });

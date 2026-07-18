@@ -101,12 +101,12 @@ describe('PurchaseReceptionsController (integration)', () => {
   });
 
   describe('POST /purchases/receptions/:id/annul', () => {
-    it('should call annul with id', async () => {
+    it('should call annul with id and userId', async () => {
       service.annul.mockResolvedValue(undefined);
 
-      await controller.annul('rec-1');
+      await controller.annul('rec-1', mockUser as any);
 
-      expect(service.annul).toHaveBeenCalledWith('rec-1');
+      expect(service.annul).toHaveBeenCalledWith('rec-1', mockUser.id);
     });
   });
 });

@@ -44,7 +44,7 @@ describe('CatalogService', () => {
   // ── findAllProducts ──────────────────────────────────────────────────
 
   describe('findAllProducts', () => {
-    const mockItems = [{ id: 'p1', commercialName: 'Product A' }];
+    const mockItems = [{ id: 'p1', commercialName: "Product A", priceHistories: [], taxHistories: [] }];
 
     it('returns paginated products from Prisma', async () => {
       (prisma.product.findMany as jest.Mock).mockResolvedValue(mockItems);
@@ -52,7 +52,10 @@ describe('CatalogService', () => {
 
       const result = await service.findAllProducts({ page: 1, pageSize: 20 });
 
-      expect(result.items).toEqual(mockItems);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({ id: 'p1', commercialName: 'Product A' });
+      expect(result.items[0].priceHistories).toBeUndefined();
+      expect(result.items[0].taxHistories).toBeUndefined();
       expect(result.total).toBe(1);
       expect(result.page).toBe(1);
       expect(result.pageSize).toBe(20);
@@ -113,19 +116,28 @@ describe('CatalogService', () => {
   // ── findProductById ──────────────────────────────────────────────────
 
   describe('findProductById', () => {
-    it('returns product with full relations when found', async () => {
+    it('returns product with full relations and derived fields when found', async () => {
       const mockProduct = {
         id: 'p1',
         commercialName: 'Product A',
         category: { id: 'c1' },
         pharmaceuticalForm: { id: 'pf1' },
         barcodes: [{ barcode: '123', isPrimary: true }],
+        priceHistories: [{ price: 1000 }],
+        taxHistories: [{ taxScheme: { rate: 19 } }],
       };
       (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
 
       const result = await service.findProductById('p1');
 
-      expect(result).toEqual(mockProduct);
+      expect(result).toMatchObject({
+        id: 'p1',
+        commercialName: 'Product A',
+        currentPrice: { price: 1000 },
+        currentTax: { taxScheme: { rate: 19 } },
+      });
+      expect(result.priceHistories).toBeUndefined();
+      expect(result.taxHistories).toBeUndefined();
     });
 
     it('throws ProductNotFoundException when not found', async () => {

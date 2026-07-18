@@ -1,0 +1,9 @@
+export { LicensingModule } from './licensing.module';
+export { PlansService } from './plans/plans.service';
+export { SubscriptionsService } from './subscriptions/subscriptions.service';
+export { LocationsService } from './locations/locations.service';
+export { ActivationsService } from './activations/activations.service';
+export { CheckInsService } from './check-ins/check-ins.service';
+export { FraudDetectionService } from './fraud/fraud-detection.service';
+export { LicenseTokenService } from './tokens/license-token.service';
+export { LicenseRequiredGuard } from './guards/license-required.guard';

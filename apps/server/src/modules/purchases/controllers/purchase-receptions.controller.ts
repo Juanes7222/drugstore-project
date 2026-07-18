@@ -63,7 +63,10 @@ export class PurchaseReceptionsController {
   @Roles(RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.PURCHASES, entityType: 'PurchaseReception' })
-  async annul(@Param('id') id: string): Promise<any> {
-    return this.purchaseReceptionsService.annul(id);
+  async annul(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ): Promise<any> {
+    return this.purchaseReceptionsService.annul(id, user.id);
   }
 }

@@ -7,10 +7,10 @@ import { PrismaClient } from '@pharmacy/database';
 import { FiscalDocumentsService } from './fiscal-documents.service';
 import { DocumentNotRetryableException } from '../exceptions/document-not-retryable.exception';
 import { DuplicateFiscalDocumentException } from '../exceptions/duplicate-fiscal-document.exception';
+import { FiscalDocumentNotFoundException } from '../exceptions/fiscal-document-not-found.exception';
 import { NoActiveResolutionForWorkstationException } from '../exceptions/no-active-resolution-for-workstation.exception';
 import { NoValidatedInvoiceForCreditNoteException } from '../exceptions/no-validated-invoice-for-credit-note.exception';
 import { ResolutionExhaustedException } from '../exceptions/resolution-exhausted.exception';
-import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 
 /**
  * Build a minimal FiscalDocument shape for use in retry tests.
@@ -48,26 +48,227 @@ describe('FiscalDocumentsService', () => {
     service = new FiscalDocumentsService(prisma as any, queue as any);
   });
 
-  // ── Stub methods ──────────────────────────────────────────────────────
+  // ── findAll ─────────────────────────────────────────────────────────────
 
-  describe('findAll (stub)', () => {
-    it('throws NotImplementedForPhaseException', async () => {
-      await expect(service.findAll({ page: 1, pageSize: 20 }))
-        .rejects.toThrow(NotImplementedForPhaseException);
+  describe('findAll', () => {
+    beforeEach(() => {
+      // findAll uses array-form $transaction ([findMany, count])
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        (args: any[]) => Promise.all(args),
+      );
+    });
+
+    it('returns paginated documents with total count and includes', async () => {
+      const mockDocs = [
+        {
+          id: 'fd-1',
+          fiscalState: 'PENDING_GENERATION',
+          resolution: { prefix: 'PRE', resolutionNumber: 1 },
+          allocation: { workstationId: 'ws-1' },
+        },
+      ];
+      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue(mockDocs);
+      (prisma.fiscalDocument.count as jest.Mock).mockResolvedValue(1);
+
+      const result = await service.findAll({ page: 1, pageSize: 20 });
+
+      expect(result).toEqual({ data: mockDocs, total: 1, page: 1, pageSize: 20 });
+    });
+
+    it('passes skip and take based on page and pageSize', async () => {
+      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.fiscalDocument.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ page: 3, pageSize: 10 });
+
+      expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 10 }),
+      );
+    });
+
+    it('orders by issueDate descending', async () => {
+      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.fiscalDocument.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 10 });
+
+      expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { issueDate: 'desc' } }),
+      );
+    });
+
+    it('includes resolution and allocation in the query', async () => {
+      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.fiscalDocument.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 10 });
+
+      expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          include: {
+            resolution: { select: { prefix: true, resolutionNumber: true } },
+            allocation: { select: { workstationId: true } },
+          },
+        }),
+      );
+    });
+
+    it('filters by state when provided', async () => {
+      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.fiscalDocument.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 10, state: 'VALIDATED' });
+
+      expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { fiscalState: 'VALIDATED' } }),
+      );
+    });
+
+    it('filters by documentType when provided', async () => {
+      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.fiscalDocument.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 10, documentType: 'INVOICE' });
+
+      expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { documentType: 'INVOICE' } }),
+      );
+    });
+
+    it('filters by issueDate range when createdAtFrom and createdAtTo are provided', async () => {
+      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.fiscalDocument.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({
+        page: 1,
+        pageSize: 10,
+        createdAtFrom: '2026-07-01',
+        createdAtTo: '2026-07-10',
+      });
+
+      expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { issueDate: { gte: expect.any(Date), lte: expect.any(Date) } },
+        }),
+      );
+    });
+
+    it('filters by issueDate gte only when only createdAtFrom is provided', async () => {
+      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.fiscalDocument.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 10, createdAtFrom: '2026-07-01' });
+
+      expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { issueDate: { gte: expect.any(Date) } },
+        }),
+      );
+    });
+
+    it('counts documents with the same where filter as findMany', async () => {
+      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.fiscalDocument.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 10, state: 'VALIDATED', documentType: 'INVOICE' });
+
+      expect(prisma.fiscalDocument.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { fiscalState: 'VALIDATED', documentType: 'INVOICE' } }),
+      );
     });
   });
 
-  describe('findById (stub)', () => {
-    it('throws NotImplementedForPhaseException', async () => {
-      await expect(service.findById('any-id'))
-        .rejects.toThrow(NotImplementedForPhaseException);
+  // ── findById ───────────────────────────────────────────────────────────
+
+  describe('findById', () => {
+    it('returns the document with resolution, allocation, and referenceDocument when found', async () => {
+      const mockDoc = {
+        id: 'fd-1',
+        resolution: { id: 'res-1', prefix: 'PRE', resolutionNumber: 1 },
+        allocation: { id: 'alloc-1', workstationId: 'ws-1', workstation: { id: 'ws-1', name: 'Workstation 1' } },
+        referenceDocument: null,
+      };
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(mockDoc);
+
+      const result = await service.findById('fd-1');
+
+      expect(result).toEqual(mockDoc);
+      expect(prisma.fiscalDocument.findUnique).toHaveBeenCalledWith({
+        where: { id: 'fd-1' },
+        include: {
+          resolution: true,
+          allocation: { include: { workstation: true } },
+          referenceDocument: { select: { id: true, fullNumber: true, documentType: true, fiscalState: true } },
+        },
+      });
+    });
+
+    it('includes referenceDocument when present', async () => {
+      const mockDoc = {
+        id: 'fd-1',
+        resolution: true,
+        allocation: { include: { workstation: true } },
+        referenceDocument: { id: 'ref-1', fullNumber: 'PRE100', documentType: 'INVOICE', fiscalState: 'VALIDATED' },
+      };
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(mockDoc);
+
+      const result = await service.findById('fd-1');
+
+      expect(result.referenceDocument).toEqual(
+        expect.objectContaining({ id: 'ref-1', fullNumber: 'PRE100' }),
+      );
+    });
+
+    it('throws FiscalDocumentNotFoundException when not found', async () => {
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.findById('missing')).rejects.toThrow(FiscalDocumentNotFoundException);
     });
   });
 
-  describe('getXmlPayload (stub)', () => {
-    it('throws NotImplementedForPhaseException', async () => {
-      await expect(service.getXmlPayload('any-id'))
-        .rejects.toThrow(NotImplementedForPhaseException);
+  // ── getXmlPayload ──────────────────────────────────────────────────────
+
+  describe('getXmlPayload', () => {
+    it('returns id, fiscalState, xmlPayload and signedXml when found', async () => {
+      const mockDoc = {
+        id: 'fd-1',
+        xmlPayload: '<Invoice>...</Invoice>',
+        signedXml: '<Signed>...</Signed>',
+        fiscalState: 'VALIDATED',
+      };
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(mockDoc);
+
+      const result = await service.getXmlPayload('fd-1');
+
+      expect(result).toEqual({
+        id: 'fd-1',
+        fiscalState: 'VALIDATED',
+        xmlPayload: '<Invoice>...</Invoice>',
+        signedXml: '<Signed>...</Signed>',
+      });
+    });
+
+    it('selects only the required fields from the database', async () => {
+      const mockDoc = {
+        id: 'fd-1',
+        xmlPayload: '<xml/>',
+        signedXml: '<signed/>',
+        fiscalState: 'PENDING_GENERATION',
+      };
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(mockDoc);
+
+      await service.getXmlPayload('fd-1');
+
+      expect(prisma.fiscalDocument.findUnique).toHaveBeenCalledWith({
+        where: { id: 'fd-1' },
+        select: { id: true, xmlPayload: true, signedXml: true, fiscalState: true },
+      });
+    });
+
+    it('throws FiscalDocumentNotFoundException when not found', async () => {
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(service.getXmlPayload('missing')).rejects.toThrow(FiscalDocumentNotFoundException);
     });
   });
 
@@ -296,11 +497,20 @@ describe('FiscalDocumentsService', () => {
     });
 
     it('throws ResolutionExhaustedException when allocation range is exhausted', async () => {
+      (prisma.fiscalDocument.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({ workstationId: 'ws-1' });
+      (prisma.fiscalResolutionAllocation.findFirst as jest.Mock).mockResolvedValue({
+        id: 'alloc-1',
+        rangeFrom: 1,
+        rangeTo: 500,
+        resolution: { id: 'res-1', prefix: 'PRE' },
+      });
       (prisma.fiscalResolutionAllocation.update as jest.Mock).mockResolvedValue({
         id: 'alloc-1',
         currentConsecutive: 501,
         rangeTo: 500,
       });
+      (prisma.fiscalIssuerConfig.findFirst as jest.Mock).mockResolvedValue({ nit: '900123456' });
 
       await expect(
         service.createPendingDocumentForSale({ saleId: 'sale-exhausted', tx: prisma }),

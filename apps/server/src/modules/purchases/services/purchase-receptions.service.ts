@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma, PurchaseReceptionState, PurchaseOrderState } from '@pharmacy/database';
+import { Prisma, PurchaseReceptionState, PurchaseOrderState, MovementType, LotState } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreatePurchaseReceptionDto, CreatePurchaseReceptionItemDto } from '../dto/create-purchase-reception.dto';
 import { QueryPurchaseReceptionDto } from '../dto/query-purchase-reception.dto';
+import { PurchaseReceptionNotConfirmedException } from '../exceptions/purchase-reception-not-confirmed.exception';
 import { PurchaseReceptionNotDraftException } from '../exceptions/purchase-reception-not-draft.exception';
 import { PurchaseReceptionNotFoundException } from '../exceptions/purchase-reception-not-found.exception';
 import { OverReceptionException } from '../exceptions/over-reception.exception';
@@ -232,9 +233,105 @@ export class PurchaseReceptionsService {
     return result;
   }
 
-  async annul(id: string): Promise<any> {
-    // Annulment logic is deferred
-    throw new Error('Annulment not implemented for this phase.');
+  async annul(id: string, userId: string): Promise<any> {
+    return this.prisma.$transaction(async (tx) => {
+      const reception = await tx.purchaseReception.findUnique({
+        where: { id },
+        include: {
+          items: { include: { purchaseOrderItem: true } },
+          purchaseOrder: { include: { items: true } },
+        },
+      });
+
+      if (!reception) {
+        throw new PurchaseReceptionNotFoundException(id);
+      }
+      if (reception.state !== PurchaseReceptionState.CONFIRMED) {
+        throw new PurchaseReceptionNotConfirmedException(id);
+      }
+
+      // Reverse stock for each reception item
+      for (const item of reception.items) {
+        if (!item.lotId) continue;
+
+        const lot = await tx.lot.findUnique({ where: { id: item.lotId } });
+        if (!lot) continue;
+
+        const newStock = lot.currentStock - item.receivedQuantity;
+        const newState = newStock <= 0 ? LotState.EXHAUSTED : lot.state;
+
+        const updated = await tx.lot.updateMany({
+          where: { id: item.lotId, version: lot.version },
+          data: {
+            currentStock: newStock < 0 ? 0 : newStock,
+            version: { increment: 1 },
+            state: newState,
+          },
+        });
+        if (updated.count === 0) {
+          throw new Error(`Concurrent stock modification on lot ${item.lotId} during reception annulment`);
+        }
+
+        // Record reversal movement
+        await tx.inventoryMovement.create({
+          data: {
+            id: crypto.randomUUID(),
+            lotId: item.lotId,
+            movementType: MovementType.NEGATIVE_ADJUSTMENT,
+            quantity: item.receivedQuantity,
+            previousStock: lot.currentStock,
+            resultingStock: newStock < 0 ? 0 : newStock,
+            createdById: userId,
+            createdAt: new Date(),
+            reason: `Reversal of purchase reception ${id}`,
+            purchaseReceptionId: reception.id,
+          },
+        });
+
+        // Revert purchase order item received/pending quantities
+        if (item.purchaseOrderItemId) {
+          await tx.purchaseOrderItem.update({
+            where: { id: item.purchaseOrderItemId },
+            data: {
+              receivedQuantity: { decrement: item.receivedQuantity },
+              pendingQuantity: { increment: item.receivedQuantity },
+            },
+          });
+        }
+      }
+
+      // Revert purchase order state if linked
+      if (reception.purchaseOrder) {
+        const allItems = await tx.purchaseOrderItem.findMany({
+          where: { purchaseOrderId: reception.purchaseOrder.id },
+        });
+        const hasAnyReceived = allItems.some(poItem => poItem.receivedQuantity > 0);
+        const newOrderState = hasAnyReceived ? PurchaseOrderState.PARTIALLY_RECEIVED : PurchaseOrderState.CONFIRMED;
+        if (reception.purchaseOrder.state !== newOrderState) {
+          await tx.purchaseOrder.update({
+            where: { id: reception.purchaseOrder.id },
+            data: { state: newOrderState },
+          });
+        }
+      }
+
+      // Annul associated fiscal document if one exists
+      const fiscalDoc = await tx.fiscalDocument.findFirst({
+        where: { purchaseReceptionId: id, fiscalState: { notIn: ['ANNULLED'] } },
+        select: { id: true },
+      });
+      if (fiscalDoc) {
+        await tx.fiscalDocument.update({
+          where: { id: fiscalDoc.id },
+          data: { fiscalState: 'ANNULLED' },
+        });
+      }
+
+      return tx.purchaseReception.update({
+        where: { id },
+        data: { state: PurchaseReceptionState.ANNULLED },
+      });
+    });
   }
 
   private calculateReceptionTotals(

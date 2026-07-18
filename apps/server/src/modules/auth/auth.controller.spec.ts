@@ -11,7 +11,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { SessionService } from './services/session.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { LoginDto } from './dto/login.dto';
 
 // ---------------------------------------------------------------------------
 // Factory helpers
@@ -60,11 +62,18 @@ function buildAuthResponse(overrides: Partial<Record<string, unknown>> = {}) {
 // ---------------------------------------------------------------------------
 
 const mockAuthService = {
-  issueSession: jest.fn(),
+  login: jest.fn(),
   validateActiveSession: jest.fn(),
   revokeSession: jest.fn(),
   refreshSession: jest.fn(),
   logoutSession: jest.fn(),
+};
+
+const mockSessionService = {
+  createSession: jest.fn(),
+  findActiveSessionByTokenHash: jest.fn(),
+  revokeSession: jest.fn(),
+  touchLastActivity: jest.fn(),
 };
 
 const mockJwtService = {
@@ -86,6 +95,7 @@ describe('AuthController (integration)', () => {
       controllers: [AuthController],
       providers: [
         { provide: AuthService, useValue: mockAuthService },
+        { provide: SessionService, useValue: mockSessionService },
         { provide: JwtService, useValue: mockJwtService },
       ],
     }).compile();
@@ -99,62 +109,67 @@ describe('AuthController (integration)', () => {
   // POST /auth/login
   // -----------------------------------------------------------------------
   describe('POST /auth/login', () => {
-    it('should call issueSession with user data and return AuthResponseDto', async () => {
-      const user = buildMockUser();
-      const workstationId = 'ws-1';
+    it('should call authService.login with dto and headers and return AuthResponseDto', async () => {
+      const dto: LoginDto = {
+        identifier: 'admin',
+        secret: 'password123',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-1',
+      };
       const clientIp = '192.168.1.1';
       const userAgent = 'test-agent';
       const expectedResponse = buildAuthResponse();
 
-      mockAuthService.issueSession.mockResolvedValue(expectedResponse);
+      mockAuthService.login.mockResolvedValue(expectedResponse);
 
-      const result = await controller.login(
-        {} as any,
-        user as any,
-        workstationId,
-        clientIp,
-        userAgent,
-      );
+      const result = await controller.login(dto, clientIp, userAgent);
 
-      expect(authService.issueSession).toHaveBeenCalledWith({
-        userId: user.id,
-        workstationId,
+      expect(authService.login).toHaveBeenCalledWith({
+        identifier: 'admin',
+        secret: 'password123',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-1',
         ipAddress: clientIp,
         userAgent,
       });
       expect(result).toEqual(expectedResponse);
     });
 
-    it('should call issueSession without optional headers when not provided', async () => {
-      const user = buildMockUser();
-      const workstationId = 'ws-1';
+    it('should call authService.login without optional headers when not provided', async () => {
+      const dto: LoginDto = {
+        identifier: 'admin',
+        secret: 'password123',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-1',
+      };
       const expectedResponse = buildAuthResponse();
 
-      mockAuthService.issueSession.mockResolvedValue(expectedResponse);
+      mockAuthService.login.mockResolvedValue(expectedResponse);
 
-      const result = await controller.login(
-        {} as any,
-        user as any,
-        workstationId,
-        undefined,
-        undefined,
-      );
+      const result = await controller.login(dto, undefined, undefined);
 
-      expect(authService.issueSession).toHaveBeenCalledWith({
-        userId: user.id,
-        workstationId,
+      expect(authService.login).toHaveBeenCalledWith({
+        identifier: 'admin',
+        secret: 'password123',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-1',
         ipAddress: undefined,
         userAgent: undefined,
       });
       expect(result).toEqual(expectedResponse);
     });
 
-    it('should propagate error when authService.issueSession throws', async () => {
-      const user = buildMockUser();
-      mockAuthService.issueSession.mockRejectedValue(new Error('Session creation failed'));
+    it('should propagate error when authService.login throws', async () => {
+      const dto: LoginDto = {
+        identifier: 'admin',
+        secret: 'password123',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-1',
+      };
+      mockAuthService.login.mockRejectedValue(new Error('Session creation failed'));
 
       await expect(
-        controller.login({} as any, user as any, 'ws-1', undefined, undefined),
+        controller.login(dto, undefined, undefined),
       ).rejects.toThrow('Session creation failed');
     });
   });
