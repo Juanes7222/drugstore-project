@@ -30,6 +30,8 @@ export async function seedInventoryLots(): Promise<void> {
     { id: IDS.LOT_JERINGA_001, batchNumber: 'JER-2025-001', productId: IDS.PROD_JERINGA_3ML, currentStock: 500, expirationDate: TWO_YEARS_FROM_NOW },
     { id: IDS.LOT_BAJA_001, batchNumber: 'BJL-2025-001', productId: IDS.PROD_BAJALENGUAS, currentStock: 80, expirationDate: TWO_YEARS_FROM_NOW },
     { id: IDS.LOT_GASA_001, batchNumber: 'GAS-2025-001', productId: IDS.PROD_GASA_ESTERIL, currentStock: 60, expirationDate: TWO_YEARS_FROM_NOW },
+    { id: IDS.LOT_TRAMADOL_001, batchNumber: 'TRM-2025-001', productId: IDS.PROD_TRAMADOL_50, currentStock: 50, expirationDate: new Date(NOW.getFullYear() + 1, 5, 15) },
+    { id: IDS.LOT_CLONAZEPAM_001, batchNumber: 'CLZ-2025-001', productId: IDS.PROD_CLONAZEPAM_2, currentStock: 30, expirationDate: TWO_YEARS_FROM_NOW },
   ];
 
   for (const lot of lots) {

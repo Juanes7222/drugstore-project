@@ -301,9 +301,9 @@ export class TenantConfigService {
   async update(
     subscriptionId: string,
     dto: {
-      strictness?: StrictnessConfig;
-      fiscal?: FiscalConfig;
-      workflow?: WorkflowConfig;
+      strictness?: Partial<StrictnessConfig>;
+      fiscal?: Partial<FiscalConfig>;
+      workflow?: Partial<WorkflowConfig>;
       expectedConfigVersion: number;
     },
     actorUserId: string,
@@ -322,10 +322,18 @@ export class TenantConfigService {
       throw new ConfigVersionConflictException(current.configVersion);
     }
 
-    // Merge partial update with current config from DB
-    const mergedStrictness = dto.strictness ?? (current.strictness as unknown as StrictnessConfig);
-    const mergedFiscal = dto.fiscal ?? (current.fiscal as unknown as FiscalConfig);
-    const mergedWorkflow = dto.workflow ?? (current.workflow as unknown as WorkflowConfig);
+    // Merge partial update with current config from DB at the field level.
+    // dto.strictness/fiscal/workflow may be partial objects containing only
+    // the fields the user actually changed.
+    const mergedStrictness: StrictnessConfig = dto.strictness
+      ? { ...(current.strictness as unknown as StrictnessConfig), ...dto.strictness }
+      : (current.strictness as unknown as StrictnessConfig);
+    const mergedFiscal: FiscalConfig = dto.fiscal
+      ? { ...(current.fiscal as unknown as FiscalConfig), ...dto.fiscal }
+      : (current.fiscal as unknown as FiscalConfig);
+    const mergedWorkflow: WorkflowConfig = dto.workflow
+      ? { ...(current.workflow as unknown as WorkflowConfig), ...dto.workflow }
+      : (current.workflow as unknown as WorkflowConfig);
 
     // RBAC: MANAGER role cannot modify system-level fields
     if (actorRole === RoleType.MANAGER) {
@@ -337,11 +345,20 @@ export class TenantConfigService {
       );
     }
 
-    const validationErrors = this.validationService.validate({
-      strictness: mergedStrictness,
-      fiscal: mergedFiscal,
-      workflow: mergedWorkflow,
-    });
+    // Validate strictness and workflow always (preset defaults are always
+    // structurally valid).  Only validate fiscal when the DB already has a
+    // fully-configured fiscal (all required fields filled). During the initial
+    // setup the admin fills fields one at a time via auto-save — partial
+    // fiscal should not block changes to other sections.
+    const validationInput: Parameters<typeof this.validationService.validate>[0] = {};
+    validationInput.strictness = mergedStrictness;
+    const dbFiscalForValidation = current.fiscal as unknown as FiscalConfig;
+    if (dto.fiscal || this.isFiscalFullyConfigured(dbFiscalForValidation)) {
+      validationInput.fiscal = mergedFiscal;
+    }
+    validationInput.workflow = mergedWorkflow;
+
+    const validationErrors = this.validationService.validate(validationInput);
     if (validationErrors.length > 0) {
       throw new ConfigValidationException(validationErrors);
     }
@@ -1000,9 +1017,9 @@ export class TenantConfigService {
   private async createDefaultAndUpdate(
     subscriptionId: string,
     dto: {
-      strictness?: StrictnessConfig;
-      fiscal?: FiscalConfig;
-      workflow?: WorkflowConfig;
+      strictness?: Partial<StrictnessConfig>;
+      fiscal?: Partial<FiscalConfig>;
+      workflow?: Partial<WorkflowConfig>;
       expectedConfigVersion: number;
     },
     actorUserId: string,
@@ -1012,16 +1029,30 @@ export class TenantConfigService {
 
     // Apply partial update on top, ignoring expectedConfigVersion mismatch
     // since the newly-created config already has version 1.
-    const mergedStrictness = dto.strictness ?? (defaults.strictness as StrictnessConfig);
-    const mergedFiscal = dto.fiscal ?? (defaults.fiscal as FiscalConfig);
-    const mergedWorkflow = dto.workflow ?? (defaults.workflow as WorkflowConfig);
+    // Deep-merge individual fields — dto sections may be partial objects
+    // containing only the fields the user changed.
+    const mergedStrictness: StrictnessConfig = dto.strictness
+      ? { ...(defaults.strictness as StrictnessConfig), ...dto.strictness }
+      : (defaults.strictness as StrictnessConfig);
+    const mergedFiscal: FiscalConfig = dto.fiscal
+      ? { ...(defaults.fiscal as FiscalConfig), ...dto.fiscal }
+      : (defaults.fiscal as FiscalConfig);
+    const mergedWorkflow: WorkflowConfig = dto.workflow
+      ? { ...(defaults.workflow as WorkflowConfig), ...dto.workflow }
+      : (defaults.workflow as WorkflowConfig);
 
-    // Validate the merged config before persisting
-    const validationErrors = this.validationService.validate({
-      strictness: mergedStrictness,
-      fiscal: mergedFiscal,
-      workflow: mergedWorkflow,
-    });
+    // Validate strictness and workflow (preset defaults are always valid,
+    // cross-field rules like clientRequired + threshold need checking).
+    // Skip fiscal validation entirely during the initial creation — the
+    // admin hasn't filled in company details yet and may save them field
+    // by field through sequential auto-save calls. Fiscal will be fully
+    // validated on subsequent updates via the normal update() path.
+    const validationInput: Parameters<typeof this.validationService.validate>[0] = {};
+    if (dto.strictness) validationInput.strictness = mergedStrictness;
+    // Fiscal intentionally omitted during first-creation path
+    if (dto.workflow) validationInput.workflow = mergedWorkflow;
+
+    const validationErrors = this.validationService.validate(validationInput);
     if (validationErrors.length > 0) {
       throw new ConfigValidationException(validationErrors);
     }
@@ -1217,6 +1248,42 @@ export class TenantConfigService {
           ? raw.createdAt.toISOString()
           : String(raw.createdAt),
     };
+  }
+
+  private isEmptyFiscal(f: Partial<FiscalConfig>): boolean {
+    return (
+      !f.companyName &&
+      !f.nit &&
+      !f.address &&
+      !f.city &&
+      !f.phone &&
+      !f.email &&
+      !f.dianResolutionNumber &&
+      !f.dianResolutionDate &&
+      !f.dianResolutionPrefix
+    );
+  }
+
+  /**
+   * Returns true when all 9 required fiscal fields are non-empty.
+   * Used by the normal update() path to decide whether to validate
+   * fiscal: once fully configured, all subsequent updates validate
+   * fiscal alongside other sections. During setup (partially filled)
+   * other sections can be saved without being blocked by incomplete
+   * fiscal data.
+   */
+  private isFiscalFullyConfigured(f: Partial<FiscalConfig>): boolean {
+    return !!(
+      f.companyName &&
+      f.nit &&
+      f.address &&
+      f.city &&
+      f.phone &&
+      f.email &&
+      f.dianResolutionNumber &&
+      f.dianResolutionDate &&
+      f.dianResolutionPrefix
+    );
   }
 
   private emptyFiscalConfig(): FiscalConfig {

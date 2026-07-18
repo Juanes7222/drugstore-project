@@ -166,6 +166,9 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
   const handleFieldChange = useCallback(
     async (section: 'fiscal' | 'workflow', key: string, value: unknown) => {
       if (readOnly || !config) return;
+      // Send the full section with the changed field — the server needs
+      // the complete context for cross-field validation (e.g. strictness
+      // clientRequired + clientRequiredThreshold).
       if (section === 'fiscal') {
         await update({ fiscal: { ...config.fiscal, [key]: value } });
       } else {

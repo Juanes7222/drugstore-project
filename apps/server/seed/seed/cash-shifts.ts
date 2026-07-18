@@ -50,14 +50,14 @@ export async function seedCashShifts(): Promise<void> {
   });
 
   await prisma.shiftCashCount.upsert({
-    where: { id: 'shiftcount_closed_1' },
+    where: { id: IDS.SHIFT_COUNT_CLOSED_1 },
     update: {
       expectedAmount: '1856000.00',
       declaredAmount: '1855000.00',
       difference: '-1000.00',
     },
     create: {
-      id: 'shiftcount_closed_1',
+      id: IDS.SHIFT_COUNT_CLOSED_1,
       cashShiftId: IDS.SHIFT_CLOSED_YESTERDAY,
       countType: 'CLOSING',
       paymentMethodId: IDS.PAY_EFECTIVO,

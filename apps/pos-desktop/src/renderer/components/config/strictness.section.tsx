@@ -196,6 +196,8 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
   const handleStrictnessChange = useCallback(
     async (key: string, value: string | number | boolean) => {
       if (readOnly || !config) return;
+      // Send the full strictness section — preserves all fields for
+      // cross-field validation (e.g. clientRequired + threshold).
       await update({
         strictness: { ...config.strictness, [key]: value },
       });

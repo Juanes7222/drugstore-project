@@ -1,3 +1,21 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// LEGACY — This file is NO LONGER the active schema.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The source of truth has moved to prisma/schema-source/{shared,server-only}/*.prisma.
+// Run `node scripts/assemble-schema.mjs full` to build prisma/schema/ from those fragments.
+//
+// All Prisma configs (prisma.config.ts, prisma.full.config.ts, prisma.local.config.ts)
+// now point to the assembled prisma/schema/ directory, not this file.
+//
+// Edit schema-source/ files instead. Regenerate with `pnpm db:generate:full`.
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// This file is preserved for reference only. It may be deleted once all teams
+// have migrated to the split-source workflow described above.
+//
+// Original header preserved below for history:
+//
 // Shared Prisma schema for @pharmacy/database — consumed by apps/server, apps/fiscal-engine, and (later) apps/pos-desktop.
 // All models, enums, and comments are unchanged from the original apps/server/prisma/schema.prisma.
 // Only the generator and datasource blocks were adapted for Prisma 7's driver-adapter + custom output requirement.

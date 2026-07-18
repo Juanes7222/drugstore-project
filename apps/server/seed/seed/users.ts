@@ -2,6 +2,8 @@ import { prisma } from '../helpers/db';
 import { hashPassword } from '../helpers/auth';
 import { IDS } from '../constants/ids';
 
+const SEED_USER_CREATED_AT = new Date('2025-01-15T08:00:00Z');
+
 export async function seedUsers(): Promise<void> {
   console.log('Seeding users...');
   const users = [
@@ -20,15 +22,18 @@ export async function seedUsers(): Promise<void> {
     const passwordHash = await hashPassword(user.plainPassword);
     await prisma.user.upsert({
       where: { id: user.id },
-      update: { fullName: user.fullName, passwordHash },
+      update: { fullName: user.fullName, passwordHash, passwordChangedAt: SEED_USER_CREATED_AT, lastPasswordChangeAt: SEED_USER_CREATED_AT },
       create: {
         id: user.id,
         username: user.username,
         fullName: user.fullName,
         email: user.email,
         role: user.role,
+        status: 'ACTIVE',
         passwordHash,
         passwordAlgorithm: 'argon2id',
+        passwordChangedAt: SEED_USER_CREATED_AT,
+        lastPasswordChangeAt: SEED_USER_CREATED_AT,
         createdById: null,
       },
     });

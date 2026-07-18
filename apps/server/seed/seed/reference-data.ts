@@ -15,6 +15,7 @@ async function seedCategories(): Promise<void> {
     { id: IDS.CAT_VITAMINAS, name: 'VITAMINAS Y SUPLEMENTOS', sortOrder: 8 },
     { id: IDS.CAT_CUIDADO_PERSONAL, name: 'CUIDADO PERSONAL', sortOrder: 9 },
     { id: IDS.CAT_MATERIAL_CURACION, name: 'MATERIAL DE CURACIÓN', sortOrder: 10 },
+    { id: IDS.CAT_SISTEMA_NERVIOSO, name: 'SISTEMA NERVIOSO', sortOrder: 11 },
   ];
   await seedMany(prisma.category, categories);
 }
@@ -49,7 +50,7 @@ async function seedPaymentMethods(): Promise<void> {
     { id: IDS.PAY_TARJETA_DEBITO, internalCode: 'PM002', name: 'Tarjeta Débito', dianCode: '1', category: 'DEBIT_CARD' as const, sortOrder: 2 },
     { id: IDS.PAY_TARJETA_CREDITO, internalCode: 'PM003', name: 'Tarjeta Crédito', dianCode: '2', category: 'CREDIT_CARD' as const, sortOrder: 3 },
     { id: IDS.PAY_TRANSFERENCIA, internalCode: 'PM004', name: 'Transferencia Bancaria', dianCode: '3', category: 'BANK_TRANSFER' as const, sortOrder: 4 },
-    { id: IDS.PAY_BOTON_PSE, internalCode: 'PM005', name: 'Botón PSE', dianCode: '49', category: 'DIGITAL_WALLET' as const, sortOrder: 5 },
+    { id: IDS.PAY_BOTON_PSE, internalCode: 'PM005', name: 'Botón PSE', dianCode: '49', category: 'BANK_TRANSFER' as const, sortOrder: 5 },
     { id: IDS.PAY_NEQUI, internalCode: 'PM006', name: 'Nequi', dianCode: '102', category: 'DIGITAL_WALLET' as const, sortOrder: 6 },
     { id: IDS.PAY_DAVIPLATA, internalCode: 'PM007', name: 'Daviplata', dianCode: '103', category: 'DIGITAL_WALLET' as const, sortOrder: 7 },
   ];

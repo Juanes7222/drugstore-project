@@ -9,6 +9,7 @@ const CAT_RESPIRATORIO = 'cat_respiratorio' as const;
 const CAT_VITAMINAS = 'cat_vitaminas' as const;
 const CAT_CUIDADO_PERSONAL = 'cat_cuidado_personal' as const;
 const CAT_MATERIAL_CURACION = 'cat_material_curacion' as const;
+const CAT_SISTEMA_NERVIOSO = 'cat_sistema_nervioso' as const;
 
 // Formas farmacéuticas
 const FORM_TABLETA = 'form_tableta' as const;
@@ -68,6 +69,43 @@ const CLIENT_SOFIA = 'client_sofia' as const;
 const CLIENT_CLINICA_SAN_JOSE = 'client_clinica_san_jose' as const;
 const CLIENT_HOGAR_GERIATRICO = 'client_hogar_geriatrico' as const;
 
+const PROD_TRAMADOL_50 = 'prod_tramadol_50' as const;
+const PROD_CLONAZEPAM_2 = 'prod_clonazepam_2' as const;
+
+// Ventas
+const SALE_CLOSED_001 = 'sale_closed_001' as const;
+const SALE_CLOSED_002 = 'sale_closed_002' as const;
+const SALE_OPEN_001 = 'sale_open_001' as const;
+
+// Conteo físico y ajustes
+const PHYS_COUNT_001 = 'phys_count_001' as const;
+const ADJ_DOC_001 = 'adj_doc_001' as const;
+
+// Prescripciones médicas
+const PRESC_SALE1_IT = 'presc_sale1_losartan' as const;
+const PRESC_SALE2_AMOX = 'presc_sale2_amox' as const;
+
+// Devolución de cliente
+const RETURN_CLOSED_001 = 'return_closed_001' as const;
+
+// Cola de sincronización
+const SYNC_SALE_001 = 'sync_sale_001' as const;
+const SYNC_SALE_002 = 'sync_sale_002' as const;
+const SYNC_CLIENT_001 = 'sync_client_001' as const;
+
+// Órdenes de compra
+const PO_DISFARMA_001 = 'po_disfarma_001' as const;
+const PO_COLVAN_001 = 'po_colvan_001' as const;
+
+// Configuración fiscal DIAN
+const FISCAL_ISSUER = 'fiscal_issuer_default' as const;
+const TECH_PROVIDER = 'tech_provider_default' as const;
+const RESOLUTION_INVOICE = 'res_invoice_001' as const;
+const RESOLUTION_POS = 'res_pos_001' as const;
+const ALLOC_INVOICE_WS1 = 'alloc_invoice_ws1' as const;
+const ALLOC_POS_WS1 = 'alloc_pos_ws1' as const;
+const ALLOC_INVOICE_WS2 = 'alloc_invoice_ws2' as const;
+
 // Productos
 const PROD_ACETAMINOFEN_500 = 'prod_acetaminofen_500' as const;
 const PROD_IBUPROFENO_400 = 'prod_ibuprofeno_400' as const;
@@ -94,6 +132,12 @@ const PROD_GUANTES_LATEX_M = 'prod_guantes_latex_m' as const;
 const PROD_JERINGA_3ML = 'prod_jeringa_3ml' as const;
 const PROD_BAJALENGUAS = 'prod_bajalenguas' as const;
 const PROD_GASA_ESTERIL = 'prod_gasa_esteril' as const;
+
+const BC_TRAMADOL_50 = 'bc_tramadol_50' as const;
+const BC_CLONAZEPAM_2 = 'bc_clonazepam_2' as const;
+
+const PRICE_TRAMADOL_50 = 'price_tramadol_50' as const;
+const PRICE_CLONAZEPAM_2 = 'price_clonazepam_2' as const;
 
 // Historiales de precios
 const PRICE_ACET_500 = 'price_acet_500' as const;
@@ -122,6 +166,9 @@ const PRICE_JERINGA = 'price_jeringa' as const;
 const PRICE_BAJA = 'price_baja' as const;
 const PRICE_GASA = 'price_gasa' as const;
 
+const TAXH_TRAMADOL_50 = 'taxh_tramadol_50' as const;
+const TAXH_CLONAZEPAM_2 = 'taxh_clonazepam_2' as const;
+
 // Historiales de impuestos
 const TAXH_ACET_500 = 'taxh_acet_500' as const;
 const TAXH_IBU_400 = 'taxh_ibu_400' as const;
@@ -148,6 +195,9 @@ const TAXH_GUANTES = 'taxh_guantes' as const;
 const TAXH_JERINGA = 'taxh_jeringa' as const;
 const TAXH_BAJA = 'taxh_baja' as const;
 const TAXH_GASA = 'taxh_gasa' as const;
+
+const LOT_TRAMADOL_001 = 'lot_tramadol_001' as const;
+const LOT_CLONAZEPAM_001 = 'lot_clonazepam_001' as const;
 
 // Lotes
 const LOT_ACET_001 = 'lot_acet_001' as const;
@@ -179,6 +229,7 @@ const LOT_GASA_001 = 'lot_gasa_001' as const;
 // Arqueos de caja
 const SHIFT_OPEN = 'shift_open' as const;
 const SHIFT_CLOSED_YESTERDAY = 'shift_closed_yesterday' as const;
+const SHIFT_COUNT_CLOSED_1 = 'shiftcount_closed_1' as const;
 
 export const IDS = {
   CAT_ANALGESICOS,
@@ -191,6 +242,7 @@ export const IDS = {
   CAT_VITAMINAS,
   CAT_CUIDADO_PERSONAL,
   CAT_MATERIAL_CURACION,
+  CAT_SISTEMA_NERVIOSO,
   FORM_TABLETA,
   FORM_CAPSULA,
   FORM_JARABE,
@@ -258,6 +310,30 @@ export const IDS = {
   PROD_JERINGA_3ML,
   PROD_BAJALENGUAS,
   PROD_GASA_ESTERIL,
+  PROD_TRAMADOL_50,
+  PROD_CLONAZEPAM_2,
+  BC_TRAMADOL_50,
+  BC_CLONAZEPAM_2,
+  SALE_CLOSED_001,
+  SALE_CLOSED_002,
+  SALE_OPEN_001,
+  PHYS_COUNT_001,
+  ADJ_DOC_001,
+  PRESC_SALE1_IT,
+  PRESC_SALE2_AMOX,
+  RETURN_CLOSED_001,
+  SYNC_SALE_001,
+  SYNC_SALE_002,
+  SYNC_CLIENT_001,
+  PO_DISFARMA_001,
+  PO_COLVAN_001,
+  FISCAL_ISSUER,
+  TECH_PROVIDER,
+  RESOLUTION_INVOICE,
+  RESOLUTION_POS,
+  ALLOC_INVOICE_WS1,
+  ALLOC_POS_WS1,
+  ALLOC_INVOICE_WS2,
   PRICE_ACET_500,
   PRICE_IBU_400,
   PRICE_IBU_800,
@@ -283,6 +359,8 @@ export const IDS = {
   PRICE_JERINGA,
   PRICE_BAJA,
   PRICE_GASA,
+  PRICE_TRAMADOL_50,
+  PRICE_CLONAZEPAM_2,
   TAXH_ACET_500,
   TAXH_IBU_400,
   TAXH_IBU_800,
@@ -308,6 +386,8 @@ export const IDS = {
   TAXH_JERINGA,
   TAXH_BAJA,
   TAXH_GASA,
+  TAXH_TRAMADOL_50,
+  TAXH_CLONAZEPAM_2,
   LOT_ACET_001,
   LOT_IBU_001,
   LOT_IBU_002,
@@ -333,6 +413,9 @@ export const IDS = {
   LOT_JERINGA_001,
   LOT_BAJA_001,
   LOT_GASA_001,
+  LOT_TRAMADOL_001,
+  LOT_CLONAZEPAM_001,
   SHIFT_OPEN,
   SHIFT_CLOSED_YESTERDAY,
+  SHIFT_COUNT_CLOSED_1,
 } as const;

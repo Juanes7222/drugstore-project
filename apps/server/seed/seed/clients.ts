@@ -12,6 +12,10 @@ interface SeedClient {
   classificationId: string;
 }
 
+const HABEAS_DATA_VERSION = 'v1.0-2025-01';
+const HABEAS_DATA_SCOPE = ['marketing', 'history', 'data_sharing'];
+const HABEAS_DATA_DATE = new Date('2025-01-15T10:00:00Z');
+
 function buildClients(): SeedClient[] {
   return [
     {
@@ -113,6 +117,10 @@ function createClientData(client: SeedClient) {
     createdById: IDS.USER_ADMIN,
     municipality: 'Bogotá D.C.',
     department: 'Cundinamarca',
+    // Ley 1581/2012 Habeas Data consent
+    consentGivenAt: HABEAS_DATA_DATE,
+    consentVersion: HABEAS_DATA_VERSION,
+    consentScope: HABEAS_DATA_SCOPE,
   };
 }
 
