@@ -496,7 +496,7 @@ describe('FiscalDocumentsService', () => {
       ).rejects.toThrow(NoActiveResolutionForWorkstationException);
     });
 
-    it('throws ResolutionExhaustedException when allocation range is exhausted', async () => {
+    it('marks allocation as exhausted when consecutive exceeds rangeTo', async () => {
       (prisma.fiscalDocument.findFirst as jest.Mock).mockResolvedValue(null);
       (prisma.sale.findUnique as jest.Mock).mockResolvedValue({ workstationId: 'ws-1' });
       (prisma.fiscalResolutionAllocation.findFirst as jest.Mock).mockResolvedValue({
@@ -515,6 +515,85 @@ describe('FiscalDocumentsService', () => {
       await expect(
         service.createPendingDocumentForSale({ saleId: 'sale-exhausted', tx: prisma }),
       ).rejects.toThrow(ResolutionExhaustedException);
+
+      // First update atomically increments currentConsecutive
+      expect(prisma.fiscalResolutionAllocation.update).toHaveBeenNthCalledWith(1,
+        expect.objectContaining({
+          where: { id: 'alloc-1' },
+          data: expect.objectContaining({ currentConsecutive: { increment: 1 } }),
+        }),
+      );
+      // Second update sets exhaustedAt before throwing
+      expect(prisma.fiscalResolutionAllocation.update).toHaveBeenNthCalledWith(2,
+        expect.objectContaining({
+          where: { id: 'alloc-1' },
+          data: expect.objectContaining({ exhaustedAt: expect.any(Date) }),
+        }),
+      );
+    });
+
+    it('computes consecutiveNumber relative to rangeFrom', async () => {
+      (prisma.fiscalDocument.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({ workstationId: 'ws-1' });
+      (prisma.fiscalResolutionAllocation.findFirst as jest.Mock).mockResolvedValue({
+        id: 'alloc-1',
+        rangeFrom: 100001,
+        rangeTo: 200000,
+        resolution: { id: 'res-1', prefix: 'PRE' },
+      });
+      (prisma.fiscalResolutionAllocation.update as jest.Mock).mockResolvedValue({
+        id: 'alloc-1',
+        currentConsecutive: 1,
+        rangeTo: 200000,
+      });
+      (prisma.fiscalIssuerConfig.findFirst as jest.Mock).mockResolvedValue({ nit: '900123456' });
+      (prisma.fiscalDocument.create as jest.Mock).mockResolvedValue({ id: 'fd-sale-1' });
+
+      await service.createPendingDocumentForSale({ saleId: 'sale-1', tx: prisma });
+
+      // consecutiveNumber = rangeFrom + currentConsecutive - 1 = 100001 + 1 - 1 = 100001
+      expect(prisma.fiscalDocument.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            consecutiveNumber: 100001,
+            fullNumber: 'PRE100001',
+          }),
+        }),
+      );
+    });
+
+    it('accepts last valid consecutive at rangeTo boundary (no exception)', async () => {
+      (prisma.fiscalDocument.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({ workstationId: 'ws-1' });
+      (prisma.fiscalResolutionAllocation.findFirst as jest.Mock).mockResolvedValue({
+        id: 'alloc-1',
+        rangeFrom: 1,
+        rangeTo: 500,
+        resolution: { id: 'res-1', prefix: 'PRE' },
+      });
+      // currentConsecutive=500 => consecutiveNumber = 1 + 500 - 1 = 500 = rangeTo
+      (prisma.fiscalResolutionAllocation.update as jest.Mock).mockResolvedValue({
+        id: 'alloc-1',
+        currentConsecutive: 500,
+        rangeTo: 500,
+      });
+      (prisma.fiscalIssuerConfig.findFirst as jest.Mock).mockResolvedValue({ nit: '900123456' });
+      (prisma.fiscalDocument.create as jest.Mock).mockResolvedValue({ id: 'fd-sale-1' });
+
+      await expect(
+        service.createPendingDocumentForSale({ saleId: 'sale-boundary', tx: prisma }),
+      ).resolves.toBeDefined();
+
+      expect(prisma.fiscalDocument.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            consecutiveNumber: 500,
+            fullNumber: 'PRE500',
+          }),
+        }),
+      );
+      // No second update for exhaustion — only the increment call
+      expect(prisma.fiscalResolutionAllocation.update).toHaveBeenCalledTimes(1);
     });
   });
 

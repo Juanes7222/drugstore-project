@@ -373,6 +373,107 @@ Teal at 28px with `strokeWidth={1.5}` for a precise, non-heavy look.
 
 ---
 
+## Audit — Timeline View (added 2026-07-18)
+
+The audit log replaces the flat-table UX with a timeline of event cards, grouped
+by day. This is the only screen that uses a timeline pattern — it is not the
+default layout for any other view.
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Registro de auditoría                       12 eventos  [↻]    │
+│                                                                  │
+│  [Todos los eventos ▼] [Todos los módulos ▼] [Desde] [Hasta]    │
+│                                                                  │
+│  ── Hoy, 18 jul 2026 ────────────────────── 8 eventos ────────── │
+│                                                                  │
+│  ┃ ┌──────────────────────────────────────────────────────────┐ │
+│  ┃ │ 🔐 Inicio de sesión                      hace 3 min      │ │
+│  ┃ │ OWNER        Límite: 10 sesiones                         │ │
+│  ┃ │ ▸ Token offline · Evictó sesión anterior                  │ │
+│  ┃ └──────────────────────────────────────────────────────────┘ │
+│  ┃ ┌──── expired: VER DETALLES ───────────────────────────────┐ │
+│  ┃ │ 🔐 Inicio de sesión                      hace 12 min     │ │
+│  ┃ │ OWNER                                                    │ │
+│  ┃ │ ▸ Token offline · Evictó sesión anterior                  │ │
+│  ┃ └──────────────────────────────────────────────────────────┘ │
+│                                                                  │
+│  ← 1 / 5 →                      Mostrando 50 de 253 eventos     │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Color mapping per event category
+
+| Category | Border color | Events |
+|----------|-------------|--------|
+| **Auth** | Pharma Teal `#0B6E6B` | AUTH_LOGIN_SUCCESS, AUTH_LOGOUT, ACCESS |
+| **Failure** | Error `#D32F2F` | AUTH_LOGIN_FAILURE, ACCOUNT_LOCKED |
+| **Security** | Restrict Violet `#5B3E96` | STEP_UP_AUTHORIZED, USER_ROLE_CHANGED, SESSION_REVOKED, AUTH_PASSWORD_CHANGED, AUTH_PIN_RESET |
+| **Users** | Sync Slate `#4A6572` | USER_CREATED, USER_DISABLED |
+| **Inventory** | Urgency Amber `#E8780A` | All INVENTORY_* events |
+
+The color is rendered as a 3px-left border on the event card. No other element
+in the audit view uses these colors outside their designated category — the
+border is the sole category indicator.
+
+### Event card anatomy
+
+1. **Left border** — 3px, category color per table above.
+2. **Icon row** — Event-type icon (lucide-react: `LogIn`, `LogOut`, `Shield`,
+   `Package`, `AlertTriangle`, `UserPlus`, `UserX`, `Lock`) + translated event
+   name in semibold 14px + relative timestamp right-aligned in caption 12px
+   muted.
+3. **Actor row** — Role badge (small, uppercase, capsule style) + user ID if
+   role alone is generic.
+4. **Detail summary** — 1-2 lines of parsed JSON rendered as human-readable
+   key-value pairs (e.g., "Token offline emitido · Límite: 10 sesiones ·
+   Vence: 01/08/2026"). Only the 2-3 most important fields shown; full JSON
+   available via expand toggle.
+5. **Target** — Only shown when target is meaningful (not "unknown:unknown" or
+   empty). Rendered as a muted label below details: e.g., "Producto:
+   Ibuprofeno 400mg · Lote: IB-2411".
+
+### Expand/collapse for JSON details
+
+- **Collapsed (default)**: Shows the human-readable detail summary only.
+- **Expanded**: Reveals a `<pre>` block in `font-data` (JetBrains Mono) with
+  the full formatted JSON, syntax-highlighted via className `text-caption` and
+  a subtle background tint. Toggle is a text button "Ver detalles" /
+  "Ocultar detalles" in caption 12px.
+- Keyboard: Enter/Space toggles expand on focused card.
+
+### Empty state
+
+When no events match filters:
+- Centered icon (from `SearchX` lucide icon) in muted ink
+- "No se encontraron eventos para los filtros seleccionados"
+- Secondary text: "Intenta ajustar las fechas o cambiar el tipo de evento"
+
+### Motion treatment
+
+- **Entrance**: No animation. The audit view is a reference screen, not a
+  high-throughput transaction screen — but also not a celebratory moment
+  worthy of orchestrated motion. Cards appear immediately on load/filter
+  change. `prefers-reduced-motion` not applicable (no animations).
+- **Expand**: 200ms height transition on detail panel, opacity 0→1 on the
+  JSON pre block. This is a functional expansion, not a decorative one.
+  Respects `prefers-reduced-motion`: collapses to instant show/hide.
+
+### Accessibility
+
+- Day group headers are `<h2>` elements for proper document outline.
+- Event cards are `<article>` elements with `aria-label` describing the event.
+- Expand toggle is a `<button>` with `aria-expanded`.
+- Filter selects are labeled via `aria-label`.
+- Pagination buttons are labeled via `aria-label="Página anterior"` /
+  `aria-label="Página siguiente"`.
+- Color is never the sole differentiator: the left border is paired with the
+  icon and event-type label.
+
+---
+
 ## Motion budget (added in Phase 3)
 
 Motion is reserved for the sale-completing handoff, not for the high-throughput search/scan/add-to-cart path.

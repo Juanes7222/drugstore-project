@@ -107,7 +107,7 @@ describe('FiscalResolutionsService', () => {
       workstationId: 'ws-1',
     });
 
-    it('creates a resolution with valid range', async () => {
+    it('creates a resolution with ACTIVE state and currentConsecutive=0', async () => {
       (prisma.fiscalResolution.findFirst as jest.Mock).mockResolvedValue(null); // no overlap
       (prisma.fiscalResolution.create as jest.Mock).mockResolvedValue({
         id: 'res-new',
@@ -124,6 +124,9 @@ describe('FiscalResolutionsService', () => {
             documentType: 'INVOICE',
             prefix: 'PRE',
             state: 'ACTIVE',
+            currentConsecutive: 0,
+            rangeFrom: 1,
+            rangeTo: 1000,
           }),
         }),
       );

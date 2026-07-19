@@ -70,3 +70,18 @@ export const CONTINGENCY_NETWORK_DEBOUNCE_MS = {
 export function isContingencyTechKeyPlaceholder(): boolean {
   return CONTINGENCY_TECH_KEY.includes('PLACEHOLDER');
 }
+
+/**
+ * Whether the app is running in development mode.
+ *
+ * In development, missing fiscal counters are auto-initialized with safe
+ * defaults so developers are not blocked by fiscal configuration. In
+ * production, the app refuses to confirm sales until a manager configures
+ * the DIAN-authorized numbering range — failing loudly rather than silently
+ * issuing non-compliant documents.
+ *
+ * Set `VITE_DEV_MODE=true` in `.env.development` or the shell environment.
+ * Production builds MUST NOT set this, or leave it unset.
+ */
+export const IS_DEV_MODE: boolean =
+  (import.meta.env.VITE_DEV_MODE as string | undefined)?.toLowerCase() === 'true';

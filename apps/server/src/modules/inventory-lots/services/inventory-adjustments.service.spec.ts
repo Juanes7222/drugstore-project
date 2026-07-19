@@ -95,6 +95,7 @@ describe('InventoryAdjustmentsService', () => {
     function createTxMock() {
       return {
         lot: { findUnique: jest.fn() },
+        inventoryAdjustmentCounter: { upsert: jest.fn().mockResolvedValue({ lastSequentialNumber: 1 }) },
         inventoryAdjustmentDocument: { create: jest.fn(), findFirst: jest.fn() },
         inventoryMovement: { create: jest.fn() },
       };
@@ -109,7 +110,6 @@ describe('InventoryAdjustmentsService', () => {
         ],
       };
       txMock.lot.findUnique.mockResolvedValue({ id: UUID, currentStock: 50 });
-      txMock.inventoryAdjustmentDocument.findFirst.mockResolvedValue(null);
       txMock.inventoryAdjustmentDocument.create.mockResolvedValue({ id: 'new-adj', reason: 'Stock correction' });
       txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' });
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));
@@ -150,6 +150,56 @@ describe('InventoryAdjustmentsService', () => {
       );
     });
 
+    it('calls inventoryAdjustmentCounter.upsert and assigns sequentialNumber to document', async () => {
+      const txMock = createTxMock();
+      const dto = {
+        reason: 'Test seq',
+        items: [{ lotId: UUID, movementType: 'POSITIVE_ADJUSTMENT' as const, quantity: 1 }],
+      };
+      txMock.lot.findUnique.mockResolvedValue({ id: UUID, currentStock: 10 });
+      txMock.inventoryAdjustmentCounter.upsert.mockResolvedValue({ lastSequentialNumber: 42 });
+      txMock.inventoryAdjustmentDocument.create.mockResolvedValue({ id: 'adj-seq', sequentialNumber: 42 });
+      txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov-seq' });
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));
+
+      await service.create(dto, 'user-1');
+
+      expect(txMock.inventoryAdjustmentCounter.upsert).toHaveBeenCalledWith({
+        where: { id: 'singleton' },
+        create: { id: 'singleton', lastSequentialNumber: 1 },
+        update: { lastSequentialNumber: { increment: 1 } },
+      });
+      expect(txMock.inventoryAdjustmentDocument.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ sequentialNumber: 42 }) }),
+      );
+    });
+
+    it('increments sequentialNumber across consecutive calls when tx shared', async () => {
+      const txMock = createTxMock();
+      const dto = {
+        reason: 'Test inc',
+        items: [{ lotId: UUID, movementType: 'POSITIVE_ADJUSTMENT' as const, quantity: 1 }],
+      };
+      let seq = 0;
+      txMock.inventoryAdjustmentCounter.upsert.mockImplementation(async () => {
+        seq += 1;
+        return { lastSequentialNumber: seq };
+      });
+      txMock.lot.findUnique.mockResolvedValue({ id: UUID, currentStock: 10 });
+      txMock.inventoryAdjustmentDocument.create.mockImplementation(async (args: any) => ({
+        id: 'adj-' + seq,
+        ...args.data,
+      }));
+      txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov' });
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));
+
+      const r1 = await service.create(dto, 'user-1');
+      const r2 = await service.create(dto, 'user-1');
+
+      expect(r1.sequentialNumber).toBe(1);
+      expect(r2.sequentialNumber).toBe(2);
+    });
+
     it('creates with physicalCountId when provided', async () => {
       const txMock = createTxMock();
       const dto = {
@@ -157,7 +207,6 @@ describe('InventoryAdjustmentsService', () => {
         items: [{ lotId: UUID, movementType: 'POSITIVE_ADJUSTMENT' as const, quantity: 5 }],
       };
       txMock.lot.findUnique.mockResolvedValue({ id: UUID, currentStock: 20 });
-      txMock.inventoryAdjustmentDocument.findFirst.mockResolvedValue(null);
       txMock.inventoryAdjustmentDocument.create.mockResolvedValue({ id: 'new-adj' });
       txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' });
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));

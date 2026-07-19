@@ -158,9 +158,38 @@ export class SyncOperationDispatcherService {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
     const userId = payload.userId as string;
     const workstationId = entry.sourceWorkstationId;
+    const createSaleDto = payload.createSaleDto as unknown as CreateSaleDto;
+
+    // Ensure the cash shift exists on the server before replaying the sale.
+    // The POS manages shifts entirely locally and never syncs SHIFT_OPEN.
+    // Without this step, every SALE_CONFIRMATION fails with
+    // CashShiftNotOpenForWorkstationException because no server-side
+    // CashShift record exists for this workstation yet.
+    if (createSaleDto?.cashShiftId) {
+      const existing = await this.prisma.cashShift.findUnique({
+        where: { id: createSaleDto.cashShiftId },
+        select: { id: true },
+      });
+      if (!existing) {
+        await this.prisma.cashShift.create({
+          data: {
+            id: createSaleDto.cashShiftId,
+            workstationId,
+            userId,
+            state: 'OPEN',
+            openedAt: new Date(),
+            openingBalance: new Prisma.Decimal(0),
+          },
+        });
+        this.logger.log(
+          `Auto-created CashShift ${createSaleDto.cashShiftId} for ` +
+          `workstation ${workstationId} during SALE_CONFIRMATION replay`,
+        );
+      }
+    }
 
     const sale = await this.salesService.create(
-      payload.createSaleDto as unknown as CreateSaleDto,
+      createSaleDto,
       userId,
       workstationId,
     );

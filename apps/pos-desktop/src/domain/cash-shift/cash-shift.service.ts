@@ -33,8 +33,9 @@ import {
   InvalidCashCountForNonCashMethodException,
   PaymentMethodNotFoundException,
 } from './exceptions';
-import { DomainError } from '../../common/domain-error';
 import type { AuthService } from '../auth/auth.service';
+import { useLocalSessionStore } from '../auth/local-session.store';
+import { useCashShiftStore } from './cash-shift.store';
 import { createBackupService, BackupFailedException } from '../backup';
 import type { LocalAdjustmentService } from '../fiscal/local-adjustment.service';
 import type { PrintRouter } from '../printing/print-router';
@@ -284,11 +285,11 @@ export class CashShiftService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Compute expected totals per payment method using the operational view
-   * (which includes local adjustments like PAYMENT_METHOD_CHANGE).
+   * Compute expected totals per payment method for a shift.
    *
-   * Uses `LocalAdjustmentService.resolveOperationalView()` to read payment
-   * methods rather than reading `Invoice.payments` directly.
+   * Base is always direct `SalePayment` sum (works regardless of invoice
+   * records). When `adjustmentService` is available, additionally merges
+   * operational-view adjustments (PAYMENT_METHOD_CHANGE, etc.) on top.
    *
    * @param shiftId  The cash shift to compute totals for
    * @returns A map of paymentMethodId → total expected amount
@@ -296,16 +297,18 @@ export class CashShiftService {
   async computeExpectedTotalsByPaymentMethod(
     shiftId: string,
   ): Promise<Map<string, Prisma.Decimal>> {
-    if (!this.adjustmentService) {
-      throw new DomainError(
-        'ADJUSTMENT_SERVICE_NOT_CONFIGURED',
-        'LocalAdjustmentService is required to compute operational totals.',
-      );
-    }
-
     this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
-    // Find all confirmed sales in this shift
+    // Base: direct SalePayment sum — always works, no invoice dependency
+    const baseTotals = await this.getDirectPaymentTotals(shiftId);
+
+    if (!this.adjustmentService) {
+      return baseTotals;
+    }
+
+    // Refinement: layer operational adjustments on top of base totals.
+    // If no invoices exist yet (invoiceService not configured / generation
+    // failed), base totals are returned unchanged.
     const sales = await this.prisma.sale.findMany({
       where: {
         cashShiftId: shiftId,
@@ -315,37 +318,41 @@ export class CashShiftService {
     });
 
     const saleIds = sales.map((s) => s.id);
-
-    // Find invoices for these sales
     const invoices = await this.prisma.invoice.findMany({
       where: { saleId: { in: saleIds } },
-      select: { id: true, saleId: true },
+      select: { id: true },
     });
 
-    const totalsByMethod = new Map<string, Prisma.Decimal>();
-
+    const adjusted = new Map(baseTotals);
     for (const invoice of invoices) {
       try {
         const opView = await this.adjustmentService.resolveOperationalView(
           invoice.id,
         );
-        const operationalPayments = opView.operational.payments;
 
-        for (const pmt of operationalPayments) {
-          const current = totalsByMethod.get(pmt.paymentMethodId) ?? new Prisma.Decimal(0);
-          totalsByMethod.set(
-            pmt.paymentMethodId,
-            current.plus(new Prisma.Decimal(pmt.amount)),
-          );
+        if (!opView.operational.hasDifferences) continue;
+
+        const opPayments = opView.operational.payments;
+        const fiscalPayments = opView.fiscal.fullData.payments;
+
+        // Remove fiscal (original) payment amounts for this invoice
+        for (const fp of fiscalPayments) {
+          const current = adjusted.get(fp.paymentMethodId) ?? new Prisma.Decimal(0);
+          const newVal = current.minus(new Prisma.Decimal(fp.amount));
+          adjusted.set(fp.paymentMethodId, newVal);
+        }
+
+        // Add operational (adjusted) payment amounts
+        for (const op of opPayments) {
+          const current = adjusted.get(op.paymentMethodId) ?? new Prisma.Decimal(0);
+          adjusted.set(op.paymentMethodId, current.plus(new Prisma.Decimal(op.amount)));
         }
       } catch {
-        // If the invoice can't be resolved, skip — it shouldn't happen
-        // for normal invoices.
         continue;
       }
     }
 
-    return totalsByMethod;
+    return adjusted;
   }
 
   /**
@@ -431,6 +438,218 @@ export class CashShiftService {
     }
 
     return drift;
+  }
+
+  // ---------------------------------------------------------------------------
+  // History & hydration
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Fetch shift history for the current workstation.
+   * Returns both open and closed shifts, newest first.
+   */
+  async getShiftHistory(options?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<{ shifts: CashShiftRecord[]; total: number }> {
+    const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+    const { limit = 20, offset = 0 } = options ?? {};
+
+    const [shifts, total] = await Promise.all([
+      this.prisma.cashShift.findMany({
+        where: { workstationId: session.workstationId },
+        orderBy: { openedAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }) as Promise<CashShiftRecord[]>,
+      this.prisma.cashShift.count({
+        where: { workstationId: session.workstationId },
+      }),
+    ]);
+
+    return { shifts, total };
+  }
+
+  /**
+   * Re-hydrate the in-memory cash shift store from the local database.
+   *
+   * Reads the current session's workstationId and queries for the most
+   * recent OPEN shift. Useful after login / user switch to ensure the
+   * store reflects the correct workstation state.
+   */
+  async hydrateStore(): Promise<void> {
+    const session = useLocalSessionStore.getState().session;
+    if (!session?.workstationId) {
+      useCashShiftStore.getState().setCurrentShift(null);
+      return;
+    }
+
+    try {
+      const openShift = (await this.prisma.cashShift.findFirst({
+        where: { workstationId: session.workstationId, state: 'OPEN' },
+        orderBy: { openedAt: 'desc' },
+      })) as CashShiftRecord | null;
+
+      useCashShiftStore.getState().setCurrentShift(openShift);
+    } catch {
+      useCashShiftStore.getState().setCurrentShift(null);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Close-prep helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Sales summary for a shift: transaction count, total amount, and expected
+   * totals per payment method (operational view when adjustment service
+   * is available, otherwise direct from invoice payments).
+   */
+  async getShiftSalesSummary(shiftId: string): Promise<{
+    transactionCount: number;
+    totalSalesAmount: string;
+    totalsByPaymentMethod: Array<{
+      paymentMethodId: string;
+      methodName: string;
+      isCash: boolean;
+      expectedAmount: string;
+    }>;
+  }> {
+    this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+
+    const sales = await this.prisma.sale.findMany({
+      where: { cashShiftId: shiftId, operationalState: 'CONFIRMED' },
+      select: { id: true, totalAmount: true },
+    });
+
+    const totalAmount = sales.reduce(
+      (sum, s) => sum.plus(s.totalAmount),
+      new Prisma.Decimal(0),
+    );
+
+    // Get payment methods used in this shift
+    const activeMethods = await this.getActivePaymentMethodsWithNames(shiftId);
+
+    // Compute expected amounts via operational view (or fallback)
+    const totalsByMethod = await this.computeExpectedTotalsWithFallback(shiftId);
+
+    const totalsByMethodArray = activeMethods.map((m) => ({
+      paymentMethodId: m.id,
+      methodName: m.name,
+      isCash: m.isCash,
+      expectedAmount: (totalsByMethod.get(m.id) ?? new Prisma.Decimal(0)).toString(),
+    }));
+
+    return {
+      transactionCount: sales.length,
+      totalSalesAmount: totalAmount.toString(),
+      totalsByPaymentMethod: totalsByMethodArray,
+    };
+  }
+
+  /**
+   * Register CLOSING cash counts for multiple payment methods at once,
+   * then immediately close the shift. This is the standard close flow
+   * used by the UI wizard.
+   *
+   * Each entry must include the declared amount. For cash methods an
+   * optional denominations breakdown can be provided.
+   *
+   * Throws `MissingClosingCashCountsException` if not all active payment
+   * methods are covered.
+   */
+  async closeWithCounts(
+    shiftId: string,
+    dto: {
+      counts: Array<{
+        paymentMethodId: string;
+        declaredAmount: Prisma.Decimal;
+        denominationsBreakdown?: Record<string, number>;
+      }>;
+      closingNotes?: string;
+    },
+  ): Promise<unknown> {
+    this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+    await this.getOpenShift(shiftId);
+
+    // 1. Compute expected totals per payment method
+    const expectedTotals = await this.computeExpectedTotalsWithFallback(shiftId);
+
+    // 2. Fetch payment methods for isCash check
+    const paymentMethods = await this.prisma.paymentMethod.findMany({
+      where: { id: { in: dto.counts.map((c) => c.paymentMethodId) } },
+    });
+    const methodMap = new Map(paymentMethods.map((m) => [m.id, m]));
+
+    // 3. Register each CLOSING count with the computed expected amount
+    for (const count of dto.counts) {
+      const method = methodMap.get(count.paymentMethodId);
+      if (!method) throw new PaymentMethodNotFoundException(count.paymentMethodId);
+
+      const expectedAmount = expectedTotals.get(count.paymentMethodId) ?? new Prisma.Decimal(0);
+
+      await this.registerCashCount(shiftId, {
+        countType: 'CLOSING',
+        paymentMethodId: count.paymentMethodId,
+        expectedAmount,
+        declaredAmount: count.declaredAmount,
+        denominationsBreakdown: count.denominationsBreakdown,
+      });
+    }
+
+    // 4. Close the shift — validates all methods have CLOSING counts
+    return this.closeShift(shiftId, { closingNotes: dto.closingNotes ?? undefined });
+  }
+
+  /**
+   * Get active payment methods (used in confirmed sales within the shift)
+   * including their names and isCash flag.
+   */
+  private async getActivePaymentMethodsWithNames(
+    shiftId: string,
+  ): Promise<Array<{ id: string; name: string; isCash: boolean }>> {
+    const activeIds = await this.getActivePaymentMethods(shiftId);
+    if (activeIds.length === 0) return [];
+
+    const methods = await this.prisma.paymentMethod.findMany({
+      where: { id: { in: activeIds.map((a) => a.paymentMethodId) } },
+      select: { id: true, name: true, isCash: true },
+    });
+    return methods;
+  }
+
+  /**
+   * Compute expected totals per payment method for a shift.
+   * Delegates to `computeExpectedTotalsByPaymentMethod` which handles
+   * both direct SalePayment sums and operational-view adjustments.
+   */
+  private async computeExpectedTotalsWithFallback(
+    shiftId: string,
+  ): Promise<Map<string, Prisma.Decimal>> {
+    return this.computeExpectedTotalsByPaymentMethod(shiftId);
+  }
+
+  /**
+   * Direct SalePayment sum per payment method for a shift.
+   * Used as the base for operational-view calculations.
+   */
+  private async getDirectPaymentTotals(
+    shiftId: string,
+  ): Promise<Map<string, Prisma.Decimal>> {
+    const sales = await this.prisma.sale.findMany({
+      where: { cashShiftId: shiftId, operationalState: 'CONFIRMED' },
+      select: { id: true },
+    });
+    const payments = await this.prisma.salePayment.findMany({
+      where: { saleId: { in: sales.map((s) => s.id) } },
+      select: { paymentMethodId: true, amount: true },
+    });
+    const totals = new Map<string, Prisma.Decimal>();
+    for (const pmt of payments) {
+      const current = totals.get(pmt.paymentMethodId) ?? new Prisma.Decimal(0);
+      totals.set(pmt.paymentMethodId, current.plus(pmt.amount));
+    }
+    return totals;
   }
 
   // ---------------------------------------------------------------------------

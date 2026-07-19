@@ -54,4 +54,6 @@ export interface UiState {
   activeScreen: PosScreen;
   saleCompletionPhase: SaleCompletionPhase;
   prescriptionFlow: PrescriptionFlowState;
+  /** The sale ID persisted in the local DB (set after create(), consumed during confirm()). */
+  currentSaleId: string | null;
 }

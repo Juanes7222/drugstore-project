@@ -23,10 +23,18 @@ import type { PrinterConfigRecord } from './printing-types';
  * Configuration for the server-side print fallback.
  * If configured, the workstation can send print jobs to the server as a
  * last-resort fallback.
+ *
+ * NOTE: The server endpoint (`POST /print/fallback`) exists to prevent a 404,
+ * but the actual payload transfer is a future enhancement — the current
+ * implementation only sends a local filesystem path that the server cannot
+ * access. The server print fallback is disabled by default as a result.
+ * See https://github.com/orgs/pharmacy/projects/XX (PAYLOAD-TRANSFER).
  */
 export interface ServerPrintConfig {
   /** Base URL of the server API. */
   baseUrl: string;
+  /** Whether server-side print fallback is enabled. Defaults to `false`. */
+  enabled?: boolean;
   /** Optional auth token for the server endpoint. */
   authToken?: string;
 }
@@ -46,7 +54,13 @@ export interface PrintRouter {
 
   /**
    * Attempt server-side print fallback.
-   * Sends the payload to the server's print endpoint.
+   *
+   * DISABLED BY DEFAULT — only sends a local filesystem path that the server
+   * cannot access. The job is already persisted in the local queue and will
+   * retry when a printer comes back online.
+   *
+   * Remove this guard and implement base64 payload transfer once the server
+   * endpoint can accept actual file data (see PAYLOAD-TRANSFER).
    */
   tryServerFallback(
     jobType: PrintJobType,
@@ -112,8 +126,10 @@ class PrintRouterImpl implements PrintRouter {
     }
 
     if (!printer) {
-      // Step 3: Try server fallback if configured
-      if (this.serverConfig) {
+      // Step 3: Try server fallback if explicitly enabled
+      // NOTE: Disabled by default — the server cannot access a local path.
+      // Job is already queued and will retry when a printer comes back online.
+      if (this.serverConfig?.enabled) {
         const serverSuccess = await this.tryServerFallback(jobType, payload);
         if (serverSuccess) {
           return job;

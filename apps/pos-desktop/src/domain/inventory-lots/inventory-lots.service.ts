@@ -215,10 +215,16 @@ export class InventoryLotsService {
    * @throws InsufficientStockException      when total available stock < `quantity`
    * @throws ConcurrentStockModificationException  when a version conflict is detected
    */
-  async consumeStockForSale(params: ConsumeStockForSaleParams): Promise<ConsumedLot[]> {
+  async consumeStockForSale(
+    params: ConsumeStockForSaleParams,
+    tx?: Prisma.TransactionClient,
+  ): Promise<ConsumedLot[]> {
     const { productId, quantity, saleId } = params;
 
-    return this.prisma.$transaction(async (tx) => {
+    // When called from inside an existing transaction (e.g. sale confirm),
+    // reuse the caller's tx to avoid nested $transaction — PGlite has only
+    // one connection and nested transactions would deadlock.
+    const run = async (tx: Prisma.TransactionClient) => {
       // 1. Select active, non-empty lots in FEFO order
       const availableLots = await tx.lot.findMany({
         where: {
@@ -298,7 +304,13 @@ export class InventoryLotsService {
       }
 
       return consumedLots;
-    });
+    };
+
+    // Reuse caller's transaction if provided, otherwise create a new one.
+    if (tx) {
+      return run(tx);
+    }
+    return this.prisma.$transaction(run);
   }
 
   /**

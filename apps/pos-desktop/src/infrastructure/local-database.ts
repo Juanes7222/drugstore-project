@@ -866,7 +866,17 @@ export async function getLocalDatabase(): Promise<{
         const { PrismaPGlite } = await import('pglite-prisma-adapter');
         const { PrismaClient } = await import('@pharmacy/database/local');
         const adapter = new PrismaPGlite(client);
-        const pc = new PrismaClient({ adapter });
+        // PGlite has a single connection.  The WriteLock (dbWriteLock)
+        // serializes long-running callers (sale confirm, sync steps) so they
+        // never contend.  These timeouts are a safety net — not the primary
+        // mechanism — so we keep them at modest defaults.
+        const pc = new PrismaClient({
+          adapter,
+          transactionOptions: {
+            maxWait: 5_000,  // 5 s to acquire the connection
+            timeout:  10_000, // 10 s to complete the transaction
+          },
+        });
         await pc.$connect();
         prisma = pc;
       } else {

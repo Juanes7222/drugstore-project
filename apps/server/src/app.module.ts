@@ -18,6 +18,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { UpdatesModule } from './modules/updates/updates.module';
 import { TenantConfigModule } from './modules/tenant-config/tenant-config.module';
+import { PrintModule } from './modules/print/print.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { TenantConfigModule } from './modules/tenant-config/tenant-config.module
     UpdatesModule,
     TenantConfigModule,
     PrismaModule,
+    PrintModule,
   ],
 })
 export class AppModule {}

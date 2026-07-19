@@ -26,6 +26,7 @@ import {
   selectSaleCompletionPhase,
 } from "@/store/slices/ui-slice";
 import {
+  clearCart,
   selectCartItems,
   selectEffectiveClient,
   selectSubtotalCents,
@@ -187,6 +188,7 @@ export const Receipt: FC = () => {
   }, [dispatch]);
 
   const handleNewSale = useCallback(() => {
+    dispatch(clearCart());
     dispatch(resetSaleFlow());
   }, [dispatch]);
 

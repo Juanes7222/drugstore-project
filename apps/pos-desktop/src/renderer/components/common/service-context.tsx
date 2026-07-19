@@ -157,6 +157,10 @@ export const useUpdateService = (): Services['updateService'] =>
 export const useClientsService = (): Services['clientsService'] =>
   useServiceContext().clientsService;
 
+/** Convenience hook — returns the SalesPosService instance. */
+export const useSalesPosService = (): Services['salesPosService'] =>
+  useServiceContext().salesPosService;
+
 /** Convenience hook — returns the InventoryLotsService instance. */
 export const useInventoryLotsService = (): Services['inventoryLotsService'] =>
   useServiceContext().inventoryLotsService;

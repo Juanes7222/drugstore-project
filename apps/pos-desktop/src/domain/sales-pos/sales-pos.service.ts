@@ -22,7 +22,8 @@
  * rationale. The provisional local figure is discarded and replaced
  * when sync replays the sale against the server.
  */
-import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState } from '@pharmacy/database/local';
+import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState, PaymentMethodCategory } from '@pharmacy/database/local';
+import { dbWriteLock } from '../../infrastructure/write-lock';
 import type { AuthService } from '../auth/auth.service';
 import type { InventoryLotsService, ConsumedLot } from '../inventory-lots/inventory-lots.service';
 import type { InvoiceService } from '../fiscal/invoice.service';
@@ -117,6 +118,21 @@ interface SaleTotals {
   totalAmount: Prisma.Decimal;
 }
 
+/**
+ * Result returned by `SalesPosService.confirm()`.
+ *
+ * Extends the confirmed Sale record with metadata about post-confirm
+ * operations that ran outside the main transaction.
+ */
+export interface ConfirmResult {
+  /** The confirmed Sale record (all Prisma fields). */
+  [key: string]: unknown;
+  /** `true` when the fiscal invoice was generated successfully. */
+  invoiceGenerated: boolean;
+  /** Human-readable failure reason when invoice generation failed. */
+  invoiceError?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -147,6 +163,44 @@ export class SalesPosService {
   // -----------------------------------------------------------------------
   // Public API
   // -----------------------------------------------------------------------
+
+  /**
+   * Resolve a frontend payment-method type string to the DB PaymentMethod UUID.
+   *
+   * Frontend uses lowercase types ("cash", "card", "transfer", "nequi").
+   * The DB stores PaymentMethod rows with a `category` enum. This method
+   * maps the frontend type to a DB category and returns the first matching
+   * method's ID.
+   *
+   * @throws Error if no matching payment method is found in the local DB.
+   */
+  async resolvePaymentMethodId(type: string): Promise<string> {
+    const categoryMap: Record<string, PaymentMethodCategory> = {
+      cash: PaymentMethodCategory.CASH,
+      card: PaymentMethodCategory.CREDIT_CARD,
+      transfer: PaymentMethodCategory.BANK_TRANSFER,
+      nequi: PaymentMethodCategory.DIGITAL_WALLET,
+    };
+
+    const category = categoryMap[type.toLowerCase()];
+    if (!category) {
+      throw new Error(`Unknown payment method type "${type}".`);
+    }
+
+    const method = await this.prisma.paymentMethod.findFirst({
+      where: { category },
+      select: { id: true },
+    });
+
+    if (!method) {
+      throw new Error(
+        `No PaymentMethod found in DB for category "${category}". ` +
+        'Run payment-method sync to seed the local catalog.',
+      );
+    }
+
+    return method.id;
+  }
 
   /**
    * Create a sale in IN_PROGRESS state.
@@ -280,10 +334,28 @@ export class SalesPosService {
    * @throws ChangeRequiresCashPaymentException when change is due but no cash
    *   payment method is present.
    */
+  /**
+   * Maximum number of retry attempts when a Prisma transaction times out
+   * due to contention (e.g. sync scheduler using the single PGlite connection).
+   * Each retry adds 500 ms exponential backoff.
+   */
+  private static readonly MAX_CONFIRM_RETRIES = 3;
+
   async confirm(saleId: string, input: ConfirmSaleInput): Promise<unknown> {
+    // Return type is intentionally `unknown` for backward compatibility.
+    // Use `ConfirmResult` type assertion on the caller side to access
+    // `invoiceGenerated` and `invoiceError` fields.
     const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
-    return this.prisma.$transaction(async (tx) => {
+    // Acquire the PGlite write lock so no sync step runs concurrently.
+    // This guarantees the $transaction never contends for the single
+    // connection — sale confirm completes in real time.
+    await dbWriteLock.acquire();
+    try {
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= SalesPosService.MAX_CONFIRM_RETRIES; attempt++) {
+        try {
+          return await this.prisma.$transaction(async (tx) => {
       // 1. Find and validate sale
       const sale = await tx.sale.findUnique({
         where: { id: saleId },
@@ -317,7 +389,7 @@ export class SalesPosService {
           productId: item.productId,
           quantity: item.quantity,
           saleId: sale.id,
-        });
+        }, tx); // Pass tx to avoid nested $transaction on single-connection PGlite
 
         const weightedUnitCost = this.computeWeightedUnitCost(consumedLots);
 
@@ -377,16 +449,27 @@ export class SalesPosService {
       //    confirm with fiscal computation. If invoice generation fails, the
       //    sale is still confirmed — the failure is logged.
       let invoiceGenerated = false;
+      let invoiceError: string | undefined;
       if (this.invoiceService) {
         try {
           await this.invoiceService.generateInvoiceForSale(saleId);
           invoiceGenerated = true;
         } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          invoiceError = message;
           console.error(
-            `[SalesPosService] Invoice generation failed for sale ${saleId}:`,
-            err instanceof Error ? err.message : err,
+            `[SalesPosService] Invoice generation FAILED for sale ${saleId}. ` +
+            `Sale is confirmed but no fiscal document was created. Reason: ${message}`,
           );
+          if (err instanceof Error && err.stack) {
+            console.error(`[SalesPosService] Stack: ${err.stack}`);
+          }
         }
+      } else {
+        console.warn(
+          `[SalesPosService] No invoiceService configured for workstation. ` +
+          `Sale ${saleId} confirmed without fiscal document.`,
+        );
       }
 
       // 8. Enqueue the receipt print job (fire-and-forget from the caller's
@@ -454,8 +537,42 @@ export class SalesPosService {
         }
       }
 
-      return result;
+      return {
+        ...(result as Record<string, unknown>),
+        invoiceGenerated,
+        ...(invoiceError ? { invoiceError } : {}),
+      } as ConfirmResult;
     });
+      } catch (error: unknown) {
+        // PrismaClientKnownRequestError with code P2028 means the
+        // transaction could not start because the single PGlite connection
+        // was busy (e.g. sync scheduler running).  Retry with backoff.
+        const isTimeout =
+          error instanceof Error &&
+          (error as { code?: string }).code === 'P2028' &&
+          error.message.includes('Unable to start a transaction');
+
+        if (isTimeout && attempt < SalesPosService.MAX_CONFIRM_RETRIES) {
+          const delay = attempt * 500; // 500 ms, 1000 ms, 1500 ms
+          console.warn(
+            `[SalesPosService] Transaction timeout on confirm attempt ${attempt}/${SalesPosService.MAX_CONFIRM_RETRIES}. ` +
+            `Retrying after ${delay} ms...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          lastError = error;
+          continue;
+        }
+
+        // Non-timeout error or final attempt exhausted — propagate.
+        throw error;
+      }
+    }
+
+    // All retries exhausted — throw the last captured error.
+    throw lastError ?? new Error('Sale confirm failed after retries');
+      } finally {
+        dbWriteLock.release();
+      }
   }
 
   // -----------------------------------------------------------------------

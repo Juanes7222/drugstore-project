@@ -31,6 +31,7 @@ const initialState: UiState = {
   activeScreen: "home",
   saleCompletionPhase: "idle",
   prescriptionFlow: initialPrescriptionFlow,
+  currentSaleId: null,
 };
 
 export const uiSlice = createSlice({
@@ -154,10 +155,15 @@ export const uiSlice = createSlice({
       state.saleCompletionPhase = "completed";
     },
 
+    setCurrentSaleId: (state, action: PayloadAction<string | null>) => {
+      state.currentSaleId = action.payload;
+    },
+
     resetSaleFlow: (state) => {
       state.activeScreen = "sales";
       state.saleCompletionPhase = "idle";
       state.prescriptionFlow = initialPrescriptionFlow;
+      state.currentSaleId = null;
     },
 
     /* ---- Prescription interception flow ---- */
@@ -193,6 +199,7 @@ export const uiSlice = createSlice({
 
 export const {
   setActiveScreen,
+  setCurrentSaleId,
   navigateToReturns,
   navigateToCashShift,
   navigateToInventoryAdjustments,
@@ -240,3 +247,6 @@ export const selectSaleCompletionPhase = (
 export const selectPrescriptionFlow = (
   state: { ui: UiState },
 ): PrescriptionFlowState => state.ui.prescriptionFlow;
+
+export const selectCurrentSaleId = (state: { ui: UiState }): string | null =>
+  state.ui.currentSaleId;

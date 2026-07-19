@@ -45,9 +45,12 @@ import {
   initiateSaleCompletion,
   navigateToReceipt,
   setActiveScreen,
+  setCurrentSaleId,
+  selectCurrentSaleId,
   setPrescriptionFlow,
 } from "@/store/slices/ui-slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { useSalesPosService } from "@/components/common/service-context";
 import { formatCurrency } from "@/utils/format-currency";
 import { createMockPaymentGatewayService } from "@/services/payment-gateway-service.mock";
 import { PaymentGatewayService } from "@/services/payment-gateway-service";
@@ -66,6 +69,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
   const dispatch = useAppDispatch();
   const timeoutRef = useRef<number | undefined>(undefined);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const methods = useAppSelector(selectPaymentMethods);
   const totalDue = useAppSelector(selectTotalCents);
@@ -78,6 +82,8 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
   const allElectronicApproved = useAppSelector(
     selectAreElectronicMethodsApproved,
   );
+  const currentSaleId = useAppSelector(selectCurrentSaleId);
+  const salesPosService = useSalesPosService();
 
   const gatewayService = useMemo<PaymentGatewayService>(
     () => injectedGateway ?? createMockPaymentGatewayService(),
@@ -153,20 +159,18 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
 
   const handleCancel = useCallback(() => {
     dispatch(resetPayment());
+    setActionError(null);
     dispatch(setActiveScreen("sales"));
   }, [dispatch]);
 
   const cartItems = useAppSelector(selectCartItems);
 
-  const handleConfirm = useCallback(() => {
-    if (!canConfirm) {
+  const handleConfirm = useCallback(async () => {
+    if (!canConfirm || isCompleting) {
       return;
     }
 
     // ---- Prescription interception ----
-    // Before initiating the sale completion, check every cart item for
-    // prescription requirements. Items with `requiresPrescription === true`
-    // and `saleType !== 'FREE_SALE'` must have a prescription attached.
     const itemsNeedingPrescription = cartItems.filter(
       (item) =>
         item.requiresPrescription && item.saleType !== SaleType.FREE_SALE,
@@ -185,19 +189,55 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
           incompleteItemIds,
         }),
       );
-      // The ui-slice's setPrescriptionFlow action automatically sets
-      // activeScreen to "prescriptions", so the Payment screen will unmount
-      // and the PrescriptionsPage will mount.
       return;
     }
 
-    dispatch(initiateSaleCompletion());
-    setIsCompleting(true);
+    // ---- Guard: must have a sale ID from create() ----
+    if (!currentSaleId) {
+      setActionError('No se encontró la venta activa. Vuelva a intentarlo.');
+      return;
+    }
 
-    timeoutRef.current = window.setTimeout(() => {
-      dispatch(navigateToReceipt());
-    }, SALE_COMPLETION_INITIATE_MS);
-  }, [canConfirm, cartItems, dispatch]);
+    setIsCompleting(true);
+    setActionError(null);
+
+    try {
+      // 1. Resolve frontend payment types → DB payment method UUIDs
+      const resolvedPayments = await Promise.all(
+        methods.map(async (m) => ({
+          paymentMethodId: await salesPosService.resolvePaymentMethodId(m.type),
+          amount: m.amountCents / 100, // cents → pesos (DB stores Decimal 15,2)
+          transactionReference: m.reference,
+          cardBrand: m.type === 'card' ? 'GENERIC' : undefined,
+          cardLastFour: undefined,
+          batchNumber: undefined,
+          processorResponseCode: m.authorizationStatus,
+        })),
+      );
+
+      // 2. Persist to DB — consumes stock, creates SalePayment, sets CONFIRMED
+      await salesPosService.confirm(currentSaleId, {
+        payments: resolvedPayments,
+      });
+
+      // 3. Clear sale & payment state now that it's persisted
+      dispatch(setCurrentSaleId(null));
+      dispatch(resetPayment());
+
+      // 4. Proceed with UI animation handoff
+      dispatch(initiateSaleCompletion());
+
+      timeoutRef.current = window.setTimeout(() => {
+        dispatch(navigateToReceipt());
+      }, SALE_COMPLETION_INITIATE_MS);
+    } catch (err) {
+      console.error('[PaymentProcessing] confirm failed:', err);
+      setActionError(
+        err instanceof Error ? err.message : 'Error al confirmar la venta.',
+      );
+      setIsCompleting(false);
+    }
+  }, [canConfirm, isCompleting, currentSaleId, cartItems, methods, salesPosService, dispatch]);
 
   const differenceText = useMemo(() => {
     if (difference < 0) {
@@ -353,6 +393,19 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
                 {formatCurrency(change)}
               </span>
             </div>
+          </div>
+        )}
+
+        {actionError && (
+          <div
+            className="mt-pos-md rounded-pos p-pos-md text-body-sm"
+            style={{
+              backgroundColor: 'color-mix(in srgb, var(--color-urgency) 12%, transparent)',
+              color: 'var(--color-urgency)',
+            }}
+            role="alert"
+          >
+            {actionError}
           </div>
         )}
 

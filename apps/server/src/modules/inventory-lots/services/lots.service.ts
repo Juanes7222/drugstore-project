@@ -16,8 +16,8 @@ import { ConcurrentStockModificationException } from '../exceptions/concurrent-s
 import { LotNotActiveException } from '../exceptions/lot-not-active.exception';
 import { LotNotBlockedException } from '../exceptions/lot-not-blocked.exception';
 import { LotNotFoundException } from '../exceptions/lot-not-found.exception';
-import { LotCostUnavailableException } from '../exceptions/lot-cost-unavailable.exception';
 import { LotStateChangedSinceSaleException } from '../exceptions/lot-state-changed-since-sale.exception';
+import { LotCostUnavailableException } from '../exceptions/lot-cost-unavailable.exception';
 import { LotNotEligibleForReturnException } from '../exceptions/lot-not-eligible-for-return.exception';
 
 @Injectable()

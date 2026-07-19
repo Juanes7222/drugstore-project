@@ -34,10 +34,13 @@
 import { useEffect, useState } from 'react';
 import { getLocalDatabase } from '../../infrastructure/local-database';
 import type { PrismaClient } from '@pharmacy/database/local';
-import { API_BASE_URL } from '../../infrastructure/config';
+import { API_BASE_URL, WORKSTATION_ID } from '../../infrastructure/config';
 import { createAuthService } from '../../domain/auth/auth.service';
 import { useLocalSessionStore } from '../../domain/auth/local-session.store';
-import { isContingencyTechKeyPlaceholder } from '../../config/fiscal';
+import {
+  isContingencyTechKeyPlaceholder,
+  IS_DEV_MODE,
+} from '../../config/fiscal';
 import { isOnline } from '../../common/is-online';
 
 import { createFiscalServices } from '../../domain/fiscal/fiscal-service.factory';
@@ -61,6 +64,7 @@ import type { ReturnsService } from '../../domain/returns/returns.service';
 import type { InventoryAdjustmentsService } from '../../domain/inventory-adjustments/inventory-adjustments.service';
 import type { PrescriptionsService } from '../../domain/prescriptions/prescriptions.service';
 import { createCashShiftService, type CashShiftService } from '../../domain/cash-shift/cash-shift.service';
+import type { SalesPosService } from '../../domain/sales-pos/sales-pos.service';
 import { useCashShiftStore } from '../../domain/cash-shift/cash-shift.store';
 import { createInventoryLotsService, type InventoryLotsService } from '../../domain/inventory-lots/inventory-lots.service';
 import type { ProductService } from '../../domain/catalog/product.service';
@@ -93,6 +97,7 @@ export interface Services {
   inventoryAdjustmentsService: InventoryAdjustmentsService;
   prescriptionsService: PrescriptionsService;
   cashShiftService: CashShiftService;
+  salesPosService: SalesPosService;
   inventoryLotsService: InventoryLotsService;
   productService: ProductService;
   clientsService: ClientsService;
@@ -125,6 +130,10 @@ export interface InitializeServicesInput {
   apiBaseUrl?: string;
   checkTechKey?: () => boolean;
   currentVersion?: string;
+  /** Override the workstation ID.  Falls back to the session's workstationId
+   *  (populated after login), then to the VITE_WORKSTATION_ID env var
+   *  (default "ws_principal" for local dev). */
+  workstationId?: string;
   getSession?: () => { session: { userId: string; workstationId: string; accessToken: string } | null };
   executePrint?: (
     printerSystemName: string,
@@ -196,6 +205,7 @@ export async function initializeServices(
     checkTechKey = isContingencyTechKeyPlaceholder,
     currentVersion = (import.meta.env.VITE_APP_VERSION as string | undefined) ?? '0.1.0',
     getSession = useLocalSessionStore.getState,
+    workstationId: inputWorkstationId,
   } = input;
 
   // 1. Initialise the local database (PGlite + Prisma)
@@ -212,7 +222,19 @@ export async function initializeServices(
 
   // 3. Read session for workstationId
   const session = getSession().session ?? null;
-  const workstationId = session?.workstationId ?? 'unknown';
+  const workstationId = inputWorkstationId ?? session?.workstationId ?? WORKSTATION_ID;
+
+  // Warn if the session has a different workstationId than the one we are
+  // using — indicates a config mismatch or a user login from a different
+  // terminal.  Fiscal services were created with the resolved workstationId
+  // above; the session value will be reconciled after login in App.tsx.
+  if (session?.workstationId && session.workstationId !== workstationId) {
+    console.warn(
+      `[use-service-init] Session workstationId (${session.workstationId}) differs ` +
+      `from resolved workstationId (${workstationId}).  Fiscal counters may not match.`,
+    );
+  }
+
   // licenseId and accessToken are optional session fields not present on the
   // LocalSession type; cast to access them (same pattern as original code).
   const sessionExt = session as { licenseId?: string; accessToken?: string } | null;
@@ -222,6 +244,37 @@ export async function initializeServices(
     prisma: prismaClient,
     workstationId,
   });
+
+  // 4a. Ensure fiscal counters exist for this workstation.
+  //     In development mode, auto-initialize with safe defaults so devs are
+  //     not blocked. In production, let the error propagate — the app must
+  //     refuse to operate until a manager configures the DIAN-authorized
+  //     numbering range.
+  if (IS_DEV_MODE) {
+    try {
+      await fiscalServices.fiscalNumberingService.ensureCounters();
+    } catch {
+      console.warn(
+        '[use-service-init] Fiscal counters not initialized for workstation ' +
+        `"${workstationId}". Auto-initializing with development defaults. ` +
+        'A manager must configure the authorized DIAN numbering range for production use.',
+      );
+      await fiscalServices.fiscalNumberingService.initializeCounters({
+        workstationId,
+        currentRegularNumber: 0,
+        currentContingencyNumber: 0,
+        resolutionPrefix: 'FE',
+        contingencyPrefix: 'CONT',
+        paddingLength: 8,
+        authorizedStart: 1,
+        authorizedEnd: 99999999,
+      });
+    }
+  } else {
+    // Production: fail loud and clear so the operator cannot accidentally
+    // issue non-compliant documents.
+    await fiscalServices.fiscalNumberingService.ensureCounters();
+  }
 
   // Hydrate contingency store from DB
   await fiscalServices.contingencyService.hydrateStore();
@@ -276,20 +329,21 @@ export async function initializeServices(
   // Start telemetry flush cycle
   updateService.startTelemetryFlush();
 
-  // 9. Create domain services
+  // 9. Create inventory-lots service (needed by domain services below)
+  const inventoryLotsService = createInventoryLotsService(prismaClient);
+
+  // 10. Create domain services
   const authService = createAuthService({ baseUrl: apiBaseUrl });
   const domainServices = createDomainServices({
     prisma: prismaClient,
     auth: authService,
     invoiceService: fiscalServices.invoiceService,
     printRouter: printingServices.printRouter,
+    inventoryLotsService,
   });
 
-  // 9b. Create local adjustment service (needed by cash-shift for operational totals)
+  // 10b. Create local adjustment service (needed by cash-shift for operational totals)
   const localAdjustmentService = createLocalAdjustmentService(prismaClient, authService);
-
-  // 9c. Create inventory-lots service
-  const inventoryLotsService = createInventoryLotsService(prismaClient);
 
   // 9d. Create cash-shift service and hydrate the current shift store
   const cashShiftService = createCashShiftService(
@@ -323,6 +377,7 @@ export async function initializeServices(
     inventoryAdjustmentsService: domainServices.inventoryAdjustmentsService,
     prescriptionsService: domainServices.prescriptionsService,
     cashShiftService,
+    salesPosService: domainServices.salesPosService,
     inventoryLotsService,
     productService: domainServices.productService,
     clientsService: domainServices.clientsService,

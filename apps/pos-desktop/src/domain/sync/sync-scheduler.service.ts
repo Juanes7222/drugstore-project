@@ -27,6 +27,7 @@
 
 import { PrismaClient } from '@pharmacy/database/local';
 import { isOnline } from '../../common/is-online';
+import { dbWriteLock } from '../../infrastructure/write-lock';
 import { useLocalSessionStore } from '../auth/local-session.store';
 import type {
   CatalogSyncService,
@@ -240,6 +241,25 @@ export class SyncScheduler {
   }
 
   // -----------------------------------------------------------------------
+  // Write-lock helper — serializes PGlite access with foreground operations
+  // (sale confirms) so sync never blocks the POS.
+  // -----------------------------------------------------------------------
+
+  /**
+   * Execute `fn` while holding the PGlite write lock.
+   * Sync steps acquire/release per step (not for the whole cycle) so a
+   * foreground sale confirm can interleave between them.
+   */
+  private async withLock<T>(fn: () => Promise<T>): Promise<T> {
+    await dbWriteLock.acquire();
+    try {
+      return await fn();
+    } finally {
+      dbWriteLock.release();
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Private
   // -----------------------------------------------------------------------
 
@@ -419,7 +439,7 @@ export class SyncScheduler {
     // 0. Configuration first — business rules (discounts, payment methods,
     //    sync defaults) must be current before anything else runs.
     try {
-      await this.configSync.pullConfiguration();
+      await this.withLock(() => this.configSync.pullConfiguration());
     } catch {
       // Logged downstream; continue to push regardless.
     }
@@ -428,7 +448,7 @@ export class SyncScheduler {
     //       and workflow decisions for downstream operations.
     if (this.tenantConfigSync) {
       try {
-        await this.tenantConfigSync.pullTenantConfig();
+        await this.withLock(() => this.tenantConfigSync!.pullTenantConfig());
       } catch {
         // Swallow — the store keeps the last known config.
       }
@@ -436,28 +456,28 @@ export class SyncScheduler {
 
     // 1. Push pending local operations (delegated to SyncPushService)
     try {
-      await this.pushService.pushPending();
+      await this.withLock(() => this.pushService.pushPending());
     } catch {
       // Logged downstream; continue to pulls regardless.
     }
 
     // 2. Catalog first — lots depend on product references being current.
     try {
-      await this.catalogSync.pullCatalog();
+      await this.withLock(() => this.catalogSync.pullCatalog());
     } catch {
       // Logged downstream; continue.
     }
 
     // 3. Lot sync
     try {
-      await this.lotSync.pullLots();
+      await this.withLock(() => this.lotSync.pullLots());
     } catch {
       // Logged downstream; continue.
     }
 
     // 4. Client pull
     try {
-      await this.clientPull.pullClients();
+      await this.withLock(() => this.clientPull.pullClients());
     } catch {
       // Logged downstream; continue.
     }
@@ -465,9 +485,11 @@ export class SyncScheduler {
     // 5. Pull invoice transmission results (only if the invoice service is available)
     if (this.invoiceService) {
       try {
-        const applied = await this.invoiceService.pullAndApplyResults(
-          this.baseUrl,
-          this.accessToken,
+        const applied = await this.withLock(() =>
+          this.invoiceService!.pullAndApplyResults(
+            this.baseUrl,
+            this.accessToken,
+          ),
         );
         if (applied > 0) {
           console.info(`[SyncScheduler] Applied ${applied} invoice transmission result(s).`);
@@ -479,23 +501,25 @@ export class SyncScheduler {
 
     // 7. Periodic background backup (offline-safe, runs regardless of online status)
     try {
-      const summary = await this.metricsService.getBackupSummary();
-      if (this.backupService.shouldRunPeriodicBackup(summary.lastBackupAt)) {
-        const [pendingCount, failedCount, maxSeqRow] = await Promise.all([
-          this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
-          this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
-          this.prisma.syncQueue.aggregate({ _max: { clientSequence: true } }),
-        ]);
-        const session = useLocalSessionStore.getState().session;
-        await this.backupService.createBackup({
-          reason: 'PERIODIC',
-          workstationId: session?.workstationId ?? 'unknown',
-          dbSchemaVersion: 1,
-          pendingCount,
-          failedCount,
-          maxClientSequence: Number(maxSeqRow._max.clientSequence ?? 0n),
-        });
-      }
+      await this.withLock(async () => {
+        const summary = await this.metricsService.getBackupSummary();
+        if (this.backupService.shouldRunPeriodicBackup(summary.lastBackupAt)) {
+          const [pendingCount, failedCount, maxSeqRow] = await Promise.all([
+            this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
+            this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
+            this.prisma.syncQueue.aggregate({ _max: { clientSequence: true } }),
+          ]);
+          const session = useLocalSessionStore.getState().session;
+          await this.backupService.createBackup({
+            reason: 'PERIODIC',
+            workstationId: session?.workstationId ?? 'unknown',
+            dbSchemaVersion: 1,
+            pendingCount,
+            failedCount,
+            maxClientSequence: Number(maxSeqRow._max.clientSequence ?? 0n),
+          });
+        }
+      });
     } catch {
       // Backups are advisory on the sync cycle; failures are surfaced on the
       // recovery page and via backup-health metrics.
@@ -503,7 +527,7 @@ export class SyncScheduler {
 
     // 8. Emit metrics (always computed locally — offline-safe)
     try {
-      const counts = await this.metricsService.getQueueCounts();
+      const counts = await this.withLock(() => this.metricsService.getQueueCounts());
       // Structured log line for operator visibility
       console.info(
         JSON.stringify({

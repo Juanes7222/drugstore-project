@@ -49,6 +49,8 @@ import { AssistantLayer } from "./components/assistant/assistant-layer";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
 import { useOnlineStatus } from "@/hooks/use-online-status";
+import { useRequireActiveShift } from "@/hooks/use-require-active-shift";
+import { ShiftRequiredOverlay } from "@/components/common/shift-required-overlay";
 import { useLocalSessionStore } from "../domain/auth/local-session.store";
 import { DB_PROOF_ENABLED } from "@infra/config";
 
@@ -71,6 +73,9 @@ const InnerApp: FC = () => {
   // When there is no session yet we render a login fallback.
   const session = useLocalSessionStore((s) => s.session);
 
+  // ---- Sales-screen shift guard -----------------------------------------
+  const { hasActiveShift, isLoading: shiftLoading } = useRequireActiveShift();
+
   // Start the sync scheduler once we have a valid authenticated session.
   // Created in initializeServices() without a token (first launch), then
   // wired up here so that seed data (products, lots, etc.) is pulled from
@@ -82,8 +87,17 @@ const InnerApp: FC = () => {
   const svc = useServiceContext();
   const isSyncStarted = useRef(false);
   const prevTokenRef = useRef<string | undefined>(undefined);
+  const prevWorkstationRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!session?.accessToken) return;
+
+    // Re-hydrate cash shift store when workstation changes (login / user switch).
+    // Called every time session changes so that the store reflects the correct
+    // workstation state even if hydrateFromDb at app startup ran with 'unknown'.
+    if (session.workstationId !== prevWorkstationRef.current) {
+      prevWorkstationRef.current = session.workstationId;
+      svc.cashShiftService.hydrateStore();
+    }
 
     // Update the token in sub-services every time it changes
     // (including the initial login AND subsequent re-logins).
@@ -97,7 +111,7 @@ const InnerApp: FC = () => {
       isSyncStarted.current = true;
       svc.syncScheduler.start();
     }
-  }, [session?.accessToken, svc]);
+  }, [session?.accessToken, session?.workstationId, svc]);
 
   const variants = {
     initial: shouldReduceMotion
@@ -318,7 +332,17 @@ const InnerApp: FC = () => {
                   ease: "easeInOut",
                 }}
               >
-                <SalesTransaction />
+                {shiftLoading ? (
+                  <div className="flex h-full items-center justify-center">
+                    <p className="text-body-sm" style={{ color: "var(--color-ink-muted)" }}>
+                      Cargando...
+                    </p>
+                  </div>
+                ) : !hasActiveShift ? (
+                  <ShiftRequiredOverlay />
+                ) : (
+                  <SalesTransaction />
+                )}
               </motion.div>
             )}
 

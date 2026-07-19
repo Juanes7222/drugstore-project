@@ -160,5 +160,29 @@ describe('FiscalResolutionAllocationsService', () => {
 
       await expect(service.create(validDto, 'user-1')).rejects.toThrow(AllocationRangeInvalidException);
     });
+
+    it('sets currentConsecutive to rangeFrom minus one', async () => {
+      const bigResolution = { id: 'res-big', rangeFrom: 1, rangeTo: 5000 };
+      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(bigResolution);
+      (prisma.fiscalResolutionAllocation.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.fiscalResolutionAllocation.create as jest.Mock).mockResolvedValue({ id: 'alloc-new' });
+
+      const dto = new CreateFiscalResolutionAllocationDto({
+        resolutionId: 'res-big',
+        workstationId: 'ws-1',
+        rangeFrom: 500,
+        rangeTo: 1500,
+      });
+
+      await service.create(dto, 'user-2');
+
+      expect(prisma.fiscalResolutionAllocation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            currentConsecutive: 499, // 500 - 1
+          }),
+        }),
+      );
+    });
   });
 });

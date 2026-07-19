@@ -333,6 +333,63 @@ describe("initializeServices", () => {
         }),
       ).rejects.toThrow(/clave t.cnica de contingencia/i);
     });
+
+    it("falls back to env var WORKSTATION_ID when no session and no override", async () => {
+      // Session returns null (not yet logged in)
+      const nullSession = vi.fn(() => ({ session: null }));
+
+      await initializeServices({
+        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        checkTechKey: () => false,
+        getSession: nullSession,
+        executePrint: mockExecutePrint,
+        discoverPrinters: mockDiscoverPrinters,
+      });
+
+      // WORKSTATION_ID defaults to "ws_principal" in test environment
+      expect(createFiscalServices).toHaveBeenCalledWith(
+        expect.objectContaining({ workstationId: "ws_principal" }),
+      );
+    });
+
+    it("uses explicit workstationId override instead of session or env var", async () => {
+      const sessionWithWs = vi.fn(() => ({
+        session: { userId: "u1", workstationId: "ws-session", accessToken: "tok" },
+      }));
+
+      await initializeServices({
+        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        checkTechKey: () => false,
+        getSession: sessionWithWs,
+        workstationId: "ws-override",
+        executePrint: mockExecutePrint,
+        discoverPrinters: mockDiscoverPrinters,
+      });
+
+      // Explicit override wins over session value
+      expect(createFiscalServices).toHaveBeenCalledWith(
+        expect.objectContaining({ workstationId: "ws-override" }),
+      );
+    });
+
+    it("uses session workstationId over env var when no explicit override", async () => {
+      const sessionWithWs = vi.fn(() => ({
+        session: { userId: "u1", workstationId: "ws-from-session", accessToken: "tok" },
+      }));
+
+      await initializeServices({
+        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        checkTechKey: () => false,
+        getSession: sessionWithWs,
+        executePrint: mockExecutePrint,
+        discoverPrinters: mockDiscoverPrinters,
+      });
+
+      // Session value beats env var default
+      expect(createFiscalServices).toHaveBeenCalledWith(
+        expect.objectContaining({ workstationId: "ws-from-session" }),
+      );
+    });
   });
 
   describe("factory wiring", () => {

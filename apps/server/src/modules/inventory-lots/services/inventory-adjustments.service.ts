@@ -285,11 +285,34 @@ export class InventoryAdjustmentsService {
     if (updated.count === 0) throw new ConcurrentStockModificationException(movement.lotId);
   }
 
+  /**
+   * Returns the next sequentialNumber for an InventoryAdjustmentDocument.
+   *
+   * Uses an atomic `increment` on the single-row InventoryAdjustmentCounter so
+   * concurrent transactions serialize at the DB level — each `update` takes a
+   * row lock and reads the post-increment value, guaranteeing unique numbers
+   * even when the sync cron job and the UI endpoint (or multiple app
+   * instances) create adjustments at the same time. This mirrors the
+   * consecutive-allocation pattern in FiscalResolutionAllocationsService.
+   *
+   * On first creation the counter seeds from MAX(sequentialNumber) among
+   * existing documents — otherwise a hardcoded initial value would collide
+   * with records that were created before the counter table existed.
+   */
   private async getNextSequentialNumber(tx: Prisma.TransactionClient): Promise<number> {
-    const latest = await tx.inventoryAdjustmentDocument.findFirst({
-      orderBy: { sequentialNumber: 'desc' },
-      select: { sequentialNumber: true },
+    const maxSeq =
+      (
+        await tx.inventoryAdjustmentDocument.aggregate({
+          _max: { sequentialNumber: true },
+        })
+      )._max.sequentialNumber ?? 0;
+
+    const counter = await tx.inventoryAdjustmentCounter.upsert({
+      where: { id: 'singleton' },
+      create: { id: 'singleton', lastSequentialNumber: maxSeq + 1 },
+      update: { lastSequentialNumber: { increment: 1 } },
     });
-    return (latest?.sequentialNumber || 0) + 1;
+
+    return counter.lastSequentialNumber;
   }
 }

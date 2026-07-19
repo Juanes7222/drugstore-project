@@ -28,3 +28,12 @@ model InventoryAdjustmentDocument {
   physicalCountId         String?
   physicalCount           PhysicalCount? @relation(fields: [physicalCountId], references: [id])
 }
+
+// Single-row counter that allocates sequentialNumber for InventoryAdjustmentDocument.
+// Incremented atomically via `update({ increment: 1 })` so concurrent creates
+// (sync cron vs UI, or multiple app instances) serialize and never collide on
+// the @unique sequentialNumber field.
+model InventoryAdjustmentCounter {
+  id                   String @id @default("singleton")
+  lastSequentialNumber Int    @default(0)
+}

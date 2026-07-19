@@ -171,7 +171,7 @@ class BackupServiceImpl implements BackupService {
       // Rust's `write_data_dir_file_command` creates the `pglite-data/`
       // directory (if missing) and writes `db-dump.json` inside it.
       await invoke('write_data_dir_file_command', {
-        file_name: DUMP_FILE_NAME,
+        fileName: DUMP_FILE_NAME,
         contents: jsonStr,
       });
 
@@ -191,7 +191,7 @@ class BackupServiceImpl implements BackupService {
 
       // ---- Step 4: clean up the temporary JSON dump ----
       await invoke('delete_data_dir_file_command', {
-        file_name: DUMP_FILE_NAME,
+        fileName: DUMP_FILE_NAME,
       }).catch(() => undefined);
 
       if (Date.now() - startTime > BACKUP_TOAST_THRESHOLD_MS) {
@@ -202,7 +202,7 @@ class BackupServiceImpl implements BackupService {
     } catch (err) {
       // Clean up the temp file on failure too.
       await invoke('delete_data_dir_file_command', {
-        file_name: DUMP_FILE_NAME,
+        fileName: DUMP_FILE_NAME,
       }).catch(() => undefined);
 
       const message =

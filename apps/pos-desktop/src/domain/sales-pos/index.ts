@@ -1,6 +1,7 @@
 export {
   SalesPosService,
   createSalesPosService,
+  type ConfirmResult,
   type CreateSaleItemInput,
   type CreateSaleInput,
   type PaymentInput,

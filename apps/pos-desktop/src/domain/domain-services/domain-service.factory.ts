@@ -22,6 +22,9 @@ import { createProductService } from '../catalog/product.service';
 import type { ProductService } from '../catalog/product.service';
 import { createClientsService } from '../clients/clients.service';
 import type { ClientsService } from '../clients/clients.service';
+import { createSalesPosService } from '../sales-pos/sales-pos.service';
+import type { SalesPosService } from '../sales-pos/sales-pos.service';
+import type { InventoryLotsService } from '../inventory-lots/inventory-lots.service';
 import { getTenantConfigState } from '../config/tenant-config.store';
 import type { EffectiveConfig } from '../config/types';
 
@@ -36,6 +39,7 @@ export interface DomainServices {
   recoveryLogService: RecoveryLogService;
   productService: ProductService;
   clientsService: ClientsService;
+  salesPosService: SalesPosService;
 }
 
 export interface DomainServiceFactoryInput {
@@ -43,6 +47,7 @@ export interface DomainServiceFactoryInput {
   auth: AuthService;
   invoiceService?: InvoiceService;
   printRouter?: PrintRouter;
+  inventoryLotsService: InventoryLotsService;
 }
 
 /**
@@ -73,7 +78,7 @@ export function getEffectiveConfig(): EffectiveConfig | null {
 export function createDomainServices(
   input: DomainServiceFactoryInput,
 ): DomainServices {
-  const { prisma, auth, invoiceService, printRouter } = input;
+  const { prisma, auth, invoiceService, printRouter, inventoryLotsService } = input;
 
   return {
     returnsService: createReturnsService(prisma, auth, invoiceService, printRouter),
@@ -82,5 +87,12 @@ export function createDomainServices(
     recoveryLogService: createRecoveryLogService(prisma),
     productService: createProductService(prisma, auth),
     clientsService: createClientsService(prisma, auth),
+    salesPosService: createSalesPosService(
+      prisma,
+      auth,
+      inventoryLotsService,
+      invoiceService,
+      printRouter,
+    ),
   };
 }

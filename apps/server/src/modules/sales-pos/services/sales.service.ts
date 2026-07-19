@@ -78,14 +78,20 @@ export class SalesService {
 
   async create(createDto: CreateSaleDto, userId: string, workstationId: string): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
-      const cashShift = await this.getOpenCashShift(tx, userId, workstationId);
+      const cashShift = await this.getOpenCashShift(tx, userId, workstationId, createDto.cashShiftId);
       const clientData = createDto.clientId ? await this.getClientSnapshot(tx, createDto.clientId) : null;
       const saleItems = await Promise.all(createDto.items.map(item => this.buildSaleItemFromRequest(tx, item, clientData?.classification?.discountPercentage)));
 
       const totalCalculations = this.calculateSaleTotals(saleItems as unknown as SaleItemTotals[]);
 
+      // Serialize local number allocation for this workstation using a
+      // PostgreSQL advisory transaction lock. This prevents concurrent sync
+      // replays from reading the same MAX(localNumber) before either commits.
+      const lockKey = this.hashWorkstationId(workstationId);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
+
       let localNumber: bigint;
-      for (let i = 0; i < 5; i++) { // Retry logic for unique constraint
+      for (let i = 0; i < 5; i++) { // Retry logic for unique constraint (belt-and-suspenders)
         localNumber = await this.getNextLocalNumber(tx, workstationId);
         try {
           const sale = await tx.sale.create({
@@ -264,14 +270,41 @@ export class SalesService {
     });
   }
 
-  private async getOpenCashShift(tx: Prisma.TransactionClient, userId: string, workstationId: string): Promise<any> {
-    const cashShift = await tx.cashShift.findFirst({
+  /**
+   * Resolve the cash shift a sale belongs to.
+   *
+   * Prefers the open shift for (userId, workstationId).  When no open shift
+   * exists (e.g. a sync replay that arrives after the shift was already
+   * closed), falls back to the shift the POS recorded at sale time, provided
+   * it belongs to the same user and workstation.
+   */
+  private async getOpenCashShift(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    workstationId: string,
+    fallbackCashShiftId?: string,
+  ): Promise<any> {
+    // 1. Happy path — shift is still open
+    const openShift = await tx.cashShift.findFirst({
       where: { userId, workstationId, state: ShiftState.OPEN },
     });
-    if (!cashShift) {
-      throw new CashShiftNotOpenForWorkstationException(workstationId);
+    if (openShift) return openShift;
+
+    // 2. Fallback — shift was closed between local creation and sync replay
+    if (fallbackCashShiftId) {
+      const closedShift = await tx.cashShift.findFirst({
+        where: {
+          id: fallbackCashShiftId,
+          userId,
+          workstationId,
+          state: ShiftState.CLOSED,
+        },
+      });
+      if (closedShift) return closedShift;
     }
-    return cashShift;
+
+    // 3. No shift at all — refuse
+    throw new CashShiftNotOpenForWorkstationException(workstationId);
   }
 
   private async getClientSnapshot(tx: Prisma.TransactionClient, clientId: string): Promise<any> {
@@ -350,6 +383,16 @@ export class SalesService {
     const totalTax = saleItems.reduce((sum, item) => sum.plus(item.taxAmount), new Prisma.Decimal(0));
     const totalAmount = saleItems.reduce((sum, item) => sum.plus(item.total), new Prisma.Decimal(0));
     return { subtotal, totalDiscount, totalTax, totalAmount };
+  }
+
+  /** Deterministic integer hash of a workstation ID for advisory lock key. */
+  private hashWorkstationId(workstationId: string): number {
+    let hash = 0;
+    for (let i = 0; i < workstationId.length; i++) {
+      hash = ((hash << 5) - hash + workstationId.charCodeAt(i)) | 0;
+    }
+    // Ensure positive integer within int4 range
+    return hash & 0x7FFFFFFF;
   }
 
   private async getNextLocalNumber(tx: Prisma.TransactionClient, workstationId: string): Promise<bigint> {
