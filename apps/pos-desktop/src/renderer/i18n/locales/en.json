@@ -94,10 +94,8 @@
     "home": "Home",
     "sales": "Sales",
     "returns": "Returns",
-    "inventory_adjustments": "Inventory Adj.",
+    "products_main": "Products",
     "cash_shift": "Cash Shift",
-    "inventory_lots": "Lots",
-    "products": "Products",
     "clients": "Clients",
     "user_management": "Users",
     "license_status": "License",
@@ -109,6 +107,17 @@
     "sync_health": "Sync Health",
     "recovery": "Recovery",
     "local_network": "Local Network"
+  },
+  "productos_main": {
+    "title": "Products & Inventory",
+    "subtitle": "Select a section to manage products, lots, or inventory adjustments",
+    "card_products_title": "Products",
+    "card_products_desc": "Product catalog: create, edit, search, and manage the full listing",
+    "card_lots_title": "Lots",
+    "card_lots_desc": "Manage lots by expiration date and batch number",
+    "card_adjustments_title": "Inventory Adjustments",
+    "card_adjustments_desc": "Perform adjustments for loss, damage, shrinkage, or stock correction",
+    "no_access": "You don't have access to any product section"
   },
   "sales": {
     "search": {

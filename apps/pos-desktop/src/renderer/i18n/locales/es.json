@@ -134,10 +134,8 @@
     "home": "Inicio",
     "sales": "Ventas",
     "returns": "Devoluciones",
-    "inventory_adjustments": "Ajustes Invent.",
+    "products_main": "Productos",
     "cash_shift": "Turno de Caja",
-    "inventory_lots": "Lotes",
-    "products": "Productos",
     "clients": "Clientes",
     "user_management": "Usuarios",
     "license_status": "Licencia",
@@ -149,6 +147,17 @@
     "sync_health": "Salud de Sinc.",
     "recovery": "Recuperación",
     "local_network": "Red Local"
+  },
+  "productos_main": {
+    "title": "Productos e Inventario",
+    "subtitle": "Seleccione una sección para gestionar productos, lotes o ajustes de inventario",
+    "card_products_title": "Productos",
+    "card_products_desc": "Catálogo de productos: crear, editar, buscar y gestionar el listado completo",
+    "card_lots_title": "Lotes",
+    "card_lots_desc": "Gestionar lotes por fecha de vencimiento y número de lote",
+    "card_adjustments_title": "Ajustes de Inventario",
+    "card_adjustments_desc": "Realizar ajustes por pérdida, daño, merma o corrección de stock",
+    "no_access": "No tienes acceso a ninguna sección de productos"
   },
   "sales": {
     "search": {
@@ -350,6 +359,9 @@
     "save_changes": "Guardar cambios",
     "tax_default_label": "Predeterminado",
     "tax_default_hint": "Impuesto predeterminado de la configuración del sistema",
+    "sale_type_free_sale": "Venta libre",
+    "sale_type_prescription": "Venta con prescripción médica",
+    "sale_type_controlled_substance": "Sustancia controlada",
     "sale_type_default_label": "Sugerido",
     "sale_type_default_hint": "Prescripciones estrictas activas — se sugiere PRESCRIPTION"
   },

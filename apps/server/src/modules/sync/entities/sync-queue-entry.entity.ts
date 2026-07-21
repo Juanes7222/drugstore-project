@@ -18,7 +18,10 @@ export interface SyncQueueEntry {
     | 'FISCAL_DOCUMENT_SYNC'
     | 'PRESCRIPTION_REGISTRATION'
     | 'RESOLUTION_ALLOCATION'
-    | 'INVOICE_TRANSMISSION';
+    | 'INVOICE_TRANSMISSION'
+    | 'INVOICE_TRANSMISSION_RESULT'
+    | 'PRODUCT_CREATION'
+    | 'PRODUCT_UPDATE';
   payload: string;
   sourceWorkstationId: string;
   retryCount: number;

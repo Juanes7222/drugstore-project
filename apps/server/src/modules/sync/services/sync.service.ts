@@ -3,16 +3,26 @@ import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { SyncBatchDto } from '../dto/sync-batch.dto';
 import { QuerySyncQueueDto } from '../dto/query-sync-queue.dto';
+import { SyncOperationDispatcherService } from '../sync-operation-dispatcher.service';
 
 @Injectable()
 export class SyncService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private dispatcher: SyncOperationDispatcherService,
+  ) {}
 
   /**
    * Accepts a batch of offline operations. Each item is independently validated
    * (hash check, duplicate-uuid guard) and inserted as PENDING. A single bad
    * item does not reject the rest of the batch. sourceWorkstationId is taken
    * from the authenticated session, never from the request body.
+   *
+   * Operations that require immediate visibility (PRODUCT_CREATION,
+   * PRODUCT_UPDATE) are dispatched synchronously after insertion so that a
+   * subsequent catalog pull sees the updated data rather than stale server
+   * state.  If immediate dispatch fails the entry remains PENDING for the
+   * background job to retry.
    */
   async receiveBatch(
     batchDto: SyncBatchDto,
@@ -93,7 +103,17 @@ export class SyncService {
 
   // ── Private helpers ─────────────────────────────────────────────
 
-  /** Validates hash, guards duplicates, inserts a single operation as PENDING. */
+  /** Operation types that can be dispatched synchronously for immediate visibility. */
+  private readonly IMMEDIATE_DISPATCH_TYPES = new Set([
+    'PRODUCT_CREATION',
+    'PRODUCT_UPDATE',
+  ]);
+
+  /**
+   * Validates hash, guards duplicates, inserts a single operation as PENDING.
+   * Operations in IMMEDIATE_DISPATCH_TYPES are additionally dispatched
+   * synchronously so a subsequent pull (e.g. catalog) sees the latest data.
+   */
   private async ingestOperation(op: any, sourceWorkstationId: string): Promise<any> {
     const computedHash = this.computePayloadHash(op.payload);
     if (computedHash !== op.payloadHash) {
@@ -101,7 +121,12 @@ export class SyncService {
     }
 
     try {
-      await this.createQueueEntry(op, sourceWorkstationId);
+      const entryId = await this.createQueueEntry(op, sourceWorkstationId);
+
+      if (this.IMMEDIATE_DISPATCH_TYPES.has(op.operationType)) {
+        await this.tryImmediateDispatch(entryId, op, sourceWorkstationId);
+      }
+
       return { operationUuid: op.operationUuid, status: 'ACCEPTED' };
     } catch (error: any) {
       if (error.code === 'P2002') {
@@ -111,11 +136,50 @@ export class SyncService {
     }
   }
 
-  /** Inserts a new PENDING SyncQueue record. */
-  private async createQueueEntry(op: any, sourceWorkstationId: string): Promise<void> {
+  /**
+   * Attempts synchronous dispatch of a just-inserted operation.  If the
+   * handler succeeds the queue entry is marked COMPLETED; on failure it
+   * stays PENDING so the background job can retry it.
+   */
+  private async tryImmediateDispatch(
+    entryId: string,
+    op: any,
+    sourceWorkstationId: string,
+  ): Promise<void> {
+    const entry: import('../entities/sync-queue-entry.entity').SyncQueueEntry = {
+      id: entryId,
+      operationUuid: op.operationUuid,
+      operationType: op.operationType as import('../entities/sync-queue-entry.entity').SyncQueueEntry['operationType'],
+      payload: JSON.stringify(op.payload),
+      sourceWorkstationId,
+      retryCount: 0,
+      status: 'PENDING',
+      operationSource: op.source ?? 'DIRECT',
+      lastErrorMessage: null,
+      nextRetryAt: null,
+      correlationId: null,
+    };
+
+    try {
+      await this.dispatcher.dispatch(entry);
+      await this.prisma.syncQueue.update({
+        where: { id: entryId },
+        data: { status: 'COMPLETED', processedAt: new Date() },
+      });
+    } catch {
+      // Leave as PENDING – the background cron job will retry.
+    }
+  }
+
+  /**
+   * Inserts a new PENDING SyncQueue record.
+   * Returns the created entry id.
+   */
+  private async createQueueEntry(op: any, sourceWorkstationId: string): Promise<string> {
+    const id = crypto.randomUUID();
     await this.prisma.syncQueue.create({
       data: {
-        id: crypto.randomUUID(),
+        id,
         operationUuid: op.operationUuid,
         operationType: op.operationType,
         payload: JSON.stringify(op.payload),
@@ -129,6 +193,7 @@ export class SyncService {
         operationSource: op.source ?? 'DIRECT',
       },
     });
+    return id;
   }
 
   /** Computes a SHA-256 hex digest of a JSON-stringified value. */

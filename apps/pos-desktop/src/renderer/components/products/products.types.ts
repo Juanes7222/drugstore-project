@@ -55,6 +55,7 @@ export interface DisplayProduct {
     isPrimary: boolean;
   }>;
   currentPrice: string | null;
+  currentTaxSchemeId: string | null;
 }
 
 export interface ProductFormData {

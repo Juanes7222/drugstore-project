@@ -9,9 +9,11 @@
 
 import { type FC, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Server, ArrowUpFromLine } from 'lucide-react';
 import { useLocalSync } from '../../hooks/use-local-sync';
 import { useAppDispatch } from '../../store/hooks';
 import { navigateToLocalNetwork } from '../../store/slices/ui-slice';
+import { HubStatusIcon } from './hub-status-icon';
 
 // ---------------------------------------------------------------------------
 // Style helpers
@@ -103,12 +105,25 @@ export const LocalSyncBanner: FC = () => {
       className={`flex w-full items-center gap-2 border-b px-4 py-1.5 text-xs font-medium transition-colors hover:brightness-95 ${styles.bg} ${styles.text} ${styles.border}`}
       aria-label={label}
     >
-      <span aria-hidden="true" className="shrink-0 text-sm leading-none">
-        {isThisWorkstationHub && '⚙️'}
-        {isReconnecting && '⏳'}
-        {isDisconnected && !isReconnecting && '🔴'}
-        {hasPendingOps && !isDisconnected && '🟡'}
-        {isConnected && !hasPendingOps && !isThisWorkstationHub && '🟢'}
+      <span aria-hidden="true" className="flex shrink-0 items-center gap-1">
+        {isThisWorkstationHub && (
+          <>
+            <HubStatusIcon status="connected" size={14} ariaLabel="" />
+            <Server size={12} strokeWidth={2} />
+          </>
+        )}
+        {isReconnecting && (
+          <HubStatusIcon status="electing" size={14} ariaLabel="" />
+        )}
+        {isDisconnected && !isReconnecting && (
+          <HubStatusIcon status="disconnected" size={14} ariaLabel="" />
+        )}
+        {hasPendingOps && !isDisconnected && (
+          <ArrowUpFromLine size={12} strokeWidth={2} className="text-amber-600" />
+        )}
+        {isConnected && !hasPendingOps && !isThisWorkstationHub && (
+          <HubStatusIcon status="connected" size={14} ariaLabel="" />
+        )}
       </span>
 
       <span className="truncate">{label}</span>

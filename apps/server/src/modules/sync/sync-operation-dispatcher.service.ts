@@ -8,6 +8,7 @@ import { SalesService } from '@/modules/sales-pos/services/sales.service';
 import { ClientReturnsService } from '@/modules/sales-pos/services/client-returns.service';
 import { InventoryAdjustmentsService } from '@/modules/inventory-lots/services/inventory-adjustments.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
+import { ProductsService } from '@/modules/catalog/products.service';
 import { InvoiceTransmissionPayloadSchema } from '@pharmacy/shared-validation';
 import type { SyncQueueEntry } from './entities/sync-queue-entry.entity';
 import type { CreateSaleDto } from '@/modules/sales-pos/dto/create-sale.dto';
@@ -40,6 +41,7 @@ export class SyncOperationDispatcherService {
     @Inject(ClientReturnsService) private readonly clientReturnsService: ClientReturnsService,
     @Inject(InventoryAdjustmentsService) private readonly inventoryAdjustmentsService: InventoryAdjustmentsService,
     @Inject(FiscalDocumentsService) private readonly fiscalDocumentsService: FiscalDocumentsService,
+    @Inject(ProductsService) private readonly productsService: ProductsService,
   ) {}
 
   /**
@@ -71,6 +73,12 @@ export class SyncOperationDispatcherService {
           break;
         case 'INVOICE_TRANSMISSION':
           await this.handleInvoiceTransmission(entry);
+          break;
+        case 'PRODUCT_CREATION':
+          await this.handleProductCreation(entry);
+          break;
+        case 'PRODUCT_UPDATE':
+          await this.handleProductUpdate(entry);
           break;
         // FISCAL_DOCUMENT_SYNC, RESOLUTION_ALLOCATION
         // are not dispatched — the job never selects them.
@@ -342,6 +350,40 @@ export class SyncOperationDispatcherService {
     );
     // Future phase: create server-side Prescription record and link to SaleItem.
     // The SyncEntry already exists as a permanent audit trail until then.
+  }
+
+  /**
+   * Replays a PRODUCT_CREATION by creating the product server-side.
+   *
+   * The payload must include a full `createProductDto` matching CreateProductDto
+   * shape and the `userId` of the user who created the product on the POS.
+   * The server re-validates all constraints (unique internalCode, required
+   * fields) through ProductsService.createProduct.
+   */
+  private async handleProductCreation(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+    const userId = payload.userId as string;
+    const createProductDto = payload.createProductDto as Record<string, unknown>;
+
+    await this.productsService.createProduct(userId, createProductDto as any);
+  }
+
+  /**
+   * Replays a PRODUCT_UPDATE by updating the product server-side.
+   *
+   * The payload must include `productId` and an `updateProductDto` matching
+   * UpdateProductDto shape. Only the fields present in the DTO are applied;
+   * omitted fields are left unchanged. Supports all mutable Product fields
+   * including therapeuticIndication, storageConditions, and internalNotes.
+   * A ProductNotFoundException is thrown if the product does not exist.
+   */
+  private async handleProductUpdate(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+    const metadata = payload.metadata as Record<string, unknown> | undefined;
+    const productId = (payload.productId ?? metadata?.productId) as string;
+    const updateProductDto = payload.updateProductDto as Record<string, unknown>;
+
+    await this.productsService.updateProduct(productId, updateProductDto as any);
   }
 
   /**

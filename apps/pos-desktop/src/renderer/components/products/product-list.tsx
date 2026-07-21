@@ -250,7 +250,7 @@ export const ProductList: FC<ProductListProps> = ({
                           color: "var(--color-pharma)",
                         }}
                       >
-                        {product.saleType}
+                        {t(`products.sale_type_${product.saleType.toLowerCase()}`)}
                       </span>
                     </td>
                     <td className="px-pos-md py-pos-sm text-right font-data text-body-sm tabular-nums">

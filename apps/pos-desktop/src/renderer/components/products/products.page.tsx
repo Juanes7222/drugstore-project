@@ -23,9 +23,8 @@ import { getTenantConfigState } from "../../../domain/config/tenant-config.store
   getPrescriptionEnforcementBehavior,
 } from "../../../domain/config/field-requirements";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { RoleType } from "@pharmacy/shared-types";
 import { useProductService } from "../common/service-context";
-import type { PrismaClient } from '@pharmacy/database/local';
+import type { PrismaClient, SaleType } from '@pharmacy/database/local';
 import type {
   DisplayProduct,
   ProductFormMode,
@@ -48,10 +47,11 @@ interface RawProduct extends Record<string, unknown> {
   commercialName: string;
   genericName: string;
   activePrinciple: string;
+  currentTaxSchemeId?: string | null;
   concentration: string | null;
   concentrationUnit: string | null;
   laboratory: string;
-  saleType: string;
+  saleType: SaleType;
   minimumStock: number;
   isActive: boolean;
   invimaRegistry: string | null;
@@ -300,15 +300,10 @@ export const ProductsPage: FC = () => {
         setError(t("errors.no_session"));
         return;
       }
-      const role = currentSession.role as RoleType;
-      if (
-        role !== RoleType.INVENTORY_ASSISTANT &&
-        role !== RoleType.ADMIN
-      ) {
-        setError(t("errors.role_inventory_admin"));
-        return;
-      }
 
+      // Role enforcement delegated to productService methods
+      // (createProduct / updateProduct call auth.requireRole internally,
+      //  which handles OWNER/SAAS_ADMIN supersession for ADMIN).
       try {
         setIsProcessing(true);
 
@@ -321,7 +316,7 @@ export const ProductsPage: FC = () => {
             concentration: data.concentration || null,
             concentrationUnit: data.concentrationUnit || null,
             laboratory: data.laboratory,
-            saleType: data.saleType as any,
+            saleType: data.saleType as SaleType,
             minimumStock: data.minimumStock,
             invimaRegistry: data.invimaRegistry || null,
             atcCode: data.atcCode || null,
@@ -542,7 +537,7 @@ function mapToDisplayProduct(raw: RawProduct): DisplayProduct {
     concentration: raw.concentration,
     concentrationUnit: raw.concentrationUnit,
     laboratory: raw.laboratory,
-    saleType: raw.saleType as any,
+    saleType: raw.saleType,
     minimumStock: raw.minimumStock,
     isActive: raw.isActive,
     invimaRegistry: raw.invimaRegistry,
@@ -556,5 +551,6 @@ function mapToDisplayProduct(raw: RawProduct): DisplayProduct {
     updatedAt: raw.updatedAt,
     barcodes: raw.barcodes,
     currentPrice: raw.currentPrice,
+    currentTaxSchemeId: raw.currentTaxSchemeId ?? null,
   };
 }

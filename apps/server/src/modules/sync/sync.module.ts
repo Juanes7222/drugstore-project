@@ -5,6 +5,7 @@ import { ClientsModule } from '@/modules/clients/clients.module';
 import { SalesPosModule } from '@/modules/sales-pos/sales-pos.module';
 import { InventoryLotsModule } from '@/modules/inventory-lots/inventory-lots.module';
 import { FiscalDianModule } from '@/modules/fiscal-dian/fiscal-dian.module';
+import { CatalogModule } from '@/modules/catalog/catalog.module';
 import { SyncController } from './controllers/sync.controller';
 import { TerminalsController } from './controllers/terminals.controller';
 import { SyncService } from './services/sync.service';
@@ -22,6 +23,7 @@ import { SyncProcessingJob } from './jobs/sync-processing.job';
     SalesPosModule,
     InventoryLotsModule,
     FiscalDianModule,
+    CatalogModule,
   ],
   controllers: [SyncController, TerminalsController],
   providers: [

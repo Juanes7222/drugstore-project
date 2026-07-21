@@ -33,13 +33,10 @@ const BARCODE_TYPES = [
   "DATAMATRIX",
 ] as const;
 
-const SALE_TYPES = [
-  "OTC",
-  "PRESCRIPTION",
-  "CONTROLLED",
-  "EXEMPT",
-  "BIOLOGIC",
-  "HOSPITAL",
+const SALE_TYPE_OPTIONS = [
+  { value: "FREE_SALE" as const, labelKey: "products.sale_type_free_sale" },
+  { value: "PRESCRIPTION" as const, labelKey: "products.sale_type_prescription" },
+  { value: "CONTROLLED_SUBSTANCE" as const, labelKey: "products.sale_type_controlled_substance" },
 ] as const;
 
 const CONCENTRATION_UNITS = [
@@ -94,7 +91,7 @@ const emptyFormData = (): FormState => ({
   concentration: "",
   concentrationUnit: "mg",
   laboratory: "",
-  saleType: "OTC",
+  saleType: "FREE_SALE",
   minimumStock: 0,
   invimaRegistry: "",
   atcCode: "",
@@ -228,6 +225,9 @@ export const ProductForm: FC<ProductFormProps> = ({
       dispatch({ type: "SET_NUMBER", field: "minimumStock", value: product.minimumStock });
       dispatch({ type: "SET_FIELD", field: "invimaRegistry", value: product.invimaRegistry ?? "" });
       dispatch({ type: "SET_FIELD", field: "atcCode", value: product.atcCode ?? "" });
+      dispatch({ type: "SET_FIELD", field: "therapeuticIndication", value: product.therapeuticIndication ?? "" });
+      dispatch({ type: "SET_FIELD", field: "storageConditions", value: product.storageConditions ?? "" });
+      dispatch({ type: "SET_FIELD", field: "internalNotes", value: product.internalNotes ?? "" });
       dispatch({ type: "SET_FIELD", field: "categoryId", value: product.categoryId ?? "" });
       dispatch({ type: "SET_FIELD", field: "pharmaceuticalFormId", value: product.pharmaceuticalFormId ?? "" });
       dispatch({
@@ -240,6 +240,13 @@ export const ProductForm: FC<ProductFormProps> = ({
       });
       if (product.currentPrice) {
         dispatch({ type: "SET_FIELD", field: "price", value: product.currentPrice });
+      }
+      if (product.currentTaxSchemeId) {
+        dispatch({
+          type: "SET_FIELD",
+          field: "taxSchemeId",
+          value: product.currentTaxSchemeId,
+        });
       }
     } else {
       dispatch({ type: "RESET" });
@@ -259,7 +266,7 @@ export const ProductForm: FC<ProductFormProps> = ({
 
   // Auto-select the default sale type when creating a new product
   useEffect(() => {
-    if (mode === "create" && defaultSaleType && defaultSaleType !== "OTC") {
+    if (mode === "create" && defaultSaleType && defaultSaleType !== "FREE_SALE") {
       dispatch({
         type: "SET_FIELD",
         field: "saleType",
@@ -568,7 +575,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                   style={{ color: "var(--color-ink)" }}
                 >
                   <span>{t("products.sale_type")}</span>
-                  {defaultSaleType && defaultSaleType !== "OTC" && (
+                  {defaultSaleType && defaultSaleType !== "FREE_SALE" && (
                     <SparklesIcon size={14} color="var(--color-pharma)" className="shrink-0" />
                   )}
                 </label>
@@ -585,17 +592,17 @@ export const ProductForm: FC<ProductFormProps> = ({
                   disabled={isProcessing}
                   className="pos-input w-full"
                 >
-                  {SALE_TYPES.map((st) => {
-                    const isDefault = defaultSaleType === st;
+                  {SALE_TYPE_OPTIONS.map((option) => {
+                    const isDefault = defaultSaleType === option.value;
                     return (
-                      <option key={st} value={st}>
-                        {st}{isDefault ? ` — ${t("products.sale_type_default_label")}` : ""}
+                      <option key={option.value} value={option.value}>
+                        {t(option.labelKey)}{isDefault ? ` — ${t("products.sale_type_default_label")}` : ""}
                       </option>
                     );
                   })}
                 </select>
                 {/* Hint: show when prescription enforcement auto-selects PRESCRIPTION */}
-                {defaultSaleType && defaultSaleType !== "OTC" && (
+                {defaultSaleType && defaultSaleType !== "FREE_SALE" && (
                   <p
                     className="mt-pos-xs flex items-center gap-pos-xs text-caption"
                     style={{

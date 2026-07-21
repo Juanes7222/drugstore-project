@@ -26,6 +26,8 @@ interface NavItem {
   labelKey: string;
   roles: RoleType[];
   icon: FC<{ className?: string }>;
+  /** Additional screens that should highlight this nav item as active. */
+  relatedScreens?: PosScreen[];
 }
 
 const HomeIcon: FC<{ className?: string }> = ({ className }) => (
@@ -210,28 +212,27 @@ const NAV_ITEMS: NavItem[] = [
     icon: ReturnsIcon,
   },
   {
-    screen: "inventory-adjustments",
-    labelKey: "navigation.inventory_adjustments",
-    roles: [RoleType.MANAGER, RoleType.OWNER],
+    screen: "productos-main",
+    labelKey: "navigation.products_main",
+    roles: [
+      RoleType.INVENTORY_ASSISTANT,
+      RoleType.MANAGER,
+      RoleType.OWNER,
+      RoleType.SAAS_ADMIN,
+    ],
     icon: InventoryIcon,
+    relatedScreens: [
+      "productos-main",
+      "products",
+      "inventory-lots",
+      "inventory-adjustments",
+    ],
   },
   {
     screen: "cash-shift",
     labelKey: "navigation.cash_shift",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER],
     icon: CashShiftIcon,
-  },
-  {
-    screen: "inventory-lots",
-    labelKey: "navigation.inventory_lots",
-    roles: [RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: InventoryIcon,
-  },
-  {
-    screen: "products",
-    labelKey: "navigation.products",
-    roles: [RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: InventoryIcon,
   },
   {
     screen: "clients",
@@ -369,7 +370,9 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
     >
       <ul className="pos-sidebar__list" role="menubar" aria-orientation="vertical">
         {visibleItems.map((item) => {
-          const isActive = activeScreen === item.screen;
+          const relatedScreens = item.relatedScreens ?? [];
+          const isActive =
+            relatedScreens.includes(activeScreen) || activeScreen === item.screen;
           const Icon = item.icon;
 
           return (

@@ -206,6 +206,17 @@ function parseEnumTypeName(stmt: string): string | null {
 }
 
 /**
+ * Extract the enum values from a `CREATE TYPE "name" AS ENUM ('v1', 'v2')` statement.
+ * Returns the list of value strings, or null if parsing fails.
+ */
+function parseEnumValues(stmt: string): string[] | null {
+  const match = stmt.match(/CREATE\s+TYPE\s+"[^"]+"\s+AS\s+ENUM\s*\(([^)]+)\)/i);
+  if (!match) return null;
+  // Split by comma, trim whitespace and surrounding single-quotes.
+  return match[1].split(',').map((v) => v.trim().replace(/^'(.*)'$/, '$1'));
+}
+
+/**
  * Extract the table name from a `CREATE TABLE "name" (…)` statement.
  */
 function parseTableName(stmt: string): string | null {
@@ -283,6 +294,29 @@ async function getExistingEnumTypeNames(
     `SELECT typname FROM pg_type WHERE typtype = 'e'`,
   );
   return new Set(result.rows.map((r) => r.typname));
+}
+
+/**
+ * Query `pg_enum` (via `pg_type`) for the current set of values per enum type.
+ * Returns a map of lowercase-type-name → Set of value strings.
+ */
+async function getExistingEnumValues(
+  client: PGlite,
+): Promise<Map<string, Set<string>>> {
+  const result = await client.query<{ typname: string; enumlabel: string }>(
+    `SELECT t.typname, e.enumlabel
+       FROM pg_type t
+       JOIN pg_enum e ON e.enumtypid = t.oid
+      WHERE t.typtype = 'e'
+      ORDER BY t.typname, e.enumsortorder`,
+  );
+  const map = new Map<string, Set<string>>();
+  for (const row of result.rows) {
+    const key = row.typname.toLowerCase();
+    if (!map.has(key)) map.set(key, new Set());
+    map.get(key)!.add(row.enumlabel);
+  }
+  return map;
 }
 
 /**
@@ -527,6 +561,49 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
   console.log(
     `[local-database] Phase 2: executed ${executedCount} of ${statements.length} statements (${statements.length - executedCount} skipped).`,
   );
+
+}
+
+/**
+ * Backfill missing values on existing enum types.
+ *
+ * `CREATE TYPE IF NOT EXISTS` is a no-op when the type already exists, so new
+ * values added to an existing Prisma enum never get applied by the normal DDL
+ * path.  This function compares each `CREATE TYPE ... AS ENUM (...)` DDL
+ * statement against the live `pg_enum` values and emits
+ * `ALTER TYPE ... ADD VALUE IF NOT EXISTS` for every missing value.
+ *
+ * Runs every startup — lightweight because it queries `pg_enum` once and
+ * compares in-memory sets.
+ */
+async function backfillEnumValues(client: PGlite): Promise<void> {
+  const sql = LOCAL_SCHEMA_SQL
+    .replace(/^--\s*CreateSchema[\s\S]*?CREATE SCHEMA IF NOT EXISTS "public";\s*/m, '')
+    .trim();
+  if (!sql) return;
+  const statements = splitSqlStatements(sql);
+  const existingEnumValues = await getExistingEnumValues(client);
+  let fixCount = 0;
+  for (const stmt of statements) {
+    if (!stmt.includes('CREATE TYPE') || !stmt.includes('AS ENUM')) continue;
+    const typeName = parseEnumTypeName(stmt);
+    if (!typeName) continue;
+    const existingVals = existingEnumValues.get(typeName.toLowerCase());
+    if (!existingVals) continue;
+    const expectedVals = parseEnumValues(stmt);
+    if (!expectedVals) continue;
+    for (const val of expectedVals) {
+      if (existingVals.has(val)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await client.exec(
+        `ALTER TYPE "${typeName}" ADD VALUE IF NOT EXISTS '${val.replace(/'/g, "''")}'`,
+      );
+      fixCount++;
+    }
+  }
+  if (fixCount > 0) {
+    console.log(`[local-database] Backfilled ${fixCount} missing enum value(s).`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -851,6 +928,12 @@ export async function getLocalDatabase(): Promise<{
           console.log(`[local-database] Schema upgraded (hash=${currentHash}).`);
         }
       }
+
+      // ---- Backfill enum values ----
+      // Ensures new values added to existing enum types (e.g. PRODUCT_UPDATE
+      // added to SyncOperationType) are applied even when the schema hash
+      // already matches.  Runs every startup — lightweight single query.
+      await backfillEnumValues(client);
 
       // ---- Seed reference data for offline-first operation ----
       // Seed tax schemes so the product form works without a server.

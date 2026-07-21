@@ -84,6 +84,10 @@ export const uiSlice = createSlice({
       state.activeScreen = "local-network";
     },
 
+    navigateToProductosMain: (state) => {
+      state.activeScreen = "productos-main";
+    },
+
     navigateToRecovery: (state) => {
       state.activeScreen = "recovery";
     },
@@ -213,6 +217,7 @@ export const {
   navigateToAdminMenu,
   navigateToSyncHealth,
   navigateToLocalNetwork,
+  navigateToProductosMain,
   navigateToRecovery,
   navigateToUserManagement,
   navigateToAuditLog,

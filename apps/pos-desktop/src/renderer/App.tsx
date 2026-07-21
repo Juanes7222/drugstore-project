@@ -25,6 +25,7 @@ import { ReturnsPage } from "@/components/returns/returns.page";
 import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inventory-adjustments.page";
 import { InventoryLotsPage } from "@/components/inventory-lots/inventory-lots.page";
 import { ProductsPage } from "@/components/products/products.page";
+import { ProductosMainPage } from "@/components/productos/productos-main.page";
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
 import { LocalNetworkPage } from "@/components/local-sync/local-network.page";
@@ -482,6 +483,23 @@ const InnerApp: FC = () => {
                 }}
               >
                 <InventoryLotsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "productos-main" && (
+              <motion.div
+                key="productos-main"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <ProductosMainPage />
               </motion.div>
             )}
 

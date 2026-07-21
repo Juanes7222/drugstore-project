@@ -9,6 +9,8 @@
 
 import { type FC, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Check, Minus } from 'lucide-react';
+import { HubStatusIcon } from './hub-status-icon';
 import type { HubScore } from '@pharmacy/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -132,12 +134,10 @@ export const HubElectionInfo: FC<HubElectionInfoProps> = ({ scores, currentHubId
             >
               {/* Peer name */}
               <div className="flex items-center gap-1.5 truncate">
-                <span
-                  className="inline-block h-2 w-2 shrink-0 rounded-full"
-                  style={{
-                    backgroundColor: score.isOnline ? 'var(--color-accent)' : 'var(--color-ink-muted)',
-                  }}
-                  aria-hidden="true"
+                <HubStatusIcon
+                  status={score.isOnline ? 'connected' : 'disconnected'}
+                  size={12}
+                  ariaLabel=""
                 />
                 <span className="truncate">{score.friendlyName}</span>
                 {isCurrent && (
@@ -167,7 +167,9 @@ export const HubElectionInfo: FC<HubElectionInfoProps> = ({ scores, currentHubId
                   />
                   <span className="text-[10px] tabular-nums" style={{ color: 'var(--color-ink-muted)' }}>
                     {typeof score[col.key as keyof HubScoreFactor] === 'boolean'
-                      ? (score[col.key as keyof HubScoreFactor] ? '✓' : '—')
+                      ? (score[col.key as keyof HubScoreFactor]
+                        ? <Check size={10} strokeWidth={2.5} aria-hidden="true" />
+                        : <Minus size={10} strokeWidth={2} aria-hidden="true" />)
                       : (score[col.key as keyof HubScoreFactor] as number).toFixed(1)}
                   </span>
                 </div>

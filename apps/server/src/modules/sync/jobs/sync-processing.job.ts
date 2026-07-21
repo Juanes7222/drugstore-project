@@ -17,6 +17,8 @@ const SUPPORTED_TYPES: SyncQueueEntry['operationType'][] = [
   'SHIFT_CLOSURE',
   'CLIENT_CREATION',
   'INVENTORY_ADJUSTMENT',
+  'PRODUCT_CREATION',
+  'PRODUCT_UPDATE',
 ];
 
 @Injectable()

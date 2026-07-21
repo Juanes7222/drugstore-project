@@ -125,6 +125,9 @@ export interface ProductListItem {
   isActive: boolean;
   invimaRegistry: string | null;
   atcCode: string | null;
+  therapeuticIndication: string | null;
+  storageConditions: string | null;
+  internalNotes: string | null;
   categoryId: string | null;
   pharmaceuticalFormId: string | null;
   createdAt: string;
@@ -132,6 +135,8 @@ export interface ProductListItem {
   barcodes: Array<{ id: string; barcode: string; barcodeType: string; isPrimary: boolean }>;
   /** Active price as decimal string, or null if no price set. */
   currentPrice: string | null;
+  /** Active tax scheme id, or null if no tax set. */
+  currentTaxSchemeId: string | null;
 }
 
 export interface ProductSearchResult {
@@ -230,6 +235,11 @@ export class ProductService {
             select: { price: true },
             take: 1,
           },
+          taxHistories: {
+            where: { effectiveTo: null },
+            select: { taxSchemeId: true },
+            take: 1,
+          },
         },
         orderBy: { commercialName: 'asc' },
         take: limit,
@@ -253,12 +263,16 @@ export class ProductService {
         isActive: p.isActive,
         invimaRegistry: p.invimaRegistry,
         atcCode: p.atcCode,
+        therapeuticIndication: p.therapeuticIndication,
+        storageConditions: p.storageConditions,
+        internalNotes: p.internalNotes,
         categoryId: p.categoryId,
         pharmaceuticalFormId: p.pharmaceuticalFormId,
         createdAt: p.createdAt.toISOString(),
         updatedAt: p.updatedAt.toISOString(),
         barcodes: p.barcodes,
         currentPrice: p.priceHistories[0]?.price.toString() ?? null,
+        currentTaxSchemeId: p.taxHistories[0]?.taxSchemeId ?? null,
       })),
     };
   }
@@ -713,6 +727,7 @@ export class ProductService {
       const syncPayload = {
         operationType: 'PRODUCT_UPDATE' as const,
         userId: session.userId,
+        productId: id,
         updateProductDto: {
           internalCode: updated.internalCode,
           ...(input.commercialName !== undefined && { commercialName: input.commercialName }),
