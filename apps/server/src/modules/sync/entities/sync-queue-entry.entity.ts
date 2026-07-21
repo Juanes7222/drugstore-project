@@ -26,6 +26,7 @@ export interface SyncQueueEntry {
   lastErrorMessage?: string | null;
   nextRetryAt?: Date | null;
   correlationId?: string | null;
+  operationSource: 'DIRECT' | 'LOCAL_HUB';
 }
 
 export type SyncQueueEntryEntity = SyncQueueEntry;

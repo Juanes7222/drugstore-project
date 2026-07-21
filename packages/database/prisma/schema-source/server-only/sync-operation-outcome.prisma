@@ -14,9 +14,10 @@ model SyncOperationOutcome {
   id              String   @id
   operationUuid   String
   workstationId   String
-  outcome         String   // 'ACCEPTED' | 'ALREADY_ACCEPTED' | 'REJECTED' | 'FAILED'
-  failureCategory String?  // Mirrors the local SyncFailureCategory values
-  createdAt       DateTime @default(now())
+  outcome           String       // 'ACCEPTED' | 'ALREADY_ACCEPTED' | 'REJECTED' | 'FAILED'
+  failureCategory   String?      // Mirrors the local SyncFailureCategory values
+  operationSource   SyncSource   @default(DIRECT)
+  createdAt         DateTime     @default(now())
 
   @@index([workstationId, createdAt])
   @@index([workstationId, outcome])

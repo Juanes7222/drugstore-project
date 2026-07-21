@@ -98,6 +98,11 @@ enum SaleOperationalState {
   ABANDONED
 }
 
+enum SyncSource {
+  DIRECT
+  LOCAL_HUB
+}
+
 enum SyncOperationType {
   SALE_CONFIRMATION
   SHIFT_CLOSURE

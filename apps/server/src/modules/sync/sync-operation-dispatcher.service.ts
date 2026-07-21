@@ -76,11 +76,11 @@ export class SyncOperationDispatcherService {
         // are not dispatched — the job never selects them.
       }
 
-      await this.recordOutcome(entry.operationUuid, entry.sourceWorkstationId, 'ACCEPTED', null);
+      await this.recordOutcomeFromEntry(entry, 'ACCEPTED', null);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const failureCategory = this.classifyServerError(errorMessage);
-      await this.recordOutcome(entry.operationUuid, entry.sourceWorkstationId, 'REJECTED', failureCategory);
+      await this.recordOutcomeFromEntry(entry, 'REJECTED', failureCategory);
       throw error;
     }
   }
@@ -96,6 +96,7 @@ export class SyncOperationDispatcherService {
     workstationId: string,
     outcome: string,
     failureCategory: string | null,
+    operationSource: 'DIRECT' | 'LOCAL_HUB' = 'DIRECT',
   ): Promise<void> {
     try {
       await this.prisma.syncOperationOutcome.create({
@@ -105,6 +106,7 @@ export class SyncOperationDispatcherService {
           workstationId,
           outcome,
           failureCategory,
+          operationSource,
         },
       });
     } catch (err) {
@@ -112,6 +114,24 @@ export class SyncOperationDispatcherService {
         `Failed to record SyncOperationOutcome for ${operationUuid}: ${err instanceof Error ? err.message : 'Unknown'}`,
       );
     }
+  }
+
+  /**
+   * Record a SyncOperationOutcome row from a SyncQueueEntry,
+   * extracting the operationSource from the entry.
+   */
+  private async recordOutcomeFromEntry(
+    entry: SyncQueueEntry,
+    outcome: string,
+    failureCategory: string | null,
+  ): Promise<void> {
+    return this.recordOutcome(
+      entry.operationUuid,
+      entry.sourceWorkstationId,
+      outcome,
+      failureCategory,
+      entry.operationSource,
+    );
   }
 
   /**

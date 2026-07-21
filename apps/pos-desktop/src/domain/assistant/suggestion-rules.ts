@@ -207,6 +207,56 @@ export const SUGGESTION_RULES: SuggestionRule[] = [
   },
 
   // ======================================================================
+  // Local network / hub rules
+  // ======================================================================
+
+  {
+    id: "suggestion.warn.local-hub-unavailable",
+    title: "Hub local no disponible",
+    description:
+      "No hay hub local disponible en la red. El sync entre workstations no funciona.",
+    severity: "WARN",
+    audience: "manager",
+    dismissable: true,
+    cooldownMs: 300_000, // 5 minutes
+    condition: (state: AppState) =>
+      state.localSyncActive && !state.localHubAvailable,
+    action: {
+      label: "Ir a red local",
+      execute: async () => {
+        const [{ store }, { navigateToLocalNetwork }] = await Promise.all([
+          import("../../renderer/store/store"),
+          import("../../renderer/store/slices/ui-slice"),
+        ]);
+        store.dispatch(navigateToLocalNetwork());
+      },
+    },
+  },
+
+  {
+    id: "suggestion.info.local-sync-inactive",
+    title: "Sync local desactivado",
+    description:
+      "El sync local entre workstations no está activo. Los cambios solo se comparten vía servidor.",
+    severity: "INFO",
+    audience: "manager",
+    dismissable: true,
+    cooldownMs: 600_000, // 10 minutes
+    condition: (state: AppState) =>
+      state.isOnline && !state.localSyncActive,
+    action: {
+      label: "Ir a red local",
+      execute: async () => {
+        const [{ store }, { navigateToLocalNetwork }] = await Promise.all([
+          import("../../renderer/store/store"),
+          import("../../renderer/store/slices/ui-slice"),
+        ]);
+        store.dispatch(navigateToLocalNetwork());
+      },
+    },
+  },
+
+  // ======================================================================
   // Offline-mode rules
   // ======================================================================
 

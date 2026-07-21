@@ -18,6 +18,7 @@ model SyncQueue {
   clientSequence        BigInt
   receivedAt            DateTime?
   processedAt           DateTime?
+  operationSource       SyncSource @default(DIRECT)
   correlationId         String?
   workstationId         String?
 

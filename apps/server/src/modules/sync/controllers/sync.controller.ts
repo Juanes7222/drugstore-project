@@ -94,6 +94,20 @@ export class SyncController {
     return this.syncHealthService.getHealth(24);
   }
 
+  /**
+   * Returns sync operation source statistics for admin monitoring.
+   *
+   * Provides DIRECT vs LOCAL_HUB breakdowns across 24h, 7d, and 30d windows,
+   * a per-workstation breakdown for the last 24 hours, and the 50 most recent
+   * hub relay events.
+   */
+  @Get('source-stats')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleType.ADMIN)
+  async getSourceStats(): Promise<any> {
+    return this.syncHealthService.getSourceStats();
+  }
+
   @Get('local-number-hint')
   @UseGuards(JwtAuthGuard)
   async getLocalNumberHint(

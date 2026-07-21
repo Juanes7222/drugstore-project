@@ -199,6 +199,23 @@ export const COMMANDS: CommandDefinition[] = [
     },
   },
 
+  // ---- Local Network ----
+  {
+    id: "cmd.open-local-network",
+    label: "Abrir red local",
+    group: "Navegación",
+    audience: "both",
+    action: "NAVIGATE",
+    actionPayload: "local-network",
+    execute: async () => {
+      const [{ store }, { navigateToLocalNetwork }] = await Promise.all([
+        import("../../renderer/store/store"),
+        import("../../renderer/store/slices/ui-slice"),
+      ]);
+      store.dispatch(navigateToLocalNetwork());
+    },
+  },
+
   // ---- Help & Shortcuts ----
   {
     id: "cmd.show-shortcuts",

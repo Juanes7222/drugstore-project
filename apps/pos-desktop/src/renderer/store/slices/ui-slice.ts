@@ -80,6 +80,10 @@ export const uiSlice = createSlice({
       state.activeScreen = "sync-health";
     },
 
+    navigateToLocalNetwork: (state) => {
+      state.activeScreen = "local-network";
+    },
+
     navigateToRecovery: (state) => {
       state.activeScreen = "recovery";
     },
@@ -208,6 +212,7 @@ export const {
   navigateToPrescriptions,
   navigateToAdminMenu,
   navigateToSyncHealth,
+  navigateToLocalNetwork,
   navigateToRecovery,
   navigateToUserManagement,
   navigateToAuditLog,

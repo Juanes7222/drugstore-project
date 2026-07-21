@@ -10,6 +10,7 @@ import { CashShiftHeader } from "./cash-shift-header";
 import { SyncPulse, SyncState } from "./sync-pulse";
 import { SyncAttentionBanner } from "./sync-attention-banner";
 import { QuickSwitch } from "../auth/quick-switch.component";
+import { LocalSyncBanner } from "../local-sync/local-sync-banner";
 
 interface AppShellProps {
   cashierName: string;
@@ -47,6 +48,7 @@ export const AppShell: FC<AppShellProps> = ({
           <QuickSwitch />
         </div>
       </div>
+      <LocalSyncBanner />
       <SyncPulse state={syncState} />
       <SyncAttentionBanner />
       <main className="flex-1 overflow-hidden">{children}</main>

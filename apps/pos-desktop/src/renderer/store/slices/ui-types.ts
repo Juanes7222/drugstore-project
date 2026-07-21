@@ -29,7 +29,8 @@ export type PosScreen =
   | "about"
   | "forgot-password"
   | "reset-password"
-  | "2fa-setup";
+  | "2fa-setup"
+  | "local-network";
 
 export type SaleCompletionPhase =
   | "idle"

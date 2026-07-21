@@ -126,6 +126,7 @@ export class SyncService {
         clientSequence: op.clientSequence,
         receivedAt: new Date(),
         status: 'PENDING',
+        operationSource: op.source ?? 'DIRECT',
       },
     });
   }

@@ -105,6 +105,8 @@ export interface AppState {
   isOfflineBlessingInProgress: boolean;
   lastConfirmedSaleId: string | null;
   lastConfirmedSaleNumber: number | null;
+  localSyncActive: boolean;
+  localHubAvailable: boolean;
 }
 
 // ---------------------------------------------------------------------------

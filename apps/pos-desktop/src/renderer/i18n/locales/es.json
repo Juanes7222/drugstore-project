@@ -147,7 +147,8 @@
     "audit_log": "Auditoría",
     "admin_menu": "Admin",
     "sync_health": "Salud de Sinc.",
-    "recovery": "Recuperación"
+    "recovery": "Recuperación",
+    "local_network": "Red Local"
   },
   "sales": {
     "search": {
@@ -694,7 +695,11 @@
     "INVENTORY_ADMIN_UNBLOCK": "Desbloqueo administrativo",
     "INVENTORY_AUTO_EXPIRATION": "Vencimiento automático",
     "INVENTORY_PHYSICAL_COUNT": "Conteo físico",
-    "INVENTORY_INITIAL_STOCK": "Stock inicial"
+    "INVENTORY_INITIAL_STOCK": "Stock inicial",
+    "LOCAL_SYNC_HUB_ELECTION": "Elección de hub local",
+    "LOCAL_SYNC_CONFLICT": "Conflicto de sync local",
+    "LOCAL_SYNC_PUSH": "Operación enviada a hub local",
+    "LOCAL_SYNC_PULL": "Operación recibida de hub local"
   },
   "step_up": {
     "title": "Autorización requerida",
@@ -1209,5 +1214,103 @@
     "no_active_shift_title": "No hay turno activo",
     "no_active_shift_description": "Debe abrir un turno de caja antes de poder realizar ventas. Vaya a la sección de Turno para iniciar uno.",
     "open_shift_button": "Ir a Turno"
+  },
+  "local_sync": {
+    "page_title": "Red local entre workstations",
+    "page_description": "Sincronización directa entre workstations en la misma red LAN.",
+    "enable_sync": "Activar sync local",
+    "disable_sync": "Desactivar sync local",
+    "enable_prompt": "Activar sync local entre workstations",
+    "enable_description": "Las workstations en la misma red LAN compartirán stock, ventas y ajustes en tiempo real sin necesidad del servidor.",
+    "disable_confirm": "¿Está seguro de desactivar el sync local? Las workstations dejarán de compartir datos hasta que se reactive.",
+    "current_hub": "Hub actual",
+    "current_hub_none": "Sin hub designado",
+    "hub_override": "Designar hub manualmente",
+    "hub_override_none": "Auto (elección automática)",
+    "hub_auto": "Selección automática",
+    "hub_forced": "Designado manualmente",
+    "hub_scores_title": "Puntajes de elección de hub",
+    "hub_score_detail": "El hub se elige por: tiempo activo (40%), estabilidad (30%), disco disponible (15%), capacidad always-on (15%)",
+    "force_sync": "Forzar sync ahora",
+    "force_sync_running": "Sincronizando...",
+    "peers_title": "Workstations en la red",
+    "peers_empty": "No se encontraron otras workstations en la red local",
+    "peers_empty_action": "Verifique que otras workstations estén encendidas y en la misma red.",
+    "peer_online": "En línea",
+    "peer_offline": "Fuera de línea",
+    "peer_unknown": "Desconocido",
+    "peer_last_seen": "Última vez: {{time}}",
+    "peer_hub_eligible": "Elegible como hub",
+    "peer_make_hub": "Hacer hub",
+    "peer_remove": "Eliminar de la red",
+    "peer_remove_confirm": "¿Eliminar {{name}} de la red local?",
+    "activity_log": "Actividad de sync",
+    "activity_empty": "Sin actividad reciente",
+    "activity_push": "Push al hub",
+    "activity_pull": "Pull del hub",
+    "activity_operations": "{{count}} operaciones",
+    "activity_duration": "{{ms}}ms",
+    "activity_success": "Éxito",
+    "activity_failed": "Falló",
+    "conflicts_title": "Conflictos de sync",
+    "conflicts_empty": "Sin conflictos",
+    "conflict_operation": "Operación {{uuid}}",
+    "conflict_reason": "Razón: {{reason}}",
+    "conflict_winner": "Ganadora: {{uuid}}",
+    "settings_title": "Configuración de red local",
+    "settings_key_rotation": "Rotar clave de red",
+    "settings_key_rotation_confirm": "¿Rotar la clave de red local? Todas las workstations recibirán la nueva clave en el próximo sync. La clave anterior tendrá 24 horas de gracia.",
+    "settings_key_rotated_at": "Última rotación: {{date}}",
+    "settings_subnet_peers": "Peers en otras subredes",
+    "settings_add_peer_ip": "Agregar IP manualmente",
+    "settings_add_peer_hint": "Use esto si mDNS no funciona (firewall, VLANs diferentes)",
+    "banner_connected": "Sync local con {{hubName}}",
+    "banner_pending": "Sync local en cola — {{count}} ops pendientes",
+    "banner_disconnected": "Hub local no disponible",
+    "banner_hub_active": "Modo hub activo",
+    "banner_transitioning": "Reconfigurando sync local...",
+    "errors": {
+      "hub_unavailable": "El hub local no responde. Algunas funciones multi-workstation están limitadas.",
+      "auth_failed": "Autenticación fallida — la key de red local no coincide. Reconecte la workstation al hub vía Configuración > Red local.",
+      "wrong_location": "Está en una red con workstations de otra droguería. Sincronice con el servidor para actualizar su configuración.",
+      "clock_drift": "El reloj de este dispositivo está mal configurado. Corríjalo para que el sync local funcione correctamente.",
+      "version_mismatch": "Workstation {{name}} tiene una versión incompatible ({{version}}). Actualícela para participar en la red local."
+    },
+    "suggestions": {
+      "hub_unavailable": {
+        "message": "El hub local no responde. Algunas funciones multi-workstation están limitadas.",
+        "audience": "CASHIER|MANAGER",
+        "severity": "WARN"
+      },
+      "pending_ops": {
+        "message": "{{count}} operaciones pendientes de sync local con {{hubName}}.",
+        "audience": "MANAGER",
+        "severity": "INFO"
+      },
+      "hub_changed": {
+        "message": "La workstation {{name}} se convirtió en hub local.",
+        "audience": "MANAGER",
+        "severity": "INFO"
+      },
+      "hub_changed_unexpected": {
+        "message": "El hub local cambió de {{old}} a {{new}}. ¿Quiere verificar que la red esté bien?",
+        "audience": "MANAGER",
+        "severity": "WARN"
+      }
+    },
+    "help_topics": {
+      "que_es": "Qué es el sync local entre workstations",
+      "hub": "Qué es el hub local y cómo se elige",
+      "troubleshooting": "Qué hacer si el hub no responde",
+      "conflictos": "Cómo se resuelven los conflictos entre workstations",
+      "seguridad": "Cómo se protege la comunicación local"
+    },
+    "migration": {
+      "title": "Configurar red local",
+      "description": "Su farmacia tiene múltiples workstations. Active el sync local para que compartan datos en tiempo real sin depender del servidor.",
+      "enable_button": "Activar sync local",
+      "generating_key": "Generando clave de red...",
+      "success": "Red local activada. Las otras workstations recibirán la configuración en su próximo sync."
+    }
   }
 }

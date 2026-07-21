@@ -288,6 +288,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: getHealthIcon(),
   },
   {
+    screen: "local-network",
+    labelKey: "navigation.local_network",
+    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
+    icon: getHealthIcon(),
+  },
+  {
     screen: "recovery",
     labelKey: "navigation.recovery",
     roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],

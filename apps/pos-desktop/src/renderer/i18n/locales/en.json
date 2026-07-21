@@ -107,7 +107,8 @@
     "audit_log": "Audit Log",
     "admin_menu": "Admin",
     "sync_health": "Sync Health",
-    "recovery": "Recovery"
+    "recovery": "Recovery",
+    "local_network": "Local Network"
   },
   "sales": {
     "search": {
@@ -611,7 +612,11 @@
     "INVENTORY_ADMIN_UNBLOCK": "Admin unblock",
     "INVENTORY_AUTO_EXPIRATION": "Auto expiration",
     "INVENTORY_PHYSICAL_COUNT": "Physical count",
-    "INVENTORY_INITIAL_STOCK": "Initial stock"
+    "INVENTORY_INITIAL_STOCK": "Initial stock",
+    "LOCAL_SYNC_HUB_ELECTION": "Local hub election",
+    "LOCAL_SYNC_CONFLICT": "Local sync conflict",
+    "LOCAL_SYNC_PUSH": "Operation pushed to local hub",
+    "LOCAL_SYNC_PULL": "Operation pulled from local hub"
   },
   "step_up": {
     "title": "Authorization required",
@@ -1117,5 +1122,103 @@
     "no_active_shift_title": "No active shift",
     "no_active_shift_description": "You must open a cash shift before you can make sales. Go to the Cash Shift section to start one.",
     "open_shift_button": "Go to Cash Shift"
+  },
+  "local_sync": {
+    "page_title": "Local network",
+    "page_description": "Direct LAN sync between workstations in the same network.",
+    "enable_sync": "Enable local sync",
+    "disable_sync": "Disable local sync",
+    "enable_prompt": "Enable LAN sync between workstations",
+    "enable_description": "Workstations on the same LAN will share stock, sales, and adjustments in real time without requiring the server.",
+    "disable_confirm": "Are you sure you want to disable local sync? Workstations will stop sharing data until it is re-enabled.",
+    "current_hub": "Current hub",
+    "current_hub_none": "No hub designated",
+    "hub_override": "Designate hub manually",
+    "hub_override_none": "Auto (automatic election)",
+    "hub_auto": "Automatic election",
+    "hub_forced": "Manually designated",
+    "hub_scores_title": "Hub election scores",
+    "hub_score_detail": "Hub is chosen by: uptime (40%), stability (30%), disk space (15%), always-on capability (15%)",
+    "force_sync": "Force sync now",
+    "force_sync_running": "Syncing...",
+    "peers_title": "Workstations on the network",
+    "peers_empty": "No workstations found on the local network",
+    "peers_empty_action": "Verify other workstations are on and on the same network.",
+    "peer_online": "Online",
+    "peer_offline": "Offline",
+    "peer_unknown": "Unknown",
+    "peer_last_seen": "Last seen: {{time}}",
+    "peer_hub_eligible": "Hub-eligible",
+    "peer_make_hub": "Make hub",
+    "peer_remove": "Remove from network",
+    "peer_remove_confirm": "Remove {{name}} from the local network?",
+    "activity_log": "Sync activity",
+    "activity_empty": "No recent activity",
+    "activity_push": "Push to hub",
+    "activity_pull": "Pull from hub",
+    "activity_operations": "{{count}} operations",
+    "activity_duration": "{{ms}}ms",
+    "activity_success": "Success",
+    "activity_failed": "Failed",
+    "conflicts_title": "Sync conflicts",
+    "conflicts_empty": "No conflicts",
+    "conflict_operation": "Operation {{uuid}}",
+    "conflict_reason": "Reason: {{reason}}",
+    "conflict_winner": "Winner: {{uuid}}",
+    "settings_title": "Local network settings",
+    "settings_key_rotation": "Rotate network key",
+    "settings_key_rotation_confirm": "Rotate the local network key? All workstations will receive the new key on next sync. The old key will have a 24-hour grace period.",
+    "settings_key_rotated_at": "Last rotation: {{date}}",
+    "settings_subnet_peers": "Peers on other subnets",
+    "settings_add_peer_ip": "Add IP manually",
+    "settings_add_peer_hint": "Use this if mDNS is blocked (firewall, different VLANs)",
+    "banner_connected": "Local sync with {{hubName}}",
+    "banner_pending": "Local sync queued — {{count}} ops pending",
+    "banner_disconnected": "Local hub unavailable",
+    "banner_hub_active": "Hub mode active",
+    "banner_transitioning": "Reconfiguring local sync...",
+    "errors": {
+      "hub_unavailable": "The local hub is not responding. Some multi-workstation features are limited.",
+      "auth_failed": "Authentication failed — the local network key does not match. Reconnect the workstation via Settings > Local Network.",
+      "wrong_location": "You are on a network with workstations from a different pharmacy. Sync with the server to update your configuration.",
+      "clock_drift": "This device's clock is misconfigured. Fix it for local sync to work correctly.",
+      "version_mismatch": "Workstation {{name}} has an incompatible version ({{version}}). Update it to join the local network."
+    },
+    "suggestions": {
+      "hub_unavailable": {
+        "message": "The local hub is not responding. Some multi-workstation features are limited.",
+        "audience": "CASHIER|MANAGER",
+        "severity": "WARN"
+      },
+      "pending_ops": {
+        "message": "{{count}} operations pending local sync with {{hubName}}.",
+        "audience": "MANAGER",
+        "severity": "INFO"
+      },
+      "hub_changed": {
+        "message": "Workstation {{name}} became the local hub.",
+        "audience": "MANAGER",
+        "severity": "INFO"
+      },
+      "hub_changed_unexpected": {
+        "message": "The local hub changed from {{old}} to {{new}}. Would you like to verify the network is OK?",
+        "audience": "MANAGER",
+        "severity": "WARN"
+      }
+    },
+    "help_topics": {
+      "que_es": "What is LAN sync between workstations",
+      "hub": "What is the local hub and how is it elected",
+      "troubleshooting": "What to do if the hub is not responding",
+      "conflictos": "How conflicts between workstations are resolved",
+      "seguridad": "How local communication is secured"
+    },
+    "migration": {
+      "title": "Configure local network",
+      "description": "Your pharmacy has multiple workstations. Enable local sync so they share data in real time without depending on the server.",
+      "enable_button": "Enable local sync",
+      "generating_key": "Generating network key...",
+      "success": "Local network enabled. Other workstations will receive the configuration on their next sync."
+    }
   }
 }

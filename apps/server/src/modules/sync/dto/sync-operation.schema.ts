@@ -10,6 +10,14 @@ import { z } from 'zod';
  * Matches the Prisma SyncOperationType enum in shared/_shared-enums.prisma.
  * Kept as a strict enum so Zod rejects unknown types before they reach Prisma.
  */
+/**
+ * Source of a sync operation:
+ * - DIRECT: pushed directly from the originating workstation
+ * - LOCAL_HUB: relayed through a hub workstation on the local network
+ */
+export const SyncSourceSchema = z.enum(['DIRECT', 'LOCAL_HUB']);
+export type SyncSource = z.infer<typeof SyncSourceSchema>;
+
 export const SyncOperationSchema = z.object({
   operationType: z.enum([
     'SALE_CONFIRMATION',
@@ -33,6 +41,8 @@ export const SyncOperationSchema = z.object({
     .number()
     .int()
     .positive('Client sequence must be a positive integer'),
+  /** Origin of the operation. Defaults to DIRECT for backward compatibility. */
+  source: SyncSourceSchema.optional().default('DIRECT'),
 });
 
 export type SyncOperationInput = z.infer<typeof SyncOperationSchema>;

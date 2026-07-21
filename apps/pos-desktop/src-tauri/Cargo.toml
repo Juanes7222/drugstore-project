@@ -27,12 +27,19 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 thiserror = "1"
 walkdir = "2"
-tokio = { version = "1", features = ["fs", "io-util", "net", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "net", "time", "macros", "sync"] }
 printers = "2.3"
 escpos = { version = "0.19", features = ["barcodes", "codes_2d"] }
 log = "0.4"
 rand = "0.8"
 hostname = "0.4"
+mdns-sd = "0.12"
+axum = "0.7"
+hmac = "0.12"
+reqwest = { version = "0.12", features = ["json"] }
+tower-http = { version = "0.5", features = ["cors"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+base64 = "0.22"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"

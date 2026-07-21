@@ -107,6 +107,12 @@ export enum AuditAction {
   STATE_CHANGE = "STATE_CHANGE",
 }
 
+/** Source of sync operations — used to distinguish server-direct from hub-relayed. */
+export enum SyncSource {
+  DIRECT = "DIRECT",
+  LOCAL_HUB = "LOCAL_HUB",
+}
+
 export enum SystemModule {
   AUTH = "AUTH",
   CATALOG = "CATALOG",

@@ -27,6 +27,7 @@ import { InventoryLotsPage } from "@/components/inventory-lots/inventory-lots.pa
 import { ProductsPage } from "@/components/products/products.page";
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
+import { LocalNetworkPage } from "@/components/local-sync/local-network.page";
 import { RecoveryPage } from "@/components/recovery/recovery.page";
 import { AboutPage } from "@/components/update/about.page";
 import { LicenseStatusPage } from "@/components/licensing/license-status.page";
@@ -282,6 +283,25 @@ const InnerApp: FC = () => {
           <NavigationSidebar />
           <div className="flex-1 overflow-hidden">
             <SessionView />
+          </div>
+        </div>
+        <PendingBlessingModal />
+        {assistantLayer}
+      </AppShell>
+    );
+  }
+
+  if (activeScreen === "local-network") {
+    return (
+      <AppShell
+        cashierName={session?.fullName || ""}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <OfflineModeBanner />
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <LocalNetworkPage />
           </div>
         </div>
         <PendingBlessingModal />

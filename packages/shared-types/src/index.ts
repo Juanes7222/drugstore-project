@@ -11,6 +11,7 @@ export {
   FiscalDocumentType,
   FiscalDocumentState,
   SyncStatus,
+  SyncSource,
   IdentificationType,
   AuditAction,
   SystemModule,
@@ -64,6 +65,22 @@ export type {
   MigrationStep,
   MigrationLogEntry,
 } from "./update-types";
+
+// Local sync types
+export {
+  HubRole,
+  LocalSyncConnectionStatus,
+  ConflictReason,
+  type LocalOperation,
+  type DiscoveredPeer,
+  type HubInfo,
+  type HubScore,
+  type LocalSyncStatus,
+  type MergeResult,
+  type RejectedOperation,
+  type LocalSyncConfig,
+  type LocalNetworkAuditEvent,
+} from "./local-sync";
 
 export type {
   PresetCode,

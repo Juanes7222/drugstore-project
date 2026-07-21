@@ -20,6 +20,7 @@ import {
   UserX,
   Lock,
   KeyRound,
+  Network,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -34,6 +35,7 @@ export type EventCategory =
   | 'security'   // Restrict Violet — role changes, step-up, password resets
   | 'users'      // Sync Slate — user creation, disable
   | 'inventory'  // Urgency Amber — stock movements, adjustments
+  | 'network'    // Network Blue — local sync, hub elections, conflicts
   | 'default';   // Border gray — unknown/unclassified events
 
 /** Full config for one audit event type. */
@@ -71,6 +73,7 @@ export const CATEGORY_META: Readonly<Record<EventCategory, CategoryMeta>> = {
   security:  { color: '#5B3E96', sensitive: true },
   users:     { color: '#4A6572' },
   inventory: { color: '#E8780A' },
+  network:   { color: '#1565C0' },
   default:   { color: '#D4D2CC' },
 };
 
@@ -232,6 +235,32 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     category: 'inventory',
     icon: 'Package',
   },
+
+  // ── Local Network ─────────────────────────────────────────────────
+  LOCAL_SYNC_HUB_ELECTION: {
+    action: 'LOCAL_SYNC_HUB_ELECTION',
+    labelKey: 'audit_events.LOCAL_SYNC_HUB_ELECTION',
+    category: 'network',
+    icon: 'Network',
+  },
+  LOCAL_SYNC_CONFLICT: {
+    action: 'LOCAL_SYNC_CONFLICT',
+    labelKey: 'audit_events.LOCAL_SYNC_CONFLICT',
+    category: 'network',
+    icon: 'AlertTriangle',
+  },
+  LOCAL_SYNC_PUSH: {
+    action: 'LOCAL_SYNC_PUSH',
+    labelKey: 'audit_events.LOCAL_SYNC_PUSH',
+    category: 'network',
+    icon: 'Network',
+  },
+  LOCAL_SYNC_PULL: {
+    action: 'LOCAL_SYNC_PULL',
+    labelKey: 'audit_events.LOCAL_SYNC_PULL',
+    category: 'network',
+    icon: 'Network',
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -252,6 +281,7 @@ const ICON_RESOLVER: Readonly<Record<string, LucideIcon>> = {
   UserX,
   Lock,
   KeyRound,
+  Network,
 };
 
 const FALLBACK_ICON: LucideIcon = Package;

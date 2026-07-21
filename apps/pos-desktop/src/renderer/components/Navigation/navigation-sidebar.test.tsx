@@ -7,7 +7,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Provider } from "react-redux";
-import { configureStore } from "@reduxjs/toolkit";
+import { configureStore, type Store } from "@reduxjs/toolkit";
 import { uiSlice } from "@/store/slices/ui-slice";
 import { NavigationSidebar } from "./navigation-sidebar";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
@@ -32,21 +32,13 @@ vi.mock(
 // Helpers
 // ---------------------------------------------------------------------------
 
-const createTestStore = (activeScreen = "sales") =>
-  configureStore({
+const createTestStore = (activeScreen = "sales"): Store => {
+  const store = configureStore({
     reducer: { ui: uiSlice.reducer },
-    preloadedState: {
-      ui: {
-        activeScreen,
-        saleCompletionPhase: "idle" as const,
-        prescriptionFlow: {
-          pendingSaleId: null,
-          pendingItemId: null,
-          incompleteItemIds: [],
-        },
-      },
-    },
   });
+  store.dispatch({ type: "ui/setActiveScreen", payload: activeScreen });
+  return store;
+};
 
 const renderSidebar = (store = createTestStore()) =>
   render(

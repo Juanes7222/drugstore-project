@@ -49,6 +49,8 @@ describe("SuggestionEngine", () => {
       isOfflineBlessingInProgress: false,
       lastConfirmedSaleId: null,
       lastConfirmedSaleNumber: null,
+      localSyncActive: false,
+      localHubAvailable: false,
     };
   });
 
