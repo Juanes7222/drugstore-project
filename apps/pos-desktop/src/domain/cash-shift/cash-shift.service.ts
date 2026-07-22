@@ -42,14 +42,17 @@ import type { PrintRouter } from '../printing/print-router';
 import { PrintJobType, PrintPayloadType } from '../printing/printing-types';
 import { writePrintPayload } from '../printing/print-payload-writer';
 import { generateShiftCloseHtml } from './shift-close-html';
+import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
+import { LocalAuditEvent } from '../audit/local-audit-writer.service';
 
 export const createCashShiftService = (
   prisma: PrismaClient,
   authService: AuthService,
   adjustmentService?: LocalAdjustmentService,
   printRouter?: PrintRouter,
+  auditWriter?: LocalAuditWriter,
 ): CashShiftService => {
-  return new CashShiftService(prisma, authService, adjustmentService, printRouter);
+  return new CashShiftService(prisma, authService, adjustmentService, printRouter, auditWriter);
 };
 
 export class CashShiftService {
@@ -58,6 +61,7 @@ export class CashShiftService {
     private readonly auth: AuthService,
     private readonly adjustmentService?: LocalAdjustmentService,
     private readonly printRouter?: PrintRouter,
+    private readonly auditWriter?: LocalAuditWriter,
   ) {}
 
   /**
@@ -75,7 +79,7 @@ export class CashShiftService {
 
     await this.assertNoOpenShiftExists(session.workstationId);
 
-    return this.prisma.cashShift.create({
+    const shift = await this.prisma.cashShift.create({
       data: {
         id: this.generateId(),
         workstationId: session.workstationId,
@@ -86,6 +90,22 @@ export class CashShiftService {
         state: 'OPEN',
       },
     });
+
+    // Audit trail
+    this.auditWriter?.write(LocalAuditEvent.CASH_SHIFT_OPENED, {
+      category: 'cash_shift',
+      entityType: 'CashShift',
+      entityId: shift.id,
+      userId: session.userId,
+      userRole: session.role,
+      workstationId: session.workstationId,
+      details: {
+        openingBalance: dto.openingBalance.toString(),
+        openingNotes: dto.openingNotes ?? null,
+      },
+    });
+
+    return shift;
   }
 
   /**
@@ -128,7 +148,7 @@ export class CashShiftService {
 
     const difference = dto.declaredAmount.minus(dto.expectedAmount);
 
-    return this.prisma.shiftCashCount.create({
+    const count = await this.prisma.shiftCashCount.create({
       data: {
         id: this.generateId(),
         cashShiftId: shiftId,
@@ -145,6 +165,27 @@ export class CashShiftService {
         createdAt: new Date(),
       },
     });
+
+    // Audit trail for partial counts (closing counts are audited inside closeShift)
+    if (dto.countType === 'PARTIAL') {
+      this.auditWriter?.write(LocalAuditEvent.CASH_COUNT_PARTIAL, {
+        category: 'cash_shift',
+        entityType: 'ShiftCashCount',
+        entityId: count.id,
+        userId: session.userId,
+        userRole: session.role,
+        details: {
+          shiftId,
+          expectedAmount: dto.expectedAmount.toString(),
+          declaredAmount: dto.declaredAmount.toString(),
+          difference: difference.toString(),
+          paymentMethodId: dto.paymentMethodId,
+          isCash: paymentMethod.isCash,
+        },
+      });
+    }
+
+    return count;
   }
 
   /**
@@ -217,7 +258,7 @@ export class CashShiftService {
       );
     }
 
-    return this.prisma.cashShift
+    const closedShift = await this.prisma.cashShift
       .update({
         where: { id: shiftId },
         data: {
@@ -232,52 +273,28 @@ export class CashShiftService {
         include: {
           cashCounts: true,
         },
-      })
-      .then(async (updatedShift) => {
-        // 6. Print the shift close report (fire-and-forget from the caller's
-        //    perspective). The print router handles routing, fallback, and
-        //    queueing. If the router is not configured, printing is skipped.
-        if (this.printRouter) {
-          try {
-            const closeHtml = generateShiftCloseHtml({
-              shiftId: updatedShift.id,
-              workstationId: session.workstationId,
-              cashierName: session.userId,
-              openedAt: updatedShift.openedAt,
-              closedAt: updatedShift.closedAt!,
-              openingBalance: updatedShift.openingBalance.toString(),
-              expectedClosingAmount: updatedShift.expectedClosingAmount.toString(),
-              actualClosingAmount: updatedShift.actualClosingAmount.toString(),
-              closingDifference: updatedShift.closingDifference.toString(),
-              closingNotes: updatedShift.closingNotes,
-              paymentMethodCounts: closingCounts.map((cc) => ({
-                methodName: (cc as typeof closingCounts[number] & { paymentMethod: { name: string } }).paymentMethod?.name ?? cc.paymentMethodId,
-                isCash: cc.paymentMethodIsCash,
-                expectedAmount: cc.expectedAmount.toString(),
-                declaredAmount: cc.declaredAmount.toString(),
-                difference: cc.difference.toString(),
-              })),
-            });
-
-            const closePath = await writePrintPayload(
-              `shift-close-${shiftId}.html`,
-              closeHtml,
-            );
-
-            await this.printRouter.print(PrintJobType.SHIFT_CLOSE_REPORT, {
-              payloadPath: closePath,
-              payloadType: PrintPayloadType.HTML,
-            });
-          } catch (err) {
-            console.error(
-              `[CashShiftService] Print routing failed for shift close ${shiftId}:`,
-              err instanceof Error ? err.message : err,
-            );
-          }
-        }
-
-        return updatedShift;
       });
+
+    // Audit trail
+    this.auditWriter?.write(LocalAuditEvent.CASH_SHIFT_CLOSED, {
+      category: 'cash_shift',
+      entityType: 'CashShift',
+      entityId: shiftId,
+      userId: session.userId,
+      userRole: session.role,
+      workstationId: session.workstationId,
+      details: {
+        expectedClosingAmount: expectedAmount.toString(),
+        actualClosingAmount: actualAmount.toString(),
+        closingDifference: closingDifference.toString(),
+        closingNotes: dto.closingNotes ?? null,
+        paymentMethodCount: closingCounts.length,
+        pendingSyncCount: pendingCount,
+        failedSyncCount: failedCount,
+      },
+    });
+
+    return this.handlePostClose(closedShift, session, closingCounts, shiftId, dto.closingNotes);
   }
 
   // ---------------------------------------------------------------------------
@@ -727,6 +744,59 @@ export class CashShiftService {
     }
 
     return { expectedAmount, actualAmount };
+  }
+
+  /**
+   * Fire-and-forget print routing after a shift close.
+   * Extracted so the audit-write + print post-close flow stays clean.
+   */
+  private async handlePostClose(
+    updatedShift: CashShiftRecord & { cashCounts: unknown[] },
+    session: { userId: string; workstationId: string; role: string },
+    closingCounts: Array<{ paymentMethodId: string; paymentMethodIsCash: boolean; expectedAmount: Prisma.Decimal; declaredAmount: Prisma.Decimal; difference: Prisma.Decimal } & { paymentMethod?: { name: string } }>,
+    _shiftId: string,
+    _closingNotes?: string,
+  ): Promise<CashShiftRecord & { cashCounts: unknown[] }> {
+    if (this.printRouter) {
+      try {
+        const closeHtml = generateShiftCloseHtml({
+          shiftId: updatedShift.id,
+          workstationId: session.workstationId,
+          cashierName: session.userId,
+          openedAt: updatedShift.openedAt,
+          closedAt: updatedShift.closedAt!,
+          openingBalance: updatedShift.openingBalance.toString(),
+          expectedClosingAmount: updatedShift.expectedClosingAmount.toString(),
+          actualClosingAmount: updatedShift.actualClosingAmount.toString(),
+          closingDifference: updatedShift.closingDifference.toString(),
+          closingNotes: updatedShift.closingNotes,
+          paymentMethodCounts: closingCounts.map((cc) => ({
+            methodName: cc.paymentMethod?.name ?? cc.paymentMethodId,
+            isCash: cc.paymentMethodIsCash,
+            expectedAmount: cc.expectedAmount.toString(),
+            declaredAmount: cc.declaredAmount.toString(),
+            difference: cc.difference.toString(),
+          })),
+        });
+
+        const closePath = await writePrintPayload(
+          `shift-close-${updatedShift.id}.html`,
+          closeHtml,
+        );
+
+        await this.printRouter.print(PrintJobType.SHIFT_CLOSE_REPORT, {
+          payloadPath: closePath,
+          payloadType: PrintPayloadType.HTML,
+        });
+      } catch (err) {
+        console.error(
+          `[CashShiftService] Print routing failed for shift close ${updatedShift.id}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
+    return updatedShift;
   }
 
   private generateId(): string {

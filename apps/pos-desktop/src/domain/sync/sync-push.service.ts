@@ -24,6 +24,8 @@
 import crypto from 'node:crypto';
 import type { PrismaClient } from '@pharmacy/database/local';
 import type { InvoiceService } from '../fiscal/invoice.service';
+import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
+import { LocalAuditEvent } from '../audit/local-audit-writer.service';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -135,6 +137,7 @@ export interface SyncPushServiceConfig {
   baseUrl: string;
   accessToken?: string;
   invoiceService?: InvoiceService;
+  auditWriter?: LocalAuditWriter;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,9 +147,9 @@ export interface SyncPushServiceConfig {
 export const createSyncPushService = (
   config: SyncPushServiceConfig,
 ): SyncPushService => {
-  const { prisma, baseUrl, accessToken, invoiceService } = config;
+  const { prisma, baseUrl, accessToken, invoiceService, auditWriter } = config;
   const normalizedBase = baseUrl.replace(/\/+$/, '');
-  return new SyncPushServiceImpl(prisma, normalizedBase, accessToken, invoiceService);
+  return new SyncPushServiceImpl(prisma, normalizedBase, accessToken, invoiceService, auditWriter);
 };
 
 // ---------------------------------------------------------------------------
@@ -179,17 +182,20 @@ class SyncPushServiceImpl implements SyncPushService {
   private readonly baseUrl: string;
   private readonly accessToken?: string;
   private readonly invoiceService?: InvoiceService;
+  private readonly auditWriter?: LocalAuditWriter;
 
   constructor(
     prisma: PrismaClient,
     baseUrl: string,
     accessToken?: string,
     invoiceService?: InvoiceService,
+    auditWriter?: LocalAuditWriter,
   ) {
     this.prisma = prisma;
     this.baseUrl = baseUrl;
     this.accessToken = accessToken;
     this.invoiceService = invoiceService;
+    this.auditWriter = auditWriter;
   }
 
   async pushPending(): Promise<{ pushed: number; accepted: number }> {
@@ -233,6 +239,17 @@ class SyncPushServiceImpl implements SyncPushService {
         'NETWORK',
         errorMessage,
       );
+      this.auditWriter?.write(LocalAuditEvent.SYNC_PUSH_FAILED, {
+        category: 'sync',
+        entityType: 'SyncQueue',
+        details: {
+          pushedCount: entries.length,
+          acceptedCount: 0,
+          failureCategory: 'NETWORK',
+          errorMessage,
+          operationTypes: [...new Set(entries.map((e) => e.operationType))],
+        },
+      });
       return { pushed: entries.length, accepted: 0 };
     }
 
@@ -243,23 +260,37 @@ class SyncPushServiceImpl implements SyncPushService {
     }
 
     // Non-OK response
+    let failureCategory: SyncFailureCategory;
     if (response.status >= 400 && response.status < 500) {
-      const category = classifyFailure(response.status, bodyText);
+      failureCategory = classifyFailure(response.status, bodyText);
       await this.recordBatchFailure(
         entries,
         response.status,
-        category,
+        failureCategory,
         `Server rejected batch (${response.status}): ${(bodyText || response.statusText).slice(0, 2000)}`,
       );
     } else {
       // Server error (5xx) or unexpected
+      failureCategory = 'NETWORK';
       await this.recordBatchFailure(
         entries,
         response.status,
-        'NETWORK',
+        failureCategory,
         `Server error (${response.status}): ${(bodyText || response.statusText).slice(0, 2000)}`,
       );
     }
+
+    this.auditWriter?.write(LocalAuditEvent.SYNC_PUSH_FAILED, {
+      category: 'sync',
+      entityType: 'SyncQueue',
+      details: {
+        pushedCount: entries.length,
+        acceptedCount: 0,
+        failureCategory,
+        statusCode: response.status,
+        operationTypes: [...new Set(entries.map((e) => e.operationType))],
+      },
+    });
 
     return { pushed: entries.length, accepted: 0 };
   }
@@ -386,6 +417,21 @@ class SyncPushServiceImpl implements SyncPushService {
           },
         });
 
+        // Audit trail — individual sync conflict or rejection
+        if (rejectionCategory === 'CONFLICT') {
+          this.auditWriter?.write(LocalAuditEvent.SYNC_CONFLICT, {
+            category: 'sync',
+            entityType: 'SyncQueue',
+            entityId: entry.id,
+            details: {
+              operationType: entry.operationType,
+              operationUuid: entry.operationUuid,
+              error: result.error ?? 'Conflict detected by server',
+              rejectionCategory,
+            },
+          });
+        }
+
         // If a SALE_CONFIRMATION was rejected, cancel any associated local
         // invoices to prevent orphan fiscal documents.
         if (entry.operationType === 'SALE_CONFIRMATION' && this.invoiceService) {
@@ -409,6 +455,20 @@ class SyncPushServiceImpl implements SyncPushService {
           }
         }
       }
+    });
+
+    // Audit trail — sync push completed
+    const rejectedCount = entries.length - acceptedCount;
+    this.auditWriter?.write(LocalAuditEvent.SYNC_PUSH_COMPLETED, {
+      category: 'sync',
+      entityType: 'SyncQueue',
+      details: {
+        pushedCount: entries.length,
+        acceptedCount,
+        rejectedCount,
+        httpStatus,
+        operationTypes: [...new Set(entries.map((e) => e.operationType))],
+      },
     });
 
     return { pushed: entries.length, accepted: acceptedCount };

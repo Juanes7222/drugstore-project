@@ -31,6 +31,8 @@ import type { PrintRouter } from '../printing/print-router';
 import { PrintJobType, PrintPayloadType } from '../printing/printing-types';
 import { writePrintPayload } from '../printing/print-payload-writer';
 import { RoleType } from '@pharmacy/shared-types';
+import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
+import { LocalAuditEvent } from '../audit/local-audit-writer.service';
 import {
   SaleNotInProgressException,
   PrescriptionRequiredNotSupportedException,
@@ -143,8 +145,9 @@ export const createSalesPosService = (
   inventoryLots: InventoryLotsService,
   invoiceService?: InvoiceService,
   printRouter?: PrintRouter,
+  auditWriter?: LocalAuditWriter,
 ): SalesPosService => {
-  return new SalesPosService(prisma, auth, inventoryLots, invoiceService, printRouter);
+  return new SalesPosService(prisma, auth, inventoryLots, invoiceService, printRouter, auditWriter);
 };
 
 // ---------------------------------------------------------------------------
@@ -158,6 +161,7 @@ export class SalesPosService {
     private readonly inventoryLots: InventoryLotsService,
     private readonly invoiceService?: InvoiceService,
     private readonly printRouter?: PrintRouter,
+    private readonly auditWriter?: LocalAuditWriter,
   ) {}
 
   // -----------------------------------------------------------------------
@@ -536,6 +540,24 @@ export class SalesPosService {
           );
         }
       }
+
+      // Audit trail — sale confirmed
+      const confirmedSale = result as { id: string; localNumber?: bigint; totalAmount?: Prisma.Decimal };
+      this.auditWriter?.write(LocalAuditEvent.SALE_CONFIRMED, {
+        category: 'sale',
+        entityType: 'Sale',
+        entityId: saleId,
+        userId: session.userId,
+        userRole: session.role,
+        workstationId: session.workstationId,
+        details: {
+          localNumber: confirmedSale.localNumber?.toString(),
+          totalAmount: confirmedSale.totalAmount?.toString(),
+          paymentCount: input.payments.length,
+          invoiceGenerated,
+          invoiceError,
+        },
+      });
 
       return {
         ...(result as Record<string, unknown>),

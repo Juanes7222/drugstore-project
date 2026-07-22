@@ -442,4 +442,292 @@ describe("SyncPushService", () => {
       vi.unstubAllGlobals();
     });
   });
+
+  // ---------------------------------------------------------------
+  // Audit trail
+  // ---------------------------------------------------------------
+
+  describe("pushPending (audit)", () => {
+    it("writes SYNC_PUSH_COMPLETED when batch is accepted", async () => {
+      const auditWriter = { write: vi.fn() };
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{ operationUuid: "uuid-1", status: "ACCEPTED" }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+        auditWriter: auditWriter as any,
+      });
+
+      const result = await service.pushPending();
+
+      expect(result).toEqual({ pushed: 1, accepted: 1 });
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SYNC_PUSH_COMPLETED",
+        expect.objectContaining({
+          category: "sync",
+          entityType: "SyncQueue",
+          details: expect.objectContaining({
+            pushedCount: 1,
+            acceptedCount: 1,
+            rejectedCount: 0,
+            httpStatus: 200,
+            operationTypes: ["SALE_CONFIRMATION"],
+          }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("writes SYNC_PUSH_FAILED on network error", async () => {
+      const auditWriter = { write: vi.fn() };
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+        auditWriter: auditWriter as any,
+      });
+
+      const result = await service.pushPending();
+
+      expect(result).toEqual({ pushed: 1, accepted: 0 });
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SYNC_PUSH_FAILED",
+        expect.objectContaining({
+          category: "sync",
+          entityType: "SyncQueue",
+          details: expect.objectContaining({
+            pushedCount: 1,
+            acceptedCount: 0,
+            failureCategory: "NETWORK",
+            operationTypes: ["SALE_CONFIRMATION"],
+          }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("writes SYNC_PUSH_FAILED on 4xx server error", async () => {
+      const auditWriter = { write: vi.fn() };
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        statusText: "Unprocessable",
+        text: vi.fn().mockResolvedValue("validation error: schema mismatch"),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+        auditWriter: auditWriter as any,
+      });
+
+      const result = await service.pushPending();
+
+      expect(result).toEqual({ pushed: 1, accepted: 0 });
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SYNC_PUSH_FAILED",
+        expect.objectContaining({
+          details: expect.objectContaining({
+            failureCategory: "VALIDATION",
+            statusCode: 422,
+          }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("writes SYNC_PUSH_FAILED on 5xx server error", async () => {
+      const auditWriter = { write: vi.fn() };
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        statusText: "Bad Gateway",
+        text: vi.fn().mockResolvedValue(""),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+        auditWriter: auditWriter as any,
+      });
+
+      const result = await service.pushPending();
+
+      expect(result).toEqual({ pushed: 1, accepted: 0 });
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SYNC_PUSH_FAILED",
+        expect.objectContaining({
+          details: expect.objectContaining({
+            failureCategory: "NETWORK",
+            statusCode: 502,
+          }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("writes SYNC_CONFLICT when server rejects with CONFLICT", async () => {
+      const auditWriter = { write: vi.fn() };
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{
+            operationUuid: "uuid-1",
+            status: "REJECTED",
+            error: "Conflict detected",
+          }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+        auditWriter: auditWriter as any,
+      });
+
+      await service.pushPending();
+
+      // Should write both SYNC_CONFLICT per-entry and SYNC_PUSH_COMPLETED once
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SYNC_CONFLICT",
+        expect.objectContaining({
+          category: "sync",
+          entityType: "SyncQueue",
+          entityId: "entry-1",
+          details: expect.objectContaining({
+            operationType: "SALE_CONFIRMATION",
+            operationUuid: "uuid-1",
+            error: "Conflict detected",
+            rejectionCategory: "CONFLICT",
+          }),
+        }),
+      );
+
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SYNC_PUSH_COMPLETED",
+        expect.objectContaining({
+          details: expect.objectContaining({
+            acceptedCount: 0,
+            rejectedCount: 1,
+          }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("does not write SYNC_CONFLICT when rejection is not CONFLICT", async () => {
+      const auditWriter = { write: vi.fn() };
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{
+            operationUuid: "uuid-1",
+            status: "REJECTED",
+            error: "Stock insufficient",
+          }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+        auditWriter: auditWriter as any,
+      });
+
+      await service.pushPending();
+
+      // Classify REJECTED with "stock" keyword → BUSINESS_RULE, not CONFLICT
+      const conflictCalls = auditWriter.write.mock.calls.filter(
+        (c: any[]) => c[0] === "SYNC_CONFLICT",
+      );
+      expect(conflictCalls).toHaveLength(0);
+
+      // SYNC_PUSH_COMPLETED should still be written
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SYNC_PUSH_COMPLETED",
+        expect.anything(),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("does not throw when auditWriter is not configured", async () => {
+      const entry = makePendingEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{ operationUuid: "uuid-1", status: "ACCEPTED" }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      // service without auditWriter (default in beforeEach)
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      await expect(service.pushPending()).resolves.toEqual({
+        pushed: 1,
+        accepted: 1,
+      });
+
+      vi.unstubAllGlobals();
+    });
+  });
 });

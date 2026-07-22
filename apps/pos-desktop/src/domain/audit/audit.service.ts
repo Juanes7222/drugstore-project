@@ -1,23 +1,26 @@
 /**
- * Local audit service — queries local inventory movements as audit entries.
+ * Local audit service — queries local audit entries from two sources:
  *
- * The server-side `AuditLog` model is not available in the local build, so
- * we query `InventoryMovement` directly via the typed Prisma client and map
- * rows to the `LocalAuditEntry` shape the audit-log-view expects.
+ * 1. **`LocalAuditLog` table** — events explicitly written by domain services
+ *    (cash-shift, sales, auth, sync, etc.). Covers everything that doesn't
+ *    already have a dedicated table.
+ * 2. **`InventoryMovement` table** (legacy) — stock mutations that already
+ *    existed before LocalAuditLog was introduced. Kept as-is because every
+ *    stock mutation already writes an InventoryMovement row inside the same
+ *    transaction.
  *
- * ## Why not write to AuditLog?
+ * ## Design rationale
  *
- * The `AuditLog` model lives under `prisma/schema-source/server-only/` and
- * is excluded from the local Prisma build.  Rather than moving it into the
- * shared schema (which would require re-generating the local client), we
- * read the data that already exists — every stock mutation already writes an
- * `InventoryMovement` row inside the same transaction as the stock change.
+ * The server-side `AuditLog` model lives under `prisma/schema-source/
+ * server-only/` and is excluded from the local Prisma build. Rather than
+ * moving it into shared schema (which would couple the two sides), we read
+ * from local-only `LocalAuditLog` for non-inventory events and from the
+ * already-existing `InventoryMovement` for stock events.
  */
-
-import type { PrismaClient, MovementType } from '@pharmacy/database/local';
+import type { PrismaClient } from '@pharmacy/database/local';
 
 // ---------------------------------------------------------------------------
-// Types — mirror the shape audit-log-view.tsx expects
+// Types — mirror the shape audit-log-view.tsx / audit-event-card.tsx expects
 // ---------------------------------------------------------------------------
 
 export interface LocalAuditEntry {
@@ -34,11 +37,31 @@ export interface LocalAuditEntry {
   lotBatch?: string;
 }
 
+/**
+ * Filter shape accepted by `getLocalAuditEntries`.
+ *
+ * When `module` is set to a specific domain it dispatches to the
+ * corresponding reader (InventoryMovement for INVENTORY, LocalAuditLog
+ * for everything else).  When omitted it reads from LocalAuditLog only.
+ */
 export interface LocalAuditQuery {
-  module?: 'INVENTORY';
+  /** Domain module to scope the query to. */
+  module?:
+    | 'INVENTORY'
+    | 'CASH_SHIFT'
+    | 'SALES'
+    | 'AUTH'
+    | 'SYNC'
+    | 'CLIENTS'
+    | 'PRESCRIPTIONS'
+    | 'PURCHASES'
+    | 'FISCAL';
+  /** LocalAuditLog category filter (e.g. "cash_shift", "sale"). */
+  category?: string;
+  /** Specific audit action filter (e.g. "CASH_SHIFT_OPENED"). */
+  action?: string;
   fromDate?: string;
   toDate?: string;
-  movementType?: MovementType;
   limit?: number;
   offset?: number;
 }
@@ -47,6 +70,21 @@ export interface LocalAuditResponse {
   rows: LocalAuditEntry[];
   total: number;
 }
+
+// ---------------------------------------------------------------------------
+// Module → LocalAuditLog category mapping
+// ---------------------------------------------------------------------------
+
+const MODULE_CATEGORY_MAP: Record<string, string> = {
+  CASH_SHIFT: 'cash_shift',
+  SALES: 'sale',
+  AUTH: 'auth',
+  SYNC: 'sync',
+  CLIENTS: 'client',
+  PRESCRIPTIONS: 'prescription',
+  PURCHASES: 'purchase',
+  FISCAL: 'fiscal',
+};
 
 // ---------------------------------------------------------------------------
 // Movement type → human-readable action label
@@ -67,7 +105,93 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Query builder
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch local audit entries, dispatching to the appropriate reader based
+ * on the `module` filter.
+ *
+ * - `module === 'INVENTORY'` → reads from `InventoryMovement` (legacy)
+ * - other module or none → reads from `LocalAuditLog`
+ */
+export async function getLocalAuditEntries(
+  prisma: PrismaClient,
+  query: LocalAuditQuery = {},
+): Promise<LocalAuditResponse> {
+  if (query.module === 'INVENTORY') {
+    return getInventoryMovements(prisma, query);
+  }
+
+  return getFromLocalAuditLog(prisma, query);
+}
+
+// ---------------------------------------------------------------------------
+// LocalAuditLog reader
+// ---------------------------------------------------------------------------
+
+async function getFromLocalAuditLog(
+  prisma: PrismaClient,
+  query: LocalAuditQuery,
+): Promise<LocalAuditResponse> {
+  const limit = query.limit ?? 50;
+  const offset = query.offset ?? 0;
+
+  // Build Prisma where
+  const where: Record<string, unknown> = {};
+
+  // Map module to category
+  const category = query.category ?? (
+    query.module ? MODULE_CATEGORY_MAP[query.module] : undefined
+  );
+  if (category) {
+    where.category = category;
+  }
+
+  if (query.action) {
+    where.action = query.action;
+  }
+
+  if (query.fromDate || query.toDate) {
+    const createdAt: Record<string, Date | string> = {};
+    if (query.fromDate) {
+      createdAt.gte = query.fromDate;
+    }
+    if (query.toDate) {
+      createdAt.lte = query.toDate + 'T23:59:59.999Z';
+    }
+    where.createdAt = createdAt;
+  }
+
+  const [rows, total] = await Promise.all([
+    (prisma as any).localAuditLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' as const },
+      take: limit,
+      skip: offset,
+    }),
+    (prisma as any).localAuditLog.count({ where }),
+  ]);
+
+  return {
+    rows: rows.map((r: any) => ({
+      id: r.id,
+      action: r.action,
+      createdAt: r.createdAt instanceof Date
+        ? r.createdAt.toISOString()
+        : String(r.createdAt),
+      userId: r.userId ?? undefined,
+      userRole: r.userRole ?? null,
+      entityType: r.entityType ?? undefined,
+      entityId: r.entityId ?? undefined,
+      details: r.details ?? null,
+    })),
+    total,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// InventoryMovement reader (legacy)
 // ---------------------------------------------------------------------------
 
 /**
@@ -77,9 +201,9 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
  * round-trip without depending on generated `include` types for every
  * relation path.
  */
-export async function getLocalAuditEntries(
+async function getInventoryMovements(
   prisma: PrismaClient,
-  query: LocalAuditQuery = {},
+  query: LocalAuditQuery,
 ): Promise<LocalAuditResponse> {
   const limit = query.limit ?? 50;
   const offset = query.offset ?? 0;
@@ -96,10 +220,6 @@ export async function getLocalAuditEntries(
   if (query.toDate) {
     conditions.push(`im."createdAt" <= $${paramIdx++}`);
     params.push(query.toDate + 'T23:59:59.999Z');
-  }
-  if (query.movementType) {
-    conditions.push(`im."movementType" = $${paramIdx++}`);
-    params.push(query.movementType);
   }
 
   const whereClause = conditions.length > 0

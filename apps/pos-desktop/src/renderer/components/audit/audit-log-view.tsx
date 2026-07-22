@@ -111,9 +111,16 @@ export const AuditLogView: FC = () => {
   const fetchLogs = useCallback(async () => {
     setIsLoading(true);
     try {
-      if (moduleFilter === 'INVENTORY') {
+      // Local-only modules — read from LocalAuditLog or InventoryMovement
+      const localModules = [
+        'INVENTORY', 'CASH_SHIFT', 'SALES', 'CLIENTS',
+        'PRESCRIPTIONS', 'PURCHASES', 'FISCAL', 'SYNC',
+      ];
+
+      if (!moduleFilter || localModules.includes(moduleFilter)) {
         const { prisma } = await getLocalDatabase();
         const result = await getLocalAuditEntries(prisma as any, {
+          module: (moduleFilter || undefined) as any,
           fromDate: fromDate || undefined,
           toDate: toDate || undefined,
           limit: pageSize,
@@ -122,6 +129,7 @@ export const AuditLogView: FC = () => {
         setLogs(result.rows);
         setTotal(result.total);
       } else {
+        // Server-side modules (AUTH_USERS)
         const result: AuditLogResponse = await authService.getAuditLogs({
           event: eventFilter || undefined,
           fromDate: fromDate || undefined,
@@ -241,6 +249,13 @@ export const AuditLogView: FC = () => {
           <option value="">{t('audit_log.all_events')}</option>
           <option value="AUTH_USERS">{t('audit_log.module_auth')}</option>
           <option value="INVENTORY">{t('audit_log.module_inventory')}</option>
+          <option value="CASH_SHIFT">{t('audit_log.module_cash_shift')}</option>
+          <option value="SALES">{t('audit_log.module_sales')}</option>
+          <option value="CLIENTS">{t('audit_log.module_clients')}</option>
+          <option value="PRESCRIPTIONS">{t('audit_log.module_prescriptions')}</option>
+          <option value="PURCHASES">{t('audit_log.module_purchases')}</option>
+          <option value="FISCAL">{t('audit_log.module_fiscal')}</option>
+          <option value="SYNC">{t('audit_log.module_sync')}</option>
         </select>
 
         <div className="flex items-center gap-pos-xs">

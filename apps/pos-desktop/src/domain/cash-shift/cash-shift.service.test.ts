@@ -648,4 +648,198 @@ describe("CashShiftService", () => {
       expect(result[0].invoiceNumber).toBe("INV-001");
     });
   });
+
+  // ---------------------------------------------------------------
+  // Audit trail
+  // ---------------------------------------------------------------
+
+  describe("openShift (audit)", () => {
+    it("writes CASH_SHIFT_OPENED event to auditWriter", async () => {
+      const auditWriter = { write: vi.fn() };
+      service = createCashShiftService(prisma, auth as any, undefined, undefined, auditWriter as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(null);
+      tx.cashShift.create.mockResolvedValue({
+        id: "shift-1",
+        workstationId: "ws-1",
+        userId: "user-1",
+        openingBalance: new Prisma.Decimal(500000),
+        state: "OPEN",
+        openedAt: new Date(),
+      });
+
+      await service.openShift({
+        openingBalance: new Prisma.Decimal(500000),
+      });
+
+      expect(auditWriter.write).toHaveBeenCalledTimes(1);
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "CASH_SHIFT_OPENED",
+        expect.objectContaining({
+          category: "cash_shift",
+          entityType: "CashShift",
+          entityId: "shift-1",
+          userId: "user-1",
+          userRole: "CASHIER",
+          workstationId: "ws-1",
+          details: expect.objectContaining({
+            openingBalance: "500000",
+          }),
+        }),
+      );
+    });
+
+    it("does not throw when auditWriter is not configured", async () => {
+      // service created without auditWriter in beforeEach
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(null);
+      tx.cashShift.create.mockResolvedValue({
+        id: "shift-1",
+        state: "OPEN",
+      });
+
+      await expect(
+        service.openShift({ openingBalance: new Prisma.Decimal(500000) }),
+      ).resolves.toBeDefined();
+    });
+
+    it("does not throw when auditWriter.write fails", async () => {
+      const auditWriter = { write: vi.fn().mockRejectedValue(new Error("Audit DB down")) };
+      service = createCashShiftService(prisma, auth as any, undefined, undefined, auditWriter as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(null);
+      tx.cashShift.create.mockResolvedValue({
+        id: "shift-1",
+        state: "OPEN",
+      });
+
+      await expect(
+        service.openShift({ openingBalance: new Prisma.Decimal(500000) }),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe("registerCashCount (audit)", () => {
+    it("writes CASH_COUNT_PARTIAL event for PARTIAL counts", async () => {
+      const auditWriter = { write: vi.fn() };
+      service = createCashShiftService(prisma, auth as any, undefined, undefined, auditWriter as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({ id: "shift-1", state: "OPEN" });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash", isCash: true, name: "Efectivo",
+      });
+      tx.shiftCashCount.create.mockResolvedValue({ id: "count-1", countType: "PARTIAL" });
+
+      await service.registerCashCount("shift-1", {
+        countType: "PARTIAL",
+        paymentMethodId: "pm-cash",
+        expectedAmount: new Prisma.Decimal(500000),
+        declaredAmount: new Prisma.Decimal(510000),
+      });
+
+      expect(auditWriter.write).toHaveBeenCalledTimes(1);
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "CASH_COUNT_PARTIAL",
+        expect.objectContaining({
+          category: "cash_shift",
+          entityType: "ShiftCashCount",
+          entityId: "count-1",
+          details: expect.objectContaining({
+            shiftId: "shift-1",
+            expectedAmount: "500000",
+            declaredAmount: "510000",
+          }),
+        }),
+      );
+    });
+
+    it("does not write audit event for CLOSING counts (deferred to closeShift)", async () => {
+      const auditWriter = { write: vi.fn() };
+      service = createCashShiftService(prisma, auth as any, undefined, undefined, auditWriter as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({ id: "shift-1", state: "OPEN" });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash", isCash: true, name: "Efectivo",
+      });
+      tx.shiftCashCount.create.mockResolvedValue({ id: "count-2", countType: "CLOSING" });
+
+      await service.registerCashCount("shift-1", {
+        countType: "CLOSING",
+        paymentMethodId: "pm-cash",
+        expectedAmount: new Prisma.Decimal(500000),
+        declaredAmount: new Prisma.Decimal(505000),
+      });
+
+      expect(auditWriter.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("closeShift (audit)", () => {
+    it("writes CASH_SHIFT_CLOSED event to auditWriter", async () => {
+      const auditWriter = { write: vi.fn() };
+      service = createCashShiftService(prisma, auth as any, undefined, undefined, auditWriter as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN", userId: "user-1",
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(0),
+        actualClosingAmount: new Prisma.Decimal(0),
+        closingDifference: new Prisma.Decimal(0),
+      });
+      tx.shiftCashCount.findMany.mockResolvedValue([
+        {
+          paymentMethodId: "pm-cash",
+          countType: "CLOSING",
+          expectedAmount: new Prisma.Decimal(500000),
+          declaredAmount: new Prisma.Decimal(510000),
+          difference: new Prisma.Decimal(10000),
+          paymentMethodIsCash: true,
+          paymentMethod: { name: "Efectivo" },
+        },
+      ]);
+      tx.salePayment.findMany.mockResolvedValue([{ paymentMethodId: "pm-cash" }]);
+      tx.syncQueue.count.mockResolvedValue(0);
+      tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
+      tx.cashShift.update.mockResolvedValue({
+        id: "shift-1",
+        state: "CLOSED",
+        closedAt: new Date(),
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(500000),
+        actualClosingAmount: new Prisma.Decimal(510000),
+        closingDifference: new Prisma.Decimal(10000),
+        closingNotes: null,
+      });
+
+      await service.closeShift("shift-1", {});
+
+      expect(auditWriter.write).toHaveBeenCalledTimes(1);
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "CASH_SHIFT_CLOSED",
+        expect.objectContaining({
+          category: "cash_shift",
+          entityType: "CashShift",
+          entityId: "shift-1",
+          userId: "user-1",
+          userRole: "CASHIER",
+          workstationId: "ws-1",
+          details: expect.objectContaining({
+            expectedClosingAmount: "500000",
+            actualClosingAmount: "510000",
+            closingDifference: "10000",
+            paymentMethodCount: 1,
+            pendingSyncCount: 0,
+            failedSyncCount: 0,
+          }),
+        }),
+      );
+    });
+  });
 });

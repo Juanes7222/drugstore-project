@@ -525,4 +525,185 @@ describe("SalesPosService", () => {
       );
     });
   });
+
+  // ---------------------------------------------------------------
+  // confirm (audit)
+  // ---------------------------------------------------------------
+
+  describe("confirm (audit)", () => {
+    const makeSale = () => ({
+      id: "sale-1",
+      localNumber: 1n,
+      operationalState: "IN_PROGRESS",
+      totalAmount: new Prisma.Decimal(11900),
+      subtotal: new Prisma.Decimal(10000),
+      totalDiscount: new Prisma.Decimal(0),
+      totalTax: new Prisma.Decimal(1900),
+      cashShiftId: "shift-1",
+      workstationId: "ws-1",
+      clientId: null,
+      startedAt: new Date(),
+      items: [{
+        id: "item-1",
+        productId: "prod-1",
+        quantity: 2,
+        unitPrice: new Prisma.Decimal(5000),
+        taxRate: new Prisma.Decimal(19),
+        taxAmount: new Prisma.Decimal(1900),
+        subtotal: new Prisma.Decimal(10000),
+        total: new Prisma.Decimal(11900),
+        discountPercentage: new Prisma.Decimal(0),
+        discountAmount: new Prisma.Decimal(0),
+        discountReason: null,
+        requiresPrescription: false,
+        productSnapshot: {
+          internalCode: "P001",
+          commercialName: "Acetaminofén",
+          genericName: "Acetaminofén",
+          concentration: "500mg",
+        },
+      }],
+    });
+
+    const validConfirmInput: ConfirmSaleInput = {
+      payments: [{ paymentMethodId: "pm-cash", amount: 11900 }],
+    };
+
+    it("writes SALE_CONFIRMED event after successful confirm", async () => {
+      const auditWriter = { write: vi.fn() };
+      service = createSalesPosService(prisma, auth as any, inventoryLots as any, undefined, undefined, auditWriter as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findUnique.mockResolvedValue(makeSale());
+      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      inventoryLots.consumeStockForSale.mockResolvedValue([
+        { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
+      ]);
+      tx.saleItem.update.mockResolvedValue({});
+      tx.saleItemLot.create.mockResolvedValue({});
+      tx.salePayment.createMany.mockResolvedValue({ count: 1 });
+      tx.sale.update.mockResolvedValue({
+        ...makeSale(),
+        operationalState: "CONFIRMED",
+        confirmedAt: new Date(),
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      await service.confirm("sale-1", validConfirmInput);
+
+      expect(auditWriter.write).toHaveBeenCalledTimes(1);
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SALE_CONFIRMED",
+        expect.objectContaining({
+          category: "sale",
+          entityType: "Sale",
+          entityId: "sale-1",
+          userId: "user-1",
+          userRole: "CASHIER",
+          workstationId: "ws-1",
+          details: expect.objectContaining({
+            localNumber: "1",
+            totalAmount: "11900",
+            paymentCount: 1,
+            invoiceGenerated: false,
+          }),
+        }),
+      );
+    });
+
+    it("reports invoiceGenerated=true when invoice service succeeds", async () => {
+      const auditWriter = { write: vi.fn() };
+      const invoiceService = { generateInvoiceForSale: vi.fn().mockResolvedValue(undefined) };
+      service = createSalesPosService(prisma, auth as any, inventoryLots as any, invoiceService as any, undefined, auditWriter as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findUnique.mockResolvedValue(makeSale());
+      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      inventoryLots.consumeStockForSale.mockResolvedValue([
+        { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
+      ]);
+      tx.saleItem.update.mockResolvedValue({});
+      tx.saleItemLot.create.mockResolvedValue({});
+      tx.salePayment.createMany.mockResolvedValue({ count: 1 });
+      tx.sale.update.mockResolvedValue({
+        ...makeSale(),
+        operationalState: "CONFIRMED",
+        confirmedAt: new Date(),
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      await service.confirm("sale-1", validConfirmInput);
+
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SALE_CONFIRMED",
+        expect.objectContaining({
+          details: expect.objectContaining({
+            invoiceGenerated: true,
+          }),
+        }),
+      );
+    });
+
+    it("reports invoiceError when invoice service fails", async () => {
+      const auditWriter = { write: vi.fn() };
+      const invoiceService = {
+        generateInvoiceForSale: vi.fn().mockRejectedValue(new Error("Fiscal API unavailable")),
+      };
+      service = createSalesPosService(prisma, auth as any, inventoryLots as any, invoiceService as any, undefined, auditWriter as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findUnique.mockResolvedValue(makeSale());
+      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      inventoryLots.consumeStockForSale.mockResolvedValue([
+        { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
+      ]);
+      tx.saleItem.update.mockResolvedValue({});
+      tx.saleItemLot.create.mockResolvedValue({});
+      tx.salePayment.createMany.mockResolvedValue({ count: 1 });
+      tx.sale.update.mockResolvedValue({
+        ...makeSale(),
+        operationalState: "CONFIRMED",
+        confirmedAt: new Date(),
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      await service.confirm("sale-1", validConfirmInput);
+
+      expect(auditWriter.write).toHaveBeenCalledWith(
+        "SALE_CONFIRMED",
+        expect.objectContaining({
+          details: expect.objectContaining({
+            invoiceGenerated: false,
+            invoiceError: "Fiscal API unavailable",
+          }),
+        }),
+      );
+    });
+
+    it("does not throw when auditWriter is not configured", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findUnique.mockResolvedValue(makeSale());
+      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      inventoryLots.consumeStockForSale.mockResolvedValue([
+        { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
+      ]);
+      tx.saleItem.update.mockResolvedValue({});
+      tx.saleItemLot.create.mockResolvedValue({});
+      tx.salePayment.createMany.mockResolvedValue({ count: 1 });
+      tx.sale.update.mockResolvedValue({
+        ...makeSale(),
+        operationalState: "CONFIRMED",
+        confirmedAt: new Date(),
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      await expect(
+        service.confirm("sale-1", validConfirmInput),
+      ).resolves.toBeDefined();
+    });
+  });
 });
