@@ -21,7 +21,11 @@ import {
 import { initializePayment } from '@/store/slices/payment-slice';
 import { setActiveScreen, setCurrentSaleId } from '@/store/slices/ui-slice';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { useSalesPosService } from '../components/common/service-context';
+import {
+  useClientsService,
+  useSalesPosService,
+} from '../components/common/service-context';
+import type { CreateClientInput } from '../../domain/clients';
 import {
   type CatalogItem,
   type CatalogService,
@@ -64,6 +68,11 @@ export interface UseSalesTransactionReturn {
   handleSelectClient: (client: ClientSelection) => void;
   /** Clear the selected client. */
   handleClearClient: () => void;
+  /**
+   * Create a new client and auto-select it for the current sale.
+   * Returns the client selection so the caller can update UI optimistically.
+   */
+  handleCreateClient: (input: CreateClientInput) => Promise<ClientSelection>;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +85,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
   const selectedClient = useAppSelector(selectSelectedClient);
   const cartItems = useAppSelector(selectCartItems);
   const salesPosService = useSalesPosService();
+  const clientsService = useClientsService();
 
   const catalogService = useMemo<CatalogService>(() => createCatalogService(), []);
 
@@ -148,6 +158,20 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     dispatch(setClient(null));
   }, [dispatch]);
 
+  const handleCreateClient = useCallback(
+    async (input: CreateClientInput): Promise<ClientSelection> => {
+      const created = await clientsService.create(input);
+      const selection: ClientSelection = {
+        id: created.id,
+        name: created.fullName,
+        identification: `${created.identificationType}: ${created.identificationNumber}`,
+      };
+      dispatch(setClient(selection));
+      return selection;
+    },
+    [clientsService, dispatch],
+  );
+
   const handleCheckout = useCallback(async () => {
     if (isCreating || cartItems.length === 0) return;
 
@@ -198,5 +222,6 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     handleCheckout,
     handleSelectClient,
     handleClearClient,
+    handleCreateClient,
   };
 }

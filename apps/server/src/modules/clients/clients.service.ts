@@ -13,6 +13,7 @@ import { DuplicateClientIdentificationException } from './exceptions/duplicate-c
 import { DataSubjectRequestAlreadyPendingException } from './exceptions/data-subject-request-already-pending.exception';
 import { NoPendingDataSubjectRequestException } from './exceptions/no-pending-data-subject-request.exception';
 import { ClientNotFoundException } from './exceptions/client-not-found.exception';
+import { ClientAlreadyInactiveException } from './exceptions/client-already-inactive.exception';
 
 @Injectable()
 export class ClientsService {
@@ -84,6 +85,35 @@ export class ClientsService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Soft-delete (deactivate) a client.
+   *
+   * Sets `isActive` to `false` so the client no longer appears in searches
+   * but the record is preserved for historical integrity.  Also enqueues a
+   * CLIENT_DEACTIVATE sync operation so the change propagates to all POS
+   * workstations on their next pull.
+   *
+   * @throws {ClientNotFoundException} when the client does not exist.
+   * @throws {ClientAlreadyInactiveException} when the client is already inactive.
+   */
+  async deactivate(id: string, userId: string): Promise<any> {
+    const client = await this.findById(id);
+    if (!client.isActive) {
+      throw new ClientAlreadyInactiveException(id);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.client.update({
+        where: { id },
+        data: { isActive: false, updatedById: userId },
+      });
+
+      await this.enqueueDeactivateSync(tx, id, userId);
+
+      return updated;
+    });
   }
 
   async registerConsent(id: string, dto: RegisterConsentDto, userId: string): Promise<any> {
@@ -211,5 +241,73 @@ export class ClientsService {
 
   async findAllClassifications(): Promise<any> {
     return this.prisma.clientClassification.findMany();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sync queue helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Enqueue a CLIENT_DEACTIVATE operation in the server-side SyncQueue so the
+   * change propagates to all POS workstations on their next pull.
+   */
+  private async enqueueDeactivateSync(
+    tx: Prisma.TransactionClient,
+    clientId: string,
+    userId: string,
+  ): Promise<void> {
+    const createdAt = new Date();
+
+    const payloadObj = {
+      deactivateClientDto: { clientId },
+      userId,
+      metadata: {
+        localClientId: clientId,
+        createdAt: createdAt.toISOString(),
+      },
+    };
+
+    await this.insertSyncQueueRow(tx, 'CLIENT_DEACTIVATE', payloadObj, createdAt);
+  }
+
+  /**
+   * Shared helper — insert a generic SyncQueue row inside a transaction.
+   */
+  private async insertSyncQueueRow(
+    tx: Prisma.TransactionClient,
+    operationType: string,
+    payloadObj: Record<string, unknown>,
+    createdAt: Date,
+  ): Promise<void> {
+    const payload = JSON.stringify(payloadObj);
+    const payloadHash = crypto.createHash('sha256').update(payload).digest('hex');
+    const payloadSize = Buffer.byteLength(payload, 'utf-8');
+    const operationUuid = crypto.randomUUID();
+
+    // Get the next sequential clientSequence
+    // Note: sourceWorkstationId is 'SERVER' for server-originated rows.
+    const latestSeq = await tx.syncQueue.findFirst({
+      where: { sourceWorkstationId: 'SERVER' },
+      orderBy: { clientSequence: 'desc' },
+      select: { clientSequence: true },
+    });
+    const clientSequence = latestSeq ? latestSeq.clientSequence + 1n : 1n;
+
+    await tx.syncQueue.create({
+      data: {
+        id: crypto.randomUUID(),
+        operationUuid,
+        operationType: operationType as any,
+        payload,
+        payloadHash,
+        payloadSize,
+        versionSchema: 1,
+        status: 'PENDING',
+        retryCount: 0,
+        sourceWorkstationId: 'SERVER',
+        sourceCreatedAt: createdAt,
+        clientSequence,
+      },
+    });
   }
 }

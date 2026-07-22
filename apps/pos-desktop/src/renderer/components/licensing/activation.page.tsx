@@ -13,7 +13,6 @@ import {
   type FC,
   type FormEvent,
   useCallback,
-  useMemo,
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -25,38 +24,17 @@ import {
   AlreadyActivatedException,
 } from "../../../domain/licensing/exceptions";
 import { useOnlineStatus } from "@/hooks/use-online-status";
+import {
+  formatActivationCode,
+  stripCodeFormatting,
+} from "./activation.helpers";
+import { ActivationForm } from "./activation-form";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const LICENSE_SERVICE_BASE_URL = "http://localhost:3000";
-
-const MAX_CODE_LENGTH = 12; // 12 alphanumeric chars => "XXXX-XXXX-XXXX"
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Format raw input into activation-code groups of 4 separated by dashes.
- * Only keeps alphanumeric characters, uppercases them, and limits to 12 chars.
- */
-function formatActivationCode(raw: string): string {
-  const cleaned = raw.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  const groups: string[] = [];
-  for (let i = 0; i < cleaned.length && i < MAX_CODE_LENGTH; i += 4) {
-    groups.push(cleaned.slice(i, i + 4));
-  }
-  return groups.join("-");
-}
-
-/**
- * Strip dashes to get the raw code for submission.
- */
-function stripCodeFormatting(formatted: string): string {
-  return formatted.replace(/-/g, "");
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -86,21 +64,6 @@ export const ActivationPage: FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-
-  // ---- Derived ----
-
-  const showLocationFields = useMemo(
-    () => true, // On a fresh install there is no location yet; always show.
-    [],
-  );
-
-  const canSubmit = useMemo(
-    () =>
-      !isLoading &&
-      stripCodeFormatting(activationCode).length >= 8 &&
-      workstationName.trim().length > 0,
-    [isLoading, activationCode, workstationName],
-  );
 
   // ---- Redirect guard ----
 
@@ -244,181 +207,24 @@ export const ActivationPage: FC = () => {
         )}
 
         {/* Activation form */}
-        <form
+        <ActivationForm
+          activationCode={activationCode}
+          workstationName={workstationName}
+          locationName={locationName}
+          locationAddress={locationAddress}
+          locationCity={locationCity}
+          locationRegion={locationRegion}
+          isLoading={isLoading}
+          errorMessage={errorMessage}
+          successMessage={successMessage}
+          onCodeChange={handleCodeChange}
+          onWorkstationNameChange={setWorkstationName}
+          onLocationNameChange={setLocationName}
+          onLocationAddressChange={setLocationAddress}
+          onLocationCityChange={setLocationCity}
+          onLocationRegionChange={setLocationRegion}
           onSubmit={handleSubmit}
-          className="pos-panel p-pos-xl"
-          noValidate
-          aria-label={t("licensing.activation.form_aria")}
-        >
-          {/* Activation code */}
-          <label
-            className="mb-pos-xs block text-body-sm font-semibold"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {t("licensing.activation.code_label")}
-          </label>
-          <input
-            type="text"
-            inputMode="text"
-            autoComplete="off"
-            autoFocus
-            className="pos-input font-data mb-pos-md tracking-widest"
-            placeholder="ABCD-EFGH-IJKL"
-            value={activationCode}
-            onChange={(e) => handleCodeChange(e.currentTarget.value)}
-            disabled={isLoading}
-            maxLength={14} /* 12 chars + 2 dashes */
-            aria-label={t("licensing.activation.code_aria")}
-          />
-
-          {/* Workstation name */}
-          <label
-            className="mb-pos-xs mt-pos-md block text-body-sm font-semibold"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {t("licensing.activation.workstation_label")}
-          </label>
-          <input
-            type="text"
-            className="pos-input mb-pos-md"
-            value={workstationName}
-            onChange={(e) => setWorkstationName(e.currentTarget.value)}
-            disabled={isLoading}
-            aria-label={t("licensing.activation.workstation_aria")}
-          />
-
-          {/* Location fields — shown on fresh install */}
-          {showLocationFields && (
-            <>
-              <hr
-                className="pos-divider my-pos-md"
-                role="separator"
-              />
-
-              <p
-                className="mb-pos-sm text-body-sm font-semibold"
-                style={{ color: "var(--color-ink)" }}
-              >
-                {t("licensing.activation.location_section")}
-              </p>
-
-              <label
-                className="mb-pos-xs mt-pos-sm block text-body-sm font-medium"
-                style={{
-                  color: "color-mix(in srgb, var(--color-ink) 70%, transparent)",
-                }}
-              >
-                {t("licensing.activation.location_name_label")}
-              </label>
-              <input
-                type="text"
-                className="pos-input mb-pos-sm"
-                value={locationName}
-                onChange={(e) => setLocationName(e.currentTarget.value)}
-                disabled={isLoading}
-                aria-label={t("licensing.activation.location_name_aria")}
-              />
-
-              <label
-                className="mb-pos-xs mt-pos-sm block text-body-sm font-medium"
-                style={{
-                  color: "color-mix(in srgb, var(--color-ink) 70%, transparent)",
-                }}
-              >
-                {t("licensing.activation.location_address_label")}
-              </label>
-              <input
-                type="text"
-                className="pos-input mb-pos-sm"
-                value={locationAddress}
-                onChange={(e) => setLocationAddress(e.currentTarget.value)}
-                disabled={isLoading}
-                aria-label={t("licensing.activation.location_address_aria")}
-              />
-
-              <div className="flex gap-pos-md">
-                <div className="flex-1">
-                  <label
-                    className="mb-pos-xs mt-pos-sm block text-body-sm font-medium"
-                    style={{
-                      color: "color-mix(in srgb, var(--color-ink) 70%, transparent)",
-                    }}
-                  >
-                    {t("licensing.activation.location_city_label")}
-                  </label>
-                  <input
-                    type="text"
-                    className="pos-input"
-                    value={locationCity}
-                    onChange={(e) => setLocationCity(e.currentTarget.value)}
-                    disabled={isLoading}
-                    aria-label={t("licensing.activation.location_city_aria")}
-                  />
-                </div>
-                <div className="flex-1">
-                  <label
-                    className="mb-pos-xs mt-pos-sm block text-body-sm font-medium"
-                    style={{
-                      color: "color-mix(in srgb, var(--color-ink) 70%, transparent)",
-                    }}
-                  >
-                    {t("licensing.activation.location_region_label")}
-                  </label>
-                  <input
-                    type="text"
-                    className="pos-input"
-                    value={locationRegion}
-                    onChange={(e) => setLocationRegion(e.currentTarget.value)}
-                    disabled={isLoading}
-                    aria-label={t("licensing.activation.location_region_aria")}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Error message */}
-          {errorMessage && (
-            <div
-              className="mt-pos-md rounded-pos px-pos-md py-pos-sm text-body-sm"
-              role="alert"
-              style={{
-                backgroundColor: "#FFEBEE",
-                border: "1px solid #D32F2F",
-                color: "#C62828",
-              }}
-            >
-              {errorMessage}
-            </div>
-          )}
-
-          {/* Success message */}
-          {successMessage && (
-            <div
-              className="mt-pos-md rounded-pos px-pos-md py-pos-sm text-body-sm"
-              role="status"
-              style={{
-                backgroundColor: "var(--color-urgency-surface)",
-                border: "1px solid var(--color-pharma)",
-                color: "var(--color-pharma)",
-              }}
-            >
-              {successMessage}
-            </div>
-          )}
-
-          {/* Submit button */}
-          <button
-            type="submit"
-            className="pos-button pos-button-primary mt-pos-lg w-full py-pos-md text-ui font-bold"
-            disabled={!canSubmit}
-            aria-busy={isLoading}
-          >
-            {isLoading
-              ? t("licensing.activation.activating")
-              : t("licensing.activation.activate")}
-          </button>
-        </form>
+        />
 
         {/* Footer help */}
         <p

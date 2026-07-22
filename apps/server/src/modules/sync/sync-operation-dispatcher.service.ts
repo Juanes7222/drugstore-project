@@ -14,6 +14,7 @@ import type { SyncQueueEntry } from './entities/sync-queue-entry.entity';
 import type { CreateSaleDto } from '@/modules/sales-pos/dto/create-sale.dto';
 import type { ConfirmSaleDto } from '@/modules/sales-pos/dto/confirm-sale.dto';
 import type { CreateClientDto } from '@/modules/clients/dto/create-client.dto';
+import type { UpdateClientDto } from '@/modules/clients/dto/update-client.dto';
 import type { CreateClientReturnDto } from '@/modules/sales-pos/dto/create-client-return.dto';
 import type { CreateInventoryAdjustmentDto } from '@/modules/inventory-lots/dto/create-inventory-adjustment.dto';
 import * as crypto from 'node:crypto';
@@ -61,6 +62,12 @@ export class SyncOperationDispatcherService {
           break;
         case 'CLIENT_CREATION':
           await this.handleClientCreation(entry);
+          break;
+        case 'CLIENT_UPDATE':
+          await this.handleClientUpdate(entry);
+          break;
+        case 'CLIENT_DEACTIVATE':
+          await this.handleClientDeactivate(entry);
           break;
         case 'CLIENT_RETURN':
           await this.handleClientReturn(entry);
@@ -272,6 +279,51 @@ export class SyncOperationDispatcherService {
       userId,
       localClientId,
     );
+  }
+
+  /**
+   * Replays a CLIENT_UPDATE by applying the update server-side.
+   *
+   * The payload must include `updateClientDto` (partial client fields to update)
+   * and `metadata.localClientId` identifying the client record to update.
+   * Uses the same conflict-resolution strategy as CLIENT_CREATION: last writer
+   * wins for concurrent offline edits.
+   *
+   * A ClientNotFoundException is thrown if the localClientId does not match
+   * any server-side record.
+   */
+  private async handleClientUpdate(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+    const userId = payload.userId as string;
+    const metadata = payload.metadata as Record<string, unknown> | undefined;
+    const clientId = (payload.clientId ?? metadata?.localClientId) as string;
+    const updateClientDto = payload.updateClientDto as unknown as UpdateClientDto;
+
+    await this.clientsService.update(clientId, updateClientDto, userId);
+  }
+
+  /**
+   * Replays a CLIENT_DEACTIVATE by soft-deleting the client server-side.
+   *
+   * The payload must include `deactivateClientDto.clientId` identifying the
+   * client to deactivate. Sets `isActive: false` on the Client record.
+   *
+   * A ClientNotFoundException is thrown if the client does not exist.
+   */
+  private async handleClientDeactivate(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+    const userId = payload.userId as string;
+    const deactivateClientDto = payload.deactivateClientDto as Record<string, unknown> | undefined;
+    const clientId = (deactivateClientDto?.clientId ?? payload.clientId) as string;
+
+    await this.clientsService.findById(clientId);
+    await this.prisma.client.update({
+      where: { id: clientId },
+      data: {
+        isActive: false,
+        updatedById: userId,
+      },
+    });
   }
 
   /**

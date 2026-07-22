@@ -10,7 +10,7 @@ const PendingSessionSchema = z.object({
   offlineTokenJwt: z.string().min(1),
   workstationFingerprint: z.string().min(1),
   createdAt: z.string().datetime(),
-  lastActiveAt: z.string().datetime(),
+  lastActivityAt: z.string().datetime(),
 });
 
 export const BlessingRequestSchema = z.object({
@@ -24,7 +24,7 @@ export class BlessingRequestDto implements z.infer<typeof BlessingRequestSchema>
     offlineTokenJwt: string;
     workstationFingerprint: string;
     createdAt: string;
-    lastActiveAt: string;
+    lastActivityAt: string;
   }>;
 }
 

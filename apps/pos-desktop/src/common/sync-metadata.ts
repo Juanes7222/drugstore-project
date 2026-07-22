@@ -2,15 +2,16 @@
  * Persistent sync-timestamp store.
  *
  * Keeps the last-successful-sync timestamp for every pull-based sync
- * operation (catalog, inventory lots, clients, …) in a single `localStorage`
- * key so a reader can query any field without caring about which module
- * does the writing.
+ * operation (catalog, inventory lots, clients, client-classifications, …)
+ * in a single `localStorage` key so a reader can query any field without
+ * caring about which module does the writing.
  *
  * Fields
  * ------
  * - `catalogLastSyncedAt` – written by `CatalogSyncService.pullCatalog()`
  * - `lotsLastSyncedAt` – written by `LotSyncService.pullLots()`
  * - `clientsLastSyncedAt` – written by `ClientPullService.pullClients()`
+ * - `classificationsLastSyncedAt` – written by `ClientPullService.pullClassifications()`
  */
 
 const STORAGE_KEY = 'pharmacy_sync_metadata';
@@ -19,12 +20,14 @@ interface SyncMetadataRecord {
   catalogLastSyncedAt: string | null;
   lotsLastSyncedAt: string | null;
   clientsLastSyncedAt: string | null;
+  classificationsLastSyncedAt: string | null;
 }
 
 const DEFAULTS: SyncMetadataRecord = {
   catalogLastSyncedAt: null,
   lotsLastSyncedAt: null,
   clientsLastSyncedAt: null,
+  classificationsLastSyncedAt: null,
 };
 
 /**
@@ -107,5 +110,22 @@ export const getClientsLastSyncedAt = (): string | null => {
 export const setClientsLastSyncedAt = (iso: string): void => {
   const record = readSyncMetadata();
   record.clientsLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+/**
+ * Return the ISO-8601 timestamp of the last successful classification sync,
+ * or `null` if it has never been performed.
+ */
+export const getClassificationsLastSyncedAt = (): string | null => {
+  return readSyncMetadata().classificationsLastSyncedAt;
+};
+
+/**
+ * Persist a new top-of-sync timestamp for the classification puller.
+ */
+export const setClassificationsLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.classificationsLastSyncedAt = iso;
   writeSyncMetadata(record);
 };

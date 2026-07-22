@@ -31,7 +31,7 @@ export interface BlessingRequest {
   offlineTokenJwt: string;
   workstationFingerprint: string;
   createdAt: string;        // ISO date
-  lastActiveAt: string;     // ISO date
+  lastActivityAt: string;     // ISO date
 }
 
 export interface BlessingResult {

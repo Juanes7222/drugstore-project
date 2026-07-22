@@ -9,3 +9,4 @@ export { OperationalInvoiceDetailPanel } from "./operational-invoice-detail-pane
 export { AdjustmentHistoryPanel } from "./adjustment-history-panel";
 export { AdjustmentCreationModal } from "./adjustment-creation-modal";
 export { CashierOperationalView } from "./cashier-operational-view";
+export { FiscalHeader } from "./fiscal-header";

@@ -111,3 +111,67 @@ export interface ProductFormFieldRequirements {
   therapeuticIndication: FieldVisibility;
   invimaRegistry: FieldVisibility;
 }
+
+// ---------------------------------------------------------------------------
+// Bridge type from service output → DisplayProduct
+// ---------------------------------------------------------------------------
+
+/** Raw shape returned by productService.listProducts — mapped to DisplayProduct. */
+export interface RawProduct extends Record<string, unknown> {
+  id: string;
+  internalCode: string;
+  commercialName: string;
+  genericName: string;
+  activePrinciple: string;
+  currentTaxSchemeId?: string | null;
+  concentration: string | null;
+  concentrationUnit: string | null;
+  laboratory: string;
+  saleType: SaleType;
+  minimumStock: number;
+  isActive: boolean;
+  invimaRegistry: string | null;
+  atcCode: string | null;
+  categoryId: string | null;
+  pharmaceuticalFormId: string | null;
+  therapeuticIndication: string | null;
+  storageConditions: string | null;
+  internalNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  barcodes: Array<{
+    id: string;
+    barcode: string;
+    barcodeType: string;
+    isPrimary: boolean;
+  }>;
+  currentPrice: string | null;
+}
+
+export function mapToDisplayProduct(raw: RawProduct): DisplayProduct {
+  return {
+    id: raw.id,
+    internalCode: raw.internalCode,
+    commercialName: raw.commercialName,
+    genericName: raw.genericName,
+    activePrinciple: raw.activePrinciple,
+    concentration: raw.concentration,
+    concentrationUnit: raw.concentrationUnit,
+    laboratory: raw.laboratory,
+    saleType: raw.saleType,
+    minimumStock: raw.minimumStock,
+    isActive: raw.isActive,
+    invimaRegistry: raw.invimaRegistry,
+    atcCode: raw.atcCode,
+    categoryId: raw.categoryId,
+    pharmaceuticalFormId: raw.pharmaceuticalFormId,
+    therapeuticIndication: raw.therapeuticIndication,
+    storageConditions: raw.storageConditions,
+    internalNotes: raw.internalNotes,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
+    barcodes: raw.barcodes,
+    currentPrice: raw.currentPrice,
+    currentTaxSchemeId: raw.currentTaxSchemeId ?? null,
+  };
+}

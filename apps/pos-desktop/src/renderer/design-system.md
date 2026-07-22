@@ -548,3 +548,51 @@ would interrupt the high-throughput scan rhythm.
   that keyboard actions at 100+/day should be instant).
 - Respects `prefers-reduced-motion`: only the opacity transition remains,
   no scale/border change.
+
+---
+
+## Clients Module (added 2026-07-21)
+
+The clients module was redesigned from a basic inline form/table into a
+polished management interface with motion, icon-enhanced buttons,
+toast notifications, a slide‑in edit panel, and an overlay delete dialog.
+
+### Design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Slide‑in edit panel** (right side, 400px max) | Keeps the table visible while editing — the cashier can reference client data without closing/reopening. Uses `motion` spring animation for natural feel. |
+| **Overlay delete dialog** via `@radix-ui/react-dialog` | Proper focus‑trapping, `Esc` to close, ARIA `role="dialog"`. Matches the weight of a destructive action — the simple inline banner was too easy to accidentally confirm. |
+| **Toast notifications** via `sileo` + `@/utils/notify` | Replaces inline success/error banners. Toasts appear at bottom‑right, auto‑dismiss after 4–8s, and never interrupt the search/edit flow. Palette‑mapped per the existing Sileo theme section. |
+| **Lucide icons on all buttons** | Icons (`Plus`, `Pencil`, `Trash2`, `RefreshCw`, `Search`, `X`, `Check`, `User`, `AlertTriangle`) give visual anchors that text alone lacks — critical in a fast‑paced POS where the cashier glances at button shapes. |
+| **Staggered row appear animation** | Rows fade in with a 30ms stagger (`motion` `variants` + `custom` index). Barely perceptible at <5 rows, but keeps the list from appearing all‑at‑once when many clients load. Respects `prefersReducedMotion`. |
+| **Action buttons hidden until hover/focus** | Edit and Delete icon‑buttons are `opacity-0` by default, shown on `group-hover:opacity-100` and `focus-within:opacity-100`. Keeps the table visually clean; the cashier's muscle memory learns exactly where actions live. |
+| **Initial avatar circle** | Each row shows the first letter of the client's name in a Pharma‑Teal‑tinted circle. Adds visual differentiation without loading images — a pure‑CSS solution that works offline. |
+| **Table head stays sticky** | `sticky top-0` on `<thead>` ensures column labels remain visible when scrolling through many results. A 2px Pharma‑Teal bottom border separates head from body. |
+
+### Form animation
+
+The create form appears inline with an opacity + translateY animation
+(0.25s easeOut). The edit form slides in from the right with a spring
+(damping: 28, stiffness: 300). Both use `AnimatePresence` for clean
+exit transitions. `prefers-reduced-motion` collapses all to instant.
+
+### Empty states
+
+Three distinct empty states, each with an illustrated icon circle:
+
+1. **Before first search** (`hasLoaded=false`): `Users` icon in muted circle.
+2. **No results** (`hasLoaded=true, results=0`): `SearchX` icon in urgency‑tinted circle.
+3. **Loading** (`isSearching=true`): `Loader2` spinner in Pharma Teal.
+
+### Accessibility
+
+- Delete dialog is a `@radix-ui/react-dialog` with `Dialog.Title`,
+  `Dialog.Description`, and focus management.
+- Search input has `aria-label` and a clear button with `aria-label`.
+- Table action buttons have `aria-label` + `title`.
+- Row hover uses `whileHover` from `motion` for GPU‑accelerated
+  background color change (no JS‑driven hover).
+- All animations respect `prefers-reduced-motion` via `useReducedMotion()`.<｜end▁of▁thinking｜>
+
+<｜｜DSML｜｜parameter name="filePath" string="true">C:\Users\juanb\Documents\GitHub\drugstore-project\apps\pos-desktop\src\renderer\design-system.md

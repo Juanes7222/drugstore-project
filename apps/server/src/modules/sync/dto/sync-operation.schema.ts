@@ -23,6 +23,8 @@ export const SyncOperationSchema = z.object({
     'SALE_CONFIRMATION',
     'SHIFT_CLOSURE',
     'CLIENT_CREATION',
+    'CLIENT_UPDATE',
+    'CLIENT_DEACTIVATE',
     'CLIENT_RETURN',
     'INVENTORY_ADJUSTMENT',
     'FISCAL_DOCUMENT_SYNC',

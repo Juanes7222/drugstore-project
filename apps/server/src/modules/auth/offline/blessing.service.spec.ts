@@ -77,7 +77,7 @@ function buildBlessingRequest(overrides: Partial<BlessingRequest> = {}): Blessin
     offlineTokenJwt: 'valid-offline-jwt-token',
     workstationFingerprint: 'fp-abc123def456',
     createdAt: '2026-06-01T10:00:00Z',
-    lastActiveAt: '2026-06-01T11:00:00Z',
+    lastActivityAt: '2026-06-01T11:00:00Z',
     ...overrides,
   };
 }

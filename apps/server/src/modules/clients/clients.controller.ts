@@ -100,6 +100,22 @@ export class ClientsController {
     return this.clientsService.registerConsent(id, dto, user.id);
   }
 
+  /**
+   * Soft-delete (deactivate) a client.
+   *
+   * Sets `isActive` to `false` and enqueues a CLIENT_DEACTIVATE sync
+   * operation so the change propagates to all POS workstations.
+   */
+  @Patch(':id/deactivate')
+  @Roles(RoleType.ADMIN, RoleType.MANAGER)
+  @Auditable({ action: AuditAction.UPDATE, module: SystemModule.CLIENTS, entityType: 'Client' })
+  async deactivate(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+  ): Promise<any> {
+    return this.clientsService.deactivate(id, user.id);
+  }
+
   @Patch(':id/classification')
   @Roles(RoleType.ADMIN)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.CLIENTS, entityType: 'Client' })

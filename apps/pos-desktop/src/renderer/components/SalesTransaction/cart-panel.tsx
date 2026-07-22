@@ -22,18 +22,21 @@ import { ClientSelector } from "./client-selector";
 import { CartLineItem } from "./cart-line-item";
 import { TotalsSummary } from "./totals-summary";
 import type { ClientSelection } from "../../hooks/use-sales-transaction";
+import type { CreateClientInput } from "../../../domain/clients";
 
 interface CartPanelProps {
   onCheckout: () => void;
   onSelectClient: (client: ClientSelection) => void;
   onClearClient: () => void;
+  onCreateClient?: (input: CreateClientInput) => Promise<ClientSelection>;
 }
 
 export const CartPanel: FC<CartPanelProps> = ({
   onCheckout,
   onSelectClient,
   onClearClient,
-}) => {
+  onCreateClient,
+}: CartPanelProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
 
@@ -61,6 +64,7 @@ export const CartPanel: FC<CartPanelProps> = ({
         selectedClient={selectedClient}
         onSelectClient={onSelectClient}
         onClearClient={onClearClient}
+        onCreateClient={onCreateClient}
       />
 
       {/* Divider after client */}

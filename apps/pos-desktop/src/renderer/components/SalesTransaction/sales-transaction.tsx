@@ -24,6 +24,7 @@ export const SalesTransaction: FC = () => {
     handleCheckout,
     handleSelectClient,
     handleClearClient,
+    handleCreateClient,
   } = useSalesTransaction();
 
   return (
@@ -36,6 +37,7 @@ export const SalesTransaction: FC = () => {
         onCheckout={handleCheckout}
         onSelectClient={handleSelectClient}
         onClearClient={handleClearClient}
+        onCreateClient={handleCreateClient}
       />
 
       <RestrictedConfirmationDialog

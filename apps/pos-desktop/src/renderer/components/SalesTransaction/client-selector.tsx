@@ -20,18 +20,23 @@ import { useTranslation } from "react-i18next";
 import { useFieldRequirementFor } from "../../../domain/config/use-field-requirement";
 import { useClientsService } from "../common/service-context";
 import type { ClientSearchResult } from "../../../domain/clients";
+import type { CreateClientInput } from "../../../domain/clients";
 import type { ClientSelection } from "../../hooks/use-sales-transaction";
+import { QuickClientForm } from "./quick-client-form";
 
 interface ClientSelectorProps {
   selectedClient: ClientSelection | null;
   onSelectClient: (client: ClientSelection) => void;
   onClearClient: () => void;
+  /** When provided, enables quick client creation from the search dropdown. */
+  onCreateClient?: (input: CreateClientInput) => Promise<ClientSelection>;
 }
 
 export const ClientSelector: FC<ClientSelectorProps> = ({
   selectedClient,
   onSelectClient,
   onClearClient,
+  onCreateClient,
 }) => {
   const clientsService = useClientsService();
   const clientRequirement = useFieldRequirementFor("clientRequired");
@@ -46,6 +51,7 @@ export const ClientSelector: FC<ClientSelectorProps> = ({
       selectedClient={selectedClient}
       onSelectClient={onSelectClient}
       onClearClient={onClearClient}
+      onCreateClient={onCreateClient}
       clientsService={clientsService}
       clientRequirement={clientRequirement}
     />
@@ -60,6 +66,7 @@ interface ClientSelectorInnerProps {
   selectedClient: ClientSelection | null;
   onSelectClient: (client: ClientSelection) => void;
   onClearClient: () => void;
+  onCreateClient?: (input: CreateClientInput) => Promise<ClientSelection>;
   clientsService: {
     search: (query?: string) => Promise<ClientSearchResult[]>;
   };
@@ -70,6 +77,7 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
   selectedClient,
   onSelectClient,
   onClearClient,
+  onCreateClient,
   clientsService,
   clientRequirement,
 }) => {
@@ -81,6 +89,25 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Quick-create form state
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createFormData, setCreateFormData] = useState<CreateClientInput>({
+    fullName: "",
+    identificationType: "CC",
+    identificationNumber: "",
+    email: "",
+    phone: "",
+    address: "",
+    municipality: "",
+    department: "",
+  });
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const createFormRef = useRef<HTMLDivElement>(null);
+
+  // Derived: does the current query look like a document number?
+  const isQueryNumeric = /^\d+$/.test(query.trim());
 
   // Search effect
   useEffect(() => {
@@ -144,13 +171,62 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
         event.preventDefault();
         handleSelect(results[focusedIndex]);
       } else if (event.key === "Escape") {
-        setIsOpen(false);
-        setQuery("");
-        setResults([]);
+        if (showCreateForm) {
+          setShowCreateForm(false);
+          setCreateError(null);
+        } else {
+          setIsOpen(false);
+          setQuery("");
+          setResults([]);
+        }
       }
     },
-    [results, focusedIndex, handleSelect],
+    [results, focusedIndex, handleSelect, showCreateForm],
   );
+
+  /** Open the quick-create form, pre-filling fields from the search query. */
+  const handleStartCreate = useCallback(() => {
+    const trimmed = query.trim();
+    setCreateFormData({
+      fullName: isQueryNumeric ? "" : trimmed,
+      identificationType: "CC",
+      identificationNumber: isQueryNumeric ? trimmed : "",
+      email: "",
+      phone: "",
+      address: "",
+      municipality: "",
+      department: "",
+    });
+    setCreateError(null);
+    setShowCreateForm(true);
+    // Small delay so the DOM renders before focusing the first input
+    setTimeout(() => {
+      createFormRef.current?.querySelector<HTMLInputElement>("input")?.focus();
+    }, 50);
+  }, [query, isQueryNumeric]);
+
+  /** Submit the quick-create form, then auto-select the new client. */
+  const handleSubmitCreate = useCallback(async () => {
+    if (!onCreateClient) return;
+    const trimmed = createFormData.fullName.trim();
+    if (!trimmed || !createFormData.identificationNumber.trim()) return;
+
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      await onCreateClient(createFormData);
+      // The hook already dispatches setClient, so we just close the form
+      setShowCreateForm(false);
+      setIsOpen(false);
+      setQuery("");
+      setResults([]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCreateError(message);
+    } finally {
+      setIsCreating(false);
+    }
+  }, [onCreateClient, createFormData]);
 
   // If a client is already selected, show the selected chip
   if (selectedClient) {
@@ -261,8 +337,10 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={() => {
-                // Small delay to allow click on result before closing
-                setTimeout(() => setIsOpen(false), 200);
+                // Keep dropdown open while the create form is showing
+                setTimeout(() => {
+                  if (!showCreateForm) setIsOpen(false);
+                }, 200);
               }}
               placeholder={t("sales.client.search_placeholder")}
               aria-label={t("sales.client.search_placeholder")}
@@ -283,6 +361,43 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
                   "color-mix(in srgb, var(--color-ink) 12%, transparent)",
               }}
             >
+              {/* Create-new-client at TOP — always visible first */}
+              {onCreateClient && (
+                <>
+                  <button
+                    type="button"
+                    onMouseDown={handleStartCreate}
+                    className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-body-sm font-semibold transition-colors hover:bg-pharma/5 sticky top-0 z-10"
+                    style={{
+                      color: "var(--color-pharma)",
+                      backgroundColor: "var(--color-panel)",
+                      borderBottom:
+                        results.length > 0
+                          ? "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)"
+                          : undefined,
+                    }}
+                  >
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 5v14" />
+                      <path d="M5 12h14" />
+                    </svg>
+                    <span>
+                      {t("sales.client.create_new", { query: query.trim() })}
+                    </span>
+                  </button>
+                </>
+              )}
+
               {results.map((client, index) => (
                 <button
                   key={client.id}
@@ -340,18 +455,66 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
             </div>
           )}
 
-          {/* Empty state */}
+          {/* Empty state — offer creation when onCreateClient is available */}
           {query.trim() && !isLoading && results.length === 0 && (
             <div
-              className="absolute left-0 right-0 top-full z-30 mt-1 rounded-pos border bg-panel px-3 py-2 text-body-sm shadow-pos"
+              className="absolute left-0 right-0 top-full z-30 mt-1 rounded-pos border bg-panel shadow-pos"
               style={{
                 borderColor:
                   "color-mix(in srgb, var(--color-ink) 12%, transparent)",
-                color:
-                  "color-mix(in srgb, var(--color-ink) 50%, transparent)",
               }}
             >
-              {t("sales.client.no_results")}
+              {onCreateClient ? (
+                <div className="flex flex-col">
+                  <p
+                    className="px-3 py-2 text-body-sm"
+                    style={{
+                      color:
+                        "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                    }}
+                  >
+                    {t("sales.client.no_results")}
+                  </p>
+                  <button
+                    type="button"
+                    onMouseDown={handleStartCreate}
+                    className="flex w-full items-center gap-2 border-t px-3 py-2 text-left text-body-sm font-medium transition-colors hover:bg-pharma/5"
+                    style={{
+                      borderColor:
+                        "color-mix(in srgb, var(--color-ink) 8%, transparent)",
+                      color: "var(--color-pharma)",
+                    }}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 5v14" />
+                      <path d="M5 12h14" />
+                    </svg>
+                    <span>
+                      {t("sales.client.create_new", { query: query.trim() })}
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                <p
+                  className="px-3 py-2 text-body-sm"
+                  style={{
+                    color:
+                      "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                  }}
+                >
+                  {t("sales.client.no_results")}
+                </p>
+              )}
             </div>
           )}
 
@@ -366,6 +529,27 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
               }}
             >
               {t("common.loading")}
+            </div>
+          )}
+
+          {/* Quick-create form */}
+          {showCreateForm && onCreateClient && (
+            <div
+              ref={createFormRef}
+              className="absolute left-0 right-0 top-full z-40 mt-1 rounded-pos border bg-panel shadow-pos-lg"
+              style={{
+                borderColor:
+                  "color-mix(in srgb, var(--color-ink) 12%, transparent)",
+              }}
+            >
+              <QuickClientForm
+                data={createFormData}
+                onChange={setCreateFormData}
+                onSubmit={handleSubmitCreate}
+                onCancel={() => { setShowCreateForm(false); setCreateError(null); }}
+                isSubmitting={isCreating}
+                error={createError}
+              />
             </div>
           )}
         </div>
