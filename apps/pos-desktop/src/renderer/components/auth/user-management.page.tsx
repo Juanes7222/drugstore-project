@@ -6,20 +6,24 @@
  *
  * Lists users with avatar, display name, role, status, last login.
  * Filter by role, status.
- * Per-user actions: edit, disable, reset PIN.
+ * Per-user actions: disable, enable, reset PIN.
  *
  * @category Page
  */
 
 import { type FC, useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { notify } from "@/utils/notify";
 import { useLocalSessionStore, hasMinRole } from "../../../domain/auth/local-session.store";
 import { createAuthService, type AuthService } from "../../../domain/auth/auth.service";
 import { API_BASE_URL } from "@infra/config";
 import { RoleType } from "@pharmacy/shared-types";
 import { UserTable } from "./user-table";
 import { CreateUserModal } from "./create-user-modal";
-import type { UserRow, NewUserForm } from "./user-management.types";
+import { EditUserModal } from "./edit-user-modal";
+import { DeleteUserDialog } from "./delete-user-dialog";
+import { SetPinDialog } from "./set-pin-dialog";
+import type { UserRow, NewUserForm, EditUserFormData } from "./user-management.types";
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -38,11 +42,11 @@ export const UserManagementPage: FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [actionResult, setActionResult] = useState<string | null>(null);
-
-  // Create-user modal
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editTarget, setEditTarget] = useState<UserRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
+  const [pinTarget, setPinTarget] = useState<UserRow | null>(null);
+  const [isSettingPin, setIsSettingPin] = useState(false);
 
   // ------------------------------------------------------------------
   // Data fetching
@@ -50,16 +54,18 @@ export const UserManagementPage: FC = () => {
 
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
-    setError(null);
     try {
+      // DELETED is a virtual status — server uses `deleted` query param
+      const isDeletedFilter = statusFilter === "DELETED";
       const result = await authService.listUsers({
         role: roleFilter || undefined,
-        status: statusFilter || undefined,
+        status: isDeletedFilter ? undefined : statusFilter || undefined,
+        deleted: isDeletedFilter ? "true" : undefined,
       });
       setUsers(result.users as UserRow[]);
       setTotal(result.total);
     } catch {
-      setError(t("user_management.load_error"));
+      notify.error({ title: t("user_management.load_error") });
     } finally {
       setIsLoading(false);
     }
@@ -83,10 +89,10 @@ export const UserManagementPage: FC = () => {
         initialPin: data.initialPin || undefined,
       });
       setShowCreateModal(false);
-      setActionResult(t("user_management.user_created"));
+      notify.success({ title: t("user_management.user_created") });
       void fetchUsers();
     } catch {
-      setError(t("user_management.create_error"));
+      notify.error({ title: t("user_management.create_error") });
     }
   };
 
@@ -95,24 +101,60 @@ export const UserManagementPage: FC = () => {
       const target = users.find((u) => u.id === userId);
       if (target?.isActive) {
         await authService.disableUser(userId);
-        setActionResult(t("user_management.user_disabled"));
+        notify.success({ title: t("user_management.user_disabled") });
       } else {
         await authService.enableUser(userId);
-        setActionResult(t("user_management.user_enabled"));
+        notify.success({ title: t("user_management.user_enabled") });
       }
       void fetchUsers();
     } catch {
-      setError(t("user_management.disable_error"));
+      notify.error({ title: t("user_management.disable_error") });
     }
   };
 
-  const handleResetPin = async (userId: string) => {
+  const handleResetPin = (userId: string) => {
+    const target = users.find((u) => u.id === userId);
+    if (target) setPinTarget(target);
+  };
+
+  const handleSetPinSubmit = async (newPin: string) => {
+    if (!pinTarget) return;
+    setIsSettingPin(true);
     try {
-      await authService.resetUserPin(userId);
-      setActionResult(t("user_management.pin_reset"));
+      await authService.resetUserPin(pinTarget.id, newPin);
+      setPinTarget(null);
+      notify.success({ title: t("user_management.pin_updated") });
       void fetchUsers();
     } catch {
-      setError(t("user_management.reset_pin_error"));
+      notify.error({ title: t("user_management.reset_pin_error") });
+    } finally {
+      setIsSettingPin(false);
+    }
+  };
+
+  const handleEditUser = async (userId: string, data: EditUserFormData) => {
+    try {
+      await authService.updateUser(userId, {
+        displayName: data.displayName || undefined,
+        email: data.email || undefined,
+        role: data.role || undefined,
+      });
+      setEditTarget(null);
+      notify.success({ title: t("user_management.user_updated") });
+      void fetchUsers();
+    } catch {
+      notify.error({ title: t("user_management.update_error") });
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      await authService.deleteUser(userId);
+      setDeleteTarget(null);
+      notify.success({ title: t("user_management.user_deleted") });
+      void fetchUsers();
+    } catch {
+      notify.error({ title: t("user_management.delete_error") });
     }
   };
 
@@ -123,9 +165,7 @@ export const UserManagementPage: FC = () => {
   if (!session || !hasMinRole(session, RoleType.MANAGER)) {
     return (
       <div className="flex h-full items-center justify-center">
-        <p style={{ color: "var(--color-ink-muted)" }}>
-          {t("user_management.no_permission")}
-        </p>
+        <p className="text-ink-muted text-sm">{t("user_management.no_permission")}</p>
       </div>
     );
   }
@@ -135,16 +175,11 @@ export const UserManagementPage: FC = () => {
   // ------------------------------------------------------------------
 
   return (
-    <div
-      className="flex h-full flex-col p-pos-md"
-      style={{ backgroundColor: "var(--color-surface)" }}
-    >
+    <div className="flex h-full flex-col bg-surface p-pos-md">
       <UserTable
         users={users}
         total={total}
         isLoading={isLoading}
-        error={error}
-        actionResult={actionResult}
         currentUserId={session.userId}
         roleFilter={roleFilter}
         statusFilter={statusFilter}
@@ -154,14 +189,40 @@ export const UserManagementPage: FC = () => {
         onAddUser={() => setShowCreateModal(true)}
         onDisable={handleDisable}
         onResetPin={handleResetPin}
-        onClearActionResult={() => setActionResult(null)}
-        onClearError={() => setError(null)}
+        onEdit={setEditTarget}
+        onDelete={setDeleteTarget}
       />
 
       <CreateUserModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onSubmit={handleCreateUser}
+      />
+
+      {editTarget !== null && (
+        <EditUserModal
+          isOpen
+          user={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSubmit={handleEditUser}
+        />
+      )}
+
+      {deleteTarget !== null && (
+        <DeleteUserDialog
+          isOpen
+          user={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={handleDeleteUser}
+        />
+      )}
+
+      <SetPinDialog
+        isOpen={pinTarget !== null}
+        userName={pinTarget?.displayName ?? ""}
+        isSubmitting={isSettingPin}
+        onClose={() => setPinTarget(null)}
+        onSubmit={handleSetPinSubmit}
       />
     </div>
   );

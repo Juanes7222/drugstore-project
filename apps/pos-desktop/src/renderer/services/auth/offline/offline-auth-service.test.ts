@@ -33,6 +33,8 @@ const { mockHttpClient, mockSecureStorageInstance, mockStoreMap } = vi.hoisted((
     post: vi.fn(),
     postWithAuth: vi.fn(),
     getWithAuth: vi.fn(),
+    patchWithAuth: vi.fn(),
+    deleteWithAuth: vi.fn(),
   };
 
   const mockSecureStorageInstance: SecureStorage = {

@@ -677,6 +677,12 @@ export class AuthService {
       SessionRevocationReason.PASSWORD_CHANGED,
     );
 
+    // Invalidate offline tokens so POS workstations force re-login
+    await this.offlineTokenService.revokeAllUserTokens(
+      userId,
+      'PASSWORD_CHANGED',
+    );
+
     await this.auditService.log(AuditEvent.PASSWORD_CHANGED, {
       actorId: userId,
       actorRole: user.role,
@@ -707,6 +713,12 @@ export class AuthService {
         mustChangePassword: false,
       },
     });
+
+    // Invalidate offline tokens so other POS sessions force re-login
+    await this.offlineTokenService.revokeAllUserTokens(
+      userId,
+      'PIN_CHANGED',
+    );
 
     await this.auditService.log(AuditEvent.PIN_CHANGED, {
       actorId: userId,

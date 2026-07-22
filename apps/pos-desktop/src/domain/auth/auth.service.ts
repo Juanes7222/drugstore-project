@@ -12,7 +12,7 @@
  */
 import { RoleType } from '@pharmacy/shared-types';
 import { useLocalSessionStore, LocalSession } from './local-session.store';
-import { InvalidCredentialsException, NoActiveSessionException, InsufficientRoleException } from './exceptions';
+import { NoActiveSessionException, InsufficientRoleException } from './exceptions';
 import { createAuthHttpClient, AuthHttpClient } from './auth-http-client';
 import { createSecureStorage } from '../../infrastructure/secure-storage';
 import { createOfflineAuthService } from '../../renderer/services/auth/offline/offline-auth-service';
@@ -360,6 +360,7 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
       role?: string;
       status?: string;
       locationId?: string;
+      deleted?: string;
       limit?: number;
       offset?: number;
     }): Promise<{ users: any[]; total: number }> => {
@@ -370,6 +371,7 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
       if (filters?.role) params.set('role', filters.role);
       if (filters?.status) params.set('status', filters.status);
       if (filters?.locationId) params.set('locationId', filters.locationId);
+      if (filters?.deleted) params.set('deleted', filters.deleted);
       if (filters?.limit) params.set('limit', String(filters.limit));
       if (filters?.offset) params.set('offset', String(filters.offset));
 
@@ -416,14 +418,59 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
     },
 
     /**
-     * Reset a user's PIN (OWNER/MANAGER only). Returns the new PIN.
+     * Reset a user's PIN (OWNER/MANAGER only).
+     *
+     * When `newPin` is provided the server uses it directly (after validation);
+     * when omitted the server generates a random one.
      */
-    resetUserPin: async (userId: string): Promise<{ newPin: string; message: string }> => {
+    resetUserPin: async (userId: string, newPin?: string): Promise<{ newPin: string; message: string }> => {
       const currentSession = useLocalSessionStore.getState().session;
       if (!currentSession) throw new NoActiveSessionException();
-      return http.postWithAuth<{ newPin: string; message: string }>(
+
+      const result = await http.postWithAuth<{ newPin: string; message: string }>(
         `/users/${userId}/reset-pin`,
-        {},
+        { newPin },
+        currentSession.accessToken,
+      );
+
+      // Clear cached offline credentials so the old offline token cannot be
+      // used to bypass server-side PIN validation on the next login attempt.
+      clearCachedCredentials(userId).catch((err) => {
+        console.warn('Failed to clear cached offline credentials:', err);
+      });
+
+      return result;
+    },
+
+    /**
+     * Update a user's profile (OWNER/MANAGER only).
+     * All fields optional — only provided fields are updated.
+     */
+    updateUser: async (
+      userId: string,
+      params: {
+        displayName?: string;
+        email?: string;
+        role?: string;
+      },
+    ): Promise<{ message: string }> => {
+      const currentSession = useLocalSessionStore.getState().session;
+      if (!currentSession) throw new NoActiveSessionException();
+      return http.patchWithAuth<{ message: string }>(
+        `/users/${userId}`,
+        params,
+        currentSession.accessToken,
+      );
+    },
+
+    /**
+     * Delete a user (OWNER only). The caller cannot delete themselves.
+     */
+    deleteUser: async (userId: string): Promise<{ message: string }> => {
+      const currentSession = useLocalSessionStore.getState().session;
+      if (!currentSession) throw new NoActiveSessionException();
+      return http.deleteWithAuth<{ message: string }>(
+        `/users/${userId}`,
         currentSession.accessToken,
       );
     },
@@ -522,6 +569,7 @@ export interface AuthService {
     role?: string;
     status?: string;
     locationId?: string;
+    deleted?: string;
     limit?: number;
     offset?: number;
   }): Promise<{ users: any[]; total: number }>;
@@ -532,7 +580,15 @@ export interface AuthService {
 
   unlockUser(userId: string): Promise<{ message: string }>;
 
-  resetUserPin(userId: string): Promise<{ newPin: string; message: string }>;
+  resetUserPin(userId: string, newPin?: string): Promise<{ newPin: string; message: string }>;
+
+  updateUser(userId: string, params: {
+    displayName?: string;
+    email?: string;
+    role?: string;
+  }): Promise<{ message: string }>;
+
+  deleteUser(userId: string): Promise<{ message: string }>;
 
   getPendingStepUpRequests(): Promise<any[]>;
 
@@ -590,4 +646,23 @@ async function cacheOfflineCredentials(
   const secureStorage = await createSecureStorage();
   const offlineService = createOfflineAuthService({ baseUrl, secureStorage });
   await offlineService.updateCachedCredentials(response, workstationId);
+}
+
+/**
+ * Clear cached offline credentials for a user from the local secure storage.
+ *
+ * Called after a PIN/password reset so the old offline token cannot be used
+ * to bypass server-side credential validation. Removing the cached offline
+ * token forces `attemptOfflineLogin` to throw NoOfflineCredentialsException.
+ */
+async function clearCachedCredentials(userId: string): Promise<void> {
+  const secureStorage = await createSecureStorage();
+  const available = await secureStorage.isAvailable();
+  if (!available) return;
+
+  await Promise.all([
+    secureStorage.removeItem(`offline_token_${userId}`),
+    secureStorage.removeItem(`offline_token_expiry_${userId}`),
+    secureStorage.removeItem(`credential_cache_${userId}`),
+  ]);
 }

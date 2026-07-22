@@ -514,6 +514,68 @@ cart panel. Behaviour depends on the tenant config's `clientRequired` field:
 
 ---
 
+## User Management (added 2026-07-22)
+
+A scan-friendly table for managing pharmacy staff. Designed for the manager/owner
+who needs to see the team's status, roles, and last-login at a glance.
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Usuarios                              [↻] [+ Agregar usuario]│
+│                                                               │
+│  [Todos los roles ▼]  [Todos los estados ▼]                   │
+│                                                               │
+│  ┌──────────────────────────────────────────────────────────┐ │
+│  │  USUARIO          ROL            ESTADO    ÚLT. INGRESO  │ │
+│  │ ──────────────────────────────────────────────────────── │ │
+│  │  ◉ Pedro Contreras  CONTADOR   ● Activo   Nunca         │ │
+│  │    pedro.contreras                                       │ │
+│  │                               [Desactivar] [Reset PIN]   │ │
+│  │ ──────────────────────────────────────────────────────── │ │
+│  │  ◉ María Rodríguez  CAJERO     ● Activo   Nunca         │ │
+│  │    cashier1 · maria.r                                    │ │
+│  │                               [Desactivar] [Reset PIN]   │ │
+│  │ ──────────────────────────────────────────────────────── │ │
+│  │  ◉ Admin Sistema    DUEÑO      ● Activo   22/7/2026     │ │
+│  │    admin · admin@                                        │ │
+│  └──────────────────────────────────────────────────────────┘ │
+│  4 usuarios                                                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Role badges with distinct colors** | Each role type gets a unique semantic color (cashier=teal, manager=amber, owner=violet, accountant=slate, inventory=teal). The manager can instantly see the role distribution without reading the text. |
+| **Status pills with semantic colors** | Active=green, Disabled=gray, Locked=red. Color + text label — never color alone per WCAG. |
+| **Sticky table header** | Column labels remain visible when scrolling through many users. Backdrop blur ensures readability over scrolling content. |
+| **Action buttons visible always** | Unlike the clients module (where actions are hover-revealed), user management actions (disable, reset PIN) are always visible — they are infrequent operations that shouldn't require discovery. |
+| **Inline username + email** | Secondary line in muted caption keeps the row compact while showing all identifiers. |
+| **i18n for all role labels** | Role enums like `CASHIER`, `ACCOUNTANT` are translated via `t('roles.cashier')`, `t('roles.accountant')` — never displayed raw. The `translateRole()` helper in `user-management.helpers.ts` provides the mapping. |
+
+### Role badge color mapping
+
+| Role | Badge color |
+|------|-------------|
+| `CASHIER` | Pharma Teal `bg-pharma/10 text-pharma` |
+| `MANAGER` | Urgency Amber `bg-urgency/10 text-urgency` |
+| `OWNER`, `SAAS_ADMIN`, `ADMIN` | Restrict Violet `bg-restrict/10 text-restrict` |
+| `ACCOUNTANT` | Sync Slate `bg-sync/10 text-sync` |
+| `INVENTORY_ASSISTANT` | Pharma Teal `bg-pharma/10 text-pharma` |
+
+### Status pill colors
+
+| Status | Pill class |
+|--------|------------|
+| `ACTIVE` | `bg-success-container text-success` |
+| `DISABLED` | `bg-ink/8 text-ink-muted` |
+| `LOCKED` | `bg-error-container text-error` |
+
+---
+
 ## Help bar (added 2026-07-17)
 
 A low-visibility strip below the search input that exposes three keyboard

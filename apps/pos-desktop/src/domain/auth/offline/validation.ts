@@ -233,17 +233,46 @@ export async function verifyOfflineToken(
 // ---------------------------------------------------------------------------
 
 /**
- * Check whether a given JWT ID (`jti`) appears in the local revocation list.
+ * Check whether a given JWT ID (`jti`) appears in the local revocation list
+ * or if a user-level revocation marker exists that invalidates all tokens
+ * issued before the marker's timestamp.
+ *
+ * The server creates user-level markers (`user:${userId}:${timestamp}`) when
+ * a user's password or PIN is changed, disabling every offline token for that
+ * user regardless of its individual `jti`.
  *
  * @param jti             The JWT ID to look up.
  * @param revocationList  The current revocation list.
+ * @param issuedAt        Token's issued-at timestamp (unix seconds). When
+ *                        provided, user-level markers created *after* this
+ *                        time are considered a match.
+ * @param userId          The user ID to match against user-level markers.
  * @returns `true` if the token has been revoked.
  */
 export function isRevoked(
   jti: string,
   revocationList: RevocationListEntry[],
+  issuedAt?: number,
+  userId?: string,
 ): boolean {
-  return revocationList.some((entry) => entry.jti === jti);
+  // Direct jti match — the exact token was revoked
+  if (revocationList.some((entry) => entry.jti === jti)) {
+    return true;
+  }
+
+  // User-level revocation marker — invalidates all tokens for this user
+  // that were issued before the marker was created.
+  if (userId && issuedAt) {
+    const markerPrefix = `user:${userId}:`;
+    const markerFound = revocationList.some((entry) => {
+      if (!entry.jti.startsWith(markerPrefix)) return false;
+      // entry.revokedAt is a Date; compare against iat in seconds
+      return entry.revokedAt.getTime() / 1000 > issuedAt;
+    });
+    if (markerFound) return true;
+  }
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------

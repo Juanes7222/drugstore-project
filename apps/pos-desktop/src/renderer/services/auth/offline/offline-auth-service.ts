@@ -255,9 +255,9 @@ export function createOfflineAuthService(config: {
         throw new OfflineCredentialsExpiredException();
       }
 
-      // 6 & 7. Check revocation list
+      // 6 & 7. Check revocation list (exact jti + user-level markers)
       const revocationList = await getRevocationList(secureStorage);
-      if (isRevoked(claims.jti, revocationList)) {
+      if (isRevoked(claims.jti, revocationList, claims.iat, claims.sub)) {
         throw new OfflineTokenRevokedException();
       }
 

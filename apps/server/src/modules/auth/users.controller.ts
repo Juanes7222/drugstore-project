@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   Param,
   UseGuards,
@@ -12,6 +13,7 @@ import {
   ForbiddenException,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
@@ -32,6 +34,7 @@ import { PinService } from './services/pin.service';
 import { PasswordHasherService } from './services/password-hasher.service';
 import { SessionService } from './services/session.service';
 import { AuditService, AuditEvent } from './services/audit.service';
+import { OfflineTokenService } from './offline/offline-token.service';
 import { AuthService } from './auth.service';
 import {
   CreateUserSchema,
@@ -39,6 +42,7 @@ import {
   UpdateUserSchema,
   UpdateUserDto,
 } from './dto/create-user.dto';
+import { ResetPinSchema, ResetPinDto } from './dto/reset-pin.dto';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -51,6 +55,7 @@ export class UsersController {
     private readonly passwordHasher: PasswordHasherService,
     private readonly sessionService: SessionService,
     private readonly auditService: AuditService,
+    private readonly offlineTokenService: OfflineTokenService,
     private readonly authService: AuthService,
   ) {}
 
@@ -62,6 +67,7 @@ export class UsersController {
     @Query('role') roleFilter?: string,
     @Query('status') statusFilter?: string,
     @Query('locationId') locationId?: string,
+    @Query('deleted') deletedFilter?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
   ): Promise<{ users: unknown[]; total: number }> {
@@ -69,6 +75,14 @@ export class UsersController {
 
     if (roleFilter) where.role = roleFilter;
     if (statusFilter) where.status = statusFilter;
+
+    // Filter soft-deleted users by deletedAt
+    // default: hide deleted; ?deleted=true → only deleted; ?deleted=all → everything
+    if (deletedFilter === 'true') {
+      where.deletedAt = { not: null };
+    } else if (deletedFilter !== 'all') {
+      where.deletedAt = null;
+    }
 
     // Managers: restrict to their accessible locations
     if (user.role === RoleType.MANAGER) {
@@ -104,6 +118,7 @@ export class UsersController {
           lastLoginAt: true,
           createdAt: true,
           createdById: true,
+          deletedAt: true,
         },
         orderBy: { createdAt: 'desc' },
         take: limit ?? 50,
@@ -215,27 +230,28 @@ export class UsersController {
   async getUser(@CurrentUser() user: User, @Param('id') id: string) {
     const targetUser = await this.prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        displayName: true,
-        fullName: true,
-        email: true,
-        username: true,
-        role: true,
-        status: true,
-        isActive: true,
-        authMethod: true,
-        totpEnabled: true,
-        avatarUrl: true,
-        avatarColor: true,
-        failedLoginAttempts: true,
-        lockedUntil: true,
-        emailVerifiedAt: true,
-        lastLoginAt: true,
-        lastPasswordChangeAt: true,
-        mustChangePassword: true,
-        createdAt: true,
-        createdById: true,
+        select: {
+          id: true,
+          displayName: true,
+          fullName: true,
+          email: true,
+          username: true,
+          role: true,
+          status: true,
+          isActive: true,
+          authMethod: true,
+          totpEnabled: true,
+          avatarUrl: true,
+          avatarColor: true,
+          failedLoginAttempts: true,
+          lockedUntil: true,
+          emailVerifiedAt: true,
+          lastLoginAt: true,
+          lastPasswordChangeAt: true,
+          mustChangePassword: true,
+          createdAt: true,
+          createdById: true,
+          deletedAt: true,
         locationAccess: {
           select: { locationId: true },
         },
@@ -276,7 +292,25 @@ export class UsersController {
       changes.push('displayName');
     }
 
+    if (dto.email !== undefined) {
+      // null means clear the email; string means update
+      if (dto.email !== null) {
+        const existingUserWithEmail = await this.prisma.user.findUnique({
+          where: { email: dto.email },
+        });
+        if (existingUserWithEmail && existingUserWithEmail.id !== id) {
+          throw new ConflictException('Email is already in use');
+        }
+      }
+      updateData.email = dto.email;
+      changes.push(`email: ${targetUser.email} → ${dto.email ?? '(none)'}`);
+    }
+
     if (dto.role !== undefined) {
+      // Only OWNER can change roles
+      if (user.role !== RoleType.OWNER) {
+        throw new ForbiddenException('Only the owner can change user roles');
+      }
       updateData.role = dto.role;
       changes.push(`role: ${targetUser.role} → ${dto.role}`);
     }
@@ -325,6 +359,60 @@ export class UsersController {
     });
 
     return { id: updatedUser.id, ...updateData };
+  }
+
+  @Delete(':id')
+  @Roles(RoleType.OWNER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Soft-delete a user (owner only)' })
+  async deleteUser(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+  ): Promise<{ message: string }> {
+    if (user.id === id) {
+      throw new ForbiddenException('Cannot delete your own account');
+    }
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, username: true, role: true },
+    });
+    if (!targetUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Scramble email to free unique constraint for future users
+    const scrambledEmail =
+      targetUser.email !== null
+        ? `deleted-${Date.now()}-${targetUser.email}`
+        : null;
+
+    // Revoke all active sessions before soft-delete
+    await this.sessionService.revokeUserSessions(
+      id,
+      SessionRevocationReason.USER_DEACTIVATION,
+      user.id,
+    );
+
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        isActive: false,
+        status: UserStatus.DISABLED,
+        email: scrambledEmail,
+        deletedAt: new Date(),
+      },
+    });
+
+    await this.auditService.log(AuditEvent.USER_DELETED, {
+      actorId: user.id,
+      actorRole: user.role,
+      targetType: 'User',
+      targetId: id,
+      details: { role: targetUser.role },
+    });
+
+    return { message: 'User deleted' };
   }
 
   @Post(':id/disable')
@@ -433,13 +521,14 @@ export class UsersController {
   async resetPin(
     @CurrentUser() user: User,
     @Param('id') id: string,
+    @Body(new ZodValidationPipe(ResetPinSchema)) dto: ResetPinDto,
   ): Promise<{ newPin: string; message: string }> {
     const targetUser = await this.prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
       throw new NotFoundException('User not found');
     }
 
-    const newPin = this.pinService.generate();
+    const newPin = dto.newPin ?? this.pinService.generate();
     const pinHash = await this.pinService.hash(newPin);
 
     await this.prisma.user.update({
@@ -452,6 +541,10 @@ export class UsersController {
       SessionRevocationReason.PASSWORD_CHANGED,
       user.id,
     );
+
+    // Revoke all offline tokens so cached credentials on POS workstations
+    // are invalidated — forcing next login to validate against the server.
+    await this.offlineTokenService.revokeAllUserTokens(id, 'PIN_CHANGED');
 
     await this.auditService.log(AuditEvent.PIN_RESET, {
       actorId: user.id,

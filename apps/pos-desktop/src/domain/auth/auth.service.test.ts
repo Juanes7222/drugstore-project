@@ -16,6 +16,8 @@ const makeMockHttpClient = (): AuthHttpClient => ({
   post: vi.fn(),
   postWithAuth: vi.fn(),
   getWithAuth: vi.fn(),
+  patchWithAuth: vi.fn(),
+  deleteWithAuth: vi.fn(),
 });
 
 const makeLocalSession = (overrides: Partial<LocalSession> = {}): LocalSession => ({

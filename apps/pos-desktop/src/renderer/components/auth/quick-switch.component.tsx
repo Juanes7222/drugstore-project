@@ -143,10 +143,12 @@ export const QuickSwitch: FC = () => {
     setError(null);
     setPassword('');
 
-    // Always use password input for now. PIN keypad can be enabled once
-    // PIN credentials are configured server-side (the current seed data
-    // only has password hashes, no PIN hashes).
-    setSwitchState('password');
+    // Cashiers and Managers use PIN; Owners and Admins use password.
+    setSwitchState(
+      user.role === RoleType.CASHIER || user.role === RoleType.MANAGER
+        ? 'pin'
+        : 'password',
+    );
   }, []);
 
   const handleSwitchComplete = useCallback(async () => {
@@ -407,7 +409,8 @@ export const QuickSwitch: FC = () => {
                 </div>
               </div>
               <PinKeypad
-                length={6}
+                minLength={4}
+                maxLength={6}
                 onComplete={handlePinComplete}
                 error={error}
                 isLoading={isLoading}

@@ -69,15 +69,16 @@ export const SelectedUserCredential: FC<SelectedUserCredentialProps> = ({
   /**
    * Whether to show a PIN keypad instead of a password input.
    *
-   * Currently disabled by default because the server seed data only
-   * configures passwords for dev users (no PIN hashes are seeded).
-   * Set to `true` once PIN credentials are provisioned server-side.
+   * Cashiers and Managers authenticate via numeric PIN on the POS.
+   * Owners and Admins use a full password (longer, mixed-case).
    *
-   * TODO: make this configurable per-user after fetching user profile
-   * from the server, so the POS knows the available auth methods before
-   * prompting for credentials.
+   * The PIN must have been provisioned server-side (via `resetPin`
+   * endpoint or user creation with `initialPin`). If no PIN hash
+   * exists yet, the server returns `AUTH_INVALID_CREDENTIALS` and
+   * the error is surfaced to the user.
    */
-  const isPinUser = false;
+  const isPinUser =
+    user.role === RoleType.CASHIER || user.role === RoleType.MANAGER;
 
   const accentColor = getRoleAccent(user.role);
 

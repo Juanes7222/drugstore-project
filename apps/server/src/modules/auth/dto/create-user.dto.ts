@@ -22,14 +22,18 @@ export class CreateUserDto implements z.infer<typeof CreateUserSchema> {
 
 export const UpdateUserSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
-  role: z.enum(['MANAGER', 'CASHIER']).optional(),
+  email: z.string().email().optional().nullable(),
+  role: z
+    .enum(['MANAGER', 'CASHIER', 'ACCOUNTANT', 'INVENTORY_ASSISTANT'])
+    .optional(),
   locationIds: z.array(z.string()).optional(),
   isActive: z.boolean().optional(),
 });
 
 export class UpdateUserDto implements z.infer<typeof UpdateUserSchema> {
   displayName?: string;
-  role?: 'MANAGER' | 'CASHIER';
+  email?: string | null;
+  role?: 'MANAGER' | 'CASHIER' | 'ACCOUNTANT' | 'INVENTORY_ASSISTANT';
   locationIds?: string[];
   isActive?: boolean;
 }

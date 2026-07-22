@@ -16,6 +16,7 @@ export interface UserRow {
   lastLoginAt?: string | null;
   avatarUrl?: string | null;
   avatarColor?: string | null;
+  deletedAt?: string | null;
 }
 
 export interface NewUserForm {
@@ -24,4 +25,10 @@ export interface NewUserForm {
   email: string;
   role: "CASHIER" | "MANAGER";
   initialPin: string;
+}
+
+export interface EditUserFormData {
+  displayName: string;
+  email: string;
+  role: string;
 }

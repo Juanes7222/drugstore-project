@@ -8,6 +8,8 @@ export interface AuthHttpClient {
   post<TRes>(path: string, body: unknown): Promise<TRes>;
   postWithAuth<TRes>(path: string, body: unknown, accessToken: string): Promise<TRes>;
   getWithAuth<TRes>(path: string, accessToken: string): Promise<TRes>;
+  patchWithAuth<TRes>(path: string, body: unknown, accessToken: string): Promise<TRes>;
+  deleteWithAuth<TRes>(path: string, accessToken: string): Promise<TRes>;
 }
 
 export function createAuthHttpClient(baseUrl: string): AuthHttpClient {
@@ -74,6 +76,57 @@ export function createAuthHttpClient(baseUrl: string): AuthHttpClient {
     ): Promise<TRes> => {
       const response = await fetch(`${apiBase}${path}`, {
         method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        const serverMessage = (errorBody as any).message;
+        throw new Error(
+          serverMessage
+            ? `[${response.status}] ${serverMessage}`
+            : `[${response.status}] ${response.statusText}`,
+        );
+      }
+
+      return response.json() as Promise<TRes>;
+    },
+
+    patchWithAuth: async <TRes>(
+      path: string,
+      body: unknown,
+      accessToken: string,
+    ): Promise<TRes> => {
+      const response = await fetch(`${apiBase}${path}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        const serverMessage = (errorBody as any).message;
+        throw new Error(
+          serverMessage
+            ? `[${response.status}] ${serverMessage}`
+            : `[${response.status}] ${response.statusText}`,
+        );
+      }
+
+      return response.json() as Promise<TRes>;
+    },
+
+    deleteWithAuth: async <TRes>(
+      path: string,
+      accessToken: string,
+    ): Promise<TRes> => {
+      const response = await fetch(`${apiBase}${path}`, {
+        method: 'DELETE',
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
