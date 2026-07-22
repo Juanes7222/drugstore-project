@@ -475,7 +475,15 @@ export class SyncScheduler {
       // Logged downstream; continue.
     }
 
-    // 4. Client pull
+    // 4. Client classifications — must be pulled BEFORE clients so the
+    //    FK from Client.classificationId to ClientClassification resolves.
+    try {
+      await this.withLock(() => this.clientPull.pullClassifications());
+    } catch {
+      // Logged downstream; continue.
+    }
+
+    // 5. Client pull
     try {
       await this.withLock(() => this.clientPull.pullClients());
     } catch {

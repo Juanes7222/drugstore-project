@@ -13,7 +13,11 @@
  */
 import { PrismaClient, Prisma } from '@pharmacy/database/local';
 import { isOnline } from '../../common/is-online';
-import { getClientsLastSyncedAt, setClientsLastSyncedAt } from '../../common/sync-metadata';
+import {
+  getClientsLastSyncedAt,
+  setClientsLastSyncedAt,
+  setClassificationsLastSyncedAt,
+} from '../../common/sync-metadata';
 import type { SyncHttpClient } from '../catalog/catalog-sync.service';
 
 // ---------------------------------------------------------------------------
@@ -59,6 +63,44 @@ export class ClientPullService {
   // -----------------------------------------------------------------------
 
   /**
+   * Pull client classifications from the server into the local database.
+   *
+   * Fetches all classifications from `GET /clients/classifications/all`
+   * and upserts them into the local `ClientClassification` table so that
+   * the FK from `Client.classificationId` resolves correctly.
+   *
+   * Records `classificationsLastSyncedAt` on success.
+   * Safe to call when offline — returns early without throwing.
+   */
+  async pullClassifications(): Promise<void> {
+    if (!isOnline()) return;
+
+    const authHeaders = this.buildAuthHeaders();
+
+    const response = await this.http.get<ClassificationRow[]>(
+      `${this.baseUrl}/clients/classifications/all`,
+      authHeaders,
+    );
+
+    if (response.length === 0) {
+      setClassificationsLastSyncedAt(new Date().toISOString());
+      return;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const cls of response) {
+        await tx.clientClassification.upsert({
+          where: { id: cls.id },
+          create: mapClassificationForCreate(cls),
+          update: mapClassificationForUpdate(cls),
+        });
+      }
+    });
+
+    setClassificationsLastSyncedAt(new Date().toISOString());
+  }
+
+  /**
    * Pull clients from the server into the local database.
    *
    * - Fetches paginated clients from `GET /clients/sync`, optionally
@@ -82,13 +124,59 @@ export class ClientPullService {
       return;
     }
 
+    const rows = clients as ClientRow[];
+
+    // Look up existing local clients by business key once, then batch.
+    const existingMap = new Map<string, string>();
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    if (rows.length > 0) {
+      const all = await this.prisma.client.findMany({
+        where: {
+          OR: rows.map((c) => ({
+            identificationType: c.identificationType,
+            identificationNumber: c.identificationNumber,
+          })),
+        } as any,
+        select: { identificationType: true, identificationNumber: true, id: true },
+      });
+      for (const e of all) {
+        existingMap.set(`${e.identificationType}::${e.identificationNumber}`, e.id);
+      }
+    }
+
+    // Build a set of known local classification IDs so we can null out
+    // any FK reference that doesn't exist locally (defensive — the
+    // classification sync may not have run yet or may be outdated).
+    const knownClassificationIds = new Set<string>();
+    {
+      const all = await this.prisma.clientClassification.findMany({
+        select: { id: true },
+      });
+      for (const c of all) knownClassificationIds.add(c.id);
+    }
+
     await this.prisma.$transaction(async (tx) => {
-      for (const client of clients as ClientRow[]) {
-        await tx.client.upsert({
-          where: { id: client.id },
-          create: mapClientForCreate(client),
-          update: mapClientForUpdate(client),
-        });
+      for (const client of rows) {
+        // Null out classificationId if the target classification does not
+        // exist locally — avoids FK constraint violations when the server
+        // references a classification we haven't synced yet.
+        if (client.classificationId && !knownClassificationIds.has(client.classificationId)) {
+          client.classificationId = null;
+        }
+
+        const key = `${client.identificationType}::${client.identificationNumber}`;
+        const existingId = existingMap.get(key);
+
+        if (existingId) {
+          await tx.client.update({
+            where: { id: existingId },
+            data: mapClientForUpdate(client),
+          });
+        } else {
+          await tx.client.create({
+            data: mapClientForCreate(client),
+          });
+        }
       }
     });
 
@@ -238,4 +326,37 @@ const mapClientForUpdate = (client: ClientRow): any => ({
   consentScope: client.consentScope ?? Prisma.DbNull,
   dataSubjectRequestStatus: client.dataSubjectRequestStatus,
   dataSubjectRequestAt: client.dataSubjectRequestAt ? new Date(client.dataSubjectRequestAt) : null,
+});
+
+// ---------------------------------------------------------------------------
+// Classification types & mapping helpers
+// ---------------------------------------------------------------------------
+
+/** Shape returned by GET /clients/classifications/all per item. */
+interface ClassificationRow {
+  id: string;
+  type: string;
+  discountPercentage: number;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const mapClassificationForCreate = (cls: ClassificationRow): any => ({
+  id: cls.id,
+  type: cls.type,
+  discountPercentage: cls.discountPercentage,
+  sortOrder: cls.sortOrder,
+  isActive: cls.isActive,
+  createdAt: new Date(cls.createdAt),
+  updatedAt: new Date(cls.updatedAt),
+});
+
+const mapClassificationForUpdate = (cls: ClassificationRow): any => ({
+  type: cls.type,
+  discountPercentage: cls.discountPercentage,
+  sortOrder: cls.sortOrder,
+  isActive: cls.isActive,
+  updatedAt: new Date(cls.updatedAt),
 });
