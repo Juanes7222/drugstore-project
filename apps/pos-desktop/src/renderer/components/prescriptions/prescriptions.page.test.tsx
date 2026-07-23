@@ -62,6 +62,8 @@ const createTestStore = (
       ui: {
         activeScreen: "prescriptions" as const,
         saleCompletionPhase: "idle" as const,
+        currentSaleId: null,
+        pendingPurchaseOrderId: null,
         prescriptionFlow: {
           pendingSaleId: "sale-1",
           pendingItemId,

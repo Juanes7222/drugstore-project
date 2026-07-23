@@ -26,6 +26,11 @@ import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inv
 import { InventoryLotsPage } from "@/components/inventory-lots/inventory-lots.page";
 import { ProductsPage } from "@/components/products/products.page";
 import { ProductosMainPage } from "@/components/productos/productos-main.page";
+import { PurchasesMainPage } from "@/components/purchases/purchases-main.page";
+import { SuppliersPage } from "@/components/purchases/suppliers.page";
+import { PurchaseOrdersPage } from "@/components/purchases/purchase-orders.page";
+import { PurchaseReceptionsPage } from "@/components/purchases/purchase-receptions.page";
+import { SupplierReturnsPage } from "@/components/purchases/supplier-returns.page";
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
 import { LocalNetworkPage } from "@/components/local-sync/local-network.page";
@@ -500,6 +505,91 @@ const InnerApp: FC = () => {
                 }}
               >
                 <ProductosMainPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "purchases-main" && (
+              <motion.div
+                key="purchases-main"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <PurchasesMainPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "suppliers" && (
+              <motion.div
+                key="suppliers"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <SuppliersPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "purchase-orders" && (
+              <motion.div
+                key="purchase-orders"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <PurchaseOrdersPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "purchase-receptions" && (
+              <motion.div
+                key="purchase-receptions"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <PurchaseReceptionsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "supplier-returns" && (
+              <motion.div
+                key="supplier-returns"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <SupplierReturnsPage />
               </motion.div>
             )}
 

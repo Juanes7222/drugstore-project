@@ -23,7 +23,10 @@ export interface SyncQueueEntry {
     | 'INVOICE_TRANSMISSION'
     | 'INVOICE_TRANSMISSION_RESULT'
     | 'PRODUCT_CREATION'
-    | 'PRODUCT_UPDATE';
+    | 'PRODUCT_UPDATE'
+    | 'PURCHASE_ORDER_CONFIRMATION'
+    | 'PURCHASE_RECEPTION_CONFIRMATION'
+    | 'SUPPLIER_RETURN_CONFIRMATION';
   payload: string;
   sourceWorkstationId: string;
   retryCount: number;

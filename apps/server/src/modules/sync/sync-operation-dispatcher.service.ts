@@ -9,6 +9,9 @@ import { ClientReturnsService } from '@/modules/sales-pos/services/client-return
 import { InventoryAdjustmentsService } from '@/modules/inventory-lots/services/inventory-adjustments.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
 import { ProductsService } from '@/modules/catalog/products.service';
+import { PurchaseOrdersService } from '@/modules/purchases/services/purchase-orders.service';
+import { PurchaseReceptionsService } from '@/modules/purchases/services/purchase-receptions.service';
+import { SupplierReturnsService } from '@/modules/purchases/services/supplier-returns.service';
 import { InvoiceTransmissionPayloadSchema } from '@pharmacy/shared-validation';
 import type { SyncQueueEntry } from './entities/sync-queue-entry.entity';
 import type { CreateSaleDto } from '@/modules/sales-pos/dto/create-sale.dto';
@@ -17,6 +20,9 @@ import type { CreateClientDto } from '@/modules/clients/dto/create-client.dto';
 import type { UpdateClientDto } from '@/modules/clients/dto/update-client.dto';
 import type { CreateClientReturnDto } from '@/modules/sales-pos/dto/create-client-return.dto';
 import type { CreateInventoryAdjustmentDto } from '@/modules/inventory-lots/dto/create-inventory-adjustment.dto';
+import type { PurchaseOrderConfirmationPayload } from './dto/purchase-sync-payloads';
+import type { PurchaseReceptionConfirmationPayload } from './dto/purchase-sync-payloads';
+import type { SupplierReturnConfirmationPayload } from './dto/purchase-sync-payloads';
 import * as crypto from 'node:crypto';
 
 /**
@@ -43,6 +49,9 @@ export class SyncOperationDispatcherService {
     @Inject(InventoryAdjustmentsService) private readonly inventoryAdjustmentsService: InventoryAdjustmentsService,
     @Inject(FiscalDocumentsService) private readonly fiscalDocumentsService: FiscalDocumentsService,
     @Inject(ProductsService) private readonly productsService: ProductsService,
+    @Inject(PurchaseOrdersService) private readonly purchaseOrdersService: PurchaseOrdersService,
+    @Inject(PurchaseReceptionsService) private readonly purchaseReceptionsService: PurchaseReceptionsService,
+    @Inject(SupplierReturnsService) private readonly supplierReturnsService: SupplierReturnsService,
   ) {}
 
   /**
@@ -86,6 +95,15 @@ export class SyncOperationDispatcherService {
           break;
         case 'PRODUCT_UPDATE':
           await this.handleProductUpdate(entry);
+          break;
+        case 'PURCHASE_ORDER_CONFIRMATION':
+          await this.handlePurchaseOrderConfirmation(entry);
+          break;
+        case 'PURCHASE_RECEPTION_CONFIRMATION':
+          await this.handlePurchaseReceptionConfirmation(entry);
+          break;
+        case 'SUPPLIER_RETURN_CONFIRMATION':
+          await this.handleSupplierReturnConfirmation(entry);
           break;
         // FISCAL_DOCUMENT_SYNC, RESOLUTION_ALLOCATION
         // are not dispatched — the job never selects them.
@@ -487,5 +505,44 @@ export class SyncOperationDispatcherService {
       `saleId=${payload.saleId}, fiscalDocumentId=${fiscalDoc.id}, ` +
       `workstationId=${entry.sourceWorkstationId}`,
     );
+  }
+
+  /**
+   * Replays a PURCHASE_ORDER_CONFIRMATION by creating/confirming the
+   * purchase order server-side from the POS payload.
+   *
+   * Idempotent: if a purchase order with the same sequentialNumber +
+   * supplierId already exists, the operation is skipped (ALREADY_ACCEPTED).
+   */
+  private async handlePurchaseOrderConfirmation(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as PurchaseOrderConfirmationPayload;
+    const userId = payload.confirmedByUserId;
+    await this.purchaseOrdersService.confirmOrderFromSync(payload, userId);
+  }
+
+  /**
+   * Replays a PURCHASE_RECEPTION_CONFIRMATION by creating and confirming
+   * the purchase reception server-side from the POS payload.
+   *
+   * Idempotent: if a reception with the same sequentialNumber + supplierId
+   * already exists, the operation is skipped (ALREADY_ACCEPTED).
+   */
+  private async handlePurchaseReceptionConfirmation(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as PurchaseReceptionConfirmationPayload;
+    const userId = payload.confirmedByUserId;
+    await this.purchaseReceptionsService.confirmReceptionFromSync(payload, userId);
+  }
+
+  /**
+   * Replays a SUPPLIER_RETURN_CONFIRMATION by creating and confirming
+   * the supplier return server-side from the POS payload.
+   *
+   * Idempotent: if a return with the same sequentialNumber + supplierId
+   * already exists, the operation is skipped (ALREADY_ACCEPTED).
+   */
+  private async handleSupplierReturnConfirmation(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as SupplierReturnConfirmationPayload;
+    const userId = payload.createdByUserId;
+    await this.supplierReturnsService.confirmReturnFromSync(payload, userId);
   }
 }

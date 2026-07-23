@@ -70,6 +70,10 @@ import { useCashShiftStore } from '../../domain/cash-shift/cash-shift.store';
 import { createInventoryLotsService, type InventoryLotsService } from '../../domain/inventory-lots/inventory-lots.service';
 import type { ProductService } from '../../domain/catalog/product.service';
 import type { ClientsService } from '../../domain/clients/clients.service';
+import type { SuppliersService } from '../../domain/purchases/suppliers.service';
+import type { PurchaseOrdersService } from '../../domain/purchases/purchase-orders.service';
+import type { PurchaseReceptionsService } from '../../domain/purchases/purchase-receptions.service';
+import type { SupplierReturnsService } from '../../domain/purchases/supplier-returns.service';
 import type { BackupService } from '../../domain/backup/backup.service';
 import type { RecoveryLogService } from '../../domain/backup/recovery-log.service';
 import type { InvoiceService } from '../../domain/fiscal/invoice.service';
@@ -118,6 +122,10 @@ export interface Services {
   customerDisplayService: CustomerDisplayService;
   syncScheduler: SyncScheduler;
   updateService: UpdateService;
+  suppliersService: SuppliersService;
+  purchaseOrdersService: PurchaseOrdersService;
+  purchaseReceptionsService: PurchaseReceptionsService;
+  supplierReturnsService: SupplierReturnsService;
 }
 
 export type InitState =
@@ -404,6 +412,10 @@ export async function initializeServices(
     cashDrawerService: peripheralServices.cashDrawer,
     customerDisplayService: peripheralServices.customerDisplay,
     updateService,
+    suppliersService: domainServices.suppliersService,
+    purchaseOrdersService: domainServices.purchaseOrdersService,
+    purchaseReceptionsService: domainServices.purchaseReceptionsService,
+    supplierReturnsService: domainServices.supplierReturnsService,
   };
 }
 

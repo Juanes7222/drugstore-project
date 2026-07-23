@@ -50,14 +50,6 @@ model User {
   autoExpirationJobs        AutoExpirationJob[]
   physicalCounts            PhysicalCount[] @relation("StartedByUser")
   approvedPhysicalCounts    PhysicalCount[] @relation("ApprovedByUser")
-  suppliers                 Supplier[]
-  purchaseOrders            PurchaseOrder[]
-  confirmedPurchaseOrders   PurchaseOrder[] @relation("ConfirmedPurchaseOrder")
-  annulledPurchaseOrders    PurchaseOrder[] @relation("AnnulledPurchaseOrder")
-  purchaseReceptions        PurchaseReception[]
-  annulledPurchaseReceptions PurchaseReception[] @relation("AnnulledPurchaseReception")
-  supplierReturns           SupplierReturn[]
-  annulledSupplierReturns   SupplierReturn[] @relation("AnnulledSupplierReturn")
   prescriptions             Prescription[]
   clientReturns             ClientReturn[]
   annulledClientReturns     ClientReturn[] @relation("AnnulledByUser")

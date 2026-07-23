@@ -25,6 +25,10 @@ import type { ClientsService } from '../clients/clients.service';
 import { createSalesPosService } from '../sales-pos/sales-pos.service';
 import type { SalesPosService } from '../sales-pos/sales-pos.service';
 import type { InventoryLotsService } from '../inventory-lots/inventory-lots.service';
+import { createSuppliersService, type SuppliersService } from '../purchases/suppliers.service';
+import { createPurchaseOrdersService, type PurchaseOrdersService } from '../purchases/purchase-orders.service';
+import { createPurchaseReceptionsService, type PurchaseReceptionsService } from '../purchases/purchase-receptions.service';
+import { createSupplierReturnsService, type SupplierReturnsService } from '../purchases/supplier-returns.service';
 import { getTenantConfigState } from '../config/tenant-config.store';
 import type { EffectiveConfig } from '../config/types';
 import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
@@ -41,6 +45,10 @@ export interface DomainServices {
   productService: ProductService;
   clientsService: ClientsService;
   salesPosService: SalesPosService;
+  suppliersService: SuppliersService;
+  purchaseOrdersService: PurchaseOrdersService;
+  purchaseReceptionsService: PurchaseReceptionsService;
+  supplierReturnsService: SupplierReturnsService;
 }
 
 export interface DomainServiceFactoryInput {
@@ -97,5 +105,9 @@ export function createDomainServices(
       printRouter,
       auditWriter,
     ),
+    suppliersService: createSuppliersService(prisma, auth),
+    purchaseOrdersService: createPurchaseOrdersService(prisma, auth),
+    purchaseReceptionsService: createPurchaseReceptionsService(prisma, auth),
+    supplierReturnsService: createSupplierReturnsService(prisma, auth),
   };
 }

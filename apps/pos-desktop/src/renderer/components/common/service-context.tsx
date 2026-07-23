@@ -173,6 +173,22 @@ export const useProductService = (): Services['productService'] =>
 export const useSyncSchedulerService = (): Services['syncScheduler'] =>
   useServiceContext().syncScheduler;
 
+/** Convenience hook — returns the SuppliersService instance. */
+export const useSuppliersService = (): Services['suppliersService'] =>
+  useServiceContext().suppliersService;
+
+/** Convenience hook — returns the PurchaseOrdersService instance. */
+export const usePurchaseOrdersService = (): Services['purchaseOrdersService'] =>
+  useServiceContext().purchaseOrdersService;
+
+/** Convenience hook — returns the PurchaseReceptionsService instance. */
+export const usePurchaseReceptionsService = (): Services['purchaseReceptionsService'] =>
+  useServiceContext().purchaseReceptionsService;
+
+/** Convenience hook — returns the SupplierReturnsService instance. */
+export const useSupplierReturnsService = (): Services['supplierReturnsService'] =>
+  useServiceContext().supplierReturnsService;
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------

@@ -145,6 +145,25 @@ const ClientsIcon: FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const PurchasesIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" />
+    <line x1="3" y1="6" x2="21" y2="6" />
+    <path d="M16 10a4 4 0 01-8 0" />
+  </svg>
+);
+
 const CashShiftIcon: FC<{ className?: string }> = ({ className }) => (
   <svg
     className={className}
@@ -226,6 +245,24 @@ const NAV_ITEMS: NavItem[] = [
       "products",
       "inventory-lots",
       "inventory-adjustments",
+    ],
+  },
+  {
+    screen: "purchases-main",
+    labelKey: "navigation.suppliers",
+    roles: [
+      RoleType.INVENTORY_ASSISTANT,
+      RoleType.MANAGER,
+      RoleType.OWNER,
+      RoleType.SAAS_ADMIN,
+    ],
+    icon: PurchasesIcon,
+    relatedScreens: [
+      "purchases-main",
+      "suppliers",
+      "purchase-orders",
+      "purchase-receptions",
+      "supplier-returns",
     ],
   },
   {

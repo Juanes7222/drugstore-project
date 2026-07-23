@@ -118,6 +118,9 @@ enum SyncOperationType {
   INVOICE_TRANSMISSION_RESULT
   PRODUCT_CREATION
   PRODUCT_UPDATE
+  PURCHASE_ORDER_CONFIRMATION
+  PURCHASE_RECEPTION_CONFIRMATION
+  SUPPLIER_RETURN_CONFIRMATION
 }
 
 enum SyncStatus {
@@ -149,5 +152,33 @@ enum AdjustmentState {
   APPROVED
   REJECTED
   APPLIED
+  ANNULLED
+}
+
+enum SupplierIdentificationType {
+  NIT
+  CC
+  CE
+  PASSPORT
+}
+
+enum PurchaseOrderState {
+  DRAFT
+  CONFIRMED
+  PARTIALLY_RECEIVED
+  FULLY_RECEIVED
+  ANNULLED
+}
+
+enum PurchaseReceptionState {
+  DRAFT
+  CONFIRMED
+  ANNULLED
+}
+
+enum PurchaseReturnState {
+  DRAFT
+  CONFIRMED
+  APPROVED
   ANNULLED
 }

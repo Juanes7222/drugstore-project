@@ -27,7 +27,7 @@ model FiscalDocument {
   receiverType          String?
   saleId                String?
   purchaseReceptionId   String?
-  purchaseReception     PurchaseReception? @relation(fields: [purchaseReceptionId], references: [id])
+  // purchaseReceptionId is kept as scalar — PurchaseReception is now shared
   clientReturnId        String? @unique
   clientReturn          ClientReturn? @relation("CreditNote")
   resolutionId          String

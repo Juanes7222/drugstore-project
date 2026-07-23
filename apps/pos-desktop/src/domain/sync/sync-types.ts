@@ -282,3 +282,83 @@ export interface InvoiceTransmissionResultPayload {
   rejectionReason?: string;
   authorizedAt?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Purchase sync operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload for PURCHASE_ORDER_CONFIRMATION operations.
+ *
+ * Created by PurchaseOrdersService.confirmOrder() and dispatched server-side
+ * to record the purchase order as active. The server re-validates supplier
+ * and product references against its authoritative state.
+ */
+export interface PurchaseOrderConfirmationPayload {
+  orderId: string;
+  sequentialNumber: number;
+  supplierId: string;
+  notes: string | null;
+  createdById: string;
+  confirmedByUserId: string;
+  workstationId: string;
+  confirmedAt: string;
+  metadata: {
+    localOrderId: string;
+    workstationId: string;
+    confirmedAt: string;
+  };
+}
+
+/**
+ * Payload for PURCHASE_RECEPTION_CONFIRMATION operations.
+ *
+ * Created by PurchaseReceptionsService.confirmReception() and dispatched
+ * server-side for re-validation, lot creation, fiscal document generation,
+ * and DIAN transmission. The server re-computes totals and creates the
+ * authoritative PurchaseReception record.
+ *
+ * The payload mirrors the server's CreatePurchaseReceptionDto shape so
+ * the server-side sync handler can delegate directly.
+ */
+export interface PurchaseReceptionConfirmationPayload {
+  operationType: 'PURCHASE_RECEPTION_CONFIRMATION';
+  receptionId: string;
+  sequentialNumber: number;
+  supplierId: string;
+  purchaseOrderId: string | null;
+  notes: string | null;
+  createdById: string;
+  confirmedByUserId: string;
+  workstationId: string;
+  confirmedAt: string;
+  metadata: {
+    localReceptionId: string;
+    workstationId: string;
+    confirmedAt: string;
+  };
+}
+
+/**
+ * Payload for SUPPLIER_RETURN_CONFIRMATION operations.
+ *
+ * Created by SupplierReturnsService.confirmReturn() and dispatched
+ * server-side for re-validation, stock reversal, and DIAN credit-note
+ * generation.
+ */
+export interface SupplierReturnConfirmationPayload {
+  operationType: 'SUPPLIER_RETURN_CONFIRMATION';
+  returnId: string;
+  sequentialNumber: number;
+  supplierId: string;
+  purchaseReceptionId: string | null;
+  reason: string | null;
+  createdByUserId: string;
+  workstationId: string;
+  confirmedAt: string;
+  metadata: {
+    localReturnId: string;
+    workstationId: string;
+    confirmedAt: string;
+  };
+}

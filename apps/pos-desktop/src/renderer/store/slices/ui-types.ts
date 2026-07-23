@@ -31,7 +31,12 @@ export type PosScreen =
   | "reset-password"
   | "2fa-setup"
   | "local-network"
-  | "productos-main";
+  | "productos-main"
+  | "purchases-main"
+  | "suppliers"
+  | "purchase-orders"
+  | "purchase-receptions"
+  | "supplier-returns";
 
 export type SaleCompletionPhase =
   | "idle"

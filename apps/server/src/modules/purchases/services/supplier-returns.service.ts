@@ -161,6 +161,103 @@ export class SupplierReturnsService {
     });
   }
 
+  /**
+   * Creates and confirms a supplier return from a sync payload.
+   *
+   * Idempotent: if a return with the same sequentialNumber + supplierId
+   * already exists, the operation is skipped (ALREADY_ACCEPTED).
+   * Validates the supplier, purchase reception (if linked), and all lots
+   * exist before creating. Consumes stock from lots as part of
+   * confirmation.
+   */
+  async confirmReturnFromSync(
+    payload: {
+      returnId: string;
+      sequentialNumber: number;
+      supplierId: string;
+      purchaseReceptionId?: string;
+      reason?: string;
+      createdByUserId: string;
+      confirmedAt: string;
+      items: Array<{
+        productId: string;
+        lotId: string;
+        quantity: number;
+        unitCost: number;
+        reason?: string;
+      }>;
+    },
+    userId: string,
+  ): Promise<any> {
+    return this.prisma.$transaction(async (tx) => {
+      // Idempotency: check if return with same sequentialNumber + supplierId exists
+      const existing = await tx.supplierReturn.findFirst({
+        where: { sequentialNumber: payload.sequentialNumber, supplierId: payload.supplierId },
+        select: { id: true, state: true },
+      });
+      if (existing) {
+        return existing;
+      }
+
+      const supplier = await tx.supplier.findUnique({ where: { id: payload.supplierId } });
+      if (!supplier) {
+        throw new SupplierNotFoundException(payload.supplierId);
+      }
+
+      if (payload.purchaseReceptionId) {
+        const reception = await tx.purchaseReception.findUnique({
+          where: { id: payload.purchaseReceptionId },
+        });
+        if (!reception) {
+          throw new PurchaseReceptionNotFoundException(payload.purchaseReceptionId);
+        }
+      }
+
+      const itemsData: Array<{
+        id: string;
+        productId: string;
+        lotId: string;
+        quantity: number;
+        unitCost: Prisma.Decimal;
+        totalAmount: Prisma.Decimal;
+      }> = [];
+
+      for (const item of payload.items) {
+        const lot = await tx.lot.findUnique({ where: { id: item.lotId } });
+        if (!lot) {
+          throw new LotNotFoundException(item.lotId);
+        }
+
+        itemsData.push({
+          id: crypto.randomUUID(),
+          productId: item.productId,
+          lotId: item.lotId,
+          quantity: item.quantity,
+          unitCost: new Prisma.Decimal(item.unitCost),
+          totalAmount: new Prisma.Decimal(item.quantity).times(item.unitCost),
+        });
+      }
+
+      const subtotal = itemsData.reduce((sum, it) => sum.plus(it.totalAmount), new Prisma.Decimal(0));
+
+      return tx.supplierReturn.create({
+        data: {
+          id: crypto.randomUUID(),
+          sequentialNumber: payload.sequentialNumber,
+          supplierId: payload.supplierId,
+          purchaseReceptionId: payload.purchaseReceptionId || null,
+          reason: payload.reason,
+          subtotal,
+          totalAmount: subtotal,
+          state: PurchaseReturnState.CONFIRMED,
+          createdById: userId,
+          items: { create: itemsData },
+        },
+        include: { items: true, supplier: true },
+      });
+    });
+  }
+
   async approve(id: string): Promise<any> {
     const supplierReturn = await this.prisma.supplierReturn.findUnique({ where: { id } });
     if (!supplierReturn) throw new SupplierReturnNotFoundException(id);

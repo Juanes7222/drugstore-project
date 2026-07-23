@@ -71,6 +71,8 @@ const createTestStore = (phase: "idle" | "initiating" | "completing" | "complete
       ui: {
         activeScreen: "receipt" as const,
         saleCompletionPhase: phase,
+        currentSaleId: null,
+        pendingPurchaseOrderId: null,
         prescriptionFlow: {
           pendingSaleId: null,
           pendingItemId: null,

@@ -88,6 +88,25 @@ export const uiSlice = createSlice({
       state.activeScreen = "productos-main";
     },
 
+    navigateToPurchasesMain: (state) => {
+      state.activeScreen = "purchases-main";
+    },
+    navigateToSuppliers: (state) => {
+      state.activeScreen = "suppliers";
+    },
+
+    navigateToPurchaseOrders: (state) => {
+      state.activeScreen = "purchase-orders";
+    },
+
+    navigateToPurchaseReceptions: (state) => {
+      state.activeScreen = "purchase-receptions";
+    },
+
+    navigateToSupplierReturns: (state) => {
+      state.activeScreen = "supplier-returns";
+    },
+
     navigateToRecovery: (state) => {
       state.activeScreen = "recovery";
     },
@@ -218,6 +237,11 @@ export const {
   navigateToSyncHealth,
   navigateToLocalNetwork,
   navigateToProductosMain,
+  navigateToPurchasesMain,
+  navigateToSuppliers,
+  navigateToPurchaseOrders,
+  navigateToPurchaseReceptions,
+  navigateToSupplierReturns,
   navigateToRecovery,
   navigateToUserManagement,
   navigateToAuditLog,

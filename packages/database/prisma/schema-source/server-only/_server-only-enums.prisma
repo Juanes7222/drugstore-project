@@ -65,34 +65,6 @@ enum PhysicalCountState {
   ANNULLED
 }
 
-enum SupplierIdentificationType {
-  NIT
-  CC
-  CE
-  PASSPORT
-}
-
-enum PurchaseOrderState {
-  DRAFT
-  CONFIRMED
-  PARTIALLY_RECEIVED
-  FULLY_RECEIVED
-  ANNULLED
-}
-
-enum PurchaseReceptionState {
-  DRAFT
-  CONFIRMED
-  ANNULLED
-}
-
-enum PurchaseReturnState {
-  DRAFT
-  CONFIRMED
-  APPROVED
-  ANNULLED
-}
-
 enum FiscalDocumentType {
   INVOICE
   POS_TICKET

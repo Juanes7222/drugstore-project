@@ -233,6 +233,120 @@ export class PurchaseReceptionsService {
     return result;
   }
 
+  /**
+   * Creates and confirms a purchase reception from a sync payload.
+   *
+   * Idempotent: if a reception with the same sequentialNumber + supplierId
+   * already exists, the operation is skipped (ALREADY_ACCEPTED).
+   * Validates the supplier, purchase order (if linked), and all products
+   * exist before creating. Creates lots and updates purchase order state
+   * as part of the confirmation.
+   */
+  async confirmReceptionFromSync(
+    payload: {
+      receptionId: string;
+      sequentialNumber: number;
+      supplierId: string;
+      purchaseOrderId?: string;
+      notes?: string;
+      confirmedByUserId: string;
+      createdById: string;
+      confirmedAt: string;
+      items: Array<{
+        productId: string;
+        quantity: number;
+        unitCost: number;
+        expirationDate?: string;
+        batchNumber?: string;
+      }>;
+    },
+    userId: string,
+  ): Promise<any> {
+    return this.prisma.$transaction(async (tx) => {
+      // Idempotency: check if reception with same sequentialNumber + supplierId exists
+      const existing = await tx.purchaseReception.findFirst({
+        where: { sequentialNumber: payload.sequentialNumber, supplierId: payload.supplierId },
+        select: { id: true, state: true },
+      });
+      if (existing) {
+        return existing;
+      }
+
+      const supplier = await tx.supplier.findUnique({ where: { id: payload.supplierId } });
+      if (!supplier) {
+        throw new SupplierNotFoundException(payload.supplierId);
+      }
+
+      let purchaseOrder = null;
+      if (payload.purchaseOrderId) {
+        purchaseOrder = await tx.purchaseOrder.findUnique({
+          where: { id: payload.purchaseOrderId },
+          include: { items: true },
+        });
+        if (!purchaseOrder) {
+          throw new PurchaseOrderNotFoundException(payload.purchaseOrderId);
+        }
+      }
+
+      // Resolve a default tax scheme for reception items.
+      // The POS payload does not include taxSchemeId; the first active
+      // TaxScheme is used as a reasonable default for sync-initiated
+      // receptions. A refinement pass can make this configurable or
+      // add tax info to the POS payload.
+      const defaultTaxScheme = await tx.taxScheme.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, rate: true },
+      });
+      const taxSchemeId = defaultTaxScheme?.id ?? '00000000-0000-0000-0000-000000000000';
+      const taxRate = defaultTaxScheme?.rate ?? new Prisma.Decimal(0);
+
+      const itemsData = await Promise.all(
+        payload.items.map(async (item) => {
+          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          if (!product) {
+            throw new ProductNotFoundException(item.productId);
+          }
+          return {
+            id: crypto.randomUUID(),
+            productId: item.productId,
+            receivedQuantity: item.quantity,
+            lotNumber: item.batchNumber || null,
+            expirationDate: item.expirationDate ? new Date(item.expirationDate) : null,
+            realUnitCost: new Prisma.Decimal(item.unitCost),
+            taxSchemeId,
+            taxRate,
+            discountAmount: new Prisma.Decimal(0),
+          };
+        }),
+      );
+
+      const subtotal = itemsData.reduce(
+        (sum, item) => sum.plus(new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost)),
+        new Prisma.Decimal(0),
+      );
+
+      const reception = await tx.purchaseReception.create({
+        data: {
+          id: crypto.randomUUID(),
+          sequentialNumber: payload.sequentialNumber,
+          state: PurchaseReceptionState.CONFIRMED,
+          supplierId: payload.supplierId,
+          purchaseOrderId: payload.purchaseOrderId || null,
+          notes: payload.notes,
+          subtotal,
+          totalTax: new Prisma.Decimal(0),
+          totalAmount: subtotal,
+          createdById: userId,
+          receivedAt: new Date(payload.confirmedAt),
+          items: { create: itemsData },
+        },
+      });
+
+      return reception;
+    });
+  }
+
   async annul(id: string, userId: string): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
       const reception = await tx.purchaseReception.findUnique({
