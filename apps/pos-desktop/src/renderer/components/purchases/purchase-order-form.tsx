@@ -10,6 +10,7 @@ import {
   type FC,
   useCallback,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -41,6 +42,8 @@ export interface PurchaseOrderFormProps {
   onCreateSupplier?: () => void;
   /** Open inline product creation modal. */
   onCreateProduct?: () => void;
+  /** Max items allowed (0 = unlimited). */
+  maxItems?: number;
 }
 
 export type { OrderFormItem, OrderFormData } from './purchase-orders.page';
@@ -58,13 +61,16 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
   onItemChange,
   onSubmit,
   onCancel,
-  isSaving,
-  error,
-  onCreateSupplier,
-  onCreateProduct,
-}) => {
+        isSaving,
+        error,
+        onCreateSupplier,
+        onCreateProduct,
+        maxItems = 0,
+      }) => {
   const { t } = useTranslation();
   const [itemErrors, setItemErrors] = useState<Record<number, string>>({});
+  /** Remember last entered unit cost so new items pre-fill it. */
+  const lastUnitCostRef = useRef(0);
 
   // ── Map suppliers to SearchableSelect options ─────────────────────────
 
@@ -122,7 +128,12 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
   );
 
   const handleAddItem = useCallback(() => {
-    onAddItem({ productId: '', productName: '', requestedQuantity: 1, expectedUnitCost: 0 });
+    onAddItem({
+      productId: '',
+      productName: '',
+      requestedQuantity: 1,
+      expectedUnitCost: lastUnitCostRef.current,
+    });
   }, [onAddItem]);
 
   // ── Render ────────────────────────────────────────────────────────────
@@ -135,16 +146,16 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
     >
       {/* Error banner */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 text-red-700 rounded text-sm border border-red-200" role="alert">
+        <div className="mb-4 p-3 bg-error-container text-error rounded text-sm border border-error/20" role="alert">
           {error}
         </div>
       )}
 
       {/* Supplier selection — combobox with keyboard nav */}
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-ink mb-1">
           {t('purchases.orders.supplier')}
-          <span className="text-red-500 ml-0.5">*</span>
+          <span className="text-error ml-0.5">*</span>
         </label>
         <div className="flex gap-2">
           <div className="flex-1">
@@ -161,7 +172,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
           </div>
         </div>
         {data.supplierId && (
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-ink-muted">
             {supplierOptions.find((o) => o.id === data.supplierId)?.label}
             {' · '}
             {supplierOptions.find((o) => o.id === data.supplierId)?.sublabel}
@@ -173,7 +184,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
       <div className="mb-4">
         <label
           htmlFor="po-expected-date"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-ink mb-1"
         >
           {t('purchases.orders.expectedDeliveryDate')}
         </label>
@@ -191,7 +202,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
       <div className="mb-4">
         <label
           htmlFor="po-notes"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-ink mb-1"
         >
           {t('purchases.orders.notes')}
         </label>
@@ -208,7 +219,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
       {/* Line items */}
       <div className="flex-1 min-h-0">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium text-ink">
             {t('purchases.orders.items')}
           </span>
           <div className="flex gap-1">
@@ -217,7 +228,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
                 type="button"
                 onClick={onCreateProduct}
                 disabled={isSaving || !data.supplierId}
-                className="text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100 transition-colors font-semibold"
+                className="text-xs px-2 py-1 bg-pharma/10 text-pharma rounded hover:bg-pharma/20 transition-colors font-semibold"
                 title={t('purchases.orders.createProduct')}
               >
                 <Package size={12} aria-hidden="true" />
@@ -227,17 +238,19 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
             <button
               type="button"
               onClick={handleAddItem}
-              disabled={isSaving || !data.supplierId}
-              className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-pharma/10 text-pharma rounded hover:bg-pharma/20 transition-colors font-semibold"
+              disabled={isSaving || !data.supplierId || (maxItems > 0 && data.items.length >= maxItems)}
+              className="pos-button pos-button-secondary text-xs px-2 py-1"
             >
               <Plus size={14} aria-hidden="true" />
-              {t('purchases.orders.addItem')}
+              {maxItems > 0
+                ? `${t('purchases.orders.addItem')} (${data.items.length}/${maxItems})`
+                : t('purchases.orders.addItem')}
             </button>
           </div>
         </div>
 
         {data.items.length === 0 ? (
-          <p className="text-sm text-gray-400 italic py-4 text-center">
+          <p className="text-sm text-ink-muted italic py-4 text-center">
             {t('purchases.orders.noItems')}
           </p>
         ) : (
@@ -246,7 +259,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
               <div
                 key={i}
                 className={`flex gap-2 items-start p-2 rounded ${
-                  itemErrors[i] ? 'bg-red-50 border border-red-200' : 'bg-gray-50'
+                  itemErrors[i] ? 'bg-error-container border border-error/20' : 'bg-surface'
                 }`}
               >
                 {/* Product selector — combobox with keyboard nav */}
@@ -270,14 +283,28 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
 
                 {/* Quantity */}
                 <div className="w-20 shrink-0">
-                  <label className="block text-xs text-gray-500 mb-0.5">
+                  <label className="block text-xs text-ink-muted mb-0.5">
                     {t('purchases.orders.qty')}
                   </label>
                   <input
                     type="number"
                     min={1}
-                    value={item.requestedQuantity}
-                    onChange={(e) => onItemChange(i, { requestedQuantity: Math.max(1, Number(e.target.value)) })}
+                    value={item.requestedQuantity || ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      // Allow empty string during editing so user can clear the field
+                      if (raw === '') {
+                        onItemChange(i, { requestedQuantity: 0 });
+                      } else {
+                        onItemChange(i, { requestedQuantity: Math.max(1, Number(raw)) });
+                      }
+                    }}
+                    onBlur={() => {
+                      // Clamp to minimum 1 on blur
+                      if (!item.requestedQuantity || item.requestedQuantity < 1) {
+                        onItemChange(i, { requestedQuantity: 1 });
+                      }
+                    }}
                     disabled={isSaving}
                     className="pos-input text-xs font-data tabular-nums"
                   />
@@ -285,15 +312,24 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
 
                 {/* Unit cost */}
                 <div className="w-24 shrink-0">
-                  <label className="block text-xs text-gray-500 mb-0.5">
+                  <label className="block text-xs text-ink-muted mb-0.5">
                     {t('purchases.orders.unitCost')}
                   </label>
                   <input
                     type="number"
                     min={0}
                     step={100}
-                    value={item.expectedUnitCost}
-                    onChange={(e) => onItemChange(i, { expectedUnitCost: Math.max(0, Number(e.target.value)) })}
+                    value={item.expectedUnitCost || ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        onItemChange(i, { expectedUnitCost: 0 });
+                      } else {
+                        const val = Math.max(0, Number(raw));
+                        onItemChange(i, { expectedUnitCost: val });
+                        lastUnitCostRef.current = val;
+                      }
+                    }}
                     disabled={isSaving}
                     className="pos-input text-xs font-data tabular-nums"
                   />
@@ -301,7 +337,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
 
                 {/* Line total */}
                 <div className="w-24 shrink-0 pt-4 text-right">
-                  <span className="text-xs font-data tabular-nums text-gray-700">
+                  <span className="text-xs font-data tabular-nums text-ink">
                     {formatCOP(item.requestedQuantity * item.expectedUnitCost)}
                   </span>
                 </div>
@@ -311,7 +347,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
                   type="button"
                   onClick={() => onRemoveItem(i)}
                   disabled={isSaving}
-                  className="pt-4 text-red-400 hover:text-red-600 transition-colors shrink-0"
+                  className="pt-4 text-error/60 hover:text-error transition-colors shrink-0"
                   aria-label={t('common.remove')}
                 >
                   <X size={14} aria-hidden="true" />
@@ -323,15 +359,15 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
       </div>
 
       {/* Total */}
-      <div className="flex justify-end py-3 border-t border-gray-100 mt-4">
+      <div className="flex justify-end py-3 border-t border-border mt-4">
         <div className="text-right">
-          <span className="text-xs text-gray-500">{t('purchases.orders.estimatedTotal')}: </span>
+          <span className="text-xs text-ink-muted">{t('purchases.orders.estimatedTotal')}: </span>
           <span className="text-sm font-bold font-data tabular-nums">{formatCOP(total)}</span>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+      <div className="flex justify-end gap-3 pt-3 border-t border-border">
         <button
           type="button"
           onClick={onCancel}

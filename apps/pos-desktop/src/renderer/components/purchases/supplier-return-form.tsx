@@ -118,16 +118,16 @@ export const SupplierReturnForm: FC<SupplierReturnFormProps> = ({
     <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex flex-col h-full" noValidate>
       {/* Error banner */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 text-red-700 rounded text-sm border border-red-200" role="alert">
+        <div className="mb-4 p-3 bg-error-container text-error rounded text-sm border border-error/20" role="alert">
           {error}
         </div>
       )}
 
       {/* Supplier */}
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-ink mb-1">
           {t('purchases.supplierReturns.supplierId')}
-          <span className="text-red-500 ml-0.5">*</span>
+          <span className="text-error ml-0.5">*</span>
         </label>
         <SearchableSelect
           options={suppliers}
@@ -142,7 +142,7 @@ export const SupplierReturnForm: FC<SupplierReturnFormProps> = ({
 
       {/* Reception reference */}
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">
+        <label className="block text-sm font-medium text-ink mb-1">
           {t('purchases.supplierReturns.receptionRef')}
         </label>
         <SearchableSelect
@@ -160,7 +160,7 @@ export const SupplierReturnForm: FC<SupplierReturnFormProps> = ({
       <div className="mb-4">
         <label
           htmlFor="return-reason"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-ink mb-1"
         >
           {t('purchases.supplierReturns.reason')}
         </label>
@@ -178,7 +178,7 @@ export const SupplierReturnForm: FC<SupplierReturnFormProps> = ({
       {/* Items */}
       <div className="flex-1 min-h-0">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium text-ink">
             {t('purchases.supplierReturns.items')}
           </span>
           <button
@@ -193,13 +193,13 @@ export const SupplierReturnForm: FC<SupplierReturnFormProps> = ({
         </div>
 
         {items.length === 0 ? (
-          <p className="text-sm text-gray-400 italic py-4 text-center">
+          <p className="text-sm text-ink-muted italic py-4 text-center">
             {t('purchases.supplierReturns.noItems')}
           </p>
         ) : (
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {items.map((item, i) => (
-              <div key={i} className="flex gap-2 items-start p-2 bg-gray-50 rounded">
+              <div key={i} className="flex gap-2 items-start p-2 bg-surface rounded">
                 <div className="flex-1 min-w-0">
                   <SearchableSelect
                     options={productResults}
@@ -237,7 +237,7 @@ export const SupplierReturnForm: FC<SupplierReturnFormProps> = ({
                   type="button"
                   onClick={() => handleRemoveItem(i)}
                   disabled={isSaving}
-                  className="pt-1 text-red-400 hover:text-red-600 transition-colors shrink-0"
+                  className="pt-1 text-error/60 hover:text-error transition-colors shrink-0"
                   aria-label={t('common.remove')}
                 >
                   <Trash2 size={14} aria-hidden="true" />
@@ -249,14 +249,14 @@ export const SupplierReturnForm: FC<SupplierReturnFormProps> = ({
       </div>
 
       {/* Summary */}
-      <div className="flex justify-between items-center py-3 border-t border-gray-100 mt-4">
-        <span className="text-xs text-gray-500">
+      <div className="flex justify-between items-center py-3 border-t border-border mt-4">
+        <span className="text-xs text-ink-muted">
           {items.length} {t('purchases.supplierReturns.itemsCount')} · {totalQty} {t('purchases.supplierReturns.unitsCount')}
         </span>
       </div>
 
       {/* Actions */}
-      <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+      <div className="flex justify-end gap-3 pt-3 border-t border-border">
         <button type="button" onClick={onCancel} disabled={isSaving} className="pos-button pos-button-secondary">
           {t('common.cancel')}
         </button>

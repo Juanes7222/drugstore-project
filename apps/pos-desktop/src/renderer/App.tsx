@@ -31,6 +31,7 @@ import { SuppliersPage } from "@/components/purchases/suppliers.page";
 import { PurchaseOrdersPage } from "@/components/purchases/purchase-orders.page";
 import { PurchaseReceptionsPage } from "@/components/purchases/purchase-receptions.page";
 import { SupplierReturnsPage } from "@/components/purchases/supplier-returns.page";
+import { PurchasesConfigPage } from "@/components/purchases/purchases-config.page";
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
 import { LocalNetworkPage } from "@/components/local-sync/local-network.page";
@@ -590,6 +591,23 @@ const InnerApp: FC = () => {
                 }}
               >
                 <SupplierReturnsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "purchases-config" && (
+              <motion.div
+                key="purchases-config"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <PurchasesConfigPage />
               </motion.div>
             )}
 

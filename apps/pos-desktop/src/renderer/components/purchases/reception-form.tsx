@@ -132,7 +132,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
     <form onSubmit={handleSubmit} className="max-w-4xl mx-auto flex flex-col h-full" noValidate>
       {/* Error banner */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 text-red-700 rounded text-sm border border-red-200" role="alert">
+        <div className="mb-4 p-3 bg-error-container text-error rounded text-sm border border-error/20" role="alert">
           {error}
         </div>
       )}
@@ -140,9 +140,9 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
       <div className="grid grid-cols-2 gap-4 mb-4">
         {/* Supplier */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-ink mb-1">
             {t('purchases.receptions.supplierId')}
-            <span className="text-red-500 ml-0.5">*</span>
+            <span className="text-error ml-0.5">*</span>
           </label>
           <SearchableSelect
             options={suppliers}
@@ -157,7 +157,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
 
         {/* PO reference */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-ink mb-1">
             {t('purchases.receptions.purchaseOrder')}
           </label>
           <SearchableSelect
@@ -176,7 +176,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
       <div className="mb-4">
         <label
           htmlFor="reception-notes"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-ink mb-1"
         >
           {t('purchases.receptions.notes')}
         </label>
@@ -193,7 +193,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
       {/* Items */}
       <div className="flex-1 min-h-0">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium text-ink">
             {t('purchases.receptions.items')}
           </span>
           <button
@@ -208,7 +208,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
         </div>
 
         {items.length === 0 ? (
-          <p className="text-sm text-gray-400 italic py-4 text-center">
+          <p className="text-sm text-ink-muted italic py-4 text-center">
             {t('purchases.receptions.noItems')}
           </p>
         ) : (
@@ -216,14 +216,14 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
             {items.map((item, i) => (
               <div key={i} className="pos-panel p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-gray-500 uppercase">
+                  <span className="text-xs font-semibold text-ink-muted uppercase">
                     {t('purchases.receptions.itemLabel')} #{i + 1}
                   </span>
             <button
               type="button"
               onClick={() => handleRemoveItem(i)}
               disabled={isSaving}
-              className="text-red-400 hover:text-red-600 transition-colors"
+              className="text-error/60 hover:text-error transition-colors"
               aria-label={t('common.remove')}
             >
               <Trash2 size={14} aria-hidden="true" />
@@ -232,7 +232,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">
+                    <label className="block text-xs text-ink-muted mb-0.5">
                       {t('purchases.receptions.productId')}
                     </label>
                     <SearchableSelect
@@ -246,7 +246,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">
+                    <label className="block text-xs text-ink-muted mb-0.5">
                       {t('purchases.receptions.qtyReceived')}
                     </label>
                     <input
@@ -262,7 +262,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">
+                    <label className="block text-xs text-ink-muted mb-0.5">
                       {t('purchases.receptions.lotNumber')}
                     </label>
                     <input
@@ -276,7 +276,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">
+                    <label className="block text-xs text-ink-muted mb-0.5">
                       {t('purchases.receptions.expirationDate')}
                     </label>
                     <input
@@ -291,7 +291,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
 
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">
+                    <label className="block text-xs text-ink-muted mb-0.5">
                       {t('purchases.receptions.unitCost')}
                     </label>
                     <input
@@ -305,7 +305,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">
+                    <label className="block text-xs text-ink-muted mb-0.5">
                       {t('purchases.receptions.taxRate')}
                     </label>
                     <input
@@ -319,7 +319,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
                     />
                   </div>
                   <div className="flex flex-col justify-end">
-                    <span className="text-xs text-gray-500 mb-0.5">
+                    <span className="text-xs text-ink-muted mb-0.5">
                       {t('purchases.receptions.subtotal')}
                     </span>
                     <span className="font-data tabular-nums text-sm font-semibold">
@@ -334,15 +334,15 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
       </div>
 
       {/* Total */}
-      <div className="flex justify-end py-3 border-t border-gray-100 mt-4">
+      <div className="flex justify-end py-3 border-t border-border mt-4">
         <div className="text-right">
-          <span className="text-xs text-gray-500">{t('purchases.receptions.totalAmount')}: </span>
+          <span className="text-xs text-ink-muted">{t('purchases.receptions.totalAmount')}: </span>
           <span className="text-sm font-bold font-data tabular-nums">{formatCOP(total)}</span>
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+      <div className="flex justify-end gap-3 pt-3 border-t border-border">
         <button type="button" onClick={onCancel} disabled={isSaving} className="pos-button pos-button-secondary">
           {t('common.cancel')}
         </button>

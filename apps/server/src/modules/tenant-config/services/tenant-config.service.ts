@@ -353,7 +353,11 @@ export class TenantConfigService {
     const validationInput: Parameters<typeof this.validationService.validate>[0] = {};
     validationInput.strictness = mergedStrictness;
     const dbFiscalForValidation = current.fiscal as unknown as FiscalConfig;
-    if (dto.fiscal || this.isFiscalFullyConfigured(dbFiscalForValidation)) {
+    // Validate fiscal only when:
+    // 1. DB already has a fully-configured fiscal (prevents wiping required fields), OR
+    // 2. The merged payload becomes fully configured (single-shot complete save).
+    // Skip during initial setup where admin fills fields one at a time via auto-save.
+    if (this.isFiscalFullyConfigured(dbFiscalForValidation) || this.isFiscalFullyConfigured(mergedFiscal)) {
       validationInput.fiscal = mergedFiscal;
     }
     validationInput.workflow = mergedWorkflow;

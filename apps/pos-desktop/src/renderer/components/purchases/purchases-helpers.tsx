@@ -55,30 +55,30 @@ export interface StateBadgeConfig {
  * State display config for purchase orders.
  */
 export const PURCHASE_ORDER_STATES: Record<string, StateBadgeConfig> = {
-  DRAFT: { label: 'Borrador', className: 'bg-gray-100 text-gray-700' },
-  CONFIRMED: { label: 'Confirmada', className: 'bg-blue-100 text-blue-700' },
-  PARTIALLY_RECEIVED: { label: 'Recibida parcialmente', className: 'bg-yellow-100 text-yellow-700' },
-  FULLY_RECEIVED: { label: 'Recibida totalmente', className: 'bg-green-100 text-green-700' },
-  ANNULLED: { label: 'Anulada', className: 'bg-red-100 text-red-700' },
+  DRAFT: { label: 'Borrador', className: 'bg-surface text-ink-muted' },
+  CONFIRMED: { label: 'Confirmada', className: 'bg-pharma/10 text-pharma' },
+  PARTIALLY_RECEIVED: { label: 'Recibida parcialmente', className: 'bg-urgency-surface text-urgency' },
+  FULLY_RECEIVED: { label: 'Recibida totalmente', className: 'bg-success-container text-success' },
+  ANNULLED: { label: 'Anulada', className: 'bg-error-container text-error' },
 };
 
 /**
  * State display config for purchase receptions.
  */
 export const RECEPTION_STATES: Record<string, StateBadgeConfig> = {
-  DRAFT: { label: 'Borrador', className: 'bg-gray-100 text-gray-700' },
-  CONFIRMED: { label: 'Confirmada', className: 'bg-green-100 text-green-700' },
-  ANNULLED: { label: 'Anulada', className: 'bg-red-100 text-red-700' },
+  DRAFT: { label: 'Borrador', className: 'bg-surface text-ink-muted' },
+  CONFIRMED: { label: 'Confirmada', className: 'bg-success-container text-success' },
+  ANNULLED: { label: 'Anulada', className: 'bg-error-container text-error' },
 };
 
 /**
  * State display config for supplier returns.
  */
 export const SUPPLIER_RETURN_STATES: Record<string, StateBadgeConfig> = {
-  DRAFT: { label: 'Borrador', className: 'bg-gray-100 text-gray-700' },
-  CONFIRMED: { label: 'Confirmada', className: 'bg-blue-100 text-blue-700' },
-  APPROVED: { label: 'Aprobada', className: 'bg-green-100 text-green-700' },
-  ANNULLED: { label: 'Anulada', className: 'bg-red-100 text-red-700' },
+  DRAFT: { label: 'Borrador', className: 'bg-surface text-ink-muted' },
+  CONFIRMED: { label: 'Confirmada', className: 'bg-pharma/10 text-pharma' },
+  APPROVED: { label: 'Aprobada', className: 'bg-success-container text-success' },
+  ANNULLED: { label: 'Anulada', className: 'bg-error-container text-error' },
 };
 
 /**
@@ -88,7 +88,7 @@ export const resolveStateConfig = (
   state: string,
   configMap: Record<string, StateBadgeConfig>,
 ): StateBadgeConfig =>
-  configMap[state] ?? { label: state, className: 'bg-gray-100 text-gray-700' };
+  configMap[state] ?? { label: state, className: 'bg-surface text-ink-muted' };
 
 // ── Skeleton helpers ───────────────────────────────────────────────────
 
@@ -98,10 +98,10 @@ export const TableSkeletonRows: FC<{
 }> = ({ rows = 8, cols = 6 }) => (
   <>
     {Array.from({ length: rows }).map((_, i) => (
-      <tr key={i} className="animate-pulse border-b border-gray-50">
+      <tr key={i} className="animate-pulse border-b border-border/40">
         {Array.from({ length: cols }).map((_, j) => (
           <td key={j} className="py-3 px-3">
-            <div className="h-4 bg-gray-100 rounded w-3/4" />
+            <div className="h-4 bg-surface-variant rounded w-3/4" />
           </td>
         ))}
       </tr>
@@ -111,9 +111,9 @@ export const TableSkeletonRows: FC<{
 
 export const DetailSkeleton: FC = () => (
   <div className="animate-pulse space-y-4">
-    <div className="h-6 bg-gray-200 rounded w-1/3" />
-    <div className="h-4 bg-gray-100 rounded w-1/2" />
-    <div className="h-32 bg-gray-100 rounded" />
+    <div className="h-6 bg-surface-variant rounded w-1/3" />
+    <div className="h-4 bg-surface-variant rounded w-1/2" />
+    <div className="h-32 bg-surface-variant rounded" />
   </div>
 );
 
@@ -146,8 +146,8 @@ export const TablePagination: FC<PaginationProps> = ({
   if (totalPages <= 1) return null;
 
   return (
-    <div className="flex items-center justify-between px-3 py-3 border-t border-gray-100">
-      <span className="text-xs text-gray-500">
+    <div className="flex items-center justify-between px-3 py-3 border-t border-border">
+      <span className="text-xs text-ink-muted">
         {total} {resultsLabel ?? t('purchases.orders.results')} — {pageLabel ?? t('purchases.orders.page')} {page} {ofLabel ?? t('purchases.orders.of')} {totalPages}
       </span>
       <div className="flex gap-2">

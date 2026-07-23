@@ -13,10 +13,12 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@/store/hooks';
 import { navigateToPurchasesMain } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
+import { getPurchasesConfig } from '../../../domain/configuration';
 import {
   usePurchaseReceptionsService,
   useSuppliersService,
@@ -213,6 +215,28 @@ export const PurchaseReceptionsPage: FC = () => {
   }, []);
 
   const handleCreateSubmit = useCallback(async () => {
+    const cfg = getPurchasesConfig();
+
+    // Config-based validation
+    if (cfg.requireLotOnReception) {
+      const missingLot = formData.items.find(
+        (item: any) => item.receivedQuantity > 0 && !(item.lotNumber ?? '').toString().trim(),
+      );
+      if (missingLot) {
+        // Show a generic error; runSave will set error on failure
+        throw new Error('Número de lote requerido para todos los items.');
+      }
+    }
+
+    if (cfg.requireExpiryOnReception) {
+      const missingExpiry = formData.items.find(
+        (item: any) => item.receivedQuantity > 0 && !(item.expirationDate ?? '').toString().trim(),
+      );
+      if (missingExpiry) {
+        throw new Error('Fecha de vencimiento requerida para todos los items.');
+      }
+    }
+
     const result = await runSave(async () => {
       const created = await receptionsService.createReception(formData);
       return created;
@@ -267,16 +291,16 @@ export const PurchaseReceptionsPage: FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
-            className="text-gray-600 hover:text-gray-900"
+            className="text-ink-muted hover:text-ink transition-colors"
             aria-label={t('common.back')}
           >
-            ←
+            <ArrowLeft size={20} aria-hidden="true" />
           </button>
-          <h1 className="text-lg font-semibold">
+          <h1 className="pos-page-title">
             {viewMode === 'create'
               ? t('purchases.receptions.createTitle')
               : viewMode === 'detail'
@@ -284,10 +308,11 @@ export const PurchaseReceptionsPage: FC = () => {
                 : t('purchases.receptions.title')}
           </h1>
         </div>
-        {viewMode === 'list' && canEdit && (
+        <div className="flex items-center gap-2">
+          {viewMode === 'list' && canEdit && (
           <button
             onClick={handleCreateClick}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            className="px-3 py-1.5 pos-button pos-button-primary text-sm"
           >
             + {t('purchases.receptions.create')}
           </button>
@@ -296,7 +321,7 @@ export const PurchaseReceptionsPage: FC = () => {
           <button
             onClick={handleConfirmReception}
             disabled={confirmLoading}
-            className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-sm disabled:opacity-50"
+            className="px-3 py-1.5 pos-button pos-button-primary text-sm disabled:opacity-50"
           >
             {confirmLoading ? t('common.processing') : t('purchases.receptions.confirm')}
           </button>
@@ -305,11 +330,12 @@ export const PurchaseReceptionsPage: FC = () => {
           <button
             onClick={handleAnnulReception}
             disabled={annulLoading}
-            className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm disabled:opacity-50"
+            className="px-3 py-1.5 pos-button pos-button-restrict text-sm disabled:opacity-50"
           >
             {annulLoading ? t('common.processing') : t('purchases.receptions.annul')}
           </button>
         )}
+        </div>
       </div>
 
       {/* Content */}

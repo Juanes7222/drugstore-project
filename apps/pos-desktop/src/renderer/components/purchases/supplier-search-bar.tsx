@@ -76,7 +76,7 @@ export const SupplierSearchBar: FC<SupplierSearchBarProps> = ({
   }, []);
 
   return (
-    <div className="px-4 py-2 border-b border-gray-100">
+    <div className="px-4 py-2 border-b border-border">
       <div className="relative flex items-center">
         {/* Search icon */}
         <span
@@ -104,7 +104,7 @@ export const SupplierSearchBar: FC<SupplierSearchBarProps> = ({
           <button
             type="button"
             onClick={handleClear}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink"
             aria-label={t('common.clear')}
             tabIndex={-1}
           >

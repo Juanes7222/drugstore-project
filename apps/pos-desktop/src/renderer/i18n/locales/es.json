@@ -177,7 +177,9 @@
       "returnsDesc": "Gestionar devoluciones de mercancía a proveedores",
       "noAccess": "No tienes acceso a la sección de compras",
       "moduleLabel": "Módulo de compras",
-      "offlineReady": "Funciona sin conexión"
+      "offlineReady": "Funciona sin conexión",
+      "configTitle": "Configuración",
+      "configDesc": "Personalizar flujo de compras, recepciones y validaciones"
     },
     "suppliers": {
       "title": "Proveedores",
@@ -251,6 +253,15 @@
       "validationProductRequired": "Producto requerido",
       "validationQtyPositive": "Cantidad debe ser mayor a 0",
       "validationCostNonNegative": "Costo no puede ser negativo",
+      "searchProduct": "Buscar producto...",
+      "barcode": "Código de barras",
+      "barcodePlaceholder": "Escanee o ingrese código...",
+      "laboratory": "Laboratorio",
+      "laboratoryPlaceholder": "Nombre del laboratorio...",
+      "productNamePlaceholder": "Nombre del producto...",
+      "newProduct": "Nuevo producto",
+      "createProduct": "Crear producto",
+      "createSupplier": "Crear proveedor",
       "receive": "Recibir"
     },
     "receptions": {
@@ -340,6 +351,26 @@
       "viewReturn": "Ver devolución",
       "itemsCount": "Productos",
       "unitsCount": "Unidades"
+    },
+    "config": {
+      "title": "Configuración de compras",
+      "saved": "Configuración guardada correctamente",
+      "sectionOrder": "Configuración de órdenes",
+      "sectionReception": "Configuración de recepciones",
+      "sectionSupplier": "Valores predeterminados de proveedores",
+      "autoConfirmOnCreate": "Confirmar orden automáticamente al crearla",
+      "autoConfirmOnCreateHint": "Al crear una orden de compra, se confirma inmediatamente sin pasar por la vista de detalle",
+      "requireLotOnReception": "Requerir lote en recepción",
+      "requireLotOnReceptionHint": "Obligar al usuario a registrar el número de lote al recibir mercancía",
+      "requireExpiryOnReception": "Requerir fecha de vencimiento",
+      "requireExpiryOnReceptionHint": "Obligar al usuario a registrar la fecha de vencimiento al recibir mercancía",
+      "allowOverReception": "Permitir sobre-recepción",
+      "allowOverReceptionHint": "Si está desactivado, no se puede recibir cantidad mayor a la solicitada en la orden",
+      "defaultPaymentTermsDays": "Días de pago por defecto",
+      "defaultPaymentTermsDaysHint": "Valor inicial para los días de pago al crear un nuevo proveedor",
+      "maxItemsPerOrder": "Máximo de productos por orden",
+      "maxItemsPerOrderHint": "Límite de productos por orden (0 = sin límite)",
+      "save": "Guardar configuración"
     }
   },
   "sales": {

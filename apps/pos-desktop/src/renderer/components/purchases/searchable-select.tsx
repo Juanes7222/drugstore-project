@@ -18,6 +18,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Loader2, Plus } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,7 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -79,13 +81,33 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
   const selectedLabel = selectedOption?.label ?? '';
   const listboxId = `searchable-listbox-${placeholder.replace(/\s+/g, '-').toLowerCase()}`;
 
-  // ── Close on click outside ────────────────────────────────────────────
+  // ── Position dropdown below input — recalculates on open ──────────────
+
+  const updateDropdownPosition = useCallback(() => {
+    if (!inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    setDropdownStyle({
+      position: 'fixed',
+      top: `${rect.bottom + 4}px`,
+      left: `${rect.left}px`,
+      width: `${rect.width}px`,
+      zIndex: 9999,
+    });
+  }, []);
+
+  // ── Close on click outside (checks both wrapper + portal) ────────────
 
   useEffect(() => {
     if (!isOpen) return;
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      const portal = document.getElementById(listboxId);
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(target) &&
+        (!portal || !portal.contains(target))
+      ) {
         setIsOpen(false);
       }
     };
@@ -98,9 +120,26 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
       clearTimeout(timer);
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isOpen]);
+  }, [isOpen, listboxId]);
 
-  // ── Scroll highlighted item into view ─────────────────────────────────
+  // ── Reposition on scroll; close on resize ──────────────────────────
+  // Scroll uses capture to catch all containers but repositions instead
+  // of closing, so the dropdown stays usable while scrolling inside it.
+
+  useEffect(() => {
+    if (!isOpen) return;
+    updateDropdownPosition();
+    const handleScroll = () => updateDropdownPosition();
+    const handleResize = () => setIsOpen(false);
+    window.addEventListener('scroll', handleScroll, true);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [isOpen, updateDropdownPosition]);
+
+  // ── Scroll highlighted item into view (portal ref) ───────────────────
 
   useEffect(() => {
     if (!listRef.current || highlightedIndex < 0) return;
@@ -124,8 +163,9 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
       onSearch(value);
       setIsOpen(true);
       setHighlightedIndex(-1);
+      updateDropdownPosition();
     },
-    [onSearch],
+    [onSearch, updateDropdownPosition],
   );
 
   // ── Focus handler ────────────────────────────────────────────────────
@@ -133,8 +173,9 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
   const handleFocus = useCallback(() => {
     if (options.length > 0 || query) {
       setIsOpen(true);
+      updateDropdownPosition();
     }
-  }, [options.length, query]);
+  }, [options.length, query, updateDropdownPosition]);
 
   // ── Select an option ─────────────────────────────────────────────────
 
@@ -159,7 +200,7 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
-          if (!isOpen) { setIsOpen(true); return; }
+          if (!isOpen) { setIsOpen(true); updateDropdownPosition(); return; }
           setHighlightedIndex((prev) =>
             prev < filtered.length - 1 ? prev + 1 : 0,
           );
@@ -167,7 +208,7 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
 
         case 'ArrowUp':
           e.preventDefault();
-          if (!isOpen) { setIsOpen(true); return; }
+          if (!isOpen) { setIsOpen(true); updateDropdownPosition(); return; }
           setHighlightedIndex((prev) =>
             prev > 0 ? prev - 1 : filtered.length - 1,
           );
@@ -198,7 +239,7 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
   const inputValue = selectedId && !isOpen ? selectedLabel : query;
 
   return (
-    <div ref={wrapperRef} className="relative">
+    <div ref={wrapperRef}>
       {/* Input trigger */}
       <div className="relative">
         <input
@@ -242,13 +283,14 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
         <p className="mt-0.5 text-xs text-error" role="alert">{error}</p>
       )}
 
-      {/* Dropdown */}
-      {showDropdown && (
+      {/* Dropdown — portal to body to escape parent overflow clipping */}
+      {showDropdown && createPortal(
         <ul
           id={listboxId}
           ref={listRef}
           role="listbox"
-          className="absolute z-40 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-border rounded shadow-pos-elevated"
+          style={dropdownStyle}
+          className="max-h-48 overflow-y-auto bg-panel border border-border rounded shadow-pos-elevated"
         >
           {options.length === 0 && onCreateNew && (
             <li className="px-3 py-2 text-xs text-ink-muted italic" role="option">
@@ -290,7 +332,8 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
               {createNewLabel ?? 'Crear nuevo'}
             </li>
           )}
-        </ul>
+        </ul>,
+        document.body,
       )}
     </div>
   );

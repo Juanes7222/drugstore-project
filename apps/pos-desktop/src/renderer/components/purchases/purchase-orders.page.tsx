@@ -15,9 +15,11 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ArrowLeft } from 'lucide-react';
 import { useAppDispatch } from '@/store/hooks';
 import { navigateToPurchasesMain } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
+import { getPurchasesConfig } from '../../../domain/configuration';
 import {
   useSuppliersService,
   usePurchaseOrdersService,
@@ -260,6 +262,7 @@ export const PurchaseOrdersPage: FC = () => {
 
   // ── Inline Reception state & handlers ──────────────────────────────────
   const [receiveItems, setReceiveItems] = useState<ReceiveItemForm[]>([]);
+  const [receiveValidationError, setReceiveValidationError] = useState<string | null>(null);
   const {
     isLoading: isReceiving,
     error: receiveError,
@@ -269,6 +272,7 @@ export const PurchaseOrdersPage: FC = () => {
 
   const handleReceiveClick = useCallback(async () => {
     if (!selectedOrderId) return;
+    setReceiveValidationError(null);
     resetReceive();
     try {
       const poData = await receptionsService.getOrderItemsForReception(selectedOrderId);
@@ -307,6 +311,42 @@ export const PurchaseOrdersPage: FC = () => {
   const handleConfirmReception = useCallback(async () => {
     if (!selectedOrderId || !selectedOrder) return;
 
+    // Config-based validation
+    const cfg = getPurchasesConfig();
+
+    if (cfg.requireLotOnReception) {
+      const missingLot = receiveItems.find(
+        (item) => item.receivedQuantity > 0 && !item.lotNumber.trim(),
+      );
+      if (missingLot) {
+        setReceiveValidationError('Número de lote requerido para todos los items.');
+        return;
+      }
+    }
+
+    if (cfg.requireExpiryOnReception) {
+      const missingExpiry = receiveItems.find(
+        (item) => item.receivedQuantity > 0 && !item.expirationDate.trim(),
+      );
+      if (missingExpiry) {
+        setReceiveValidationError('Fecha de vencimiento requerida para todos los items.');
+        return;
+      }
+    }
+
+    if (!cfg.allowOverReception) {
+      const overReceived = receiveItems.find(
+        (item) => item.receivedQuantity > item.pendingQuantity,
+      );
+      if (overReceived) {
+        setReceiveValidationError(
+          `No puede recibir más de lo ordenado. Item "${overReceived.productName}": solicitado ${overReceived.pendingQuantity}, recibiendo ${overReceived.receivedQuantity}.`,
+        );
+        return;
+      }
+    }
+
+    setReceiveValidationError(null);
     const result = await runReceive(async () => {
       // Build CreateReceptionInput from receiveItems
       const receptionInput = {
@@ -346,6 +386,7 @@ export const PurchaseOrdersPage: FC = () => {
 
   const handleCancelReception = useCallback(() => {
     setViewMode('detail');
+    setReceiveValidationError(null);
     resetReceive();
   }, [resetReceive]);
 
@@ -429,7 +470,15 @@ export const PurchaseOrdersPage: FC = () => {
       return await ordersService.createOrder(input);
     });
     if (result.success) {
-      setSelectedOrder(result.data);
+      const cfg = getPurchasesConfig();
+      if (cfg.autoConfirmOnCreate) {
+        const confirmed = await ordersService.confirmOrder(result.data.id);
+        setSelectedOrder(confirmed);
+        setSelectedOrderId(confirmed.id);
+      } else {
+        setSelectedOrder(result.data);
+        setSelectedOrderId(result.data.id);
+      }
       setViewMode('detail');
       await loadOrders();
     }
@@ -574,16 +623,16 @@ export const PurchaseOrdersPage: FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
-            className="text-gray-600 hover:text-gray-900"
+            className="text-ink-muted hover:text-ink transition-colors"
             aria-label={t('common.back')}
           >
-            ←
+            <ArrowLeft size={20} aria-hidden="true" />
           </button>
-          <h1 className="text-lg font-semibold">
+          <h1 className="pos-page-title">
             {viewMode === 'create'
               ? t('purchases.orders.createTitle')
               : viewMode === 'detail'
@@ -593,49 +642,51 @@ export const PurchaseOrdersPage: FC = () => {
                   : t('purchases.orders.title')}
           </h1>
         </div>
-        {viewMode === 'list' && canEdit && (
-          <button
-            onClick={handleCreateClick}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-          >
-            + {t('purchases.orders.create')}
-          </button>
-        )}
-        {viewMode === 'detail' && canConfirm && (
-          <button
-            onClick={handleConfirmOrder}
-            disabled={confirmLoading}
-            className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-sm disabled:opacity-50"
-          >
-            {confirmLoading ? t('common.processing') : t('purchases.orders.confirm')}
-          </button>
-        )}
-        {viewMode === 'detail' && canAnnul && (
-          <button
-            onClick={handleAnnulOrder}
-            disabled={annulLoading}
-            className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm disabled:opacity-50"
-          >
-            {annulLoading ? t('common.processing') : t('purchases.orders.annul')}
-          </button>
-        )}
-        {viewMode === 'receive' && (
-          <button
-            onClick={handleConfirmReception}
-            disabled={isReceiving}
-            className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-sm disabled:opacity-50"
-          >
-            {isReceiving ? t('common.processing') : t('purchases.receptions.confirm')}
-          </button>
-        )}
-        {viewMode === 'detail' && (isConfirmed || selectedOrder?.state === 'PARTIALLY_RECEIVED') && selectedOrderId && (
-          <button
-            onClick={handleReceiveClick}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm flex items-center gap-1"
-          >
-            {t('purchases.orders.receive')}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {viewMode === 'list' && canEdit && (
+            <button
+              onClick={handleCreateClick}
+              className="pos-button pos-button-primary text-sm"
+            >
+              + {t('purchases.orders.create')}
+            </button>
+          )}
+          {viewMode === 'detail' && canConfirm && (
+            <button
+              onClick={handleConfirmOrder}
+              disabled={confirmLoading}
+              className="pos-button pos-button-primary text-sm"
+            >
+              {confirmLoading ? t('common.processing') : t('purchases.orders.confirm')}
+            </button>
+          )}
+          {viewMode === 'detail' && canAnnul && (
+            <button
+              onClick={handleAnnulOrder}
+              disabled={annulLoading}
+              className="pos-button pos-button-restrict text-sm"
+            >
+              {annulLoading ? t('common.processing') : t('purchases.orders.annul')}
+            </button>
+          )}
+          {viewMode === 'receive' && (
+            <button
+              onClick={handleConfirmReception}
+              disabled={isReceiving}
+              className="pos-button pos-button-primary text-sm"
+            >
+              {isReceiving ? t('common.processing') : t('purchases.receptions.confirm')}
+            </button>
+          )}
+          {viewMode === 'detail' && (isConfirmed || selectedOrder?.state === 'PARTIALLY_RECEIVED') && selectedOrderId && (
+            <button
+              onClick={handleReceiveClick}
+              className="pos-button pos-button-secondary text-sm"
+            >
+              {t('purchases.orders.receive')}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Content */}
@@ -673,6 +724,7 @@ export const PurchaseOrdersPage: FC = () => {
             error={saveError}
             onCreateSupplier={canEdit ? handleOpenCreateSupplier : undefined}
             onCreateProduct={canEdit ? handleOpenCreateProduct : undefined}
+            maxItems={getPurchasesConfig().maxItemsPerOrder}
           />
         )}
 
@@ -693,7 +745,7 @@ export const PurchaseOrdersPage: FC = () => {
                 <h2 className="pos-page-title">
                   {t('purchases.orders.receive')} — #{selectedOrder.sequentialNumber}
                 </h2>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-ink-muted mt-0.5">
                   {selectedOrder.supplier.businessName}
                 </p>
               </div>
@@ -707,9 +759,9 @@ export const PurchaseOrdersPage: FC = () => {
             </div>
 
             {/* Error banner */}
-            {receiveError && (
-              <div className="mb-4 p-3 bg-red-50 text-red-700 rounded text-sm border border-red-200" role="alert">
-                {receiveError}
+            {(receiveError || receiveValidationError) && (
+              <div className="mb-4 p-3 bg-error-container text-error rounded text-sm border border-error/20" role="alert">
+                {receiveValidationError ?? receiveError}
               </div>
             )}
 
@@ -718,17 +770,17 @@ export const PurchaseOrdersPage: FC = () => {
               {receiveItems.map((item, i) => (
                 <div key={i} className="pos-panel p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-gray-700">
+                    <span className="text-sm font-semibold text-ink">
                       {item.productId}
                     </span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-ink-muted">
                       {t('purchases.orders.requestedQty')}: {item.requestedQuantity}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-0.5">
+                      <label className="block text-xs text-ink-muted mb-0.5">
                         {t('purchases.receptions.qtyReceived')}
                       </label>
                       <input
@@ -741,7 +793,7 @@ export const PurchaseOrdersPage: FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-0.5">
+                      <label className="block text-xs text-ink-muted mb-0.5">
                         {t('purchases.receptions.lotNumber')}
                       </label>
                       <input
@@ -754,7 +806,7 @@ export const PurchaseOrdersPage: FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-0.5">
+                      <label className="block text-xs text-ink-muted mb-0.5">
                         {t('purchases.receptions.expirationDate')}
                       </label>
                       <input
@@ -766,7 +818,7 @@ export const PurchaseOrdersPage: FC = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-0.5">
+                      <label className="block text-xs text-ink-muted mb-0.5">
                         {t('purchases.receptions.unitCost')}
                       </label>
                       <input
@@ -785,9 +837,9 @@ export const PurchaseOrdersPage: FC = () => {
             </div>
 
             {/* Summary */}
-            <div className="flex justify-end py-3 border-t border-gray-200">
+            <div className="flex justify-end py-3 border-t border-border">
               <div className="text-right">
-                <span className="text-sm text-gray-500">{t('purchases.receptions.totalAmount')}: </span>
+                <span className="text-sm text-ink-muted">{t('purchases.receptions.totalAmount')}: </span>
                 <span className="text-base font-bold font-data tabular-nums">
                   {formatCOP(receiveItems.reduce((sum, item) => sum + item.receivedQuantity * item.realUnitCost, 0))}
                 </span>
@@ -795,7 +847,7 @@ export const PurchaseOrdersPage: FC = () => {
             </div>
 
             {/* Actions */}
-            <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+            <div className="flex justify-end gap-3 pt-3 border-t border-border">
               <button
                 type="button"
                 onClick={handleCancelReception}
@@ -818,19 +870,19 @@ export const PurchaseOrdersPage: FC = () => {
       </div>
       {/* ── Inline Supplier Creation Modal ─────────────────────────────── */}
       {showCreateSupplier && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCreateSupplier(false)}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="px-4 py-3 border-b border-gray-200">
-              <h2 className="text-base font-semibold">{t('purchases.orders.createSupplier')}</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40" onClick={() => setShowCreateSupplier(false)}>
+          <div className="bg-panel rounded shadow-pos-elevated w-full max-w-md mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-border">
+              <h2 className="text-base font-semibold text-ink">{t('purchases.orders.createSupplier')}</h2>
             </div>
             <div className="p-4 space-y-3">
               {inlineSupplierError && (
-                <div className="p-2 bg-red-50 text-red-700 rounded text-xs border border-red-200" role="alert">
+                <div className="p-2 bg-error-container text-error rounded text-xs border border-error/20" role="alert">
                   {inlineSupplierError}
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                <label className="block text-xs font-medium text-ink-muted mb-0.5">
                   {t('purchases.suppliers.identificationType')}
                 </label>
                 <select
@@ -845,8 +897,8 @@ export const PurchaseOrdersPage: FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                  {t('purchases.suppliers.identificationNumber')} <span className="text-red-500">*</span>
+                <label className="block text-xs font-medium text-ink-muted mb-0.5">
+                  {t('purchases.suppliers.identificationNumber')} <span className="text-error">*</span>
                 </label>
                 <input
                   type="text"
@@ -858,8 +910,8 @@ export const PurchaseOrdersPage: FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                  {t('purchases.suppliers.businessName')} <span className="text-red-500">*</span>
+                <label className="block text-xs font-medium text-ink-muted mb-0.5">
+                  {t('purchases.suppliers.businessName')} <span className="text-error">*</span>
                 </label>
                 <input
                   type="text"
@@ -871,7 +923,7 @@ export const PurchaseOrdersPage: FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                <label className="block text-xs font-medium text-ink-muted mb-0.5">
                   {t('purchases.suppliers.contactName')}
                 </label>
                 <input
@@ -884,7 +936,7 @@ export const PurchaseOrdersPage: FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                <label className="block text-xs font-medium text-ink-muted mb-0.5">
                   {t('purchases.suppliers.phone')}
                 </label>
                 <input
@@ -897,7 +949,7 @@ export const PurchaseOrdersPage: FC = () => {
                 />
               </div>
             </div>
-            <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-100">
+            <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
               <button
                 type="button"
                 onClick={() => setShowCreateSupplier(false)}
@@ -921,20 +973,20 @@ export const PurchaseOrdersPage: FC = () => {
 
       {/* ── Inline Product Creation Modal ──────────────────────────────── */}
       {showCreateProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowCreateProduct(false)}>
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="px-4 py-3 border-b border-gray-200">
-              <h2 className="text-base font-semibold">{t('purchases.orders.createProduct')}</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40" onClick={() => setShowCreateProduct(false)}>
+          <div className="bg-panel rounded shadow-pos-elevated w-full max-w-md mx-4 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-border">
+              <h2 className="text-base font-semibold text-ink">{t('purchases.orders.createProduct')}</h2>
             </div>
             <div className="p-4 space-y-3">
               {inlineProductError && (
-                <div className="p-2 bg-red-50 text-red-700 rounded text-xs border border-red-200" role="alert">
+                <div className="p-2 bg-error-container text-error rounded text-xs border border-error/20" role="alert">
                   {inlineProductError}
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                  {t('purchases.orders.productName')} <span className="text-red-500">*</span>
+                <label className="block text-xs font-medium text-ink-muted mb-0.5">
+                  {t('purchases.orders.productName')} <span className="text-error">*</span>
                 </label>
                 <input
                   type="text"
@@ -947,8 +999,8 @@ export const PurchaseOrdersPage: FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                  {t('purchases.orders.laboratory')} <span className="text-red-500">*</span>
+                <label className="block text-xs font-medium text-ink-muted mb-0.5">
+                  {t('purchases.orders.laboratory')} <span className="text-error">*</span>
                 </label>
                 <input
                   type="text"
@@ -961,7 +1013,7 @@ export const PurchaseOrdersPage: FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                <label className="block text-xs font-medium text-ink-muted mb-0.5">
                   {t('purchases.orders.barcode')}
                 </label>
                 <input
@@ -975,8 +1027,8 @@ export const PurchaseOrdersPage: FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                  {t('purchases.orders.taxScheme')} <span className="text-red-500">*</span>
+                <label className="block text-xs font-medium text-ink-muted mb-0.5">
+                  {t('purchases.orders.taxScheme')} <span className="text-error">*</span>
                 </label>
                 <select
                   value={selectedTaxSchemeId}
@@ -995,7 +1047,7 @@ export const PurchaseOrdersPage: FC = () => {
                 </select>
               </div>
             </div>
-            <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-100">
+            <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
               <button
                 type="button"
                 onClick={() => setShowCreateProduct(false)}

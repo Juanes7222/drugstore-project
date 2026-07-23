@@ -51,7 +51,7 @@ export const PurchaseOrderList: FC<PurchaseOrderListProps> = ({
 
   if (error) {
     return (
-      <div className="p-4 bg-red-50 text-red-700 rounded border border-red-200 text-sm" role="alert">
+      <div className="p-4 bg-error-container text-error rounded border border-error/20 text-sm" role="alert">
         {error}
       </div>
     );
@@ -62,7 +62,7 @@ export const PurchaseOrderList: FC<PurchaseOrderListProps> = ({
       {/* State filter */}
       {onFilterStateChange && (
         <div className="mb-3 flex items-center gap-2">
-          <label htmlFor="po-state-filter" className="text-xs text-gray-500 font-semibold uppercase tracking-wider">
+          <label htmlFor="po-state-filter" className="text-xs text-ink-muted font-semibold uppercase tracking-wider">
             {t('purchases.orders.filterState')}
           </label>
           <select
@@ -84,7 +84,7 @@ export const PurchaseOrderList: FC<PurchaseOrderListProps> = ({
       <div className="flex-1 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="sticky top-0 bg-white z-10 border-b text-left text-gray-500 text-xs uppercase tracking-wider">
+            <tr className="sticky top-0 bg-panel z-10 border-b border-border text-left text-ink-muted text-xs uppercase tracking-wider">
               <th className="py-2 px-3 font-semibold">#</th>
               <th className="py-2 px-3 font-semibold">{t('purchases.orders.supplier')}</th>
               <th className="py-2 px-3 font-semibold">{t('purchases.orders.state')}</th>
@@ -98,7 +98,7 @@ export const PurchaseOrderList: FC<PurchaseOrderListProps> = ({
               <TableSkeletonRows cols={6} />
             ) : orders.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-gray-400 text-sm">
+                <td colSpan={6} className="py-12 text-center text-ink-muted text-sm">
                   {t('purchases.orders.emptyState')}
                 </td>
               </tr>
@@ -108,14 +108,14 @@ export const PurchaseOrderList: FC<PurchaseOrderListProps> = ({
                 return (
                   <tr
                     key={o.id}
-                    className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                    className="border-b border-border/40 hover:bg-surface/50 transition-colors cursor-pointer"
                     onClick={() => onView(o.id)}
                     tabIndex={0}
                     onKeyDown={(e) => { if (e.key === 'Enter') onView(o.id); }}
                     role="button"
                     aria-label={`${t('purchases.orders.viewOrder')} #${o.sequentialNumber}`}
                   >
-                    <td className="py-3 px-3 font-data tabular-nums text-xs text-gray-500">
+                    <td className="py-3 px-3 font-data tabular-nums text-xs text-ink-muted">
                       #{o.sequentialNumber}
                     </td>
                     <td className="py-3 px-3 font-medium">{o.supplier.businessName}</td>
@@ -127,7 +127,7 @@ export const PurchaseOrderList: FC<PurchaseOrderListProps> = ({
                     <td className="py-3 px-3 text-right font-data tabular-nums">
                       {formatCOP(o.subtotal)}
                     </td>
-                    <td className="py-3 px-3 text-xs text-gray-500">
+                    <td className="py-3 px-3 text-xs text-ink-muted">
                       {formatShortDate(o.createdAt)}
                     </td>
                     <td className="py-3 px-3">

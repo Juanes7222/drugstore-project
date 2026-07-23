@@ -36,7 +36,8 @@ export type PosScreen =
   | "suppliers"
   | "purchase-orders"
   | "purchase-receptions"
-  | "supplier-returns";
+  | "supplier-returns"
+  | "purchases-config";
 
 export type SaleCompletionPhase =
   | "idle"

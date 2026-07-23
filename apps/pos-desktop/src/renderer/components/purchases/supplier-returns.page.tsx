@@ -14,6 +14,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ArrowLeft } from 'lucide-react';
 import { useAppDispatch } from '@/store/hooks';
 import { navigateToPurchasesMain } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
@@ -282,16 +283,16 @@ export const SupplierReturnsPage: FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
-            className="text-gray-600 hover:text-gray-900"
+            className="text-ink-muted hover:text-ink transition-colors"
             aria-label={t('common.back')}
           >
-            ←
+            <ArrowLeft size={20} aria-hidden="true" />
           </button>
-          <h1 className="text-lg font-semibold">
+          <h1 className="pos-page-title">
             {viewMode === 'create'
               ? t('purchases.supplierReturns.createTitle')
               : viewMode === 'detail'
@@ -299,10 +300,11 @@ export const SupplierReturnsPage: FC = () => {
                 : t('purchases.supplierReturns.title')}
           </h1>
         </div>
+        <div className="flex items-center gap-2">
         {viewMode === 'list' && canEdit && (
           <button
             onClick={handleCreateClick}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            className="pos-button pos-button-primary"
           >
             + {t('purchases.supplierReturns.create')}
           </button>
@@ -311,7 +313,7 @@ export const SupplierReturnsPage: FC = () => {
           <button
             onClick={handleConfirmReturn}
             disabled={confirmLoading}
-            className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-sm disabled:opacity-50"
+            className="pos-button pos-button-primary disabled:opacity-50"
           >
             {confirmLoading ? t('common.processing') : t('purchases.supplierReturns.confirm')}
           </button>
@@ -320,7 +322,7 @@ export const SupplierReturnsPage: FC = () => {
           <button
             onClick={handleApproveReturn}
             disabled={approveLoading}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm disabled:opacity-50"
+            className="pos-button pos-button-primary disabled:opacity-50"
           >
             {approveLoading ? t('common.processing') : t('purchases.supplierReturns.approve')}
           </button>
@@ -329,11 +331,12 @@ export const SupplierReturnsPage: FC = () => {
           <button
             onClick={handleAnnulReturn}
             disabled={annulLoading}
-            className="px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-sm disabled:opacity-50"
+            className="pos-button pos-button-restrict disabled:opacity-50"
           >
             {annulLoading ? t('common.processing') : t('purchases.supplierReturns.annul')}
           </button>
         )}
+        </div>
       </div>
 
       {/* Content */}

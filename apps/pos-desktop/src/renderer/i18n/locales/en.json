@@ -136,7 +136,9 @@
       "returnsDesc": "Manage goods returns to suppliers",
       "noAccess": "You don't have access to the purchasing section",
       "moduleLabel": "Purchasing module",
-      "offlineReady": "Works offline"
+      "offlineReady": "Works offline",
+      "configTitle": "Settings",
+      "configDesc": "Customize purchase workflow, reception rules, and validations"
     },
     "suppliers": {
       "title": "Suppliers",
@@ -210,6 +212,15 @@
       "validationProductRequired": "Product is required",
       "validationQtyPositive": "Quantity must be greater than 0",
       "validationCostNonNegative": "Cost cannot be negative",
+      "searchProduct": "Search product...",
+      "barcode": "Barcode",
+      "barcodePlaceholder": "Scan or enter barcode...",
+      "laboratory": "Laboratory",
+      "laboratoryPlaceholder": "Laboratory name...",
+      "productNamePlaceholder": "Product name...",
+      "newProduct": "New product",
+      "createProduct": "Create product",
+      "createSupplier": "Create supplier",
       "receive": "Receive"
     },
     "receptions": {
@@ -299,6 +310,26 @@
       "unitsCount": "Units",
       "searchSupplier": "Search supplier...",
       "searchReception": "Search reception..."
+    },
+    "config": {
+      "title": "Purchase Settings",
+      "saved": "Settings saved successfully",
+      "sectionOrder": "Order Settings",
+      "sectionReception": "Reception Settings",
+      "sectionSupplier": "Supplier Defaults",
+      "autoConfirmOnCreate": "Auto-confirm order on creation",
+      "autoConfirmOnCreateHint": "When creating a purchase order, confirm it immediately without showing the detail view",
+      "requireLotOnReception": "Require lot on reception",
+      "requireLotOnReceptionHint": "Force user to enter lot number when receiving goods",
+      "requireExpiryOnReception": "Require expiry date on reception",
+      "requireExpiryOnReceptionHint": "Force user to enter expiry date when receiving goods",
+      "allowOverReception": "Allow over-reception",
+      "allowOverReceptionHint": "If disabled, received quantity cannot exceed ordered quantity",
+      "defaultPaymentTermsDays": "Default payment terms (days)",
+      "defaultPaymentTermsDaysHint": "Default value for payment terms days when creating a new supplier",
+      "maxItemsPerOrder": "Max items per order",
+      "maxItemsPerOrderHint": "Maximum items allowed per purchase order (0 = unlimited)",
+      "save": "Save settings"
     }
   },
   "sales": {

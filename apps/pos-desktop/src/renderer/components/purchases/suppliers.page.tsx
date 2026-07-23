@@ -14,10 +14,12 @@ import {
   useMemo,
   useState,
 } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@/store/hooks';
 import { navigateToPurchasesMain } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
+import { getPurchasesConfig } from '../../../domain/configuration';
 import { useSuppliersService } from '../common/service-context';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import type {
@@ -128,7 +130,8 @@ export const SuppliersPage: FC = () => {
   const handleCreateClick = useCallback(() => {
     setFormMode('create');
     setEditingSupplierId(null);
-    setFormData(EMPTY_FORM);
+    const cfg = getPurchasesConfig();
+    setFormData({ ...EMPTY_FORM, paymentTermsDays: cfg.defaultPaymentTermsDays });
     resetSave();
     setShowForm(true);
   }, [resetSave]);
@@ -241,21 +244,21 @@ export const SuppliersPage: FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <div className="flex items-center gap-3">
           <button
             onClick={handleBack}
-            className="text-gray-600 hover:text-gray-900"
+            className="text-ink-muted hover:text-ink transition-colors"
             aria-label={t('common.back')}
           >
-            ←
+            <ArrowLeft size={20} aria-hidden="true" />
           </button>
-          <h1 className="text-lg font-semibold">{t('purchases.suppliers.title')}</h1>
+          <h1 className="pos-page-title">{t('purchases.suppliers.title')}</h1>
         </div>
         {canEdit && !showForm && (
           <button
             onClick={handleCreateClick}
-            className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+            className="pos-button pos-button-primary text-sm"
           >
             + {t('purchases.suppliers.create')}
           </button>
@@ -282,7 +285,7 @@ export const SuppliersPage: FC = () => {
             error={saveError}
           />
         ) : listError ? (
-          <div className="p-4 bg-red-50 text-red-700 rounded border border-red-200">
+          <div className="p-4 bg-error-container text-error rounded border border-error/20">
             {listError}
           </div>
         ) : (
@@ -297,18 +300,18 @@ export const SuppliersPage: FC = () => {
 
       {/* Deactivate confirmation dialog */}
       {deletingId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-            <h2 className="text-lg font-semibold mb-2">
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50">
+          <div className="bg-panel rounded shadow-pos-elevated p-6 max-w-sm w-full mx-4">
+            <h2 className="text-base font-semibold text-ink mb-2">
               {t('purchases.suppliers.deactivateConfirm')}
             </h2>
             {deleteError && (
-              <p className="text-red-600 text-sm mb-3">{deleteError}</p>
+              <p className="text-error text-sm mb-3">{deleteError}</p>
             )}
             <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={() => { setDeletingId(null); resetDelete(); }}
-                className="px-4 py-2 text-gray-600 hover:text-gray-900"
+                className="pos-button pos-button-secondary"
                 disabled={isDeleting}
               >
                 {t('common.cancel')}
@@ -316,7 +319,7 @@ export const SuppliersPage: FC = () => {
               <button
                 onClick={handleDeactivateConfirm}
                 disabled={isDeleting}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                className="pos-button pos-button-restrict disabled:opacity-50"
               >
                 {isDeleting ? t('common.processing') : t('common.confirm')}
               </button>

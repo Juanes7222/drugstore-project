@@ -32,7 +32,7 @@ export const SupplierList: FC<SupplierListProps> = ({
     return (
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b text-left text-gray-500 text-xs uppercase tracking-wider">
+          <tr className="border-b text-left text-ink-muted text-xs uppercase tracking-wider">
             <th className="py-2 px-3 font-semibold">{t('purchases.suppliers.nit')}</th>
             <th className="py-2 px-3 font-semibold">{t('purchases.suppliers.businessName')}</th>
             <th className="py-2 px-3 font-semibold">{t('purchases.suppliers.contactName')}</th>
@@ -64,7 +64,7 @@ export const SupplierList: FC<SupplierListProps> = ({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="sticky top-0 bg-white z-10 border-b text-left text-gray-500 text-xs uppercase tracking-wider">
+          <tr className="sticky top-0 bg-panel z-10 border-b border-border text-left text-ink-muted text-xs uppercase tracking-wider">
             <th className="py-2 px-3 font-semibold">{t('purchases.suppliers.nit')}</th>
             <th className="py-2 px-3 font-semibold">{t('purchases.suppliers.businessName')}</th>
             <th className="py-2 px-3 font-semibold">{t('purchases.suppliers.contactName')}</th>
@@ -76,7 +76,7 @@ export const SupplierList: FC<SupplierListProps> = ({
           {suppliers.map((s) => (
             <tr
               key={s.id}
-              className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors"
+              className="border-b border-border/40 hover:bg-surface/50 transition-colors"
             >
               <td className="py-3 px-3 font-data tabular-nums text-xs">
                 {s.identificationNumber}

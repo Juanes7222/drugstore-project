@@ -56,6 +56,29 @@ export interface SyncDefaults {
 }
 
 /**
+ * Purchase-specific workflow settings.
+ * Controls behaviour of purchase orders, receptions, and supplier returns.
+ */
+export interface PurchasesConfig {
+  /** Auto-confirm PO after creation (skip DRAFT). */
+  autoConfirmOnCreate: boolean;
+  /** Require manager PIN to confirm a purchase order. */
+  requireManagerPinForConfirm: boolean;
+  /** Require manager PIN to annul a purchase order. */
+  requireManagerPinForAnnul: boolean;
+  /** Lot number is required on reception items. */
+  requireLotOnReception: boolean;
+  /** Expiration date is required on reception items. */
+  requireExpiryOnReception: boolean;
+  /** Allow receiving more than the ordered quantity. */
+  allowOverReception: boolean;
+  /** Default payment terms (days) when creating a new supplier. */
+  defaultPaymentTermsDays: number;
+  /** Max items per purchase order (0 = unlimited). */
+  maxItemsPerOrder: number;
+}
+
+/**
  * Seller/tenant identity displayed on receipts and invoices.
  * Matches the InvoiceSeller shape from fiscal-types for consistency.
  */
@@ -75,6 +98,8 @@ export interface HydratePayload {
   syncDefaults: SyncDefaults;
   /** Optional seller/tenant info to persist locally. */
   sellerInfo?: TenantInfo;
+  /** Optional purchase-specific config. */
+  purchasesConfig?: PurchasesConfig;
 }
 
 export interface LocalConfigState {
@@ -83,11 +108,16 @@ export interface LocalConfigState {
   syncDefaults: SyncDefaults;
   /** Pharmacy/tenant identity for receipts and invoices. */
   sellerInfo: TenantInfo;
+  /** Purchase-specific workflow settings. */
+  purchasesConfig: PurchasesConfig;
   /** ISO-8601 timestamp of the last successful configuration pull. */
   lastSyncedAt: string | null;
 
   /** Replace the entire store with values fetched from the server. */
   hydrateFromServer(payload: HydratePayload): void;
+
+  /** Merge a partial update into the purchases config. */
+  updatePurchasesConfig(partial: Partial<PurchasesConfig>): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +140,17 @@ const DEFAULT_SYNC_DEFAULTS: SyncDefaults = {
   batchSize: 10,
   maxRetryAttempts: 10,
   retryDelaysSeconds: [30, 120, 300, 600, 1800],
+};
+
+const DEFAULT_PURCHASES_CONFIG: PurchasesConfig = {
+  autoConfirmOnCreate: false,
+  requireManagerPinForConfirm: false,
+  requireManagerPinForAnnul: false,
+  requireLotOnReception: true,
+  requireExpiryOnReception: true,
+  allowOverReception: false,
+  defaultPaymentTermsDays: 30,
+  maxItemsPerOrder: 0,
 };
 
 const DEFAULT_SELLER_INFO: TenantInfo = {
@@ -137,6 +178,7 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
       alertThresholds: { ...DEFAULT_ALERT_THRESHOLDS },
       syncDefaults: { ...DEFAULT_SYNC_DEFAULTS },
       sellerInfo: { ...DEFAULT_SELLER_INFO },
+      purchasesConfig: { ...DEFAULT_PURCHASES_CONFIG },
       lastSyncedAt: null,
 
       hydrateFromServer(payload) {
@@ -145,8 +187,15 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
           alertThresholds: payload.alertThresholds,
           syncDefaults: payload.syncDefaults,
           sellerInfo: payload.sellerInfo ?? { ...DEFAULT_SELLER_INFO },
+          purchasesConfig: payload.purchasesConfig ?? { ...DEFAULT_PURCHASES_CONFIG },
           lastSyncedAt: new Date().toISOString(),
         });
+      },
+
+      updatePurchasesConfig(partial) {
+        set((prev) => ({
+          purchasesConfig: { ...prev.purchasesConfig, ...partial },
+        }));
       },
     }),
     {
@@ -166,3 +215,7 @@ export const getLocalConfigState = (): LocalConfigState =>
 /** Convenience accessor for the seller/tenant identity block. */
 export const getTenantInfo = (): TenantInfo =>
   useLocalConfigStore.getState().sellerInfo;
+
+/** Convenience accessor for purchase-specific config. */
+export const getPurchasesConfig = (): PurchasesConfig =>
+  useLocalConfigStore.getState().purchasesConfig;
