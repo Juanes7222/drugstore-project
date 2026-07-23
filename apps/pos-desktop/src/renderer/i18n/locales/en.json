@@ -472,6 +472,8 @@
     "remove_barcode": "Remove barcode",
     "section_pricing": "Price & tax",
     "price": "Sale price",
+    "cost": "Initial cost",
+    "cost_helper": "Unit purchase cost",
     "tax_scheme": "Tax scheme",
     "select_tax_scheme": "Select a tax scheme",
     "no_tax_schemes_synced": "No data — sync with server",

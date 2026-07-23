@@ -23,16 +23,18 @@ model Product {
   category              Category? @relation(fields: [categoryId], references: [id])
   pharmaceuticalFormId  String?
   pharmaceuticalForm    PharmaceuticalForm? @relation(fields: [pharmaceuticalFormId], references: [id])
-  currentPriceId        String?
-  currentTaxHistoryId   String?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  createdById           String
-  priceHistories        ProductPriceHistory[]
-  taxHistories          ProductTaxHistory[]
-  barcodes              ProductBarcode[]
-  lots                  Lot[]
-  saleItems             SaleItem[]
+  currentPriceId         String?
+  currentTaxHistoryId    String?
+  currentCostId          String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  createdById            String
+  priceHistories         ProductPriceHistory[]
+  taxHistories           ProductTaxHistory[]
+  costHistories          ProductCostHistory[]
+  barcodes               ProductBarcode[]
+  lots                   Lot[]
+  saleItems              SaleItem[]
 
   @@index([commercialName])
   @@index([genericName])

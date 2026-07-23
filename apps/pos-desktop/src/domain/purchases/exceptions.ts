@@ -134,6 +134,16 @@ export class SupplierReturnLotCostUnavailableException extends DomainError {
 }
 
 // ---------------------------------------------------------------------------
+// Product
+// ---------------------------------------------------------------------------
+
+export class ProductNotFoundException extends DomainError {
+  constructor(productId: string) {
+    super('PRODUCT_NOT_FOUND', `Product ${productId} not found.`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Lot / Stock
 // ---------------------------------------------------------------------------
 

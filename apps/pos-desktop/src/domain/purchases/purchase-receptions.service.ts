@@ -3,8 +3,8 @@
  *
  * A purchase reception records the physical receipt of inventory from a
  * supplier.  On confirmation, stock is added to lots, inventory movements
- * are recorded, and a SyncQueue entry is created for server-side
- * reconciliation.
+ * are recorded, the product's weighted average cost (CPP) is recalculated,
+ * and a SyncQueue entry is created for server-side reconciliation.
  *
  * ## Stock authority
  * The local POS is the single writer to its own PGlite database.  Lot
@@ -31,6 +31,7 @@ import {
   PurchaseOrderItemNotFoundException,
   PurchaseOrderItemMismatchException,
   ConcurrentStockModificationException,
+  ProductNotFoundException,
 } from './exceptions';
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,30 @@ export interface CreateReceptionItemInput {
   taxRate: number;
   /** Discount amount applied to this item. */
   discountAmount?: number;
+}
+
+/**
+ * Extended item info returned by getOrderItemsForReception.
+ * Carries display fields (productName, requestedQuantity) that
+ * CreateReceptionItemInput doesn't have, so the inline receive
+ * form can show the user what they're receiving.
+ */
+export interface ReceptionOrderItem {
+  productId: string;
+  productName: string;
+  /** The purchase-order-item link (if any). */
+  purchaseOrderItemId: string;
+  /** Quantity originally ordered. */
+  requestedQuantity: number;
+  /** Quantity still pending from the PO item. */
+  pendingQuantity: number;
+  /** Pre-filled quantity to receive (defaults to pending). */
+  receivedQuantity: number;
+  lotNumber?: string;
+  expirationDate?: string;
+  realUnitCost: number;
+  taxSchemeId: string;
+  taxRate: number;
 }
 
 export interface CreateReceptionInput {
@@ -285,8 +310,9 @@ export class PurchaseReceptionsService {
 
   /**
    * Confirm a DRAFT purchase reception — commits stock, creates inventory
-   * movements, updates linked purchase order, and creates a SyncQueue entry
-   * for server-side reconciliation.
+   * movements, recalculates product CPP (weighted average cost), updates
+   * linked purchase order, and creates a SyncQueue entry for server-side
+   * reconciliation.
    *
    * Requires INVENTORY_ASSISTANT or ADMIN role.
    *
@@ -294,6 +320,12 @@ export class PurchaseReceptionsService {
    * For each item, a Lot is found or created using the provided lot number
    * and expiration date. Stock is incremented with optimistic locking via
    * the `version` column.
+   *
+   * ## CPP recalculation (RF-COM-35 / RF-COM-36)
+   * After all stock updates, the weighted average cost for each product
+   * in the reception is recalculated using:
+   *   CPP_nuevo = (stock_anterior × CPP_anterior + cantidad_recibida × costo_recibido)
+   *             / (stock_anterior + cantidad_recibida)
    *
    * @throws PurchaseReceptionNotFoundException
    * @throws PurchaseReceptionNotDraftException
@@ -320,7 +352,46 @@ export class PurchaseReceptionsService {
         throw new PurchaseReceptionNotDraftException(id, reception.state);
       }
 
-      // 2. For each item, create/update lot and record movement
+      // 2a. Collect pre-update stock/cost per product for CPP calculation
+      //     Group reception items by product to know total received per product
+      const productReceivedQuantities = new Map<string, number>();
+      const productReceivedCosts = new Map<string, Prisma.Decimal>();
+      for (const item of reception.items) {
+        const prevQty = productReceivedQuantities.get(item.productId) ?? 0;
+        productReceivedQuantities.set(item.productId, prevQty + item.receivedQuantity);
+        // Use the first item's cost per product (all items of same product in one reception
+        // should have the same realUnitCost; if not, the last one wins — conservative choice)
+        productReceivedCosts.set(item.productId, item.realUnitCost);
+      }
+
+      // Fetch current product costs and total stock per product (pre-update)
+      const productCostMap = new Map<string, string | null>();
+      const productStockMap = new Map<string, number>();
+      for (const productId of productReceivedQuantities.keys()) {
+        // Get current cost from product's active cost history
+        const product = await tx.product.findUnique({
+          where: { id: productId },
+          select: {
+            currentCostId: true,
+            costHistories: {
+              where: { effectiveTo: null },
+              select: { cost: true },
+              take: 1,
+            },
+          },
+        });
+        if (!product) throw new ProductNotFoundException(productId);
+        productCostMap.set(productId, product.costHistories[0]?.cost.toString() ?? null);
+
+        // Get total stock across all lots for this product (pre-update)
+        const lotsAgg = await tx.lot.aggregate({
+          where: { productId },
+          _sum: { currentStock: true },
+        });
+        productStockMap.set(productId, lotsAgg._sum.currentStock ?? 0);
+      }
+
+      // 2b. For each item, create/update lot and record movement
       for (const item of reception.items) {
         if (!item.expirationDate) {
           throw new Error(`Item ${item.id} is missing expiration date — required for lot creation.`);
@@ -404,7 +475,67 @@ export class PurchaseReceptionsService {
         }
       }
 
-      // 4. Transition reception to CONFIRMED
+      // 4. Calculate and update CPP for each product (RF-COM-35 / RF-COM-36)
+      //    CPP_nuevo = (stock_anterior × CPP_anterior + cantidad_recibida × costo_recibido)
+      //              / (stock_anterior + cantidad_recibida)
+      for (const [productId, receivedQty] of productReceivedQuantities) {
+        const prevStock = productStockMap.get(productId) ?? 0;
+        const prevCostStr = productCostMap.get(productId);
+        const receivedCost = productReceivedCosts.get(productId)!;
+
+        const prevCost = prevCostStr
+          ? new Prisma.Decimal(prevCostStr)
+          : new Prisma.Decimal(0);
+        const prevStockD = new Prisma.Decimal(prevStock);
+        const receivedQtyD = new Prisma.Decimal(receivedQty);
+
+        // If no prior stock, new CPP = received cost
+        // If no prior cost, new CPP = received cost
+        let newCost: Prisma.Decimal;
+        if (prevStock === 0 || !prevCostStr) {
+          newCost = receivedCost;
+        } else {
+          newCost = prevStockD
+            .times(prevCost)
+            .plus(receivedQtyD.times(receivedCost))
+            .dividedBy(prevStockD.plus(receivedQtyD));
+        }
+
+        // Expire current cost history
+        const product = await tx.product.findUnique({
+          where: { id: productId },
+          select: { currentCostId: true },
+        });
+        if (product?.currentCostId) {
+          await tx.productCostHistory.update({
+            where: { id: product.currentCostId },
+            data: { effectiveTo: confirmedAt },
+          });
+        }
+
+        // Create new cost history
+        const newCostHistoryId = globalThis.crypto.randomUUID();
+        await tx.productCostHistory.create({
+          data: {
+            id: newCostHistoryId,
+            productId,
+            previousCostHistoryId: product?.currentCostId ?? null,
+            cost: newCost,
+            effectiveFrom: confirmedAt,
+            changedById: session.userId,
+            changedAt: confirmedAt,
+            changeReason: 'CPP updated after purchase reception confirmation',
+          },
+        });
+
+        // Update product pointer
+        await tx.product.update({
+          where: { id: productId },
+          data: { currentCostId: newCostHistoryId },
+        });
+      }
+
+      // 6. Transition reception to CONFIRMED
       const updated = await tx.purchaseReception.update({
         where: { id },
         data: {
@@ -418,7 +549,7 @@ export class PurchaseReceptionsService {
         },
       });
 
-      // 5. Create SyncQueue entry
+      // 7. Create SyncQueue entry
       await this.createSyncQueueEntry(tx, reception, session, confirmedAt);
 
       return this.mapReception(updated, updated.items);
@@ -439,12 +570,20 @@ export class PurchaseReceptionsService {
    */
   async getOrderItemsForReception(
     orderId: string,
-  ): Promise<{ supplierId: string; notes: string | null; items: CreateReceptionItemInput[] }> {
+  ): Promise<{ supplierId: string; notes: string | null; items: ReceptionOrderItem[] }> {
     const order = await this.prisma.purchaseOrder.findUnique({
       where: { id: orderId },
       include: { items: true },
     });
     if (!order) throw new PurchaseOrderNotFoundException(orderId);
+
+    // Batch-fetch product names for display
+    const productIds = [...new Set(order.items.map((i) => i.productId))];
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, commercialName: true },
+    });
+    const productNameMap = new Map(products.map((p) => [p.id, p.commercialName]));
 
     // Look up default tax scheme for fallback
     const defaultTaxScheme = await this.prisma.taxScheme.findFirst({
@@ -453,16 +592,18 @@ export class PurchaseReceptionsService {
       select: { id: true, rate: true },
     });
 
-    const items: CreateReceptionItemInput[] = order.items.map((item) => ({
+    const items: ReceptionOrderItem[] = order.items.map((item) => ({
       productId: item.productId,
+      productName: productNameMap.get(item.productId) ?? '',
       purchaseOrderItemId: item.id,
+      requestedQuantity: item.requestedQuantity,
+      pendingQuantity: item.pendingQuantity,
       receivedQuantity: item.pendingQuantity, // default = still pending
       lotNumber: undefined,
       expirationDate: undefined,
       realUnitCost: Number(item.expectedUnitCost),
       taxSchemeId: defaultTaxScheme?.id ?? '',
       taxRate: defaultTaxScheme ? Number(defaultTaxScheme.rate) : 0,
-      discountAmount: 0,
     }));
 
     return {

@@ -76,6 +76,7 @@ export interface ProductFormData {
   pharmaceuticalFormId: string;
   barcodes: DisplayBarcode[];
   price: string;
+  cost: string;
   taxSchemeId: string;
 }
 

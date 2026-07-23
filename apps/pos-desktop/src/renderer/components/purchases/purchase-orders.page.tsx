@@ -275,10 +275,10 @@ export const PurchaseOrdersPage: FC = () => {
       setReceiveItems(
         poData.items.map((item) => ({
           productId: item.productId,
-          productName: '',
-          purchaseOrderItemId: item.purchaseOrderItemId ?? '',
-          requestedQuantity: 0,
-          pendingQuantity: item.receivedQuantity,
+          productName: item.productName,
+          purchaseOrderItemId: item.purchaseOrderItemId,
+          requestedQuantity: item.requestedQuantity,
+          pendingQuantity: item.pendingQuantity,
           receivedQuantity: item.receivedQuantity,
           lotNumber: item.lotNumber ?? '',
           expirationDate: item.expirationDate ?? '',

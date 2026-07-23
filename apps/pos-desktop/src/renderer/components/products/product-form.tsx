@@ -70,6 +70,7 @@ interface FormState {
   pharmaceuticalFormId: string;
   barcodes: DisplayBarcode[];
   price: string;
+  cost: string;
   taxSchemeId: string;
   errors: Record<string, string>;
 }
@@ -102,6 +103,7 @@ const emptyFormData = (): FormState => ({
   pharmaceuticalFormId: "",
   barcodes: [{ barcode: "", barcodeType: "EAN13", isPrimary: true }],
   price: "",
+  cost: "",
   taxSchemeId: "",
   errors: {},
 });
@@ -303,6 +305,7 @@ export const ProductForm: FC<ProductFormProps> = ({
         barcode: bc.barcode.trim(),
       })),
       price: state.price,
+      cost: state.cost,
       taxSchemeId: state.taxSchemeId,
     });
   }, [state, onSave]);
@@ -862,6 +865,54 @@ export const ProductForm: FC<ProductFormProps> = ({
                     {t("products.field_required")}
                   </p>
                 )}
+              </div>
+
+              {/* Initial cost */}
+              <div>
+                <label
+                  htmlFor="pf-cost"
+                  className="mb-pos-xs block text-body-sm font-medium"
+                  style={{ color: "var(--color-ink)" }}
+                >
+                  {t("products.cost")}
+                </label>
+                <div className="relative">
+                  <span
+                    className="absolute left-pos-sm top-1/2 -translate-y-1/2 text-body-sm"
+                    style={{
+                      color:
+                        "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                    }}
+                  >
+                    $
+                  </span>
+                  <input
+                    id="pf-cost"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    lang="es-CO"
+                    value={state.cost}
+                    onChange={(e) =>
+                      dispatch({
+                        type: "SET_FIELD",
+                        field: "cost",
+                        value: e.target.value,
+                      })
+                    }
+                    disabled={isProcessing}
+                    className="pos-input w-full pl-pos-lg font-data tabular-nums"
+                  />
+                </div>
+                <p
+                  className="mt-pos-xs text-caption"
+                  style={{
+                    color:
+                      "color-mix(in srgb, var(--color-ink) 45%, transparent)",
+                  }}
+                >
+                  {t("products.cost_helper")}
+                </p>
               </div>
 
               {/* Tax scheme */}

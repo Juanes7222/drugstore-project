@@ -185,6 +185,14 @@ export const ProductsPage: FC = () => {
             })),
             price: { price: data.price },
             tax: { taxSchemeId: data.taxSchemeId },
+            ...(data.cost.trim()
+              ? {
+                  initialCost: {
+                    cost: data.cost,
+                    changeReason: "Initial cost on creation",
+                  },
+                }
+              : {}),
           });
         } else if (formMode === "edit" && selectedProduct) {
           const updateInput: Record<string, unknown> = {};

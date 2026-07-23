@@ -528,6 +528,8 @@
     "remove_barcode": "Eliminar código",
     "section_pricing": "Precio e impuestos",
     "price": "Precio de venta",
+    "cost": "Costo inicial",
+    "cost_helper": "Costo unitario de compra",
     "tax_scheme": "Esquema de impuesto",
     "select_tax_scheme": "Seleccione un esquema de impuesto",
     "no_tax_schemes_synced": "Sin datos — sincronice con el servidor",

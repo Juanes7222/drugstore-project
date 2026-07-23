@@ -166,6 +166,34 @@ const PRICE_JERINGA = 'price_jeringa' as const;
 const PRICE_BAJA = 'price_baja' as const;
 const PRICE_GASA = 'price_gasa' as const;
 
+const COST_ACET_500 = 'cost_acet_500' as const;
+const COST_IBU_400 = 'cost_ibu_400' as const;
+const COST_IBU_800 = 'cost_ibu_800' as const;
+const COST_DIC_50 = 'cost_dic_50' as const;
+const COST_NAP_250 = 'cost_nap_250' as const;
+const COST_AMOX_500 = 'cost_amox_500' as const;
+const COST_AZIT_500 = 'cost_azit_500' as const;
+const COST_CEF_500 = 'cost_cef_500' as const;
+const COST_COTRI = 'cost_cotri' as const;
+const COST_LORAT_10 = 'cost_lorat_10' as const;
+const COST_CET_10 = 'cost_cet_10' as const;
+const COST_DESL_5 = 'cost_desl_5' as const;
+const COST_LOS_50 = 'cost_los_50' as const;
+const COST_ENAL_10 = 'cost_enal_10' as const;
+const COST_OME_20 = 'cost_ome_20' as const;
+const COST_ESO_40 = 'cost_eso_40' as const;
+const COST_RAN_150 = 'cost_ran_150' as const;
+const COST_SALB_100 = 'cost_salb_100' as const;
+const COST_DOLEX = 'cost_dolex' as const;
+const COST_VITC_500 = 'cost_vitc_500' as const;
+const COST_ALCOHOL = 'cost_alcohol' as const;
+const COST_GUANTES = 'cost_guantes' as const;
+const COST_JERINGA = 'cost_jeringa' as const;
+const COST_BAJA = 'cost_baja' as const;
+const COST_GASA = 'cost_gasa' as const;
+const COST_TRAMADOL_50 = 'cost_tramadol_50' as const;
+const COST_CLONAZEPAM_2 = 'cost_clonazepam_2' as const;
+
 const TAXH_TRAMADOL_50 = 'taxh_tramadol_50' as const;
 const TAXH_CLONAZEPAM_2 = 'taxh_clonazepam_2' as const;
 
@@ -361,6 +389,33 @@ export const IDS = {
   PRICE_GASA,
   PRICE_TRAMADOL_50,
   PRICE_CLONAZEPAM_2,
+  COST_ACET_500,
+  COST_IBU_400,
+  COST_IBU_800,
+  COST_DIC_50,
+  COST_NAP_250,
+  COST_AMOX_500,
+  COST_AZIT_500,
+  COST_CEF_500,
+  COST_COTRI,
+  COST_LORAT_10,
+  COST_CET_10,
+  COST_DESL_5,
+  COST_LOS_50,
+  COST_ENAL_10,
+  COST_OME_20,
+  COST_ESO_40,
+  COST_RAN_150,
+  COST_SALB_100,
+  COST_DOLEX,
+  COST_VITC_500,
+  COST_ALCOHOL,
+  COST_GUANTES,
+  COST_JERINGA,
+  COST_BAJA,
+  COST_GASA,
+  COST_TRAMADOL_50,
+  COST_CLONAZEPAM_2,
   TAXH_ACET_500,
   TAXH_IBU_400,
   TAXH_IBU_800,

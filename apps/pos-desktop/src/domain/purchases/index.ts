@@ -22,6 +22,7 @@ export {
   type ReceptionResult,
   type CreateReceptionInput,
   type CreateReceptionItemInput,
+  type ReceptionOrderItem,
 } from './purchase-receptions.service';
 export {
   createSupplierReturnsService,

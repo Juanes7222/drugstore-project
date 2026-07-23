@@ -57,6 +57,12 @@ export interface CreateProductPriceInput {
   changeReason?: string;
 }
 
+export interface CreateProductCostInput {
+  cost: number | string | Prisma.Decimal;
+  effectiveFrom?: Date | string;
+  changeReason?: string;
+}
+
 export interface CreateProductTaxInput {
   taxSchemeId: string;
   effectiveFrom?: Date | string;
@@ -83,8 +89,10 @@ export interface CreateProductInput {
   price: CreateProductPriceInput;
   /** Default tax entry. Required for offline creation. */
   tax: CreateProductTaxInput;
-  /** Initial barcodes (must include at least one primary). */
+  /** Default barcodes (must include at least one primary). */
   barcodes: ProductBarcodeInput[];
+  /** Optional initial cost entry. */
+  initialCost?: CreateProductCostInput;
 }
 
 export interface UpdateProductInput {
@@ -109,6 +117,8 @@ export interface UpdateProductInput {
   newPrice?: CreateProductPriceInput;
   /** New tax entry (creates a new ProductTaxHistory, updates currentTaxHistoryId). */
   newTax?: CreateProductTaxInput;
+  /** New cost entry (creates a new ProductCostHistory, updates currentCostId). */
+  newCost?: CreateProductCostInput;
 }
 
 export interface ProductListItem {
@@ -135,6 +145,8 @@ export interface ProductListItem {
   barcodes: Array<{ id: string; barcode: string; barcodeType: string; isPrimary: boolean }>;
   /** Active price as decimal string, or null if no price set. */
   currentPrice: string | null;
+  /** Active cost (CPP) as decimal string, or null if no cost set. */
+  currentCost: string | null;
   /** Active tax scheme id, or null if no tax set. */
   currentTaxSchemeId: string | null;
 }
@@ -150,6 +162,7 @@ export interface ProductSearchResult {
   saleType: SaleType;
   isActive: boolean;
   currentPrice: string | null;
+  currentCost: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +248,11 @@ export class ProductService {
             select: { price: true },
             take: 1,
           },
+          costHistories: {
+            where: { effectiveTo: null },
+            select: { cost: true },
+            take: 1,
+          },
           taxHistories: {
             where: { effectiveTo: null },
             select: { taxSchemeId: true },
@@ -272,6 +290,7 @@ export class ProductService {
         updatedAt: p.updatedAt.toISOString(),
         barcodes: p.barcodes,
         currentPrice: p.priceHistories[0]?.price.toString() ?? null,
+        currentCost: p.costHistories[0]?.cost.toString() ?? null,
         currentTaxSchemeId: p.taxHistories[0]?.taxSchemeId ?? null,
       })),
     };
@@ -298,6 +317,11 @@ export class ProductService {
           include: {
             changedByUser: { select: { id: true, displayName: true } },
           },
+        },
+        costHistories: {
+          where: { effectiveTo: null },
+          select: { cost: true },
+          take: 1,
         },
         taxHistories: {
           where: { effectiveTo: null },
@@ -333,6 +357,11 @@ export class ProductService {
           select: { price: true },
           take: 1,
         },
+        costHistories: {
+          where: { effectiveTo: null },
+          select: { cost: true },
+          take: 1,
+        },
       },
     });
 
@@ -349,6 +378,7 @@ export class ProductService {
       saleType: product.saleType as SaleType,
       isActive: product.isActive,
       currentPrice: product.priceHistories[0]?.price.toString() ?? null,
+      currentCost: product.costHistories[0]?.cost.toString() ?? null,
     };
   }
 
@@ -371,6 +401,11 @@ export class ProductService {
           select: { price: true },
           take: 1,
         },
+        costHistories: {
+          where: { effectiveTo: null },
+          select: { cost: true },
+          take: 1,
+        },
       },
     });
 
@@ -387,6 +422,7 @@ export class ProductService {
       saleType: product.saleType as SaleType,
       isActive: product.isActive,
       currentPrice: product.priceHistories[0]?.price.toString() ?? null,
+      currentCost: product.costHistories[0]?.cost.toString() ?? null,
     };
   }
 
@@ -501,13 +537,40 @@ export class ProductService {
         },
       });
 
-      // 5. Update product with price/tax pointers
+      // 4b. Create initial cost history (if provided)
+      let costHistoryId: string | null = null;
+      let costEffectiveFrom: Date = now;
+      if (input.initialCost) {
+        costHistoryId = globalThis.crypto.randomUUID();
+        costEffectiveFrom = input.initialCost.effectiveFrom
+          ? new Date(input.initialCost.effectiveFrom)
+          : now;
+
+        await tx.productCostHistory.create({
+          data: {
+            id: costHistoryId,
+            productId,
+            cost: new Prisma.Decimal(input.initialCost.cost),
+            effectiveFrom: costEffectiveFrom,
+            changedById: session.userId,
+            changedAt: now,
+            changeReason: input.initialCost.changeReason ?? 'Initial cost on creation',
+          },
+        });
+      }
+
+      // 5. Update product with price/tax/cost pointers
+      const updatePointers: Record<string, string> = {
+        currentPriceId: priceHistoryId,
+        currentTaxHistoryId: taxHistoryId,
+      };
+      if (costHistoryId) {
+        updatePointers.currentCostId = costHistoryId;
+      }
+
       await tx.product.update({
         where: { id: productId },
-        data: {
-          currentPriceId: priceHistoryId,
-          currentTaxHistoryId: taxHistoryId,
-        },
+        data: updatePointers,
       });
 
       // 6. Build full product data for sync payload
@@ -540,6 +603,12 @@ export class ProductService {
             price: input.price.price.toString(),
             effectiveFrom: effectiveFrom.toISOString(),
           },
+          ...(input.initialCost && {
+            cost: {
+              cost: input.initialCost.cost.toString(),
+              effectiveFrom: costEffectiveFrom!.toISOString(),
+            },
+          }),
           tax: {
             taxSchemeId: input.tax.taxSchemeId,
             effectiveFrom: taxEffectiveFrom.toISOString(),
@@ -591,7 +660,7 @@ export class ProductService {
     // Verify existence
     const existing = await this.prisma.product.findUnique({
       where: { id },
-      select: { id: true, currentPriceId: true, currentTaxHistoryId: true },
+      select: { id: true, currentPriceId: true, currentTaxHistoryId: true, currentCostId: true },
     });
     if (!existing) throw new ProductNotFoundException(id);
 
@@ -685,7 +754,39 @@ export class ProductService {
         updateData.currentPriceId = newPriceHistoryId;
       }
 
-      // 4. Handle new tax entry
+      // 4. Handle new cost entry
+      if (input.newCost) {
+        // Expire current active cost
+        if (existing.currentCostId) {
+          await tx.productCostHistory.update({
+            where: { id: existing.currentCostId },
+            data: { effectiveTo: now },
+          });
+        }
+
+        // Create new cost history
+        const newCostHistoryId = globalThis.crypto.randomUUID();
+        const costEffectiveFrom = input.newCost.effectiveFrom
+          ? new Date(input.newCost.effectiveFrom)
+          : now;
+
+        await tx.productCostHistory.create({
+          data: {
+            id: newCostHistoryId,
+            productId: id,
+            previousCostHistoryId: existing.currentCostId ?? null,
+            cost: new Prisma.Decimal(input.newCost.cost),
+            effectiveFrom: costEffectiveFrom,
+            changedById: session.userId,
+            changedAt: now,
+            changeReason: input.newCost.changeReason ?? null,
+          },
+        });
+
+        updateData.currentCostId = newCostHistoryId;
+      }
+
+      // 5. Handle new tax entry
       if (input.newTax) {
         // Expire current active tax
         if (existing.currentTaxHistoryId) {
@@ -852,6 +953,89 @@ export class ProductService {
         now,
       );
     });
+  }
+
+  /**
+   * Update the current cost (CPP) of a product.
+   *
+   * Creates a new ProductCostHistory entry, expires the previous one,
+   * and updates `currentCostId`. Does NOT create a SyncQueue entry —
+   * cost updates are side effects of purchase receptions and are synced
+   * as part of the reception confirmation payload.
+   *
+   * Requires INVENTORY_ASSISTANT or ADMIN role.
+   *
+   * @throws ProductNotFoundException if the product does not exist.
+   */
+  async updateProductCost(
+    productId: string,
+    newCost: number | string | Prisma.Decimal,
+    changedById: string,
+    changeReason?: string,
+  ): Promise<void> {
+    this.auth.requireRole(
+      RoleType.INVENTORY_ASSISTANT,
+      RoleType.ADMIN,
+    );
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, currentCostId: true },
+    });
+    if (!product) throw new ProductNotFoundException(productId);
+
+    await this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+
+      // Expire current active cost
+      if (product.currentCostId) {
+        await tx.productCostHistory.update({
+          where: { id: product.currentCostId },
+          data: { effectiveTo: now },
+        });
+      }
+
+      // Create new cost history
+      const newCostHistoryId = globalThis.crypto.randomUUID();
+      await tx.productCostHistory.create({
+        data: {
+          id: newCostHistoryId,
+          productId,
+          previousCostHistoryId: product.currentCostId ?? null,
+          cost: new Prisma.Decimal(newCost),
+          effectiveFrom: now,
+          changedById,
+          changedAt: now,
+          changeReason: changeReason ?? 'CPP updated after purchase reception',
+        },
+      });
+
+      // Update product pointer
+      await tx.product.update({
+        where: { id: productId },
+        data: { currentCostId: newCostHistoryId },
+      });
+    });
+  }
+
+  /**
+   * Get the current cost of a product.
+   *
+   * @returns The current cost as a decimal string, or null if no cost has been set.
+   */
+  async getCurrentCost(productId: string): Promise<string | null> {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      include: {
+        costHistories: {
+          where: { effectiveTo: null },
+          select: { cost: true },
+          take: 1,
+        },
+      },
+    });
+    if (!product) throw new ProductNotFoundException(productId);
+    return product.costHistories[0]?.cost.toString() ?? null;
   }
 
   // -------------------------------------------------------------------------

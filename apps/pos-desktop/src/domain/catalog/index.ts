@@ -11,6 +11,7 @@ export {
   ProductService,
   type CreateProductInput,
   type CreateProductPriceInput,
+  type CreateProductCostInput,
   type CreateProductTaxInput,
   type UpdateProductInput,
   type ProductBarcodeInput,
