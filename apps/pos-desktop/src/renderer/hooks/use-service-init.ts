@@ -50,6 +50,7 @@ import { createLocalAdjustmentService } from '../../domain/fiscal/local-adjustme
 import { createDomainServices } from '../../domain/domain-services/domain-service.factory';
 import { createBackupService } from '../../domain/backup/backup.service';
 import { createSyncScheduler, type SyncScheduler } from '../../domain/sync/sync-scheduler.service';
+import { createLocalAuditWriter } from '../../domain/audit/local-audit-writer.service';
 import { createUpdateService } from '../../domain/updates/update.service';
 import type { UpdateService, UpdateServiceConfig } from '../../domain/updates/update.service';
 import type { PrintPayloadType, DiscoveredPrinter } from '../../domain/printing/printing-types';
@@ -332,6 +333,9 @@ export async function initializeServices(
   // 9. Create inventory-lots service (needed by domain services below)
   const inventoryLotsService = createInventoryLotsService(prismaClient);
 
+  // 9b. Create local audit writer (fire-and-forget — never throws)
+  const auditWriter = createLocalAuditWriter(prismaClient);
+
   // 10. Create domain services
   const authService = createAuthService({ baseUrl: apiBaseUrl });
   const domainServices = createDomainServices({
@@ -340,6 +344,7 @@ export async function initializeServices(
     invoiceService: fiscalServices.invoiceService,
     printRouter: printingServices.printRouter,
     inventoryLotsService,
+    auditWriter,
   });
 
   // 10b. Create local adjustment service (needed by cash-shift for operational totals)
@@ -351,6 +356,7 @@ export async function initializeServices(
     authService,
     localAdjustmentService,
     printingServices.printRouter,
+    auditWriter,
   );
   await useCashShiftStore.getState().hydrateFromDb(prismaClient, workstationId);
 
@@ -369,6 +375,7 @@ export async function initializeServices(
     clients: { baseUrl: apiBaseUrl },
     accessToken: sessionExt?.accessToken ?? undefined,
     invoiceService: fiscalServices.invoiceService,
+    auditWriter,
   });
 
   // Flatten into the services interface consumers expect

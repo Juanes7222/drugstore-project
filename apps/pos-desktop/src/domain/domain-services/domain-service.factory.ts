@@ -27,6 +27,7 @@ import type { SalesPosService } from '../sales-pos/sales-pos.service';
 import type { InventoryLotsService } from '../inventory-lots/inventory-lots.service';
 import { getTenantConfigState } from '../config/tenant-config.store';
 import type { EffectiveConfig } from '../config/types';
+import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +49,7 @@ export interface DomainServiceFactoryInput {
   invoiceService?: InvoiceService;
   printRouter?: PrintRouter;
   inventoryLotsService: InventoryLotsService;
+  auditWriter?: LocalAuditWriter;
 }
 
 /**
@@ -78,7 +80,7 @@ export function getEffectiveConfig(): EffectiveConfig | null {
 export function createDomainServices(
   input: DomainServiceFactoryInput,
 ): DomainServices {
-  const { prisma, auth, invoiceService, printRouter, inventoryLotsService } = input;
+  const { prisma, auth, invoiceService, printRouter, inventoryLotsService, auditWriter } = input;
 
   return {
     returnsService: createReturnsService(prisma, auth, invoiceService, printRouter),
@@ -93,6 +95,7 @@ export function createDomainServices(
       inventoryLotsService,
       invoiceService,
       printRouter,
+      auditWriter,
     ),
   };
 }

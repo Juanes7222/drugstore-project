@@ -17,6 +17,7 @@
  * from local-only `LocalAuditLog` for non-inventory events and from the
  * already-existing `InventoryMovement` for stock events.
  */
+import type { PGlite } from '@electric-sql/pglite';
 import type { PrismaClient } from '@pharmacy/database/local';
 
 // ---------------------------------------------------------------------------
@@ -118,9 +119,15 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
 export async function getLocalAuditEntries(
   prisma: PrismaClient,
   query: LocalAuditQuery = {},
+  client?: PGlite,
 ): Promise<LocalAuditResponse> {
   if (query.module === 'INVENTORY') {
-    return getInventoryMovements(prisma, query);
+    if (!client) {
+      throw new Error(
+        'getLocalAuditEntries: PGlite client is required for INVENTORY module',
+      );
+    }
+    return getInventoryMovements(client, query);
   }
 
   return getFromLocalAuditLog(prisma, query);
@@ -202,7 +209,7 @@ async function getFromLocalAuditLog(
  * relation path.
  */
 async function getInventoryMovements(
-  prisma: PrismaClient,
+  client: PGlite,
   query: LocalAuditQuery,
 ): Promise<LocalAuditResponse> {
   const limit = query.limit ?? 50;
@@ -212,6 +219,16 @@ async function getInventoryMovements(
   const conditions: string[] = [];
   const params: unknown[] = [];
   let paramIdx = 1;
+
+  if (query.action) {
+    // Reverse-lookup: find movementType key by its label
+    const movementType = Object.entries(MOVEMENT_TYPE_LABELS)
+      .find(([, label]) => label === query.action)?.[0];
+    if (movementType) {
+      conditions.push(`im."movementType" = $${paramIdx++}`);
+      params.push(movementType);
+    }
+  }
 
   if (query.fromDate) {
     conditions.push(`im."createdAt" >= $${paramIdx++}`);
@@ -227,54 +244,51 @@ async function getInventoryMovements(
     : '';
 
   // Count query
-  const countResult = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
-    `SELECT COUNT(*) AS count FROM "InventoryMovement" im ${whereClause}`,
-    ...params,
+  const countResult = await client.query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM "InventoryMovement" im ${whereClause}`,
+    params,
   );
-  const total = Number(countResult[0]?.count ?? 0);
+  const total = Number(countResult.rows[0]?.count ?? 0);
 
   // Data query
-  const rows = await prisma.$queryRawUnsafe<
-    Array<{
-      id: string;
-      movement_type: string;
-      quantity: number;
-      previous_stock: number;
-      resulting_stock: number;
-      created_by_id: string;
-      created_at: Date;
-      lot_id: string;
-      reason: string | null;
-      batch_number: string | null;
-      product_name: string | null;
-    }>
-  >(
-     `SELECT
-        im.id,
-        im."movementType" AS movement_type,
-        im.quantity,
-        im."previousStock" AS previous_stock,
-        im."resultingStock" AS resulting_stock,
-        im."createdById" AS created_by_id,
-        im."createdAt" AS created_at,
-        im."lotId" AS lot_id,
-        im.reason,
-        l."batchNumber" AS batch_number,
-        p."commercialName" AS product_name
-      FROM "InventoryMovement" im
-      LEFT JOIN "Lot" l ON l.id = im."lotId"
-      LEFT JOIN "Product" p ON p.id = l."productId"
-      ${whereClause}
-      ORDER BY im."createdAt" DESC
+  type MovementRow = {
+    id: string;
+    movement_type: string;
+    quantity: number;
+    previous_stock: number;
+    resulting_stock: number;
+    created_by_id: string;
+    created_at: Date;
+    lot_id: string;
+    reason: string | null;
+    batch_number: string | null;
+    product_name: string | null;
+  };
+  const dataResult = await client.query<MovementRow>(
+    `SELECT
+       im.id,
+       im."movementType" AS movement_type,
+       im.quantity,
+       im."previousStock" AS previous_stock,
+       im."resultingStock" AS resulting_stock,
+       im."createdById" AS created_by_id,
+       im."createdAt" AS created_at,
+       im."lotId" AS lot_id,
+       im.reason,
+       l."batchNumber" AS batch_number,
+       p."commercialName" AS product_name
+     FROM "InventoryMovement" im
+     LEFT JOIN "Lot" l ON l.id = im."lotId"
+     LEFT JOIN "Product" p ON p.id = l."productId"
+     ${whereClause}
+     ORDER BY im."createdAt" DESC
      LIMIT $${paramIdx++}
      OFFSET $${paramIdx++}`,
-    ...params,
-    limit,
-    offset,
+    [...params, limit, offset],
   );
 
   return {
-    rows: rows.map((r) => ({
+    rows: dataResult.rows.map((r) => ({
       id: r.id,
       action: MOVEMENT_TYPE_LABELS[r.movement_type] ?? r.movement_type,
       createdAt: new Date(r.created_at).toISOString(),

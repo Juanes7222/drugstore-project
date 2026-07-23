@@ -121,10 +121,18 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
         isLoading: false,
       });
     } catch (error) {
+      // Tauri commands for local sync not yet implemented — skip polling.
+      const message = error instanceof Error ? error.message : 'Failed to initialise local sync';
+      // If "command not found", the Rust module isn't built yet; don't mark
+      // initialized so polling loops never start.
+      const isCommandMissing =
+        message.includes('command not found') ||
+        message.includes('not initialised') ||
+        message.includes('No command');
       set({
-        isInitialized: true,
+        isInitialized: !isCommandMissing,
         isLoading: false,
-        lastSyncError: error instanceof Error ? error.message : 'Failed to initialise local sync',
+        lastSyncError: isCommandMissing ? null : message,
       });
     }
   },

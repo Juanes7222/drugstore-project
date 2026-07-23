@@ -27,6 +27,19 @@ import {
   ShoppingCart,
   Printer,
   ClipboardList,
+  TrendingUp,
+  TrendingDown,
+  Ban,
+  Undo2,
+  Check,
+  CheckCheck,
+  Plus,
+  Minus,
+  Calendar,
+  Unlock,
+  ArrowLeft,
+  Edit,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -50,6 +63,18 @@ export type EventCategory =
   | 'fiscal'       // Fiscal Blue — DIAN invoice, contingency
   | 'default';     // Border gray — unknown/unclassified events
 
+/** Module filter value this event belongs to. */
+export type EventModule =
+  | 'AUTH_USERS'
+  | 'INVENTORY'
+  | 'CASH_SHIFT'
+  | 'SALES'
+  | 'CLIENTS'
+  | 'PRESCRIPTIONS'
+  | 'PURCHASES'
+  | 'FISCAL'
+  | 'SYNC';
+
 /** Full config for one audit event type. */
 export interface AuditEventConfig {
   /** The raw action string from the server (e.g. "AUTH_LOGIN_SUCCESS"). */
@@ -60,6 +85,8 @@ export interface AuditEventConfig {
   readonly category: EventCategory;
   /** Lucide icon name string — resolved to component by {@link resolveIcon}. */
   readonly icon: string;
+  /** Which module filter this event belongs to. */
+  readonly module?: EventModule;
   /** When false, excluded from the event-type filter dropdown. Default true. */
   readonly showInFilter?: boolean;
 }
@@ -114,24 +141,28 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.AUTH_LOGIN_SUCCESS',
     category: 'auth',
     icon: 'LogIn',
+    module: 'AUTH_USERS',
   },
   AUTH_LOGIN_FAILURE: {
     action: 'AUTH_LOGIN_FAILURE',
     labelKey: 'audit_events.AUTH_LOGIN_FAILURE',
     category: 'failure',
     icon: 'AlertTriangle',
+    module: 'AUTH_USERS',
   },
   AUTH_LOGOUT: {
     action: 'AUTH_LOGOUT',
     labelKey: 'audit_events.AUTH_LOGOUT',
     category: 'auth',
     icon: 'LogOut',
+    module: 'AUTH_USERS',
   },
   ACCESS: {
     action: 'ACCESS',
     labelKey: 'audit_events.ACCESS',
     category: 'auth',
     icon: 'KeyRound',
+    module: 'AUTH_USERS',
   },
 
   // ── Security ──────────────────────────────────────────────────────
@@ -140,36 +171,42 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.STEP_UP_AUTHORIZED',
     category: 'security',
     icon: 'Shield',
+    module: 'AUTH_USERS',
   },
   USER_ROLE_CHANGED: {
     action: 'USER_ROLE_CHANGED',
     labelKey: 'audit_events.USER_ROLE_CHANGED',
     category: 'security',
     icon: 'UserPlus',
+    module: 'AUTH_USERS',
   },
   SESSION_REVOKED: {
     action: 'SESSION_REVOKED',
     labelKey: 'audit_events.SESSION_REVOKED',
     category: 'security',
     icon: 'Lock',
+    module: 'AUTH_USERS',
   },
   AUTH_PASSWORD_CHANGED: {
     action: 'AUTH_PASSWORD_CHANGED',
     labelKey: 'audit_events.AUTH_PASSWORD_CHANGED',
     category: 'security',
     icon: 'Lock',
+    module: 'AUTH_USERS',
   },
   AUTH_PIN_RESET: {
     action: 'AUTH_PIN_RESET',
     labelKey: 'audit_events.AUTH_PIN_RESET',
     category: 'security',
     icon: 'KeyRound',
+    module: 'AUTH_USERS',
   },
   ACCOUNT_LOCKED: {
     action: 'ACCOUNT_LOCKED',
     labelKey: 'audit_events.ACCOUNT_LOCKED',
     category: 'failure',
     icon: 'Lock',
+    module: 'AUTH_USERS',
   },
 
   // ── Users ─────────────────────────────────────────────────────────
@@ -178,12 +215,14 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.USER_CREATED',
     category: 'users',
     icon: 'UserPlus',
+    module: 'AUTH_USERS',
   },
   USER_DISABLED: {
     action: 'USER_DISABLED',
     labelKey: 'audit_events.USER_DISABLED',
     category: 'users',
     icon: 'UserX',
+    module: 'AUTH_USERS',
   },
 
   // ── Inventory ─────────────────────────────────────────────────────
@@ -192,66 +231,77 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.INVENTORY_PURCHASE_RECEIPT',
     category: 'inventory',
     icon: 'Package',
+    module: 'INVENTORY',
   },
   INVENTORY_SALE: {
     action: 'INVENTORY_SALE',
     labelKey: 'audit_events.INVENTORY_SALE',
     category: 'inventory',
-    icon: 'Package',
+    icon: 'ShoppingCart',
+    module: 'INVENTORY',
   },
   INVENTORY_ADJUSTMENT_POSITIVE: {
     action: 'INVENTORY_ADJUSTMENT_POSITIVE',
     labelKey: 'audit_events.INVENTORY_ADJUSTMENT_POSITIVE',
     category: 'inventory',
-    icon: 'Package',
+    icon: 'TrendingUp',
+    module: 'INVENTORY',
   },
   INVENTORY_ADJUSTMENT_NEGATIVE: {
     action: 'INVENTORY_ADJUSTMENT_NEGATIVE',
     labelKey: 'audit_events.INVENTORY_ADJUSTMENT_NEGATIVE',
     category: 'inventory',
-    icon: 'Package',
+    icon: 'TrendingDown',
+    module: 'INVENTORY',
   },
   INVENTORY_CLIENT_RETURN: {
     action: 'INVENTORY_CLIENT_RETURN',
     labelKey: 'audit_events.INVENTORY_CLIENT_RETURN',
     category: 'inventory',
-    icon: 'Package',
+    icon: 'Undo2',
+    module: 'INVENTORY',
   },
   INVENTORY_SUPPLIER_RETURN: {
     action: 'INVENTORY_SUPPLIER_RETURN',
     labelKey: 'audit_events.INVENTORY_SUPPLIER_RETURN',
     category: 'inventory',
-    icon: 'Package',
+    icon: 'ArrowLeft',
+    module: 'INVENTORY',
   },
   INVENTORY_ADMIN_BLOCK: {
     action: 'INVENTORY_ADMIN_BLOCK',
     labelKey: 'audit_events.INVENTORY_ADMIN_BLOCK',
     category: 'inventory',
-    icon: 'Lock',
+    icon: 'Ban',
+    module: 'INVENTORY',
   },
   INVENTORY_ADMIN_UNBLOCK: {
     action: 'INVENTORY_ADMIN_UNBLOCK',
     labelKey: 'audit_events.INVENTORY_ADMIN_UNBLOCK',
     category: 'inventory',
-    icon: 'Lock',
+    icon: 'Unlock',
+    module: 'INVENTORY',
   },
   INVENTORY_AUTO_EXPIRATION: {
     action: 'INVENTORY_AUTO_EXPIRATION',
     labelKey: 'audit_events.INVENTORY_AUTO_EXPIRATION',
     category: 'inventory',
-    icon: 'AlertTriangle',
+    icon: 'Calendar',
+    module: 'INVENTORY',
   },
   INVENTORY_PHYSICAL_COUNT: {
     action: 'INVENTORY_PHYSICAL_COUNT',
     labelKey: 'audit_events.INVENTORY_PHYSICAL_COUNT',
     category: 'inventory',
-    icon: 'Package',
+    icon: 'ClipboardList',
+    module: 'INVENTORY',
   },
   INVENTORY_INITIAL_STOCK: {
     action: 'INVENTORY_INITIAL_STOCK',
     labelKey: 'audit_events.INVENTORY_INITIAL_STOCK',
     category: 'inventory',
     icon: 'Package',
+    module: 'INVENTORY',
   },
 
   // ── Local Network ─────────────────────────────────────────────────
@@ -260,24 +310,28 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.LOCAL_SYNC_HUB_ELECTION',
     category: 'network',
     icon: 'Network',
+    module: 'SYNC',
   },
   LOCAL_SYNC_CONFLICT: {
     action: 'LOCAL_SYNC_CONFLICT',
     labelKey: 'audit_events.LOCAL_SYNC_CONFLICT',
     category: 'network',
     icon: 'AlertTriangle',
+    module: 'SYNC',
   },
   LOCAL_SYNC_PUSH: {
     action: 'LOCAL_SYNC_PUSH',
     labelKey: 'audit_events.LOCAL_SYNC_PUSH',
     category: 'network',
     icon: 'Network',
+    module: 'SYNC',
   },
   LOCAL_SYNC_PULL: {
     action: 'LOCAL_SYNC_PULL',
     labelKey: 'audit_events.LOCAL_SYNC_PULL',
     category: 'network',
     icon: 'Network',
+    module: 'SYNC',
   },
 
   // ── Cash Shift ──────────────────────────────────────────────
@@ -286,24 +340,28 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.CASH_SHIFT_OPENED',
     category: 'cashShift',
     icon: 'DollarSign',
+    module: 'CASH_SHIFT',
   },
   CASH_SHIFT_CLOSED: {
     action: 'CASH_SHIFT_CLOSED',
     labelKey: 'audit_events.CASH_SHIFT_CLOSED',
     category: 'cashShift',
     icon: 'DollarSign',
+    module: 'CASH_SHIFT',
   },
   CASH_SHIFT_FORCED_CLOSE: {
     action: 'CASH_SHIFT_FORCED_CLOSE',
     labelKey: 'audit_events.CASH_SHIFT_FORCED_CLOSE',
     category: 'cashShift',
     icon: 'AlertTriangle',
+    module: 'CASH_SHIFT',
   },
   CASH_COUNT_PARTIAL: {
     action: 'CASH_COUNT_PARTIAL',
     labelKey: 'audit_events.CASH_COUNT_PARTIAL',
     category: 'cashShift',
     icon: 'ClipboardList',
+    module: 'CASH_SHIFT',
   },
 
   // ── Sales ───────────────────────────────────────────────────
@@ -312,12 +370,14 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.SALE_CONFIRMED',
     category: 'sale',
     icon: 'Receipt',
+    module: 'SALES',
   },
   SALE_ANNULLED: {
     action: 'SALE_ANNULLED',
     labelKey: 'audit_events.SALE_ANNULLED',
     category: 'sale',
     icon: 'Receipt',
+    module: 'SALES',
   },
 
   // ── Clients ─────────────────────────────────────────────────
@@ -326,24 +386,28 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.CLIENT_CREATED',
     category: 'client',
     icon: 'UserPlus',
+    module: 'CLIENTS',
   },
   CLIENT_UPDATED: {
     action: 'CLIENT_UPDATED',
     labelKey: 'audit_events.CLIENT_UPDATED',
     category: 'client',
     icon: 'UserPlus',
+    module: 'CLIENTS',
   },
   CLIENT_DEACTIVATED: {
     action: 'CLIENT_DEACTIVATED',
     labelKey: 'audit_events.CLIENT_DEACTIVATED',
     category: 'client',
     icon: 'UserX',
+    module: 'CLIENTS',
   },
   CLIENT_RETURN_CONFIRMED: {
     action: 'CLIENT_RETURN_CONFIRMED',
     labelKey: 'audit_events.CLIENT_RETURN_CONFIRMED',
     category: 'client',
     icon: 'FileText',
+    module: 'CLIENTS',
   },
 
   // ── Prescriptions ───────────────────────────────────────────
@@ -352,6 +416,7 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.PRESCRIPTION_REGISTERED',
     category: 'prescription',
     icon: 'FileText',
+    module: 'PRESCRIPTIONS',
   },
 
   // ── Offline Auth ─────────────────────────────────────────────
@@ -360,18 +425,21 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.OFFLINE_LOGIN',
     category: 'auth',
     icon: 'LogIn',
+    module: 'AUTH_USERS',
   },
   OFFLINE_SESSION_BLESSED: {
     action: 'OFFLINE_SESSION_BLESSED',
     labelKey: 'audit_events.OFFLINE_SESSION_BLESSED',
     category: 'auth',
     icon: 'Shield',
+    module: 'AUTH_USERS',
   },
   OFFLINE_SESSION_REJECTED: {
     action: 'OFFLINE_SESSION_REJECTED',
     labelKey: 'audit_events.OFFLINE_SESSION_REJECTED',
     category: 'failure',
     icon: 'Lock',
+    module: 'AUTH_USERS',
   },
 
   // ── Inventory Adjustments ───────────────────────────────────
@@ -379,25 +447,29 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     action: 'INVENTORY_ADJUSTMENT_CREATED',
     labelKey: 'audit_events.INVENTORY_ADJUSTMENT_CREATED',
     category: 'inventory',
-    icon: 'Package',
+    icon: 'Edit',
+    module: 'INVENTORY',
   },
   INVENTORY_ADJUSTMENT_APPLIED: {
     action: 'INVENTORY_ADJUSTMENT_APPLIED',
     labelKey: 'audit_events.INVENTORY_ADJUSTMENT_APPLIED',
     category: 'inventory',
-    icon: 'Package',
+    icon: 'Check',
+    module: 'INVENTORY',
   },
   INVENTORY_ADJUSTMENT_APPROVED: {
     action: 'INVENTORY_ADJUSTMENT_APPROVED',
     labelKey: 'audit_events.INVENTORY_ADJUSTMENT_APPROVED',
     category: 'inventory',
-    icon: 'Package',
+    icon: 'CheckCheck',
+    module: 'INVENTORY',
   },
   INVENTORY_ADJUSTMENT_REJECTED: {
     action: 'INVENTORY_ADJUSTMENT_REJECTED',
     labelKey: 'audit_events.INVENTORY_ADJUSTMENT_REJECTED',
     category: 'inventory',
-    icon: 'AlertTriangle',
+    icon: 'X',
+    module: 'INVENTORY',
   },
 
   // ── Purchases ───────────────────────────────────────────────
@@ -406,12 +478,14 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.PURCHASE_ORDER_CREATED',
     category: 'purchase',
     icon: 'ShoppingCart',
+    module: 'PURCHASES',
   },
   PURCHASE_RECEPTION_CONFIRMED: {
     action: 'PURCHASE_RECEPTION_CONFIRMED',
     labelKey: 'audit_events.PURCHASE_RECEPTION_CONFIRMED',
     category: 'purchase',
     icon: 'Package',
+    module: 'PURCHASES',
   },
 
   // ── Fiscal ──────────────────────────────────────────────────
@@ -420,18 +494,21 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
     labelKey: 'audit_events.FISCAL_INVOICE_EMITTED',
     category: 'fiscal',
     icon: 'Receipt',
+    module: 'FISCAL',
   },
   FISCAL_CONTINGENCY_ACTIVATED: {
     action: 'FISCAL_CONTINGENCY_ACTIVATED',
     labelKey: 'audit_events.FISCAL_CONTINGENCY_ACTIVATED',
     category: 'fiscal',
     icon: 'AlertTriangle',
+    module: 'FISCAL',
   },
   FISCAL_TRANSMISSION_FAILED: {
     action: 'FISCAL_TRANSMISSION_FAILED',
     labelKey: 'audit_events.FISCAL_TRANSMISSION_FAILED',
     category: 'failure',
     icon: 'AlertTriangle',
+    module: 'FISCAL',
   },
 };
 
@@ -460,6 +537,19 @@ const ICON_RESOLVER: Readonly<Record<string, LucideIcon>> = {
   ShoppingCart,
   Printer,
   ClipboardList,
+  TrendingUp,
+  TrendingDown,
+  Ban,
+  Undo2,
+  Check,
+  CheckCheck,
+  Plus,
+  Minus,
+  Calendar,
+  Unlock,
+  ArrowLeft,
+  Edit,
+  X,
 };
 
 const FALLBACK_ICON: LucideIcon = Package;
@@ -479,6 +569,7 @@ export function getEventConfig(action: string): AuditEventConfig {
     labelKey: `audit_events.${action}`,
     category: 'default',
     icon: 'Package',
+    module: undefined,
   };
 }
 

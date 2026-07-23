@@ -56,6 +56,7 @@ import { createSyncMetricsService } from './sync-metrics.service';
 import { createBackupService, type BackupService } from '../backup/backup.service';
 import { useSyncAuthStatusStore } from './sync-auth-status.store';
 import type { InvoiceService } from '../fiscal/invoice.service';
+import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
 import {
   createTenantConfigSyncService,
   type TenantConfigSyncService,
@@ -88,6 +89,8 @@ export interface SyncSchedulerConfig {
   intervalMs?: number;
   /** Invoice service for pulling fiscal transmission results. */
   invoiceService?: InvoiceService;
+  /** Local audit event writer (optional). */
+  auditWriter?: LocalAuditWriter;
 }
 
 export const createSyncScheduler = (
@@ -113,6 +116,7 @@ export class SyncScheduler {
   private readonly metricsService: SyncMetricsService;
   private readonly backupService: BackupService;
   private readonly invoiceService?: InvoiceService;
+  private readonly auditWriter?: LocalAuditWriter;
   private readonly intervalMs: number;
   private timerId: ReturnType<typeof setInterval> | null = null;
 
@@ -140,10 +144,12 @@ export class SyncScheduler {
       prisma: config.prisma,
       baseUrl: config.baseUrl,
       accessToken: config.accessToken,
+      auditWriter: config.auditWriter,
     });
     this.metricsService = createSyncMetricsService(config.prisma);
     this.backupService = createBackupService();
     this.invoiceService = config.invoiceService;
+    this.auditWriter = config.auditWriter;
     this.intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
 
     if (config.tenantConfig) {
@@ -171,6 +177,7 @@ export class SyncScheduler {
       baseUrl: this.baseUrl,
       accessToken: token,
       invoiceService: this.invoiceService,
+      auditWriter: this.auditWriter,
     });
     // Also recreate tenant config sync with new token
     this.tenantConfigSync = createTenantConfigSyncService({

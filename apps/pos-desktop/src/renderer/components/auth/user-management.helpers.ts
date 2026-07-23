@@ -18,6 +18,19 @@ const ROLE_I18N_MAP: Record<string, string> = {
   INVENTORY_ASSISTANT: "roles.inventory_assistant",
   SAAS_ADMIN: "roles.saas_admin",
   ADMIN: "roles.admin",
+  // Legacy/alias role names that may appear in audit logs
+  user_admin: "roles.admin",
+  admin: "roles.admin",
+  user_cashier: "roles.cashier",
+  cashier: "roles.cashier",
+  user_manager: "roles.manager",
+  manager: "roles.manager",
+  user_owner: "roles.owner",
+  owner: "roles.owner",
+  user_accountant: "roles.accountant",
+  accountant: "roles.accountant",
+  user_inventory: "roles.inventory_assistant",
+  inventory: "roles.inventory_assistant",
 };
 
 export function translateRole(role: string, t: TFunction): string {

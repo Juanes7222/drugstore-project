@@ -18,7 +18,7 @@ import type { AuditLogEntry } from '../audit/audit-event-card';
 // Hoisted mock state (must be before vi.mock calls)
 // ---------------------------------------------------------------------------
 
-const { mockSessionState, mockAuthService } = vi.hoisted(() => {
+const { mockSessionState, mockAuthService, mockGetLocalAuditEntries, mockGetDatabase } = vi.hoisted(() => {
   const state: {
     session: LocalSession | null;
     isInitialized: boolean;
@@ -47,6 +47,8 @@ const { mockSessionState, mockAuthService } = vi.hoisted(() => {
       getPendingStepUpRequests: vi.fn(),
       getAuditLogs: vi.fn(),
     },
+    mockGetLocalAuditEntries: vi.fn(),
+    mockGetDatabase: vi.fn(),
   };
 });
 
@@ -87,11 +89,11 @@ vi.mock('../../../domain/auth/auth.service', () => ({
 }));
 
 vi.mock('../../../infrastructure/local-database', () => ({
-  getLocalDatabase: vi.fn(),
+  getLocalDatabase: mockGetDatabase,
 }));
 
 vi.mock('../../../domain/audit/audit.service', () => ({
-  getLocalAuditEntries: vi.fn(),
+  getLocalAuditEntries: mockGetLocalAuditEntries,
 }));
 
 // ---------------------------------------------------------------------------
@@ -140,6 +142,7 @@ describe('AuditLogView', () => {
   beforeEach(() => {
     mockSessionState.session = null;
     vi.clearAllMocks();
+    mockGetDatabase.mockResolvedValue({ prisma: {} });
   });
 
   // No afterEach needed — beforeEach resets session + mocks already
@@ -164,7 +167,7 @@ describe('AuditLogView', () => {
 
     it('renders the timeline view for a MANAGER user', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
         ],
@@ -188,7 +191,7 @@ describe('AuditLogView', () => {
   describe('empty state', () => {
     it('shows empty state with icon and hint when no events returned', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [],
         total: 0,
       });
@@ -207,7 +210,7 @@ describe('AuditLogView', () => {
 
     it('shows a loading indicator while fetching logs', () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockReturnValue(
+      mockGetLocalAuditEntries.mockReturnValue(
         new Promise(() => { /* never resolves */ }),
       );
 
@@ -224,7 +227,7 @@ describe('AuditLogView', () => {
   describe('timeline cards', () => {
     it('renders each event as an article with aria-label containing name and time', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({
             id: 'log-1',
@@ -269,7 +272,7 @@ describe('AuditLogView', () => {
       const yesterdayDate = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
 
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({
             id: 'log-today',
@@ -307,7 +310,7 @@ describe('AuditLogView', () => {
       const user = userEvent.setup();
 
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({
             id: 'log-detail',
@@ -366,7 +369,7 @@ describe('AuditLogView', () => {
   describe('target display', () => {
     it('hides target line when entityType and entityId are both unknown', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({
             id: 'log-unknown',
@@ -392,7 +395,7 @@ describe('AuditLogView', () => {
 
     it('shows target line with productName when present', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({
             id: 'log-product',
@@ -423,11 +426,11 @@ describe('AuditLogView', () => {
   // -----------------------------------------------------------------------
 
   describe('event filter', () => {
-    it('calls getAuditLogs with the selected event value on change', async () => {
+    it('calls getLocalAuditEntries with the selected action value on change', async () => {
       const user = userEvent.setup();
 
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
           makeLogEntry({ id: 'log-2' }),
@@ -439,16 +442,17 @@ describe('AuditLogView', () => {
 
       // Wait for initial fetch
       await waitFor(() => {
-        expect(mockAuthService.getAuditLogs).toHaveBeenCalledTimes(1);
+        expect(mockGetLocalAuditEntries).toHaveBeenCalledTimes(1);
       });
 
       const eventSelect = screen.getByLabelText('Evento');
       await user.selectOptions(eventSelect, 'AUTH_LOGIN_SUCCESS');
 
       await waitFor(() => {
-        expect(mockAuthService.getAuditLogs).toHaveBeenCalledTimes(2);
-        expect(mockAuthService.getAuditLogs).toHaveBeenLastCalledWith(
-          expect.objectContaining({ event: 'AUTH_LOGIN_SUCCESS' }),
+        expect(mockGetLocalAuditEntries).toHaveBeenCalledTimes(2);
+        expect(mockGetLocalAuditEntries).toHaveBeenLastCalledWith(
+          expect.anything(),
+          expect.objectContaining({ action: 'AUTH_LOGIN_SUCCESS' }),
         );
       });
     });
@@ -459,9 +463,9 @@ describe('AuditLogView', () => {
   // -----------------------------------------------------------------------
 
   describe('date range', () => {
-    it('calls getAuditLogs with new fromDate when changed', async () => {
+    it('calls getLocalAuditEntries with new fromDate when changed', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
         ],
@@ -471,23 +475,24 @@ describe('AuditLogView', () => {
       render(<AuditLogView />);
 
       await waitFor(() => {
-        expect(mockAuthService.getAuditLogs).toHaveBeenCalledTimes(1);
+        expect(mockGetLocalAuditEntries).toHaveBeenCalledTimes(1);
       });
 
       const fromDateInput = screen.getByLabelText('Desde');
       fireEvent.change(fromDateInput, { target: { value: '2026-07-01' } });
 
       await waitFor(() => {
-        expect(mockAuthService.getAuditLogs).toHaveBeenCalledTimes(2);
-        expect(mockAuthService.getAuditLogs).toHaveBeenLastCalledWith(
+        expect(mockGetLocalAuditEntries).toHaveBeenCalledTimes(2);
+        expect(mockGetLocalAuditEntries).toHaveBeenLastCalledWith(
+          expect.anything(),
           expect.objectContaining({ fromDate: '2026-07-01' }),
         );
       });
     });
 
-    it('calls getAuditLogs with new toDate when changed', async () => {
+    it('calls getLocalAuditEntries with new toDate when changed', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
         ],
@@ -497,15 +502,16 @@ describe('AuditLogView', () => {
       render(<AuditLogView />);
 
       await waitFor(() => {
-        expect(mockAuthService.getAuditLogs).toHaveBeenCalledTimes(1);
+        expect(mockGetLocalAuditEntries).toHaveBeenCalledTimes(1);
       });
 
       const toDateInput = screen.getByLabelText('Hasta');
       fireEvent.change(toDateInput, { target: { value: '2026-07-31' } });
 
       await waitFor(() => {
-        expect(mockAuthService.getAuditLogs).toHaveBeenCalledTimes(2);
-        expect(mockAuthService.getAuditLogs).toHaveBeenLastCalledWith(
+        expect(mockGetLocalAuditEntries).toHaveBeenCalledTimes(2);
+        expect(mockGetLocalAuditEntries).toHaveBeenLastCalledWith(
+          expect.anything(),
           expect.objectContaining({ toDate: '2026-07-31' }),
         );
       });
@@ -520,7 +526,7 @@ describe('AuditLogView', () => {
     it('shows Anterior / Siguiente buttons when total > pageSize (50)', async () => {
       mockSessionState.session = managerSession;
       // Return fewer rows than total to simulate current page being a partial slice
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
         ],
@@ -541,7 +547,7 @@ describe('AuditLogView', () => {
 
     it('disables the Anterior button on the first page', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
         ],
@@ -559,7 +565,7 @@ describe('AuditLogView', () => {
 
     it('shows page indicator with correct page count', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
         ],
@@ -577,7 +583,7 @@ describe('AuditLogView', () => {
 
     it('does not render pagination when total <= pageSize', async () => {
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
         ],
@@ -603,7 +609,7 @@ describe('AuditLogView', () => {
       const user = userEvent.setup();
 
       mockSessionState.session = managerSession;
-      mockAuthService.getAuditLogs.mockResolvedValue({
+      mockGetLocalAuditEntries.mockResolvedValue({
         rows: [
           makeLogEntry({ id: 'log-1' }),
         ],
@@ -614,7 +620,7 @@ describe('AuditLogView', () => {
 
       // Initial fetchLogs fires on mount
       await waitFor(() => {
-        expect(mockAuthService.getAuditLogs).toHaveBeenCalledTimes(1);
+        expect(mockGetLocalAuditEntries).toHaveBeenCalledTimes(1);
       });
 
       const refreshButton = screen.getByRole('button', {
@@ -623,7 +629,7 @@ describe('AuditLogView', () => {
       await user.click(refreshButton);
 
       await waitFor(() => {
-        expect(mockAuthService.getAuditLogs).toHaveBeenCalledTimes(2);
+        expect(mockGetLocalAuditEntries).toHaveBeenCalledTimes(2);
       });
     });
   });

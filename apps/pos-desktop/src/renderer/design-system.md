@@ -373,104 +373,157 @@ Teal at 28px with `strokeWidth={1.5}` for a precise, non-heavy look.
 
 ---
 
-## Audit — Timeline View (added 2026-07-18)
+## Audit — Timeline View (added 2026-07-18, redesigned 2026-07-22)
 
-The audit log replaces the flat-table UX with a timeline of event cards, grouped
-by day. This is the only screen that uses a timeline pattern — it is not the
-default layout for any other view.
+The audit log is a timeline of event cards grouped by day. This is the only
+screen that uses a timeline pattern.
 
 ### Layout
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Registro de auditoría                       12 eventos  [↻]    │
+│  Registro de auditoría                           [ℹ] [↻]         │
+│  Todos los eventos del sistema ordenados por fecha               │
 │                                                                  │
-│  [Todos los eventos ▼] [Todos los módulos ▼] [Desde] [Hasta]    │
+│  [ℹ Leyenda de categorías — togglable]                           │
 │                                                                  │
-│  ── Hoy, 18 jul 2026 ────────────────────── 8 eventos ────────── │
+│  [🔍 Todos los eventos ▼] [Todos los módulos ▼] [📅 Desde][—][Hasta] [✕ Limpiar] │
+│                                                                  │
+│  ── HOY ────────────────────────────────── 8 eventos ────────── │
 │                                                                  │
 │  ┃ ┌──────────────────────────────────────────────────────────┐ │
-│  ┃ │ 🔐 Inicio de sesión                      hace 3 min      │ │
-│  ┃ │ OWNER        Límite: 10 sesiones                         │ │
-│  ┃ │ ▸ Token offline · Evictó sesión anterior                  │ │
+│  ┃ │ 🔐 Inicio de sesión       [Usuarios]        hace 3 min   │ │
+│  ┃ │ maria.gomez  [DUEÑO]                                     │ │
+│  ┃ │ Conexión sin internet · Vence: 01/08/2026                 │ │
+│  ┃ │ ▸ Ver detalles                                            │ │
 │  ┃ └──────────────────────────────────────────────────────────┘ │
-│  ┃ ┌──── expired: VER DETALLES ───────────────────────────────┐ │
-│  ┃ │ 🔐 Inicio de sesión                      hace 12 min     │ │
-│  ┃ │ OWNER                                                    │ │
-│  ┃ │ ▸ Token offline · Evictó sesión anterior                  │ │
+│  ┃ ┌──────────────────────────────────────────────────────────┐ │
+│  ┃ │ ⚠ Intento fallido                           hace 12 min  │ │
+│  ┃ │ carlos.r  [CAJERO]                                       │ │
+│  ┃ │ Motivo: Contraseña incorrecta                             │ │
+│  ┃ │ ▸ Ver detalles                                            │ │
 │  ┃ └──────────────────────────────────────────────────────────┘ │
 │                                                                  │
-│  ← 1 / 5 →                      Mostrando 50 de 253 eventos     │
+│  Mostrando 50 de 253 eventos     ← 1 / 5 →                      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 ### Color mapping per event category
 
+Full legend shown in a togglable panel below the header:
+
 | Category | Border color | Events |
 |----------|-------------|--------|
-| **Auth** | Pharma Teal `#0B6E6B` | AUTH_LOGIN_SUCCESS, AUTH_LOGOUT, ACCESS |
-| **Failure** | Error `#D32F2F` | AUTH_LOGIN_FAILURE, ACCOUNT_LOCKED |
+| **Auth** | Pharma Teal `#0B6E6B` | AUTH_LOGIN_SUCCESS, AUTH_LOGOUT, ACCESS, OFFLINE_LOGIN |
+| **Failure** | Error `#D32F2F` | AUTH_LOGIN_FAILURE, ACCOUNT_LOCKED, OFFLINE_SESSION_REJECTED |
 | **Security** | Restrict Violet `#5B3E96` | STEP_UP_AUTHORIZED, USER_ROLE_CHANGED, SESSION_REVOKED, AUTH_PASSWORD_CHANGED, AUTH_PIN_RESET |
 | **Users** | Sync Slate `#4A6572` | USER_CREATED, USER_DISABLED |
 | **Inventory** | Urgency Amber `#E8780A` | All INVENTORY_* events |
-
-The color is rendered as a 3px-left border on the event card. No other element
-in the audit view uses these colors outside their designated category — the
-border is the sole category indicator.
+| **Network** | Network Blue `#1565C0` | LOCAL_SYNC_HUB_ELECTION, LOCAL_SYNC_CONFLICT, LOCAL_SYNC_PUSH, LOCAL_SYNC_PULL |
+| **Cash Shift** | Cash Green `#2E7D32` | CASH_SHIFT_OPENED, CASH_SHIFT_CLOSED, CASH_SHIFT_FORCED_CLOSE, CASH_COUNT_PARTIAL |
+| **Sale** | Dark Teal `#00897B` | SALE_CONFIRMED, SALE_ANNULLED |
+| **Client** | Blue-Grey `#546E7A` | CLIENT_CREATED, CLIENT_UPDATED, CLIENT_DEACTIVATED |
+| **Prescription** | Purple `#7B1FA2` | PRESCRIPTION_REGISTERED |
+| **Purchase** | Deep Orange `#E65100` | PURCHASE_ORDER_CREATED, PURCHASE_RECEPTION_CONFIRMED |
+| **Fiscal** | Dark Blue `#0D47A1` | FISCAL_INVOICE_EMITTED, FISCAL_CONTINGENCY_ACTIVATED |
+| **Default** | Grey `#D4D2CC` | Unknown/unclassified events |
 
 ### Event card anatomy
 
-1. **Left border** — 3px, category color per table above.
-2. **Icon row** — Event-type icon (lucide-react: `LogIn`, `LogOut`, `Shield`,
-   `Package`, `AlertTriangle`, `UserPlus`, `UserX`, `Lock`) + translated event
-   name in semibold 14px + relative timestamp right-aligned in caption 12px
-   muted.
-3. **Actor row** — Role badge (small, uppercase, capsule style) + user ID if
-   role alone is generic.
-4. **Detail summary** — 1-2 lines of parsed JSON rendered as human-readable
-   key-value pairs (e.g., "Token offline emitido · Límite: 10 sesiones ·
-   Vence: 01/08/2026"). Only the 2-3 most important fields shown; full JSON
-   available via expand toggle.
-5. **Target** — Only shown when target is meaningful (not "unknown:unknown" or
-   empty). Rendered as a muted label below details: e.g., "Producto:
-   Ibuprofeno 400mg · Lote: IB-2411".
+1. **Left border** — 3px, category color.
+2. **Icon row** — Event-type icon (varied lucide-react icons per event type) +
+   translated event name in semibold 14px + module badge (muted pill) + relative
+   timestamp right-aligned in caption 12px.
+3. **Actor row** — User ID in `font-data` + translated role badge (e.g. "Dueño",
+   "Cajero", "Contador") using `translateRole()` helper — NEVER raw English
+   role strings. Role badges use `bg-ink/8` by default; per-role semantic colors
+   are defined in user-management.helpers.ts.
+4. **Detail summary** — 1-2 lines of human-readable fragments with inline dots.
+   Terminology uses plain Spanish: "Conexión sin internet" (not "Token offline"),
+   "Clave criptográfica v{{version}}" (not "CVK v{{version}}"), "Sesión anterior
+   cerrada" (not "evictada").
+5. **Target** — Only when meaningful (not "unknown:unknown" or empty). Muted
+   caption below details: e.g., "Producto: Ibuprofeno 400mg · Lote: IB-2411".
 
-### Expand/collapse for JSON details
+### Expanded detail panel
 
-- **Collapsed (default)**: Shows the human-readable detail summary only.
-- **Expanded**: Reveals a `<pre>` block in `font-data` (JetBrains Mono) with
-  the full formatted JSON, syntax-highlighted via className `text-caption` and
-  a subtle background tint. Toggle is a text button "Ver detalles" /
-  "Ocultar detalles" in caption 12px.
-- Keyboard: Enter/Space toggles expand on focused card.
+- Replaced the old `<pre>` block with a 2-column grid of parsed key-value pairs.
+- All known fields are translated to readable Spanish.
+- Unknown fields render with a translated label via `translateUnknownKey()` map:
+  `ipAddress → "Dirección IP"`, `userAgent → "Navegador"`, etc.
+- Toggle uses `ChevronDown`/`ChevronRight` instead of `Eye`/`EyeOff`.
 
-### Empty state
+### Category legend
 
-When no events match filters:
-- Centered icon (from `SearchX` lucide icon) in muted ink
-- "No se encontraron eventos para los filtros seleccionados"
-- Secondary text: "Intenta ajustar las fechas o cambiar el tipo de evento"
+- Togglable panel below the header showing all 13 categories with their color
+  swatch and translated name.
+- Activated via a button with `Info` icon in the header bar.
+
+### Loading state
+
+- 5 animated skeleton cards with `animate-pulse` that mimic the event card shape.
+- Replaces the old plain text "Cargando..." message.
+
+### Empty states
+
+Two distinct empty states:
+1. **No events at all** (`!hasActiveFilters`): Large `SearchX` icon with
+   "No hay eventos" + hint text.
+2. **No results for active filters** (`hasActiveFilters`): Same visual layout
+   with "No se encontraron eventos para los filtros seleccionados" + hint.
+   A "Clear filters" button with `X` icon is always visible when filters are
+   active.
+
+### Role gate
+
+When the user lacks MANAGER role:
+- Centered `Info` icon + "No tiene permisos para ver esta página."
+- Clean layout instead of a bare text message.
+
+### Filter bar
+
+- `Filter` icon leading the row.
+- Event type `<select>`, module `<select>`, date range (from/to `<input type="date">`).
+- "Clear filters" button (`X` icon) shown when any filter is active.
+- All inputs use `text-caption` for compact dense layout.
+
+### Improved icon distribution (2026-07-22)
+
+Every inventory event now has a distinct icon instead of all using `Package`:
+
+| Event | Icon |
+|-------|------|
+| INVENTORY_SALE | `ShoppingCart` |
+| INVENTORY_ADJUSTMENT_POSITIVE | `TrendingUp` |
+| INVENTORY_ADJUSTMENT_NEGATIVE | `TrendingDown` |
+| INVENTORY_CLIENT_RETURN | `Undo2` |
+| INVENTORY_SUPPLIER_RETURN | `ArrowLeft` |
+| INVENTORY_ADMIN_BLOCK | `Ban` |
+| INVENTORY_ADMIN_UNBLOCK | `Unlock` |
+| INVENTORY_AUTO_EXPIRATION | `Calendar` |
+| INVENTORY_PHYSICAL_COUNT | `ClipboardList` |
+| INVENTORY_ADJUSTMENT_CREATED | `Edit` |
+| INVENTORY_ADJUSTMENT_APPLIED | `Check` |
+| INVENTORY_ADJUSTMENT_APPROVED | `CheckCheck` |
+| INVENTORY_ADJUSTMENT_REJECTED | `X` |
 
 ### Motion treatment
 
-- **Entrance**: No animation. The audit view is a reference screen, not a
-  high-throughput transaction screen — but also not a celebratory moment
-  worthy of orchestrated motion. Cards appear immediately on load/filter
-  change. `prefers-reduced-motion` not applicable (no animations).
-- **Expand**: 200ms height transition on detail panel, opacity 0→1 on the
-  JSON pre block. This is a functional expansion, not a decorative one.
-  Respects `prefers-reduced-motion`: collapses to instant show/hide.
+- **Entrance**: No animation. Cards appear immediately on load/filter change.
+- **Loading skeleton**: CSS `animate-pulse` on skeleton cards.
+- **Expand**: Instant show/hide (no transition to avoid delay during fast
+  browsing). Respects `prefers-reduced-motion` via global `@media` rule.
 
 ### Accessibility
 
-- Day group headers are `<h2>` elements for proper document outline.
-- Event cards are `<article>` elements with `aria-label` describing the event.
+- Day group headers are `<h2>` for document outline.
+- Event cards are `<article>` with `aria-label` describing the event + time.
 - Expand toggle is a `<button>` with `aria-expanded`.
-- Filter selects are labeled via `aria-label`.
-- Pagination buttons are labeled via `aria-label="Página anterior"` /
-  `aria-label="Página siguiente"`.
-- Color is never the sole differentiator: the left border is paired with the
-  icon and event-type label.
+- Filter selects and date inputs are labeled via `aria-label`.
+- Pagination buttons labeled via `aria-label`.
+- Color is never the sole differentiator: left border + icon + label + module.
+- Category legend is a `role="region"` with `aria-label`.
+- Role names use translated text, never raw English strings.
 
 ---
 

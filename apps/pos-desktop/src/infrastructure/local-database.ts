@@ -1006,7 +1006,91 @@ export async function closeLocalDatabase(): Promise<void> {
  * used primarily for UI development, not full offline POS transactions.
  */
 function createDevPrismaWrapper(client: PGlite): unknown {
-  // Return a proxy that logs a warning on first property access.
+  // In-memory model storage so domain services and audit view work
+  // during Vite dev without a real PrismaClient.
+  const modelData = new Map<string, Array<Record<string, unknown>>>();
+
+  function createModelDelegate(modelName: string) {
+    if (!modelData.has(modelName)) {
+      modelData.set(modelName, []);
+    }
+    const data = modelData.get(modelName)!;
+
+    return {
+      findMany: (
+        args: {
+          where?: Record<string, unknown>;
+          orderBy?: Record<string, 'asc' | 'desc'>;
+          take?: number;
+          skip?: number;
+        } = {},
+      ) => {
+        let results = [...data];
+
+        // Apply where filter
+        const where = args.where as Record<string, unknown> | undefined;
+        if (where && Object.keys(where).length > 0) {
+          results = results.filter((item) =>
+            (Object.entries(where) as Array<[string, unknown]>).every(([key, value]) => {
+              // Handle Prisma-style date range: { gte, lte }
+              if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                const range = value as Record<string, string>;
+                const itemDate = new Date(item[key] as string).getTime();
+                if (range.gte && itemDate < new Date(range.gte).getTime()) return false;
+                if (range.lte && itemDate > new Date(range.lte).getTime()) return false;
+                return true;
+              }
+              return item[key] === value;
+            }),
+          );
+        }
+
+        // Apply orderBy
+        if (args.orderBy) {
+          const [[key, dir]] = Object.entries(args.orderBy);
+          results.sort((a, b) => {
+            const aVal = String(a[key] ?? '');
+            const bVal = String(b[key] ?? '');
+            return dir === 'desc'
+              ? bVal.localeCompare(aVal)
+              : aVal.localeCompare(bVal);
+          });
+        }
+
+        // Apply skip / take
+        const skip = args.skip ?? 0;
+        const take = args.take ?? results.length;
+        return Promise.resolve(results.slice(skip, skip + take));
+      },
+
+      count: (args: { where?: Record<string, unknown> } = {}) => {
+        const where = args.where as Record<string, unknown> | undefined;
+        if (where && Object.keys(where).length > 0) {
+          const filtered = data.filter((item) =>
+            (Object.entries(where) as Array<[string, unknown]>).every(([key, value]) => {
+              if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                const range = value as Record<string, string>;
+                const itemDate = new Date(item[key] as string).getTime();
+                if (range.gte && itemDate < new Date(range.gte).getTime()) return false;
+                if (range.lte && itemDate > new Date(range.lte).getTime()) return false;
+                return true;
+              }
+              return item[key] === value;
+            }),
+          );
+          return Promise.resolve(filtered.length);
+        }
+        return Promise.resolve(data.length);
+      },
+
+      create: (args: { data: Record<string, unknown> }) => {
+        const entry = { ...args.data };
+        data.push(entry);
+        return Promise.resolve(entry);
+      },
+    };
+  }
+
   let warned = false;
   return new Proxy(
     { _client: client },
@@ -1018,14 +1102,16 @@ function createDevPrismaWrapper(client: PGlite): unknown {
         if (prop === '$extends') return () => target;
         if (prop === 'constructor') return Object;
         if (prop === Symbol.toPrimitive || prop === 'then') return undefined;
-        if (!warned) {
-          warned = true;
-          console.warn(
-            '[local-database] Dev-mode PrismaClient shim in use. ' +
-            'Property "%s" was accessed but no Prisma models are available. ' +
-            'Run `tauri dev` or build for full functionality.',
-            String(prop),
-          );
+        if (typeof prop === 'string' && prop !== '_client') {
+          if (!warned) {
+            warned = true;
+            console.warn(
+              '[local-database] Dev-mode PrismaClient shim in use. ' +
+              'Model "%s" uses in-memory store — data lost on reload.',
+              String(prop),
+            );
+          }
+          return createModelDelegate(String(prop));
         }
         return undefined;
       },
