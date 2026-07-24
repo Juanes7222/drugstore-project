@@ -21,6 +21,7 @@ import {
   getPrescriptionExpiryDays,
 } from "./field-requirements";
 import type { StrictnessConfig, EffectiveConfig, FieldRequirement } from "./types";
+import { DEFAULT_PURCHASES } from "./defaults";
 
 // ---------------------------------------------------------------------------
 // Factories
@@ -54,6 +55,7 @@ function makeEffectiveConfig(
     strictness: makeStrictness(overrides),
     fiscal: {} as any,
     workflow: {} as any,
+    purchases: { ...DEFAULT_PURCHASES },
     customCompanyFields: [],
     customStrictnessToggles: [],
     activePresetCode: "BALANCED",

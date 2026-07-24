@@ -17,6 +17,7 @@ export type ConfigFieldPath =
   | `strictness.${string}`
   | `fiscal.${string}`
   | `workflow.${string}`
+  | `purchases.${string}`
   | 'customCompanyFields'
   | 'customStrictnessToggles';
 

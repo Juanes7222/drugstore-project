@@ -17,6 +17,7 @@
     "previous": "Previous",
     "next": "Next",
     "actions": "Actions",
+    "optional": "(optional)",
     "all_roles": "All roles",
     "all_status": "All statuses",
     "no_permission": "You do not have permission to view this page.",
@@ -136,9 +137,7 @@
       "returnsDesc": "Manage goods returns to suppliers",
       "noAccess": "You don't have access to the purchasing section",
       "moduleLabel": "Purchasing module",
-      "offlineReady": "Works offline",
-      "configTitle": "Settings",
-      "configDesc": "Customize purchase workflow, reception rules, and validations"
+      "offlineReady": "Works offline"
     },
     "suppliers": {
       "title": "Suppliers",
@@ -267,7 +266,10 @@
       "itemLabel": "Item",
       "searchSupplier": "Search supplier...",
       "searchPurchaseOrder": "Search purchase order...",
-      "searchProduct": "Search product..."
+      "searchProduct": "Search product...",
+      "validationLotRequired": "Lot number is required for all items.",
+      "validationExpiryRequired": "Expiration date is required for all items.",
+      "validationOverReception": "Cannot receive more than ordered. Item \"{{productName}}\": ordered {{requested}}, receiving {{received}}."
     },
     "supplierReturns": {
       "title": "Supplier Returns",
@@ -313,10 +315,15 @@
     },
     "config": {
       "title": "Purchase Settings",
+      "description": "Customize purchase order workflow, reception rules, and supplier defaults",
       "saved": "Settings saved successfully",
       "sectionOrder": "Order Settings",
       "sectionReception": "Reception Settings",
       "sectionSupplier": "Supplier Defaults",
+      "requireManagerPinForConfirm": "Require manager PIN to confirm",
+      "requireManagerPinForConfirmHint": "Require manager PIN authorization before confirming a purchase order",
+      "requireManagerPinForAnnul": "Require manager PIN to annul",
+      "requireManagerPinForAnnulHint": "Require manager PIN authorization before annulling a purchase order",
       "autoConfirmOnCreate": "Auto-confirm order on creation",
       "autoConfirmOnCreateHint": "When creating a purchase order, confirm it immediately without showing the detail view",
       "requireLotOnReception": "Require lot on reception",
@@ -329,7 +336,8 @@
       "defaultPaymentTermsDaysHint": "Default value for payment terms days when creating a new supplier",
       "maxItemsPerOrder": "Max items per order",
       "maxItemsPerOrderHint": "Maximum items allowed per purchase order (0 = unlimited)",
-      "save": "Save settings"
+      "save": "Save settings",
+      "autoSave": "Auto-save"
     }
   },
   "sales": {
@@ -1262,7 +1270,8 @@
       "fiscal": "Fiscal",
       "operation": "Operation",
       "preferences": "System Preferences",
-      "user_preferences": "User Preferences"
+      "user_preferences": "User Preferences",
+      "purchases": "Purchases"
     },
     "presets": {
       "title": "Operation mode",

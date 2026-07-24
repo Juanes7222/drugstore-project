@@ -70,6 +70,7 @@ export const PurchaseReceptionsPage: FC = () => {
     notes: '',
     items: [],
   });
+  const [validationError, setValidationError] = useState<string | null>(null);
   const {
     isLoading: isSaving,
     error: saveError,
@@ -216,15 +217,15 @@ export const PurchaseReceptionsPage: FC = () => {
 
   const handleCreateSubmit = useCallback(async () => {
     const cfg = getPurchasesConfig();
+    setValidationError(null);
 
-    // Config-based validation
     if (cfg.requireLotOnReception) {
       const missingLot = formData.items.find(
         (item: any) => item.receivedQuantity > 0 && !(item.lotNumber ?? '').toString().trim(),
       );
       if (missingLot) {
-        // Show a generic error; runSave will set error on failure
-        throw new Error('Número de lote requerido para todos los items.');
+        setValidationError(t('purchases.receptions.validationLotRequired'));
+        return;
       }
     }
 
@@ -233,7 +234,8 @@ export const PurchaseReceptionsPage: FC = () => {
         (item: any) => item.receivedQuantity > 0 && !(item.expirationDate ?? '').toString().trim(),
       );
       if (missingExpiry) {
-        throw new Error('Fecha de vencimiento requerida para todos los items.');
+        setValidationError(t('purchases.receptions.validationExpiryRequired'));
+        return;
       }
     }
 
@@ -242,11 +244,12 @@ export const PurchaseReceptionsPage: FC = () => {
       return created;
     });
     if (result.success) {
+      setValidationError(null);
       setSelectedReception(result.data);
       setViewMode('detail');
       await loadReceptions();
     }
-  }, [formData, receptionsService, loadReceptions, runSave]);
+  }, [formData, receptionsService, loadReceptions, runSave, t]);
 
   // ── Confirm / Annul ───────────────────────────────────────────────────
 
@@ -360,7 +363,9 @@ export const PurchaseReceptionsPage: FC = () => {
             onSubmit={handleCreateSubmit}
             onCancel={() => setViewMode('list')}
             isSaving={isSaving}
-            error={saveError}
+            error={validationError || saveError}
+            requireLotOnReception={getPurchasesConfig().requireLotOnReception}
+            requireExpiryOnReception={getPurchasesConfig().requireExpiryOnReception}
             suppliers={supplierResults}
             onSupplierSearch={handleSupplierSearch}
             purchaseOrders={poResults}

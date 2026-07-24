@@ -19,6 +19,7 @@ import type {
   StrictnessConfig,
   FiscalConfig,
   WorkflowConfig,
+  PurchasesConfig,
   CustomCompanyField,
   CustomStrictnessToggle,
   ConfigChangelogEntry,
@@ -66,6 +67,7 @@ type PresetWorkflow = Pick<
 interface PresetData {
   strictness: PresetStrictness;
   workflow: PresetWorkflow;
+  purchases: PurchasesConfig;
 }
 
 const PRESETS: Record<string, PresetData> = {
@@ -101,6 +103,16 @@ const PRESETS: Record<string, PresetData> = {
       suggestionEngineEnabled: false,
       autoReprintLastReceiptOnReprint: false,
     },
+    purchases: {
+      autoConfirmOnCreate: true,
+      requireManagerPinForConfirm: false,
+      requireManagerPinForAnnul: false,
+      requireLotOnReception: false,
+      requireExpiryOnReception: false,
+      allowOverReception: true,
+      defaultPaymentTermsDays: 30,
+      maxItemsPerOrder: 0,
+    },
   },
   BALANCED: {
     strictness: {
@@ -134,6 +146,16 @@ const PRESETS: Record<string, PresetData> = {
       suggestionEngineEnabled: true,
       autoReprintLastReceiptOnReprint: true,
     },
+    purchases: {
+      autoConfirmOnCreate: false,
+      requireManagerPinForConfirm: false,
+      requireManagerPinForAnnul: false,
+      requireLotOnReception: true,
+      requireExpiryOnReception: true,
+      allowOverReception: false,
+      defaultPaymentTermsDays: 30,
+      maxItemsPerOrder: 50,
+    },
   },
   STRICT: {
     strictness: {
@@ -166,6 +188,16 @@ const PRESETS: Record<string, PresetData> = {
       },
       suggestionEngineEnabled: true,
       autoReprintLastReceiptOnReprint: true,
+    },
+    purchases: {
+      autoConfirmOnCreate: false,
+      requireManagerPinForConfirm: true,
+      requireManagerPinForAnnul: true,
+      requireLotOnReception: true,
+      requireExpiryOnReception: true,
+      allowOverReception: false,
+      defaultPaymentTermsDays: 15,
+      maxItemsPerOrder: 20,
     },
   },
 };
@@ -228,6 +260,7 @@ export class TenantConfigService {
       strictness: preset.strictness as StrictnessConfig,
       fiscal: this.emptyFiscalConfig(),
       workflow: preset.workflow as WorkflowConfig,
+      purchases: preset.purchases as PurchasesConfig,
       customCompanyFields: [],
       customStrictnessToggles: [],
       configVersion: 1,
@@ -258,6 +291,7 @@ export class TenantConfigService {
         strictness: this.json(preset.strictness),
         fiscal: this.json(this.emptyFiscalConfig()),
         workflow: this.json(preset.workflow),
+        purchases: this.json(preset.purchases),
         customCompanyFields: [],
         customStrictnessToggles: [],
         configVersion: 1,
@@ -304,6 +338,7 @@ export class TenantConfigService {
       strictness?: Partial<StrictnessConfig>;
       fiscal?: Partial<FiscalConfig>;
       workflow?: Partial<WorkflowConfig>;
+      purchases?: Partial<PurchasesConfig>;
       expectedConfigVersion: number;
     },
     actorUserId: string,
@@ -334,6 +369,9 @@ export class TenantConfigService {
     const mergedWorkflow: WorkflowConfig = dto.workflow
       ? { ...(current.workflow as unknown as WorkflowConfig), ...dto.workflow }
       : (current.workflow as unknown as WorkflowConfig);
+    const mergedPurchases: PurchasesConfig = dto.purchases
+      ? { ...(current.purchases as unknown as PurchasesConfig), ...dto.purchases }
+      : (current.purchases as unknown as PurchasesConfig);
 
     // RBAC: MANAGER role cannot modify system-level fields
     if (actorRole === RoleType.MANAGER) {
@@ -361,6 +399,7 @@ export class TenantConfigService {
       validationInput.fiscal = mergedFiscal;
     }
     validationInput.workflow = mergedWorkflow;
+    validationInput.purchases = mergedPurchases;
 
     const validationErrors = this.validationService.validate(validationInput);
     if (validationErrors.length > 0) {
@@ -412,6 +451,16 @@ export class TenantConfigService {
         });
       }
       updateData.workflow = this.json(mergedWorkflow);
+    }
+    if (dto.purchases) {
+      if (!this.deepEqual(current.purchases, mergedPurchases)) {
+        changes.push({
+          fieldPath: 'purchases',
+          beforeValue: current.purchases,
+          afterValue: mergedPurchases,
+        });
+      }
+      updateData.purchases = this.json(mergedPurchases);
     }
 
     const updated = await this.prisma.tenantConfig.update({
@@ -469,6 +518,7 @@ export class TenantConfigService {
       data: {
         strictness: this.json(preset.strictness),
         workflow: this.json(preset.workflow),
+        purchases: this.json(preset.purchases),
         activePresetCode: presetCode,
         configVersion: newVersion,
         lastModifiedById: actorUserId,
@@ -520,6 +570,7 @@ export class TenantConfigService {
       data: {
         strictness: this.json(preset.strictness),
         workflow: this.json(preset.workflow),
+        purchases: this.json(preset.purchases),
         configVersion: newVersion,
         lastModifiedById: actorUserId,
         lastModifiedAt: now,
@@ -536,10 +587,12 @@ export class TenantConfigService {
         beforeValue: this.json({
           strictness: current.strictness,
           workflow: current.workflow,
+          purchases: current.purchases,
         }),
         afterValue: this.json({
           strictness: preset.strictness,
           workflow: preset.workflow,
+          purchases: preset.purchases,
         }),
         actorUserId,
         createdAt: now,
@@ -732,6 +785,7 @@ export class TenantConfigService {
     const newStrictness: Record<string, unknown> = { ...(config.strictness as Record<string, unknown>) };
     const newFiscal: Record<string, unknown> = { ...(config.fiscal as Record<string, unknown>) };
     const newWorkflow: Record<string, unknown> = { ...(config.workflow as Record<string, unknown>) };
+    const newPurchases: Record<string, unknown> = { ...(config.purchases as Record<string, unknown>) };
 
     for (const entry of entries) {
       if (!entry.fieldPath || !entry.beforeValue) continue;
@@ -742,6 +796,8 @@ export class TenantConfigService {
         Object.assign(newFiscal, entry.beforeValue as Record<string, unknown>);
       } else if (entry.fieldPath === 'workflow') {
         Object.assign(newWorkflow, entry.beforeValue as Record<string, unknown>);
+      } else if (entry.fieldPath === 'purchases') {
+        Object.assign(newPurchases, entry.beforeValue as Record<string, unknown>);
       }
     }
 
@@ -754,6 +810,7 @@ export class TenantConfigService {
         strictness: this.json(newStrictness),
         fiscal: this.json(newFiscal),
         workflow: this.json(newWorkflow),
+        purchases: this.json(newPurchases),
         configVersion: newVersion,
         lastModifiedById: actorUserId,
         lastModifiedAt: now,
@@ -818,6 +875,7 @@ export class TenantConfigService {
       strictness: data.strictness as Partial<StrictnessConfig>,
       fiscal: {},
       workflow: data.workflow as Partial<WorkflowConfig>,
+      purchases: data.purchases as Partial<PurchasesConfig>,
     }));
   }
 
@@ -841,6 +899,7 @@ export class TenantConfigService {
         strictness: this.json(config.strictness),
         fiscal: this.json(config.fiscal),
         workflow: this.json(config.workflow),
+        purchases: this.json(config.purchases),
         customCompanyFields: this.jsonArray(config.customCompanyFields),
         customStrictnessToggles: this.jsonArray(config.customStrictnessToggles),
         isShared,
@@ -900,6 +959,7 @@ export class TenantConfigService {
         strictness: this.json(preset.strictness),
         fiscal: this.json(preset.fiscal),
         workflow: this.json(preset.workflow),
+        purchases: this.json(preset.purchases),
         customCompanyFields: this.jsonArray(preset.customCompanyFields),
         customStrictnessToggles: this.jsonArray(preset.customStrictnessToggles),
         configVersion: newVersion,
@@ -1024,6 +1084,7 @@ export class TenantConfigService {
       strictness?: Partial<StrictnessConfig>;
       fiscal?: Partial<FiscalConfig>;
       workflow?: Partial<WorkflowConfig>;
+      purchases?: Partial<PurchasesConfig>;
       expectedConfigVersion: number;
     },
     actorUserId: string,
@@ -1044,6 +1105,9 @@ export class TenantConfigService {
     const mergedWorkflow: WorkflowConfig = dto.workflow
       ? { ...(defaults.workflow as WorkflowConfig), ...dto.workflow }
       : (defaults.workflow as WorkflowConfig);
+    const mergedPurchases: PurchasesConfig = dto.purchases
+      ? { ...(defaults.purchases as PurchasesConfig), ...dto.purchases }
+      : (defaults.purchases as PurchasesConfig);
 
     // Validate strictness and workflow (preset defaults are always valid,
     // cross-field rules like clientRequired + threshold need checking).
@@ -1055,6 +1119,7 @@ export class TenantConfigService {
     if (dto.strictness) validationInput.strictness = mergedStrictness;
     // Fiscal intentionally omitted during first-creation path
     if (dto.workflow) validationInput.workflow = mergedWorkflow;
+    if (dto.purchases) validationInput.purchases = mergedPurchases;
 
     const validationErrors = this.validationService.validate(validationInput);
     if (validationErrors.length > 0) {
@@ -1105,6 +1170,16 @@ export class TenantConfigService {
         });
       }
       updateData.workflow = this.json(mergedWorkflow);
+    }
+    if (dto.purchases) {
+      if (!this.deepEqual(defaults.purchases, mergedPurchases)) {
+        changes.push({
+          fieldPath: 'purchases',
+          beforeValue: defaults.purchases,
+          afterValue: mergedPurchases,
+        });
+      }
+      updateData.purchases = this.json(mergedPurchases);
     }
 
     // Only persist if there are changes beyond the defaults
@@ -1239,6 +1314,7 @@ export class TenantConfigService {
       strictness: raw.strictness as StrictnessConfig,
       fiscal: safeFiscal,
       workflow: raw.workflow as WorkflowConfig,
+      purchases: raw.purchases as PurchasesConfig,
       customCompanyFields: (raw.customCompanyFields ?? []) as CustomCompanyField[],
       customStrictnessToggles: (raw.customStrictnessToggles ?? []) as CustomStrictnessToggle[],
       configVersion: raw.configVersion,
@@ -1288,6 +1364,19 @@ export class TenantConfigService {
       f.dianResolutionDate &&
       f.dianResolutionPrefix
     );
+  }
+
+  private emptyPurchasesConfig(): PurchasesConfig {
+    return {
+      autoConfirmOnCreate: false,
+      requireManagerPinForConfirm: true,
+      requireManagerPinForAnnul: true,
+      requireLotOnReception: false,
+      requireExpiryOnReception: false,
+      allowOverReception: false,
+      defaultPaymentTermsDays: 30,
+      maxItemsPerOrder: 500,
+    };
   }
 
   private emptyFiscalConfig(): FiscalConfig {

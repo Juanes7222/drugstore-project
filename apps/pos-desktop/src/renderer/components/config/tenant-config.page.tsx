@@ -19,6 +19,7 @@ import {
   Receipt,
   ToggleLeft,
   Settings2,
+  ShoppingCart,
   UserCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -34,12 +35,13 @@ import { UserPreferencesSection } from "./user-preferences.section";
 import { CompanyConfigTab } from "./company-config-tab";
 import { FiscalConfigTab } from "./fiscal-config-tab";
 import { SystemPreferencesTab } from "./system-preferences-tab";
+import { PurchasesConfigTab } from "./purchases-config-tab";
 
 // ---------------------------------------------------------------------------
 // Tab definitions
 // ---------------------------------------------------------------------------
 
-type TabId = "company" | "fiscal" | "operation" | "preferences" | "user-preferences";
+type TabId = "company" | "fiscal" | "operation" | "preferences" | "user-preferences" | "purchases";
 
 interface TabDefinition {
   id: TabId;
@@ -53,6 +55,7 @@ const TABS: TabDefinition[] = [
   { id: "operation", i18nKey: "tabs.operation", Icon: ToggleLeft },
   { id: "preferences", i18nKey: "tabs.preferences", Icon: Settings2 },
   { id: "user-preferences", i18nKey: "tabs.user_preferences", Icon: UserCircle },
+  { id: "purchases", i18nKey: "tabs.purchases", Icon: ShoppingCart },
 ];
 
 // ---------------------------------------------------------------------------
@@ -170,6 +173,8 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
         );
       case "user-preferences":
         return <UserPreferencesSection />;
+      case "purchases":
+        return <PurchasesConfigTab />;
     }
   };
 

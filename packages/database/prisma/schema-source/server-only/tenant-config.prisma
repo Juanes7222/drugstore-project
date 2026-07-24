@@ -24,6 +24,9 @@ model TenantConfig {
   /// Json: WorkflowConfig — workflow preferences
   workflow          Json
 
+  /// Json: PurchasesConfig — purchase workflow settings
+  purchases         Json   @default("{}")
+
   /// Json: CustomCompanyField[] — user-added company info fields
   customCompanyFields Json   @default("[]")
 
@@ -57,6 +60,8 @@ model NamedPreset {
   fiscal            Json
   /// Json: WorkflowConfig
   workflow          Json
+  /// Json: PurchasesConfig
+  purchases         Json   @default("{}")
   /// Json: CustomCompanyField[]
   customCompanyFields Json   @default("[]")
   /// Json: CustomStrictnessToggle[]

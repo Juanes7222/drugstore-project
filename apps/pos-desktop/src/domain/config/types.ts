@@ -40,6 +40,7 @@ import type {
   ConfigChangelogEntry,
   TenantConfigSyncPayload,
   UserPreferences,
+  PurchasesConfig,
 } from '@pharmacy/shared-types';
 
 export type {
@@ -77,6 +78,7 @@ export type {
   ConfigChangelogEntry,
   TenantConfigSyncPayload,
   UserPreferences,
+  PurchasesConfig,
 };
 
 // ---------------------------------------------------------------------------
@@ -88,6 +90,7 @@ export interface EffectiveConfig {
   strictness: StrictnessConfig;
   fiscal: FiscalConfig;
   workflow: WorkflowConfig;
+  purchases: PurchasesConfig;
   customCompanyFields: CustomCompanyField[];
   customStrictnessToggles: CustomStrictnessToggle[];
   activePresetCode: PresetCode | null;

@@ -9,6 +9,7 @@ import type {
   StrictnessConfig,
   FiscalConfig,
   WorkflowConfig,
+  PurchasesConfig,
   CustomCompanyField,
   CustomStrictnessToggle,
 } from '@pharmacy/shared-types';
@@ -30,6 +31,7 @@ export class ConfigValidationService {
       strictness: StrictnessConfig;
       fiscal: FiscalConfig;
       workflow: WorkflowConfig;
+      purchases: PurchasesConfig;
       customCompanyFields: CustomCompanyField[];
       customStrictnessToggles: CustomStrictnessToggle[];
     }>,
@@ -44,6 +46,9 @@ export class ConfigValidationService {
     }
     if (config.workflow) {
       this.validateWorkflow(config.workflow, errors);
+    }
+    if (config.purchases) {
+      this.validatePurchases(config.purchases, errors);
     }
     if (config.customCompanyFields) {
       this.validateCustomFields(config.customCompanyFields, errors);
@@ -169,6 +174,22 @@ export class ConfigValidationService {
   ): void {
     // Workflow validation is mostly structural (Zod handles it).
     // Business cross-validation goes here as needed.
+  }
+
+  private validatePurchases(
+    p: PurchasesConfig,
+    errors: ValidationError[],
+  ): void {
+    // autoConfirmOnCreate + requireManagerPinForConfirm conflict check
+    if (p.autoConfirmOnCreate && p.requireManagerPinForConfirm) {
+      errors.push({
+        path: 'purchases.autoConfirmOnCreate',
+        message:
+          'autoConfirmOnCreate cannot be enabled when requireManagerPinForConfirm is also enabled — ' +
+          'auto-confirm bypasses the manager PIN requirement',
+        code: 'PURCHASES_AUTO_CONFIRM_CONFLICT',
+      });
+    }
   }
 
   private validateCustomFields(

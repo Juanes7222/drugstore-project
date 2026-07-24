@@ -91,6 +91,19 @@ export interface WorkflowConfig {
   autoReprintLastReceiptOnReprint: boolean;
 }
 
+// --- Purchases ---
+
+export interface PurchasesConfig {
+  autoConfirmOnCreate: boolean;
+  requireManagerPinForConfirm: boolean;
+  requireManagerPinForAnnul: boolean;
+  requireLotOnReception: boolean;
+  requireExpiryOnReception: boolean;
+  allowOverReception: boolean;
+  defaultPaymentTermsDays: number;
+  maxItemsPerOrder: number;
+}
+
 // --- Custom fields ---
 
 export type CustomFieldType = 'TEXT' | 'NUMBER' | 'DATE' | 'URL' | 'EMAIL';
@@ -134,6 +147,7 @@ export interface PresetDefinition {
   strictness: Partial<StrictnessConfig>;
   fiscal: Partial<FiscalConfig>;
   workflow: Partial<WorkflowConfig>;
+  purchases?: Partial<PurchasesConfig>;
 }
 
 // --- TenantConfig (persisted to server DB) ---
@@ -145,6 +159,7 @@ export interface TenantConfig {
   strictness: StrictnessConfig;
   fiscal: FiscalConfig;
   workflow: WorkflowConfig;
+  purchases: PurchasesConfig;
   customCompanyFields: CustomCompanyField[];
   customStrictnessToggles: CustomStrictnessToggle[];
   configVersion: number;
@@ -163,6 +178,7 @@ export interface NamedPreset {
   strictness: StrictnessConfig;
   fiscal: FiscalConfig;
   workflow: WorkflowConfig;
+  purchases: PurchasesConfig;
   customCompanyFields: CustomCompanyField[];
   customStrictnessToggles: CustomStrictnessToggle[];
   isShared: boolean;

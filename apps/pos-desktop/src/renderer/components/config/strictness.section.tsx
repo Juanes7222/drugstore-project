@@ -57,6 +57,27 @@ const STRICTNESS_FIELDS: StrictnessField[] = [
     ],
   },
   {
+    key: 'inventoryAdjustmentReason',
+    i18nKey: 'strictness.inventory_adjustment_reason',
+    i18nDescKey: 'strictness.inventory_adjustment_reason_desc',
+    type: 'select',
+    options: [
+      { value: 'REQUIRED', i18nLabel: 'strictness.option_required' },
+      { value: 'OPTIONAL', i18nLabel: 'strictness.option_optional' },
+    ],
+  },
+  {
+    key: 'returnsRequireOriginalSale',
+    i18nKey: 'strictness.returns_require_original_sale',
+    i18nDescKey: 'strictness.returns_require_original_sale_desc',
+    type: 'select',
+    options: [
+      { value: 'STRICT', i18nLabel: 'strictness.option_strict' },
+      { value: 'OPTIONAL', i18nLabel: 'strictness.option_optional' },
+      { value: 'OFF', i18nLabel: 'strictness.option_off' },
+    ],
+  },
+  {
     key: 'stockValidation',
     i18nKey: 'strictness.stock_validation',
     i18nDescKey: 'strictness.stock_validation_desc',
@@ -92,27 +113,6 @@ const STRICTNESS_FIELDS: StrictnessField[] = [
     options: [
       { value: 'STRICT', i18nLabel: 'strictness.option_block' },
       { value: 'WARN', i18nLabel: 'strictness.option_warn' },
-      { value: 'OFF', i18nLabel: 'strictness.option_off' },
-    ],
-  },
-  {
-    key: 'inventoryAdjustmentReason',
-    i18nKey: 'strictness.inventory_adjustment_reason',
-    i18nDescKey: 'strictness.inventory_adjustment_reason_desc',
-    type: 'select',
-    options: [
-      { value: 'REQUIRED', i18nLabel: 'strictness.option_required' },
-      { value: 'OPTIONAL', i18nLabel: 'strictness.option_optional' },
-    ],
-  },
-  {
-    key: 'returnsRequireOriginalSale',
-    i18nKey: 'strictness.returns_require_original_sale',
-    i18nDescKey: 'strictness.returns_require_original_sale_desc',
-    type: 'select',
-    options: [
-      { value: 'STRICT', i18nLabel: 'strictness.option_strict' },
-      { value: 'OPTIONAL', i18nLabel: 'strictness.option_optional' },
       { value: 'OFF', i18nLabel: 'strictness.option_off' },
     ],
   },

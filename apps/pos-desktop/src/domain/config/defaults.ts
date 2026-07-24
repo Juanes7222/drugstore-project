@@ -11,6 +11,7 @@ import type {
   StrictnessConfig,
   FiscalConfig,
   WorkflowConfig,
+  PurchasesConfig,
   CustomCompanyField,
   CustomStrictnessToggle,
 } from './types';
@@ -78,6 +79,21 @@ export const DEFAULT_WORKFLOW: WorkflowConfig = {
   sessionIdleTimeouts: { cashier: 600, manager: 1800, owner: 3600 },
   suggestionEngineEnabled: true,
   autoReprintLastReceiptOnReprint: true,
+};
+
+// ---------------------------------------------------------------------------
+// Default purchases config
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_PURCHASES: PurchasesConfig = {
+  autoConfirmOnCreate: false,
+  requireManagerPinForConfirm: false,
+  requireManagerPinForAnnul: false,
+  requireLotOnReception: true,
+  requireExpiryOnReception: true,
+  allowOverReception: false,
+  defaultPaymentTermsDays: 30,
+  maxItemsPerOrder: 0,
 };
 
 // ---------------------------------------------------------------------------

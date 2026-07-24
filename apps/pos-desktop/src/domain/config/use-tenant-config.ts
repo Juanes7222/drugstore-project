@@ -31,7 +31,10 @@ import {
   DEFAULT_STRICTNESS,
   DEFAULT_FISCAL,
   DEFAULT_WORKFLOW,
+  DEFAULT_PURCHASES,
 } from './defaults';
+import { getPresetPurchases } from './presets';
+import { useLocalConfigStore } from '../configuration/local-config.store';
 
 // ---------------------------------------------------------------------------
 // Default config factory — used when server returns 404
@@ -47,6 +50,7 @@ function createDefaultTenantConfig(
     strictness: { ...DEFAULT_STRICTNESS },
     fiscal: { ...DEFAULT_FISCAL },
     workflow: { ...DEFAULT_WORKFLOW },
+    purchases: { ...DEFAULT_PURCHASES },
     customCompanyFields: [],
     customStrictnessToggles: [],
     configVersion: 0,
@@ -199,6 +203,12 @@ export function useTenantConfig(
       try {
         const config = await svc.applyPreset(code);
         store.getState().setConfig(config);
+
+        // Also update local purchases config to match the preset's defaults
+        const presetPurchases = getPresetPurchases(code);
+        if (presetPurchases) {
+          useLocalConfigStore.getState().applyPresetPurchases(presetPurchases);
+        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Failed to apply preset';
@@ -227,6 +237,12 @@ export function useTenantConfig(
       try {
         const config = await svc.update(updates, currentVersion);
         store.getState().setConfig(config);
+
+        // Propagate purchases changes to the local config store
+        // so any code reading from the older store stays in sync.
+        if (config.purchases) {
+          useLocalConfigStore.getState().updatePurchasesConfig(config.purchases);
+        }
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Failed to update config';

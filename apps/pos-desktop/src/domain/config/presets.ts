@@ -6,10 +6,22 @@
  */
 
 import type { PresetDefinition, StrictnessConfig, WorkflowConfig } from './types';
+import type { PurchasesConfig } from '../../domain/configuration/local-config.store';
 
 // ---------------------------------------------------------------------------
 // Preset: Simple
 // ---------------------------------------------------------------------------
+
+const SIMPLE_PURCHASES: Partial<PurchasesConfig> = {
+  autoConfirmOnCreate: true,
+  requireManagerPinForConfirm: false,
+  requireManagerPinForAnnul: false,
+  requireLotOnReception: false,
+  requireExpiryOnReception: false,
+  allowOverReception: true,
+  defaultPaymentTermsDays: 30,
+  maxItemsPerOrder: 0,
+};
 
 const SIMPLE_STRICTNESS: StrictnessConfig = {
   lots: 'OFF',
@@ -40,7 +52,7 @@ const SIMPLE_WORKFLOW: WorkflowConfig = {
   autoReprintLastReceiptOnReprint: false,
 };
 
-export const PRESET_SIMPLE: PresetDefinition = {
+export const PRESET_SIMPLE: PresetDefinition & { purchases: Partial<PurchasesConfig> } = {
   code: 'SIMPLE',
   name: 'Simple',
   description:
@@ -50,6 +62,7 @@ export const PRESET_SIMPLE: PresetDefinition = {
   strictness: SIMPLE_STRICTNESS,
   fiscal: {},
   workflow: SIMPLE_WORKFLOW,
+  purchases: SIMPLE_PURCHASES,
 };
 
 // ---------------------------------------------------------------------------
@@ -85,7 +98,18 @@ const BALANCED_WORKFLOW: WorkflowConfig = {
   autoReprintLastReceiptOnReprint: true,
 };
 
-export const PRESET_BALANCED: PresetDefinition = {
+const BALANCED_PURCHASES: Partial<PurchasesConfig> = {
+  autoConfirmOnCreate: false,
+  requireManagerPinForConfirm: false,
+  requireManagerPinForAnnul: false,
+  requireLotOnReception: true,
+  requireExpiryOnReception: true,
+  allowOverReception: false,
+  defaultPaymentTermsDays: 30,
+  maxItemsPerOrder: 50,
+};
+
+export const PRESET_BALANCED: PresetDefinition & { purchases: Partial<PurchasesConfig> } = {
   code: 'BALANCED',
   name: 'Balanceado',
   description:
@@ -95,6 +119,7 @@ export const PRESET_BALANCED: PresetDefinition = {
   strictness: BALANCED_STRICTNESS,
   fiscal: {},
   workflow: BALANCED_WORKFLOW,
+  purchases: BALANCED_PURCHASES,
 };
 
 // ---------------------------------------------------------------------------
@@ -130,7 +155,18 @@ const STRICT_WORKFLOW: WorkflowConfig = {
   autoReprintLastReceiptOnReprint: true,
 };
 
-export const PRESET_STRICT: PresetDefinition = {
+const STRICT_PURCHASES: Partial<PurchasesConfig> = {
+  autoConfirmOnCreate: false,
+  requireManagerPinForConfirm: true,
+  requireManagerPinForAnnul: true,
+  requireLotOnReception: true,
+  requireExpiryOnReception: true,
+  allowOverReception: false,
+  defaultPaymentTermsDays: 15,
+  maxItemsPerOrder: 20,
+};
+
+export const PRESET_STRICT: PresetDefinition & { purchases: Partial<PurchasesConfig> } = {
   code: 'STRICT',
   name: 'Estricto',
   description:
@@ -140,13 +176,14 @@ export const PRESET_STRICT: PresetDefinition = {
   strictness: STRICT_STRICTNESS,
   fiscal: {},
   workflow: STRICT_WORKFLOW,
+  purchases: STRICT_PURCHASES,
 };
 
 // ---------------------------------------------------------------------------
 // Preset: Custom marker
 // ---------------------------------------------------------------------------
 
-export const PRESET_CUSTOM: PresetDefinition = {
+export const PRESET_CUSTOM: PresetDefinition & { purchases: Partial<PurchasesConfig> } = {
   code: 'CUSTOM',
   name: 'Personalizado',
   description:
@@ -156,6 +193,7 @@ export const PRESET_CUSTOM: PresetDefinition = {
   strictness: {},
   fiscal: {},
   workflow: {},
+  purchases: {},
 };
 
 // ---------------------------------------------------------------------------
@@ -184,4 +222,13 @@ export const PRESET_LIST: PresetDefinition[] = [
  */
 export function getPreset(code: string): PresetDefinition | undefined {
   return PRESET_MAP[code];
+}
+
+/**
+ * Resolve purchases config defaults for a preset code.
+ * Returns undefined when no preset matches (or CUSTOM).
+ */
+export function getPresetPurchases(code: string): Partial<PurchasesConfig> | undefined {
+  const entry = PRESET_MAP[code] as (PresetDefinition & { purchases?: Partial<PurchasesConfig> }) | undefined;
+  return entry?.purchases;
 }

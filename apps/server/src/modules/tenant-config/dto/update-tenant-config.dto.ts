@@ -7,6 +7,7 @@ export class UpdateTenantConfigDto
   strictness?: z.infer<typeof UpdateTenantConfigSchema.shape.strictness>;
   fiscal?: z.infer<typeof UpdateTenantConfigSchema.shape.fiscal>;
   workflow?: z.infer<typeof UpdateTenantConfigSchema.shape.workflow>;
+  purchases?: z.infer<typeof UpdateTenantConfigSchema.shape.purchases>;
   expectedConfigVersion!: number;
 
   constructor(data?: z.infer<typeof UpdateTenantConfigSchema>) {
@@ -14,6 +15,7 @@ export class UpdateTenantConfigDto
       this.strictness = data.strictness;
       this.fiscal = data.fiscal;
       this.workflow = data.workflow;
+      this.purchases = data.purchases;
       this.expectedConfigVersion = data.expectedConfigVersion;
     }
   }

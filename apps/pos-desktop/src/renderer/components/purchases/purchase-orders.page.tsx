@@ -20,6 +20,10 @@ import { useAppDispatch } from '@/store/hooks';
 import { navigateToPurchasesMain } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
 import { getPurchasesConfig } from '../../../domain/configuration';
+import { StepUpModal } from '../auth/step-up-modal';
+import { createAuthService, type AuthService } from '../../../domain/auth/auth.service';
+import { API_BASE_URL } from '@infra/config';
+import { RoleType } from '@pharmacy/shared-types';
 import {
   useSuppliersService,
   usePurchaseOrdersService,
@@ -176,6 +180,9 @@ export const PurchaseOrdersPage: FC = () => {
     reset: resetAnnul,
   } = useAsyncAction();
 
+  // ── Manager PIN step-up state ──────────────────────────────────────────
+  const [pendingPinAction, setPendingPinAction] = useState<'confirm' | 'annul' | null>(null);
+
   // ── Supplier search for selector ──────────────────────────────────────
   const [suppliers, setSuppliers] = useState<SupplierSearchResult[]>([]);
 
@@ -263,6 +270,9 @@ export const PurchaseOrdersPage: FC = () => {
   // ── Inline Reception state & handlers ──────────────────────────────────
   const [receiveItems, setReceiveItems] = useState<ReceiveItemForm[]>([]);
   const [receiveValidationError, setReceiveValidationError] = useState<string | null>(null);
+  const receiveCfg = useMemo(() => getPurchasesConfig(), []);
+  const isLotRequired = receiveCfg.requireLotOnReception;
+  const isExpiryRequired = receiveCfg.requireExpiryOnReception;
   const {
     isLoading: isReceiving,
     error: receiveError,
@@ -313,13 +323,14 @@ export const PurchaseOrdersPage: FC = () => {
 
     // Config-based validation
     const cfg = getPurchasesConfig();
+    setReceiveValidationError(null);
 
     if (cfg.requireLotOnReception) {
       const missingLot = receiveItems.find(
         (item) => item.receivedQuantity > 0 && !item.lotNumber.trim(),
       );
       if (missingLot) {
-        setReceiveValidationError('Número de lote requerido para todos los items.');
+        setReceiveValidationError(t('purchases.receptions.validationLotRequired'));
         return;
       }
     }
@@ -329,7 +340,7 @@ export const PurchaseOrdersPage: FC = () => {
         (item) => item.receivedQuantity > 0 && !item.expirationDate.trim(),
       );
       if (missingExpiry) {
-        setReceiveValidationError('Fecha de vencimiento requerida para todos los items.');
+        setReceiveValidationError(t('purchases.receptions.validationExpiryRequired'));
         return;
       }
     }
@@ -340,13 +351,15 @@ export const PurchaseOrdersPage: FC = () => {
       );
       if (overReceived) {
         setReceiveValidationError(
-          `No puede recibir más de lo ordenado. Item "${overReceived.productName}": solicitado ${overReceived.pendingQuantity}, recibiendo ${overReceived.receivedQuantity}.`,
+          t('purchases.receptions.validationOverReception', {
+            productName: overReceived.productName,
+            requested: overReceived.pendingQuantity,
+            received: overReceived.receivedQuantity,
+          }),
         );
         return;
       }
     }
-
-    setReceiveValidationError(null);
     const result = await runReceive(async () => {
       // Build CreateReceptionInput from receiveItems
       const receptionInput = {
@@ -583,7 +596,7 @@ export const PurchaseOrdersPage: FC = () => {
 
   // ── Confirm / Annul handlers ──────────────────────────────────────────
 
-  const handleConfirmOrder = useCallback(async () => {
+  const doConfirmOrder = useCallback(async () => {
     if (!selectedOrderId) return;
     const result = await runConfirm(async () => {
       return await ordersService.confirmOrder(selectedOrderId);
@@ -594,7 +607,7 @@ export const PurchaseOrdersPage: FC = () => {
     }
   }, [selectedOrderId, ordersService, loadOrders, runConfirm]);
 
-  const handleAnnulOrder = useCallback(async () => {
+  const doAnnulOrder = useCallback(async () => {
     if (!selectedOrderId) return;
     const result = await runAnnul(async () => {
       return await ordersService.annulOrder(selectedOrderId);
@@ -605,9 +618,51 @@ export const PurchaseOrdersPage: FC = () => {
     }
   }, [selectedOrderId, ordersService, loadOrders, runAnnul]);
 
+  const handleConfirmOrder = useCallback(async () => {
+    if (!selectedOrderId) return;
+    const config = getPurchasesConfig();
+    if (config.requireManagerPinForConfirm) {
+      setPendingPinAction('confirm');
+      return;
+    }
+    await doConfirmOrder();
+  }, [selectedOrderId, doConfirmOrder]);
+
+  const handleAnnulOrder = useCallback(async () => {
+    if (!selectedOrderId) return;
+    const config = getPurchasesConfig();
+    if (config.requireManagerPinForAnnul) {
+      setPendingPinAction('annul');
+      return;
+    }
+    await doAnnulOrder();
+  }, [selectedOrderId, doAnnulOrder]);
+
+  const handlePinApproved = useCallback(
+    async (_approvalToken: string) => {
+      const action = pendingPinAction;
+      setPendingPinAction(null);
+      if (action === 'confirm') {
+        await doConfirmOrder();
+      } else if (action === 'annul') {
+        await doAnnulOrder();
+      }
+    },
+    [pendingPinAction, doConfirmOrder, doAnnulOrder],
+  );
+
+  const handlePinCancel = useCallback(() => {
+    setPendingPinAction(null);
+  }, []);
+
   // ── Role / permissions ────────────────────────────────────────────────
 
   const session = useLocalSessionStore((s) => s.session);
+  const workstationId = session?.workstationId ?? '';
+  const authService = useMemo<AuthService>(
+    () => createAuthService({ baseUrl: API_BASE_URL }),
+    [],
+  );
   const canEdit = useMemo(() => {
     if (!session) return false;
     return ['INVENTORY_ASSISTANT', 'ADMIN', 'ACCOUNTANT', 'MANAGER', 'OWNER', 'SAAS_ADMIN'].includes(session.role);
@@ -795,6 +850,8 @@ export const PurchaseOrdersPage: FC = () => {
                     <div>
                       <label className="block text-xs text-ink-muted mb-0.5">
                         {t('purchases.receptions.lotNumber')}
+                        {isLotRequired && <span className="text-error ml-0.5">*</span>}
+                        {!isLotRequired && <span className="text-ink-muted/60 ml-1 font-normal">({t('common.optional')})</span>}
                       </label>
                       <input
                         type="text"
@@ -808,6 +865,8 @@ export const PurchaseOrdersPage: FC = () => {
                     <div>
                       <label className="block text-xs text-ink-muted mb-0.5">
                         {t('purchases.receptions.expirationDate')}
+                        {isExpiryRequired && <span className="text-error ml-0.5">*</span>}
+                        {!isExpiryRequired && <span className="text-ink-muted/60 ml-1 font-normal">({t('common.optional')})</span>}
                       </label>
                       <input
                         type="date"
@@ -1067,6 +1126,23 @@ export const PurchaseOrdersPage: FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Manager PIN step-up modal ──────────────────────────────────── */}
+      {pendingPinAction && workstationId && (
+        <StepUpModal
+          operationType={
+            pendingPinAction === 'confirm'
+              ? 'CONFIRM_PURCHASE_ORDER'
+              : 'ANNUL_PURCHASE_ORDER'
+          }
+          operationId={selectedOrderId ?? undefined}
+          workstationId={workstationId}
+          requiredRole={RoleType.MANAGER}
+          authService={authService}
+          onApproved={handlePinApproved}
+          onCancel={handlePinCancel}
+        />
       )}
     </div>
   );

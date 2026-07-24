@@ -14,6 +14,7 @@ import {
   DEFAULT_STRICTNESS,
   DEFAULT_FISCAL,
   DEFAULT_WORKFLOW,
+  DEFAULT_PURCHASES,
 } from "./defaults";
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,7 @@ function makeTenantConfig(
     strictness: { ...DEFAULT_STRICTNESS, ...(ov.strictness as Partial<StrictnessConfig>) } as StrictnessConfig,
     fiscal: { ...DEFAULT_FISCAL, ...(ov.fiscal as Partial<FiscalConfig>) } as FiscalConfig,
     workflow: { ...DEFAULT_WORKFLOW, ...(ov.workflow as Partial<WorkflowConfig>) } as WorkflowConfig,
+    purchases: { ...DEFAULT_PURCHASES, ...(ov.purchases as Partial<typeof DEFAULT_PURCHASES>) },
     customCompanyFields: (ov.customCompanyFields as CustomCompanyField[]) ?? [],
     customStrictnessToggles: (ov.customStrictnessToggles as CustomStrictnessToggle[]) ?? [],
     configVersion: (ov.configVersion as number) ?? 1,

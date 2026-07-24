@@ -263,7 +263,6 @@ const NAV_ITEMS: NavItem[] = [
       "purchase-orders",
       "purchase-receptions",
       "supplier-returns",
-      "purchases-config",
     ],
   },
   {

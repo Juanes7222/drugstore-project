@@ -73,6 +73,17 @@ export const FiscalConfigSchema = z.object({
   qrCustomContent: z.string().nullable(),
 });
 
+export const PurchasesConfigSchema = z.object({
+  autoConfirmOnCreate: z.boolean(),
+  requireManagerPinForConfirm: z.boolean(),
+  requireManagerPinForAnnul: z.boolean(),
+  requireLotOnReception: z.boolean(),
+  requireExpiryOnReception: z.boolean(),
+  allowOverReception: z.boolean(),
+  defaultPaymentTermsDays: z.number().int().min(0),
+  maxItemsPerOrder: z.number().int().min(0),
+});
+
 // --- Main update schema ---
 //
 // All sections are optional and within each section ALL fields are
@@ -88,6 +99,7 @@ export const UpdateTenantConfigSchema = z.object({
   strictness: StrictnessConfigSchema.partial().optional(),
   fiscal: FiscalConfigSchema.partial().optional(),
   workflow: WorkflowConfigSchema.partial().optional(),
+  purchases: PurchasesConfigSchema.partial().optional(),
   expectedConfigVersion: z.number().int().min(0),
 });
 

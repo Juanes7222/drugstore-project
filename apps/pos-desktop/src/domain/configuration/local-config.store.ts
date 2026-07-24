@@ -118,6 +118,9 @@ export interface LocalConfigState {
 
   /** Merge a partial update into the purchases config. */
   updatePurchasesConfig(partial: Partial<PurchasesConfig>): void;
+
+  /** Replace the entire purchases config with preset values (resets all fields). */
+  applyPresetPurchases(presetPurchases: Partial<PurchasesConfig>): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +199,12 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
         set((prev) => ({
           purchasesConfig: { ...prev.purchasesConfig, ...partial },
         }));
+      },
+
+      applyPresetPurchases(presetPurchases) {
+        set({
+          purchasesConfig: { ...DEFAULT_PURCHASES_CONFIG, ...presetPurchases },
+        });
       },
     }),
     {

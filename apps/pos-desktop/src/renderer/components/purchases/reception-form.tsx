@@ -37,6 +37,9 @@ export interface ReceptionFormProps {
   productResults: SearchableSelectOption[];
   onProductSearch: (query: string) => void;
   isSearchingProduct?: boolean;
+  // Config-aware field requirements (from local-config.store)
+  requireLotOnReception?: boolean;
+  requireExpiryOnReception?: boolean;
 }
 
 interface ReceptionFormItem {
@@ -64,6 +67,8 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
   productResults,
   onProductSearch,
   isSearchingProduct = false,
+  requireLotOnReception = false,
+  requireExpiryOnReception = false,
 }) => {
   const { t } = useTranslation();
 
@@ -264,6 +269,8 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
                   <div>
                     <label className="block text-xs text-ink-muted mb-0.5">
                       {t('purchases.receptions.lotNumber')}
+                      {requireLotOnReception && <span className="text-error ml-0.5">*</span>}
+                      {!requireLotOnReception && <span className="text-ink-muted/60 ml-1 font-normal">({t('common.optional')})</span>}
                     </label>
                     <input
                       type="text"
@@ -278,6 +285,8 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
                   <div>
                     <label className="block text-xs text-ink-muted mb-0.5">
                       {t('purchases.receptions.expirationDate')}
+                      {requireExpiryOnReception && <span className="text-error ml-0.5">*</span>}
+                      {!requireExpiryOnReception && <span className="text-ink-muted/60 ml-1 font-normal">({t('common.optional')})</span>}
                     </label>
                     <input
                       type="date"

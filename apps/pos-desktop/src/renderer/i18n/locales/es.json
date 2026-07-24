@@ -17,6 +17,7 @@
     "previous": "Anterior",
     "next": "Siguiente",
     "actions": "Acciones",
+    "optional": "(opcional)",
     "all_roles": "Todos los roles",
     "all_status": "Todos los estados",
     "no_permission": "No tienes permisos para ver esta página.",
@@ -177,9 +178,7 @@
       "returnsDesc": "Gestionar devoluciones de mercancía a proveedores",
       "noAccess": "No tienes acceso a la sección de compras",
       "moduleLabel": "Módulo de compras",
-      "offlineReady": "Funciona sin conexión",
-      "configTitle": "Configuración",
-      "configDesc": "Personalizar flujo de compras, recepciones y validaciones"
+      "offlineReady": "Funciona sin conexión"
     },
     "suppliers": {
       "title": "Proveedores",
@@ -308,7 +307,10 @@
       "itemLabel": "Producto",
       "searchSupplier": "Buscar proveedor...",
       "searchPurchaseOrder": "Buscar orden de compra...",
-      "searchProduct": "Buscar producto..."
+      "searchProduct": "Buscar producto...",
+      "validationLotRequired": "Número de lote requerido para todos los items.",
+      "validationExpiryRequired": "Fecha de vencimiento requerida para todos los items.",
+      "validationOverReception": "No puede recibir más de lo ordenado. Item \"{{productName}}\": solicitado {{requested}}, recibiendo {{received}}."
     },
     "supplierReturns": {
       "title": "Devoluciones a proveedores",
@@ -354,10 +356,15 @@
     },
     "config": {
       "title": "Configuración de compras",
+      "description": "Personalice el flujo de trabajo de órdenes de compra, recepciones y valores predeterminados de proveedores",
       "saved": "Configuración guardada correctamente",
       "sectionOrder": "Configuración de órdenes",
       "sectionReception": "Configuración de recepciones",
       "sectionSupplier": "Valores predeterminados de proveedores",
+      "requireManagerPinForConfirm": "Requerir PIN de gerente para confirmar",
+      "requireManagerPinForConfirmHint": "Solicitar autorización con PIN de gerente antes de confirmar una orden de compra",
+      "requireManagerPinForAnnul": "Requerir PIN de gerente para anular",
+      "requireManagerPinForAnnulHint": "Solicitar autorización con PIN de gerente antes de anular una orden de compra",
       "autoConfirmOnCreate": "Confirmar orden automáticamente al crearla",
       "autoConfirmOnCreateHint": "Al crear una orden de compra, se confirma inmediatamente sin pasar por la vista de detalle",
       "requireLotOnReception": "Requerir lote en recepción",
@@ -370,7 +377,8 @@
       "defaultPaymentTermsDaysHint": "Valor inicial para los días de pago al crear un nuevo proveedor",
       "maxItemsPerOrder": "Máximo de productos por orden",
       "maxItemsPerOrderHint": "Límite de productos por orden (0 = sin límite)",
-      "save": "Guardar configuración"
+      "save": "Guardar configuración",
+      "autoSave": "Guardado automático"
     }
   },
   "sales": {
@@ -1372,7 +1380,8 @@
       "fiscal": "Fiscal",
       "operation": "Operación",
       "preferences": "Preferencias del sistema",
-      "user_preferences": "Preferencias de usuario"
+      "user_preferences": "Preferencias de usuario",
+      "purchases": "Compras"
     },
     "presets": {
       "title": "Modo de operación",

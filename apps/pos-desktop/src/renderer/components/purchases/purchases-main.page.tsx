@@ -14,7 +14,6 @@ import {
   Building2,
   FileText,
   PackageCheck,
-  Settings,
   Undo2,
   ArrowRight,
   ClipboardList,
@@ -27,7 +26,6 @@ import {
   navigateToPurchaseOrders,
   navigateToPurchaseReceptions,
   navigateToSupplierReturns,
-  navigateToPurchasesConfig,
 } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
 import { RoleType } from '@pharmacy/shared-types';
@@ -93,14 +91,6 @@ export const PurchasesMainPage: FC = () => {
         icon: Undo2,
         onClick: () => dispatch(navigateToSupplierReturns()),
         requiredRole: RoleType.INVENTORY_ASSISTANT,
-      },
-      {
-        key: 'purchases-config',
-        titleKey: 'purchases.main.configTitle',
-        descriptionKey: 'purchases.main.configDesc',
-        icon: Settings,
-        onClick: () => dispatch(navigateToPurchasesConfig()),
-        requiredRole: RoleType.MANAGER,
       },
     ],
     [dispatch, pendingOrdersCount, pendingReceptionsCount],

@@ -74,6 +74,7 @@ export function computeEffectiveConfig(
     strictness: mergedStrictness,
     fiscal: mergedFiscal,
     workflow: mergedWorkflow,
+    purchases: config.purchases,
     customCompanyFields: config.customCompanyFields ?? EMPTY_CUSTOM_FIELDS,
     customStrictnessToggles: config.customStrictnessToggles ?? EMPTY_CUSTOM_TOGGLES,
     activePresetCode: config.activePresetCode,

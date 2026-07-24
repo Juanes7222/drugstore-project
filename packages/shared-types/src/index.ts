@@ -108,6 +108,7 @@ export type {
   FiscalConfig,
   AdditionalTax,
   WorkflowConfig,
+  PurchasesConfig,
   CustomCompanyField,
   CustomStrictnessToggle,
   PresetDefinition,

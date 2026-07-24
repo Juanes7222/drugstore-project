@@ -393,15 +393,16 @@ export class PurchaseReceptionsService {
 
       // 2b. For each item, create/update lot and record movement
       for (const item of reception.items) {
-        if (!item.expirationDate) {
-          throw new Error(`Item ${item.id} is missing expiration date — required for lot creation.`);
-        }
-
         // Resolve the lot: find existing or create new
+        // When no lotNumber is provided, generate an internal one so stock
+        // tracking still works — the UI layer decides whether to require one.
+        const lotExpiration = item.expirationDate ?? new Date(
+          Date.now() + 365 * 24 * 60 * 60 * 1000,
+        );
         const lot = await this.resolveLot(tx, {
           productId: item.productId,
           lotNumber: item.lotNumber ?? `REC-${reception.sequentialNumber}`,
-          expirationDate: item.expirationDate,
+          expirationDate: lotExpiration,
         });
 
         // Optimistic-locked stock increment

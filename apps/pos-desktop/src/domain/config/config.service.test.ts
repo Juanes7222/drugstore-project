@@ -16,6 +16,7 @@ import {
   DEFAULT_STRICTNESS,
   DEFAULT_FISCAL,
   DEFAULT_WORKFLOW,
+  DEFAULT_PURCHASES,
 } from "./defaults";
 
 // ---------------------------------------------------------------------------
@@ -46,6 +47,7 @@ function makeTenantConfig(
     strictness: { ...DEFAULT_STRICTNESS },
     fiscal: { ...DEFAULT_FISCAL },
     workflow: { ...DEFAULT_WORKFLOW },
+    purchases: { ...DEFAULT_PURCHASES },
     customCompanyFields: [],
     customStrictnessToggles: [],
     configVersion: 1,
