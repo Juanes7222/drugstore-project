@@ -161,8 +161,9 @@ export const PurchaseReceptionsPage: FC = () => {
         result.items.map((p) => ({
           id: p.id,
           label: p.commercialName,
-          sublabel: p.laboratory,
-        })),
+          sublabel: `${p.laboratory}${p.currentCost ? ` · Costo: $${p.currentCost}` : ''}`,
+          currentCost: p.currentCost,
+        } as SearchableSelectOption & { currentCost: string | null })),
       );
     } catch {
       setProductResults([]);

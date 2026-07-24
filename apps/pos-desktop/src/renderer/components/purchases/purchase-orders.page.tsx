@@ -187,7 +187,7 @@ export const PurchaseOrdersPage: FC = () => {
   const [suppliers, setSuppliers] = useState<SupplierSearchResult[]>([]);
 
   // ── Product search for autocomplete ───────────────────────────────────
-  const [productResults, setProductResults] = useState<Array<{ id: string; commercialName: string; laboratory: string; barcodes: Array<{ barcode: string }>; currentPrice: string | null }>>([]);
+  const [productResults, setProductResults] = useState<Array<{ id: string; commercialName: string; laboratory: string; barcodes: Array<{ barcode: string }>; currentPrice: string | null; currentCost: string | null }>>([]);
   const [isSearchingProduct, setIsSearchingProduct] = useState(false);
 
   // ── Inline supplier creation state ────────────────────────────────────
@@ -251,6 +251,7 @@ export const PurchaseOrdersPage: FC = () => {
         laboratory: item.laboratory,
         barcodes: item.barcodes,
         currentPrice: item.currentPrice,
+        currentCost: item.currentCost,
       })));
     } catch {
       setProductResults([]);

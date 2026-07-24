@@ -33,8 +33,8 @@ export interface ReceptionFormProps {
   purchaseOrders: SearchableSelectOption[];
   onPurchaseOrderSearch: (query: string) => void;
   isSearchingPurchaseOrder?: boolean;
-  // Product search for items
-  productResults: SearchableSelectOption[];
+  // Product search for items — items may include optional currentCost for auto-fill
+  productResults: (SearchableSelectOption & { currentCost?: string | null })[];
   onProductSearch: (query: string) => void;
   isSearchingProduct?: boolean;
   // Config-aware field requirements (from local-config.store)
@@ -243,7 +243,11 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
                     <SearchableSelect
                       options={productResults}
                       onSearch={onProductSearch}
-                      onSelect={(opt) => handleItemChange(i, { productId: opt.id })}
+                      onSelect={(opt) => {
+                      const optWithCost = opt as SearchableSelectOption & { currentCost?: string | null };
+                      const cost = optWithCost.currentCost ? Number(optWithCost.currentCost) : 0;
+                      handleItemChange(i, { productId: opt.id, realUnitCost: cost });
+                    }}
                       selectedId={item.productId}
                       placeholder={t('purchases.receptions.searchProduct')}
                       disabled={isSaving}

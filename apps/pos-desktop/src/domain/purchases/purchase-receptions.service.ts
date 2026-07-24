@@ -578,13 +578,24 @@ export class PurchaseReceptionsService {
     });
     if (!order) throw new PurchaseOrderNotFoundException(orderId);
 
-    // Batch-fetch product names for display
+    // Batch-fetch product names and current costs for display & pre-fill
     const productIds = [...new Set(order.items.map((i) => i.productId))];
     const products = await this.prisma.product.findMany({
       where: { id: { in: productIds } },
-      select: { id: true, commercialName: true },
+      select: {
+        id: true,
+        commercialName: true,
+        costHistories: {
+          where: { effectiveTo: null },
+          select: { cost: true },
+          take: 1,
+        },
+      },
     });
     const productNameMap = new Map(products.map((p) => [p.id, p.commercialName]));
+    const productCostMap = new Map(
+      products.map((p) => [p.id, p.costHistories[0]?.cost.toString() ?? null]),
+    );
 
     // Look up default tax scheme for fallback
     const defaultTaxScheme = await this.prisma.taxScheme.findFirst({
@@ -593,19 +604,24 @@ export class PurchaseReceptionsService {
       select: { id: true, rate: true },
     });
 
-    const items: ReceptionOrderItem[] = order.items.map((item) => ({
-      productId: item.productId,
-      productName: productNameMap.get(item.productId) ?? '',
-      purchaseOrderItemId: item.id,
-      requestedQuantity: item.requestedQuantity,
-      pendingQuantity: item.pendingQuantity,
-      receivedQuantity: item.pendingQuantity, // default = still pending
-      lotNumber: undefined,
-      expirationDate: undefined,
-      realUnitCost: Number(item.expectedUnitCost),
-      taxSchemeId: defaultTaxScheme?.id ?? '',
-      taxRate: defaultTaxScheme ? Number(defaultTaxScheme.rate) : 0,
-    }));
+    const items: ReceptionOrderItem[] = order.items.map((item) => {
+      const currentCost = productCostMap.get(item.productId);
+      return {
+        productId: item.productId,
+        productName: productNameMap.get(item.productId) ?? '',
+        purchaseOrderItemId: item.id,
+        requestedQuantity: item.requestedQuantity,
+        pendingQuantity: item.pendingQuantity,
+        receivedQuantity: item.pendingQuantity, // default = still pending
+        lotNumber: undefined,
+        expirationDate: undefined,
+        // Pre-fill with the last known cost from ProductCostHistory;
+        // fall back to the PO's expected unit cost if no history exists.
+        realUnitCost: currentCost ? Number(currentCost) : Number(item.expectedUnitCost),
+        taxSchemeId: defaultTaxScheme?.id ?? '',
+        taxRate: defaultTaxScheme ? Number(defaultTaxScheme.rate) : 0,
+      };
+    });
 
     return {
       supplierId: order.supplierId,

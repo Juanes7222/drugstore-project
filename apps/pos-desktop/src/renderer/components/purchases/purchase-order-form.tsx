@@ -10,7 +10,6 @@ import {
   type FC,
   useCallback,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -27,7 +26,7 @@ export interface PurchaseOrderFormProps {
   suppliers: SupplierSearchResult[];
   onSupplierSearch: (query: string) => void;
   /** Array of products matching the current search query. */
-  productResults: Array<{ id: string; commercialName: string; laboratory: string; barcodes: Array<{ barcode: string }>; currentPrice: string | null }>;
+  productResults: Array<{ id: string; commercialName: string; laboratory: string; barcodes: Array<{ barcode: string }>; currentPrice: string | null; currentCost: string | null }>;
   /** Called whenever the user types in any product search input. */
   onProductSearch: (query: string) => void;
   isSearchingProduct: boolean;
@@ -69,8 +68,6 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
       }) => {
   const { t } = useTranslation();
   const [itemErrors, setItemErrors] = useState<Record<number, string>>({});
-  /** Remember last entered unit cost so new items pre-fill it. */
-  const lastUnitCostRef = useRef(0);
 
   // ── Map suppliers to SearchableSelect options ─────────────────────────
 
@@ -98,7 +95,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
       productResults.map((p) => ({
         id: p.id,
         label: p.commercialName,
-        sublabel: `${p.laboratory}${p.barcodes[0] ? ` · ${p.barcodes[0].barcode}` : ''}${p.currentPrice ? ` · $${p.currentPrice}` : ''}`,
+        sublabel: `${p.laboratory}${p.barcodes[0] ? ` · ${p.barcodes[0].barcode}` : ''}${p.currentPrice ? ` · $${p.currentPrice}` : ''}${p.currentCost ? ` · Costo: $${p.currentCost}` : ''}`,
       })),
     [productResults],
   );
@@ -132,7 +129,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
       productId: '',
       productName: '',
       requestedQuantity: 1,
-      expectedUnitCost: lastUnitCostRef.current,
+      expectedUnitCost: 0,
     });
   }, [onAddItem]);
 
@@ -268,9 +265,12 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
                     options={productOptions}
                     onSearch={onProductSearch}
                     onSelect={(option) => {
+                      const selected = productResults.find((p) => p.id === option.id);
+                      const cost = selected?.currentCost ? Number(selected.currentCost) : 0;
                       onItemChange(i, {
                         productId: option.id,
                         productName: option.label,
+                        expectedUnitCost: cost,
                       });
                     }}
                     selectedId={item.productId}
@@ -327,7 +327,6 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
                       } else {
                         const val = Math.max(0, Number(raw));
                         onItemChange(i, { expectedUnitCost: val });
-                        lastUnitCostRef.current = val;
                       }
                     }}
                     disabled={isSaving}
