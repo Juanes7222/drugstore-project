@@ -4,7 +4,7 @@
  * Shows icon area, name, brief description. Active state with highlighted
  * border and "Activo" badge. Customized state shows "Personalizado" overlay.
  */
-import { type FC } from 'react';
+import { type FC, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import type { PresetDefinition } from '../../../domain/config';
@@ -30,6 +30,7 @@ export const PresetCard: FC<PresetCardProps> = ({
   disabled = false,
 }) => {
   const { t } = useTranslation();
+  const [isHovered, setIsHovered] = useState(false);
 
   const handleClick = (): void => {
     if (!disabled) {
@@ -54,50 +55,65 @@ export const PresetCard: FC<PresetCardProps> = ({
       type="button"
       onClick={handleClick}
       onKeyDown={handleKeyDown}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       disabled={disabled}
       aria-pressed={isActive}
       aria-label={`${displayName}${isActive ? ` - ${t('config.presets.active')}` : ''}`}
       className={`
-        relative flex w-full flex-col gap-2 rounded-lg border-2 p-4 text-left
+        relative flex w-full flex-col gap-2 rounded-sm border-2 p-4 text-left
         transition-colors
         focus-visible:outline-2 focus-visible:outline-offset-2
         focus-visible:outline-pharma
         disabled:cursor-not-allowed disabled:opacity-50
         ${
           isActive
-            ? 'border-pharma bg-pharma/10 dark:border-pharma dark:bg-pharma/20'
-            : 'border-border bg-panel hover:border-border dark:border-gray-700 dark:bg-gray-800 dark:hover:border-gray-500'
+            ? 'border-pharma bg-pharma/[0.08]'
+            : 'border-border bg-panel'
         }
+        ${!disabled && !isActive ? 'hover:border-ink/20' : ''}
       `}
-      whileTap={disabled ? undefined : { scale: 0.98 }}
-      transition={{ duration: 0.15 }}
+      whileTap={disabled ? undefined : { scale: 0.97 }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
     >
       {/* Active badge */}
       {isActive && (
-        <span className="absolute right-2 top-2 rounded-full bg-pharma px-2 py-0.5 text-xs font-medium text-white">
+        <motion.span
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="absolute right-2 top-2 rounded-full bg-pharma px-2 py-0.5 text-caption font-semibold text-white"
+        >
           {t('config.presets.active')}
-        </span>
+        </motion.span>
       )}
 
       {/* Customized badge overlay */}
       {isActive && isCustomized && (
-        <span className="absolute bottom-2 right-2 rounded-full bg-urgency px-2 py-0.5 text-xs font-medium text-white">
+        <motion.span
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="absolute bottom-2 right-2 rounded-full bg-urgency px-2 py-0.5 text-caption font-semibold text-white"
+        >
           {t('config.presets.customized')}
-        </span>
+        </motion.span>
       )}
 
       {/* Icon area */}
-      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-variant dark:bg-gray-700">
+      <motion.div
+        className="flex h-10 w-10 items-center justify-center rounded-sm bg-surface-variant"
+        animate={isHovered && !disabled ? { scale: 1.05 } : { scale: 1 }}
+        transition={{ type: "spring", stiffness: 400, damping: 20 }}
+      >
         <PresetIcon code={preset.code} />
-      </div>
+      </motion.div>
 
       {/* Name */}
-      <h3 className="text-sm font-semibold text-ink dark:text-gray-100">
+      <h3         className="text-body-sm font-semibold text-ink">
         {displayName}
       </h3>
 
       {/* Description */}
-      <p className="text-xs text-ink-muted dark:text-gray-400 line-clamp-2">
+      <p className="text-caption text-ink-muted line-clamp-2">
         {displayDescription}
       </p>
     </motion.button>
@@ -125,7 +141,7 @@ const PresetIcon: FC<PresetIconProps> = ({ code }) => {
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="text-green-600"
+          className="text-pharma"
           aria-hidden="true"
         >
           <circle cx="12" cy="12" r="10" />
@@ -143,7 +159,7 @@ const PresetIcon: FC<PresetIconProps> = ({ code }) => {
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="text-blue-600"
+          className="text-urgency"
           aria-hidden="true"
         >
           <path d="M12 2v20M2 12h20" />
@@ -162,7 +178,7 @@ const PresetIcon: FC<PresetIconProps> = ({ code }) => {
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="text-red-600"
+          className="text-error"
           aria-hidden="true"
         >
           <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -180,7 +196,7 @@ const PresetIcon: FC<PresetIconProps> = ({ code }) => {
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className="text-purple-600"
+          className="text-restrict"
           aria-hidden="true"
         >
           <circle cx="12" cy="12" r="3" />

@@ -2,7 +2,7 @@
  * ConfigPreviewModal — shows a human-readable summary of the current config.
  *
  * "Con esta configuración:" list explaining what each strictness setting
- * means in practice. Used by the strictness section's "Vista previa" button.
+ * means in practice. Uses Radix dialog with POS-styled close button.
  */
 import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -114,36 +114,37 @@ export const ConfigPreviewModal: FC<ConfigPreviewModalProps> = ({
             </Dialog.Overlay>
             <Dialog.Content asChild>
               <motion.div
-                className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-panel p-6 shadow-xl dark:bg-gray-800"
-                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-sm bg-panel p-6"
+                style={{ boxShadow: 'var(--shadow-pos-elevated)' }}
+                initial={{ opacity: 0, scale: 0.96, y: 8 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                transition={{ duration: 0.2 }}
+                exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                transition={{ type: "spring", stiffness: 350, damping: 30 }}
               >
-                <Dialog.Title className="text-lg font-semibold text-ink dark:text-gray-100">
+                <Dialog.Title className="text-heading font-bold text-ink">
                   {t('config.preview.title')}
                 </Dialog.Title>
 
-                <Dialog.Description className="mt-2 text-sm text-ink-muted dark:text-gray-400">
+                <Dialog.Description className="mt-pos-sm text-body text-ink-muted">
                   {t('config.preview.what_it_means')}
                 </Dialog.Description>
 
-                <div className="mt-4 space-y-3">
+                <div className="mt-pos-md space-y-pos-xs">
                   {items.map((item) => (
                     <div
                       key={item.label}
-                      className="flex items-center justify-between rounded-lg bg-surface-variant px-3 py-2 dark:bg-gray-700/50"
+                      className="flex items-center justify-between rounded-sm bg-surface-variant px-pos-md py-pos-sm"
                     >
-                      <span className="text-sm text-ink-muted dark:text-gray-300">
+                      <span className="text-body-sm text-ink-muted">
                         {item.label}
                       </span>
                       <span
-                        className={`ml-2 text-xs font-medium ${
+                        className={`ml-pos-sm text-caption font-semibold ${
                           item.value === t('config.preview.action_required')
-                            ? 'text-error dark:text-red-400'
+                            ? 'text-error'
                             : item.value === t('config.preview.action_hidden')
-                              ? 'text-ink-muted dark:text-gray-500'
-                              : 'text-ink dark:text-gray-400'
+                              ? 'text-ink-muted'
+                              : 'text-ink'
                         }`}
                       >
                         {item.value}
@@ -156,7 +157,7 @@ export const ConfigPreviewModal: FC<ConfigPreviewModalProps> = ({
                   <Dialog.Close asChild>
                     <button
                       type="button"
-                      className="rounded-lg bg-surface-variant px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                      className="pos-button pos-button-secondary"
                     >
                       {t('common.close')}
                     </button>

@@ -2,7 +2,7 @@
  * ConfigHistorySection — change history table with rollback support.
  *
  * Shows version, change type, user, date. "Restaurar" button per version.
- * "No hay cambios" empty state.
+ * Uses pos-return-table classes for table styling consistent with the app.
  */
 import { type FC, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -91,8 +91,8 @@ export const ConfigHistorySection: FC<ConfigHistorySectionProps> = ({
   }
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-base font-semibold text-ink dark:text-gray-100">
+    <div className="space-y-pos-md">
+      <h3 className="text-ui font-semibold text-ink">
         {t('config.history.title')}
       </h3>
 
@@ -107,91 +107,91 @@ export const ConfigHistorySection: FC<ConfigHistorySectionProps> = ({
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="text-gray-300 dark:text-gray-600"
+            className="text-ink-muted/40"
             aria-hidden="true"
           >
             <circle cx="12" cy="12" r="10" />
             <polyline points="12 6 12 12 16 14" />
           </svg>
-          <p className="mt-3 text-sm text-ink-muted dark:text-gray-400">
+          <p className="mt-pos-md text-body-sm text-ink-muted">
             {t('config.history.no_history')}
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border dark:border-gray-700">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead className="bg-surface-variant dark:bg-gray-800">
+        <div className="overflow-x-auto rounded-sm border border-border">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-surface-variant">
               <tr>
                 <th
                   scope="col"
-                  className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-muted dark:text-gray-400"
+                  className="px-pos-md py-pos-sm text-left text-caption font-semibold uppercase tracking-wider text-ink-muted"
                 >
                   {t('config.history.version')}
                 </th>
                 <th
                   scope="col"
-                  className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-muted dark:text-gray-400"
+                  className="px-pos-md py-pos-sm text-left text-caption font-semibold uppercase tracking-wider text-ink-muted"
                 >
                   {t('config.history.change_type')}
                 </th>
                 <th
                   scope="col"
-                  className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-muted dark:text-gray-400"
+                  className="px-pos-md py-pos-sm text-left text-caption font-semibold uppercase tracking-wider text-ink-muted"
                 >
                   {t('config.history.actor')}
                 </th>
                 <th
                   scope="col"
-                  className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-ink-muted dark:text-gray-400"
+                  className="px-pos-md py-pos-sm text-left text-caption font-semibold uppercase tracking-wider text-ink-muted"
                 >
                   {t('config.history.date')}
                 </th>
                 <th
                   scope="col"
-                  className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-ink-muted dark:text-gray-400"
+                  className="px-pos-md py-pos-sm text-right text-caption font-semibold uppercase tracking-wider text-ink-muted"
                 >
                   {t('common.actions')}
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 bg-panel dark:divide-gray-700 dark:bg-gray-900">
+            <tbody className="divide-y divide-gray-200 bg-panel">
               {entries.map((entry) => {
                 const isCurrent = entry.configVersion === currentVersion;
                 return (
                   <tr
                     key={entry.id}
-                    className={`transition-colors hover:bg-surface-variant dark:hover:bg-gray-800 ${
-                      isCurrent ? 'bg-blue-50/50 dark:bg-blue-950/30' : ''
+                    className={`transition-colors hover:bg-surface-variant ${
+                      isCurrent ? 'bg-pharma/[0.04]' : ''
                     }`}
                   >
-                    <td className="whitespace-nowrap px-4 py-3 text-sm font-medium text-ink dark:text-gray-100">
+                    <td className="whitespace-nowrap px-pos-md py-pos-sm text-body-sm font-medium text-ink">
                       v{entry.configVersion}
                       {isCurrent && (
-                        <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                        <span className="ml-pos-sm rounded-full bg-pharma/10 px-pos-sm py-0.5 text-caption font-semibold text-pharma">
                           {t('config.presets.active')}
                         </span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-ink-muted dark:text-gray-300">
+                    <td className="whitespace-nowrap px-pos-md py-pos-sm text-body-sm text-ink-muted">
                       {getChangeTypeLabel(entry.changeType)}
                       {entry.fieldPath && (
-                        <span className="ml-1 text-xs text-ink-muted">
+                        <span className="ml-1 text-caption text-ink-muted">
                           ({entry.fieldPath})
                         </span>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-ink-muted dark:text-gray-300">
+                    <td className="whitespace-nowrap px-pos-md py-pos-sm text-body-sm text-ink-muted">
                       {entry.actorUserId.slice(0, 8)}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-ink-muted dark:text-gray-400">
+                    <td className="whitespace-nowrap px-pos-md py-pos-sm text-body-sm text-ink-muted">
                       {formatDate(entry.createdAt)}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                    <td className="whitespace-nowrap px-pos-md py-pos-sm text-right">
                       {!isCurrent && !readOnly && (
                         <button
                           type="button"
                           onClick={() => onRollback(entry.configVersion)}
-                          className="rounded-lg bg-pharma px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-pharma/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
+                          className="pos-button pos-button-primary text-caption"
                         >
                           {t('config.history.rollback')}
                         </button>

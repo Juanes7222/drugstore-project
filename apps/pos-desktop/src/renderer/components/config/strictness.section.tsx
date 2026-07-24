@@ -7,6 +7,7 @@
 import { type FC, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
+import { Eye, Bookmark, RotateCcw, Plus, X } from 'lucide-react';
 import {
   useTenantConfig,
   PRESET_LIST,
@@ -196,8 +197,6 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
   const handleStrictnessChange = useCallback(
     async (key: string, value: string | number | boolean) => {
       if (readOnly || !config) return;
-      // Send the full strictness section — preserves all fields for
-      // cross-field validation (e.g. clientRequired + threshold).
       await update({
         strictness: { ...config.strictness, [key]: value },
       });
@@ -242,10 +241,10 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
     <div className="space-y-8">
       {/* ---- Preset selector ---- */}
       <section>
-        <h3 className="mb-4 text-base font-semibold text-ink dark:text-gray-100">
+        <h3 className="mb-pos-md text-ui font-semibold text-ink">
           {t('config.presets.title')}
         </h3>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-4 gap-pos-md">
           {PRESET_LIST.map((preset) => (
             <PresetCard
               key={preset.code}
@@ -263,31 +262,18 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
           <motion.button
             type="button"
             onClick={handleResetToPreset}
-            className="mt-3 inline-flex items-center gap-1.5 text-sm text-pharma hover:text-pharma/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma dark:text-pharma dark:hover:text-pharma/80"
+            className="pos-button pos-button-secondary mt-pos-md gap-pos-xs"
             whileTap={{ scale: 0.97 }}
             transition={{ duration: 0.1 }}
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="1 4 1 10 7 10" />
-              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-            </svg>
+            <RotateCcw size={14} strokeWidth={1.5} aria-hidden="true" />
             {t('config.presets.reset_all')}
           </motion.button>
         )}
 
         {/* Active preset description */}
         {currentPreset && (
-          <p className="mt-2 text-xs text-ink-muted dark:text-gray-400">
+          <p className="mt-pos-sm text-caption text-ink-muted">
             {currentPreset.description}
           </p>
         )}
@@ -295,11 +281,11 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
 
       {/* ---- Per-toggle strictness list ---- */}
       <section>
-        <h3 className="mb-4 text-base font-semibold text-ink dark:text-gray-100">
+        <h3 className="mb-pos-md text-ui font-semibold text-ink">
           {t('config.strictness.title')}
         </h3>
-        <div className="space-y-3">
-          {STRICTNESS_FIELDS.map((field) => {
+        <div className="space-y-pos-xs">
+          {STRICTNESS_FIELDS.map((field, index) => {
             const value = strictness?.[field.key];
             const isOverridden =
               config?.activePresetCode &&
@@ -308,28 +294,30 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
               domainIsFieldOverridden(config, `strictness.${field.key}`);
 
             return (
-              <div
+              <motion.div
                 key={field.key}
-                className="flex items-center justify-between rounded-lg border border-border bg-panel px-4 py-3 dark:border-gray-700 dark:bg-gray-800"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2, delay: index * 0.02, ease: "easeOut" }}
+                className="flex items-center justify-between rounded-sm border border-border bg-panel px-pos-md py-pos-sm"
               >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-ink dark:text-gray-100">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-pos-sm">
+                    <span className="text-body-sm font-medium text-ink">
                       {t('config.' + field.i18nKey)}
                     </span>
                     {isOverridden && (
-                      <span className="inline-flex items-center rounded-full bg-urgency-surface px-2 py-0.5 text-xs font-medium text-urgency
-dark:bg-amber-900/30 dark:text-urgency">
+                      <span className="pos-badge pos-badge-urgency">
                         {t('config.presets.customized')}
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 text-xs text-ink-muted dark:text-gray-400">
+                  <p className="mt-0.5 text-caption text-ink-muted">
                     {t('config.' + field.i18nDescKey)}
                   </p>
                 </div>
 
-                <div className="ml-4">
+                <div className="ml-pos-md shrink-0">
                   {field.type === 'boolean' ? (
                     <label className="relative inline-flex cursor-pointer items-center">
                       <input
@@ -342,7 +330,7 @@ dark:bg-amber-900/30 dark:text-urgency">
                         className="peer sr-only"
                         aria-label={t('config.' + field.i18nKey)}
                       />
-                      <div className="h-6 w-11 rounded-full bg-surface-variant after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-panel after:transition-all peer-checked:bg-pharma peer-checked:after:translate-x-full peer-focus:outline-2 peer-focus:outline-pharma dark:bg-gray-600 dark:after:bg-gray-300" />
+                      <div className="h-6 w-11 rounded-full bg-surface-variant after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-panel after:transition-all peer-checked:bg-pharma peer-checked:after:translate-x-full peer-focus:outline-2 peer-focus:outline-pharma" />
                     </label>
                   ) : field.type === 'number' ? (
                     <input
@@ -355,7 +343,7 @@ dark:bg-amber-900/30 dark:text-urgency">
                         )
                       }
                       disabled={readOnly}
-                      className="w-24 rounded-lg border border-border px-3 py-1.5 text-sm text-right focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                      className="pos-input w-24 text-right font-data"
                       aria-label={t('config.' + field.i18nKey)}
                     />
                   ) : (
@@ -365,7 +353,7 @@ dark:bg-amber-900/30 dark:text-urgency">
                         handleStrictnessChange(field.key, e.target.value)
                       }
                       disabled={readOnly}
-                      className="rounded-lg border border-border px-3 py-1.5 text-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                      className="pos-input"
                       aria-label={t('config.' + field.i18nKey)}
                     >
                       {field.options?.map((opt) => (
@@ -376,7 +364,7 @@ dark:bg-amber-900/30 dark:text-urgency">
                     </select>
                   )}
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>
@@ -385,61 +373,48 @@ dark:bg-amber-900/30 dark:text-urgency">
       {/* ---- Custom toggles ---- */}
       <section>
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-ink dark:text-gray-100">
+          <h3 className="text-ui font-semibold text-ink">
             {t('config.custom_toggles.title')}
           </h3>
           {!readOnly && (
             <button
               type="button"
               onClick={() => setCustomToggleEditorOpen(true)}
-              className="inline-flex items-center gap-1 rounded-lg bg-pharma px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-pharma/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
+              className="pos-button pos-button-primary gap-pos-xs"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
+              <Plus size={14} strokeWidth={1.5} aria-hidden="true" />
               {t('config.custom_toggles.add')}
             </button>
           )}
         </div>
 
         {customToggles.length === 0 ? (
-          <p className="mt-2 text-sm text-ink-muted dark:text-gray-400">
+          <p className="mt-pos-sm text-body-sm text-ink-muted">
             {t('config.custom_fields.title')} —{' '}
             {readOnly ? t('common.no_permission') : t('config.custom_toggles.add')}
           </p>
         ) : (
-          <div className="mt-3 space-y-2">
+          <div className="mt-pos-md space-y-pos-xs">
             {customToggles.map((toggle) => (
               <div
                 key={toggle.id}
-                className="flex items-center justify-between rounded-lg border border-border bg-panel px-4 py-3 dark:border-gray-700 dark:bg-gray-800"
+                className="flex items-center justify-between rounded-sm border border-border bg-panel px-pos-md py-pos-sm"
               >
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-ink dark:text-gray-100">
+                  <div className="flex items-center gap-pos-sm">
+                    <span className="text-body-sm font-medium text-ink">
                       {toggle.name}
                     </span>
                     {toggle.isAdvisory && (
-                      <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                      <span className="pos-badge pos-badge-restrict">
                         {t('config.custom_toggles.advisory')}
                       </span>
                     )}
                   </div>
-                  <p className="mt-0.5 text-xs text-ink-muted dark:text-gray-400">
+                  <p className="mt-0.5 text-caption text-ink-muted">
                     {toggle.description}
                   </p>
-                  <p className="mt-0.5 text-xs text-ink-muted">
+                  <p className="mt-0.5 text-caption text-ink-muted">
                     {t('config.custom_toggles.applies_to')}: {toggle.appliesTo}
                   </p>
                 </div>
@@ -447,23 +422,10 @@ dark:bg-amber-900/30 dark:text-urgency">
                   <button
                     type="button"
                     onClick={() => handleRemoveCustomToggle(toggle.id)}
-                    className="ml-4 rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-error-container hover:text-error focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-error dark:hover:bg-red-900/20"
+                    className="pos-button pos-button-secondary p-1.5 hover:bg-error-container hover:text-error focus-visible:outline-error"
                     aria-label={`${t('config.custom_fields.remove')} ${toggle.name}`}
                   >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
+                    <X size={14} strokeWidth={1.5} aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -473,47 +435,23 @@ dark:bg-amber-900/30 dark:text-urgency">
       </section>
 
       {/* ---- Preview & Save buttons ---- */}
-      <div className="flex items-center gap-3 border-t border-border pt-4 dark:border-gray-700">
+      <div className="pos-divider pt-4" />
+      <div className="flex items-center gap-pos-md">
         <button
           type="button"
           onClick={() => setPreviewOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-panel px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-surface-variant focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+          className="pos-button pos-button-secondary gap-pos-xs"
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-            <circle cx="12" cy="12" r="3" />
-          </svg>
+          <Eye size={14} strokeWidth={1.5} aria-hidden="true" />
           {t('config.preview.title')}
         </button>
 
         {!readOnly && (
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-pharma px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-pharma/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
+            className="pos-button pos-button-primary gap-pos-xs"
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
+            <Bookmark size={14} strokeWidth={1.5} aria-hidden="true" />
             {t('config.named_presets.save')}
           </button>
         )}
@@ -535,5 +473,3 @@ dark:bg-amber-900/30 dark:text-urgency">
     </div>
   );
 };
-
-

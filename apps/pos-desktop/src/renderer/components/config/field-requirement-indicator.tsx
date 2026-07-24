@@ -14,11 +14,11 @@ export interface FieldRequirementIndicatorProps {
 
 const STYLES: Record<FieldRequirement, string> = {
   REQUIRED:
-    'bg-error-container text-error border-error-container dark:bg-red-900/30 dark:text-red-400 dark:border-red-800',
+    'bg-error-container text-error border-error-container',
   OPTIONAL:
-    'bg-surface-variant text-ink-muted border-border dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700',
+    'bg-surface-variant text-ink-muted border-border',
   HIDDEN:
-    'bg-transparent text-ink-muted border-transparent dark:text-gray-600',
+    'bg-transparent text-ink-muted border-transparent',
 };
 
 const I18N_KEYS: Record<FieldRequirement, string> = {
@@ -42,7 +42,7 @@ export const FieldRequirementIndicator: FC<FieldRequirementIndicatorProps> = ({
           className={`mr-1 h-1.5 w-1.5 rounded-full ${
             requirement === 'REQUIRED'
               ? 'bg-error'
-              : 'bg-ink-muted dark:bg-gray-500'
+              : 'bg-ink-muted'
           }`}
           aria-hidden="true"
         />

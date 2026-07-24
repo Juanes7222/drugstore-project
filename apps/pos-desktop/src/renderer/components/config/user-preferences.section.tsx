@@ -6,6 +6,8 @@
  */
 import { type FC, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { motion } from 'motion/react';
+import { Sun, Globe, CalendarDays, Clock, Volume2, Ruler, Keyboard, type LucideIcon } from 'lucide-react';
 import { useUserPreferences } from '../../../domain/config/use-user-preferences';
 import type {
   UserTheme,
@@ -16,35 +18,64 @@ import type {
 } from '../../../domain/config';
 
 // ---------------------------------------------------------------------------
-// Options
+// Options with icons
 // ---------------------------------------------------------------------------
 
-const THEME_OPTIONS: Array<{ value: UserTheme; label: string }> = [
+interface Option<T> {
+  value: T;
+  label: string;
+}
+
+const THEME_OPTIONS: Option<UserTheme>[] = [
   { value: 'LIGHT', label: 'Claro' },
   { value: 'DARK', label: 'Oscuro' },
   { value: 'SYSTEM', label: 'Sistema' },
 ];
 
-const LANGUAGE_OPTIONS: Array<{ value: Language; label: string }> = [
-  { value: 'es', label: 'Espanol' },
+const LANGUAGE_OPTIONS: Option<Language>[] = [
+  { value: 'es', label: 'Español' },
   { value: 'en', label: 'English' },
 ];
 
-const DATE_FORMAT_OPTIONS: Array<{ value: DateFormat; label: string }> = [
+const DATE_FORMAT_OPTIONS: Option<DateFormat>[] = [
   { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' },
   { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' },
   { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY' },
 ];
 
-const TIME_FORMAT_OPTIONS: Array<{ value: TimeFormat; label: string }> = [
+const TIME_FORMAT_OPTIONS: Option<TimeFormat>[] = [
   { value: '24H', label: '24 horas' },
   { value: '12H', label: '12 horas (AM/PM)' },
 ];
 
-const KEYBOARD_OPTIONS: Array<{ value: KeyboardLayout; label: string }> = [
-  { value: 'STANDARD', label: 'Estandar' },
+const KEYBOARD_OPTIONS: Option<KeyboardLayout>[] = [
+  { value: 'STANDARD', label: 'Estándar' },
   { value: 'COMPACT', label: 'Compacto' },
 ];
+
+// ---------------------------------------------------------------------------
+// Preference row layout — consistent card with icon, label, and control
+// ---------------------------------------------------------------------------
+
+interface PreferenceRowProps {
+  icon: LucideIcon;
+  label: string;
+  children: React.ReactNode;
+}
+
+const PreferenceRow: FC<PreferenceRowProps> = ({ icon: Icon, label, children }) => (
+  <div className="flex items-center justify-between rounded-sm border border-border bg-panel px-pos-md py-pos-sm transition-colors hover:bg-surface-variant">
+    <div className="flex items-center gap-pos-md">
+      <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-pharma/10 text-pharma">
+        <Icon size={16} strokeWidth={1.5} aria-hidden="true" />
+      </div>
+      <span className="text-body-sm font-medium text-ink">
+        {label}
+      </span>
+    </div>
+    {children}
+  </div>
+);
 
 // ---------------------------------------------------------------------------
 // Component
@@ -85,48 +116,49 @@ export const UserPreferencesSection: FC<UserPreferencesSectionProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-base font-semibold text-ink dark:text-gray-100">
+      <h3 className="text-ui font-semibold text-ink">
         {title ?? t('config.tabs.user_preferences')}
       </h3>
 
-      <div className="space-y-4">
+      <div className="space-y-pos-xs">
         {/* Theme */}
-        <SelectField
-          label="Tema"
-          value={theme}
-          options={THEME_OPTIONS}
-          onChange={(v) => setTheme(v as UserTheme)}
-        />
+        <PreferenceRow icon={Sun} label="Tema">
+          <SelectControl
+            value={theme}
+            options={THEME_OPTIONS}
+            onChange={(v) => setTheme(v as UserTheme)}
+          />
+        </PreferenceRow>
 
         {/* Language */}
-        <SelectField
-          label="Idioma"
-          value={language}
-          options={LANGUAGE_OPTIONS}
-          onChange={(v) => setLanguage(v as Language)}
-        />
+        <PreferenceRow icon={Globe} label="Idioma">
+          <SelectControl
+            value={language}
+            options={LANGUAGE_OPTIONS}
+            onChange={(v) => setLanguage(v as Language)}
+          />
+        </PreferenceRow>
 
         {/* Date format */}
-        <SelectField
-          label="Formato de fecha"
-          value={dateFormat}
-          options={DATE_FORMAT_OPTIONS}
-          onChange={(v) => setDateFormat(v as DateFormat)}
-        />
+        <PreferenceRow icon={CalendarDays} label="Formato de fecha">
+          <SelectControl
+            value={dateFormat}
+            options={DATE_FORMAT_OPTIONS}
+            onChange={(v) => setDateFormat(v as DateFormat)}
+          />
+        </PreferenceRow>
 
         {/* Time format */}
-        <SelectField
-          label="Formato de hora"
-          value={timeFormat}
-          options={TIME_FORMAT_OPTIONS}
-          onChange={(v) => setTimeFormat(v as TimeFormat)}
-        />
+        <PreferenceRow icon={Clock} label="Formato de hora">
+          <SelectControl
+            value={timeFormat}
+            options={TIME_FORMAT_OPTIONS}
+            onChange={(v) => setTimeFormat(v as TimeFormat)}
+          />
+        </PreferenceRow>
 
         {/* Sound toggle */}
-        <div className="flex items-center justify-between rounded-lg border border-border bg-panel px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-          <span className="text-sm font-medium text-ink dark:text-gray-100">
-            Sonido
-          </span>
+        <PreferenceRow icon={Volume2} label="Sonido">
           <label className="relative inline-flex cursor-pointer items-center">
             <input
               type="checkbox"
@@ -135,75 +167,87 @@ export const UserPreferencesSection: FC<UserPreferencesSectionProps> = ({
               className="peer sr-only"
               aria-label="Sonido"
             />
-            <div className="h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-panel after:transition-all peer-checked:bg-pharma peer-checked:after:translate-x-full peer-focus:outline-2 peer-focus:outline-blue-600 dark:bg-gray-600 dark:after:bg-gray-300" />
+            <div className="h-6 w-11 rounded-full bg-surface-variant after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-panel after:transition-all peer-checked:bg-pharma peer-checked:after:translate-x-full peer-focus:outline-2 peer-focus:outline-pharma" />
           </label>
-        </div>
+        </PreferenceRow>
 
         {/* Receipt font size */}
-        <div className="rounded-lg border border-border bg-panel px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-ink dark:text-gray-100">
-              Tamano de letra del recibo
-            </span>
-            <span className="text-sm text-ink-muted dark:text-gray-400">
-              {receiptFontSize}pt
+        <div className="rounded-sm border border-border bg-panel px-pos-md py-pos-sm transition-colors hover:bg-surface-variant">
+          <div className="flex items-center gap-pos-md">
+            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-pharma/10 text-pharma">
+              <Ruler size={16} strokeWidth={1.5} aria-hidden="true" />
+            </div>
+            <span className="text-body-sm font-medium text-ink">
+              Tamaño de letra del recibo
             </span>
           </div>
-          <input
-            type="range"
-            min={8}
-            max={20}
-            step={1}
-            value={receiptFontSize}
-            onChange={handleFontSizeChange}
-            className="mt-2 w-full cursor-pointer accent-blue-600"
-            aria-label="Tamano de letra del recibo"
-          />
-          <div className="mt-1 flex justify-between text-xs text-ink-muted">
-            <span>8pt</span>
-            <span>20pt</span>
+          <div className="ml-11 mt-pos-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-caption text-ink-muted">8pt</span>
+              <motion.span
+                key={receiptFontSize}
+                className="text-body-sm font-data text-pharma"
+                initial={{ opacity: 0.5, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                {receiptFontSize}pt
+              </motion.span>
+              <span className="text-caption text-ink-muted">20pt</span>
+            </div>
+            <input
+              type="range"
+              min={8}
+              max={20}
+              step={1}
+              value={receiptFontSize}
+              onChange={handleFontSizeChange}
+              className="mt-pos-xs w-full cursor-pointer accent-pharma"
+              aria-label="Tamaño de letra del recibo"
+            />
           </div>
         </div>
 
         {/* Keyboard layout */}
-        <SelectField
-          label="Distribucion del teclado"
-          value={keyboardLayout}
-          options={KEYBOARD_OPTIONS}
-          onChange={(v) => setKeyboardLayout(v as KeyboardLayout)}
-        />
+        <PreferenceRow icon={Keyboard} label="Distribución del teclado">
+          <SelectControl
+            value={keyboardLayout}
+            options={KEYBOARD_OPTIONS}
+            onChange={(v) => setKeyboardLayout(v as KeyboardLayout)}
+          />
+        </PreferenceRow>
       </div>
     </div>
   );
 };
 
 // ---------------------------------------------------------------------------
-// Helper small component for labelled selects
+// SelectControl — compact styled select using pos-input
 // ---------------------------------------------------------------------------
 
-interface SelectFieldProps {
-  label: string;
+interface SelectControlProps<T extends string> {
   value: string;
-  options: Array<{ value: string; label: string }>;
+  options: Option<T>[];
   onChange: (value: string) => void;
 }
 
-const SelectField: FC<SelectFieldProps> = ({ label, value, options, onChange }) => (
-  <div className="flex items-center justify-between rounded-lg border border-border bg-panel px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-    <span className="text-sm font-medium text-ink dark:text-gray-100">
-      {label}
-    </span>
+function SelectControl<T extends string>({
+  value,
+  options,
+  onChange,
+}: SelectControlProps<T>): React.ReactElement {
+  return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="ml-4 rounded-lg border border-border px-3 py-1.5 text-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-      aria-label={label}
+      className="pos-input ml-pos-md"
+      aria-label={options.find((o) => o.value === value)?.label}
     >
       {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
+        <option key={opt.value as string} value={opt.value as string}>
           {opt.label}
         </option>
       ))}
     </select>
-  </div>
-);
+  );
+}

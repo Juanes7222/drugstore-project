@@ -15,6 +15,14 @@ import { type FC, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import {
+  Building2,
+  Receipt,
+  ToggleLeft,
+  Settings2,
+  UserCircle,
+  type LucideIcon,
+} from "lucide-react";
+import {
   useTenantConfig,
   type CustomCompanyField,
   type CustomStrictnessToggle,
@@ -36,61 +44,15 @@ type TabId = "company" | "fiscal" | "operation" | "preferences" | "user-preferen
 interface TabDefinition {
   id: TabId;
   i18nKey: string;
-  icon: React.FC<React.SVGProps<SVGSVGElement>>;
+  Icon: LucideIcon;
 }
 
 const TABS: TabDefinition[] = [
-  {
-    id: "company",
-    i18nKey: "tabs.company",
-    icon: (props) => (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-        <line x1="8" y1="21" x2="16" y2="21" />
-        <line x1="12" y1="17" x2="12" y2="21" />
-      </svg>
-    ),
-  },
-  {
-    id: "fiscal",
-    i18nKey: "tabs.fiscal",
-    icon: (props) => (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <line x1="12" y1="1" x2="12" y2="23" />
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-      </svg>
-    ),
-  },
-  {
-    id: "operation",
-    i18nKey: "tabs.operation",
-    icon: (props) => (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <circle cx="12" cy="12" r="3" />
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-      </svg>
-    ),
-  },
-  {
-    id: "preferences",
-    i18nKey: "tabs.preferences",
-    icon: (props) => (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <circle cx="12" cy="12" r="3" />
-        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-      </svg>
-    ),
-  },
-  {
-    id: "user-preferences",
-    i18nKey: "tabs.user_preferences",
-    icon: (props) => (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-      </svg>
-    ),
-  },
+  { id: "company", i18nKey: "tabs.company", Icon: Building2 },
+  { id: "fiscal", i18nKey: "tabs.fiscal", Icon: Receipt },
+  { id: "operation", i18nKey: "tabs.operation", Icon: ToggleLeft },
+  { id: "preferences", i18nKey: "tabs.preferences", Icon: Settings2 },
+  { id: "user-preferences", i18nKey: "tabs.user_preferences", Icon: UserCircle },
 ];
 
 // ---------------------------------------------------------------------------
@@ -216,7 +178,7 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
   if (isLoading && !config) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-pos-md">
           <svg
             className="h-8 w-8 animate-spin text-ink-muted"
             viewBox="0 0 24 24"
@@ -237,7 +199,7 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
             />
           </svg>
-          <p className="text-sm text-ink-muted dark:text-gray-400">
+          <p className="text-body-sm text-ink-muted">
             {t("common.loading")}
           </p>
         </div>
@@ -248,7 +210,7 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
   if (error) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="max-w-md rounded-lg border border-error bg-error-container p-6 text-center dark:border-red-800 dark:bg-red-950">
+        <div className="max-w-md rounded-sm border border-error bg-error-container p-6 text-center">
           <svg
             width="32"
             height="32"
@@ -265,7 +227,7 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
           </svg>
-          <p className="mt-3 text-sm text-error dark:text-red-400">
+          <p className="mt-pos-md text-body-sm text-error">
             {t("config.errors.load_failed")}: {error}
           </p>
         </div>
@@ -276,34 +238,41 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
   // ---- Main render ----
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full" style={{ backgroundColor: 'var(--color-surface)' }}>
       {/* Tab sidebar */}
       <nav
-        className="flex w-48 flex-col gap-1 border-r border-border bg-surface-variant p-3 dark:border-gray-700 dark:bg-gray-800/50"
+        className="relative flex w-48 flex-col border-r border-border bg-surface-variant p-pos-xs"
         aria-label={t("config.tabs.company")}
       >
         {TABS.map((tab) => {
-          const Icon = tab.icon;
+          const Icon = tab.Icon;
+          const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               type="button"
               onClick={() => handleTabChange(tab.id)}
-              aria-current={activeTab === tab.id ? "page" : undefined}
+              aria-current={isActive ? "page" : undefined}
               className={`
-                flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium
-                transition-colors
-                focus-visible:outline-2 focus-visible:outline-offset-2
+                relative flex items-center gap-pos-md px-pos-md py-pos-sm text-body-sm font-medium
+                transition-colors duration-150
+                focus-visible:outline-2 focus-visible:outline-offset-[-2px]
                 focus-visible:outline-pharma
-                ${
-                  activeTab === tab.id
-                    ? "bg-success-container text-pharma dark:bg-pharma/20 dark:text-pharma"
-                    : "text-ink-muted hover:bg-surface-variant dark:text-gray-400 dark:hover:bg-gray-700"
-                }
+                ${isActive ? "text-pharma" : "text-ink-muted hover:text-ink"}
               `}
             >
-              <Icon aria-hidden="true" />
-              <span>{t("config." + tab.i18nKey)}</span>
+              {/* Active indicator — animated pill using layoutId */}
+              {isActive && (
+                <motion.div
+                  className="absolute inset-y-1 left-1 right-1 rounded-sm bg-success-container"
+                  layoutId="config-tab-active"
+                  transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                />
+              )}
+              <span className="relative z-10 flex items-center gap-pos-sm">
+                <Icon size={18} strokeWidth={1.5} aria-hidden="true" />
+                <span>{t("config." + tab.i18nKey)}</span>
+              </span>
             </button>
           );
         })}
@@ -312,22 +281,22 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
       {/* Content area */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <div className="flex items-center justify-between border-b border-border bg-panel px-6 py-3 dark:border-gray-700 dark:bg-gray-900">
-          <h2 className="text-lg font-semibold text-ink dark:text-gray-100">
+        <div className="flex items-center justify-between border-b border-border bg-panel px-pos-xl py-pos-md">
+          <h2 className="text-ui font-semibold text-ink">
             {t("config.title")}
           </h2>
           <ActiveModeIndicator onClick={() => setActiveTab("operation")} />
         </div>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto px-pos-xl py-pos-lg">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 4 }}
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.15 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
             >
               {renderTabContent()}
             </motion.div>

@@ -43,11 +43,11 @@ export const FiscalConfigTab: FC<FiscalConfigTabProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-base font-semibold text-ink dark:text-gray-100">
+      <h3 className="text-ui font-semibold text-ink">
         {t("config.tabs.fiscal")}
       </h3>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-pos-md">
         <SelectField
           label={t("config.fiscal.tax_regime")}
           value={config?.fiscal.taxRegime ?? "RESPONSABLE_IVA"}
@@ -77,11 +77,12 @@ export const FiscalConfigTab: FC<FiscalConfigTabProps> = ({
       </div>
 
       {/* DIAN Resolution */}
-      <div className="border-t border-border pt-6 dark:border-gray-700">
-        <h4 className="mb-4 text-sm font-semibold text-ink dark:text-gray-100">
+      <div className="pos-divider pt-6" />
+      <div>
+        <h4 className="mb-pos-md text-body-sm font-semibold text-ink">
           {t("config.fiscal.dian_resolution")}
         </h4>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-pos-md">
           <TextField
             label={t("config.fiscal.dian_resolution_number")}
             value={config?.fiscal.dianResolutionNumber ?? ""}
@@ -110,9 +111,9 @@ export const FiscalConfigTab: FC<FiscalConfigTabProps> = ({
         </div>
       </div>
 
-      {/* Invoice display options */}
-      <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-        <h4 className="text-sm font-semibold text-ink dark:text-gray-100">
+      {/* Invoice display options — pos-panel card */}
+      <div className="space-y-pos-xs rounded-sm border border-border bg-panel p-pos-md" style={{ boxShadow: 'var(--shadow-pos-panel)' }}>
+        <h4 className="text-body-sm font-semibold text-ink">
           Pantalla
         </h4>
         <CheckboxField
@@ -130,7 +131,7 @@ export const FiscalConfigTab: FC<FiscalConfigTabProps> = ({
       </div>
 
       {/* Header / Footer */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-pos-md">
         <TextAreaField
           label={t("config.fiscal.invoice_header")}
           value={config?.fiscal.invoiceHeader ?? ""}

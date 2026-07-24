@@ -1,9 +1,12 @@
 /**
  * NamedPresetsSection — saved presets list with apply/delete actions.
+ *
+ * All elements use POS design system component classes for visual consistency.
  */
 import { type FC, useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
+import { Plus, Trash2, Check } from 'lucide-react';
 import type { NamedPreset } from '../../../domain/config';
 
 export interface NamedPresetsSectionProps {
@@ -60,32 +63,19 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
   }, []);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-pos-md">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-ink dark:text-gray-100">
+        <h3 className="text-ui font-semibold text-ink">
           {t('config.named_presets.title')}
         </h3>
         {!readOnly && (
           <button
             type="button"
             onClick={() => setShowSaveForm((v) => !v)}
-            className="inline-flex items-center gap-1 rounded-lg bg-pharma px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-pharma/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
+            className="pos-button pos-button-primary gap-pos-xs"
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
+            <Plus size={14} strokeWidth={1.5} aria-hidden="true" />
             {t('config.named_presets.save')}
           </button>
         )}
@@ -97,10 +87,10 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}
           exit={{ opacity: 0, height: 0 }}
-          className="overflow-hidden rounded-lg border border-pharma/30 bg-pharma/10 p-4 dark:border-blue-800 dark:bg-blue-950"
+          className="overflow-hidden rounded-sm border border-pharma/30 bg-pharma/[0.06] p-pos-md"
         >
           <label className="block">
-            <span className="text-sm font-medium text-ink-muted dark:text-gray-300">
+            <span className="text-body-sm font-medium text-ink-muted">
               {t('config.named_presets.name')}
             </span>
             <input
@@ -108,11 +98,11 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
               placeholder={t('config.named_presets.name')}
-              className="mt-1 block w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              className="pos-input mt-pos-xs"
             />
           </label>
-          <label className="mt-3 block">
-            <span className="text-sm font-medium text-ink-muted dark:text-gray-300">
+          <label className="mt-pos-md block">
+            <span className="text-body-sm font-medium text-ink-muted">
               {t('config.named_presets.description')}
             </span>
             <input
@@ -120,14 +110,14 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
               value={saveDescription}
               onChange={(e) => setSaveDescription(e.target.value)}
               placeholder={t('config.named_presets.description')}
-              className="mt-1 block w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+              className="pos-input mt-pos-xs"
             />
           </label>
-          <div className="mt-3 flex justify-end gap-2">
+          <div className="mt-pos-md flex justify-end gap-pos-sm">
             <button
               type="button"
               onClick={() => setShowSaveForm(false)}
-              className="rounded-lg bg-surface-variant px-3 py-1.5 text-sm font-medium text-ink-muted transition-colors hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+              className="pos-button pos-button-secondary"
             >
               {t('common.cancel')}
             </button>
@@ -135,7 +125,7 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
               type="button"
               onClick={handleSave}
               disabled={!saveName.trim()}
-              className="rounded-lg bg-pharma px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-pharma/90 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
+              className="pos-button pos-button-primary"
             >
               {t('common.save')}
             </button>
@@ -168,59 +158,47 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
           </svg>
         </div>
       ) : presets.length === 0 ? (
-        <p className="py-4 text-sm text-ink-muted dark:text-gray-400">
+        <p className="py-pos-md text-body-sm text-ink-muted">
           {t('config.history.no_history')}
         </p>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-pos-xs">
           {presets.map((preset) => (
             <div
               key={preset.id}
-              className="flex items-center justify-between rounded-lg border border-border bg-panel px-4 py-3 dark:border-gray-700 dark:bg-gray-800"
+              className="flex items-center justify-between rounded-sm border border-border bg-panel px-pos-md py-pos-sm"
             >
               <div className="flex-1">
-                <span className="text-sm font-medium text-ink dark:text-gray-100">
+                <span className="text-body-sm font-medium text-ink">
                   {preset.name}
                 </span>
                 {preset.description && (
-                  <p className="mt-0.5 text-xs text-ink-muted dark:text-gray-400">
+                  <p className="mt-0.5 text-caption text-ink-muted">
                     {preset.description}
                   </p>
                 )}
-                <p className="mt-0.5 text-xs text-ink-muted">
+                <p className="mt-0.5 text-caption text-ink-muted">
                   {formatDate(preset.createdAt)}
                   {preset.isShared && ` — ${t('config.named_presets.share')}`}
                 </p>
               </div>
-              <div className="ml-4 flex items-center gap-2">
+              <div className="ml-pos-md flex items-center gap-pos-sm">
                 <button
                   type="button"
                   onClick={() => onApply(preset.id)}
-                  className="rounded-lg bg-pharma px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-pharma/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
+                  className="pos-button pos-button-primary gap-pos-xs text-caption"
                 >
+                  <Check size={12} strokeWidth={1.5} aria-hidden="true" />
                   {t('config.named_presets.apply')}
                 </button>
                 {!readOnly && (
                   <button
                     type="button"
                     onClick={() => onDelete(preset.id)}
-                    className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 dark:hover:bg-red-900/20"
+                    className="pos-button pos-button-secondary p-1.5 hover:bg-error-container hover:text-error focus-visible:outline-error"
                     aria-label={`${t('config.named_presets.delete')} ${preset.name}`}
                   >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
+                    <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
                   </button>
                 )}
               </div>

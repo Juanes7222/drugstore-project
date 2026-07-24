@@ -32,11 +32,11 @@ export const SystemPreferencesTab: FC<SystemPreferencesTabProps> = ({
 
   return (
     <div className="space-y-6">
-      <h3 className="text-base font-semibold text-ink dark:text-gray-100">
+      <h3 className="text-ui font-semibold text-ink">
         {t("config.tabs.preferences")}
       </h3>
 
-      <div className="space-y-3">
+      <div className="space-y-pos-xs">
         <CheckboxField
           label={t("config.workflow.auto_print_on_confirm")}
           checked={config?.workflow.autoPrintOnConfirm ?? true}

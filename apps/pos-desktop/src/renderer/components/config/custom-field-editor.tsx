@@ -3,6 +3,7 @@
  * strictness toggles.
  *
  * Type-dependent form fields with inline validation.
+ * Uses POS design system: `pos-input`, `pos-button` variants, Radix dialog.
  */
 import { type FC, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -201,13 +202,14 @@ export const CustomFieldEditor: FC<CustomFieldEditorProps> = ({
             </Dialog.Overlay>
             <Dialog.Content asChild>
               <motion.div
-                className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-panel p-6 shadow-xl dark:bg-gray-800"
-                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-sm bg-panel p-6"
+                style={{ boxShadow: 'var(--shadow-pos-elevated)' }}
+                initial={{ opacity: 0, scale: 0.96, y: 8 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                transition={{ duration: 0.2 }}
+                exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                transition={{ type: "spring", stiffness: 350, damping: 30 }}
               >
-                <Dialog.Title className="text-lg font-semibold text-ink dark:text-gray-100">
+                <Dialog.Title className="text-heading font-bold text-ink">
                   {isEditing
                     ? isFieldMode
                       ? t('config.custom_fields.edit')
@@ -217,10 +219,10 @@ export const CustomFieldEditor: FC<CustomFieldEditorProps> = ({
                       : t('config.custom_toggles.add')}
                 </Dialog.Title>
 
-                <div className="mt-4 space-y-4">
+                <div className="mt-pos-md space-y-pos-md">
                   {/* Name field (shared) */}
                   <label className="block">
-                    <span className="text-sm font-medium text-ink-muted dark:text-gray-300">
+                    <span className="text-body-sm font-medium text-ink-muted">
                       {isFieldMode
                         ? t('config.custom_fields.name')
                         : t('config.custom_toggles.description')}
@@ -233,13 +235,13 @@ export const CustomFieldEditor: FC<CustomFieldEditorProps> = ({
                           ? setFieldName(e.target.value)
                           : setToggleName(e.target.value)
                       }
-                      className="mt-1 block w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                      className="pos-input mt-pos-xs"
                     />
                   </label>
 
                   {/* Key field (shared) */}
                   <label className="block">
-                    <span className="text-sm font-medium text-ink-muted dark:text-gray-300">
+                    <span className="text-body-sm font-medium text-ink-muted">
                       {t('config.custom_fields.key')}
                     </span>
                     <input
@@ -250,13 +252,13 @@ export const CustomFieldEditor: FC<CustomFieldEditorProps> = ({
                           ? setFieldKey(e.target.value)
                           : setToggleKey(e.target.value)
                       }
-                      className="mt-1 block w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                      className="pos-input mt-pos-xs"
                     />
                   </label>
 
                   {/* Type selector (shared) */}
                   <label className="block">
-                    <span className="text-sm font-medium text-ink-muted dark:text-gray-300">
+                    <span className="text-body-sm font-medium text-ink-muted">
                       {t('config.custom_fields.type')}
                     </span>
                     <select
@@ -266,7 +268,7 @@ export const CustomFieldEditor: FC<CustomFieldEditorProps> = ({
                           ? setFieldType(e.target.value as CustomFieldType)
                           : setToggleType(e.target.value as CustomToggleType)
                       }
-                      className="mt-1 block w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                      className="pos-input mt-pos-xs"
                     >
                       {isFieldMode
                         ? (['TEXT', 'NUMBER', 'DATE', 'URL', 'EMAIL'] as const).map(
@@ -287,32 +289,32 @@ export const CustomFieldEditor: FC<CustomFieldEditorProps> = ({
                   {/* Field-specific: toggles */}
                   {isFieldMode ? (
                     <>
-                      <label className="flex items-center gap-2">
+                      <label className="flex cursor-pointer items-center gap-pos-sm">
                         <input
                           type="checkbox"
                           checked={fieldShowOnInvoice}
                           onChange={(e) => setFieldShowOnInvoice(e.target.checked)}
-                          className="h-4 w-4 rounded border-border text-pharma focus:ring-pharma"
+                          className="h-4 w-4 accent-pharma"
                         />
-                        <span className="text-sm text-ink-muted dark:text-gray-300">
+                        <span className="text-body-sm text-ink-muted">
                           {t('config.custom_fields.show_on_invoice')}
                         </span>
                       </label>
-                      <label className="flex items-center gap-2">
+                      <label className="flex cursor-pointer items-center gap-pos-sm">
                         <input
                           type="checkbox"
                           checked={fieldShowOnReport}
                           onChange={(e) => setFieldShowOnReport(e.target.checked)}
-                          className="h-4 w-4 rounded border-border text-pharma focus:ring-pharma"
+                          className="h-4 w-4 accent-pharma"
                         />
-                        <span className="text-sm text-ink-muted dark:text-gray-300">
+                        <span className="text-body-sm text-ink-muted">
                           {t('config.custom_fields.show_on_report')}
                         </span>
                       </label>
                     </>
                   ) : (
                     <label className="block">
-                      <span className="text-sm font-medium text-ink-muted dark:text-gray-300">
+                      <span className="text-body-sm font-medium text-ink-muted">
                         {t('config.custom_toggles.applies_to')}
                       </span>
                       <select
@@ -320,7 +322,7 @@ export const CustomFieldEditor: FC<CustomFieldEditorProps> = ({
                         onChange={(e) =>
                           setToggleAppliesTo(e.target.value as CustomToggleAppliesTo)
                         }
-                        className="mt-1 block w-full rounded-lg border border-border px-3 py-2 text-sm shadow-sm focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                        className="pos-input mt-pos-xs"
                       >
                         {(['SALE', 'RETURN', 'INVENTORY', 'CLIENT', 'ALL'] as const).map(
                           (a) => (
@@ -336,17 +338,17 @@ export const CustomFieldEditor: FC<CustomFieldEditorProps> = ({
 
                 {/* Error */}
                 {error && (
-                  <p className="mt-3 text-sm text-red-600 dark:text-red-400" role="alert">
+                  <p className="mt-pos-md text-body-sm text-error" role="alert">
                     {error}
                   </p>
                 )}
 
                 {/* Actions */}
-                <div className="mt-6 flex justify-end gap-3">
+                <div className="mt-6 flex justify-end gap-pos-md">
                   <Dialog.Close asChild>
                     <button
                       type="button"
-                      className="rounded-lg bg-surface-variant px-4 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                      className="pos-button pos-button-secondary"
                     >
                       {t('common.cancel')}
                     </button>
@@ -354,7 +356,7 @@ export const CustomFieldEditor: FC<CustomFieldEditorProps> = ({
                   <button
                     type="button"
                     onClick={handleSave}
-                    className="rounded-lg bg-pharma px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-pharma/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
+                    className="pos-button pos-button-primary"
                   >
                     {t('common.save')}
                   </button>
