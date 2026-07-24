@@ -621,7 +621,12 @@
     "movement_reason": "Motivo",
     "movement_sale": "Venta",
     "movement_positive_adjustment": "Ajuste +",
-    "movement_negative_adjustment": "Ajuste -"
+    "movement_negative_adjustment": "Ajuste -",
+    "alerts": "Alertas",
+    "lots_column": "Lotes",
+    "low_stock_count": "{{count}} bajo stock",
+    "no_alerts": "Sin alertas",
+    "feature_disabled": "La gestión de lotes está desactivada en la configuración del sistema."
   },
   "inventory_adjustments": {
     "title": "Inventario",

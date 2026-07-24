@@ -4,6 +4,7 @@ export {
   type ConsumeStockForSaleParams,
   type ConsumedLot,
   type LotMovementRecord,
+  type ProductLotGroup,
 } from './inventory-lots.service';
 
 export {

@@ -562,7 +562,12 @@
     "movement_reason": "Reason",
     "movement_sale": "Sale",
     "movement_positive_adjustment": "Adjustment +",
-    "movement_negative_adjustment": "Adjustment -"
+    "movement_negative_adjustment": "Adjustment -",
+    "alerts": "Alerts",
+    "lots_column": "Lots",
+    "low_stock_count": "{{count}} low stock",
+    "no_alerts": "No alerts",
+    "feature_disabled": "Lot management is disabled in system configuration."
   },
   "inventory_adjustments": {
     "title": "Inventory",

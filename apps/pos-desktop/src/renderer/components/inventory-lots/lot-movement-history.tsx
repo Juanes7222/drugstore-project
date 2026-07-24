@@ -53,6 +53,8 @@ interface LotMovementHistoryProps {
   lotCode: string;
   isOpen: boolean;
   onClose: () => void;
+  /** Number of columns the panel should span in its parent table. */
+  colSpan?: number;
 }
 
 export const LotMovementHistory: FC<LotMovementHistoryProps> = ({
@@ -60,6 +62,7 @@ export const LotMovementHistory: FC<LotMovementHistoryProps> = ({
   lotCode,
   isOpen,
   onClose,
+  colSpan = 7,
 }) => {
   const { t } = useTranslation();
   const lotsService = useInventoryLotsService();
@@ -91,7 +94,7 @@ export const LotMovementHistory: FC<LotMovementHistoryProps> = ({
 
   return (
     <tr>
-      <td colSpan={7} className="p-0">
+      <td colSpan={colSpan} className="p-0">
         <div
           className="border-t"
           style={{

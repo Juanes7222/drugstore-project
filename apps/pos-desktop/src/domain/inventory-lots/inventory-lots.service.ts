@@ -82,6 +82,24 @@ export interface LotMovementRecord {
 }
 
 // ---------------------------------------------------------------------------
+// Grouped-lot query types
+// ---------------------------------------------------------------------------
+
+export interface ProductLotGroup {
+  productId: string;
+  commercialName: string;
+  genericName: string;
+  internalCode: string;
+  totalStock: number;
+  lotCount: number;
+  soonToExpireCount: number;
+  expiredCount: number;
+  lowStockCount: number;
+  nearestExpiryDate: Date | null;
+  lots: LotWithProduct[];
+}
+
+// ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
@@ -339,5 +357,112 @@ export class InventoryLotsService {
       adjustmentDocumentId: m.adjustmentDocumentId,
       saleId: m.saleId,
     }));
+  }
+
+  /**
+   * Get lots grouped by product with pre-computed aggregates.
+   *
+   * Returns products ordered by priority: expired lots first, then soon-to-expire,
+   * then low-stock, then alphabetically by commercial name. Within each product,
+   * lots are sorted by expiration date ascending (FEFO order).
+   *
+   * @param params.search   Optional text search across product name, code, or batch.
+   * @param params.state    Optional lot state filter.
+   * @param params.expiringSoonDays  Threshold for "soon to expire" (default 90).
+   */
+  async getLotsGroupedByProduct(params?: {
+    search?: string;
+    state?: LotState;
+    expiringSoonDays?: number;
+  }): Promise<ProductLotGroup[]> {
+    const threshold = params?.expiringSoonDays ?? 90;
+    const now = new Date();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() + threshold);
+
+    const allLots = await this.getLots({
+      search: params?.search,
+      state: params?.state,
+    });
+
+    // Group by productId
+    const groups = new Map<string, LotWithProduct[]>();
+
+    for (const lot of allLots) {
+      const existing = groups.get(lot.productId);
+      if (existing) {
+        existing.push(lot);
+      } else {
+        groups.set(lot.productId, [lot]);
+      }
+    }
+
+    const result: ProductLotGroup[] = [];
+
+    for (const [productId, lots] of groups) {
+      const first = lots[0];
+      let totalStock = 0;
+      let soonToExpireCount = 0;
+      let expiredCount = 0;
+      let lowStockCount = 0;
+      let nearestExpiryDate: Date | null = null;
+
+      for (const lot of lots) {
+        totalStock += lot.currentStock;
+
+        if (lot.currentStock <= 10) lowStockCount++;
+
+        if (lot.expirationDate <= now) {
+          expiredCount++;
+        } else if (lot.expirationDate <= cutoff) {
+          soonToExpireCount++;
+        }
+
+        if (
+          nearestExpiryDate === null ||
+          lot.expirationDate < nearestExpiryDate
+        ) {
+          nearestExpiryDate = lot.expirationDate;
+        }
+      }
+
+      // Sort lots within group by expiration ascending
+      const sortedLots = [...lots].sort(
+        (a, b) => a.expirationDate.getTime() - b.expirationDate.getTime(),
+      );
+
+      result.push({
+        productId,
+        commercialName: first.product.commercialName,
+        genericName: first.product.genericName,
+        internalCode: first.product.internalCode,
+        totalStock,
+        lotCount: lots.length,
+        soonToExpireCount,
+        expiredCount,
+        lowStockCount,
+        nearestExpiryDate,
+        lots: sortedLots,
+      });
+    }
+
+    // Sort groups by priority
+    result.sort((a, b) => {
+      const priorityA =
+        a.expiredCount > 0 ? 0
+        : a.soonToExpireCount > 0 ? 1
+        : a.lowStockCount > 0 ? 2
+        : 3;
+      const priorityB =
+        b.expiredCount > 0 ? 0
+        : b.soonToExpireCount > 0 ? 1
+        : b.lowStockCount > 0 ? 2
+        : 3;
+
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      return a.commercialName.localeCompare(b.commercialName);
+    });
+
+    return result;
   }
 }

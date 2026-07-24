@@ -17,6 +17,7 @@ import {
   navigateToInventoryAdjustments,
 } from "@/store/slices/ui-slice";
 import { useLocalSessionStore, hasMinRole } from "../../../domain/auth/local-session.store";
+import { useTenantConfig } from "../../../domain/config/use-tenant-config";
 import { RoleType } from "@pharmacy/shared-types";
 
 // ---------------------------------------------------------------------------
@@ -107,6 +108,9 @@ export const ProductosMainPage: FC = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const session = useLocalSessionStore((s) => s.session);
+  const { effectiveConfig } = useTenantConfig();
+  const lotManagementOff =
+    effectiveConfig?.strictness.lots === 'OFF';
 
   const cards: ProductosCard[] = useMemo(
     () => [
@@ -118,14 +122,18 @@ export const ProductosMainPage: FC = () => {
         onClick: () => dispatch(navigateToProducts()),
         requiredRole: RoleType.INVENTORY_ASSISTANT,
       },
-      {
-        key: "lots",
-        titleKey: "productos_main.card_lots_title",
-        descriptionKey: "productos_main.card_lots_desc",
-        icon: BarcodeIcon,
-        onClick: () => dispatch(navigateToInventoryLots()),
-        requiredRole: RoleType.INVENTORY_ASSISTANT,
-      },
+      ...(lotManagementOff
+        ? ([] as ProductosCard[])
+        : [
+            {
+              key: "lots",
+              titleKey: "productos_main.card_lots_title",
+              descriptionKey: "productos_main.card_lots_desc",
+              icon: BarcodeIcon,
+              onClick: () => dispatch(navigateToInventoryLots()),
+              requiredRole: RoleType.INVENTORY_ASSISTANT,
+            } as ProductosCard,
+          ]),
       {
         key: "adjustments",
         titleKey: "productos_main.card_adjustments_title",
@@ -135,7 +143,7 @@ export const ProductosMainPage: FC = () => {
         requiredRole: RoleType.MANAGER,
       },
     ],
-    [dispatch],
+    [dispatch, lotManagementOff],
   );
 
   const visibleCards = cards.filter((card) =>
