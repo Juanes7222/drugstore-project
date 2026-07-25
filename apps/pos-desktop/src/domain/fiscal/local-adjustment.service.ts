@@ -294,41 +294,66 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
     // Capture the previous value for the audit trail
     const previousValue = this.capturePreviousValue(invoice, type);
 
-    // Optimistic concurrency: read current version (1-based count of non-reversed
-    // adjustments for this invoice). The next adjustment gets `version = currentVersion + 1`.
-    // The `@@unique([invoiceId, version])` constraint ensures that two concurrent writes
-    // for the same invoice at the same version cannot both succeed.
-    const currentVersion = await this.countNonReversedAdjustments(invoiceId);
-    const nextVersion = currentVersion + 1;
+    // Optimistic concurrency: use a retry loop because the read (count) and
+    // write (create) are not atomic across concurrent callers.  The
+    // `@@unique([invoiceId, version])` constraint rejects the second caller
+    // with a P2002 error; we retry with a fresh count.
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const currentVersion = await this.countNonReversedAdjustments(invoiceId);
+      const nextVersion = currentVersion + 1;
+      const id = globalThis.crypto.randomUUID();
 
-    const id = globalThis.crypto.randomUUID();
+      try {
+        await this.prisma.invoiceLocalAdjustment.create({
+          data: {
+            id,
+            invoiceId,
+            createdAt: new Date(),
+            createdByUserId: session.userId,
+            createdByUserName: session.fullName,
+            adjustmentType: type as InvoiceAdjustmentType,
+            previousValue:
+              previousValue != null
+                ? (previousValue as Prisma.InputJsonValue)
+                : Prisma.DbNull,
+            newValue:
+              newValue != null
+                ? (newValue as Prisma.InputJsonValue)
+                : Prisma.DbNull,
+            reason,
+            version: nextVersion,
+            reversalOfAdjustmentId: null,
+            replacedByAdjustmentId: null,
+          },
+        });
 
-    try {
-      await this.prisma.invoiceLocalAdjustment.create({
-        data: {
-          id,
-          invoiceId,
-          createdAt: new Date(),
-          createdByUserId: session.userId,
-          createdByUserName: session.fullName,
-          adjustmentType: type as InvoiceAdjustmentType,
-          previousValue: previousValue != null ? (previousValue as Prisma.InputJsonValue) : Prisma.DbNull,
-          newValue: newValue != null ? (newValue as Prisma.InputJsonValue) : Prisma.DbNull,
-          reason,
-          version: nextVersion,
-          reversalOfAdjustmentId: null,
-          replacedByAdjustmentId: null,
-        },
-      });
-    } catch (err) {
-      // A Prisma unique constraint violation on [invoiceId, version] means a
-      // concurrent writer already inserted version `nextVersion` for this invoice.
-      throw new AdjustmentConflictException(invoiceId);
+        // Success — return the record
+        return this.toAdjustmentRecord(
+          await this.prisma.invoiceLocalAdjustment.findUniqueOrThrow({
+            where: { id },
+          }),
+        );
+      } catch (err) {
+        // Only retry on Prisma unique-constraint violations (P2002).
+        // Everything else propagates immediately.
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          if (attempt < MAX_RETRIES) {
+            // Another writer claimed the same version; retry with a fresh count.
+            continue;
+          }
+          // Exhausted retries — the concurrent writer is still active.
+          throw new AdjustmentConflictException(invoiceId);
+        }
+        throw err;
+      }
     }
 
-    return this.toAdjustmentRecord(
-      await this.prisma.invoiceLocalAdjustment.findUniqueOrThrow({ where: { id } }),
-    );
+    // Unreachable — every path above returns or throws.
+    throw new Error('Unreachable: applyAdjustment retry loop exhausted without result.');
   }
 
   async reverseAdjustment(
@@ -372,42 +397,72 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
       );
     }
 
-    // Optimistic concurrency: compute the next version for this invoice
-    const currentVersion = await this.countNonReversedAdjustments(original.invoiceId);
-    const nextVersion = currentVersion + 1;
+    // Optimistic concurrency: wrap the count + create in a retry loop.
+    // The `@@unique([invoiceId, version])` constraint rejects concurrent writes
+    // with a P2002 error; we retry with a fresh count.
+    const MAX_RETRIES = 3;
+    let reversalId: string | null = null;
 
-    // Create the reversal entry
-    const reversalId = globalThis.crypto.randomUUID();
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const currentVersion = await this.countNonReversedAdjustments(original.invoiceId);
+      const nextVersion = currentVersion + 1;
+      const newReversalId = globalThis.crypto.randomUUID();
 
-    try {
-      await this.prisma.$transaction(async (tx) => {
-      // Create reversal pointing to the original
-      await tx.invoiceLocalAdjustment.create({
-        data: {
-          id: reversalId,
-          invoiceId: original.invoiceId,
-          createdAt: new Date(),
-          createdByUserId: session.userId,
-          createdByUserName: session.fullName,
-          adjustmentType: 'REVERSAL' as InvoiceAdjustmentType,
-          previousValue: original.newValue != null ? (original.newValue as Prisma.InputJsonValue) : Prisma.DbNull,
-          newValue: original.previousValue != null ? (original.previousValue as Prisma.InputJsonValue) : Prisma.DbNull,
-          reason,
-          version: nextVersion,
-          reversalOfAdjustmentId: adjustmentId,
-          replacedByAdjustmentId: null,
-        },
-      });
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          // Create reversal pointing to the original
+          await tx.invoiceLocalAdjustment.create({
+            data: {
+              id: newReversalId,
+              invoiceId: original.invoiceId,
+              createdAt: new Date(),
+              createdByUserId: session.userId,
+              createdByUserName: session.fullName,
+              adjustmentType: 'REVERSAL' as InvoiceAdjustmentType,
+              previousValue:
+                original.newValue != null
+                  ? (original.newValue as Prisma.InputJsonValue)
+                  : Prisma.DbNull,
+              newValue:
+                original.previousValue != null
+                  ? (original.previousValue as Prisma.InputJsonValue)
+                  : Prisma.DbNull,
+              reason,
+              version: nextVersion,
+              reversalOfAdjustmentId: adjustmentId,
+              replacedByAdjustmentId: null,
+            },
+          });
 
-        // Mark the original as replaced
-        await tx.invoiceLocalAdjustment.update({
-          where: { id: adjustmentId },
-          data: { replacedByAdjustmentId: reversalId },
+          // Mark the original as replaced
+          await tx.invoiceLocalAdjustment.update({
+            where: { id: adjustmentId },
+            data: { replacedByAdjustmentId: newReversalId },
+          });
         });
-      });
-    } catch (err) {
-      // Unique constraint violation on [invoiceId, version] means a concurrent
-      // writer already created a reversal at the same version.
+
+        reversalId = newReversalId;
+        break; // Success
+      } catch (err) {
+        // Only retry on Prisma unique-constraint violations (P2002).
+        // Everything else propagates immediately.
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          if (attempt < MAX_RETRIES) {
+            // Another writer claimed the same version; retry with a fresh count.
+            continue;
+          }
+          // Exhausted retries.
+          throw new AdjustmentConflictException(original.invoiceId);
+        }
+        throw err;
+      }
+    }
+
+    if (!reversalId) {
+      // Unreachable — the loop either succeeds or throws.
       throw new AdjustmentConflictException(original.invoiceId);
     }
 

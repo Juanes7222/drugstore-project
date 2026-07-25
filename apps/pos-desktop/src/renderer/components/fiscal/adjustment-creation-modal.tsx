@@ -7,7 +7,7 @@
  *   2. Edit new value + reason
  *   3. Confirm before/after diff and submit
  */
-import { type FC, useState, useCallback, useMemo } from "react";
+import { type FC, useState, useCallback, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, ChevronLeft, AlertCircle } from "lucide-react";
@@ -1329,8 +1329,30 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
   const [newValue, setNewValue] = useState<unknown>(null);
   const [reason, setReason] = useState("");
   const [reasonTouched, setReasonTouched] = useState(false);
+  /**
+   * Local submitting guard — prevents double-submit even if the parent's
+   * `loading` prop is stale during a re-render.
+   */
+  const [submitting, setSubmitting] = useState(false);
 
-  // Reset internal state when the modal opens
+  // Reset all internal form state when modal opens — this covers the case
+  // where the parent programmatically closes the modal (onSubmit success) and
+  // reopens it later. Radix may not call onOpenChange(false) when the open
+  // prop changes from outside, so the handleOpenChange reset alone is unreliable.
+  useEffect(() => {
+    if (visible) {
+      setStep("select-type");
+      setSelectedType(null);
+      setNewValue(null);
+      setReason("");
+      setReasonTouched(false);
+      setSubmitting(false);
+    }
+  }, [visible]);
+
+  // Reset internal state when the modal closes via user interaction (X,
+  // Escape, overlay click). The useEffect above handles the programmatic-
+  // close-then-reopen case; this is a safety net for direct user dismissal.
   const handleOpenChange = useCallback(
     (open: boolean) => {
       if (!open) {
@@ -1339,7 +1361,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
         setSelectedType(null);
         setNewValue(null);
         setReason("");
-        setReasonTouched(false);
+        setSubmitting(false);
         onClose();
       }
     },
@@ -1369,9 +1391,14 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
 
   // ----- Confirm -> Submit -----
   const handleSubmit = useCallback(async () => {
-    if (!selectedType) return;
-    await onSubmit(selectedType, newValue, reason);
-  }, [selectedType, newValue, reason, onSubmit]);
+    if (!selectedType || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit(selectedType, newValue, reason);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [selectedType, newValue, reason, onSubmit, submitting]);
 
   // ----- Navigate back -----
   const handleBack = useCallback(() => {
@@ -1856,10 +1883,10 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
               <button
                 type="button"
                 className="pos-button pos-button-primary px-4 py-1 text-body-sm"
-                disabled={loading}
+                disabled={loading || submitting}
                 onClick={handleSubmit}
               >
-                {loading
+                {loading || submitting
                   ? t("fiscal.adjustment_create_submitting")
                   : t("fiscal.adjustment_create_submit")}
               </button>
