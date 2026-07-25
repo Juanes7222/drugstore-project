@@ -121,18 +121,26 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
         isLoading: false,
       });
     } catch (error) {
-      // Tauri commands for local sync not yet implemented — skip polling.
       const message = error instanceof Error ? error.message : 'Failed to initialise local sync';
-      // If "command not found", the Rust module isn't built yet; don't mark
-      // initialized so polling loops never start.
+
+      // "command not found" / "No command" — the Tauri command does not exist
+      // in the Rust binary at all (build mismatch).  Keep isInitialized false
+      // so the polling loop never starts.
       const isCommandMissing =
         message.includes('command not found') ||
-        message.includes('not initialised') ||
         message.includes('No command');
+
+      // "not initialised" — the Tauri command exists but the lazy module
+      // (LocalSyncModules) hasn't been populated yet via
+      // initialize_local_sync.  That happens in initializeServices() once
+      // workstation config is loaded.  Until then, keep isInitialized false
+      // so the polling loop does not start and spam the console.
+      const isLazyNotInit = message.includes('not initialised');
+
       set({
-        isInitialized: !isCommandMissing,
+        isInitialized: !isCommandMissing && !isLazyNotInit,
         isLoading: false,
-        lastSyncError: isCommandMissing ? null : message,
+        lastSyncError: isCommandMissing || isLazyNotInit ? null : message,
       });
     }
   },

@@ -62,3 +62,36 @@ export const WORKSTATION_ID: string =
  */
 export const DB_PROOF_ENABLED: boolean =
   import.meta.env.VITE_DB_PROOF === "1";
+
+// ---------------------------------------------------------------------------
+// Local network sync
+// ---------------------------------------------------------------------------
+
+/**
+ * IP address of this workstation for local-network mDNS announcements.
+ *
+ * Falls back to `"127.0.0.1"` for local development.  Production deployments
+ * *must* configure `VITE_HOST_IP` (or detect it at runtime) so peers can
+ * reach this workstation over the LAN.
+ */
+export const HOST_IP: string =
+  (import.meta.env.VITE_HOST_IP as string | undefined) ?? "127.0.0.1";
+
+/**
+ * Human-readable name for this workstation in the local network.
+ *
+ * Shown to operators when browsing peer workstations or viewing hub-election
+ * info.  Falls back to `"POS Terminal"`.
+ */
+export const FRIENDLY_NAME: string =
+  (import.meta.env.VITE_FRIENDLY_NAME as string | undefined) ?? "POS Terminal";
+
+/**
+ * Whether this workstation is eligible to act as local-sync hub.
+ *
+ * Set to `"false"` to exclude this workstation from hub election (e.g. for
+ * back-office terminals that should not host the sync server).  Defaults to
+ * `true`.
+ */
+export const HUB_ELIGIBLE: boolean =
+  (import.meta.env.VITE_HUB_ELIGIBLE as string | undefined) !== "false";

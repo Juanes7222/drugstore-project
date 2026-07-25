@@ -34,7 +34,7 @@
 import { useEffect, useState } from 'react';
 import { getLocalDatabase } from '../../infrastructure/local-database';
 import type { PrismaClient } from '@pharmacy/database/local';
-import { API_BASE_URL, WORKSTATION_ID } from '../../infrastructure/config';
+import { API_BASE_URL, WORKSTATION_ID, HOST_IP, FRIENDLY_NAME, HUB_ELIGIBLE } from '../../infrastructure/config';
 import { createAuthService } from '../../domain/auth/auth.service';
 import { useLocalSessionStore } from '../../domain/auth/local-session.store';
 import {
@@ -247,6 +247,44 @@ export async function initializeServices(
       `[use-service-init] Session workstationId (${session.workstationId}) differs ` +
       `from resolved workstationId (${workstationId}).  Fiscal counters may not match.`,
     );
+  }
+
+  // --- Local sync Tauri module initialisation -------------------------------
+  // The Rust-side LocalSyncModules start empty (None) and must be configured
+  // with workstation identity, network key, and IP before any Tauri command
+  // (get_status, get_peers, get_current_hub) succeeds.  This call populates
+  // the three lazy modules (mDNS, server, client).
+  //
+  // Wrapped in try/catch so that non-Tauri environments (tests, browser dev)
+  // degrade gracefully — the polling loop in useLocalSync will stay inactive
+  // because the store's isInitialized stays false.
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { createLocalNetworkKeyService } = await import(
+      '../services/local-sync/local-network-key.service'
+    );
+
+    const networkKeyService = createLocalNetworkKeyService();
+    let localNetworkKey = await networkKeyService.getKey();
+    if (!localNetworkKey) {
+      localNetworkKey = await networkKeyService.generateKey();
+    }
+
+    await invoke('initialize_local_sync', {
+      workstationId,
+      friendlyName: FRIENDLY_NAME,
+      hubEligible: HUB_ELIGIBLE,
+      localNetworkKey,
+      hostIp: HOST_IP,
+      port: null, // Rust defaults to 49_500
+    });
+  } catch (err) {
+    // Tauri invoke not available (test/browser) or already initialized.
+    // The error is harmless — the store's isInitialized stays false until a
+    // component successfully calls initialize() with real params.
+    if (import.meta.env.DEV) {
+      console.debug('[initializeServices] Local sync init unavailable:', err);
+    }
   }
 
   // licenseId and accessToken are optional session fields not present on the
