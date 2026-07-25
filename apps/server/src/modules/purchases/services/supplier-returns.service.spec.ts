@@ -24,6 +24,7 @@ jest.mock('@pharmacy/database', () => {
 import { SupplierReturnsService } from './supplier-returns.service';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
+import type { SupplierReturnConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 // ── Mock objects ──────────────────────────────────────────────────────
 
@@ -63,7 +64,12 @@ const mockPrisma = {
 
 const mockLotsService = {
   consumeStockForSupplierReturn: jest.fn(),
+  resolveLotForSync: jest.fn(),
 } as unknown as LotsService;
+
+const mockSuppliersService = {
+  resolveSupplierForSync: jest.fn(),
+};
 
 const UUID = '00000000-0000-4000-8000-000000000001';
 
@@ -73,7 +79,8 @@ describe('SupplierReturnsService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     Object.assign(mockTx, createTxMock());
-    service = new SupplierReturnsService(mockPrisma, mockLotsService);
+    mockSuppliersService.resolveSupplierForSync.mockReset();
+    service = new SupplierReturnsService(mockPrisma, mockLotsService, mockSuppliersService as any);
   });
 
   // ── findAll ─────────────────────────────────────────────────────────
@@ -342,6 +349,159 @@ describe('SupplierReturnsService', () => {
       mockSupplierReturn.findUnique.mockResolvedValue({ id: 'sr1', state: 'CONFIRMED' });
 
       await expect(service.annul('sr1')).rejects.toThrow(/cannot be annulled/);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // confirmReturnFromSync
+  // -------------------------------------------------------------------------
+  describe('confirmReturnFromSync', () => {
+    const syncPayload: SupplierReturnConfirmationPayload = {
+      returnId: 'sr-sync-1',
+      sequentialNumber: 300,
+      supplierId: 'supplier-sync-1',
+      supplier: {
+        businessName: 'Sync Supplier',
+        identificationType: 'NIT',
+        identificationNumber: '900666666-6',
+      },
+      reason: 'Damaged in transit',
+      createdByUserId: 'user-1',
+      confirmedAt: '2026-07-25T10:00:00.000Z',
+      items: [
+        {
+          productId: 'prod-1',
+          lotId: 'lot-sync-1',
+          quantity: 5,
+          unitCost: 5000,
+          lot: {
+            batchNumber: 'SYNC-BATCH-001',
+            expirationDate: '2028-12-31T00:00:00.000Z',
+            productId: 'prod-1',
+            currentStock: 5,
+          },
+        },
+      ],
+    };
+
+    const syncPayloadNoSupplierData: SupplierReturnConfirmationPayload = {
+      ...syncPayload,
+      supplier: undefined,
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockTx.supplierReturn.findFirst.mockReset();
+      mockTx.purchaseReception.findUnique.mockReset();
+      mockTx.supplierReturn.create.mockReset();
+      mockLotsService.resolveLotForSync.mockReset();
+      mockSuppliersService.resolveSupplierForSync.mockReset();
+    });
+
+    it('returns existing return when same sequentialNumber + supplierId exists (idempotent)', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.supplierReturn.findFirst.mockResolvedValue({
+          id: 'existing-sr',
+          state: 'CONFIRMED',
+        });
+        return cb(mockTx);
+      });
+
+      const result = await service.confirmReturnFromSync(syncPayload, 'user-1');
+
+      expect(result).toEqual({ id: 'existing-sr', state: 'CONFIRMED' });
+      expect(mockSuppliersService.resolveSupplierForSync).not.toHaveBeenCalled();
+      expect(mockTx.supplierReturn.create).not.toHaveBeenCalled();
+    });
+
+    it('resolves supplier via resolver when supplier does not exist but payload has supplier data', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.supplierReturn.findFirst.mockResolvedValue(null);
+        mockLotsService.resolveLotForSync.mockResolvedValue({
+          id: 'lot-sync-1',
+          currentStock: 5,
+          version: 1,
+          state: 'ACTIVE',
+        });
+        mockTx.supplierReturn.create.mockResolvedValue({ id: 'new-sr' });
+        return cb(mockTx);
+      });
+
+      await service.confirmReturnFromSync(syncPayload, 'user-1');
+
+      expect(mockSuppliersService.resolveSupplierForSync).toHaveBeenCalledWith(
+        mockTx,
+        'supplier-sync-1',
+        syncPayload.supplier,
+        'user-1',
+      );
+    });
+
+    it('resolves each item lot via lotsService', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.supplierReturn.findFirst.mockResolvedValue(null);
+        mockLotsService.resolveLotForSync.mockResolvedValue({
+          id: 'lot-sync-1',
+          currentStock: 5,
+          version: 1,
+          state: 'ACTIVE',
+        });
+        mockTx.supplierReturn.create.mockResolvedValue({ id: 'new-sr' });
+        return cb(mockTx);
+      });
+
+      await service.confirmReturnFromSync(syncPayload, 'user-1');
+
+      expect(mockLotsService.resolveLotForSync).toHaveBeenCalledWith(
+        mockTx,
+        'lot-sync-1',
+        syncPayload.items[0].lot,
+      );
+    });
+
+    it('creates a CONFIRMED return with items and supplier', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.supplierReturn.findFirst.mockResolvedValue(null);
+        mockSuppliersService.resolveSupplierForSync.mockResolvedValue({ id: 'supplier-sync-1' });
+        mockLotsService.resolveLotForSync.mockResolvedValue({
+          id: 'lot-sync-1',
+          currentStock: 5,
+          version: 1,
+          state: 'ACTIVE',
+        });
+        mockTx.supplierReturn.create.mockResolvedValue({ id: 'new-sr' });
+        return cb(mockTx);
+      });
+
+      const result = await service.confirmReturnFromSync(syncPayload, 'user-1');
+
+      expect(result.id).toBe('new-sr');
+      expect(mockTx.supplierReturn.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            sequentialNumber: 300,
+            supplierId: 'supplier-sync-1',
+            reason: 'Damaged in transit',
+            state: 'CONFIRMED',
+          }),
+        }),
+      );
+    });
+
+    it('throws PurchaseReceptionNotFoundException when referenced reception does not exist', async () => {
+      const payloadWithReception = {
+        ...syncPayload,
+        purchaseReceptionId: 'missing-rec',
+      };
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.supplierReturn.findFirst.mockResolvedValue(null);
+        mockTx.purchaseReception.findUnique.mockResolvedValue(null);
+        return cb(mockTx);
+      });
+
+      await expect(
+        service.confirmReturnFromSync(payloadWithReception, 'user-1'),
+      ).rejects.toThrow(/Purchase reception.*not found/);
     });
   });
 });

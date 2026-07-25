@@ -225,6 +225,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: SalesIcon,
   },
   {
+    screen: "sales-history",
+    labelKey: "navigation.sales_history",
+    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
+    icon: SalesIcon,
+  },
+  {
     screen: "returns",
     labelKey: "navigation.returns",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],

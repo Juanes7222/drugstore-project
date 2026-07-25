@@ -812,17 +812,106 @@ export class PurchaseReceptionsService {
     session: { userId: string; workstationId: string },
     confirmedAt: Date,
   ): Promise<void> {
+    // Fetch supplier data for server-side upsert (offline-first: supplier may
+    // not exist on the server yet)
+    const supplier = await tx.supplier.findUnique({
+      where: { id: reception.supplierId },
+      select: {
+        businessName: true,
+        identificationType: true,
+        identificationNumber: true,
+        contactName: true,
+        phone: true,
+        email: true,
+        address: true,
+        city: true,
+        country: true,
+        paymentTermsDays: true,
+        creditLimit: true,
+      },
+    });
+
+    // Fetch reception items with their lot details for the sync payload
+    const items = await tx.purchaseReceptionItem.findMany({
+      where: { purchaseReceptionId: reception.id },
+      select: {
+        productId: true,
+        receivedQuantity: true,
+        realUnitCost: true,
+        taxSchemeId: true,
+        taxRate: true,
+        discountAmount: true,
+        lotId: true,
+      },
+    });
+
+    // Batch-fetch lots for all items that have a lotId
+    const lotIds = items
+      .map((i) => i.lotId)
+      .filter((id): id is string => id !== null);
+    const lots = lotIds.length > 0
+      ? await tx.lot.findMany({
+          where: { id: { in: lotIds } },
+          select: {
+            id: true,
+            batchNumber: true,
+            expirationDate: true,
+            productId: true,
+            currentStock: true,
+            locationCode: true,
+          },
+        })
+      : [];
+    const lotMap = new Map(lots.map((l) => [l.id, l]));
+
+    const payloadItems = items.map((item) => {
+      const lot = item.lotId ? lotMap.get(item.lotId) : undefined;
+      return {
+        productId: item.productId,
+        receivedQuantity: item.receivedQuantity,
+        realUnitCost: Number(item.realUnitCost),
+        taxSchemeId: item.taxSchemeId,
+        taxRate: Number(item.taxRate),
+        discountAmount: Number(item.discountAmount),
+        lot: lot
+          ? {
+              batchNumber: lot.batchNumber,
+              expirationDate: lot.expirationDate.toISOString(),
+              productId: lot.productId,
+              currentStock: lot.currentStock,
+              locationCode: lot.locationCode ?? undefined,
+            }
+          : undefined,
+      };
+    });
+
     const payload = JSON.stringify({
       operationType: 'PURCHASE_RECEPTION_CONFIRMATION',
       receptionId: reception.id,
       sequentialNumber: reception.sequentialNumber,
       supplierId: reception.supplierId,
+      supplier: supplier
+        ? {
+            businessName: supplier.businessName,
+            identificationType: supplier.identificationType,
+            identificationNumber: supplier.identificationNumber,
+            contactName: supplier.contactName ?? undefined,
+            phone: supplier.phone ?? undefined,
+            email: supplier.email ?? undefined,
+            address: supplier.address ?? undefined,
+            city: supplier.city ?? undefined,
+            country: supplier.country,
+            paymentTermsDays: supplier.paymentTermsDays,
+            creditLimit: Number(supplier.creditLimit),
+          }
+        : undefined,
       purchaseOrderId: reception.purchaseOrderId,
       notes: reception.notes,
       createdById: reception.createdById,
       confirmedByUserId: session.userId,
       workstationId: session.workstationId,
       confirmedAt: confirmedAt.toISOString(),
+      items: payloadItems,
     });
 
     const payloadBytes = new TextEncoder().encode(payload);

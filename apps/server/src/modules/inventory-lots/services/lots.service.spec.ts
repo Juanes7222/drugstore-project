@@ -10,6 +10,7 @@ import { LotCostUnavailableException } from '../exceptions/lot-cost-unavailable.
 import { LotStateChangedSinceSaleException } from '../exceptions/lot-state-changed-since-sale.exception';
 import { LotNotEligibleForReturnException } from '../exceptions/lot-not-eligible-for-return.exception';
 import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
+import type { LotSyncData } from '@/modules/sync/dto/purchase-sync-payloads';
 
 jest.mock('@pharmacy/database', () => {
   const DecimalMock = jest.fn().mockImplementation((v: any) => ({
@@ -401,6 +402,103 @@ describe('LotsService', () => {
       await expect(
         service.receiveStockFromClientReturn({ lotId: 'unknown', quantity: 1, clientReturnId: 'cr-1', tx: prisma as any }),
       ).rejects.toThrow(LotNotFoundException);
+    });
+  });
+
+  describe('resolveLotForSync', () => {
+    const mockTx = {
+      lot: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+      },
+    } as any;
+
+    const lotId = 'lot-sync-1';
+    const syncData: LotSyncData = {
+      batchNumber: 'SYNC-BATCH-001',
+      expirationDate: '2028-12-31T00:00:00.000Z',
+      productId: 'prod-sync-1',
+      locationCode: 'B-02',
+      currentStock: 50,
+    };
+
+    const existingLot = {
+      id: lotId,
+      productId: 'prod-1',
+      batchNumber: 'BATCH-001',
+      expirationDate: new Date('2027-12-31'),
+      entryDate: new Date('2026-01-15'),
+      currentStock: 100,
+      version: 0,
+      state: 'ACTIVE',
+      locationCode: 'A-01',
+      blockedAt: null,
+      blockedByUserId: null,
+      blockReason: null,
+      createdById: 'system',
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('returns existing lot when found by ID', async () => {
+      mockTx.lot.findUnique.mockResolvedValue(existingLot);
+
+      const result = await service.resolveLotForSync(mockTx, lotId, syncData);
+
+      expect(result).toEqual(existingLot);
+      expect(mockTx.lot.findUnique).toHaveBeenCalledWith({ where: { id: lotId } });
+      expect(mockTx.lot.create).not.toHaveBeenCalled();
+    });
+
+    it('creates lot with provided ID and data when not found', async () => {
+      const createdLot = { ...existingLot, id: lotId, currentStock: 50, version: 0, state: 'ACTIVE' };
+      mockTx.lot.findUnique.mockResolvedValue(null);
+      mockTx.lot.create.mockResolvedValue(createdLot);
+
+      const result = await service.resolveLotForSync(mockTx, lotId, syncData);
+
+      expect(result).toEqual(createdLot);
+      expect(mockTx.lot.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          id: lotId,
+          productId: syncData.productId,
+          batchNumber: syncData.batchNumber,
+          currentStock: 50,
+          version: 0,
+          state: 'ACTIVE',
+          locationCode: syncData.locationCode,
+        }),
+      });
+    });
+
+    it('creates lot with currentStock = 0 when data.currentStock is omitted', async () => {
+      const noStockData: LotSyncData = {
+        batchNumber: 'NO-STOCK',
+        expirationDate: '2028-06-30T00:00:00.000Z',
+        productId: 'prod-2',
+      };
+      mockTx.lot.findUnique.mockResolvedValue(null);
+      mockTx.lot.create.mockResolvedValue({ ...existingLot, id: 'new-lot-id', currentStock: 0 });
+
+      await service.resolveLotForSync(mockTx, 'new-lot-id', noStockData);
+
+      expect(mockTx.lot.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ currentStock: 0 }),
+        }),
+      );
+    });
+
+    it('throws LotNotFoundException when not found and no data provided', async () => {
+      mockTx.lot.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.resolveLotForSync(mockTx, 'unknown-lot'),
+      ).rejects.toThrow(LotNotFoundException);
+
+      expect(mockTx.lot.create).not.toHaveBeenCalled();
     });
   });
 

@@ -545,17 +545,48 @@ export class InventoryAdjustmentsService {
       },
     });
 
+    // Batch-fetch lot details for each movement to support server-side upsert
+    const lotIds = movements
+      .map((m) => m.lotId)
+      .filter((id): id is string => id !== null);
+    const lots = lotIds.length > 0
+      ? await tx.lot.findMany({
+          where: { id: { in: lotIds } },
+          select: {
+            id: true,
+            batchNumber: true,
+            expirationDate: true,
+            productId: true,
+            currentStock: true,
+            locationCode: true,
+          },
+        })
+      : [];
+    const lotMap = new Map(lots.map((l) => [l.id, l]));
+
     const payloadObj = {
       userId: session.userId,
       createAdjustmentDto: {
         reason: adjustment.reason,
         notes: adjustment.notes,
-        items: movements.map((m) => ({
-          lotId: m.lotId,
-          movementType: m.movementType,
-          quantity: m.quantity,
-          reason: m.reason ?? undefined,
-        })),
+        items: movements.map((m) => {
+          const lot = lotMap.get(m.lotId);
+          return {
+            lotId: m.lotId,
+            movementType: m.movementType,
+            quantity: m.quantity,
+            reason: m.reason ?? undefined,
+            lot: lot
+              ? {
+                  batchNumber: lot.batchNumber,
+                  expirationDate: lot.expirationDate.toISOString(),
+                  productId: lot.productId,
+                  currentStock: lot.currentStock,
+                  locationCode: lot.locationCode ?? undefined,
+                }
+              : undefined,
+          };
+        }),
       },
       metadata: {
         adjustmentId: adjustment.id,

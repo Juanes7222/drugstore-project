@@ -80,6 +80,7 @@ export type {
   OperationalInvoiceView,
   OperationalNote,
   OperationalContactInfo,
+  OperationalClient,
   OperationalDeliveryInfo,
   LocalAdjustmentSummary,
   ReportView,

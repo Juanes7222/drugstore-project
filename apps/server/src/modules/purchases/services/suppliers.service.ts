@@ -6,6 +6,7 @@ import { CreateSupplierDto } from '../dto/create-supplier.dto';
 import { UpdateSupplierDto } from '../dto/update-supplier.dto';
 import { DuplicateSupplierIdentificationException } from '../exceptions/duplicate-supplier-identification.exception';
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
+import type { SupplierSyncData } from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
 export class SuppliersService {
@@ -80,5 +81,73 @@ export class SuppliersService {
   async remove(id: string): Promise<any> {
     await this.findById(id); // Check if supplier exists
     return this.prisma.supplier.delete({ where: { id } });
+  }
+
+  /**
+   * Resolves a supplier reference during sync processing.
+   *
+   * 1. Looks up the supplier by ID.
+   * 2. If found, returns it.
+   * 3. If not found and `data` is provided, creates the supplier with the
+   *    given ID using the provided fields (offline-first upsert by ID).
+   * 4. If not found and no data, creates a minimal placeholder supplier so
+   *    that legacy sync payloads (enqueued before the enriched format) can
+   *    still succeed. The placeholder uses the supplierId as a human-readable
+   *    marker and can be enriched via the REST API later.
+   *
+   * This ensures existing queued operations eventually resolve instead of
+   * retrying forever.
+   */
+  async resolveSupplierForSync(
+    tx: Prisma.TransactionClient,
+    supplierId: string,
+    data?: SupplierSyncData,
+    userId?: string,
+  ): Promise<{ id: string }> {
+    const existing = await tx.supplier.findUnique({
+      where: { id: supplierId },
+      select: { id: true },
+    });
+    if (existing) {
+      return existing;
+    }
+
+    if (data) {
+      return tx.supplier.create({
+        data: {
+          id: supplierId,
+          businessName: data.businessName,
+          identificationType: data.identificationType as SupplierIdentificationType,
+          identificationNumber: data.identificationNumber,
+          contactName: data.contactName ?? null,
+          phone: data.phone ?? null,
+          email: data.email ?? null,
+          address: data.address ?? null,
+          city: data.city ?? null,
+          country: data.country ?? 'CO',
+          paymentTermsDays: data.paymentTermsDays ?? 0,
+          creditLimit: new Prisma.Decimal(data.creditLimit ?? 0),
+          isActive: true,
+          createdById: userId ?? 'system',
+        },
+        select: { id: true },
+      });
+    }
+
+    // Legacy payload fallback: create a minimal placeholder supplier.
+    // The supplierId is used as the identification suffix to guarantee
+    // uniqueness on the [identificationType, identificationNumber] constraint.
+    const shortId = supplierId.replace(/-/g, '').slice(0, 16);
+    return tx.supplier.create({
+      data: {
+        id: supplierId,
+        businessName: `Proveedor POS (${shortId})`,
+        identificationType: SupplierIdentificationType.NIT,
+        identificationNumber: `SYNC-${shortId}`,
+        isActive: true,
+        createdById: userId ?? 'system',
+      },
+      select: { id: true },
+    });
   }
 }

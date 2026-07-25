@@ -263,7 +263,7 @@ describe('LocalAdjustmentService', () => {
   // Happy path
   // -----------------------------------------------------------------------
 
-  it('applies a PAYMENT_METHOD_CHANGE adjustment', async () => {
+  it('applies a PAYMENT_METHOD_CHANGE adjustment with the flat single-method shape', async () => {
     const auth = createMockAuth('ADMIN');
     const service = createLocalAdjustmentService(prisma as never, auth);
 
@@ -271,18 +271,13 @@ describe('LocalAdjustmentService', () => {
       'inv-1',
       'PAYMENT_METHOD_CHANGE',
       {
-        payments: [
-          {
-            paymentMethodId: 'pm-card',
-            paymentMethodName: 'Tarjeta Débito',
-            amount: '50000.00',
-            category: 'DEBIT_CARD',
-            transactionReference: 'TXN-001',
-            authorizationCode: null,
-            cardBrand: 'VISA',
-            cardLastFour: '1234',
-          },
-        ],
+        paymentMethodId: 'pm-card',
+        paymentMethodName: 'Tarjeta Débito',
+        category: 'DEBIT_CARD',
+        transactionReference: 'TXN-001',
+        authorizationCode: null,
+        cardBrand: 'VISA',
+        cardLastFour: '1234',
       },
       'Cliente cambió método de pago después de salir',
     );
@@ -291,19 +286,38 @@ describe('LocalAdjustmentService', () => {
     expect(result.reason).toBe('Cliente cambió método de pago después de salir');
     expect(result.createdByUserName).toBe('Admin User');
     expect(result.newValue).toEqual({
-      payments: [
-        {
-          paymentMethodId: 'pm-card',
-          paymentMethodName: 'Tarjeta Débito',
-          amount: '50000.00',
-          category: 'DEBIT_CARD',
-          transactionReference: 'TXN-001',
-          authorizationCode: null,
-          cardBrand: 'VISA',
-          cardLastFour: '1234',
-        },
-      ],
+      paymentMethodId: 'pm-card',
+      paymentMethodName: 'Tarjeta Débito',
+      category: 'DEBIT_CARD',
+      transactionReference: 'TXN-001',
+      authorizationCode: null,
+      cardBrand: 'VISA',
+      cardLastFour: '1234',
     });
+  });
+
+  it('does not persist an amount in the PAYMENT_METHOD_CHANGE override', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    const result = await service.applyAdjustment(
+      'inv-1',
+      'PAYMENT_METHOD_CHANGE',
+      {
+        paymentMethodId: 'pm-card',
+        paymentMethodName: 'Tarjeta Débito',
+        category: 'DEBIT_CARD',
+        transactionReference: null,
+        authorizationCode: null,
+        cardBrand: null,
+        cardLastFour: null,
+      },
+      'Cambio de método de pago post-venta autorizado',
+    );
+
+    const stored = result.newValue as Record<string, unknown>;
+    expect(stored).not.toHaveProperty('amount');
+    expect(stored).not.toHaveProperty('payments');
   });
 
   // -----------------------------------------------------------------------
@@ -371,7 +385,7 @@ describe('LocalAdjustmentService', () => {
     const result = await service.applyAdjustment(
       'inv-1',
       'PAYMENT_METHOD_CHANGE',
-      { payments: [{ paymentMethodId: 'pm-card', paymentMethodName: 'Card', amount: '50000.00', category: 'DEBIT_CARD', transactionReference: null, authorizationCode: null, cardBrand: null, cardLastFour: null }] },
+      { paymentMethodId: 'pm-card', paymentMethodName: 'Card', category: 'DEBIT_CARD', transactionReference: null, authorizationCode: null, cardBrand: null, cardLastFour: null },
       'Cambio de método de pago post-venta autorizado',
     );
 
@@ -386,7 +400,7 @@ describe('LocalAdjustmentService', () => {
       service.applyAdjustment(
         'inv-pending',
         'PAYMENT_METHOD_CHANGE',
-        { payments: [] },
+        { paymentMethodId: 'pm-card', paymentMethodName: 'Card', category: 'DEBIT_CARD', transactionReference: null, authorizationCode: null, cardBrand: null, cardLastFour: null },
         'Intento de cambio de pago en contingencia pendiente',
       ),
     ).rejects.toThrow(AdjustmentNotAllowedForStatusException);
@@ -414,7 +428,7 @@ describe('LocalAdjustmentService', () => {
       service.applyAdjustment(
         'inv-rejected',
         'PAYMENT_METHOD_CHANGE',
-        { payments: [] },
+        { paymentMethodId: 'pm-card', paymentMethodName: 'Card', category: 'DEBIT_CARD', transactionReference: null, authorizationCode: null, cardBrand: null, cardLastFour: null },
         'Cambio de pago en factura rechazada no permitido',
       ),
     ).rejects.toThrow(AdjustmentNotAllowedForStatusException);
@@ -448,7 +462,7 @@ describe('LocalAdjustmentService', () => {
     ).rejects.toThrow(AdjustmentNotAllowedForStatusException);
   });
 
-  it('blocks payment method change on TRANSMITTED_REJECTED', async () => {
+  it('blocks payment method change on EXPIRED_CONTINGENCY', async () => {
     const auth = createMockAuth('ADMIN');
     const service = createLocalAdjustmentService(prisma as never, auth);
 
@@ -456,7 +470,7 @@ describe('LocalAdjustmentService', () => {
       service.applyAdjustment(
         'inv-expired',
         'PAYMENT_METHOD_CHANGE',
-        { payments: [] },
+        { paymentMethodId: 'pm-card', paymentMethodName: 'Card', category: 'DEBIT_CARD', transactionReference: null, authorizationCode: null, cardBrand: null, cardLastFour: null },
         'No debe permitir cambio de pago en vencidas',
       ),
     ).rejects.toThrow(AdjustmentNotAllowedForStatusException);
@@ -503,16 +517,13 @@ describe('LocalAdjustmentService', () => {
       'inv-1',
       'PAYMENT_METHOD_CHANGE',
       {
-        payments: [{
-          paymentMethodId: 'pm-card',
-          paymentMethodName: 'Tarjeta Débito',
-          amount: '50000.00',
-          category: 'DEBIT_CARD',
-          transactionReference: null,
-          authorizationCode: null,
-          cardBrand: null,
-          cardLastFour: null,
-        }],
+        paymentMethodId: 'pm-card',
+        paymentMethodName: 'Tarjeta Débito',
+        category: 'DEBIT_CARD',
+        transactionReference: null,
+        authorizationCode: null,
+        cardBrand: null,
+        cardLastFour: null,
       },
       'Cambio a tarjeta por solicitud del cliente',
     );
@@ -542,16 +553,13 @@ describe('LocalAdjustmentService', () => {
       'inv-1',
       'PAYMENT_METHOD_CHANGE',
       {
-        payments: [{
-          paymentMethodId: 'pm-card',
-          paymentMethodName: 'Tarjeta Débito',
-          amount: '50000.00',
-          category: 'DEBIT_CARD',
-          transactionReference: null,
-          authorizationCode: null,
-          cardBrand: null,
-          cardLastFour: null,
-        }],
+        paymentMethodId: 'pm-card',
+        paymentMethodName: 'Tarjeta Débito',
+        category: 'DEBIT_CARD',
+        transactionReference: null,
+        authorizationCode: null,
+        cardBrand: null,
+        cardLastFour: null,
       },
       'Cambio a tarjeta',
     );
@@ -564,16 +572,13 @@ describe('LocalAdjustmentService', () => {
       'inv-1',
       'PAYMENT_METHOD_CHANGE',
       {
-        payments: [{
-          paymentMethodId: 'pm-transfer',
-          paymentMethodName: 'Transferencia',
-          amount: '50000.00',
-          category: 'BANK_TRANSFER',
-          transactionReference: 'TXN-002',
-          authorizationCode: null,
-          cardBrand: null,
-          cardLastFour: null,
-        }],
+        paymentMethodId: 'pm-transfer',
+        paymentMethodName: 'Transferencia',
+        category: 'BANK_TRANSFER',
+        transactionReference: 'TXN-002',
+        authorizationCode: null,
+        cardBrand: null,
+        cardLastFour: null,
       },
       'Cambio a transferencia bancaria',
     );
@@ -620,16 +625,13 @@ describe('LocalAdjustmentService', () => {
       'inv-1',
       'PAYMENT_METHOD_CHANGE',
       {
-        payments: [{
-          paymentMethodId: 'pm-card',
-          paymentMethodName: 'Tarjeta Débito',
-          amount: '50000.00',
-          category: 'DEBIT_CARD',
-          transactionReference: null,
-          authorizationCode: null,
-          cardBrand: null,
-          cardLastFour: null,
-        }],
+        paymentMethodId: 'pm-card',
+        paymentMethodName: 'Tarjeta Débito',
+        category: 'DEBIT_CARD',
+        transactionReference: null,
+        authorizationCode: null,
+        cardBrand: null,
+        cardLastFour: null,
       },
       'Cambio a tarjera débito primera vez',
     );
@@ -639,16 +641,13 @@ describe('LocalAdjustmentService', () => {
       'inv-1',
       'PAYMENT_METHOD_CHANGE',
       {
-        payments: [{
-          paymentMethodId: 'pm-transfer',
-          paymentMethodName: 'Transferencia',
-          amount: '50000.00',
-          category: 'BANK_TRANSFER',
-          transactionReference: 'TXN-003',
-          authorizationCode: null,
-          cardBrand: null,
-          cardLastFour: null,
-        }],
+        paymentMethodId: 'pm-transfer',
+        paymentMethodName: 'Transferencia',
+        category: 'BANK_TRANSFER',
+        transactionReference: 'TXN-003',
+        authorizationCode: null,
+        cardBrand: null,
+        cardLastFour: null,
       },
       'Cambio a transferencia bancaria definitivo',
     );
@@ -657,6 +656,109 @@ describe('LocalAdjustmentService', () => {
     expect(view.operational.payments).toHaveLength(1);
     expect(view.operational.payments[0].paymentMethodId).toBe('pm-transfer');
     expect(view.operational.payments[0].paymentMethodName).toBe('Transferencia');
+  });
+
+  it('PAYMENT_METHOD_CHANGE operational amount equals the original fiscal totalAmount', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    // Use an invoice with a non-trivial fiscal total so we can prove the
+    // operational amount follows the fiscal total, not the override.
+    store.invoices.set('inv-900', makeFakeInvoice({
+      id: 'inv-900',
+      invoiceNumber: 'FE00000900',
+      fullData: {
+        invoiceType: 'ELECTRONIC_INVOICE',
+        invoiceNumber: 'FE00000900',
+        payments: [
+          {
+            paymentMethodId: 'pm-cash',
+            paymentMethodName: 'Efectivo',
+            amount: '1234.56',
+            category: 'CASH',
+            transactionReference: null,
+            authorizationCode: null,
+            cardBrand: null,
+            cardLastFour: null,
+          },
+        ],
+        lineItems: [],
+        taxSummaries: [],
+        subtotal: '1037.45',
+        totalDiscount: '0.00',
+        totalTax: '197.11',
+        totalAmount: '1234.56',
+        changeAmount: '0.00',
+        issuedAt: '2026-07-08T10:00:00.000Z',
+        currency: 'COP',
+        buyer: { name: 'CONSUMIDOR FINAL', email: null, phone: null, address: null },
+        seller: { nit: '', name: '', prefix: 'FE' },
+        contingencyNumber: null,
+        relatedInvoiceNumber: null,
+        workstationCode: 'WS-01',
+        prescriptionNumber: null,
+      },
+    }));
+
+    await service.applyAdjustment(
+      'inv-900',
+      'PAYMENT_METHOD_CHANGE',
+      {
+        paymentMethodId: 'pm-card',
+        paymentMethodName: 'Tarjeta Crédito',
+        category: 'CREDIT_CARD',
+        transactionReference: 'TXN-900',
+        authorizationCode: 'AUTH-900',
+        cardBrand: 'MASTERCARD',
+        cardLastFour: '9876',
+      },
+      'Cambio a tarjeta de crédito por solicitud del cliente',
+    );
+
+    const view = await service.resolveOperationalView('inv-900');
+    expect(view.operational.payments).toHaveLength(1);
+    expect(view.operational.payments[0].amount).toBe('1234.56');
+    // Method/category/reference are all from the override, not the fiscal row
+    expect(view.operational.payments[0].paymentMethodId).toBe('pm-card');
+    expect(view.operational.payments[0].paymentMethodName).toBe('Tarjeta Crédito');
+    expect(view.operational.payments[0].transactionReference).toBe('TXN-900');
+    expect(view.operational.payments[0].cardBrand).toBe('MASTERCARD');
+  });
+
+  it('PAYMENT_METHOD_CHANGE previousValue captures the original payments and totalAmount', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    const result = await service.applyAdjustment(
+      'inv-1',
+      'PAYMENT_METHOD_CHANGE',
+      {
+        paymentMethodId: 'pm-card',
+        paymentMethodName: 'Tarjeta Débito',
+        category: 'DEBIT_CARD',
+        transactionReference: null,
+        authorizationCode: null,
+        cardBrand: null,
+        cardLastFour: null,
+      },
+      'Cambio de método de pago con captura completa del estado anterior',
+    );
+
+    const previous = result.previousValue as {
+      payments: Array<Record<string, unknown>>;
+      totalAmount: string;
+    };
+
+    expect(previous).toBeTruthy();
+    expect(previous.totalAmount).toBe('50000.00');
+    expect(Array.isArray(previous.payments)).toBe(true);
+    expect(previous.payments).toHaveLength(1);
+    expect(previous.payments[0]).toMatchObject({
+      paymentMethodId: 'pm-cash',
+      paymentMethodName: 'Efectivo',
+      amount: '50000.00',
+      category: 'CASH',
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -881,5 +983,111 @@ describe('LocalAdjustmentService', () => {
       'Reversión de nota uno por error en el texto',
     );
     expect(reversal.version).toBe(4);
+  });
+
+  // -----------------------------------------------------------------------
+  // CLIENT_CHANGE
+  // -----------------------------------------------------------------------
+
+  it('applies CLIENT_CHANGE on a valid invoice status', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    const result = await service.applyAdjustment(
+      'inv-1',
+      'CLIENT_CHANGE',
+      {
+        clientId: 'client-2',
+        name: 'Ana Gómez',
+        identificationType: 'CC',
+        identificationNumber: '654321',
+      },
+      'Corrección de cliente asociado a la venta',
+    );
+
+    expect(result.adjustmentType).toBe('CLIENT_CHANGE');
+    expect(result.newValue).toEqual({
+      clientId: 'client-2',
+      name: 'Ana Gómez',
+      identificationType: 'CC',
+      identificationNumber: '654321',
+    });
+  });
+
+  it('rejects CLIENT_CHANGE on CANCELLED invoices', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    await expect(
+      service.applyAdjustment(
+        'inv-cancelled',
+        'CLIENT_CHANGE',
+        { clientId: 'client-2', name: 'Ana Gómez' },
+        'Intento de cambiar cliente en factura anulada',
+      ),
+    ).rejects.toThrow(AdjustmentNotAllowedForStatusException);
+  });
+
+  it('projects CLIENT_CHANGE into the operational view', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    await service.applyAdjustment(
+      'inv-1',
+      'CLIENT_CHANGE',
+      {
+        clientId: 'client-2',
+        name: 'Ana Gómez',
+        identificationType: 'CC',
+        identificationNumber: '654321',
+      },
+      'Corrección de cliente asociado a la venta',
+    );
+
+    const view = await service.resolveOperationalView('inv-1');
+
+    expect(view.operational.client).toEqual({
+      clientId: 'client-2',
+      name: 'Ana Gómez',
+      identificationType: 'CC',
+      identificationNumber: '654321',
+    });
+    expect(view.operational.hasDifferences).toBe(true);
+    // Fiscal buyer remains unchanged.
+    expect(view.fiscal.fullData.buyer).toEqual(
+      expect.objectContaining({ name: 'CONSUMIDOR FINAL' }),
+    );
+  });
+
+  it('reversing CLIENT_CHANGE restores the previous client', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    const originalView = await service.resolveOperationalView('inv-1');
+    const originalClientName = originalView.operational.client?.name;
+
+    const adj = await service.applyAdjustment(
+      'inv-1',
+      'CLIENT_CHANGE',
+      {
+        clientId: 'client-2',
+        name: 'Ana Gómez',
+        identificationType: 'CC',
+        identificationNumber: '654321',
+      },
+      'Corrección de cliente asociado a la venta',
+    );
+
+    let view = await service.resolveOperationalView('inv-1');
+    expect(view.operational.client?.name).toBe('Ana Gómez');
+
+    await service.reverseAdjustment(
+      adj.id,
+      'Reversión de cambio de cliente por error',
+    );
+
+    view = await service.resolveOperationalView('inv-1');
+    expect(view.operational.client?.name).toBe(originalClientName);
+    expect(view.operational.hasDifferences).toBe(false);
   });
 });

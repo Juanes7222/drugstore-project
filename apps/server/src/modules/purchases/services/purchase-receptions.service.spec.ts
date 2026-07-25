@@ -25,7 +25,7 @@ jest.mock('@pharmacy/database', () => {
     Prisma: { Decimal: MockDecimal },
     PurchaseReceptionState: { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', ANNULLED: 'ANNULLED' },
     PurchaseOrderState: { CONFIRMED: 'CONFIRMED', PARTIALLY_RECEIVED: 'PARTIALLY_RECEIVED', FULLY_RECEIVED: 'FULLY_RECEIVED', ANNULLED: 'ANNULLED' },
-    MovementType: { NEGATIVE_ADJUSTMENT: 'NEGATIVE_ADJUSTMENT' },
+    MovementType: { NEGATIVE_ADJUSTMENT: 'NEGATIVE_ADJUSTMENT', PURCHASE_RECEIPT: 'PURCHASE_RECEIPT' },
     LotState: { ACTIVE: 'ACTIVE', EXHAUSTED: 'EXHAUSTED' },
   };
 });
@@ -34,6 +34,7 @@ import { PurchaseReceptionsService } from './purchase-receptions.service';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
+import type { PurchaseReceptionConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 // ── Mock objects ──────────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ function createTxMock() {
     fiscalDocument: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
     invoiceTransmissionAttempt: { create: jest.fn() },
     receptionCreatedEvent: { create: jest.fn() },
+    taxScheme: { findFirst: jest.fn() },
   };
 }
 
@@ -68,12 +70,17 @@ const mockPrisma = {
 
 const mockLotsService = {
   receiveStock: jest.fn(),
+  resolveLotForSync: jest.fn(),
 } as unknown as LotsService;
 
 const mockFiscalDocumentsService = {
   createPendingDocumentForPurchaseReception: jest.fn(),
   enqueueGenerationJob: jest.fn(),
 } as unknown as FiscalDocumentsService;
+
+const mockSuppliersService = {
+  resolveSupplierForSync: jest.fn(),
+};
 
 const UUID = '00000000-0000-4000-8000-000000000001';
 
@@ -84,7 +91,13 @@ describe('PurchaseReceptionsService', () => {
     jest.clearAllMocks();
     // Restore tx mocks by creating fresh ones
     Object.assign(mockTx, createTxMock());
-    service = new PurchaseReceptionsService(mockPrisma, mockLotsService, mockFiscalDocumentsService);
+    mockSuppliersService.resolveSupplierForSync.mockReset();
+    service = new PurchaseReceptionsService(
+      mockPrisma,
+      mockLotsService,
+      mockFiscalDocumentsService,
+      mockSuppliersService as any,
+    );
   });
 
   // ── findAll ─────────────────────────────────────────────────────────
@@ -684,6 +697,170 @@ describe('PurchaseReceptionsService', () => {
       await service.annul('r1', 'user-1');
 
       expect(mockTx.purchaseOrder.update).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // confirmReceptionFromSync
+  // -------------------------------------------------------------------------
+  describe('confirmReceptionFromSync', () => {
+    const syncPayload: PurchaseReceptionConfirmationPayload = {
+      receptionId: 'rec-sync-1',
+      sequentialNumber: 200,
+      supplierId: 'supplier-sync-1',
+      supplier: {
+        businessName: 'Sync Supplier',
+        identificationType: 'NIT',
+        identificationNumber: '900777777-7',
+      },
+      confirmedByUserId: 'user-1',
+      createdById: 'user-1',
+      confirmedAt: '2026-07-25T10:00:00.000Z',
+      items: [
+        {
+          productId: 'prod-1',
+          lotId: 'lot-sync-1',
+          quantity: 25,
+          unitCost: 5000,
+          batchNumber: 'SYNC-BATCH-001',
+          lot: {
+            batchNumber: 'SYNC-BATCH-001',
+            expirationDate: '2028-12-31T00:00:00.000Z',
+            productId: 'prod-1',
+            currentStock: 25,
+          },
+        },
+      ],
+    };
+
+    const syncPayloadNoSupplierData: PurchaseReceptionConfirmationPayload = {
+      ...syncPayload,
+      supplier: undefined,
+    };
+
+    const syncPayloadItemNoLot: PurchaseReceptionConfirmationPayload = {
+      ...syncPayload,
+      items: [
+        {
+          productId: 'prod-1',
+          quantity: 10,
+          unitCost: 5000,
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockTx.purchaseReception.findFirst.mockReset();
+      mockTx.product.findUnique.mockReset();
+      mockTx.purchaseReception.create.mockReset();
+      mockTx.inventoryMovement.create.mockReset();
+      mockLotsService.resolveLotForSync.mockReset();
+      mockSuppliersService.resolveSupplierForSync.mockReset();
+    });
+
+    it('returns existing reception when same sequentialNumber + supplierId exists (idempotent)', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findFirst.mockResolvedValue({
+          id: 'existing-rec',
+          state: 'CONFIRMED',
+        });
+        return cb(mockTx);
+      });
+
+      const result = await service.confirmReceptionFromSync(syncPayload, 'user-1');
+
+      expect(result).toEqual({ id: 'existing-rec', state: 'CONFIRMED' });
+      expect(mockSuppliersService.resolveSupplierForSync).not.toHaveBeenCalled();
+      expect(mockTx.purchaseReception.create).not.toHaveBeenCalled();
+    });
+
+    it('resolves supplier via resolver when supplier does not exist but payload has supplier data', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findFirst.mockResolvedValue(null);
+        mockTx.product.findUnique.mockResolvedValue({ id: 'prod-1' });
+        mockTx.taxScheme.findFirst.mockResolvedValue({ id: UUID, rate: new (require('@pharmacy/database').Prisma.Decimal)(19) });
+        mockLotsService.resolveLotForSync.mockResolvedValue({
+          id: 'lot-sync-1',
+          currentStock: 25,
+          version: 1,
+          state: 'ACTIVE',
+        });
+        mockTx.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' });
+        mockTx.purchaseReception.create.mockResolvedValue({ id: 'new-rec' });
+        return cb(mockTx);
+      });
+
+      await service.confirmReceptionFromSync(syncPayload, 'user-1');
+
+      expect(mockSuppliersService.resolveSupplierForSync).toHaveBeenCalledWith(
+        mockTx,
+        'supplier-sync-1',
+        syncPayload.supplier,
+        'user-1',
+      );
+    });
+
+    it('resolves each lot with lotId via lotsService and records inventory movement', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findFirst.mockResolvedValue(null);
+        mockTx.product.findUnique.mockResolvedValue({ id: 'prod-1' });
+        mockTx.taxScheme.findFirst.mockResolvedValue({ id: UUID, rate: new (require('@pharmacy/database').Prisma.Decimal)(19) });
+        mockLotsService.resolveLotForSync.mockResolvedValue({
+          id: 'lot-sync-1',
+          currentStock: 25,
+          version: 1,
+          state: 'ACTIVE',
+        });
+        mockTx.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' });
+        mockTx.purchaseReception.create.mockResolvedValue({ id: 'new-rec' });
+        return cb(mockTx);
+      });
+
+      await service.confirmReceptionFromSync(syncPayload, 'user-1');
+
+      expect(mockLotsService.resolveLotForSync).toHaveBeenCalledWith(
+        mockTx,
+        'lot-sync-1',
+        syncPayload.items[0].lot,
+      );
+      expect(mockTx.inventoryMovement.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            lotId: 'lot-sync-1',
+            movementType: 'PURCHASE_RECEIPT',
+            quantity: 25,
+            purchaseReceptionId: expect.any(String),
+          }),
+        }),
+      );
+    });
+
+    it('skips lot resolution and movement when item has no lotId', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findFirst.mockResolvedValue(null);
+        mockTx.product.findUnique.mockResolvedValue({ id: 'prod-1' });
+        mockTx.taxScheme.findFirst.mockResolvedValue({ id: UUID, rate: new (require('@pharmacy/database').Prisma.Decimal)(19) });
+        mockTx.purchaseReception.create.mockResolvedValue({ id: 'new-rec' });
+        return cb(mockTx);
+      });
+
+      await service.confirmReceptionFromSync(syncPayloadItemNoLot, 'user-1');
+
+      expect(mockLotsService.resolveLotForSync).not.toHaveBeenCalled();
+      expect(mockTx.inventoryMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('throws ProductNotFoundException when a product does not exist', async () => {
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findFirst.mockResolvedValue(null);
+        mockTx.product.findUnique.mockResolvedValue(null);
+        return cb(mockTx);
+      });
+
+      await expect(
+        service.confirmReceptionFromSync(syncPayload, 'user-1'),
+      ).rejects.toThrow(/Product.*not found/);
     });
   });
 });

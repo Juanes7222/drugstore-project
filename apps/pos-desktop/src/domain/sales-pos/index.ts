@@ -9,6 +9,18 @@ export {
 } from './sales-pos.service';
 
 export {
+  createSalesHistoryService,
+  type SalesHistoryService,
+  type SalesHistoryServiceConfig,
+  type SaleHistoryListItem,
+  type SaleHistoryListResult,
+  type SaleHistoryFilters,
+  type SaleHistoryDetail,
+  type SaleHistoryItem,
+  type SaleHistoryPayment,
+} from './sales-history.service';
+
+export {
   SaleNotInProgressException,
   PrescriptionRequiredNotSupportedException,
   PaymentAmountMismatchException,

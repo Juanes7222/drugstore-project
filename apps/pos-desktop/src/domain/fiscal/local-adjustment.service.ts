@@ -20,7 +20,8 @@
  * (B is reversed, so A's value applies). The audit log shows the full chain.
  */
 
-import type { PrismaClient, InvoiceAdjustmentType, Prisma } from '@pharmacy/database/local';
+import type { PrismaClient, InvoiceAdjustmentType } from '@pharmacy/database/local';
+import { Prisma } from '@pharmacy/database/local';
 import { RoleType } from '@pharmacy/shared-types';
 import type { AuthService } from '../auth/auth.service';
 import type {
@@ -28,14 +29,12 @@ import type {
   AdjustmentRecord,
   AdjustmentHistoryEntry,
   OperationalInvoiceView,
-  OperationalNote,
   OperationalContactInfo,
+  OperationalClient,
   OperationalDeliveryInfo,
   LocalAdjustmentSummary,
-  AdjustmentCsvRow,
 } from './local-adjustment.types';
 import {
-  AdjustmentAuthorizationException,
   AdjustmentInvoiceNotFoundException,
   AdjustmentNotAllowedForStatusException,
   AdjustmentReasonTooShortException,
@@ -52,6 +51,7 @@ const ALLOWED_ADJUSTMENTS_BY_STATUS: Record<string, AdjustmentType[]> = {
   CONTINGENCY_PENDING_TRANSMISSION: [
     'INTERNAL_NOTE',
     'CONTACT_UPDATE',
+    'CLIENT_CHANGE',
     'DELIVERY_INFO',
     'TAG_ADD',
     'TAG_REMOVE',
@@ -62,9 +62,9 @@ const ALLOWED_ADJUSTMENTS_BY_STATUS: Record<string, AdjustmentType[]> = {
   ],
   TRANSMITTED_AUTHORIZED: [
     'PAYMENT_METHOD_CHANGE',
-    'PAYMENT_SPLIT_CHANGE',
     'INTERNAL_NOTE',
     'CONTACT_UPDATE',
+    'CLIENT_CHANGE',
     'DELIVERY_INFO',
     'TAG_ADD',
     'TAG_REMOVE',
@@ -76,6 +76,7 @@ const ALLOWED_ADJUSTMENTS_BY_STATUS: Record<string, AdjustmentType[]> = {
     'TAG_ADD',
     'TAG_REMOVE',
     'CONTACT_UPDATE',
+    'CLIENT_CHANGE',
     // Payment changes blocked — rejected invoice awaits re-issue via nota crédito.
     // DELIVERY_INFO blocked — no point annotating a rejected doc.
     // CUSTOM_FIELD_SET/CLEAR blocked — use nota crédito instead.
@@ -85,7 +86,19 @@ const ALLOWED_ADJUSTMENTS_BY_STATUS: Record<string, AdjustmentType[]> = {
     'TAG_ADD',
     'TAG_REMOVE',
     'CONTACT_UPDATE',
+    'CLIENT_CHANGE',
     // Same restrictions as TRANSMITTED_REJECTED — needs official re-issue.
+  ],
+  // Credit notes are treated as their own document type; they keep the same
+  // status as a regular invoice but allow only non-payment annotations.
+  CREDIT_NOTE: [
+    'INTERNAL_NOTE',
+    'CONTACT_UPDATE',
+    'CLIENT_CHANGE',
+    'TAG_ADD',
+    'TAG_REMOVE',
+    'CUSTOM_FIELD_SET',
+    'CUSTOM_FIELD_CLEAR',
   ],
   CANCELLED: [], // Terminal state — no adjustments allowed.
 };
@@ -99,20 +112,21 @@ const isContingencyCancellation = (invoiceType: string): boolean =>
   invoiceType === 'CONTINGENCY_CANCELLATION';
 
 // ---------------------------------------------------------------------------
-// Payment method overrides — JSON shape for the newValue field
+// Payment method override — JSON shape for the newValue field
+//
+// Amount is deliberately NOT stored here: the operational amount is always
+// the original fiscal total. Allowing amount changes would break DIAN
+// reconciliation, so this only captures the method/category/reference.
 // ---------------------------------------------------------------------------
 
 export interface PaymentOverrideValue {
-  payments: Array<{
-    paymentMethodId: string;
-    paymentMethodName: string;
-    amount: string;
-    category: string;
-    transactionReference: string | null;
-    authorizationCode: string | null;
-    cardBrand: string | null;
-    cardLastFour: string | null;
-  }>;
+  paymentMethodId: string;
+  paymentMethodName: string;
+  category: string;
+  transactionReference: string | null;
+  authorizationCode: string | null;
+  cardBrand: string | null;
+  cardLastFour: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +143,6 @@ export interface LocalAdjustmentService {
    * @param newValue   The new value (varies by type)
    * @param reason     Required (min 10 chars)
    * @returns The created adjustment record
-   * @throws AdjustmentAuthorizationException if not manager/admin
    * @throws AdjustmentInvoiceNotFoundException if invoice not found
    * @throws AdjustmentNotAllowedForStatusException if type blocked for invoice status
    * @throws AdjustmentReasonTooShortException if reason < 10 chars
@@ -299,8 +312,8 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
           createdByUserId: session.userId,
           createdByUserName: session.fullName,
           adjustmentType: type as InvoiceAdjustmentType,
-          previousValue: previousValue != null ? (previousValue as Prisma.InputJsonValue) : null,
-          newValue: newValue != null ? (newValue as Prisma.InputJsonValue) : null,
+          previousValue: previousValue != null ? (previousValue as Prisma.InputJsonValue) : Prisma.DbNull,
+          newValue: newValue != null ? (newValue as Prisma.InputJsonValue) : Prisma.DbNull,
           reason,
           version: nextVersion,
           reversalOfAdjustmentId: null,
@@ -377,8 +390,8 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
           createdByUserId: session.userId,
           createdByUserName: session.fullName,
           adjustmentType: 'REVERSAL' as InvoiceAdjustmentType,
-          previousValue: original.newValue != null ? (original.newValue as Prisma.InputJsonValue) : null,
-          newValue: original.previousValue != null ? (original.previousValue as Prisma.InputJsonValue) : null,
+          previousValue: original.newValue != null ? (original.newValue as Prisma.InputJsonValue) : Prisma.DbNull,
+          newValue: original.previousValue != null ? (original.previousValue as Prisma.InputJsonValue) : Prisma.DbNull,
           reason,
           version: nextVersion,
           reversalOfAdjustmentId: adjustmentId,
@@ -469,7 +482,14 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
     const active = adjustments.filter((a) => !replacedIds.has(a.id));
 
     // Start with fiscal defaults
+    const buyer = (fullData.buyer ?? {}) as Record<string, unknown>;
     const operational: OperationalInvoiceView['operational'] = {
+      client: {
+        clientId: null,
+        name: typeof buyer.name === 'string' ? buyer.name : null,
+        identificationType: typeof buyer.identificationType === 'string' ? buyer.identificationType : null,
+        identificationNumber: typeof buyer.identificationNumber === 'string' ? buyer.identificationNumber : null,
+      },
       payments: [...payments],
       notes: [],
       contactInfo: {
@@ -486,11 +506,25 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
     // Apply each non-reversed adjustment in order
     for (const adj of active) {
       switch (adj.adjustmentType) {
-        case 'PAYMENT_METHOD_CHANGE':
-        case 'PAYMENT_SPLIT_CHANGE': {
+        case 'PAYMENT_METHOD_CHANGE': {
           const override = adj.newValue as PaymentOverrideValue | null;
-          if (override?.payments) {
-            operational.payments = override.payments;
+          if (override) {
+            // Amount is always the original fiscal total — only the method
+            // changes. Replaces the entire payment set with a single entry.
+            const originalTotal = fullData?.totalAmount
+              ?? operational.payments.reduce((sum, p) => sum + Number(p.amount), 0).toString();
+            operational.payments = [
+              {
+                paymentMethodId: override.paymentMethodId,
+                paymentMethodName: override.paymentMethodName,
+                amount: originalTotal,
+                category: override.category,
+                transactionReference: override.transactionReference,
+                authorizationCode: override.authorizationCode,
+                cardBrand: override.cardBrand,
+                cardLastFour: override.cardLastFour,
+              },
+            ];
             operational.hasDifferences = true;
           }
           break;
@@ -515,6 +549,24 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
             if (contact.email !== undefined) operational.contactInfo.email = contact.email;
             if (contact.phone !== undefined) operational.contactInfo.phone = contact.phone;
             if (contact.address !== undefined) operational.contactInfo.address = contact.address;
+            operational.hasDifferences = true;
+          }
+          break;
+        }
+
+        case 'CLIENT_CHANGE': {
+          const client = adj.newValue as Partial<OperationalClient> | null;
+          if (client) {
+            operational.client ??= {
+              clientId: null,
+              name: null,
+              identificationType: null,
+              identificationNumber: null,
+            };
+            if (client.clientId !== undefined) operational.client.clientId = client.clientId;
+            if (client.name !== undefined) operational.client.name = client.name;
+            if (client.identificationType !== undefined) operational.client.identificationType = client.identificationType;
+            if (client.identificationNumber !== undefined) operational.client.identificationNumber = client.identificationNumber;
             operational.hasDifferences = true;
           }
           break;
@@ -735,10 +787,9 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
       return false;
     }
 
-    // Credit notes use the same rules as regular invoices
+    // Credit notes use their own rule set; everything else uses its status rules
     const effectiveType = isCreditNoteType(invoiceType) ? 'CREDIT_NOTE' : status;
-    // Use the status-based rules
-    const allowed = ALLOWED_ADJUSTMENTS_BY_STATUS[status];
+    const allowed = ALLOWED_ADJUSTMENTS_BY_STATUS[effectiveType];
     if (!allowed) return false;
     return allowed.includes(type);
   }
@@ -753,10 +804,10 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
     const fullData = invoice.fullData as Record<string, unknown> | null;
 
     switch (type) {
-      case 'PAYMENT_METHOD_CHANGE':
-      case 'PAYMENT_SPLIT_CHANGE': {
+      case 'PAYMENT_METHOD_CHANGE': {
         const payments = (fullData?.payments ?? []) as Array<Record<string, unknown>>;
-        return { payments };
+        const totalAmount = fullData?.totalAmount;
+        return { payments, totalAmount };
       }
 
       case 'TAG_REMOVE':
@@ -766,6 +817,16 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
 
       case 'CUSTOM_FIELD_CLEAR':
         return null;
+
+      case 'CLIENT_CHANGE': {
+        const buyer = (fullData?.buyer ?? {}) as Record<string, unknown>;
+        return {
+          clientId: null,
+          name: typeof buyer.name === 'string' ? buyer.name : null,
+          identificationType: typeof buyer.identificationType === 'string' ? buyer.identificationType : null,
+          identificationNumber: typeof buyer.identificationNumber === 'string' ? buyer.identificationNumber : null,
+        };
+      }
 
       default:
         return null;

@@ -14,9 +14,9 @@ import type { InvoicePayment, InvoiceFullData, InvoiceStatus, InvoiceType } from
 
 export type AdjustmentType =
   | 'PAYMENT_METHOD_CHANGE'
-  | 'PAYMENT_SPLIT_CHANGE'
   | 'INTERNAL_NOTE'
   | 'CONTACT_UPDATE'
+  | 'CLIENT_CHANGE'
   | 'DELIVERY_INFO'
   | 'TAG_ADD'
   | 'TAG_REMOVE'
@@ -83,6 +83,7 @@ export interface OperationalInvoiceView {
 
   /** The operational projection after applying all non-reversed adjustments */
   operational: {
+    client?: OperationalClient;
     payments: InvoicePayment[];
     notes: OperationalNote[];
     contactInfo: OperationalContactInfo;
@@ -92,6 +93,13 @@ export interface OperationalInvoiceView {
     /** True when the operational view differs from the fiscal view */
     hasDifferences: boolean;
   };
+}
+
+export interface OperationalClient {
+  clientId: string | null;
+  name: string | null;
+  identificationType: string | null;
+  identificationNumber: string | null;
 }
 
 export interface OperationalNote {

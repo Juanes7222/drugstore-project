@@ -76,6 +76,10 @@ export const uiSlice = createSlice({
       state.activeScreen = "fiscal";
     },
 
+    navigateToSalesHistory: (state) => {
+      state.activeScreen = "sales-history";
+    },
+
     navigateToSyncHealth: (state) => {
       state.activeScreen = "sync-health";
     },
@@ -253,6 +257,7 @@ export const {
   navigateToHome,
   navigateToAbout,
   navigateToFiscal,
+  navigateToSalesHistory,
   navigateToLogin,
   navigateToSales,
   navigateToForgotPassword,

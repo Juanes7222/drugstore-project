@@ -8,10 +8,15 @@ import { PurchaseOrderNotDraftException } from '../exceptions/purchase-order-not
 import { PurchaseOrderNotFoundException } from '../exceptions/purchase-order-not-found.exception';
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
+import { SuppliersService } from './suppliers.service';
+import type { PurchaseOrderConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
 export class PurchaseOrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private suppliersService: SuppliersService,
+  ) {}
 
   async findAll(query: QueryPurchaseOrderDto): Promise<any> {
     const where: Prisma.PurchaseOrderWhereInput = {};
@@ -143,18 +148,11 @@ export class PurchaseOrdersService {
    *
    * Idempotent: if a purchase order with the same sequentialNumber +
    * supplierId already exists, the operation is skipped (ALREADY_ACCEPTED).
-   * Validates the supplier and all products exist before creating.
+   * Resolves the supplier (creating inline if needed and data is provided)
+   * and validates all products exist before creating.
    */
   async confirmOrderFromSync(
-    payload: {
-      orderId: string;
-      sequentialNumber: number;
-      supplierId: string;
-      notes?: string;
-      confirmedByUserId: string;
-      confirmedAt: string;
-      items: Array<{ productId: string; requestedQuantity: number; expectedUnitCost: number }>;
-    },
+    payload: PurchaseOrderConfirmationPayload,
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
@@ -167,47 +165,75 @@ export class PurchaseOrdersService {
         return existing;
       }
 
-      const supplier = await tx.supplier.findUnique({ where: { id: payload.supplierId } });
-      if (!supplier) {
-        throw new SupplierNotFoundException(payload.supplierId);
+      // Resolve supplier — create inline if missing and payload carries data
+      await this.suppliersService.resolveSupplierForSync(
+        tx,
+        payload.supplierId,
+        payload.supplier,
+        userId,
+      );
+
+      // Build items data if present; legacy payloads may omit `items`.
+      // When missing, the PO header is created without items so the
+      // sync operation can complete and subsequent receptions can
+      // reference this PO. A note is appended to signal the gap.
+      let itemsData: Array<{
+        id: string;
+        productId: string;
+        requestedQuantity: number;
+        receivedQuantity: number;
+        pendingQuantity: number;
+        expectedUnitCost: Prisma.Decimal;
+      }> = [];
+      let subtotal = new Prisma.Decimal(0);
+
+      if (payload.items && payload.items.length > 0) {
+        itemsData = await Promise.all(
+          payload.items.map(async (item) => {
+            const product = await tx.product.findUnique({ where: { id: item.productId } });
+            if (!product) {
+              throw new ProductNotFoundException(item.productId);
+            }
+            return {
+              id: crypto.randomUUID(),
+              productId: item.productId,
+              requestedQuantity: item.requestedQuantity,
+              receivedQuantity: 0,
+              pendingQuantity: item.requestedQuantity,
+              expectedUnitCost: new Prisma.Decimal(item.expectedUnitCost),
+            };
+          }),
+        );
+
+        subtotal = itemsData.reduce(
+          (sum, item) => sum.plus(new Prisma.Decimal(item.requestedQuantity).times(item.expectedUnitCost)),
+          new Prisma.Decimal(0),
+        );
       }
 
-      const itemsData = await Promise.all(
-        payload.items.map(async (item) => {
-          const product = await tx.product.findUnique({ where: { id: item.productId } });
-          if (!product) {
-            throw new ProductNotFoundException(item.productId);
-          }
-          return {
-            id: crypto.randomUUID(),
-            productId: item.productId,
-            requestedQuantity: item.requestedQuantity,
-            receivedQuantity: 0,
-            pendingQuantity: item.requestedQuantity,
-            expectedUnitCost: new Prisma.Decimal(item.expectedUnitCost),
-          };
-        }),
-      );
+      // Compute notes — append a marker when items were missing from payload
+      let notes = payload.notes ?? null;
+      if (!payload.items || payload.items.length === 0) {
+        const legacyMarker = '[Legacy sync: items metadata unavailable]';
+        notes = notes ? `${notes} ${legacyMarker}` : legacyMarker;
+      }
 
-      const subtotal = itemsData.reduce(
-        (sum, item) => sum.plus(new Prisma.Decimal(item.requestedQuantity).times(item.expectedUnitCost)),
-        new Prisma.Decimal(0),
-      );
-
+      // Use the POS-originated order ID so downstream sync operations
+      // (receptions, returns) can reference this PO by the same ID.
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
-          id: crypto.randomUUID(),
+          id: payload.orderId,
           sequentialNumber: payload.sequentialNumber,
           state: PurchaseOrderState.CONFIRMED,
           supplierId: payload.supplierId,
-          notes: payload.notes,
+          notes,
           subtotal,
           totalTax: new Prisma.Decimal(0),
           totalAmount: subtotal,
           createdById: userId,
           confirmedById: userId,
           confirmedAt: new Date(payload.confirmedAt),
-          items: { create: itemsData },
+          items: itemsData.length > 0 ? { create: itemsData } : undefined,
         },
       });
 

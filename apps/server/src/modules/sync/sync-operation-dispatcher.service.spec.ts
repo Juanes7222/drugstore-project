@@ -364,6 +364,8 @@ describe('SyncOperationDispatcherService', () => {
           ]),
         }),
         'u-1',
+        undefined, // physicalCountId
+        undefined, // syncLotContext
       );
     });
 

@@ -66,6 +66,8 @@ import type { InventoryAdjustmentsService } from '../../domain/inventory-adjustm
 import type { PrescriptionsService } from '../../domain/prescriptions/prescriptions.service';
 import { createCashShiftService, type CashShiftService } from '../../domain/cash-shift/cash-shift.service';
 import type { SalesPosService } from '../../domain/sales-pos/sales-pos.service';
+import { createSalesHistoryService } from '../../domain/sales-pos/sales-history.service';
+import type { SalesHistoryService } from '../../domain/sales-pos/sales-history.service';
 import { useCashShiftStore } from '../../domain/cash-shift/cash-shift.store';
 import { createInventoryLotsService, type InventoryLotsService } from '../../domain/inventory-lots/inventory-lots.service';
 import type { ProductService } from '../../domain/catalog/product.service';
@@ -76,6 +78,7 @@ import type { PurchaseReceptionsService } from '../../domain/purchases/purchase-
 import type { SupplierReturnsService } from '../../domain/purchases/supplier-returns.service';
 import type { BackupService } from '../../domain/backup/backup.service';
 import type { RecoveryLogService } from '../../domain/backup/recovery-log.service';
+import type { LocalAdjustmentService } from '../../domain/fiscal/local-adjustment.service';
 import type { InvoiceService } from '../../domain/fiscal/invoice.service';
 import type { ContingencyService } from '../../domain/fiscal/contingency.service';
 import type { FiscalNumberingService } from '../../domain/fiscal/numbering.service';
@@ -103,6 +106,7 @@ export interface Services {
   prescriptionsService: PrescriptionsService;
   cashShiftService: CashShiftService;
   salesPosService: SalesPosService;
+  salesHistoryService: SalesHistoryService;
   inventoryLotsService: InventoryLotsService;
   productService: ProductService;
   clientsService: ClientsService;
@@ -126,6 +130,7 @@ export interface Services {
   purchaseOrdersService: PurchaseOrdersService;
   purchaseReceptionsService: PurchaseReceptionsService;
   supplierReturnsService: SupplierReturnsService;
+  localAdjustmentService: LocalAdjustmentService;
 }
 
 export type InitState =
@@ -358,6 +363,12 @@ export async function initializeServices(
   // 10b. Create local adjustment service (needed by cash-shift for operational totals)
   const localAdjustmentService = createLocalAdjustmentService(prismaClient, authService);
 
+  // 10c. Create sales history service (depends on local adjustment service)
+  const salesHistoryService = createSalesHistoryService({
+    prisma: prismaClient,
+    adjustmentService: localAdjustmentService,
+  });
+
   // 9d. Create cash-shift service and hydrate the current shift store
   const cashShiftService = createCashShiftService(
     prismaClient,
@@ -393,6 +404,7 @@ export async function initializeServices(
     prescriptionsService: domainServices.prescriptionsService,
     cashShiftService,
     salesPosService: domainServices.salesPosService,
+    salesHistoryService,
     inventoryLotsService,
     productService: domainServices.productService,
     clientsService: domainServices.clientsService,
@@ -416,6 +428,7 @@ export async function initializeServices(
     purchaseOrdersService: domainServices.purchaseOrdersService,
     purchaseReceptionsService: domainServices.purchaseReceptionsService,
     supplierReturnsService: domainServices.supplierReturnsService,
+    localAdjustmentService,
   };
 }
 

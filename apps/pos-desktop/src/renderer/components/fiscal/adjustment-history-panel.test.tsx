@@ -60,12 +60,49 @@ describe("AdjustmentHistoryPanel", () => {
     expect(screen.getByText("Nota interna")).toBeInTheDocument();
   });
 
-  it("shows previous and new values for value changes", () => {
-    render(<AdjustmentHistoryPanel {...defaultProps} />);
+  it("shows previous and new payment method without an amount for PAYMENT_METHOD_CHANGE entries", () => {
+    render(
+      <AdjustmentHistoryPanel
+        adjustments={[
+          createEntry({
+            id: "adj-payment",
+            adjustmentType: "PAYMENT_METHOD_CHANGE",
+            // previousValue captures the original payments and totalAmount
+            previousValue: {
+              payments: [
+                {
+                  paymentMethodId: "pm-cash",
+                  paymentMethodName: "Efectivo",
+                  amount: "50000.00",
+                  category: "CASH",
+                  transactionReference: null,
+                  authorizationCode: null,
+                  cardBrand: null,
+                  cardLastFour: null,
+                },
+              ],
+              totalAmount: "50000.00",
+            },
+            // newValue is a single flat method override (no `amount`, no `payments` array)
+            newValue: {
+              paymentMethodId: "pm-card",
+              paymentMethodName: "Tarjeta Débito",
+              category: "DEBIT_CARD",
+              transactionReference: "TXN-1",
+              authorizationCode: null,
+              cardBrand: "VISA",
+              cardLastFour: "1234",
+            },
+          }),
+        ]}
+      />,
+    );
 
-    // The component shows previousValue with line-through and newValue
-    expect(screen.getByText("Efectivo")).toBeInTheDocument();
-    expect(screen.getByText("Tarjeta")).toBeInTheDocument();
+    // Method names are shown for both sides
+    expect(screen.getByText(/Efectivo/)).toBeInTheDocument();
+    expect(screen.getByText(/Tarjeta D.bito/)).toBeInTheDocument();
+    // Category is appended to the new value
+    expect(screen.getByText(/DEBIT_CARD/)).toBeInTheDocument();
   });
 
   it("shows empty state when there are no adjustments", () => {
@@ -108,5 +145,38 @@ describe("AdjustmentHistoryPanel", () => {
     );
 
     expect(screen.getByText("REVERTIDO")).toBeInTheDocument();
+  });
+
+  it("shows previous and new client for CLIENT_CHANGE entries", () => {
+    render(
+      <AdjustmentHistoryPanel
+        adjustments={[
+          createEntry({
+            id: "adj-client",
+            adjustmentType: "CLIENT_CHANGE",
+            previousValue: {
+              clientId: null,
+              name: "Consumidor Final",
+              identificationType: null,
+              identificationNumber: null,
+            },
+            newValue: {
+              clientId: "client-2",
+              name: "Ana Gómez",
+              identificationType: "CC",
+              identificationNumber: "654321",
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Nombre completo: Consumidor Final/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Nombre completo: Ana Gómez/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Documento: CC 654321/)).toBeInTheDocument();
   });
 });

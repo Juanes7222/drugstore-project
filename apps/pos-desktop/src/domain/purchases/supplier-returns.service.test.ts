@@ -35,8 +35,12 @@ const makeMockPrisma = () => {
     purchaseReceptionItem: {
       findFirst: vi.fn(),
     },
+    supplierReturnItem: {
+      findMany: vi.fn(),
+    },
     lot: {
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       updateMany: vi.fn(),
     },
     supplierReturn: {
@@ -374,6 +378,39 @@ describe("SupplierReturnsService", () => {
       );
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
+      tx.supplier.findUnique.mockResolvedValue({
+        id: "supplier-1",
+        businessName: "Distribuidora Farmacéutica SAS",
+        identificationType: "NIT",
+        identificationNumber: "900123456-7",
+        contactName: null,
+        phone: null,
+        email: null,
+        address: null,
+        city: null,
+        country: "CO",
+        paymentTermsDays: 0,
+        creditLimit: 0,
+      });
+      tx.supplierReturnItem.findMany.mockResolvedValue([
+        {
+          productId: "prod-1",
+          lotId: "lot-1",
+          quantity: 5,
+          unitCost: { toString: () => "25000", toNumber: () => 25000 },
+          totalAmount: { toString: () => "125000", toNumber: () => 125000 },
+        },
+      ]);
+      tx.lot.findMany.mockResolvedValue([
+        {
+          id: "lot-1",
+          batchNumber: "LOT-001",
+          expirationDate: new Date("2027-06-01"),
+          productId: "prod-1",
+          currentStock: 100,
+          locationCode: null,
+        },
+      ]);
 
       const result = await service.confirmReturn("ret-1");
 
@@ -467,6 +504,39 @@ describe("SupplierReturnsService", () => {
       );
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
+      tx.supplier.findUnique.mockResolvedValue({
+        id: "supplier-1",
+        businessName: "Distribuidora Farmacéutica SAS",
+        identificationType: "NIT",
+        identificationNumber: "900123456-7",
+        contactName: null,
+        phone: null,
+        email: null,
+        address: null,
+        city: null,
+        country: "CO",
+        paymentTermsDays: 0,
+        creditLimit: 0,
+      });
+      tx.supplierReturnItem.findMany.mockResolvedValue([
+        {
+          productId: "prod-1",
+          lotId: "lot-1",
+          quantity: 5,
+          unitCost: { toString: () => "25000", toNumber: () => 25000 },
+          totalAmount: { toString: () => "125000", toNumber: () => 125000 },
+        },
+      ]);
+      tx.lot.findMany.mockResolvedValue([
+        {
+          id: "lot-1",
+          batchNumber: "LOT-001",
+          expirationDate: new Date("2027-06-01"),
+          productId: "prod-1",
+          currentStock: 100,
+          locationCode: null,
+        },
+      ]);
 
       await service.confirmReturn("ret-1");
 

@@ -5,6 +5,7 @@ import { PurchaseOrderNotFoundException } from '../exceptions/purchase-order-not
 import { PurchaseOrderNotDraftException } from '../exceptions/purchase-order-not-draft.exception';
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
+import type { PurchaseOrderConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 jest.mock('@pharmacy/database', () => {
   class Decimal {
@@ -73,6 +74,10 @@ describe('PurchaseOrdersService', () => {
     expectedUnitCost: new (jest.requireMock('@pharmacy/database').Prisma.Decimal)(5000),
   };
 
+  const mockSuppliersService = {
+    resolveSupplierForSync: jest.fn(),
+  };
+
   function setupTransactionMock(): void {
     (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
       if (typeof cb === 'function') return cb(prisma);
@@ -82,7 +87,8 @@ describe('PurchaseOrdersService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new PurchaseOrdersService(prisma as any);
+    mockSuppliersService.resolveSupplierForSync.mockReset();
+    service = new PurchaseOrdersService(prisma as any, mockSuppliersService as any);
   });
 
   // -------------------------------------------------------------------------
@@ -342,6 +348,102 @@ describe('PurchaseOrdersService', () => {
       await expect(service.annul('po-1')).rejects.toThrow(
         'Annulment not implemented for this phase.',
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // confirmOrderFromSync
+  // -------------------------------------------------------------------------
+  describe('confirmOrderFromSync', () => {
+    const syncPayload: PurchaseOrderConfirmationPayload = {
+      orderId: 'po-sync-1',
+      sequentialNumber: 100,
+      supplierId: 'supplier-sync-1',
+      supplier: {
+        businessName: 'Sync Supplier',
+        identificationType: 'NIT',
+        identificationNumber: '900888888-8',
+      },
+      notes: 'Sync order',
+      confirmedByUserId: 'user-1',
+      confirmedAt: '2026-07-25T10:00:00.000Z',
+      items: [
+        { productId: 'prod-1', requestedQuantity: 10, expectedUnitCost: 5000 },
+      ],
+    };
+
+    const syncPayloadNoSupplierData: PurchaseOrderConfirmationPayload = {
+      ...syncPayload,
+      supplier: undefined,
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      setupTransactionMock();
+    });
+
+    it('returns existing PO when same sequentialNumber + supplierId already exists (idempotent)', async () => {
+      (prisma.purchaseOrder.findFirst as jest.Mock).mockResolvedValue({
+        id: 'existing-po',
+        state: 'CONFIRMED',
+      });
+
+      const result = await service.confirmOrderFromSync(syncPayload, 'user-1');
+
+      expect(result).toEqual({ id: 'existing-po', state: 'CONFIRMED' });
+      expect(mockSuppliersService.resolveSupplierForSync).not.toHaveBeenCalled();
+      expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
+    });
+
+    it('resolves supplier via resolver when supplier does not exist but payload has supplier data', async () => {
+      (prisma.purchaseOrder.findFirst as jest.Mock).mockResolvedValue(null);
+      mockSuppliersService.resolveSupplierForSync.mockResolvedValue({ id: 'supplier-sync-1' });
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({ id: 'prod-1' });
+      (prisma.purchaseOrder.create as jest.Mock).mockResolvedValue({ id: 'new-po' });
+
+      await service.confirmOrderFromSync(syncPayload, 'user-1');
+
+      expect(mockSuppliersService.resolveSupplierForSync).toHaveBeenCalledWith(
+        prisma,
+        'supplier-sync-1',
+        syncPayload.supplier,
+        'user-1',
+      );
+    });
+
+    it('throws ProductNotFoundException when a product does not exist', async () => {
+      (prisma.purchaseOrder.findFirst as jest.Mock).mockResolvedValue(null);
+      mockSuppliersService.resolveSupplierForSync.mockResolvedValue({ id: 'supplier-sync-1' });
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(
+        service.confirmOrderFromSync(syncPayload, 'user-1'),
+      ).rejects.toThrow(ProductNotFoundException);
+
+      expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
+    });
+
+    it('creates a CONFIRMED purchase order with items and calculated totals', async () => {
+      (prisma.purchaseOrder.findFirst as jest.Mock).mockResolvedValue(null);
+      mockSuppliersService.resolveSupplierForSync.mockResolvedValue({ id: 'supplier-sync-1' });
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue({ id: 'prod-1' });
+      (prisma.purchaseOrder.create as jest.Mock).mockResolvedValue({
+        id: 'new-po',
+        sequentialNumber: 100,
+        state: 'CONFIRMED',
+      });
+
+      const result = await service.confirmOrderFromSync(syncPayload, 'user-1');
+
+      expect(result.id).toBe('new-po');
+      expect(prisma.purchaseOrder.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          sequentialNumber: 100,
+          state: 'CONFIRMED',
+          supplierId: 'supplier-sync-1',
+          confirmedById: 'user-1',
+        }),
+      });
     });
   });
 });

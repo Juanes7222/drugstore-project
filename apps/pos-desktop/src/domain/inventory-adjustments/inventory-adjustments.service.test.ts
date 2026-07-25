@@ -187,9 +187,12 @@ describe("InventoryAdjustmentsService", () => {
       tx.lot.findMany.mockResolvedValue([{
         id: "lot-1",
         productId: "prod-1",
+        batchNumber: "BATCH-001",
+        expirationDate: new Date("2027-06-01"),
         currentStock: 50,
         version: 3,
         state: "ACTIVE",
+        locationCode: "A-12",
       }]);
       tx.lot.updateMany.mockResolvedValue({ count: 1 });
       tx.inventoryMovement.create.mockResolvedValue({});
@@ -264,12 +267,18 @@ describe("InventoryAdjustmentsService", () => {
         id: "adj-1",
         state: "DRAFT",
       });
+      // First call (applyPositiveAdjustment): lot lookup with stock fields
+      // Second call (createSyncQueueEntry): lot lookup with batch/expiry fields
+      // Both use same mock because findMany is called twice with different selects
       tx.lot.findMany.mockResolvedValue([{
         id: "lot-1",
         productId: "prod-1",
+        batchNumber: "BATCH-001",
+        expirationDate: new Date("2027-06-01"),
         currentStock: 50,
         version: 3,
         state: "ACTIVE",
+        locationCode: "A-12",
       }]);
       tx.lot.updateMany.mockResolvedValue({ count: 1 });
       tx.inventoryMovement.create.mockResolvedValue({});
@@ -335,6 +344,14 @@ describe("InventoryAdjustmentsService", () => {
         version: 1,
         state: "ACTIVE",
       });
+      tx.lot.findMany.mockResolvedValue([{
+        id: "lot-1",
+        productId: "prod-1",
+        batchNumber: "BATCH-001",
+        expirationDate: new Date("2027-06-01"),
+        currentStock: 20,
+        locationCode: "A-12",
+      }]);
       tx.lot.updateMany.mockResolvedValue({ count: 1 });
       tx.inventoryMovement.create.mockResolvedValue({});
       tx.inventoryMovement.findMany.mockResolvedValue([{
@@ -392,8 +409,8 @@ describe("InventoryAdjustmentsService", () => {
         id: "adj-1", state: "DRAFT",
       });
       tx.lot.findMany.mockResolvedValue([
-        { id: "lot-1", productId: "prod-1", currentStock: 10, version: 1, state: "ACTIVE", expirationDate: new Date("2025-01-01") },
-        { id: "lot-2", productId: "prod-1", currentStock: 20, version: 2, state: "ACTIVE", expirationDate: new Date("2025-06-01") },
+        { id: "lot-1", productId: "prod-1", batchNumber: "BATCH-001", expirationDate: new Date("2025-01-01"), currentStock: 10, version: 1, state: "ACTIVE", locationCode: "A-12" },
+        { id: "lot-2", productId: "prod-1", batchNumber: "BATCH-002", expirationDate: new Date("2025-06-01"), currentStock: 20, version: 2, state: "ACTIVE", locationCode: "B-07" },
       ]);
       // First updateMany succeeds
       tx.lot.updateMany.mockResolvedValue({ count: 1 });

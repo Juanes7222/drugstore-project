@@ -117,6 +117,10 @@ export const useContingencyService = (): Services['contingencyService'] =>
 export const useFiscalNumberingService = (): Services['fiscalNumberingService'] =>
   useServiceContext().fiscalNumberingService;
 
+/** Convenience hook — returns the LocalAdjustmentService instance. */
+export const useLocalAdjustmentService = (): Services['localAdjustmentService'] =>
+  useServiceContext().localAdjustmentService;
+
 /** Convenience hook — returns the PrinterConfigService instance. */
 export const usePrinterConfigService = (): Services['printerConfigService'] =>
   useServiceContext().printerConfigService;
@@ -160,6 +164,10 @@ export const useClientsService = (): Services['clientsService'] =>
 /** Convenience hook — returns the SalesPosService instance. */
 export const useSalesPosService = (): Services['salesPosService'] =>
   useServiceContext().salesPosService;
+
+/** Convenience hook — returns the SalesHistoryService instance. */
+export const useSalesHistoryService = (): Services['salesHistoryService'] =>
+  useServiceContext().salesHistoryService;
 
 /** Convenience hook — returns the InventoryLotsService instance. */
 export const useInventoryLotsService = (): Services['inventoryLotsService'] =>

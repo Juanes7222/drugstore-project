@@ -7,6 +7,7 @@ export type PosScreen =
   | "fiscal"
   | "home"
   | "offline-sessions"
+  | "sales-history"
   | "login"
   | "sales"
   | "payment"

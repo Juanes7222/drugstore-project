@@ -1,8 +1,9 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient } from '@pharmacy/database';
+import { PrismaClient, Prisma } from '@pharmacy/database';
 import { SuppliersService } from './suppliers.service';
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
 import { DuplicateSupplierIdentificationException } from '../exceptions/duplicate-supplier-identification.exception';
+import type { SupplierSyncData } from '@/modules/sync/dto/purchase-sync-payloads';
 
 jest.mock('@pharmacy/database', () => ({
   PrismaClient: jest.fn(),
@@ -267,6 +268,139 @@ describe('SuppliersService', () => {
 
       await expect(service.remove('unknown')).rejects.toThrow(SupplierNotFoundException);
       expect(prisma.supplier.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // resolveSupplierForSync
+  // -------------------------------------------------------------------------
+  describe('resolveSupplierForSync', () => {
+    const mockTx = {
+      supplier: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+      },
+    } as any;
+
+    const supplierId = 'supplier-sync-1';
+    const syncData: SupplierSyncData = {
+      businessName: 'Sync Supplier',
+      identificationType: 'NIT',
+      identificationNumber: '900999999-9',
+      contactName: 'Sync Contact',
+      phone: '+57 300 999 9999',
+      email: 'sync@supplier.com',
+      address: 'Sync Address 123',
+      city: 'Sync City',
+      country: 'CO',
+      paymentTermsDays: 60,
+      creditLimit: 10_000_000,
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
+    it('returns existing supplier when found by ID', async () => {
+      mockTx.supplier.findUnique.mockResolvedValue({ id: supplierId });
+
+      const result = await service.resolveSupplierForSync(mockTx, supplierId, syncData, 'user-1');
+
+      expect(result).toEqual({ id: supplierId });
+      expect(mockTx.supplier.findUnique).toHaveBeenCalledWith({
+        where: { id: supplierId },
+        select: { id: true },
+      });
+      expect(mockTx.supplier.create).not.toHaveBeenCalled();
+    });
+
+    it('creates supplier with provided ID and data when not found', async () => {
+      const created = { id: supplierId };
+      mockTx.supplier.findUnique.mockResolvedValue(null);
+      mockTx.supplier.create.mockResolvedValue(created);
+
+      const result = await service.resolveSupplierForSync(mockTx, supplierId, syncData, 'user-1');
+
+      expect(result).toEqual(created);
+      expect(mockTx.supplier.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          id: supplierId,
+          businessName: syncData.businessName,
+          identificationType: syncData.identificationType,
+          identificationNumber: syncData.identificationNumber,
+          contactName: syncData.contactName,
+          phone: syncData.phone,
+          email: syncData.email,
+          address: syncData.address,
+          city: syncData.city,
+          country: syncData.country,
+          paymentTermsDays: syncData.paymentTermsDays,
+          isActive: true,
+          createdById: 'user-1',
+        }),
+        select: { id: true },
+      });
+    });
+
+    it('uses "system" as createdById when userId is omitted', async () => {
+      mockTx.supplier.findUnique.mockResolvedValue(null);
+      mockTx.supplier.create.mockResolvedValue({ id: supplierId });
+
+      await service.resolveSupplierForSync(mockTx, supplierId, syncData);
+
+      expect(mockTx.supplier.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ createdById: 'system' }),
+        }),
+      );
+    });
+
+    it('creates a stub supplier when not found and no data provided (legacy payload fallback)', async () => {
+      mockTx.supplier.findUnique.mockResolvedValue(null);
+      mockTx.supplier.create.mockResolvedValue({ id: 'unknown-supplier' });
+
+      const result = await service.resolveSupplierForSync(mockTx, 'unknown-supplier');
+
+      expect(result).toEqual({ id: 'unknown-supplier' });
+      expect(mockTx.supplier.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          id: 'unknown-supplier',
+          identificationType: 'NIT',
+          createdById: 'system',
+        }),
+        select: { id: true },
+      });
+    });
+
+    it('applies default values when optional fields are omitted', async () => {
+      const minimalData: SupplierSyncData = {
+        businessName: 'Minimal Supplier',
+        identificationType: 'CC',
+        identificationNumber: '123456789',
+      };
+      mockTx.supplier.findUnique.mockResolvedValue(null);
+      mockTx.supplier.create.mockResolvedValue({ id: 'new-id' });
+
+      await service.resolveSupplierForSync(mockTx, 'new-id', minimalData, 'user-1');
+
+      expect(mockTx.supplier.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          id: 'new-id',
+          businessName: 'Minimal Supplier',
+          identificationType: 'CC',
+          identificationNumber: '123456789',
+          contactName: null,
+          phone: null,
+          email: null,
+          address: null,
+          city: null,
+          country: 'CO',
+          paymentTermsDays: 0,
+          isActive: true,
+          createdById: 'user-1',
+        }),
+        select: { id: true },
+      });
     });
   });
 });

@@ -21,6 +21,7 @@ import { NavigationSidebar } from "@/components/Navigation/navigation-sidebar";
 import { CashShiftPage } from "@/components/cash-shift/cash-shift.page";
 import { ClientsPage } from "@/components/clients/clients.page";
 import { FiscalPage } from "../domain/fiscal/fiscal.page";
+import { SalesHistoryPage } from "../domain/sales-pos/sales-history.page";
 import { ReturnsPage } from "@/components/returns/returns.page";
 import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inventory-adjustments.page";
 import { InventoryLotsPage } from "@/components/inventory-lots/inventory-lots.page";
@@ -658,6 +659,23 @@ const InnerApp: FC = () => {
                 }}
               >
                 <FiscalPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "sales-history" && (
+              <motion.div
+                key="sales-history"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <SalesHistoryPage />
               </motion.div>
             )}
 

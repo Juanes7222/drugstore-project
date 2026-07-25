@@ -13,8 +13,10 @@ import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-n
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
 import { PurchaseOrderNotFoundException } from '../exceptions/purchase-order-not-found.exception';
 import { PurchaseOrderItemNotFoundException } from '../exceptions/purchase-order-item-not-found.exception';
+import { SuppliersService } from './suppliers.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
+import type { PurchaseReceptionConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
 export class PurchaseReceptionsService {
@@ -22,6 +24,7 @@ export class PurchaseReceptionsService {
     private prisma: PrismaService,
     private lotsService: LotsService,
     private fiscalDocumentsService: FiscalDocumentsService,
+    private suppliersService: SuppliersService,
   ) {}
 
   async findAll(query: QueryPurchaseReceptionDto): Promise<any> {
@@ -238,28 +241,12 @@ export class PurchaseReceptionsService {
    *
    * Idempotent: if a reception with the same sequentialNumber + supplierId
    * already exists, the operation is skipped (ALREADY_ACCEPTED).
-   * Validates the supplier, purchase order (if linked), and all products
-   * exist before creating. Creates lots and updates purchase order state
-   * as part of the confirmation.
+   * Resolves the supplier (creating inline if needed), validates products,
+   * creates Lot records with inventory movements, and links them to
+   * reception items.
    */
   async confirmReceptionFromSync(
-    payload: {
-      receptionId: string;
-      sequentialNumber: number;
-      supplierId: string;
-      purchaseOrderId?: string;
-      notes?: string;
-      confirmedByUserId: string;
-      createdById: string;
-      confirmedAt: string;
-      items: Array<{
-        productId: string;
-        quantity: number;
-        unitCost: number;
-        expirationDate?: string;
-        batchNumber?: string;
-      }>;
-    },
+    payload: PurchaseReceptionConfirmationPayload,
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
@@ -272,10 +259,13 @@ export class PurchaseReceptionsService {
         return existing;
       }
 
-      const supplier = await tx.supplier.findUnique({ where: { id: payload.supplierId } });
-      if (!supplier) {
-        throw new SupplierNotFoundException(payload.supplierId);
-      }
+      // Resolve supplier — create inline if missing and payload carries data
+      await this.suppliersService.resolveSupplierForSync(
+        tx,
+        payload.supplierId,
+        payload.supplier,
+        userId,
+      );
 
       let purchaseOrder = null;
       if (payload.purchaseOrderId) {
@@ -283,16 +273,33 @@ export class PurchaseReceptionsService {
           where: { id: payload.purchaseOrderId },
           include: { items: true },
         });
+
+        // Offline-first: the PO confirmation sync may not have arrived yet.
+        // Create a minimal PO stub so the reception can proceed. The real PO
+        // confirmation operation (when it arrives) will skip via idempotency.
         if (!purchaseOrder) {
-          throw new PurchaseOrderNotFoundException(payload.purchaseOrderId);
+          const nextSeq = await tx.purchaseOrder.aggregate({ _max: { sequentialNumber: true } });
+          const stubSeq = (nextSeq._max.sequentialNumber ?? 0) + 1;
+          purchaseOrder = await tx.purchaseOrder.create({
+            data: {
+              id: payload.purchaseOrderId,
+              sequentialNumber: stubSeq,
+              state: PurchaseOrderState.CONFIRMED,
+              supplierId: payload.supplierId,
+              subtotal: new Prisma.Decimal(0),
+              totalTax: new Prisma.Decimal(0),
+              totalAmount: new Prisma.Decimal(0),
+              createdById: userId,
+              confirmedById: userId,
+              confirmedAt: new Date(payload.confirmedAt),
+              notes: 'Auto-created by reception sync — PO confirmation pending',
+            },
+            include: { items: true },
+          });
         }
       }
 
       // Resolve a default tax scheme for reception items.
-      // The POS payload does not include taxSchemeId; the first active
-      // TaxScheme is used as a reasonable default for sync-initiated
-      // receptions. A refinement pass can make this configurable or
-      // add tax info to the POS payload.
       const defaultTaxScheme = await tx.taxScheme.findFirst({
         where: { isActive: true },
         orderBy: { createdAt: 'asc' },
@@ -301,13 +308,64 @@ export class PurchaseReceptionsService {
       const taxSchemeId = defaultTaxScheme?.id ?? '00000000-0000-0000-0000-000000000000';
       const taxRate = defaultTaxScheme?.rate ?? new Prisma.Decimal(0);
 
-      const itemsData = await Promise.all(
-        payload.items.map(async (item) => {
+      // Use the POS-originated reception ID so downstream sync operations
+      // (returns) can reference this reception by the same ID.
+      const receptionId = payload.receptionId;
+      const itemsData: Array<{
+        id: string;
+        productId: string;
+        receivedQuantity: number;
+        lotNumber: string | null;
+        expirationDate: Date | null;
+        realUnitCost: Prisma.Decimal;
+        taxSchemeId: string;
+        taxRate: Prisma.Decimal;
+        discountAmount: Prisma.Decimal;
+        lotId: string | null;
+      }> = [];
+
+      if (payload.items && payload.items.length > 0) {
+        for (const item of payload.items) {
           const product = await tx.product.findUnique({ where: { id: item.productId } });
           if (!product) {
             throw new ProductNotFoundException(item.productId);
           }
-          return {
+
+          // Create/resolve Lot record when the payload carries a lotId.
+          // The POS knows on which lot each received unit lands; the server
+          // mirrors that so subsequent sync ops (inventory adjustments,
+          // supplier returns) can reference the lot.
+          let resolvedLotId: string | null = null;
+          if (item.lotId) {
+            const resolved = await this.lotsService.resolveLotForSync(
+              tx,
+              item.lotId,
+              item.lot ?? {
+                batchNumber: item.batchNumber ?? 'UNKNOWN',
+                expirationDate: item.expirationDate ?? new Date().toISOString(),
+                productId: item.productId,
+                currentStock: item.quantity,
+              },
+            );
+            resolvedLotId = resolved.id;
+
+            // Record an inventory movement for the receipt
+            await tx.inventoryMovement.create({
+              data: {
+                id: crypto.randomUUID(),
+                lotId: resolvedLotId,
+                movementType: MovementType.PURCHASE_RECEIPT,
+                quantity: item.quantity,
+                previousStock: resolved.currentStock - item.quantity,
+                resultingStock: resolved.currentStock,
+                createdById: 'system',
+                createdAt: new Date(payload.confirmedAt),
+                purchaseReceptionId: receptionId,
+              },
+            });
+          }
+
+          itemsData.push({
             id: crypto.randomUUID(),
             productId: item.productId,
             receivedQuantity: item.quantity,
@@ -317,29 +375,56 @@ export class PurchaseReceptionsService {
             taxSchemeId,
             taxRate,
             discountAmount: new Prisma.Decimal(0),
-          };
-        }),
-      );
+            lotId: resolvedLotId,
+          });
+        }
+      }
 
-      const subtotal = itemsData.reduce(
-        (sum, item) => sum.plus(new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost)),
-        new Prisma.Decimal(0),
-      );
+      const subtotal = itemsData.length > 0
+        ? itemsData.reduce(
+            (sum, item) => sum.plus(new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost)),
+            new Prisma.Decimal(0),
+          )
+        : new Prisma.Decimal(0);
+
+      // Compute notes — append a marker when items were missing from payload
+      let notes = payload.notes ?? null;
+      if (!payload.items || payload.items.length === 0) {
+        const legacyMarker = '[Legacy sync: items metadata unavailable]';
+        notes = notes ? `${notes} ${legacyMarker}` : legacyMarker;
+      }
 
       const reception = await tx.purchaseReception.create({
         data: {
-          id: crypto.randomUUID(),
+          id: receptionId,
           sequentialNumber: payload.sequentialNumber,
           state: PurchaseReceptionState.CONFIRMED,
           supplierId: payload.supplierId,
           purchaseOrderId: payload.purchaseOrderId || null,
-          notes: payload.notes,
+          notes,
           subtotal,
           totalTax: new Prisma.Decimal(0),
           totalAmount: subtotal,
           createdById: userId,
           receivedAt: new Date(payload.confirmedAt),
-          items: { create: itemsData },
+          ...(itemsData.length > 0
+            ? {
+                items: {
+                  create: itemsData.map((item) => ({
+                    id: item.id,
+                    productId: item.productId,
+                    receivedQuantity: item.receivedQuantity,
+                    lotNumber: item.lotNumber,
+                    expirationDate: item.expirationDate,
+                    realUnitCost: item.realUnitCost,
+                    taxSchemeId: item.taxSchemeId,
+                    taxRate: item.taxRate,
+                    discountAmount: item.discountAmount,
+                    ...(item.lotId ? { lotId: item.lotId } : {}),
+                  })),
+                },
+              }
+            : {}),
         },
       });
 

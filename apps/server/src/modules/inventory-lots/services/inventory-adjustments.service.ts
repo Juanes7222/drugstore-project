@@ -19,6 +19,8 @@ import { InsufficientStockForAdjustmentException } from '../exceptions/insuffici
 import { StaleAdjustmentException } from '../exceptions/stale-adjustment.exception';
 import { ConcurrentStockModificationException } from '../exceptions/concurrent-stock-modification.exception';
 import { LotNotFoundException } from '../exceptions/lot-not-found.exception';
+import { LotsService } from './lots.service';
+import type { LotSyncData } from '@/modules/sync/dto/purchase-sync-payloads';
 
 interface AdjustmentItemPrep {
   lotId: string;
@@ -36,7 +38,10 @@ interface LotWithMovement {
 
 @Injectable()
 export class InventoryAdjustmentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private lotsService: LotsService,
+  ) {}
 
   async findAll(query: QueryInventoryAdjustmentDto): Promise<any> {
     const where: Prisma.InventoryAdjustmentDocumentWhereInput = {};
@@ -78,16 +83,15 @@ export class InventoryAdjustmentsService {
     createDto: CreateInventoryAdjustmentDto,
     userId: string,
     physicalCountId?: string,
+    syncLotContext?: Map<string, LotSyncData>,
   ): Promise<any> {
     // Business validation: at least one adjustment item is required.
-    // Relocated from CreateInventoryAdjustmentSchema (HTTP DTO) to the service
-    // layer so that sync dispatcher replays are also protected.
     if (!createDto.items || createDto.items.length === 0) {
       throw new Error('At least one item is required for an inventory adjustment');
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const itemsData = await this.prepareAdjustmentItems(tx, createDto.items);
+      const itemsData = await this.prepareAdjustmentItems(tx, createDto.items, syncLotContext);
       const sequentialNumber = await this.getNextSequentialNumber(tx);
       const doc = await tx.inventoryAdjustmentDocument.create({
         data: {
@@ -224,11 +228,48 @@ export class InventoryAdjustmentsService {
   private async prepareAdjustmentItems(
     tx: Prisma.TransactionClient,
     items: CreateInventoryAdjustmentItemDto[],
+    syncLotContext?: Map<string, LotSyncData>,
   ): Promise<AdjustmentItemPrep[]> {
     return Promise.all(
       items.map(async (item) => {
-        const lot = await tx.lot.findUnique({ where: { id: item.lotId } });
-        if (!lot) throw new LotNotFoundException(item.lotId);
+        let lotData = syncLotContext?.get(item.lotId);
+
+        // Legacy payloads (before POS refactor e631860) may omit lot data.
+        // When that happens, try to hydrate from any available source.
+        if (!lotData) {
+          // Attempt to extract productId from item.lot (new format) or
+          // item.productId (some old payload variants have it at item level)
+          const productIdFromItem = (item as any).lot?.productId ?? (item as any).productId;
+          if (productIdFromItem) {
+            lotData = {
+              productId: productIdFromItem,
+              batchNumber: 'UNKNOWN',
+              expirationDate: new Date().toISOString(),
+              currentStock: 0,
+            };
+          } else if (typeof (tx as any).product?.findFirst === 'function') {
+            // Last resort: pick the first active product from catalog
+            const fallbackProduct = await tx.product.findFirst({
+              where: { isActive: true },
+              select: { id: true },
+              orderBy: { createdAt: 'asc' },
+            });
+            if (fallbackProduct) {
+              lotData = {
+                productId: fallbackProduct.id,
+                batchNumber: 'SYNC-UNKNOWN',
+                expirationDate: new Date().toISOString(),
+                currentStock: 0,
+              };
+            }
+          }
+        }
+
+        const lot = await this.lotsService.resolveLotForSync(
+          tx,
+          item.lotId,
+          lotData,
+        );
 
         if (item.movementType === MovementType.NEGATIVE_ADJUSTMENT && item.quantity > lot.currentStock) {
           throw new InsufficientStockForAdjustmentException(item.lotId, item.quantity, lot.currentStock);

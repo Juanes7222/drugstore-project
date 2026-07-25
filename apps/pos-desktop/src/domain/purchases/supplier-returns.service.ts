@@ -405,16 +405,100 @@ export class SupplierReturnsService {
     },
     session: { userId: string; workstationId: string },
   ): Promise<void> {
+    // Fetch supplier data for server-side upsert (offline-first: supplier may
+    // not exist on the server yet)
+    const supplier = await tx.supplier.findUnique({
+      where: { id: supplierReturn.supplierId },
+      select: {
+        businessName: true,
+        identificationType: true,
+        identificationNumber: true,
+        contactName: true,
+        phone: true,
+        email: true,
+        address: true,
+        city: true,
+        country: true,
+        paymentTermsDays: true,
+        creditLimit: true,
+      },
+    });
+
+    // Fetch return items with lot details for the sync payload
+    const items = await tx.supplierReturnItem.findMany({
+      where: { supplierReturnId: supplierReturn.id },
+      select: {
+        productId: true,
+        lotId: true,
+        quantity: true,
+        unitCost: true,
+        totalAmount: true,
+      },
+    });
+
+    // Batch-fetch lots for all return items
+    const lotIds = items.map((i) => i.lotId);
+    const lots = lotIds.length > 0
+      ? await tx.lot.findMany({
+          where: { id: { in: lotIds } },
+          select: {
+            id: true,
+            batchNumber: true,
+            expirationDate: true,
+            productId: true,
+            currentStock: true,
+            locationCode: true,
+          },
+        })
+      : [];
+    const lotMap = new Map(lots.map((l) => [l.id, l]));
+
+    const payloadItems = items.map((item) => {
+      const lot = lotMap.get(item.lotId);
+      return {
+        productId: item.productId,
+        lotId: item.lotId,
+        quantity: item.quantity,
+        unitCost: Number(item.unitCost),
+        totalAmount: Number(item.totalAmount),
+        lot: lot
+          ? {
+              batchNumber: lot.batchNumber,
+              expirationDate: lot.expirationDate.toISOString(),
+              productId: lot.productId,
+              currentStock: lot.currentStock,
+              locationCode: lot.locationCode ?? undefined,
+            }
+          : undefined,
+      };
+    });
+
     const payload = JSON.stringify({
       operationType: 'SUPPLIER_RETURN_CONFIRMATION',
       returnId: supplierReturn.id,
       sequentialNumber: supplierReturn.sequentialNumber,
       supplierId: supplierReturn.supplierId,
+      supplier: supplier
+        ? {
+            businessName: supplier.businessName,
+            identificationType: supplier.identificationType,
+            identificationNumber: supplier.identificationNumber,
+            contactName: supplier.contactName ?? undefined,
+            phone: supplier.phone ?? undefined,
+            email: supplier.email ?? undefined,
+            address: supplier.address ?? undefined,
+            city: supplier.city ?? undefined,
+            country: supplier.country,
+            paymentTermsDays: supplier.paymentTermsDays,
+            creditLimit: Number(supplier.creditLimit),
+          }
+        : undefined,
       purchaseReceptionId: supplierReturn.purchaseReceptionId,
       reason: supplierReturn.reason,
       createdByUserId: session.userId,
       workstationId: session.workstationId,
       confirmedAt: new Date().toISOString(),
+      items: payloadItems,
     });
 
     const payloadBytes = new TextEncoder().encode(payload);

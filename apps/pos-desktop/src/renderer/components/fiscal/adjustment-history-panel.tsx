@@ -18,9 +18,9 @@ interface AdjustmentHistoryPanelProps {
 
 const ADJUSTMENT_TYPE_COLORS: Record<AdjustmentType, string> = {
   PAYMENT_METHOD_CHANGE: "var(--color-pharma)",
-  PAYMENT_SPLIT_CHANGE: "var(--color-pharma)",
   INTERNAL_NOTE: "var(--color-urgency)",
   CONTACT_UPDATE: "var(--color-sync)",
+  CLIENT_CHANGE: "var(--color-pharma)",
   DELIVERY_INFO: "var(--color-sync)",
   TAG_ADD: "var(--color-pharma)",
   TAG_REMOVE: "#D32F2F",
@@ -33,12 +33,12 @@ const adjustmentTypeLabelKey = (type: AdjustmentType): string => {
   switch (type) {
     case "PAYMENT_METHOD_CHANGE":
       return "fiscal.adjustment_type_payment_method_change";
-    case "PAYMENT_SPLIT_CHANGE":
-      return "fiscal.adjustment_type_payment_split_change";
     case "INTERNAL_NOTE":
       return "fiscal.adjustment_type_internal_note";
     case "CONTACT_UPDATE":
       return "fiscal.adjustment_type_contact_update";
+    case "CLIENT_CHANGE":
+      return "fiscal.adjustment_type_client_change";
     case "DELIVERY_INFO":
       return "fiscal.adjustment_type_delivery_info";
     case "TAG_ADD":
@@ -56,9 +56,51 @@ const adjustmentTypeLabelKey = (type: AdjustmentType): string => {
   }
 };
 
-const formatValue = (value: unknown): string => {
+const formatValue = (value: unknown, t: (key: string) => string): string => {
   if (value === null || value === undefined) return "—";
-  if (typeof value === "object") {
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    // PAYMENT_METHOD_CHANGE — show method + category, never amount
+    if (
+      "paymentMethodName" in obj &&
+      typeof obj.paymentMethodName === "string"
+    ) {
+      const name = obj.paymentMethodName;
+      const category =
+        typeof obj.category === "string" && obj.category
+          ? ` (${obj.category})`
+          : "";
+      return name ? `${name}${category}` : "—";
+    }
+    // CLIENT_CHANGE — show readable client diff
+    if (
+      "clientId" in obj ||
+      "name" in obj ||
+      "identificationType" in obj ||
+      "identificationNumber" in obj
+    ) {
+      const client = obj as {
+        clientId?: string | null;
+        name?: string | null;
+        identificationType?: string | null;
+        identificationNumber?: string | null;
+      };
+      const parts: string[] = [];
+      if (client.name) {
+        parts.push(`${t("clients.full_name")}: ${client.name}`);
+      }
+      if (client.identificationType && client.identificationNumber) {
+        parts.push(
+          `${t("clients.document")}: ${client.identificationType} ${client.identificationNumber}`,
+        );
+      }
+      if (client.clientId) {
+        parts.push(
+          `${t("salesHistory.adjustment.client_id_label")}: ${client.clientId}`,
+        );
+      }
+      return parts.length > 0 ? parts.join(" · ") : "—";
+    }
     try {
       return JSON.stringify(value, null, 1);
     } catch {
@@ -205,13 +247,13 @@ export const AdjustmentHistoryPanel: FC<AdjustmentHistoryPanelProps> = ({
                         <div className="mt-1 flex items-start gap-2 text-caption font-data" style={{ color: "color-mix(in srgb, var(--color-ink) 65%, transparent)" }}>
                           {entry.previousValue !== null && (
                             <>
-                              <span className="line-through">{formatValue(entry.previousValue)}</span>
+                              <span className="line-through">{formatValue(entry.previousValue, t)}</span>
                               <span aria-hidden="true">→</span>
                             </>
                           )}
                           {entry.newValue !== null && (
                             <span style={{ color: "var(--color-ink)" }}>
-                              {formatValue(entry.newValue)}
+                              {formatValue(entry.newValue, t)}
                             </span>
                           )}
                         </div>

@@ -43,6 +43,7 @@ const makeMockPrisma = () => {
     },
     purchaseReceptionItem: {
       update: vi.fn(),
+      findMany: vi.fn(),
     },
     purchaseOrder: {
       findUnique: vi.fn(),
@@ -54,11 +55,22 @@ const makeMockPrisma = () => {
       findMany: vi.fn(),
       update: vi.fn(),
     },
+    product: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      update: vi.fn(),
+    },
+    productCostHistory: {
+      create: vi.fn(),
+      update: vi.fn(),
+    },
     lot: {
       findFirst: vi.fn(),
       findUnique: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
       updateMany: vi.fn(),
+      aggregate: vi.fn(),
     },
     inventoryMovement: {
       create: vi.fn(),
@@ -453,6 +465,46 @@ describe("PurchaseReceptionsService", () => {
       );
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
+      tx.product.findUnique.mockResolvedValue({
+        currentCostId: null,
+        costHistories: [],
+      });
+      tx.lot.aggregate.mockResolvedValue({ _sum: { currentStock: 0 } });
+      tx.supplier.findUnique.mockResolvedValue({
+        id: "supplier-1",
+        businessName: "Distribuidora Farmacéutica SAS",
+        identificationType: "NIT",
+        identificationNumber: "900123456-7",
+        contactName: null,
+        phone: null,
+        email: null,
+        address: null,
+        city: null,
+        country: "CO",
+        paymentTermsDays: 0,
+        creditLimit: 0,
+      });
+      tx.purchaseReceptionItem.findMany.mockResolvedValue([
+        {
+          productId: "prod-1",
+          receivedQuantity: 10,
+          realUnitCost: { toString: () => "25000", toNumber: () => 25000 },
+          taxSchemeId: "tax-iva",
+          taxRate: { toString: () => "19", toNumber: () => 19 },
+          discountAmount: { toString: () => "0", toNumber: () => 0 },
+          lotId: "lot-1",
+        },
+      ]);
+      tx.lot.findMany.mockResolvedValue([
+        {
+          id: "lot-1",
+          batchNumber: "LOT-001",
+          expirationDate: new Date("2027-06-01"),
+          productId: "prod-1",
+          currentStock: 10,
+          locationCode: null,
+        },
+      ]);
 
       const result = await service.confirmReception("rec-1");
 
@@ -504,6 +556,11 @@ describe("PurchaseReceptionsService", () => {
       );
       tx.lot.findFirst.mockResolvedValue(makeLotRecord({ id: "lot-1" }));
       tx.lot.updateMany.mockResolvedValue({ count: 0 });
+      tx.product.findUnique.mockResolvedValue({
+        currentCostId: null,
+        costHistories: [],
+      });
+      tx.lot.aggregate.mockResolvedValue({ _sum: { currentStock: 0 } });
 
       await expect(service.confirmReception("rec-1")).rejects.toThrow(
         ConcurrentStockModificationException,
@@ -536,6 +593,46 @@ describe("PurchaseReceptionsService", () => {
       );
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
+      tx.product.findUnique.mockResolvedValue({
+        currentCostId: null,
+        costHistories: [],
+      });
+      tx.lot.aggregate.mockResolvedValue({ _sum: { currentStock: 0 } });
+      tx.supplier.findUnique.mockResolvedValue({
+        id: "supplier-1",
+        businessName: "Distribuidora Farmacéutica SAS",
+        identificationType: "NIT",
+        identificationNumber: "900123456-7",
+        contactName: null,
+        phone: null,
+        email: null,
+        address: null,
+        city: null,
+        country: "CO",
+        paymentTermsDays: 0,
+        creditLimit: 0,
+      });
+      tx.purchaseReceptionItem.findMany.mockResolvedValue([
+        {
+          productId: "prod-1",
+          receivedQuantity: 10,
+          realUnitCost: { toString: () => "25000", toNumber: () => 25000 },
+          taxSchemeId: "tax-iva",
+          taxRate: { toString: () => "19", toNumber: () => 19 },
+          discountAmount: { toString: () => "0", toNumber: () => 0 },
+          lotId: "lot-1",
+        },
+      ]);
+      tx.lot.findMany.mockResolvedValue([
+        {
+          id: "lot-1",
+          batchNumber: "LOT-001",
+          expirationDate: new Date("2027-06-01"),
+          productId: "prod-1",
+          currentStock: 10,
+          locationCode: null,
+        },
+      ]);
 
       await service.confirmReception("rec-1");
 

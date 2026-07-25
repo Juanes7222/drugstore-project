@@ -708,6 +708,71 @@ Three distinct empty states, each with an illustrated icon circle:
 - Table action buttons have `aria-label` + `title`.
 - Row hover uses `whileHover` from `motion` for GPU‑accelerated
   background color change (no JS‑driven hover).
-- All animations respect `prefers-reduced-motion` via `useReducedMotion()`.<｜end▁of▁thinking｜>
+- All animations respect `prefers-reduced-motion` via `useReducedMotion()`.
 
-<｜｜DSML｜｜parameter name="filePath" string="true">C:\Users\juanb\Documents\GitHub\drugstore-project\apps\pos-desktop\src\renderer\design-system.md
+---
+
+## Sales History (added 2026-07-24)
+
+A manager-only read-only view of confirmed sales. Each row is a local sale tied
+(permanently) to its DIAN fiscal invoice, with a secondary operational layer
+that can override the client, contact info, payments, delivery notes, tags, and
+custom fields without changing what DIAN received.
+
+### Layout
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Historial de ventas                       [↻ Refrescar]           │
+│  Ventas confirmadas con factura DIAN y vista operativa               │
+│  [Buscar venta, cliente o factura...] [Desde ▼] [Hasta ▼] [✕]     │
+│                                                                     │
+│  Mostrando 23 de 50                                                │
+│  ┌────────────────────────────────────────────────────────────────┐│
+│  │ Venta │ Fecha     │ Cliente     │ Total │ Factura │ Estado │ …││
+│  │ #1245 │ 23/07/26  │ Juan Pérez  │ $45.600 │ FE-123 │ Autorizado ││
+│  │ #1244 │ 23/07/26  │ Consumid... │ $12.300 │ FE-122 │ Autorizado ││
+│  └────────────────────────────────────────────────────────────────┘│
+│  [Cargar más]                                                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Detail side panel
+
+Two tabs: **Fiscal (DIAN)** (read-only) and **Operativa (droguería)** (editable
+annotation layer). The fiscal tab shows the invoice number, CUFE, status, buyer,
+seller, line items, and totals. The operational tab shows the current
+operational client, contact info, payments, delivery info, notes, tags, and
+custom fields, plus a button to create a new adjustment.
+
+### Design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Split fiscal vs. operational** | A Colombian drugstore must be able to prove to DIAN exactly what was invoiced while still correcting the local operational record (e.g., a client change that does not affect the fiscal document). |
+| **Ambient difference indicator** | The operational tab shows a small amber dot when an override differs from the fiscal view — the same color language as near-expiry alerts. |
+| **Tabular figures everywhere** | Totals, prices, quantities, and CUFE numbers use JetBrains Mono with `tabular-nums` so columns align. |
+| **No inline editing** | All changes go through the multi-step adjustment modal so the manager must provide a reason and confirm the diff before the audit trail is written. |
+
+### Client-change adjustment
+
+The `CLIENT_CHANGE` editor offers a searchable client list populated from the
+local client catalog. Selecting a client fills the name, ID type, and ID number
+fields. The manager can still edit the fields manually, and an optional client
+ID links the sale to a specific client record without altering the DIAN buyer.
+
+### Accessibility
+
+- Sales table uses semantic `<table>` with `<th scope="col">`.
+- Each row is clickable with a dedicated "View" button for keyboard users.
+- Date inputs and the search field have `aria-label`.
+- The fiscal/operational tabs use `role="tablist"` / `role="tab"` / `aria-selected`.
+- Empty state includes an icon, explanation, and a clear-filters action.
+
+### Motion
+
+- Initial load: skeleton rows only; no entrance animation.
+- List refresh: spinner inside the refresh button.
+- Detail panel appears instantly when a row is selected.
+- No full-screen motion on the high-throughput list — the manager is scanning
+  rows, not watching a transition.

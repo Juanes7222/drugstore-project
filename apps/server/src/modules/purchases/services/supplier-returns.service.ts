@@ -12,12 +12,15 @@ import { SupplierReturnLotCostUnavailableException } from '../exceptions/supplie
 import { SupplierReturnNotDraftException } from '../exceptions/supplier-return-not-draft.exception';
 import { SupplierReturnCannotBeAnnulledException } from '../exceptions/supplier-return-cannot-be-annulled.exception';
 import { LotNotFoundException } from '@/modules/inventory-lots/exceptions/lot-not-found.exception';
+import { SuppliersService } from './suppliers.service';
+import type { SupplierReturnConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
 export class SupplierReturnsService {
   constructor(
     private prisma: PrismaService,
     private lotsService: LotsService,
+    private suppliersService: SuppliersService,
   ) {}
 
   async findAll(query: QuerySupplierReturnDto): Promise<any> {
@@ -166,27 +169,11 @@ export class SupplierReturnsService {
    *
    * Idempotent: if a return with the same sequentialNumber + supplierId
    * already exists, the operation is skipped (ALREADY_ACCEPTED).
-   * Validates the supplier, purchase reception (if linked), and all lots
-   * exist before creating. Consumes stock from lots as part of
-   * confirmation.
+   * Resolves the supplier (creating inline if needed) and lots (creating
+   * inline if data provided), then consumes stock as part of confirmation.
    */
   async confirmReturnFromSync(
-    payload: {
-      returnId: string;
-      sequentialNumber: number;
-      supplierId: string;
-      purchaseReceptionId?: string;
-      reason?: string;
-      createdByUserId: string;
-      confirmedAt: string;
-      items: Array<{
-        productId: string;
-        lotId: string;
-        quantity: number;
-        unitCost: number;
-        reason?: string;
-      }>;
-    },
+    payload: SupplierReturnConfirmationPayload,
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
@@ -199,10 +186,13 @@ export class SupplierReturnsService {
         return existing;
       }
 
-      const supplier = await tx.supplier.findUnique({ where: { id: payload.supplierId } });
-      if (!supplier) {
-        throw new SupplierNotFoundException(payload.supplierId);
-      }
+      // Resolve supplier — create inline if missing and payload carries data
+      await this.suppliersService.resolveSupplierForSync(
+        tx,
+        payload.supplierId,
+        payload.supplier,
+        userId,
+      );
 
       if (payload.purchaseReceptionId) {
         const reception = await tx.purchaseReception.findUnique({
@@ -222,36 +212,49 @@ export class SupplierReturnsService {
         totalAmount: Prisma.Decimal;
       }> = [];
 
-      for (const item of payload.items) {
-        const lot = await tx.lot.findUnique({ where: { id: item.lotId } });
-        if (!lot) {
-          throw new LotNotFoundException(item.lotId);
-        }
+      if (payload.items && payload.items.length > 0) {
+        for (const item of payload.items) {
+          // Resolve lot — create inline if missing and payload carries data
+          const lot = await this.lotsService.resolveLotForSync(
+            tx,
+            item.lotId,
+            item.lot,
+          );
 
-        itemsData.push({
-          id: crypto.randomUUID(),
-          productId: item.productId,
-          lotId: item.lotId,
-          quantity: item.quantity,
-          unitCost: new Prisma.Decimal(item.unitCost),
-          totalAmount: new Prisma.Decimal(item.quantity).times(item.unitCost),
-        });
+          itemsData.push({
+            id: crypto.randomUUID(),
+            productId: item.productId,
+            lotId: item.lotId,
+            quantity: item.quantity,
+            unitCost: new Prisma.Decimal(item.unitCost),
+            totalAmount: new Prisma.Decimal(item.quantity).times(item.unitCost),
+          });
+        }
       }
 
       const subtotal = itemsData.reduce((sum, it) => sum.plus(it.totalAmount), new Prisma.Decimal(0));
 
+      // Compute notes — append a marker when items were missing from payload
+      let notes = payload.reason ?? null;
+      if (!payload.items || payload.items.length === 0) {
+        const legacyMarker = '[Legacy sync: items metadata unavailable]';
+        notes = notes ? `${notes} ${legacyMarker}` : legacyMarker;
+      }
+
+      // Use the POS-originated return ID so the server-side record matches
+      // the ID the POS references across sync operations.
       return tx.supplierReturn.create({
         data: {
-          id: crypto.randomUUID(),
+          id: payload.returnId,
           sequentialNumber: payload.sequentialNumber,
           supplierId: payload.supplierId,
           purchaseReceptionId: payload.purchaseReceptionId || null,
-          reason: payload.reason,
+          reason: notes,
           subtotal,
           totalAmount: subtotal,
           state: PurchaseReturnState.CONFIRMED,
           createdById: userId,
-          items: { create: itemsData },
+          ...(itemsData.length > 0 ? { items: { create: itemsData } } : {}),
         },
         include: { items: true, supplier: true },
       });

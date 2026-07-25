@@ -19,6 +19,7 @@ import { LotNotFoundException } from '../exceptions/lot-not-found.exception';
 import { LotStateChangedSinceSaleException } from '../exceptions/lot-state-changed-since-sale.exception';
 import { LotCostUnavailableException } from '../exceptions/lot-cost-unavailable.exception';
 import { LotNotEligibleForReturnException } from '../exceptions/lot-not-eligible-for-return.exception';
+import type { LotSyncData } from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
 export class LotsService {
@@ -261,6 +262,49 @@ export class LotsService {
       createdById: 'system',
       supplierReturnId,
     });
+  }
+
+  /**
+   * Resolves a lot reference during sync processing.
+   *
+   * 1. Looks up the lot by ID.
+   * 2. If found, returns it.
+   * 3. If not found and `data` is provided, creates the lot with the given ID
+   *    (offline-first upsert by ID). The `createdById` is set to 'system'
+   *    since this is a sync replay.
+   * 4. If not found and no data, throws LotNotFoundException (legacy
+   *    backward-compatible behavior).
+   */
+  async resolveLotForSync(
+    tx: Prisma.TransactionClient,
+    lotId: string,
+    data?: LotSyncData,
+  ): Promise<{ id: string; currentStock: number; version: number; state: LotState }> {
+    const existing = await tx.lot.findUnique({ where: { id: lotId } });
+    if (existing) {
+      return existing;
+    }
+
+    if (!data) {
+      throw new LotNotFoundException(lotId);
+    }
+
+    const entryStock = data.currentStock ?? 0;
+    const created = await tx.lot.create({
+      data: {
+        id: lotId,
+        productId: data.productId,
+        batchNumber: data.batchNumber,
+        expirationDate: new Date(data.expirationDate),
+        entryDate: new Date(),
+        currentStock: entryStock,
+        version: 0,
+        state: LotState.ACTIVE,
+        locationCode: data.locationCode ?? null,
+      },
+    });
+
+    return created;
   }
 
   async receiveStockFromClientReturn(params: ReceiveStockFromClientReturnParams): Promise<void> {

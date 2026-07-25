@@ -21,6 +21,13 @@ import type { InvoicePayment } from "../../../domain/fiscal/fiscal-types";
 // Props
 // ---------------------------------------------------------------------------
 
+export interface ClientOption {
+  id: string;
+  name: string;
+  identificationType: string;
+  identificationNumber: string;
+}
+
 interface AdjustmentCreationModalProps {
   visible: boolean;
   invoiceId: string;
@@ -29,6 +36,8 @@ interface AdjustmentCreationModalProps {
   allowedTypes: AdjustmentType[];
   loading: boolean;
   error: string | null;
+  /** Optional client catalog for the CLIENT_CHANGE editor. */
+  clients?: ClientOption[];
   onSubmit: (
     type: AdjustmentType,
     newValue: unknown,
@@ -49,9 +58,9 @@ type ModalStep = "select-type" | "edit" | "confirm";
 
 const ADJUSTMENT_TYPE_LABEL_KEY: Record<AdjustmentType, string> = {
   PAYMENT_METHOD_CHANGE: "fiscal.adjustment_type_payment_method_change",
-  PAYMENT_SPLIT_CHANGE: "fiscal.adjustment_type_payment_split_change",
   INTERNAL_NOTE: "fiscal.adjustment_type_internal_note",
   CONTACT_UPDATE: "fiscal.adjustment_type_contact_update",
+  CLIENT_CHANGE: "fiscal.adjustment_type_client_change",
   DELIVERY_INFO: "fiscal.adjustment_type_delivery_info",
   TAG_ADD: "fiscal.adjustment_type_tag_add",
   TAG_REMOVE: "fiscal.adjustment_type_tag_remove",
@@ -73,11 +82,21 @@ function getInitialValue(
   const op = view?.operational;
 
   switch (type) {
-    case "PAYMENT_METHOD_CHANGE":
-    case "PAYMENT_SPLIT_CHANGE":
+    case "PAYMENT_METHOD_CHANGE": {
+      // Single-method override. Amount is locked to the original fiscal total
+      // and never carried in the override payload — it is sourced from the
+      // fiscal invoice at apply time to keep DIAN reconciliation intact.
+      const current = op?.payments?.[0];
       return {
-        payments: op?.payments ?? [],
+        paymentMethodId: current?.paymentMethodId ?? "",
+        paymentMethodName: current?.paymentMethodName ?? "",
+        category: current?.category ?? "",
+        transactionReference: current?.transactionReference ?? null,
+        authorizationCode: current?.authorizationCode ?? null,
+        cardBrand: current?.cardBrand ?? null,
+        cardLastFour: current?.cardLastFour ?? null,
       };
+    }
     case "INTERNAL_NOTE":
       return "";
     case "CONTACT_UPDATE":
@@ -85,6 +104,13 @@ function getInitialValue(
         email: op?.contactInfo.email ?? "",
         phone: op?.contactInfo.phone ?? "",
         address: op?.contactInfo.address ?? "",
+      };
+    case "CLIENT_CHANGE":
+      return {
+        clientId: op?.client?.clientId ?? "",
+        name: op?.client?.name ?? "",
+        identificationType: op?.client?.identificationType ?? "",
+        identificationNumber: op?.client?.identificationNumber ?? "",
       };
     case "DELIVERY_INFO":
       return {
@@ -114,19 +140,23 @@ function getInitialValue(
 function getBeforeValue(
   type: AdjustmentType,
   view: OperationalInvoiceView | null,
+  t?: (key: string) => string,
 ): string {
   const op = view?.operational;
   if (!op) return "—";
 
   switch (type) {
-    case "PAYMENT_METHOD_CHANGE":
-    case "PAYMENT_SPLIT_CHANGE":
-      return op.payments
-        .map(
-          (p: InvoicePayment) =>
-            `${p.paymentMethodName}: $${Number(p.amount).toLocaleString("es-CO", { minimumFractionDigits: 2 })}`,
+    case "PAYMENT_METHOD_CHANGE": {
+      const first = op.payments[0];
+      if (!first) return "—";
+      const total = op.payments
+        .reduce(
+          (acc: number, p: InvoicePayment) => acc + Number(p.amount),
+          0,
         )
-        .join("\n");
+        .toLocaleString("es-CO", { minimumFractionDigits: 2 });
+      return `${first.paymentMethodName} — $${total}`;
+    }
     case "INTERNAL_NOTE":
       return "—";
     case "CONTACT_UPDATE": {
@@ -134,6 +164,24 @@ function getBeforeValue(
       if (op.contactInfo.email) parts.push(`Email: ${op.contactInfo.email}`);
       if (op.contactInfo.phone) parts.push(`Tel: ${op.contactInfo.phone}`);
       if (op.contactInfo.address) parts.push(`Dir: ${op.contactInfo.address}`);
+      return parts.length > 0 ? parts.join("\n") : "—";
+    }
+    case "CLIENT_CHANGE": {
+      const client = op.client;
+      const parts: string[] = [];
+      if (client?.name) {
+        parts.push(`${t?.("clients.full_name") ?? "Nombre"}: ${client.name}`);
+      }
+      if (client?.identificationType && client?.identificationNumber) {
+        parts.push(
+          `${t?.("clients.document") ?? "Documento"}: ${client.identificationType} ${client.identificationNumber}`,
+        );
+      }
+      if (client?.clientId) {
+        parts.push(
+          `${t?.("salesHistory.adjustment.client_id_label") ?? "ID cliente"}: ${client.clientId}`,
+        );
+      }
       return parts.length > 0 ? parts.join("\n") : "—";
     }
     case "DELIVERY_INFO": {
@@ -168,18 +216,50 @@ function getBeforeValue(
   }
 }
 
-function formatNewValueDisplay(value: unknown): string {
+function formatNewValueDisplay(value: unknown, t?: (key: string) => string): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value || "—";
   if (typeof value === "object" && !Array.isArray(value)) {
     const obj = value as Record<string, unknown>;
-    if ("payments" in obj && Array.isArray(obj.payments)) {
-      return (obj.payments as InvoicePayment[])
-        .map(
-          (p) =>
-            `${p.paymentMethodName}: $${Number(p.amount).toLocaleString("es-CO", { minimumFractionDigits: 2 })}`,
-        )
-        .join("\n");
+    if (
+      "paymentMethodName" in obj &&
+      typeof obj.paymentMethodName === "string"
+    ) {
+      const name = obj.paymentMethodName;
+      const category =
+        typeof obj.category === "string" && obj.category
+          ? ` (${obj.category})`
+          : "";
+      return name ? `${name}${category}` : "—";
+    }
+    // Client change: present human-readable diff
+    if (
+      "clientId" in obj ||
+      "name" in obj ||
+      "identificationType" in obj ||
+      "identificationNumber" in obj
+    ) {
+      const client = obj as {
+        clientId?: string;
+        name?: string;
+        identificationType?: string;
+        identificationNumber?: string;
+      };
+      const parts: string[] = [];
+      if (client.name) {
+        parts.push(`${t?.("clients.full_name") ?? "Nombre"}: ${client.name}`);
+      }
+      if (client.identificationType && client.identificationNumber) {
+        parts.push(
+          `${t?.("clients.document") ?? "Documento"}: ${client.identificationType} ${client.identificationNumber}`,
+        );
+      }
+      if (client.clientId) {
+        parts.push(
+          `${t?.("salesHistory.adjustment.client_id_label") ?? "ID cliente"}: ${client.clientId}`,
+        );
+      }
+      return parts.length > 0 ? parts.join("\n") : "—";
     }
     // key-value pairs
     const entries = Object.entries(obj).filter(
@@ -202,87 +282,235 @@ interface ValueEditorProps {
   value: unknown;
   onChange: (next: unknown) => void;
   operationalView: OperationalInvoiceView | null;
+  clients?: ClientOption[];
 }
 
-/** Editor for PAYMENT_METHOD_CHANGE / PAYMENT_SPLIT_CHANGE — editable amounts */
+/** Shape of a single payment-method override (no `amount` — locked to the
+ *  original fiscal invoice total so DIAN reconciliation is preserved). */
+interface PaymentOverrideValue {
+  paymentMethodId: string;
+  paymentMethodName: string;
+  category: string;
+  transactionReference: string | null;
+  authorizationCode: string | null;
+  cardBrand: string | null;
+  cardLastFour: string | null;
+}
+
+/** Editor for PAYMENT_METHOD_CHANGE — method is editable, amount is locked to
+ *  the fiscal total. Reference fields are optional context for the new method. */
 const PaymentEditor: FC<{
-  payments: InvoicePayment[];
-  onChange: (payments: InvoicePayment[]) => void;
-}> = ({ payments, onChange }) => {
+  value: PaymentOverrideValue;
+  onChange: (next: PaymentOverrideValue) => void;
+  /** Total amount sourced from the fiscal invoice (immutable). */
+  lockedAmount: string;
+}> = ({ value, onChange, lockedAmount }) => {
   const { t } = useTranslation();
 
-  const handleAmountChange = useCallback(
-    (index: number, raw: string) => {
-      const next = payments.map((p, i) =>
-        i === index ? { ...p, amount: raw } : p,
-      );
-      onChange(next);
+  const set = useCallback(
+    <K extends keyof PaymentOverrideValue>(
+      key: K,
+      next: PaymentOverrideValue[K],
+    ) => {
+      onChange({ ...value, [key]: next });
     },
-    [payments, onChange],
+    [onChange, value],
   );
 
   return (
-    <div className="overflow-x-auto">
-      <table
-        className="w-full text-caption"
-        role="table"
-        aria-label={t("fiscal.operational_payments_title")}
-      >
-        <thead>
-          <tr
-            className="text-left"
-            style={{
-              color:
-                "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-            }}
-          >
-            <th scope="col" className="pb-1 pr-2 font-medium">
-              {t("fiscal.detail_payment_method")}
-            </th>
-            <th scope="col" className="pb-1 pl-2 text-right font-medium">
-              {t("fiscal.detail_payment_amount")}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {payments.map((pmt, idx) => (
-            <tr key={`${pmt.paymentMethodId}-${idx}`}>
-              <td
-                className="py-1 pr-2 font-medium"
-                style={{ color: "var(--color-ink)" }}
-              >
-                {pmt.paymentMethodName}
-              </td>
-              <td className="py-1 pl-2">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  className="w-28 rounded-pos border px-2 py-1 text-right font-data tabular-nums text-body-sm"
-                  style={{
-                    color: "var(--color-ink)",
-                    borderColor:
-                      "color-mix(in srgb, var(--color-ink) 15%, transparent)",
-                    backgroundColor: "var(--color-panel)",
-                  }}
-                  value={pmt.amount}
-                  onChange={(e) => handleAmountChange(idx, e.target.value)}
-                  aria-label={`${t("fiscal.detail_payment_amount")} — ${pmt.paymentMethodName}`}
-                />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {payments.length === 0 && (
-        <p
-          className="py-2 text-center text-caption"
+    <div className="flex flex-col gap-3">
+      {/* Method picker */}
+      <div className="flex flex-col gap-1">
+        <label
+          className="text-caption font-medium"
           style={{
-            color: "color-mix(in srgb, var(--color-ink) 40%, transparent)",
+            color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
+          htmlFor="adjustment-payment-method-name"
         >
           {t("fiscal.detail_payment_method")}
-        </p>
-      )}
+        </label>
+        <input
+          id="adjustment-payment-method-name"
+          type="text"
+          className="pos-input text-body-sm"
+          value={value.paymentMethodName}
+          onChange={(e) => {
+            set("paymentMethodName", e.target.value);
+            // Keep the id aligned with the human-readable name when the
+            // cashier free-types a method; backend treats empty id as a no-op.
+            if (!value.paymentMethodId) {
+              set("paymentMethodId", e.target.value);
+            }
+          }}
+          placeholder={t("fiscal.adjustment_payment_method_placeholder")}
+          aria-label={t("fiscal.detail_payment_method")}
+        />
+      </div>
+
+      {/* Category — coarse grouping matching the fiscal payment.category field. */}
+      <div className="flex flex-col gap-1">
+        <label
+          className="text-caption font-medium"
+          style={{
+            color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+          }}
+          htmlFor="adjustment-payment-category"
+        >
+          {t("fiscal.adjustment_payment_category_label")}
+        </label>
+        <select
+          id="adjustment-payment-category"
+          className="pos-input text-body-sm"
+          value={value.category}
+          onChange={(e) => set("category", e.target.value)}
+          aria-label={t("fiscal.adjustment_payment_category_label")}
+        >
+          <option value="">—</option>
+          <option value="CASH">{t("fiscal.adjustment_payment_category_cash")}</option>
+          <option value="CARD">{t("fiscal.adjustment_payment_category_card")}</option>
+          <option value="TRANSFER">{t("fiscal.adjustment_payment_category_transfer")}</option>
+          <option value="OTHER">{t("fiscal.adjustment_payment_category_other")}</option>
+        </select>
+      </div>
+
+      {/* Read-only amount — sourced from the original fiscal invoice total. */}
+      <div
+        className="flex items-center justify-between gap-2 rounded-pos px-3 py-2"
+        style={{
+          backgroundColor:
+            "color-mix(in srgb, var(--color-pharma) 6%, white)",
+          border: `1px solid color-mix(in srgb, var(--color-pharma) 20%, transparent)`,
+        }}
+      >
+        <div className="flex flex-col">
+          <span
+            className="text-caption font-medium"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+            }}
+          >
+            {t("fiscal.adjustment_payment_amount_readonly")}
+          </span>
+          <span
+            className="text-caption"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 45%, transparent)",
+            }}
+          >
+            {t("fiscal.adjustment_payment_amount_locked_hint")}
+          </span>
+        </div>
+        <span
+          className="font-data tabular-nums text-ui font-semibold"
+          style={{ color: "var(--color-pharma)" }}
+          aria-label={t("fiscal.adjustment_payment_amount_readonly")}
+        >
+          $
+          {Number(lockedAmount).toLocaleString("es-CO", {
+            minimumFractionDigits: 2,
+          })}
+        </span>
+      </div>
+
+      {/* Optional reference fields */}
+      <details className="rounded-pos border" style={{ borderColor: "color-mix(in srgb, var(--color-ink) 12%, transparent)" }}>
+        <summary
+          className="cursor-pointer px-3 py-2 text-caption font-medium"
+          style={{ color: "var(--color-ink)" }}
+        >
+          {t("fiscal.adjustment_payment_reference_details_summary")}
+        </summary>
+        <div className="flex flex-col gap-2 p-3">
+          <label className="flex flex-col gap-1">
+            <span
+              className="text-caption font-medium"
+              style={{
+                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+              }}
+            >
+              {t("fiscal.adjustment_payment_reference_label")}
+            </span>
+            <input
+              type="text"
+              className="pos-input text-body-sm"
+              value={value.transactionReference ?? ""}
+              onChange={(e) =>
+                set(
+                  "transactionReference",
+                  e.target.value === "" ? null : e.target.value,
+                )
+              }
+              aria-label={t("fiscal.adjustment_payment_reference_label")}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span
+              className="text-caption font-medium"
+              style={{
+                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+              }}
+            >
+              {t("fiscal.adjustment_payment_authorization_label")}
+            </span>
+            <input
+              type="text"
+              className="pos-input text-body-sm"
+              value={value.authorizationCode ?? ""}
+              onChange={(e) =>
+                set(
+                  "authorizationCode",
+                  e.target.value === "" ? null : e.target.value,
+                )
+              }
+              aria-label={t("fiscal.adjustment_payment_authorization_label")}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span
+              className="text-caption font-medium"
+              style={{
+                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+              }}
+            >
+              {t("fiscal.adjustment_payment_card_brand_label")}
+            </span>
+            <input
+              type="text"
+              className="pos-input text-body-sm"
+              value={value.cardBrand ?? ""}
+              onChange={(e) =>
+                set("cardBrand", e.target.value === "" ? null : e.target.value)
+              }
+              aria-label={t("fiscal.adjustment_payment_card_brand_label")}
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span
+              className="text-caption font-medium"
+              style={{
+                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+              }}
+            >
+              {t("fiscal.adjustment_payment_card_last_four_label")}
+            </span>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              className="pos-input text-body-sm font-data tabular-nums"
+              value={value.cardLastFour ?? ""}
+              onChange={(e) =>
+                set(
+                  "cardLastFour",
+                  e.target.value === "" ? null : e.target.value,
+                )
+              }
+              aria-label={t("fiscal.adjustment_payment_card_last_four_label")}
+            />
+          </label>
+        </div>
+      </details>
     </div>
   );
 };
@@ -369,6 +597,263 @@ const ContactEditor: FC<{
           onChange={(e) => set("address", e.target.value)}
         />
       </label>
+    </div>
+  );
+};
+
+/** Editor for CLIENT_CHANGE */
+const ClientEditor: FC<{
+  value: {
+    clientId?: string;
+    name?: string;
+    identificationType?: string;
+    identificationNumber?: string;
+  };
+  onChange: (
+    v: {
+      clientId?: string;
+      name?: string;
+      identificationType?: string;
+      identificationNumber?: string;
+    },
+  ) => void;
+  clients?: ClientOption[];
+}> = ({ value, onChange, clients = [] }) => {
+  const { t } = useTranslation();
+  const v = value ?? {};
+  const set = (field: string, val: string) =>
+    onChange({ ...v, [field]: val });
+
+  const [query, setQuery] = useState("");
+  const [showResults, setShowResults] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.identificationNumber.toLowerCase().startsWith(q),
+    );
+  }, [clients, query]);
+
+  const handleSelect = (client: ClientOption) => {
+    onChange({
+      clientId: client.id,
+      name: client.name,
+      identificationType: client.identificationType,
+      identificationNumber: client.identificationNumber,
+    });
+    setQuery("");
+    setShowResults(false);
+  };
+
+  const handleClear = () => {
+    onChange({
+      clientId: "",
+      name: "",
+      identificationType: "",
+      identificationNumber: "",
+    });
+    setQuery("");
+    setShowResults(false);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p
+        className="text-caption"
+        style={{
+          color: "color-mix(in srgb, var(--color-ink) 55%, transparent)",
+        }}
+      >
+        {t("salesHistory.adjustment.client_change_description")}
+      </p>
+
+      {/* Client search */}
+      {clients.length > 0 && (
+        <div className="relative">
+          <label className="flex flex-col gap-1">
+            <span
+              className="text-caption font-medium"
+              style={{
+                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+              }}
+            >
+              {t("clients.search_placeholder")}
+            </span>
+            <input
+              type="text"
+              className="pos-input text-body-sm"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setShowResults(true);
+              }}
+              onFocus={() => setShowResults(true)}
+              placeholder={t("clients.search_placeholder")}
+              aria-label={t("clients.search_placeholder")}
+              aria-expanded={showResults}
+              aria-controls="client-search-results"
+              aria-autocomplete="list"
+            />
+          </label>
+
+          {showResults && query.length > 0 && filtered.length === 0 && (
+            <div
+              className="absolute z-10 mt-1 w-full rounded-pos border px-3 py-2 text-caption"
+              style={{
+                backgroundColor: "var(--color-panel)",
+                borderColor:
+                  "color-mix(in srgb, var(--color-ink) 10%, transparent)",
+                color: "var(--color-ink-muted)",
+              }}
+            >
+              {t("clients.no_results")}
+            </div>
+          )}
+
+          {showResults && filtered.length > 0 && (
+            <ul
+              id="client-search-results"
+              role="listbox"
+              className="absolute z-10 mt-1 max-h-48 w-full overflow-y-auto rounded-pos border py-1 shadow-pos-panel"
+              style={{
+                backgroundColor: "var(--color-panel)",
+                borderColor:
+                  "color-mix(in srgb, var(--color-ink) 10%, transparent)",
+              }}
+            >
+              {filtered.map((client) => (
+                <li key={client.id} role="presentation">
+                  <button
+                    type="button"
+                    role="option"
+                    className="w-full px-3 py-2 text-left text-body-sm transition-colors hover:bg-surface"
+                    style={{
+                      color: "var(--color-ink)",
+                    }}
+                    onClick={() => handleSelect(client)}
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    <span className="block font-medium">{client.name}</span>
+                    <span
+                      className="text-caption font-data tabular-nums"
+                      style={{
+                        color:
+                          "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                      }}
+                    >
+                      {client.identificationType}: {client.identificationNumber}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Selected / manual fields */}
+      <div className="flex flex-col gap-2">
+        <label className="flex flex-col gap-1">
+          <span
+            className="text-caption font-medium"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+            }}
+          >
+            {t("clients.full_name")}
+          </span>
+          <input
+            type="text"
+            className="pos-input text-body-sm"
+            value={v.name ?? ""}
+            onChange={(e) => set("name", e.target.value)}
+            aria-label={t("clients.full_name")}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span
+            className="text-caption font-medium"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+            }}
+          >
+            {t("clients.id_type")}
+          </span>
+          <select
+            className="pos-input text-body-sm"
+            value={v.identificationType ?? ""}
+            onChange={(e) => set("identificationType", e.target.value)}
+            aria-label={t("clients.id_type")}
+          >
+            <option value="">—</option>
+            <option value="CC">{t("clients.id_type_cc")}</option>
+            <option value="NIT">{t("clients.id_type_nit")}</option>
+            <option value="CE">{t("clients.id_type_ce")}</option>
+            <option value="PASSPORT">{t("clients.id_type_passport")}</option>
+            <option value="TI">{t("clients.id_type_ti")}</option>
+            <option value="PEP">{t("clients.id_type_pep")}</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span
+            className="text-caption font-medium"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+            }}
+          >
+            {t("clients.id_number")}
+          </span>
+          <input
+            type="text"
+            className="pos-input text-body-sm"
+            value={v.identificationNumber ?? ""}
+            onChange={(e) => set("identificationNumber", e.target.value)}
+            aria-label={t("clients.id_number")}
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span
+            className="text-caption font-medium"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+            }}
+          >
+            {t("salesHistory.adjustment.client_id_label")}{" "}
+            <span
+              className="font-normal"
+              style={{
+                color: "color-mix(in srgb, var(--color-ink) 40%, transparent)",
+              }}
+            >
+              ({t("common.optional")})
+            </span>
+          </span>
+          <input
+            type="text"
+            className="pos-input text-body-sm"
+            value={v.clientId ?? ""}
+            onChange={(e) => set("clientId", e.target.value)}
+            aria-label={t("salesHistory.adjustment.client_id_label")}
+          />
+        </label>
+      </div>
+
+      {(v.name || v.identificationNumber || v.clientId) && (
+        <button
+          type="button"
+          onClick={handleClear}
+          className="self-start text-caption font-medium underline-offset-2 hover:underline"
+          style={{ color: "var(--color-error)" }}
+        >
+          {t("common.clear")}
+        </button>
+      )}
     </div>
   );
 };
@@ -639,19 +1124,28 @@ const ValueEditorDispatch: FC<ValueEditorProps> = ({
   value,
   onChange,
   operationalView,
+  clients,
 }) => {
   switch (type) {
-    case "PAYMENT_METHOD_CHANGE":
-    case "PAYMENT_SPLIT_CHANGE":
+    case "PAYMENT_METHOD_CHANGE": {
+      const override =
+        (value as PaymentOverrideValue | undefined) ?? {
+          paymentMethodId: "",
+          paymentMethodName: "",
+          category: "",
+          transactionReference: null,
+          authorizationCode: null,
+          cardBrand: null,
+          cardLastFour: null,
+        };
       return (
         <PaymentEditor
-          payments={
-            (value as { payments: InvoicePayment[] } | undefined)
-              ?.payments ?? []
-          }
-          onChange={(payments) => onChange({ payments })}
+          value={override}
+          onChange={(next) => onChange(next)}
+          lockedAmount={operationalView?.fiscal.fullData.totalAmount ?? "0"}
         />
       );
+    }
     case "INTERNAL_NOTE":
       return (
         <NoteEditor value={String(value ?? "")} onChange={onChange} />
@@ -667,6 +1161,21 @@ const ValueEditorDispatch: FC<ValueEditorProps> = ({
             }) ?? {}
           }
           onChange={onChange}
+        />
+      );
+    case "CLIENT_CHANGE":
+      return (
+        <ClientEditor
+          value={
+            (value as {
+              clientId?: string;
+              name?: string;
+              identificationType?: string;
+              identificationNumber?: string;
+            }) ?? {}
+          }
+          onChange={onChange}
+          clients={clients}
         />
       );
     case "DELIVERY_INFO":
@@ -806,6 +1315,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
   allowedTypes,
   loading,
   error,
+  clients,
   onSubmit,
   onClose,
 }) => {
@@ -882,13 +1392,13 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
     : "";
 
   const beforeValue = useMemo(
-    () => getBeforeValue(selectedType ?? "INTERNAL_NOTE", operationalView),
-    [selectedType, operationalView],
+    () => getBeforeValue(selectedType ?? "INTERNAL_NOTE", operationalView, t),
+    [selectedType, operationalView, t],
   );
 
   const afterValue = useMemo(
-    () => formatNewValueDisplay(newValue),
-    [newValue],
+    () => formatNewValueDisplay(newValue, t),
+    [newValue, t],
   );
 
   const hasTypes = allowedTypes.length > 0;
@@ -1094,6 +1604,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
             value={newValue}
             onChange={setNewValue}
             operationalView={operationalView}
+            clients={clients}
           />
         </div>
 

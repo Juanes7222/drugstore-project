@@ -1,0 +1,94 @@
+/**
+ * Component tests for SalesHistoryList.
+ */
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { SalesHistoryList } from './sales-history-list';
+import type { SaleHistoryListItem } from '../../../domain/sales-pos/sales-history.service';
+import '@/i18n';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const createSale = (
+  overrides: Partial<SaleHistoryListItem> = {},
+): SaleHistoryListItem => ({
+  saleId: 'sale-1',
+  localNumber: '100',
+  confirmedAt: '2026-07-20T10:00:00.000Z',
+  totalAmount: '119.00',
+  clientName: 'Juan Pérez',
+  clientIdentificationNumber: '123456',
+  invoiceId: 'inv-1',
+  invoiceNumber: 'FE0001',
+  invoiceStatus: 'TRANSMITTED_AUTHORIZED',
+  invoiceType: 'ELECTRONIC_INVOICE',
+  hasAdjustments: false,
+  ...overrides,
+});
+
+const defaultProps = {
+  sales: [createSale()],
+  totalCount: 1,
+  loading: false,
+  filters: {},
+  onSelect: vi.fn(),
+  onRefresh: vi.fn(),
+  onFiltersChange: vi.fn(),
+  onLoadMore: vi.fn(),
+};
+
+// ---------------------------------------------------------------------------
+// Suite
+// ---------------------------------------------------------------------------
+
+describe('SalesHistoryList', () => {
+  it('renders sale rows with number, client, total and status', () => {
+    render(<SalesHistoryList {...defaultProps} />);
+
+    expect(screen.getByText('#100')).toBeInTheDocument();
+    expect(screen.getByText('Juan Pérez')).toBeInTheDocument();
+    expect(screen.getByText('FE0001')).toBeInTheDocument();
+    expect(screen.getByText('Autorizado DIAN')).toBeInTheDocument();
+  });
+
+  it('filters rows by sale number when typing in the search input', async () => {
+    render(
+      <SalesHistoryList
+        {...defaultProps}
+        sales={[createSale(), createSale({ saleId: 'sale-2', localNumber: '101', clientName: 'Ana Gómez' })]}
+        totalCount={2}
+      />,
+    );
+
+    expect(screen.getByText('#100')).toBeInTheDocument();
+    expect(screen.getByText('#101')).toBeInTheDocument();
+
+    const searchInput = screen.getByLabelText(/Buscar venta, cliente o factura/);
+    await userEvent.type(searchInput, '100');
+
+    expect(screen.getByText('#100')).toBeInTheDocument();
+    expect(screen.queryByText('#101')).not.toBeInTheDocument();
+  });
+
+  it('shows empty state when there are no sales', () => {
+    render(<SalesHistoryList {...defaultProps} sales={[]} totalCount={0} />);
+
+    expect(screen.getByText('No hay ventas confirmadas')).toBeInTheDocument();
+  });
+
+  it('calls onSelect when the detail button is clicked', async () => {
+    const onSelect = vi.fn();
+    render(<SalesHistoryList {...defaultProps} onSelect={onSelect} />);
+
+    const detailButton = screen.getByRole('button', {
+      name: /Detalle de venta/,
+    });
+    await userEvent.click(detailButton);
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith('sale-1');
+  });
+});

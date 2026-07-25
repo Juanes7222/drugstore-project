@@ -19,10 +19,8 @@ import type { ConfirmSaleDto } from '@/modules/sales-pos/dto/confirm-sale.dto';
 import type { CreateClientDto } from '@/modules/clients/dto/create-client.dto';
 import type { UpdateClientDto } from '@/modules/clients/dto/update-client.dto';
 import type { CreateClientReturnDto } from '@/modules/sales-pos/dto/create-client-return.dto';
-import type { CreateInventoryAdjustmentDto } from '@/modules/inventory-lots/dto/create-inventory-adjustment.dto';
-import type { PurchaseOrderConfirmationPayload } from './dto/purchase-sync-payloads';
-import type { PurchaseReceptionConfirmationPayload } from './dto/purchase-sync-payloads';
-import type { SupplierReturnConfirmationPayload } from './dto/purchase-sync-payloads';
+import type { CreateInventoryAdjustmentDto, CreateInventoryAdjustmentItemDto } from '@/modules/inventory-lots/dto/create-inventory-adjustment.dto';
+import type { PurchaseOrderConfirmationPayload, PurchaseReceptionConfirmationPayload, SupplierReturnConfirmationPayload, LotSyncData } from './dto/purchase-sync-payloads';
 import * as crypto from 'node:crypto';
 
 /**
@@ -390,14 +388,32 @@ export class SyncOperationDispatcherService {
 
   /**
    * Replays an INVENTORY_ADJUSTMENT by creating the document in DRAFT.
-   * The normal Phase 16 approval chain must be followed — sync does not
-   * bypass that gate.
+   *
+   * If the payload carries lot data alongside item references, it is
+   * passed to the service so missing lots can be created inline
+   * (offline-first scenario). The normal Phase 16 approval chain must
+   * be followed — sync does not bypass that gate.
    */
   private async handleInventoryAdjustment(entry: SyncQueueEntry): Promise<void> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+    const createAdjustmentDto = payload.createAdjustmentDto as Record<string, unknown> | undefined;
+    const items = (createAdjustmentDto?.items ?? []) as Array<Record<string, unknown>>;
+
+    // Extract lot creation data keyed by lotId for each item
+    const lotContext = new Map<string, LotSyncData>();
+    for (const item of items) {
+      const lotId = item.lotId as string | undefined;
+      const lotData = item.lot as LotSyncData | undefined;
+      if (lotId && lotData) {
+        lotContext.set(lotId, lotData);
+      }
+    }
+
     await this.inventoryAdjustmentsService.create(
-      payload.createAdjustmentDto as unknown as CreateInventoryAdjustmentDto,
+      createAdjustmentDto as unknown as CreateInventoryAdjustmentDto,
       payload.userId as string,
+      undefined,
+      lotContext.size > 0 ? lotContext : undefined,
     );
   }
 

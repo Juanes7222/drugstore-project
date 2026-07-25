@@ -17,8 +17,13 @@ import { AdjustmentNotAnnullableException } from '../exceptions/adjustment-not-a
 import { InsufficientStockForAdjustmentException } from '../exceptions/insufficient-stock-for-adjustment.exception';
 import { StaleAdjustmentException } from '../exceptions/stale-adjustment.exception';
 import { LotNotFoundException } from '../exceptions/lot-not-found.exception';
+import type { LotSyncData } from '@/modules/sync/dto/purchase-sync-payloads';
 
 const UUID = '00000000-0000-4000-8000-000000000001';
+
+const mockLotsService = {
+  resolveLotForSync: jest.fn(),
+};
 
 describe('InventoryAdjustmentsService', () => {
   let service: InventoryAdjustmentsService;
@@ -26,7 +31,8 @@ describe('InventoryAdjustmentsService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new InventoryAdjustmentsService(prisma as any);
+    mockLotsService.resolveLotForSync.mockReset();
+    service = new InventoryAdjustmentsService(prisma as any, mockLotsService as any);
   });
 
   // ── findAll ──────────────────────────────────────────────────────────
@@ -94,12 +100,17 @@ describe('InventoryAdjustmentsService', () => {
   describe('create', () => {
     function createTxMock() {
       return {
-        lot: { findUnique: jest.fn() },
         inventoryAdjustmentCounter: { upsert: jest.fn().mockResolvedValue({ lastSequentialNumber: 1 }) },
-        inventoryAdjustmentDocument: { create: jest.fn(), findFirst: jest.fn() },
+        inventoryAdjustmentDocument: {
+          create: jest.fn(),
+          findFirst: jest.fn(),
+          aggregate: jest.fn().mockResolvedValue({ _max: { sequentialNumber: null } }),
+        },
         inventoryMovement: { create: jest.fn() },
       };
     }
+
+    const resolvedLot = { id: UUID, currentStock: 50, version: 1, state: 'ACTIVE' };
 
     it('creates adjustment document with items in transaction', async () => {
       const txMock = createTxMock();
@@ -109,7 +120,7 @@ describe('InventoryAdjustmentsService', () => {
           { lotId: UUID, movementType: 'POSITIVE_ADJUSTMENT' as const, quantity: 10 },
         ],
       };
-      txMock.lot.findUnique.mockResolvedValue({ id: UUID, currentStock: 50 });
+      mockLotsService.resolveLotForSync.mockResolvedValue(resolvedLot);
       txMock.inventoryAdjustmentDocument.create.mockResolvedValue({ id: 'new-adj', reason: 'Stock correction' });
       txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' });
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));
@@ -126,7 +137,7 @@ describe('InventoryAdjustmentsService', () => {
         reason: 'Test',
         items: [{ lotId: 'bad-lot', movementType: 'POSITIVE_ADJUSTMENT' as const, quantity: 5 }],
       };
-      txMock.lot.findUnique.mockResolvedValue(null);
+      mockLotsService.resolveLotForSync.mockRejectedValue(new LotNotFoundException('bad-lot'));
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));
 
       await expect(service.create(dto, 'user-1')).rejects.toThrow(/Lot.*not found/);
@@ -138,7 +149,7 @@ describe('InventoryAdjustmentsService', () => {
         reason: 'Test',
         items: [{ lotId: UUID, movementType: 'NEGATIVE_ADJUSTMENT' as const, quantity: 100 }],
       };
-      txMock.lot.findUnique.mockResolvedValue({ id: UUID, currentStock: 10 }); // only 10 in stock
+      mockLotsService.resolveLotForSync.mockResolvedValue({ ...resolvedLot, currentStock: 10 });
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));
 
       await expect(service.create(dto, 'user-1')).rejects.toThrow(/Insufficient stock/);
@@ -156,7 +167,7 @@ describe('InventoryAdjustmentsService', () => {
         reason: 'Test seq',
         items: [{ lotId: UUID, movementType: 'POSITIVE_ADJUSTMENT' as const, quantity: 1 }],
       };
-      txMock.lot.findUnique.mockResolvedValue({ id: UUID, currentStock: 10 });
+      mockLotsService.resolveLotForSync.mockResolvedValue(resolvedLot);
       txMock.inventoryAdjustmentCounter.upsert.mockResolvedValue({ lastSequentialNumber: 42 });
       txMock.inventoryAdjustmentDocument.create.mockResolvedValue({ id: 'adj-seq', sequentialNumber: 42 });
       txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov-seq' });
@@ -185,7 +196,7 @@ describe('InventoryAdjustmentsService', () => {
         seq += 1;
         return { lastSequentialNumber: seq };
       });
-      txMock.lot.findUnique.mockResolvedValue({ id: UUID, currentStock: 10 });
+      mockLotsService.resolveLotForSync.mockResolvedValue(resolvedLot);
       txMock.inventoryAdjustmentDocument.create.mockImplementation(async (args: any) => ({
         id: 'adj-' + seq,
         ...args.data,
@@ -206,7 +217,7 @@ describe('InventoryAdjustmentsService', () => {
         reason: 'Physical count adjustment',
         items: [{ lotId: UUID, movementType: 'POSITIVE_ADJUSTMENT' as const, quantity: 5 }],
       };
-      txMock.lot.findUnique.mockResolvedValue({ id: UUID, currentStock: 20 });
+      mockLotsService.resolveLotForSync.mockResolvedValue({ ...resolvedLot, currentStock: 20 });
       txMock.inventoryAdjustmentDocument.create.mockResolvedValue({ id: 'new-adj' });
       txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' });
       (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));
@@ -216,6 +227,53 @@ describe('InventoryAdjustmentsService', () => {
       expect(txMock.inventoryAdjustmentDocument.create).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ physicalCountId: 'pc-1' }) }),
       );
+    });
+
+    it('creates lot from syncLotContext when lot does not exist', async () => {
+      const txMock = createTxMock();
+      const lotSyncData: LotSyncData = {
+        batchNumber: 'SYNC-BATCH',
+        expirationDate: '2028-12-31T00:00:00.000Z',
+        productId: 'prod-sync-1',
+        locationCode: 'A-01',
+        currentStock: 15,
+      };
+      const syncLotContext = new Map<string, LotSyncData>([
+        ['lot-sync-new', lotSyncData],
+      ]);
+      const dto = {
+        reason: 'Sync adjustment',
+        items: [{ lotId: 'lot-sync-new', movementType: 'POSITIVE_ADJUSTMENT' as const, quantity: 15 }],
+      };
+      mockLotsService.resolveLotForSync.mockResolvedValue({
+        id: 'lot-sync-new',
+        currentStock: 15,
+        version: 0,
+        state: 'ACTIVE',
+      });
+      txMock.inventoryAdjustmentDocument.create.mockResolvedValue({ id: 'adj-sync' });
+      txMock.inventoryMovement.create.mockResolvedValue({ id: 'mov-sync' });
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));
+
+      await service.create(dto, 'user-1', undefined, syncLotContext);
+
+      expect(mockLotsService.resolveLotForSync).toHaveBeenCalledWith(
+        txMock,
+        'lot-sync-new',
+        lotSyncData,
+      );
+    });
+
+    it('throws LotNotFoundException when lot does not exist and no syncLotContext provided (backward compatible)', async () => {
+      const txMock = createTxMock();
+      const dto = {
+        reason: 'Legacy adjustment',
+        items: [{ lotId: 'unknown-lot', movementType: 'POSITIVE_ADJUSTMENT' as const, quantity: 5 }],
+      };
+      mockLotsService.resolveLotForSync.mockRejectedValue(new LotNotFoundException('unknown-lot'));
+      (prisma.$transaction as jest.Mock).mockImplementation(async (cb: Function) => cb(txMock));
+
+      await expect(service.create(dto, 'user-1')).rejects.toThrow(/Lot.*not found/);
     });
   });
 

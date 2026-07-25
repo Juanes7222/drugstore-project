@@ -23,10 +23,10 @@ describe("AdjustmentInvoiceNotFoundException", () => {
 
 describe("AdjustmentNotAllowedForStatusException", () => {
   it("includes invoice id, status and adjustment type", () => {
-    const e = new AdjustmentNotAllowedForStatusException("inv-1", "CANCELLED", "PRICE");
+    const e = new AdjustmentNotAllowedForStatusException("inv-1", "CANCELLED", "INTERNAL_NOTE");
     expect(e.message).toContain("inv-1");
     expect(e.message).toContain("CANCELLED");
-    expect(e.message).toContain("PRICE");
+    expect(e.message).toContain("INTERNAL_NOTE");
   });
 });
 

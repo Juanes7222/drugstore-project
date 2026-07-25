@@ -299,20 +299,66 @@ export class PurchaseOrdersService {
 
   private async createSyncQueueEntry(
     tx: Prisma.TransactionClient,
-    order: { id: string; sequentialNumber: number; supplierId: string; notes: string | null; createdById: string },
+    order: {
+      id: string;
+      sequentialNumber: number;
+      supplierId: string;
+      notes: string | null;
+      createdById: string;
+      items: Array<{ productId: string; requestedQuantity: number; expectedUnitCost: number | Prisma.Decimal }>;
+    },
     session: { userId: string; workstationId: string },
     confirmedAt: Date,
   ): Promise<void> {
+    // Fetch supplier data for server-side upsert (offline-first: supplier may
+    // not exist on the server yet, so we embed its creation data in the payload)
+    const supplier = await tx.supplier.findUnique({
+      where: { id: order.supplierId },
+      select: {
+        businessName: true,
+        identificationType: true,
+        identificationNumber: true,
+        contactName: true,
+        phone: true,
+        email: true,
+        address: true,
+        city: true,
+        country: true,
+        paymentTermsDays: true,
+        creditLimit: true,
+      },
+    });
+
     const payload = JSON.stringify({
       operationType: 'PURCHASE_ORDER_CONFIRMATION',
       orderId: order.id,
       sequentialNumber: order.sequentialNumber,
       supplierId: order.supplierId,
+      supplier: supplier
+        ? {
+            businessName: supplier.businessName,
+            identificationType: supplier.identificationType,
+            identificationNumber: supplier.identificationNumber,
+            contactName: supplier.contactName ?? undefined,
+            phone: supplier.phone ?? undefined,
+            email: supplier.email ?? undefined,
+            address: supplier.address ?? undefined,
+            city: supplier.city ?? undefined,
+            country: supplier.country,
+            paymentTermsDays: supplier.paymentTermsDays,
+            creditLimit: Number(supplier.creditLimit),
+          }
+        : undefined,
       notes: order.notes,
       createdById: order.createdById,
       confirmedByUserId: session.userId,
       workstationId: session.workstationId,
       confirmedAt: confirmedAt.toISOString(),
+      items: order.items.map((item) => ({
+        productId: item.productId,
+        requestedQuantity: item.requestedQuantity,
+        expectedUnitCost: Number(item.expectedUnitCost),
+      })),
     });
 
     const payloadBytes = new TextEncoder().encode(payload);
