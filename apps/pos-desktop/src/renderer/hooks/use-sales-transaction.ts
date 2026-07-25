@@ -185,8 +185,10 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
         items: cartItems.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
-          // Convert cents to pesos (Decimal) — DB stores Decimal(15,2)
-          unitPrice: new Prisma.Decimal(item.unitPriceCents / 100),
+          // Convert cents to pesos (Decimal) — DB stores Decimal(15,2).
+          // Use Decimal division instead of JS / to avoid IEEE 754 drift
+          // (e.g. 2499 / 100 = 24.98999… in JS).
+          unitPrice: new Prisma.Decimal(item.unitPriceCents).dividedBy(100),
         })),
       });
 

@@ -118,9 +118,27 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
 
   const handleAmountChange = useCallback(
     (id: string, amountCents: number) => {
+      const method = methods.find((m) => m.id === id);
+      if (!method) return;
+
+      // CASH can be overpaid (change is returned). All other methods
+      // (transfer, card, nequi) cannot — cap at the remaining balance so
+      // the backend never rejects with ChangeRequiresCashPaymentException.
+      if (method.type !== PaymentMethodType.CASH) {
+        const otherMethodsTotal = methods
+          .filter((m) => m.id !== id)
+          .reduce((sum, m) => sum + m.amountCents, 0);
+        const remainingBalance = Math.max(0, totalDue - otherMethodsTotal);
+        const capped = Math.min(amountCents, remainingBalance);
+        if (capped !== amountCents) {
+          dispatch(updatePaymentMethodAmount({ id, amountCents: capped }));
+          return;
+        }
+      }
+
       dispatch(updatePaymentMethodAmount({ id, amountCents }));
     },
-    [dispatch],
+    [dispatch, methods, totalDue],
   );
 
   const handleCashReceivedChange = useCallback(

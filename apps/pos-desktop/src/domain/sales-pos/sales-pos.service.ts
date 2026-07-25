@@ -372,15 +372,41 @@ export class SalesPosService {
       }
 
       // 2. Validate payments
-      const totalPaid = input.payments.reduce((sum, p) => sum + p.amount, 0);
-      const saleTotal = Number(sale.totalAmount.toString());
+      // Use Decimal arithmetic throughout to avoid IEEE 754 drift from
+      // cents→pesos division (e.g. 12495 / 100 = 124.94999… in JS).
+      // Round the sum to 2 decimal places so any floating-point artifact is
+      // eliminated before comparing with the DB-stored total.
+      const totalPaidDecimal = input.payments.reduce(
+        (sum, p) => sum.plus(p.amount),
+        new Prisma.Decimal(0),
+      ).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+      // Round DB-stored total too — sales created before the cents→pesos fix
+      // (old JS division) stored imprecise values like 124.949999… instead of
+      // exactly 124.95. Rounding both sides eliminates the ghost difference.
+      const saleTotalDecimal = sale.totalAmount.toDecimalPlaces(
+        2, Prisma.Decimal.ROUND_HALF_UP,
+      );
+      const saleTotalNumber = Number(saleTotalDecimal.toString());
 
-      if (totalPaid < saleTotal) {
-        throw new PaymentAmountMismatchException(saleTotal, totalPaid);
-      }
+      const changeAmount = totalPaidDecimal.minus(saleTotalDecimal).toDecimalPlaces(
+        2, Prisma.Decimal.ROUND_HALF_UP,
+      );
 
-      const changeAmount = new Prisma.Decimal(totalPaid).minus(sale.totalAmount);
-      if (changeAmount.greaterThan(0)) {
+      // Ghost-difference guard: any gap < 1 cent (₡0.01) is IEEE 754 drift,
+      // not a real discrepancy.  COP has no fractional centavos — the
+      // frontend always works in whole cents — so any meaningful difference
+      // is ≥ 1¢.  This covers both the overpayment and underpayment sides
+      // without requiring the DB-stored total to match the frontend's exact
+      // rounding (frontend uses Math.round for tax, DB uses Decimal).
+      const ONE_CENT = new Prisma.Decimal('0.01');
+      if (changeAmount.abs().lessThan(ONE_CENT)) {
+        // treat as exact match — no change, proceed
+      } else if (changeAmount.lessThan(0)) {
+        throw new PaymentAmountMismatchException(
+          saleTotalNumber,
+          totalPaidDecimal.toNumber(),
+        );
+      } else {
         const hasCash = await this.hasAnyCashPaymentMethod(tx, input.payments);
         if (!hasCash) {
           throw new ChangeRequiresCashPaymentException();
