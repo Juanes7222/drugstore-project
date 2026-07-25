@@ -588,6 +588,7 @@
     "selected_lot": "Selected lot",
     "badge_low_stock": "Low stock",
     "badge_near_expiry": "Near expiry",
+    "badge_expired": "Expired",
     "adjustment_type": "Adjustment type",
     "decrease": "Decrease",
     "increase": "Increase",

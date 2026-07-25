@@ -23,7 +23,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { LotState } from '@pharmacy/database/local';
 import { useInventoryLotsService } from '../common/service-context';
-import { useTenantConfig } from '../../../domain/config/use-tenant-config';
+import { useRequireLotOnReception } from '../../../domain/configuration';
 import type { ProductLotGroup } from '../../../domain/inventory-lots/inventory-lots.service';
 import { LotMovementHistory } from './lot-movement-history';
 
@@ -129,10 +129,10 @@ function groupAlertColor(priority: ReturnType<typeof groupPriority>): string {
 export const InventoryLotsPage: FC = () => {
   const { t } = useTranslation();
   const lotsService = useInventoryLotsService();
-  const { effectiveConfig } = useTenantConfig();
+  const requireLotOnReception = useRequireLotOnReception();
 
-  // Feature gate: lot management disabled in tenant config
-  if (effectiveConfig && effectiveConfig.strictness.lots === 'OFF') {
+  // Feature gate: lot management disabled when purchases do not require lot on reception
+  if (!requireLotOnReception) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-pos-md p-pos-xl">
         <p

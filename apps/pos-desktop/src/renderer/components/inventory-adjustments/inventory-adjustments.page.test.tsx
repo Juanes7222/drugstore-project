@@ -1,47 +1,71 @@
 /**
- * Component tests for InventoryAdjustmentsPage (updated two-column layout).
+ * Component tests for InventoryAdjustmentsPage (grouped-by-product layout).
  *
- * Covers: loading state, full-lot mount via listAllLots(), error/empty states,
- * client-side search filtering, searchLots fallback, lot selection with
- * AdjustmentForm reveal, low-stock and near-expiry badges, submit validation
- * (role, selected lot, quantity), successful create+apply flow, toast, and
- * back-navigation.
+ * Covers: loading state, full-lot mount via getLotsGroupedByProduct(), error/
+ * empty states, lot selection (expand group → click lot row) with AdjustmentForm
+ * reveal, submit validation (role, selected lot, quantity), successful
+ * create+apply flow, toast, and back-navigation.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
 import { uiSlice } from "@/store/slices/ui-slice";
 import { InventoryAdjustmentsPage } from "./inventory-adjustments.page";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
+import { LotState } from "@pharmacy/database/local";
 import type { LocalSession } from "../../../domain/auth/local-session.store";
-import type { DisplayLot } from "./inventory-adjustments.types";
+import type { ProductLotGroup } from "../../../domain/inventory-lots/inventory-lots.service";
+
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockListAllLots = vi.fn<() => Promise<DisplayLot[]>>();
-const mockSearchLots = vi.fn<() => Promise<DisplayLot[]>>();
+const mockGetLotsGroupedByProduct = vi.fn<() => Promise<ProductLotGroup[]>>();
 const mockCreate = vi.fn<() => Promise<{ id: string }>>();
 const mockApply = vi.fn<() => Promise<{ operationUuid?: string }>>();
+const mockNotifySuccess = vi.fn();
 
-// Stable service object reference so useEffect([adjustmentsService]) doesn't
-// re-run on every render (the real context provides a stable reference).
-const mockService = {
-  listAllLots: mockListAllLots,
-  searchLots: mockSearchLots,
+const mockAdjustmentsService = {
   create: mockCreate,
   apply: mockApply,
 };
 
+const mockInventoryLotsService = {
+  getLotsGroupedByProduct: mockGetLotsGroupedByProduct,
+};
+
 vi.mock("../common/service-context", () => ({
-  useInventoryAdjustmentsService: () => mockService,
+  useInventoryAdjustmentsService: () => mockAdjustmentsService,
+  useInventoryLotsService: () => mockInventoryLotsService,
 }));
 
 vi.mock("@/hooks/use-online-status", () => ({
   useOnlineStatus: () => true,
+}));
+
+// Mock field-requirement so reason always matters
+vi.mock("../../../domain/config/use-field-requirement", () => ({
+  useFieldRequirementFor: (_field: string) => "REQUIRED" as const,
+}));
+
+vi.mock("../../../domain/configuration", () => ({
+  useRequireLotOnReception: vi.fn().mockReturnValue(true),
+}));
+
+// Mock notify so we can assert on calls rather than depending on sileo DOM
+vi.mock("@/utils/notify", () => ({
+  notify: {
+    success: (...args: unknown[]) => {
+      mockNotifySuccess(...args);
+      return "toast-id";
+    },
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -80,8 +104,14 @@ const setSession = (session: LocalSession | null): void => {
   }
 };
 
+/** Expand first group and select its lot */
+async function selectFirstLot() {
+  await userEvent.click(screen.getByText("Acetaminofén 500mg"));
+  await userEvent.click(screen.getByText("L24001"));
+}
+
 // ---------------------------------------------------------------------------
-// Test data
+// Test data — explicit ProductLotGroup objects, no factory wrappers
 // ---------------------------------------------------------------------------
 
 const baseSession: LocalSession = {
@@ -103,34 +133,66 @@ const baseSession: LocalSession = {
   mustChangePassword: false,
 };
 
-const mockLot1: DisplayLot = {
-  id: "lot-1",
+const group1: ProductLotGroup = {
   productId: "p-001",
-  productName: "Acetaminofén 500mg",
-  lotCode: "L24001",
-  currentStock: 50,
-  expirationDate: "2027-06-01",
-  location: "A1",
+  commercialName: "Acetaminofén 500mg",
+  genericName: "Acetaminofén",
+  internalCode: "ACET-500",
+  totalStock: 50,
+  lotCount: 1,
+  soonToExpireCount: 0,
+  expiredCount: 0,
+  lowStockCount: 0,
+  nearestExpiryDate: new Date("2027-06-01"),
+  lots: [{
+    id: "lot-1",
+    productId: "p-001",
+    batchNumber: "L24001",
+    currentStock: 50,
+    expirationDate: new Date("2027-06-01"),
+    state: LotState.ACTIVE,
+    locationCode: "A1",
+    version: 1,
+    entryDate: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    product: {
+      commercialName: "Acetaminofén 500mg",
+      genericName: "Acetaminofén",
+      internalCode: "ACET-500",
+    },
+  } as unknown as ProductLotGroup["lots"][number]],
 };
 
-const mockLot2: DisplayLot = {
-  id: "lot-2",
+const group2: ProductLotGroup = {
   productId: "p-002",
-  productName: "Ibuprofeno 400mg",
-  lotCode: "L24002",
-  currentStock: 5,
-  expirationDate: "2026-08-15",
-  location: "B2",
-};
-
-const mockLot3: DisplayLot = {
-  id: "lot-3",
-  productId: "p-003",
-  productName: "Metformina 850mg",
-  lotCode: "M85001",
-  currentStock: 30,
-  expirationDate: "2026-08-01",
-  location: "C3",
+  commercialName: "Ibuprofeno 400mg",
+  genericName: "Ibuprofeno",
+  internalCode: "IBU-400",
+  totalStock: 5,
+  lotCount: 1,
+  soonToExpireCount: 0,
+  expiredCount: 0,
+  lowStockCount: 1,
+  nearestExpiryDate: new Date("2026-08-15"),
+  lots: [{
+    id: "lot-2",
+    productId: "p-002",
+    batchNumber: "L24002",
+    currentStock: 5,
+    expirationDate: new Date("2026-08-15"),
+    state: LotState.ACTIVE,
+    locationCode: "B2",
+    version: 1,
+    entryDate: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    product: {
+      commercialName: "Ibuprofeno 400mg",
+      genericName: "Ibuprofeno",
+      internalCode: "IBU-400",
+    },
+  } as unknown as ProductLotGroup["lots"][number]],
 };
 
 const mockDraft = { id: "adj-1" };
@@ -144,8 +206,7 @@ describe("InventoryAdjustmentsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setSession(baseSession);
-    mockListAllLots.mockResolvedValue([mockLot1, mockLot2]);
-    mockSearchLots.mockResolvedValue([]);
+    mockGetLotsGroupedByProduct.mockResolvedValue([group1, group2]);
     mockCreate.mockResolvedValue(mockDraft);
     mockApply.mockResolvedValue(mockApplied);
   });
@@ -155,26 +216,24 @@ describe("InventoryAdjustmentsPage", () => {
   // ── Loading & mount ─────────────────────────────────────────────────
 
   describe("loading & mount", () => {
-    it("shows loading indicator while listAllLots is in-flight", () => {
-      // Arrange — defer the promise so we can assert before it resolves
-      const { promise } = createDeferred<DisplayLot[]>();
-      mockListAllLots.mockReturnValue(promise);
+    it("shows loading indicator while getLotsGroupedByProduct is in-flight", () => {
+      const { promise } = createDeferred<ProductLotGroup[]>();
+      mockGetLotsGroupedByProduct.mockReturnValue(promise);
 
       renderPage();
 
-      // Act / Assert — loading text visible immediately
       expect(screen.getByText("Cargando...")).toBeInTheDocument();
     });
 
-    it("calls listAllLots() on mount", async () => {
+    it("calls getLotsGroupedByProduct() on mount", async () => {
       renderPage();
 
       await waitFor(() => {
-        expect(mockListAllLots).toHaveBeenCalled();
+        expect(mockGetLotsGroupedByProduct).toHaveBeenCalled();
       });
     });
 
-    it("hides loading indicator once listAllLots resolves", async () => {
+    it("hides loading indicator once getLotsGroupedByProduct resolves", async () => {
       renderPage();
 
       await waitFor(() => {
@@ -186,17 +245,19 @@ describe("InventoryAdjustmentsPage", () => {
   // ── Inventory display ───────────────────────────────────────────────
 
   describe("inventory display", () => {
-    it("renders lot cards after loading completes", async () => {
+    it("renders group headers after loading completes", async () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
+        expect(
+          screen.getByText("Acetaminofén 500mg"),
+        ).toBeInTheDocument();
       });
       expect(screen.getByText("Ibuprofeno 400mg")).toBeInTheDocument();
     });
 
-    it("shows no_inventory hint when listAllLots returns empty", async () => {
-      mockListAllLots.mockResolvedValue([]);
+    it("shows no_inventory hint when getLotsGroupedByProduct returns empty", async () => {
+      mockGetLotsGroupedByProduct.mockResolvedValue([]);
       renderPage();
 
       await waitFor(() => {
@@ -220,10 +281,9 @@ describe("InventoryAdjustmentsPage", () => {
       });
     });
 
-    it("displays lot count chip matching the number of lots", async () => {
+    it("displays group count chip matching the number of product groups", async () => {
       renderPage();
 
-      // The chip is a <span> containing just the number
       await waitFor(() => {
         expect(screen.getByText("2")).toBeInTheDocument();
       });
@@ -233,8 +293,10 @@ describe("InventoryAdjustmentsPage", () => {
   // ── Error handling ──────────────────────────────────────────────────
 
   describe("error handling", () => {
-    it("shows load_error when listAllLots fails", async () => {
-      mockListAllLots.mockRejectedValue(new Error("network failure"));
+    it("shows load_error when getLotsGroupedByProduct fails", async () => {
+      mockGetLotsGroupedByProduct.mockRejectedValue(
+        new Error("network failure"),
+      );
       renderPage();
 
       await waitFor(() => {
@@ -248,22 +310,20 @@ describe("InventoryAdjustmentsPage", () => {
       mockCreate.mockRejectedValue(new Error("Stock insuficiente"));
       renderPage();
 
-      // Wait for lots to load
       await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
+        expect(
+          screen.getByText("Acetaminofén 500mg"),
+        ).toBeInTheDocument();
       });
 
-      // Select the first lot
-      fireEvent.click(screen.getByText("Acetaminofén 500mg"));
+      await selectFirstLot();
 
-      // Change reason away from OTHER so button is enabled
-      fireEvent.change(
+      await userEvent.selectOptions(
         screen.getByRole("combobox", { name: /Motivo/i }),
-        { target: { value: "DAMAGED" } },
+        "DAMAGED",
       );
 
-      // Submit
-      fireEvent.click(
+      await userEvent.click(
         screen.getByRole("button", { name: /Aplicar ajuste/i }),
       );
 
@@ -273,127 +333,20 @@ describe("InventoryAdjustmentsPage", () => {
     });
   });
 
-  // ── Search / filter ─────────────────────────────────────────────────
-
-  describe("search & filter", () => {
-    it("filters lots client-side by product name", async () => {
-      renderPage();
-
-      await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
-      });
-
-      const searchInput = screen.getByPlaceholderText(
-        /Buscar por nombre, lote o ubicación/,
-      );
-      await userEvent.type(searchInput, "Ibuprofeno");
-
-      // Acetaminofén should disappear, only Ibuprofeno remains
-      await waitFor(() => {
-        expect(
-          screen.queryByText("Acetaminofén 500mg"),
-        ).not.toBeInTheDocument();
-      });
-      expect(screen.getByText("Ibuprofeno 400mg")).toBeInTheDocument();
-    });
-
-    it("filters lots client-side by lot code", async () => {
-      renderPage();
-
-      await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
-      });
-
-      const searchInput = screen.getByPlaceholderText(
-        /Buscar por nombre, lote o ubicación/,
-      );
-      await userEvent.type(searchInput, "L24001");
-
-      await waitFor(() => {
-        expect(
-          screen.queryByText("Ibuprofeno 400mg"),
-        ).not.toBeInTheDocument();
-      });
-      expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
-    });
-
-    it("filters lots client-side by location", async () => {
-      renderPage();
-
-      await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
-      });
-
-      const searchInput = screen.getByPlaceholderText(
-        /Buscar por nombre, lote o ubicación/,
-      );
-      await userEvent.type(searchInput, "B2");
-
-      await waitFor(() => {
-        expect(
-          screen.queryByText("Acetaminofén 500mg"),
-        ).not.toBeInTheDocument();
-      });
-      expect(screen.getByText("Ibuprofeno 400mg")).toBeInTheDocument();
-    });
-
-    it("falls back to searchLots() when no local match", async () => {
-      mockSearchLots.mockResolvedValue([mockLot3]);
-      renderPage();
-
-      await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
-      });
-
-      const searchInput = screen.getByPlaceholderText(
-        /Buscar por nombre, lote o ubicación/,
-      );
-      await userEvent.type(searchInput, "Metformina");
-
-      // Wait for the fallback searchLots call to resolve
-      await waitFor(() => {
-        expect(mockSearchLots).toHaveBeenCalledWith("Metformina");
-      });
-      expect(screen.getByText("Metformina 850mg")).toBeInTheDocument();
-    });
-
-    it("shows no_results message when search returns empty from service", async () => {
-      mockSearchLots.mockResolvedValue([]);
-
-      // Make listAllLots return a single lot so local filter runs first
-      mockListAllLots.mockResolvedValue([mockLot1]);
-      renderPage();
-
-      await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
-      });
-
-      const searchInput = screen.getByPlaceholderText(
-        /Buscar por nombre, lote o ubicación/,
-      );
-      await userEvent.type(searchInput, "ZZZZ");
-
-      await waitFor(() => {
-        expect(
-          screen.getByText("No se encontraron productos o lotes."),
-        ).toBeInTheDocument();
-      });
-    });
-  });
-
   // ── Lot selection ───────────────────────────────────────────────────
 
   describe("lot selection", () => {
-    it("shows AdjustmentForm after selecting a lot", async () => {
+    it("shows AdjustmentForm after expanding a group and selecting a lot", async () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
+        expect(
+          screen.getByText("Acetaminofén 500mg"),
+        ).toBeInTheDocument();
       });
 
-      await userEvent.click(screen.getByText("Acetaminofén 500mg"));
+      await selectFirstLot();
 
-      // AdjustmentForm rendered — "Aplicar ajuste" button appears
       await waitFor(() => {
         expect(
           screen.getByRole("button", { name: /Aplicar ajuste/i }),
@@ -412,7 +365,7 @@ describe("InventoryAdjustmentsPage", () => {
         ).toBeInTheDocument();
       });
 
-      await userEvent.click(screen.getByText("Acetaminofén 500mg"));
+      await selectFirstLot();
 
       await waitFor(() => {
         expect(
@@ -424,54 +377,6 @@ describe("InventoryAdjustmentsPage", () => {
     });
   });
 
-  // ── Badges ──────────────────────────────────────────────────────────
-
-  describe("badges", () => {
-    it("shows 'Stock bajo' badge for lots with currentStock <= 10", async () => {
-      mockListAllLots.mockResolvedValue([
-        { ...mockLot2, currentStock: 3 },
-      ]);
-      renderPage();
-
-      await waitFor(() => {
-        expect(screen.getByText("Stock bajo")).toBeInTheDocument();
-      });
-    });
-
-    // Use dates that are deterministically past/future regardless of when
-    // tests run — avoids vi.useFakeTimers which conflicts with React scheduling.
-    it("shows 'Próximo a vencer' badge for lots expiring within 90 days", async () => {
-      // A date in the past is always within the 90-day window
-      mockListAllLots.mockResolvedValue([
-        { ...mockLot2, expirationDate: "2020-01-01" },
-      ]);
-      renderPage();
-
-      await waitFor(() => {
-        expect(screen.getByText("Próximo a vencer")).toBeInTheDocument();
-      });
-    });
-
-    it("does NOT show near-expiry badge when lot is also low stock", async () => {
-      // stock <= 10 AND date in the past → only "Stock bajo"
-      mockListAllLots.mockResolvedValue([
-        {
-          ...mockLot2,
-          currentStock: 3,
-          expirationDate: "2020-01-01",
-        },
-      ]);
-      renderPage();
-
-      await waitFor(() => {
-        expect(screen.getByText("Stock bajo")).toBeInTheDocument();
-      });
-      expect(
-        screen.queryByText("Próximo a vencer"),
-      ).not.toBeInTheDocument();
-    });
-  });
-
   // ── Submit validation ───────────────────────────────────────────────
 
   describe("submit validation", () => {
@@ -480,17 +385,16 @@ describe("InventoryAdjustmentsPage", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
+        expect(
+          screen.getByText("Acetaminofén 500mg"),
+        ).toBeInTheDocument();
       });
 
-      // Select a lot
-      await userEvent.click(screen.getByText("Acetaminofén 500mg"));
+      await selectFirstLot();
 
-      // Enable submit by selecting a non-OTHER reason
       const reasonSelect = screen.getByRole("combobox", { name: /Motivo/i });
       await userEvent.selectOptions(reasonSelect, "DAMAGED");
 
-      // Submit
       await userEvent.click(
         screen.getByRole("button", { name: /Aplicar ajuste/i }),
       );
@@ -504,15 +408,18 @@ describe("InventoryAdjustmentsPage", () => {
       });
     });
 
-    it("shows role_inventory_admin error when session has CASHIER role", async () => {
+    it("shows role_inventory_admin error when service throws INSUFFICIENT_ROLE", async () => {
       setSession({ ...baseSession, role: "CASHIER" });
+      mockCreate.mockRejectedValue({ errorCode: "INSUFFICIENT_ROLE" });
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
+        expect(
+          screen.getByText("Acetaminofén 500mg"),
+        ).toBeInTheDocument();
       });
 
-      await userEvent.click(screen.getByText("Acetaminofén 500mg"));
+      await selectFirstLot();
 
       const reasonSelect = screen.getByRole("combobox", { name: /Motivo/i });
       await userEvent.selectOptions(reasonSelect, "DAMAGED");
@@ -534,10 +441,12 @@ describe("InventoryAdjustmentsPage", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
+        expect(
+          screen.getByText("Acetaminofén 500mg"),
+        ).toBeInTheDocument();
       });
 
-      await userEvent.click(screen.getByText("Acetaminofén 500mg"));
+      await selectFirstLot();
 
       const reasonSelect = screen.getByRole("combobox", { name: /Motivo/i });
       await userEvent.selectOptions(reasonSelect, "OTHER");
@@ -553,10 +462,12 @@ describe("InventoryAdjustmentsPage", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
+        expect(
+          screen.getByText("Acetaminofén 500mg"),
+        ).toBeInTheDocument();
       });
 
-      await userEvent.click(screen.getByText("Acetaminofén 500mg"));
+      await selectFirstLot();
 
       const reasonSelect = screen.getByRole("combobox", { name: /Motivo/i });
       await userEvent.selectOptions(reasonSelect, "OTHER");
@@ -577,21 +488,20 @@ describe("InventoryAdjustmentsPage", () => {
   // ── Successful submission ───────────────────────────────────────────
 
   describe("successful submission", () => {
-    it("calls create then apply and shows toast on success", async () => {
+    it("calls create then apply and notifies on success", async () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
+        expect(
+          screen.getByText("Acetaminofén 500mg"),
+        ).toBeInTheDocument();
       });
 
-      // Select lot
-      await userEvent.click(screen.getByText("Acetaminofén 500mg"));
+      await selectFirstLot();
 
-      // Enable submit
       const reasonSelect = screen.getByRole("combobox", { name: /Motivo/i });
       await userEvent.selectOptions(reasonSelect, "DAMAGED");
 
-      // Submit
       await userEvent.click(
         screen.getByRole("button", { name: /Aplicar ajuste/i }),
       );
@@ -601,25 +511,27 @@ describe("InventoryAdjustmentsPage", () => {
         expect(mockApply).toHaveBeenCalledOnce();
       });
 
-      // Toast appears with role="status"
       await waitFor(() => {
-        expect(screen.getByRole("status")).toBeInTheDocument();
+        expect(mockNotifySuccess).toHaveBeenCalled();
       });
-      // Toast shows the operation type
-      expect(
-        screen.getByText("Ajuste de inventario"),
-      ).toBeInTheDocument();
+      const callArg = mockNotifySuccess.mock.calls[0][0] as {
+        title: string;
+        description: string;
+      };
+      expect(callArg.title).toBe("Operación sincronizada");
+      expect(callArg.description).toContain("Ajuste de inventario");
     });
 
     it("updates local stock optimistically after successful apply", async () => {
-      // Lot has currentStock=50, we submit DECREASE with qty=5 → projected 45
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
+        expect(
+          screen.getByText("Acetaminofén 500mg"),
+        ).toBeInTheDocument();
       });
 
-      await userEvent.click(screen.getByText("Acetaminofén 500mg"));
+      await selectFirstLot();
 
       const reasonSelect = screen.getByRole("combobox", { name: /Motivo/i });
       await userEvent.selectOptions(reasonSelect, "DAMAGED");
@@ -628,7 +540,6 @@ describe("InventoryAdjustmentsPage", () => {
         screen.getByRole("button", { name: /Aplicar ajuste/i }),
       );
 
-      // After success, the projected stock reflects the delta in the form
       await waitFor(() => {
         expect(mockCreate).toHaveBeenCalled();
       });

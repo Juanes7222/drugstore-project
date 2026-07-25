@@ -21,8 +21,6 @@ import type {
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_STRICTNESS: StrictnessConfig = {
-  lots: 'OPTIONAL',
-  expiryDates: 'OPTIONAL',
   stockValidation: 'WARN',
   clientRequired: 'ABOVE_AMOUNT',
   clientRequiredThreshold: 50000,
@@ -89,8 +87,8 @@ export const DEFAULT_PURCHASES: PurchasesConfig = {
   autoConfirmOnCreate: false,
   requireManagerPinForConfirm: false,
   requireManagerPinForAnnul: false,
-  requireLotOnReception: true,
-  requireExpiryOnReception: true,
+  requireLotOnReception: false,
+  requireExpiryOnReception: false,
   allowOverReception: false,
   defaultPaymentTermsDays: 30,
   maxItemsPerOrder: 0,

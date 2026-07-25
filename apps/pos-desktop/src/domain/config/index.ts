@@ -82,8 +82,6 @@ export {
 } from './effective-config';
 
 export {
-  getLotRequirement,
-  getExpiryDateRequirement,
   getStockValidationBehavior,
   getClientRequirement,
   getPrescriptionEnforcementBehavior,

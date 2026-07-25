@@ -7,8 +7,6 @@
  */
 import { describe, expect, it } from "vitest";
 import {
-  getLotRequirement,
-  getExpiryDateRequirement,
   getStockValidationBehavior,
   getClientRequirement,
   getPrescriptionEnforcementBehavior,
@@ -20,7 +18,7 @@ import {
   isCustomerDisplayRequired,
   getPrescriptionExpiryDays,
 } from "./field-requirements";
-import type { StrictnessConfig, EffectiveConfig, FieldRequirement } from "./types";
+import type { StrictnessConfig, EffectiveConfig } from "./types";
 import { DEFAULT_PURCHASES } from "./defaults";
 
 // ---------------------------------------------------------------------------
@@ -31,8 +29,6 @@ function makeStrictness(
   overrides?: Partial<StrictnessConfig>,
 ): StrictnessConfig {
   return {
-    lots: "OPTIONAL",
-    expiryDates: "OPTIONAL",
     stockValidation: "WARN",
     clientRequired: "ABOVE_AMOUNT",
     clientRequiredThreshold: 50000,
@@ -62,66 +58,6 @@ function makeEffectiveConfig(
     configVersion: 1,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Tests — getLotRequirement
-// ---------------------------------------------------------------------------
-
-describe("getLotRequirement", () => {
-  it("returns REQUIRED for STRICT level", () => {
-    expect(getLotRequirement(makeStrictness({ lots: "STRICT" }))).toBe(
-      "REQUIRED" satisfies FieldRequirement,
-    );
-  });
-
-  it("returns OPTIONAL for OPTIONAL level", () => {
-    expect(getLotRequirement(makeStrictness({ lots: "OPTIONAL" }))).toBe(
-      "OPTIONAL" satisfies FieldRequirement,
-    );
-  });
-
-  it("returns HIDDEN for OFF level", () => {
-    expect(getLotRequirement(makeStrictness({ lots: "OFF" }))).toBe(
-      "HIDDEN" satisfies FieldRequirement,
-    );
-  });
-
-  it("works with EffectiveConfig", () => {
-    expect(getLotRequirement(makeEffectiveConfig({ lots: "STRICT" }))).toBe(
-      "REQUIRED",
-    );
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Tests — getExpiryDateRequirement
-// ---------------------------------------------------------------------------
-
-describe("getExpiryDateRequirement", () => {
-  it("returns REQUIRED for STRICT level", () => {
-    expect(
-      getExpiryDateRequirement(makeStrictness({ expiryDates: "STRICT" })),
-    ).toBe("REQUIRED");
-  });
-
-  it("returns OPTIONAL for OPTIONAL level", () => {
-    expect(
-      getExpiryDateRequirement(makeStrictness({ expiryDates: "OPTIONAL" })),
-    ).toBe("OPTIONAL");
-  });
-
-  it("returns HIDDEN for OFF level", () => {
-    expect(
-      getExpiryDateRequirement(makeStrictness({ expiryDates: "OFF" })),
-    ).toBe("HIDDEN");
-  });
-
-  it("works with EffectiveConfig", () => {
-    expect(
-      getExpiryDateRequirement(makeEffectiveConfig({ expiryDates: "STRICT" })),
-    ).toBe("REQUIRED");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Tests — getStockValidationBehavior
@@ -244,10 +180,10 @@ describe("getPrescriptionEnforcementBehavior", () => {
 // ---------------------------------------------------------------------------
 
 describe("getAdjustmentReasonRequirement", () => {
-  it("returns REQUIRED for REQUIRED", () => {
+  it("returns REQUIRED for STRICT", () => {
     expect(
       getAdjustmentReasonRequirement(
-        makeStrictness({ inventoryAdjustmentReason: "REQUIRED" }),
+        makeStrictness({ inventoryAdjustmentReason: "STRICT" }),
       ),
     ).toBe("REQUIRED");
   });

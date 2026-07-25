@@ -17,7 +17,7 @@ import {
   navigateToInventoryAdjustments,
 } from "@/store/slices/ui-slice";
 import { useLocalSessionStore, hasMinRole } from "../../../domain/auth/local-session.store";
-import { useTenantConfig } from "../../../domain/config/use-tenant-config";
+import { useRequireLotOnReception } from "../../../domain/configuration";
 import { RoleType } from "@pharmacy/shared-types";
 
 // ---------------------------------------------------------------------------
@@ -108,9 +108,8 @@ export const ProductosMainPage: FC = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const session = useLocalSessionStore((s) => s.session);
-  const { effectiveConfig } = useTenantConfig();
-  const lotManagementOff =
-    effectiveConfig?.strictness.lots === 'OFF';
+  const requireLotOnReception = useRequireLotOnReception();
+  const lotManagementOff = !requireLotOnReception;
 
   const cards: ProductosCard[] = useMemo(
     () => [

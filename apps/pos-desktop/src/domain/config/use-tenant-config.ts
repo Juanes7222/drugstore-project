@@ -179,16 +179,25 @@ export function useTenantConfig(
     try {
       const config = await svc.getCurrent();
       store.getState().setConfig(config);
+      // Propagate purchases to the local config store so the POS always
+      // has a consistent copy even before the periodic sync fires.
+      if (config.purchases) {
+        useLocalConfigStore.getState().updatePurchasesConfig(config.purchases);
+      }
     } catch (err) {
       if (err instanceof ConfigHttpError && err.statusCode === 404) {
         // No config on server yet — seed with defaults.
         // This is expected for brand-new subscriptions.
         const session = useLocalSessionStore.getState().session;
-        store
-          .getState()
-          .setConfig(
-            createDefaultTenantConfig(session?.subscriptionId ?? null),
-          );
+        const defaultConfig = createDefaultTenantConfig(
+          session?.subscriptionId ?? null,
+        );
+        store.getState().setConfig(defaultConfig);
+        if (defaultConfig.purchases) {
+          useLocalConfigStore
+            .getState()
+            .updatePurchasesConfig(defaultConfig.purchases);
+        }
       } else {
         const message =
           err instanceof Error ? err.message : 'Failed to fetch config';

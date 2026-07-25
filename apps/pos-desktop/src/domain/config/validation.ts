@@ -22,8 +22,6 @@ import { getPreset } from './presets';
 // ---------------------------------------------------------------------------
 
 const KNOWN_STRICTNESS_KEYS: readonly string[] = [
-  'lots',
-  'expiryDates',
   'stockValidation',
   'clientRequired',
   'clientRequiredThreshold',
@@ -72,7 +70,6 @@ function validateStrictness(s?: Partial<StrictnessConfig>): ConfigValidationErro
   const errors: ConfigValidationError[] = [];
   if (!s) return [];
 
-  const validLevels = ['STRICT', 'OPTIONAL', 'OFF'];
   const validClientReq = ['ALWAYS', 'ABOVE_AMOUNT', 'NEVER'];
   const validStock = ['STRICT', 'WARN', 'OFF'];
   const validPrescription = ['STRICT', 'WARN', 'OFF'];
@@ -80,12 +77,6 @@ function validateStrictness(s?: Partial<StrictnessConfig>): ConfigValidationErro
   const validDrawer = ['ALWAYS', 'CASH_ONLY', 'MANUAL'];
   const validReturnsReq = ['STRICT', 'WITH_MANAGER_AUTH', 'OFF'];
 
-  if (s.lots && !validLevels.includes(s.lots)) {
-    errors.push({ path: 'strictness.lots', message: `Valor invalido: ${s.lots}`, code: 'INVALID_VALUE' });
-  }
-  if (s.expiryDates && !validLevels.includes(s.expiryDates)) {
-    errors.push({ path: 'strictness.expiryDates', message: `Valor invalido: ${s.expiryDates}`, code: 'INVALID_VALUE' });
-  }
   if (s.stockValidation && !validStock.includes(s.stockValidation)) {
     errors.push({ path: 'strictness.stockValidation', message: `Valor invalido: ${s.stockValidation}`, code: 'INVALID_VALUE' });
   }

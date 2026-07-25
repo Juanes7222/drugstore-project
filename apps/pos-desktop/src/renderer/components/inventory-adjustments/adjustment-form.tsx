@@ -32,6 +32,8 @@ interface AdjustmentFormProps {
   projectedStock: number;
   reasonRequirement: FieldRequirement;
   onSubmit: () => void;
+  /** When false, hides lot-specific details (code, expiry, location). */
+  showLotInfo?: boolean;
 }
 
 const ADJUSTMENT_REASON_KEYS: Record<string, string> = {
@@ -60,6 +62,7 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
   projectedStock,
   reasonRequirement,
   onSubmit,
+  showLotInfo = true,
 }) => {
   const { t } = useTranslation();
 
@@ -69,51 +72,74 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
 
   return (
     <section className="pos-panel mt-pos-lg p-pos-md">
-      {/* Selected lot heading */}
-      <h2
-        className="text-ui font-semibold"
-        style={{ color: "var(--color-ink)" }}
-      >
-        {t("inventory_adjustments.lot_code")}:{" "}
-        <span className="font-data tabular-nums">{selectedLot.lotCode}</span>
-      </h2>
+      {/* Selected heading */}
+      {showLotInfo ? (
+        <h2
+          className="text-ui font-semibold"
+          style={{ color: "var(--color-ink)" }}
+        >
+          {t("inventory_adjustments.lot_code")}:{" "}
+          <span className="font-data tabular-nums">{selectedLot.lotCode}</span>
+        </h2>
+      ) : (
+        <h2
+          className="text-ui font-semibold"
+          style={{ color: "var(--color-ink)" }}
+        >
+          {selectedLot.productName}
+        </h2>
+      )}
 
       {/* Info grid */}
       <div
         className="mt-pos-md grid grid-cols-2 gap-pos-sm text-body-sm"
         style={{ color: "color-mix(in srgb, var(--color-ink) 60%, transparent)" }}
       >
-        {/* Current stock */}
-        <div>
-          <span className="block text-caption font-semibold uppercase tracking-wider">
-            {t("inventory_adjustments.stock")}
-          </span>
-          <span className="font-data tabular-nums" style={{ color: "var(--color-ink)" }}>
-            {selectedLot.currentStock}
-          </span>
-        </div>
+        {showLotInfo ? (
+          <>
+            {/* Current stock (lot-level) */}
+            <div>
+              <span className="block text-caption font-semibold uppercase tracking-wider">
+                {t("inventory_adjustments.stock")}
+              </span>
+              <span className="font-data tabular-nums" style={{ color: "var(--color-ink)" }}>
+                {selectedLot.currentStock}
+              </span>
+            </div>
+            {/* Expiration */}
+            <div>
+              <span className="block text-caption font-semibold uppercase tracking-wider">
+                {t("inventory_adjustments.expires")}
+              </span>
+              <span className="font-data tabular-nums" style={{ color: "var(--color-ink)" }}>
+                {selectedLot.expirationDate}
+              </span>
+            </div>
+            {/* Location */}
+            <div>
+              <span className="block text-caption font-semibold uppercase tracking-wider">
+                {t("inventory_adjustments.location")}
+              </span>
+              <span style={{ color: "var(--color-ink)" }}>
+                {selectedLot.location}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Total stock (product-level) */}
+            <div className="col-span-2">
+              <span className="block text-caption font-semibold uppercase tracking-wider">
+                {t("inventory_adjustments.stock")}
+              </span>
+              <span className="font-data tabular-nums" style={{ color: "var(--color-ink)" }}>
+                {selectedLot.currentStock}
+              </span>
+            </div>
+          </>
+        )}
 
-        {/* Expiration */}
-        <div>
-          <span className="block text-caption font-semibold uppercase tracking-wider">
-            {t("inventory_adjustments.expires")}
-          </span>
-          <span className="font-data tabular-nums" style={{ color: "var(--color-ink)" }}>
-            {selectedLot.expirationDate}
-          </span>
-        </div>
-
-        {/* Location */}
-        <div>
-          <span className="block text-caption font-semibold uppercase tracking-wider">
-            {t("inventory_adjustments.location")}
-          </span>
-          <span style={{ color: "var(--color-ink)" }}>
-            {selectedLot.location}
-          </span>
-        </div>
-
-        {/* Projected stock */}
+        {/* Projected stock (always shown) */}
         <div>
           <span className="block text-caption font-semibold uppercase tracking-wider">
             {t("inventory_adjustments.projected")}

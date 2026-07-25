@@ -35,28 +35,6 @@ interface StrictnessField {
 
 const STRICTNESS_FIELDS: StrictnessField[] = [
   {
-    key: 'lots',
-    i18nKey: 'strictness.lots',
-    i18nDescKey: 'strictness.lots_desc',
-    type: 'select',
-    options: [
-      { value: 'STRICT', i18nLabel: 'strictness.option_strict' },
-      { value: 'OPTIONAL', i18nLabel: 'strictness.option_optional' },
-      { value: 'OFF', i18nLabel: 'strictness.option_off' },
-    ],
-  },
-  {
-    key: 'expiryDates',
-    i18nKey: 'strictness.expiry_dates',
-    i18nDescKey: 'strictness.expiry_dates_desc',
-    type: 'select',
-    options: [
-      { value: 'STRICT', i18nLabel: 'strictness.option_strict' },
-      { value: 'OPTIONAL', i18nLabel: 'strictness.option_optional' },
-      { value: 'OFF', i18nLabel: 'strictness.option_off' },
-    ],
-  },
-  {
     key: 'inventoryAdjustmentReason',
     i18nKey: 'strictness.inventory_adjustment_reason',
     i18nDescKey: 'strictness.inventory_adjustment_reason_desc',

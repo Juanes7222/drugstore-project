@@ -1,10 +1,12 @@
 /**
  * Inventory Adjustments page — full inventory view with adjustment form.
  *
- * Loads all active lots on mount so the user sees inventory immediately
- * without requiring a search.  Search/filter narrows the shown list.
- * Left panel: scrollable lot list.  Right panel: adjustment form for
- * the selected lot.
+ * Two modes:
+ * - **Lot tracking ON** (`requireLotOnReception=true`): shows lots grouped by product
+ *   in LotSearchPanel. User selects a specific lot to adjust.
+ * - **Lot tracking OFF** (`requireLotOnReception=false`): shows a flat product list.
+ *   User selects a product; the adjustment auto-resolves to the oldest lot (FEFO).
+ *   No lot details are visible to the user.
  *
  * @category Page
  */
@@ -21,9 +23,14 @@ import { useAppDispatch } from "@/store/hooks";
 import { navigateBackToSales } from "@/store/slices/ui-slice";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
-import { useInventoryAdjustmentsService } from "../common/service-context";
+import {
+  useInventoryAdjustmentsService,
+  useInventoryLotsService,
+} from "../common/service-context";
 import { useFieldRequirementFor } from "../../../domain/config/use-field-requirement";
+import { useRequireLotOnReception } from "../../../domain/configuration";
 import type { FieldRequirement } from "../../../domain/config/types";
+import type { ProductLotGroup } from "../../../domain/inventory-lots/inventory-lots.service";
 import type { DisplayLot, AdjustmentType, AdjustmentReason } from "./inventory-adjustments.types";
 
 import { InventoryAdjustmentsHeader } from "./inventory-adjustments-header";
@@ -31,20 +38,51 @@ import { LotSearchPanel } from "./lot-search-panel";
 import { AdjustmentForm } from "./adjustment-form";
 import { ErrorBanner } from "./error-banner";
 import { notify } from "@/utils/notify";
+import { SearchIcon } from "@/components/ui/icons";
 
-// ── Page component ──────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const LOW_STOCK_THRESHOLD = 10;
+
+function toDisplayLot(
+  productId: string,
+  productName: string,
+  lotId: string,
+  lotCode: string,
+  currentStock: number,
+  expirationDate: Date,
+  location: string,
+): DisplayLot {
+  return {
+    id: lotId,
+    productId,
+    productName,
+    lotCode,
+    currentStock,
+    expirationDate: expirationDate.toISOString(),
+    location,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Page component
+// ---------------------------------------------------------------------------
 
 export const InventoryAdjustmentsPage: FC = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
   const isOnline = useOnlineStatus();
   const adjustmentsService = useInventoryAdjustmentsService();
+  const inventoryLotsService = useInventoryLotsService();
   const reasonRequirement: FieldRequirement = useFieldRequirementFor("inventoryAdjustmentReason");
+  const requireLotOnReception = useRequireLotOnReception();
+  const lotManagementOff = !requireLotOnReception;
 
   // Search / list state
   const [searchQuery, setSearchQuery] = useState("");
-  const [allLots, setAllLots] = useState<DisplayLot[]>([]);
-  const [filteredLots, setFilteredLots] = useState<DisplayLot[]>([]);
+  const [productGroups, setProductGroups] = useState<ProductLotGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedLot, setSelectedLot] = useState<DisplayLot | null>(null);
 
@@ -62,7 +100,7 @@ export const InventoryAdjustmentsPage: FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Load all lots on mount ────────────────────────────────────────────
+  // ── Load data on mount ───────────────────────────────────────────────
 
   useEffect(() => {
     let cancelled = false;
@@ -70,10 +108,9 @@ export const InventoryAdjustmentsPage: FC = () => {
     const load = async () => {
       try {
         setIsLoading(true);
-        const lots = await adjustmentsService.listAllLots();
+        const groups = await inventoryLotsService.getLotsGroupedByProduct();
         if (!cancelled) {
-          setAllLots(lots);
-          setFilteredLots(lots);
+          setProductGroups(groups);
         }
       } catch {
         if (!cancelled) setError(t("inventory_adjustments.load_error"));
@@ -84,46 +121,39 @@ export const InventoryAdjustmentsPage: FC = () => {
 
     void load();
     return () => { cancelled = true; };
-  }, [adjustmentsService, t]);
+  }, [inventoryLotsService, t]);
 
-  // ── Filter lots when searchQuery changes ──────────────────────────────
-
-  useEffect(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) {
-      setFilteredLots(allLots);
-      return;
-    }
-
-    // Filter locally first — faster than a service call
-    const filtered = allLots.filter(
-      (lot) =>
-        lot.productName.toLowerCase().includes(q) ||
-        lot.lotCode.toLowerCase().includes(q) ||
-        lot.location.toLowerCase().includes(q),
-    );
-
-    // If no local match, fall back to service searchLots for DB-fresh results
-    if (filtered.length === 0 && searchQuery.trim()) {
-      const doSearch = async () => {
-        try {
-          const results = await adjustmentsService.searchLots(searchQuery.trim());
-          setFilteredLots(results);
-        } catch {
-          setFilteredLots([]);
-        }
-      };
-      void doSearch();
-      return;
-    }
-
-    setFilteredLots(filtered);
-  }, [searchQuery, allLots, adjustmentsService]);
-
-  // ── Handlers ──────────────────────────────────────────────────────────
+  // ── Handlers ─────────────────────────────────────────────────────────
 
   const handleSelectLot = useCallback((lot: DisplayLot) => {
     setSelectedLot(lot);
+    setError(null);
+  }, []);
+
+  /**
+   * In no-lot mode: when a product group is clicked, create a synthetic
+   * DisplayLot with the total stock of the product (not a single lot).
+   */
+  const handleSelectProductGroup = useCallback((group: ProductLotGroup) => {
+    const oldestActive = group.lots
+      .filter((l) => l.currentStock > 0)
+      .sort(
+        (a, b) => a.expirationDate.getTime() - b.expirationDate.getTime(),
+      )[0];
+
+    if (oldestActive) {
+      setSelectedLot(
+        toDisplayLot(
+          group.productId,
+          group.commercialName,
+          oldestActive.id,
+          oldestActive.batchNumber,
+          group.totalStock,     // ← total stock, not lot-level stock
+          oldestActive.expirationDate,
+          oldestActive.locationCode ?? "",
+        ),
+      );
+    }
     setError(null);
   }, []);
 
@@ -134,9 +164,7 @@ export const InventoryAdjustmentsPage: FC = () => {
   const handleSubmit = useCallback(async () => {
     setError(null);
 
-    // Session guard — quick check before calling the service.
-    // Role enforcement is done by the service's requireRole, which handles
-    // supersession (OWNER/SAAS_ADMIN implicitly satisfy ADMIN/INVENTORY_ASSISTANT).
+    // Session guard
     const currentSession = useLocalSessionStore.getState().session;
     if (!currentSession) {
       setError(t("errors.no_session"));
@@ -151,6 +179,27 @@ export const InventoryAdjustmentsPage: FC = () => {
     if (quantity <= 0) {
       setError(t("inventory_adjustments.quantity_invalid"));
       return;
+    }
+
+    // In no-lot mode, re-resolve the oldest lot in case stock changed
+    // since the product was selected.
+    let targetLotId = selectedLot.id;
+    if (lotManagementOff) {
+      const lots = await inventoryLotsService.getLots({
+        productId: selectedLot.productId,
+        state: 'ACTIVE',
+      });
+      const oldestActive = lots
+        .filter((l) => l.currentStock > 0)
+        .sort(
+          (a, b) =>
+            a.expirationDate.getTime() - b.expirationDate.getTime(),
+        )[0];
+      if (!oldestActive) {
+        setError(t("inventory_adjustments.no_inventory"));
+        return;
+      }
+      targetLotId = oldestActive.id;
     }
 
     const effectiveReason =
@@ -169,7 +218,7 @@ export const InventoryAdjustmentsPage: FC = () => {
           {
             productId: selectedLot.productId,
             quantity: signedQuantity,
-            lotId: selectedLot.id,
+            lotId: targetLotId,
             reason: effectiveReason,
           },
         ],
@@ -184,7 +233,7 @@ export const InventoryAdjustmentsPage: FC = () => {
             {
               productId: selectedLot.productId,
               quantity: signedQuantity,
-              lotId: selectedLot.id,
+              lotId: targetLotId,
               reason: effectiveReason,
             },
           ],
@@ -197,12 +246,20 @@ export const InventoryAdjustmentsPage: FC = () => {
 
       // Optimistic local stock update
       const delta = adjustmentType === "INCREASE" ? quantity : -quantity;
-      const updatedLots = allLots.map((l) =>
-        l.id === selectedLot.id
-          ? { ...l, currentStock: Math.max(0, l.currentStock + delta) }
-          : l,
+      setProductGroups((prev) =>
+        prev.map((group) => ({
+          ...group,
+          totalStock:
+            group.productId === selectedLot.productId
+              ? group.totalStock + delta
+              : group.totalStock,
+          lots: group.lots.map((lot) =>
+            lot.id === targetLotId
+              ? { ...lot, currentStock: Math.max(0, lot.currentStock + delta) }
+              : lot,
+          ),
+        })),
       );
-      setAllLots(updatedLots);
       setSelectedLot((prev) =>
         prev
           ? { ...prev, currentStock: Math.max(0, prev.currentStock + delta) }
@@ -231,8 +288,6 @@ export const InventoryAdjustmentsPage: FC = () => {
       setNotes("");
     } catch (err) {
       setIsProcessing(false);
-
-      // Map known error codes to localized messages
       if (
         err &&
         typeof err === "object" &&
@@ -253,21 +308,20 @@ export const InventoryAdjustmentsPage: FC = () => {
     reason,
     customReason,
     notes,
-    allLots,
+    productGroups,
     adjustmentsService,
+    inventoryLotsService,
+    lotManagementOff,
+    isOnline,
     t,
   ]);
 
-  // ── Derived ───────────────────────────────────────────────────────────
+  // ── Derived ──────────────────────────────────────────────────────────
 
   const canSubmit = useMemo(
     () => {
       if (!selectedLot || quantity <= 0 || isProcessing) return false;
-
-      // When reason is HIDDEN/OPTIONAL, no reason validation needed
       if (reasonRequirement !== "REQUIRED") return true;
-
-      // When REQUIRED, enforce reason selection
       return reason !== "OTHER" || customReason.trim().length > 0;
     },
     [selectedLot, quantity, isProcessing, reasonRequirement, reason, customReason],
@@ -279,7 +333,23 @@ export const InventoryAdjustmentsPage: FC = () => {
     ? Math.max(0, selectedLot.currentStock + adjustmentDelta)
     : 0;
 
-  // ── Render ────────────────────────────────────────────────────────────
+  // ── Filter product groups for no-lot mode ────────────────────────────
+
+  const filteredProductGroups = useMemo(() => {
+    if (!lotManagementOff) return productGroups;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return productGroups;
+    return productGroups.filter(
+      (g) =>
+        g.commercialName.toLowerCase().includes(q) ||
+        g.genericName.toLowerCase().includes(q) ||
+        g.internalCode.toLowerCase().includes(q),
+    );
+  }, [productGroups, searchQuery, lotManagementOff]);
+
+  const hasResults = filteredProductGroups.length > 0;
+
+  // ── Render ───────────────────────────────────────────────────────────
 
   return (
     <section
@@ -292,21 +362,162 @@ export const InventoryAdjustmentsPage: FC = () => {
         onBack={handleBack}
       />
 
-      {/* ── Two-column body ─────────────────────────────────────────── */}
       <div className="flex min-h-0 flex-1 gap-pos-lg px-pos-xl pb-pos-xl">
-        {/* Left: scrollable lot list */}
+        {/* ── Left panel ──────────────────────────────────────────────── */}
         <div className="flex w-3/5 flex-col overflow-hidden">
-          <LotSearchPanel
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
-            isProcessing={isProcessing || isLoading}
-            lots={filteredLots}
-            selectedLot={selectedLot}
-            onSelectLot={handleSelectLot}
-          />
+          {lotManagementOff ? (
+            /* ── No-lot mode: flat product list ─────────────────────── */
+            <section
+              className="flex flex-col overflow-hidden"
+              aria-label={t("inventory_adjustments.inventory_list")}
+            >
+              {/* Search bar */}
+              <div className="mb-pos-sm flex items-center gap-pos-sm">
+                <div className="relative flex-1">
+                  <input
+                    id="product-search-input"
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t("inventory_adjustments.search_placeholder")}
+                    disabled={isProcessing}
+                    className="pos-input w-full pl-pos-lg"
+                  />
+                  <span
+                    className="absolute left-pos-sm top-1/2 -translate-y-1/2"
+                    style={{
+                      color: "color-mix(in srgb, var(--color-ink) 40%, transparent)",
+                    }}
+                  >
+                    <SearchIcon />
+                  </span>
+                </div>
+                <span
+                  className="shrink-0 rounded-full px-pos-sm py-pos-xs font-data text-caption tabular-nums"
+                  style={{
+                    backgroundColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
+                    color: "color-mix(in srgb, var(--color-ink) 55%, transparent)",
+                  }}
+                >
+                  {filteredProductGroups.length}
+                </span>
+              </div>
+
+              {/* Scrollable product list */}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {isLoading && (
+                  <div className="flex items-center justify-center py-pos-xl">
+                    <p className="text-body-sm" style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}>
+                      {t("common.loading")}
+                    </p>
+                  </div>
+                )}
+
+                {!isLoading && !hasResults && (
+                  <div className="flex items-center justify-center py-pos-xl">
+                    <p className="text-body-sm" style={{ color: "color-mix(in srgb, var(--color-ink) 40%, transparent)" }}>
+                      {searchQuery.trim()
+                        ? t("inventory_adjustments.no_results")
+                        : t("inventory_adjustments.no_inventory")}
+                    </p>
+                  </div>
+                )}
+
+                {!isLoading &&
+                  filteredProductGroups.map((group) => {
+                    const isSelected = selectedLot?.productId === group.productId;
+                    const alerts: string[] = [];
+                    if (group.expiredCount > 0) alerts.push(`${group.expiredCount} ${t("inventory_adjustments.badge_expired")}`);
+                    if (group.soonToExpireCount > 0) alerts.push(`${group.soonToExpireCount} ${t("inventory_adjustments.badge_near_expiry")}`);
+                    // In no-lot mode, low stock is based on total product stock,
+                    // not per-lot count.
+                    if (group.totalStock <= LOW_STOCK_THRESHOLD) alerts.push(t("inventory_adjustments.badge_low_stock"));
+
+                    return (
+                      <div
+                        key={group.productId}
+                        role="option"
+                        aria-selected={isSelected}
+                        tabIndex={0}
+                        onClick={() => handleSelectProductGroup(group)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleSelectProductGroup(group);
+                          }
+                        }}
+                        className={`mb-pos-xs cursor-pointer rounded-pos px-pos-md py-pos-sm transition-colors duration-100 ${
+                          isSelected ? "" : "hover:opacity-80"
+                        }`}
+                        style={{
+                          backgroundColor: isSelected
+                            ? "color-mix(in srgb, var(--color-pharma) 8%, transparent)"
+                            : "color-mix(in srgb, var(--color-ink) 3%, transparent)",
+                          borderLeft: isSelected
+                            ? "3px solid var(--color-pharma)"
+                            : "3px solid transparent",
+                        }}
+                      >
+                        {/* Product name row */}
+                        <div className="flex items-center gap-pos-xs">
+                          <p
+                            className="truncate text-body font-medium"
+                            style={{ color: "var(--color-ink)" }}
+                          >
+                            {group.commercialName}
+                          </p>
+                          <span
+                            className="shrink-0 ml-auto font-data text-caption tabular-nums"
+                            style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}
+                          >
+                            {t("inventory_adjustments.stock")}: {group.totalStock}
+                          </span>
+                        </div>
+
+                        {/* Generic name */}
+                        <p
+                          className="mt-pos-xs text-caption truncate"
+                          style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}
+                        >
+                          {group.genericName} · {group.internalCode}
+                        </p>
+
+                        {/* Alert badges */}
+                        {alerts.length > 0 && (
+                          <div className="mt-pos-xs flex flex-wrap gap-pos-xs">
+                            {alerts.map((a) => (
+                              <span
+                                key={a}
+                                className="rounded px-pos-xs py-0.5 text-caption font-semibold"
+                                style={{
+                                  backgroundColor: "color-mix(in srgb, var(--color-warning) 12%, transparent)",
+                                  color: "var(--color-warning)",
+                                }}
+                              >
+                                {a}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </section>
+          ) : (
+            /* ── Lot mode: grouped lot list ────────────────────────── */
+            <LotSearchPanel
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              isProcessing={isProcessing || isLoading}
+              productGroups={productGroups}
+              selectedLot={selectedLot}
+              onSelectLot={handleSelectLot}
+            />
+          )}
         </div>
 
-        {/* Right: adjustment form (shown when lot selected) */}
+        {/* ── Right panel: adjustment form ────────────────────────────── */}
         <div className="w-2/5 overflow-y-auto">
           {isLoading && (
             <div className="pos-panel flex items-center justify-center p-pos-xl">
@@ -329,7 +540,7 @@ export const InventoryAdjustmentsPage: FC = () => {
               quantityStr={quantityStr}
               onQuantityChange={setQuantityStr}
               reason={reason}
-              onReasonChange={(reason: string) => setReason(reason as AdjustmentReason)}
+              onReasonChange={(r: string) => setReason(r as AdjustmentReason)}
               customReason={customReason}
               onCustomReasonChange={setCustomReason}
               notes={notes}
@@ -340,6 +551,7 @@ export const InventoryAdjustmentsPage: FC = () => {
               projectedStock={projectedStock}
               reasonRequirement={reasonRequirement}
               onSubmit={handleSubmit}
+              showLotInfo={!lotManagementOff}
             />
           )}
 
@@ -363,7 +575,6 @@ export const InventoryAdjustmentsPage: FC = () => {
           )}
         </div>
       </div>
-
     </section>
   );
 };

@@ -17,8 +17,10 @@ export type AutoOpenDrawerSetting = 'ALWAYS' | 'CASH_ONLY' | 'MANUAL';
 export type ReturnsOriginalSaleRequirement = 'STRICT' | 'WITH_MANAGER_AUTH' | 'OFF';
 
 export interface StrictnessConfig {
-  lots: StrictnessLevel;
-  expiryDates: StrictnessLevel;
+  /** @deprecated Lot tracking is now driven by PurchasesConfig.requireLotOnReception. */
+  lots?: StrictnessLevel;
+  /** @deprecated Expiry tracking is now driven by PurchasesConfig.requireExpiryOnReception. */
+  expiryDates?: StrictnessLevel;
   stockValidation: StockValidationLevel;
   clientRequired: ClientRequirement;
   clientRequiredThreshold: number; // COP cents

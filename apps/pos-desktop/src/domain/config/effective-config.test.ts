@@ -28,10 +28,12 @@ function makeTenantConfig(
   return {
     id: "test-config-id",
     subscriptionId: "sub-1",
-    activePresetCode: (ov.activePresetCode as PresetCode) ?? ("BALANCED" as PresetCode),
-    strictness: { ...DEFAULT_STRICTNESS, ...(ov.strictness as Partial<StrictnessConfig>) } as StrictnessConfig,
+    activePresetCode: ov.activePresetCode !== undefined
+      ? (ov.activePresetCode as PresetCode | null)
+      : "BALANCED",
+    strictness: { ...PRESET_BALANCED.strictness, ...(ov.strictness as Partial<StrictnessConfig>) } as StrictnessConfig,
     fiscal: { ...DEFAULT_FISCAL, ...(ov.fiscal as Partial<FiscalConfig>) } as FiscalConfig,
-    workflow: { ...DEFAULT_WORKFLOW, ...(ov.workflow as Partial<WorkflowConfig>) } as WorkflowConfig,
+    workflow: { ...PRESET_BALANCED.workflow, ...(ov.workflow as Partial<WorkflowConfig>) } as WorkflowConfig,
     purchases: { ...DEFAULT_PURCHASES, ...(ov.purchases as Partial<typeof DEFAULT_PURCHASES>) },
     customCompanyFields: (ov.customCompanyFields as CustomCompanyField[]) ?? [],
     customStrictnessToggles: (ov.customStrictnessToggles as CustomStrictnessToggle[]) ?? [],
@@ -52,18 +54,18 @@ describe("computeEffectiveConfig", () => {
 
     const result = computeEffectiveConfig(config);
 
-    expect(result.strictness.lots).toBe("OPTIONAL");
+    expect(result.strictness.stockValidation).toBe("WARN");
     expect(result.strictness.clientRequiredThreshold).toBe(50000);
     expect(result.workflow.requireShiftOpenForSale).toBe(true);
   });
 
   it("overrides preset values with stored overrides", () => {
     const config = makeTenantConfig();
-    config.strictness = { ...DEFAULT_STRICTNESS, lots: "STRICT" };
+    config.strictness = { ...DEFAULT_STRICTNESS, stockValidation: "STRICT" };
 
     const result = computeEffectiveConfig(config);
 
-    expect(result.strictness.lots).toBe("STRICT");
+    expect(result.strictness.stockValidation).toBe("STRICT");
     // Other preset values remain unchanged
     expect(result.strictness.clientRequired).toBe("ABOVE_AMOUNT");
   });
@@ -71,13 +73,13 @@ describe("computeEffectiveConfig", () => {
   it("returns config as-is when preset is CUSTOM", () => {
     const config = makeTenantConfig({
       activePresetCode: "CUSTOM" as PresetCode,
-      strictness: { lots: "STRICT", expiryDates: "STRICT" },
+      strictness: { stockValidation: "OFF", inventoryAdjustmentReason: "STRICT" },
     });
 
     const result = computeEffectiveConfig(config);
 
-    expect(result.strictness.lots).toBe("STRICT");
-    expect(result.strictness.expiryDates).toBe("STRICT");
+    expect(result.strictness.stockValidation).toBe("OFF");
+    expect(result.strictness.inventoryAdjustmentReason).toBe("STRICT");
     // Non-overridden fields use defaults
     expect(result.strictness.clientRequired).toBe(
       DEFAULT_STRICTNESS.clientRequired,
@@ -89,7 +91,6 @@ describe("computeEffectiveConfig", () => {
 
     const result = computeEffectiveConfig(config);
 
-    expect(result.strictness.lots).toBe(DEFAULT_STRICTNESS.lots);
     expect(result.strictness.stockValidation).toBe(
       DEFAULT_STRICTNESS.stockValidation,
     );
@@ -106,7 +107,6 @@ describe("computeEffectiveConfig", () => {
     const result = computeEffectiveConfig(config);
 
     // Falls back to global defaults
-    expect(result.strictness.lots).toBe(DEFAULT_STRICTNESS.lots);
     expect(result.strictness.clientRequired).toBe(
       DEFAULT_STRICTNESS.clientRequired,
     );
@@ -206,12 +206,12 @@ describe("getOverriddenFields", () => {
 
   it("detects overridden strictness fields", () => {
     const config = makeTenantConfig({
-      strictness: { lots: "OFF" },
+      strictness: { stockValidation: "OFF" },
     });
 
     const result = getOverriddenFields(config);
 
-    expect(result["strictness.lots"]).toBe(true);
+    expect(result["strictness.stockValidation"]).toBe(true);
   });
 
   it("detects overridden workflow fields", () => {
@@ -226,21 +226,21 @@ describe("getOverriddenFields", () => {
 
   it("detects multiple overridden fields simultaneously", () => {
     const config = makeTenantConfig({
-      strictness: { lots: "OFF", expiryDates: "OFF" },
+      strictness: { stockValidation: "OFF", clientRequired: "NEVER" },
       workflow: { autoPrintOnConfirm: false },
     });
 
     const result = getOverriddenFields(config);
 
-    expect(result["strictness.lots"]).toBe(true);
-    expect(result["strictness.expiryDates"]).toBe(true);
+    expect(result["strictness.stockValidation"]).toBe(true);
+    expect(result["strictness.clientRequired"]).toBe(true);
     expect(result["workflow.autoPrintOnConfirm"]).toBe(true);
   });
 
   it("returns empty map for CUSTOM preset", () => {
     const config = makeTenantConfig({
       activePresetCode: "CUSTOM" as PresetCode,
-      strictness: { lots: "STRICT" },
+      strictness: { stockValidation: "STRICT" },
     });
 
     const result = getOverriddenFields(config);
@@ -251,7 +251,7 @@ describe("getOverriddenFields", () => {
   it("returns empty map when activePresetCode is null", () => {
     const config = makeTenantConfig({
       activePresetCode: null,
-      strictness: { lots: "STRICT" },
+      strictness: { stockValidation: "STRICT" },
     });
 
     const result = getOverriddenFields(config);
@@ -271,12 +271,12 @@ describe("getOverriddenFields", () => {
 
   it("does not include fields that match the preset value exactly", () => {
     const config = makeTenantConfig({
-      strictness: { lots: "OPTIONAL" }, // Same as BALANCED preset
+      strictness: { stockValidation: "WARN" }, // Same as BALANCED preset
     });
 
     const result = getOverriddenFields(config);
 
-    expect(result["strictness.lots"]).toBeUndefined();
+    expect(result["strictness.stockValidation"]).toBeUndefined();
   });
 });
 
@@ -293,7 +293,7 @@ describe("hasOverrides", () => {
 
   it("returns true when overrides exist", () => {
     const config = makeTenantConfig({
-      strictness: { lots: "STRICT" },
+      strictness: { stockValidation: "STRICT" },
     });
 
     expect(hasOverrides(config)).toBe(true);
@@ -316,15 +316,15 @@ describe("isFieldOverridden", () => {
   it("returns false when field is not overridden", () => {
     const config = makeTenantConfig();
 
-    expect(isFieldOverridden(config, "strictness.lots")).toBe(false);
+    expect(isFieldOverridden(config, "strictness.stockValidation")).toBe(false);
   });
 
   it("returns true when field is overridden", () => {
     const config = makeTenantConfig({
-      strictness: { lots: "STRICT" },
+      strictness: { stockValidation: "STRICT" },
     });
 
-    expect(isFieldOverridden(config, "strictness.lots")).toBe(true);
+    expect(isFieldOverridden(config, "strictness.stockValidation")).toBe(true);
   });
 
   it("returns false for a non-existent field path", () => {
@@ -398,14 +398,12 @@ describe("computeEffectiveConfig with workstationConfig", () => {
     expect(result.fiscal.defaultTaxRate).toBe(DEFAULT_FISCAL.defaultTaxRate);
   });
 
-  it("does not affect system-level strictness fields (lots, expiry, tax, compliance)", () => {
+  it("does not affect system-level strictness fields (tax, compliance)", () => {
     const config = makeTenantConfig();
 
     const result = computeEffectiveConfig(config, testWorkstationConfig);
 
     // These are system-level and NOT in the testWorkstationConfig
-    expect(result.strictness.lots).toBe("OPTIONAL");
-    expect(result.strictness.expiryDates).toBe("OPTIONAL");
     expect(result.strictness.prescriptionEnforcement).toBe("STRICT");
     expect(result.strictness.returnsRequireOriginalSale).toBe("STRICT");
   });
@@ -422,13 +420,13 @@ describe("computeEffectiveConfig with workstationConfig", () => {
   it("works with CUSTOM preset and workstation overrides", () => {
     const config = makeTenantConfig({
       activePresetCode: "CUSTOM" as PresetCode,
-      strictness: { lots: "STRICT", cashShiftRequired: true },
+      strictness: { stockValidation: "STRICT", cashShiftRequired: true },
     });
 
     const result = computeEffectiveConfig(config, testWorkstationConfig);
 
     // System-level still uses CUSTOM values
-    expect(result.strictness.lots).toBe("STRICT");
+    expect(result.strictness.stockValidation).toBe("STRICT");
     // Workstation overrides operational field
     expect(result.strictness.cashShiftRequired).toBe(false);
   });

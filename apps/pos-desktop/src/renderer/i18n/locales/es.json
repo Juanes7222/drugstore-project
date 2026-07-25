@@ -647,6 +647,7 @@
     "selected_lot": "Lote seleccionado",
     "badge_low_stock": "Stock bajo",
     "badge_near_expiry": "Próximo a vencer",
+    "badge_expired": "Vencido",
     "adjustment_type": "Tipo de ajuste",
     "decrease": "Disminuir",
     "increase": "Aumentar",

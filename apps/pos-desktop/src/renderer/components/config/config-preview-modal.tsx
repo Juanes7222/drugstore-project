@@ -34,24 +34,6 @@ export const ConfigPreviewModal: FC<ConfigPreviewModalProps> = ({
 
   const items: Array<{ label: string; value: string }> = [
     {
-      label: t('config.strictness.lots'),
-      value:
-        strictness.lots === 'STRICT'
-          ? t('config.preview.action_required')
-          : strictness.lots === 'OPTIONAL'
-            ? t('config.preview.action_optional')
-            : t('config.preview.action_hidden'),
-    },
-    {
-      label: t('config.strictness.expiry_dates'),
-      value:
-        strictness.expiryDates === 'STRICT'
-          ? t('config.preview.action_required')
-          : strictness.expiryDates === 'OPTIONAL'
-            ? t('config.preview.action_optional')
-            : t('config.preview.action_hidden'),
-    },
-    {
       label: t('config.strictness.client_required'),
       value:
         strictness.clientRequired === 'ALWAYS'

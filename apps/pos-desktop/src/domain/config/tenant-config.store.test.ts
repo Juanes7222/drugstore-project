@@ -3,7 +3,7 @@
  */
 import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
 import { useTenantConfigStore } from "./tenant-config.store";
-import type { TenantConfig, PresetCode, StrictnessConfig, EffectiveConfig } from "./types";
+import type { TenantConfig, PresetCode } from "./types";
 import { PRESET_LIST } from "./presets";
 
 // ---------------------------------------------------------------------------
@@ -107,13 +107,13 @@ describe("setConfig", () => {
 
   it("computes effectiveConfig from the config", () => {
     const testConfig = makeTenantConfig({
-      strictness: { lots: "STRICT" },
+      strictness: { stockValidation: "STRICT" },
     });
 
     useTenantConfigStore.getState().setConfig(testConfig);
 
     const effective = useTenantConfigStore.getState().effectiveConfig;
-    expect(effective?.strictness.lots).toBe("STRICT");
+    expect(effective?.strictness.stockValidation).toBe("STRICT");
     // Other fields should come from preset + defaults
     expect(effective?.strictness.clientRequired).toBeDefined();
   });
@@ -145,7 +145,7 @@ describe("setConfig", () => {
 
   it("sets isCustomized to true when overrides exist", () => {
     useTenantConfigStore.getState().setConfig(
-      makeTenantConfig({ strictness: { lots: "OFF" } }),
+      makeTenantConfig({ strictness: { stockValidation: "OFF" } }),
     );
 
     expect(useTenantConfigStore.getState().isCustomized).toBe(true);
@@ -220,7 +220,7 @@ describe("clearConfig", () => {
 
   it("resets isCustomized to false", () => {
     useTenantConfigStore.getState().setConfig(
-      makeTenantConfig({ strictness: { lots: "OFF" } }),
+      makeTenantConfig({ strictness: { stockValidation: "OFF" } }),
     );
     useTenantConfigStore.getState().clearConfig();
 

@@ -24,8 +24,6 @@ function makePartialConfig(
 ): Partial<TenantConfig> {
   return {
     strictness: {
-      lots: "OPTIONAL",
-      expiryDates: "OPTIONAL",
       stockValidation: "WARN",
       clientRequired: "ABOVE_AMOUNT",
       clientRequiredThreshold: 50000,
@@ -328,16 +326,6 @@ describe("validateTenantConfig", () => {
   });
 
   describe("strictness field validation", () => {
-    it("rejects invalid lots value", () => {
-      const errors = validateTenantConfig(
-        makePartialConfig({
-          strictness: { lots: "INVALID" } as unknown as Partial<StrictnessConfig>,
-        }),
-      );
-
-      expect(errors.some((e) => e.path === "strictness.lots")).toBe(true);
-    });
-
     it("rejects invalid stockValidation value", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
@@ -443,9 +431,9 @@ describe("validateTenantConfig", () => {
         makePartialConfig({
           customStrictnessToggles: [
             {
-              key: "lots",
+              key: "stockValidation",
               type: "BOOLEAN",
-              label: "Override Lots",
+              label: "Override Stock Validation",
               appliesTo: "SALE",
               defaultValue: false,
             },

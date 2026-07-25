@@ -18,8 +18,6 @@ describe("PRESET_SIMPLE", () => {
   });
 
   it("has lenient strictness defaults", () => {
-    expect(PRESET_SIMPLE.strictness.lots).toBe("OFF");
-    expect(PRESET_SIMPLE.strictness.expiryDates).toBe("OFF");
     expect(PRESET_SIMPLE.strictness.clientRequired).toBe("NEVER");
     expect(PRESET_SIMPLE.strictness.cashShiftRequired).toBe(false);
   });
@@ -31,7 +29,6 @@ describe("PRESET_BALANCED", () => {
   });
 
   it("has moderate strictness defaults", () => {
-    expect(PRESET_BALANCED.strictness.lots).toBe("OPTIONAL");
     expect(PRESET_BALANCED.strictness.clientRequired).toBe("ABOVE_AMOUNT");
     expect(PRESET_BALANCED.strictness.clientRequiredThreshold).toBe(50000);
     expect(PRESET_BALANCED.strictness.cashShiftRequired).toBe(true);
@@ -44,8 +41,6 @@ describe("PRESET_STRICT", () => {
   });
 
   it("has strict configuration", () => {
-    expect(PRESET_STRICT.strictness.lots).toBe("STRICT");
-    expect(PRESET_STRICT.strictness.expiryDates).toBe("STRICT");
     expect(PRESET_STRICT.strictness.stockValidation).toBe("STRICT");
     expect(PRESET_STRICT.strictness.clientRequired).toBe("ALWAYS");
     expect(PRESET_STRICT.strictness.customerDisplayRequired).toBe(true);

@@ -24,8 +24,6 @@ const SIMPLE_PURCHASES: Partial<PurchasesConfig> = {
 };
 
 const SIMPLE_STRICTNESS: StrictnessConfig = {
-  lots: 'OFF',
-  expiryDates: 'OFF',
   stockValidation: 'WARN',
   clientRequired: 'NEVER',
   clientRequiredThreshold: 0,
@@ -56,7 +54,7 @@ export const PRESET_SIMPLE: PresetDefinition & { purchases: Partial<PurchasesCon
   code: 'SIMPLE',
   name: 'Simple',
   description:
-    'Configuracion minima. Sin lotes, sin fechas de vencimiento, sin cliente obligatorio. Ideal para farmacias pequenas o de barrio con volumen bajo.',
+    'Configuracion minima. Sin cliente obligatorio, sin justificacion estricta de ajustes. Ideal para farmacias pequenas o de barrio con volumen bajo.',
   nameI18nKey: 'config.presets.simple_name',
   descriptionI18nKey: 'config.presets.simple_desc',
   strictness: SIMPLE_STRICTNESS,
@@ -70,8 +68,6 @@ export const PRESET_SIMPLE: PresetDefinition & { purchases: Partial<PurchasesCon
 // ---------------------------------------------------------------------------
 
 const BALANCED_STRICTNESS: StrictnessConfig = {
-  lots: 'OPTIONAL',
-  expiryDates: 'OPTIONAL',
   stockValidation: 'WARN',
   clientRequired: 'ABOVE_AMOUNT',
   clientRequiredThreshold: 50000,
@@ -113,7 +109,7 @@ export const PRESET_BALANCED: PresetDefinition & { purchases: Partial<PurchasesC
   code: 'BALANCED',
   name: 'Balanceado',
   description:
-    'Configuracion recomendada. Lotes opcionales, cliente obligatorio sobre $50,000, prescripciones estrictas. Balance entre agilidad y control.',
+    'Configuracion recomendada. Lotes requeridos en recepcion de compras, cliente obligatorio sobre $50,000, prescripciones estrictas. Balance entre agilidad y control.',
   nameI18nKey: 'config.presets.balanced_name',
   descriptionI18nKey: 'config.presets.balanced_desc',
   strictness: BALANCED_STRICTNESS,
@@ -127,8 +123,6 @@ export const PRESET_BALANCED: PresetDefinition & { purchases: Partial<PurchasesC
 // ---------------------------------------------------------------------------
 
 const STRICT_STRICTNESS: StrictnessConfig = {
-  lots: 'STRICT',
-  expiryDates: 'STRICT',
   stockValidation: 'STRICT',
   clientRequired: 'ALWAYS',
   clientRequiredThreshold: 0,
@@ -170,7 +164,7 @@ export const PRESET_STRICT: PresetDefinition & { purchases: Partial<PurchasesCon
   code: 'STRICT',
   name: 'Estricto',
   description:
-    'Control total. Lotes obligatorios, cliente siempre requerido, inventario estricto, ajustes con justificacion. Para farmacias que manejan trazabilidad rigurosa.',
+    'Control total. Lotes y fechas de vencimiento obligatorios en recepcion de compras, cliente siempre requerido, inventario estricto, ajustes con justificacion. Para farmacias que manejan trazabilidad rigurosa.',
   nameI18nKey: 'config.presets.strict_name',
   descriptionI18nKey: 'config.presets.strict_desc',
   strictness: STRICT_STRICTNESS,

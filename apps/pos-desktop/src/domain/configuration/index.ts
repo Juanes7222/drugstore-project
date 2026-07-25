@@ -19,3 +19,8 @@ export {
   type TenantInfo,
   type PurchasesConfig,
 } from './local-config.store';
+export {
+  usePurchasesConfig,
+  useRequireLotOnReception,
+  useRequireExpiryOnReception,
+} from './use-purchases-config';

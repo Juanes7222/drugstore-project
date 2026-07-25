@@ -10,8 +10,6 @@ import { useSyncExternalStore, useCallback } from 'react';
 import { useTenantConfigStore } from './tenant-config.store';
 import type { FieldRequirement, EffectiveConfig, CustomStrictnessToggle } from './types';
 import {
-  getLotRequirement,
-  getExpiryDateRequirement,
   getClientRequirement,
   getPrescriptionEnforcementBehavior,
   getAdjustmentReasonRequirement,
@@ -24,8 +22,6 @@ import {
 // ---------------------------------------------------------------------------
 
 export type KnownFieldKey =
-  | 'lots'
-  | 'expiryDates'
   | 'stockValidation'
   | 'clientRequired'
   | 'prescriptionEnforcement'
@@ -128,10 +124,6 @@ export function useFieldRequirementFor(
     const strictness = state.effectiveConfig.strictness;
 
     switch (field) {
-      case 'lots':
-        return getLotRequirement(strictness);
-      case 'expiryDates':
-        return getExpiryDateRequirement(strictness);
       case 'clientRequired':
         return getClientRequirement(strictness, 0);
       case 'prescriptionEnforcement':

@@ -4,7 +4,7 @@
  * Every service that needs to know "is this field required / optional / hidden
  * based on the current strictness config?" calls these functions.
  *
- * Centralizing this logic here instead of scattering `if (config.lots === 'STRICT')`
+ * Centralizing this logic here instead of scattering `if (config.stockValidation === 'STRICT')`
  * throughout the codebase.
  */
 
@@ -33,26 +33,6 @@ function strictnessToRequirement(level: 'STRICT' | 'OPTIONAL' | 'OFF'): FieldReq
 // ---------------------------------------------------------------------------
 // Field-specific requirement functions
 // ---------------------------------------------------------------------------
-
-/**
- * Should lot/batch fields be required, optional, or hidden?
- */
-export function getLotRequirement(
-  strictness: StrictnessConfig | EffectiveConfig,
-): FieldRequirement {
-  const s = 'strictness' in strictness ? strictness.strictness : strictness;
-  return strictnessToRequirement(s.lots);
-}
-
-/**
- * Should expiry date fields be required, optional, or hidden?
- */
-export function getExpiryDateRequirement(
-  strictness: StrictnessConfig | EffectiveConfig,
-): FieldRequirement {
-  const s = 'strictness' in strictness ? strictness.strictness : strictness;
-  return strictnessToRequirement(s.expiryDates);
-}
 
 /**
  * Should stock validation block sales with insufficient stock?
