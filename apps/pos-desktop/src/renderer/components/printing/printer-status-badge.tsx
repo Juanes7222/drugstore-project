@@ -17,11 +17,11 @@ const STATUS_META: Record<
   PrinterStatusCode,
   { dot: string; label: string }
 > = {
-  ONLINE: { dot: 'bg-green-500', label: 'En línea' },
-  OFFLINE: { dot: 'bg-gray-400', label: 'Sin conexión' },
-  ERROR: { dot: 'bg-red-500', label: 'Error' },
-  NO_PAPER: { dot: 'bg-yellow-500', label: 'Sin papel' },
-  UNKNOWN: { dot: 'bg-gray-300', label: 'Desconocido' },
+  ONLINE: { dot: 'bg-success', label: 'En línea' },
+  OFFLINE: { dot: 'bg-ink-muted', label: 'Sin conexión' },
+  ERROR: { dot: 'bg-error', label: 'Error' },
+  NO_PAPER: { dot: 'bg-urgency', label: 'Sin papel' },
+  UNKNOWN: { dot: 'bg-border', label: 'Desconocido' },
 };
 
 // ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ export const PrinterStatusBadge: FC<PrinterStatusBadgeProps> = ({
         aria-hidden="true"
       />
       {!dotOnly && (
-        <span className="text-xs font-medium text-gray-500">
+        <span className="text-xs font-medium text-ink-muted">
           {t(`printing.status.${status}`, meta.label)}
         </span>
       )}

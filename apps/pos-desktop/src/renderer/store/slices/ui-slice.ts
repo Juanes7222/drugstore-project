@@ -131,6 +131,10 @@ export const uiSlice = createSlice({
       state.activeScreen = "license-status";
     },
 
+    navigateToPrinting: (state) => {
+      state.activeScreen = "printing";
+    },
+
     navigateToPrinters: (state) => {
       state.activeScreen = "printers";
     },
@@ -251,6 +255,7 @@ export const {
   navigateToAuditLog,
   navigateToClients,
   navigateToLicenseStatus,
+  navigateToPrinting,
   navigateToPrinters,
   navigateToPrintQueue,
   navigateToSetupWizard,

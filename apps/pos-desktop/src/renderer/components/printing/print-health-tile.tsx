@@ -60,21 +60,21 @@ export const PrintHealthTile: FC<{
   const status = getOverallStatus();
 
   const statusColors: Record<HealthStatus, string> = {
-    good: 'text-green-600',
-    warning: 'text-yellow-600',
-    error: 'text-red-600',
+    good: 'text-success',
+    warning: 'text-warning',
+    error: 'text-error',
   };
 
   const statusBgColors: Record<HealthStatus, string> = {
-    good: 'bg-green-50 border-green-200',
-    warning: 'bg-yellow-50 border-yellow-200',
-    error: 'bg-red-50 border-red-200',
+    good: 'bg-success-container border-success/20',
+    warning: 'bg-urgency-surface border-urgency/20',
+    error: 'bg-error-container border-error/20',
   };
 
   if (loading) {
     return (
       <div className="rounded-lg border p-4">
-        <div className="h-4 w-24 animate-pulse rounded bg-gray-200" />
+        <div className="h-4 w-24 animate-pulse rounded bg-surface-variant" />
       </div>
     );
   }
@@ -97,39 +97,39 @@ export const PrintHealthTile: FC<{
       {printerSummary && (
         <div className="mt-3 grid grid-cols-5 gap-2 text-center text-xs">
           <div>
-            <div className="font-bold text-green-600">{printerSummary.online}</div>
-            <div className="text-gray-500">{t('printing.printHealth.online', 'En línea')}</div>
+            <div className="font-bold text-success">{printerSummary.online}</div>
+            <div className="text-ink-muted">{t('printing.printHealth.online', 'En línea')}</div>
           </div>
           <div>
-            <div className={`font-bold ${printerSummary.offline > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+            <div className={`font-bold ${printerSummary.offline > 0 ? 'text-warning' : 'text-ink-muted'}`}>
               {printerSummary.offline}
             </div>
-            <div className="text-gray-500">{t('printing.printHealth.offline', 'Offline')}</div>
+            <div className="text-ink-muted">{t('printing.printHealth.offline', 'Offline')}</div>
           </div>
           <div>
-            <div className={`font-bold ${printerSummary.noPaper > 0 ? 'text-yellow-600' : 'text-gray-400'}`}>
+            <div className={`font-bold ${printerSummary.noPaper > 0 ? 'text-warning' : 'text-ink-muted'}`}>
               {printerSummary.noPaper}
             </div>
-            <div className="text-gray-500">{t('printing.printHealth.noPaper', 'Sin papel')}</div>
+            <div className="text-ink-muted">{t('printing.printHealth.noPaper', 'Sin papel')}</div>
           </div>
           <div>
-            <div className={`font-bold ${printerSummary.error > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+            <div className={`font-bold ${printerSummary.error > 0 ? 'text-error' : 'text-ink-muted'}`}>
               {printerSummary.error}
             </div>
-            <div className="text-gray-500">{t('printing.printHealth.error', 'Error')}</div>
+            <div className="text-ink-muted">{t('printing.printHealth.error', 'Error')}</div>
           </div>
           <div>
-            <div className={`font-bold ${printerSummary.unknown > 0 ? 'text-gray-500' : 'text-gray-400'}`}>
+            <div className={`font-bold ${printerSummary.unknown > 0 ? 'text-ink-muted' : 'text-ink-muted'}`}>
               {printerSummary.unknown}
             </div>
-            <div className="text-gray-500">{t('printing.printHealth.unknown', 'Desconocido')}</div>
+            <div className="text-ink-muted">{t('printing.printHealth.unknown', 'Desconocido')}</div>
           </div>
         </div>
       )}
 
       {queueSummary && (
         <div className="mt-2 flex items-center justify-between border-t pt-2 text-xs">
-          <span className="text-gray-500">
+          <span className="text-ink-muted">
             {queueSummary.pending > 0
               ? t('printing.printHealth.pendingJobs', '{count} trabajo(s) pendiente(s)', { count: queueSummary.pending })
               : t('printing.printHealth.noPending', 'Sin trabajos pendientes')}
@@ -140,7 +140,7 @@ export const PrintHealthTile: FC<{
             {onViewQueue && (
               <button
                 type="button"
-                className="text-blue-600 hover:text-blue-800"
+                className="text-pharma hover:text-pharma/80"
                 onClick={onViewQueue}
               >
                 {t('printing.printHealth.viewQueue', 'Ver cola')}
@@ -149,7 +149,7 @@ export const PrintHealthTile: FC<{
             {onConfigurePrinters && (
               <button
                 type="button"
-                className="text-blue-600 hover:text-blue-800"
+                className="text-pharma hover:text-pharma/80"
                 onClick={onConfigurePrinters}
               >
                 {t('printing.printHealth.configure', 'Configurar')}

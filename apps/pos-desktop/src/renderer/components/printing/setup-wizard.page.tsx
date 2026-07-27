@@ -114,7 +114,7 @@ export const SetupWizardPage: FC<{
           <div
             key={s}
             className={`flex items-center gap-1 text-sm ${
-              state.step === s ? 'font-bold text-blue-600' : 'text-gray-400'
+              state.step === s ? 'font-bold text-pharma' : 'text-ink-muted'
             }`}
           >
             <span className="flex h-6 w-6 items-center justify-center rounded-full border text-xs">
@@ -179,7 +179,7 @@ export const SetupWizardPage: FC<{
       <div className="flex items-center justify-between border-t px-6 py-4">
         <button
           type="button"
-          className="text-sm text-gray-500 hover:text-gray-700"
+          className="text-sm text-ink-muted hover:text-ink"
           onClick={() => {
             if (state.step === 'welcome') onDismiss?.();
             else goToStep(STEPS[currentStepIndex - 1]);
@@ -193,7 +193,7 @@ export const SetupWizardPage: FC<{
         {state.step !== 'summary' && state.step !== 'test-prints' && (
           <button
             type="button"
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded bg-pharma px-4 py-2 text-sm font-medium text-white hover:brightness-110"
             onClick={() => goToStep(STEPS[currentStepIndex + 1])}
           >
             {state.step === 'welcome'
@@ -204,7 +204,7 @@ export const SetupWizardPage: FC<{
         {state.step === 'test-prints' && (
           <button
             type="button"
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded bg-pharma px-4 py-2 text-sm font-medium text-white hover:brightness-110"
             onClick={() => goToStep('fallback-config')}
           >
             {t('printing.wizard.continue', 'Continuar configuración')}

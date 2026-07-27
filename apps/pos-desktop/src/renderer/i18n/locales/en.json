@@ -203,6 +203,7 @@
     "license_status": "License",
     "print_queue": "Print Queue",
     "printers": "Printers",
+    "printing": "Printing",
     "fiscal": "Fiscal",
     "audit_log": "Audit Log",
     "admin_menu": "Admin",
@@ -1724,6 +1725,136 @@
       "enable_button": "Enable local sync",
       "generating_key": "Generating network key...",
       "success": "Local network enabled. Other workstations will receive the configuration on their next sync."
+    }
+  },
+  "printing": {
+    "container": {
+      "title": "Printing",
+      "tablist_label": "Printing sections",
+      "tab_queue": "Print queue",
+      "tab_printers": "Printers"
+    },
+    "queue": {
+      "title": "Print queue",
+      "processing": "Processing...",
+      "retryAll": "Retry all",
+      "filterAll": "All",
+      "filterPending": "Pending",
+      "filterFailed": "Failed",
+      "filterCompleted": "Completed",
+      "filterDiscarded": "Discarded",
+      "empty": "No jobs in the queue",
+      "summary": {
+        "label": "Queue summary",
+        "pending": "Pending",
+        "printing": "Printing",
+        "failed": "Failed",
+        "discarded": "Discarded",
+        "completed24h": "Completed (24h)",
+        "average_attempts": "Avg attempts"
+      },
+      "row": {
+        "attempts": "Attempt {{n}}",
+        "created": "Created: {{date}}",
+        "completed": "Completed: {{date}}",
+        "routing_log": "Routing log",
+        "retry_aria": "Retry print job",
+        "retrying": "Retrying...",
+        "retry": "Retry",
+        "discard_aria": "Discard print job",
+        "discard": "Discard",
+        "discard_dialog": {
+          "title": "Discard print job",
+          "description": "Are you sure you want to discard this job? It will not be printed and will be marked as discarded."
+        },
+        "discarding": "Discarding...",
+        "confirm_discard": "Discard"
+      }
+    },
+    "printers": {
+      "title": "Configured printers",
+      "addPrinter": "Add printer",
+      "export": "Export",
+      "import": "Import configuration",
+      "matched": "printers matched",
+      "unmatched": "unmatched",
+      "noPrinters": "No printers configured"
+    },
+    "status": {
+      "ONLINE": "Online",
+      "OFFLINE": "Offline",
+      "ERROR": "Error",
+      "NO_PAPER": "No paper",
+      "UNKNOWN": "Unknown"
+    },
+    "card": {
+      "color": "Color",
+      "no_jobs": "No jobs assigned",
+      "pending_count": "{{count}} pending",
+      "test_aria": "Test printer",
+      "testing": "Testing...",
+      "test": "Test",
+      "test_success": "✓ Print successful",
+      "test_fail": "✗ Print failed",
+      "edit": "Edit",
+      "delete_aria": "Delete printer",
+      "delete": "Delete",
+      "delete_dialog": {
+        "title": "Delete printer",
+        "description": "Are you sure you want to delete \"{{name}}\"? Pending print jobs will be redirected or remain in the queue."
+      },
+      "deleting": "Deleting...",
+      "confirm_delete": "Delete"
+    },
+    "job_type": {
+      "SALE_RECEIPT": "Sale receipt",
+      "ELECTRONIC_INVOICE": "Electronic invoice",
+      "CREDIT_NOTE": "Credit note",
+      "CONTINGENCY_RECEIPT": "Contingency receipt",
+      "INVENTORY_REPORT": "Inventory report",
+      "SHIFT_CLOSE_REPORT": "Shift close report",
+      "TEST_PAGE": "Test page",
+      "OTHER": "Other"
+    },
+    "printHealth": {
+      "title": "Print health",
+      "good": "All good",
+      "warning": "Attention needed",
+      "error": "Requires action",
+      "online": "Online",
+      "offline": "Offline",
+      "noPaper": "No paper",
+      "unknown": "Unknown",
+      "pendingJobs": "{count} pending job(s)",
+      "noPending": "No pending jobs",
+      "failedJobs": "{count} failed",
+      "viewQueue": "View queue",
+      "configure": "Configure"
+    },
+    "wizard": {
+      "title": "Configure printers",
+      "later": "Configure later",
+      "start": "Start",
+      "continue": "Continue setup",
+      "step": {
+        "welcome": "Welcome",
+        "discovery": "Discovery",
+        "found-printers": "Found printers",
+        "job-assignment": "Job assignment",
+        "test-prints": "Test prints",
+        "fallback-config": "Fallback config",
+        "summary": "Summary"
+      },
+      "welcome": {
+        "title": "Set up your printers",
+        "subtitle": "Configure your workstation printers in a few easy steps. The process takes 2–3 minutes and requires no technical knowledge.",
+        "feature_discovery": "Automatic detection of connected printers",
+        "feature_assign": "Assign job types to each printer",
+        "feature_fallback": "Configure a backup printer",
+        "feature_test": "Test print to verify operation",
+        "start": "Start",
+        "later_hint": "You can configure printers later from the admin menu."
+      }
     }
   }
 }

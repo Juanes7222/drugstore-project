@@ -27,39 +27,39 @@ const STATUS_BADGE: Record<
 > = {
   PENDING: {
     label: 'Pendiente',
-    dot: 'bg-yellow-500',
-    bg: 'bg-yellow-50',
-    text: 'text-yellow-800',
+    dot: 'bg-urgency',
+    bg: 'bg-urgency-surface',
+    text: 'text-urgency',
   },
   PRINTING: {
     label: 'Imprimiendo',
-    dot: 'bg-blue-500',
-    bg: 'bg-blue-50',
-    text: 'text-blue-800',
+    dot: 'bg-pharma',
+    bg: 'bg-pharma/10',
+    text: 'text-pharma',
   },
   COMPLETED: {
     label: 'Completado',
-    dot: 'bg-green-500',
-    bg: 'bg-green-50',
-    text: 'text-green-800',
+    dot: 'bg-success',
+    bg: 'bg-success-container',
+    text: 'text-success',
   },
   FAILED: {
     label: 'Fallido',
-    dot: 'bg-red-500',
-    bg: 'bg-red-50',
-    text: 'text-red-800',
+    dot: 'bg-error',
+    bg: 'bg-error-container',
+    text: 'text-error',
   },
   DISCARDED: {
     label: 'Descartado',
-    dot: 'bg-gray-400',
-    bg: 'bg-gray-100',
-    text: 'text-gray-600',
+    dot: 'bg-ink-muted',
+    bg: 'bg-surface-variant',
+    text: 'text-ink-muted',
   },
   RETRYING: {
     label: 'Reintentando',
-    dot: 'bg-orange-500',
-    bg: 'bg-orange-50',
-    text: 'text-orange-800',
+    dot: 'bg-urgency',
+    bg: 'bg-urgency-surface',
+    text: 'text-urgency',
   },
 };
 
@@ -127,9 +127,9 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
   const badge =
     STATUS_BADGE[job.status] ?? {
       label: job.status,
-      dot: 'bg-gray-300',
-      bg: 'bg-gray-100',
-      text: 'text-gray-700',
+      dot: 'bg-border',
+      bg: 'bg-surface-variant',
+      text: 'text-ink-muted',
     };
   const jobTypeLabel =
     JOB_TYPE_LABELS[job.jobType] ?? job.jobType;
@@ -172,11 +172,11 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
       exit={{ opacity: 0, height: 0 }}
       className={`pos-panel border-l-4 p-3 ${
         job.status === 'FAILED'
-          ? 'border-l-red-400'
+          ? 'border-l-error'
           : job.status === 'DISCARDED'
-            ? 'border-l-gray-300'
+            ? 'border-l-border'
             : job.status === 'COMPLETED'
-              ? 'border-l-green-400'
+              ? 'border-l-success'
               : 'border-l-transparent'
       }`}
     >
@@ -205,7 +205,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
             </span>
 
             {/* Attempt counter */}
-            <span className="text-caption text-gray-400">
+            <span className="text-caption text-ink-muted">
               {t('printing.queue.row.attempts', 'Intento {{n}}', {
                 n: job.attempts,
               })}
@@ -213,7 +213,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
           </div>
 
           {/* Timestamps */}
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-caption text-gray-400">
+          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-caption text-ink-muted">
             <span>
               {t('printing.queue.row.created', 'Creado: {{date}}', {
                 date: formatDateTime(job.createdAt),
@@ -237,7 +237,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className="mt-1.5 truncate text-caption text-red-500"
+                className="mt-1.5 truncate text-caption text-error"
                 title={job.lastError}
               >
                 {job.lastError}
@@ -250,7 +250,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
             <div className="mt-2">
               <button
                 type="button"
-                className="flex items-center gap-1 text-caption text-gray-400 hover:text-gray-600"
+                className="flex items-center gap-1 text-caption text-ink-muted hover:text-ink"
                 onClick={() => setLogExpanded((p) => !p)}
                 aria-expanded={logExpanded}
               >
@@ -282,7 +282,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="mt-1 overflow-x-auto whitespace-pre-wrap rounded bg-gray-50 p-2 font-data text-caption text-gray-500"
+                    className="mt-1 overflow-x-auto whitespace-pre-wrap rounded bg-surface-variant p-2 font-data text-caption text-ink-muted"
                   >
                     {job.routingLog}
                   </motion.pre>
@@ -300,7 +300,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
               type="button"
               whileTap={{ scale: 0.95 }}
               disabled={retrying}
-              className="pos-button border-blue-200 bg-blue-50 text-caption text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+              className="pos-button border-pharma/20 bg-pharma/10 text-caption text-pharma hover:bg-pharma/20 disabled:opacity-50"
               onClick={handleRetry}
               aria-label={t(
                 'printing.queue.row.retry_aria',
@@ -322,7 +322,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
               <Dialog.Trigger asChild>
                 <button
                   type="button"
-                  className="pos-button border-red-200 bg-red-50 text-caption text-red-600 hover:bg-red-100"
+                  className="pos-button border-error/20 bg-error-container text-caption text-error hover:bg-error"
                   aria-label={t(
                     'printing.queue.row.discard_aria',
                     'Descartar trabajo',
@@ -341,7 +341,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
                       'Descartar trabajo de impresión',
                     )}
                   </Dialog.Title>
-                  <Dialog.Description className="mt-2 text-body-sm text-gray-500">
+                  <Dialog.Description className="mt-2 text-body-sm text-ink-muted">
                     {t(
                       'printing.queue.row.discard_dialog.description',
                       '¿Está seguro de descartar este trabajo? No se imprimirá y se marcará como descartado.',
@@ -360,7 +360,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
                     <button
                       type="button"
                       disabled={discarding}
-                      className="pos-button bg-red-600 text-body-sm text-white hover:bg-red-700 disabled:opacity-50"
+                      className="pos-button bg-error text-body-sm text-white hover:brightness-110 disabled:opacity-50"
                       onClick={handleDiscard}
                     >
                       {discarding
@@ -378,7 +378,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
                   <Dialog.Close asChild>
                     <button
                       type="button"
-                      className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                      className="absolute right-3 top-3 text-ink-muted hover:text-ink"
                       aria-label={t('common.close', 'Cerrar')}
                     >
                       <svg

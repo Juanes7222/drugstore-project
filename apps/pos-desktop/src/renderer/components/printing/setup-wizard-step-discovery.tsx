@@ -24,9 +24,9 @@ export interface SetupWizardStepDiscoveryProps {
 // ---------------------------------------------------------------------------
 
 const CONNECTION_BADGE: Record<string, string> = {
-  USB: 'bg-blue-100 text-blue-700',
-  NETWORK: 'bg-purple-100 text-purple-700',
-  BLUETOOTH: 'bg-cyan-100 text-cyan-700',
+  USB: 'bg-pharma/10 text-pharma',
+  NETWORK: 'bg-restrict-surface text-restrict',
+  BLUETOOTH: 'bg-pharma/10 text-pharma',
 };
 
 // ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ export const SetupWizardStepDiscovery: FC<
               )}
         </h2>
 
-        <p className="mt-1 text-body-sm text-gray-500">
+        <p className="mt-1 text-body-sm text-ink-muted">
           {state.isDiscovering
             ? t(
                 'printing.wizard.discovery.searching_hint',
@@ -124,7 +124,7 @@ export const SetupWizardStepDiscovery: FC<
           {state.discovered.map((printer, i) => {
             const badgeClass =
               CONNECTION_BADGE[printer.connection] ??
-              'bg-gray-100 text-gray-600';
+              'bg-surface-variant text-ink-muted';
 
             return (
               <motion.div
@@ -135,7 +135,7 @@ export const SetupWizardStepDiscovery: FC<
                 className="pos-panel flex items-center gap-3 px-4 py-3"
               >
                 {/* Connection icon */}
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-gray-100">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-surface-variant">
                   {printer.connection === 'USB' && (
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -147,7 +147,7 @@ export const SetupWizardStepDiscovery: FC<
                       strokeWidth="1.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="text-gray-500"
+                      className="text-ink-muted"
                     >
                       <rect x="7" y="2" width="10" height="7" rx="1" />
                       <path d="M12 9v5" />
@@ -166,7 +166,7 @@ export const SetupWizardStepDiscovery: FC<
                       strokeWidth="1.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="text-gray-500"
+                      className="text-ink-muted"
                     >
                       <path d="M12 2a4 4 0 0 0-4 4v4a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4Z" />
                       <path d="M5 14a7 7 0 0 0 14 0" />
@@ -186,7 +186,7 @@ export const SetupWizardStepDiscovery: FC<
                       strokeWidth="1.5"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="text-gray-500"
+                      className="text-ink-muted"
                     >
                       <circle cx="12" cy="12" r="10" />
                       <path d="M12 8v8" />
@@ -200,7 +200,7 @@ export const SetupWizardStepDiscovery: FC<
                   <p className="truncate text-body-sm font-medium text-ink">
                     {printer.friendlyName}
                   </p>
-                  <p className="truncate text-caption text-gray-400">
+                  <p className="truncate text-caption text-ink-muted">
                     {printer.systemName}
                   </p>
                 </div>
@@ -241,7 +241,7 @@ export const SetupWizardStepDiscovery: FC<
           className={`inline-block h-3.5 w-3.5 rounded border ${
             state.networkScanEnabled
               ? 'border-pharma bg-pharma'
-              : 'border-gray-300 bg-white'
+              : 'border-border bg-white'
           }`}
           aria-hidden="true"
         >
@@ -280,7 +280,7 @@ export const SetupWizardStepDiscovery: FC<
               'No se encontraron impresoras',
             )}
           </p>
-          <p className="mt-1 text-caption text-gray-500">
+          <p className="mt-1 text-caption text-ink-muted">
             {t(
               'printing.wizard.discovery.troubleshoot',
               'Verifique que la impresora esté encendida y conectada. Active la búsqueda en red si usa una impresora de red.',

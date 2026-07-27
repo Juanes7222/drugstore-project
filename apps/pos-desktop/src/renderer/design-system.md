@@ -776,3 +776,85 @@ ID links the sale to a specific client record without altering the DIAN buyer.
 - Detail panel appears instantly when a row is selected.
 - No full-screen motion on the high-throughput list — the manager is scanning
   rows, not watching a transition.
+
+---
+
+## Print Queue & Printers
+
+### Design rationale
+
+The print queue is an operational tool, not a consumer screen. The cashier
+needs at a glance: is my receipt printing? Did it fail? How do I retry?
+Every printer card and job row must communicate status without relying on
+colour alone — a dot, a text label, and a contextual action button.
+
+Status colours map to the palette:
+- **COMPLETED / ONLINE** → Pharma Teal (`#0B6E6B`) — everything normal.
+  Badge uses `success-container` (`#E0F2F1`) bg.
+- **PENDING / NO_PAPER** → Urgency Amber (`#E8780A`) — needs attention
+  soon. Badge uses `urgency-surface` (`#FFF3E5`) bg.
+- **FAILED / ERROR** → Error (`#D32F2F`) — action required. Badge uses
+  `error-container` (`#FCE4E4`) bg.
+- **PRINTING** → Pharma Teal (`#0B6E6B`) — active state, not alarming.
+- **DISCARDED / OFFLINE** → Ink Muted (`#8B8A87`) — neutral terminal
+  state. Badge uses `surface-variant` (`#EDE9E1`) bg.
+- **RETRYING** → Urgency Amber (`#E8780A`) — transitional, in-progress.
+
+All status badges pair a `bg-{token}` background with a `text-{token}` label
+and a `dot` circle — never colour alone.
+
+### Print Queue layout
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Cola de impresión                    [Reintentar todos] [↻] │
+│━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────┐ │
+│  │   3  │ │   1  │ │   2  │ │   0  │ │  47  │ │   1.4    │ │ ← summary stats
+│  │Pend. │ │Imprim│ │Fall. │ │Desc. │ │Comp. │ │Intentos  │ │
+│  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘ └──────────┘ │
+│━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+│  [Todos] [Pendientes] [Fallidos] [Completados] [Descartados] │ ← filters
+│━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━│
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │ ● Pendiente   Recibo de venta   Intento 0              │ │ ← job row
+│  │   Creado: 27/07/26 14:30                                │ │
+│  │                                          [Retry] [Disc.]│ │
+│  ├─────────────────────────────────────────────────────────┤ │
+│  │ ● Fallido     Factura electrónica   Intento 3/10       │ │
+│  │   Creado: 27/07/26 14:22                                │ │
+│  │   Error: printer timeout                                │ │
+│  │   ▸ Bitácora de enrutamiento          [Retry] [Disc.]   │ │
+│  ├─────────────────────────────────────────────────────────┤ │
+│  │ ● Completado  Cierre de turno        Intento 1          │ │
+│  │   Creado: 27/07/26 13:15  Completado: 27/07/26 13:16   │ │
+│  └─────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Printer Card layout
+
+```
+┌──────────────────────────────────────┐
+│ EPSON TM-T88VI            ● En línea │ ← name + status badge
+│ EPSON-123456                         │ ← system name
+│                                      │
+│ [USB] [Térmica] [80 mm]             │ ← type badges
+│ [Recibos] [Facturas] [Cierres]      │ ← job-type chips (pharma/10 bg)
+│                                      │
+│ ⏱ 3 pendiente(s)                     │ ← pending count (urgency)
+│ ───────────────────────────────────  │
+│ [Probar] [Editar]  [Eliminar]        │ ← action buttons
+└──────────────────────────────────────┘
+```
+
+### Motion
+
+- Job rows enter with `x: -8` slide and fade; exit with height collapse.
+  Quick enough to not block scrolling (80ms per row).
+- Summary stats stagger in with 50ms delay per stat, 200ms duration.
+- Printer cards enter with `y: 8` fade; exit with scale collapse.
+- Discard/delete confirmation dialogs use Radix `animate-in`/`animate-out`.
+- Test print result appears as a brief `y: -4` slide-in message below the
+  action bar; auto-hides on next action.
+- All animations respect `prefers-reduced-motion` via the global CSS reset.

@@ -244,6 +244,7 @@
     "license_status": "Licencia",
     "print_queue": "Cola Impresión",
     "printers": "Impresoras",
+    "printing": "Impresión",
     "fiscal": "Facturación",
     "audit_log": "Auditoría",
     "admin_menu": "Admin",
@@ -1834,6 +1835,136 @@
       "enable_button": "Activar sync local",
       "generating_key": "Generando clave de red...",
       "success": "Red local activada. Las otras workstations recibirán la configuración en su próximo sync."
+    }
+  },
+  "printing": {
+    "container": {
+      "title": "Impresión",
+      "tablist_label": "Secciones de impresión",
+      "tab_queue": "Cola de impresión",
+      "tab_printers": "Impresoras"
+    },
+    "queue": {
+      "title": "Cola de impresión",
+      "processing": "Procesando...",
+      "retryAll": "Reintentar todos",
+      "filterAll": "Todos",
+      "filterPending": "Pendientes",
+      "filterFailed": "Fallidos",
+      "filterCompleted": "Completados",
+      "filterDiscarded": "Descartados",
+      "empty": "No hay trabajos en la cola",
+      "summary": {
+        "label": "Resumen de la cola",
+        "pending": "Pendientes",
+        "printing": "Imprimiendo",
+        "failed": "Fallidos",
+        "discarded": "Descartados",
+        "completed24h": "Completados (24h)",
+        "average_attempts": "Intentos promedio"
+      },
+      "row": {
+        "attempts": "Intento {{n}}",
+        "created": "Creado: {{date}}",
+        "completed": "Completado: {{date}}",
+        "routing_log": "Bitácora de enrutamiento",
+        "retry_aria": "Reintentar impresión",
+        "retrying": "Reintentando...",
+        "retry": "Reintentar",
+        "discard_aria": "Descartar trabajo",
+        "discard": "Descartar",
+        "discard_dialog": {
+          "title": "Descartar trabajo de impresión",
+          "description": "¿Está seguro de descartar este trabajo? No se imprimirá y se marcará como descartado."
+        },
+        "discarding": "Descartando...",
+        "confirm_discard": "Descartar"
+      }
+    },
+    "printers": {
+      "title": "Impresoras configuradas",
+      "addPrinter": "Añadir impresora",
+      "export": "Exportar",
+      "import": "Importar configuración",
+      "matched": "impresoras coincidieron",
+      "unmatched": "sin coincidencia",
+      "noPrinters": "No hay impresoras configuradas"
+    },
+    "status": {
+      "ONLINE": "En línea",
+      "OFFLINE": "Sin conexión",
+      "ERROR": "Error",
+      "NO_PAPER": "Sin papel",
+      "UNKNOWN": "Desconocido"
+    },
+    "card": {
+      "color": "Color",
+      "no_jobs": "Sin trabajos asignados",
+      "pending_count": "{{count}} pendiente(s)",
+      "test_aria": "Probar impresora",
+      "testing": "Probando...",
+      "test": "Probar",
+      "test_success": "✓ Impresión exitosa",
+      "test_fail": "✗ Error al imprimir",
+      "edit": "Editar",
+      "delete_aria": "Eliminar impresora",
+      "delete": "Eliminar",
+      "delete_dialog": {
+        "title": "Eliminar impresora",
+        "description": "¿Está seguro de eliminar \"{{name}}\"? Los trabajos de impresión pendientes se redirigirán a otra impresora o quedarán en la cola."
+      },
+      "deleting": "Eliminando...",
+      "confirm_delete": "Eliminar"
+    },
+    "job_type": {
+      "SALE_RECEIPT": "Recibo de venta",
+      "ELECTRONIC_INVOICE": "Factura electrónica",
+      "CREDIT_NOTE": "Nota crédito",
+      "CONTINGENCY_RECEIPT": "Recibo contingencia",
+      "INVENTORY_REPORT": "Reporte inventario",
+      "SHIFT_CLOSE_REPORT": "Cierre de turno",
+      "TEST_PAGE": "Prueba",
+      "OTHER": "Otro"
+    },
+    "printHealth": {
+      "title": "Salud de impresión",
+      "good": "Todo bien",
+      "warning": "Atención",
+      "error": "Requiere acción",
+      "online": "En línea",
+      "offline": "Offline",
+      "noPaper": "Sin papel",
+      "unknown": "Desconocido",
+      "pendingJobs": "{count} trabajo(s) pendiente(s)",
+      "noPending": "Sin trabajos pendientes",
+      "failedJobs": "{count} fallido(s)",
+      "viewQueue": "Ver cola",
+      "configure": "Configurar"
+    },
+    "wizard": {
+      "title": "Configurar impresoras",
+      "later": "Configurar más tarde",
+      "start": "Empezar",
+      "continue": "Continuar configuración",
+      "step": {
+        "welcome": "Bienvenida",
+        "discovery": "Detección",
+        "found-printers": "Impresoras detectadas",
+        "job-assignment": "Asignación de trabajos",
+        "test-prints": "Prueba de impresión",
+        "fallback-config": "Respaldo",
+        "summary": "Resumen"
+      },
+      "welcome": {
+        "title": "Configure sus impresoras",
+        "subtitle": "En unos pocos pasos configure las impresoras de su puesto de trabajo. El proceso toma 2–3 minutos y no requiere conocimientos técnicos.",
+        "feature_discovery": "Detección automática de impresoras conectadas",
+        "feature_assign": "Asignación de tipos de trabajo a cada impresora",
+        "feature_fallback": "Configuración de impresora de respaldo",
+        "feature_test": "Prueba de impresión para verificar funcionamiento",
+        "start": "Empezar",
+        "later_hint": "Puede configurar las impresoras más tarde desde el menú de administración."
+      }
     }
   }
 }

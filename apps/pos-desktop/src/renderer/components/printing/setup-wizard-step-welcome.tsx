@@ -72,7 +72,7 @@ export const SetupWizardStepWelcome: FC<SetupWizardStepWelcomeProps> = ({
       </h1>
 
       {/* Subtitle */}
-      <p className="mt-3 max-w-sm text-body text-gray-500">
+      <p className="mt-3 max-w-sm text-body text-ink-muted">
         {t(
           'printing.wizard.welcome.subtitle',
           'En unos pocos pasos configure las impresoras de su puesto de trabajo. El proceso toma 2–3 minutos y no requiere conocimientos técnicos.',
@@ -80,7 +80,7 @@ export const SetupWizardStepWelcome: FC<SetupWizardStepWelcomeProps> = ({
       </p>
 
       {/* Feature list */}
-      <ul className="mt-6 space-y-2 text-left text-body-sm text-gray-500">
+      <ul className="mt-6 space-y-2 text-left text-body-sm text-ink-muted">
         {[
           t(
             'printing.wizard.welcome.feature_discovery',
@@ -118,7 +118,7 @@ export const SetupWizardStepWelcome: FC<SetupWizardStepWelcomeProps> = ({
       </motion.button>
 
       {/* Hint */}
-      <p className="mt-4 text-caption text-gray-400">
+      <p className="mt-4 text-caption text-ink-muted">
         {t(
           'printing.wizard.welcome.later_hint',
           'Puede configurar las impresoras más tarde desde el menú de administración.',

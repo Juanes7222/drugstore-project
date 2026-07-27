@@ -66,7 +66,7 @@ export const SetupWizardStepSummary: FC<
             'Resumen de configuración',
           )}
         </h2>
-        <p className="mt-1 text-body-sm text-gray-500">
+        <p className="mt-1 text-body-sm text-ink-muted">
           {t(
             'printing.wizard.summary.subtitle',
             'Revise la configuración antes de guardar. Puede volver atrás para hacer cambios.',
@@ -80,29 +80,29 @@ export const SetupWizardStepSummary: FC<
           <span className="font-data text-lg font-bold tabular-nums text-pharma">
             {totalPrinters}
           </span>
-          <p className="text-caption text-gray-500">
+          <p className="text-caption text-ink-muted">
             {t(
               'printing.wizard.summary.total_printers',
               'Impresora(s) configurada(s)',
             )}
           </p>
         </div>
-        <div className="rounded bg-green-50 px-3 py-2 text-center">
-          <span className="font-data text-lg font-bold tabular-nums text-green-700">
+        <div className="rounded bg-success-container px-3 py-2 text-center">
+          <span className="font-data text-lg font-bold tabular-nums text-success">
             {configuredPrinters}
           </span>
-          <p className="text-caption text-green-600">
+          <p className="text-caption text-success">
             {t(
               'printing.wizard.summary.with_jobs',
               'Con trabajos asignados',
             )}
           </p>
         </div>
-        <div className="rounded bg-blue-50 px-3 py-2 text-center">
-          <span className="font-data text-lg font-bold tabular-nums text-blue-700">
+        <div className="rounded bg-pharma/10 px-3 py-2 text-center">
+          <span className="font-data text-lg font-bold tabular-nums text-pharma">
             {withFallback}
           </span>
-          <p className="text-caption text-blue-600">
+          <p className="text-caption text-pharma">
             {t(
               'printing.wizard.summary.with_fallback',
               'Con respaldo configurado',
@@ -151,14 +151,14 @@ export const SetupWizardStepSummary: FC<
                   <h3 className="text-body-sm font-semibold text-ink">
                     {displayName}
                   </h3>
-                  <p className="text-caption text-gray-400">
+                  <p className="text-caption text-ink-muted">
                     {printer.systemName}
                   </p>
                 </div>
 
                 {/* Test result badge */}
                 {state.testResults[printer.systemName] === true && (
-                  <span className="rounded bg-green-50 px-2 py-0.5 text-caption font-medium text-green-700">
+                  <span className="rounded bg-success-container px-2 py-0.5 text-caption font-medium text-success">
                     {t(
                       'printing.wizard.summary.tested_ok',
                       'Verificada',
@@ -166,7 +166,7 @@ export const SetupWizardStepSummary: FC<
                   </span>
                 )}
                 {state.testResults[printer.systemName] === false && (
-                  <span className="rounded bg-red-50 px-2 py-0.5 text-caption font-medium text-red-600">
+                  <span className="rounded bg-error-container px-2 py-0.5 text-caption font-medium text-error">
                     {t(
                       'printing.wizard.summary.tested_fail',
                       'Error en prueba',
@@ -181,7 +181,7 @@ export const SetupWizardStepSummary: FC<
                   jobs.map((job) => (
                     <span
                       key={job}
-                      className="rounded bg-gray-100 px-2 py-0.5 text-caption font-medium text-gray-600"
+                      className="rounded bg-surface-variant px-2 py-0.5 text-caption font-medium text-ink-muted"
                     >
                       {t(
                         `printing.job_type.${job}`,
@@ -190,7 +190,7 @@ export const SetupWizardStepSummary: FC<
                     </span>
                   ))
                 ) : (
-                  <span className="text-caption text-gray-400">
+                  <span className="text-caption text-ink-muted">
                     {t(
                       'printing.wizard.summary.no_jobs',
                       'Sin trabajos asignados',
@@ -200,7 +200,7 @@ export const SetupWizardStepSummary: FC<
               </div>
 
               {/* Fallback */}
-              <div className="mt-2 flex items-center gap-1.5 text-caption text-gray-500">
+              <div className="mt-2 flex items-center gap-1.5 text-caption text-ink-muted">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="12"

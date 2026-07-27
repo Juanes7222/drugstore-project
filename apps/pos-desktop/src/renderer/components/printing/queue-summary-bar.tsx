@@ -25,32 +25,32 @@ const STATS: StatDef[] = [
   {
     key: 'pending',
     label: 'Pendientes',
-    bgClass: 'bg-amber-50',
-    textClass: 'text-amber-800',
+    bgClass: 'bg-urgency-surface',
+    textClass: 'text-urgency',
   },
   {
     key: 'printing',
     label: 'Imprimiendo',
-    bgClass: 'bg-blue-50',
-    textClass: 'text-blue-800',
+    bgClass: 'bg-pharma/10',
+    textClass: 'text-pharma',
   },
   {
     key: 'failed',
     label: 'Fallidos',
-    bgClass: 'bg-red-50',
-    textClass: 'text-red-800',
+    bgClass: 'bg-error-container',
+    textClass: 'text-error',
   },
   {
     key: 'discarded',
     label: 'Descartados',
-    bgClass: 'bg-gray-100',
-    textClass: 'text-gray-600',
+    bgClass: 'bg-surface-variant',
+    textClass: 'text-ink-muted',
   },
   {
     key: 'completed24h',
     label: 'Completados (24h)',
-    bgClass: 'bg-green-50',
-    textClass: 'text-green-800',
+    bgClass: 'bg-success-container',
+    textClass: 'text-success',
   },
 ];
 
@@ -107,7 +107,7 @@ export const QueueSummaryBar: FC<QueueSummaryBarProps> = ({ summary }) => {
         <span className="font-data text-lg font-bold leading-none tabular-nums">
           {summary.averageAttemptsBeforeSuccess.toFixed(1)}
         </span>
-        <span className="mt-1 text-xs font-medium text-gray-500">
+        <span className="mt-1 text-xs font-medium text-ink-muted">
           {t(
             'printing.queue.summary.average_attempts',
             'Intentos promedio',

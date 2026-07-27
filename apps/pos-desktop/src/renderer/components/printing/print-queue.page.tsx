@@ -96,7 +96,7 @@ export const PrintQueuePage: FC = () => {
   if (loading && jobs.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-pharma border-t-transparent" />
       </div>
     );
   }
@@ -109,7 +109,7 @@ export const PrintQueuePage: FC = () => {
         <div className="flex gap-2">
           <button
             type="button"
-            className="rounded border px-4 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+            className="rounded border px-4 py-2 text-sm hover:bg-surface disabled:opacity-50"
             disabled={processingAll}
             onClick={handleProcessAll}
           >
@@ -119,7 +119,7 @@ export const PrintQueuePage: FC = () => {
           </button>
           <button
             type="button"
-            className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
+            className="rounded border px-4 py-2 text-sm hover:bg-surface"
             onClick={handleRefresh}
           >
             {t('common.refresh', 'Actualizar')}
@@ -140,8 +140,8 @@ export const PrintQueuePage: FC = () => {
             type="button"
             className={`rounded px-3 py-1 text-sm ${
               filter === f
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 hover:bg-gray-200'
+                ? 'bg-pharma text-white'
+                : 'bg-surface hover:bg-surface-variant'
             }`}
             onClick={() => setFilter(f)}
           >
@@ -155,7 +155,7 @@ export const PrintQueuePage: FC = () => {
       {/* Queue list */}
       <div className="flex-1 overflow-y-auto p-6">
         {jobs.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-gray-400">
+          <div className="flex h-full items-center justify-center text-ink-muted">
             {t('printing.queue.empty', 'No hay trabajos en la cola')}
           </div>
         ) : (

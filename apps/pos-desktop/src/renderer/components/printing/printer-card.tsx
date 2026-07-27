@@ -109,7 +109,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
           <h3 className="truncate text-body-sm font-semibold text-ink">
             {printer.friendlyName}
           </h3>
-          <p className="truncate text-caption text-gray-400">
+          <p className="truncate text-caption text-ink-muted">
             {printer.systemName}
           </p>
         </div>
@@ -121,17 +121,17 @@ export const PrinterCard: FC<PrinterCardProps> = ({
 
       {/* Badges: type, connection, paper */}
       <div className="mt-2 flex flex-wrap gap-1.5">
-        <span className="rounded bg-gray-100 px-2 py-0.5 text-caption font-medium text-gray-600">
+        <span className="rounded bg-surface-variant px-2 py-0.5 text-caption font-medium text-ink-muted">
           {printer.printerType}
         </span>
-        <span className="rounded bg-gray-100 px-2 py-0.5 text-caption font-medium text-gray-600">
+        <span className="rounded bg-surface-variant px-2 py-0.5 text-caption font-medium text-ink-muted">
           {printer.connection}
         </span>
-        <span className="rounded bg-gray-100 px-2 py-0.5 text-caption font-medium text-gray-600">
+        <span className="rounded bg-surface-variant px-2 py-0.5 text-caption font-medium text-ink-muted">
           {printer.paperSize}
         </span>
         {printer.supportsColor && (
-          <span className="rounded bg-purple-50 px-2 py-0.5 text-caption font-medium text-purple-700">
+          <span className="rounded bg-restrict-surface px-2 py-0.5 text-caption font-medium text-restrict">
             {t('printing.card.color', 'Color')}
           </span>
         )}
@@ -155,7 +155,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
             ))}
           </div>
         ) : (
-          <p className="text-caption text-gray-400">
+          <p className="text-caption text-ink-muted">
             {t(
               'printing.card.no_jobs',
               'Sin trabajos asignados',
@@ -171,7 +171,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="mt-2 truncate text-caption text-red-500"
+            className="mt-2 truncate text-caption text-error"
             title={printer.lastErrorMessage}
           >
             {printer.lastErrorMessage}
@@ -214,9 +214,9 @@ export const PrinterCard: FC<PrinterCardProps> = ({
           disabled={testing}
           className={`pos-button text-caption ${
             testResult === true
-              ? 'border-green-200 bg-green-50 text-green-700'
+              ? 'border-success/20 bg-success-container text-success'
               : testResult === false
-                ? 'border-red-200 bg-red-50 text-red-600'
+                ? 'border-error/20 bg-error-container text-error'
                 : 'pos-button-secondary'
           }`}
           onClick={handleTest}
@@ -241,7 +241,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
           <Dialog.Trigger asChild>
             <button
               type="button"
-              className="pos-button border-red-200 bg-red-50 text-caption text-red-600 hover:bg-red-100"
+              className="pos-button border-error/20 bg-error-container text-caption text-error hover:bg-error-container"
               aria-label={t('printing.card.delete_aria', 'Eliminar impresora')}
             >
               {t('printing.card.delete', 'Eliminar')}
@@ -257,7 +257,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
                   'Eliminar impresora',
                 )}
               </Dialog.Title>
-              <Dialog.Description className="mt-2 text-body-sm text-gray-500">
+              <Dialog.Description className="mt-2 text-body-sm text-ink-muted">
                 {t(
                   'printing.card.delete_dialog.description',
                   '¿Está seguro de eliminar "{{name}}"? Los trabajos de impresión pendientes se redirigirán a otra impresora o quedarán en la cola.',
@@ -277,7 +277,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
                 <button
                   type="button"
                   disabled={deleting}
-                  className="pos-button bg-red-600 text-body-sm text-white hover:bg-red-700 disabled:opacity-50"
+                  className="pos-button bg-error text-body-sm text-white hover:brightness-110 disabled:opacity-50"
                   onClick={handleDelete}
                 >
                   {deleting
@@ -289,7 +289,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
               <Dialog.Close asChild>
                 <button
                   type="button"
-                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                  className="absolute right-3 top-3 text-ink-muted hover:text-ink"
                   aria-label={t('common.close', 'Cerrar')}
                 >
                   <svg
@@ -321,7 +321,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
             className={`mt-2 text-caption font-medium ${
-              testResult ? 'text-green-600' : 'text-red-600'
+              testResult ? 'text-success' : 'text-error'
             }`}
           >
             {testResult

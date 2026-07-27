@@ -138,7 +138,7 @@ export const SetupWizardStepJobAssignment: FC<
   if (state.selected.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-center">
-        <p className="text-body-sm text-gray-400">
+        <p className="text-body-sm text-ink-muted">
           {t(
             'printing.wizard.job_assignment.no_printers',
             'No hay impresoras seleccionadas. Vuelva atrás y seleccione al menos una.',
@@ -161,7 +161,7 @@ export const SetupWizardStepJobAssignment: FC<
             'Asignación de trabajos',
           )}
         </h2>
-        <p className="mt-1 text-body-sm text-gray-500">
+        <p className="mt-1 text-body-sm text-ink-muted">
           {t(
             'printing.wizard.job_assignment.subtitle',
             'Indique qué tipo de trabajos debe imprimir cada impresora. Los valores sugeridos se basan en el tipo de impresora.',
@@ -194,7 +194,7 @@ export const SetupWizardStepJobAssignment: FC<
                 <h3 className="truncate text-body-sm font-semibold text-ink">
                   {displayName}
                 </h3>
-                <p className="truncate text-caption text-gray-400">
+                <p className="truncate text-caption text-ink-muted">
                   {printer.systemName}
                 </p>
                 {/* Paper size selector */}
@@ -213,7 +213,7 @@ export const SetupWizardStepJobAssignment: FC<
                           e.target.value,
                         )
                       }
-                      className="appearance-none rounded bg-gray-100 pl-1.5 pr-4 py-0.5 text-caption font-medium text-gray-600 cursor-pointer hover:bg-gray-200 focus:outline-none focus:ring-1 focus:ring-pharma"
+                      className="appearance-none rounded bg-surface-variant pl-1.5 pr-4 py-0.5 text-caption font-medium text-ink-muted cursor-pointer hover:bg-surface-variant focus:outline-none focus:ring-1 focus:ring-pharma"
                       aria-label={t(
                         'printing.wizard.job_assignment.paper_size',
                         'Tamaño de papel',
@@ -228,7 +228,7 @@ export const SetupWizardStepJobAssignment: FC<
                       )}
                     </select>
                     <svg
-                      className="pointer-events-none absolute right-0.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-gray-400"
+                      className="pointer-events-none absolute right-0.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-ink-muted"
                       viewBox="0 0 10 6"
                       fill="none"
                       aria-hidden="true"
@@ -246,7 +246,7 @@ export const SetupWizardStepJobAssignment: FC<
                     <svg
                       viewBox="0 0 14 14"
                       fill="none"
-                      className="h-3 w-3 shrink-0 text-green-600"
+                      className="h-3 w-3 shrink-0 text-success"
                       aria-label={t(
                         'printing.wizard.job_assignment.confidence_high',
                         'Detección precisa',
@@ -265,7 +265,7 @@ export const SetupWizardStepJobAssignment: FC<
                     <svg
                       viewBox="0 0 14 14"
                       fill="none"
-                      className="h-3 w-3 shrink-0 text-amber-500"
+                      className="h-3 w-3 shrink-0 text-urgency"
                       aria-label={t(
                         'printing.wizard.job_assignment.confidence_low',
                         'Detección incierta',
@@ -296,7 +296,7 @@ export const SetupWizardStepJobAssignment: FC<
                     <svg
                       viewBox="0 0 14 14"
                       fill="none"
-                      className="h-3 w-3 shrink-0 text-red-400"
+                      className="h-3 w-3 shrink-0 text-error"
                       aria-label={t(
                         'printing.wizard.job_assignment.confidence_none',
                         'No detectado',
@@ -337,7 +337,7 @@ export const SetupWizardStepJobAssignment: FC<
                   return (
                     <label
                       key={jobType}
-                      className="flex cursor-pointer items-center gap-2.5 rounded px-1 py-1 text-body-sm hover:bg-gray-50"
+                      className="flex cursor-pointer items-center gap-2.5 rounded px-1 py-1 text-body-sm hover:bg-surface-variant"
                     >
                       <input
                         type="checkbox"
@@ -349,7 +349,7 @@ export const SetupWizardStepJobAssignment: FC<
                             e.target.checked,
                           )
                         }
-                        className="h-4 w-4 rounded border-gray-300 text-pharma focus:ring-pharma/30"
+                        className="h-4 w-4 rounded border-border text-pharma focus:ring-pharma/30"
                       />
                       <span className="flex-1 text-ink">
                         {t(

@@ -38,6 +38,7 @@ import { LocalNetworkPage } from "@/components/local-sync/local-network.page";
 import { RecoveryPage } from "@/components/recovery/recovery.page";
 import { AboutPage } from "@/components/update/about.page";
 import { LicenseStatusPage } from "@/components/licensing/license-status.page";
+import { PrintingContainer } from "@/components/printing/printing-container";
 import { PrintersPage } from "@/components/printing/printers.page";
 import { PrintQueuePage } from "@/components/printing/print-queue.page";
 import { SetupWizardPage } from "@/components/printing/setup-wizard.page";
@@ -214,6 +215,25 @@ const InnerApp: FC = () => {
           <NavigationSidebar />
           <div className="flex-1 overflow-hidden">
             <LicenseStatusPage />
+          </div>
+        </div>
+        <PendingBlessingModal />
+        {assistantLayer}
+      </AppShell>
+    );
+  }
+
+  if (activeScreen === "printing") {
+    return (
+      <AppShell
+        cashierName={session?.fullName || ""}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <OfflineModeBanner />
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <PrintingContainer />
           </div>
         </div>
         <PendingBlessingModal />

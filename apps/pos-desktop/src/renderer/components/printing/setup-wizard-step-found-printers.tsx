@@ -137,7 +137,7 @@ export const SetupWizardStepFoundPrinters: FC<
             'Impresoras encontradas',
           )}
         </h2>
-        <p className="mt-1 text-body-sm text-gray-500">
+        <p className="mt-1 text-body-sm text-ink-muted">
           {t(
             'printing.wizard.found_printers.subtitle',
             'Seleccione las impresoras que desea configurar y asígneles un nombre descriptivo.',
@@ -168,7 +168,7 @@ export const SetupWizardStepFoundPrinters: FC<
                   className={`pos-panel cursor-pointer border-2 p-4 transition-colors ${
                     selected
                       ? 'border-pharma'
-                      : 'border-transparent hover:border-gray-200'
+                      : 'border-transparent hover:border-border'
                   }`}
                   onClick={() => handleToggle(printer)}
                   role="option"
@@ -199,14 +199,14 @@ export const SetupWizardStepFoundPrinters: FC<
                         }
                         onClick={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
-                        className="w-full border-b border-transparent bg-transparent text-body-sm font-medium text-ink outline-none hover:border-gray-300 focus:border-pharma"
+                        className="w-full border-b border-transparent bg-transparent text-body-sm font-medium text-ink outline-none hover:border-ink-muted/30 focus:border-pharma"
                         aria-label={t(
                           'printing.wizard.found_printers.name_label',
                           'Nombre descriptivo',
                         )}
                         placeholder={printer.friendlyName}
                       />
-                      <p className="mt-0.5 truncate text-caption text-gray-400">
+                      <p className="mt-0.5 truncate text-caption text-ink-muted">
                         {printer.systemName}
                       </p>
                     </div>
@@ -216,7 +216,7 @@ export const SetupWizardStepFoundPrinters: FC<
                       className={`ml-3 flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors ${
                         selected
                           ? 'border-pharma bg-pharma'
-                          : 'border-gray-300 bg-white'
+                          : 'border-border bg-white'
                       }`}
                       aria-hidden="true"
                       onClick={(e) => e.stopPropagation()}
@@ -241,14 +241,14 @@ export const SetupWizardStepFoundPrinters: FC<
 
                   {/* Badges row */}
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-caption font-medium text-gray-600">
+                    <span className="rounded bg-surface-variant px-2 py-0.5 text-caption font-medium text-ink-muted">
                       {connectionLabel}
                     </span>
-                    <span className="rounded bg-gray-100 px-2 py-0.5 text-caption font-medium text-gray-600">
+                    <span className="rounded bg-surface-variant px-2 py-0.5 text-caption font-medium text-ink-muted">
                       {typeLabel}
                     </span>
                     {printer.supportsColor && (
-                      <span className="rounded bg-purple-50 px-2 py-0.5 text-caption font-medium text-purple-700">
+                      <span className="rounded bg-restrict-surface px-2 py-0.5 text-caption font-medium text-restrict">
                         {t(
                           'printing.wizard.found_printers.color',
                           'Color',
@@ -280,7 +280,7 @@ export const SetupWizardStepFoundPrinters: FC<
                               e.target.value,
                             )
                           }
-                          className="appearance-none rounded bg-gray-100 pl-1.5 pr-4 py-0.5 text-caption font-medium text-gray-600 cursor-pointer hover:bg-gray-200 focus:outline-none focus:ring-1 focus:ring-pharma"
+                          className="appearance-none rounded bg-surface-variant pl-1.5 pr-4 py-0.5 text-caption font-medium text-ink-muted cursor-pointer hover:bg-surface-variant focus:outline-none focus:ring-1 focus:ring-pharma"
                           aria-label={t(
                             'printing.wizard.found_printers.paper_size',
                             'Tamaño de papel',
@@ -295,7 +295,7 @@ export const SetupWizardStepFoundPrinters: FC<
                           )}
                         </select>
                         <svg
-                          className="pointer-events-none absolute right-0.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-gray-400"
+                          className="pointer-events-none absolute right-0.5 top-1/2 -translate-y-1/2 h-2.5 w-2.5 text-ink-muted"
                           viewBox="0 0 10 6"
                           fill="none"
                           aria-hidden="true"
@@ -313,7 +313,7 @@ export const SetupWizardStepFoundPrinters: FC<
                         <svg
                           viewBox="0 0 14 14"
                           fill="none"
-                          className="h-3 w-3 shrink-0 text-green-600"
+                          className="h-3 w-3 shrink-0 text-success"
                           aria-label={t(
                             'printing.wizard.found_printers.confidence_high',
                             'Detección precisa',
@@ -332,7 +332,7 @@ export const SetupWizardStepFoundPrinters: FC<
                         <svg
                           viewBox="0 0 14 14"
                           fill="none"
-                          className="h-3 w-3 shrink-0 text-amber-500"
+                          className="h-3 w-3 shrink-0 text-urgency"
                           aria-label={t(
                             'printing.wizard.found_printers.confidence_low',
                             'Detección incierta',
@@ -363,7 +363,7 @@ export const SetupWizardStepFoundPrinters: FC<
                         <svg
                           viewBox="0 0 14 14"
                           fill="none"
-                          className="h-3 w-3 shrink-0 text-red-400"
+                          className="h-3 w-3 shrink-0 text-error"
                           aria-label={t(
                             'printing.wizard.found_printers.confidence_none',
                             'No detectado',
@@ -427,7 +427,7 @@ export const SetupWizardStepFoundPrinters: FC<
               'No se encontraron impresoras',
             )}
           </p>
-          <ul className="mt-3 space-y-1 text-left text-caption text-gray-600">
+          <ul className="mt-3 space-y-1 text-left text-caption text-ink-muted">
             <li>
               {t(
                 'printing.wizard.found_printers.tip_power',
@@ -458,7 +458,7 @@ export const SetupWizardStepFoundPrinters: FC<
 
       {/* Selection count */}
       {state.discovered.length > 0 && (
-        <p className="mt-4 text-caption text-gray-400">
+        <p className="mt-4 text-caption text-ink-muted">
           {t(
             'printing.wizard.found_printers.selected_count',
             '{{count}} de {{total}} seleccionada(s)',

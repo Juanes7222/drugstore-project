@@ -39,3 +39,5 @@ export { SetupWizardStepSummary } from './setup-wizard-step-summary';
 export type { SetupWizardStepSummaryProps } from './setup-wizard-step-summary';
 
 export { PrintHealthTile } from './print-health-tile';
+
+export { PrintingContainer } from './printing-container';

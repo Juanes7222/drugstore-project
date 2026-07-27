@@ -100,7 +100,7 @@ export const SetupWizardStepFallbackConfig: FC<
   if (state.selected.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-center">
-        <p className="text-body-sm text-gray-400">
+        <p className="text-body-sm text-ink-muted">
           {t(
             'printing.wizard.job_assignment.no_printers',
             'No hay impresoras seleccionadas.',
@@ -123,7 +123,7 @@ export const SetupWizardStepFallbackConfig: FC<
             'Configuración de respaldo',
           )}
         </h2>
-        <p className="mt-1 text-body-sm text-gray-500">
+        <p className="mt-1 text-body-sm text-ink-muted">
           {t(
             'printing.wizard.fallback.subtitle',
             'Configure una impresora de respaldo para cada equipo. Si la impresora principal falla, el trabajo se redirigirá automáticamente.',
@@ -152,14 +152,14 @@ export const SetupWizardStepFallbackConfig: FC<
                 <h3 className="truncate text-body-sm font-semibold text-ink">
                   {displayName}
                 </h3>
-                <p className="truncate text-caption text-gray-400">
+                <p className="truncate text-caption text-ink-muted">
                   {printer.systemName}
                 </p>
               </div>
 
               {/* Fallback options */}
               <fieldset className="space-y-2.5">
-                <legend className="mb-2 text-caption font-medium text-gray-500">
+                <legend className="mb-2 text-caption font-medium text-ink-muted">
                   {t(
                     'printing.wizard.fallback.if_fails',
                     'Si esta impresora falla:',
@@ -185,7 +185,7 @@ export const SetupWizardStepFallbackConfig: FC<
                         className={`flex cursor-pointer items-center gap-2.5 rounded px-3 py-2 text-body-sm transition-colors ${
                           isSelected
                             ? 'bg-pharma/5 ring-1 ring-pharma/20'
-                            : 'hover:bg-gray-50'
+                            : 'hover:bg-surface-variant'
                         }`}
                       >
                         <input
@@ -199,13 +199,13 @@ export const SetupWizardStepFallbackConfig: FC<
                               other.systemName,
                             )
                           }
-                          className="h-4 w-4 border-gray-300 text-pharma focus:ring-pharma/30"
+                          className="h-4 w-4 border-border text-pharma focus:ring-pharma/30"
                         />
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium text-ink">
                             {otherName}
                           </p>
-                          <p className="truncate text-caption text-gray-400">
+                          <p className="truncate text-caption text-ink-muted">
                             {t(
                               'printing.wizard.fallback.local_printer',
                               'Impresora local',
@@ -221,7 +221,7 @@ export const SetupWizardStepFallbackConfig: FC<
                   className={`flex cursor-pointer items-center gap-2.5 rounded px-3 py-2 text-body-sm transition-colors ${
                     selectedValue === 'server'
                       ? 'bg-pharma/5 ring-1 ring-pharma/20'
-                      : 'hover:bg-gray-50'
+                      : 'hover:bg-surface-variant'
                   }`}
                 >
                   <input
@@ -232,7 +232,7 @@ export const SetupWizardStepFallbackConfig: FC<
                     onChange={() =>
                       handleChange(printer.systemName, 'server')
                     }
-                    className="h-4 w-4 border-gray-300 text-pharma focus:ring-pharma/30"
+                    className="h-4 w-4 border-border text-pharma focus:ring-pharma/30"
                   />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-ink">
@@ -241,7 +241,7 @@ export const SetupWizardStepFallbackConfig: FC<
                         'Servidor central',
                       )}
                     </p>
-                    <p className="text-caption text-gray-400">
+                    <p className="text-caption text-ink-muted">
                       {t(
                         'printing.wizard.fallback.server_desc',
                         'Enviar al servidor para imprimir remotamente',
@@ -255,7 +255,7 @@ export const SetupWizardStepFallbackConfig: FC<
                   className={`flex cursor-pointer items-center gap-2.5 rounded px-3 py-2 text-body-sm transition-colors ${
                     selectedValue === 'none'
                       ? 'bg-pharma/5 ring-1 ring-pharma/20'
-                      : 'hover:bg-gray-50'
+                      : 'hover:bg-surface-variant'
                   }`}
                 >
                   <input
@@ -266,7 +266,7 @@ export const SetupWizardStepFallbackConfig: FC<
                     onChange={() =>
                       handleChange(printer.systemName, 'none')
                     }
-                    className="h-4 w-4 border-gray-300 text-pharma focus:ring-pharma/30"
+                    className="h-4 w-4 border-border text-pharma focus:ring-pharma/30"
                   />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-ink">
@@ -275,7 +275,7 @@ export const SetupWizardStepFallbackConfig: FC<
                         'Sin respaldo',
                       )}
                     </p>
-                    <p className="text-caption text-gray-400">
+                    <p className="text-caption text-ink-muted">
                       {t(
                         'printing.wizard.fallback.none_desc',
                         'Solo guardar el trabajo y notificar al cajero',
@@ -286,7 +286,7 @@ export const SetupWizardStepFallbackConfig: FC<
               </fieldset>
 
               {/* Current selection summary */}
-              <div className="mt-3 border-t pt-2 text-caption text-gray-400">
+              <div className="mt-3 border-t pt-2 text-caption text-ink-muted">
                 {selectedValue === 'none' &&
                   t(
                     'printing.wizard.fallback.summary_none',

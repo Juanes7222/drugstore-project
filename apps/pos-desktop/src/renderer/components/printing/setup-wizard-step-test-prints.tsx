@@ -55,9 +55,9 @@ const PAPER_SIZE_LABELS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 const STATUS_LEGEND = [
-  { status: null, label: 'No probada', dot: 'bg-gray-300' },
-  { status: true, label: 'Funciona', dot: 'bg-green-500' },
-  { status: false, label: 'Error', dot: 'bg-red-500' },
+  { status: null, label: 'No probada', dot: 'bg-border' },
+  { status: true, label: 'Funciona', dot: 'bg-success' },
+  { status: false, label: 'Error', dot: 'bg-error' },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ export const SetupWizardStepTestPrints: FC<
             'Prueba de impresión',
           )}
         </h2>
-        <p className="mt-1 text-body-sm text-gray-500">
+        <p className="mt-1 text-body-sm text-ink-muted">
           {t(
             'printing.wizard.test_prints.subtitle',
             'Verifique que cada impresora configurada funcione correctamente antes de finalizar.',
@@ -126,7 +126,7 @@ export const SetupWizardStepTestPrints: FC<
       </div>
 
       {/* Status legend */}
-      <div className="mb-4 flex items-center gap-4 text-caption text-gray-500">
+      <div className="mb-4 flex items-center gap-4 text-caption text-ink-muted">
         {STATUS_LEGEND.map((entry) => {
           const count =
             entry.status === null
@@ -172,11 +172,11 @@ export const SetupWizardStepTestPrints: FC<
                   <h3 className="truncate text-body-sm font-semibold text-ink">
                     {displayName}
                   </h3>
-                  <p className="truncate text-caption text-gray-400">
+                  <p className="truncate text-caption text-ink-muted">
                     {printer.systemName}
                   </p>
                   {/* Paper size label */}
-                  <span className="mt-0.5 inline-flex items-center gap-1 text-caption text-gray-500">
+                  <span className="mt-0.5 inline-flex items-center gap-1 text-caption text-ink-muted">
                     <svg
                       viewBox="0 0 14 14"
                       fill="none"
@@ -213,10 +213,10 @@ export const SetupWizardStepTestPrints: FC<
                   <span
                     className={`inline-block h-3 w-3 rounded-full ${
                       result === null
-                        ? 'bg-gray-300'
-                        : result
-                          ? 'bg-green-500'
-                          : 'bg-red-500'
+  ? 'bg-border'
+  : result
+    ? 'bg-success'
+    : 'bg-error'
                     }`}
                     aria-hidden="true"
                   />
@@ -226,7 +226,7 @@ export const SetupWizardStepTestPrints: FC<
               {/* Status message */}
               <p className="mt-2 text-body-sm">
                 {result === null && (
-                  <span className="text-gray-400">
+                  <span className="text-ink-muted">
                     {t(
                       'printing.wizard.test_prints.not_tested',
                       'No probada aún',
@@ -234,7 +234,7 @@ export const SetupWizardStepTestPrints: FC<
                   </span>
                 )}
                 {result === true && (
-                  <span className="font-medium text-green-700">
+                  <span className="font-medium text-success">
                     {t(
                       'printing.wizard.test_prints.success',
                       '✓ Funciona correctamente',
@@ -242,7 +242,7 @@ export const SetupWizardStepTestPrints: FC<
                   </span>
                 )}
                 {result === false && (
-                  <span className="font-medium text-red-600">
+                  <span className="font-medium text-error">
                     {t(
                       'printing.wizard.test_prints.failed',
                       '✗ Error en la impresión',
@@ -258,10 +258,10 @@ export const SetupWizardStepTestPrints: FC<
                 disabled={isTesting}
                 className={`mt-3 rounded px-4 py-1.5 text-body-sm font-medium transition-colors ${
                   isTesting
-                    ? 'bg-gray-100 text-gray-400'
+                    ? 'bg-surface-variant text-ink-muted'
                     : result === true
-                      ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-success-container text-success hover:bg-success-container'
+                      : 'bg-surface-variant text-ink-muted hover:bg-surface-variant'
                 }`}
                 onClick={() =>
                   handleTest(printer.systemName, printer.printerType)
@@ -283,7 +283,7 @@ export const SetupWizardStepTestPrints: FC<
                 <motion.p
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  className="mt-2 text-caption text-red-500"
+                  className="mt-2 text-caption text-error"
                 >
                   {t(
                     'printing.wizard.test_prints.retry_hint',
@@ -303,8 +303,8 @@ export const SetupWizardStepTestPrints: FC<
           animate={{ opacity: 1, y: 0 }}
           className={`mt-6 rounded px-4 py-3 text-body-sm ${
             successCount === state.selected.length
-              ? 'bg-green-50 text-green-800'
-              : 'bg-urgency-surface text-urgency'
+  ? 'bg-success-container text-success'
+  : 'bg-urgency-surface text-urgency'
           }`}
         >
           {successCount === state.selected.length
