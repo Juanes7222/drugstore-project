@@ -6,7 +6,7 @@
  * inside the presentational layer and only talks to the service context.
  */
 import { type FC, useEffect, useState } from 'react';
-import { useClientsService } from '../common/service-context';
+import { useCashShiftService, useClientsService } from '../common/service-context';
 import { AdjustmentCreationModal } from '../fiscal/adjustment-creation-modal';
 import type {
   AdjustmentType,
@@ -49,8 +49,13 @@ export const SalesHistoryAdjustmentModal: FC<SalesHistoryAdjustmentModalProps> =
   onClose,
 }) => {
   const clientsService = useClientsService();
+  const cashShiftService = useCashShiftService();
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<
+    Array<{ id: string; category: string; name: string }>
+  >([]);
+  const [paymentMethodsLoading, setPaymentMethodsLoading] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -72,6 +77,17 @@ export const SalesHistoryAdjustmentModal: FC<SalesHistoryAdjustmentModalProps> =
       .finally(() => setClientsLoading(false));
   }, [visible, clientsService]);
 
+  useEffect(() => {
+    if (!visible) return;
+
+    setPaymentMethodsLoading(true);
+    cashShiftService
+      .getActivePaymentMethodsList()
+      .then((methods) => setPaymentMethods(methods))
+      .catch(() => setPaymentMethods([]))
+      .finally(() => setPaymentMethodsLoading(false));
+  }, [visible, cashShiftService]);
+
   return (
     <AdjustmentCreationModal
       visible={visible}
@@ -79,8 +95,9 @@ export const SalesHistoryAdjustmentModal: FC<SalesHistoryAdjustmentModalProps> =
       invoiceStatus={invoiceStatus}
       operationalView={operationalView}
       allowedTypes={allowedTypes}
-      loading={loading || clientsLoading}
+      loading={loading || clientsLoading || paymentMethodsLoading}
       error={error}
+      paymentMethods={paymentMethods}
       onSubmit={onSubmit}
       onClose={onClose}
       clients={clients}

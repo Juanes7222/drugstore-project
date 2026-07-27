@@ -56,6 +56,20 @@ const adjustmentTypeLabelKey = (type: AdjustmentType): string => {
   }
 };
 
+/** Translate a payment-method category enum to its cashier-facing label.
+ *  Falls back to the raw enum value when no translation key exists (e.g.
+ *  legacy data using enum values no longer in the picker). */
+const translatePaymentCategory = (
+  category: string,
+  t: (key: string) => string,
+): string => {
+  const key = `fiscal.adjustment_payment_method_${category.toLowerCase()}`;
+  const translated = t(key);
+  // i18next returns the key itself when the translation is missing —
+  // surface the raw enum in that case rather than showing the key path.
+  return translated === key ? category : translated;
+};
+
 const formatValue = (
   value: unknown,
   type: AdjustmentType,
@@ -106,11 +120,13 @@ const formatValue = (
         typeof obj.paymentMethodName === "string"
       ) {
         const name = obj.paymentMethodName;
-        const category =
-          typeof obj.category === "string" && obj.category
-            ? ` (${obj.category})`
-            : "";
-        return name ? `${name}${category}` : "—";
+        const category = typeof obj.category === "string" ? obj.category : "";
+        // Single readable line. Prefer the cashier-entered name; fall back
+        // to the translated category for legacy entries that only stored
+        // the enum value.
+        if (name) return name;
+        if (category) return translatePaymentCategory(category, t);
+        return "—";
       }
       try {
         return JSON.stringify(value, null, 1);

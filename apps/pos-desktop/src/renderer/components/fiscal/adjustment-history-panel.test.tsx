@@ -60,7 +60,7 @@ describe("AdjustmentHistoryPanel", () => {
     expect(screen.getByText("Nota interna")).toBeInTheDocument();
   });
 
-  it("shows previous and new payment method without an amount for PAYMENT_METHOD_CHANGE entries", () => {
+  it("shows the cashier-entered payment method name for PAYMENT_METHOD_CHANGE entries, not the raw category enum", () => {
     render(
       <AdjustmentHistoryPanel
         adjustments={[
@@ -98,11 +98,57 @@ describe("AdjustmentHistoryPanel", () => {
       />,
     );
 
-    // Method names are shown for both sides
+    // Method names are shown for both sides as the cashier-facing string.
     expect(screen.getByText(/Efectivo/)).toBeInTheDocument();
     expect(screen.getByText(/Tarjeta D.bito/)).toBeInTheDocument();
-    // Category is appended to the new value
-    expect(screen.getByText(/DEBIT_CARD/)).toBeInTheDocument();
+    // The raw category enum is no longer appended to the new value — the
+    // cashier-facing line reads as a single readable label.
+    expect(screen.queryByText(/DEBIT_CARD/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to the translated category when no cashier-entered name is stored on a PAYMENT_METHOD_CHANGE entry", () => {
+    render(
+      <AdjustmentHistoryPanel
+        adjustments={[
+          createEntry({
+            id: "adj-payment-fallback",
+            adjustmentType: "PAYMENT_METHOD_CHANGE",
+            previousValue: {
+              payments: [
+                {
+                  paymentMethodId: "pm-cash",
+                  paymentMethodName: "Efectivo",
+                  amount: "50000.00",
+                  category: "CASH",
+                  transactionReference: null,
+                  authorizationCode: null,
+                  cardBrand: null,
+                  cardLastFour: null,
+                },
+              ],
+              totalAmount: "50000.00",
+            },
+            // Legacy-style entry: only the category enum is stored, no
+            // cashier-entered name. The display must fall back to the
+            // translated category label rather than the raw enum.
+            newValue: {
+              paymentMethodId: "CREDIT_CARD",
+              paymentMethodName: "",
+              category: "CREDIT_CARD",
+              transactionReference: null,
+              authorizationCode: null,
+              cardBrand: null,
+              cardLastFour: null,
+            },
+          }),
+        ]}
+      />,
+    );
+
+    // The translated category is shown (Spanish default: "Tarjeta de crédito").
+    expect(screen.getByText(/Tarjeta de cr.dito/)).toBeInTheDocument();
+    // The raw enum is never shown to the user.
+    expect(screen.queryByText(/CREDIT_CARD/)).not.toBeInTheDocument();
   });
 
   it("shows empty state when there are no adjustments", () => {

@@ -38,6 +38,14 @@ interface AdjustmentCreationModalProps {
   error: string | null;
   /** Optional client catalog for the CLIENT_CHANGE editor. */
   clients?: ClientOption[];
+  /**
+   * Optional list of active payment methods (id, category, name).
+   * When provided, the PAYMENT_METHOD_CHANGE editor resolves the selected
+   * category enum to the real PaymentMethod.id UUID instead of storing
+   * the raw enum string — keeping the stored adjustment self-describing
+   * and compatible with downstream shift-summary reconciliation.
+   */
+  paymentMethods?: Array<{ id: string; category: string; name: string }>;
   onSubmit: (
     type: AdjustmentType,
     newValue: unknown,
@@ -226,11 +234,9 @@ function formatNewValueDisplay(value: unknown, t?: (key: string) => string): str
       typeof obj.paymentMethodName === "string"
     ) {
       const name = obj.paymentMethodName;
-      const category =
-        typeof obj.category === "string" && obj.category
-          ? ` (${obj.category})`
-          : "";
-      return name ? `${name}${category}` : "—";
+      // Show the cashier-facing name as a single readable line. The internal
+      // category enum is an accounting grouping, not a second user-facing field.
+      return name || "—";
     }
     // Client change: present human-readable diff
     if (
@@ -297,6 +303,37 @@ interface PaymentOverrideValue {
   cardLastFour: string | null;
 }
 
+/** Single-source list of payment-method categories shown in the picker.
+ *  Values match the `PaymentMethodCategory` Prisma enum. */
+const PAYMENT_METHOD_CATEGORY_VALUES = [
+  "CASH",
+  "DEBIT_CARD",
+  "CREDIT_CARD",
+  "BANK_TRANSFER",
+  "DIGITAL_WALLET",
+  "CHECK",
+  "CREDIT",
+  "OTHER",
+] as const;
+type PaymentMethodCategoryValue = (typeof PAYMENT_METHOD_CATEGORY_VALUES)[number];
+
+/** Which optional reference fields are meaningful for each category.
+ *  CASH/CREDIT/OTHER carry no references; card methods expose card details;
+ *  BANK_TRANSFER/DIGITAL_WALLET/CHECK expose a transaction reference. */
+const REFERENCE_FIELDS_BY_CATEGORY: Record<
+  PaymentMethodCategoryValue,
+  { reference: boolean; authCode: boolean; cardBrand: boolean; cardLastFour: boolean }
+> = {
+  CASH: { reference: false, authCode: false, cardBrand: false, cardLastFour: false },
+  DEBIT_CARD: { reference: false, authCode: true, cardBrand: true, cardLastFour: true },
+  CREDIT_CARD: { reference: false, authCode: true, cardBrand: true, cardLastFour: true },
+  BANK_TRANSFER: { reference: true, authCode: false, cardBrand: false, cardLastFour: false },
+  DIGITAL_WALLET: { reference: true, authCode: false, cardBrand: false, cardLastFour: false },
+  CHECK: { reference: true, authCode: false, cardBrand: false, cardLastFour: false },
+  CREDIT: { reference: false, authCode: false, cardBrand: false, cardLastFour: false },
+  OTHER: { reference: false, authCode: false, cardBrand: false, cardLastFour: false },
+};
+
 /** Editor for PAYMENT_METHOD_CHANGE — method is editable, amount is locked to
  *  the fiscal total. Reference fields are optional context for the new method. */
 const PaymentEditor: FC<{
@@ -304,7 +341,14 @@ const PaymentEditor: FC<{
   onChange: (next: PaymentOverrideValue) => void;
   /** Total amount sourced from the fiscal invoice (immutable). */
   lockedAmount: string;
-}> = ({ value, onChange, lockedAmount }) => {
+  /**
+   * Optional active payment methods list. When present, the category selector
+   * stores the real PaymentMethod.id UUID (not the category enum string) in
+   * `paymentMethodId`, keeping the stored adjustment compatible with the
+   * cash-shift summary's payment-method reconciliation.
+   */
+  paymentMethods?: Array<{ id: string; category: string; name: string }>;
+}> = ({ value, onChange, lockedAmount, paymentMethods }) => {
   const { t } = useTranslation();
 
   const set = useCallback(
@@ -317,61 +361,129 @@ const PaymentEditor: FC<{
     [onChange, value],
   );
 
+  // Default display name for the currently selected category, or empty
+  // string when no category is picked. Used both for the override field's
+  // placeholder and to fall back when the override is cleared.
+  const defaultName = value.category
+    ? t(`fiscal.adjustment_payment_method_${value.category.toLowerCase()}`)
+    : "";
+
+  /** Build a category → first-active-PaymentMethod.id lookup. */
+  const categoryToId = useMemo(() => {
+    const map = new Map<string, string>();
+    if (paymentMethods) {
+      for (const pm of paymentMethods) {
+        if (pm.category && !map.has(pm.category)) {
+          map.set(pm.category, pm.id);
+        }
+      }
+    }
+    return map;
+  }, [paymentMethods]);
+
+  const handleCategoryChange = useCallback(
+    (nextCategory: string) => {
+      // Picking a category auto-fills the display name with the default
+      // for that category, resets the optional override, and resolves the
+      // paymentMethodId to the real PaymentMethod.id UUID when the
+      // active payment-method list is available.  If the list is absent
+      // (caller did not provide it), fall back to the category enum value
+      // — the cash-shift service's buildPaymentMethodResolver handles
+      // that case defensively.
+      const resolvedId = categoryToId.get(nextCategory) ?? nextCategory;
+      onChange({
+        ...value,
+        category: nextCategory,
+        paymentMethodId: resolvedId,
+        paymentMethodName: "",
+      });
+    },
+    [categoryToId, onChange, value],
+  );
+
+  const handleOverrideChange = useCallback(
+    (nextOverride: string) => {
+      // Empty override reverts to the category default; non-empty override
+      // is the cashier's explicit display name (e.g. "Tarjeta Visa").
+      const trimmed = nextOverride.trim();
+      onChange({
+        ...value,
+        paymentMethodName: trimmed === "" ? defaultName : nextOverride,
+      });
+    },
+    [defaultName, onChange, value],
+  );
+
+  const refFields: {
+    reference: boolean;
+    authCode: boolean;
+    cardBrand: boolean;
+    cardLastFour: boolean;
+  } =
+    value.category && value.category in REFERENCE_FIELDS_BY_CATEGORY
+      ? REFERENCE_FIELDS_BY_CATEGORY[
+          value.category as PaymentMethodCategoryValue
+        ]
+      : REFERENCE_FIELDS_BY_CATEGORY.OTHER;
+  const hasAnyRefField =
+    refFields.reference ||
+    refFields.authCode ||
+    refFields.cardBrand ||
+    refFields.cardLastFour;
+
   return (
     <div className="flex flex-col gap-3">
-      {/* Method picker */}
+      {/* Single method picker — category enum drives both the internal
+          accounting grouping and the auto-filled display name. */}
       <div className="flex flex-col gap-1">
         <label
           className="text-caption font-medium"
           style={{
             color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
-          htmlFor="adjustment-payment-method-name"
+          htmlFor="adjustment-payment-method"
         >
-          {t("fiscal.detail_payment_method")}
+          {t("fiscal.adjustment_payment_method_label")}
+        </label>
+        <select
+          id="adjustment-payment-method"
+          className="pos-input text-body-sm"
+          value={value.category}
+          onChange={(e) => handleCategoryChange(e.target.value)}
+          aria-label={t("fiscal.adjustment_payment_method_label")}
+        >
+          <option value="">—</option>
+          {PAYMENT_METHOD_CATEGORY_VALUES.map((cat) => (
+            <option key={cat} value={cat}>
+              {t(`fiscal.adjustment_payment_method_${cat.toLowerCase()}`)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Optional specific name override — does not change the category,
+          only the human-readable label (e.g. "Tarjeta Visa" vs "Tarjeta
+          Mastercard" under CREDIT_CARD). */}
+      <div className="flex flex-col gap-1">
+        <label
+          className="text-caption font-medium"
+          style={{
+            color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+          }}
+          htmlFor="adjustment-payment-specific-name"
+        >
+          {t("fiscal.adjustment_payment_specific_name_label")}
         </label>
         <input
-          id="adjustment-payment-method-name"
+          id="adjustment-payment-specific-name"
           type="text"
           className="pos-input text-body-sm"
           value={value.paymentMethodName}
-          onChange={(e) => {
-            set("paymentMethodName", e.target.value);
-            // Keep the id aligned with the human-readable name when the
-            // cashier free-types a method; backend treats empty id as a no-op.
-            if (!value.paymentMethodId) {
-              set("paymentMethodId", e.target.value);
-            }
-          }}
-          placeholder={t("fiscal.adjustment_payment_method_placeholder")}
-          aria-label={t("fiscal.detail_payment_method")}
+          onChange={(e) => handleOverrideChange(e.target.value)}
+          placeholder={defaultName}
+          aria-label={t("fiscal.adjustment_payment_specific_name_label")}
+          disabled={!value.category}
         />
-      </div>
-
-      {/* Category — coarse grouping matching the fiscal payment.category field. */}
-      <div className="flex flex-col gap-1">
-        <label
-          className="text-caption font-medium"
-          style={{
-            color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-          }}
-          htmlFor="adjustment-payment-category"
-        >
-          {t("fiscal.adjustment_payment_category_label")}
-        </label>
-        <select
-          id="adjustment-payment-category"
-          className="pos-input text-body-sm"
-          value={value.category}
-          onChange={(e) => set("category", e.target.value)}
-          aria-label={t("fiscal.adjustment_payment_category_label")}
-        >
-          <option value="">—</option>
-          <option value="CASH">{t("fiscal.adjustment_payment_category_cash")}</option>
-          <option value="CARD">{t("fiscal.adjustment_payment_category_card")}</option>
-          <option value="TRANSFER">{t("fiscal.adjustment_payment_category_transfer")}</option>
-          <option value="OTHER">{t("fiscal.adjustment_payment_category_other")}</option>
-        </select>
       </div>
 
       {/* Read-only amount — sourced from the original fiscal invoice total. */}
@@ -413,104 +525,119 @@ const PaymentEditor: FC<{
         </span>
       </div>
 
-      {/* Optional reference fields */}
-      <details className="rounded-pos border" style={{ borderColor: "color-mix(in srgb, var(--color-ink) 12%, transparent)" }}>
-        <summary
-          className="cursor-pointer px-3 py-2 text-caption font-medium"
-          style={{ color: "var(--color-ink)" }}
+      {/* Optional reference fields — only the subset relevant to the
+          selected category is shown. Hidden entirely when the category
+          carries no reference data (CASH/CREDIT/OTHER). */}
+      {hasAnyRefField && (
+        <details
+          className="rounded-pos border"
+          style={{ borderColor: "color-mix(in srgb, var(--color-ink) 12%, transparent)" }}
         >
-          {t("fiscal.adjustment_payment_reference_details_summary")}
-        </summary>
-        <div className="flex flex-col gap-2 p-3">
-          <label className="flex flex-col gap-1">
-            <span
-              className="text-caption font-medium"
-              style={{
-                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-              }}
-            >
-              {t("fiscal.adjustment_payment_reference_label")}
-            </span>
-            <input
-              type="text"
-              className="pos-input text-body-sm"
-              value={value.transactionReference ?? ""}
-              onChange={(e) =>
-                set(
-                  "transactionReference",
-                  e.target.value === "" ? null : e.target.value,
-                )
-              }
-              aria-label={t("fiscal.adjustment_payment_reference_label")}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span
-              className="text-caption font-medium"
-              style={{
-                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-              }}
-            >
-              {t("fiscal.adjustment_payment_authorization_label")}
-            </span>
-            <input
-              type="text"
-              className="pos-input text-body-sm"
-              value={value.authorizationCode ?? ""}
-              onChange={(e) =>
-                set(
-                  "authorizationCode",
-                  e.target.value === "" ? null : e.target.value,
-                )
-              }
-              aria-label={t("fiscal.adjustment_payment_authorization_label")}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span
-              className="text-caption font-medium"
-              style={{
-                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-              }}
-            >
-              {t("fiscal.adjustment_payment_card_brand_label")}
-            </span>
-            <input
-              type="text"
-              className="pos-input text-body-sm"
-              value={value.cardBrand ?? ""}
-              onChange={(e) =>
-                set("cardBrand", e.target.value === "" ? null : e.target.value)
-              }
-              aria-label={t("fiscal.adjustment_payment_card_brand_label")}
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span
-              className="text-caption font-medium"
-              style={{
-                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-              }}
-            >
-              {t("fiscal.adjustment_payment_card_last_four_label")}
-            </span>
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={4}
-              className="pos-input text-body-sm font-data tabular-nums"
-              value={value.cardLastFour ?? ""}
-              onChange={(e) =>
-                set(
-                  "cardLastFour",
-                  e.target.value === "" ? null : e.target.value,
-                )
-              }
-              aria-label={t("fiscal.adjustment_payment_card_last_four_label")}
-            />
-          </label>
-        </div>
-      </details>
+          <summary
+            className="cursor-pointer px-3 py-2 text-caption font-medium"
+            style={{ color: "var(--color-ink)" }}
+          >
+            {t("fiscal.adjustment_payment_reference_details_summary")}
+          </summary>
+          <div className="flex flex-col gap-2 p-3">
+            {refFields.reference && (
+              <label className="flex flex-col gap-1">
+                <span
+                  className="text-caption font-medium"
+                  style={{
+                    color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+                  }}
+                >
+                  {t("fiscal.adjustment_payment_reference_label")}
+                </span>
+                <input
+                  type="text"
+                  className="pos-input text-body-sm"
+                  value={value.transactionReference ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "transactionReference",
+                      e.target.value === "" ? null : e.target.value,
+                    )
+                  }
+                  aria-label={t("fiscal.adjustment_payment_reference_label")}
+                />
+              </label>
+            )}
+            {refFields.authCode && (
+              <label className="flex flex-col gap-1">
+                <span
+                  className="text-caption font-medium"
+                  style={{
+                    color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+                  }}
+                >
+                  {t("fiscal.adjustment_payment_authorization_label")}
+                </span>
+                <input
+                  type="text"
+                  className="pos-input text-body-sm"
+                  value={value.authorizationCode ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "authorizationCode",
+                      e.target.value === "" ? null : e.target.value,
+                    )
+                  }
+                  aria-label={t("fiscal.adjustment_payment_authorization_label")}
+                />
+              </label>
+            )}
+            {refFields.cardBrand && (
+              <label className="flex flex-col gap-1">
+                <span
+                  className="text-caption font-medium"
+                  style={{
+                    color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+                  }}
+                >
+                  {t("fiscal.adjustment_payment_card_brand_label")}
+                </span>
+                <input
+                  type="text"
+                  className="pos-input text-body-sm"
+                  value={value.cardBrand ?? ""}
+                  onChange={(e) =>
+                    set("cardBrand", e.target.value === "" ? null : e.target.value)
+                  }
+                  aria-label={t("fiscal.adjustment_payment_card_brand_label")}
+                />
+              </label>
+            )}
+            {refFields.cardLastFour && (
+              <label className="flex flex-col gap-1">
+                <span
+                  className="text-caption font-medium"
+                  style={{
+                    color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+                  }}
+                >
+                  {t("fiscal.adjustment_payment_card_last_four_label")}
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  className="pos-input text-body-sm font-data tabular-nums"
+                  value={value.cardLastFour ?? ""}
+                  onChange={(e) =>
+                    set(
+                      "cardLastFour",
+                      e.target.value === "" ? null : e.target.value,
+                    )
+                  }
+                  aria-label={t("fiscal.adjustment_payment_card_last_four_label")}
+                />
+              </label>
+            )}
+          </div>
+        </details>
+      )}
     </div>
   );
 };
@@ -1119,12 +1246,13 @@ const CustomFieldClearEditor: FC<{
 // ValueEditorDispatch — renders the correct editor for the selected type
 // ---------------------------------------------------------------------------
 
-const ValueEditorDispatch: FC<ValueEditorProps> = ({
+const ValueEditorDispatch: FC<ValueEditorProps & { clients?: ClientOption[]; paymentMethods?: Array<{ id: string; category: string; name: string }> }> = ({
   type,
   value,
   onChange,
   operationalView,
   clients,
+  paymentMethods,
 }) => {
   switch (type) {
     case "PAYMENT_METHOD_CHANGE": {
@@ -1143,6 +1271,7 @@ const ValueEditorDispatch: FC<ValueEditorProps> = ({
           value={override}
           onChange={(next) => onChange(next)}
           lockedAmount={operationalView?.fiscal.fullData.totalAmount ?? "0"}
+          paymentMethods={paymentMethods}
         />
       );
     }
@@ -1316,6 +1445,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
   loading,
   error,
   clients,
+  paymentMethods,
   onSubmit,
   onClose,
 }) => {
@@ -1632,6 +1762,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
             onChange={setNewValue}
             operationalView={operationalView}
             clients={clients}
+            paymentMethods={paymentMethods}
           />
         </div>
 

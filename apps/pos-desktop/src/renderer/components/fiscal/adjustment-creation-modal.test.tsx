@@ -185,23 +185,46 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
     operationalView: paymentView,
   };
 
-  it('renders the method editor without an editable amount input', async () => {
+  it('renders the method picker as a category select with an optional specific-name input', async () => {
     render(<AdjustmentCreationModal {...paymentProps} />);
 
     await userEvent.click(
       screen.getByRole('radio', { name: /Cambio m.*todo de pago/ }),
     );
 
-    // Method name is editable (label is just "M" todo")
-    expect(
-      screen.getByLabelText(/^M.todo$/),
-    ).toBeInTheDocument();
-    // Category select is editable
-    expect(
-      screen.getByLabelText(/Categor.a/),
-    ).toBeInTheDocument();
-    // No editable amount input — the only amount rendered is a read-only
-    // span showing the fiscal total. There is no <input> for amount.
+    // The method picker is a <select> driven by the PaymentMethodCategory
+    // enum, not a free-text input. Querying by the picker label returns the
+    // <select> element.
+    const methodSelect = screen.getByLabelText(
+      /M.todo de pago|Payment method/,
+    ) as HTMLSelectElement;
+    expect(methodSelect.tagName).toBe('SELECT');
+
+    // Every value from the new PAYMENT_METHOD_CATEGORY_VALUES enum is offered
+    // as a <select> option — there is no free-text category input.
+    const optionValues = Array.from(methodSelect.options).map((o) => o.value);
+    expect(optionValues).toEqual(
+      expect.arrayContaining([
+        'CASH',
+        'DEBIT_CARD',
+        'CREDIT_CARD',
+        'BANK_TRANSFER',
+        'DIGITAL_WALLET',
+        'CHECK',
+        'CREDIT',
+        'OTHER',
+      ]),
+    );
+
+    // Optional cashier-entered specific name is a separate text input below
+    // the picker.
+    const specificNameInput = screen.getByLabelText(
+      /Nombre espec.fico|Specific name/,
+    );
+    expect(specificNameInput.tagName).toBe('INPUT');
+    expect(specificNameInput).toHaveAttribute('type', 'text');
+
+    // No editable <input> for the amount — only the read-only amount display.
     expect(
       screen.queryByLabelText(/^Monto$/),
     ).not.toBeInTheDocument();
@@ -222,7 +245,7 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
     expect(screen.getByText(/\$ ?75[.,]000[.,]00/)).toBeInTheDocument();
   });
 
-  it('submits the flat single-method shape without an amount field', async () => {
+  it('submits the flat single-method shape with category matching the selected enum', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<AdjustmentCreationModal {...paymentProps} onSubmit={onSubmit} />);
 
@@ -230,12 +253,18 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
       screen.getByRole('radio', { name: /Cambio m.*todo de pago/ }),
     );
 
-    const methodInput = screen.getByLabelText(/^M.todo$/);
-    await userEvent.clear(methodInput);
-    await userEvent.type(methodInput, 'Tarjeta Crédito');
+    // Single method picker — the <select> drives the internal `category`
+    // field directly. Picking CREDIT_CARD sets `category` to the enum.
+    const methodSelect = screen.getByLabelText(
+      /M.todo de pago|Payment method/,
+    ) as HTMLSelectElement;
+    await userEvent.selectOptions(methodSelect, 'CREDIT_CARD');
 
-    const categorySelect = screen.getByLabelText(/Categor.a/) as HTMLSelectElement;
-    await userEvent.selectOptions(categorySelect, 'CARD');
+    // Optional cashier-entered specific name — separate from the category.
+    const specificNameInput = screen.getByLabelText(
+      /Nombre espec.fico|Specific name/,
+    );
+    await userEvent.type(specificNameInput, 'Tarjeta Visa');
 
     await userEvent.type(
       screen.getByPlaceholderText(/Describa el motivo/),
@@ -258,12 +287,67 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
     // Flat shape: no `payments` array, no `amount` field
     expect(value).not.toHaveProperty('payments');
     expect(value).not.toHaveProperty('amount');
+    // `category` is the enum value from the select, not a free-form string.
+    // `paymentMethodName` is the cashier-entered override (may be empty when
+    // the cashier leaves the optional field blank — verified separately).
     expect(value).toMatchObject({
-      paymentMethodName: 'Tarjeta Crédito',
-      category: 'CARD',
+      paymentMethodName: 'Tarjeta Visa',
+      category: 'CREDIT_CARD',
     });
     expect(typeof (value as { paymentMethodId?: string }).paymentMethodId)
       .toBe('string');
     expect(reason).toBe('Cambio a tarjeta de crédito por solicitud del cliente');
+  });
+
+  it('shows reference fields only for categories that carry reference data', async () => {
+    render(<AdjustmentCreationModal {...paymentProps} />);
+
+    await userEvent.click(
+      screen.getByRole('radio', { name: /Cambio m.*todo de pago/ }),
+    );
+
+    const methodSelect = screen.getByLabelText(
+      /M.todo de pago|Payment method/,
+    ) as HTMLSelectElement;
+
+    // CASH carries no reference data — no reference inputs are rendered.
+    await userEvent.selectOptions(methodSelect, 'CASH');
+    expect(
+      screen.queryByLabelText(/Referencia \/ CUS|Reference \/ CUS/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/C.digo de autorizaci.n|Authorization code/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/Marca de tarjeta|Card brand/),
+    ).not.toBeInTheDocument();
+
+    // BANK_TRANSFER exposes a single transaction reference field.
+    await userEvent.selectOptions(methodSelect, 'BANK_TRANSFER');
+    expect(
+      screen.getByLabelText(/Referencia \/ CUS|Reference \/ CUS/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/C.digo de autorizaci.n|Authorization code/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/Marca de tarjeta|Card brand/),
+    ).not.toBeInTheDocument();
+
+    // CREDIT_CARD exposes auth code, brand, and last-4 — no transaction
+    // reference. Switching categories removes the now-irrelevant field.
+    await userEvent.selectOptions(methodSelect, 'CREDIT_CARD');
+    expect(
+      screen.queryByLabelText(/Referencia \/ CUS|Reference \/ CUS/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/C.digo de autorizaci.n|Authorization code/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Marca de tarjeta|Card brand/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/.ltimos 4 d.gitos|Last 4 digits/),
+    ).toBeInTheDocument();
   });
 });

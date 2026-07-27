@@ -38,6 +38,7 @@ import { useLocalSessionStore } from '../auth/local-session.store';
 import { useCashShiftStore } from './cash-shift.store';
 import { createBackupService, BackupFailedException } from '../backup';
 import type { LocalAdjustmentService } from '../fiscal/local-adjustment.service';
+import type { OperationalInvoiceView } from '../fiscal/local-adjustment.types';
 import type { PrintRouter } from '../printing/print-router';
 import { PrintJobType, PrintPayloadType } from '../printing/printing-types';
 import { writePrintPayload } from '../printing/print-payload-writer';
@@ -323,9 +324,20 @@ export class CashShiftService {
       return baseTotals;
     }
 
-    // Refinement: layer operational adjustments on top of base totals.
-    // If no invoices exist yet (invoiceService not configured / generation
-    // failed), base totals are returned unchanged.
+    // Load active payment methods once so we can resolve the `category` enum
+    // values that the adjustment-creation modal mistakenly stores in the
+    // `paymentMethodId` field of `InvoiceLocalAdjustment.newValue` back to
+    // real `PaymentMethod.id` UUIDs. Without this normalization, the
+    // computed totals would be keyed under strings like "BANK_TRANSFER" and
+    // never match anything when `getActivePaymentMethodsWithNames` looks up
+    // the method by id.
+    const paymentMethodResolver = await this.buildPaymentMethodResolver();
+
+    // Layer operational adjustments on top of base totals.
+    // Primary path: resolveOperationalView (handles full adjustment chain
+    // including reversals). If it throws (e.g. malformed invoice JSON),
+    // logs the error and falls back to querying InvoiceLocalAdjustment
+    // directly.
     const sales = await this.prisma.sale.findMany({
       where: {
         cashShiftId: shiftId,
@@ -335,41 +347,194 @@ export class CashShiftService {
     });
 
     const saleIds = sales.map((s) => s.id);
+    if (saleIds.length === 0) return baseTotals;
+
     const invoices = await this.prisma.invoice.findMany({
       where: { saleId: { in: saleIds } },
       select: { id: true },
     });
 
+    if (invoices.length === 0) return baseTotals;
+
     const adjusted = new Map(baseTotals);
+
     for (const invoice of invoices) {
+      let opView: OperationalInvoiceView | null = null;
       try {
-        const opView = await this.adjustmentService.resolveOperationalView(
-          invoice.id,
+        opView = await this.adjustmentService.resolveOperationalView(invoice.id);
+      } catch (err) {
+        console.error(
+          `[CashShiftService] resolveOperationalView failed for invoice ${invoice.id}: `,
+          err instanceof Error ? err.message : String(err),
         );
+      }
 
-        if (!opView.operational.hasDifferences) continue;
-
+      if (opView?.operational.hasDifferences) {
         const opPayments = opView.operational.payments;
-        const fiscalPayments = opView.fiscal.fullData.payments;
+        const fiscalPayments = opView.fiscal.fullData?.payments;
 
         // Remove fiscal (original) payment amounts for this invoice
-        for (const fp of fiscalPayments) {
-          const current = adjusted.get(fp.paymentMethodId) ?? new Prisma.Decimal(0);
-          const newVal = current.minus(new Prisma.Decimal(fp.amount));
-          adjusted.set(fp.paymentMethodId, newVal);
+        if (fiscalPayments) {
+          for (const fp of fiscalPayments) {
+            const current = adjusted.get(fp.paymentMethodId) ?? new Prisma.Decimal(0);
+            adjusted.set(fp.paymentMethodId, current.minus(new Prisma.Decimal(fp.amount)));
+          }
         }
 
         // Add operational (adjusted) payment amounts
         for (const op of opPayments) {
-          const current = adjusted.get(op.paymentMethodId) ?? new Prisma.Decimal(0);
-          adjusted.set(op.paymentMethodId, current.plus(new Prisma.Decimal(op.amount)));
+          const resolvedId = paymentMethodResolver(op.paymentMethodId);
+          const current = adjusted.get(resolvedId) ?? new Prisma.Decimal(0);
+          adjusted.set(resolvedId, current.plus(new Prisma.Decimal(op.amount)));
         }
-      } catch {
-        continue;
+      } else if (!opView) {
+        // Fallback: query PAYMENT_METHOD_CHANGE adjustments directly
+        await this.applyAdjustmentsDirect(invoice.id, adjusted, paymentMethodResolver);
       }
     }
 
     return adjusted;
+  }
+
+  /**
+   * Fallback: query PAYMENT_METHOD_CHANGE adjustments directly from the
+   * InvoiceLocalAdjustment table and apply them to the totals map.
+   * Used when resolveOperationalView throws for a specific invoice.
+   *
+   * The `paymentMethodResolver` is the function returned by
+   * `buildPaymentMethodResolver`. It normalizes whatever is stored in
+   * `newValue.paymentMethodId` (which is sometimes a `PaymentMethodCategory`
+   * enum value written by the adjustment-creation modal) back to a real
+   * `PaymentMethod.id` UUID before mutating `adjusted`.
+   */
+  private async applyAdjustmentsDirect(
+    invoiceId: string,
+    adjusted: Map<string, Prisma.Decimal>,
+    paymentMethodResolver: (rawId: string) => string,
+  ): Promise<void> {
+    try {
+      const adjustments = await this.prisma.invoiceLocalAdjustment.findMany({
+        where: {
+          invoiceId,
+          adjustmentType: 'PAYMENT_METHOD_CHANGE',
+          replacedByAdjustmentId: null,
+        },
+        select: {
+          newValue: true,
+        },
+      });
+
+      if (adjustments.length === 0) return;
+
+      for (const adj of adjustments) {
+        const nv = adj.newValue as {
+          paymentMethodId?: string;
+        } | null;
+        if (!nv?.paymentMethodId) continue;
+
+        // Get the invoice to find the sale
+        const inv = await this.prisma.invoice.findUnique({
+          where: { id: invoiceId },
+          select: { saleId: true, fullData: true },
+        });
+        if (!inv) continue;
+
+        // Get original SalePayment amounts for this sale
+        const salePayments = await this.prisma.salePayment.findMany({
+          where: { saleId: inv.saleId },
+          select: { paymentMethodId: true, amount: true },
+        });
+
+        // Subtract original amounts
+        for (const sp of salePayments) {
+          const current = adjusted.get(sp.paymentMethodId) ?? new Prisma.Decimal(0);
+          adjusted.set(sp.paymentMethodId, current.minus(sp.amount));
+        }
+
+        // Calculate total from the invoice fullData if possible,
+        // otherwise sum the SalePayment amounts
+        const fullData = inv.fullData as Record<string, unknown> | null;
+        const invoiceTotal = typeof fullData?.totalAmount === 'string'
+          ? fullData.totalAmount
+          : salePayments.reduce((s, p) => s.plus(p.amount), new Prisma.Decimal(0)).toString();
+
+        const adjAmount = new Prisma.Decimal(invoiceTotal);
+        // Normalize: the modal may have stored a category enum like
+        // "BANK_TRANSFER" in the paymentMethodId field. Resolve to a real
+        // PaymentMethod.id before writing into the totals map so the
+        // downstream `getActivePaymentMethodsWithNames` lookup hits.
+        const resolvedId = paymentMethodResolver(nv.paymentMethodId);
+        const current = adjusted.get(resolvedId) ?? new Prisma.Decimal(0);
+        adjusted.set(resolvedId, current.plus(adjAmount));
+      }
+    } catch (fallbackErr) {
+      console.error(
+        `[CashShiftService] Fallback adjustment lookup also failed for invoice ${invoiceId}: `,
+        fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr),
+      );
+    }
+  }
+
+  /**
+   * Build a function that normalizes a raw payment-method identifier
+   * (which may be a `PaymentMethod.id` UUID or, due to a known
+   * adjustment-creation-modal quirk, a `PaymentMethodCategory` enum
+   * value like "BANK_TRANSFER") into a real `PaymentMethod.id`.
+   *
+   * The implementation pre-loads every active `PaymentMethod` once,
+   * builds a `category → id` map keyed by enum string, and the returned
+   * closure applies the lookup with a small in-memory cache so repeated
+   * calls within a single `computeExpectedTotalsByPaymentMethod`
+   * invocation don't re-scan the map.
+   */
+  private async buildPaymentMethodResolver(): Promise<(rawId: string) => string> {
+    const methods = await this.prisma.paymentMethod.findMany({
+      where: { isActive: true },
+      select: { id: true, category: true },
+    });
+
+    // Defensive: when the caller (e.g. unit-test mocks) returns nothing
+    // we still need the closure to work as an identity function rather
+    // than crashing on `methods.map`.
+    const safeMethods: Array<{ id: string; category: string }> = Array.isArray(methods)
+      ? methods
+      : [];
+
+    // Map from category enum value → first active PaymentMethod.id
+    // sharing that category. If multiple methods share a category
+    // (e.g. two cash drawers), we pick the first one and the safety-net
+    // query in `getActivePaymentMethods` will still surface the others
+    // when their adjustment values are non-zero.
+    const categoryToId = new Map<string, string>();
+    for (const m of safeMethods) {
+      if (m.category && !categoryToId.has(m.category)) {
+        categoryToId.set(m.category, m.id);
+      }
+    }
+    const knownIds = new Set(safeMethods.map((m) => m.id));
+
+    const memo = new Map<string, string>();
+    return (rawId: string) => {
+      const cached = memo.get(rawId);
+      if (cached !== undefined) return cached;
+
+      let resolved: string;
+      if (knownIds.has(rawId)) {
+        // Already a real PaymentMethod.id — pass through.
+        resolved = rawId;
+      } else if (categoryToId.has(rawId)) {
+        // A category enum value (e.g. "BANK_TRANSFER") — map to the
+        // canonical PaymentMethod.id for that category.
+        resolved = categoryToId.get(rawId) as string;
+      } else {
+        // Unknown — leave as-is. Downstream lookups will simply not find
+        // a match, which preserves the previous (broken) behavior for
+        // genuinely unknown ids rather than throwing.
+        resolved = rawId;
+      }
+      memo.set(rawId, resolved);
+      return resolved;
+    };
   }
 
   /**
@@ -699,21 +864,83 @@ export class CashShiftService {
   }
 
   /**
-   * Get payment method IDs that have been used in confirmed sales within the shift.
+   * Get payment method IDs that are operationally active (have non-zero
+   * expected totals) within the shift.
+   *
+   * Derives the set from `computeExpectedTotalsByPaymentMethod` which
+   * correctly accounts for PAYMENT_METHOD_CHANGE adjustments: if an
+   * invoice's payment was moved from method A to method B, method A
+   * appears as $0 (excluded) and method B appears with the full amount
+   * (included).
+   *
+   * As a safety net, also queries PAYMENT_METHOD_CHANGE adjustments
+   * directly to ensure the new method IDs are always in the active set
+   * even if the totals computation returned $0 for them.
    */
   private async getActivePaymentMethods(
     shiftId: string,
   ): Promise<{ paymentMethodId: string }[]> {
-    return this.prisma.salePayment.findMany({
-      where: {
-        sale: {
-          cashShiftId: shiftId,
-          operationalState: 'CONFIRMED',
-        },
-      },
-      distinct: ['paymentMethodId'],
-      select: { paymentMethodId: true },
+    const totals = await this.computeExpectedTotalsByPaymentMethod(shiftId);
+    const activeSet = new Set<string>();
+
+    for (const [paymentMethodId, amount] of totals) {
+      if (amount.greaterThan(0)) {
+        activeSet.add(paymentMethodId);
+      }
+    }
+
+    // Safety net: include any payment method referenced by a non-reversed
+    // PAYMENT_METHOD_CHANGE adjustment in this shift. The resolver handles
+    // the case where the modal stored a category enum in paymentMethodId.
+    try {
+      const paymentMethodResolver = await this.buildPaymentMethodResolver();
+      await this.addAdjustmentMethodIds(shiftId, activeSet, paymentMethodResolver);
+    } catch {
+      // Non-critical safety net — totals-based result already computed
+    }
+
+    return Array.from(activeSet).map((paymentMethodId) => ({ paymentMethodId }));
+  }
+
+  /**
+   * Query PAYMENT_METHOD_CHANGE adjustments for the shift and add their
+   * target payment method IDs to the active set. Each id is normalized
+   * through `paymentMethodResolver` so category-enum strings (e.g.
+   * "BANK_TRANSFER") become real `PaymentMethod.id` UUIDs.
+   */
+  private async addAdjustmentMethodIds(
+    shiftId: string,
+    activeSet: Set<string>,
+    paymentMethodResolver: (rawId: string) => string,
+  ): Promise<void> {
+    const sales = await this.prisma.sale.findMany({
+      where: { cashShiftId: shiftId, operationalState: 'CONFIRMED' },
+      select: { id: true },
     });
+    if (sales.length === 0) return;
+
+    const saleIds = sales.map((s) => s.id);
+    const invoices = await this.prisma.invoice.findMany({
+      where: { saleId: { in: saleIds } },
+      select: { id: true },
+    });
+    if (invoices.length === 0) return;
+
+    const adjustments = await this.prisma.invoiceLocalAdjustment.findMany({
+      where: {
+        invoiceId: { in: invoices.map((i) => i.id) },
+        adjustmentType: 'PAYMENT_METHOD_CHANGE',
+        replacedByAdjustmentId: null,
+      },
+      select: { newValue: true },
+    });
+
+    for (const adj of adjustments) {
+      const nv = adj.newValue as { paymentMethodId?: string } | null;
+      if (nv?.paymentMethodId) {
+        activeSet.add(paymentMethodResolver(nv.paymentMethodId));
+      }
+    }
   }
 
   private findMissingClosingCounts(
@@ -797,6 +1024,22 @@ export class CashShiftService {
     }
 
     return updatedShift;
+  }
+
+  /**
+   * Return all active payment methods as a simple id/category/name list,
+   * sorted by sortOrder. Useful for UI components that need to resolve
+   * category enum values to real PaymentMethod.id values.
+   */
+  async getActivePaymentMethodsList(): Promise<
+    Array<{ id: string; category: string; name: string }>
+  > {
+    const methods = await this.prisma.paymentMethod.findMany({
+      where: { isActive: true },
+      select: { id: true, category: true, name: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+    return Array.isArray(methods) ? methods : [];
   }
 
   private generateId(): string {

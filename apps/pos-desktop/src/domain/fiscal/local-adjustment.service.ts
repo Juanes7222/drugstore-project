@@ -509,8 +509,11 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
       throw new AdjustmentInvoiceNotFoundException(invoiceId);
     }
 
-    const fullData = invoice.fullData as Record<string, unknown>;
-    const payments = (fullData.payments ?? []) as OperationalInvoiceView['fiscal']['fullData']['payments'];
+    const fullData = (invoice.fullData ?? {}) as Record<string, unknown>;
+    const payments = ('payments' in fullData
+      ? (fullData.payments ?? [])
+      : []
+    ) as OperationalInvoiceView['fiscal']['fullData']['payments'];
 
     // Build the fiscal view
     const fiscal: OperationalInvoiceView['fiscal'] = {
@@ -521,7 +524,7 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
       cufeProvisional: invoice.cufeProvisional,
       cufeOfficial: invoice.cufeOfficial,
       issuedAt: invoice.issuedAt.toISOString(),
-      fullData: invoice.fullData as unknown as OperationalInvoiceView['fiscal']['fullData'],
+      fullData: (invoice.fullData ?? {}) as unknown as OperationalInvoiceView['fiscal']['fullData'],
     };
 
     // Get all non-reversed adjustments in chronological order
@@ -566,8 +569,9 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
           if (override) {
             // Amount is always the original fiscal total — only the method
             // changes. Replaces the entire payment set with a single entry.
-            const originalTotal = fullData?.totalAmount
-              ?? operational.payments.reduce((sum, p) => sum + Number(p.amount), 0).toString();
+            const originalTotal = typeof fullData?.totalAmount === 'string'
+              ? fullData.totalAmount
+              : operational.payments.reduce((sum, p) => sum + Number(p.amount), 0).toString();
             operational.payments = [
               {
                 paymentMethodId: override.paymentMethodId,
