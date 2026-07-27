@@ -935,6 +935,10 @@ export class SalesPosService {
       startedAt: Date;
       cashShiftId: string;
       clientId: string | null;
+      subtotal: Prisma.Decimal;
+      totalDiscount: Prisma.Decimal;
+      totalTax: Prisma.Decimal;
+      totalAmount: Prisma.Decimal;
       items: Array<{
         id: string;
         productId: string;
@@ -965,6 +969,15 @@ export class SalesPosService {
           discountReason: item.discountReason,
         })),
         prescriptionNumber: null,
+        // Snapshotted sale-header totals. The server uses these as the
+        // authoritative figures (CreateSaleSchema.subtotal/totalDiscount/
+        // totalTax/totalAmount) when all four are present, so a drifted
+        // catalog between sale time and sync time can't cause
+        // `Total payments do not match total sale amount` failures.
+        subtotal: sale.subtotal.toString(),
+        totalDiscount: sale.totalDiscount.toString(),
+        totalTax: sale.totalTax.toString(),
+        totalAmount: sale.totalAmount.toString(),
       },
       confirmSaleDto: {
         payments: input.payments.map((p) => ({

@@ -12,6 +12,8 @@
     "db:push": "npx prisma db push --schema ../../packages/database/prisma/schema --config ../../packages/database/prisma.full.config.ts",
     "db:seed": "npx tsx seed/main.ts",
     "db:reset": "npx prisma db push --force-reset --schema ../../packages/database/prisma/schema --config ../../packages/database/prisma.full.config.ts && npx tsx seed/main.ts",
+    "sync:recover": "npx tsx scripts/recover-stuck-sync.ts",
+    "sync:recover:dry-run": "npx tsx scripts/recover-stuck-sync.ts --dry-run",
     "test": "jest --forceExit --detectOpenHandles",
     "test:cov": "jest --coverage --forceExit --detectOpenHandles",
     "test:watch": "jest --watch",

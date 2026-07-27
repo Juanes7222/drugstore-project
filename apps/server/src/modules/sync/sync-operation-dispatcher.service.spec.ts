@@ -18,6 +18,11 @@ import { SalesService } from '@/modules/sales-pos/services/sales.service';
 import { ClientReturnsService } from '@/modules/sales-pos/services/client-returns.service';
 import { InventoryAdjustmentsService } from '@/modules/inventory-lots/services/inventory-adjustments.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
+import { ProductsService } from '@/modules/catalog/products.service';
+import { PurchaseOrdersService } from '@/modules/purchases/services/purchase-orders.service';
+import { PurchaseReceptionsService } from '@/modules/purchases/services/purchase-receptions.service';
+import { SupplierReturnsService } from '@/modules/purchases/services/supplier-returns.service';
+import { SyncPayloadValidationException } from './exceptions/sync-payload-validation.exception';
 
 // These mocks are set up before instantiation since the constructor uses them
 const mockSalesService = {
@@ -46,6 +51,23 @@ const mockFiscalDocumentsService = {
   createPendingDocumentForContingency: jest.fn(),
   enqueueGenerationJob: jest.fn(),
 } as unknown as FiscalDocumentsService;
+
+const mockProductsService = {
+  createProduct: jest.fn(),
+  updateProduct: jest.fn(),
+} as unknown as ProductsService;
+
+const mockPurchaseOrdersService = {
+  confirmOrderFromSync: jest.fn(),
+} as unknown as PurchaseOrdersService;
+
+const mockPurchaseReceptionsService = {
+  confirmReceptionFromSync: jest.fn(),
+} as unknown as PurchaseReceptionsService;
+
+const mockSupplierReturnsService = {
+  confirmReturnFromSync: jest.fn(),
+} as unknown as SupplierReturnsService;
 
 const mockSyncOperationOutcome = {
   create: jest.fn(),
@@ -117,6 +139,10 @@ describe('SyncOperationDispatcherService', () => {
       mockClientReturnsService,
       mockInventoryAdjustmentsService,
       mockFiscalDocumentsService,
+      mockProductsService,
+      mockPurchaseOrdersService,
+      mockPurchaseReceptionsService,
+      mockSupplierReturnsService,
     );
   });
 
@@ -458,6 +484,196 @@ describe('SyncOperationDispatcherService', () => {
 
       expect(mockFiscalDocumentsService.createPendingDocumentForContingency)
         .not.toHaveBeenCalled();
+    });
+  });
+
+  // ── PURCHASE_ORDER_CONFIRMATION ───────────────────────────────────────
+
+  describe('PURCHASE_ORDER_CONFIRMATION', () => {
+    const validOrderPayload = {
+      orderId: UUID,
+      sequentialNumber: 1,
+      supplierId: UUID,
+      confirmedByUserId: UUID,
+      confirmedAt: '2026-07-09T10:00:00.000Z',
+    };
+
+    it('calls confirmOrderFromSync with the parsed payload', async () => {
+      mockPurchaseOrdersService.confirmOrderFromSync.mockResolvedValue({ id: 'po-1' });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await service.dispatch(buildEntry({
+        operationType: 'PURCHASE_ORDER_CONFIRMATION',
+        payload: JSON.stringify(validOrderPayload),
+      }));
+
+      expect(mockPurchaseOrdersService.confirmOrderFromSync).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: UUID, confirmedByUserId: UUID }),
+        UUID,
+      );
+    });
+
+    it('throws SyncPayloadValidationException when confirmedByUserId is missing', async () => {
+      const { confirmedByUserId, ...bad } = validOrderPayload;
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(buildEntry({
+          operationType: 'PURCHASE_ORDER_CONFIRMATION',
+          payload: JSON.stringify(bad),
+        })),
+      ).rejects.toThrow(SyncPayloadValidationException);
+
+      expect(mockPurchaseOrdersService.confirmOrderFromSync).not.toHaveBeenCalled();
+      expect(mockSyncOperationOutcome.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ outcome: 'REJECTED' }),
+      });
+    });
+
+    it('throws SyncPayloadValidationException with "payload is not valid JSON" detail when payload is unparseable', async () => {
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(buildEntry({
+          operationType: 'PURCHASE_ORDER_CONFIRMATION',
+          payload: 'not json',
+        })),
+      ).rejects.toThrow(SyncPayloadValidationException);
+
+      expect(mockPurchaseOrdersService.confirmOrderFromSync).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── PURCHASE_RECEPTION_CONFIRMATION ───────────────────────────────────
+
+  describe('PURCHASE_RECEPTION_CONFIRMATION', () => {
+    const validReceptionPayload = {
+      receptionId: UUID,
+      sequentialNumber: 1,
+      supplierId: UUID,
+      confirmedByUserId: UUID,
+      createdById: UUID,
+      confirmedAt: '2026-07-09T10:00:00.000Z',
+      items: [
+        {
+          productId: UUID,
+          quantity: 1,
+          unitCost: 1000,
+        },
+      ],
+    };
+
+    it('calls confirmReceptionFromSync when payload is valid', async () => {
+      mockPurchaseReceptionsService.confirmReceptionFromSync.mockResolvedValue({ id: 'pr-1' });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await service.dispatch(buildEntry({
+        operationType: 'PURCHASE_RECEPTION_CONFIRMATION',
+        payload: JSON.stringify(validReceptionPayload),
+      }));
+
+      expect(mockPurchaseReceptionsService.confirmReceptionFromSync).toHaveBeenCalledWith(
+        expect.objectContaining({ receptionId: UUID, confirmedByUserId: UUID }),
+        UUID,
+      );
+    });
+
+    it('rejects a payload with item.unitCost undefined at the Zod boundary without calling confirmReceptionFromSync', async () => {
+      // Simulate a POS payload where the JSON object literal carries the
+      // `unitCost` key with a literal `undefined` value — JSON.parse turns
+      // it into the absence of the key, which Zod sees as a missing required
+      // field, so the test sets the items array via the same shape the
+      // dispatcher receives: parsed JSON without unitCost.
+      const payloadWithoutUnitCost = {
+        ...validReceptionPayload,
+        items: [
+          {
+            productId: UUID,
+            quantity: 1,
+            // unitCost intentionally omitted — equivalent to "unitCost: undefined"
+          },
+        ],
+      };
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(buildEntry({
+          operationType: 'PURCHASE_RECEPTION_CONFIRMATION',
+          payload: JSON.stringify(payloadWithoutUnitCost),
+        })),
+      ).rejects.toThrow(SyncPayloadValidationException);
+
+      expect(mockPurchaseReceptionsService.confirmReceptionFromSync).not.toHaveBeenCalled();
+    });
+
+    it('throws SyncPayloadValidationException with "payload is not valid JSON" detail when payload is unparseable', async () => {
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(buildEntry({
+          operationType: 'PURCHASE_RECEPTION_CONFIRMATION',
+          payload: 'not json',
+        })),
+      ).rejects.toThrow(SyncPayloadValidationException);
+
+      expect(mockPurchaseReceptionsService.confirmReceptionFromSync).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── SUPPLIER_RETURN_CONFIRMATION ──────────────────────────────────────
+
+  describe('SUPPLIER_RETURN_CONFIRMATION', () => {
+    const validReturnPayload = {
+      returnId: UUID,
+      sequentialNumber: 1,
+      supplierId: UUID,
+      createdByUserId: UUID,
+      confirmedAt: '2026-07-09T10:00:00.000Z',
+    };
+
+    it('calls confirmReturnFromSync with the parsed payload', async () => {
+      mockSupplierReturnsService.confirmReturnFromSync.mockResolvedValue({ id: 'sr-1' });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await service.dispatch(buildEntry({
+        operationType: 'SUPPLIER_RETURN_CONFIRMATION',
+        payload: JSON.stringify(validReturnPayload),
+      }));
+
+      expect(mockSupplierReturnsService.confirmReturnFromSync).toHaveBeenCalledWith(
+        expect.objectContaining({ returnId: UUID, createdByUserId: UUID }),
+        UUID,
+      );
+    });
+
+    it('throws SyncPayloadValidationException when returnId is missing', async () => {
+      const { returnId, ...bad } = validReturnPayload;
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(buildEntry({
+          operationType: 'SUPPLIER_RETURN_CONFIRMATION',
+          payload: JSON.stringify(bad),
+        })),
+      ).rejects.toThrow(SyncPayloadValidationException);
+
+      expect(mockSupplierReturnsService.confirmReturnFromSync).not.toHaveBeenCalled();
+      expect(mockSyncOperationOutcome.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ outcome: 'REJECTED' }),
+      });
+    });
+
+    it('throws SyncPayloadValidationException with "payload is not valid JSON" detail when payload is unparseable', async () => {
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(buildEntry({
+          operationType: 'SUPPLIER_RETURN_CONFIRMATION',
+          payload: 'not json',
+        })),
+      ).rejects.toThrow(SyncPayloadValidationException);
+
+      expect(mockSupplierReturnsService.confirmReturnFromSync).not.toHaveBeenCalled();
     });
   });
 

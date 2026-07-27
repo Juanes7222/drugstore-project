@@ -264,6 +264,101 @@ describe('SalesService', () => {
       expect(createdSaleData.totalAmount.toNumber()).toBe(23800);
     });
 
+    it('uses POS-snapshotted unitPrice on the sale item when it differs from the server catalog price', async () => {
+      setupTransactionMock();
+      (prisma.cashShift.findFirst as jest.Mock).mockResolvedValue(mockCashShift);
+      (prisma.sale.findFirst as jest.Mock).mockResolvedValue(null);
+      // Server catalog says 5000; the POS sent 3500 in the item unitPrice.
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+      let createdSaleData: any;
+      (prisma.sale.create as jest.Mock).mockImplementation(({ data }: any) => {
+        createdSaleData = data;
+        return { ...mockSale, ...data };
+      });
+
+      await service.create(
+        {
+          saleType: 'FREE_SALE' as any,
+          cashShiftId: 'shift-1',
+          items: [{ productId: 'prod-1', quantity: 1, unitPrice: '3500.00' }],
+        },
+        'user-1',
+        'ws-1',
+      );
+
+      // Header totals come from the recompute (no DTO totals), but the per-item
+      // unitPrice is the POS-snapshotted 3500.00, not the server's 5000.
+      const createdItem = createdSaleData.items.create[0];
+      expect(createdItem.unitPrice.toNumber()).toBe(3500);
+      expect(createdItem.unitPrice.toNumber()).not.toBe(5000);
+    });
+
+    it('stores DTO-supplied totals on the sale header when all four are present', async () => {
+      setupTransactionMock();
+      (prisma.cashShift.findFirst as jest.Mock).mockResolvedValue(mockCashShift);
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.sale.findFirst as jest.Mock).mockResolvedValue(null);
+      let createdSaleData: any;
+      (prisma.sale.create as jest.Mock).mockImplementation(({ data }: any) => {
+        createdSaleData = data;
+        return { ...mockSale, ...data };
+      });
+
+      await service.create(
+        {
+          saleType: 'FREE_SALE' as any,
+          cashShiftId: 'shift-1',
+          items: [{ productId: 'prod-1', quantity: 1, unitPrice: '5000.00' }],
+          subtotal: '3500.00',
+          totalDiscount: '0.00',
+          totalTax: '175.00',
+          totalAmount: '3675.00',
+        },
+        'user-1',
+        'ws-1',
+      );
+
+      expect(createdSaleData.subtotal.toNumber()).toBe(3500);
+      expect(createdSaleData.totalDiscount.toNumber()).toBe(0);
+      expect(createdSaleData.totalTax.toNumber()).toBe(175);
+      expect(createdSaleData.totalAmount.toNumber()).toBe(3675);
+    });
+
+    it('falls back to the server recompute when only some of the four totals are provided', async () => {
+      setupTransactionMock();
+      (prisma.cashShift.findFirst as jest.Mock).mockResolvedValue(mockCashShift);
+      (prisma.sale.findFirst as jest.Mock).mockResolvedValue(null);
+      const mockProductWithPrice = {
+        ...mockProduct,
+        priceHistories: [{ price: new Prisma.Decimal(10000) }],
+        taxHistories: [{ taxScheme: { rate: new Prisma.Decimal(19) } }],
+      };
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProductWithPrice);
+      let createdSaleData: any;
+      (prisma.sale.create as jest.Mock).mockImplementation(({ data }: any) => {
+        createdSaleData = data;
+        return { ...mockSale, ...data };
+      });
+
+      await service.create(
+        {
+          saleType: 'FREE_SALE' as any,
+          cashShiftId: 'shift-1',
+          items: [{ productId: 'prod-1', quantity: 2, unitPrice: '10000.00' }],
+          subtotal: '20000.00',
+          // totalDiscount, totalTax, totalAmount intentionally omitted
+        },
+        'user-1',
+        'ws-1',
+      );
+
+      // All four totals must be present for resolveHeaderTotals to use the
+      // DTO values; a partial set falls back to the server recompute (20000/3800/23800).
+      expect(createdSaleData.subtotal.toNumber()).toBe(20000);
+      expect(createdSaleData.totalTax.toNumber()).toBe(3800);
+      expect(createdSaleData.totalAmount.toNumber()).toBe(23800);
+    });
+
     it('retries on P2002 unique constraint violation for localNumber', async () => {
       setupTransactionMock();
       const Prisma = jest.requireMock('@pharmacy/database').Prisma;

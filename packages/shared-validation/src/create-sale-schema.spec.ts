@@ -209,4 +209,48 @@ describe('CreateSaleSchema', () => {
       ).toThrow();
     });
   });
+
+  describe('when pre-computed totals are provided', () => {
+    it('should accept a sale with all four totals', () => {
+      const result = CreateSaleSchema.parse({
+        ...validSale,
+        subtotal: '3500.00',
+        totalDiscount: '0.00',
+        totalTax: '175.00',
+        totalAmount: '3675.00',
+      });
+
+      expect(result.subtotal).toBe('3500.00');
+      expect(result.totalDiscount).toBe('0.00');
+      expect(result.totalTax).toBe('175.00');
+      expect(result.totalAmount).toBe('3675.00');
+    });
+
+    it('should accept a sale with no totals (regression)', () => {
+      const result = CreateSaleSchema.parse(validSale);
+
+      expect(result.subtotal).toBeUndefined();
+      expect(result.totalDiscount).toBeUndefined();
+      expect(result.totalTax).toBeUndefined();
+      expect(result.totalAmount).toBeUndefined();
+    });
+
+    it('should reject a sale with non-numeric subtotal', () => {
+      expect(() =>
+        CreateSaleSchema.parse({
+          ...validSale,
+          subtotal: 'abc',
+        }),
+      ).toThrow();
+    });
+
+    it('should reject a sale with a negative totalAmount', () => {
+      expect(() =>
+        CreateSaleSchema.parse({
+          ...validSale,
+          totalAmount: '-100',
+        }),
+      ).toThrow();
+    });
+  });
 });

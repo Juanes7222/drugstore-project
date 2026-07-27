@@ -12,6 +12,18 @@ export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
     discount?: string;
   }>;
   prescriptionNumber?: string | null;
+  /**
+   * Pre-computed totals (subtotal, totalDiscount, totalTax, totalAmount)
+   * snapshotted by the caller. When the offline-first POS replay path
+   * provides these, the server stores them on the sale header instead of
+   * recomputing from items, so payment-mismatch sync failures do not
+   * appear when the server's catalog has drifted from the POS snapshot.
+   * Optional: HTTP API callers may omit them and the server recomputes.
+   */
+  subtotal?: string;
+  totalDiscount?: string;
+  totalTax?: string;
+  totalAmount?: string;
 
   constructor(data?: z.infer<typeof CreateSaleSchema>) {
     if (data) {
@@ -20,6 +32,10 @@ export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
       this.clientId = data.clientId;
       this.items = data.items;
       this.prescriptionNumber = data.prescriptionNumber;
+      this.subtotal = data.subtotal;
+      this.totalDiscount = data.totalDiscount;
+      this.totalTax = data.totalTax;
+      this.totalAmount = data.totalAmount;
     }
   }
 }

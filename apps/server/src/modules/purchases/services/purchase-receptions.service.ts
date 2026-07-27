@@ -16,6 +16,7 @@ import { PurchaseOrderItemNotFoundException } from '../exceptions/purchase-order
 import { SuppliersService } from './suppliers.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
+import { toDecimal } from '@/common/to-decimal';
 import type { PurchaseReceptionConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
@@ -371,7 +372,13 @@ export class PurchaseReceptionsService {
             receivedQuantity: item.quantity,
             lotNumber: item.batchNumber || null,
             expirationDate: item.expirationDate ? new Date(item.expirationDate) : null,
-            realUnitCost: new Prisma.Decimal(item.unitCost),
+            // Zod-validated at the dispatcher, but cast through toDecimal so a
+            // missing/non-numeric value surfaces a clear `SYNC_PAYLOAD_VALIDATION`
+            // error pointing at `items[N].unitCost` instead of a raw
+            // `[DecimalError] Invalid argument: undefined` from decimal.js.
+            realUnitCost: toDecimal(item.unitCost, {
+              fieldName: `items[${itemsData.length}].unitCost`,
+            }),
             taxSchemeId,
             taxRate,
             discountAmount: new Prisma.Decimal(0),

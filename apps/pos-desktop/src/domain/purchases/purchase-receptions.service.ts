@@ -868,11 +868,12 @@ export class PurchaseReceptionsService {
       const lot = item.lotId ? lotMap.get(item.lotId) : undefined;
       return {
         productId: item.productId,
-        receivedQuantity: item.receivedQuantity,
-        realUnitCost: Number(item.realUnitCost),
-        taxSchemeId: item.taxSchemeId,
-        taxRate: Number(item.taxRate),
-        discountAmount: Number(item.discountAmount),
+        // JSON keys align with PurchaseReceptionConfirmationItemSchema
+        // (apps/server/src/modules/sync/dto/purchase-sync-payloads.schema.ts).
+        // Local column / model / form field names stay as `receivedQuantity`
+        // and `realUnitCost`; only the sync-payload wire names change.
+        quantity: item.receivedQuantity,
+        unitCost: Number(item.realUnitCost),
         lot: lot
           ? {
               batchNumber: lot.batchNumber,

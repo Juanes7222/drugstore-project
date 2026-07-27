@@ -13,6 +13,12 @@ import { PurchaseOrdersService } from '@/modules/purchases/services/purchase-ord
 import { PurchaseReceptionsService } from '@/modules/purchases/services/purchase-receptions.service';
 import { SupplierReturnsService } from '@/modules/purchases/services/supplier-returns.service';
 import { InvoiceTransmissionPayloadSchema } from '@pharmacy/shared-validation';
+import { SyncPayloadValidationException } from './exceptions/sync-payload-validation.exception';
+import {
+  PurchaseOrderConfirmationPayloadSchema,
+  PurchaseReceptionConfirmationPayloadSchema,
+  SupplierReturnConfirmationPayloadSchema,
+} from './dto/purchase-sync-payloads.schema';
 import type { SyncQueueEntry } from './entities/sync-queue-entry.entity';
 import type { CreateSaleDto } from '@/modules/sales-pos/dto/create-sale.dto';
 import type { ConfirmSaleDto } from '@/modules/sales-pos/dto/confirm-sale.dto';
@@ -202,6 +208,39 @@ export class SyncOperationDispatcherService {
       return 'BUSINESS_RULE';
     }
     return 'UNKNOWN';
+  }
+
+  /**
+   * Parse a JSON payload and validate it against a Zod schema, surfacing a
+   * `SyncPayloadValidationException` with field-level detail on failure.
+   * Used by every handler that consumes a typed sync payload so a missing
+   * or malformed field produces a `VALIDATION` failure category with a
+   * clear message instead of a raw `DecimalError` deeper in the service.
+   */
+  private parsePayload<T>(
+    operationType: string,
+    raw: string,
+    schema: import('zod').ZodType<T>,
+  ): T {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new SyncPayloadValidationException(operationType, [
+        { field: '(root)', message: 'payload is not valid JSON' },
+      ]);
+    }
+    const result = schema.safeParse(parsed);
+    if (!result.success) {
+      throw new SyncPayloadValidationException(
+        operationType,
+        result.error.issues.map((i) => ({
+          field: i.path.join('.') || '(root)',
+          message: i.message,
+        })),
+      );
+    }
+    return result.data;
   }
 
   /** Replays a SALE_CONFIRMATION by creating and confirming the sale server-side. */
@@ -531,7 +570,11 @@ export class SyncOperationDispatcherService {
    * supplierId already exists, the operation is skipped (ALREADY_ACCEPTED).
    */
   private async handlePurchaseOrderConfirmation(entry: SyncQueueEntry): Promise<void> {
-    const payload = JSON.parse(entry.payload) as PurchaseOrderConfirmationPayload;
+    const payload = this.parsePayload(
+      'PURCHASE_ORDER_CONFIRMATION',
+      entry.payload,
+      PurchaseOrderConfirmationPayloadSchema,
+    ) as PurchaseOrderConfirmationPayload;
     const userId = payload.confirmedByUserId;
     await this.purchaseOrdersService.confirmOrderFromSync(payload, userId);
   }
@@ -544,7 +587,11 @@ export class SyncOperationDispatcherService {
    * already exists, the operation is skipped (ALREADY_ACCEPTED).
    */
   private async handlePurchaseReceptionConfirmation(entry: SyncQueueEntry): Promise<void> {
-    const payload = JSON.parse(entry.payload) as PurchaseReceptionConfirmationPayload;
+    const payload = this.parsePayload(
+      'PURCHASE_RECEPTION_CONFIRMATION',
+      entry.payload,
+      PurchaseReceptionConfirmationPayloadSchema,
+    ) as PurchaseReceptionConfirmationPayload;
     const userId = payload.confirmedByUserId;
     await this.purchaseReceptionsService.confirmReceptionFromSync(payload, userId);
   }
@@ -557,7 +604,11 @@ export class SyncOperationDispatcherService {
    * already exists, the operation is skipped (ALREADY_ACCEPTED).
    */
   private async handleSupplierReturnConfirmation(entry: SyncQueueEntry): Promise<void> {
-    const payload = JSON.parse(entry.payload) as SupplierReturnConfirmationPayload;
+    const payload = this.parsePayload(
+      'SUPPLIER_RETURN_CONFIRMATION',
+      entry.payload,
+      SupplierReturnConfirmationPayloadSchema,
+    ) as SupplierReturnConfirmationPayload;
     const userId = payload.createdByUserId;
     await this.supplierReturnsService.confirmReturnFromSync(payload, userId);
   }

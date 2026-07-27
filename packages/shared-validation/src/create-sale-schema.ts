@@ -40,4 +40,31 @@ export const CreateSaleSchema = z.object({
     .string()
     .nullable()
     .optional(),
+  /**
+   * Pre-computed totals snapshotted by the caller (offline-first POS replay
+   * path). When provided, the server uses these values as the authoritative
+   * sale-header amounts instead of recomputing from items. This prevents
+   * `Total payments do not match total sale amount` failures when the
+   * server's catalog has drifted from the POS snapshot between sale time
+   * and sync time.
+   *
+   * Optional: legacy callers and direct HTTP API requests that do not carry
+   * these still work — the server falls back to recomputing from items.
+   */
+  subtotal: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Subtotal invalido")
+    .optional(),
+  totalDiscount: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Total descuento invalido")
+    .optional(),
+  totalTax: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Total impuesto invalido")
+    .optional(),
+  totalAmount: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Total invalido")
+    .optional(),
 });

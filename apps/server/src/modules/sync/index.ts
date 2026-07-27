@@ -3,4 +3,10 @@ export { SyncService } from './services/sync.service';
 export { SyncHealthService } from './services/sync-health.service';
 export { TerminalBackupService } from './services/terminal-backup.service';
 export { PayloadHashMismatchException } from './exceptions/payload-hash-mismatch.exception';
+export { SyncPayloadValidationException } from './exceptions/sync-payload-validation.exception';
 export { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
+export {
+  PurchaseOrderConfirmationPayloadSchema,
+  PurchaseReceptionConfirmationPayloadSchema,
+  SupplierReturnConfirmationPayloadSchema,
+} from './dto/purchase-sync-payloads.schema';

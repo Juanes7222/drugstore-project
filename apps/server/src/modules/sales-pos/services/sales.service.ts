@@ -20,6 +20,7 @@ import { LotNotFoundException } from '@/modules/inventory-lots/exceptions/lot-no
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 import { DiscountReasonRequiredException } from '@/modules/catalog/exceptions/discount-reason-required.exception';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
+import { toDecimal } from '@/common/to-decimal';
 
 interface SaleItemCalculations {
   unitPrice: Prisma.Decimal;
@@ -84,6 +85,15 @@ export class SalesService {
 
       const totalCalculations = this.calculateSaleTotals(saleItems as unknown as SaleItemTotals[]);
 
+      // Offline-first: when the caller (the POS replay path) provides
+      // pre-computed totals, use them as the authoritative sale-header
+      // values. The server's recompute is preserved for direct HTTP API
+      // callers and legacy sync payloads that do not carry totals. This
+      // keeps the offline-recorded payment amount and the server-stored
+      // total aligned even when the server's catalog has drifted from the
+      // POS snapshot between sale time and sync time.
+      const headerTotals = this.resolveHeaderTotals(createDto, totalCalculations);
+
       // Serialize local number allocation for this workstation using a
       // PostgreSQL advisory transaction lock. This prevents concurrent sync
       // replays from reading the same MAX(localNumber) before either commits.
@@ -111,10 +121,10 @@ export class SalesService {
               clientId: clientData?.id || null,
               clientClassificationIdSnapshot: clientData?.classification?.id || null,
               clientTypeSnapshot: clientData?.classification?.type || null,
-              subtotal: totalCalculations.subtotal,
-              totalDiscount: totalCalculations.totalDiscount,
-              totalTax: totalCalculations.totalTax,
-              totalAmount: totalCalculations.totalAmount,
+              subtotal: headerTotals.subtotal,
+              totalDiscount: headerTotals.totalDiscount,
+              totalTax: headerTotals.totalTax,
+              totalAmount: headerTotals.totalAmount,
               items: { create: saleItems.map(item => ({ ...item, saleItemPrescriptionId: null })) },
             },
             include: { items: true },
@@ -334,7 +344,17 @@ export class SalesService {
 
     const priceHist = product.priceHistories?.[0];
     const taxHist = product.taxHistories?.[0];
-    const unitPrice = priceHist?.price || new Prisma.Decimal(0);
+    // Offline-first: prefer the POS-snapshotted unitPrice when present.
+    // The customer was charged at this price at sale time; using the
+    // server's current price here would produce per-item totals that
+    // diverge from the POS-recorded payment whenever the catalog has
+    // drifted between sale and sync (the gap that manifested as
+    // `Total payments (X) do not match total sale amount (Y)` sync
+    // failures). Fall back to the server's current price only when the
+    // POS did not provide one (direct HTTP API callers, legacy payloads).
+    const unitPrice = itemDto.unitPrice
+      ? toDecimal(itemDto.unitPrice, { fieldName: 'items[].unitPrice' })
+      : (priceHist?.price ?? new Prisma.Decimal(0));
     const taxRate = taxHist?.taxScheme?.rate || new Prisma.Decimal(0);
 
     const quantity = new Prisma.Decimal(itemDto.quantity);
@@ -367,6 +387,31 @@ export class SalesService {
       subtotal: itemSubtotal,
       total,
       requiresPrescription: false,
+    };
+  }
+
+  /**
+   * Decide which totals to store on the sale header. When the DTO carries
+   * the full set of pre-computed totals (the offline-first sync path),
+   * trust them — they are what the customer actually paid. Otherwise
+   * fall back to the server's recompute from the per-item breakdown
+   * (direct HTTP API, legacy payloads).
+   */
+  private resolveHeaderTotals(
+    createDto: CreateSaleDto,
+    computed: { subtotal: Prisma.Decimal; totalDiscount: Prisma.Decimal; totalTax: Prisma.Decimal; totalAmount: Prisma.Decimal },
+  ): { subtotal: Prisma.Decimal; totalDiscount: Prisma.Decimal; totalTax: Prisma.Decimal; totalAmount: Prisma.Decimal } {
+    const hasAll = createDto.subtotal !== undefined
+      && createDto.totalDiscount !== undefined
+      && createDto.totalTax !== undefined
+      && createDto.totalAmount !== undefined;
+    if (!hasAll) return computed;
+
+    return {
+      subtotal: toDecimal(createDto.subtotal!, { fieldName: 'subtotal' }),
+      totalDiscount: toDecimal(createDto.totalDiscount!, { fieldName: 'totalDiscount' }),
+      totalTax: toDecimal(createDto.totalTax!, { fieldName: 'totalTax' }),
+      totalAmount: toDecimal(createDto.totalAmount!, { fieldName: 'totalAmount' }),
     };
   }
 
