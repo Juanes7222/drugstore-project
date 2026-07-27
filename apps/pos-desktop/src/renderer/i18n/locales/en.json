@@ -453,7 +453,17 @@
       "checkout": "PAY",
       "subtotal": "Subtotal",
       "tax": "VAT ({{rate}}%)",
-      "total": "TOTAL"
+      "tax_mixed": "VAT",
+      "total": "TOTAL",
+      "discount": "Discount",
+      "editPrice": "Edit price",
+      "editDiscount": "Edit discount",
+      "error_price_below_cost": "Price of {{name}} ({{price}}) is below the cost floor ({{floor}}).",
+      "error_discount_exceeds_limit": "Discount exceeds the limit for your role.",
+      "error_override_not_allowed": "You are not allowed to override the price of this product.",
+      "error_checkout_failed": "Checkout failed.",
+      "error_generic": "{{message}}",
+      "error_dismiss": "Dismiss error"
     },
     "product": {
       "stock": "Stock",
@@ -1389,7 +1399,8 @@
       "operation": "Operation",
       "preferences": "System Preferences",
       "user_preferences": "User Preferences",
-      "purchases": "Purchases"
+      "purchases": "Purchases",
+      "sales": "Sales"
     },
     "presets": {
       "title": "Operation mode",
@@ -1558,6 +1569,38 @@
       "required": "This field is required",
       "threshold_required": "You must specify a minimum amount when customer is required above a value",
       "tax_rate_invalid": "VAT rate must be between 0 and 1 (e.g. 0.19 for 19%)"
+    },
+    "sales": {
+      "title": "Sales settings",
+      "description": "Set per-role discount limits, price-override permissions, and the minimum sale-price floor.",
+      "saved": "Sales settings saved",
+      "autoSave": "Auto-save",
+      "sectionDiscounts": "Discount limits per role",
+      "sectionDiscountsDesc": "Maximum allowed discount per line item and per full sale.",
+      "sectionOverrides": "Price overrides",
+      "sectionOverridesDesc": "Decide which roles can change the catalog price at sale time and whether they must record a reason.",
+      "sectionFloor": "Price floor",
+      "sectionFloorDesc": "Blocks below-cost sales. Applies to every user, including the owner.",
+      "ownerExemptNote": "The owner is not subject to discount limits. Only the cost floor applies.",
+      "discountItem": "Max per item",
+      "discountGlobal": "Max per sale",
+      "discountHint": "Maximum percentage the role can apply.",
+      "allowOverride": "Allow price change",
+      "allowOverrideHint": "When off, the role cannot change the catalog price at sale time.",
+      "requireReason": "Require reason",
+      "requireReasonHint": "When on, the cashier must type a reason when overriding the price.",
+      "floorEnabled": "Enforce minimum sale price",
+      "floorEnabledHint": "Blocks below-cost sales. Applies to every user, including the owner. Disable only if you explicitly want to allow below-cost sales.",
+      "floorType": "Floor type",
+      "floorTypeCost": "Cost",
+      "floorTypeCostPlusMargin": "Cost + margin",
+      "minMargin": "Minimum margin (%)",
+      "minMarginHint": "Minimum percentage over cost when 'Cost + margin' is selected.",
+      "roleOwner": "Owner",
+      "roleManager": "Manager",
+      "roleCashier": "Cashier",
+      "roleInventoryAssistant": "Inventory assistant",
+      "roleAccountant": "Accountant"
     },
     "errors": {
       "load_failed": "Failed to load configuration",

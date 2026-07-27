@@ -36,6 +36,8 @@ const baseCartItem = {
   lotExpirationDate: "2027-01-01",
   taxPercentage: 19,
   quantity: 1,
+  overrideUnitPriceCents: null,
+  discountPercentage: null,
 };
 
 const createTestStore = (totalCents: number, extraItems: CartItem[] = []) => {
@@ -262,6 +264,8 @@ describe("PaymentProcessing", () => {
         unitPriceCents: 24_300,
         taxPercentage: 19,
         quantity: 1,
+        overrideUnitPriceCents: null,
+        discountPercentage: null,
       },
     ] as CartItem[];
 

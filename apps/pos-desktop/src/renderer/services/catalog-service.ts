@@ -25,6 +25,8 @@ export interface CatalogItem {
   requiresPrescription: boolean;
   isRestricted: boolean;
   unitPriceCents: number | null;
+  /** Cost per unit in cents. Null when unavailable (e.g. HTTP service). */
+  costCents: number | null;
   taxPercentage: number;
   currentStock: number;
   minimumStock: number;

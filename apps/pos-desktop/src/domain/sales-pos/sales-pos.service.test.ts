@@ -3,8 +3,19 @@
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { SalesPosService, createSalesPosService, type CreateSaleInput, type ConfirmSaleInput } from "./sales-pos.service";
-import { SaleNotInProgressException, PrescriptionRequiredNotSupportedException, PaymentAmountMismatchException, ChangeRequiresCashPaymentException, SaleNotFoundException } from "./exceptions";
+import {
+  SaleNotInProgressException,
+  PrescriptionRequiredNotSupportedException,
+  PaymentAmountMismatchException,
+  ChangeRequiresCashPaymentException,
+  SaleNotFoundException,
+  PriceOverrideNotAllowedForRoleException,
+  DiscountExceedsRoleLimitException,
+  PriceBelowCostException,
+} from "./exceptions";
 import { Prisma } from "@pharmacy/database/local";
+import { useLocalConfigStore, type DiscountLimits, type SalesConfig } from "../configuration/local-config.store";
+import { RoleType } from "@pharmacy/shared-types";
 
 // ---------------------------------------------------------------------------
 // Factory helpers
@@ -113,6 +124,7 @@ const makeProduct = () => ({
   concentration: "500mg",
   saleType: "FREE_SALE",
   priceHistories: [{ price: new Prisma.Decimal(5000) }],
+  costHistories: [],
   taxHistories: [{ taxScheme: { rate: new Prisma.Decimal(19) } }],
 });
 
@@ -704,6 +716,260 @@ describe("SalesPosService", () => {
       await expect(
         service.confirm("sale-1", validConfirmInput),
       ).resolves.toBeDefined();
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // create (pricing rules)
+  // ---------------------------------------------------------------
+
+  describe("create (pricing rules)", () => {
+    const defaultDiscountLimits = (): DiscountLimits => ({
+      owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+      manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
+      cashier: { itemMaxPercent: 10, globalMaxPercent: 5 },
+      admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
+      inventoryAssistant: { itemMaxPercent: 15, globalMaxPercent: 10 },
+      accountant: { itemMaxPercent: 0, globalMaxPercent: 0 },
+    });
+
+    const defaultSalesConfig = (overrides?: {
+      cashierAllowed?: boolean;
+      floorEnabled?: boolean;
+    }): SalesConfig => ({
+      priceOverridePermissions: {
+        manager: { allowed: true, requireReason: true },
+        cashier: {
+          allowed: overrides?.cashierAllowed ?? false,
+          requireReason: true,
+        },
+        inventoryAssistant: { allowed: false, requireReason: true },
+        accountant: { allowed: false, requireReason: true },
+      },
+      priceFloor: {
+        enabled: overrides?.floorEnabled ?? true,
+        type: "COST",
+        minMarginPercent: 0,
+      },
+    });
+
+    const makeProductWithCost = (cost: Prisma.Decimal | null) => ({
+      ...makeProduct(),
+      costHistories: cost === null ? [] : [{ cost }],
+    });
+
+    const makeSessionForRole = (role: RoleType) => ({
+      ...makeMockSession(),
+      role,
+    });
+
+    beforeEach(() => {
+      // Reset the local config store to known defaults so the
+      // pricing-validator reads predictable values.  The store is
+      // module-level and other test files may have mutated it.
+      useLocalConfigStore.setState({
+        discountLimits: defaultDiscountLimits(),
+        salesConfig: defaultSalesConfig(),
+      });
+    });
+
+    it("throws PriceOverrideNotAllowedForRoleException when cashier overrides price and override is not allowed", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProductWithCost(null));
+      tx.sale.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create({
+          items: [{ productId: "prod-1", quantity: 1, unitPrice: new Prisma.Decimal(4000) }],
+        }),
+      ).rejects.toThrow(PriceOverrideNotAllowedForRoleException);
+    });
+
+    it("throws DiscountExceedsRoleLimitException with scope 'item' when cashier item discount exceeds the cap", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProductWithCost(null));
+      tx.sale.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create({
+          items: [
+            {
+              productId: "prod-1",
+              quantity: 1,
+              discountPercentage: 15, // > cashier.itemMaxPercent = 10
+              discountReason: "promo",
+            },
+          ],
+        }),
+      ).rejects.toThrow(DiscountExceedsRoleLimitException);
+
+      try {
+        await service.create({
+          items: [
+            {
+              productId: "prod-1",
+              quantity: 1,
+              discountPercentage: 15,
+              discountReason: "promo",
+            },
+          ],
+        });
+      } catch (err) {
+        expect(err).toBeInstanceOf(DiscountExceedsRoleLimitException);
+        expect((err as DiscountExceedsRoleLimitException).scope).toBe("item");
+      }
+    });
+
+    it("throws DiscountExceedsRoleLimitException with scope 'global' when cashier combined item discounts exceed the global cap", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProductWithCost(null));
+      tx.sale.findFirst.mockResolvedValue(null);
+
+      // Two items, each with 6% item discount (under the 10% item cap)
+      // but combined they exceed the cashier 5% global cap.
+      // Each item: subtotal 5000 (1 unit * 5000), discount 6% = 300
+      // Total: subtotal 10000, discount 600 = 6% > 5%
+      await expect(
+        service.create({
+          items: [
+            { productId: "prod-1", quantity: 1, discountPercentage: 6, discountReason: "promo-a" },
+            { productId: "prod-1", quantity: 1, discountPercentage: 6, discountReason: "promo-b" },
+          ],
+        }),
+      ).rejects.toThrow(DiscountExceedsRoleLimitException);
+
+      try {
+        await service.create({
+          items: [
+            { productId: "prod-1", quantity: 1, discountPercentage: 6, discountReason: "promo-a" },
+            { productId: "prod-1", quantity: 1, discountPercentage: 6, discountReason: "promo-b" },
+          ],
+        });
+      } catch (err) {
+        expect(err).toBeInstanceOf(DiscountExceedsRoleLimitException);
+        expect((err as DiscountExceedsRoleLimitException).scope).toBe("global");
+      }
+    });
+
+    it("allows an owner to apply a 100% item discount when product cost is 0", async () => {
+      auth.requireRole.mockReturnValue(makeSessionForRole(RoleType.OWNER));
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProductWithCost(new Prisma.Decimal(0)));
+      tx.sale.findFirst.mockResolvedValue(null);
+      tx.sale.create.mockResolvedValue({
+        id: "sale-1",
+        localNumber: 1n,
+        operationalState: "IN_PROGRESS",
+        items: [],
+      });
+
+      await expect(
+        service.create({
+          items: [
+            {
+              productId: "prod-1",
+              quantity: 1,
+              discountPercentage: 100,
+              discountReason: "owner comp",
+            },
+          ],
+        }),
+      ).resolves.toBeDefined();
+
+      expect(tx.sale.create).toHaveBeenCalled();
+    });
+
+    it("throws PriceBelowCostException when owner overrides below cost with the floor enabled", async () => {
+      auth.requireRole.mockReturnValue(makeSessionForRole(RoleType.OWNER));
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProductWithCost(new Prisma.Decimal(50)));
+      tx.sale.findFirst.mockResolvedValue(null);
+
+      // Owner provides an explicit override unitPrice of 5 (below cost 50)
+      // and also applies a 90% discount.  The cost floor throws before
+      // the discount is even applied because the override itself is
+      // already below the floor.
+      await expect(
+        service.create({
+          items: [
+            {
+              productId: "prod-1",
+              quantity: 1,
+              unitPrice: new Prisma.Decimal(5),
+              discountPercentage: 90,
+              discountReason: "owner comp",
+            },
+          ],
+        }),
+      ).rejects.toThrow(PriceBelowCostException);
+    });
+
+    it("allows an owner to apply a 50% discount with no override when catalog price is above cost", async () => {
+      auth.requireRole.mockReturnValue(makeSessionForRole(RoleType.OWNER));
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProductWithCost(new Prisma.Decimal(50)));
+      tx.sale.findFirst.mockResolvedValue(null);
+      tx.sale.create.mockResolvedValue({
+        id: "sale-1",
+        localNumber: 1n,
+        operationalState: "IN_PROGRESS",
+        items: [],
+      });
+
+      // No unitPrice override → uses catalog price 5000 which is well
+      // above the cost 50, so the cost floor passes.
+      await expect(
+        service.create({
+          items: [
+            {
+              productId: "prod-1",
+              quantity: 1,
+              discountPercentage: 50,
+              discountReason: "owner promo",
+            },
+          ],
+        }),
+      ).resolves.toBeDefined();
+
+      expect(tx.sale.create).toHaveBeenCalled();
+    });
+
+    it("allows a price override below cost when the price floor is disabled", async () => {
+      useLocalConfigStore.setState({
+        discountLimits: defaultDiscountLimits(),
+        salesConfig: defaultSalesConfig({ cashierAllowed: true, floorEnabled: false }),
+      });
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProductWithCost(new Prisma.Decimal(50)));
+      tx.sale.findFirst.mockResolvedValue(null);
+      tx.sale.create.mockResolvedValue({
+        id: "sale-1",
+        localNumber: 1n,
+        operationalState: "IN_PROGRESS",
+        items: [],
+      });
+
+      // Cashier is allowed to override (cashierAllowed: true), the floor
+      // is disabled, so the below-cost override succeeds even though
+      // 5 < 50.
+      await expect(
+        service.create({
+          items: [
+            {
+              productId: "prod-1",
+              quantity: 1,
+              unitPrice: new Prisma.Decimal(5),
+            },
+          ],
+        }),
+      ).resolves.toBeDefined();
+
+      expect(tx.sale.create).toHaveBeenCalled();
     });
   });
 });

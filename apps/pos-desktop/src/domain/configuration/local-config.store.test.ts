@@ -12,6 +12,8 @@ describe("LocalConfigStore", () => {
   beforeEach(() => {
     useLocalConfigStore.setState({
       discountLimits: {
+        owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+        manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
         cashier: { itemMaxPercent: 10, globalMaxPercent: 5 },
         admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
         inventoryAssistant: { itemMaxPercent: 15, globalMaxPercent: 10 },
@@ -70,6 +72,8 @@ describe("LocalConfigStore", () => {
     it("replaces all state with provided payload", () => {
       const payload: HydratePayload = {
         discountLimits: {
+          owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
           cashier: { itemMaxPercent: 15, globalMaxPercent: 10 },
           admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
           inventoryAssistant: { itemMaxPercent: 20, globalMaxPercent: 15 },

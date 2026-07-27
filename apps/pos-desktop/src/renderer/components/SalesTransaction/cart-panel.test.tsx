@@ -36,6 +36,9 @@ const baseItem = (overrides: Partial<CartItem> = {}): CartItem => ({
   lotCode: "L24056",
   lotExpirationDate: "2027-06-01",
   unitPriceCents: 6_200,
+  overrideUnitPriceCents: null,
+  discountPercentage: null,
+  costCents: 3_000,
   taxPercentage: 19,
   quantity: 1,
   ...overrides,
@@ -66,6 +69,9 @@ const renderCartPanel = (
   onCheckout = vi.fn(),
   onSelectClient = vi.fn(),
   onClearClient = vi.fn(),
+  actionError: string | null = null,
+  onClearError = vi.fn(),
+  isCreating = false,
 ) =>
   render(
     <Provider store={store}>
@@ -73,6 +79,9 @@ const renderCartPanel = (
         onCheckout={onCheckout}
         onSelectClient={onSelectClient}
         onClearClient={onClearClient}
+        actionError={actionError}
+        onClearError={onClearError}
+        isCreating={isCreating}
       />
     </Provider>,
   );

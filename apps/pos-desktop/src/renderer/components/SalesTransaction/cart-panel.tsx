@@ -15,6 +15,8 @@ import {
   selectTaxCents,
   selectTotalCents,
   selectSelectedClient,
+  updateItemDiscount,
+  updateItemPrice,
   updateQuantity,
 } from "@/store/slices/sales-slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -29,6 +31,9 @@ interface CartPanelProps {
   onSelectClient: (client: ClientSelection) => void;
   onClearClient: () => void;
   onCreateClient?: (input: CreateClientInput) => Promise<ClientSelection>;
+  actionError: string | null;
+  onClearError: () => void;
+  isCreating: boolean;
 }
 
 export const CartPanel: FC<CartPanelProps> = ({
@@ -36,6 +41,9 @@ export const CartPanel: FC<CartPanelProps> = ({
   onSelectClient,
   onClearClient,
   onCreateClient,
+  actionError,
+  onClearError,
+  isCreating,
 }: CartPanelProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
@@ -54,6 +62,29 @@ export const CartPanel: FC<CartPanelProps> = ({
   const handleRemove = (id: string) => {
     dispatch(removeItem(id));
   };
+
+  const handleUpdatePrice = (id: string, unitPriceCents: number) => {
+    dispatch(updateItemPrice({ id, unitPriceCents }));
+  };
+
+  const handleUpdateDiscount = (
+    id: string,
+    discountPercentage: number | null,
+  ) => {
+    dispatch(updateItemDiscount({ id, discountPercentage }));
+  };
+
+  /**
+   * Unique taxPercentage across all cart items.
+   * null when items have mixed rates (e.g. one exempt 0%, another 19%).
+   * The label omits the rate in that case.
+   */
+  const uniqueRate: number | null =
+    items.length === 0
+      ? null
+      : items.every((item) => item.taxPercentage === items[0].taxPercentage)
+        ? (items[0].taxPercentage ?? 0)
+        : null;
 
   const isEmpty = items.length === 0;
 
@@ -100,6 +131,7 @@ export const CartPanel: FC<CartPanelProps> = ({
                 <th>{t("sales.cart.title")}</th>
                 <th>{t("sales.product.stock")}</th>
                 <th>{t("sales.product.price")}</th>
+                <th>{t("sales.cart.discount")}</th>
                 <th>{t("sales.cart.total")}</th>
                 <th>{t("common.remove")}</th>
               </tr>
@@ -111,12 +143,39 @@ export const CartPanel: FC<CartPanelProps> = ({
                   item={item}
                   onUpdateQuantity={handleUpdateQuantity}
                   onRemove={handleRemove}
+                  onUpdatePrice={handleUpdatePrice}
+                  onUpdateDiscount={handleUpdateDiscount}
                 />
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Error banner — shown when checkout fails */}
+      {actionError && (
+        <div
+          role="alert"
+          className="mx-0 my-pos-sm flex items-start gap-2 rounded-pos-sm px-pos-md py-pos-sm text-body"
+          style={{ backgroundColor: "color-mix(in srgb, var(--color-danger) 12%, transparent)", color: "var(--color-danger)" }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="mt-0.5 shrink-0">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span className="flex-1">{actionError}</span>
+          <button
+            type="button"
+            onClick={onClearError}
+            className="shrink-0 cursor-pointer bg-transparent border-none p-0 leading-none"
+            aria-label={t("sales.cart.error_dismiss")}
+            style={{ color: "inherit" }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Totals & checkout — always at bottom */}
       {!isEmpty && (
@@ -125,11 +184,13 @@ export const CartPanel: FC<CartPanelProps> = ({
             subtotalCents={subtotal}
             taxCents={tax}
             totalCents={total}
+            uniqueRate={uniqueRate}
           />
 
           <button
             type="button"
             onClick={onCheckout}
+            disabled={isCreating}
             className="pos-button pos-button-primary mt-pos-md w-full text-ui py-pos-md"
           >
             <span className="flex items-center justify-center gap-2">
@@ -148,7 +209,7 @@ export const CartPanel: FC<CartPanelProps> = ({
                 <path d="M3 6h18" />
                 <path d="M16 10a4 4 0 0 1-8 0" />
               </svg>
-              {t("sales.cart.checkout")}
+              {isCreating ? t("common.processing") : t("sales.cart.checkout")}
             </span>
           </button>
         </>

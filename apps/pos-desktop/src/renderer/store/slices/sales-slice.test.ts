@@ -33,6 +33,9 @@ const baseItem = (
   unitPriceCents: 500_000,
   taxPercentage: 19,
   quantity: 1,
+  overrideUnitPriceCents: null,
+  discountPercentage: null,
+  costCents: null,
   ...overrides,
 });
 

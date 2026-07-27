@@ -24,6 +24,7 @@ const createItem = (overrides: Partial<CatalogItem> = {}): CatalogItem => ({
   requiresPrescription: false,
   isRestricted: false,
   unitPriceCents: 5000,
+  costCents: null,
   taxPercentage: 19,
   currentStock: 100,
   minimumStock: 10,

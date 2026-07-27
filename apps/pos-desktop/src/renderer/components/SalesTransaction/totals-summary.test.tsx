@@ -15,6 +15,7 @@ describe("TotalsSummary", () => {
         subtotalCents={500_000}
         taxCents={95_000}
         totalCents={595_000}
+        uniqueRate={19}
       />,
     );
 
@@ -29,6 +30,7 @@ describe("TotalsSummary", () => {
         subtotalCents={0}
         taxCents={0}
         totalCents={0}
+        uniqueRate={null}
       />,
     );
 
@@ -43,6 +45,7 @@ describe("TotalsSummary", () => {
         subtotalCents={100_000}
         taxCents={19_000}
         totalCents={119_000}
+        uniqueRate={19}
       />,
     );
 
@@ -56,6 +59,7 @@ describe("TotalsSummary", () => {
         subtotalCents={15_000_000}
         taxCents={2_850_000}
         totalCents={17_850_000}
+        uniqueRate={19}
       />,
     );
 
@@ -70,6 +74,7 @@ describe("TotalsSummary", () => {
         subtotalCents={500}
         taxCents={95}
         totalCents={595}
+        uniqueRate={19}
       />,
     );
 

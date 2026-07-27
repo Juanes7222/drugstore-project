@@ -63,6 +63,47 @@ export const salesSlice = createSlice({
       }
     },
 
+    /**
+     * Override the unit price of a cart item.
+     * Sets both `unitPriceCents` (effective) and `overrideUnitPriceCents`
+     * (marker) so the downstream service can distinguish a manual override
+     * from the original catalog price.
+     */
+    updateItemPrice: (
+      state,
+      action: PayloadAction<{ id: string; unitPriceCents: number }>,
+    ) => {
+      const { id, unitPriceCents } = action.payload;
+      const item = state.items.find((cartItem) => cartItem.id === id);
+      if (!item) return;
+
+      item.unitPriceCents = Math.max(0, unitPriceCents);
+      item.overrideUnitPriceCents = Math.max(0, unitPriceCents);
+    },
+
+    /**
+     * Set or clear the discount percentage on a cart item.
+     * `discountPercentage` is clamped to [0, 100]; null clears the discount.
+     * Does NOT change `unitPriceCents` — the discount is additive at the
+     * service level.
+     */
+    updateItemDiscount: (
+      state,
+      action: PayloadAction<{
+        id: string;
+        discountPercentage: number | null;
+      }>,
+    ) => {
+      const { id, discountPercentage } = action.payload;
+      const item = state.items.find((cartItem) => cartItem.id === id);
+      if (!item) return;
+
+      item.discountPercentage =
+        discountPercentage !== null
+          ? Math.max(0, Math.min(100, discountPercentage))
+          : null;
+    },
+
     setClient: (state, action: PayloadAction<SelectedClient | null>) => {
       state.selectedClient = action.payload;
     },
@@ -74,8 +115,15 @@ export const salesSlice = createSlice({
   },
 });
 
-export const { addItem, removeItem, updateQuantity, clearCart, setClient } =
-  salesSlice.actions;
+export const {
+  addItem,
+  removeItem,
+  updateQuantity,
+  updateItemPrice,
+  updateItemDiscount,
+  clearCart,
+  setClient,
+} = salesSlice.actions;
 
 /* ------------------------------------------------------------------ */
 /* Selectors                                                          */

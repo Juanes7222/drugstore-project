@@ -6,7 +6,7 @@
  *
  * 1. Payment methods → `PaymentMethodSyncService.syncPaymentMethods()`
  *    (transactional upsert into local PGlite)
- * 2. Discount limits, alert thresholds, sync defaults →
+ * 2. Discount limits, sales config, alert thresholds, sync defaults →
  *    `useLocalConfigStore.getState().hydrateFromServer()` (persistent
  *    Zustand store)
  *
@@ -49,10 +49,35 @@ export interface RoleDiscountLimitPayload {
 }
 
 export interface DiscountLimitsPayload {
+  owner: RoleDiscountLimitPayload;
+  manager: RoleDiscountLimitPayload;
   cashier: RoleDiscountLimitPayload;
   admin: RoleDiscountLimitPayload;
   inventoryAssistant: RoleDiscountLimitPayload;
   accountant: RoleDiscountLimitPayload;
+}
+
+export interface RolePriceOverridePayload {
+  allowed: boolean;
+  requireReason: boolean;
+}
+
+export interface PriceOverridePermissionsPayload {
+  manager: RolePriceOverridePayload;
+  cashier: RolePriceOverridePayload;
+  inventoryAssistant: RolePriceOverridePayload;
+  accountant: RolePriceOverridePayload;
+}
+
+export interface PriceFloorConfigPayload {
+  enabled: boolean;
+  type: 'COST' | 'COST_PLUS_MARGIN';
+  minMarginPercent: number;
+}
+
+export interface SalesConfigPayload {
+  priceOverridePermissions: PriceOverridePermissionsPayload;
+  priceFloor: PriceFloorConfigPayload;
 }
 
 export interface AlertThresholdsPayload {
@@ -69,6 +94,8 @@ export interface SyncDefaultsPayload {
 export interface PosSettingsPayload {
   paymentMethods: PosPaymentMethodPayload[];
   discountLimits: DiscountLimitsPayload;
+  /** Optional in payloads from older servers — falls back to defaults. */
+  salesConfig?: SalesConfigPayload;
   alertThresholds: AlertThresholdsPayload;
   syncDefaults: SyncDefaultsPayload;
 }
@@ -144,6 +171,7 @@ export class ConfigSyncService {
     // Step 2: update the persistent local config store
     useLocalConfigStore.getState().hydrateFromServer({
       discountLimits: payload.discountLimits,
+      salesConfig: payload.salesConfig,
       alertThresholds: payload.alertThresholds,
       syncDefaults: payload.syncDefaults,
     });

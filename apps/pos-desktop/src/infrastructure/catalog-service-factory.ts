@@ -8,20 +8,18 @@
  *
  * Selection rules:
  *
- *   1. If the local PGlite database is reachable, return the local service.
- *      The cashier sees the products (and prices, and tax schemes) that the
- *      workstation actually has locally — including unsynced local edits
- *      and products that the sync has not yet pulled from the server.
- *   2. If the local DB is not reachable (e.g. dev mode outside Tauri), fall
- *      back to the in-memory mock so the UI is still navigable.
- *   3. The HTTP catalog service is NOT used by the sales counter. It exists
- *      as an opt-in escape hatch for tooling that genuinely needs server-side
- *      data; the sales path never calls it.
+ *   The POS always uses the local PGlite database for product search.
+ *   The cashier sees the products (and prices, and tax schemes) that the
+ *   workstation actually has locally — including unsynced local edits
+ *   and products that the sync has not yet pulled from the server.
+ *
+ *   The HTTP catalog service is NOT used by the sales counter. It exists
+ *   as an opt-in escape hatch for tooling that genuinely needs server-side
+ *   data; the sales path never calls it.
  */
 import { type PrismaClient } from '@pharmacy/database/local';
 import { type CatalogService } from '../renderer/services/catalog-service';
 import { createLocalCatalogService } from '../renderer/services/catalog-service.local';
-import { createMockCatalogService } from '../renderer/services/catalog-service.mock';
 import { getLocalDatabase } from './local-database';
 
 /**
@@ -39,10 +37,10 @@ const resolvePrismaClient = async (): Promise<PrismaClient | null> => {
 };
 
 /**
- * Try local first, fall back to the in-memory mock when PGlite is not
- * available. Returning the local service synchronously (with a lazy
- * Prisma resolver) keeps the factory signature compatible with the rest
- * of the renderer; the actual DB call happens inside `search()`.
+ * Create a catalog service backed by the local PGlite database.
+ * Returning the service synchronously (with a lazy Prisma resolver) keeps
+ * the factory signature compatible with the rest of the renderer; the
+ * actual DB call happens inside `search()`.
  */
 export function createCatalogService(): CatalogService {
   return createLocalCatalogService({
@@ -50,11 +48,4 @@ export function createCatalogService(): CatalogService {
   });
 }
 
-/**
- * Build a mock catalog service explicitly. Used by tests and by callers
- * that need a deterministic in-memory implementation independent of the
- * local DB availability.
- */
-export function createMockCatalogServiceInstance(): CatalogService {
-  return createMockCatalogService();
-}
+

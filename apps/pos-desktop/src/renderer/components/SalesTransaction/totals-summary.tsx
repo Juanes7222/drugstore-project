@@ -12,25 +12,26 @@ interface TotalsSummaryProps {
   subtotalCents: number;
   taxCents: number;
   totalCents: number;
+  /**
+   * Unique taxPercentage that all cart items share.
+   * null when items have mixed rates — shows "IVA" without percentage.
+   * Example: 19 → "IVA (19%)", null → "IVA".
+   */
+  uniqueRate: number | null;
 }
 
 export const TotalsSummary: FC<TotalsSummaryProps> = ({
   subtotalCents,
   taxCents,
   totalCents,
+  uniqueRate,
 }) => {
   const { t } = useTranslation();
 
-  /**
-   * Effective tax rate rounded to nearest integer, derived from the actual
-   * per-item taxCents.  When all items share the same rate this matches the
-   * product's taxPercentage exactly (e.g. 19 → "IVA (19%)", 0 → "IVA (0%)").
-   * For mixed-rate carts the displayed percentage is an approximation.
-   */
-  const effectiveRate =
-    subtotalCents > 0
-      ? Math.round((taxCents / subtotalCents) * 100)
-      : 0;
+  const taxLabel =
+    uniqueRate !== null
+      ? t("sales.cart.tax", { rate: uniqueRate })
+      : t("sales.cart.tax_mixed");
 
   return (
     <div className="mt-auto pt-pos-md">
@@ -50,7 +51,7 @@ export const TotalsSummary: FC<TotalsSummaryProps> = ({
 
       <div className="mt-pos-xs flex justify-between text-body">
         <span style={{ color: "color-mix(in srgb, var(--color-ink) 70%, transparent)" }}>
-          {t("sales.cart.tax", { rate: effectiveRate })}
+          {taxLabel}
         </span>
         <span className="font-data tabular-nums">{formatCurrency(taxCents)}</span>
       </div>

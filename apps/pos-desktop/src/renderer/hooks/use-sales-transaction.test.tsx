@@ -46,6 +46,7 @@ const unrestrictedItem: CatalogItem = {
   requiresPrescription: false,
   isRestricted: false,
   unitPriceCents: 6_200,
+  costCents: null,
   taxPercentage: 19,
   currentStock: 45,
   minimumStock: 10,
@@ -65,6 +66,7 @@ const restrictedItem: CatalogItem = {
   requiresPrescription: true,
   isRestricted: true,
   unitPriceCents: 18_900,
+  costCents: null,
   taxPercentage: 19,
   currentStock: 34,
   minimumStock: 5,
@@ -127,6 +129,9 @@ describe("useSalesTransaction", () => {
           unitPriceCents: unrestrictedItem.unitPriceCents!,
           taxPercentage: unrestrictedItem.taxPercentage,
           quantity: 1,
+          overrideUnitPriceCents: null,
+          discountPercentage: null,
+          costCents: null,
         }),
       );
       expect(result.current.pendingItem).toBeNull();
@@ -188,6 +193,9 @@ describe("useSalesTransaction", () => {
           unitPriceCents: restrictedItem.unitPriceCents!,
           taxPercentage: restrictedItem.taxPercentage,
           quantity: 1,
+          overrideUnitPriceCents: null,
+          discountPercentage: null,
+          costCents: null,
         }),
       );
       expect(result.current.pendingItem).toBeNull();

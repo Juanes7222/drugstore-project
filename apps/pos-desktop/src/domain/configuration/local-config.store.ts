@@ -5,6 +5,7 @@
  * values that the POS needs to operate offline:
  *
  * - `discountLimits` — maximum discount percentages per role
+ * - `salesConfig` — price-override permissions and cost floor rules
  * - `alertThresholds` — global alert settings (expiry, low-stock)
  * - `syncDefaults` — sync-engine tuning parameters
  * - `sellerInfo` — pharmacy/tenant identity for receipts and invoices
@@ -13,7 +14,9 @@
  * Every value has a hardcoded fallback so the POS can launch with no
  * prior sync and never crash.  Cashier discount limits are intentionally
  * conservative (10 % item / 5 % global) to prevent accidental overrides.
- * Seller info defaults to "Farmacia" / empty NIT — override via sync.
+ * The cost floor is enabled by default — even the owner cannot sell
+ * below cost unless the floor is explicitly disabled in the settings
+ * tab.  Seller info defaults to "Farmacia" / empty NIT — override via sync.
  *
  * ## Usage
  * ```ts
@@ -21,6 +24,7 @@
  *
  * const limits = useLocalConfigStore.getState().discountLimits;
  * const cashierItemMax = limits.cashier.itemMaxPercent;  // 10 by default
+ * const sales = useLocalConfigStore.getState().salesConfig;
  * const seller = useLocalConfigStore.getState().sellerInfo;
  * ```
  */
@@ -38,10 +42,66 @@ export interface RoleDiscountLimit {
 }
 
 export interface DiscountLimits {
+  owner: RoleDiscountLimit;
+  manager: RoleDiscountLimit;
   cashier: RoleDiscountLimit;
   admin: RoleDiscountLimit;
   inventoryAssistant: RoleDiscountLimit;
   accountant: RoleDiscountLimit;
+}
+
+/** Roles that have configurable discount limits in the settings UI. */
+export type DiscountLimitRole =
+  | 'owner'
+  | 'manager'
+  | 'cashier'
+  | 'inventoryAssistant'
+  | 'accountant';
+
+/**
+ * Whether a role is allowed to override the catalog price at sale time,
+ * and whether a reason is required to do so.
+ *
+ * Owners are never listed here — they are implicitly allowed to override
+ * any price (subject only to the cost floor).
+ */
+export interface RolePriceOverride {
+  allowed: boolean;
+  requireReason: boolean;
+}
+
+export interface PriceOverridePermissions {
+  manager: RolePriceOverride;
+  cashier: RolePriceOverride;
+  inventoryAssistant: RolePriceOverride;
+  accountant: RolePriceOverride;
+}
+
+/** Which strategy is used to compute the minimum allowed sale price. */
+export type PriceFloorType = 'COST' | 'COST_PLUS_MARGIN';
+
+/**
+ * Sale price floor configuration.
+ *
+ * The floor is enforced for every role — including the owner — because
+ * selling below cost is a business loss the owner would not normally
+ * authorise.  The owner can disable the floor from the settings tab if
+ * they explicitly want to allow below-cost sales.
+ */
+export interface PriceFloorConfig {
+  enabled: boolean;
+  type: PriceFloorType;
+  /** Only used when `type === 'COST_PLUS_MARGIN'`. */
+  minMarginPercent: number;
+}
+
+/**
+ * Sales workflow configuration — controls who can override catalog
+ * prices and what the minimum allowed sale price is.
+ */
+export interface SalesConfig {
+  priceOverridePermissions: PriceOverridePermissions;
+  priceFloor: PriceFloorConfig;
 }
 
 export interface AlertThresholds {
@@ -96,6 +156,8 @@ export interface HydratePayload {
   discountLimits: DiscountLimits;
   alertThresholds: AlertThresholds;
   syncDefaults: SyncDefaults;
+  /** Optional sales configuration (price overrides + cost floor). */
+  salesConfig?: SalesConfig;
   /** Optional seller/tenant info to persist locally. */
   sellerInfo?: TenantInfo;
   /** Optional purchase-specific config. */
@@ -106,6 +168,8 @@ export interface LocalConfigState {
   discountLimits: DiscountLimits;
   alertThresholds: AlertThresholds;
   syncDefaults: SyncDefaults;
+  /** Sales workflow settings (price overrides + cost floor). */
+  salesConfig: SalesConfig;
   /** Pharmacy/tenant identity for receipts and invoices. */
   sellerInfo: TenantInfo;
   /** Purchase-specific workflow settings. */
@@ -121,6 +185,12 @@ export interface LocalConfigState {
 
   /** Replace the entire purchases config with preset values (resets all fields). */
   applyPresetPurchases(presetPurchases: Partial<PurchasesConfig>): void;
+
+  /** Merge a partial update into the sales config. */
+  updateSalesConfig(partial: Partial<SalesConfig>): void;
+
+  /** Replace the entire sales config with preset values (resets all fields). */
+  applyPresetSales(presetSales: Partial<SalesConfig>): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,10 +198,29 @@ export interface LocalConfigState {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_DISCOUNT_LIMITS: DiscountLimits = {
+  // Owner: effectively unlimited. The cost floor is the only constraint.
+  owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+  // Manager: a reasonable cap; owner can tune this in the settings tab.
+  manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
   cashier: { itemMaxPercent: 10, globalMaxPercent: 5 },
   admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
   inventoryAssistant: { itemMaxPercent: 15, globalMaxPercent: 10 },
   accountant: { itemMaxPercent: 0, globalMaxPercent: 0 },
+};
+
+const DEFAULT_PRICE_OVERRIDE_PERMISSIONS: PriceOverridePermissions = {
+  // Manager: allowed, reason required.
+  manager: { allowed: true, requireReason: true },
+  // Cashier: not allowed by default — owner must explicitly opt-in.
+  cashier: { allowed: false, requireReason: true },
+  inventoryAssistant: { allowed: false, requireReason: true },
+  accountant: { allowed: false, requireReason: true },
+};
+
+const DEFAULT_PRICE_FLOOR: PriceFloorConfig = {
+  enabled: true,
+  type: 'COST',
+  minMarginPercent: 0,
 };
 
 const DEFAULT_ALERT_THRESHOLDS: AlertThresholds = {
@@ -180,6 +269,17 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
       discountLimits: { ...DEFAULT_DISCOUNT_LIMITS },
       alertThresholds: { ...DEFAULT_ALERT_THRESHOLDS },
       syncDefaults: { ...DEFAULT_SYNC_DEFAULTS },
+      salesConfig: {
+        priceOverridePermissions: {
+          manager: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.manager },
+          cashier: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.cashier },
+          inventoryAssistant: {
+            ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.inventoryAssistant,
+          },
+          accountant: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.accountant },
+        },
+        priceFloor: { ...DEFAULT_PRICE_FLOOR },
+      },
       sellerInfo: { ...DEFAULT_SELLER_INFO },
       purchasesConfig: { ...DEFAULT_PURCHASES_CONFIG },
       lastSyncedAt: null,
@@ -189,6 +289,17 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
           discountLimits: payload.discountLimits,
           alertThresholds: payload.alertThresholds,
           syncDefaults: payload.syncDefaults,
+          salesConfig: payload.salesConfig ?? {
+            priceOverridePermissions: {
+              manager: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.manager },
+              cashier: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.cashier },
+              inventoryAssistant: {
+                ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.inventoryAssistant,
+              },
+              accountant: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.accountant },
+            },
+            priceFloor: { ...DEFAULT_PRICE_FLOOR },
+          },
           sellerInfo: payload.sellerInfo ?? { ...DEFAULT_SELLER_INFO },
           purchasesConfig: payload.purchasesConfig ?? { ...DEFAULT_PURCHASES_CONFIG },
           lastSyncedAt: new Date().toISOString(),
@@ -204,6 +315,36 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
       applyPresetPurchases(presetPurchases) {
         set({
           purchasesConfig: { ...DEFAULT_PURCHASES_CONFIG, ...presetPurchases },
+        });
+      },
+
+      updateSalesConfig(partial) {
+        set((prev) => ({
+          salesConfig: {
+            priceOverridePermissions: {
+              ...prev.salesConfig.priceOverridePermissions,
+              ...partial.priceOverridePermissions,
+            },
+            priceFloor: {
+              ...prev.salesConfig.priceFloor,
+              ...partial.priceFloor,
+            },
+          },
+        }));
+      },
+
+      applyPresetSales(presetSales) {
+        set({
+          salesConfig: {
+            priceOverridePermissions: {
+              ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS,
+              ...presetSales.priceOverridePermissions,
+            },
+            priceFloor: {
+              ...DEFAULT_PRICE_FLOOR,
+              ...presetSales.priceFloor,
+            },
+          },
         });
       },
     }),
@@ -228,3 +369,11 @@ export const getTenantInfo = (): TenantInfo =>
 /** Convenience accessor for purchase-specific config. */
 export const getPurchasesConfig = (): PurchasesConfig =>
   useLocalConfigStore.getState().purchasesConfig;
+
+/** Convenience accessor for the full sales configuration block. */
+export const getSalesConfig = (): SalesConfig =>
+  useLocalConfigStore.getState().salesConfig;
+
+/** Convenience accessor for the discount limits block. */
+export const getDiscountLimits = (): DiscountLimits =>
+  useLocalConfigStore.getState().discountLimits;

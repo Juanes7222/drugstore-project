@@ -21,10 +21,6 @@ vi.mock("../renderer/services/catalog-service.local", () => ({
   createLocalCatalogService: mockCreateLocalCatalogService,
 }));
 
-vi.mock("../renderer/services/catalog-service.mock", () => ({
-  createMockCatalogService: vi.fn(() => ({ search: vi.fn() })),
-}));
-
 vi.mock("./local-database", () => ({
   getLocalDatabase: mockGetLocalDatabase,
 }));
@@ -46,14 +42,4 @@ describe("createCatalogService", () => {
     expect(service).toBe(mockServiceImplementation);
   });
 
-  it("builds a mock catalog service when explicitly requested", async () => {
-    const { createMockCatalogServiceInstance } = await import(
-      "./catalog-service-factory"
-    );
-
-    const service = createMockCatalogServiceInstance();
-
-    expect(service).toBeDefined();
-    expect(typeof service.search).toBe("function");
-  });
 });

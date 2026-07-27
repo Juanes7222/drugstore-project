@@ -40,6 +40,14 @@ import {
   ChangeRequiresCashPaymentException,
   SaleNotFoundException,
 } from './exceptions';
+import {
+  validateItemPricing,
+  validateSalePricing,
+} from './sales-pricing-validator';
+import {
+  getDiscountLimits,
+  getSalesConfig,
+} from '../configuration/local-config.store';
 
 // ---------------------------------------------------------------------------
 // Public input types
@@ -243,13 +251,29 @@ export class SalesPosService {
 
       const saleItems: BuiltSaleItem[] = await Promise.all(
         input.items.map((item) =>
-          this.buildSaleItemFromRequest(tx, item, clientDiscountPct),
+          this.buildSaleItemFromRequest(
+            tx,
+            item,
+            clientDiscountPct,
+            session.role,
+          ),
         ),
       );
 
       const totals: SaleTotals = this.calculateSaleTotals(
         saleItems as unknown as SaleItemTotals[],
       );
+
+      // Sale-level global discount cap.  Per-item limits are enforced
+      // inside `buildSaleItemFromRequest`; this final check catches the
+      // case where several small per-item discounts add up to a sale
+      // total that exceeds the role's `globalMaxPercent`.
+      validateSalePricing({
+        role: session.role,
+        totalDiscount: totals.totalDiscount,
+        subtotal: totals.subtotal,
+        discountLimits: getDiscountLimits(),
+      });
 
       // Retry loop for the `ux_sale_local_per_ws` unique constraint
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -678,11 +702,17 @@ export class SalesPosService {
    * Mirrors the server's `buildSaleItemFromRequest` exactly, but returns
    * a plain object instead of a Prisma input type, since there is no
    * NestJS dependency.
+   *
+   * After resolving the price and discount, runs the per-item pricing
+   * rules from `sales-pricing-validator.ts` so role-based discount
+   * limits, price-override permissions, and the cost floor are checked
+   * here — before any state is written.
    */
   private async buildSaleItemFromRequest(
     tx: Prisma.TransactionClient,
     item: CreateSaleItemInput,
     clientDiscountPercentage: Prisma.Decimal,
+    role: RoleType | string,
   ): Promise<BuiltSaleItem> {
     const product = await tx.product.findUnique({
       where: { id: item.productId },
@@ -697,6 +727,12 @@ export class SalesPosService {
           take: 1,
           orderBy: { effectiveFrom: 'desc' },
           select: { price: true },
+        },
+        costHistories: {
+          where: { effectiveTo: null },
+          take: 1,
+          orderBy: { effectiveFrom: 'desc' },
+          select: { cost: true },
         },
         taxHistories: {
           take: 1,
@@ -719,8 +755,9 @@ export class SalesPosService {
     // Resolve unit price: use the explicit override if provided, otherwise
     // read from the latest PriceHistory.  This matches the server's behaviour
     // of always using the latest catalog price.
-    const unitPrice = item.unitPrice
-      ?? (product.priceHistories[0]?.price ?? new Prisma.Decimal(0));
+    const catalogUnitPrice = product.priceHistories[0]?.price
+      ?? new Prisma.Decimal(0);
+    const unitPrice = item.unitPrice ?? catalogUnitPrice;
 
     const taxRate = product.taxHistories[0]?.taxScheme?.rate
       ?? new Prisma.Decimal(0);
@@ -743,6 +780,24 @@ export class SalesPosService {
       discountPercentage = clientDiscountPercentage;
       discountReason = null;
     }
+
+    // Per-item pricing rules: discount cap, price-override permission,
+    // and the universal cost floor.  Read the current config snapshot
+    // inside the transaction so the limits are consistent with what
+    // the store had at the moment the user clicked "create".
+    validateItemPricing({
+      role,
+      productId: item.productId,
+      requestedUnitPrice: item.unitPrice,
+      catalogUnitPrice,
+      discountPercentage:
+        item.discountPercentage !== undefined
+          ? Number(discountPercentage.toString())
+          : undefined,
+      productCost: product.costHistories[0]?.cost ?? null,
+      discountLimits: getDiscountLimits(),
+      salesConfig: getSalesConfig(),
+    });
 
     const discountAmount = itemSubtotal.times(discountPercentage).dividedBy(100);
     const priceAfterDiscount = itemSubtotal.minus(discountAmount);

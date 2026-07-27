@@ -36,6 +36,8 @@ const baseCartItem = {
   lotExpirationDate: "2027-01-01",
   taxPercentage: 19,
   quantity: 1,
+  overrideUnitPriceCents: null,
+  discountPercentage: null,
 };
 
 interface TestRootState {

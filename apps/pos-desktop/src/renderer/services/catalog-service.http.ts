@@ -159,6 +159,7 @@ const mapServerProductToCatalogItem = async (
     requiresPrescription,
     isRestricted,
     unitPriceCents,
+    costCents: null,
     taxPercentage,
     currentStock,
     minimumStock: product.minimumStock ?? 0,

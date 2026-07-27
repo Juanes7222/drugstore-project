@@ -20,6 +20,7 @@ import {
   ToggleLeft,
   Settings2,
   ShoppingCart,
+  Percent,
   UserCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -36,12 +37,13 @@ import { CompanyConfigTab } from "./company-config-tab";
 import { FiscalConfigTab } from "./fiscal-config-tab";
 import { SystemPreferencesTab } from "./system-preferences-tab";
 import { PurchasesConfigTab } from "./purchases-config-tab";
+import { SalesConfigTab } from "./sales-config-tab";
 
 // ---------------------------------------------------------------------------
 // Tab definitions
 // ---------------------------------------------------------------------------
 
-type TabId = "company" | "fiscal" | "operation" | "preferences" | "user-preferences" | "purchases";
+type TabId = "company" | "fiscal" | "operation" | "preferences" | "user-preferences" | "purchases" | "sales";
 
 interface TabDefinition {
   id: TabId;
@@ -56,6 +58,7 @@ const TABS: TabDefinition[] = [
   { id: "preferences", i18nKey: "tabs.preferences", Icon: Settings2 },
   { id: "user-preferences", i18nKey: "tabs.user_preferences", Icon: UserCircle },
   { id: "purchases", i18nKey: "tabs.purchases", Icon: ShoppingCart },
+  { id: "sales", i18nKey: "tabs.sales", Icon: Percent },
 ];
 
 // ---------------------------------------------------------------------------
@@ -175,6 +178,8 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
         return <UserPreferencesSection />;
       case "purchases":
         return <PurchasesConfigTab />;
+      case "sales":
+        return <SalesConfigTab />;
     }
   };
 

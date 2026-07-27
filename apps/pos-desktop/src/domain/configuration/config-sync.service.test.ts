@@ -61,10 +61,21 @@ describe("ConfigSyncService", () => {
           { id: "pm-1", internalCode: "CASH", name: "Efectivo", category: "CASH", isCash: true, sortOrder: 1, isActive: true },
         ],
         discountLimits: {
+          owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
           cashier: { itemMaxPercent: 15, globalMaxPercent: 10 },
           admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
           inventoryAssistant: { itemMaxPercent: 20, globalMaxPercent: 15 },
           accountant: { itemMaxPercent: 5, globalMaxPercent: 5 },
+        },
+        salesConfig: {
+          priceOverridePermissions: {
+            manager: { allowed: true, requireReason: true },
+            cashier: { allowed: false, requireReason: true },
+            inventoryAssistant: { allowed: false, requireReason: true },
+            accountant: { allowed: false, requireReason: true },
+          },
+          priceFloor: { enabled: true, type: "COST", minMarginPercent: 0 },
         },
         alertThresholds: {
           expirationWarningDays: 60,
@@ -129,10 +140,21 @@ describe("ConfigSyncService", () => {
       vi.mocked(authedHttp.get).mockResolvedValue({
         paymentMethods: [],
         discountLimits: {
+          owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
           cashier: { itemMaxPercent: 15, globalMaxPercent: 10 },
           admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
           inventoryAssistant: { itemMaxPercent: 20, globalMaxPercent: 15 },
           accountant: { itemMaxPercent: 5, globalMaxPercent: 5 },
+        },
+        salesConfig: {
+          priceOverridePermissions: {
+            manager: { allowed: true, requireReason: true },
+            cashier: { allowed: false, requireReason: true },
+            inventoryAssistant: { allowed: false, requireReason: true },
+            accountant: { allowed: false, requireReason: true },
+          },
+          priceFloor: { enabled: true, type: "COST", minMarginPercent: 0 },
         },
         alertThresholds: {
           expirationWarningDays: 60,
@@ -167,10 +189,21 @@ describe("ConfigSyncService", () => {
       const fakePayload = {
         paymentMethods: [],
         discountLimits: {
+          owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
           cashier: { itemMaxPercent: 15, globalMaxPercent: 10 },
           admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
           inventoryAssistant: { itemMaxPercent: 20, globalMaxPercent: 15 },
           accountant: { itemMaxPercent: 5, globalMaxPercent: 5 },
+        },
+        salesConfig: {
+          priceOverridePermissions: {
+            manager: { allowed: true, requireReason: true },
+            cashier: { allowed: false, requireReason: true },
+            inventoryAssistant: { allowed: false, requireReason: true },
+            accountant: { allowed: false, requireReason: true },
+          },
+          priceFloor: { enabled: true, type: "COST", minMarginPercent: 0 },
         },
         alertThresholds: { expirationWarningDays: 60, lowStockAlertEnabled: true },
         syncDefaults: { batchSize: 25, maxRetryAttempts: 15, retryDelaysSeconds: [60] },

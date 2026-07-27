@@ -26,4 +26,16 @@ export {
   PaymentAmountMismatchException,
   ChangeRequiresCashPaymentException,
   SaleNotFoundException,
+  DiscountExceedsRoleLimitException,
+  PriceOverrideNotAllowedForRoleException,
+  PriceBelowCostException,
 } from './exceptions';
+
+export {
+  validateItemPricing,
+  validateSalePricing,
+  resolveDiscountLimitKey,
+  resolvePriceOverrideRoleKey,
+  type DiscountLimitKey,
+  type PriceOverrideRoleKey,
+} from './sales-pricing-validator';

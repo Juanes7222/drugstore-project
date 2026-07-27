@@ -17,7 +17,14 @@ export interface CartItem {
   isRestricted: boolean;
   lotCode: string;
   lotExpirationDate: string;
+  /** The active unit price in cents — catalog price, or overridden. */
   unitPriceCents: number;
+  /** When non-null, the price was manually overridden at sale time. */
+  overrideUnitPriceCents: number | null;
+  /** Percentage discount applied to this line (0–100). Null = no explicit discount. */
+  discountPercentage: number | null;
+  /** Cost per unit in cents. Used for inline price-below-cost validation. */
+  costCents: number | null;
   taxPercentage: number;
   quantity: number;
 }

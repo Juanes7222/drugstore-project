@@ -11,6 +11,13 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { Prisma } from '@pharmacy/database/local';
+import i18n from '@/i18n';
+import { formatCurrency } from '@/utils/format-currency';
+import {
+  PriceBelowCostException,
+  DiscountExceedsRoleLimitException,
+  PriceOverrideNotAllowedForRoleException,
+} from '../../domain/sales-pos/exceptions';
 import {
   addItem,
   selectCartItems,
@@ -56,6 +63,8 @@ export interface UseSalesTransactionReturn {
   isCreating: boolean;
   /** Error message from a failed create() call, or null. */
   actionError: string | null;
+  /** Clear the current action error. */
+  clearActionError: () => void;
   /** Called when a product is selected from the search results. */
   handleSelect: (item: CatalogItem) => void;
   /** Confirm the restricted-item dialog and add to cart. */
@@ -93,6 +102,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const clearActionError = useCallback(() => setActionError(null), []);
 
   const addToCart = useCallback(
     (item: CatalogItem) => {
@@ -111,6 +121,9 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
           lotCode: item.lotCode,
           lotExpirationDate: item.lotExpirationDate,
           unitPriceCents: item.unitPriceCents,
+          overrideUnitPriceCents: null,
+          discountPercentage: null,
+          costCents: item.costCents,
           taxPercentage: item.taxPercentage,
           quantity: 1,
         }),
@@ -182,14 +195,27 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
       // Persist the sale (IN_PROGRESS) in the local DB
       const sale = await salesPosService.create({
         clientId: selectedClient?.id ?? null,
-        items: cartItems.map((item) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-          // Convert cents to pesos (Decimal) — DB stores Decimal(15,2).
-          // Use Decimal division instead of JS / to avoid IEEE 754 drift
-          // (e.g. 2499 / 100 = 24.98999… in JS).
-          unitPrice: new Prisma.Decimal(item.unitPriceCents).dividedBy(100),
-        })),
+        items: cartItems.map((item) => {
+          // Only send explicit `unitPrice` when the cashier overrode the
+          // catalog price.  When omitted the service falls back to the
+          // latest catalog price — and the role-based price-override
+          // permission check does NOT fire.
+          const unitPriceOverride =
+            item.overrideUnitPriceCents !== null
+              ? new Prisma.Decimal(item.overrideUnitPriceCents).dividedBy(100)
+              : undefined;
+
+          return {
+            productId: item.productId,
+            quantity: item.quantity,
+            unitPrice: unitPriceOverride,
+            discountPercentage: item.discountPercentage ?? undefined,
+            discountReason:
+              item.discountPercentage !== null && item.discountPercentage > 0
+                ? 'Ajuste manual en POS'
+                : undefined,
+          };
+        }),
       });
 
       // Store sale ID for the payment screen to consume on confirm()
@@ -197,8 +223,25 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
       dispatch(initializePayment({ totalCents: totalDue }));
       dispatch(setActiveScreen('payment'));
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setActionError(message);
+      if (err instanceof PriceBelowCostException) {
+        const itemName =
+          cartItems.find((ci) => ci.productId === err.productId)?.name ??
+          err.productId;
+        setActionError(
+          i18n.t("sales.cart.error_price_below_cost", {
+            name: itemName,
+            price: formatCurrency(err.attemptedPrice),
+            floor: formatCurrency(err.floorPrice),
+          }),
+        );
+      } else if (err instanceof DiscountExceedsRoleLimitException) {
+        setActionError(i18n.t("sales.cart.error_discount_exceeds_limit"));
+      } else if (err instanceof PriceOverrideNotAllowedForRoleException) {
+        setActionError(i18n.t("sales.cart.error_override_not_allowed"));
+      } else {
+        const message = err instanceof Error ? err.message : String(err);
+        setActionError(i18n.t("sales.cart.error_checkout_failed") + " " + message);
+      }
     } finally {
       setIsCreating(false);
     }
@@ -218,6 +261,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     selectedClient,
     isCreating,
     actionError,
+    clearActionError,
     handleSelect,
     handleConfirmRestricted,
     handleCancelRestricted,

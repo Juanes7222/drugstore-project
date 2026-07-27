@@ -18,6 +18,9 @@ export const SalesTransaction: FC = () => {
     catalogService,
     pendingItem,
     isDialogOpen,
+    actionError,
+    clearActionError,
+    isCreating,
     handleSelect,
     handleConfirmRestricted,
     handleCancelRestricted,
@@ -38,6 +41,9 @@ export const SalesTransaction: FC = () => {
         onSelectClient={handleSelectClient}
         onClearClient={handleClearClient}
         onCreateClient={handleCreateClient}
+        actionError={actionError}
+        onClearError={clearActionError}
+        isCreating={isCreating}
       />
 
       <RestrictedConfirmationDialog

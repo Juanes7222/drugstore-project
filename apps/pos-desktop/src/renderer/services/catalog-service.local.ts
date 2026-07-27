@@ -29,16 +29,24 @@ import { type CatalogItem, type CatalogService } from './catalog-service';
 const SEARCH_LIMIT = 20;
 
 /**
- * Convert a Prisma Decimal (stored as decimal fraction, e.g. 0.19 for 19%)
- * to an integer percentage (e.g. 19). Returns 0 if the rate is missing,
- * matching the behaviour expected by the cart selector: missing tax data
- * must not be silently treated as 19% (see `selectTaxCents`).
+ * Convert a Prisma Decimal to an integer percentage (e.g. 19 for 19%).
+ *
+ * The local DB may store the rate as either a decimal fraction (0.19) or an
+ * integer percentage (19) depending on what the server sent during the last
+ * catalog sync — a known historical inconsistency.  The guard below handles
+ * both formats so the POS works correctly regardless of which one the
+ * server produces.
+ *
+ * Returns 0 if the rate is missing, matching the behaviour expected by the
+ * cart selector: missing tax data must not be silently treated as 19%.
  */
 const rateToPercentage = (rate: unknown): number => {
   if (rate === null || rate === undefined) return 0;
   const numeric =
     typeof rate === 'string' ? Number.parseFloat(rate) : Number(rate);
   if (Number.isNaN(numeric)) return 0;
+  // Server may send rate as decimal (0.19) or percentage integer (19).
+  if (numeric > 1) return Math.round(numeric);
   return Math.round(numeric * 100);
 };
 
@@ -80,6 +88,7 @@ interface LocalProductRow {
   invimaRegistry: string | null;
   barcodes: Array<{ barcode: string; isPrimary: boolean }>;
   priceHistories: Array<{ price: unknown }>;
+  costHistories: Array<{ cost: unknown }>;
   taxHistories: Array<{ taxScheme: { rate: unknown } | null }>;
   lots: LocalLotRow[];
 }
@@ -103,6 +112,7 @@ const mapLocalProductToCatalogItem = (
     )[0];
 
   const unitPriceCents = priceToCents(product.priceHistories[0]?.price);
+  const costCents = priceToCents(product.costHistories[0]?.cost) ?? null;
   const taxPercentage = rateToPercentage(
     product.taxHistories[0]?.taxScheme?.rate,
   );
@@ -131,6 +141,7 @@ const mapLocalProductToCatalogItem = (
     requiresPrescription,
     isRestricted,
     unitPriceCents,
+    costCents,
     taxPercentage,
     currentStock,
     minimumStock: product.minimumStock ?? 0,
@@ -172,6 +183,12 @@ export const createLocalCatalogService = (
         priceHistories: {
           where: { effectiveTo: null },
           select: { price: true },
+          orderBy: { effectiveFrom: 'desc' },
+          take: 1,
+        },
+        costHistories: {
+          where: { effectiveTo: null },
+          select: { cost: true },
           orderBy: { effectiveFrom: 'desc' },
           take: 1,
         },

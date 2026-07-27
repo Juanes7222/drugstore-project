@@ -76,3 +76,61 @@ export class SaleNotFoundException extends DomainError {
     );
   }
 }
+
+/**
+ * Thrown when a non-owner role tries to apply a discount that exceeds
+ * either the per-item cap or the sale-wide cap configured for their role.
+ */
+export class DiscountExceedsRoleLimitException extends DomainError {
+  constructor(
+    public readonly role: string,
+    public readonly productId: string,
+    public readonly attemptedPercent: number,
+    public readonly maxPercent: number,
+    public readonly scope: 'item' | 'global',
+  ) {
+    super(
+      'DISCOUNT_EXCEEDS_ROLE_LIMIT',
+      scope === 'item'
+        ? `Role ${role} cannot apply a ${attemptedPercent.toFixed(2)}% item discount to product ${productId} (max ${maxPercent}%).`
+        : `Role ${role} cannot apply a ${attemptedPercent.toFixed(2)}% sale-wide discount (max ${maxPercent}%).`,
+    );
+  }
+}
+
+/**
+ * Thrown when a non-owner role tries to override the catalog unit price
+ * at sale time, and the role's `priceOverridePermissions.allowed` is
+ * `false`.
+ */
+export class PriceOverrideNotAllowedForRoleException extends DomainError {
+  constructor(
+    public readonly role: string,
+    public readonly productId: string,
+  ) {
+    super(
+      'PRICE_OVERRIDE_NOT_ALLOWED_FOR_ROLE',
+      `Role ${role} is not permitted to override the catalog price for product ${productId}.`,
+    );
+  }
+}
+
+/**
+ * Thrown when a sale's effective unit price would fall below the
+ * configured price floor.  The floor is universal — it applies to every
+ * role including the owner — and the owner can disable it from the
+ * settings tab.
+ */
+export class PriceBelowCostException extends DomainError {
+  constructor(
+    public readonly productId: string,
+    public readonly attemptedPrice: number,
+    public readonly floorPrice: number,
+    public readonly floorType: 'COST' | 'COST_PLUS_MARGIN',
+  ) {
+    super(
+      'PRICE_BELOW_COST',
+      `Price ${attemptedPrice} for product ${productId} is below the ${floorType} floor of ${floorPrice}.`,
+    );
+  }
+}

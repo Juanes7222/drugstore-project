@@ -494,7 +494,17 @@
       "checkout": "COBRAR",
       "subtotal": "Subtotal",
 "tax": "IVA ({{rate}}%)",
-      "total": "TOTAL"
+      "tax_mixed": "IVA",
+      "total": "TOTAL",
+      "discount": "Descuento",
+      "editPrice": "Editar precio",
+      "editDiscount": "Editar descuento",
+      "error_price_below_cost": "El precio de {{name}} ({{price}}) está por debajo del costo mínimo ({{floor}}).",
+      "error_discount_exceeds_limit": "El descuento excede el límite permitido para tu rol.",
+      "error_override_not_allowed": "No tienes permiso para modificar el precio de este producto.",
+      "error_checkout_failed": "No se pudo procesar el cobro.",
+      "error_generic": "{{message}}",
+      "error_dismiss": "Descartar error"
     },
     "product": {
       "stock": "Stock",
@@ -1499,7 +1509,8 @@
       "operation": "Operación",
       "preferences": "Preferencias del sistema",
       "user_preferences": "Preferencias de usuario",
-      "purchases": "Compras"
+      "purchases": "Compras",
+      "sales": "Ventas"
     },
     "presets": {
       "title": "Modo de operación",
@@ -1668,6 +1679,38 @@
       "required": "Este campo es requerido",
       "threshold_required": "Debe especificar un monto mínimo cuando el cliente es requerido sobre cierto valor",
       "tax_rate_invalid": "La tasa de IVA debe estar entre 0 y 1 (ej: 0.19 para 19%)"
+    },
+    "sales": {
+      "title": "Configuración de ventas",
+      "description": "Defina los límites de descuento, los permisos de sobreescritura de precios y el piso mínimo de venta por rol.",
+      "saved": "Configuración de ventas guardada",
+      "autoSave": "Guardado automático",
+      "sectionDiscounts": "Límites de descuento por rol",
+      "sectionDiscountsDesc": "Descuento máximo permitido por producto y por venta completa.",
+      "sectionOverrides": "Sobreescritura de precios",
+      "sectionOverridesDesc": "Define qué roles pueden cambiar el precio de catálogo al cobrar y si deben registrar un motivo.",
+      "sectionFloor": "Piso de precio",
+      "sectionFloorDesc": "Impide vender por debajo del costo. Aplica a todos los usuarios, incluyendo al dueño.",
+      "ownerExemptNote": "El dueño no está sujeto a límites de descuento. Solo le aplica el piso de costo.",
+      "discountItem": "Máx. por producto",
+      "discountGlobal": "Máx. total de la venta",
+      "discountHint": "Porcentaje máximo que el rol puede aplicar.",
+      "allowOverride": "Permitir cambiar el precio",
+      "allowOverrideHint": "Si está desactivado, el rol no puede cambiar el precio de catálogo al cobrar.",
+      "requireReason": "Exigir motivo",
+      "requireReasonHint": "Si está activo, el cajero debe escribir una razón cuando cambia el precio.",
+      "floorEnabled": "Activar piso de precio",
+      "floorEnabledHint": "Bloquea ventas por debajo del costo. Aplica a todos los usuarios, incluyendo al dueño. Desactívelo solo si explícitamente quiere permitir ventas a pérdida.",
+      "floorType": "Tipo de piso",
+      "floorTypeCost": "Costo",
+      "floorTypeCostPlusMargin": "Costo + margen",
+      "minMargin": "Margen mínimo (%)",
+      "minMarginHint": "Porcentaje mínimo sobre el costo cuando se elige 'Costo + margen'.",
+      "roleOwner": "Dueño",
+      "roleManager": "Gerente",
+      "roleCashier": "Cajero",
+      "roleInventoryAssistant": "Aux. de inventario",
+      "roleAccountant": "Contador"
     },
     "errors": {
       "load_failed": "Error al cargar la configuración",
