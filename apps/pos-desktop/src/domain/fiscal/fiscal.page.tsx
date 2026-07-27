@@ -43,7 +43,7 @@ import { FiscalHeader } from "../../renderer/components/fiscal/fiscal-header";
 // ---------------------------------------------------------------------------
 
 export const FiscalPage: FC = () => {
-  const { t } = useTranslation("fiscal");
+  const { t } = useTranslation();
   const session = useLocalSessionStore((s) => s.session);
   const contingencyState = useContingencyStore.getState();
   const { loading, error, invoices, totalCount, history, loadData, servicesRef } =
@@ -115,7 +115,7 @@ export const FiscalPage: FC = () => {
     try {
       await servicesRef.current.invoiceService.cancelInvoice(
         selectedInvoice.id,
-        t("cancel_reason", { defaultValue: "Manual cancellation by manager" }),
+        t("fiscal.cancel_reason"),
       );
       setSelectedInvoice(null);
       await loadData();
@@ -133,7 +133,7 @@ export const FiscalPage: FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `ajustes-${selectedInvoice.invoiceNumber}.csv`;
+      a.download = `${t("fiscal.csv_prefix")}-${selectedInvoice.invoiceNumber}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -151,7 +151,7 @@ export const FiscalPage: FC = () => {
       setAdjustmentModalError(null);
       setShowAdjustmentModal(true);
     } catch {
-      setAdjustmentModalError("Error al cargar tipos de ajuste permitidos");
+      setAdjustmentModalError(t("fiscal.adjustment_create_load_types_error"));
       setShowAdjustmentModal(true);
     }
   }, [selectedInvoice, servicesRef]);
@@ -189,7 +189,7 @@ export const FiscalPage: FC = () => {
         setShowAdjustmentModal(false);
       } catch (err) {
         setAdjustmentModalError(
-          err instanceof Error ? err.message : "Error al aplicar el ajuste",
+          err instanceof Error ? err.message : t("fiscal.adjustment_create_apply_error"),
         );
       } finally {
         setAdjustmentModalLoading(false);
@@ -203,14 +203,14 @@ export const FiscalPage: FC = () => {
   // ------------------------------------------------------------------
 
   const role = session?.role as RoleType | undefined;
-  const isAdmin = role === RoleType.ADMIN;
+  const hasAccess = role === RoleType.ADMIN || role === RoleType.OWNER;
 
-  if (!isAdmin) {
+  if (!hasAccess) {
     return (
-      <section className="flex h-full items-center justify-center p-6">
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
-          <h2 className="text-lg font-bold text-red-700">{t("access_denied_title")}</h2>
-          <p className="mt-2 text-red-600">{t("access_denied_message")}</p>
+      <section className="flex h-full items-center justify-center p-pos-xl">
+        <div className="rounded-lg border border-danger/20 bg-error-container p-pos-xl text-center">
+          <h2 className="text-ui font-bold text-danger">{t("fiscal.access_denied_title")}</h2>
+          <p className="mt-pos-sm text-danger/80">{t("fiscal.access_denied_message")}</p>
         </div>
       </section>
     );
@@ -218,10 +218,10 @@ export const FiscalPage: FC = () => {
 
   if (loading) {
     return (
-      <section className="flex h-full items-center justify-center p-6">
+      <section className="flex h-full items-center justify-center p-pos-xl">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-t-blue-500 border-r-blue-500 border-transparent" />
-          <p className="text-gray-500">{t("loading")}</p>
+          <div className="mx-auto mb-pos-md h-8 w-8 animate-spin rounded-full border-2 border-t-pharma border-r-pharma border-transparent" />
+          <p className="text-body text-ink-muted">{t("fiscal.loading")}</p>
         </div>
       </section>
     );
@@ -229,16 +229,16 @@ export const FiscalPage: FC = () => {
 
   if (error) {
     return (
-      <section className="flex h-full items-center justify-center p-6">
-        <div className="rounded-lg border border-red-300 bg-red-50 p-6 text-center">
-          <h2 className="text-lg font-bold text-red-700">{t("error_title")}</h2>
-          <p className="mt-2 text-red-600">{error}</p>
+      <section className="flex h-full items-center justify-center p-pos-xl">
+        <div className="rounded-lg border border-danger/30 bg-error-container p-pos-xl text-center">
+          <h2 className="text-ui font-bold text-danger">{t("fiscal.error_title")}</h2>
+          <p className="mt-pos-sm text-danger/80">{error}</p>
           <button
             type="button"
-            className="mt-4 rounded bg-red-600 px-4 py-2 text-white hover:bg-red-700"
+            className="mt-pos-md rounded bg-danger px-pos-md py-pos-sm text-white hover:opacity-90"
             onClick={loadData}
           >
-            {t("retry")}
+            {t("fiscal.retry")}
           </button>
         </div>
       </section>
@@ -256,7 +256,7 @@ export const FiscalPage: FC = () => {
   );
 
   return (
-    <section className="flex h-full flex-col overflow-hidden bg-gray-50">
+    <section className="flex h-full flex-col overflow-hidden bg-surface">
       <FiscalHeader
         activeTab={tab}
         totalCount={totalCount}
@@ -266,7 +266,7 @@ export const FiscalPage: FC = () => {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Main content area */}
-        <div className={`flex-1 overflow-y-auto p-6 ${selectedInvoice ? "pr-3" : ""}`}>
+        <div className={`flex-1 overflow-y-auto p-pos-xl ${selectedInvoice ? "pr-pos-sm" : ""}`}>
           {tab === "invoices" && (
             <InvoiceListView
               invoices={invoices}
@@ -283,42 +283,42 @@ export const FiscalPage: FC = () => {
         {/* Invoice detail side panel */}
         {selectedInvoice && (
           <aside
-            className="flex flex-col overflow-hidden border-l border-gray-200 bg-white"
+            className="flex flex-col overflow-hidden border-l border-ink/8 bg-panel"
             style={{ width: detailView === "dual" ? "48rem" : "24rem" }}
           >
             {/* Detail view toggle */}
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-2">
-              <h2 className="text-sm font-semibold text-gray-700">{t("invoice_detail")}</h2>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between border-b border-ink/8 px-pos-md py-pos-sm">
+              <h2 className="text-body-sm font-semibold text-ink">{t("fiscal.invoice_detail")}</h2>
+              <div className="flex items-center gap-pos-sm">
                 <button
                   type="button"
-                  className={`rounded px-2 py-1 text-xs font-medium ${
+                  className={`rounded px-pos-sm py-1 text-caption font-medium transition-colors ${
                     detailView === "fiscal"
-                      ? "bg-blue-100 text-blue-700"
-                      : "text-gray-500 hover:bg-gray-100"
+                      ? "bg-pharma/10 text-pharma"
+                      : "text-ink-muted hover:bg-ink/5"
                   }`}
                   onClick={() => setDetailView("fiscal")}
                 >
-                  {t("view_fiscal")}
+                  {t("fiscal.view_fiscal")}
                 </button>
                 {operationalView && (
                   <button
                     type="button"
-                    className={`rounded px-2 py-1 text-xs font-medium ${
+                    className={`rounded px-pos-sm py-1 text-caption font-medium transition-colors ${
                       detailView === "dual"
-                        ? "bg-blue-100 text-blue-700"
-                        : "text-gray-500 hover:bg-gray-100"
+                        ? "bg-pharma/10 text-pharma"
+                        : "text-ink-muted hover:bg-ink/5"
                     }`}
                     onClick={() => setDetailView("dual")}
                   >
-                    {t("view_dual")}
+                    {t("fiscal.view_dual")}
                   </button>
                 )}
                 <button
                   type="button"
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-ink-muted hover:text-ink transition-colors"
                   onClick={handleCloseDetail}
-                  aria-label={t("close")}
+                  aria-label={t("common.close")}
                 >
                   <svg
                     width="20"
@@ -338,7 +338,7 @@ export const FiscalPage: FC = () => {
             <div className="flex flex-1 overflow-hidden">
               {/* Fiscal panel (always visible) */}
               <div
-                className={`overflow-y-auto ${detailView === "dual" ? "w-1/2 border-r border-gray-200" : "flex-1"}`}
+                className={`overflow-y-auto ${detailView === "dual" ? "w-1/2 border-r border-ink/8" : "flex-1"}`}
               >
                 <FiscalInvoiceDetailPanel
                   invoice={selectedInvoice}
@@ -360,7 +360,7 @@ export const FiscalPage: FC = () => {
                   />
 
                   {adjustmentHistory.length > 0 && (
-                    <div className="border-t border-gray-200">
+                    <div className="border-t border-ink/8">
                       <AdjustmentHistoryPanel
                         adjustments={adjustmentHistory}
                         isLoading={operationalLoading}

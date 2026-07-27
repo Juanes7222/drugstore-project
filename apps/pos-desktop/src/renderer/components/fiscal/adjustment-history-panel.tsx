@@ -23,9 +23,9 @@ const ADJUSTMENT_TYPE_COLORS: Record<AdjustmentType, string> = {
   CLIENT_CHANGE: "var(--color-pharma)",
   DELIVERY_INFO: "var(--color-sync)",
   TAG_ADD: "var(--color-pharma)",
-  TAG_REMOVE: "#D32F2F",
+  TAG_REMOVE: "var(--color-error)",
   CUSTOM_FIELD_SET: "var(--color-sync)",
-  CUSTOM_FIELD_CLEAR: "#D32F2F",
+  CUSTOM_FIELD_CLEAR: "var(--color-error)",
   REVERSAL: "var(--color-restrict)",
 };
 
@@ -175,7 +175,7 @@ const formatValue = (
       if (obj.address && typeof obj.address === "string")
         parts.push(`${t("clients.address")}: ${obj.address}`);
       if (obj.contactName && typeof obj.contactName === "string")
-        parts.push(`Contacto: ${obj.contactName}`);
+        parts.push(`${t("fiscal.operational_contact")}: ${obj.contactName}`);
       if (obj.contactPhone && typeof obj.contactPhone === "string")
         parts.push(`${t("clients.phone")}: ${obj.contactPhone}`);
       if (
@@ -184,10 +184,10 @@ const formatValue = (
         obj.scheduledDate
       )
         parts.push(
-          `Programado: ${new Date(obj.scheduledDate).toLocaleString("es-CO")}`,
+          `${t("fiscal.adjustment_delivery_scheduled_date")}: ${new Date(obj.scheduledDate).toLocaleString("es-CO")}`,
         );
       if (obj.notes && typeof obj.notes === "string" && obj.notes)
-        parts.push(`Notas: ${obj.notes}`);
+        parts.push(`${t("fiscal.adjustment_delivery_notes")}: ${obj.notes}`);
       return parts.length > 0 ? parts.join(" | ") : "—";
     }
 

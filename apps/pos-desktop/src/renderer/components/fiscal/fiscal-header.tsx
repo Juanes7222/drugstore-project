@@ -28,45 +28,45 @@ export const FiscalHeader: FC<FiscalHeaderProps> = ({
   contingencyMode,
   onTabChange,
 }) => {
-  const { t } = useTranslation("fiscal");
+  const { t } = useTranslation();
 
   return (
-    <header className="border-b border-gray-200 bg-white px-6 py-4">
+    <header className="border-b border-ink/8 bg-panel px-pos-xl py-pos-md">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-800">{t("title")}</h1>
+        <h1 className="text-ui text-ink">{t("fiscal.title")}</h1>
         <div className="flex items-center gap-4">
           {contingencyMode && (
-            <span className="inline-flex items-center gap-2 rounded bg-red-600 px-3 py-1 text-sm font-bold text-white">
+            <span className="inline-flex items-center gap-2 rounded bg-danger px-3 py-1 text-sm font-bold text-white">
               <span className="h-2 w-2 rounded-full bg-white" />
-              {t("contingency_mode")}
+              {t("fiscal.contingency_mode")}
             </span>
           )}
         </div>
       </div>
 
       {/* Tab navigation */}
-      <nav className="mt-4 flex gap-4 border-b border-gray-200">
+      <nav className="mt-pos-md flex gap-pos-md border-b border-ink/8">
         <button
           type="button"
-          className={`pb-2 text-sm font-medium ${
+          className={`pb-2 text-body-sm font-medium transition-colors ${
             activeTab === "invoices"
-              ? "border-b-2 border-blue-600 text-blue-600"
-              : "text-gray-500 hover:text-gray-700"
+              ? "border-b-2 border-pharma text-pharma"
+              : "text-ink-muted hover:text-ink"
           }`}
           onClick={() => onTabChange("invoices")}
         >
-          {t("tab_invoices", { count: totalCount })}
+          {t("fiscal.tab_invoices", { count: totalCount })}
         </button>
         <button
           type="button"
-          className={`pb-2 text-sm font-medium ${
+          className={`pb-2 text-body-sm font-medium transition-colors ${
             activeTab === "contingency"
-              ? "border-b-2 border-blue-600 text-blue-600"
-              : "text-gray-500 hover:text-gray-700"
+              ? "border-b-2 border-pharma text-pharma"
+              : "text-ink-muted hover:text-ink"
           }`}
           onClick={() => onTabChange("contingency")}
         >
-          {t("tab_contingency")}
+          {t("fiscal.tab_contingency")}
         </button>
       </nav>
     </header>

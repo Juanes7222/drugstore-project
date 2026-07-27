@@ -182,6 +182,24 @@ const CashShiftIcon: FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const HistoryIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+);
+
 const PrinterIcon: FC<{ className?: string }> = ({ className }) => (
   <svg
     className={className}
@@ -219,6 +237,24 @@ const AdminIcon: FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const UsersIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M19 21v-2a4 4 0 00-4-4H9a4 4 0 00-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+);
+
 /**
  * Check if the current session's role is among the allowed roles for a nav item.
  */
@@ -247,7 +283,7 @@ const NAV_ITEMS: NavItem[] = [
     screen: "sales-history",
     labelKey: "navigation.sales_history",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: SalesIcon,
+    icon: HistoryIcon,
   },
   {
     screen: "returns",
@@ -306,7 +342,7 @@ const NAV_ITEMS: NavItem[] = [
     screen: "user-management",
     labelKey: "navigation.user_management",
     roles: [RoleType.MANAGER, RoleType.OWNER],
-    icon: AdminIcon,
+    icon: UsersIcon,
   },
   {
     screen: "license-status",

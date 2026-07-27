@@ -267,19 +267,19 @@ export const OperationalInvoiceDetailPanel: FC<OperationalInvoiceDetailPanelProp
             <div className="space-y-0.5 text-caption" style={{ color: "var(--color-ink)" }}>
               {operational.contactInfo.email && (
                 <p>
-                  <span className="font-medium">Email:</span>{" "}
+                  <span className="font-medium">{t("clients.email")}:</span>{" "}
                   {operational.contactInfo.email}
                 </p>
               )}
               {operational.contactInfo.phone && (
                 <p>
-                  <span className="font-medium">Tel:</span>{" "}
+                  <span className="font-medium">{t("clients.phone")}:</span>{" "}
                   {operational.contactInfo.phone}
                 </p>
               )}
               {operational.contactInfo.address && (
                 <p>
-                  <span className="font-medium">Dir:</span>{" "}
+                  <span className="font-medium">{t("clients.address")}:</span>{" "}
                   {operational.contactInfo.address}
                 </p>
               )}
@@ -306,25 +306,25 @@ export const OperationalInvoiceDetailPanel: FC<OperationalInvoiceDetailPanelProp
             <div className="space-y-0.5 text-caption" style={{ color: "var(--color-ink)" }}>
               {operational.deliveryInfo.address && (
                 <p>
-                  <span className="font-medium">Dir:</span>{" "}
+                  <span className="font-medium">{t("clients.address")}:</span>{" "}
                   {operational.deliveryInfo.address}
                 </p>
               )}
               {operational.deliveryInfo.contactName && (
                 <p>
-                  <span className="font-medium">Contacto:</span>{" "}
+                  <span className="font-medium">{t("fiscal.operational_contact")}:</span>{" "}
                   {operational.deliveryInfo.contactName}
                 </p>
               )}
               {operational.deliveryInfo.contactPhone && (
                 <p>
-                  <span className="font-medium">Tel:</span>{" "}
+                  <span className="font-medium">{t("clients.phone")}:</span>{" "}
                   {operational.deliveryInfo.contactPhone}
                 </p>
               )}
               {operational.deliveryInfo.scheduledDate && (
                 <p>
-                  <span className="font-medium">Programado:</span>{" "}
+                  <span className="font-medium">{t("fiscal.adjustment_delivery_scheduled_date")}:</span>{" "}
                   {new Date(
                     operational.deliveryInfo.scheduledDate,
                   ).toLocaleString("es-CO")}
@@ -332,7 +332,7 @@ export const OperationalInvoiceDetailPanel: FC<OperationalInvoiceDetailPanelProp
               )}
               {operational.deliveryInfo.notes && (
                 <p>
-                  <span className="font-medium">Notas:</span>{" "}
+                  <span className="font-medium">{t("fiscal.adjustment_delivery_notes")}:</span>{" "}
                   {operational.deliveryInfo.notes}
                 </p>
               )}

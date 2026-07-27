@@ -413,19 +413,19 @@ export const CashierOperationalView: FC<CashierOperationalViewProps> = ({
             >
               {operational.contactInfo.email && (
                 <p>
-                  <span className="font-medium">Email:</span>{" "}
+                  <span className="font-medium">{t("clients.email")}:</span>{" "}
                   {operational.contactInfo.email}
                 </p>
               )}
               {operational.contactInfo.phone && (
                 <p>
-                  <span className="font-medium">Tel:</span>{" "}
+                  <span className="font-medium">{t("clients.phone")}:</span>{" "}
                   {operational.contactInfo.phone}
                 </p>
               )}
               {operational.contactInfo.address && (
                 <p>
-                  <span className="font-medium">Dir:</span>{" "}
+                  <span className="font-medium">{t("clients.address")}:</span>{" "}
                   {operational.contactInfo.address}
                 </p>
               )}

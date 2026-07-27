@@ -169,9 +169,9 @@ function getBeforeValue(
       return "—";
     case "CONTACT_UPDATE": {
       const parts: string[] = [];
-      if (op.contactInfo.email) parts.push(`Email: ${op.contactInfo.email}`);
-      if (op.contactInfo.phone) parts.push(`Tel: ${op.contactInfo.phone}`);
-      if (op.contactInfo.address) parts.push(`Dir: ${op.contactInfo.address}`);
+      if (op.contactInfo.email) parts.push(`${t?.("clients.email") ?? "Email"}: ${op.contactInfo.email}`);
+      if (op.contactInfo.phone) parts.push(`${t?.("clients.phone") ?? "Tel"}: ${op.contactInfo.phone}`);
+      if (op.contactInfo.address) parts.push(`${t?.("clients.address") ?? "Dir"}: ${op.contactInfo.address}`);
       return parts.length > 0 ? parts.join("\n") : "—";
     }
     case "CLIENT_CHANGE": {
@@ -196,16 +196,16 @@ function getBeforeValue(
       if (!op.deliveryInfo) return "—";
       const parts: string[] = [];
       if (op.deliveryInfo.address)
-        parts.push(`Dir: ${op.deliveryInfo.address}`);
+        parts.push(`${t?.("clients.address") ?? "Dir"}: ${op.deliveryInfo.address}`);
       if (op.deliveryInfo.contactName)
-        parts.push(`Contacto: ${op.deliveryInfo.contactName}`);
+        parts.push(`${t?.("fiscal.operational_contact") ?? "Contacto"}: ${op.deliveryInfo.contactName}`);
       if (op.deliveryInfo.contactPhone)
-        parts.push(`Tel: ${op.deliveryInfo.contactPhone}`);
+        parts.push(`${t?.("clients.phone") ?? "Tel"}: ${op.deliveryInfo.contactPhone}`);
       if (op.deliveryInfo.notes)
-        parts.push(`Notas: ${op.deliveryInfo.notes}`);
+        parts.push(`${t?.("fiscal.adjustment_delivery_notes") ?? "Notas"}: ${op.deliveryInfo.notes}`);
       if (op.deliveryInfo.scheduledDate)
         parts.push(
-          `Programado: ${new Date(op.deliveryInfo.scheduledDate).toLocaleString("es-CO")}`,
+          `${t?.("fiscal.adjustment_delivery_scheduled_date") ?? "Programado"}: ${new Date(op.deliveryInfo.scheduledDate).toLocaleString("es-CO")}`,
         );
       return parts.length > 0 ? parts.join("\n") : "—";
     }
@@ -646,27 +646,31 @@ const PaymentEditor: FC<{
 const NoteEditor: FC<{
   value: string;
   onChange: (v: string) => void;
-}> = ({ value, onChange }) => (
-  <textarea
-    className="min-h-[120px] w-full rounded-pos border px-3 py-2 text-body-sm"
-    style={{
-      color: "var(--color-ink)",
-      borderColor:
-        "color-mix(in srgb, var(--color-ink) 15%, transparent)",
-      backgroundColor: "var(--color-panel)",
-    }}
-    value={value}
-    onChange={(e) => onChange(e.target.value)}
-    aria-label="Nota interna"
-    placeholder="Escriba la nota aquí..."
-  />
-);
+}> = ({ value, onChange }) => {
+  const { t } = useTranslation();
+  return (
+    <textarea
+      className="min-h-[120px] w-full rounded-pos border px-3 py-2 text-body-sm"
+      style={{
+        color: "var(--color-ink)",
+        borderColor:
+          "color-mix(in srgb, var(--color-ink) 15%, transparent)",
+        backgroundColor: "var(--color-panel)",
+      }}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label={t("fiscal.adjustment_type_internal_note")}
+      placeholder={t("fiscal.adjustment_note_placeholder")}
+    />
+  );
+};
 
 /** Editor for CONTACT_UPDATE — email, phone, address */
 const ContactEditor: FC<{
   value: { email?: string; phone?: string; address?: string };
   onChange: (v: { email?: string; phone?: string; address?: string }) => void;
 }> = ({ value, onChange }) => {
+  const { t } = useTranslation();
   const v = value ?? {};
   const set = (field: string, val: string) =>
     onChange({ ...v, [field]: val });
@@ -681,7 +685,7 @@ const ContactEditor: FC<{
               "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          Email
+          {t("clients.email")}
         </span>
         <input
           type="email"
@@ -698,7 +702,7 @@ const ContactEditor: FC<{
               "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          Teléfono
+          {t("clients.phone")}
         </span>
         <input
           type="tel"
@@ -715,7 +719,7 @@ const ContactEditor: FC<{
               "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          Dirección
+          {t("clients.address")}
         </span>
         <input
           type="text"
@@ -1004,6 +1008,7 @@ const DeliveryEditor: FC<{
     },
   ) => void;
 }> = ({ value, onChange }) => {
+  const { t } = useTranslation();
   const v = value ?? {};
   const set = (field: string, val: string) =>
     onChange({ ...v, [field]: val });
@@ -1018,7 +1023,7 @@ const DeliveryEditor: FC<{
               "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          Dirección de entrega
+          {t("fiscal.adjustment_delivery_address")}
         </span>
         <input
           type="text"
@@ -1035,7 +1040,7 @@ const DeliveryEditor: FC<{
               "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          Nombre de contacto
+          {t("fiscal.adjustment_delivery_contact_name")}
         </span>
         <input
           type="text"
@@ -1052,7 +1057,7 @@ const DeliveryEditor: FC<{
               "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          Teléfono de contacto
+          {t("fiscal.adjustment_delivery_contact_phone")}
         </span>
         <input
           type="tel"
@@ -1069,7 +1074,7 @@ const DeliveryEditor: FC<{
               "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          Fecha programada
+          {t("fiscal.adjustment_delivery_scheduled_date")}
         </span>
         <input
           type="datetime-local"
@@ -1086,7 +1091,7 @@ const DeliveryEditor: FC<{
               "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          Notas de entrega
+          {t("fiscal.adjustment_delivery_notes")}
         </span>
         <textarea
           className="min-h-[80px] w-full rounded-pos border px-3 py-2 text-body-sm"
@@ -1108,16 +1113,19 @@ const DeliveryEditor: FC<{
 const TagAddEditor: FC<{
   value: string;
   onChange: (v: string) => void;
-}> = ({ value, onChange }) => (
-  <input
-    type="text"
-    className="pos-input text-body-sm"
-    value={value}
-    onChange={(e) => onChange(e.target.value)}
-    placeholder="Nombre de la etiqueta"
-    aria-label="Nueva etiqueta"
-  />
-);
+}> = ({ value, onChange }) => {
+  const { t } = useTranslation();
+  return (
+    <input
+      type="text"
+      className="pos-input text-body-sm"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={t("fiscal.adjustment_tag_add_placeholder")}
+      aria-label={t("fiscal.adjustment_tag_add_aria")}
+    />
+  );
+};
 
 /** Editor for TAG_REMOVE — selector from existing tags */
 const TagRemoveEditor: FC<{
@@ -1146,9 +1154,9 @@ const TagRemoveEditor: FC<{
       className="pos-input text-body-sm"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      aria-label="Seleccionar etiqueta a remover"
+      aria-label={t("fiscal.adjustment_tag_remove_aria")}
     >
-      <option value="">— Seleccionar —</option>
+      <option value="">—</option>
       {tags.map((tag) => (
         <option key={tag} value={tag}>
           {tag}
@@ -1162,44 +1170,47 @@ const TagRemoveEditor: FC<{
 const CustomFieldSetEditor: FC<{
   value: { key: string; value: string };
   onChange: (v: { key: string; value: string }) => void;
-}> = ({ value, onChange }) => (
-  <div className="flex flex-col gap-2">
-    <label className="flex flex-col gap-1">
-      <span
-        className="text-caption font-medium"
-        style={{
-          color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-        }}
-      >
-        Clave
-      </span>
-      <input
-        type="text"
-        className="pos-input text-body-sm"
-        value={value.key}
-        onChange={(e) => onChange({ ...value, key: e.target.value })}
-        placeholder="Nombre del campo"
-      />
-    </label>
-    <label className="flex flex-col gap-1">
-      <span
-        className="text-caption font-medium"
-        style={{
-          color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-        }}
-      >
-        Valor
-      </span>
-      <input
-        type="text"
-        className="pos-input text-body-sm"
-        value={value.value}
-        onChange={(e) => onChange({ ...value, value: e.target.value })}
-        placeholder="Valor del campo"
-      />
-    </label>
-  </div>
-);
+}> = ({ value, onChange }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="flex flex-col gap-1">
+        <span
+          className="text-caption font-medium"
+          style={{
+            color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+          }}
+        >
+          {t("fiscal.adjustment_custom_field_key")}
+        </span>
+        <input
+          type="text"
+          className="pos-input text-body-sm"
+          value={value.key}
+          onChange={(e) => onChange({ ...value, key: e.target.value })}
+          placeholder={t("fiscal.adjustment_custom_field_key_placeholder")}
+        />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span
+          className="text-caption font-medium"
+          style={{
+            color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+          }}
+        >
+          {t("fiscal.adjustment_custom_field_value")}
+        </span>
+        <input
+          type="text"
+          className="pos-input text-body-sm"
+          value={value.value}
+          onChange={(e) => onChange({ ...value, value: e.target.value })}
+          placeholder={t("fiscal.adjustment_custom_field_value_placeholder")}
+        />
+      </label>
+    </div>
+  );
+};
 
 /** Editor for CUSTOM_FIELD_CLEAR — selector from existing keys */
 const CustomFieldClearEditor: FC<{
@@ -1230,9 +1241,9 @@ const CustomFieldClearEditor: FC<{
       className="pos-input text-body-sm"
       value={value.key}
       onChange={(e) => onChange({ key: e.target.value })}
-      aria-label="Seleccionar campo a eliminar"
+      aria-label={t("fiscal.adjustment_custom_field_clear_aria")}
     >
-      <option value="">— Seleccionar —</option>
+      <option value="">—</option>
       {keys.map((key) => (
         <option key={key} value={key}>
           {key}
@@ -1566,13 +1577,13 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
 
   const renderStepIndicator = () => {
     const steps = [
-      { key: "select-type", label: "Tipo" },
-      { key: "edit", label: "Editar" },
-      { key: "confirm", label: "Confirmar" },
+      { key: "select-type", label: t("fiscal.adjustment_create_step_type") },
+      { key: "edit", label: t("fiscal.adjustment_create_step_edit") },
+      { key: "confirm", label: t("fiscal.adjustment_create_step_confirm") },
     ];
 
     return (
-      <nav aria-label="Progreso" className="mb-4">
+      <nav aria-label={t("fiscal.adjustment_create_step_progress")} className="mb-4">
         <ol className="flex items-center gap-1">
           {steps.map((s, idx) => {
             const isActive =
@@ -1791,7 +1802,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
                     : "color-mix(in srgb, var(--color-ink) 40%, transparent)",
               }}
             >
-              {reason.length}/10 min
+              {t("fiscal.adjustment_create_reason_counter", { count: reason.length })}
             </span>
           </label>
           <textarea
@@ -1810,7 +1821,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
               if (!reasonTouched) setReasonTouched(true);
             }}
             onBlur={() => setReasonTouched(true)}
-            placeholder="Describa el motivo del ajuste (mín. 10 caracteres)"
+            placeholder={t("fiscal.adjustment_create_reason_placeholder")}
             aria-label={t("fiscal.adjustment_create_reason_label")}
             aria-invalid={
               reason.trim().length < 10 && reasonTouched ? true : undefined
@@ -1863,7 +1874,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
                 "color-mix(in srgb, var(--color-ink) 55%, transparent)",
             }}
           >
-            Factura: {invoiceId} ({invoiceStatus})
+            {t("fiscal.adjustment_create_invoice_label")}: {invoiceId} ({invoiceStatus})
           </p>
         </div>
 

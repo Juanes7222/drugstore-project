@@ -341,8 +341,8 @@ export const FiscalInvoiceDetailPanel: FC<FiscalInvoiceDetailPanelProps> = ({
           <div
             className="rounded-pos p-2 text-caption font-medium"
             style={{
-              backgroundColor: actionMessage.startsWith("Error") ? "color-mix(in srgb, #D32F2F 8%, white)" : "color-mix(in srgb, var(--color-pharma) 8%, white)",
-              color: actionMessage.startsWith("Error") ? "#D32F2F" : "var(--color-pharma)",
+              backgroundColor: actionMessage.startsWith("Error") ? "var(--color-error-container)" : "color-mix(in srgb, var(--color-pharma) 8%, white)",
+              color: actionMessage.startsWith("Error") ? "var(--color-error)" : "var(--color-pharma)",
             }}
             role="alert"
           >
@@ -370,9 +370,9 @@ export const FiscalInvoiceDetailPanel: FC<FiscalInvoiceDetailPanelProps> = ({
               disabled={isCancelling}
               aria-label={t("fiscal.action_cancel")}
               style={{
-                backgroundColor: "color-mix(in srgb, #D32F2F 10%, white)",
-                color: "#D32F2F",
-                borderColor: "color-mix(in srgb, #D32F2F 30%, transparent)",
+                backgroundColor: "var(--color-error-container)",
+                color: "var(--color-error)",
+                borderColor: "color-mix(in srgb, var(--color-error) 30%, transparent)",
               }}
             >
               {isCancelling ? t("fiscal.action_cancelling") : t("fiscal.action_cancel")}

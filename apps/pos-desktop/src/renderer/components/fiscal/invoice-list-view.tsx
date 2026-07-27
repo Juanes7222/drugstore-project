@@ -15,22 +15,35 @@ interface InvoiceListViewProps {
   isLoading?: boolean;
 }
 
-/**
- * Map an invoice status code to a Tailwind colour class pair.
- */
-const STATUS_CLASSES: Record<string, string> = {
-  CONTINGENCY_PENDING_TRANSMISSION: "text-amber-700 bg-amber-50",
-  TRANSMITTED_AUTHORIZED: "text-green-700 bg-green-50",
-  TRANSMITTED_REJECTED: "text-red-700 bg-red-50",
-  EXPIRED_CONTINGENCY: "text-gray-600 bg-gray-100",
-  CANCELLED: "text-gray-400 bg-gray-50",
+/** Map an invoice status code to design-token inline styles. */
+const STATUS_STYLES: Record<string, React.CSSProperties> = {
+  CONTINGENCY_PENDING_TRANSMISSION: {
+    backgroundColor: "var(--color-urgency-surface)",
+    color: "var(--color-urgency)",
+  },
+  TRANSMITTED_AUTHORIZED: {
+    backgroundColor: "color-mix(in srgb, var(--color-pharma) 10%, white)",
+    color: "var(--color-pharma)",
+  },
+  TRANSMITTED_REJECTED: {
+    backgroundColor: "var(--color-error-container)",
+    color: "var(--color-error)",
+  },
+  EXPIRED_CONTINGENCY: {
+    backgroundColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
+    color: "var(--color-ink-muted)",
+  },
+  CANCELLED: {
+    backgroundColor: "color-mix(in srgb, var(--color-ink) 6%, transparent)",
+    color: "color-mix(in srgb, var(--color-ink) 40%, transparent)",
+  },
 };
 
 /** Default fallback when status is unknown. */
-const STATUS_FALLBACK_CLASS = "text-gray-700 bg-gray-100";
-
-const statusColor = (status: string): string =>
-  STATUS_CLASSES[status] ?? STATUS_FALLBACK_CLASS;
+const STATUS_FALLBACK_STYLE: React.CSSProperties = {
+  backgroundColor: "color-mix(in srgb, var(--color-ink) 10%, transparent)",
+  color: "var(--color-ink-muted)",
+};
 
 export const InvoiceListView: FC<InvoiceListViewProps> = ({
   invoices,
@@ -167,7 +180,10 @@ export const InvoiceListView: FC<InvoiceListViewProps> = ({
                     ${formatAmount(inv.totalAmount)}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
-                    <span className={`pos-badge ${statusColor(inv.status)}`}>
+                    <span
+                      className="pos-badge text-caption"
+                      style={STATUS_STYLES[inv.status] ?? STATUS_FALLBACK_STYLE}
+                    >
                       {statusLabel(inv.status)}
                     </span>
                   </td>
