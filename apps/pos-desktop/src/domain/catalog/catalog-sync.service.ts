@@ -19,6 +19,17 @@
  *
  * Price and tax histories are synced from the server's `currentPrice` and
  * `currentTax` fields so the POS can display prices and taxes while offline.
+ *
+ * ## Local-write safety
+ * Product edits made locally (price/tax change, soft-delete) are enqueued
+ * in the SyncQueue as `PRODUCT_CREATION` or `PRODUCT_UPDATE` operations.
+ * A pull-sync that overwrites `currentPriceId` or `currentTaxHistoryId`
+ * with server data while a local edit is still pending would silently
+ * destroy the cashier's change.  `hasPendingLocalEdit` below guards against
+ * that — if a pending product operation exists for the product being
+ * pulled, the price/tax pointer update is skipped and the local edit wins.
+ * The product's other fields (name, stock minimums, etc.) are still
+ * refreshed because those don't conflict with the pending edit.
  */
 
 import { PrismaClient, Prisma } from '@pharmacy/database/local';
@@ -150,6 +161,21 @@ export class CatalogSyncService {
 
       // Upsert products and their barcodes
       for (const prod of products as ProductRow[]) {
+        // Detect a pending local product edit (price change, tax change,
+        // soft-delete) before we touch the price/tax pointers.  If one
+        // exists the server's currentPrice/currentTax must NOT win — the
+        // local edit is newer and has not been pushed yet.
+        const hasPendingLocalEdit = await tx.syncQueue
+          .findFirst({
+            where: {
+              operationType: { in: ['PRODUCT_CREATION', 'PRODUCT_UPDATE'] },
+              status: { in: ['PENDING', 'FAILED'] },
+              payload: { contains: prod.id },
+            },
+            select: { id: true, operationType: true },
+          })
+          .then((row) => row !== null);
+
         await tx.product.upsert({
           where: { id: prod.id },
           create: mapProductForCreate(prod),
@@ -173,8 +199,10 @@ export class CatalogSyncService {
           }
         }
 
-        // Sync active price history (two-step: create history, then point to it)
-        if (prod.currentPrice) {
+        // Sync active price history (two-step: create history, then point to it).
+        // Skip the pointer update when a local edit is pending — the cashier's
+        // price change must not be silently overwritten by stale server data.
+        if (prod.currentPrice && !hasPendingLocalEdit) {
           await tx.productPriceHistory.upsert({
             where: { id: prod.currentPrice.id },
             create: mapPriceHistoryForCreate(prod.currentPrice),
@@ -186,13 +214,17 @@ export class CatalogSyncService {
           });
         }
 
-        // Sync active tax history (two-step: create history, then point to it)
+        // Sync active tax history (two-step: create history, then point to it).
+        // Same guard: when a local edit is pending, the server's tax pointer
+        // must not win.  The price history row above is still upserted (idempotent)
+        // so when the local edit eventually pushes and clears, the next pull will
+        // find the row already present.
         // Assumes the referenced TaxScheme was already upserted earlier in
         // this same transaction (from the taxSchemes fetch).  If fetchTaxSchemes
         // returned empty but a product references a scheme, the FK constraint
         // will cause the transaction to roll back — which is the correct
         // outcome for inconsistent server data.
-        if (prod.currentTax) {
+        if (prod.currentTax && !hasPendingLocalEdit) {
           await tx.productTaxHistory.upsert({
             where: { id: prod.currentTax.id },
             create: mapTaxHistoryForCreate(prod.currentTax),

@@ -21,6 +21,17 @@ export const TotalsSummary: FC<TotalsSummaryProps> = ({
 }) => {
   const { t } = useTranslation();
 
+  /**
+   * Effective tax rate rounded to nearest integer, derived from the actual
+   * per-item taxCents.  When all items share the same rate this matches the
+   * product's taxPercentage exactly (e.g. 19 → "IVA (19%)", 0 → "IVA (0%)").
+   * For mixed-rate carts the displayed percentage is an approximation.
+   */
+  const effectiveRate =
+    subtotalCents > 0
+      ? Math.round((taxCents / subtotalCents) * 100)
+      : 0;
+
   return (
     <div className="mt-auto pt-pos-md">
       <div
@@ -39,7 +50,7 @@ export const TotalsSummary: FC<TotalsSummaryProps> = ({
 
       <div className="mt-pos-xs flex justify-between text-body">
         <span style={{ color: "color-mix(in srgb, var(--color-ink) 70%, transparent)" }}>
-          {t("sales.cart.tax")}
+          {t("sales.cart.tax", { rate: effectiveRate })}
         </span>
         <span className="font-data tabular-nums">{formatCurrency(taxCents)}</span>
       </div>

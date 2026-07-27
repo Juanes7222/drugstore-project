@@ -493,7 +493,7 @@
       "empty": "El carrito está vacío",
       "checkout": "COBRAR",
       "subtotal": "Subtotal",
-      "tax": "IVA (19%)",
+"tax": "IVA ({{rate}}%)",
       "total": "TOTAL"
     },
     "product": {

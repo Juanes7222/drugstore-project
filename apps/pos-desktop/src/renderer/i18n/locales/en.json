@@ -452,7 +452,7 @@
       "empty": "The cart is empty",
       "checkout": "PAY",
       "subtotal": "Subtotal",
-      "tax": "VAT (19%)",
+      "tax": "VAT ({{rate}}%)",
       "total": "TOTAL"
     },
     "product": {

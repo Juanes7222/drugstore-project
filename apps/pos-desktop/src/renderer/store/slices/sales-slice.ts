@@ -3,7 +3,11 @@
  *
  * Responsibilities:
  *   - Track line items, quantities, and selected lots.
- *   - Expose computed totals via selectors (subtotal, IVA 19%, grand total).
+ *   - Expose computed totals via selectors (subtotal, IVA per product rate, grand total).
+ *
+ * Tax is computed per cart item using each item's `taxPercentage` field (e.g. 19, 5, 0)
+ * rather than a flat rate, so exempt items (EXENTO, 0%) and reduced-rate items (5%, 8%)
+ * are correctly reflected in the total.
  *
  * The slice never imports the catalog implementation — it only receives
  * already-shaped CartItem objects from components/services.
@@ -15,8 +19,6 @@ import {
   SalesState,
   SelectedClient,
 } from "./sales-types";
-
-const TAX_RATE = 0.19;
 
 const initialState: SalesState = {
   items: [],
@@ -101,9 +103,20 @@ export const selectSubtotalCents = createSelector(
     ),
 );
 
+/**
+ * Tax in cents, computed per cart item using each item's own taxPercentage.
+ *
+ * taxPercentage is an integer percentage (e.g. 19 for 19%, 5 for 5%, 0 for exempt).
+ * Items without a taxPercentage are treated as exempt (0%).
+ */
 export const selectTaxCents = createSelector(
-  [selectSubtotalCents],
-  (subtotal) => Math.round(subtotal * TAX_RATE),
+  [selectCartItems],
+  (items) =>
+    items.reduce((sum, item) => {
+      const taxRate = (item.taxPercentage ?? 0) / 100;
+      const itemTotal = item.unitPriceCents * item.quantity;
+      return sum + Math.round(itemTotal * taxRate);
+    }, 0),
 );
 
 export const selectTotalCents = createSelector(

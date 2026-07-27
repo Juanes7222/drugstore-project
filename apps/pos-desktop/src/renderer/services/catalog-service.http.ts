@@ -49,7 +49,12 @@ interface ServerLotsResponse {
   pageSize: number;
 }
 
-const DEFAULT_TAX_PERCENTAGE = 19;
+/**
+ * When the server does not return tax data for a product, default to 0 (exento)
+ * rather than 19. Charging IVA on products without known tax info would overcharge
+ * exempt items — the safer default is to not apply tax.
+ */
+const DEFAULT_TAX_PERCENTAGE = 0;
 const SEARCH_PAGE_SIZE = 20;
 const LOTS_PAGE_SIZE = 100;
 

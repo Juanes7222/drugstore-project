@@ -81,8 +81,6 @@ export const Receipt: FC = () => {
     if (items.length === 0) return "";
 
     const invoiceNumber = generatePreviewInvoiceNumber();
-    const taxRate =
-      items.length > 0 ? (items[0].taxPercentage ?? 19) : 19;
 
     const lineItems: InvoiceLineItem[] = items.map((item) => {
       const itemSubtotal = (item.unitPriceCents * item.quantity) / 100;
@@ -118,14 +116,35 @@ export const Receipt: FC = () => {
       cardLastFour: null,
     }));
 
-    const taxSummaries: InvoiceTaxSummary[] = [
-      {
-        scheme: "IVA",
-        rate: (taxRate / 100).toFixed(2),
-        taxableAmount: centsToDecimalStr(subtotalCents),
-        taxAmount: centsToDecimalStr(taxCents),
-      },
-    ];
+    // Group items by tax percentage for DIAN-compliant per-rate summaries
+    const taxRateGroups = new Map<
+      number,
+      { taxableAmount: number; taxAmount: number }
+    >();
+    for (const item of items) {
+      const taxPct = item.taxPercentage ?? 0;
+      const itemSubtotal = (item.unitPriceCents * item.quantity) / 100;
+      const itemTaxAmount = itemSubtotal * (taxPct / 100);
+      const group = taxRateGroups.get(taxPct);
+      if (group) {
+        group.taxableAmount += itemSubtotal;
+        group.taxAmount += itemTaxAmount;
+      } else {
+        taxRateGroups.set(taxPct, {
+          taxableAmount: itemSubtotal,
+          taxAmount: itemTaxAmount,
+        });
+      }
+    }
+
+    const taxSummaries: InvoiceTaxSummary[] = Array.from(
+      taxRateGroups.entries(),
+    ).map(([ratePct, { taxableAmount, taxAmount }]) => ({
+      scheme: "IVA",
+      rate: (ratePct / 100).toFixed(2),
+      taxableAmount: taxableAmount.toFixed(2),
+      taxAmount: taxAmount.toFixed(2),
+    }));
 
     const fullData: InvoiceFullData = {
       invoiceType: "ELECTRONIC_INVOICE",
