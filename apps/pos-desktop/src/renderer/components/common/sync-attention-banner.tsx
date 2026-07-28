@@ -8,6 +8,10 @@
  *
  * Hidden entirely when all counts are zero.
  * Polls every 30s, pauses on tab hide.
+ *
+ * The PERMANENT_FAILURE variant offers a "Discard all" action for clearing
+ * test/noise entries. Two-step inline confirm (no modal) keeps the action
+ * close at hand for power users without disrupting the cashier's flow.
  */
 
 import { type FC, useCallback, useEffect, useRef, useState } from "react";
@@ -17,10 +21,13 @@ import {
   TriangleAlert,
   AlertTriangle,
   Clock,
+  Trash2,
 } from "lucide-react";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
 import type { PrismaClient } from "@pharmacy/database/local";
 import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
+import { createSyncRecoveryService } from "../../../domain/sync/sync-recovery.service";
+import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 
 type BannerVariant = "permanent_failure" | "pending" | "backup_critical";
 
@@ -69,6 +76,10 @@ export const SyncAttentionBanner: FC = () => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  // Discard-all inline confirmation state
+  const [discardAllConfirming, setDiscardAllConfirming] = useState(false);
+  const [discardAllSubmitting, setDiscardAllSubmitting] = useState(false);
+
   const checkMetrics = useCallback(async () => {
     try {
       const { prisma: rawPrisma } = await getLocalDatabase();
@@ -103,14 +114,52 @@ export const SyncAttentionBanner: FC = () => {
       }
     };
 
-    document.addEventListener("visibilityChange", onVisibilityChange);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     intervalRef.current = setInterval(checkMetrics, 30_000);
 
     return () => {
-      document.removeEventListener("visibilityChange", onVisibilityChange);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [checkMetrics]);
+
+  // Reset the discard-confirm state when the banner hides
+  useEffect(() => {
+    if (!hasPermanentFailures && discardAllConfirming) {
+      setDiscardAllConfirming(false);
+    }
+  }, [hasPermanentFailures, discardAllConfirming]);
+
+  const handleDiscardAllClick = useCallback(() => {
+    if (discardAllConfirming) {
+      // Second click — execute
+      void executeDiscardAll();
+    } else {
+      // First click — ask for confirmation
+      setDiscardAllConfirming(true);
+    }
+  }, [discardAllConfirming]);
+
+  const executeDiscardAll = useCallback(async () => {
+    setDiscardAllSubmitting(true);
+    try {
+      const session = useLocalSessionStore.getState().session;
+      const actorUserId = session?.userId ?? "system";
+      const { prisma: rawPrisma } = await getLocalDatabase();
+      const prisma = rawPrisma as PrismaClient;
+      const recoveryService = createSyncRecoveryService({ prisma });
+      await recoveryService.discardAllPermanentFailures(
+        t("sync.attention_banner.discard_all_reason"),
+        actorUserId,
+      );
+      setDiscardAllConfirming(false);
+      await checkMetrics();
+    } catch {
+      // Leave the user on the confirming state so they can retry or close
+    } finally {
+      setDiscardAllSubmitting(false);
+    }
+  }, [checkMetrics, t]);
 
   // Priority: backup_critical > permanent_failure > pending
   let variant: BannerVariant | null = null;
@@ -149,6 +198,47 @@ export const SyncAttentionBanner: FC = () => {
           <span className="text-ink/60 text-caption">
             {t(config!.descKey)}
           </span>
+
+          {variant === "permanent_failure" && (
+            <div className="ml-auto flex items-center gap-2">
+              {discardAllConfirming && (
+                <span className="text-caption text-ink/60">
+                  {t("sync.attention_banner.discard_all_confirm_hint")}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={
+                  discardAllConfirming
+                    ? () => setDiscardAllConfirming(false)
+                    : handleDiscardAllClick
+                }
+                disabled={discardAllSubmitting}
+                className={`flex items-center gap-1 rounded border px-2 py-0.5 text-caption font-medium transition-colors disabled:opacity-50 ${
+                  discardAllConfirming
+                    ? "border-ink/20 bg-white text-ink/70 hover:bg-ink/5"
+                    : "border-urgency/40 bg-white/60 text-urgency hover:bg-urgency/10"
+                }`}
+              >
+                {discardAllConfirming
+                  ? t("common.cancel", "Cancelar")
+                  : t("sync.attention_banner.discard_all_button")}
+              </button>
+              {discardAllConfirming && (
+                <button
+                  type="button"
+                  onClick={handleDiscardAllClick}
+                  disabled={discardAllSubmitting}
+                  className="flex items-center gap-1 rounded border border-red-500 bg-red-600 px-2 py-0.5 text-caption font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3 w-3" aria-hidden="true" />
+                  {discardAllSubmitting
+                    ? t("common.processing", "Procesando…")
+                    : t("sync.attention_banner.discard_all_confirm_button")}
+                </button>
+              )}
+            </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

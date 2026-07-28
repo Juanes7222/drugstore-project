@@ -608,7 +608,7 @@ export class ReturnsService {
   ): Array<{ lotId: string; quantity: number; unitCostAtSale: Prisma.Decimal }> {
     // Reverse in LIFO order (last consumed lot gets stock back first)
     const sorted = [...originalLotAssignments].sort(
-      (a, b) => 0, // preserve original order — the SaleItemLot creation order IS the FEFO consumption order
+      (_a, _b) => 0, // preserve original order — the SaleItemLot creation order IS the FEFO consumption order
     );
 
     // Actually, we need to reverse the FEFO order for LIFO reversal:

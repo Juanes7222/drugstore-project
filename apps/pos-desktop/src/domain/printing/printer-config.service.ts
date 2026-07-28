@@ -398,11 +398,11 @@ class PrinterConfigServiceImpl implements PrinterConfigService {
       }
       visited.add(current);
 
-      const p = await this.prisma.printerConfig.findUnique({
+      const printerRow: { fallbackPrinterId: string | null } | null = await this.prisma.printerConfig.findUnique({
         where: { id: current },
         select: { fallbackPrinterId: true },
       });
-      current = p?.fallbackPrinterId ?? null;
+      current = printerRow?.fallbackPrinterId ?? null;
     }
   }
 }

@@ -333,7 +333,7 @@ export class InventoryAdjustmentsService {
       });
 
       // 4. Insert SyncQueue entry inside the same transaction
-      await this.createSyncQueueEntry(tx, adjustment, input, session, appliedAt);
+      await this.createSyncQueueEntry(tx, adjustment, session, appliedAt);
 
       return updated;
     }).then((result) => {
@@ -360,7 +360,7 @@ export class InventoryAdjustmentsService {
     },
   ): Promise<void> {
     // Find or select the target lot
-    let lot: { id: string; currentStock: number; version: number; state: string } | null = null;
+    let lot: { id: string; currentStock: number; version: number; state: LotState } | null = null;
 
     if (params.lotId) {
       lot = await tx.lot.findUnique({
@@ -534,7 +534,6 @@ export class InventoryAdjustmentsService {
   private async createSyncQueueEntry(
     tx: Prisma.TransactionClient,
     adjustment: { id: string; sequentialNumber: number; reason: string | null; notes: string | null },
-    input: CreateAdjustmentInput,
     session: { userId: string; workstationId: string },
     appliedAt: Date,
   ): Promise<void> {

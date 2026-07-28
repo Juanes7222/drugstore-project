@@ -48,13 +48,10 @@ export interface HealthCheckReport {
 export const createPrinterHealthService = (
   printerConfigService: PrinterConfigService,
   printQueueService: PrintQueueService,
-  /** Optional external online check. If false, health check still runs. */
-  isOnline: () => boolean,
 ): PrinterHealthService => {
   return new PrinterHealthServiceImpl(
     printerConfigService,
     printQueueService,
-    isOnline,
   );
 };
 
@@ -65,7 +62,6 @@ class PrinterHealthServiceImpl implements PrinterHealthService {
   constructor(
     private readonly printerConfigService: PrinterConfigService,
     private readonly printQueueService: PrintQueueService,
-    private readonly isOnline: () => boolean,
   ) {}
 
   start(): void {

@@ -12,7 +12,7 @@
 import type { PrinterConfigService } from './printer-config.service';
 import type { PrintQueueService } from './print-queue.service';
 import type { CashDrawerService } from './cash-drawer.service';
-import type { PrinterStatusCode } from './printing-types';
+
 
 export interface PrinterNotificationRule {
   id: string;
@@ -47,7 +47,7 @@ export interface PrinterNotification {
 export async function checkPrinterNotifications(
   printerConfigService: PrinterConfigService,
   printQueueService: PrintQueueService,
-  cashDrawerService: CashDrawerService,
+  _cashDrawerService: CashDrawerService,
 ): Promise<PrinterNotification[]> {
   const notifications: PrinterNotification[] = [];
   const printers = await printerConfigService.listAll();

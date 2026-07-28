@@ -246,7 +246,11 @@
       "pending_title": "Operaciones pendientes",
       "pending_description": "Hay operaciones esperando sincronizarse con el servidor.",
       "backup_critical_title": "Respaldo crítico",
-      "backup_critical_description": "El estado del respaldo es crítico — contacte a un administrador."
+      "backup_critical_description": "El estado del respaldo es crítico — contacte a un administrador.",
+      "discard_all_button": "Descartar todas",
+      "discard_all_confirm_button": "Confirmar descarte",
+      "discard_all_confirm_hint": "¿Descartar todos los errores permanentes?",
+      "discard_all_reason": "Descartadas desde el banner por el operador"
     },
     "test_connection": "Probar conexión",
     "connected_label": "Conectado",

@@ -24,13 +24,12 @@
  * is created inside the same transaction. The server re-validates the
  * prescription data for fiscal compliance.
  */
-import { PrismaClient, RecipeType } from '@pharmacy/database/local';
+import { PrismaClient, Prisma, RecipeType } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import { RoleType } from '@pharmacy/shared-types';
 import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import {
   PrescriptionSaleItemNotFoundException,
-  PrescriptionNotFoundException,
   ControlledSubstanceFieldsRequiredException,
   PrescriptionAlreadyExistsException,
 } from './exceptions';

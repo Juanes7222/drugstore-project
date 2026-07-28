@@ -205,7 +205,11 @@
       "pending_title": "Operations pending",
       "pending_description": "Operations waiting to sync with the server.",
       "backup_critical_title": "Backup critical",
-      "backup_critical_description": "Backup status is critical — contact a manager."
+      "backup_critical_description": "Backup status is critical — contact a manager.",
+      "discard_all_button": "Discard all",
+      "discard_all_confirm_button": "Confirm discard",
+      "discard_all_confirm_hint": "Discard all permanent errors?",
+      "discard_all_reason": "Discarded from banner by operator"
     },
     "test_connection": "Test connection",
     "connected_label": "Connected",

@@ -63,13 +63,6 @@ function setBold(on: boolean): number[] {
   return cmd(ESC, 0x45, on ? 1 : 0);
 }
 
-function setUnderline(mode: 0 | 1 | 2): number[] {
-  return cmd(ESC, 0x2D, mode);
-}
-
-function setDoubleWidth(on: boolean): number[] {
-  return cmd(ESC, 0x21, on ? 0x20 : 0x00);
-}
 
 function setDoubleHeight(on: boolean): number[] {
   return cmd(ESC, 0x21, on ? 0x10 : 0x00);

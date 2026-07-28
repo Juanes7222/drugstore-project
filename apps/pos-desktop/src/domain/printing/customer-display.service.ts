@@ -26,7 +26,6 @@
 import type { PrinterConfigService } from './printer-config.service';
 import {
   type CustomerDisplayConfig,
-  type CustomerDisplayMode,
   type DisplayContent,
 } from './printing-types';
 
@@ -105,9 +104,6 @@ export const createCustomerDisplayService = (
 class CustomerDisplayServiceImpl implements CustomerDisplayService {
   /** Per-session display failure tracking. */
   private displayFailures = new Map<string, boolean>();
-  /** Line items accumulated during the current sale. */
-  private currentItems: string[] = [];
-
   constructor(
     private readonly printerConfigService: PrinterConfigService,
   ) {}
@@ -149,12 +145,10 @@ class CustomerDisplayServiceImpl implements CustomerDisplayService {
     await this.updateDisplay(printerId, {
       message: config.idleMessage,
     });
-    this.currentItems = [];
   }
 
   async showWelcome(printerId: string): Promise<void> {
     const config = await this.getConfig(printerId);
-    this.currentItems = [];
     this.displayFailures.set(printerId, false);
 
     await this.updateDisplay(printerId, {
@@ -180,7 +174,6 @@ class CustomerDisplayServiceImpl implements CustomerDisplayService {
     const lineItems = items.map(
       (item) => `${item.qty}x ${this.truncate(item.name, 15)} ${this.formatPrice(item.price)}`,
     );
-    this.currentItems = lineItems;
 
     const displayContent: DisplayContent = {
       lineItems,

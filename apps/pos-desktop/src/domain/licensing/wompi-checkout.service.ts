@@ -16,7 +16,6 @@
 import { API_BASE_URL } from '../../infrastructure/config';
 import {
   BillingPeriod,
-  type PlanSeedDefinition,
   type WompiTransactionStatus,
 } from '@pharmacy/shared-types';
 

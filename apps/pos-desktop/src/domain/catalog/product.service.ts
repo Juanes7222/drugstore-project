@@ -57,7 +57,6 @@ import { RoleType } from '@pharmacy/shared-types';
 import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import {
   ProductNotFoundException,
-  ProductCreationException,
   ProductUpdateException,
   DuplicateBarcodeException,
   UnsyncedReferenceException,
@@ -427,9 +426,6 @@ export class ProductService {
         priceHistories: {
           where: { effectiveTo: null },
           take: 1,
-          include: {
-            changedByUser: { select: { id: true, displayName: true } },
-          },
         },
         costHistories: {
           where: { effectiveTo: null },
@@ -441,7 +437,6 @@ export class ProductService {
           take: 1,
           include: {
             taxScheme: { select: { id: true, code: true, name: true, taxType: true, rate: true } },
-            changedByUser: { select: { id: true, displayName: true } },
           },
         },
         category: { select: { id: true, name: true } },
@@ -972,9 +967,11 @@ export class ProductService {
       if (input.therapeuticIndication !== undefined) updateData.therapeuticIndication = input.therapeuticIndication;
       if (input.storageConditions !== undefined) updateData.storageConditions = input.storageConditions;
       if (input.internalNotes !== undefined) updateData.internalNotes = input.internalNotes;
-      if (sanitizedCategoryId !== undefined) updateData.categoryId = sanitizedCategoryId;
+      if (sanitizedCategoryId !== undefined) {
+        updateData.category = { connect: { id: sanitizedCategoryId } };
+      }
       if (sanitizedPharmaceuticalFormId !== undefined) {
-        updateData.pharmaceuticalFormId = sanitizedPharmaceuticalFormId;
+        updateData.pharmaceuticalForm = { connect: { id: sanitizedPharmaceuticalFormId } };
       }
 
       // 2. Handle barcode replacement (if provided, full replace)

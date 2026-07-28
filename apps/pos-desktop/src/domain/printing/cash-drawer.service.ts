@@ -181,7 +181,7 @@ class CashDrawerServiceImpl implements CashDrawerService {
 
   private async updateCashDrawerConfig(printerId: string, json: string): Promise<void> {
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
+      const { invoke: _invoke } = await import('@tauri-apps/api/core');
       // In Tauri, we can use a SQL query directly via the PGlite client
       // For now, update via the prisma direct access
       const { getLocalDatabase } = await import('../../infrastructure/local-database');

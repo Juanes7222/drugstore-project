@@ -160,6 +160,8 @@ export function useFiscalServices(): FiscalServicesResult {
         newPin: "",
         message: "Not available",
       }),
+      updateUser: async () => ({ message: "Not available" }),
+      deleteUser: async () => ({ message: "Not available" }),
       getPendingStepUpRequests: async (): Promise<any[]> => [],
       getAuditLogs: async () => ({}),
     } satisfies AuthService;

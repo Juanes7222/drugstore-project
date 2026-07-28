@@ -102,7 +102,6 @@ export function createPrintingServices(
   const printerHealth = createPrinterHealthService(
     printerConfig,
     printQueue,
-    io.isOnline ?? (() => true),
   );
 
   const configExport = createConfigExportService(

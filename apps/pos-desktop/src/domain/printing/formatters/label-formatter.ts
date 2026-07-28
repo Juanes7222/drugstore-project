@@ -16,7 +16,6 @@
  */
 
 import { PaperSize, type VariableContext } from '../printing-types';
-import { resolveTemplateVariables } from './template-engine';
 
 // Label dimensions in mm converted to CSS pixels (1mm ≈ 3.78px at 96dpi)
 const LABEL_DIMENSIONS: Record<string, { widthMm: number; heightMm: number; cssWidth: number; cssHeight: number }> = {
