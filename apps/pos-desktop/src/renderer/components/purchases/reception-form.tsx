@@ -238,7 +238,7 @@ export const ReceptionForm: FC<ReceptionFormProps> = ({
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs text-ink-muted mb-0.5">
-                      {t('purchases.receptions.productId')}
+                      {t('purchases.receptions.product')}
                     </label>
                     <SearchableSelect
                       options={productResults}

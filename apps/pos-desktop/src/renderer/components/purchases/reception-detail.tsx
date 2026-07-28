@@ -139,7 +139,7 @@ export const ReceptionDetail: FC<ReceptionDetailProps> = ({
       <div className="pos-panel overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="sticky top-0 bg-white z-10 border-b border-border text-left text-ink-muted text-xs uppercase tracking-wider bg-surface/50">
+            <tr className="sticky top-0 bg-white z-10 border-b border-border text-left text-ink-muted text-xs uppercase tracking-wider">
               <th className="py-2 px-3 font-semibold">{t('purchases.receptions.product')}</th>
               <th className="py-2 px-3 font-semibold">{t('purchases.receptions.lot')}</th>
               <th className="py-2 px-3 font-semibold">{t('purchases.receptions.expiry')}</th>
@@ -152,7 +152,7 @@ export const ReceptionDetail: FC<ReceptionDetailProps> = ({
           <tbody>
             {reception.items.map((item) => (
               <tr key={item.id} className="border-b border-border/40 hover:bg-surface/30">
-                <td className="py-3 px-3 font-medium">{item.productId}</td>
+                <td className="py-3 px-3 font-medium">{item.productName}</td>
                 <td className="py-3 px-3 font-data tabular-nums text-xs">
                   {item.lotNumber ?? '—'}
                 </td>

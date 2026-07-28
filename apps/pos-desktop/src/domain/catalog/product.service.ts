@@ -30,6 +30,26 @@
  * transaction. Soft-delete (`isActive = false`) does NOT create a sync
  * entry — deletion is replicated by the server as a side effect of
  * processing PRODUCT_CREATION/PRODUCT_UPDATE.
+ *
+ * ### Sync payload contract
+ * The `createProductDto` built for the sync queue mirrors the server's
+ * `CreateProductSchema` (apps/server/src/modules/catalog/dto/create-product.dto.ts).
+ * Two non-obvious requirements the POS used to get wrong:
+ * - `initialPrice` is a flat top-level string, not a nested `price` object.
+ * - `initialTaxSchemeId` is a flat top-level string, not a nested `tax.taxSchemeId`.
+ * - `pharmaceuticalFormId` / `categoryId` (optional) must be a non-empty
+ *   string when present — empty strings are rejected by the server's
+ *   Zod schema as `z.string().min(1)`.
+ *
+ * Reference ids must be a non-empty string that is not a `seed-*` local
+ * only id, AND must exist in the local cache (taxScheme /
+ * pharmaceuticalForm / category rows). The server accepts both
+ * canonical UUIDs and the slug-style ids used by the seed
+ * (`tax_exento`, `pf_tablet`, `cat_antibiotics`, etc. — see
+ * packages/database/prisma/schema.prisma:10-14), so the only format
+ * check the POS enforces is "not a `seed-` local-only id". The local
+ * cache existence check is what actually protects against pushing an id
+ * the server has never seen.
  */
 import { PrismaClient, Prisma, SaleType } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
@@ -39,6 +59,7 @@ import {
   ProductCreationException,
   ProductUpdateException,
   DuplicateBarcodeException,
+  UnsyncedReferenceException,
 } from './exceptions';
 
 // ---------------------------------------------------------------------------
@@ -174,6 +195,97 @@ export const createProductService = (
   auth: AuthService,
 ): ProductService => {
   return new ProductService(prisma, auth);
+};
+
+// ---------------------------------------------------------------------------
+// Sync payload helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Prefix used by the offline catalog seed rows created in
+ * `src/infrastructure/local-database.ts` (e.g. `seed-iva-19`,
+ * `seed-iva-5`, `seed-exento`, `seed-inc`). The server has no
+ * equivalent rows — its seed uses slug-style ids like `tax_exento` —
+ * so any `seed-` id would be rejected by the sync push. Kept as a
+ * single constant so the producer and any future Zod mirror stay
+ * aligned without hardcoding the prefix in more than one place.
+ */
+const LOCAL_SEED_PREFIX = 'seed-';
+
+/**
+ * True when the trimmed value starts with the local seed prefix
+ * (case-insensitive). These ids are POS-local-only and must never be
+ * sent to the server.
+ */
+const isLocalSeedId = (value: string | null | undefined): boolean => {
+  return (
+    typeof value === 'string' &&
+    value.trim().toLowerCase().startsWith(LOCAL_SEED_PREFIX)
+  );
+};
+
+/**
+ * Normalise an optional reference field for the sync payload.
+ *
+ * - `null` / `undefined` / whitespace-only string  → `undefined`
+ *   (so the server's `.optional()` skips the field).
+ * - `seed-` local-only id  → throws `UnsyncedReferenceException` with
+ *   `reason: 'local_seed_id'` so the producer fails fast with a clear,
+ *   typed error instead of letting the server reject it as "unknown id".
+ * - Any other non-empty string  → returned trimmed. The server accepts
+ *   both canonical UUIDs and slug-style ids (`tax_exento`, `pf_tablet`,
+ *   `cat_antibiotics`, etc.), so no format check is applied here beyond
+ *   the local-seed exclusion. The local cache existence check
+ *   (`assertReferenceExists`) is what actually catches typos and
+ *   unsynced ids.
+ */
+export const sanitizeOptionalReferenceId = (
+  value: string | null | undefined,
+  referenceType: 'pharmaceuticalForm' | 'category',
+): string | undefined => {
+  if (value == null) return undefined;
+  const trimmed = value.trim();
+  if (trimmed === '') return undefined;
+  if (isLocalSeedId(trimmed)) {
+    throw new UnsyncedReferenceException(
+      referenceType,
+      value,
+      'local_seed_id',
+    );
+  }
+  return trimmed;
+};
+
+/**
+ * Require a non-empty, non-seed reference id for a mandatory field.
+ *
+ * Used for `initialTaxSchemeId`, which the server validates as a
+ * required `z.string().min(1)`. The only ids this helper rejects are
+ * `seed-*` local-only rows (and empty / null values) — every other
+ * non-empty string is accepted on the assumption that the follow-up
+ * `assertReferenceExists` call will catch ids that the server has
+ * never heard of. The server accepts both UUIDs and slug-style ids.
+ */
+export const requireServerReferenceId = (
+  value: string | null | undefined,
+  referenceType: 'taxScheme' | 'pharmaceuticalForm' | 'category',
+): string => {
+  if (typeof value !== 'string') {
+    throw new UnsyncedReferenceException(
+      referenceType,
+      value ?? '',
+      'local_seed_id',
+    );
+  }
+  const trimmed = value.trim();
+  if (trimmed === '' || isLocalSeedId(trimmed)) {
+    throw new UnsyncedReferenceException(
+      referenceType,
+      value,
+      'local_seed_id',
+    );
+  }
+  return trimmed;
 };
 
 // ---------------------------------------------------------------------------
@@ -433,12 +545,24 @@ export class ProductService {
    *
    * 1. Generates an OFFLINE-{uuid} internalCode for offline-created products.
    * 2. Validates that primary barcode is not a duplicate.
-   * 3. Creates the product row with null price/tax pointers.
-   * 4. Creates the initial ProductPriceHistory and ProductTaxHistory rows.
-   * 5. Updates product with currentPriceId and currentTaxHistoryId.
-   * 6. Inserts a SyncQueue row (PRODUCT_CREATION) inside the same transaction.
+   * 3. Validates that every reference id is a non-empty string that is
+   *    not a `seed-` local-only id, AND exists in the local cache (tax
+   *    scheme is required; form/category optional). Fails fast with
+   *    `UnsyncedReferenceException` (reason `local_seed_id` or
+   *    `not_in_local_cache`) so the operator sees the problem
+   *    immediately rather than after a failed sync round-trip.
+   * 4. Creates the product row with null price/tax pointers.
+   * 5. Creates the initial ProductPriceHistory and ProductTaxHistory rows.
+   * 6. Updates product with currentPriceId and currentTaxHistoryId.
+   * 7. Inserts a SyncQueue row (PRODUCT_CREATION) inside the same transaction.
+   *    The payload mirrors the server's `CreateProductDto` shape, with
+   *    `initialPrice` and `initialTaxSchemeId` as flat top-level fields
+   *    (not nested `price` / `tax` objects).
    *
-   * @throws ProductCreationException if barcode is duplicate.
+   * @throws DuplicateBarcodeException if any barcode is already in use.
+   * @throws UnsyncedReferenceException if a referenced tax scheme /
+   *         pharmaceutical form / category is a `seed-` local-only id
+   *         or is missing from the local cache.
    */
   async createProduct(input: CreateProductInput): Promise<unknown> {
     const session = this.auth.requireRole(
@@ -447,7 +571,6 @@ export class ProductService {
     );
 
     // Pre-validate duplicate barcodes
-    const primaryBarcode = input.barcodes.find((b) => b.isPrimary);
     for (const bc of input.barcodes) {
       const existing = await this.prisma.productBarcode.findUnique({
         where: { barcode: bc.barcode },
@@ -457,6 +580,29 @@ export class ProductService {
         throw new DuplicateBarcodeException(bc.barcode);
       }
     }
+
+    // Pre-validate reference ids.  These checks happen before the
+    // transaction so a sync-incompatible reference fails the create
+    // immediately instead of writing a local row that the sync engine
+    // would later reject with a 422.
+    const sanitizedPharmaceuticalFormId = sanitizeOptionalReferenceId(
+      input.pharmaceuticalFormId,
+      'pharmaceuticalForm',
+    );
+    const sanitizedCategoryId = sanitizeOptionalReferenceId(
+      input.categoryId,
+      'category',
+    );
+    const sanitizedTaxSchemeId = requireServerReferenceId(
+      input.tax.taxSchemeId,
+      'taxScheme',
+    );
+
+    await this.assertReferencesExist({
+      taxSchemeId: sanitizedTaxSchemeId,
+      pharmaceuticalFormId: sanitizedPharmaceuticalFormId,
+      categoryId: sanitizedCategoryId,
+    });
 
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
@@ -482,8 +628,8 @@ export class ProductService {
           therapeuticIndication: input.therapeuticIndication ?? null,
           storageConditions: input.storageConditions ?? null,
           internalNotes: input.internalNotes ?? null,
-          categoryId: input.categoryId ?? null,
-          pharmaceuticalFormId: input.pharmaceuticalFormId ?? null,
+          categoryId: sanitizedCategoryId ?? null,
+          pharmaceuticalFormId: sanitizedPharmaceuticalFormId ?? null,
           createdById: session.userId,
         },
       });
@@ -529,7 +675,7 @@ export class ProductService {
         data: {
           id: taxHistoryId,
           productId,
-          taxSchemeId: input.tax.taxSchemeId,
+          taxSchemeId: sanitizedTaxSchemeId,
           effectiveFrom: taxEffectiveFrom,
           changedById: session.userId,
           changedAt: now,
@@ -573,47 +719,41 @@ export class ProductService {
         data: updatePointers,
       });
 
-      // 6. Build full product data for sync payload
+      // 6. Build the sync payload in the server's CreateProductDto shape.
+      // Note: `initialPrice` and `initialTaxSchemeId` are flat top-level
+      // fields — the server's Zod schema rejects nested `price`/`tax`
+      // objects with "expected string, received undefined" / "must be
+      // a valid UUID".
+      const createProductDto: Record<string, unknown> = {
+        internalCode,
+        commercialName: input.commercialName,
+        genericName: input.genericName,
+        activePrinciple: input.activePrinciple,
+        concentration: input.concentration ?? undefined,
+        concentrationUnit: input.concentrationUnit ?? undefined,
+        laboratory: input.laboratory,
+        saleType: input.saleType,
+        minimumStock: input.minimumStock ?? 0,
+        invimaRegistry: input.invimaRegistry ?? undefined,
+        atcCode: input.atcCode ?? undefined,
+        therapeuticIndication: input.therapeuticIndication ?? undefined,
+        storageConditions: input.storageConditions ?? undefined,
+        internalNotes: input.internalNotes ?? undefined,
+        categoryId: sanitizedCategoryId,
+        pharmaceuticalFormId: sanitizedPharmaceuticalFormId,
+        initialPrice: new Prisma.Decimal(input.price.price).toString(),
+        initialTaxSchemeId: sanitizedTaxSchemeId,
+        barcodes: input.barcodes.map((bc) => ({
+          barcode: bc.barcode,
+          barcodeType: bc.barcodeType,
+          isPrimary: bc.isPrimary ?? false,
+        })),
+      };
+
       const syncPayload = {
         operationType: 'PRODUCT_CREATION' as const,
         userId: session.userId,
-        createProductDto: {
-          internalCode,
-          commercialName: input.commercialName,
-          genericName: input.genericName,
-          activePrinciple: input.activePrinciple,
-          concentration: input.concentration ?? undefined,
-          concentrationUnit: input.concentrationUnit ?? undefined,
-          laboratory: input.laboratory,
-          saleType: input.saleType,
-          minimumStock: input.minimumStock ?? 0,
-          invimaRegistry: input.invimaRegistry ?? undefined,
-          atcCode: input.atcCode ?? undefined,
-          therapeuticIndication: input.therapeuticIndication ?? undefined,
-          storageConditions: input.storageConditions ?? undefined,
-          internalNotes: input.internalNotes ?? undefined,
-          categoryId: input.categoryId ?? undefined,
-          pharmaceuticalFormId: input.pharmaceuticalFormId ?? undefined,
-          barcodes: input.barcodes.map((bc) => ({
-            barcode: bc.barcode,
-            barcodeType: bc.barcodeType,
-            isPrimary: bc.isPrimary ?? false,
-          })),
-          price: {
-            price: input.price.price.toString(),
-            effectiveFrom: effectiveFrom.toISOString(),
-          },
-          ...(input.initialCost && {
-            cost: {
-              cost: input.initialCost.cost.toString(),
-              effectiveFrom: costEffectiveFrom!.toISOString(),
-            },
-          }),
-          tax: {
-            taxSchemeId: input.tax.taxSchemeId,
-            effectiveFrom: taxEffectiveFrom.toISOString(),
-          },
-        },
+        createProductDto,
         metadata: {
           productId,
           workstationId: session.workstationId,
@@ -664,6 +804,36 @@ export class ProductService {
     });
     if (!existing) throw new ProductNotFoundException(id);
 
+    // Sanitize optional reference ids.  Same rule as createProduct:
+    // empty strings are dropped (so the server skips the optional field
+    // instead of rejecting it as "must not be empty") and `seed-*`
+    // local-only ids fail fast with `UnsyncedReferenceException`.  We
+    // only validate the presence of categoryId / pharmaceuticalFormId
+    // if a value is actually being changed.
+    const sanitizedCategoryId =
+      input.categoryId !== undefined
+        ? sanitizeOptionalReferenceId(input.categoryId, 'category')
+        : undefined;
+    const sanitizedPharmaceuticalFormId =
+      input.pharmaceuticalFormId !== undefined
+        ? sanitizeOptionalReferenceId(
+            input.pharmaceuticalFormId,
+            'pharmaceuticalForm',
+          )
+        : undefined;
+    if (sanitizedCategoryId !== undefined) {
+      await this.assertReferenceExists(
+        'category',
+        sanitizedCategoryId,
+      );
+    }
+    if (sanitizedPharmaceuticalFormId !== undefined) {
+      await this.assertReferenceExists(
+        'pharmaceuticalForm',
+        sanitizedPharmaceuticalFormId,
+      );
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
 
@@ -683,8 +853,10 @@ export class ProductService {
       if (input.therapeuticIndication !== undefined) updateData.therapeuticIndication = input.therapeuticIndication;
       if (input.storageConditions !== undefined) updateData.storageConditions = input.storageConditions;
       if (input.internalNotes !== undefined) updateData.internalNotes = input.internalNotes;
-      if (input.categoryId !== undefined) updateData.categoryId = input.categoryId;
-      if (input.pharmaceuticalFormId !== undefined) updateData.pharmaceuticalFormId = input.pharmaceuticalFormId;
+      if (sanitizedCategoryId !== undefined) updateData.categoryId = sanitizedCategoryId;
+      if (sanitizedPharmaceuticalFormId !== undefined) {
+        updateData.pharmaceuticalFormId = sanitizedPharmaceuticalFormId;
+      }
 
       // 2. Handle barcode replacement (if provided, full replace)
       if (input.barcodes) {
@@ -825,6 +997,16 @@ export class ProductService {
       });
 
       // 6. Create sync queue entry
+      //
+      // Only Product scalar fields are sent — the server's
+      // `UpdateProductDto` (apps/server/src/modules/catalog/dto/update-product.dto.ts)
+      // does not have `initialPrice` / `initialTaxSchemeId`, so the
+      // nested `price` / `tax` objects the previous version emitted were
+      // silently dropped server-side.  Price and tax changes stay local
+      // until they are replayed through the server's dedicated endpoints
+      // (register-product-price, assign-product-tax-scheme); the local
+      // ProductPriceHistory / ProductTaxHistory rows created above are
+      // still authoritative for the POS.
       const syncPayload = {
         operationType: 'PRODUCT_UPDATE' as const,
         userId: session.userId,
@@ -844,34 +1026,16 @@ export class ProductService {
           ...(input.therapeuticIndication !== undefined && { therapeuticIndication: input.therapeuticIndication }),
           ...(input.storageConditions !== undefined && { storageConditions: input.storageConditions }),
           ...(input.internalNotes !== undefined && { internalNotes: input.internalNotes }),
-          ...(input.categoryId !== undefined && { categoryId: input.categoryId }),
-          ...(input.pharmaceuticalFormId !== undefined && { pharmaceuticalFormId: input.pharmaceuticalFormId }),
+          ...(sanitizedCategoryId !== undefined && { categoryId: sanitizedCategoryId }),
+          ...(sanitizedPharmaceuticalFormId !== undefined && {
+            pharmaceuticalFormId: sanitizedPharmaceuticalFormId,
+          }),
           ...(input.barcodes && {
             barcodes: input.barcodes.map((bc) => ({
               barcode: bc.barcode,
               barcodeType: bc.barcodeType,
               isPrimary: bc.isPrimary ?? false,
             })),
-          }),
-          ...(input.newPrice && {
-            price: {
-              price: input.newPrice.price.toString(),
-              effectiveFrom: (input.newPrice.effectiveFrom
-                ? new Date(input.newPrice.effectiveFrom)
-                : now
-              ).toISOString(),
-              changeReason: input.newPrice.changeReason ?? null,
-            },
-          }),
-          ...(input.newTax && {
-            tax: {
-              taxSchemeId: input.newTax.taxSchemeId,
-              effectiveFrom: (input.newTax.effectiveFrom
-                ? new Date(input.newTax.effectiveFrom)
-                : now
-              ).toISOString(),
-              changeReason: input.newTax.changeReason ?? null,
-            },
           }),
         },
         metadata: {
@@ -1036,6 +1200,75 @@ export class ProductService {
     });
     if (!product) throw new ProductNotFoundException(productId);
     return product.costHistories[0]?.cost.toString() ?? null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Private — reference validation
+  // -------------------------------------------------------------------------
+
+  /**
+   * Verify that every reference id is present in the local cache.
+   *
+   * The local cache is the authoritative source for reference ids on the
+   * POS: a row only lands in the local `taxScheme` / `pharmaceuticalForm`
+   * / `category` table after a successful pull-sync, which means the
+   * server already knows about it.  If the row is missing here, sending
+   * the id to the server would fail with a 422 (unknown id) or, worse,
+   * a 500 (FK violation when the server tries to create the history).
+   *
+   * Throws `UnsyncedReferenceException` with `not_in_local_cache` so the
+   * UI can prompt the operator to wait for / trigger a pull-sync.
+   */
+  private async assertReferencesExist(refs: {
+    taxSchemeId: string;
+    pharmaceuticalFormId?: string;
+    categoryId?: string;
+  }): Promise<void> {
+    const checks: Array<Promise<unknown>> = [
+      this.assertReferenceExists('taxScheme', refs.taxSchemeId),
+    ];
+    if (refs.pharmaceuticalFormId) {
+      checks.push(
+        this.assertReferenceExists(
+          'pharmaceuticalForm',
+          refs.pharmaceuticalFormId,
+        ),
+      );
+    }
+    if (refs.categoryId) {
+      checks.push(this.assertReferenceExists('category', refs.categoryId));
+    }
+    await Promise.all(checks);
+  }
+
+  private async assertReferenceExists(
+    referenceType: 'taxScheme' | 'pharmaceuticalForm' | 'category',
+    referenceId: string,
+  ): Promise<void> {
+    let row: { id: string } | null = null;
+    if (referenceType === 'taxScheme') {
+      row = await this.prisma.taxScheme.findUnique({
+        where: { id: referenceId },
+        select: { id: true },
+      });
+    } else if (referenceType === 'pharmaceuticalForm') {
+      row = await this.prisma.pharmaceuticalForm.findUnique({
+        where: { id: referenceId },
+        select: { id: true },
+      });
+    } else {
+      row = await this.prisma.category.findUnique({
+        where: { id: referenceId },
+        select: { id: true },
+      });
+    }
+    if (!row) {
+      throw new UnsyncedReferenceException(
+        referenceType,
+        referenceId,
+        'not_in_local_cache',
+      );
+    }
   }
 
   // -------------------------------------------------------------------------

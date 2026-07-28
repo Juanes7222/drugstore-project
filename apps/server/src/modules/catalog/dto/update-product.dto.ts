@@ -16,8 +16,8 @@ export const UpdateProductSchema = z.object({
   therapeuticIndication: z.string().optional(),
   storageConditions: z.string().optional(),
   internalNotes: z.string().optional(),
-  categoryId: z.uuid().optional().nullable(),
-  pharmaceuticalFormId: z.uuid().optional().nullable(),
+  categoryId: z.string().min(1).optional().nullable(),
+  pharmaceuticalFormId: z.string().min(1).optional().nullable(),
   isActive: z.boolean().optional(),
 });
 

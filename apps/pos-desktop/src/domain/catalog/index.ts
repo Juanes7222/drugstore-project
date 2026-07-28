@@ -9,6 +9,8 @@ export {
 export {
   createProductService,
   ProductService,
+  requireServerReferenceId,
+  sanitizeOptionalReferenceId,
   type CreateProductInput,
   type CreateProductPriceInput,
   type CreateProductCostInput,
@@ -24,4 +26,5 @@ export {
   ProductCreationException,
   ProductUpdateException,
   DuplicateBarcodeException,
+  UnsyncedReferenceException,
 } from './exceptions';

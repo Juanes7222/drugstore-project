@@ -37,6 +37,10 @@ export class SyncProcessingJob {
    * Picks up PENDING and retryable FAILED entries of supported types.
    * Unsupported types (FISCAL_DOCUMENT_SYNC, PRESCRIPTION_REGISTRATION,
    * RESOLUTION_ALLOCATION) are never selected.
+   *
+   * Each entry is marked PROCESSING before dispatch so overlapping cron
+   * runs (which can occur when processing takes >30s) will not pick up
+   * the same entry twice — the fetch query excludes PROCESSING rows.
    */
   @Cron(CronExpression.EVERY_30_SECONDS)
   async processPendingOperations(): Promise<void> {
@@ -71,9 +75,15 @@ export class SyncProcessingJob {
 
       await this.dispatcher.dispatch(entry);
 
+      // Clear any previous error message from a prior failed attempt —
+      // a successful retry should not show stale error context.
       await this.prisma.syncQueue.update({
         where: { id: entry.id },
-        data: { status: 'COMPLETED', processedAt: new Date() },
+        data: {
+          status: 'COMPLETED',
+          processedAt: new Date(),
+          lastErrorMessage: null,
+        },
       });
     } catch (error: unknown) {
       await this.markFailed(entry, error);

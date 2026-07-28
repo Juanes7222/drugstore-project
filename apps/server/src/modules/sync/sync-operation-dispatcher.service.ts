@@ -19,6 +19,7 @@ import {
   PurchaseReceptionConfirmationPayloadSchema,
   SupplierReturnConfirmationPayloadSchema,
 } from './dto/purchase-sync-payloads.schema';
+import { CreateProductSchema } from '@/modules/catalog/dto/create-product.dto';
 import type { SyncQueueEntry } from './entities/sync-queue-entry.entity';
 import type { CreateSaleDto } from '@/modules/sales-pos/dto/create-sale.dto';
 import type { ConfirmSaleDto } from '@/modules/sales-pos/dto/confirm-sale.dto';
@@ -255,27 +256,22 @@ export class SyncOperationDispatcherService {
     // Without this step, every SALE_CONFIRMATION fails with
     // CashShiftNotOpenForWorkstationException because no server-side
     // CashShift record exists for this workstation yet.
+    //
+    // Uses upsert to avoid a TOCTOU race when two concurrent sync jobs
+    // try to create the same cash shift id simultaneously.
     if (createSaleDto?.cashShiftId) {
-      const existing = await this.prisma.cashShift.findUnique({
+      await this.prisma.cashShift.upsert({
         where: { id: createSaleDto.cashShiftId },
-        select: { id: true },
+        update: {},
+        create: {
+          id: createSaleDto.cashShiftId,
+          workstationId,
+          userId,
+          state: 'OPEN',
+          openedAt: new Date(),
+          openingBalance: new Prisma.Decimal(0),
+        },
       });
-      if (!existing) {
-        await this.prisma.cashShift.create({
-          data: {
-            id: createSaleDto.cashShiftId,
-            workstationId,
-            userId,
-            state: 'OPEN',
-            openedAt: new Date(),
-            openingBalance: new Prisma.Decimal(0),
-          },
-        });
-        this.logger.log(
-          `Auto-created CashShift ${createSaleDto.cashShiftId} for ` +
-          `workstation ${workstationId} during SALE_CONFIRMATION replay`,
-        );
-      }
     }
 
     const sale = await this.salesService.create(
@@ -488,9 +484,20 @@ export class SyncOperationDispatcherService {
   private async handleProductCreation(entry: SyncQueueEntry): Promise<void> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
     const userId = payload.userId as string;
-    const createProductDto = payload.createProductDto as Record<string, unknown>;
+    const raw = payload.createProductDto as Record<string, unknown>;
 
-    await this.productsService.createProduct(userId, createProductDto as any);
+    const result = CreateProductSchema.safeParse(raw);
+    if (!result.success) {
+      throw new SyncPayloadValidationException(
+        'PRODUCT_CREATION',
+        result.error.issues.map((i) => ({
+          field: i.path.join('.') || '(root)',
+          message: i.message,
+        })),
+      );
+    }
+
+    await this.productsService.createProduct(userId, result.data);
   }
 
   /**

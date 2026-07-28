@@ -173,6 +173,14 @@ export interface InvoiceTransmissionPayload {
  * Created by ProductService.createProduct() and dispatched server-side
  * to create the product authoritatively. The server assigns a real
  * sequential `internalCode` and reflects it back on sync completion.
+ *
+ * `createProductDto` mirrors the server's `CreateProductSchema` shape
+ * (apps/server/src/modules/catalog/dto/create-product.dto.ts):
+ * - `initialPrice` is a flat top-level string, NOT a nested `price` object.
+ * - `initialTaxSchemeId` is a flat top-level server UUID, NOT a nested
+ *   `tax.taxSchemeId`.
+ * - `pharmaceuticalFormId` / `categoryId` are server UUIDs and are
+ *   omitted (not set to `null` or `""`) when not provided.
  */
 export interface ProductCreationPayload {
   operationType: 'PRODUCT_CREATION';
@@ -194,19 +202,13 @@ export interface ProductCreationPayload {
     internalNotes?: string;
     categoryId?: string;
     pharmaceuticalFormId?: string;
+    initialPrice: string;
+    initialTaxSchemeId: string;
     barcodes: Array<{
       barcode: string;
       barcodeType: string;
       isPrimary: boolean;
     }>;
-    price: {
-      price: string;
-      effectiveFrom: string;
-    };
-    tax: {
-      taxSchemeId: string;
-      effectiveFrom: string;
-    };
   };
   metadata: {
     productId: string;
@@ -221,10 +223,20 @@ export interface ProductCreationPayload {
  * Created by ProductService.updateProduct() (and softDeleteProduct) and
  * dispatched server-side to apply the same changes to the server record.
  * Only includes fields that actually changed.
+ *
+ * `updateProductDto` mirrors the server's `UpdateProductDto` shape
+ * (apps/server/src/modules/catalog/dto/update-product.dto.ts). Price
+ * and tax history changes are NOT sent over the sync queue — the
+ * server's `UpdateProductDto` has no slots for them. The local
+ * `ProductPriceHistory` / `ProductTaxHistory` rows created by the POS
+ * remain authoritative for the POS and can be replayed through the
+ * server's dedicated endpoints (register-product-price,
+ * assign-product-tax-scheme) by a follow-up flow.
  */
 export interface ProductUpdatePayload {
   operationType: 'PRODUCT_UPDATE';
   userId: string;
+  productId: string;
   updateProductDto: {
     internalCode: string;
     commercialName?: string;
@@ -249,16 +261,6 @@ export interface ProductUpdatePayload {
       barcodeType: string;
       isPrimary: boolean;
     }>;
-    price?: {
-      price: string;
-      effectiveFrom: string;
-      changeReason?: string | null;
-    };
-    tax?: {
-      taxSchemeId: string;
-      effectiveFrom: string;
-      changeReason?: string | null;
-    };
   };
   metadata: {
     productId: string;

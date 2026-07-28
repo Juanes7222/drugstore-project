@@ -827,7 +827,7 @@ export const PurchaseOrdersPage: FC = () => {
                 <div key={i} className="pos-panel p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-ink">
-                      {item.productId}
+                      {item.productName || item.productId}
                     </span>
                     <span className="text-xs text-ink-muted">
                       {t('purchases.orders.requestedQty')}: {item.requestedQuantity}

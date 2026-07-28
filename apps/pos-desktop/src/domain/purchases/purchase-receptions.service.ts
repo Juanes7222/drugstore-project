@@ -93,6 +93,7 @@ export interface CreateReceptionInput {
 export interface ReceptionItemResult {
   id: string;
   productId: string;
+  productName: string;
   purchaseOrderItemId: string | null;
   lotId: string | null;
   receivedQuantity: number;
@@ -178,8 +179,12 @@ export class PurchaseReceptionsService {
       this.prisma.purchaseReception.count({ where }),
     ]);
 
+    // Batch-fetch product names for all items across all receptions
+    const allProductIds = receptions.flatMap((r) => r.items.map((i) => i.productId));
+    const productNameMap = await this.fetchProductNameMap(allProductIds);
+
     return {
-      data: receptions.map((r) => this.mapReception(r, r.items)),
+      data: receptions.map((r) => this.mapReception(r, r.items, productNameMap)),
       total,
     };
   }
@@ -198,7 +203,11 @@ export class PurchaseReceptionsService {
       },
     });
     if (!reception) throw new PurchaseReceptionNotFoundException(id);
-    return this.mapReception(reception, reception.items);
+
+    const productIds = reception.items.map((i) => i.productId);
+    const productNameMap = await this.fetchProductNameMap(productIds);
+
+    return this.mapReception(reception, reception.items, productNameMap);
   }
 
   /**
@@ -213,7 +222,7 @@ export class PurchaseReceptionsService {
       RoleType.ADMIN,
     );
 
-    return this.prisma.$transaction(async (tx) => {
+    const reception = await this.prisma.$transaction(async (tx) => {
       // Validate supplier exists
       const supplier = await tx.supplier.findUnique({
         where: { id: input.supplierId },
@@ -283,7 +292,7 @@ export class PurchaseReceptionsService {
         this.calculateTotals(itemsData);
       const sequentialNumber = await this.getNextSequentialNumber(tx);
 
-      const reception = await tx.purchaseReception.create({
+      return tx.purchaseReception.create({
         data: {
           id: globalThis.crypto.randomUUID(),
           sequentialNumber,
@@ -303,9 +312,12 @@ export class PurchaseReceptionsService {
           items: true,
         },
       });
-
-      return this.mapReception(reception, reception.items);
     });
+
+    const productIds = reception.items.map((i) => i.productId);
+    const productNameMap = await this.fetchProductNameMap(productIds);
+
+    return this.mapReception(reception, reception.items, productNameMap);
   }
 
   /**
@@ -338,7 +350,7 @@ export class PurchaseReceptionsService {
     );
     const confirmedAt = new Date();
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       // 1. Validate reception exists and is draft
       const reception = await tx.purchaseReception.findUnique({
         where: { id },
@@ -407,7 +419,7 @@ export class PurchaseReceptionsService {
 
         // Optimistic-locked stock increment
         const newStock = lot.currentStock + item.receivedQuantity;
-        const updated = await tx.lot.updateMany({
+        const updatedLot = await tx.lot.updateMany({
           where: { id: lot.id, version: lot.version },
           data: {
             currentStock: newStock,
@@ -415,7 +427,7 @@ export class PurchaseReceptionsService {
             state: LotState.ACTIVE,
           },
         });
-        if (updated.count === 0) {
+        if (updatedLot.count === 0) {
           throw new ConcurrentStockModificationException(lot.id);
         }
 
@@ -537,7 +549,7 @@ export class PurchaseReceptionsService {
       }
 
       // 6. Transition reception to CONFIRMED
-      const updated = await tx.purchaseReception.update({
+      const updatedReception = await tx.purchaseReception.update({
         where: { id },
         data: {
           state: PurchaseReceptionState.CONFIRMED,
@@ -553,8 +565,13 @@ export class PurchaseReceptionsService {
       // 7. Create SyncQueue entry
       await this.createSyncQueueEntry(tx, reception, session, confirmedAt);
 
-      return this.mapReception(updated, updated.items);
+      return updatedReception;
     });
+
+    const productIds = updated.items.map((i) => i.productId);
+    const productNameMap = await this.fetchProductNameMap(productIds);
+
+    return this.mapReception(updated, updated.items, productNameMap);
   }
 
   /**
@@ -642,7 +659,7 @@ export class PurchaseReceptionsService {
   async annulReception(id: string): Promise<ReceptionResult> {
     const session = this.auth.requireRole(RoleType.ADMIN);
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const reception = await tx.purchaseReception.findUnique({
         where: { id },
         include: {
@@ -666,7 +683,7 @@ export class PurchaseReceptionsService {
         const newState: LotState =
           newStock <= 0 ? LotState.EXHAUSTED : lot.state as LotState;
 
-        const updated = await tx.lot.updateMany({
+        const updatedLot = await tx.lot.updateMany({
           where: { id: item.lotId, version: lot.version },
           data: {
             currentStock: newStock,
@@ -674,7 +691,7 @@ export class PurchaseReceptionsService {
             state: newState,
           },
         });
-        if (updated.count === 0) {
+        if (updatedLot.count === 0) {
           throw new ConcurrentStockModificationException(item.lotId);
         }
 
@@ -723,7 +740,7 @@ export class PurchaseReceptionsService {
         }
       }
 
-      const updated = await tx.purchaseReception.update({
+      return tx.purchaseReception.update({
         where: { id },
         data: {
           state: PurchaseReceptionState.ANNULLED,
@@ -736,9 +753,12 @@ export class PurchaseReceptionsService {
           items: true,
         },
       });
-
-      return this.mapReception(updated, updated.items);
     });
+
+    const productIds = updated.items.map((i) => i.productId);
+    const productNameMap = await this.fetchProductNameMap(productIds);
+
+    return this.mapReception(updated, updated.items, productNameMap);
   }
 
   // ---------------------------------------------------------------------------
@@ -987,6 +1007,24 @@ export class PurchaseReceptionsService {
   }
 
   // ---------------------------------------------------------------------------
+  // Private — product name resolution
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Batch-fetch Product records for the given product IDs and return
+   * a Map<productId, commercialName>.  Missing IDs yield an empty string.
+   */
+  private async fetchProductNameMap(productIds: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(productIds)];
+    if (unique.length === 0) return new Map();
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, commercialName: true },
+    });
+    return new Map(products.map((p) => [p.id, p.commercialName]));
+  }
+
+  // ---------------------------------------------------------------------------
   // Private — mapper
   // ---------------------------------------------------------------------------
 
@@ -1022,6 +1060,7 @@ export class PurchaseReceptionsService {
       subtotal: Prisma.Decimal;
       total: Prisma.Decimal;
     }>,
+    productNameMap: Map<string, string>,
   ): ReceptionResult {
     return {
       id: reception.id,
@@ -1041,6 +1080,7 @@ export class PurchaseReceptionsService {
       items: items.map((item) => ({
         id: item.id,
         productId: item.productId,
+        productName: productNameMap.get(item.productId) ?? '',
         purchaseOrderItemId: item.purchaseOrderItemId,
         lotId: item.lotId,
         receivedQuantity: item.receivedQuantity,

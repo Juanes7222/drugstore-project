@@ -43,6 +43,7 @@ export interface CreatePurchaseOrderInput {
 export interface PurchaseOrderItemResult {
   id: string;
   productId: string;
+  productName: string;
   requestedQuantity: number;
   receivedQuantity: number;
   pendingQuantity: number;
@@ -119,8 +120,12 @@ export class PurchaseOrdersService {
       this.prisma.purchaseOrder.count({ where }),
     ]);
 
+    // Batch-fetch product names for all items across all orders
+    const allProductIds = orders.flatMap((o) => o.items.map((i) => i.productId));
+    const productNameMap = await this.fetchProductNameMap(allProductIds);
+
     return {
-      data: orders.map((o) => this.mapOrder(o, o.items)),
+      data: orders.map((o) => this.mapOrder(o, o.items, productNameMap)),
       total,
     };
   }
@@ -138,7 +143,11 @@ export class PurchaseOrdersService {
       },
     });
     if (!order) throw new PurchaseOrderNotFoundException(id);
-    return this.mapOrder(order, order.items);
+
+    const productIds = order.items.map((i) => i.productId);
+    const productNameMap = await this.fetchProductNameMap(productIds);
+
+    return this.mapOrder(order, order.items, productNameMap);
   }
 
   /**
@@ -151,7 +160,7 @@ export class PurchaseOrdersService {
       RoleType.ADMIN,
     );
 
-    return this.prisma.$transaction(async (tx) => {
+    const order = await this.prisma.$transaction(async (tx) => {
       // Validate supplier exists
       const supplier = await tx.supplier.findUnique({
         where: { id: input.supplierId },
@@ -178,7 +187,7 @@ export class PurchaseOrdersService {
       // Get next sequential number
       const sequentialNumber = await this.getNextSequentialNumber(tx);
 
-      const order = await tx.purchaseOrder.create({
+      return tx.purchaseOrder.create({
         data: {
           id: globalThis.crypto.randomUUID(),
           sequentialNumber,
@@ -199,9 +208,12 @@ export class PurchaseOrdersService {
           items: true,
         },
       });
-
-      return this.mapOrder(order, order.items);
     });
+
+    const productIds = order.items.map((i) => i.productId);
+    const productNameMap = await this.fetchProductNameMap(productIds);
+
+    return this.mapOrder(order, order.items, productNameMap);
   }
 
   /**
@@ -221,7 +233,7 @@ export class PurchaseOrdersService {
       RoleType.ADMIN,
     );
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const order = await tx.purchaseOrder.findUnique({
         where: { id },
         include: { items: true },
@@ -235,7 +247,7 @@ export class PurchaseOrdersService {
       }
 
       const confirmedAt = new Date();
-      const updated = await tx.purchaseOrder.update({
+      const updatedOrder = await tx.purchaseOrder.update({
         where: { id },
         data: {
           state: PurchaseOrderState.CONFIRMED,
@@ -251,8 +263,13 @@ export class PurchaseOrdersService {
       // Create SyncQueue entry
       await this.createSyncQueueEntry(tx, order, session, confirmedAt);
 
-      return this.mapOrder(updated, updated.items);
+      return updatedOrder;
     });
+
+    const productIds = updated.items.map((i) => i.productId);
+    const productNameMap = await this.fetchProductNameMap(productIds);
+
+    return this.mapOrder(updated, updated.items, productNameMap);
   }
 
   /**
@@ -265,7 +282,7 @@ export class PurchaseOrdersService {
   ): Promise<PurchaseOrderResult> {
     const session = this.auth.requireRole(RoleType.ADMIN);
 
-    return this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       const order = await tx.purchaseOrder.findUnique({
         where: { id },
         include: { items: true },
@@ -275,7 +292,7 @@ export class PurchaseOrdersService {
         throw new PurchaseOrderNotDraftException(id, order.state);
       }
 
-      const updated = await tx.purchaseOrder.update({
+      return tx.purchaseOrder.update({
         where: { id },
         data: {
           state: PurchaseOrderState.ANNULLED,
@@ -288,9 +305,12 @@ export class PurchaseOrdersService {
           items: true,
         },
       });
-
-      return this.mapOrder(updated, updated.items);
     });
+
+    const productIds = updated.items.map((i) => i.productId);
+    const productNameMap = await this.fetchProductNameMap(productIds);
+
+    return this.mapOrder(updated, updated.items, productNameMap);
   }
 
   // ---------------------------------------------------------------------------
@@ -395,6 +415,24 @@ export class PurchaseOrdersService {
   }
 
   // ---------------------------------------------------------------------------
+  // Private — product name resolution
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Batch-fetch Product records for the given product IDs and return
+   * a Map<productId, commercialName>.  Missing IDs yield an empty string.
+   */
+  private async fetchProductNameMap(productIds: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(productIds)];
+    if (unique.length === 0) return new Map();
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, commercialName: true },
+    });
+    return new Map(products.map((p) => [p.id, p.commercialName]));
+  }
+
+  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 
@@ -434,6 +472,7 @@ export class PurchaseOrdersService {
       pendingQuantity: number;
       expectedUnitCost: Prisma.Decimal;
     }>,
+    productNameMap: Map<string, string>,
   ): PurchaseOrderResult {
     return {
       id: order.id,
@@ -454,6 +493,7 @@ export class PurchaseOrdersService {
       items: items.map((item) => ({
         id: item.id,
         productId: item.productId,
+        productName: productNameMap.get(item.productId) ?? '',
         requestedQuantity: item.requestedQuantity,
         receivedQuantity: item.receivedQuantity,
         pendingQuantity: item.pendingQuantity,

@@ -136,7 +136,7 @@ export const PurchaseOrderDetail: FC<PurchaseOrderDetailProps> = ({
             {order.items.map((item) => (
               <tr key={item.id} className="border-b border-border/40 hover:bg-surface/30">
                 <td className="py-3 px-3 font-medium">
-                  {item.productId}
+                  {item.productName}
                 </td>
                 <td className="py-3 px-3 text-right font-data tabular-nums">{item.requestedQuantity}</td>
                 <td className="py-3 px-3 text-right font-data tabular-nums">{item.receivedQuantity}</td>

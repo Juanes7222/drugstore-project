@@ -143,7 +143,7 @@ export const SupplierReturnDetail: FC<SupplierReturnDetailProps> = ({
       <div className="pos-panel overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="sticky top-0 bg-white z-10 border-b border-border text-left text-ink-muted text-xs uppercase tracking-wider bg-surface/50">
+            <tr className="sticky top-0 bg-white z-10 border-b border-border text-left text-ink-muted text-xs uppercase tracking-wider ">
               <th className="py-2 px-3 font-semibold">{t('purchases.supplierReturns.product')}</th>
               <th className="py-2 px-3 font-semibold">{t('purchases.supplierReturns.lot')}</th>
               <th className="py-2 px-3 font-semibold text-right">{t('purchases.supplierReturns.qty')}</th>
