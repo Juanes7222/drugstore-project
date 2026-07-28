@@ -29,6 +29,7 @@ import {
 } from './exceptions';
 import { clearAllTableData, exportPgliteToJson, importJsonToPglite } from './backup-export';
 import type { BackupJson } from './backup-export';
+import type { UploadQueueItem, UploadWorkerHandle } from './upload-worker';
 
 
 // ---------------------------------------------------------------------------
@@ -53,10 +54,27 @@ export interface BackupMetadata {
   containsUnpushedOperations: boolean;
   pendingCount: number;
   failedCount: number;
+  /**
+   * Operations that exhausted retries — the server will never accept them.
+   * Distinct from `failedCount` (transient) and surfaced so the operator
+   * can see real data-loss exposure that the simpler count misses.
+   */
+  permanentFailureCount: number;
+  /**
+   * Operations the operator explicitly discarded via the recovery UI.
+   * Same data-loss exposure as permanent failures.
+   */
+  discardedCount: number;
   maxClientSequence: number;
   note: string | null;
   clockSkewSeconds: number | null;
   status: BackupStatus;
+  /**
+   * Timestamp of the most recent successful off-site upload, if any.
+   * Missing means the backup is local-only and is at risk of being lost
+   * if the local disk fails.
+   */
+  uploadedAt: string | null;
 }
 
 export interface VerificationReport {
@@ -105,6 +123,8 @@ export interface CreateBackupRequest {
   dbSchemaVersion: number;
   pendingCount: number;
   failedCount: number;
+  permanentFailureCount: number;
+  discardedCount: number;
   maxClientSequence: number;
   note?: string;
   clockSkewSeconds?: number;
@@ -143,6 +163,17 @@ export interface BackupService {
   ): Promise<UploadReceipt>;
   fetchLocalNumberHint(workstationId: string, accessToken: string): Promise<number | null>;
   shouldRunPeriodicBackup(lastBackupAt: string | null): boolean;
+  /** Read the off-site upload queue. Used by the recovery UI to surface
+   *  pending or stuck uploads. Returns `[]` when the worker is not
+   *  wired (e.g. older builds or unit tests). */
+  getUploadQueue(): Promise<UploadQueueItem[]>;
+  /** Wire the off-site upload worker. Called once from use-service-init
+   *  after both the service and the worker exist. When set, every
+   *  successful `createBackup` enqueues the new backup for upload. */
+  setUploadWorker(worker: UploadWorkerHandle): void;
+  /** Force the wired worker to drain its queue on the next tick. No-op when
+   *  the worker has not been wired (older builds, unit tests). */
+  kickUploadWorker(): void;
 }
 
 export const createBackupService = (): BackupService => new BackupServiceImpl();
@@ -150,6 +181,7 @@ export const createBackupService = (): BackupService => new BackupServiceImpl();
 class BackupServiceImpl implements BackupService {
   private inProgress = false;
   private periodicBackupTimer: ReturnType<typeof setInterval> | null = null;
+  private uploadWorker: UploadWorkerHandle | null = null;
 
   async createBackup(request: CreateBackupRequest): Promise<BackupMetadata> {
     if (this.inProgress) {
@@ -179,13 +211,15 @@ class BackupServiceImpl implements BackupService {
       const metadata = await invoke<BackupMetadata>('create_backup_command', {
         request: {
           reason: request.reason,
-          workstation_id: request.workstationId,
-          db_schema_version: LOCAL_DB_SCHEMA_VERSION,
-          pending_count: request.pendingCount,
-          failed_count: request.failedCount,
-          max_client_sequence: request.maxClientSequence,
+          workstationId: request.workstationId,
+          dbSchemaVersion: LOCAL_DB_SCHEMA_VERSION,
+          pendingCount: request.pendingCount,
+          failedCount: request.failedCount,
+          permanentFailureCount: request.permanentFailureCount,
+          discardedCount: request.discardedCount,
+          maxClientSequence: request.maxClientSequence,
           note: request.note,
-          clock_skew_seconds: request.clockSkewSeconds,
+          clockSkewSeconds: request.clockSkewSeconds,
         },
       });
 
@@ -196,6 +230,16 @@ class BackupServiceImpl implements BackupService {
 
       if (Date.now() - startTime > BACKUP_TOAST_THRESHOLD_MS) {
         window.dispatchEvent(new CustomEvent('backup:slow', { detail: metadata }));
+      }
+
+      // Off-site upload is best-effort. Failures are tracked by the worker
+      // and surfaced on the recovery page; the local backup is already
+      // safe on disk. Fire-and-forget so a slow network call doesn't
+      // delay the user-facing toast.
+      if (this.uploadWorker !== null) {
+        void this.uploadWorker.enqueue(metadata.id).catch((err) => {
+          console.warn('[backup-service] enqueue for upload failed:', err);
+        });
       }
 
       return metadata;
@@ -384,6 +428,21 @@ class BackupServiceImpl implements BackupService {
   shouldRunPeriodicBackup(lastBackupAt: string | null): boolean {
     if (!lastBackupAt) return true;
     return Date.now() - new Date(lastBackupAt).getTime() >= PERIODIC_BACKUP_INTERVAL_MS;
+  }
+
+  setUploadWorker(worker: UploadWorkerHandle): void {
+    this.uploadWorker = worker;
+  }
+
+  kickUploadWorker(): void {
+    this.uploadWorker?.kick();
+  }
+
+  async getUploadQueue(): Promise<UploadQueueItem[]> {
+    if (this.uploadWorker === null) {
+      return [];
+    }
+    return this.uploadWorker.getQueue();
   }
 
   /**

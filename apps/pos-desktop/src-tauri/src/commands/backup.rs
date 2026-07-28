@@ -7,14 +7,17 @@ use std::path::PathBuf;
 
 use tauri::{command, AppHandle, State};
 
+use chrono::Utc;
+
 use crate::backup::{
     clear_startup_sentinel, copy_backup_to_temp, create_backup, decrypt_backup,
     delete_data_dir_file, encrypt_backup, get_backup_health, get_backup_summary, list_backups,
-    mark_backup_corrupt, mark_integrity_failure, prune_backups, read_backup_dump, read_data_dir_file,
-    remove_temp_dir, restore_backup, verify_backup, write_data_dir_file, BackupError,
-    BackupHealthLevel, BackupMetadata, BackupReason, BackupState, BackupSummary, QueueState,
-    RestoreError, RestoreOptions, RestoreReport, RetentionPolicy, StartupHealth,
-    StartupHealthStatus, TempCopyResult, UploadError, VerificationReport,
+    mark_backup_corrupt, mark_backup_uploaded, mark_integrity_failure, prune_backups,
+    read_backup_dump, read_data_dir_file, read_upload_queue, remove_temp_dir, restore_backup,
+    verify_backup, write_data_dir_file, write_upload_queue, BackupError, BackupHealthLevel,
+    BackupMetadata, BackupReason, BackupState, BackupSummary, QueueState, RestoreError,
+    RestoreOptions, RestoreReport, RetentionPolicy, StartupHealth, StartupHealthStatus,
+    TempCopyResult, UploadError, UploadQueueItem, VerificationReport,
 };
 
 // ---------------------------------------------------------------------------
@@ -51,12 +54,19 @@ pub fn report_integrity_failure(app: AppHandle) -> Result<(), BackupError> {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateBackupRequest {
     pub reason: BackupReason,
     pub workstation_id: String,
     pub db_schema_version: i32,
     pub pending_count: u64,
     pub failed_count: u64,
+    /// Defaults to 0 when omitted (older clients pre-dating the PERMANENT_FAILURE
+    /// and DISCARDED awareness in the backup metadata).
+    #[serde(default)]
+    pub permanent_failure_count: u64,
+    #[serde(default)]
+    pub discarded_count: u64,
     pub max_client_sequence: i64,
     pub note: Option<String>,
     pub clock_skew_seconds: Option<i64>,
@@ -75,6 +85,8 @@ pub fn create_backup_command(
         QueueState {
             pending_count: request.pending_count,
             failed_count: request.failed_count,
+            permanent_failure_count: request.permanent_failure_count,
+            discarded_count: request.discarded_count,
             max_client_sequence: request.max_client_sequence,
         },
         request.note,
@@ -220,4 +232,31 @@ pub fn read_backup_dump_command(
     id: String,
 ) -> Result<String, BackupError> {
     read_backup_dump(&app, &id)
+}
+
+// ---------------------------------------------------------------------------
+// Off-site upload queue
+// ---------------------------------------------------------------------------
+
+#[command]
+pub fn read_upload_queue_command(
+    app: AppHandle,
+) -> Result<Vec<UploadQueueItem>, BackupError> {
+    read_upload_queue(&app)
+}
+
+#[command]
+pub fn write_upload_queue_command(
+    app: AppHandle,
+    items: Vec<UploadQueueItem>,
+) -> Result<(), BackupError> {
+    write_upload_queue(&app, &items)
+}
+
+#[command]
+pub fn mark_backup_uploaded_command(
+    app: AppHandle,
+    id: String,
+) -> Result<(), BackupError> {
+    mark_backup_uploaded(&app, &id, Utc::now())
 }

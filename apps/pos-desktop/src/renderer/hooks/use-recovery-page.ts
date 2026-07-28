@@ -19,6 +19,7 @@ import type {
   VerificationReport,
 } from '../../domain/backup/backup.service';
 import type { RecoveryLogEntry } from '../../domain/backup/recovery-log.service';
+import type { UploadQueueItem } from '../../domain/backup/upload-worker';
 import type { PrismaClient } from '@pharmacy/database/local';
 import { formatAge } from '../../common/format-age';
 import {
@@ -67,6 +68,9 @@ export interface UseRecoveryPageReturn {
   isCreatingBackup: boolean;
   /** Number of operations that may be lost on restore, or null. */
   gapHint: number | null;
+  /** Backups currently in the off-site upload queue (PENDING + FAILED).
+   *  Used to surface a banner when uploads are stuck. */
+  pendingUploads: UploadQueueItem[];
   /** Currently active tab. */
   activeTab: 'backups' | 'log';
   /** Switch between the backups and log tabs. */
@@ -85,6 +89,9 @@ export interface UseRecoveryPageReturn {
   handleCancelRestore: () => void;
   /** Re-fetch all data from services. */
   handleRefresh: () => Promise<void>;
+  /** Force the off-site upload worker to drain its queue and refresh the
+   *  queue snapshot. Wired to the FAILED-state banner's "Retry now" button. */
+  handleRetryUploads: () => Promise<void>;
   /** Whether the current user has permission to view this page. */
   hasAccess: boolean;
 }
@@ -103,7 +110,7 @@ export function useRecoveryPage(): UseRecoveryPageReturn {
   const [backups, setBackups] = useState<BackupMetadata[]>([]);
   const [logEntries, setLogEntries] = useState<RecoveryLogEntry[]>([]);
   const [healthStatus, setHealthStatus] = useState<RecoveryHealthStatus>('HEALTHY');
-  const [backupHealth, setBackupHealth] = useState<BackupHealthLevel>('CRITICAL');
+  const [backupHealth, setBackupHealth] = useState<BackupHealthLevel>('HEALTHY');
   const [selectedBackup, setSelectedBackup] = useState<BackupMetadata | null>(null);
   const [verifyReport, setVerifyReport] = useState<VerificationReport | null>(null);
   const [activeTab, setActiveTab] = useState<'backups' | 'log'>('backups');
@@ -112,6 +119,7 @@ export function useRecoveryPage(): UseRecoveryPageReturn {
   const [isVerifying, setIsVerifying] = useState<string | null>(null);
   const [isCreatingBackup, setIsCreatingBackup] = useState(false);
   const [gapHint, setGapHint] = useState<number | null>(null);
+  const [pendingUploads, setPendingUploads] = useState<UploadQueueItem[]>([]);
 
   const hasAccess = session !== null && hasMinRole(session, RoleType.ADMIN);
 
@@ -119,15 +127,17 @@ export function useRecoveryPage(): UseRecoveryPageReturn {
 
   const loadData = useCallback(async () => {
     try {
-      const [list, log, health, startup] = await Promise.all([
+      const [list, log, health, startup, queue] = await Promise.all([
         backupService.listBackups(),
         recoveryLogService.list(),
         backupService.getBackupHealth(),
         getStartupHealth(),
+        backupService.getUploadQueue().catch(() => [] as UploadQueueItem[]),
       ]);
       setBackups(list);
       setLogEntries(log);
       setBackupHealth(health);
+      setPendingUploads(queue);
 
       if (startup.status === 'INTEGRITY_FAILED') {
         setHealthStatus('INTEGRITY_FAILED');
@@ -188,17 +198,22 @@ export function useRecoveryPage(): UseRecoveryPageReturn {
     setIsCreatingBackup(true);
     try {
       const { prisma } = await getLocalDatabase();
-      const [pendingCount, failedCount, maxSeqRow] = await Promise.all([
-        (prisma as PrismaClient).syncQueue.count({ where: { status: 'PENDING' } }),
-        (prisma as PrismaClient).syncQueue.count({ where: { status: 'FAILED' } }),
-        (prisma as PrismaClient).syncQueue.aggregate({ _max: { clientSequence: true } }),
-      ]);
+      const [pendingCount, failedCount, permanentFailureCount, discardedCount, maxSeqRow] =
+        await Promise.all([
+          (prisma as PrismaClient).syncQueue.count({ where: { status: 'PENDING' } }),
+          (prisma as PrismaClient).syncQueue.count({ where: { status: 'FAILED' } }),
+          (prisma as PrismaClient).syncQueue.count({ where: { status: 'PERMANENT_FAILURE' } }),
+          (prisma as PrismaClient).syncQueue.count({ where: { status: 'DISCARDED' } }),
+          (prisma as PrismaClient).syncQueue.aggregate({ _max: { clientSequence: true } }),
+        ]);
       const metadata = await backupService.createBackup({
         reason: 'MANUAL',
         workstationId: session.workstationId,
         dbSchemaVersion: 1,
         pendingCount,
         failedCount,
+        permanentFailureCount,
+        discardedCount,
         maxClientSequence: Number(maxSeqRow._max.clientSequence ?? 0n),
         note: undefined,
       });
@@ -284,6 +299,19 @@ export function useRecoveryPage(): UseRecoveryPageReturn {
     await loadData();
   }, [loadData]);
 
+  const handleRetryUploads = useCallback(async () => {
+    backupService.kickUploadWorker();
+    // Re-read the queue so the banner reflects items that succeeded or
+    // moved to FAILED on the new attempt.
+    try {
+      const queue = await backupService.getUploadQueue();
+      setPendingUploads(queue);
+    } catch {
+      // Queue read failure is non-fatal; the worker will retry on its own
+      // and the next periodic refresh (AUTO_REFRESH_MS) will re-sync.
+    }
+  }, [backupService]);
+
   // Derive BackupViewModels for the presentational component
   const backupViewModels: BackupViewModel[] = backups.map((b) => ({
     ...b,
@@ -305,6 +333,7 @@ export function useRecoveryPage(): UseRecoveryPageReturn {
     isVerifying,
     isCreatingBackup,
     gapHint,
+    pendingUploads,
     activeTab,
     setActiveTab,
     setRestoreConfirmText,
@@ -314,6 +343,7 @@ export function useRecoveryPage(): UseRecoveryPageReturn {
     handleRestore,
     handleCancelRestore,
     handleRefresh,
+    handleRetryUploads,
     hasAccess,
   };
 }

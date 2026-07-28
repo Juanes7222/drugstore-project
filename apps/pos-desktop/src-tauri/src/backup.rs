@@ -172,6 +172,7 @@ pub enum BackupReason {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BackupMetadata {
     pub id: String,
     pub created_at: DateTime<Utc>,
@@ -184,10 +185,23 @@ pub struct BackupMetadata {
     pub contains_unpushed_operations: bool,
     pub pending_count: u64,
     pub failed_count: u64,
+    /// Operations that exhausted retries — the server will never accept them.
+    /// Captured in metadata so the operator can see real data-loss exposure
+    /// that the simpler `pending + failed` count misses.
+    #[serde(default)]
+    pub permanent_failure_count: u64,
+    /// Operations the operator explicitly discarded via the recovery UI.
+    /// Same data-loss exposure as permanent failures.
+    #[serde(default)]
+    pub discarded_count: u64,
     pub max_client_sequence: i64,
     pub note: Option<String>,
     pub clock_skew_seconds: Option<i64>,
     pub status: BackupStatus,
+    /// Timestamp of the most recent successful off-site upload, if any.
+    /// Missing means the backup is local-only and is at risk of being lost
+    /// if the local disk fails.
+    pub uploaded_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -199,6 +213,7 @@ pub enum BackupStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VerificationReport {
     pub id: String,
     pub passed: bool,
@@ -209,11 +224,13 @@ pub struct VerificationReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RestoreOptions {
     pub skip_schema_version_check: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RestoreReport {
     pub id: String,
     pub success: bool,
@@ -222,6 +239,7 @@ pub struct RestoreReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RetentionPolicy {
     pub keep_last_n: Option<usize>,
     pub keep_days: Option<i64>,
@@ -239,6 +257,7 @@ impl Default for RetentionPolicy {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[allow(dead_code)]
 pub struct UploadReceipt {
     pub upload_id: String,
@@ -247,6 +266,7 @@ pub struct UploadReceipt {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BackupSummary {
     pub last_backup_at: Option<DateTime<Utc>>,
     pub last_backup_reason: Option<BackupReason>,
@@ -264,6 +284,7 @@ pub enum BackupHealthLevel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StartupHealth {
     pub status: StartupHealthStatus,
     pub message: String,
@@ -487,13 +508,19 @@ pub fn create_backup(
         size_bytes,
         sha256,
         reason,
-        contains_unpushed_operations: queue_state.pending_count > 0 || queue_state.failed_count > 0,
+        contains_unpushed_operations: queue_state.pending_count > 0
+            || queue_state.failed_count > 0
+            || queue_state.permanent_failure_count > 0
+            || queue_state.discarded_count > 0,
         pending_count: queue_state.pending_count,
         failed_count: queue_state.failed_count,
+        permanent_failure_count: queue_state.permanent_failure_count,
+        discarded_count: queue_state.discarded_count,
         max_client_sequence: queue_state.max_client_sequence,
         note,
         clock_skew_seconds,
         status: BackupStatus::Healthy,
+        uploaded_at: None,
     };
 
     write_metadata(&temp_backup_root, &metadata)?;
@@ -522,6 +549,8 @@ pub fn create_backup(
 pub struct QueueState {
     pub pending_count: u64,
     pub failed_count: u64,
+    pub permanent_failure_count: u64,
+    pub discarded_count: u64,
     pub max_client_sequence: i64,
 }
 
@@ -608,8 +637,56 @@ fn hash_directory(path: &Path) -> Result<String, BackupError> {
 fn read_metadata(path: &Path) -> Result<BackupMetadata, BackupError> {
     let content = fs::read_to_string(path)
         .map_err(|e| BackupError::MetadataRead(e.to_string()))?;
-    serde_json::from_str(&content)
-        .map_err(|e| BackupError::MetadataRead(e.to_string()))
+
+    // Try camelCase deserialization first (current format).
+    let result: Result<BackupMetadata, _> = serde_json::from_str(&content);
+    match result {
+        Ok(meta) => return Ok(meta),
+        Err(_) => {
+            // Fallback: convert all JSON keys from snake_case → camelCase
+            // for backward compat with backups created before the
+            // rename_all = "camelCase" change.
+            let value: serde_json::Value =
+                serde_json::from_str(&content).map_err(|e| BackupError::MetadataRead(e.to_string()))?;
+            let converted = convert_json_keys(&value);
+            serde_json::from_value(converted)
+                .map_err(|e| BackupError::MetadataRead(e.to_string()))
+        }
+    }
+}
+
+/// Recursively convert all JSON object keys from snake_case to camelCase.
+fn convert_json_keys(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(obj) => {
+            let mut new_obj = serde_json::Map::with_capacity(obj.len());
+            for (k, v) in obj {
+                new_obj.insert(snake_to_camel(k), convert_json_keys(v));
+            }
+            serde_json::Value::Object(new_obj)
+        }
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.iter().map(convert_json_keys).collect())
+        }
+        other => other.clone(),
+    }
+}
+
+/// Convert a snake_case string to camelCase.
+fn snake_to_camel(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut capitalize = false;
+    for ch in s.chars() {
+        if ch == '_' {
+            capitalize = true;
+        } else if capitalize {
+            out.push(ch.to_ascii_uppercase());
+            capitalize = false;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 fn write_metadata(dir: &Path, metadata: &BackupMetadata) -> Result<(), BackupError> {
@@ -661,14 +738,23 @@ pub fn get_backup_summary(app: &AppHandle) -> Result<BackupSummary, BackupError>
     })
 }
 
+/// Compute the operator-facing health level for the most recent backup.
+///
+/// Health reflects whether the workstation has a *currently valid* backup
+/// to restore from, not the historical integrity of the entire backup
+/// archive. A single older corrupt backup is reported separately (in the
+/// backup list as a red badge) and does not poison the overall status —
+/// otherwise a once-bad verify on a week-old snapshot would leave the
+/// recovery page stuck on CRITICAL forever, even after fresh healthy
+/// backups.
 pub fn get_backup_health(app: &AppHandle) -> Result<BackupHealthLevel, BackupError> {
     let backups = list_backups(app)?;
-    if backups.iter().any(|b| b.status == BackupStatus::Corrupt) {
-        return Ok(BackupHealthLevel::Critical);
-    }
     match backups.first() {
         None => Ok(BackupHealthLevel::Critical),
         Some(latest) => {
+            if latest.status == BackupStatus::Corrupt {
+                return Ok(BackupHealthLevel::Critical);
+            }
             let age = Utc::now() - latest.created_at;
             if age.num_hours() > 24 {
                 Ok(BackupHealthLevel::Stale)
@@ -870,6 +956,83 @@ pub fn prune_backups(
 }
 
 // ---------------------------------------------------------------------------
+// Off-site upload queue
+//
+// Persisted as a single JSON file at `appDataDir/upload-queue.json`. The
+// TypeScript worker holds an in-memory copy and calls `read_upload_queue`
+// on startup and `write_upload_queue` after every state change. Reads and
+// writes go through the filesystem so they survive process restarts.
+// ---------------------------------------------------------------------------
+
+const UPLOAD_QUEUE_FILE: &str = "upload-queue.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploadQueueItem {
+    pub backup_id: String,
+    pub attempts: u32,
+    pub status: UploadQueueStatus,
+    pub last_attempt_at: Option<DateTime<Utc>>,
+    pub next_retry_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum UploadQueueStatus {
+    Pending,
+    Uploading,
+    Failed,
+}
+
+fn upload_queue_path(app: &AppHandle) -> Result<PathBuf, BackupError> {
+    Ok(app_data_dir(app)?.join(UPLOAD_QUEUE_FILE))
+}
+
+pub fn read_upload_queue(app: &AppHandle) -> Result<Vec<UploadQueueItem>, BackupError> {
+    let path = upload_queue_path(app)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(&path)
+        .map_err(|e| BackupError::Io(format!("upload queue read: {e}")))?;
+    let items: Vec<UploadQueueItem> = serde_json::from_str(&raw)
+        .map_err(|e| BackupError::Io(format!("upload queue parse: {e}")))?;
+    Ok(items)
+}
+
+pub fn write_upload_queue(
+    app: &AppHandle,
+    items: &[UploadQueueItem],
+) -> Result<(), BackupError> {
+    let path = upload_queue_path(app)?;
+    // Atomic-ish: write to temp file, rename. Avoids a half-written queue
+    // if the process dies mid-write.
+    let tmp = path.with_extension("json.tmp");
+    let raw = serde_json::to_string_pretty(items)
+        .map_err(|e| BackupError::Io(format!("upload queue serialize: {e}")))?;
+    fs::write(&tmp, raw).map_err(|e| BackupError::Io(e.to_string()))?;
+    fs::rename(&tmp, &path).map_err(|e| BackupError::Io(format!("upload queue rename: {e}")))?;
+    Ok(())
+}
+
+/// Stamp the most recent successful upload time on a backup's metadata.
+pub fn mark_backup_uploaded(
+    app: &AppHandle,
+    id: &str,
+    uploaded_at: DateTime<Utc>,
+) -> Result<(), BackupError> {
+    let meta_path = backup_metadata_path(app, id)?;
+    if !meta_path.exists() {
+        return Err(BackupError::BackupNotFound(id.into()));
+    }
+    let mut metadata = read_metadata(&meta_path)?;
+    metadata.uploaded_at = Some(uploaded_at);
+    write_metadata(meta_path.parent().unwrap_or(Path::new("")), &metadata)
+}
+
+// ---------------------------------------------------------------------------
 // Encrypted off-site upload
 // ---------------------------------------------------------------------------
 
@@ -1004,6 +1167,7 @@ pub fn read_backup_dump(app: &AppHandle, id: &str) -> Result<String, BackupError
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TempCopyResult {
     pub temp_data_dir: String,
 }

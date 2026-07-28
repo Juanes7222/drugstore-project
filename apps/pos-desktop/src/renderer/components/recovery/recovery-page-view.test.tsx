@@ -63,6 +63,7 @@ const defaultProps = {
   isRestoring: false,
   isCreatingBackup: false,
   gapHint: null,
+  pendingUploads: [],
   onRefresh: vi.fn(),
   onCreateBackup: vi.fn(),
   onVerify: vi.fn(),
@@ -71,6 +72,7 @@ const defaultProps = {
   onCancelRestore: vi.fn(),
   onConfirmTextChange: vi.fn(),
   onTabChange: vi.fn(),
+  onRetryUploads: vi.fn(),
 };
 
 // ---------------------------------------------------------------------------

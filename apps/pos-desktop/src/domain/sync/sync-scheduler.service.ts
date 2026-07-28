@@ -519,11 +519,14 @@ export class SyncScheduler {
       await this.withLock(async () => {
         const summary = await this.metricsService.getBackupSummary();
         if (this.backupService.shouldRunPeriodicBackup(summary.lastBackupAt)) {
-          const [pendingCount, failedCount, maxSeqRow] = await Promise.all([
-            this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
-            this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
-            this.prisma.syncQueue.aggregate({ _max: { clientSequence: true } }),
-          ]);
+          const [pendingCount, failedCount, permanentFailureCount, discardedCount, maxSeqRow] =
+            await Promise.all([
+              this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
+              this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
+              this.prisma.syncQueue.count({ where: { status: 'PERMANENT_FAILURE' } }),
+              this.prisma.syncQueue.count({ where: { status: 'DISCARDED' } }),
+              this.prisma.syncQueue.aggregate({ _max: { clientSequence: true } }),
+            ]);
           const session = useLocalSessionStore.getState().session;
           await this.backupService.createBackup({
             reason: 'PERIODIC',
@@ -531,6 +534,8 @@ export class SyncScheduler {
             dbSchemaVersion: 1,
             pendingCount,
             failedCount,
+            permanentFailureCount,
+            discardedCount,
             maxClientSequence: Number(maxSeqRow._max.clientSequence ?? 0n),
           });
         }

@@ -6,8 +6,11 @@
  * formatting, see the function in recovery-page-view.tsx which uses t().
  */
 
-export function formatAge(isoString: string): string {
-  const diffMs = Date.now() - new Date(isoString).getTime();
+export function formatAge(isoString: string | undefined | null): string {
+  if (isoString == null) return 'just now';
+  const ts = new Date(isoString).getTime();
+  if (!Number.isFinite(ts)) return 'just now';
+  const diffMs = Date.now() - ts;
   const diffMin = Math.floor(diffMs / (60 * 1000));
   const diffHours = Math.floor(diffMin / 60);
   const diffDays = Math.floor(diffHours / 24);

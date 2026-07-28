@@ -49,6 +49,7 @@ import { createPeripheralServices } from '../../domain/peripherals/peripheral-se
 import { createLocalAdjustmentService } from '../../domain/fiscal/local-adjustment.service';
 import { createDomainServices } from '../../domain/domain-services/domain-service.factory';
 import { createBackupService } from '../../domain/backup/backup.service';
+import { createUploadWorker } from '../../domain/backup/upload-worker';
 import { createSyncScheduler, type SyncScheduler } from '../../domain/sync/sync-scheduler.service';
 import { createLocalAuditWriter } from '../../domain/audit/local-audit-writer.service';
 import { createUpdateService } from '../../domain/updates/update.service';
@@ -357,6 +358,12 @@ export async function initializeServices(
 
   // 7. Create backup service
   const backupService = createBackupService();
+
+  // 7a. Wire the off-site upload worker. Lives in app data dir so it
+  //     survives restarts; new backups are enqueued automatically and
+  //     drained when the device is online.
+  const uploadWorker = createUploadWorker({ backupService });
+  backupService.setUploadWorker(uploadWorker);
 
   // 8. Create update service
   const licenseId = sessionExt?.licenseId ?? 'unknown';

@@ -36,6 +36,18 @@ export interface RecoveryPageViewProps {
   isRestoring: boolean;
   isCreatingBackup: boolean;
   gapHint: number | null;
+  /**
+   * Backups currently waiting to upload to the server, or stuck after
+   * retry exhaustion. Surfaced as a banner so the operator can see a
+   * backlog at a glance. Wired by the page hook from
+   * `backupService.getUploadQueue()`.
+   */
+  pendingUploads: ReadonlyArray<{
+    backupId: string;
+    attempts: number;
+    status: "PENDING" | "UPLOADING" | "FAILED";
+    lastError: string | null;
+  }>;
   onRefresh: () => void;
   onCreateBackup: () => void;
   onVerify: (id: string) => void;
@@ -44,6 +56,9 @@ export interface RecoveryPageViewProps {
   onCancelRestore: () => void;
   onConfirmTextChange: (text: string) => void;
   onTabChange: (tab: "backups" | "log") => void;
+  /** Force a drain pass on the off-site upload queue. Wired to the
+   *  retry button inside the FAILED-state queue banner. */
+  onRetryUploads: () => void;
 }
 
 export const RecoveryPageView: FC<RecoveryPageViewProps> = ({
@@ -60,6 +75,7 @@ export const RecoveryPageView: FC<RecoveryPageViewProps> = ({
   isRestoring,
   isCreatingBackup,
   gapHint,
+  pendingUploads,
   onRefresh,
   onCreateBackup,
   onVerify,
@@ -68,6 +84,7 @@ export const RecoveryPageView: FC<RecoveryPageViewProps> = ({
   onCancelRestore,
   onConfirmTextChange,
   onTabChange,
+  onRetryUploads,
 }) => {
   const { t } = useTranslation();
 
@@ -105,6 +122,7 @@ export const RecoveryPageView: FC<RecoveryPageViewProps> = ({
       <div className="flex-1 overflow-y-auto p-6">
         <h1 className="pos-page-title mb-6">{t("recovery.title")}</h1>
 
+        <UploadQueueBanner pendingUploads={pendingUploads} onRetry={onRetryUploads} />
         <StatusBanner healthStatus={healthStatus} />
         <BackupHealthBanner backupHealth={backupHealth} />
 
@@ -176,6 +194,70 @@ export const RecoveryPageView: FC<RecoveryPageViewProps> = ({
 };
 
 // ── Status banners ────────────────────────────────────────────────────────
+
+const ERROR_PREVIEW_MAX = 80;
+
+function truncateError(message: string | null): string | null {
+  if (message === null) return null;
+  if (message.length <= ERROR_PREVIEW_MAX) return message;
+  return `${message.slice(0, ERROR_PREVIEW_MAX - 1)}…`;
+}
+
+const UploadQueueBanner: FC<{
+  pendingUploads: ReadonlyArray<{
+    backupId: string;
+    attempts: number;
+    status: "PENDING" | "UPLOADING" | "FAILED";
+    lastError: string | null;
+  }>;
+  onRetry: () => void;
+}> = ({ pendingUploads, onRetry }) => {
+  const { t } = useTranslation();
+
+  if (pendingUploads.length === 0) {
+    return null;
+  }
+
+  const failed = pendingUploads.filter((item) => item.status === "FAILED");
+  if (failed.length > 0) {
+    // Most recent failure = the one with the highest retry count.
+    const mostRecent = failed.reduce((acc, item) =>
+      item.attempts > acc.attempts ? item : acc,
+    );
+    const errorPreview = truncateError(mostRecent.lastError);
+    return (
+      <div
+        className="mb-4 flex items-start gap-3 rounded-r-md border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800"
+        role="alert"
+      >
+        <div className="flex-1">
+          <p>{t("recovery.upload_queue_failed", { count: failed.length })}</p>
+          {errorPreview !== null && (
+            <p className="mt-1 text-xs font-normal text-amber-700">
+              {t("recovery.upload_queue_failed_error", { error: errorPreview })}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          className="inline-flex shrink-0 items-center rounded border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+          onClick={onRetry}
+        >
+          {t("recovery.upload_queue_retry")}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mb-4 rounded-r-md border-l-4 border-slate-500 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-800"
+      role="status"
+    >
+      {t("recovery.upload_queue_pending", { count: pendingUploads.length })}
+    </div>
+  );
+};
 
 const StatusBanner: FC<{ healthStatus: RecoveryHealthStatus }> = ({ healthStatus }) => {
   const { t } = useTranslation();
@@ -317,7 +399,7 @@ const BackupList: FC<BackupListProps> = ({ backups, onVerify, onSelect }) => {
                 className={`${isCorrupt ? "opacity-50" : "hover:bg-gray-50"}`}
               >
                 <td className="whitespace-nowrap px-4 py-3 text-gray-700">
-                  <div>{new Date(backup.createdAt).toLocaleString()}</div>
+                  <div>{backup.createdAt ? new Date(backup.createdAt).toLocaleString() : "\u2014"}</div>
                   <div className="text-xs text-gray-400">{backup.ageText}</div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-gray-700">
@@ -327,10 +409,10 @@ const BackupList: FC<BackupListProps> = ({ backups, onVerify, onSelect }) => {
                   {formatBytes(backup.sizeBytes)}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right font-data text-gray-700">
-                  {backup.pendingCount.toLocaleString()}
+                  {(backup.pendingCount ?? 0).toLocaleString()}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right font-data text-gray-700">
-                  {backup.failedCount.toLocaleString()}
+                  {(backup.failedCount ?? 0).toLocaleString()}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   <StatusBadge status={backup.status} />
@@ -457,7 +539,7 @@ const RestoreModal: FC<RestoreModalProps> = ({
 
         <p className="mb-3 text-sm text-gray-600">
           {t("recovery.modal_timestamp", {
-            timestamp: new Date(backup.createdAt).toLocaleString(),
+            timestamp: backup.createdAt ? new Date(backup.createdAt).toLocaleString() : "\u2014",
             age: ageText,
           })}
         </p>
@@ -467,8 +549,18 @@ const RestoreModal: FC<RestoreModalProps> = ({
         </div>
 
         <div className="mb-4 space-y-1 text-sm text-gray-700">
-          <p>{t("recovery.modal_pending", { count: backup.pendingCount })}</p>
-          <p>{t("recovery.modal_failed", { count: backup.failedCount })}</p>
+          <p>{t("recovery.modal_pending", { count: backup.pendingCount ?? 0 })}</p>
+          <p>{t("recovery.modal_failed", { count: backup.failedCount ?? 0 })}</p>
+          {(backup.permanentFailureCount ?? 0) > 0 && (
+            <p className="font-medium text-red-700">
+              {t("recovery.modal_permanent_failure", { count: backup.permanentFailureCount ?? 0 })}
+            </p>
+          )}
+          {(backup.discardedCount ?? 0) > 0 && (
+            <p className="font-medium text-amber-700">
+              {t("recovery.modal_discarded", { count: backup.discardedCount ?? 0 })}
+            </p>
+          )}
         </div>
 
         <div className="mb-4 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
@@ -488,6 +580,19 @@ const RestoreModal: FC<RestoreModalProps> = ({
           {verifyReport?.error && (
             <p className="mt-1 text-xs text-red-600">{verifyReport.error}</p>
           )}
+          <p className="mt-2 font-medium text-gray-900">
+            {t("recovery.modal_offsite_upload")}:
+            {" "}
+            {backup.uploadedAt ? (
+              <span className="text-green-700">
+                {t("recovery.modal_offsite_upload_at", {
+                  timestamp: new Date(backup.uploadedAt).toLocaleString(),
+                })}
+              </span>
+            ) : (
+              <span className="text-amber-700">{t("recovery.modal_offsite_upload_pending")}</span>
+            )}
+          </p>
         </div>
 
         <label className="mb-4 block">
@@ -588,16 +693,20 @@ const AuditLog: FC<AuditLogProps> = ({ entries }) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
+function formatBytes(bytes: number | undefined | null): string {
+  if (bytes == null || bytes === 0) return "0 B";
+  if (!Number.isFinite(bytes)) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 }
 
-function formatAge(isoString: string, t: (key: string, options?: Record<string, unknown>) => string): string {
-  const diffMs = Date.now() - new Date(isoString).getTime();
+function formatAge(isoString: string | undefined | null, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (isoString == null) return t("recovery.age_just_now");
+  const ts = new Date(isoString).getTime();
+  if (!Number.isFinite(ts)) return t("recovery.age_just_now");
+  const diffMs = Date.now() - ts;
   const diffMin = Math.floor(diffMs / (60 * 1000));
   const diffHours = Math.floor(diffMin / 60);
   const diffDays = Math.floor(diffHours / 24);

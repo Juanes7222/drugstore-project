@@ -234,11 +234,14 @@ export class CashShiftService {
 
     // A backup is mandatory before a shift can be closed. If the backup fails,
     // the shift remains open and the cashier is told to contact a manager.
-    const [pendingCount, failedCount, maxSeqRow] = await Promise.all([
-      this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
-      this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
-      this.prisma.syncQueue.aggregate({ _max: { clientSequence: true } }),
-    ]);
+    const [pendingCount, failedCount, permanentFailureCount, discardedCount, maxSeqRow] =
+      await Promise.all([
+        this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
+        this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
+        this.prisma.syncQueue.count({ where: { status: 'PERMANENT_FAILURE' } }),
+        this.prisma.syncQueue.count({ where: { status: 'DISCARDED' } }),
+        this.prisma.syncQueue.aggregate({ _max: { clientSequence: true } }),
+      ]);
 
     const backupService = createBackupService();
     try {
@@ -248,6 +251,8 @@ export class CashShiftService {
         dbSchemaVersion: 1,
         pendingCount,
         failedCount,
+        permanentFailureCount,
+        discardedCount,
         maxClientSequence: Number(maxSeqRow._max.clientSequence ?? 0n),
       });
     } catch (err) {
@@ -292,6 +297,8 @@ export class CashShiftService {
         paymentMethodCount: closingCounts.length,
         pendingSyncCount: pendingCount,
         failedSyncCount: failedCount,
+        permanentFailureSyncCount: permanentFailureCount,
+        discardedSyncCount: discardedCount,
       },
     });
 

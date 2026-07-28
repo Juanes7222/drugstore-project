@@ -1426,10 +1426,15 @@
     "modal_data_loss_unknown": "Unable to estimate — restore will proceed regardless",
     "modal_pending": "Pending operations in backup: {{count}}",
     "modal_failed": "Failed operations in backup: {{count}}",
+    "modal_permanent_failure": "Permanent-failure operations (will never sync): {{count}}",
+    "modal_discarded": "Discarded operations: {{count}}",
     "modal_verification": "Verification",
     "modal_verification_passed": "Passed",
     "modal_verification_failed": "Failed",
     "modal_verification_none": "Not verified",
+    "modal_offsite_upload": "Off-site upload",
+    "modal_offsite_upload_at": "Uploaded {{timestamp}}",
+    "modal_offsite_upload_pending": "Not uploaded (local-only)",
     "modal_confirm_label": "Type RESTORE to confirm:",
     "modal_restoring": "Restoring…",
     "age_just_now": "just now",
@@ -1442,7 +1447,11 @@
     "action_RESTORE_ABORTED": "Restore aborted",
     "action_UNHEALTHY_SHUTDOWN_DETECTED": "Unclean shutdown detected",
     "action_INTEGRITY_FAILURE_DETECTED": "Integrity failure detected",
-    "backup_none": "—"
+    "backup_none": "—",
+    "upload_queue_pending": "{{count}} backup(s) pending off-site upload",
+    "upload_queue_failed": "{{count}} backup(s) failed to upload — check connection and retry",
+    "upload_queue_failed_error": "Last error: {{error}}",
+    "upload_queue_retry": "Retry now"
   },
   "licensing": {
     "already_activated_redirect": "Redirecting to the system...",

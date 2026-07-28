@@ -164,6 +164,8 @@ class InstallOrchestratorImpl implements InstallOrchestrator {
           dbSchemaVersion: 1,
           pendingCount: 0,
           failedCount: 0,
+          permanentFailureCount: 0,
+          discardedCount: 0,
           maxClientSequence: 0,
           note: `Pre-update backup for version ${this.config.version}`,
         });

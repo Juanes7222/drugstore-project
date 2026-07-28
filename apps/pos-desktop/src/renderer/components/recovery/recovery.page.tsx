@@ -25,6 +25,7 @@ export const RecoveryPage: FC = () => {
     isRestoring,
     isCreatingBackup,
     gapHint,
+    pendingUploads,
     activeTab,
     hasAccess,
     setActiveTab,
@@ -35,6 +36,7 @@ export const RecoveryPage: FC = () => {
     handleRestore,
     handleCancelRestore,
     handleRefresh,
+    handleRetryUploads,
   } = useRecoveryPage();
 
   if (!hasAccess) {
@@ -68,6 +70,7 @@ export const RecoveryPage: FC = () => {
       isRestoring={isRestoring}
       isCreatingBackup={isCreatingBackup}
       gapHint={gapHint}
+      pendingUploads={pendingUploads}
       onRefresh={handleRefresh}
       onCreateBackup={handleCreateBackup}
       onVerify={handleVerify}
@@ -76,6 +79,7 @@ export const RecoveryPage: FC = () => {
       onCancelRestore={handleCancelRestore}
       onConfirmTextChange={setRestoreConfirmText}
       onTabChange={setActiveTab}
+      onRetryUploads={handleRetryUploads}
     />
   );
 };

@@ -43,6 +43,7 @@ const buildReturn = (
   isVerifying: null,
   isCreatingBackup: false,
   gapHint: null,
+  pendingUploads: [],
   activeTab: 'backups',
   hasAccess: true,
   setActiveTab: vi.fn(),
@@ -53,6 +54,7 @@ const buildReturn = (
   handleRestore: vi.fn(),
   handleCancelRestore: vi.fn(),
   handleRefresh: vi.fn(),
+  handleRetryUploads: vi.fn(),
   ...overrides,
 });
 

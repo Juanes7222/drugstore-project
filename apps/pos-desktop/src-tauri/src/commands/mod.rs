@@ -3,3 +3,4 @@
 pub mod backup;
 pub mod local_sync;
 pub mod printer_discovery;
+pub mod sentinel;

@@ -102,6 +102,12 @@ pub fn run() {
             commands::backup::read_data_dir_file_command,
             commands::backup::delete_data_dir_file_command,
             commands::backup::read_backup_dump_command,
+            commands::backup::read_upload_queue_command,
+            commands::backup::write_upload_queue_command,
+            commands::backup::mark_backup_uploaded_command,
+            // Sentinel commands (update-stability tracking)
+            commands::sentinel::read_sentinel_command,
+            commands::sentinel::write_sentinel_command,
             // Printer discovery commands
             commands::printer_discovery::discover_printers,
             commands::printer_discovery::scan_network_printers,

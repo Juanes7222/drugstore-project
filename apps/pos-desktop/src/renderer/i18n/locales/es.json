@@ -1556,10 +1556,15 @@
     "modal_data_loss_unknown": "No se puede estimar - la restauración procederá de todos modos",
     "modal_pending": "Operaciones pendientes en el respaldo: {{count}}",
     "modal_failed": "Operaciones fallidas en el respaldo: {{count}}",
+    "modal_permanent_failure": "Operaciones con falla permanente (nunca se sincronizarán): {{count}}",
+    "modal_discarded": "Operaciones descartadas: {{count}}",
     "modal_verification": "Verificación",
     "modal_verification_passed": "Exitosa",
     "modal_verification_failed": "Fallida",
     "modal_verification_none": "No verificado",
+    "modal_offsite_upload": "Subida al servidor",
+    "modal_offsite_upload_at": "Subido el {{timestamp}}",
+    "modal_offsite_upload_pending": "No subido (solo local)",
     "modal_confirm_label": "Escriba RESTORE para confirmar:",
     "modal_restoring": "Restaurando…",
     "age_just_now": "ahora mismo",
@@ -1572,7 +1577,11 @@
     "action_RESTORE_ABORTED": "Restauración abortada",
     "action_UNHEALTHY_SHUTDOWN_DETECTED": "Apagado incorrecto detectado",
     "action_INTEGRITY_FAILURE_DETECTED": "Fallo de integridad detectado",
-    "backup_none": "-"
+    "backup_none": "-",
+    "upload_queue_pending": "{{count}} respaldo(s) pendiente(s) de subir al servidor",
+    "upload_queue_failed": "{{count}} respaldo(s) no se pudieron subir — revise la conexión y reintente",
+    "upload_queue_failed_error": "Último error: {{error}}",
+    "upload_queue_retry": "Reintentar ahora"
   },
   "licensing": {
     "already_activated_redirect": "Redirigiendo al sistema...",
