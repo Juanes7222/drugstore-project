@@ -156,7 +156,18 @@ export class PurchaseOrdersService {
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
-      // Idempotency: check if PO with same sequentialNumber + supplierId exists
+      // Idempotency: check by POS-originated id first. If the same PO was
+      // already created from an earlier sync attempt, return it. The
+      // (sequentialNumber, supplierId) check is a fallback for POs that
+      // pre-date the POS-originated id convention.
+      const existingById = await tx.purchaseOrder.findUnique({
+        where: { id: payload.orderId },
+        select: { id: true, state: true },
+      });
+      if (existingById) {
+        return existingById;
+      }
+
       const existing = await tx.purchaseOrder.findFirst({
         where: { sequentialNumber: payload.sequentialNumber, supplierId: payload.supplierId },
         select: { id: true, state: true },

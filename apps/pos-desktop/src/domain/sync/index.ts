@@ -34,3 +34,7 @@ export {
   type PayloadSnapshotGenerator,
   type SyncRecoveryServiceConfig,
 } from './sync-recovery.service';
+export {
+  setPushTrigger,
+  notifyPendingEntry,
+} from './sync-queue-notifier';

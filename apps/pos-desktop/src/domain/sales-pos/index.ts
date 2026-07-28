@@ -29,6 +29,7 @@ export {
   DiscountExceedsRoleLimitException,
   PriceOverrideNotAllowedForRoleException,
   PriceBelowCostException,
+  ProductNotSyncedYetException,
 } from './exceptions';
 
 export {

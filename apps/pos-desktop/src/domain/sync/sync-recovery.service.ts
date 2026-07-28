@@ -11,7 +11,6 @@
  * and write an audit row to SyncRecoveryLog.
  */
 
-import crypto from 'node:crypto';
 import type { PrismaClient } from '@pharmacy/database/local';
 import { DomainError } from '../../common/domain-error';
 
@@ -64,6 +63,11 @@ export interface SyncRecoveryService {
     reason: string,
     actorUserId: string,
   ): Promise<{ id: string; status: string }>;
+
+  discardAllPermanentFailures(
+    reason: string,
+    actorUserId: string,
+  ): Promise<{ discardedCount: number }>;
 }
 
 export interface SyncRecoveryServiceConfig {
@@ -178,7 +182,7 @@ class SyncRecoveryServiceImpl implements SyncRecoveryService {
 
         await tx.syncRecoveryLog.create({
           data: {
-            id: crypto.randomUUID(),
+            id: globalThis.crypto.randomUUID(),
             syncQueueEntryId: entryId,
             action: 'RETRY',
             reason: payloadResnapshotted ? 'Payload re-snapshotted from current DB state' : null,
@@ -219,7 +223,7 @@ class SyncRecoveryServiceImpl implements SyncRecoveryService {
 
         await tx.syncRecoveryLog.create({
           data: {
-            id: crypto.randomUUID(),
+            id: globalThis.crypto.randomUUID(),
             syncQueueEntryId: entryId,
             action: 'DISCARD',
             reason,
@@ -233,6 +237,64 @@ class SyncRecoveryServiceImpl implements SyncRecoveryService {
         if (isPrismaNotFound(err)) throw new EntryStateChangedException(entryId);
         throw err;
       }
+    });
+  }
+
+  async discardAllPermanentFailures(
+    reason: string,
+    actorUserId: string,
+  ): Promise<{ discardedCount: number }> {
+    if (reason.trim().length === 0) {
+      throw new DomainError(
+        'DISCARD_REASON_REQUIRED',
+        'A discard reason is required',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const entries = await tx.syncQueue.findMany({
+        where: { status: 'PERMANENT_FAILURE' },
+        select: { id: true },
+      });
+
+      if (entries.length === 0) {
+        return { discardedCount: 0 };
+      }
+
+      const at = new Date();
+      const errorMessage = `DISCARDED: ${reason}`;
+      let discardedCount = 0;
+
+      // Per-row updates with status in the where clause: a concurrent
+      // discard (another operator, or a retry that just succeeded) will
+      // cause P2025 here, which we treat as "already moved" and skip.
+      // This keeps the discardedCount honest under contention.
+      for (const entry of entries) {
+        try {
+          await tx.syncQueue.update({
+            where: { id: entry.id, status: 'PERMANENT_FAILURE' },
+            data: { status: 'DISCARDED', lastErrorMessage: errorMessage },
+          });
+
+          await tx.syncRecoveryLog.create({
+            data: {
+              id: crypto.randomUUID(),
+              syncQueueEntryId: entry.id,
+              action: 'DISCARD',
+              reason,
+              actorUserId,
+              at,
+            },
+          });
+
+          discardedCount += 1;
+        } catch (err: unknown) {
+          if (isPrismaNotFound(err)) continue;
+          throw err;
+        }
+      }
+
+      return { discardedCount };
     });
   }
 }

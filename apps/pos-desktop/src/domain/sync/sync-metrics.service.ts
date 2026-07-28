@@ -3,11 +3,11 @@
  * All methods are offline-safe — they read from local Prisma only.
  */
 
-import type { PrismaClient } from '@pharmacy/database/local';
+import type { PrismaClient, SyncQueue } from '@pharmacy/database/local';
 import { DomainError } from '../../common/domain-error';
 
 // Any PENDING entry with sourceCreatedAt older than this threshold is stale.
-export const STALE_PENDING_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+export const STALE_PENDING_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // Hard cap — exports over this limit throw instead of producing a partial file.
 export const EXPORT_ROW_LIMIT = 10_000;
@@ -603,7 +603,7 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
 
   private async fetchFilteredEntries(
     filter: EntryFilter,
-  ): Promise<Array<Record<string, unknown>>> {
+  ): Promise<SyncQueue[]> {
     const where: Record<string, unknown> = {};
     if (filter.status) where.status = filter.status;
     if (filter.operationType) where.operationType = filter.operationType;
@@ -618,7 +618,7 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
     return this.prisma.syncQueue.findMany({
       where,
       orderBy: { sourceCreatedAt: 'desc' as const },
-    }) as unknown as Array<Record<string, unknown>>;
+    });
   }
 
   private prettyPrintPayload(payloadJson: string): string {

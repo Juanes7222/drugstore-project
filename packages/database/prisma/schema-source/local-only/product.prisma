@@ -1,0 +1,74 @@
+// LOCAL-ONLY schema fragment — only included in the local build (apps/pos-desktop).
+// This file OVERRIDES the shared product.prisma for local builds only.
+//
+// Adds a `serverId` column to Product. The local POS generates its own
+// UUIDs when products are created offline, which never match the server's
+// server-assigned id. The `serverId` column records the id the server
+// returns after a successful PRODUCT_CREATION sync, so the POS can:
+//   1. Tell locally-created products apart from server mirrors
+//   2. Block sales that reference unsynced products (see
+//      ProductNotSyncedYetException in apps/pos-desktop/src/domain/catalog/exceptions.ts)
+//   3. Push unsynced products first on reconnect, before any sales of
+//      those products are processed by the server
+//
+// The `serverId` field is nullable: NULL means "not yet pushed to the
+// server". It is populated by the catalog pull (which matches the server
+// product by `internalCode` and updates the matching local row's
+// `serverId`) and, for freshly-pushed products, by the next catalog
+// pull cycle. Products created directly on the server (via the backoffice
+// or another POS) start with their server id and `serverId` already set.
+//
+// This field is NOT in the shared schema because the server's Product
+// table already has `id` which IS the server-assigned id — the server
+// does not need a separate `serverId` column. The local POS needs both:
+// its own `id` (stable across the lifecycle of the local row) and the
+// `serverId` (the mirror's id on the server).
+
+model Product {
+  id                    String    @id
+  internalCode          String    @unique
+  commercialName        String
+  genericName           String
+  activePrinciple       String
+  concentration         String?
+  concentrationUnit     String?
+  laboratory            String
+  saleType              SaleType
+  minimumStock          Int       @default(0)
+  isActive              Boolean   @default(true)
+  discontinuationReason String?
+  invimaRegistry        String?
+  atcCode               String?
+  therapeuticIndication String?
+  storageConditions     String?
+  internalNotes         String?
+  categoryId            String?
+  category              Category? @relation(fields: [categoryId], references: [id])
+  pharmaceuticalFormId  String?
+  pharmaceuticalForm    PharmaceuticalForm? @relation(fields: [pharmaceuticalFormId], references: [id])
+  currentPriceId         String?
+  currentTaxHistoryId    String?
+  currentCostId          String?
+  /// Local-only column. The id the server assigned to the matching
+  /// server-side product after a successful PRODUCT_CREATION sync.
+  /// NULL means the product has never been pushed to the server.
+  /// Indexed because the catalog pull matches by `serverId` to detect
+  /// rows that already have a server mirror.
+  serverId              String?   @unique
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  createdById            String
+  priceHistories         ProductPriceHistory[]
+  taxHistories           ProductTaxHistory[]
+  costHistories          ProductCostHistory[]
+  barcodes               ProductBarcode[]
+  lots                   Lot[]
+  saleItems              SaleItem[]
+
+  @@index([commercialName])
+  @@index([genericName])
+  @@index([activePrinciple])
+  @@index([isActive])
+  @@index([categoryId, isActive])
+  @@index([invimaRegistry])
+}

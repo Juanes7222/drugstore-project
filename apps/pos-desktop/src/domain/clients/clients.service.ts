@@ -22,6 +22,7 @@
 import { PrismaClient, Prisma } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import { RoleType } from '@pharmacy/shared-types';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import { createClientPullService } from './client-pull.service';
 import { API_BASE_URL } from '../../infrastructure/config';
 import { useLocalSessionStore } from '../auth/local-session.store';
@@ -162,6 +163,9 @@ export class ClientsService {
       await this.createSyncQueueEntry(tx, client, input, session);
 
       return client as unknown as ClientSearchResult;
+    }).then((result) => {
+      notifyPendingEntry();
+      return result;
     });
   }
 
@@ -238,6 +242,9 @@ export class ClientsService {
       await this.enqueueUpdateSync(tx, client, input, session);
 
       return client as unknown as ClientSearchResult;
+    }).then((result) => {
+      notifyPendingEntry();
+      return result;
     });
   }
 
@@ -275,6 +282,9 @@ export class ClientsService {
       await this.enqueueDeactivateSync(tx, client, session);
 
       return client as unknown as ClientSearchResult;
+    }).then((result) => {
+      notifyPendingEntry();
+      return result;
     });
   }
 

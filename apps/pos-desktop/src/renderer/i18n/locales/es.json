@@ -241,9 +241,10 @@
     "errors": "Errores",
     "no_errors": "Sin errores",
     "attention_banner": {
-      "title": "Sincronización pendiente",
-      "description": "Algunas operaciones no pudieron sincronizarse con el servidor.",
-      "contact_manager": "Contacte a un administrador para revisar el estado de sincronización.",
+      "permanent_failure_title": "Sincronización con errores",
+      "permanent_failure_description": "Algunas operaciones no pudieron sincronizarse después de varios intentos — contacte a un administrador.",
+      "pending_title": "Operaciones pendientes",
+      "pending_description": "Hay operaciones esperando sincronizarse con el servidor.",
       "backup_critical_title": "Respaldo crítico",
       "backup_critical_description": "El estado del respaldo es crítico — contacte a un administrador."
     },
@@ -632,6 +633,7 @@
       "error_price_below_cost": "El precio de {{name}} ({{price}}) está por debajo del costo mínimo ({{floor}}).",
       "error_discount_exceeds_limit": "El descuento excede el límite permitido para tu rol.",
       "error_override_not_allowed": "No tienes permiso para modificar el precio de este producto.",
+      "error_product_not_synced_yet": "El producto aún no se ha sincronizado con el servidor. Espera a que termine el próximo ciclo de sincronización y vuelve a intentarlo.",
       "error_checkout_failed": "No se pudo procesar el cobro.",
       "error_generic": "{{message}}",
       "error_dismiss": "Descartar error"

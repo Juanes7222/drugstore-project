@@ -21,8 +21,7 @@
  * or PERMANENT_FAILURE status are never selected.
  */
 
-import crypto from 'node:crypto';
-import type { PrismaClient } from '@pharmacy/database/local';
+import { Prisma, type PrismaClient } from '@pharmacy/database/local';
 import type { InvoiceService } from '../fiscal/invoice.service';
 import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
 import { LocalAuditEvent } from '../audit/local-audit-writer.service';
@@ -156,7 +155,7 @@ export const createSyncPushService = (
 // Implementation
 // ---------------------------------------------------------------------------
 
-type SyncQueueEntryForPush = {
+type SyncEntryForPush = {
   id: string;
   operationUuid: string;
   operationType: string;
@@ -170,11 +169,19 @@ type SyncQueueEntryForPush = {
 
 /**
  * Per-operation result from the server's batch response.
+ *
+ * The server includes the new entity's server-assigned id in
+ * `entityId` for create-style operations (`PRODUCT_CREATION`,
+ * `CLIENT_CREATION`, etc.). The push pipeline reads this so it can
+ * stamp the corresponding local row's `serverId` after the
+ * SyncQueue entry transitions to COMPLETED — that's how the
+ * sales-pos service knows a product is "synced" and safe to sell.
  */
 interface BatchOperationResult {
   operationUuid: string;
   status: string;
   error?: string;
+  entityId?: string;
 }
 
 class SyncPushServiceImpl implements SyncPushService {
@@ -357,37 +364,21 @@ class SyncPushServiceImpl implements SyncPushService {
 
         if (!result || result.status === 'ACCEPTED') {
           acceptedCount++;
-          await tx.syncQueue.update({
-            where: { id: entry.id },
-            data: { status: 'COMPLETED', lastAttemptAt: now },
-          });
-          await tx.syncAttempt.create({
-            data: {
-              id: crypto.randomUUID(),
-              syncQueueEntryId: entry.id,
-              attemptedAt: now,
-              outcome: 'ACCEPTED',
-              httpStatus,
-            },
-          });
+          await this.markEntryCompleted(tx, entry, 'ACCEPTED', httpStatus, now);
+          await this.stampEntityIdFromResult(tx, entry, result);
           continue;
         }
 
         if (result.status === 'ALREADY_ACCEPTED') {
           acceptedCount++;
-          await tx.syncQueue.update({
-            where: { id: entry.id },
-            data: { status: 'COMPLETED', lastAttemptAt: now },
-          });
-          await tx.syncAttempt.create({
-            data: {
-              id: crypto.randomUUID(),
-              syncQueueEntryId: entry.id,
-              attemptedAt: now,
-              outcome: 'ALREADY_ACCEPTED',
-              httpStatus,
-            },
-          });
+          await this.markEntryCompleted(
+            tx,
+            entry,
+            'ALREADY_ACCEPTED',
+            httpStatus,
+            now,
+          );
+          await this.stampEntityIdFromResult(tx, entry, result);
           continue;
         }
 
@@ -407,7 +398,7 @@ class SyncPushServiceImpl implements SyncPushService {
         });
         await tx.syncAttempt.create({
           data: {
-            id: crypto.randomUUID(),
+            id: globalThis.crypto.randomUUID(),
             syncQueueEntryId: entry.id,
             attemptedAt: now,
             outcome: 'REJECTED',
@@ -475,6 +466,92 @@ class SyncPushServiceImpl implements SyncPushService {
   }
 
   /**
+   * Transition a SyncQueue entry to COMPLETED and record a
+   * `SyncAttempt` row. The two writes happen inside the caller's
+   * transaction so the queue and the attempt log stay consistent.
+   *
+   * Extracted from the inline branches in `handleOkResponse` so both
+   * the `ACCEPTED` and `ALREADY_ACCEPTED` paths can share it — and so
+   * the post-complete entity-id stamping in
+   * `stampEntityIdFromResult` has a single chokepoint to attach to.
+   */
+  private async markEntryCompleted(
+    tx: Prisma.TransactionClient,
+    entry: SyncEntryForPush,
+    outcome: 'ACCEPTED' | 'ALREADY_ACCEPTED',
+    httpStatus: number,
+    now: Date,
+  ): Promise<void> {
+    await tx.syncQueue.update({
+      where: { id: entry.id },
+      data: { status: 'COMPLETED', lastAttemptAt: now },
+    });
+    await tx.syncAttempt.create({
+      data: {
+        id: globalThis.crypto.randomUUID(),
+        syncQueueEntryId: entry.id,
+        attemptedAt: now,
+        outcome,
+        httpStatus,
+      },
+    });
+  }
+
+  /**
+   * After a SyncQueue entry reaches COMPLETED, stamp the
+   * server-assigned id onto the local row so the rest of the app can
+   * treat the entity as "synced".
+   *
+   * Currently only handles PRODUCT_CREATION. The payload's
+   * `metadata.productId` carries the local UUID; the batch result's
+   * `entityId` carries the server-assigned id. Both writes happen
+   * inside the same transaction as the SyncQueue update so a crash
+   * between "server accepted" and "local stamp" cannot leave a
+   * perpetual orphan. If a future operation type needs the same
+   * treatment (CLIENT_CREATION, SUPPLIER_RETURN, etc.) extend the
+   * switch below — the rest of the pipeline already carries
+   * `entityId` through.
+   *
+   * Failures inside the stamp are swallowed: the entry is COMPLETED
+   * and will not be re-pushed, so a stamp failure must not roll the
+   * whole batch back. The next `enqueueUnsyncedProducts()` pass on
+   * the next reconnect will see the still-null `serverId` and re-enqueue
+   * a PRODUCT_CREATION with a fresh `operationUuid`; the server's
+   * `internalCode`-based idempotency will fold it together.
+   */
+  private async stampEntityIdFromResult(
+    tx: Prisma.TransactionClient,
+    entry: SyncEntryForPush,
+    result: BatchOperationResult | undefined,
+  ): Promise<void> {
+    if (!result?.entityId) return;
+    if (entry.operationType !== 'PRODUCT_CREATION') return;
+
+    const localProductId = extractProductIdFromProductCreationPayload(
+      entry.payload,
+    );
+    if (localProductId === null) return;
+
+    try {
+      await tx.product.update({
+        where: { id: localProductId },
+        data: { serverId: result.entityId },
+      });
+    } catch (err) {
+      // The local row may have been soft-deleted or its schema may
+      // have evolved since the payload was enqueued. Logging and
+      // moving on is the correct trade-off — the SyncQueue entry is
+      // already COMPLETED, the server is no longer tracking it, and
+      // a permanent error here would deadlock the rest of the batch.
+      console.warn(
+        `[SyncPush] Failed to stamp serverId on product ${localProductId} ` +
+          `from operation ${entry.operationUuid}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  /**
    * Record a failure for all entries in a batch.
    * Each entry is updated individually because retryCount differs per row.
    */
@@ -516,7 +593,7 @@ class SyncPushServiceImpl implements SyncPushService {
 
         await tx.syncAttempt.create({
           data: {
-            id: crypto.randomUUID(),
+            id: globalThis.crypto.randomUUID(),
             syncQueueEntryId: entry.id,
             attemptedAt: now,
             outcome,
@@ -539,7 +616,7 @@ class SyncPushServiceImpl implements SyncPushService {
 
   /**
    * Parse the per-operation results from a batch response.
-   * The server returns an array of `{ operationUuid, status, error? }`.
+   * The server returns an array of `{ operationUuid, status, error?, entityId? }`.
    */
   private parseBatchResults(bodyText: string): BatchOperationResult[] {
     try {
@@ -550,6 +627,8 @@ class SyncPushServiceImpl implements SyncPushService {
             operationUuid: String(item.operationUuid ?? ''),
             status: String(item.status ?? ''),
             error: item.error != null ? String(item.error) : undefined,
+            entityId:
+              item.entityId != null ? String(item.entityId) : undefined,
           }),
         );
       }
@@ -583,4 +662,30 @@ export function computeNextRetryDelay(retryCount: number): number {
     4: 600_000,
   };
   return delays[retryCount] ?? 1_800_000;
+}
+
+// ---------------------------------------------------------------------------
+// Module-level helpers — payload parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Safely extract `metadata.productId` from a PRODUCT_CREATION payload.
+ * Returns `null` when the payload can't be parsed or doesn't carry the
+ * expected field — callers treat null as "skip, do not stamp".
+ */
+function extractProductIdFromProductCreationPayload(
+  payload: string,
+): string | null {
+  try {
+    const parsed = JSON.parse(payload) as {
+      metadata?: { productId?: unknown };
+    };
+    const value = parsed.metadata?.productId;
+    if (typeof value !== 'string' || value.length === 0) {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
 }

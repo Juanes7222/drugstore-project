@@ -177,7 +177,18 @@ export class SupplierReturnsService {
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
-      // Idempotency: check if return with same sequentialNumber + supplierId exists
+      // Idempotency: check by POS-originated id first. If the same return
+      // was already created from an earlier sync attempt, return it. The
+      // (sequentialNumber, supplierId) check is a fallback for returns that
+      // pre-date the POS-originated id convention.
+      const existingById = await tx.supplierReturn.findUnique({
+        where: { id: payload.returnId },
+        select: { id: true, state: true },
+      });
+      if (existingById) {
+        return existingById;
+      }
+
       const existing = await tx.supplierReturn.findFirst({
         where: { sequentialNumber: payload.sequentialNumber, supplierId: payload.supplierId },
         select: { id: true, state: true },

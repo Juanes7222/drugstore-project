@@ -217,6 +217,21 @@ No other element in the application uses a full-width animated line. It is the s
 
 ---
 
+### SyncAttentionBanner (redesigned 2026-07-28)
+
+The banner now has three tiers, only one visible at a time (highest priority wins):
+
+| Priority | Variant | Trigger | Color | Icon | Tone |
+|----------|---------|---------|-------|------|------|
+| 1 (highest) | `backup_critical` | `backupHealth === "CRITICAL"` | Error red | TriangleAlert | Urgent — contact admin |
+| 2 | `permanent_failure` | `permanentFailure > 0` | Urgency Amber | AlertTriangle | Warning — some items failed permanently |
+| 3 | `pending` | `pending > 0` | Sync Slate | Clock | Calm info — items waiting to sync |
+
+Previously the banner showed `stalePending > 0` (items PENDING > 1h) as an amber alert. This was too aggressive for an offline-first POS where pending items are normal. Changed:
+- Pending items now show as calm Sync Slate info, not as an amber alert.
+- Only `permanentFailure` (items that exhausted retries) triggers a warning.
+- The old `contact_manager` key was removed — permanent failures now point to admin directly.
+
 ### Component primitives (added in Phase 2)
 
 These classes live in `styles/global.css` and are built entirely from the tokens above. They are the reusable surface/pattern vocabulary for every screen:

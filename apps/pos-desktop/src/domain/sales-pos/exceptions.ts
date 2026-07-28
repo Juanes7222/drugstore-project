@@ -134,3 +134,39 @@ export class PriceBelowCostException extends DomainError {
     );
   }
 }
+
+/**
+ * Thrown when a sale is being created (or confirmed) and at least one
+ * referenced product has not been pushed to the server yet.
+ *
+ * Background: the POS can create products while offline. Those rows
+ * carry a provisional `OFFLINE-{uuid}` internalCode and `serverId IS NULL`
+ * until the next sync push successfully delivers a `PRODUCT_CREATION`
+ * to the server and stamps the returned server-assigned id on the local
+ * row. If a sale of one of those products reaches the server first, the
+ * server rejects the `SALE_CONFIRMATION` with `Product with ID {x} not
+ * found`, the cashier sees a successful local sale that the server has
+ * no record of, and every subsequent sale of the same product piles up
+ * behind that first failed push.
+ *
+ * Blocking the sale at create/confirm time is the correct fix for a
+ * local-first POS that needs eventual consistency with the server: the
+ * cashier can still process a sale of a synced product, and the unsynced
+ * product becomes sellable the moment its `PRODUCT_CREATION` push
+ * completes (the same `SyncScheduler` reconnect-burst that pushes the
+ * sale-confirmation also pushes the product-creation). The exception
+ * carries a `productId` so the UI can highlight exactly which line item
+ * the cashier needs to wait for.
+ *
+ * Surfaced to the user through the i18n key
+ * `sales.cart.error_product_not_synced_yet`.
+ */
+export class ProductNotSyncedYetException extends DomainError {
+  constructor(public readonly productId: string) {
+    super(
+      'PRODUCT_NOT_SYNCED_YET',
+      `Product ${productId} has not been synced to the server yet. ` +
+        'Wait for the next sync cycle to complete and retry, or contact a manager.',
+    );
+  }
+}

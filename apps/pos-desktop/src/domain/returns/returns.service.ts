@@ -25,6 +25,7 @@
  */
 import { PrismaClient, Prisma, ClientReturnState, MovementType } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import type { InvoiceService, CreditNoteInput } from '../fiscal/invoice.service';
 import type { PrintRouter } from '../printing/print-router';
 import { PrintJobType, PrintPayloadType } from '../printing/printing-types';
@@ -528,6 +529,10 @@ export class ReturnsService {
 
       return { updatedReturn, creditNoteData } as const;
     }).then(async (result) => {
+      // Transaction committed — trigger immediate push instead of waiting
+      // for the 5-minute scheduler cycle.
+      notifyPendingEntry();
+
       const creditNoteData: CreditNoteInput = (result as { creditNoteData: CreditNoteInput }).creditNoteData;
 
       // 6. Generate credit note (fiscal document) after the return confirms.

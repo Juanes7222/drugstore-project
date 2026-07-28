@@ -38,6 +38,7 @@
  */
 
 import type { PrismaClient, Prisma } from '@pharmacy/database/local';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import {
   CONTINGENCY_TECH_KEY,
   CONTINGENCY_TRANSMISSION_WINDOW_HOURS,
@@ -268,6 +269,9 @@ class InvoiceServiceImpl implements InvoiceService {
       }
 
       return invoice as unknown as InvoiceModel;
+    }).then((result) => {
+      notifyPendingEntry();
+      return result;
     });
   }
 
@@ -345,6 +349,9 @@ class InvoiceServiceImpl implements InvoiceService {
       }
 
       return invoice as unknown as InvoiceModel;
+    }).then((result) => {
+      notifyPendingEntry();
+      return result;
     });
   }
 
@@ -644,6 +651,8 @@ class InvoiceServiceImpl implements InvoiceService {
           clientSequence,
         },
       });
+    }).then(() => {
+      notifyPendingEntry();
     });
   }
 

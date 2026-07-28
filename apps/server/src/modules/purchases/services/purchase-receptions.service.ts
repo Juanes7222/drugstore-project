@@ -251,7 +251,18 @@ export class PurchaseReceptionsService {
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
-      // Idempotency: check if reception with same sequentialNumber + supplierId exists
+      // Idempotency: check by POS-originated id first. If the same reception
+      // was already created from an earlier sync attempt, return it. The
+      // (sequentialNumber, supplierId) check is a fallback for receptions
+      // that pre-date the POS-originated id convention.
+      const existingById = await tx.purchaseReception.findUnique({
+        where: { id: payload.receptionId },
+        select: { id: true, state: true },
+      });
+      if (existingById) {
+        return existingById;
+      }
+
       const existing = await tx.purchaseReception.findFirst({
         where: { sequentialNumber: payload.sequentialNumber, supplierId: payload.supplierId },
         select: { id: true, state: true },

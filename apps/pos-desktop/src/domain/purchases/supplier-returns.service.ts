@@ -15,6 +15,7 @@ import {
 } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import { RoleType } from '@pharmacy/shared-types';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import {
   SupplierNotFoundException,
   SupplierReturnNotFoundException,
@@ -327,6 +328,9 @@ export class SupplierReturnsService {
       await this.createSyncQueueEntry(tx, supplierReturn, session);
 
       return this.mapReturn(updated, updated.items);
+    }).then((result) => {
+      notifyPendingEntry();
+      return result;
     });
   }
 

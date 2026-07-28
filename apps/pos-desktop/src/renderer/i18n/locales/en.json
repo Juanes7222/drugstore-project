@@ -200,9 +200,10 @@
     "errors": "Errors",
     "no_errors": "No errors",
     "attention_banner": {
-      "title": "Sync needs attention",
-      "description": "Some operations could not be synchronized with the server.",
-      "contact_manager": "Contact a manager to review the sync status.",
+      "permanent_failure_title": "Sync errors",
+      "permanent_failure_description": "Some operations failed after multiple attempts — contact an administrator.",
+      "pending_title": "Operations pending",
+      "pending_description": "Operations waiting to sync with the server.",
       "backup_critical_title": "Backup critical",
       "backup_critical_description": "Backup status is critical — contact a manager."
     },
@@ -562,6 +563,7 @@
       "error_price_below_cost": "Price of {{name}} ({{price}}) is below the cost floor ({{floor}}).",
       "error_discount_exceeds_limit": "Discount exceeds the limit for your role.",
       "error_override_not_allowed": "You are not allowed to override the price of this product.",
+      "error_product_not_synced_yet": "Product has not been synced to the server yet. Wait for the next sync cycle to complete and retry.",
       "error_checkout_failed": "Checkout failed.",
       "error_generic": "{{message}}",
       "error_dismiss": "Dismiss error"

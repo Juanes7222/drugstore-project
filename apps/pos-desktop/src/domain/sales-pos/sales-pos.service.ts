@@ -24,6 +24,7 @@
  */
 import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState, PaymentMethodCategory } from '@pharmacy/database/local';
 import { dbWriteLock } from '../../infrastructure/write-lock';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import type { AuthService } from '../auth/auth.service';
 import type { InventoryLotsService, ConsumedLot } from '../inventory-lots/inventory-lots.service';
 import type { InvoiceService } from '../fiscal/invoice.service';
@@ -39,6 +40,7 @@ import {
   PaymentAmountMismatchException,
   ChangeRequiresCashPaymentException,
   SaleNotFoundException,
+  ProductNotSyncedYetException,
 } from './exceptions';
 import {
   validateItemPricing,
@@ -241,6 +243,16 @@ export class SalesPosService {
     return this.prisma.$transaction(async (tx) => {
       const cashShift = await this.getOpenCashShift(tx, session.userId, session.workstationId);
 
+      // Block sales of products that the POS created offline and has not yet
+      // pushed to the server. Without this, every sale of an unsynced product
+      // piles up in the SyncQueue and is rejected by the server as
+      // "Product with ID X not found" — a silent data-loss loop the cashier
+      // cannot recover from. See ProductNotSyncedYetException for context.
+      await this.assertProductsSynced(
+        tx,
+        input.items.map((item) => item.productId),
+      );
+
       const clientData = input.clientId
         ? await this.getClientSnapshot(tx, input.clientId)
         : null;
@@ -395,6 +407,18 @@ export class SalesPosService {
         throw new SaleNotInProgressException(saleId);
       }
 
+      // 1b. Defensive sync-state check on confirm: a sale created while a
+      // product was synced could in theory be sitting in IN_PROGRESS for a
+      // long time (cashier walks away, network drops) and the product could
+      // have been soft-deleted+recreated locally in between. Re-validating
+      // here means confirm can never produce a SyncQueue SALE_CONFIRMATION
+      // pointing at an unsynced product, regardless of what happened
+      // between create and confirm.
+      await this.assertProductsSynced(
+        tx,
+        sale.items.map((item) => item.productId),
+      );
+
       // 2. Validate payments
       // Use Decimal arithmetic throughout to avoid IEEE 754 drift from
       // cents→pesos division (e.g. 12495 / 100 = 124.94999… in JS).
@@ -498,6 +522,10 @@ export class SalesPosService {
 
       return updatedSale;
     }).then(async (result) => {
+      // Transaction committed — trigger immediate push instead of waiting
+      // for the 5-minute scheduler cycle.
+      notifyPendingEntry();
+
       // 7. Generate invoice (fiscal document) after the sale confirms.
       //    This runs outside the main transaction so it doesn't block the
       //    confirm with fiscal computation. If invoice generation fails, the
@@ -650,6 +678,64 @@ export class SalesPosService {
   // -----------------------------------------------------------------------
   // Private helpers
   // -----------------------------------------------------------------------
+
+  /**
+   * Verify that every referenced product has been pushed to the server
+   * (i.e. `serverId IS NOT NULL`).
+   *
+   * The local `Product.serverId` column is stamped by `SyncPushService`
+   * when the server accepts the corresponding `PRODUCT_CREATION` sync
+   * operation and returns the new server-assigned id. Until that stamp
+   * lands, the product only exists in the local PGlite database and the
+   * server will reject any sale of it.
+   *
+   * Runs inside the caller's transaction so the check and the subsequent
+   * write are atomic — a concurrent `SyncPushService` that just stamped
+   * `serverId` between the read and the write cannot cause us to throw
+   * here and still let the create commit (the row would be re-read on
+   * retry and pass).
+   *
+   * @throws ProductNotSyncedYetException as soon as the first unsynced
+   *         product is found. The order of the ids list is preserved so
+   *         the exception carries the same product the cashier saw in
+   *         the cart, not whatever the database happened to return first.
+   */
+  private async assertProductsSynced(
+    tx: Prisma.TransactionClient,
+    productIds: string[],
+  ): Promise<void> {
+    if (productIds.length === 0) return;
+
+    // Deduplicate while preserving first-occurrence order so the error
+    // matches the line item the cashier actually saw in the cart.
+    const uniqueIds: string[] = [];
+    const seen = new Set<string>();
+    for (const id of productIds) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        uniqueIds.push(id);
+      }
+    }
+
+    const rows = await tx.product.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, serverId: true },
+    });
+
+    const syncStateById = new Map<string, string | null>();
+    for (const row of rows) {
+      syncStateById.set(row.id, row.serverId);
+    }
+
+    for (const id of uniqueIds) {
+      // Missing row is treated as unsynced — the per-item builder would
+      // also fail with a "not found" error, so this branch is just an
+      // earlier, more specific failure mode.
+      if (!syncStateById.has(id) || syncStateById.get(id) === null) {
+        throw new ProductNotSyncedYetException(id);
+      }
+    }
+  }
 
   /**
    * Find the open cash shift for the given user and workstation.

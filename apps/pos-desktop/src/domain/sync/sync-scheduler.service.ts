@@ -55,8 +55,10 @@ import type { SyncMetricsService } from './sync-metrics.service';
 import { createSyncMetricsService } from './sync-metrics.service';
 import { createBackupService, type BackupService } from '../backup/backup.service';
 import { useSyncAuthStatusStore } from './sync-auth-status.store';
+import { setPushTrigger } from './sync-queue-notifier';
 import type { InvoiceService } from '../fiscal/invoice.service';
 import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
+import type { ProductService } from '../catalog/product.service';
 import {
   createTenantConfigSyncService,
   type TenantConfigSyncService,
@@ -68,6 +70,28 @@ import {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Reconnect burst schedule.
+ *
+ * After an offline → online transition the scheduler runs a denser
+ * push cadence for ~2 minutes before settling back into the regular
+ * 5-minute interval. Two phases:
+ *
+ * - 6 ticks at 10 s (60 s total) — drains any small backlog that
+ *   accumulated during a short network blip.
+ * - 2 ticks at 30 s (60 s total) — handles larger backlogs without
+ *   hammering the server with a hot loop.
+ *
+ * Each burst tick runs the unsynced-products scanner before
+ * `pushPending()` so product creations land before any sales of those
+ * products. The burst is cancelled if the workstation goes offline
+ * again before it completes — we re-arm on the next online event.
+ */
+const BURST_FAST_TICKS = 6;
+const BURST_FAST_INTERVAL_MS = 10_000;
+const BURST_SLOW_TICKS = 2;
+const BURST_SLOW_INTERVAL_MS = 30_000;
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -91,6 +115,15 @@ export interface SyncSchedulerConfig {
   invoiceService?: InvoiceService;
   /** Local audit event writer (optional). */
   auditWriter?: LocalAuditWriter;
+  /**
+   * Product service — used by the reconnect burst to enqueue
+   * unsynced local products before the regular push begins, so that
+   * sales of those products (which the sales-pos service now blocks
+   * until `serverId IS NOT NULL`) become sellable as soon as the
+   * burst completes.  If omitted, the burst still runs — it just
+   * won't reconcile orphan products.
+   */
+  productService?: ProductService;
 }
 
 export const createSyncScheduler = (
@@ -117,8 +150,17 @@ export class SyncScheduler {
   private readonly backupService: BackupService;
   private readonly invoiceService?: InvoiceService;
   private readonly auditWriter?: LocalAuditWriter;
+  private readonly productService?: ProductService;
   private readonly intervalMs: number;
   private timerId: ReturnType<typeof setInterval> | null = null;
+  /** Reconnect-burst timer + remaining-tick counter.  Null when no burst is active. */
+  private burstTimerId: ReturnType<typeof setTimeout> | null = null;
+  private burstTicksRemaining: number = 0;
+  private burstPhase: 'fast' | 'slow' | null = null;
+  /** Tracks previous online state so `tick()` can detect transitions as a fallback. */
+  private wasOnline: boolean = false;
+  /** Bound handler for `window.online` so `stop()` can detach the same reference. */
+  private readonly handleOnlineEvent: () => void;
 
   constructor(config: SyncSchedulerConfig) {
     this.prisma = config.prisma;
@@ -150,7 +192,10 @@ export class SyncScheduler {
     this.backupService = createBackupService();
     this.invoiceService = config.invoiceService;
     this.auditWriter = config.auditWriter;
+    this.productService = config.productService;
     this.intervalMs = config.intervalMs ?? DEFAULT_INTERVAL_MS;
+    this.wasOnline = isOnline();
+    this.handleOnlineEvent = () => this.onOnlineEvent();
 
     if (config.tenantConfig) {
       this.tenantConfigSync = createTenantConfigSyncService({
@@ -158,6 +203,11 @@ export class SyncScheduler {
         accessToken: config.accessToken ?? config.tenantConfig.accessToken,
       });
     }
+
+    // Register the auto-push trigger so notifyPendingEntry() calls from domain
+    // services immediately push the new SyncQueue row instead of waiting for
+    // the next 5-minute sync cycle.
+    setPushTrigger(() => this.triggerPush());
   }
 
   /**
@@ -197,6 +247,11 @@ export class SyncScheduler {
    *    operations attempt to use it).
    * 2. Fires a full cycle immediately.
    * 3. Repeats on `intervalMs`.
+   * 4. Subscribes to the browser's `online` event so the first push
+   *    after an offline window happens immediately instead of waiting
+   *    up to `intervalMs` for the next regular tick. The `online`
+   *    listener also arms the reconnect-burst schedule (denser push
+   *    cadence for ~2 minutes after reconnect).
    *
    * Safe to call multiple times — subsequent calls are no-ops.
    */
@@ -226,6 +281,18 @@ export class SyncScheduler {
     this.timerId = setInterval(() => {
       void this.tick();
     }, this.intervalMs);
+
+    // 4. Subscribe to browser `online` events. The handler is stored
+    //    as a class field so `stop()` can detach the same reference;
+    //    `addEventListener` deduplicates identical (function, capture)
+    //    pairs, but using a stored reference makes the intent obvious
+    //    and survives refactors that move the handler body.
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function'
+    ) {
+      window.addEventListener('online', this.handleOnlineEvent);
+    }
   }
 
   /**
@@ -237,6 +304,18 @@ export class SyncScheduler {
       clearInterval(this.timerId);
       this.timerId = null;
     }
+    if (this.burstTimerId !== null) {
+      clearTimeout(this.burstTimerId);
+      this.burstTimerId = null;
+    }
+    this.burstTicksRemaining = 0;
+    this.burstPhase = null;
+    if (
+      typeof window !== 'undefined' &&
+      typeof window.removeEventListener === 'function'
+    ) {
+      window.removeEventListener('online', this.handleOnlineEvent);
+    }
   }
 
   /**
@@ -245,6 +324,201 @@ export class SyncScheduler {
    */
   async syncNow(): Promise<void> {
     await this.tick();
+  }
+
+  /**
+   * Trigger an immediate push of pending SyncQueue entries.
+   *
+   * Called by `notifyPendingEntry()` (via the registered callback) after a
+   * domain service creates a new PENDING SyncQueue row and commits the
+   * transaction.  This fires a push immediately instead of waiting for
+   * the next 5-minute scheduler tick.
+   *
+   * Fire-and-forget — errors are logged internally by `pushPending()`.
+   * No-op when offline (the scheduler's tick will eventually push when
+   * connectivity returns).
+   */
+  triggerPush(): void {
+    if (!isOnline()) return;
+
+    void this.withLock(() => this.pushService.pushPending()).catch(() => {
+      /* pushPending handles its own errors */
+    });
+  }
+
+  /**
+   * Handle the browser's `online` event.
+   *
+   * Three things happen on the offline → online transition:
+   *
+   * 1. An immediate `pushPending()` fires so a single-entry backlog
+   *    drains without waiting for the burst timer.
+   * 2. Every FAILED SyncQueue entry has its `nextRetryAt` pushed to
+   *    the current instant, so the very next `pushPending()` call
+   *    (the one from step 1, then each burst tick) picks them up
+   *    instead of waiting on their stale exponential-backoff timer.
+   * 3. The reconnect burst is (re-)armed. If a burst is already
+   *    running the new arm replaces it — the user just flapped, and
+   *    we want to honour the latest reconnect rather than running a
+   *    half-finished schedule.
+   */
+  private onOnlineEvent(): void {
+    // The `online` event also fires on the very first render in some
+    // browsers (Chromium fires one when the webview loads even if the
+    // network is already up). Guard against the spurious initial
+    // event by checking the previous state — only act on a real
+    // transition offline → online.
+    const online = isOnline();
+    if (this.wasOnline) {
+      // Already online when the event arrived. Nothing to do; the
+      // regular tick and the auto-push trigger already cover steady-
+      // state traffic.
+      return;
+    }
+    this.wasOnline = online;
+
+    // 1. Immediate push (fire-and-forget).
+    void this.withLock(() => this.pushService.pushPending()).catch(() => {
+      /* pushPending handles its own errors */
+    });
+
+    // 2. Reset FAILED entries' `nextRetryAt` so they re-enter the
+    //    push pipeline on the very next push. This is the single
+    //    change that turns "wait up to 30 minutes for the next
+    //    exponential-backoff window" into "drained within ~10
+    //    seconds". A push failure during the burst will rewrite
+    //    `nextRetryAt` again via `recordBatchFailure`; the reset
+    //    only affects entries that were waiting on a stale backoff.
+    void this.resetFailedRetryTimers();
+
+    // 3. Arm the burst.
+    this.armBurst();
+  }
+
+  /**
+   * Set `nextRetryAt` to the current instant on every FAILED
+   * SyncQueue row whose retry budget is not exhausted. Best-effort:
+   * if the write fails the regular push path will eventually pick
+   * the entries up at their original backoff time.
+   */
+  private async resetFailedRetryTimers(): Promise<void> {
+    try {
+      const now = new Date();
+      await this.prisma.syncQueue.updateMany({
+        where: {
+          status: 'FAILED',
+          retryCount: { lt: 10 },
+        },
+        data: { nextRetryAt: now },
+      });
+    } catch (err) {
+      console.warn(
+        '[SyncScheduler] Failed to reset FAILED nextRetryAt on reconnect:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  /**
+   * Arm the reconnect-burst schedule. The burst is a `setTimeout`
+   * chain (not `setInterval`) because the cadence changes between
+   * phases — fast at 10 s for 6 ticks, then slow at 30 s for 2 ticks.
+   *
+   * Idempotent: calling while a burst is already running cancels
+   * the old chain and starts fresh, so flapping connectivity doesn't
+   * leave half-completed bursts running indefinitely.
+   */
+  private armBurst(): void {
+    if (this.burstTimerId !== null) {
+      clearTimeout(this.burstTimerId);
+      this.burstTimerId = null;
+    }
+    this.burstPhase = 'fast';
+    this.burstTicksRemaining = BURST_FAST_TICKS;
+    this.scheduleNextBurstTick();
+  }
+
+  /**
+   * Cancel an in-flight burst. Called from the regular `tick()` when
+   * the previous-online tracking detects that we have gone offline
+   * between burst ticks.
+   */
+  private cancelBurst(): void {
+    if (this.burstTimerId !== null) {
+      clearTimeout(this.burstTimerId);
+      this.burstTimerId = null;
+    }
+    this.burstTicksRemaining = 0;
+    this.burstPhase = null;
+  }
+
+  private scheduleNextBurstTick(): void {
+    if (this.burstTicksRemaining <= 0) {
+      this.burstTimerId = null;
+      this.burstPhase = null;
+      return;
+    }
+    const interval =
+      this.burstPhase === 'fast'
+        ? BURST_FAST_INTERVAL_MS
+        : BURST_SLOW_INTERVAL_MS;
+    this.burstTimerId = setTimeout(() => {
+      this.burstTimerId = null;
+      void this.runBurstTick();
+    }, interval);
+  }
+
+  /**
+   * One burst tick: enqueue any unsynced products, then push, then
+   * decrement the counter and re-arm the next tick (or end the
+   * burst if we've run out).
+   */
+  private async runBurstTick(): Promise<void> {
+    if (this.burstTicksRemaining <= 0) return;
+
+    // If the workstation went offline between schedule and fire,
+    // abandon the burst — we don't want to do pointless work and
+    // we'll re-arm on the next online event.
+    if (!isOnline()) {
+      this.cancelBurst();
+      return;
+    }
+
+    // Reconcile orphan products before pushing sales-of-them, so the
+    // server's SALE_CONFIRMATION validator finds the referenced
+    // products. Failures here are non-fatal; the push step still
+    // runs and the orphan scanner will be retried on the next
+    // reconnect.
+    if (this.productService) {
+      try {
+        await this.productService.enqueueUnsyncedProducts();
+      } catch (err) {
+        console.warn(
+          '[SyncScheduler] enqueueUnsyncedProducts failed during burst:',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
+    try {
+      await this.withLock(() => this.pushService.pushPending());
+    } catch {
+      // Per-step error handling inside pushPending covers logging.
+    }
+
+    this.burstTicksRemaining -= 1;
+    if (this.burstTicksRemaining === 0) {
+      // Phase boundary: fast → slow, then slow → end.
+      if (this.burstPhase === 'fast') {
+        this.burstPhase = 'slow';
+        this.burstTicksRemaining = BURST_SLOW_TICKS;
+      } else {
+        this.burstPhase = null;
+        this.burstTimerId = null;
+        return;
+      }
+    }
+    this.scheduleNextBurstTick();
   }
 
   // -----------------------------------------------------------------------
@@ -431,7 +705,25 @@ export class SyncScheduler {
    * Metrics are computed regardless of online status (offline-safe).
    */
   private async tick(): Promise<void> {
-    if (!isOnline()) return;
+    // Fallback transition detection: the `online` browser event is the
+    // primary trigger for the reconnect burst, but it can be missed
+    // (webview starts up offline, the OS fires no event when WiFi
+    // returns, etc.). The regular tick therefore compares the current
+    // online state against the previous one and arms the burst
+    // itself when it sees a fresh transition. This is idempotent with
+    // the `online` event handler — `onOnlineEvent` already updated
+    // `wasOnline` and armed the burst, so the fallback no-ops on a
+    // real transition.
+    const online = isOnline();
+    if (online && !this.wasOnline) {
+      this.wasOnline = true;
+      this.armBurst();
+    } else if (!online && this.wasOnline) {
+      this.wasOnline = false;
+      this.cancelBurst();
+    }
+
+    if (!online) return;
 
     // Refresh the access token if needed before running any sync operations.
     // If the token could not be refreshed (offline, server error) the

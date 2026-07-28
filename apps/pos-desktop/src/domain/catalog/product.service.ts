@@ -54,6 +54,7 @@
 import { PrismaClient, Prisma, SaleType } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import { RoleType } from '@pharmacy/shared-types';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import {
   ProductNotFoundException,
   ProductCreationException,
@@ -774,7 +775,125 @@ export class ProductService {
         currentPriceId: priceHistoryId,
         currentTaxHistoryId: taxHistoryId,
       };
+    }).then((result) => {
+      notifyPendingEntry();
+      return result;
     });
+  }
+
+  /**
+   * Scan the local `Product` table for rows that have never been pushed
+   * to the server (`serverId IS NULL` AND a provisional `OFFLINE-` internalCode)
+   * and enqueue a `PRODUCT_CREATION` SyncQueue entry for each one.
+   *
+   * This is the backstop for products that were created offline by
+   * `createProduct` but whose sync entry never reached `COMPLETED` —
+   * either because the original `createProduct` happened before the
+   * payload-shape fix landed, because a prior sync push failed with
+   * `PERMANENT_FAILURE` and the operator has not yet used the recovery
+   * page, or because a backup-restore cycle left the local DB with
+   * products but no corresponding SyncQueue rows. The scheduler calls
+   * this on every reconnect so the unsynced products are guaranteed to
+   * land in the queue before the first `SALE_CONFIRMATION` for any of
+   * them does (the sales-pos service blocks those sales outright, but
+   * the queue drain is what actually unblocks the cashier).
+   *
+   * Skips any product that already has an active (PENDING / FAILED /
+   * PROCESSING) SyncQueue PRODUCT_CREATION row referencing it — those
+   * are already in the push pipeline and the server's
+   * `internalCode`-based idempotency will fold the rows together.
+   *
+   * No role check: this is an internal sync primitive invoked by the
+   * scheduler, not a user-facing endpoint. The role check that matters
+   * already ran when the product was first created.
+   *
+   * @returns Count of newly enqueued products.
+   */
+  async enqueueUnsyncedProducts(): Promise<{ enqueued: number }> {
+    const orphanProducts = await this.prisma.product.findMany({
+      where: {
+        serverId: null,
+        internalCode: { startsWith: 'OFFLINE-' },
+      },
+      select: { id: true },
+    });
+
+    if (orphanProducts.length === 0) {
+      return { enqueued: 0 };
+    }
+
+    // Find any PRODUCT_CREATION row that is still in flight for the
+    // local workstation. We can't filter on `metadata.productId` (it
+    // lives inside the JSON payload, not a column) so we load the
+    // payloads and parse them in memory — the active queue is bounded
+    // by the batch size and even a full day of PENDING entries is
+    // small enough for in-process filtering.
+    const activeQueueEntries = await this.prisma.syncQueue.findMany({
+      where: {
+        operationType: 'PRODUCT_CREATION',
+        status: { in: ['PENDING', 'FAILED', 'PROCESSING'] },
+      },
+      select: { payload: true },
+    });
+
+    const inFlightProductIds = new Set<string>();
+    for (const entry of activeQueueEntries) {
+      const productId = extractMetadataProductId(entry.payload);
+      if (productId !== null) {
+        inFlightProductIds.add(productId);
+      }
+    }
+
+    const needsEnqueue = orphanProducts
+      .map((p) => p.id)
+      .filter((id) => !inFlightProductIds.has(id));
+
+    if (needsEnqueue.length === 0) {
+      return { enqueued: 0 };
+    }
+
+    const enqueued = await this.prisma.$transaction(async (tx) => {
+      let count = 0;
+      for (const productId of needsEnqueue) {
+        const product = await this.loadProductForReconciliation(
+          tx,
+          productId,
+        );
+        if (product === null) {
+          // Row vanished between the scan and the transaction — nothing
+          // to do, skip it.
+          continue;
+        }
+
+        const payloadObj = this.buildCreateProductPayloadFromRow(
+          product,
+          product.session,
+          product.workstationId,
+        );
+
+        // Re-use the same SyncQueue entry shape that createProduct
+        // produces, so the server's batch dispatcher treats the entry
+        // identically.  We pass the original product creation timestamp
+        // through `sourceCreatedAt` so the client's monotonic sequence
+        // numbers are preserved correctly.
+        const sourceCreatedAt = product.createdAt;
+        await this.createSyncQueueEntry(
+          tx,
+          { userId: product.createdById, workstationId: product.workstationId },
+          'PRODUCT_CREATION',
+          payloadObj,
+          sourceCreatedAt,
+        );
+        count += 1;
+      }
+      return count;
+    });
+
+    if (enqueued > 0) {
+      notifyPendingEntry();
+    }
+
+    return { enqueued };
   }
 
   /**
@@ -1054,6 +1173,9 @@ export class ProductService {
       );
 
       return updated;
+    }).then((result) => {
+      notifyPendingEntry();
+      return result;
     });
   }
 
@@ -1116,6 +1238,8 @@ export class ProductService {
         syncPayload,
         now,
       );
+    }).then(() => {
+      notifyPendingEntry();
     });
   }
 
@@ -1275,6 +1399,235 @@ export class ProductService {
   // Private — sync helpers
   // -------------------------------------------------------------------------
 
+  /**
+   * Load a product and the data needed to rebuild a server-side
+   * `createProductDto` payload from the stored row. Returns null when
+   * the row is missing or has no current price/tax history — the latter
+   * means the product was created in a partially-valid state and a
+   * manual fix is required.
+   *
+   * The returned `session`/`workstationId` are best-effort echoes from
+   * the stored row so the SyncQueue entry's `metadata` field has the
+   * same workstation attribution the original `createProduct` call
+   * produced.
+   */
+  private async loadProductForReconciliation(
+    tx: Prisma.TransactionClient,
+    productId: string,
+  ): Promise<{
+    id: string;
+    internalCode: string;
+    commercialName: string;
+    genericName: string;
+    activePrinciple: string;
+    concentration: string | null;
+    concentrationUnit: string | null;
+    laboratory: string;
+    saleType: SaleType;
+    minimumStock: number;
+    invimaRegistry: string | null;
+    atcCode: string | null;
+    therapeuticIndication: string | null;
+    storageConditions: string | null;
+    internalNotes: string | null;
+    categoryId: string | null;
+    pharmaceuticalFormId: string | null;
+    barcodes: Array<{ barcode: string; barcodeType: string; isPrimary: boolean }>;
+    initialPrice: string;
+    initialTaxSchemeId: string;
+    createdById: string;
+    createdAt: Date;
+    session: { userId: string; workstationId: string };
+    workstationId: string;
+  } | null> {
+    const row = await tx.product.findUnique({
+      where: { id: productId },
+      select: {
+        // Scalar fields needed for the payload — `serverId` is also
+        // selected here (rather than via `include`) because the
+        // generated client's `include` type doesn't surface
+        // `serverId` even though the runtime column exists. The
+        // same field is read by `enqueueUnsyncedProducts` to skip
+        // already-reconciled rows.
+        serverId: true,
+        id: true,
+        internalCode: true,
+        commercialName: true,
+        genericName: true,
+        activePrinciple: true,
+        concentration: true,
+        concentrationUnit: true,
+        laboratory: true,
+        saleType: true,
+        minimumStock: true,
+        invimaRegistry: true,
+        atcCode: true,
+        therapeuticIndication: true,
+        storageConditions: true,
+        internalNotes: true,
+        categoryId: true,
+        pharmaceuticalFormId: true,
+        createdById: true,
+        createdAt: true,
+        barcodes: {
+          select: { barcode: true, barcodeType: true, isPrimary: true },
+        },
+        priceHistories: {
+          where: { effectiveTo: null },
+          take: 1,
+          orderBy: { effectiveFrom: 'desc' },
+          select: { price: true },
+        },
+        taxHistories: {
+          where: { effectiveTo: null },
+          take: 1,
+          orderBy: { effectiveFrom: 'desc' },
+          select: { taxSchemeId: true },
+        },
+        costHistories: {
+          where: { effectiveTo: null },
+          take: 1,
+          orderBy: { effectiveFrom: 'desc' },
+          select: { cost: true },
+        },
+      },
+    });
+
+    if (!row) return null;
+    if (row.priceHistories.length === 0) return null;
+    if (row.taxHistories.length === 0) return null;
+    if (row.serverId !== null) return null; // raced with another reconciliation pass
+
+    // We don't store a workstationId column on Product — the only
+    // workstation attribution we have is from the SyncQueue row(s)
+    // that reference this product.  Fall back to the
+    // `metadata.workstationId` of the most recent in-flight entry, or
+    // to a stable placeholder if none exists yet (the scheduler that
+    // pulls this never validates the metadata workstationId against
+    // the live session, so a missing value is harmless).
+    const lastEntry = await tx.syncQueue.findFirst({
+      where: {
+        operationType: 'PRODUCT_CREATION',
+        payload: { contains: productId },
+      },
+      orderBy: { clientSequence: 'desc' },
+      select: { payload: true },
+    });
+    const lastWorkstationId = lastEntry
+      ? extractMetadataWorkstationId(lastEntry.payload)
+      : null;
+
+    return {
+      id: row.id,
+      internalCode: row.internalCode,
+      commercialName: row.commercialName,
+      genericName: row.genericName,
+      activePrinciple: row.activePrinciple,
+      concentration: row.concentration,
+      concentrationUnit: row.concentrationUnit,
+      laboratory: row.laboratory,
+      saleType: row.saleType as SaleType,
+      minimumStock: row.minimumStock,
+      invimaRegistry: row.invimaRegistry,
+      atcCode: row.atcCode,
+      therapeuticIndication: row.therapeuticIndication,
+      storageConditions: row.storageConditions,
+      internalNotes: row.internalNotes,
+      categoryId: row.categoryId,
+      pharmaceuticalFormId: row.pharmaceuticalFormId,
+      barcodes: row.barcodes.map((bc) => ({
+        barcode: bc.barcode,
+        barcodeType: bc.barcodeType as string,
+        isPrimary: bc.isPrimary,
+      })),
+      initialPrice: row.priceHistories[0].price.toString(),
+      initialTaxSchemeId: row.taxHistories[0].taxSchemeId,
+      createdById: row.createdById,
+      createdAt: row.createdAt,
+      session: { userId: row.createdById, workstationId: lastWorkstationId ?? 'unknown' },
+      workstationId: lastWorkstationId ?? 'unknown',
+    };
+  }
+
+  /**
+   * Build a `createProductDto` payload (and SyncQueue metadata) from a
+   * stored Product row, matching the shape `createProduct` produces.
+   *
+   * Kept separate from `createProduct`'s inline construction so the
+   * two paths can never drift: any change to the server-side
+   * `CreateProductDto` contract must be applied here too, and the
+   * shared `// NOTE:` comment in `createProduct` is the cross-reference
+   * the next developer will grep for.
+   */
+  private buildCreateProductPayloadFromRow(
+    row: {
+      id: string;
+      internalCode: string;
+      commercialName: string;
+      genericName: string;
+      activePrinciple: string;
+      concentration: string | null;
+      concentrationUnit: string | null;
+      laboratory: string;
+      saleType: SaleType;
+      minimumStock: number;
+      invimaRegistry: string | null;
+      atcCode: string | null;
+      therapeuticIndication: string | null;
+      storageConditions: string | null;
+      internalNotes: string | null;
+      categoryId: string | null;
+      pharmaceuticalFormId: string | null;
+      barcodes: Array<{ barcode: string; barcodeType: string; isPrimary: boolean }>;
+      initialPrice: string;
+      initialTaxSchemeId: string;
+      createdAt: Date;
+    },
+    session: { userId: string; workstationId: string },
+    workstationId: string,
+  ): Record<string, unknown> {
+    // Mirrors the createProductDto block in createProduct — keep both
+    // in sync. `initialPrice` and `initialTaxSchemeId` are flat
+    // top-level fields; the server's Zod schema rejects nested
+    // `price`/`tax` objects.
+    const createProductDto: Record<string, unknown> = {
+      internalCode: row.internalCode,
+      commercialName: row.commercialName,
+      genericName: row.genericName,
+      activePrinciple: row.activePrinciple,
+      concentration: row.concentration ?? undefined,
+      concentrationUnit: row.concentrationUnit ?? undefined,
+      laboratory: row.laboratory,
+      saleType: row.saleType,
+      minimumStock: row.minimumStock,
+      invimaRegistry: row.invimaRegistry ?? undefined,
+      atcCode: row.atcCode ?? undefined,
+      therapeuticIndication: row.therapeuticIndication ?? undefined,
+      storageConditions: row.storageConditions ?? undefined,
+      internalNotes: row.internalNotes ?? undefined,
+      categoryId: row.categoryId ?? undefined,
+      pharmaceuticalFormId: row.pharmaceuticalFormId ?? undefined,
+      initialPrice: row.initialPrice,
+      initialTaxSchemeId: row.initialTaxSchemeId,
+      barcodes: row.barcodes.map((bc) => ({
+        barcode: bc.barcode,
+        barcodeType: bc.barcodeType,
+        isPrimary: bc.isPrimary,
+      })),
+    };
+
+    return {
+      operationType: 'PRODUCT_CREATION' as const,
+      userId: session.userId,
+      createProductDto,
+      metadata: {
+        productId: row.id,
+        workstationId,
+        createdAt: row.createdAt.toISOString(),
+      },
+    };
+  }
+
   private async createSyncQueueEntry(
     tx: Prisma.TransactionClient,
     session: { userId: string; workstationId: string },
@@ -1319,5 +1672,45 @@ export class ProductService {
     const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Module-level helpers — payload parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Safely extract `metadata.productId` from a SyncQueue payload string.
+ * Returns `null` when the payload can't be parsed or doesn't contain
+ * the expected field — callers treat null as "no claim, do not skip".
+ *
+ * Only used by `enqueueUnsyncedProducts` to filter the active
+ * SyncQueue entries down to "ones that already represent this orphan
+ * product"; production paths must always build payloads through
+ * `createProduct` rather than parsing them.
+ */
+function extractMetadataProductId(payload: string): string | null {
+  return extractMetadataField(payload, 'productId');
+}
+
+function extractMetadataWorkstationId(payload: string): string | null {
+  return extractMetadataField(payload, 'workstationId');
+}
+
+function extractMetadataField(
+  payload: string,
+  field: 'productId' | 'workstationId',
+): string | null {
+  try {
+    const parsed = JSON.parse(payload) as {
+      metadata?: Record<string, unknown>;
+    };
+    const value = parsed.metadata?.[field];
+    if (typeof value !== 'string' || value.length === 0) {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
   }
 }

@@ -1,24 +1,28 @@
 /**
- * Cashier-facing sync-attention banner.
+ * Cashier-facing sync-status banner.
  *
- * Shows when PERMANENT_FAILURE > 0 or stale PENDING > 0. Purely advisory —
- * no payload details, counts, or categories leaked. Hidden when both are zero.
+ * Three tiers, only one visible at a time (highest-priority wins):
+ *   1. BACKUP_CRITICAL — backup state is critical, needs admin.
+ *   2. PERMANENT_FAILURE — items exhausted retries, needs admin review.
+ *   3. PENDING — items waiting to sync (calm info, not an alert).
+ *
+ * Hidden entirely when all counts are zero.
  * Polls every 30s, pauses on tab hide.
- *
- * TODO: invoke pos-local agent to extract data-fetching into a reusable
- * useSyncMetrics() hook — this component should consume a hook, not import
- * infrastructure directly.
  */
 
 import { type FC, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
-import { AlertTriangle, TriangleAlert } from "lucide-react";
+import {
+  TriangleAlert,
+  AlertTriangle,
+  Clock,
+} from "lucide-react";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
 import type { PrismaClient } from "@pharmacy/database/local";
 import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
 
-type BannerVariant = "sync" | "backup";
+type BannerVariant = "permanent_failure" | "pending" | "backup_critical";
 
 const bannerConfig: Record<
   BannerVariant,
@@ -26,20 +30,28 @@ const bannerConfig: Record<
     bg: string;
     border: string;
     text: string;
-    icon: typeof AlertTriangle;
+    icon: typeof Clock;
     titleKey: string;
     descKey: string;
   }
 > = {
-  sync: {
+  permanent_failure: {
     bg: "bg-urgency/10",
     border: "border-urgency/40",
     text: "text-urgency",
     icon: AlertTriangle,
-    titleKey: "sync.attention_banner.title",
-    descKey: "sync.attention_banner.description",
+    titleKey: "sync.attention_banner.permanent_failure_title",
+    descKey: "sync.attention_banner.permanent_failure_description",
   },
-  backup: {
+  pending: {
+    bg: "bg-sync/8",
+    border: "border-sync/30",
+    text: "text-sync",
+    icon: Clock,
+    titleKey: "sync.attention_banner.pending_title",
+    descKey: "sync.attention_banner.pending_description",
+  },
+  backup_critical: {
     bg: "bg-error-container",
     border: "border-error/40",
     text: "text-error",
@@ -51,7 +63,8 @@ const bannerConfig: Record<
 
 export const SyncAttentionBanner: FC = () => {
   const { t } = useTranslation();
-  const [syncVisible, setSyncVisible] = useState(false);
+  const [hasPermanentFailures, setHasPermanentFailures] = useState(false);
+  const [hasPending, setHasPending] = useState(false);
   const [backupCritical, setBackupCritical] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -66,10 +79,12 @@ export const SyncAttentionBanner: FC = () => {
         metricsService.getQueueCounts(),
         metricsService.getBackupHealth(),
       ]);
-      setSyncVisible(counts.permanentFailure > 0 || counts.stalePending > 0);
+      setHasPermanentFailures(counts.permanentFailure > 0);
+      setHasPending(counts.pending > 0);
       setBackupCritical(backupHealth === "CRITICAL");
     } catch {
-      setSyncVisible(false);
+      setHasPermanentFailures(false);
+      setHasPending(false);
       setBackupCritical(false);
     }
   }, []);
@@ -88,22 +103,27 @@ export const SyncAttentionBanner: FC = () => {
       }
     };
 
-    document.addEventListener("visibilitychange", onVisibilityChange);
+    document.addEventListener("visibilityChange", onVisibilityChange);
     intervalRef.current = setInterval(checkMetrics, 30_000);
 
     return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      document.removeEventListener("visibilityChange", onVisibilityChange);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [checkMetrics]);
 
-  const variant: BannerVariant | null = backupCritical
-    ? "backup"
-    : syncVisible
-      ? "sync"
-      : null;
+  // Priority: backup_critical > permanent_failure > pending
+  let variant: BannerVariant | null = null;
+  if (backupCritical) {
+    variant = "backup_critical";
+  } else if (hasPermanentFailures) {
+    variant = "permanent_failure";
+  } else if (hasPending) {
+    variant = "pending";
+  }
+
   const config = variant ? bannerConfig[variant] : null;
-  const Icon = config?.icon ?? AlertTriangle;
+  const Icon = config?.icon ?? Clock;
   const show = mounted && variant !== null;
 
   return (
@@ -111,8 +131,8 @@ export const SyncAttentionBanner: FC = () => {
       {show && (
         <motion.div
           key={variant}
-          role="alert"
-          aria-live="assertive"
+          role="status"
+          aria-live="polite"
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: "auto", opacity: 1 }}
           exit={{ height: 0, opacity: 0 }}

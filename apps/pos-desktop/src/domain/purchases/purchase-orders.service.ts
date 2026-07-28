@@ -16,6 +16,7 @@ import {
 } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import { RoleType } from '@pharmacy/shared-types';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import {
   SupplierNotFoundException,
   PurchaseOrderNotFoundException,
@@ -264,6 +265,9 @@ export class PurchaseOrdersService {
       await this.createSyncQueueEntry(tx, order, session, confirmedAt);
 
       return updatedOrder;
+    }).then((result) => {
+      notifyPendingEntry();
+      return result;
     });
 
     const productIds = updated.items.map((i) => i.productId);

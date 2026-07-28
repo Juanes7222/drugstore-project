@@ -440,6 +440,7 @@ export async function initializeServices(
     accessToken: sessionExt?.accessToken ?? undefined,
     invoiceService: fiscalServices.invoiceService,
     auditWriter,
+    productService: domainServices.productService,
   });
 
   // Flatten into the services interface consumers expect

@@ -27,6 +27,7 @@
 import { PrismaClient, Prisma, AdjustmentState, LotState, MovementType } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import { RoleType } from '@pharmacy/shared-types';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import {
   AdjustmentNotFoundException,
   AdjustmentNotInDraftException,
@@ -335,6 +336,11 @@ export class InventoryAdjustmentsService {
       await this.createSyncQueueEntry(tx, adjustment, input, session, appliedAt);
 
       return updated;
+    }).then((result) => {
+      // Transaction committed — trigger immediate push instead of waiting
+      // for the 5-minute scheduler cycle.
+      notifyPendingEntry();
+      return result;
     });
   }
 

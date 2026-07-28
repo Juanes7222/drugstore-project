@@ -27,6 +27,7 @@
 import { PrismaClient, RecipeType } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import { RoleType } from '@pharmacy/shared-types';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import {
   PrescriptionSaleItemNotFoundException,
   PrescriptionNotFoundException,
@@ -178,6 +179,11 @@ export class PrescriptionsService {
       );
 
       return prescription;
+    }).then((result) => {
+      // Transaction committed — trigger immediate push instead of waiting
+      // for the 5-minute scheduler cycle.
+      notifyPendingEntry();
+      return result;
     });
   }
 
