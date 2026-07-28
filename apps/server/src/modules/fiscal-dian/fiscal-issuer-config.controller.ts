@@ -22,13 +22,13 @@ export class FiscalIssuerConfigController {
   constructor(private readonly service: FiscalIssuerConfigService) {}
 
   @Get()
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   async find(): Promise<any> {
     return this.service.find();
   }
 
   @Patch()
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.FISCAL, entityType: 'FiscalIssuerConfig' })
   async upsert(
     @Body(new ZodValidationPipe(UpsertFiscalIssuerConfigSchema))

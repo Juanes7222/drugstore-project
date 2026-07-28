@@ -95,3 +95,4 @@ export const FRIENDLY_NAME: string =
  */
 export const HUB_ELIGIBLE: boolean =
   (import.meta.env.VITE_HUB_ELIGIBLE as string | undefined) !== "false";
+

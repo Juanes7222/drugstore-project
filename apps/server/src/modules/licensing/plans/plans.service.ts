@@ -1,14 +1,57 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { DomainException } from '@/common/exceptions/domain.exception';
 import { HttpStatus } from '@nestjs/common';
+import { DEFAULT_PLANS } from '@pharmacy/shared-types';
 import type { CreatePlanDto, UpdatePlanDto, PlanFilterDto } from './dto/plan.dto';
 
 @Injectable()
-export class PlansService {
+export class PlansService implements OnModuleInit {
   private readonly logger = new Logger(PlansService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Seed the Plan table with DEFAULT_PLANS on first run.
+   * Uses upsert by code to be idempotent — safe to run on every startup.
+   */
+  async onModuleInit(): Promise<void> {
+    this.logger.log('Seeding default plans...');
+    let created = 0;
+
+    for (const seed of DEFAULT_PLANS) {
+      const existing = await this.prisma.plan.findUnique({ where: { code: seed.code } });
+      if (!existing) {
+        await this.prisma.plan.create({
+          data: {
+            id: crypto.randomUUID(),
+            code: seed.code,
+            name: seed.name,
+            description: seed.description,
+            pricingModel: seed.pricingModel,
+            basePriceCents: seed.basePriceCents,
+            currency: seed.currency,
+            billingPeriod: seed.billingPeriod,
+            maxLocations: seed.maxLocations,
+            maxWorkstationsPerLocation: seed.maxWorkstationsPerLocation,
+            includedWorkstations: seed.includedWorkstations,
+            extraWorkstationPriceCents: seed.extraWorkstationPriceCents,
+            features: seed.features,
+            displayOrder: seed.displayOrder,
+            isActive: seed.isActive,
+            isPublic: seed.isPublic,
+          },
+        });
+        created++;
+      }
+    }
+
+    if (created > 0) {
+      this.logger.log(`Seeded ${created} default plan(s)`);
+    } else {
+      this.logger.log('All default plans already exist — skipping seed');
+    }
+  }
 
   async create(dto: CreatePlanDto) {
     const existing = await this.prisma.plan.findUnique({ where: { code: dto.code } });

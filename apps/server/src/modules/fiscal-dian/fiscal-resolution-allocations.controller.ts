@@ -27,7 +27,7 @@ export class FiscalResolutionAllocationsController {
   ) {}
 
   @Get()
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   async findAll(
     @Query('page') page = 1,
     @Query('pageSize') pageSize = 20,
@@ -36,13 +36,13 @@ export class FiscalResolutionAllocationsController {
   }
 
   @Get(':id')
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   async findById(@Param('id') id: string): Promise<any> {
     return this.service.findById(id);
   }
 
   @Post()
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   @HttpCode(201)
   @Auditable({
     action: AuditAction.CREATE,

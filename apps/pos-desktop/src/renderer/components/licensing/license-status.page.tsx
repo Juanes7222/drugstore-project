@@ -1,27 +1,30 @@
 /**
- * LicenseStatusPage — manager/admin panel showing the license details.
+ * LicenseStatusPage — manager/admin panel for subscription & license status.
  *
- * Thin wiring container: reads license store, provides action handlers.
- * Presentational sub-components are imported from sibling files.
+ * Displays current plan, assignment, check-in history, and renewal actions.
+ * Uses the app's design system: pharma teal for active states, urgency amber
+ * for warnings, restrict violet for confirmation steps, sync slate for offline.
  *
- * Displays the current license status with domain-appropriate visual
- * treatment (green for active, amber for grace period, red for
- * locked/revoked), plan details, workstation info, and check-in history.
+ * Layout:
+ *   Header (title + actions)
+ *   Hero status card (plan name, status badge, expiry countdown)
+ *   2-column grid: Plan details (left) | Assignment (right)
+ *   Full-width: Check-in timeline
  *
  * @category Page
  */
 
 import { type FC, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Shield, RefreshCw, Download, Loader2 } from "lucide-react";
 import { useLicenseStore } from "../../../domain/licensing/license.store";
 import { createLicenseService } from "../../../domain/licensing/license.service";
-import { getStatusDescriptor } from "./license-status.helpers";
-import { LicenseStatusBadge } from "./license-status-badge";
+import { API_BASE_URL } from "../../../infrastructure/config";
+import { LicenseStatus } from "@pharmacy/shared-types";
+import { LicenseHeroCard } from "./license-hero-card";
 import { LicensePlanPanel } from "./license-plan-panel";
 import { LicenseAssignmentPanel } from "./license-assignment-panel";
 import { LicenseCheckinPanel } from "./license-checkin-panel";
-
-const LICENSE_SERVICE_BASE_URL = "http://localhost:3000";
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -30,7 +33,7 @@ const LICENSE_SERVICE_BASE_URL = "http://localhost:3000";
 export const LicenseStatusPage: FC = () => {
   const { t } = useTranslation();
 
-  // Read all license state from store
+  // ---- License store state ----
   const status = useLicenseStore((s) => s.status);
   const activationToken = useLicenseStore((s) => s.activationToken);
   const tokenExpiresAt = useLicenseStore((s) => s.tokenExpiresAt);
@@ -38,9 +41,7 @@ export const LicenseStatusPage: FC = () => {
   const planCode = useLicenseStore((s) => s.planCode);
   const planFeatures = useLicenseStore((s) => s.planFeatures);
   const maxLocations = useLicenseStore((s) => s.maxLocations);
-  const maxWorkstationsPerLocation = useLicenseStore(
-    (s) => s.maxWorkstationsPerLocation,
-  );
+  const maxWorkstationsPerLocation = useLicenseStore((s) => s.maxWorkstationsPerLocation);
   const locationName = useLicenseStore((s) => s.locationName);
   const locationAddress = useLicenseStore((s) => s.locationAddress);
   const locationCity = useLicenseStore((s) => s.locationCity);
@@ -49,31 +50,21 @@ export const LicenseStatusPage: FC = () => {
   const activatedAt = useLicenseStore((s) => s.activatedAt);
   const lastCheckInAt = useLicenseStore((s) => s.lastCheckInAt);
   const daysUntilExpiry = useLicenseStore((s) => s.daysUntilExpiry);
-  const daysUntilGracePeriodEnd = useLicenseStore(
-    (s) => s.daysUntilGracePeriodEnd,
-  );
+  const daysUntilGracePeriodEnd = useLicenseStore((s) => s.daysUntilGracePeriodEnd);
   const checkInsLast30Days = useLicenseStore((s) => s.checkInsLast30Days);
+  const isRenewalInProgress = useLicenseStore((s) => s.isRenewalInProgress);
 
   // ---- Local UI state ----
-
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [checkInMessage, setCheckInMessage] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
 
-  // ---- Status visual ----
-
-  const descriptor = getStatusDescriptor(status, t, tokenExpiresAt);
-
   // ---- Handlers ----
-
   const handleCheckIn = useCallback(async () => {
     setIsCheckingIn(true);
     setCheckInMessage(null);
-
     try {
-      const licenseService = createLicenseService({
-        baseUrl: LICENSE_SERVICE_BASE_URL,
-      });
+      const licenseService = createLicenseService({ baseUrl: API_BASE_URL });
       await licenseService.checkIn();
       setCheckInMessage(t("licensing.status_page.checkin_success"));
     } catch {
@@ -89,110 +80,117 @@ export const LicenseStatusPage: FC = () => {
   }, [t]);
 
   // ---- Render ----
+  const notActivated = status === LicenseStatus.UNACTIVATED;
+  const isLocked = status === LicenseStatus.LOCKED || status === LicenseStatus.REVOKED;
+
+  if (notActivated) {
+    return (
+      <section aria-label={t("licensing.status_page.title")} className="flex h-full flex-col items-center justify-center p-pos-lg">
+        <div className="max-w-md text-center">
+          <Shield className="mx-auto mb-pos-lg h-12 w-12 text-sync" aria-hidden="true" />
+          <h1 className="mb-pos-md text-heading font-semibold text-ink">{t("licensing.status_page.title")}</h1>
+          <p className="mb-pos-lg text-body text-ink-muted">{t("licensing.status_page.not_activated")}</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section
-      aria-label={t("licensing.status_page.title")}
-      className="flex h-full flex-col overflow-y-auto p-pos-lg"
-      style={{ backgroundColor: "var(--color-surface)" }}
-    >
-      {/* Page header */}
+    <section aria-label={t("licensing.status_page.title")} className="flex h-full flex-col overflow-y-auto bg-surface p-pos-lg">
+      {/* ---- Header ---- */}
       <div className="mb-pos-lg flex items-center justify-between">
-        <h1
-          className="pos-page-title"
-          style={{ color: "var(--color-ink)" }}
-        >
-          {t("licensing.status_page.title")}
-        </h1>
+        <div className="flex items-center gap-pos-md">
+          <Shield className="h-6 w-6 text-pharma" aria-hidden="true" />
+          <h1 className="text-heading font-semibold text-ink">{t("licensing.status_page.title")}</h1>
+        </div>
 
-        <div className="flex gap-pos-sm">
+        <div className="flex items-center gap-pos-sm">
+          {/* Renew / Check-in button */}
           <button
             type="button"
-            className="pos-button pos-button-primary"
+            className="inline-flex items-center gap-pos-xs rounded-pos bg-pharma px-pos-md py-pos-sm text-body-sm font-semibold text-panel transition-colors hover:bg-pharma/90 disabled:opacity-50"
             onClick={handleCheckIn}
-            disabled={isCheckingIn || !activationToken}
+            disabled={isCheckingIn || isLocked || !activationToken}
             aria-busy={isCheckingIn}
           >
-            {isCheckingIn
-              ? t("licensing.status_page.renewing")
-              : t("licensing.status_page.renew_now")}
+            {isCheckingIn ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            )}
+            {isCheckingIn ? t("licensing.status_page.renewing") : t("licensing.status_page.renew_now")}
           </button>
 
+          {/* Export button */}
           <button
             type="button"
-            className="pos-button pos-button-secondary"
+            className="inline-flex items-center gap-pos-xs rounded-pos border border-border bg-panel px-pos-md py-pos-sm text-body-sm font-medium text-ink transition-colors hover:bg-surface-variant"
             onClick={handleExport}
           >
+            <Download className="h-4 w-4" aria-hidden="true" />
             {t("licensing.status_page.export_data")}
           </button>
         </div>
       </div>
 
-      {/* Status badge */}
-      <LicenseStatusBadge descriptor={descriptor} />
+      {/* ---- Hero card ---- */}
+      <LicenseHeroCard
+        status={status}
+        planName={planName}
+        planCode={planCode}
+        tokenExpiresAt={tokenExpiresAt}
+        daysUntilExpiry={daysUntilExpiry}
+        daysUntilGracePeriodEnd={daysUntilGracePeriodEnd}
+        isRenewalInProgress={isRenewalInProgress}
+      />
 
-      {/* Action feedback messages */}
+      {/* ---- Feedback messages ---- */}
       {checkInMessage && (
         <div
-          className="mb-pos-md rounded-pos px-pos-md py-pos-sm text-body-sm"
+          className="mb-pos-md flex items-center gap-pos-sm rounded-pos border px-pos-md py-pos-sm text-body-sm"
           role="alert"
-          style={{
-            backgroundColor: checkInMessage.includes(
-              t("licensing.status_page.checkin_success"),
-            )
-              ? "color-mix(in srgb, var(--color-pharma) 10%, white)"
-              : "#FFEBEE",
-            border: `1px solid ${
-              checkInMessage.includes(
-                t("licensing.status_page.checkin_success"),
-              )
-                ? "var(--color-pharma)"
-                : "#D32F2F"
-            }`,
-            color: checkInMessage.includes(
-              t("licensing.status_page.checkin_success"),
-            )
-              ? "var(--color-pharma)"
-              : "#C62828",
-          }}
         >
-          {checkInMessage}
+          {checkInMessage.includes(t("licensing.status_page.checkin_success")) ? (
+            <>
+              <span className="h-2 w-2 rounded-full bg-pharma" aria-hidden="true" />
+              <span className="text-pharma">{checkInMessage}</span>
+            </>
+          ) : (
+            <>
+              <span className="h-2 w-2 rounded-full bg-error" aria-hidden="true" />
+              <span className="text-error">{checkInMessage}</span>
+            </>
+          )}
         </div>
       )}
 
       {exportMessage && (
-        <div
-          className="mb-pos-md rounded-pos px-pos-md py-pos-sm text-body-sm"
-          role="status"
-          style={{
-            backgroundColor:
-              "color-mix(in srgb, var(--color-sync) 10%, white)",
-            border: "1px solid var(--color-sync)",
-            color: "var(--color-sync)",
-          }}
-        >
+        <div className="mb-pos-md flex items-center gap-pos-sm rounded-pos border border-sync/30 bg-sync/5 px-pos-md py-pos-sm text-body-sm text-sync" role="status">
+          <Download className="h-4 w-4" aria-hidden="true" />
           {exportMessage}
         </div>
       )}
 
-      {/* Panels */}
-      <LicensePlanPanel
-        planName={planName}
-        planCode={planCode}
-        planFeatures={planFeatures}
-        maxLocations={maxLocations}
-        maxWorkstationsPerLocation={maxWorkstationsPerLocation}
-      />
+      {/* ---- 2-column grid ---- */}
+      <div className="mb-pos-md grid grid-cols-1 gap-pos-md lg:grid-cols-2">
+        <LicensePlanPanel
+          planName={planName}
+          planCode={planCode}
+          planFeatures={planFeatures}
+          maxLocations={maxLocations}
+          maxWorkstationsPerLocation={maxWorkstationsPerLocation}
+        />
+        <LicenseAssignmentPanel
+          locationName={locationName}
+          locationAddress={locationAddress}
+          locationCity={locationCity}
+          locationRegion={locationRegion}
+          workstationName={workstationName}
+          activatedAt={activatedAt}
+        />
+      </div>
 
-      <LicenseAssignmentPanel
-        locationName={locationName}
-        locationAddress={locationAddress}
-        locationCity={locationCity}
-        locationRegion={locationRegion}
-        workstationName={workstationName}
-        activatedAt={activatedAt}
-      />
-
+      {/* ---- Check-in timeline ---- */}
       <LicenseCheckinPanel
         status={status}
         lastCheckInAt={lastCheckInAt}

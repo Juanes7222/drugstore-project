@@ -19,6 +19,12 @@ export const envSchema = z.object({
   UPDATE_PUBLIC_BASE_URL: z.string().default('http://localhost:3000').describe('Public base URL for constructing download URLs'),
   UPDATE_TELEMETRY_HMAC_SECRET: z.string().min(32).default('dev-telemetry-hmac-secret-change-in-prod-32chars!!!').describe('HMAC secret for verifying telemetry signatures'),
   CORS_ORIGIN: z.string().default('http://localhost:5173').describe('Allowed CORS origin for the frontend'),
+
+  // Wompi Colombia payment gateway
+  WOMPI_PUBLIC_KEY: z.string().optional().describe('Public key from Wompi dashboard (pub_test_* / pub_prod_*)'),
+  WOMPI_PRIVATE_KEY: z.string().optional().describe('Private key from Wompi dashboard (prv_test_* / prv_prod_*)'),
+  WOMPI_EVENTS_SECRET: z.string().optional().describe('Wompi events secret for webhook signature verification'),
+  WOMPI_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

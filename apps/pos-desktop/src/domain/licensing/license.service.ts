@@ -15,10 +15,14 @@ import {
   AlreadyActivatedException,
   LicenseInvalidException,
 } from './exceptions';
+import type { WompiCheckoutService, CheckoutSession, SessionStatus } from './wompi-checkout.service';
+import { WORKSTATION_ID } from '../../infrastructure/config';
 
 export interface LicenseServiceConfig {
   /** Server base URL, e.g. "http://localhost:3000" */
   baseUrl: string;
+  /** Optional Wompi checkout service for subscription renewal. */
+  checkoutService?: WompiCheckoutService;
 }
 
 export interface LicenseGuard {
@@ -68,6 +72,31 @@ export interface LicenseService extends LicenseGuard {
    * Force refresh the license status from the server.
    */
   refreshStatus(): Promise<void>;
+
+  /**
+   * Restore license state from server by workstation ID.
+   * Used on startup when the local store is UNACTIVATED — queries the server
+   * for an existing activation tied to this workstation.
+   */
+  restoreLicense(): Promise<boolean>;
+
+  /**
+   * Start a subscription renewal payment flow.
+   * Creates a Wompi checkout session and returns the payment URL.
+   * Requires the checkoutService to be configured.
+   */
+  startRenewal(customerEmail: string, customerName: string): Promise<CheckoutSession>;
+
+  /**
+   * Poll the status of an in-progress renewal payment.
+   * Updates the store with the result and completes the renewal on success.
+   */
+  pollRenewalStatus(): Promise<SessionStatus | null>;
+
+  /**
+   * Cancel the in-progress renewal flow.
+   */
+  cancelRenewal(): void;
 }
 
 /**
@@ -123,6 +152,41 @@ const defaultHttpClient = {
 export const createLicenseService = (config: LicenseServiceConfig): LicenseService => {
   const baseUrl = config.baseUrl.replace(/\/$/, '');
   const http = defaultHttpClient;
+  const checkoutService = config.checkoutService;
+
+  /**
+   * Check-in logic extracted so renewal flow can call it directly
+   * without relying on `this` (arrow functions don't bind `this`).
+   */
+  const doCheckIn = async (): Promise<CheckInResult | null> => {
+    const state = useLicenseStore.getState();
+    if (!state.activationToken) return null;
+
+    let hardwareFingerprint: string;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      hardwareFingerprint = await invoke<string>('get_hardware_fingerprint');
+    } catch {
+      hardwareFingerprint = state.hardwareFingerprint ?? 'unknown';
+    }
+
+    try {
+      const result = await http.post<Record<string, unknown>, CheckInResult>(
+        `${baseUrl}/public/licensing/check-in`,
+        {
+          activationToken: state.activationToken,
+          hardwareFingerprint,
+        },
+      );
+
+      // Update store with check-in result
+      useLicenseStore.getState().setCheckInResult(result);
+      return result;
+    } catch {
+      // Silent failure — local token continues to work
+      return null;
+    }
+  };
 
   return {
     // -----------------------------------------------------------------------
@@ -205,35 +269,7 @@ export const createLicenseService = (config: LicenseServiceConfig): LicenseServi
     // Check-in
     // -----------------------------------------------------------------------
 
-    checkIn: async (): Promise<CheckInResult | null> => {
-      const state = useLicenseStore.getState();
-      if (!state.activationToken) return null;
-
-      let hardwareFingerprint: string;
-      try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        hardwareFingerprint = await invoke<string>('get_hardware_fingerprint');
-      } catch {
-        hardwareFingerprint = state.hardwareFingerprint ?? 'unknown';
-      }
-
-      try {
-        const result = await http.post<Record<string, unknown>, CheckInResult>(
-          `${baseUrl}/public/licensing/check-in`,
-          {
-            activationToken: state.activationToken,
-            hardwareFingerprint,
-          },
-        );
-
-        // Update store with check-in result
-        useLicenseStore.getState().setCheckInResult(result);
-        return result;
-      } catch {
-        // Silent failure — local token continues to work
-        return null;
-      }
-    },
+    checkIn: doCheckIn,
 
     // -----------------------------------------------------------------------
     // Token validation
@@ -273,6 +309,92 @@ export const createLicenseService = (config: LicenseServiceConfig): LicenseServi
       // checkIn is called via the service reference
       const svc = createLicenseService(config);
       await svc.checkIn();
+    },
+
+    restoreLicense: async (): Promise<boolean> => {
+      try {
+        const response = await fetch(
+          `${baseUrl}/public/licensing/status/${WORKSTATION_ID}`,
+          { method: 'GET', headers: { 'Content-Type': 'application/json' } },
+        );
+        if (!response.ok) return false;
+        const result = await response.json();
+        // result has the same shape as ActivationResult
+        useLicenseStore.getState().setActivated({
+          activationToken: result.activationToken,
+          expiresAt: result.expiresAt,
+          subscription: result.subscription,
+          location: result.location,
+          plan: result.plan,
+          workstationActivation: result.workstationActivation,
+          hardwareFingerprint: result.workstationActivation.id ?? 'restored',
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
+    // -----------------------------------------------------------------------
+    // Renewal flow
+    // -----------------------------------------------------------------------
+
+    startRenewal: async (customerEmail, customerName): Promise<CheckoutSession> => {
+      if (!checkoutService) {
+        throw new ActivationFailedException(
+          'El servicio de pagos no está configurado en este terminal.',
+        );
+      }
+
+      const state = useLicenseStore.getState();
+      if (!state.planCode) {
+        throw new ActivationFailedException(
+          'No hay un plan de suscripción activo para renovar.',
+        );
+      }
+
+      const session = await checkoutService.createSession({
+        planCode: state.planCode,
+        customerTaxId: 'N/A', // The server has the actual tax ID from subscription
+        customerEmail,
+        customerName,
+      });
+
+      useLicenseStore.getState().startRenewal(session.reference, session.checkoutUrl);
+
+      return session;
+    },
+
+    pollRenewalStatus: async (): Promise<SessionStatus | null> => {
+      if (!checkoutService) return null;
+
+      const state = useLicenseStore.getState();
+      if (!state.isRenewalInProgress || !state.renewalReference) return null;
+
+      try {
+        const status = await checkoutService.pollSession(state.renewalReference);
+
+        if (status.status === 'APPROVED') {
+          useLicenseStore.getState().completeRenewal();
+          // Force a check-in to refresh the license token
+          await doCheckIn();
+        } else if (
+          status.status === 'DECLINED' ||
+          status.status === 'ERROR' ||
+          status.status === 'VOIDED'
+        ) {
+          useLicenseStore.getState().cancelRenewal();
+        }
+
+        return status;
+      } catch {
+        // Network error during polling — return null, caller can retry
+        return null;
+      }
+    },
+
+    cancelRenewal: (): void => {
+      useLicenseStore.getState().cancelRenewal();
     },
   } as LicenseService;
 };

@@ -21,6 +21,10 @@ describe("LicenseCheckInScheduler", () => {
       refreshStatus: vi.fn(),
       requireValidLicense: vi.fn(),
       validateTokenLocally: vi.fn(),
+      startRenewal: vi.fn(),
+      pollRenewalStatus: vi.fn(),
+      cancelRenewal: vi.fn(),
+      restoreLicense: vi.fn(),
     };
   });
 
@@ -55,6 +59,21 @@ describe("LicenseCheckInScheduler", () => {
       scheduler.start();
 
       expect(mockLicenseService.checkIn).not.toHaveBeenCalled();
+    });
+
+    it("starts check-ins when the license status is REVOKED", () => {
+      useLicenseStore.getState().setRevoked();
+
+      scheduler = new LicenseCheckInScheduler({
+        licenseService: mockLicenseService,
+        intervalMs: 60_000,
+      });
+
+      scheduler.start();
+
+      // REVOKED is not explicitly blocked in start(); the scheduler will
+      // attempt check-ins so the server can restore access if applicable.
+      expect(mockLicenseService.checkIn).toHaveBeenCalledTimes(1);
     });
 
     it("fires an immediate check-in when status is ACTIVE", () => {

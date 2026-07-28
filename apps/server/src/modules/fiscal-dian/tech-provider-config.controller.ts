@@ -22,13 +22,13 @@ export class TechProviderConfigController {
   constructor(private readonly service: TechProviderConfigService) {}
 
   @Get()
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   async find(): Promise<any> {
     return this.service.find();
   }
 
   @Patch()
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.FISCAL, entityType: 'TechProviderConfig' })
   async upsert(
     @Body(new ZodValidationPipe(UpsertTechProviderConfigSchema))

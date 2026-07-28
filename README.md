@@ -1179,3 +1179,1773 @@ For questions or support, contact the development team at [contact-email].
 ---
 
 **Document Version**: 1.0.0**Last Updated**: July 2, 2026**Maintained By**: Development Team
+```
+drugstore-project
+├─ .opencode
+│  ├─ agents
+│  │  ├─ backend.md
+│  │  ├─ frontend-backoffice.md
+│  │  ├─ frontend-pos.md
+│  │  ├─ pos-local.md
+│  │  ├─ pos-testing.md
+│  │  └─ testing.md
+│  ├─ package-lock.json
+│  ├─ package.json
+│  ├─ plugins
+│  │  └─ startup
+│  └─ README.md
+├─ AGENTS.md
+├─ apps
+│  ├─ fiscal-engine
+│  │  ├─ package.json
+│  │  ├─ src
+│  │  │  ├─ app.module.ts
+│  │  │  ├─ common
+│  │  │  │  └─ exceptions
+│  │  │  │     ├─ domain.exception.ts
+│  │  │  │     └─ not-implemented-for-phase.exception.ts
+│  │  │  ├─ config
+│  │  │  │  └─ env.schema.ts
+│  │  │  ├─ infrastructure
+│  │  │  │  ├─ prisma
+│  │  │  │  │  ├─ prisma.module.ts
+│  │  │  │  │  └─ prisma.service.ts
+│  │  │  │  └─ queue
+│  │  │  │     └─ bullmq.module.ts
+│  │  │  ├─ main.ts
+│  │  │  └─ modules
+│  │  │     └─ fiscal-processing
+│  │  │        ├─ adapters
+│  │  │        │  ├─ file-system-secret-reader.adapter.ts
+│  │  │        │  ├─ index.ts
+│  │  │        │  └─ soap-fiscal-transmission.adapter.ts
+│  │  │        ├─ builders
+│  │  │        │  ├─ cufe.calculator.ts
+│  │  │        │  └─ ubl-invoice.builder.ts
+│  │  │        ├─ exceptions
+│  │  │        │  ├─ fiscal-document-generation-failed.exception.ts
+│  │  │        │  ├─ fiscal-document-rejected.exception.ts
+│  │  │        │  └─ fiscal-transmission-failed.exception.ts
+│  │  │        ├─ fiscal-documents.service.ts
+│  │  │        ├─ fiscal-processing.module.ts
+│  │  │        ├─ fiscal-processing.processor.ts
+│  │  │        ├─ fiscal-transmission.service.ts
+│  │  │        ├─ ports
+│  │  │        │  ├─ fiscal-transmission.port.ts
+│  │  │        │  ├─ index.ts
+│  │  │        │  ├─ secret-reader.port.ts
+│  │  │        │  └─ transmission-results.type.ts
+│  │  │        ├─ signing
+│  │  │        │  ├─ certificate.loader.ts
+│  │  │        │  ├─ dian-constants.ts
+│  │  │        │  └─ xades-signer.ts
+│  │  │        └─ soap
+│  │  │           ├─ dian-http-client.ts
+│  │  │           ├─ soap-envelope.builder.ts
+│  │  │           └─ soap-signer.ts
+│  │  └─ tsconfig.json
+│  ├─ pos-desktop
+│  │  ├─ e2e
+│  │  │  ├─ admin-flow.spec.ts
+│  │  │  ├─ inventory-flow.spec.ts
+│  │  │  ├─ offline-flow.spec.ts
+│  │  │  ├─ returns-flow.spec.ts
+│  │  │  ├─ sales-flow.spec.ts
+│  │  │  └─ setup.ts
+│  │  ├─ index.html
+│  │  ├─ package.json
+│  │  ├─ playwright.config.ts
+│  │  ├─ src
+│  │  │  ├─ assets
+│  │  │  │  └─ help
+│  │  │  │     ├─ licensing
+│  │  │  │     │  ├─ activation.md
+│  │  │  │     │  ├─ adding-workstations.md
+│  │  │  │     │  ├─ locked.md
+│  │  │  │     │  ├─ multiple-locations.md
+│  │  │  │     │  └─ renewal.md
+│  │  │  │     └─ updates
+│  │  │  │        ├─ beta-channel.md
+│  │  │  │        ├─ how-it-works.md
+│  │  │  │        ├─ installation.md
+│  │  │  │        ├─ rollback.md
+│  │  │  │        └─ troubleshooting.md
+│  │  │  ├─ common
+│  │  │  │  ├─ domain-error.test.ts
+│  │  │  │  ├─ domain-error.ts
+│  │  │  │  ├─ download.test.ts
+│  │  │  │  ├─ download.ts
+│  │  │  │  ├─ format-age.test.ts
+│  │  │  │  ├─ format-age.ts
+│  │  │  │  ├─ is-online.test.ts
+│  │  │  │  ├─ is-online.ts
+│  │  │  │  ├─ sync-metadata.test.ts
+│  │  │  │  ├─ sync-metadata.ts
+│  │  │  │  ├─ time-format.test.ts
+│  │  │  │  └─ time-format.ts
+│  │  │  ├─ config
+│  │  │  │  ├─ fiscal.test.ts
+│  │  │  │  └─ fiscal.ts
+│  │  │  ├─ domain
+│  │  │  │  ├─ assistant
+│  │  │  │  │  ├─ assistant-metrics.service.test.ts
+│  │  │  │  │  ├─ assistant-metrics.service.ts
+│  │  │  │  │  ├─ assistant-types.ts
+│  │  │  │  │  ├─ commands.test.ts
+│  │  │  │  │  ├─ commands.ts
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ form-memory.service.test.ts
+│  │  │  │  │  ├─ form-memory.service.ts
+│  │  │  │  │  ├─ help-helpers.test.ts
+│  │  │  │  │  ├─ help-helpers.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ markdown-renderer.tsx
+│  │  │  │  │  ├─ palette-helpers.test.ts
+│  │  │  │  │  ├─ palette-helpers.ts
+│  │  │  │  │  ├─ search-index.service.test.ts
+│  │  │  │  │  ├─ search-index.service.ts
+│  │  │  │  │  ├─ shortcut-helpers.test.ts
+│  │  │  │  │  ├─ shortcut-helpers.ts
+│  │  │  │  │  ├─ shortcut-manager.test.ts
+│  │  │  │  │  ├─ shortcut-manager.ts
+│  │  │  │  │  ├─ suggestion-engine.service.test.ts
+│  │  │  │  │  ├─ suggestion-engine.service.ts
+│  │  │  │  │  ├─ suggestion-rules.test.ts
+│  │  │  │  │  └─ suggestion-rules.ts
+│  │  │  │  ├─ audit
+│  │  │  │  │  ├─ audit.service.inventory-bugs.test.ts
+│  │  │  │  │  ├─ audit.service.test.ts
+│  │  │  │  │  ├─ audit.service.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ local-audit-writer.service.test.ts
+│  │  │  │  │  └─ local-audit-writer.service.ts
+│  │  │  │  ├─ auth
+│  │  │  │  │  ├─ auth-guards.test.ts
+│  │  │  │  │  ├─ auth-guards.ts
+│  │  │  │  │  ├─ auth-http-client.test.ts
+│  │  │  │  │  ├─ auth-http-client.ts
+│  │  │  │  │  ├─ auth.service.test.ts
+│  │  │  │  │  ├─ auth.service.ts
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ local-session.store.ts
+│  │  │  │  │  ├─ local-user-cache.test.ts
+│  │  │  │  │  ├─ local-user-cache.ts
+│  │  │  │  │  ├─ local-users.test.ts
+│  │  │  │  │  ├─ local-users.ts
+│  │  │  │  │  └─ offline
+│  │  │  │  │     ├─ exceptions.test.ts
+│  │  │  │  │     ├─ exceptions.ts
+│  │  │  │  │     ├─ index.ts
+│  │  │  │  │     ├─ local-offline-session.store.test.ts
+│  │  │  │  │     ├─ local-offline-session.store.ts
+│  │  │  │  │     ├─ session.test.ts
+│  │  │  │  │     ├─ session.ts
+│  │  │  │  │     ├─ storage.test.ts
+│  │  │  │  │     ├─ storage.ts
+│  │  │  │  │     ├─ types.ts
+│  │  │  │  │     ├─ validation.test.ts
+│  │  │  │  │     └─ validation.ts
+│  │  │  │  ├─ backup
+│  │  │  │  │  ├─ backup-export.ts
+│  │  │  │  │  ├─ backup.service.test.ts
+│  │  │  │  │  ├─ backup.service.ts
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ recovery-log.service.test.ts
+│  │  │  │  │  └─ recovery-log.service.ts
+│  │  │  │  ├─ cash-shift
+│  │  │  │  │  ├─ cash-shift.service.pglite.test.ts
+│  │  │  │  │  ├─ cash-shift.service.prisma-integration.test.ts
+│  │  │  │  │  ├─ cash-shift.service.test.ts
+│  │  │  │  │  ├─ cash-shift.service.ts
+│  │  │  │  │  ├─ cash-shift.store.ts
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ shift-close-html.test.ts
+│  │  │  │  │  └─ shift-close-html.ts
+│  │  │  │  ├─ catalog
+│  │  │  │  │  ├─ catalog-sync.service.test.ts
+│  │  │  │  │  ├─ catalog-sync.service.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ payment-method-sync.service.test.ts
+│  │  │  │  │  ├─ payment-method-sync.service.ts
+│  │  │  │  │  └─ product.service.ts
+│  │  │  │  ├─ clients
+│  │  │  │  │  ├─ client-pull.service.test.ts
+│  │  │  │  │  ├─ client-pull.service.ts
+│  │  │  │  │  ├─ clients.service.test.ts
+│  │  │  │  │  ├─ clients.service.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  └─ sync-payload-contract.test.ts
+│  │  │  │  ├─ config
+│  │  │  │  │  ├─ config-sync.service.ts
+│  │  │  │  │  ├─ config.service.test.ts
+│  │  │  │  │  ├─ config.service.ts
+│  │  │  │  │  ├─ defaults.ts
+│  │  │  │  │  ├─ effective-config.test.ts
+│  │  │  │  │  ├─ effective-config.ts
+│  │  │  │  │  ├─ field-requirements.test.ts
+│  │  │  │  │  ├─ field-requirements.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ presets.test.ts
+│  │  │  │  │  ├─ presets.ts
+│  │  │  │  │  ├─ tenant-config.store.test.ts
+│  │  │  │  │  ├─ tenant-config.store.ts
+│  │  │  │  │  ├─ types.ts
+│  │  │  │  │  ├─ use-field-requirement.ts
+│  │  │  │  │  ├─ use-tenant-config.ts
+│  │  │  │  │  ├─ use-user-preferences.ts
+│  │  │  │  │  ├─ validation.test.ts
+│  │  │  │  │  └─ validation.ts
+│  │  │  │  ├─ configuration
+│  │  │  │  │  ├─ config-sync.service.test.ts
+│  │  │  │  │  ├─ config-sync.service.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ local-config.store.test.ts
+│  │  │  │  │  ├─ local-config.store.ts
+│  │  │  │  │  └─ use-purchases-config.ts
+│  │  │  │  ├─ domain-services
+│  │  │  │  │  ├─ domain-service.factory.test.ts
+│  │  │  │  │  └─ domain-service.factory.ts
+│  │  │  │  ├─ fiscal
+│  │  │  │  │  ├─ contingency.service.test.ts
+│  │  │  │  │  ├─ contingency.service.ts
+│  │  │  │  │  ├─ contingency.store.test.ts
+│  │  │  │  │  ├─ contingency.store.ts
+│  │  │  │  │  ├─ cufe.test.ts
+│  │  │  │  │  ├─ cufe.ts
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ fiscal-scheduler.service.test.ts
+│  │  │  │  │  ├─ fiscal-scheduler.service.ts
+│  │  │  │  │  ├─ fiscal-service.factory.test.ts
+│  │  │  │  │  ├─ fiscal-service.factory.ts
+│  │  │  │  │  ├─ fiscal-types.ts
+│  │  │  │  │  ├─ fiscal.page.tsx
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ invoice.service.test.ts
+│  │  │  │  │  ├─ invoice.service.ts
+│  │  │  │  │  ├─ local-adjustment.exceptions.test.ts
+│  │  │  │  │  ├─ local-adjustment.exceptions.ts
+│  │  │  │  │  ├─ local-adjustment.service.test.ts
+│  │  │  │  │  ├─ local-adjustment.service.ts
+│  │  │  │  │  ├─ local-adjustment.types.ts
+│  │  │  │  │  ├─ numbering.service.test.ts
+│  │  │  │  │  ├─ numbering.service.ts
+│  │  │  │  │  ├─ receipt-generator.test.ts
+│  │  │  │  │  ├─ receipt-generator.ts
+│  │  │  │  │  └─ use-fiscal-services.ts
+│  │  │  │  ├─ inventory-adjustments
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ inventory-adjustments.service.pglite.test.ts
+│  │  │  │  │  ├─ inventory-adjustments.service.prisma-integration.test.ts
+│  │  │  │  │  ├─ inventory-adjustments.service.test.ts
+│  │  │  │  │  ├─ inventory-adjustments.service.ts
+│  │  │  │  │  └─ sync-payload-contract.test.ts
+│  │  │  │  ├─ inventory-lots
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ inventory-lots.service.test.ts
+│  │  │  │  │  ├─ inventory-lots.service.ts
+│  │  │  │  │  ├─ lot-sync.service.test.ts
+│  │  │  │  │  └─ lot-sync.service.ts
+│  │  │  │  ├─ licensing
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ license-check-in-scheduler.test.ts
+│  │  │  │  │  ├─ license-check-in-scheduler.ts
+│  │  │  │  │  ├─ license.service.test.ts
+│  │  │  │  │  ├─ license.service.ts
+│  │  │  │  │  ├─ license.store.test.ts
+│  │  │  │  │  └─ license.store.ts
+│  │  │  │  ├─ local-sync
+│  │  │  │  │  ├─ hub-election.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ operation-merge.ts
+│  │  │  │  │  ├─ peer-validation.ts
+│  │  │  │  │  └─ types.ts
+│  │  │  │  ├─ peripherals
+│  │  │  │  │  ├─ peripheral-service.factory.test.ts
+│  │  │  │  │  └─ peripheral-service.factory.ts
+│  │  │  │  ├─ prescriptions
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ prescriptions.service.test.ts
+│  │  │  │  │  ├─ prescriptions.service.ts
+│  │  │  │  │  └─ sync-payload-contract.test.ts
+│  │  │  │  ├─ printing
+│  │  │  │  │  ├─ cash-drawer.service.test.ts
+│  │  │  │  │  ├─ cash-drawer.service.ts
+│  │  │  │  │  ├─ config-export.service.test.ts
+│  │  │  │  │  ├─ config-export.service.ts
+│  │  │  │  │  ├─ customer-display.service.test.ts
+│  │  │  │  │  ├─ customer-display.service.ts
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ formatters
+│  │  │  │  │  │  ├─ escpos-formatter.test.ts
+│  │  │  │  │  │  ├─ escpos-formatter.ts
+│  │  │  │  │  │  ├─ label-formatter.test.ts
+│  │  │  │  │  │  ├─ label-formatter.ts
+│  │  │  │  │  │  ├─ pdf-formatter.test.ts
+│  │  │  │  │  │  ├─ pdf-formatter.ts
+│  │  │  │  │  │  ├─ template-engine.test.ts
+│  │  │  │  │  │  └─ template-engine.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ print-payload-writer.test.ts
+│  │  │  │  │  ├─ print-payload-writer.ts
+│  │  │  │  │  ├─ print-queue.service.test.ts
+│  │  │  │  │  ├─ print-queue.service.ts
+│  │  │  │  │  ├─ printer-config.service.test.ts
+│  │  │  │  │  ├─ printer-config.service.ts
+│  │  │  │  │  ├─ printer-health.service.test.ts
+│  │  │  │  │  ├─ printer-health.service.ts
+│  │  │  │  │  ├─ printing-metrics.service.test.ts
+│  │  │  │  │  ├─ printing-metrics.service.ts
+│  │  │  │  │  ├─ printing-service.factory.test.ts
+│  │  │  │  │  ├─ printing-service.factory.ts
+│  │  │  │  │  ├─ printing-types.ts
+│  │  │  │  │  ├─ proactive-notifications.test.ts
+│  │  │  │  │  └─ proactive-notifications.ts
+│  │  │  │  ├─ purchases
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ purchase-orders.service.test.ts
+│  │  │  │  │  ├─ purchase-orders.service.ts
+│  │  │  │  │  ├─ purchase-receptions.service.test.ts
+│  │  │  │  │  ├─ purchase-receptions.service.ts
+│  │  │  │  │  ├─ supplier-returns.service.test.ts
+│  │  │  │  │  ├─ supplier-returns.service.ts
+│  │  │  │  │  ├─ suppliers.service.test.ts
+│  │  │  │  │  ├─ suppliers.service.ts
+│  │  │  │  │  └─ sync-payload-contract.test.ts
+│  │  │  │  ├─ returns
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ returns.service.test.ts
+│  │  │  │  │  ├─ returns.service.ts
+│  │  │  │  │  └─ sync-payload-contract.test.ts
+│  │  │  │  ├─ sales-pos
+│  │  │  │  │  ├─ exceptions.test.ts
+│  │  │  │  │  ├─ exceptions.ts
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ sales-history.page.tsx
+│  │  │  │  │  ├─ sales-history.service.test.ts
+│  │  │  │  │  ├─ sales-history.service.ts
+│  │  │  │  │  ├─ sales-pos.service.pglite.test.ts
+│  │  │  │  │  ├─ sales-pos.service.test.ts
+│  │  │  │  │  ├─ sales-pos.service.ts
+│  │  │  │  │  ├─ sales-pricing-validator.test.ts
+│  │  │  │  │  ├─ sales-pricing-validator.ts
+│  │  │  │  │  └─ sync-payload-contract.test.ts
+│  │  │  │  ├─ sync
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  ├─ sync-auth-status.store.ts
+│  │  │  │  │  ├─ sync-metrics.service.test.ts
+│  │  │  │  │  ├─ sync-metrics.service.ts
+│  │  │  │  │  ├─ sync-push.service.test.ts
+│  │  │  │  │  ├─ sync-push.service.ts
+│  │  │  │  │  ├─ sync-recovery.service.test.ts
+│  │  │  │  │  ├─ sync-recovery.service.ts
+│  │  │  │  │  ├─ sync-scheduler.service.test.ts
+│  │  │  │  │  ├─ sync-scheduler.service.ts
+│  │  │  │  │  ├─ sync-scheduler.update-access-token.test.ts
+│  │  │  │  │  └─ sync-types.ts
+│  │  │  │  └─ updates
+│  │  │  │     ├─ check-strategy.test.ts
+│  │  │  │     ├─ check-strategy.ts
+│  │  │  │     ├─ download-manager.test.ts
+│  │  │  │     ├─ download-manager.ts
+│  │  │  │     ├─ exceptions.test.ts
+│  │  │  │     ├─ exceptions.ts
+│  │  │  │     ├─ index.ts
+│  │  │  │     ├─ install-orchestrator.test.ts
+│  │  │  │     ├─ install-orchestrator.ts
+│  │  │  │     ├─ migration-runner.test.ts
+│  │  │  │     ├─ migration-runner.ts
+│  │  │  │     ├─ rollback-detector.test.ts
+│  │  │  │     ├─ rollback-detector.ts
+│  │  │  │     ├─ state-machine.test.ts
+│  │  │  │     ├─ state-machine.ts
+│  │  │  │     ├─ telemetry.service.test.ts
+│  │  │  │     ├─ telemetry.service.ts
+│  │  │  │     ├─ update.service.test.ts
+│  │  │  │     ├─ update.service.ts
+│  │  │  │     ├─ update.store.test.ts
+│  │  │  │     └─ update.store.ts
+│  │  │  ├─ help-content
+│  │  │  │  ├─ auth
+│  │  │  │  │  ├─ 2fa-offline.md
+│  │  │  │  │  ├─ credentials-cache.md
+│  │  │  │  │  ├─ offline-login.md
+│  │  │  │  │  └─ pending-blessings.md
+│  │  │  │  ├─ index.md
+│  │  │  │  ├─ index.ts
+│  │  │  │  ├─ local-sync
+│  │  │  │  │  ├─ conflictos.md
+│  │  │  │  │  ├─ hub.md
+│  │  │  │  │  ├─ que-es.md
+│  │  │  │  │  ├─ seguridad.md
+│  │  │  │  │  └─ troubleshooting.md
+│  │  │  │  ├─ procedures
+│  │  │  │  │  ├─ close-shift.md
+│  │  │  │  │  ├─ process-return.md
+│  │  │  │  │  └─ sync-offline.md
+│  │  │  │  ├─ screens
+│  │  │  │  │  ├─ inventory-adjustments.md
+│  │  │  │  │  ├─ returns.md
+│  │  │  │  │  ├─ sales.md
+│  │  │  │  │  └─ sync-health.md
+│  │  │  │  └─ shortcuts.md
+│  │  │  ├─ infrastructure
+│  │  │  │  ├─ auth-token-provider.test.ts
+│  │  │  │  ├─ auth-token-provider.ts
+│  │  │  │  ├─ catalog-service-factory.test.ts
+│  │  │  │  ├─ catalog-service-factory.ts
+│  │  │  │  ├─ config.test.ts
+│  │  │  │  ├─ config.ts
+│  │  │  │  ├─ http-client.test.ts
+│  │  │  │  ├─ http-client.ts
+│  │  │  │  ├─ local-database.ts
+│  │  │  │  ├─ README.md
+│  │  │  │  ├─ secure-storage.ts
+│  │  │  │  ├─ startup-health.test.ts
+│  │  │  │  ├─ startup-health.ts
+│  │  │  │  └─ write-lock.ts
+│  │  │  ├─ modules
+│  │  │  ├─ renderer
+│  │  │  │  ├─ App.sync-scheduler.test.tsx
+│  │  │  │  ├─ App.tsx
+│  │  │  │  ├─ commands
+│  │  │  │  │  ├─ printing-commands.test.ts
+│  │  │  │  │  └─ printing-commands.ts
+│  │  │  │  ├─ components
+│  │  │  │  │  ├─ assistant
+│  │  │  │  │  │  ├─ assistant-layer.test.tsx
+│  │  │  │  │  │  ├─ assistant-layer.tsx
+│  │  │  │  │  │  ├─ command-palette.test.tsx
+│  │  │  │  │  │  ├─ command-palette.tsx
+│  │  │  │  │  │  ├─ form-memory-autocomplete.test.tsx
+│  │  │  │  │  │  ├─ form-memory-autocomplete.tsx
+│  │  │  │  │  │  ├─ help-content-area.tsx
+│  │  │  │  │  │  ├─ help-not-found-state.tsx
+│  │  │  │  │  │  ├─ help-sidebar.tsx
+│  │  │  │  │  │  ├─ help-topic-content.tsx
+│  │  │  │  │  │  ├─ help-viewer.test.tsx
+│  │  │  │  │  │  ├─ help-viewer.tsx
+│  │  │  │  │  │  ├─ help-welcome-index.tsx
+│  │  │  │  │  │  ├─ palette-footer.tsx
+│  │  │  │  │  │  ├─ palette-search-input.tsx
+│  │  │  │  │  │  ├─ palette-search-result-group.tsx
+│  │  │  │  │  │  ├─ palette-search-result-item.tsx
+│  │  │  │  │  │  ├─ palette-states.tsx
+│  │  │  │  │  │  ├─ shortcut-cheatsheet.test.tsx
+│  │  │  │  │  │  ├─ shortcut-cheatsheet.tsx
+│  │  │  │  │  │  ├─ shortcut-footer.tsx
+│  │  │  │  │  │  ├─ shortcut-group.tsx
+│  │  │  │  │  │  ├─ shortcut-header.tsx
+│  │  │  │  │  │  ├─ shortcut-row.tsx
+│  │  │  │  │  │  ├─ shortcut-search-input.tsx
+│  │  │  │  │  │  ├─ shortcut-states.tsx
+│  │  │  │  │  │  ├─ suggestion-banner.test.tsx
+│  │  │  │  │  │  └─ suggestion-banner.tsx
+│  │  │  │  │  ├─ audit
+│  │  │  │  │  │  ├─ audit-event-card.tsx
+│  │  │  │  │  │  ├─ audit-event-registry.test.ts
+│  │  │  │  │  │  ├─ audit-event-registry.ts
+│  │  │  │  │  │  ├─ audit-log-view.test.tsx
+│  │  │  │  │  │  └─ audit-log-view.tsx
+│  │  │  │  │  ├─ auth
+│  │  │  │  │  │  ├─ activation-redirect.test.tsx
+│  │  │  │  │  │  ├─ activation-redirect.tsx
+│  │  │  │  │  │  ├─ audit-log-view.test.tsx
+│  │  │  │  │  │  ├─ audit-log-view.tsx
+│  │  │  │  │  │  ├─ auth-redirect.test.tsx
+│  │  │  │  │  │  ├─ auth-redirect.tsx
+│  │  │  │  │  │  ├─ avatar-grid.test.tsx
+│  │  │  │  │  │  ├─ avatar-grid.tsx
+│  │  │  │  │  │  ├─ avatar.component.test.tsx
+│  │  │  │  │  │  ├─ avatar.component.tsx
+│  │  │  │  │  │  ├─ create-user-modal.tsx
+│  │  │  │  │  │  ├─ delete-user-dialog.tsx
+│  │  │  │  │  │  ├─ edit-user-modal.tsx
+│  │  │  │  │  │  ├─ error-banner.test.tsx
+│  │  │  │  │  │  ├─ error-banner.tsx
+│  │  │  │  │  │  ├─ forgot-password.page.test.tsx
+│  │  │  │  │  │  ├─ forgot-password.page.tsx
+│  │  │  │  │  │  ├─ index.ts
+│  │  │  │  │  │  ├─ license-redirect.test.tsx
+│  │  │  │  │  │  ├─ license-redirect.tsx
+│  │  │  │  │  │  ├─ login-header.test.tsx
+│  │  │  │  │  │  ├─ login-header.tsx
+│  │  │  │  │  │  ├─ login.page.test.tsx
+│  │  │  │  │  │  ├─ login.page.tsx
+│  │  │  │  │  │  ├─ manual-login-form.test.tsx
+│  │  │  │  │  │  ├─ manual-login-form.tsx
+│  │  │  │  │  │  ├─ offline
+│  │  │  │  │  │  │  ├─ offline-mode-banner.test.tsx
+│  │  │  │  │  │  │  ├─ offline-mode-banner.tsx
+│  │  │  │  │  │  │  ├─ pending-blessing-modal.test.tsx
+│  │  │  │  │  │  │  └─ pending-blessing-modal.tsx
+│  │  │  │  │  │  ├─ pin-keypad.component.test.tsx
+│  │  │  │  │  │  ├─ pin-keypad.component.tsx
+│  │  │  │  │  │  ├─ quick-switch.component.test.tsx
+│  │  │  │  │  │  ├─ quick-switch.component.tsx
+│  │  │  │  │  │  ├─ reset-password.page.test.tsx
+│  │  │  │  │  │  ├─ reset-password.page.tsx
+│  │  │  │  │  │  ├─ role-guard.test.tsx
+│  │  │  │  │  │  ├─ role-guard.tsx
+│  │  │  │  │  │  ├─ selected-user-credential.test.tsx
+│  │  │  │  │  │  ├─ selected-user-credential.tsx
+│  │  │  │  │  │  ├─ sessions
+│  │  │  │  │  │  │  ├─ session-view.test.tsx
+│  │  │  │  │  │  │  └─ session-view.tsx
+│  │  │  │  │  │  ├─ set-pin-dialog.tsx
+│  │  │  │  │  │  ├─ step-up-modal.test.tsx
+│  │  │  │  │  │  ├─ step-up-modal.tsx
+│  │  │  │  │  │  ├─ two-factor-modal.test.tsx
+│  │  │  │  │  │  ├─ two-factor-modal.tsx
+│  │  │  │  │  │  ├─ user-management.helpers.ts
+│  │  │  │  │  │  ├─ user-management.page.test.tsx
+│  │  │  │  │  │  ├─ user-management.page.tsx
+│  │  │  │  │  │  ├─ user-management.types.ts
+│  │  │  │  │  │  └─ user-table.tsx
+│  │  │  │  │  ├─ cash-shift
+│  │  │  │  │  │  ├─ active-shift-view.tsx
+│  │  │  │  │  │  ├─ cash-shift.page.tsx
+│  │  │  │  │  │  ├─ confirm-step.tsx
+│  │  │  │  │  │  ├─ count-step.tsx
+│  │  │  │  │  │  ├─ index.ts
+│  │  │  │  │  │  ├─ open-shift-form.tsx
+│  │  │  │  │  │  ├─ operational-drift-banner.test.tsx
+│  │  │  │  │  │  ├─ operational-drift-banner.tsx
+│  │  │  │  │  │  ├─ reconciliation-view.test.tsx
+│  │  │  │  │  │  ├─ reconciliation-view.tsx
+│  │  │  │  │  │  ├─ shift-history-section.tsx
+│  │  │  │  │  │  ├─ summary-step.tsx
+│  │  │  │  │  │  └─ types.ts
+│  │  │  │  │  ├─ clients
+│  │  │  │  │  │  ├─ client-form.tsx
+│  │  │  │  │  │  ├─ client-table.tsx
+│  │  │  │  │  │  ├─ clients.page.tsx
+│  │  │  │  │  │  └─ delete-confirm-dialog.tsx
+│  │  │  │  │  ├─ common
+│  │  │  │  │  │  ├─ app-shell.test.tsx
+│  │  │  │  │  │  ├─ app-shell.tsx
+│  │  │  │  │  │  ├─ cash-shift-header.tsx
+│  │  │  │  │  │  ├─ currency-input.test.tsx
+│  │  │  │  │  │  ├─ currency-input.tsx
+│  │  │  │  │  │  ├─ error-boundary.test.tsx
+│  │  │  │  │  │  ├─ error-boundary.tsx
+│  │  │  │  │  │  ├─ operation-queued-toast.test.tsx
+│  │  │  │  │  │  ├─ operation-queued-toast.tsx
+│  │  │  │  │  │  ├─ service-context.sync-scheduler.test.tsx
+│  │  │  │  │  │  ├─ service-context.test.tsx
+│  │  │  │  │  │  ├─ service-context.tsx
+│  │  │  │  │  │  ├─ service-error-panel.test.tsx
+│  │  │  │  │  │  ├─ service-error-panel.tsx
+│  │  │  │  │  │  ├─ service-loading.test.tsx
+│  │  │  │  │  │  ├─ service-loading.tsx
+│  │  │  │  │  │  ├─ shift-required-overlay.tsx
+│  │  │  │  │  │  ├─ sync-attention-banner.tsx
+│  │  │  │  │  │  ├─ sync-pulse.test.tsx
+│  │  │  │  │  │  └─ sync-pulse.tsx
+│  │  │  │  │  ├─ config
+│  │  │  │  │  │  ├─ active-mode-indicator.tsx
+│  │  │  │  │  │  ├─ company-config-tab.tsx
+│  │  │  │  │  │  ├─ config-form-fields.tsx
+│  │  │  │  │  │  ├─ config-history.section.tsx
+│  │  │  │  │  │  ├─ config-preview-modal.tsx
+│  │  │  │  │  │  ├─ custom-field-editor.tsx
+│  │  │  │  │  │  ├─ field-requirement-indicator.tsx
+│  │  │  │  │  │  ├─ fiscal-config-tab.tsx
+│  │  │  │  │  │  ├─ named-presets.section.tsx
+│  │  │  │  │  │  ├─ preset-card.tsx
+│  │  │  │  │  │  ├─ purchases-config-tab.tsx
+│  │  │  │  │  │  ├─ sales-config-tab.tsx
+│  │  │  │  │  │  ├─ strictness.section.tsx
+│  │  │  │  │  │  ├─ system-preferences-tab.tsx
+│  │  │  │  │  │  ├─ tenant-config.page.tsx
+│  │  │  │  │  │  └─ user-preferences.section.tsx
+│  │  │  │  │  ├─ DatabaseProof
+│  │  │  │  │  │  ├─ database-proof.test.tsx
+│  │  │  │  │  │  └─ database-proof.tsx
+│  │  │  │  │  ├─ fiscal
+│  │  │  │  │  │  ├─ adjustment-creation-modal.test.tsx
+│  │  │  │  │  │  ├─ adjustment-creation-modal.tsx
+│  │  │  │  │  │  ├─ adjustment-history-panel.test.tsx
+│  │  │  │  │  │  ├─ adjustment-history-panel.tsx
+│  │  │  │  │  │  ├─ cashier-operational-view.test.tsx
+│  │  │  │  │  │  ├─ cashier-operational-view.tsx
+│  │  │  │  │  │  ├─ contingency-history-view.test.tsx
+│  │  │  │  │  │  ├─ contingency-history-view.tsx
+│  │  │  │  │  │  ├─ fiscal-header.tsx
+│  │  │  │  │  │  ├─ fiscal-invoice-detail-panel.test.tsx
+│  │  │  │  │  │  ├─ fiscal-invoice-detail-panel.tsx
+│  │  │  │  │  │  ├─ index.ts
+│  │  │  │  │  │  ├─ invoice-list-view.test.tsx
+│  │  │  │  │  │  ├─ invoice-list-view.tsx
+│  │  │  │  │  │  ├─ operational-invoice-detail-panel.test.tsx
+│  │  │  │  │  │  └─ operational-invoice-detail-panel.tsx
+│  │  │  │  │  ├─ Home
+│  │  │  │  │  │  ├─ home.test.tsx
+│  │  │  │  │  │  ├─ home.tsx
+│  │  │  │  │  │  ├─ quick-actions-card.test.tsx
+│  │  │  │  │  │  ├─ quick-actions-card.tsx
+│  │  │  │  │  │  ├─ stats-card.test.tsx
+│  │  │  │  │  │  └─ stats-card.tsx
+│  │  │  │  │  ├─ inventory-adjustments
+│  │  │  │  │  │  ├─ adjustment-form.tsx
+│  │  │  │  │  │  ├─ error-banner.tsx
+│  │  │  │  │  │  ├─ inventory-adjustments-header.tsx
+│  │  │  │  │  │  ├─ inventory-adjustments.page.test.tsx
+│  │  │  │  │  │  ├─ inventory-adjustments.page.tsx
+│  │  │  │  │  │  ├─ inventory-adjustments.types.ts
+│  │  │  │  │  │  ├─ lot-search-panel.test.tsx
+│  │  │  │  │  │  └─ lot-search-panel.tsx
+│  │  │  │  │  ├─ inventory-lots
+│  │  │  │  │  │  ├─ inventory-lots.page.tsx
+│  │  │  │  │  │  └─ lot-movement-history.tsx
+│  │  │  │  │  ├─ licensing
+│  │  │  │  │  │  ├─ activation-form.tsx
+│  │  │  │  │  │  ├─ activation.helpers.ts
+│  │  │  │  │  │  ├─ activation.page.test.tsx
+│  │  │  │  │  │  ├─ activation.page.tsx
+│  │  │  │  │  │  ├─ license-assignment-panel.tsx
+│  │  │  │  │  │  ├─ license-banner.test.tsx
+│  │  │  │  │  │  ├─ license-banner.tsx
+│  │  │  │  │  │  ├─ license-checkin-panel.tsx
+│  │  │  │  │  │  ├─ license-plan-panel.tsx
+│  │  │  │  │  │  ├─ license-status-badge.tsx
+│  │  │  │  │  │  ├─ license-status.helpers.ts
+│  │  │  │  │  │  ├─ license-status.page.test.tsx
+│  │  │  │  │  │  └─ license-status.page.tsx
+│  │  │  │  │  ├─ local-sync
+│  │  │  │  │  │  ├─ hub-election-info.tsx
+│  │  │  │  │  │  ├─ hub-status-icon.tsx
+│  │  │  │  │  │  ├─ local-network.page.tsx
+│  │  │  │  │  │  ├─ local-sync-banner.tsx
+│  │  │  │  │  │  └─ peer-status-card.tsx
+│  │  │  │  │  ├─ Navigation
+│  │  │  │  │  │  ├─ navigation-sidebar.test.tsx
+│  │  │  │  │  │  └─ navigation-sidebar.tsx
+│  │  │  │  │  ├─ PaymentProcessing
+│  │  │  │  │  │  ├─ payment-method-row.tsx
+│  │  │  │  │  │  ├─ payment-processing.test.tsx
+│  │  │  │  │  │  ├─ payment-processing.tsx
+│  │  │  │  │  │  └─ payment-status-badge.tsx
+│  │  │  │  │  ├─ prescriptions
+│  │  │  │  │  │  ├─ prescription-form.tsx
+│  │  │  │  │  │  ├─ prescription-item-info.tsx
+│  │  │  │  │  │  ├─ prescriptions-header.tsx
+│  │  │  │  │  │  ├─ prescriptions-no-pending.tsx
+│  │  │  │  │  │  ├─ prescriptions-toast.tsx
+│  │  │  │  │  │  ├─ prescriptions.page.test.tsx
+│  │  │  │  │  │  └─ prescriptions.page.tsx
+│  │  │  │  │  ├─ printing
+│  │  │  │  │  │  ├─ index.ts
+│  │  │  │  │  │  ├─ print-health-tile.test.tsx
+│  │  │  │  │  │  ├─ print-health-tile.tsx
+│  │  │  │  │  │  ├─ print-job-row.test.tsx
+│  │  │  │  │  │  ├─ print-job-row.tsx
+│  │  │  │  │  │  ├─ print-queue.page.test.tsx
+│  │  │  │  │  │  ├─ print-queue.page.tsx
+│  │  │  │  │  │  ├─ printer-card.test.tsx
+│  │  │  │  │  │  ├─ printer-card.tsx
+│  │  │  │  │  │  ├─ printer-status-badge.test.tsx
+│  │  │  │  │  │  ├─ printer-status-badge.tsx
+│  │  │  │  │  │  ├─ printers.page.test.tsx
+│  │  │  │  │  │  ├─ printers.page.tsx
+│  │  │  │  │  │  ├─ printing-container.tsx
+│  │  │  │  │  │  ├─ queue-summary-bar.test.tsx
+│  │  │  │  │  │  ├─ queue-summary-bar.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-discovery.test.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-discovery.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-fallback-config.test.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-fallback-config.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-found-printers.test.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-found-printers.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-job-assignment.test.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-job-assignment.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-summary.test.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-summary.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-test-prints.test.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-test-prints.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-welcome.test.tsx
+│  │  │  │  │  │  ├─ setup-wizard-step-welcome.tsx
+│  │  │  │  │  │  ├─ setup-wizard.page.test.tsx
+│  │  │  │  │  │  └─ setup-wizard.page.tsx
+│  │  │  │  │  ├─ productos
+│  │  │  │  │  │  └─ productos-main.page.tsx
+│  │  │  │  │  ├─ products
+│  │  │  │  │  │  ├─ product-form.tsx
+│  │  │  │  │  │  ├─ product-header.tsx
+│  │  │  │  │  │  ├─ product-list.tsx
+│  │  │  │  │  │  ├─ products.page.tsx
+│  │  │  │  │  │  ├─ products.types.ts
+│  │  │  │  │  │  └─ use-product-form-data.ts
+│  │  │  │  │  ├─ purchases
+│  │  │  │  │  │  ├─ purchase-order-detail.tsx
+│  │  │  │  │  │  ├─ purchase-order-form.tsx
+│  │  │  │  │  │  ├─ purchase-order-list.tsx
+│  │  │  │  │  │  ├─ purchase-orders.page.tsx
+│  │  │  │  │  │  ├─ purchase-receptions.page.tsx
+│  │  │  │  │  │  ├─ purchases-helpers.tsx
+│  │  │  │  │  │  ├─ purchases-main.page.tsx
+│  │  │  │  │  │  ├─ reception-detail.tsx
+│  │  │  │  │  │  ├─ reception-form.tsx
+│  │  │  │  │  │  ├─ reception-list.tsx
+│  │  │  │  │  │  ├─ searchable-select.tsx
+│  │  │  │  │  │  ├─ supplier-form.tsx
+│  │  │  │  │  │  ├─ supplier-list.tsx
+│  │  │  │  │  │  ├─ supplier-return-detail.tsx
+│  │  │  │  │  │  ├─ supplier-return-form.tsx
+│  │  │  │  │  │  ├─ supplier-return-list.tsx
+│  │  │  │  │  │  ├─ supplier-returns.page.tsx
+│  │  │  │  │  │  ├─ supplier-search-bar.tsx
+│  │  │  │  │  │  └─ suppliers.page.tsx
+│  │  │  │  │  ├─ Receipt
+│  │  │  │  │  │  ├─ receipt.test.tsx
+│  │  │  │  │  │  └─ receipt.tsx
+│  │  │  │  │  ├─ recovery
+│  │  │  │  │  │  ├─ index.ts
+│  │  │  │  │  │  ├─ recovery-page-view.test.tsx
+│  │  │  │  │  │  ├─ recovery-page-view.tsx
+│  │  │  │  │  │  ├─ recovery.page.test.tsx
+│  │  │  │  │  │  └─ recovery.page.tsx
+│  │  │  │  │  ├─ returns
+│  │  │  │  │  │  ├─ return-tabs.tsx
+│  │  │  │  │  │  ├─ returns-header.tsx
+│  │  │  │  │  │  ├─ returns-toast.tsx
+│  │  │  │  │  │  ├─ returns.page.test.tsx
+│  │  │  │  │  │  ├─ returns.page.tsx
+│  │  │  │  │  │  ├─ returns.types.ts
+│  │  │  │  │  │  ├─ unverified-return-flow.tsx
+│  │  │  │  │  │  └─ verified-return-flow.tsx
+│  │  │  │  │  ├─ sales-history
+│  │  │  │  │  │  ├─ index.ts
+│  │  │  │  │  │  ├─ sales-history-adjustment-modal.test.tsx
+│  │  │  │  │  │  ├─ sales-history-adjustment-modal.tsx
+│  │  │  │  │  │  ├─ sales-history-detail.test.tsx
+│  │  │  │  │  │  ├─ sales-history-detail.tsx
+│  │  │  │  │  │  ├─ sales-history-empty.test.tsx
+│  │  │  │  │  │  ├─ sales-history-empty.tsx
+│  │  │  │  │  │  ├─ sales-history-list.test.tsx
+│  │  │  │  │  │  └─ sales-history-list.tsx
+│  │  │  │  │  ├─ SalesTransaction
+│  │  │  │  │  │  ├─ cart-line-item.tsx
+│  │  │  │  │  │  ├─ cart-panel.test.tsx
+│  │  │  │  │  │  ├─ cart-panel.tsx
+│  │  │  │  │  │  ├─ client-selector.tsx
+│  │  │  │  │  │  ├─ help-bar.tsx
+│  │  │  │  │  │  ├─ product-search-results.tsx
+│  │  │  │  │  │  ├─ product-search.test.tsx
+│  │  │  │  │  │  ├─ product-search.tsx
+│  │  │  │  │  │  ├─ quick-client-form.tsx
+│  │  │  │  │  │  ├─ restricted-confirmation-dialog.test.tsx
+│  │  │  │  │  │  ├─ restricted-confirmation-dialog.tsx
+│  │  │  │  │  │  ├─ sales-transaction.test.tsx
+│  │  │  │  │  │  ├─ sales-transaction.tsx
+│  │  │  │  │  │  ├─ totals-summary.test.tsx
+│  │  │  │  │  │  └─ totals-summary.tsx
+│  │  │  │  │  ├─ sync
+│  │  │  │  │  │  ├─ action-bar.test.tsx
+│  │  │  │  │  │  ├─ action-bar.tsx
+│  │  │  │  │  │  ├─ all-clear-banner.tsx
+│  │  │  │  │  │  ├─ auth-status-badge.test.tsx
+│  │  │  │  │  │  ├─ auth-status-badge.tsx
+│  │  │  │  │  │  ├─ discard-entry-modal.test.tsx
+│  │  │  │  │  │  ├─ discard-entry-modal.tsx
+│  │  │  │  │  │  ├─ entries-section.test.tsx
+│  │  │  │  │  │  ├─ entries-section.tsx
+│  │  │  │  │  │  ├─ entry-detail-drawer.test.tsx
+│  │  │  │  │  │  ├─ entry-detail-drawer.tsx
+│  │  │  │  │  │  ├─ failure-breakdown-panel.test.tsx
+│  │  │  │  │  │  ├─ failure-breakdown-panel.tsx
+│  │  │  │  │  │  ├─ kpi-grid.tsx
+│  │  │  │  │  │  ├─ no-sync-data-placeholder.tsx
+│  │  │  │  │  │  ├─ sync-health-error.tsx
+│  │  │  │  │  │  ├─ sync-health-loading.tsx
+│  │  │  │  │  │  ├─ sync-health-toast.tsx
+│  │  │  │  │  │  ├─ sync-health.page.test.tsx
+│  │  │  │  │  │  ├─ sync-health.page.tsx
+│  │  │  │  │  │  ├─ sync-health.types.ts
+│  │  │  │  │  │  ├─ timeline-chart.test.tsx
+│  │  │  │  │  │  └─ timeline-chart.tsx
+│  │  │  │  │  ├─ ui
+│  │  │  │  │  │  ├─ icons
+│  │  │  │  │  │  │  └─ index.tsx
+│  │  │  │  │  │  └─ tooltip.tsx
+│  │  │  │  │  └─ update
+│  │  │  │  │     ├─ update-check-interceptor.test.tsx
+│  │  │  │  │     ├─ update-check-interceptor.tsx
+│  │  │  │  │     ├─ update-modal.test.tsx
+│  │  │  │  │     ├─ update-modal.tsx
+│  │  │  │  │     ├─ update-progress.test.tsx
+│  │  │  │  │     ├─ update-progress.tsx
+│  │  │  │  │     ├─ update-settings.section.test.tsx
+│  │  │  │  │     └─ update-settings.section.tsx
+│  │  │  │  ├─ design-system.md
+│  │  │  │  ├─ dev
+│  │  │  │  │  ├─ buffer-polyfill.ts
+│  │  │  │  │  ├─ design-tokens.tsx
+│  │  │  │  │  ├─ empty-crypto-polyfill.ts
+│  │  │  │  │  ├─ empty-url-polyfill.ts
+│  │  │  │  │  ├─ fs-polyfill.ts
+│  │  │  │  │  ├─ fs-promises-polyfill.ts
+│  │  │  │  │  ├─ node-polyfills.ts
+│  │  │  │  │  ├─ path-polyfill.ts
+│  │  │  │  │  └─ postgres-array-polyfill.ts
+│  │  │  │  ├─ hooks
+│  │  │  │  │  ├─ use-async-action.ts
+│  │  │  │  │  ├─ use-command-palette.test.tsx
+│  │  │  │  │  ├─ use-command-palette.ts
+│  │  │  │  │  ├─ use-elapsed-time.test.tsx
+│  │  │  │  │  ├─ use-elapsed-time.ts
+│  │  │  │  │  ├─ use-global-shortcuts.test.tsx
+│  │  │  │  │  ├─ use-global-shortcuts.ts
+│  │  │  │  │  ├─ use-help-viewer.test.tsx
+│  │  │  │  │  ├─ use-help-viewer.ts
+│  │  │  │  │  ├─ use-local-sync.ts
+│  │  │  │  │  ├─ use-login-page.test.tsx
+│  │  │  │  │  ├─ use-login-page.ts
+│  │  │  │  │  ├─ use-offline-auth.test.tsx
+│  │  │  │  │  ├─ use-offline-auth.ts
+│  │  │  │  │  ├─ use-online-status.test.tsx
+│  │  │  │  │  ├─ use-online-status.ts
+│  │  │  │  │  ├─ use-pagination.ts
+│  │  │  │  │  ├─ use-recovery-page.test.tsx
+│  │  │  │  │  ├─ use-recovery-page.ts
+│  │  │  │  │  ├─ use-require-active-shift.ts
+│  │  │  │  │  ├─ use-sales-transaction.test.tsx
+│  │  │  │  │  ├─ use-sales-transaction.ts
+│  │  │  │  │  ├─ use-service-init.sync-scheduler.test.ts
+│  │  │  │  │  ├─ use-service-init.test.tsx
+│  │  │  │  │  ├─ use-service-init.ts
+│  │  │  │  │  ├─ use-shortcut-cheatsheet.test.tsx
+│  │  │  │  │  └─ use-shortcut-cheatsheet.ts
+│  │  │  │  ├─ i18n
+│  │  │  │  │  ├─ index.ts
+│  │  │  │  │  └─ locales
+│  │  │  │  │     ├─ en.json
+│  │  │  │  │     └─ es.json
+│  │  │  │  ├─ main.tsx
+│  │  │  │  ├─ services
+│  │  │  │  │  ├─ auth
+│  │  │  │  │  │  └─ offline
+│  │  │  │  │  │     ├─ offline-auth-service.test.ts
+│  │  │  │  │  │     └─ offline-auth-service.ts
+│  │  │  │  │  ├─ catalog-service.http.test.ts
+│  │  │  │  │  ├─ catalog-service.http.ts
+│  │  │  │  │  ├─ catalog-service.local.ts
+│  │  │  │  │  ├─ catalog-service.test.ts
+│  │  │  │  │  ├─ catalog-service.ts
+│  │  │  │  │  ├─ local-sync
+│  │  │  │  │  │  ├─ index.ts
+│  │  │  │  │  │  ├─ local-network-key.service.ts
+│  │  │  │  │  │  └─ local-sync.service.ts
+│  │  │  │  │  ├─ payment-gateway-service.mock.ts
+│  │  │  │  │  ├─ payment-gateway-service.test.ts
+│  │  │  │  │  └─ payment-gateway-service.ts
+│  │  │  │  ├─ store
+│  │  │  │  │  ├─ hooks.test.tsx
+│  │  │  │  │  ├─ hooks.ts
+│  │  │  │  │  ├─ local-sync
+│  │  │  │  │  │  ├─ index.ts
+│  │  │  │  │  │  └─ local-sync.store.ts
+│  │  │  │  │  ├─ slices
+│  │  │  │  │  │  ├─ offline-auth-slice.ts
+│  │  │  │  │  │  ├─ payment-slice.test.ts
+│  │  │  │  │  │  ├─ payment-slice.ts
+│  │  │  │  │  │  ├─ payment-types.ts
+│  │  │  │  │  │  ├─ sales-slice.test.ts
+│  │  │  │  │  │  ├─ sales-slice.ts
+│  │  │  │  │  │  ├─ sales-types.ts
+│  │  │  │  │  │  ├─ ui-slice.test.ts
+│  │  │  │  │  │  ├─ ui-slice.ts
+│  │  │  │  │  │  └─ ui-types.ts
+│  │  │  │  │  ├─ store.test.ts
+│  │  │  │  │  └─ store.ts
+│  │  │  │  ├─ styles
+│  │  │  │  │  └─ global.css
+│  │  │  │  └─ utils
+│  │  │  │     ├─ format-currency.test.ts
+│  │  │  │     ├─ format-currency.ts
+│  │  │  │     ├─ format-date.test.ts
+│  │  │  │     ├─ format-date.ts
+│  │  │  │     └─ notify.ts
+│  │  │  └─ stores
+│  │  │     ├─ assistant.store.test.ts
+│  │  │     ├─ assistant.store.ts
+│  │  │     ├─ user-preferences.store.test.ts
+│  │  │     └─ user-preferences.store.ts
+│  │  ├─ src-tauri
+│  │  │  ├─ build.rs
+│  │  │  ├─ capabilities
+│  │  │  │  └─ default.json
+│  │  │  ├─ Cargo.lock
+│  │  │  ├─ Cargo.toml
+│  │  │  ├─ gen
+│  │  │  │  └─ schemas
+│  │  │  │     ├─ acl-manifests.json
+│  │  │  │     ├─ capabilities.json
+│  │  │  │     ├─ desktop-schema.json
+│  │  │  │     └─ windows-schema.json
+│  │  │  ├─ icons
+│  │  │  │  └─ icon.ico
+│  │  │  ├─ src
+│  │  │  │  ├─ backup.rs
+│  │  │  │  ├─ commands
+│  │  │  │  │  ├─ backup.rs
+│  │  │  │  │  ├─ local_sync.rs
+│  │  │  │  │  ├─ mod.rs
+│  │  │  │  │  └─ printer_discovery.rs
+│  │  │  │  ├─ hardware_fingerprint.rs
+│  │  │  │  ├─ hub_election.rs
+│  │  │  │  ├─ lib.rs
+│  │  │  │  ├─ local_sync_client.rs
+│  │  │  │  ├─ local_sync_server.rs
+│  │  │  │  ├─ main.rs
+│  │  │  │  ├─ mdns_discovery.rs
+│  │  │  │  └─ printer_discovery.rs
+│  │  │  └─ tauri.conf.json
+│  │  ├─ test
+│  │  │  └─ integration
+│  │  │     ├─ flows
+│  │  │     │  ├─ auth.flow.test.ts
+│  │  │     │  ├─ inventory-flow.flow.test.ts
+│  │  │     │  ├─ multi-workstation.flow.test.ts
+│  │  │     │  ├─ offline-flow.flow.test.ts
+│  │  │     │  ├─ sale-annulment.flow.test.ts
+│  │  │     │  ├─ sale-lifecycle.flow.test.ts
+│  │  │     │  └─ sync-retry.flow.test.ts
+│  │  │     ├─ global-setup.ts
+│  │  │     └─ harness
+│  │  │        ├─ test-client.ts
+│  │  │        ├─ test-database.ts
+│  │  │        └─ test-server.ts
+│  │  ├─ tsconfig.json
+│  │  ├─ tsconfig.node.json
+│  │  ├─ vite.config.d.ts
+│  │  ├─ vite.config.d.ts.map
+│  │  ├─ vite.config.ts
+│  │  ├─ vitest.config.ts
+│  │  ├─ vitest.integration.config.ts
+│  │  └─ vitest.setup.ts
+│  └─ server
+│     ├─ jest.config.ts
+│     ├─ jest.e2e.config.ts
+│     ├─ package.json
+│     ├─ scripts
+│     │  └─ recover-stuck-sync.ts
+│     ├─ seed
+│     │  ├─ constants
+│     │  │  ├─ dates.ts
+│     │  │  └─ ids.ts
+│     │  ├─ helpers
+│     │  │  ├─ auth.ts
+│     │  │  ├─ db.ts
+│     │  │  └─ upsert.ts
+│     │  ├─ main.ts
+│     │  └─ seed
+│     │     ├─ audit-log.ts
+│     │     ├─ cash-shifts.ts
+│     │     ├─ client-returns.ts
+│     │     ├─ clients.ts
+│     │     ├─ fiscal-config.ts
+│     │     ├─ inventory-lots.ts
+│     │     ├─ physical-counts.ts
+│     │     ├─ prescriptions.ts
+│     │     ├─ products.ts
+│     │     ├─ purchases.ts
+│     │     ├─ reference-data.ts
+│     │     ├─ sales.ts
+│     │     ├─ suppliers.ts
+│     │     ├─ sync-queue.ts
+│     │     ├─ system-config.ts
+│     │     ├─ users.ts
+│     │     └─ workstation.ts
+│     ├─ src
+│     │  ├─ app.module.ts
+│     │  ├─ common
+│     │  │  ├─ decorators
+│     │  │  │  ├─ auditable.decorator.ts
+│     │  │  │  ├─ current-user.decorator.ts
+│     │  │  │  ├─ public.decorator.ts
+│     │  │  │  └─ roles.decorator.ts
+│     │  │  ├─ exceptions
+│     │  │  │  ├─ domain.exception.ts
+│     │  │  │  └─ not-implemented-for-phase.exception.ts
+│     │  │  ├─ filters
+│     │  │  │  ├─ http-exception.filter.spec.ts
+│     │  │  │  └─ http-exception.filter.ts
+│     │  │  ├─ guards
+│     │  │  │  ├─ jwt-auth.guard.ts
+│     │  │  │  ├─ roles.guard.spec.ts
+│     │  │  │  └─ roles.guard.ts
+│     │  │  ├─ interceptors
+│     │  │  │  ├─ audit-log.interceptor.spec.ts
+│     │  │  │  └─ audit-log.interceptor.ts
+│     │  │  ├─ pipes
+│     │  │  │  ├─ zod-validation.pipe.spec.ts
+│     │  │  │  └─ zod-validation.pipe.ts
+│     │  │  ├─ to-decimal.spec.ts
+│     │  │  └─ to-decimal.ts
+│     │  ├─ config
+│     │  │  ├─ env.schema.spec.ts
+│     │  │  └─ env.schema.ts
+│     │  ├─ infrastructure
+│     │  │  ├─ prisma
+│     │  │  │  ├─ prisma.module.ts
+│     │  │  │  ├─ prisma.service.spec.ts
+│     │  │  │  └─ prisma.service.ts
+│     │  │  └─ queue
+│     │  │     └─ bullmq.module.ts
+│     │  ├─ main.ts
+│     │  ├─ modules
+│     │  │  ├─ auth
+│     │  │  │  ├─ audit.controller.ts
+│     │  │  │  ├─ auth.controller.spec.ts
+│     │  │  │  ├─ auth.controller.ts
+│     │  │  │  ├─ auth.module.ts
+│     │  │  │  ├─ auth.service.spec.ts
+│     │  │  │  ├─ auth.service.ts
+│     │  │  │  ├─ constants
+│     │  │  │  │  └─ auth.constants.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ auth-response.dto.ts
+│     │  │  │  │  ├─ change-password.dto.ts
+│     │  │  │  │  ├─ change-pin.dto.ts
+│     │  │  │  │  ├─ create-user.dto.ts
+│     │  │  │  │  ├─ login.dto.ts
+│     │  │  │  │  ├─ password-reset.dto.ts
+│     │  │  │  │  └─ reset-pin.dto.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ account-inactive.exception.ts
+│     │  │  │  │  ├─ account-locked.exception.ts
+│     │  │  │  │  ├─ invalid-credentials.exception.ts
+│     │  │  │  │  ├─ session-expired.exception.ts
+│     │  │  │  │  └─ session-revoked.exception.ts
+│     │  │  │  ├─ guards
+│     │  │  │  │  ├─ permission.guard.ts
+│     │  │  │  │  └─ step-up.guard.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ offline
+│     │  │  │  │  ├─ blessing.controller.ts
+│     │  │  │  │  ├─ blessing.service.spec.ts
+│     │  │  │  │  ├─ blessing.service.ts
+│     │  │  │  │  ├─ credential-cache.service.spec.ts
+│     │  │  │  │  ├─ credential-cache.service.ts
+│     │  │  │  │  ├─ dto
+│     │  │  │  │  │  ├─ blessing.dto.ts
+│     │  │  │  │  │  └─ revocation-list.dto.ts
+│     │  │  │  │  ├─ index.ts
+│     │  │  │  │  ├─ offline-token.service.spec.ts
+│     │  │  │  │  ├─ offline-token.service.ts
+│     │  │  │  │  ├─ revocation-list.service.spec.ts
+│     │  │  │  │  └─ revocation-list.service.ts
+│     │  │  │  ├─ services
+│     │  │  │  │  ├─ audit.service.ts
+│     │  │  │  │  ├─ backup-codes.service.ts
+│     │  │  │  │  ├─ password-hasher.service.spec.ts
+│     │  │  │  │  ├─ password-hasher.service.ts
+│     │  │  │  │  ├─ pin.service.ts
+│     │  │  │  │  ├─ session.service.spec.ts
+│     │  │  │  │  ├─ session.service.ts
+│     │  │  │  │  ├─ step-up.service.ts
+│     │  │  │  │  └─ totp.service.ts
+│     │  │  │  ├─ step-up.controller.ts
+│     │  │  │  ├─ strategies
+│     │  │  │  │  ├─ jwt.strategy.spec.ts
+│     │  │  │  │  ├─ jwt.strategy.ts
+│     │  │  │  │  ├─ local.strategy.spec.ts
+│     │  │  │  │  └─ local.strategy.ts
+│     │  │  │  ├─ totp.controller.ts
+│     │  │  │  └─ users.controller.ts
+│     │  │  ├─ backoffice
+│     │  │  │  ├─ backoffice.module.ts
+│     │  │  │  ├─ controllers
+│     │  │  │  │  ├─ sync-health.controller.spec.ts
+│     │  │  │  │  └─ sync-health.controller.ts
+│     │  │  │  └─ index.ts
+│     │  │  ├─ cash-shift
+│     │  │  │  ├─ cash-shift.controller.spec.ts
+│     │  │  │  ├─ cash-shift.controller.ts
+│     │  │  │  ├─ cash-shift.module.ts
+│     │  │  │  ├─ cash-shift.service.spec.ts
+│     │  │  │  ├─ cash-shift.service.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ close-cash-shift.dto.ts
+│     │  │  │  │  ├─ create-cash-shift.dto.ts
+│     │  │  │  │  ├─ create-cash-shift.schema.ts
+│     │  │  │  │  ├─ force-close-cash-shift.dto.ts
+│     │  │  │  │  ├─ open-cash-shift.dto.ts
+│     │  │  │  │  ├─ query-cash-shift.dto.ts
+│     │  │  │  │  ├─ register-cash-count.dto.ts
+│     │  │  │  │  └─ update-cash-shift.dto.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  └─ cash-shift.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ invalid-cash-count-for-non-cash-method.exception.ts
+│     │  │  │  │  ├─ missing-closing-cash-counts.exception.ts
+│     │  │  │  │  ├─ payment-method-not-found.exception.ts
+│     │  │  │  │  ├─ shift-already-open.exception.ts
+│     │  │  │  │  └─ shift-not-open.exception.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  └─ jobs
+│     │  │  │     └─ extended-shift-alert.job.ts
+│     │  │  ├─ catalog
+│     │  │  │  ├─ catalog.controller.spec.ts
+│     │  │  │  ├─ catalog.controller.ts
+│     │  │  │  ├─ catalog.module.ts
+│     │  │  │  ├─ catalog.service.spec.ts
+│     │  │  │  ├─ catalog.service.ts
+│     │  │  │  ├─ categories.controller.spec.ts
+│     │  │  │  ├─ categories.controller.ts
+│     │  │  │  ├─ categories.service.spec.ts
+│     │  │  │  ├─ categories.service.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ add-product-barcode.dto.ts
+│     │  │  │  │  ├─ assign-product-tax-scheme.dto.ts
+│     │  │  │  │  ├─ create-category.dto.ts
+│     │  │  │  │  ├─ create-pharmaceutical-form.dto.ts
+│     │  │  │  │  ├─ create-product.dto.ts
+│     │  │  │  │  ├─ create-tax-scheme.dto.ts
+│     │  │  │  │  ├─ query-product.dto.ts
+│     │  │  │  │  ├─ register-product-price.dto.ts
+│     │  │  │  │  ├─ update-category.dto.ts
+│     │  │  │  │  ├─ update-pharmaceutical-form.dto.ts
+│     │  │  │  │  └─ update-product.dto.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  └─ product.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ discount-reason-required.exception.ts
+│     │  │  │  │  ├─ duplicate-active-tax-scheme.exception.ts
+│     │  │  │  │  ├─ duplicate-barcode.exception.ts
+│     │  │  │  │  └─ product-not-found.exception.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ pharmaceutical-forms.controller.spec.ts
+│     │  │  │  ├─ pharmaceutical-forms.controller.ts
+│     │  │  │  ├─ pharmaceutical-forms.service.spec.ts
+│     │  │  │  ├─ pharmaceutical-forms.service.ts
+│     │  │  │  ├─ products.controller.spec.ts
+│     │  │  │  ├─ products.controller.ts
+│     │  │  │  ├─ products.service.spec.ts
+│     │  │  │  ├─ products.service.ts
+│     │  │  │  ├─ tax-schemes.controller.spec.ts
+│     │  │  │  ├─ tax-schemes.controller.ts
+│     │  │  │  ├─ tax-schemes.service.spec.ts
+│     │  │  │  └─ tax-schemes.service.ts
+│     │  │  ├─ clients
+│     │  │  │  ├─ clients.controller.spec.ts
+│     │  │  │  ├─ clients.controller.ts
+│     │  │  │  ├─ clients.module.ts
+│     │  │  │  ├─ clients.service.spec.ts
+│     │  │  │  ├─ clients.service.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ create-client.dto.ts
+│     │  │  │  │  ├─ query-client.dto.ts
+│     │  │  │  │  ├─ register-consent.dto.ts
+│     │  │  │  │  ├─ request-data-subject-action.dto.ts
+│     │  │  │  │  ├─ resolve-data-subject-request.dto.ts
+│     │  │  │  │  ├─ set-classification.dto.ts
+│     │  │  │  │  └─ update-client.dto.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  └─ client.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ client-already-inactive.exception.ts
+│     │  │  │  │  ├─ client-not-found.exception.ts
+│     │  │  │  │  ├─ data-subject-request-already-pending.exception.ts
+│     │  │  │  │  ├─ duplicate-client-identification.exception.ts
+│     │  │  │  │  └─ no-pending-data-subject-request.exception.ts
+│     │  │  │  └─ index.ts
+│     │  │  ├─ configuration
+│     │  │  │  ├─ configuration.module.ts
+│     │  │  │  ├─ controllers
+│     │  │  │  │  ├─ configuration.controller.spec.ts
+│     │  │  │  │  └─ configuration.controller.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ pos-settings-response.dto.ts
+│     │  │  │  │  ├─ system-config-value.schema.ts
+│     │  │  │  │  └─ upsert-system-config.dto.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  └─ system-config.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ config-value-type-mismatch.exception.ts
+│     │  │  │  │  └─ immutable-config-field.exception.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  └─ services
+│     │  │  │     ├─ configuration.service.spec.ts
+│     │  │  │     ├─ configuration.service.ts
+│     │  │  │     ├─ pos-settings.service.spec.ts
+│     │  │  │     └─ pos-settings.service.ts
+│     │  │  ├─ fiscal-dian
+│     │  │  │  ├─ constants
+│     │  │  │  │  └─ fiscal-singleton-ids.ts
+│     │  │  │  ├─ controllers
+│     │  │  │  │  ├─ fiscal-documents.controller.spec.ts
+│     │  │  │  │  ├─ fiscal-documents.controller.ts
+│     │  │  │  │  ├─ fiscal-resolutions.controller.spec.ts
+│     │  │  │  │  └─ fiscal-resolutions.controller.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ create-fiscal-resolution-allocation.dto.ts
+│     │  │  │  │  ├─ create-fiscal-resolution.dto.ts
+│     │  │  │  │  ├─ create-fiscal-resolution.schema.ts
+│     │  │  │  │  ├─ query-fiscal-documents.dto.ts
+│     │  │  │  │  ├─ query-fiscal-resolutions.dto.ts
+│     │  │  │  │  ├─ upsert-fiscal-issuer-config.dto.ts
+│     │  │  │  │  └─ upsert-tech-provider-config.dto.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  ├─ fiscal-document.entity.ts
+│     │  │  │  │  └─ fiscal-resolution.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ allocation-range-invalid.exception.ts
+│     │  │  │  │  ├─ document-not-retryable.exception.ts
+│     │  │  │  │  ├─ duplicate-fiscal-document.exception.ts
+│     │  │  │  │  ├─ fiscal-document-not-found.exception.spec.ts
+│     │  │  │  │  ├─ fiscal-document-not-found.exception.ts
+│     │  │  │  │  ├─ fiscal-issuer-config-not-set.exception.ts
+│     │  │  │  │  ├─ invalid-resolution-range.exception.ts
+│     │  │  │  │  ├─ no-active-resolution-for-workstation.exception.ts
+│     │  │  │  │  ├─ no-validated-invoice-for-credit-note.exception.ts
+│     │  │  │  │  ├─ overlapping-active-resolution.exception.ts
+│     │  │  │  │  ├─ resolution-exhausted.exception.ts
+│     │  │  │  │  └─ tech-provider-config-not-set.exception.ts
+│     │  │  │  ├─ fiscal-dian.module.ts
+│     │  │  │  ├─ fiscal-issuer-config.controller.spec.ts
+│     │  │  │  ├─ fiscal-issuer-config.controller.ts
+│     │  │  │  ├─ fiscal-issuer-config.service.spec.ts
+│     │  │  │  ├─ fiscal-issuer-config.service.ts
+│     │  │  │  ├─ fiscal-resolution-allocations.controller.spec.ts
+│     │  │  │  ├─ fiscal-resolution-allocations.controller.ts
+│     │  │  │  ├─ fiscal-resolution-allocations.service.spec.ts
+│     │  │  │  ├─ fiscal-resolution-allocations.service.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ jobs
+│     │  │  │  │  └─ resolution-expiration-alert.job.ts
+│     │  │  │  ├─ services
+│     │  │  │  │  ├─ fiscal-documents.service.spec.ts
+│     │  │  │  │  ├─ fiscal-documents.service.ts
+│     │  │  │  │  ├─ fiscal-resolutions.service.spec.ts
+│     │  │  │  │  └─ fiscal-resolutions.service.ts
+│     │  │  │  ├─ tech-provider-config.controller.spec.ts
+│     │  │  │  ├─ tech-provider-config.controller.ts
+│     │  │  │  ├─ tech-provider-config.service.spec.ts
+│     │  │  │  └─ tech-provider-config.service.ts
+│     │  │  ├─ inventory-lots
+│     │  │  │  ├─ controllers
+│     │  │  │  │  ├─ inventory-adjustments.controller.spec.ts
+│     │  │  │  │  ├─ inventory-adjustments.controller.ts
+│     │  │  │  │  ├─ inventory-movements.controller.spec.ts
+│     │  │  │  │  ├─ inventory-movements.controller.ts
+│     │  │  │  │  ├─ lots.controller.spec.ts
+│     │  │  │  │  ├─ lots.controller.ts
+│     │  │  │  │  ├─ physical-counts.controller.spec.ts
+│     │  │  │  │  └─ physical-counts.controller.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ annul-inventory-adjustment.dto.ts
+│     │  │  │  │  ├─ approve-inventory-adjustment.dto.ts
+│     │  │  │  │  ├─ block-lot.dto.ts
+│     │  │  │  │  ├─ create-inventory-adjustment.dto.ts
+│     │  │  │  │  ├─ create-inventory-adjustment.schema.ts
+│     │  │  │  │  ├─ query-inventory-adjustment.dto.ts
+│     │  │  │  │  ├─ query-inventory-movement.dto.ts
+│     │  │  │  │  ├─ query-lot.dto.ts
+│     │  │  │  │  ├─ register-physical-count-line.dto.ts
+│     │  │  │  │  ├─ reject-inventory-adjustment.dto.ts
+│     │  │  │  │  └─ start-physical-count.dto.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  ├─ inventory-adjustment-document.entity.ts
+│     │  │  │  │  ├─ inventory-movement.entity.ts
+│     │  │  │  │  └─ lot.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ adjustment-not-annullable.exception.ts
+│     │  │  │  │  ├─ adjustment-not-approved.exception.ts
+│     │  │  │  │  ├─ adjustment-not-draft.exception.ts
+│     │  │  │  │  ├─ adjustment-not-found.exception.ts
+│     │  │  │  │  ├─ adjustment-not-pending-approval.exception.ts
+│     │  │  │  │  ├─ concurrent-stock-modification.exception.ts
+│     │  │  │  │  ├─ insufficient-stock-for-adjustment.exception.ts
+│     │  │  │  │  ├─ insufficient-stock.exception.ts
+│     │  │  │  │  ├─ lot-cost-unavailable.exception.ts
+│     │  │  │  │  ├─ lot-not-active.exception.ts
+│     │  │  │  │  ├─ lot-not-blocked.exception.ts
+│     │  │  │  │  ├─ lot-not-eligible-for-return.exception.ts
+│     │  │  │  │  ├─ lot-not-found.exception.ts
+│     │  │  │  │  ├─ lot-state-changed-since-sale.exception.ts
+│     │  │  │  │  ├─ physical-count-cannot-be-annulled.exception.ts
+│     │  │  │  │  ├─ physical-count-not-approved.exception.ts
+│     │  │  │  │  ├─ physical-count-not-counted.exception.ts
+│     │  │  │  │  ├─ physical-count-not-found.exception.ts
+│     │  │  │  │  ├─ physical-count-not-open.exception.ts
+│     │  │  │  │  ├─ physical-count-not-reviewed.exception.ts
+│     │  │  │  │  └─ stale-adjustment.exception.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ inventory-lots.module.ts
+│     │  │  │  ├─ services
+│     │  │  │  │  ├─ inventory-adjustments.service.spec.ts
+│     │  │  │  │  ├─ inventory-adjustments.service.ts
+│     │  │  │  │  ├─ inventory-movements.service.spec.ts
+│     │  │  │  │  ├─ inventory-movements.service.ts
+│     │  │  │  │  ├─ lots.service.spec.ts
+│     │  │  │  │  ├─ lots.service.ts
+│     │  │  │  │  ├─ physical-counts.service.spec.ts
+│     │  │  │  │  └─ physical-counts.service.ts
+│     │  │  │  └─ types
+│     │  │  │     ├─ consume-stock-for-supplier-return.types.ts
+│     │  │  │     ├─ consume-stock.types.ts
+│     │  │  │     ├─ receive-stock-from-client-return.types.ts
+│     │  │  │     ├─ receive-stock.types.ts
+│     │  │  │     └─ reverse-stock-for-sale.types.ts
+│     │  │  ├─ licensing
+│     │  │  │  ├─ activations
+│     │  │  │  │  ├─ activations.controller.ts
+│     │  │  │  │  ├─ activations.service.spec.ts
+│     │  │  │  │  ├─ activations.service.ts
+│     │  │  │  │  └─ dto
+│     │  │  │  │     └─ activation.dto.ts
+│     │  │  │  ├─ check-ins
+│     │  │  │  │  ├─ check-ins.controller.ts
+│     │  │  │  │  ├─ check-ins.service.spec.ts
+│     │  │  │  │  ├─ check-ins.service.ts
+│     │  │  │  │  └─ dto
+│     │  │  │  │     └─ check-in.dto.ts
+│     │  │  │  ├─ fraud
+│     │  │  │  │  ├─ fraud-alerts.controller.ts
+│     │  │  │  │  ├─ fraud-detection.service.spec.ts
+│     │  │  │  │  └─ fraud-detection.service.ts
+│     │  │  │  ├─ guards
+│     │  │  │  │  ├─ license-required.guard.spec.ts
+│     │  │  │  │  └─ license-required.guard.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ licensing.module.ts
+│     │  │  │  ├─ locations
+│     │  │  │  │  ├─ dto
+│     │  │  │  │  │  └─ location.dto.ts
+│     │  │  │  │  ├─ locations.controller.ts
+│     │  │  │  │  ├─ locations.service.spec.ts
+│     │  │  │  │  └─ locations.service.ts
+│     │  │  │  ├─ payments
+│     │  │  │  │  ├─ dto
+│     │  │  │  │  ├─ wompi-config.service.ts
+│     │  │  │  │  ├─ wompi-webhook.controller.ts
+│     │  │  │  │  └─ wompi.service.ts
+│     │  │  │  ├─ plans
+│     │  │  │  │  ├─ dto
+│     │  │  │  │  │  └─ plan.dto.ts
+│     │  │  │  │  ├─ plans.controller.spec.ts
+│     │  │  │  │  ├─ plans.controller.ts
+│     │  │  │  │  ├─ plans.service.spec.ts
+│     │  │  │  │  └─ plans.service.ts
+│     │  │  │  ├─ subscriptions
+│     │  │  │  │  ├─ dto
+│     │  │  │  │  │  └─ subscription.dto.ts
+│     │  │  │  │  ├─ subscriptions.controller.ts
+│     │  │  │  │  ├─ subscriptions.service.spec.ts
+│     │  │  │  │  └─ subscriptions.service.ts
+│     │  │  │  └─ tokens
+│     │  │  │     ├─ license-token.service.spec.ts
+│     │  │  │     └─ license-token.service.ts
+│     │  │  ├─ print
+│     │  │  │  ├─ controllers
+│     │  │  │  │  └─ print.controller.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  └─ print-fallback.dto.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ print.module.ts
+│     │  │  │  └─ services
+│     │  │  │     └─ print.service.ts
+│     │  │  ├─ purchases
+│     │  │  │  ├─ controllers
+│     │  │  │  │  ├─ purchase-orders.controller.spec.ts
+│     │  │  │  │  ├─ purchase-orders.controller.ts
+│     │  │  │  │  ├─ purchase-receptions.controller.spec.ts
+│     │  │  │  │  ├─ purchase-receptions.controller.ts
+│     │  │  │  │  ├─ supplier-returns.controller.spec.ts
+│     │  │  │  │  ├─ supplier-returns.controller.ts
+│     │  │  │  │  ├─ suppliers.controller.spec.ts
+│     │  │  │  │  └─ suppliers.controller.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ create-purchase-order.dto.ts
+│     │  │  │  │  ├─ create-purchase-order.schema.ts
+│     │  │  │  │  ├─ create-purchase-reception.dto.ts
+│     │  │  │  │  ├─ create-supplier-return.dto.ts
+│     │  │  │  │  ├─ create-supplier.dto.ts
+│     │  │  │  │  ├─ query-purchase-order.dto.ts
+│     │  │  │  │  ├─ query-purchase-reception.dto.ts
+│     │  │  │  │  ├─ query-supplier-return.dto.ts
+│     │  │  │  │  ├─ query-supplier.dto.ts
+│     │  │  │  │  ├─ supplier.schema.ts
+│     │  │  │  │  └─ update-supplier.dto.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  ├─ purchase-order.entity.ts
+│     │  │  │  │  └─ supplier.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ duplicate-supplier-identification.exception.ts
+│     │  │  │  │  ├─ over-reception.exception.ts
+│     │  │  │  │  ├─ purchase-order-item-mismatch.exception.ts
+│     │  │  │  │  ├─ purchase-order-item-not-found.exception.ts
+│     │  │  │  │  ├─ purchase-order-not-draft.exception.ts
+│     │  │  │  │  ├─ purchase-order-not-found.exception.ts
+│     │  │  │  │  ├─ purchase-reception-not-confirmed.exception.spec.ts
+│     │  │  │  │  ├─ purchase-reception-not-confirmed.exception.ts
+│     │  │  │  │  ├─ purchase-reception-not-draft.exception.ts
+│     │  │  │  │  ├─ purchase-reception-not-found.exception.ts
+│     │  │  │  │  ├─ supplier-not-found.exception.ts
+│     │  │  │  │  ├─ supplier-return-cannot-be-annulled.exception.ts
+│     │  │  │  │  ├─ supplier-return-lot-cost-unavailable.exception.ts
+│     │  │  │  │  ├─ supplier-return-not-draft.exception.ts
+│     │  │  │  │  └─ supplier-return-not-found.exception.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ purchases.module.ts
+│     │  │  │  └─ services
+│     │  │  │     ├─ purchase-orders.service.spec.ts
+│     │  │  │     ├─ purchase-orders.service.ts
+│     │  │  │     ├─ purchase-receptions.service.spec.ts
+│     │  │  │     ├─ purchase-receptions.service.ts
+│     │  │  │     ├─ supplier-returns.service.spec.ts
+│     │  │  │     ├─ supplier-returns.service.ts
+│     │  │  │     ├─ suppliers.service.spec.ts
+│     │  │  │     └─ suppliers.service.ts
+│     │  │  ├─ reports
+│     │  │  │  ├─ controllers
+│     │  │  │  │  ├─ reports.controller.spec.ts
+│     │  │  │  │  └─ reports.controller.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ cash-shift-summary.response.dto.ts
+│     │  │  │  │  ├─ daily-report.response.dto.ts
+│     │  │  │  │  ├─ fiscal-report.response.dto.ts
+│     │  │  │  │  ├─ inventory-valuation.response.dto.ts
+│     │  │  │  │  ├─ report-date-range.query.dto.ts
+│     │  │  │  │  ├─ report-date-range.schema.ts
+│     │  │  │  │  ├─ sales-summary.response.dto.ts
+│     │  │  │  │  └─ tax-summary.response.dto.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  └─ report-invalid-date-range.exception.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ reports.module.ts
+│     │  │  │  └─ services
+│     │  │  │     ├─ reports.service.spec.ts
+│     │  │  │     └─ reports.service.ts
+│     │  │  ├─ sales-pos
+│     │  │  │  ├─ controllers
+│     │  │  │  │  ├─ client-returns.controller.spec.ts
+│     │  │  │  │  ├─ client-returns.controller.ts
+│     │  │  │  │  ├─ sales.controller.spec.ts
+│     │  │  │  │  └─ sales.controller.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ annul-client-return.dto.ts
+│     │  │  │  │  ├─ annul-sale.dto.ts
+│     │  │  │  │  ├─ confirm-sale.dto.ts
+│     │  │  │  │  ├─ create-client-return.dto.ts
+│     │  │  │  │  ├─ create-sale.dto.ts
+│     │  │  │  │  ├─ query-sale.dto.ts
+│     │  │  │  │  └─ reject-client-return.dto.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  └─ sale.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ cash-shift-not-open-for-workstation.exception.ts
+│     │  │  │  │  ├─ change-requires-cash-payment.exception.ts
+│     │  │  │  │  ├─ client-return-cannot-be-annulled.exception.ts
+│     │  │  │  │  ├─ client-return-not-draft.exception.ts
+│     │  │  │  │  ├─ client-return-not-found.exception.ts
+│     │  │  │  │  ├─ payment-amount-mismatch.exception.ts
+│     │  │  │  │  ├─ prescription-required-not-supported.exception.ts
+│     │  │  │  │  ├─ return-quantity-exceeds-available.exception.ts
+│     │  │  │  │  ├─ sale-item-not-found.exception.ts
+│     │  │  │  │  ├─ sale-not-confirmed.exception.ts
+│     │  │  │  │  ├─ sale-not-found.exception.ts
+│     │  │  │  │  └─ sale-not-in-progress.exception.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ sales-pos.module.ts
+│     │  │  │  └─ services
+│     │  │  │     ├─ client-return-calculator.service.spec.ts
+│     │  │  │     ├─ client-return-calculator.service.ts
+│     │  │  │     ├─ client-returns.service.spec.ts
+│     │  │  │     ├─ client-returns.service.ts
+│     │  │  │     ├─ sales.service.spec.ts
+│     │  │  │     └─ sales.service.ts
+│     │  │  ├─ sync
+│     │  │  │  ├─ controllers
+│     │  │  │  │  ├─ sync.controller.spec.ts
+│     │  │  │  │  ├─ sync.controller.ts
+│     │  │  │  │  ├─ terminals.controller.spec.ts
+│     │  │  │  │  └─ terminals.controller.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ backup-upload.schema.ts
+│     │  │  │  │  ├─ invoice-results-query.dto.ts
+│     │  │  │  │  ├─ local-number-hint-query.dto.ts
+│     │  │  │  │  ├─ purchase-sync-payloads.schema.ts
+│     │  │  │  │  ├─ purchase-sync-payloads.ts
+│     │  │  │  │  ├─ query-sync-queue.dto.ts
+│     │  │  │  │  ├─ sync-batch.dto.ts
+│     │  │  │  │  ├─ sync-operation.schema.spec.ts
+│     │  │  │  │  └─ sync-operation.schema.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  └─ sync-queue-entry.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ payload-hash-mismatch.exception.ts
+│     │  │  │  │  └─ sync-payload-validation.exception.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ jobs
+│     │  │  │  │  ├─ sync-processing.job.spec.ts
+│     │  │  │  │  └─ sync-processing.job.ts
+│     │  │  │  ├─ services
+│     │  │  │  │  ├─ invoice-transmission-result.service.spec.ts
+│     │  │  │  │  ├─ invoice-transmission-result.service.ts
+│     │  │  │  │  ├─ sync-health.service.spec.ts
+│     │  │  │  │  ├─ sync-health.service.ts
+│     │  │  │  │  ├─ sync.service.spec.ts
+│     │  │  │  │  ├─ sync.service.ts
+│     │  │  │  │  ├─ terminal-backup.service.spec.ts
+│     │  │  │  │  └─ terminal-backup.service.ts
+│     │  │  │  ├─ sync-operation-dispatcher.service.spec.ts
+│     │  │  │  ├─ sync-operation-dispatcher.service.ts
+│     │  │  │  └─ sync.module.ts
+│     │  │  ├─ tenant-config
+│     │  │  │  ├─ controllers
+│     │  │  │  │  ├─ admin-config.controller.ts
+│     │  │  │  │  ├─ named-presets.controller.ts
+│     │  │  │  │  ├─ tenant-config.controller.ts
+│     │  │  │  │  ├─ workstation-config.controller.spec.ts
+│     │  │  │  │  └─ workstation-config.controller.ts
+│     │  │  │  ├─ dto
+│     │  │  │  │  ├─ apply-preset.dto.ts
+│     │  │  │  │  ├─ custom-field.dto.ts
+│     │  │  │  │  ├─ custom-toggle.dto.ts
+│     │  │  │  │  ├─ named-preset.dto.ts
+│     │  │  │  │  ├─ update-tenant-config.dto.ts
+│     │  │  │  │  └─ update-tenant-config.schema.ts
+│     │  │  │  ├─ entities
+│     │  │  │  │  └─ tenant-config.entity.ts
+│     │  │  │  ├─ exceptions
+│     │  │  │  │  ├─ config-validation.exception.ts
+│     │  │  │  │  ├─ config-version-conflict.exception.ts
+│     │  │  │  │  └─ preset-not-found.exception.ts
+│     │  │  │  ├─ index.ts
+│     │  │  │  ├─ services
+│     │  │  │  │  ├─ config-sync.service.ts
+│     │  │  │  │  ├─ config-validation.service.ts
+│     │  │  │  │  ├─ tenant-config.service.spec.ts
+│     │  │  │  │  ├─ tenant-config.service.ts
+│     │  │  │  │  ├─ workstation-config.service.spec.ts
+│     │  │  │  │  └─ workstation-config.service.ts
+│     │  │  │  └─ tenant-config.module.ts
+│     │  │  └─ updates
+│     │  │     ├─ admin
+│     │  │     │  └─ admin-updates.controller.ts
+│     │  │     ├─ binary-storage.service.ts
+│     │  │     ├─ dto
+│     │  │     │  ├─ index.ts
+│     │  │     │  ├─ publish-version.schema.ts
+│     │  │     │  ├─ update-channel-opt-in.schema.ts
+│     │  │     │  ├─ update-check.schema.ts
+│     │  │     │  └─ update-telemetry.schema.ts
+│     │  │     ├─ entities
+│     │  │     │  ├─ update-attempt-log.entity.ts
+│     │  │     │  ├─ update-channel-config.entity.ts
+│     │  │     │  └─ update-version.entity.ts
+│     │  │     ├─ exceptions
+│     │  │     │  ├─ index.ts
+│     │  │     │  ├─ invalid-signature.exception.ts
+│     │  │     │  ├─ version-already-exists.exception.ts
+│     │  │     │  ├─ version-not-active.exception.ts
+│     │  │     │  └─ version-not-found.exception.ts
+│     │  │     ├─ index.ts
+│     │  │     ├─ jobs
+│     │  │     ├─ signature.service.ts
+│     │  │     ├─ telemetry.service.ts
+│     │  │     ├─ updates.controller.ts
+│     │  │     ├─ updates.module.ts
+│     │  │     └─ updates.service.ts
+│     │  └─ types
+│     ├─ stderr.txt
+│     ├─ storage
+│     │  └─ updates
+│     ├─ test
+│     │  ├─ auth.e2e-spec.ts
+│     │  ├─ cash-shift.e2e-spec.ts
+│     │  ├─ catalog.e2e-spec.ts
+│     │  ├─ client-return.e2e-spec.ts
+│     │  ├─ fifo-stock.e2e-spec.ts
+│     │  ├─ habeas-data.e2e-spec.ts
+│     │  ├─ health.e2e-spec.ts
+│     │  ├─ sale-lifecycle.e2e-spec.ts
+│     │  └─ set-env.ts
+│     ├─ tsconfig.e2e.json
+│     ├─ tsconfig.json
+│     └─ tsconfig.spec.json
+├─ docker-compose.dev.yml
+├─ docker-compose.test.yml
+├─ docs
+│  ├─ Anexo-Tecnico-Factura-Electronica-de-Venta-vr-1-9.md
+│  ├─ DEV.md
+│  ├─ dian-anexo-v1.9-referencia.md
+│  ├─ main.md
+│  ├─ MIGRACION-LOCAL-FIRST.md
+│  ├─ REFACTORING-PLAN-POS-DESKTOP.md
+│  ├─ TESTING-PLAN-POS-DESKTOP.md
+│  ├─ TESTING-PLAN.md
+│  └─ update-signing-key-rotation.md
+├─ opencode.json
+├─ package.json
+├─ packages
+│  ├─ database
+│  │  ├─ package.json
+│  │  ├─ prisma
+│  │  │  ├─ migrations
+│  │  │  │  ├─ 20260720000001_add_sync_source
+│  │  │  │  │  ├─ migration.json
+│  │  │  │  │  └─ migration.sql
+│  │  │  │  ├─ 20260721000001_add_client_sync_ops
+│  │  │  │  │  ├─ migration.json
+│  │  │  │  │  └─ migration.sql
+│  │  │  │  ├─ 20260722000001_add_deleted_at_to_user
+│  │  │  │  │  └─ migration.sql
+│  │  │  │  ├─ 20260723110330_add_product_cost
+│  │  │  │  │  ├─ migration.sql
+│  │  │  │  │  └─ migration_lock.toml
+│  │  │  │  ├─ 20260724000001_add_purchases_config
+│  │  │  │  │  └─ migration.sql
+│  │  │  │  └─ migration_lock.toml
+│  │  │  ├─ schema-source
+│  │  │  │  ├─ local-only
+│  │  │  │  │  ├─ fiscal.prisma
+│  │  │  │  │  ├─ inventory-adjustment.prisma
+│  │  │  │  │  ├─ local-audit-log.prisma
+│  │  │  │  │  ├─ printing.prisma
+│  │  │  │  │  ├─ recovery-log.prisma
+│  │  │  │  │  ├─ sale-item.prisma
+│  │  │  │  │  ├─ sync-queue.prisma
+│  │  │  │  │  └─ updates.prisma
+│  │  │  │  ├─ server-only
+│  │  │  │  │  ├─ audit-log.prisma
+│  │  │  │  │  ├─ auth.prisma
+│  │  │  │  │  ├─ auto-expiration-job.prisma
+│  │  │  │  │  ├─ client-return.prisma
+│  │  │  │  │  ├─ fiscal-config.prisma
+│  │  │  │  │  ├─ fiscal-document.prisma
+│  │  │  │  │  ├─ fiscal-resolution.prisma
+│  │  │  │  │  ├─ licensing.prisma
+│  │  │  │  │  ├─ offline-auth.prisma
+│  │  │  │  │  ├─ physical-count.prisma
+│  │  │  │  │  ├─ prescription.prisma
+│  │  │  │  │  ├─ sync-invoice-result.prisma
+│  │  │  │  │  ├─ system-config.prisma
+│  │  │  │  │  ├─ tenant-config.prisma
+│  │  │  │  │  ├─ updates.prisma
+│  │  │  │  │  └─ _server-only-enums.prisma
+│  │  │  │  └─ shared
+│  │  │  │     ├─ cash-shift.prisma
+│  │  │  │     ├─ catalog-base.prisma
+│  │  │  │     ├─ client.prisma
+│  │  │  │     ├─ inventory-adjustment.prisma
+│  │  │  │     ├─ inventory-movement.prisma
+│  │  │  │     ├─ lot.prisma
+│  │  │  │     ├─ payment-method.prisma
+│  │  │  │     ├─ product-barcode.prisma
+│  │  │  │     ├─ product-cost-history.prisma
+│  │  │  │     ├─ product-price-history.prisma
+│  │  │  │     ├─ product-tax-history.prisma
+│  │  │  │     ├─ product.prisma
+│  │  │  │     ├─ purchase-order.prisma
+│  │  │  │     ├─ purchase-reception.prisma
+│  │  │  │     ├─ sale-item-lot.prisma
+│  │  │  │     ├─ sale-item.prisma
+│  │  │  │     ├─ sale-payment.prisma
+│  │  │  │     ├─ sale.prisma
+│  │  │  │     ├─ shift-cash-count.prisma
+│  │  │  │     ├─ supplier-return.prisma
+│  │  │  │     ├─ supplier.prisma
+│  │  │  │     ├─ sync-queue.prisma
+│  │  │  │     ├─ tax-scheme.prisma
+│  │  │  │     └─ _shared-enums.prisma
+│  │  │  ├─ schema.prisma
+│  │  │  └─ test-schema
+│  │  │     └─ schema.prisma
+│  │  ├─ prisma.config.ts
+│  │  ├─ prisma.full.config.ts
+│  │  ├─ prisma.local.config.ts
+│  │  ├─ scripts
+│  │  │  ├─ assemble-schema.mjs
+│  │  │  ├─ check-enum.ts
+│  │  │  ├─ fix-esm-imports.ps1
+│  │  │  ├─ fix-generated-imports.ps1
+│  │  │  ├─ fix-imports.mjs
+│  │  │  ├─ generate-local-sql.mjs
+│  │  │  └─ split-schema.mjs
+│  │  ├─ src
+│  │  │  ├─ full.ts
+│  │  │  ├─ index.d.ts
+│  │  │  ├─ index.d.ts.map
+│  │  │  ├─ index.js
+│  │  │  ├─ index.js.map
+│  │  │  ├─ index.ts
+│  │  │  ├─ local-schema.ts
+│  │  │  └─ local.ts
+│  │  └─ tsconfig.json
+│  ├─ shared-types
+│  │  ├─ jest.config.ts
+│  │  ├─ package.json
+│  │  ├─ src
+│  │  │  ├─ auth-types.ts
+│  │  │  ├─ cash-shift.ts
+│  │  │  ├─ client.ts
+│  │  │  ├─ enums.spec.ts
+│  │  │  ├─ enums.ts
+│  │  │  ├─ fiscal-document.ts
+│  │  │  ├─ index.ts
+│  │  │  ├─ licensing-enums.ts
+│  │  │  ├─ licensing.ts
+│  │  │  ├─ local-sync.ts
+│  │  │  ├─ plan-seeds.ts
+│  │  │  ├─ product.ts
+│  │  │  ├─ report.ts
+│  │  │  ├─ sale-item.ts
+│  │  │  ├─ sale.ts
+│  │  │  ├─ sync-queue-entry.ts
+│  │  │  ├─ tenant-config.ts
+│  │  │  ├─ update-enums.ts
+│  │  │  ├─ update-types.ts
+│  │  │  ├─ user.ts
+│  │  │  └─ wompi.ts
+│  │  └─ tsconfig.json
+│  └─ shared-validation
+│     ├─ jest.config.ts
+│     ├─ package.json
+│     ├─ src
+│     │  ├─ client-schema.spec.ts
+│     │  ├─ client-schema.ts
+│     │  ├─ create-sale-schema.spec.ts
+│     │  ├─ create-sale-schema.ts
+│     │  ├─ index.ts
+│     │  ├─ invoice-transmission-schema.ts
+│     │  ├─ product-schema.spec.ts
+│     │  ├─ product-schema.ts
+│     │  ├─ user-login-schema.spec.ts
+│     │  └─ user-login-schema.ts
+│     └─ tsconfig.json
+├─ pnpm-lock.yaml
+├─ pnpm-workspace.yaml
+├─ README.md
+├─ scripts
+│  ├─ seed-db.ps1
+│  ├─ setup-dev.ps1
+│  └─ test-e2e.ps1
+├─ skills-lock.json
+├─ tsconfig.base.json
+└─ turbo.json
+
+```

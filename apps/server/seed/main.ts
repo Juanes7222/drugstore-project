@@ -16,6 +16,7 @@ import { seedPhysicalCounts } from './seed/physical-counts';
 import { seedSyncQueue } from './seed/sync-queue';
 import { seedSystemConfig } from './seed/system-config';
 import { seedAuditLog } from './seed/audit-log';
+import { seedLicensing } from './seed/licensing';
 
 async function main(): Promise<void> {
   console.log('Starting pharmacy-system seed...\n');
@@ -63,6 +64,9 @@ async function main(): Promise<void> {
   // 13. Audit log — append-only historical entries (no FK constraints that block)
   await seedAuditLog();
 
+  // 14. Licensing — plans, subscription, locations, activations
+  await seedLicensing();
+
   console.log('\nSeed completed successfully!');
   console.log('');
   console.log('━━━━ Usuarios ━━━━');
@@ -101,6 +105,14 @@ async function main(): Promise<void> {
   console.log('');
   console.log('━━━━ Auditoría ━━━━');
   console.log('   15 registros de auditoría');
+  console.log('');
+  console.log('━━━━ Licencias ━━━━');
+  console.log('   3 planes (Starter, Professional, Enterprise)');
+  console.log('   1 suscripción activa (Professional — Droguería La Esperanza)');
+  console.log('   1 local (Sede Principal)');
+  console.log('   3 códigos de activación (2 usados, 1 disponible)');
+  console.log('   2 activaciones de puesto');
+  console.log('   3 check-ins de licencia');
   console.log('');
   console.log('━━━━ Estaciones de trabajo (workstationId) ━━━━');
   console.log('   ws_principal   → Caja Principal  (código WS-001)');

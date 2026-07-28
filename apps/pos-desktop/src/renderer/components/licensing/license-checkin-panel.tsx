@@ -1,11 +1,15 @@
 /**
- * Check-in history panel — last check-in, days until expiry, grace period.
+ * LicenseCheckinPanel — check-in history with timeline indicators.
+ *
+ * Shows last check-in, expiry countdown, grace period status, and
+ * check-in frequency for the last 30 days.
  *
  * @category Component
  */
 
-import { type FC } from "react";
+import type { FC } from "react";
 import { useTranslation } from "react-i18next";
+import { Clock, History, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { LicenseStatus } from "@pharmacy/shared-types";
 import { formatDateTime } from "./license-status.helpers";
 
@@ -27,89 +31,85 @@ export const LicenseCheckinPanel: FC<LicenseCheckinPanelProps> = ({
   const { t } = useTranslation();
 
   return (
-    <div className="pos-panel p-pos-lg">
-      <h2
-        className="mb-pos-md text-ui font-semibold"
-        style={{ color: "var(--color-ink)" }}
-      >
-        {t("licensing.status_page.checkin_section")}
-      </h2>
+    <div className="rounded-pos border border-border bg-panel p-pos-lg shadow-pos-panel">
+      <div className="mb-pos-md flex items-center gap-pos-sm">
+        <History className="h-5 w-5 text-pharma" aria-hidden="true" />
+        <h2 className="text-ui font-semibold text-ink">
+          {t("licensing.status_page.checkin_section")}
+        </h2>
+      </div>
 
-      <dl className="space-y-pos-sm text-body-sm">
-        <div className="flex gap-pos-xs">
-          <dt
-            className="font-medium"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-            }}
-          >
-            {t("licensing.status_page.last_checkin")}
-          </dt>
-          <dd style={{ color: "var(--color-ink)" }}>
-            {formatDateTime(lastCheckInAt)}
-          </dd>
+      <div className="space-y-pos-md">
+        {/* Last check-in */}
+        <div className="flex items-center gap-pos-sm">
+          <Clock className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <div>
+            <p className="text-caption font-medium text-ink-muted">
+              {t("licensing.status_page.last_checkin")}
+            </p>
+            <p className="text-body-sm text-ink">
+              {formatDateTime(lastCheckInAt)}
+            </p>
+          </div>
         </div>
 
-        <div className="flex gap-pos-xs">
-          <dt
-            className="font-medium"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-            }}
-          >
-            {t("licensing.status_page.days_until_expiry")}
-          </dt>
-          <dd
-            className="font-data font-medium"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {daysUntilExpiry !== null && daysUntilExpiry !== undefined
-              ? daysUntilExpiry
-              : "—"}
-          </dd>
+        {/* Days until expiry */}
+        <div className="flex items-center gap-pos-sm">
+          <Clock className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <div>
+            <p className="text-caption font-medium text-ink-muted">
+              {t("licensing.status_page.days_until_expiry")}
+            </p>
+            <p className="font-data text-body-sm font-semibold tabular-nums text-ink">
+              {daysUntilExpiry !== null && daysUntilExpiry !== undefined
+                ? String(daysUntilExpiry)
+                : "—"}
+            </p>
+          </div>
         </div>
 
-        <div className="flex gap-pos-xs">
-          <dt
-            className="font-medium"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-            }}
-          >
-            {t("licensing.status_page.checkins_30d")}
-          </dt>
-          <dd
-            className="font-data font-medium"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {checkInsLast30Days}
-          </dd>
+        {/* Check-ins in last 30 days */}
+        <div className="flex items-center gap-pos-sm">
+          <History className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <div>
+            <p className="text-caption font-medium text-ink-muted">
+              {t("licensing.status_page.checkins_30d")}
+            </p>
+            <p className="font-data text-body-sm font-semibold tabular-nums text-ink">
+              {checkInsLast30Days}
+            </p>
+          </div>
         </div>
 
-        {status === LicenseStatus.GRACE_PERIOD &&
-          daysUntilGracePeriodEnd !== null && (
-            <div className="flex gap-pos-xs">
-              <dt
-                className="font-medium"
-                style={{
-                  color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-                }}
-              >
+        {/* Grace period warning */}
+        {status === LicenseStatus.GRACE_PERIOD && daysUntilGracePeriodEnd !== null && (
+          <div className="flex items-center gap-pos-sm">
+            <AlertTriangle className="h-4 w-4 text-urgency" aria-hidden="true" />
+            <div>
+              <p className="text-caption font-medium text-ink-muted">
                 {t("licensing.status_page.grace_ends")}
-              </dt>
-              <dd
-                className="font-data font-semibold"
-                style={{ color: "var(--color-urgency)" }}
-              >
+              </p>
+              <p className="font-data text-body-sm font-semibold tabular-nums text-urgency">
                 {daysUntilGracePeriodEnd <= 0
                   ? t("licensing.status_page.grace_expired")
                   : t("licensing.status_page.grace_days_remaining", {
                       count: daysUntilGracePeriodEnd,
                     })}
-              </dd>
+              </p>
             </div>
-          )}
-      </dl>
+          </div>
+        )}
+
+        {/* Active check indicator */}
+        {status === LicenseStatus.ACTIVE && (
+          <div className="flex items-center gap-pos-sm">
+            <CheckCircle2 className="h-4 w-4 text-pharma" aria-hidden="true" />
+            <p className="text-body-sm text-pharma">
+              {t("licensing.status_page.checkin_healthy")}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

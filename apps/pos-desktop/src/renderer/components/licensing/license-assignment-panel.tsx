@@ -1,11 +1,14 @@
 /**
- * Location and workstation assignment panel.
+ * LicenseAssignmentPanel — location and workstation assignment.
+ *
+ * Shows the physical location (drugstore) and POS workstation identity.
  *
  * @category Component
  */
 
-import { type FC } from "react";
+import type { FC } from "react";
 import { useTranslation } from "react-i18next";
+import { Store, Monitor, Calendar } from "lucide-react";
 import { formatDate } from "./license-status.helpers";
 
 export interface LicenseAssignmentPanelProps {
@@ -27,52 +30,59 @@ export const LicenseAssignmentPanel: FC<LicenseAssignmentPanelProps> = ({
 }) => {
   const { t } = useTranslation();
 
+  const locationParts = [locationName, locationAddress, locationCity, locationRegion].filter(Boolean);
+  const locationDisplay = locationParts.length > 0 ? locationParts.join(", ") : null;
+
   return (
-    <div className="pos-panel mb-pos-md p-pos-lg">
-      <h2
-        className="mb-pos-md text-ui font-semibold"
-        style={{ color: "var(--color-ink)" }}
-      >
-        {t("licensing.status_page.assignment_section")}
-      </h2>
+    <div className="rounded-pos border border-border bg-panel p-pos-lg shadow-pos-panel">
+      <div className="mb-pos-md flex items-center gap-pos-sm">
+        <Store className="h-5 w-5 text-pharma" aria-hidden="true" />
+        <h2 className="text-ui font-semibold text-ink">
+          {t("licensing.status_page.assignment_section")}
+        </h2>
+      </div>
 
-      <dl className="space-y-pos-sm text-body-sm">
-        {/* Location */}
-        <div className="flex gap-pos-xs">
-          <dt
-            className="font-medium"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-            }}
-          >
-            {t("licensing.status_page.location_label")}
-          </dt>
-          <dd style={{ color: "var(--color-ink)" }}>
-            {locationName
-              ? [locationName, locationAddress, locationCity, locationRegion]
-                  .filter(Boolean)
-                  .join(", ")
-              : "—"}
-          </dd>
-        </div>
+      {/* Location */}
+      <div className="mb-pos-md">
+        <p className="text-caption font-medium text-ink-muted">
+          {t("licensing.status_page.location_label")}
+        </p>
+        {locationDisplay ? (
+          <p className="text-body-sm text-ink">{locationDisplay}</p>
+        ) : (
+          <p className="text-body-sm text-ink-muted">—</p>
+        )}
+      </div>
 
-        {/* Workstation */}
-        <div className="flex gap-pos-xs">
-          <dt
-            className="font-medium"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-            }}
-          >
-            {t("licensing.status_page.workstation_label")}
-          </dt>
-          <dd style={{ color: "var(--color-ink)" }}>
-            {workstationName
-              ? `${workstationName}, ${t("licensing.status_page.activated_on", { date: formatDate(activatedAt) })}`
-              : "—"}
-          </dd>
+      {/* Workstation */}
+      <div className="mb-pos-md">
+        <div className="flex items-center gap-pos-sm">
+          <Monitor className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <div>
+            <p className="text-caption font-medium text-ink-muted">
+              {t("licensing.status_page.workstation_label")}
+            </p>
+            <p className="text-body-sm text-ink">
+              {workstationName ?? "—"}
+            </p>
+          </div>
         </div>
-      </dl>
+      </div>
+
+      {/* Activated date */}
+      {activatedAt && (
+        <div className="flex items-center gap-pos-sm">
+          <Calendar className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <div>
+            <p className="text-caption font-medium text-ink-muted">
+              {t("licensing.status_page.activated_label")}
+            </p>
+            <p className="text-body-sm text-ink">
+              {formatDate(activatedAt)}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

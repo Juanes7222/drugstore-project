@@ -20,6 +20,13 @@ export class ActivationsController {
     return this.activationsService.activate(dto, ip);
   }
 
+  // Public: get license status by workstation ID
+  @Get('public/licensing/status/:workstationId')
+  @Public()
+  async getStatusByWorkstation(@Param('workstationId') workstationId: string) {
+    return this.activationsService.getStatusByWorkstation(workstationId);
+  }
+
   // Admin: generate activation codes
   @Post('admin/subscriptions/:id/generate-activation-code')
   @UseGuards(JwtAuthGuard, RolesGuard)

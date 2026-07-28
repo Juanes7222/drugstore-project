@@ -293,6 +293,83 @@ export class ActivationsService {
     return activation;
   }
 
+  /**
+   * Find active activation by workstation name.
+   * The workstation activation's `workstationName` matches the Workstation model's `name`.
+   * Fully database-driven — returns the same shape as activate().
+   */
+  async getStatusByWorkstation(workstationId: string) {
+    // 1. Resolve workstation name
+    const workstation = await this.prisma.workstation.findUnique({
+      where: { id: workstationId },
+    });
+    if (!workstation) {
+      throw new DomainException('WORKSTATION_NOT_FOUND', 'Workstation not found', HttpStatus.NOT_FOUND);
+    }
+
+    // 2. Find active activation by workstation name
+    const activation = await this.prisma.workstationActivation.findFirst({
+      where: {
+        workstationName: workstation.name,
+        isActive: true,
+      },
+      include: {
+        subscription: { include: { plan: true } },
+        location: true,
+      },
+    });
+    if (!activation) {
+      throw new DomainException(
+        'NO_ACTIVE_ACTIVATION',
+        `No active activation found for workstation ${workstation.name}`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    // 3. Generate activation token
+    const token = this.licenseTokenService.generateToken({
+      subscriptionId: activation.subscriptionId,
+      subscriptionStatus: activation.subscription.status,
+      planId: activation.subscription.plan.id,
+      planFeatures: activation.subscription.plan.features,
+      locationId: activation.locationId,
+      locationName: activation.location?.name ?? '',
+      workstationId: activation.id,
+      hardwareFingerprint: activation.hardwareFingerprint,
+    });
+
+    return {
+      activationToken: token.token,
+      expiresAt: token.expiresAt,
+      subscription: {
+        id: activation.subscription.id,
+        status: activation.subscription.status,
+        currentPeriodEnd: activation.subscription.currentPeriodEnd,
+        gracePeriodDays: activation.subscription.gracePeriodDays,
+      },
+      location: activation.location ? {
+        id: activation.location.id,
+        name: activation.location.name,
+        address: activation.location.address,
+        city: activation.location.city,
+        region: activation.location.region,
+      } : null,
+      plan: {
+        id: activation.subscription.plan.id,
+        code: activation.subscription.plan.code,
+        name: activation.subscription.plan.name,
+        features: activation.subscription.plan.features,
+        maxLocations: activation.subscription.plan.maxLocations,
+        maxWorkstationsPerLocation: activation.subscription.plan.maxWorkstationsPerLocation,
+      },
+      workstationActivation: {
+        id: activation.id,
+        workstationName: activation.workstationName,
+        activatedAt: activation.activatedAt,
+      },
+    };
+  }
+
   private generateCode(): string {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const groups: string[] = [];

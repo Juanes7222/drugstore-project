@@ -7,3 +7,7 @@ export { CheckInsService } from './check-ins/check-ins.service';
 export { FraudDetectionService } from './fraud/fraud-detection.service';
 export { LicenseTokenService } from './tokens/license-token.service';
 export { LicenseRequiredGuard } from './guards/license-required.guard';
+export { WompiConfigService } from './payments/wompi-config.service';
+export { WompiService } from './payments/wompi.service';
+export { WompiWebhookController } from './payments/wompi-webhook.controller';
+export { CheckoutController } from './payments/checkout.controller';

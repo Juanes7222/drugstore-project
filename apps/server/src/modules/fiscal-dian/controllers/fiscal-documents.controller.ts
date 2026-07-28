@@ -22,25 +22,25 @@ export class FiscalDocumentsController {
   constructor(private fiscalDocumentsService: FiscalDocumentsService) {}
 
   @Get()
-  @Roles(RoleType.ACCOUNTANT, RoleType.ADMIN)
+  @Roles(RoleType.ACCOUNTANT, RoleType.ADMIN, RoleType.OWNER)
   async findAll(@Query() query: QueryFiscalDocumentsDto): Promise<any> {
     return this.fiscalDocumentsService.findAll(query);
   }
 
   @Get(':id')
-  @Roles(RoleType.ACCOUNTANT, RoleType.ADMIN)
+  @Roles(RoleType.ACCOUNTANT, RoleType.ADMIN, RoleType.OWNER)
   async findById(@Param('id') id: string): Promise<any> {
     return this.fiscalDocumentsService.findById(id);
   }
 
   @Get(':id/xml')
-  @Roles(RoleType.ACCOUNTANT, RoleType.ADMIN)
+  @Roles(RoleType.ACCOUNTANT, RoleType.ADMIN, RoleType.OWNER)
   async getXmlPayload(@Param('id') id: string): Promise<any> {
     return this.fiscalDocumentsService.getXmlPayload(id);
   }
 
   @Post(':id/retry')
-  @Roles(RoleType.ACCOUNTANT, RoleType.ADMIN)
+  @Roles(RoleType.ACCOUNTANT, RoleType.ADMIN, RoleType.OWNER)
   @HttpCode(200)
   @Auditable({
     action: AuditAction.UPDATE,

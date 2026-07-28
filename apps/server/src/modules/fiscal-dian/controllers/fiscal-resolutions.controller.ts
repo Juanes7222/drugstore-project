@@ -25,19 +25,19 @@ export class FiscalResolutionsController {
   constructor(private readonly service: FiscalResolutionsService) {}
 
   @Get()
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   async findAll(@Query() query: QueryFiscalResolutionsDto): Promise<any> {
     return this.service.findAll(query);
   }
 
   @Get(':id')
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   async findById(@Param('id') id: string): Promise<any> {
     return this.service.findById(id);
   }
 
   @Post()
-  @Roles(RoleType.ADMIN)
+  @Roles(RoleType.ADMIN, RoleType.OWNER)
   @HttpCode(201)
   @Auditable({
     action: AuditAction.CREATE,

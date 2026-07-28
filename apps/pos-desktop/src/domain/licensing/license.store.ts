@@ -40,6 +40,15 @@ export interface LicenseState {
   daysUntilGracePeriodEnd: number | null;
   daysUntilExpiry: number | null;
   checkInsLast30Days: number;
+
+  /** Whether a renewal payment flow is currently in progress. */
+  isRenewalInProgress: boolean;
+  /** Wompi checkout URL for the active renewal (not persisted). */
+  renewalCheckoutUrl: string | null;
+  /** Reference for polling the renewal payment status. */
+  renewalReference: string | null;
+  /** ISO timestamp of the last renewal attempt. */
+  lastRenewalAttempt: string | null;
 }
 
 interface LicenseActions {
@@ -70,6 +79,15 @@ interface LicenseActions {
   setCheckInTimestamp: () => void;
 
   updateCheckInCount: (count: number) => void;
+
+  /** Start a subscription renewal payment flow. */
+  startRenewal: (reference: string, checkoutUrl: string) => void;
+
+  /** Mark the renewal as completed successfully. */
+  completeRenewal: () => void;
+
+  /** Cancel an in-progress renewal. */
+  cancelRenewal: () => void;
 
   reset: () => void;
 }
@@ -102,6 +120,11 @@ const initialState: LicenseState = {
   daysUntilGracePeriodEnd: null,
   daysUntilExpiry: null,
   checkInsLast30Days: 0,
+
+  isRenewalInProgress: false,
+  renewalCheckoutUrl: null,
+  renewalReference: null,
+  lastRenewalAttempt: null,
 };
 
 export const useLicenseStore = create<LicenseStore>()(
@@ -174,6 +197,25 @@ export const useLicenseStore = create<LicenseStore>()(
 
       updateCheckInCount: (count) => set({
         checkInsLast30Days: count,
+      }),
+
+      startRenewal: (reference, checkoutUrl) => set({
+        isRenewalInProgress: true,
+        renewalCheckoutUrl: checkoutUrl,
+        renewalReference: reference,
+        lastRenewalAttempt: new Date().toISOString(),
+      }),
+
+      completeRenewal: () => set({
+        isRenewalInProgress: false,
+        renewalCheckoutUrl: null,
+        renewalReference: null,
+      }),
+
+      cancelRenewal: () => set({
+        isRenewalInProgress: false,
+        renewalCheckoutUrl: null,
+        renewalReference: null,
       }),
 
       reset: () => set(initialState),

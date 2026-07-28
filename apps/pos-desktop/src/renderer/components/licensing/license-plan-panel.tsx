@@ -1,11 +1,12 @@
 /**
- * Plan details panel — name, capacity, and feature list.
+ * LicensePlanPanel — plan details with feature icons.
  *
  * @category Component
  */
 
-import { type FC } from "react";
+import type { FC } from "react";
 import { useTranslation } from "react-i18next";
+import { CheckCircle2, Building2, Monitor } from "lucide-react";
 import { FEATURE_LABELS } from "./license-status.helpers";
 
 export interface LicensePlanPanelProps {
@@ -24,66 +25,65 @@ export const LicensePlanPanel: FC<LicensePlanPanelProps> = ({
   maxWorkstationsPerLocation,
 }) => {
   const { t } = useTranslation();
+  const displayName = planName ?? planCode ?? "—";
 
   return (
-    <div className="pos-panel mb-pos-md p-pos-lg">
-      <h2
-        className="mb-pos-md text-ui font-semibold"
-        style={{ color: "var(--color-ink)" }}
-      >
-        {t("licensing.status_page.plan_section")}
-      </h2>
+    <div className="rounded-pos border border-border bg-panel p-pos-lg shadow-pos-panel">
+      <div className="mb-pos-md flex items-center gap-pos-sm">
+        <CheckCircle2 className="h-5 w-5 text-pharma" aria-hidden="true" />
+        <h2 className="text-ui font-semibold text-ink">
+          {t("licensing.status_page.plan_section")}
+        </h2>
+      </div>
 
-      <dl className="space-y-pos-sm text-body-sm">
-        <div className="flex gap-pos-xs">
-          <dt
-            className="font-medium"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-            }}
-          >
-            {t("licensing.status_page.plan_name")}
-          </dt>
-          <dd
-            className="font-semibold"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {planName ?? planCode ?? "—"}
-          </dd>
+      {/* Plan name */}
+      <div className="mb-pos-md">
+        <p className="text-caption font-medium text-ink-muted">
+          {t("licensing.status_page.plan_name")}
+        </p>
+        <p className="font-data text-body font-semibold tabular-nums text-ink">
+          {displayName}
+        </p>
+      </div>
+
+      {/* Capacity */}
+      <div className="mb-pos-md space-y-pos-xs">
+        <div className="flex items-center gap-pos-sm text-body-sm text-ink-muted">
+          <Building2 className="h-4 w-4" aria-hidden="true" />
+          <span>
+            {t("licensing.status_page.max_locations", {
+              count: maxLocations ?? 0,
+            })}
+          </span>
         </div>
-
-        <div
-          className="text-body-sm"
-          style={{
-            color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-          }}
-        >
-          {t("licensing.status_page.plan_capacity", {
-            maxLocations: maxLocations ?? "—",
-            maxWorkstationsPerLocation: maxWorkstationsPerLocation ?? "—",
-          })}
+        <div className="flex items-center gap-pos-sm text-body-sm text-ink-muted">
+          <Monitor className="h-4 w-4" aria-hidden="true" />
+          <span>
+            {t("licensing.status_page.max_workstations", {
+              count: maxWorkstationsPerLocation ?? 0,
+            })}
+          </span>
         </div>
-      </dl>
+      </div>
 
+      {/* Features */}
       {planFeatures.length > 0 && (
-        <ul className="mt-pos-md space-y-pos-xs">
-          {planFeatures.map((feature) => (
-            <li
-              key={feature}
-              className="flex items-center gap-pos-sm text-body-sm"
-              style={{ color: "var(--color-ink)" }}
-            >
-              <span
-                aria-hidden="true"
-                className="flex-shrink-0 font-bold"
-                style={{ color: "var(--color-pharma)" }}
+        <div>
+          <p className="mb-pos-xs text-caption font-medium text-ink-muted">
+            {t("licensing.status_page.features_title")}
+          </p>
+          <ul className="space-y-pos-xs">
+            {planFeatures.map((feature) => (
+              <li
+                key={feature}
+                className="flex items-center gap-pos-sm text-body-sm text-ink"
               >
-                ✓
-              </span>
-              {t(FEATURE_LABELS[feature] ?? feature)}
-            </li>
-          ))}
-        </ul>
+                <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-pharma" aria-hidden="true" />
+                {t(FEATURE_LABELS[feature] ?? feature)}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

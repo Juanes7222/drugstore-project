@@ -858,3 +858,52 @@ and a `dot` circle — never colour alone.
 - Test print result appears as a brief `y: -4` slide-in message below the
   action bar; auto-hides on next action.
 - All animations respect `prefers-reduced-motion` via the global CSS reset.
+
+---
+
+## License Status Panel (added 2026-07-27)
+
+The license status panel is an admin/owner screen showing subscription details,
+plan features, location assignment, and check-in health.
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  🛡 Estado de Licencia              [↻ Renovar] [↓ Exportar]     │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────────────┐ │
+│  │ 🛡 Plan Profesional                    Activa hasta 31/12/26  │ │
+│  │ ⏱ 184 días restantes                                         │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│  ┌──────────────────────┐  ┌────────────────────────────────────┐ │
+│  │ ✓ Plan contratado    │  │ 🏪 Asignación                      │ │
+│  │ ✓ Profesional        │  │ Local: Droguería La Esperanza      │ │
+│  │                      │  │ Calle 123 #45-67, Bogotá           │ │
+│  │ Características:     │  │ Puesto: Caja Principal             │ │
+│  │ ✓ Múltiples locales  │  │ Activado: 15 enero 2026            │ │
+│  │ ✓ Reportes avanzados │  └────────────────────────────────────┘ │
+│  │ ✓ Sync multi-terminal│                                         │
+│  └──────────────────────┘                                         │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────────────┐ │
+│  │ 📋 Historial de check-in                                     │ │
+│  │ ⏱ Último check-in: 27/07/26, 14:30                           │ │
+│  │ ⏱ Días hasta vencimiento: 184                                │ │
+│  │ 📋 Check-ins (30d): 28                                       │ │
+│  │ ✓ Todo al día                                                │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Hero card with left border color** | The 4px left border uses domain colors (pharma teal=active, urgency amber=grace, error red=locked/revoked). The cashier/admin sees the status at a glance without reading text. |
+| **Icon in every panel header** | Each panel (plan, assignment, checkin) uses a distinct lucide-react icon as a visual anchor. This matches the pattern used in the clients, audit, and user management modules. |
+| **font-data for numbers** | Expiry counts, days remaining, and check-in counts use JetBrains Mono with tabular-nums for unambiguous reading. |
+| **Grace period warning with AlertTriangle** | When in grace period, the amber urgency color + alert icon appears inline in the check-in panel, not as a separate banner. This follows the pattern of inline status indicators (near-expiry, low-stock) used throughout the app. |
+| **Check-in health indicator** | A green checkmark + "Todo al día" message when active gives positive reinforcement. No news is good news, but a small confirmation helps the admin know the check-in mechanism is working. |
+```

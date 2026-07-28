@@ -42,6 +42,43 @@ export type { SyncQueueEntry } from "./sync-queue-entry";
 export type { CashShift } from "./cash-shift";
 export type { ReportView } from "./report";
 export type { Plan, Subscription, Location, WorkstationActivation, ActivationCode, FraudAlert, ActivationResult, CheckInResult, LicenseSummary } from "./licensing";
+
+// Wompi payment gateway types
+export {
+  WompiTransactionStatus,
+  WompiPaymentMethodType,
+  WompiEventType,
+  SubscriptionPaymentPurpose,
+  WOMpi_CHECKOUT_BASE_URL,
+  WOMpi_API_URLS,
+  getWompiBaseUrl,
+} from "./wompi";
+export type {
+  WompiCardBrand,
+  WompiCurrency,
+  WompiCardPaymentMethod,
+  WompiNequiPaymentMethod,
+  WompiPsePaymentMethod,
+  WompiBancolombiaTransferPaymentMethod,
+  WompiBancolombiaQrPaymentMethod,
+  WompiBancolombiaCollectPaymentMethod,
+  WompiPaymentMethod,
+  WompiCreateTransactionRequest,
+  WompiTransaction,
+  WompiResponse,
+  WompiCreatePaymentLinkRequest,
+  WompiPaymentLink,
+  WompiAcceptanceTokenResponse,
+  WompiEventSignature,
+  WompiWebhookEvent,
+  WompiTransactionUpdatedData,
+  SubscriptionPendingPayment,
+  CreateSubscriptionFromCheckout,
+  WompiConfig,
+} from "./wompi";
+
+// Plan seed data
+export { DEFAULT_PLANS, type PlanSeedDefinition } from "./plan-seeds";
 export type { UserSession, StepUpRequest, AuditLogEntry, UserLocationAccess, LoginAttempt, DetailedUser } from "./auth-types";
 
 export {

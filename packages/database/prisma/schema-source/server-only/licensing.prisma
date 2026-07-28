@@ -190,6 +190,30 @@ model FraudAlert {
   @@index([detectedAt])
 }
 
+/// Tracks a pending Wompi payment for license/subscription purchases.
+/// Stored server-side until the webhook confirms the payment result.
+model SubscriptionPendingPayment {
+  id                  String    @id
+  subscriptionId      String?   // null for new subscriptions (created after payment)
+  wompiTransactionId  String    @unique
+  wompiReference      String
+  purpose             String    // NEW_SUBSCRIPTION | RENEWAL | PLAN_UPGRADE | EXTRA_WORKSTATION
+  planId              String
+  amountCents         Int
+  currency            String    @default("COP")
+  customerTaxId       String
+  customerEmail       String
+  customerName        String
+  newSubscriptionData Json?     // CreateSubscriptionFromCheckout stored as JSON for NEW_SUBSCRIPTION
+  status              String    @default("PENDING")
+  expiresAt           DateTime?
+  createdAt           DateTime  @default(now())
+
+  @@index([wompiTransactionId])
+  @@index([subscriptionId])
+  @@index([status])
+}
+
 /// Payment history for a subscription (out-of-band payments recorded by admin).
 model SubscriptionPaymentHistory {
   id              String    @id

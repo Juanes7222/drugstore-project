@@ -61,6 +61,10 @@ import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useRequireActiveShift } from "@/hooks/use-require-active-shift";
 import { ShiftRequiredOverlay } from "@/components/common/shift-required-overlay";
 import { useLocalSessionStore } from "../domain/auth/local-session.store";
+import { useLicenseStore } from "../domain/licensing/license.store";
+import { LicenseStatus } from "@pharmacy/shared-types";
+import { createLicenseService } from "../domain/licensing/license.service";
+import { API_BASE_URL } from "../infrastructure/config";
 import { DB_PROOF_ENABLED } from "@infra/config";
 
 const SCREEN_TRANSITION_DURATION_S = 0.3;
@@ -121,6 +125,21 @@ const InnerApp: FC = () => {
       svc.syncScheduler.start();
     }
   }, [session?.accessToken, session?.workstationId, svc]);
+
+  // Restore license from server on startup if not activated
+  const licenseRestored = useRef(false);
+  useEffect(() => {
+    if (licenseRestored.current) return;
+    if (!session?.accessToken) return;
+    const state = useLicenseStore.getState();
+    if (state.status !== LicenseStatus.UNACTIVATED) {
+      licenseRestored.current = true;
+      return;
+    }
+    licenseRestored.current = true;
+    const svc = createLicenseService({ baseUrl: API_BASE_URL });
+    svc.restoreLicense();
+  }, [session?.accessToken]);
 
   const variants = {
     initial: shouldReduceMotion

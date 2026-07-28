@@ -195,17 +195,23 @@ describe("LicenseStatusPage", () => {
       setActivatedStore();
       render(<LicenseStatusPage />);
 
-      expect(
-        screen.getByText("Premium"),
-      ).toBeInTheDocument();
+      // Plan name appears in both HeroCard and PlanPanel — expect at least 2
+      const matches = screen.getAllByText("Premium");
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+      matches.forEach((el) => expect(el).toBeVisible());
     });
 
     it("displays plan capacity info", () => {
       setActivatedStore();
       render(<LicenseStatusPage />);
 
+      // Translation: "Hasta 5 local" + "Hasta 3 puesto por local"
+      // (i18next uses singular template interpolation, not plural suffixes)
       expect(
-        screen.getByText(/5 local.*3 puesto/i),
+        screen.getByText(/5 local/i),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/3 puesto/i),
       ).toBeInTheDocument();
     });
 
@@ -264,9 +270,10 @@ describe("LicenseStatusPage", () => {
       setActivatedStore({ daysUntilExpiry: undefined as unknown as number });
       render(<LicenseStatusPage />);
 
-      // The value should show "—" which is the em dash rendered by formatDate
-      const emDash = screen.queryByText("—");
-      expect(emDash).toBeInTheDocument();
+      // The em dash "—" appears in HeroCard (days countdown) and CheckinPanel
+      // (days until expiry) — both render it when the value is null.
+      const emDashes = screen.getAllByText("—");
+      expect(emDashes.length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -300,9 +307,11 @@ describe("LicenseStatusPage", () => {
       setActivatedStore({ status: LicenseStatus.GRACE_PERIOD, daysUntilGracePeriodEnd: 0 });
       render(<LicenseStatusPage />);
 
-      expect(
-        screen.getByText(/Período de gracia vencido/i),
-      ).toBeInTheDocument();
+      // HeroCard shows a badge and CheckinPanel shows a message — both
+      // contain "Período de gracia vencido".
+      const matches = screen.getAllByText(/Período de gracia vencido/i);
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+      matches.forEach((el) => expect(el).toBeVisible());
     });
   });
 
@@ -320,14 +329,15 @@ describe("LicenseStatusPage", () => {
       ).toBeInTheDocument();
     });
 
-    it("renders the renew button as disabled when there is no token", () => {
-      // Store is UNACTIVATED — no token
+    it("does not render the renew button when the license is not activated", () => {
+      // Store is UNACTIVATED — the page renders the "not activated" view
+      // which has no admin buttons.
       useLicenseStore.getState().reset();
       render(<LicenseStatusPage />);
 
       expect(
-        screen.getByRole("button", { name: /Renovar ahora/i }),
-      ).toBeDisabled();
+        screen.queryByRole("button", { name: /Renovar ahora/i }),
+      ).not.toBeInTheDocument();
     });
 
     it("calls checkIn on the license service when clicked", async () => {

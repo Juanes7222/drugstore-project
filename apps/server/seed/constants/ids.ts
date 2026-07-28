@@ -259,6 +259,20 @@ const SHIFT_OPEN = 'shift_open' as const;
 const SHIFT_CLOSED_YESTERDAY = 'shift_closed_yesterday' as const;
 const SHIFT_COUNT_CLOSED_1 = 'shiftcount_closed_1' as const;
 
+const PLAN_STARTER = 'plan_starter' as const;
+const PLAN_PROFESSIONAL = 'plan_professional' as const;
+const PLAN_ENTERPRISE = 'plan_enterprise' as const;
+const SUBSCRIPTION_DEFAULT = 'sub_default' as const;
+const LOCATION_MAIN = 'loc_main' as const;
+const ACT_CODE_WS1 = 'act_code_ws1' as const;
+const ACT_CODE_WS2 = 'act_code_ws2' as const;
+const ACT_CODE_UNUSED = 'act_code_unused' as const;
+const WS_ACTIVATION_PRINCIPAL = 'ws_act_principal' as const;
+const WS_ACTIVATION_SECUNDARIA = 'ws_act_secundaria' as const;
+const CHECKIN_001 = 'checkin_001' as const;
+const CHECKIN_002 = 'checkin_002' as const;
+const CHECKIN_003 = 'checkin_003' as const;
+
 export const IDS = {
   CAT_ANALGESICOS,
   CAT_ANTIBIOTICOS,
@@ -473,4 +487,17 @@ export const IDS = {
   SHIFT_OPEN,
   SHIFT_CLOSED_YESTERDAY,
   SHIFT_COUNT_CLOSED_1,
+  PLAN_STARTER,
+  PLAN_PROFESSIONAL,
+  PLAN_ENTERPRISE,
+  SUBSCRIPTION_DEFAULT,
+  LOCATION_MAIN,
+  ACT_CODE_WS1,
+  ACT_CODE_WS2,
+  ACT_CODE_UNUSED,
+  WS_ACTIVATION_PRINCIPAL,
+  WS_ACTIVATION_SECUNDARIA,
+  CHECKIN_001,
+  CHECKIN_002,
+  CHECKIN_003,
 } as const;

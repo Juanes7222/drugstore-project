@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '@/infrastructure/prisma/prisma.module';
 import { PlansService } from './plans/plans.service';
@@ -15,9 +16,13 @@ import { FraudDetectionService } from './fraud/fraud-detection.service';
 import { FraudAlertsController } from './fraud/fraud-alerts.controller';
 import { LicenseTokenService } from './tokens/license-token.service';
 import { LicenseRequiredGuard } from './guards/license-required.guard';
+import { WompiConfigService } from './payments/wompi-config.service';
+import { WompiService } from './payments/wompi.service';
+import { WompiWebhookController } from './payments/wompi-webhook.controller';
+import { CheckoutController } from './payments/checkout.controller';
 
 @Module({
-  imports: [PrismaModule, ScheduleModule.forRoot()],
+  imports: [PrismaModule, ScheduleModule.forRoot(), HttpModule],
   controllers: [
     PlansController,
     SubscriptionsController,
@@ -25,6 +30,8 @@ import { LicenseRequiredGuard } from './guards/license-required.guard';
     ActivationsController,
     CheckInsController,
     FraudAlertsController,
+    WompiWebhookController,
+    CheckoutController,
   ],
   providers: [
     PlansService,
@@ -35,6 +42,8 @@ import { LicenseRequiredGuard } from './guards/license-required.guard';
     FraudDetectionService,
     LicenseTokenService,
     LicenseRequiredGuard,
+    WompiConfigService,
+    WompiService,
   ],
   exports: [
     PlansService,
@@ -45,6 +54,8 @@ import { LicenseRequiredGuard } from './guards/license-required.guard';
     FraudDetectionService,
     LicenseTokenService,
     LicenseRequiredGuard,
+    WompiConfigService,
+    WompiService,
   ],
 })
 export class LicensingModule {}
