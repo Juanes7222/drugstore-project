@@ -1,39 +1,32 @@
 /**
- * Green success banner indicating no sync failures detected.
+ * Success banner indicating no sync failures detected.
  *
- * Shown when the failure breakdown is empty but there is sync activity,
- * to reassure the user that everything is operating normally.
+ * Uses design-system success tokens and a lucide CheckCircle2 icon.
+ * Animated entrance via motion. Reassures the user that the sync
+ * engine is operating normally.
  *
  * @category Component
  */
 
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
+import { motion } from "motion/react";
+import { CheckCircle2 } from "lucide-react";
 
 export const AllClearBanner: FC = () => {
   const { t } = useTranslation();
 
   return (
-    <div className="mb-6 flex items-center gap-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 shadow-sm">
-      <svg
-        className="h-5 w-5 flex-shrink-0 text-green-600"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        <path
-          fillRule="evenodd"
-          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z"
-          clipRule="evenodd"
-        />
-      </svg>
-      <p className="text-sm font-medium text-green-800">
-        {t(
-          "sync.all_clear",
-          "\u2713 All operations completed successfully. No failures detected.",
-        )}
+    <motion.div
+      className="mb-6 flex items-center gap-3 rounded-lg border border-success bg-success-container px-4 py-3 shadow-pos-panel"
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, ease: "easeOut" }}
+    >
+      <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-success" aria-hidden="true" />
+      <p className="text-body-sm font-medium text-success">
+        {t("sync.all_clear")}
       </p>
-    </div>
+    </motion.div>
   );
 };

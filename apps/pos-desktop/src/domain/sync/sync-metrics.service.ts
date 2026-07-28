@@ -293,18 +293,146 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
   private extractPayloadPreview(payloadJson: string, operationType: string): string {
     try {
       const parsed = JSON.parse(payloadJson) as Record<string, unknown>;
-      if (operationType === 'SALE_CONFIRMATION' && typeof parsed.metadata === 'object' && parsed.metadata !== null) {
-        const meta = parsed.metadata as Record<string, unknown>;
-        return `Sale #${String(meta.localNumber ?? '?')}`;
+
+      switch (operationType) {
+        // ── Sales ─────────────────────────────────────────────
+        case 'SALE_CONFIRMATION': {
+          const meta = parsed.metadata as Record<string, unknown> | undefined;
+          if (meta?.localNumber != null) {
+            return `Venta #${String(meta.localNumber)}`;
+          }
+          return 'Venta';
+        }
+
+        // ── Returns ───────────────────────────────────────────
+        case 'CLIENT_RETURN': {
+          const num = parsed.sequentialNumber ?? parsed.receiptNumber;
+          if (num != null) {
+            return `Devolución #${String(num)}`;
+          }
+          return 'Devolución';
+        }
+
+        // ── Inventory ─────────────────────────────────────────
+        case 'INVENTORY_ADJUSTMENT': {
+          const adjMeta = parsed.metadata as Record<string, unknown> | undefined;
+          const id = parsed.lotId ?? adjMeta?.adjustmentId ?? parsed.adjustmentId;
+          if (id != null) {
+            return `Ajuste lote: ${String(id)}`;
+          }
+          return 'Ajuste inventario';
+        }
+
+        // ── Products ──────────────────────────────────────────
+        case 'PRODUCT_CREATION':
+        case 'PRODUCT_UPDATE': {
+          const dto = parsed.createProductDto as Record<string, unknown> | undefined
+            ?? parsed.updateProductDto as Record<string, unknown> | undefined;
+          if (typeof dto?.internalCode === 'string' && dto.internalCode.length > 0) {
+            return `Producto: ${dto.internalCode}`;
+          }
+          if (typeof dto?.commercialName === 'string' && dto.commercialName.length > 0) {
+            return `Producto: ${dto.commercialName}`;
+          }
+          return 'Producto';
+        }
+
+        // ── Clients ───────────────────────────────────────────
+        case 'CLIENT_CREATION':
+        case 'CLIENT_UPDATE': {
+          const cdto = parsed.createClientDto as Record<string, unknown> | undefined
+            ?? parsed.updateClientDto as Record<string, unknown> | undefined;
+          if (typeof cdto?.fullName === 'string' && cdto.fullName.length > 0) {
+            return `Cliente: ${cdto.fullName}`;
+          }
+          if (typeof cdto?.identificationNumber === 'string' && cdto.identificationNumber.length > 0) {
+            return `Cliente: ${cdto.identificationNumber}`;
+          }
+          return 'Cliente';
+        }
+
+        case 'CLIENT_DEACTIVATE': {
+          const ddto = parsed.deactivateClientDto as Record<string, unknown> | undefined;
+          const clientId = ddto?.clientId ?? parsed.clientId;
+          if (clientId != null) {
+            return `Cliente: ${String(clientId)}`;
+          }
+          return 'Cliente';
+        }
+
+        // ── Shift closure ─────────────────────────────────────
+        case 'SHIFT_CLOSURE': {
+          const shiftId = parsed.cashShiftId
+            ?? (parsed.metadata as Record<string, unknown> | undefined)?.cashShiftId;
+          if (shiftId != null) {
+            return `Turno: ${String(shiftId)}`;
+          }
+          return 'Turno';
+        }
+
+        // ── Prescriptions ─────────────────────────────────────
+        case 'PRESCRIPTION_REGISTRATION': {
+          if (typeof parsed.prescriptionNumber === 'string' && parsed.prescriptionNumber.length > 0) {
+            return `Receta: ${parsed.prescriptionNumber}`;
+          }
+          if (typeof parsed.prescriberName === 'string' && parsed.prescriberName.length > 0) {
+            return `Receta: Dr. ${parsed.prescriberName}`;
+          }
+          return 'Receta';
+        }
+
+        // ── Invoice transmission ──────────────────────────────
+        case 'INVOICE_TRANSMISSION': {
+          if (typeof parsed.invoiceNumber === 'string' && parsed.invoiceNumber.length > 0) {
+            return `Factura #${parsed.invoiceNumber}`;
+          }
+          return 'Factura';
+        }
+
+        case 'INVOICE_TRANSMISSION_RESULT': {
+          const invId = typeof parsed.invoiceId === 'string' ? parsed.invoiceId : '?';
+          const status = typeof parsed.status === 'string' ? parsed.status : '?';
+          return `Factura ${invId}: ${status}`;
+        }
+
+        // ── Fiscal / resolution ───────────────────────────────
+        case 'FISCAL_DOCUMENT_SYNC':
+          return 'Documento fiscal';
+
+        case 'RESOLUTION_ALLOCATION':
+          return 'Resolución';
+
+        // ── Purchase confirmations ────────────────────────────
+        case 'PURCHASE_ORDER_CONFIRMATION': {
+          const poSeq = parsed.sequentialNumber;
+          if (poSeq != null) {
+            return `Orden #${String(poSeq)}`;
+          }
+          return 'Orden de compra';
+        }
+
+        case 'PURCHASE_RECEPTION_CONFIRMATION': {
+          const prSeq = parsed.sequentialNumber;
+          if (prSeq != null) {
+            return `Recepción #${String(prSeq)}`;
+          }
+          return 'Recepción';
+        }
+
+        case 'SUPPLIER_RETURN_CONFIRMATION': {
+          const srSeq = parsed.sequentialNumber;
+          if (srSeq != null) {
+            return `Devolución #${String(srSeq)}`;
+          }
+          return 'Devolución proveedor';
+        }
+
+        // ── Unknown ───────────────────────────────────────────
+        default: {
+          // Never dump raw JSON — produce a stable placeholder
+          return `Operación ${operationType}`;
+        }
       }
-      if (operationType === 'CLIENT_RETURN') {
-        return `Return receipt #${String(parsed.receiptNumber ?? parsed.sequentialNumber ?? '?')}`;
-      }
-      if (operationType === 'INVENTORY_ADJUSTMENT') {
-        return `Adjustment lotId: ${String(parsed.lotId ?? parsed.adjustmentId ?? '?')}`;
-      }
-      const formatted = JSON.stringify(parsed);
-      return formatted.length > 200 ? `${formatted.slice(0, 200)}…` : formatted;
     } catch {
       return '(unparseable payload)';
     }

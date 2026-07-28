@@ -419,12 +419,6 @@ export const SyncHealthPage: FC = () => {
       : `${((counts.completed24h / denominator) * 100).toFixed(1)}%`;
   }, [counts]);
 
-  const successRateColor = useMemo(() => {
-    if (successRateDisplay === "—") return "#9ca3af";
-    const value = parseFloat(successRateDisplay);
-    return value >= 95 ? "#22c55e" : value >= 80 ? "#f59e0b" : "#ef4444";
-  }, [successRateDisplay]);
-
   const sessionRole = useLocalSessionStore.getState().session?.role as RoleType | undefined;
 
   const retryDisabledMessage =
@@ -452,7 +446,6 @@ export const SyncHealthPage: FC = () => {
         <KpiGrid
           counts={counts}
           successRateDisplay={successRateDisplay}
-          successRateColor={successRateColor}
           backupSummary={backupSummary}
           onBackupClick={() => dispatch(navigateToRecovery())}
         />

@@ -907,3 +907,66 @@ plan features, location assignment, and check-in health.
 | **Grace period warning with AlertTriangle** | When in grace period, the amber urgency color + alert icon appears inline in the check-in panel, not as a separate banner. This follows the pattern of inline status indicators (near-expiry, low-stock) used throughout the app. |
 | **Check-in health indicator** | A green checkmark + "Todo al día" message when active gives positive reinforcement. No news is good news, but a small confirmation helps the admin know the check-in mechanism is working. |
 ```
+
+---
+
+## Sync Module (redesigned 2026-07-27)
+
+The sync module encompasses three visible surfaces: the Ambient Sync Pulse (full‑width line below the header), the Sync Attention Banner (advisory banner for permanent failures or stale pending entries), and the Sync Health dashboard (admin‑only management screen for reviewing and retrying failed sync operations).
+
+### Design decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Sync Pulse uses CSS animations, motion only for mount** | The pulse rhythm is an ambient background presence — it must not draw attention. CSS `@keyframes` handle the continuous fade cycle; `motion` handles only the initial mount entrance (400ms easeOut) so the bar appears smoothly when the app loads. |
+| **Attention Banner uses AnimatePresence for enter/exit** | The banner slides in and out with height‑collapse animation (250ms easeOut) to avoid jarring layout shifts when sync state changes. Always present as `role="alert"` with `aria-live="assertive"`. |
+| **Attention Banner colors map to design system** | Sync‑related advisory → `bg-urgency/10` + `border-urgency/40` + icon `AlertTriangle`. Backup‑critical → `bg-error-container` + `border-error/40` + icon `TriangleAlert`. Never raw Tailwind amber/red. |
+| **KPI grid uses staggered entrance animation** | Tiles appear with `y: 12` fade‑up, 60ms stagger delay per tile. Brief enough (<300ms for 5 tiles) to not block reading. Respects `prefers-reduced-motion`. |
+| **Each KPI tile has a distinct lucide icon** | `Clock` (pending), `AlertTriangle` (failed 24h), `Ban` (permanent failures), `TrendingUp` (success rate), `HardDrive` (last backup). Gives visual anchors for quick scanning. |
+| **KPI accent borders use semantic tokens** | Pending/failed → `border-l-warning`/`border-l-error`. Success rate → `border-l-pharma`. Backup → `border-l-success`/`border-l-warning`/`border-l-ink-muted` depending on health. |
+| **Action bar uses design‑system buttons** | Connection test → success/error container backgrounds. Primary action (Run sync now) → `pos-button-primary` (pharma teal). Export → `pos-button-secondary`. Checkboxes → pharma teal focus ring. All replace previous raw blue‑600 / gray‑300 Tailwind classes. |
+| **Connection status feedback uses motion** | When the test‑connection button completes, a brief sliding label (`x: -8` fade, 200ms) confirms reachable/unreachable. Auto‑dismisses after 5s via the parent page. |
+| **Inline SVGs replaced with lucide‑react** | `Radio`, `RefreshCw`, `FileDown`, `FileJson`, `CheckCircle2`, `XCircle`, `Loader2` replace raw SVG paths. Consistent icon language with the rest of the app (clients, audit, user management). |
+| **All hardcoded strings replaced with i18n** | Every visible string in `kpi-grid`, `action-bar`, `sync-pulse`, and `sync-attention-banner` uses `useTranslation` with keys under the `sync.` namespace. No English fallback strings in components. |
+
+### Sync Pulse states (unchanged from original design)
+
+| State | Color | Animation | Opacity |
+|-------|-------|-----------|---------|
+| `online` | Pharma Teal `#0B6E6B` | Static | 0.6 |
+| `offline` | Sync Slate `#4A6572` | CSS pulse (3s ease‑in‑out) | 0.4 → 0.8 |
+| `draining` | Sync Slate `#4A6572` | CSS drain (1.5s ease‑in‑out) | 0.7 → 1.0 |
+
+### Sync Health dashboard layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Salud de sincronización           [↻ Auto‑30s]                  │
+│                                                                   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐            │
+│  │ 🕐 3     │ │ ⚠ 12    │ │ 🚫 2     │ │ 📈 94.2% │ ← KPI grid │
+│  │ Pend.    │ │ Fall.24h │ │ Perm.    │ │ Éxito    │            │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘            │
+│                                                                   │
+│  [Auth Badge] [📡 Test] [↻ Sync now] [↓ CSV] [↓ JSON] │ ⃞ Retry…│
+│                                                                   │
+│  ┌─ Timeline ──────────────────────────────────────────────────┐ │
+│  │ ▁▃▆▇▆▅▃▂▁▃▅▇▆▄▃▂▁▃▅▇▆▄▃▂                                 │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│  ┌─ Failure breakdown ──────────────────────────────────────────┐ │
+│  │ ● SALES        12 (52.2%)  ████████████████                  │ │
+│  │ ● INVENTORY     6 (26.1%)  ████████                          │ │
+│  │ ● CLIENTS       3 (13.0%)  ████                              │ │
+│  │ ● AUTH          2 (8.7%)   ██                                │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│  ┌─ Permanent failures ─────────────────────────────────────────┐ │
+│  │ │ Tipo    │ Intentos │ Últ. intento │ Acciones │             │ │
+│  │ │─────────┼──────────┼──────────────┼──────────│             │ │
+│  │ │ SALES   │ 5/10     │ 14:32:01     │ [↻][🗑]  │             │ │
+│  │ │ INVENT. │ 3/10     │ 14:28:44     │ [↻][🗑]  │             │ │
+│  │ │ ...     │          │              │          │             │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+```

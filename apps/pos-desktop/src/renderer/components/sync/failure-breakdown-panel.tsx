@@ -1,18 +1,20 @@
 /**
  * Failure breakdown panel with filter pills.
  *
- * Displays a card titled "Failure Breakdown" with rounded filter pills.
- * Each pill shows the failure category, count, and time since the most
- * recent occurrence.  Clicking a pill toggles its selection as a category
- * filter.
+ * Shows failure categories as toggle-able pills with count badges and
+ * time since most recent occurrence. Uses design-system tokens, lucide
+ * icons, and motion staggered entrance. Clicking a pill toggles it as
+ * a category filter.
  *
  * @category Component
  */
 
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { motion } from "motion/react";
+import { AlertTriangle } from "lucide-react";
 import type { FailureBreakdownEntry } from "../../../domain/sync/sync-metrics.service";
-import { formatRelativeTime } from "../../../common/time-format";
+import { formatRelativeTimeEs } from "../../hooks/use-relative-time";
 
 interface FailureBreakdownPanelProps {
   data: FailureBreakdownEntry[];
@@ -29,64 +31,68 @@ export const FailureBreakdownPanel: FC<FailureBreakdownPanelProps> = ({
 
   const handlePillClick = useCallback(
     (category: string) => () => {
-      if (selectedCategory === category) {
-        onSelectCategory(null);
-      } else {
-        onSelectCategory(category);
-      }
+      onSelectCategory(selectedCategory === category ? null : category);
     },
     [selectedCategory, onSelectCategory],
   );
 
   return (
-    <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      <h3 className="mb-3 text-sm font-semibold text-gray-700">
-        {t("sync.failure_breakdown_title", "Failure Breakdown")}
+    <div className="mb-6 rounded-lg border border-border bg-panel p-4 shadow-pos-panel">
+      <h3 className="mb-3 text-body-sm font-semibold text-ink">
+        {t("sync.failure_breakdown_title")}
       </h3>
 
       {data.length === 0 ? (
-        <p className="py-4 text-center text-sm text-gray-400">
-          {t("sync.failure_breakdown_empty", "No failure data available")}
-        </p>
+        <motion.p
+          className="py-4 text-center text-body-sm text-ink-muted"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+        >
+          {t("sync.failure_breakdown_empty")}
+        </motion.p>
       ) : (
         <div className="flex flex-wrap gap-2">
-          {data.map((entry) => {
+          {data.map((entry, idx) => {
             const isSelected = selectedCategory === entry.category;
 
             return (
-              <button
+              <motion.button
                 key={entry.category}
                 type="button"
                 onClick={handlePillClick(entry.category)}
-                className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2, delay: idx * 0.04, ease: "easeOut" }}
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-body-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 ${
                   isSelected
-                    ? "bg-blue-600 text-white focus:ring-blue-500"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-400"
+                    ? "bg-pharma text-white focus:ring-pharma"
+                    : "bg-surface text-ink hover:bg-surface-variant focus:ring-pharma"
                 }`}
               >
-                <span>{entry.category}</span>
+                <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>{t(`sync.failure_cat.${entry.category}`, { defaultValue: entry.category })}</span>
                 <span
-                  className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-xs font-bold tabular-nums ${
+                  className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-caption font-bold tabular-nums ${
                     isSelected
-                      ? "bg-blue-500 text-white"
-                      : "bg-gray-200 text-gray-600"
+                      ? "bg-pharma/30 text-white"
+                      : "bg-surface-variant text-ink-muted"
                   }`}
                 >
                   {entry.count.toLocaleString()}
                 </span>
                 {entry.mostRecent && (
                   <span
-                    className={`text-xs ${
-                      isSelected ? "text-blue-200" : "text-gray-400"
+                    className={`text-caption ${
+                      isSelected ? "text-white/70" : "text-ink-muted"
                     }`}
                   >
                     {t("sync.failure_latest", {
-                      defaultValue: "latest: {{time}} ago",
-                      time: formatRelativeTime(entry.mostRecent),
+                      time: formatRelativeTimeEs(entry.mostRecent),
                     })}
                   </span>
                 )}
-              </button>
+              </motion.button>
             );
           })}
         </div>

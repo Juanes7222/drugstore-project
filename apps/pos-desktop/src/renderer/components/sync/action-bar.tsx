@@ -1,15 +1,25 @@
 /**
  * Toolbar row for Sync Health actions.
  *
- * Provides connection testing (with animated spinner while in progress),
- * manual sync trigger, CSV/JSON export, and toggles for retry-without-check
- * and showing discarded entries.
+ * Connection testing (with animated spinner), manual sync trigger, CSV/JSON
+ * export, and toggles for retry-without-check and showing discarded entries.
+ * Uses design-system tokens and lucide-react icons.
  *
  * @category Component
  */
 
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  Radio,
+  RefreshCw,
+  FileDown,
+  FileJson,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+} from "lucide-react";
 import type { ConnectionStatus } from "./sync-health.types";
 import { AuthStatusBadge } from "./auth-status-badge";
 
@@ -72,143 +82,119 @@ export const ActionBar: FC<ActionBarProps> = ({
   const isReachable = connectionStatus.type === "reachable";
   const isUnreachable = connectionStatus.type === "unreachable";
 
+  const testBtnStyle = isTesting
+    ? "bg-ink/8 text-ink-muted cursor-wait"
+    : isReachable
+      ? "bg-success-container text-success hover:brightness-95"
+      : isUnreachable
+        ? "bg-error-container text-error hover:brightness-95"
+        : "bg-surface text-ink hover:bg-surface-variant";
+
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-      {/* Auth status badge — shows token refresh state from the SyncScheduler */}
+    <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-panel p-4 shadow-pos-panel">
       <AuthStatusBadge />
 
-      {/* Test connection button */}
+      {/* Test connection */}
       <button
         type="button"
         onClick={handleTestConnection}
         disabled={isTesting}
-        className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-          isTesting
-            ? "cursor-wait bg-gray-100 text-gray-400"
-            : isReachable
-              ? "bg-green-50 text-green-700 hover:bg-green-100 focus:ring-green-500"
-              : isUnreachable
-                ? "bg-red-50 text-red-700 hover:bg-red-100 focus:ring-red-500"
-                : "bg-gray-50 text-gray-700 hover:bg-gray-100 focus:ring-gray-500"
-        }`}
+        className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-body-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2 ${testBtnStyle}`}
       >
-        {isTesting && (
-          <svg
-            className="h-4 w-4 animate-spin text-gray-400"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            aria-hidden="true"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
+        {isTesting ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        ) : isReachable ? (
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+        ) : isUnreachable ? (
+          <XCircle className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          <Radio className="h-4 w-4" aria-hidden="true" />
         )}
-        {isReachable && (
-          <svg
-            className="h-4 w-4 text-green-500"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z"
-              clipRule="evenodd"
-            />
-          </svg>
-        )}
-        {isUnreachable && (
-          <svg
-            className="h-4 w-4 text-red-500"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z"
-              clipRule="evenodd"
-            />
-          </svg>
-        )}
-        {t("sync.test_connection", "Test connection")}
+        {isReachable
+          ? t("sync.connected_label")
+          : isUnreachable
+            ? t("sync.unreachable_label")
+            : t("sync.test_connection")}
       </button>
+
+      {/* Connection status feedback */}
+      <AnimatePresence>
+        {connectionStatus.type === "reachable" && (
+          <motion.span
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -8 }}
+            transition={{ duration: 0.2 }}
+            className="text-caption text-success"
+          >
+            {t("sync.server_reachable")}
+          </motion.span>
+        )}
+        {connectionStatus.type === "unreachable" && (
+          <motion.span
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -8 }}
+            transition={{ duration: 0.2 }}
+            className="text-caption text-error"
+          >
+            {connectionStatus.message ??
+              t("sync.server_unreachable")}
+          </motion.span>
+        )}
+      </AnimatePresence>
 
       {/* Run sync now */}
       <button
         type="button"
         onClick={handleRunSyncNow}
-        className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        className="inline-flex items-center gap-2 rounded-md bg-pharma px-3 py-1.5 text-body-sm font-medium text-panel shadow-sm transition-colors hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2"
       >
-        <svg
-          className="h-4 w-4"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
-          <path
-            fillRule="evenodd"
-            d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z"
-            clipRule="evenodd"
-          />
-        </svg>
-        {t("sync.run_sync_now", "Run sync now")}
+        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+        {t("sync.run_sync_now")}
       </button>
 
       {/* Export CSV */}
       <button
         type="button"
         onClick={handleExportCsv}
-        className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+        className="inline-flex items-center gap-2 rounded-md border border-border bg-panel px-3 py-1.5 text-body-sm font-medium text-ink shadow-sm transition-colors hover:bg-surface focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2"
       >
-        {t("sync.export_csv", "Export CSV")}
+        <FileDown className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+        {t("sync.export_csv")}
       </button>
 
       {/* Export JSON */}
       <button
         type="button"
         onClick={handleExportJson}
-        className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+        className="inline-flex items-center gap-2 rounded-md border border-border bg-panel px-3 py-1.5 text-body-sm font-medium text-ink shadow-sm transition-colors hover:bg-surface focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2"
       >
-        {t("sync.export_json", "Export JSON")}
+        <FileJson className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+        {t("sync.export_json")}
       </button>
 
       <div className="flex flex-1 items-center justify-end gap-4">
         {/* Retry without server check */}
-        <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+        <label className="inline-flex items-center gap-2 text-body-sm text-ink-muted">
           <input
             type="checkbox"
             checked={retryWithoutCheck}
             onChange={handleRetryCheckChange}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-border text-pharma focus:ring-pharma"
           />
-          {t("sync.retry_without_check", "Retry without server check")}
+          {t("sync.retry_without_check")}
         </label>
 
         {/* Show discarded */}
-        <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+        <label className="inline-flex items-center gap-2 text-body-sm text-ink-muted">
           <input
             type="checkbox"
             checked={showDiscarded}
             onChange={handleShowDiscardedChange}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-border text-pharma focus:ring-pharma"
           />
-          {t("sync.show_discarded", "Show discarded")}
+          {t("sync.show_discarded")}
         </label>
       </div>
     </div>

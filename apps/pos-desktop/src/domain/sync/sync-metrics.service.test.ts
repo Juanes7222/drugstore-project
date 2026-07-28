@@ -194,7 +194,7 @@ describe("SyncMetricsService", () => {
 
       const result = await service.getPermanentFailureEntries({ limit: 20 });
 
-      expect(result.data[0].payloadPreview).toBe("Return receipt #999");
+      expect(result.data[0].payloadPreview).toBe("Devolución #999");
     });
 
     it("renders payload preview for INVENTORY_ADJUSTMENT operation", async () => {
@@ -216,7 +216,7 @@ describe("SyncMetricsService", () => {
 
       const result = await service.getPermanentFailureEntries({ limit: 20 });
 
-      expect(result.data[0].payloadPreview).toBe("Adjustment lotId: L-42");
+      expect(result.data[0].payloadPreview).toBe("Ajuste lote: L-42");
     });
 
     it("handles unparseable payload in permanent failure entry", async () => {
