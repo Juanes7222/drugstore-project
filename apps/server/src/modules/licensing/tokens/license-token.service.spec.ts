@@ -2,7 +2,7 @@
 process.env.LICENSE_TOKEN_SECRET = 'test-secret-that-is-at-least-32-characters-long!!';
 process.env.LICENSE_TOKEN_TTL_SECONDS = '604800';
 
-import * as jwt from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { LicenseTokenService } from './license-token.service';
 
 // ---------------------------------------------------------------------------

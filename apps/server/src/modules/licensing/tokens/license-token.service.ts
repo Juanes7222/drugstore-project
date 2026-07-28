@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as jwt from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 
 interface TokenPayload {
   subscriptionId: string;
