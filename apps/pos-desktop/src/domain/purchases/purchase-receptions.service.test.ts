@@ -17,7 +17,6 @@ import {
   PurchaseOrderItemMismatchException,
   ConcurrentStockModificationException,
 } from "./exceptions";
-import { RoleType } from "@pharmacy/shared-types";
 import {
   PurchaseReceptionState,
   PurchaseOrderState,

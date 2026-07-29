@@ -33,12 +33,12 @@ function createMockPrisma() {
           ? counterStore
           : null;
       }),
-      upsert: vi.fn(async ({ where, create, update }: any) => {
+      upsert: vi.fn(async ({ create, update }: any) => {
         const data = { ...counterStore, ...create, ...update };
         counterStore = data;
         return data;
       }),
-      update: vi.fn(async ({ where, data }: any) => {
+      update: vi.fn(async ({ data }: any) => {
         counterStore = { ...counterStore, ...data };
         return counterStore;
       }),

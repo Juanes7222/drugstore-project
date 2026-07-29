@@ -187,11 +187,6 @@ describe("InventoryLotsService", () => {
       const activeLot = makeActiveLot({
         id: "lot-active", currentStock: 10, version: 1,
       });
-      const expiredLot = makeActiveLot({
-        id: "lot-expired", currentStock: 5, version: 1,
-        expirationDate: new Date("2025-01-01"),
-        state: "EXPIRED",
-      });
       tx.lot.findMany.mockResolvedValue([activeLot]); // Only ACTIVE returned
       tx.lot.updateMany.mockResolvedValue({ count: 1 });
 

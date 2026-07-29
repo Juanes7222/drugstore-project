@@ -52,7 +52,7 @@ vi.mock("../../infrastructure/secure-storage", () => ({
 const makeUser = (overrides: Partial<LocalUserInfo> = {}): LocalUserInfo => ({
   id: "user-1",
   displayName: "Test User",
-  role: "CASHIER",
+  role: "CASHIER" as any,
   avatarUrl: null,
   avatarColor: null,
   username: "testuser",

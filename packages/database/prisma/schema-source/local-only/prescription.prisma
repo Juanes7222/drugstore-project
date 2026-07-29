@@ -1,0 +1,32 @@
+// LOCAL-ONLY schema fragment — included in local build only.
+// Strips the server-only relation field (verifiedByUser).
+// The full-schema version lives in server-only/prescription.prisma.
+
+model Prescription {
+  id                                String    @id
+  saleItemId                        String    @unique
+  saleItem                          SaleItem  @relation("PrescriptionFromSaleItem", fields: [saleItemId], references: [id])
+  prescriptionNumber                String?
+  prescriberIdType                  IdentificationType?
+  prescriberIdNumber                String?
+  prescriberName                    String?
+  prescriberSpecialty               String?
+  prescriptionDate                  DateTime?
+  expiresAt                         DateTime?
+  patientFullName                   String?
+  patientIdType                     IdentificationType?
+  patientIdNumber                   String?
+  fileUrl                           String?
+  fileHash                          String?
+  verifiedById                      String?
+  verifiedAt                        DateTime?
+  isControlledSubstance             Boolean   @default(false)
+  controlledSubstanceBookEntry      String?
+  controlledSubstanceBookPage       String?
+  recipeType                        RecipeType?
+  createdAt                         DateTime  @default(now())
+
+  @@index([prescriberIdNumber])
+  @@index([prescriptionNumber])
+  @@index([isControlledSubstance])
+}

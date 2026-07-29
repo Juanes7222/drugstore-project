@@ -203,7 +203,7 @@ describe("FiscalInvoiceDetailPanel", () => {
   it("renders prescription number when present", () => {
     const invoiceWithRx = {
       ...baseInvoice,
-      fullData: { ...baseInvoice.fullData, prescriptionNumber: "RX-12345" },
+      fullData: { ...(baseInvoice.fullData as Record<string, unknown>), prescriptionNumber: "RX-12345" },
     };
     render(
       <FiscalInvoiceDetailPanel {...defaultProps} invoice={invoiceWithRx} />,

@@ -46,7 +46,7 @@ function renderBar(props: Partial<Parameters<typeof ActionBar>[0]> = {}) {
 describe("ActionBar", () => {
   it("calls onExportCsv when the Export CSV button is clicked", async () => {
     const onExportCsv = vi.fn();
-    const { container } = renderBar({ onExportCsv });
+    renderBar({ onExportCsv });
     const user = userEvent.setup();
 
     // Find by visible text instead of testid

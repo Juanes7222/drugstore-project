@@ -1,7 +1,6 @@
 // LOCAL-ONLY override of shared sale-item.prisma.
-// Strips the server-only relation fields (prescription, clientReturnItems)
-// that are only valid in the full build. The POS desktop does not use
-// these relations.
+// Adds local-only relations (prescription, clientReturnItems) that
+// the POS desktop services rely on.
 
 model SaleItem {
   id                                String    @id
@@ -25,6 +24,8 @@ model SaleItem {
   total                             Decimal   @db.Decimal(15, 2)
   requiresPrescription              Boolean   @default(false)
   saleItemPrescriptionId            String?
+  prescription                      Prescription? @relation("PrescriptionFromSaleItem")
+  clientReturnItems                 ClientReturnItem[]
   lots                              SaleItemLot[]
 
   @@index([saleId])

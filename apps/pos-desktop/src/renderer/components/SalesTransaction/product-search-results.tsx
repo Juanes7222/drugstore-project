@@ -9,7 +9,9 @@
  */
 import {
   forwardRef,
+  type FC,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MutableRefObject,
   useCallback,
   useEffect,
   useRef,
@@ -213,8 +215,9 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
 
   // Set up forwarded ref
   useEffect(() => {
-    if (isFocused && cardRef.current) {
-      cardRef.current.focus({ preventScroll: true });
+    const ref = cardRef as MutableRefObject<HTMLDivElement | null>;
+    if (isFocused && ref.current) {
+      ref.current.focus({ preventScroll: true });
     }
   }, [isFocused]);
 

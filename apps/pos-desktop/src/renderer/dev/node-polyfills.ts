@@ -60,10 +60,10 @@
 // The default export of each sister polyfill mirrors the shape of the
 // Node.js builtin's module.exports object, which is what CJS consumers
 // expect.
-import * as _fs from "./fs-polyfill.ts";
-import * as _path from "./path-polyfill.ts";
-import * as _buffer from "./buffer-polyfill.ts";
-import * as _url from "./empty-url-polyfill.ts";
+import * as _fs from "./fs-polyfill";
+import * as _path from "./path-polyfill";
+import * as _buffer from "./buffer-polyfill";
+import * as _url from "./empty-url-polyfill";
 // node:os is inlined below — no separate polyfill file for it.
 
 // ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ registerRequireModule('node:crypto', {
     size?: number,
   ): Uint8Array => {
     const view = size != null ? buffer.subarray(offset, offset + size) : buffer;
-    crypto.getRandomValues(view);
+    crypto.getRandomValues(view as any);
     return buffer;
   },
   default: { webcrypto: crypto, randomUUID: crypto.randomUUID, randomBytes: () => new Uint8Array(0), randomFillSync: () => new Uint8Array(0) },

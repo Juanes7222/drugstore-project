@@ -4,7 +4,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { PrescriptionsService, createPrescriptionsService, type CreatePrescriptionInput } from "./prescriptions.service";
 import { PrescriptionSaleItemNotFoundException, PrescriptionAlreadyExistsException, ControlledSubstanceFieldsRequiredException } from "./exceptions";
-import { RoleType } from "@pharmacy/shared-types";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -116,7 +115,7 @@ describe("PrescriptionsService", () => {
       const result = await service.create(baseInput);
 
       expect(auth.requireRole).toHaveBeenCalledWith("CASHIER", "ADMIN");
-      expect(result.saleItemId).toBe("item-1");
+      expect((result as any).saleItemId).toBe("item-1");
       expect(tx.prescription.create).toHaveBeenCalled();
       expect(tx.syncQueue.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -180,7 +179,7 @@ describe("PrescriptionsService", () => {
         controlledSubstanceBookPage: "42",
       });
 
-      expect(result.isControlledSubstance).toBe(true);
+      expect((result as any).isControlledSubstance).toBe(true);
     });
   });
 });

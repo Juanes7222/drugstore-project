@@ -4,7 +4,7 @@
  * Covers: printer info display, badges, job-type chips, pending count,
  * test/delete/edit actions, delete confirmation dialog, test result feedback.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PrinterCard } from "./printer-card";

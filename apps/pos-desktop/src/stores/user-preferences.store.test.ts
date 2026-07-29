@@ -1,7 +1,7 @@
 /**
  * Tests for the user preferences Zustand store (persisted).
  */
-import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 import { useUserPreferencesStore } from "./user-preferences.store";
 
 beforeEach(() => {

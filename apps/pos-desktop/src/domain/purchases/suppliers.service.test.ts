@@ -12,7 +12,6 @@ import {
   SupplierNotFoundException,
   DuplicateSupplierIdentificationException,
 } from "./exceptions";
-import { RoleType } from "@pharmacy/shared-types";
 
 // ---------------------------------------------------------------------------
 // Mocks

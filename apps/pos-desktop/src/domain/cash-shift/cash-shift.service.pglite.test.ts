@@ -276,7 +276,7 @@ describe("Cash shift — PGlite data layer", () => {
     });
 
     it("supports multiple shifts for different workstations", async () => {
-      const shift1 = await insertOpenShift(pg, seeds, {
+      await insertOpenShift(pg, seeds, {
         openingBalance: "100000.00",
       });
 

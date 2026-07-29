@@ -8,11 +8,6 @@ import { describe, expect, it } from "vitest";
 import { validateTenantConfig, validatePresetCode } from "./validation";
 import type {
   TenantConfig,
-  StrictnessConfig,
-  FiscalConfig,
-  WorkflowConfig,
-  CustomCompanyField,
-  CustomStrictnessToggle,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -35,7 +30,7 @@ function makePartialConfig(
       autoOpenDrawer: "CASH_ONLY",
       customerDisplayRequired: false,
       prescriptionExpiryDays: 180,
-    },
+    } as any,
     fiscal: {
       companyName: "Farmacia Salud",
       nit: "1234567890",
@@ -45,13 +40,13 @@ function makePartialConfig(
       email: "info@farmaciasalud.com",
       taxRegime: "RESPONSABLE_IVA",
       defaultTaxRate: 0.19,
-    },
+    } as any,
     workflow: {
       defaultPaymentMethodId: null,
       autoPrintOnConfirm: true,
       requireShiftOpenForSale: true,
       maxOfflineLoginDays: 30,
-    },
+    } as any,
     customCompanyFields: [],
     customStrictnessToggles: [],
     activePresetCode: "BALANCED",
@@ -83,7 +78,7 @@ describe("validateTenantConfig", () => {
     it("returns error when companyName is an empty string", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { companyName: "" } as Partial<FiscalConfig>,
+          fiscal: { companyName: "" } as any,
         }),
       );
 
@@ -95,7 +90,7 @@ describe("validateTenantConfig", () => {
     it("returns error when companyName is whitespace only", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { companyName: "   " } as Partial<FiscalConfig>,
+          fiscal: { companyName: "   " } as any,
         }),
       );
 
@@ -106,7 +101,7 @@ describe("validateTenantConfig", () => {
     it("allows non-empty company name", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { companyName: "Mi Farmacia" } as Partial<FiscalConfig>,
+          fiscal: { companyName: "Mi Farmacia" } as any,
         }),
       );
 
@@ -121,7 +116,7 @@ describe("validateTenantConfig", () => {
     it("accepts valid 10-digit NIT", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { nit: "1234567890" } as Partial<FiscalConfig>,
+          fiscal: { nit: "1234567890" } as any,
         }),
       );
 
@@ -132,7 +127,7 @@ describe("validateTenantConfig", () => {
     it("accepts valid 9-digit NIT", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { nit: "123456789" } as Partial<FiscalConfig>,
+          fiscal: { nit: "123456789" } as any,
         }),
       );
 
@@ -143,7 +138,7 @@ describe("validateTenantConfig", () => {
     it("rejects NIT with fewer than 9 digits", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { nit: "12345678" } as Partial<FiscalConfig>,
+          fiscal: { nit: "12345678" } as any,
         }),
       );
 
@@ -155,7 +150,7 @@ describe("validateTenantConfig", () => {
     it("rejects NIT with non-numeric characters", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { nit: "abc1234567" } as Partial<FiscalConfig>,
+          fiscal: { nit: "abc1234567" } as any,
         }),
       );
 
@@ -166,7 +161,7 @@ describe("validateTenantConfig", () => {
     it("strips dashes and spaces before validating NIT", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { nit: "123-456-7890" } as Partial<FiscalConfig>,
+          fiscal: { nit: "123-456-7890" } as any,
         }),
       );
 
@@ -181,7 +176,7 @@ describe("validateTenantConfig", () => {
         makePartialConfig({
           fiscal: {
             email: "admin@farmacia.com",
-          } as Partial<FiscalConfig>,
+          } as any,
         }),
       );
 
@@ -192,7 +187,7 @@ describe("validateTenantConfig", () => {
     it("rejects invalid email", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { email: "not-an-email" } as Partial<FiscalConfig>,
+          fiscal: { email: "not-an-email" } as any,
         }),
       );
 
@@ -204,7 +199,7 @@ describe("validateTenantConfig", () => {
     it("allows empty email (not validated)", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { email: "" } as Partial<FiscalConfig>,
+          fiscal: { email: "" } as any,
         }),
       );
 
@@ -217,7 +212,7 @@ describe("validateTenantConfig", () => {
     it("accepts 0.19", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { defaultTaxRate: 0.19 } as Partial<FiscalConfig>,
+          fiscal: { defaultTaxRate: 0.19 } as any,
         }),
       );
 
@@ -230,7 +225,7 @@ describe("validateTenantConfig", () => {
     it("accepts 0", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { defaultTaxRate: 0 } as Partial<FiscalConfig>,
+          fiscal: { defaultTaxRate: 0 } as any,
         }),
       );
 
@@ -243,7 +238,7 @@ describe("validateTenantConfig", () => {
     it("rejects negative tax rate", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { defaultTaxRate: -0.1 } as Partial<FiscalConfig>,
+          fiscal: { defaultTaxRate: -0.1 } as any,
         }),
       );
 
@@ -257,7 +252,7 @@ describe("validateTenantConfig", () => {
     it("rejects tax rate greater than 1", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          fiscal: { defaultTaxRate: 1.5 } as Partial<FiscalConfig>,
+          fiscal: { defaultTaxRate: 1.5 } as any,
         }),
       );
 
@@ -272,7 +267,7 @@ describe("validateTenantConfig", () => {
         makePartialConfig({
           fiscal: {
             defaultTaxRate: "0.19" as unknown as number,
-          } as Partial<FiscalConfig>,
+          } as any,
         }),
       );
 
@@ -287,7 +282,7 @@ describe("validateTenantConfig", () => {
     it("accepts value within range", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          workflow: { maxOfflineLoginDays: 30 } as Partial<WorkflowConfig>,
+          workflow: { maxOfflineLoginDays: 30 } as any,
         }),
       );
 
@@ -300,7 +295,7 @@ describe("validateTenantConfig", () => {
     it("rejects value below 1", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          workflow: { maxOfflineLoginDays: 0 } as Partial<WorkflowConfig>,
+          workflow: { maxOfflineLoginDays: 0 } as any,
         }),
       );
 
@@ -314,7 +309,7 @@ describe("validateTenantConfig", () => {
     it("rejects value above 365", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
-          workflow: { maxOfflineLoginDays: 400 } as Partial<WorkflowConfig>,
+          workflow: { maxOfflineLoginDays: 400 } as any,
         }),
       );
 
@@ -331,7 +326,7 @@ describe("validateTenantConfig", () => {
         makePartialConfig({
           strictness: {
             stockValidation: "INVALID",
-          } as unknown as Partial<StrictnessConfig>,
+          } as any,
         }),
       );
 
@@ -345,7 +340,7 @@ describe("validateTenantConfig", () => {
         makePartialConfig({
           strictness: {
             clientRequired: "INVALID",
-          } as unknown as Partial<StrictnessConfig>,
+          } as any,
         }),
       );
 
@@ -360,8 +355,8 @@ describe("validateTenantConfig", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
           customCompanyFields: [
-            { key: "licencia", name: "Licencia", type: "TEXT", order: 1 },
-            { key: "licencia", name: "Licencia 2", type: "TEXT", order: 2 },
+            { key: "licencia", name: "Licencia", type: "TEXT", order: 1 } as any,
+            { key: "licencia", name: "Licencia 2", type: "TEXT", order: 2 } as any,
           ],
         }),
       );
@@ -375,7 +370,7 @@ describe("validateTenantConfig", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
           customCompanyFields: [
-            { key: "", name: "Empty Key", type: "TEXT", order: 1 },
+            { key: "", name: "Empty Key", type: "TEXT", order: 1 } as any,
           ],
         }),
       );
@@ -392,7 +387,7 @@ describe("validateTenantConfig", () => {
               name: "Test",
               type: "INVALID" as any,
               order: 1,
-            },
+            } as any,
           ],
         }),
       );
@@ -404,7 +399,7 @@ describe("validateTenantConfig", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
           customCompanyFields: [
-            { key: "test", name: "", type: "TEXT", order: 1 },
+            { key: "test", name: "", type: "TEXT", order: 1 } as any,
           ],
         }),
       );
@@ -416,7 +411,7 @@ describe("validateTenantConfig", () => {
       const errors = validateTenantConfig(
         makePartialConfig({
           customCompanyFields: [
-            { key: "test", name: "Test", type: "TEXT", order: -1 },
+            { key: "test", name: "Test", type: "TEXT", order: -1 } as any,
           ],
         }),
       );
@@ -436,7 +431,7 @@ describe("validateTenantConfig", () => {
               label: "Override Stock Validation",
               appliesTo: "SALE",
               defaultValue: false,
-            },
+            } as any,
           ],
         }),
       );
@@ -456,14 +451,14 @@ describe("validateTenantConfig", () => {
               label: "Requiere ID Doctor",
               appliesTo: "SALE",
               defaultValue: false,
-            },
+            } as any,
             {
               key: "requireDoctorId",
               type: "BOOLEAN",
               label: "Duplicado",
               appliesTo: "SALE",
               defaultValue: true,
-            },
+            } as any,
           ],
         }),
       );
@@ -483,7 +478,7 @@ describe("validateTenantConfig", () => {
               label: "Test",
               appliesTo: "SALE",
               defaultValue: "",
-            },
+            } as any,
           ],
         }),
       );
@@ -501,7 +496,7 @@ describe("validateTenantConfig", () => {
               label: "Test",
               appliesTo: "INVALID" as any,
               defaultValue: false,
-            },
+            } as any,
           ],
         }),
       );
@@ -517,7 +512,7 @@ describe("validateTenantConfig", () => {
           strictness: {
             clientRequired: "ABOVE_AMOUNT",
             clientRequiredThreshold: undefined,
-          } as unknown as Partial<StrictnessConfig>,
+          } as any,
         }),
       );
 
@@ -532,7 +527,7 @@ describe("validateTenantConfig", () => {
           strictness: {
             clientRequired: "ABOVE_AMOUNT",
             clientRequiredThreshold: 0,
-          },
+          } as any,
         }),
       );
 
@@ -547,7 +542,7 @@ describe("validateTenantConfig", () => {
           strictness: {
             clientRequired: "ABOVE_AMOUNT",
             clientRequiredThreshold: null,
-          } as unknown as Partial<StrictnessConfig>,
+          } as any,
         }),
       );
 
@@ -562,7 +557,7 @@ describe("validateTenantConfig", () => {
           strictness: {
             clientRequired: "ABOVE_AMOUNT",
             clientRequiredThreshold: 50000,
-          },
+          } as any,
         }),
       );
 

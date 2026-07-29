@@ -6,7 +6,7 @@
  * The returnsService is the only one with optional dependencies (invoiceService
  * and printRouter); the factory must handle their absence gracefully.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock service objects
@@ -105,6 +105,7 @@ describe("createDomainServices", () => {
     const services = createDomainServices({
       prisma: mockPrisma as any,
       auth: mockAuth as any,
+      inventoryLotsService: {} as any,
       invoiceService: mockInvoiceService as any,
       printRouter: mockPrintRouter as any,
     });
@@ -119,6 +120,7 @@ describe("createDomainServices", () => {
     createDomainServices({
       prisma: mockPrisma as any,
       auth: mockAuth as any,
+      inventoryLotsService: {} as any,
       invoiceService: mockInvoiceService as any,
       printRouter: mockPrintRouter as any,
     });
@@ -135,6 +137,7 @@ describe("createDomainServices", () => {
     createDomainServices({
       prisma: mockPrisma as any,
       auth: mockAuth as any,
+      inventoryLotsService: {} as any,
     });
 
     expect(createReturnsService).toHaveBeenCalledWith(
@@ -149,6 +152,7 @@ describe("createDomainServices", () => {
     createDomainServices({
       prisma: mockPrisma as any,
       auth: mockAuth as any,
+      inventoryLotsService: {} as any,
     });
 
     expect(createInventoryAdjustmentsService).toHaveBeenCalledWith(mockPrisma, mockAuth);
@@ -158,6 +162,7 @@ describe("createDomainServices", () => {
     createDomainServices({
       prisma: mockPrisma as any,
       auth: mockAuth as any,
+      inventoryLotsService: {} as any,
     });
 
     expect(createPrescriptionsService).toHaveBeenCalledWith(mockPrisma, mockAuth);
@@ -167,6 +172,7 @@ describe("createDomainServices", () => {
     createDomainServices({
       prisma: mockPrisma as any,
       auth: mockAuth as any,
+      inventoryLotsService: {} as any,
     });
 
     expect(createRecoveryLogService).toHaveBeenCalledWith(mockPrisma);

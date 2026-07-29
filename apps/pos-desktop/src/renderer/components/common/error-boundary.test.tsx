@@ -4,6 +4,7 @@
  * Covers: catching render errors, default fallback UI, retry mechanism,
  * custom fallback, onError callback, and no-error pass-through.
  */
+import React from "react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ErrorBoundary } from "./error-boundary";
@@ -13,12 +14,12 @@ import { ErrorBoundary } from "./error-boundary";
 // ---------------------------------------------------------------------------
 
 /** A component that throws during render. */
-function CrashOnRender({ message = "Intentional crash" }: { message?: string }) {
+function CrashOnRender({ message = "Intentional crash" }: { message?: string }): React.ReactNode {
   throw new Error(message);
 }
 
 /** A stable component that renders normally. */
-function StableComponent({ text = "Hello" }: { text?: string }) {
+function StableComponent({ text = "Hello" }: { text?: string }): React.ReactNode {
   return <div>{text}</div>;
 }
 

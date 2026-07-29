@@ -9,7 +9,6 @@ import type {
   UpdateType,
   UpdateChannel,
   RolloutStrategy,
-  UpdateStateMachine,
   DownloadStatus,
   InstallStatus,
   UpdateOutcome,

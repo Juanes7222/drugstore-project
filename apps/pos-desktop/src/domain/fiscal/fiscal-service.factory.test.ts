@@ -10,7 +10,7 @@
  * 2. The invoice service receives the same numbering + contingency services.
  * 3. The fiscal scheduler receives the same invoice + contingency services.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock creation functions

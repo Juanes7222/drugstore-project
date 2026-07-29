@@ -24,15 +24,6 @@ const cashierUser: LocalUserInfo = {
   username: "cashier1",
 };
 
-const adminUser: LocalUserInfo = {
-  id: "user_admin",
-  displayName: "Administrador del Sistema",
-  role: RoleType.ADMIN,
-  avatarUrl: null,
-  avatarColor: "#4F46E5",
-  username: "admin",
-};
-
 const defaultProps = {
   user: cashierUser,
   password: "",

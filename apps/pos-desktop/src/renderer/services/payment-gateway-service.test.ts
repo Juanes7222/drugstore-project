@@ -4,7 +4,7 @@
  * Covers reference generation, deterministic approval, and seeded random
  * outcomes via vi.spyOn.
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { createMockPaymentGatewayService } from "./payment-gateway-service.mock";
 
 describe("MockPaymentGatewayService", () => {
@@ -44,7 +44,7 @@ describe("MockPaymentGatewayService", () => {
       const service = createMockPaymentGatewayService({ approveAll: true });
 
       const result = await service.authorize({
-        methodType: "CARD",
+        methodType: "card",
         amountCents: 50000,
       });
 
@@ -55,7 +55,7 @@ describe("MockPaymentGatewayService", () => {
       const service = createMockPaymentGatewayService({ approveAll: true });
 
       const result = await service.authorize({
-        methodType: "CARD",
+        methodType: "card",
         amountCents: 50000,
       });
 
@@ -67,7 +67,7 @@ describe("MockPaymentGatewayService", () => {
       const service = createMockPaymentGatewayService({ approveAll: true });
 
       const result = await service.authorize({
-        methodType: "TRANSFER",
+        methodType: "transfer",
         amountCents: 25000,
       });
 

@@ -17,7 +17,6 @@ import {
   LotNotFoundException,
   ConcurrentStockModificationException,
 } from "./exceptions";
-import { RoleType } from "@pharmacy/shared-types";
 import { PurchaseReturnState, MovementType } from "@pharmacy/database/local";
 
 // ---------------------------------------------------------------------------

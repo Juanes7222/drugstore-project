@@ -12,12 +12,7 @@ import { type FC } from "react";
 // Mock useServiceInit at module level (same strategy as service-context.test.tsx)
 // ---------------------------------------------------------------------------
 
-const mockUseServiceInit = vi.fn<
-  [object?],
-  | { status: "loading" }
-  | { status: "ready"; services: Record<string, unknown> }
-  | { status: "error"; error: Error }
->();
+const mockUseServiceInit = vi.fn() as ReturnType<typeof vi.fn> & ((...args: unknown[]) => { status: string; services?: Record<string, unknown>; error?: Error });
 
 vi.mock("../../hooks/use-service-init", () => ({
   useServiceInit: (...args: unknown[]) => mockUseServiceInit(...args),
@@ -75,8 +70,6 @@ const ValueDisplay: FC<{ hook: () => unknown; testId: string }> = ({
   const value = useHook();
   return <div data-testid={testId}>{value === mockSyncScheduler ? "syncScheduler" : "other"}</div>;
 };
-
-const NopChild: FC = () => <div data-testid="child">child</div>;
 
 // ---------------------------------------------------------------------------
 // Suite

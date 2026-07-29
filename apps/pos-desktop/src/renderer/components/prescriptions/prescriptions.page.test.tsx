@@ -10,7 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
 import { uiSlice } from "@/store/slices/ui-slice";
-import { salesSlice, addItem } from "@/store/slices/sales-slice";
+import { salesSlice } from "@/store/slices/sales-slice";
 import { PrescriptionsPage } from "./prescriptions.page";
 import type { CartItem } from "@/store/slices/sales-types";
 import { SaleType } from "@pharmacy/shared-types";
@@ -45,7 +45,10 @@ const baseCartItem: CartItem = {
   unitPriceCents: 6_200,
   taxPercentage: 19,
   quantity: 2,
-};
+  overrideUnitPriceCents: null,
+  discountPercentage: null,
+  costCents: null,
+} as CartItem;
 
 const createTestStore = (
   pendingItemId: string | null,
@@ -58,7 +61,7 @@ const createTestStore = (
       ui: uiSlice.reducer,
     },
     preloadedState: {
-      sales: { items },
+      sales: { items, selectedClient: null },
       ui: {
         activeScreen: "prescriptions" as const,
         saleCompletionPhase: "idle" as const,

@@ -95,7 +95,7 @@ describe("PrintQueueService", () => {
     service = createPrintQueueService(
       mockPrisma as any,
       resolvePrinterMock as unknown as (jobType: PrintJobType) => Promise<any>,
-      executePrintMock,
+      executePrintMock as unknown as (printerSystemName: string, payloadPath: string, payloadType: PrintPayloadType) => Promise<{ success: boolean; errorMessage?: string; paperOut?: boolean }>,
     );
   });
 

@@ -1,7 +1,7 @@
 /**
  * Tests for the tenant config Zustand vanilla store.
  */
-import { describe, expect, it, beforeEach, vi, afterEach } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import { useTenantConfigStore } from "./tenant-config.store";
 import type { TenantConfig, PresetCode } from "./types";
 import { PRESET_LIST } from "./presets";
@@ -15,14 +15,14 @@ function makeTenantConfig(
 ): TenantConfig {
   return {
     activePresetCode: "BALANCED" as PresetCode,
-    strictness: {},
-    fiscal: {},
-    workflow: {},
+    strictness: {} as any,
+    fiscal: {} as any,
+    workflow: {} as any,
     customCompanyFields: [],
     customStrictnessToggles: [],
     configVersion: 1,
     ...overrides,
-  };
+  } as TenantConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ describe("setConfig", () => {
 
   it("computes effectiveConfig from the config", () => {
     const testConfig = makeTenantConfig({
-      strictness: { stockValidation: "STRICT" },
+      strictness: { stockValidation: "STRICT" } as any,
     });
 
     useTenantConfigStore.getState().setConfig(testConfig);
@@ -145,7 +145,7 @@ describe("setConfig", () => {
 
   it("sets isCustomized to true when overrides exist", () => {
     useTenantConfigStore.getState().setConfig(
-      makeTenantConfig({ strictness: { stockValidation: "OFF" } }),
+      makeTenantConfig({ strictness: { stockValidation: "OFF" } as any }),
     );
 
     expect(useTenantConfigStore.getState().isCustomized).toBe(true);
@@ -220,7 +220,7 @@ describe("clearConfig", () => {
 
   it("resets isCustomized to false", () => {
     useTenantConfigStore.getState().setConfig(
-      makeTenantConfig({ strictness: { stockValidation: "OFF" } }),
+      makeTenantConfig({ strictness: { stockValidation: "OFF" } as any }),
     );
     useTenantConfigStore.getState().clearConfig();
 
@@ -278,7 +278,6 @@ describe("setError", () => {
 describe("persistence partialize", () => {
   it("includes config in partialized state", () => {
     const state = useTenantConfigStore.getState();
-    const partial: Record<string, unknown> = {};
     const persistConfig = {
       config: state.config,
       effectiveConfig: state.effectiveConfig,
@@ -296,19 +295,12 @@ describe("persistence partialize", () => {
 
   it("omits transient state (isLoading, error, isCustomized, overrides)", () => {
     const state = useTenantConfigStore.getState();
-    const partialKeys = [
-      "config",
-      "effectiveConfig",
-      "configVersion",
-      "lastSyncedAt",
-      "presets",
-    ];
     const omitted = ["isLoading", "error", "isCustomized", "overrides"];
 
     // These should be in the full state but not all in persist partial
     // Test that transient fields are NOT in the persist set
     for (const key of omitted) {
-      expect((state as Record<string, unknown>)[key]).toBeDefined();
+      expect((state as unknown as Record<string, unknown>)[key]).toBeDefined();
     }
   });
 });

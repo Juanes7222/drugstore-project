@@ -18,7 +18,6 @@ import {
   Ban,
   TrendingUp,
   HardDrive,
-  CheckCircle2,
 } from "lucide-react";
 import type { QueueCounts } from "../../../domain/sync/sync-metrics.service";
 

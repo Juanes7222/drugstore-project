@@ -24,7 +24,7 @@ export const randomFillSync = (
   size?: number,
 ): Uint8Array => {
   const view = size != null ? buffer.subarray(offset, offset + size) : buffer;
-  crypto.getRandomValues(view);
+  crypto.getRandomValues(view as any);
   return buffer;
 };
 

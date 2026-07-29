@@ -94,7 +94,7 @@ describe("LocalAuditEvent", () => {
 
 describe("LocalAuditWriter", () => {
   let prisma: any;
-  let localAuditLog: ReturnType<typeof vi.fn>;
+  let localAuditLog: any;
   let writer: LocalAuditWriter;
 
   beforeEach(() => {

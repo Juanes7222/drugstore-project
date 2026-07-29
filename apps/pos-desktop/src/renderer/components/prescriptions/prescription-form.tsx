@@ -50,7 +50,6 @@ export const PrescriptionForm: FC<PrescriptionFormProps> = ({
   onBookPageChange,
   error,
   isProcessing,
-  canSubmit,
   isLastItem,
   onSubmit,
   onCancel,

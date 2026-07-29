@@ -19,9 +19,6 @@ function createMockInvoiceService() {
     findById: vi.fn(),
     findBySaleId: vi.fn(),
     listInvoices: vi.fn(),
-    findExpiringWithin: vi.fn(),
-    findExpired: vi.fn(),
-    markInvoiceAsExpired: vi.fn(),
     queueInvoiceForTransmission: vi.fn(),
     pullAndApplyResults: vi.fn(),
   };
@@ -58,8 +55,8 @@ describe("FiscalScheduler", () => {
 
   describe("checkNow", () => {
     it("returns zero counts when nothing is expiring or expired", async () => {
-      mockInvoiceService.findExpiringWithin = vi.fn(async () => []);
-      mockInvoiceService.findExpired = vi.fn(async () => []);
+      mockInvoiceService.findExpiringWithin = vi.fn(async () => []) as any;
+      mockInvoiceService.findExpired = vi.fn(async () => []) as any;
 
       const scheduler = createFiscalScheduler({
         invoiceService: mockInvoiceService as any,
@@ -77,7 +74,7 @@ describe("FiscalScheduler", () => {
       mockInvoiceService.findExpiringWithin = vi.fn(async () => [
         { id: "inv-exp1" },
         { id: "inv-exp2" },
-      ] as any[]);
+      ] as any[]) as any;
       mockInvoiceService.findExpired = vi.fn(async () => []);
 
       const scheduler = createFiscalScheduler({
@@ -100,7 +97,7 @@ describe("FiscalScheduler", () => {
         { id: "inv-expired-1" },
         { id: "inv-expired-2" },
         { id: "inv-expired-3" },
-      ] as any[]);
+      ] as any[]) as any;
 
       const scheduler = createFiscalScheduler({
         invoiceService: mockInvoiceService as any,
@@ -118,10 +115,10 @@ describe("FiscalScheduler", () => {
     });
 
     it("adds warning for expired invoices", async () => {
-      mockInvoiceService.findExpiringWithin = vi.fn(async () => []);
+      mockInvoiceService.findExpiringWithin = vi.fn(async () => []) as any;
       mockInvoiceService.findExpired = vi.fn(async () => [
         { id: "inv-expired-1" },
-      ] as any[]);
+      ] as any[]) as any;
 
       const scheduler = createFiscalScheduler({
         invoiceService: mockInvoiceService as any,

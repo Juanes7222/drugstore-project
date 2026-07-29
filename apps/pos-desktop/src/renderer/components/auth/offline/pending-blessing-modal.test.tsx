@@ -215,8 +215,6 @@ describe("PendingBlessingModal", () => {
   });
 
   it("shows the close button when all sessions are processed and rejected dismissed", async () => {
-    const user = userEvent.setup();
-
     // All sessions resolved: one blessed (no pending counts), one rejected
     mockZustandSessions.push(
       makeSession({

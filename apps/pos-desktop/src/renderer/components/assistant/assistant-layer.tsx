@@ -171,7 +171,7 @@ export const AssistantLayer: FC = () => {
             isOnline: isUserOnline,
             lastConfirmedSaleId: null,
             lastConfirmedSaleNumber: null,
-          };
+          } as Parameters<typeof engine.evaluate>[0];
         };
 
         engine.evaluate(buildAppState());

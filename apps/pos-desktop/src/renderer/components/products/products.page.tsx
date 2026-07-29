@@ -84,7 +84,7 @@ export const ProductsPage: FC = () => {
         });
         if (!cancelled) {
           setProducts(
-            (result.items as RawProduct[]).map(mapToDisplayProduct),
+            (result.items as unknown as RawProduct[]).map(mapToDisplayProduct),
           );
         }
       } catch {
@@ -272,7 +272,7 @@ export const ProductsPage: FC = () => {
           limit: 500,
         });
         setProducts(
-          (result.items as RawProduct[]).map(mapToDisplayProduct),
+          (result.items as unknown as RawProduct[]).map(mapToDisplayProduct),
         );
 
         setIsProcessing(false);

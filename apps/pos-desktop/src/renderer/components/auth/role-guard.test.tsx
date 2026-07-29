@@ -3,7 +3,7 @@
  *
  * Covers: session check, role matching, fallback rendering, HOC wrapper.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { RoleGuard, withRoleGuard } from "./role-guard";
 import { RoleType } from "@pharmacy/shared-types";

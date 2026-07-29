@@ -3,7 +3,7 @@
  *
  * Covers: scanning state, discovered printer list, network scan toggle.
  */
-import { describe, expect, it, vi, type Mock } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SetupWizardStepDiscovery } from "./setup-wizard-step-discovery";

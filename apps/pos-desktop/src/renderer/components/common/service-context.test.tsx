@@ -11,24 +11,18 @@
  * 4. Convenience hooks throw when called outside a provider.
  * 5. Convenience hooks return the correct service inside a provider.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { type FC } from "react";
 
 // ---------------------------------------------------------------------------
 // Mock useServiceInit
 // ---------------------------------------------------------------------------
 
-const mockUseServiceInit = vi.fn<
-  [object?],
-  | { status: "loading" }
-  | { status: "ready"; services: Record<string, unknown> }
-  | { status: "error"; error: Error }
->();
+const mockUseServiceInit = vi.fn() as ReturnType<typeof vi.fn> & ((arg?: object) => { status: string; services?: Record<string, unknown>; error?: Error });
 
 vi.mock("../../hooks/use-service-init", () => ({
-  useServiceInit: (...args: unknown[]) => mockUseServiceInit(...args),
+  useServiceInit: (...args: any[]) => mockUseServiceInit(...args),
   initializeServices: vi.fn(),
 }));
 
@@ -229,7 +223,7 @@ describe("convenience hooks", () => {
       { name: "useUpdateService", hook: useUpdateService, expectedService: "updateService" },
     ];
 
-    HOOK_TESTS.forEach(({ name, hook, expectedService }) => {
+    HOOK_TESTS.forEach(({ name, hook }) => {
       it(`${name} returns the correct service`, () => {
         render(
           <ServiceProvider>

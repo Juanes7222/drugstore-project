@@ -5,14 +5,14 @@
  * PP-07 (add method), PP-10 (prescription interception),
  * PP-11 (completing state).
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { Provider } from "react-redux";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { configureStore } from "@reduxjs/toolkit";
 import { PaymentProcessing } from "./payment-processing";
 import { addItem, salesSlice } from "@/store/slices/sales-slice";
 import { paymentSlice, initializePayment, setCashReceived } from "@/store/slices/payment-slice";
-import { uiSlice, setPrescriptionFlow } from "@/store/slices/ui-slice";
+import { uiSlice } from "@/store/slices/ui-slice";
 import { PaymentGatewayService } from "@/services/payment-gateway-service";
 import { SaleType } from "@pharmacy/shared-types";
 import type { CartItem } from "@/store/slices/sales-types";
@@ -38,6 +38,7 @@ const baseCartItem = {
   quantity: 1,
   overrideUnitPriceCents: null,
   discountPercentage: null,
+  costCents: null,
 };
 
 const createTestStore = (totalCents: number, extraItems: CartItem[] = []) => {
@@ -314,15 +315,15 @@ describe("PaymentProcessing", () => {
     );
     // payload.pendingSaleId should be a UUID, and incompleteItemIds should contain line-2.
     const setFlowCall = dispatch.mock.calls.find(
-      ([action]: [unknown]) =>
-        typeof action === "object" &&
-        action !== null &&
-        "type" in action &&
-        (action as Record<string, unknown>).type === "ui/setPrescriptionFlow",
+      (args: unknown[]) =>
+        typeof args[0] === "object" &&
+        args[0] !== null &&
+        "type" in args[0] &&
+        (args[0] as Record<string, unknown>).type === "ui/setPrescriptionFlow",
     );
     expect(setFlowCall).toBeDefined();
-    const payload = (setFlowCall as [{ payload: { pendingSaleId: string; incompleteItemIds: string[] } }])[0].payload;
-    expect(payload.incompleteItemIds).toEqual(["line-2"]);
+    const action = (setFlowCall as unknown[])[0] as { payload: { pendingSaleId: string; incompleteItemIds: string[] } };
+    expect(action.payload.incompleteItemIds).toEqual(["line-2"]);
   });
 
   it("does not intercept when cart has no prescription-required items", () => {

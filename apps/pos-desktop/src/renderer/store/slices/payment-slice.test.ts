@@ -38,6 +38,7 @@ const baseCartItem = {
   quantity: 1,
   overrideUnitPriceCents: null,
   discountPercentage: null,
+  costCents: null,
 };
 
 interface TestRootState {

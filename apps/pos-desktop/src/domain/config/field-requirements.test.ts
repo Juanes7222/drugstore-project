@@ -18,9 +18,7 @@ import {
   isCustomerDisplayRequired,
   getPrescriptionExpiryDays,
 } from "./field-requirements";
-import type { StrictnessConfig, EffectiveConfig } from "./types";
-import { DEFAULT_PURCHASES } from "./defaults";
-
+import type { StrictnessConfig } from "./types";
 // ---------------------------------------------------------------------------
 // Factories
 // ---------------------------------------------------------------------------
@@ -41,21 +39,6 @@ function makeStrictness(
     customerDisplayRequired: false,
     prescriptionExpiryDays: 180,
     ...overrides,
-  };
-}
-
-function makeEffectiveConfig(
-  overrides?: Partial<StrictnessConfig>,
-): EffectiveConfig {
-  return {
-    strictness: makeStrictness(overrides),
-    fiscal: {} as any,
-    workflow: {} as any,
-    purchases: { ...DEFAULT_PURCHASES },
-    customCompanyFields: [],
-    customStrictnessToggles: [],
-    activePresetCode: "BALANCED",
-    configVersion: 1,
   };
 }
 

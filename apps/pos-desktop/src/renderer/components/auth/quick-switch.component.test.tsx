@@ -5,7 +5,7 @@
  * CASHIER/MANAGER, password input for OWNER, auth service call,
  * session update, outside click close.
  */
-import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QuickSwitch } from "./quick-switch.component";
 import { RoleType } from "@pharmacy/shared-types";

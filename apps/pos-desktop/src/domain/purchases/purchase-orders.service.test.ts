@@ -13,7 +13,6 @@ import {
   PurchaseOrderNotDraftException,
   PurchaseOrderNotConfirmableException,
 } from "./exceptions";
-import { RoleType } from "@pharmacy/shared-types";
 import { PurchaseOrderState } from "@pharmacy/database/local";
 
 // ---------------------------------------------------------------------------

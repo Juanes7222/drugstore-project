@@ -59,6 +59,7 @@ export const Avatar: FC<AvatarProps> = ({
   className = '',
 }) => {
   const safeName = displayName ?? '';
+  const accessibleLabel = displayName ?? undefined;
   const bgColor = avatarColor || (userId ? getColorFromId(userId) : '#6366F1');
   const initials = getInitials(safeName);
 
@@ -66,7 +67,7 @@ export const Avatar: FC<AvatarProps> = ({
     return (
       <img
         src={avatarUrl}
-        alt={displayName}
+        alt={accessibleLabel}
         className={className}
         style={{
           width: size,
@@ -82,7 +83,7 @@ export const Avatar: FC<AvatarProps> = ({
     <div
       className={className}
       role="img"
-      aria-label={displayName}
+      aria-label={accessibleLabel}
       style={{
         width: size,
         height: size,

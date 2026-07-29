@@ -6,39 +6,14 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PrismaClient, SaleOperationalState } from '@pharmacy/database/local';
-import {
-  createSalesHistoryService,
-  type SaleHistoryFilters,
-  type SaleHistoryListItem,
-  type SaleHistoryDetail,
-} from './sales-history.service';
-import type { LocalAdjustmentService } from './local-adjustment.service';
+import { createSalesHistoryService } from './sales-history.service';
 import type {
   OperationalInvoiceView,
   AdjustmentHistoryEntry,
-} from './local-adjustment.types';
-import type { InvoiceModel } from './fiscal-types';
-
+} from '../fiscal/local-adjustment.types';
 // ---------------------------------------------------------------------------
 // Factories
 // ---------------------------------------------------------------------------
-
-const createSaleListItem = (
-  overrides: Partial<SaleHistoryListItem> = {},
-): SaleHistoryListItem => ({
-  saleId: 'sale-1',
-  localNumber: '100',
-  confirmedAt: '2026-07-20T10:00:00.000Z',
-  totalAmount: '119.00',
-  clientName: 'Juan Pérez',
-  clientIdentificationNumber: '123456',
-  invoiceId: 'inv-1',
-  invoiceNumber: 'FE0001',
-  invoiceStatus: 'TRANSMITTED_AUTHORIZED',
-  invoiceType: 'ELECTRONIC_INVOICE',
-  hasAdjustments: false,
-  ...overrides,
-});
 
 const createSaleRow = (overrides: Record<string, unknown> = {}) => ({
   id: 'sale-1',
@@ -220,7 +195,7 @@ function createMockPrisma(): MockPrisma {
   };
 }
 
-function createMockAdjustmentService(): LocalAdjustmentService {
+function createMockAdjustmentService() {
   return {
     applyAdjustment: vi.fn(),
     reverseAdjustment: vi.fn(),
@@ -240,7 +215,7 @@ function createMockAdjustmentService(): LocalAdjustmentService {
 
 describe('SalesHistoryService', () => {
   let prisma: MockPrisma;
-  let adjustmentService: LocalAdjustmentService;
+  let adjustmentService: ReturnType<typeof createMockAdjustmentService>;
   let service: ReturnType<typeof createSalesHistoryService>;
 
   beforeEach(() => {

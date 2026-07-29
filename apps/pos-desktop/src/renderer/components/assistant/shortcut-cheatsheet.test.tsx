@@ -7,7 +7,6 @@
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { ShortcutCheatsheet } from "./shortcut-cheatsheet";
 
 // ---------------------------------------------------------------------------
@@ -44,19 +43,19 @@ vi.mock("../../hooks/use-shortcut-cheatsheet", () => ({
 // ---------------------------------------------------------------------------
 
 vi.mock("./shortcut-header", () => ({
-  ShortcutHeader: ({ onClose }: Record<string, unknown>) => (
+  ShortcutHeader: () => (
     <div data-testid="shortcut-header" />
   ),
 }));
 
 vi.mock("./shortcut-search-input", () => ({
-  ShortcutSearchInput: (props: Record<string, unknown>) => (
+  ShortcutSearchInput: () => (
     <div data-testid="shortcut-search-input" />
   ),
 }));
 
 vi.mock("./shortcut-group", () => ({
-  ShortcutGroup: (props: Record<string, unknown>) => (
+  ShortcutGroup: () => (
     <div data-testid="shortcut-group" />
   ),
 }));
@@ -66,12 +65,10 @@ vi.mock("./shortcut-footer", () => ({
 }));
 
 vi.mock("./shortcut-states", () => ({
-  ShortcutConflictWarning: ({
-    commandDescription,
-  }: Record<string, unknown>) => (
+  ShortcutConflictWarning: () => (
     <div data-testid="shortcut-conflict-warning" />
   ),
-  ShortcutEmptySearch: ({ query }: Record<string, unknown>) => (
+  ShortcutEmptySearch: () => (
     <div data-testid="shortcut-empty-search" />
   ),
 }));
@@ -91,7 +88,7 @@ describe("ShortcutCheatsheet", () => {
   it("does not render children when cheatsheet is closed", () => {
     mockHookReturn.cheatsheetOpen = false;
 
-    const { container } = render(<ShortcutCheatsheet />);
+    render(<ShortcutCheatsheet />);
 
     expect(
       screen.queryByTestId("shortcut-header"),
@@ -112,7 +109,7 @@ describe("ShortcutCheatsheet", () => {
           { id: "s1", keys: "Ctrl+N", description: "Nueva venta" },
         ],
       },
-    ];
+    ] as any;
 
     render(<ShortcutCheatsheet />);
 
@@ -128,7 +125,7 @@ describe("ShortcutCheatsheet", () => {
 
   it("renders conflict warning when conflictDescription is set", () => {
     mockHookReturn.cheatsheetOpen = true;
-    mockHookReturn.conflictDescription = "Ctrl+S ya está asignado";
+    mockHookReturn.conflictDescription = "Ctrl+S ya está asignado" as any;
 
     render(<ShortcutCheatsheet />);
 
@@ -153,7 +150,7 @@ describe("ShortcutCheatsheet", () => {
   it("renders empty search state when search has no results", () => {
     mockHookReturn.cheatsheetOpen = true;
     mockHookReturn.searchQuery = "unknown";
-    mockHookReturn.filteredBindings = [];
+    mockHookReturn.filteredBindings = [] as any;
 
     render(<ShortcutCheatsheet />);
 
@@ -178,7 +175,7 @@ describe("ShortcutCheatsheet", () => {
     mockHookReturn.searchQuery = "Venta";
     mockHookReturn.filteredBindings = [
       { id: "s1", keys: "Ctrl+N", description: "Nueva venta" },
-    ];
+    ] as any;
 
     render(<ShortcutCheatsheet />);
 
@@ -191,7 +188,7 @@ describe("ShortcutCheatsheet", () => {
 
   it("disables search input when capturing key binding", () => {
     mockHookReturn.cheatsheetOpen = true;
-    mockHookReturn.capturingId = "s1";
+    mockHookReturn.capturingId = "s1" as any;
 
     render(<ShortcutCheatsheet />);
 

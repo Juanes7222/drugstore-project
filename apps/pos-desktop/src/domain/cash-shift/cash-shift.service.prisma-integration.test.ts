@@ -176,7 +176,6 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
     it("throws ShiftAlreadyOpenException when a shift is already open for the workstation", async () => {
       // Create two services that share the SAME workstation
       const session1 = nextSession();
-      const ws = session1.workstationId;
       auth.requireRole.mockReturnValue(session1);
       const svc1 = createCashShiftService(prisma, auth as any);
       await svc1.openShift({ openingBalance: new Prisma.Decimal("100000.00") });
@@ -200,7 +199,6 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
     });
 
     it("persists the shift in the database", async () => {
-      const service = makeService();
       const session = nextSession();
       auth.requireRole.mockReturnValue(session);
       const localService = createCashShiftService(prisma, auth as any);
@@ -235,8 +233,8 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
         denominationsBreakdown: { "50000": 5, "20000": 10, "1000": 50 },
       });
 
-      expect(count.countType).toBe("PARTIAL");
-      expect(Number(count.difference)).toBe(2000);
+      expect((count as any).countType).toBe("PARTIAL");
+      expect(Number((count as any).difference)).toBe(2000);
     });
 
     it("registers a CLOSING cash count", async () => {
@@ -252,8 +250,8 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
         declaredAmount: new Prisma.Decimal("500000.00"),
       });
 
-      expect(count.countType).toBe("CLOSING");
-      expect(Number(count.difference)).toBe(0);
+      expect((count as any).countType).toBe("CLOSING");
+      expect(Number((count as any).difference)).toBe(0);
     });
 
     it("throws ShiftNotOpenException when shift is not OPEN", async () => {
@@ -360,11 +358,11 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
         closingNotes: "Turno cerrado sin novedades",
       });
 
-      expect(result.state).toBe("CLOSED");
-      expect(result.closingNotes).toBe("Turno cerrado sin novedades");
-      expect(Number(result.expectedClosingAmount)).toBe(650000);
-      expect(Number(result.actualClosingAmount)).toBe(652000);
-      expect(Number(result.closingDifference)).toBe(2000);
+      expect((result as any).state).toBe("CLOSED");
+      expect((result as any).closingNotes).toBe("Turno cerrado sin novedades");
+      expect(Number((result as any).expectedClosingAmount)).toBe(650000);
+      expect(Number((result as any).actualClosingAmount)).toBe(652000);
+      expect(Number((result as any).closingDifference)).toBe(2000);
     });
 
     it("throws ShiftNotOpenException when shift is already closed", async () => {
@@ -393,7 +391,7 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
       });
 
       const result = await service.closeShift(shift.id, {});
-      expect(result.state).toBe("CLOSED");
+      expect((result as any).state).toBe("CLOSED");
     });
   });
 

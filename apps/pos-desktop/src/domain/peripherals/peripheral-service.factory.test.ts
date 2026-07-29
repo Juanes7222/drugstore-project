@@ -5,7 +5,7 @@
  * Both peripherals are physically attached to a printer's pass-through port,
  * so they receive the same printerConfigService dependency.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock service objects
@@ -59,6 +59,14 @@ describe("createPeripheralServices", () => {
     getPrinterForJobType: vi.fn(),
     resolvePrinterWithFallback: vi.fn(),
     assignJobsToPrinter: vi.fn(),
+    updatePrinterAssignments: vi.fn(),
+    setFallbackChain: vi.fn(),
+    updateStatus: vi.fn(),
+    hasAnyConfigured: vi.fn(),
+    findBySystemName: vi.fn(),
+    setCashDrawerConfig: vi.fn(),
+    setCustomerDisplayConfig: vi.fn(),
+    setReceiptTemplate: vi.fn(),
   };
 
   beforeEach(() => {
@@ -66,20 +74,20 @@ describe("createPeripheralServices", () => {
   });
 
   it("returns an object with cashDrawer and customerDisplay defined", () => {
-    const services = createPeripheralServices(mockPrinterConfigService);
+    const services = createPeripheralServices(mockPrinterConfigService as unknown as import("../printing/printer-config.service").PrinterConfigService);
 
     expect(services.cashDrawer).toBe(mockCashDrawer);
     expect(services.customerDisplay).toBe(mockCustomerDisplay);
   });
 
   it("passes printerConfigService to cashDrawer service", () => {
-    createPeripheralServices(mockPrinterConfigService);
+    createPeripheralServices(mockPrinterConfigService as unknown as import("../printing/printer-config.service").PrinterConfigService);
 
     expect(createCashDrawerService).toHaveBeenCalledWith(mockPrinterConfigService);
   });
 
   it("passes printerConfigService to customerDisplay service", () => {
-    createPeripheralServices(mockPrinterConfigService);
+    createPeripheralServices(mockPrinterConfigService as unknown as import("../printing/printer-config.service").PrinterConfigService);
 
     expect(createCustomerDisplayService).toHaveBeenCalledWith(mockPrinterConfigService);
   });

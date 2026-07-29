@@ -191,11 +191,9 @@ import { createFiscalServices } from "../../domain/fiscal/fiscal-service.factory
 import { createPrintingServices } from "../../domain/printing/printing-service.factory";
 import { createPeripheralServices } from "../../domain/peripherals/peripheral-service.factory";
 import { createDomainServices } from "../../domain/domain-services/domain-service.factory";
-import { createBackupService } from "../../domain/backup/backup.service";
 import { createUpdateService } from "../../domain/updates/update.service";
 import { createAuthService } from "../../domain/auth/auth.service";
 import { getLocalDatabase } from "../../infrastructure/local-database";
-import { useUpdateStore } from "../../domain/updates/update.store";
 
 // =========================================================================
 // Shared test data
@@ -234,7 +232,7 @@ describe("initializeServices", () => {
   describe("happy path", () => {
     it("returns all 17 services defined", async () => {
       const services = await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         apiBaseUrl: "http://localhost:3000",
         checkTechKey: () => false,
         currentVersion: "1.0.0",
@@ -267,7 +265,7 @@ describe("initializeServices", () => {
 
   describe("parameter injection", () => {
     it("calls getLocalDatabase when injected", async () => {
-      const mockGetDb = vi.fn().mockResolvedValue({ prisma: mockPrisma });
+      const mockGetDb = vi.fn().mockResolvedValue({ client: {} as any, prisma: mockPrisma });
 
       await initializeServices({
         getLocalDatabase: mockGetDb,
@@ -285,7 +283,7 @@ describe("initializeServices", () => {
       const discPrinters = vi.fn().mockResolvedValue([]);
 
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: mockGetSession,
         executePrint: execPrint,
@@ -308,7 +306,7 @@ describe("initializeServices", () => {
       }));
 
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession,
         executePrint: mockExecutePrint,
@@ -325,7 +323,7 @@ describe("initializeServices", () => {
 
       await expect(
         initializeServices({
-          getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+          getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
           checkTechKey,
           getSession: mockGetSession,
           executePrint: mockExecutePrint,
@@ -339,7 +337,7 @@ describe("initializeServices", () => {
       const nullSession = vi.fn(() => ({ session: null }));
 
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: nullSession,
         executePrint: mockExecutePrint,
@@ -358,7 +356,7 @@ describe("initializeServices", () => {
       }));
 
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: sessionWithWs,
         workstationId: "ws-override",
@@ -378,7 +376,7 @@ describe("initializeServices", () => {
       }));
 
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: sessionWithWs,
         executePrint: mockExecutePrint,
@@ -395,7 +393,7 @@ describe("initializeServices", () => {
   describe("factory wiring", () => {
     it("passes workstationId to fiscal factory", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: () => ({
           session: { userId: "u1", workstationId: "ws-xyz", accessToken: "tok" },
@@ -411,7 +409,7 @@ describe("initializeServices", () => {
 
     it("creates peripheral services from printerConfig", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: mockGetSession,
         executePrint: mockExecutePrint,
@@ -423,7 +421,7 @@ describe("initializeServices", () => {
 
     it("creates auth service with the correct base URL", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         apiBaseUrl: "http://custom.api:4000",
         checkTechKey: () => false,
         getSession: mockGetSession,
@@ -438,7 +436,7 @@ describe("initializeServices", () => {
 
     it("creates domain services with auth, invoiceService, and printRouter", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: mockGetSession,
         executePrint: mockExecutePrint,
@@ -458,7 +456,7 @@ describe("initializeServices", () => {
   describe("side effects", () => {
     it("hydrates the contingency store", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: mockGetSession,
         executePrint: mockExecutePrint,
@@ -470,7 +468,7 @@ describe("initializeServices", () => {
 
     it("starts the printer health check loop", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: mockGetSession,
         executePrint: mockExecutePrint,
@@ -482,7 +480,7 @@ describe("initializeServices", () => {
 
     it("starts telemetry flush on the update service", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         getSession: mockGetSession,
         executePrint: mockExecutePrint,
@@ -496,7 +494,7 @@ describe("initializeServices", () => {
   describe("update service creation", () => {
     it("passes prisma, version, workstationId to createUpdateService", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         checkTechKey: () => false,
         currentVersion: "2.0.0",
         getSession: mockGetSession,
@@ -519,7 +517,7 @@ describe("initializeServices", () => {
     it("throws descriptive error when checkTechKey returns true", async () => {
       await expect(
         initializeServices({
-          getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+          getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
           checkTechKey: () => true,
           getSession: mockGetSession,
           executePrint: mockExecutePrint,
@@ -538,7 +536,7 @@ describe("useServiceInit", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Set up default getLocalDatabase mock so the hook can resolve.
-    vi.mocked(getLocalDatabase).mockResolvedValue({ prisma: mockPrisma });
+    vi.mocked(getLocalDatabase).mockResolvedValue({ client: {} as any, prisma: mockPrisma });
   });
 
   describe("state transitions", () => {
@@ -554,7 +552,7 @@ describe("useServiceInit", () => {
     });
 
     it("transitions to ready when initialization succeeds", async () => {
-      vi.mocked(getLocalDatabase).mockResolvedValue({ prisma: mockPrisma });
+      vi.mocked(getLocalDatabase).mockResolvedValue({ client: {} as any, prisma: mockPrisma });
 
       const { result } = renderHook(() => useServiceInit());
 
@@ -613,7 +611,7 @@ describe("useServiceInit", () => {
       unmount();
 
       // Now resolve the promise
-      resolvePromise!({ prisma: mockPrisma });
+      resolvePromise!({ client: {} as any, prisma: mockPrisma });
 
       // Wait a tick then verify the state stayed at loading
       await new Promise((r) => setTimeout(r, 10));

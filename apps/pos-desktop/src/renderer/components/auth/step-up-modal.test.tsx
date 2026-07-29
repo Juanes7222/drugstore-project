@@ -33,7 +33,13 @@ const { mockAuthService } = vi.hoisted(() => ({
     listUsers: vi.fn(),
     getPendingStepUpRequests: vi.fn(),
     getAuditLogs: vi.fn(),
-  } as AuthService,
+    disableUser: vi.fn(),
+    enableUser: vi.fn(),
+    unlockUser: vi.fn(),
+    resetUserPin: vi.fn(),
+    updateUser: vi.fn(),
+    deleteUser: vi.fn(),
+  } as unknown as AuthService,
 }));
 
 vi.mock("@infra/config", () => ({

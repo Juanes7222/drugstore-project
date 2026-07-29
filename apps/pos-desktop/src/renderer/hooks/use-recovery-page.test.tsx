@@ -84,12 +84,15 @@ const createBackup = (overrides: Partial<BackupMetadata> = {}): BackupMetadata =
   sha256: 'abc123',
   reason: 'MANUAL',
   containsUnpushedOperations: false,
+  permanentFailureCount: 0,
+  discardedCount: 0,
   pendingCount: 3,
   failedCount: 0,
   maxClientSequence: 42,
   note: null,
   clockSkewSeconds: null,
   status: 'HEALTHY',
+  uploadedAt: null,
   ...overrides,
 });
 

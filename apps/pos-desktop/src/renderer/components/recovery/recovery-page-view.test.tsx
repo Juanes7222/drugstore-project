@@ -20,6 +20,17 @@ const createBackup = (
   overrides: Partial<BackupViewModel> = {},
 ): BackupViewModel => ({
   id: "backup-1",
+  workstationId: "ws-1",
+  appVersion: "1.0.0",
+  dbSchemaVersion: 1,
+  sha256: "abc",
+  containsUnpushedOperations: false,
+  permanentFailureCount: 0,
+  discardedCount: 0,
+  maxClientSequence: 0,
+  note: null,
+  clockSkewSeconds: null,
+  uploadedAt: null,
   createdAt: "2026-07-13T08:00:00.000Z",
   reason: "SHIFT_CLOSE",
   sizeBytes: 1048576,
@@ -311,8 +322,12 @@ describe("RecoveryPageView", () => {
 
   it("shows verification report in restore modal", () => {
     const verifyReport: VerificationReport = {
+      id: "v-1",
       passed: true,
-      error: null,
+      hashMatched: true,
+      integrityCheckPassed: true,
+      tableCounts: {},
+      error: undefined,
     };
     render(
       <RecoveryPageView

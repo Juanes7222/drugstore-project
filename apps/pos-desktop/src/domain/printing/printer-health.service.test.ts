@@ -22,12 +22,8 @@ describe("PrinterHealthService", () => {
   let service: PrinterHealthService;
   let mockPrinterConfigService: Partial<PrinterConfigService>;
   let mockPrintQueueService: Partial<PrintQueueService>;
-  let isOnline: () => boolean;
-
   beforeEach(() => {
     vi.clearAllMocks();
-
-    isOnline = vi.fn().mockReturnValue(true);
 
     mockPrinterConfigService = {
       listAll: vi.fn().mockResolvedValue([]),
@@ -41,7 +37,6 @@ describe("PrinterHealthService", () => {
     service = createPrinterHealthService(
       mockPrinterConfigService as PrinterConfigService,
       mockPrintQueueService as PrintQueueService,
-      isOnline,
     );
   });
 

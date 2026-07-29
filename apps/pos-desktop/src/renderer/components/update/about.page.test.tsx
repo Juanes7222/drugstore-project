@@ -13,7 +13,7 @@ import "@/i18n";
 // variables they reference must be defined via vi.hoisted().
 // ---------------------------------------------------------------------------
 
-const { createStoreState, mockStoreStateRef, mockUseUpdateStore } =
+const { mockStoreStateRef, mockUseUpdateStore } =
   vi.hoisted(() => {
     const updateAndPersistFn = vi.fn();
     const dismissVersionFn = vi.fn();

@@ -13,7 +13,6 @@ import { ForgotPasswordPage } from "./forgot-password.page";
 // ---------------------------------------------------------------------------
 
 const dispatch = vi.fn();
-const mockForgotPassword = vi.fn();
 
 const { mockAuthService } = vi.hoisted(() => ({
   mockAuthService: {

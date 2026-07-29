@@ -4,7 +4,7 @@
  * Covers: step navigation, next/back/finish/cancel actions.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SetupWizardPage } from "./setup-wizard.page";
 
@@ -27,30 +27,6 @@ vi.mock("../common/service-context", () => ({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Checks that the current step indicator is visible, then clicks the next
- * button to advance.
- */
-async function advanceToStep(
-  stepNumber: number,
-  nextButtonText: string,
-): Promise<void> {
-  // Wait for step indicator to render
-  await waitFor(() => {
-    const indicators = document.querySelectorAll(
-      ".flex.items-center.gap-2.border-b .flex.items-center.gap-1",
-    );
-    // The current step should have font-bold
-  });
-
-  if (nextButtonText) {
-    const nextButton = screen.getByRole("button", {
-      name: nextButtonText,
-    });
-    await userEvent.click(nextButton);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Suite

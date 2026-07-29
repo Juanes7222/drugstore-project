@@ -105,7 +105,7 @@ vi.mock("./help-viewer", () => ({
 describe("AssistantLayer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSessionStore.session = null;
+    mockSessionStore.session = null as any;
   });
 
   // ── Render all children ──────────────────────────────────────────────
@@ -178,7 +178,7 @@ describe("AssistantLayer", () => {
   // ── Session role ─────────────────────────────────────────────────────
 
   it("handles null session gracefully", () => {
-    mockSessionStore.session = null;
+    mockSessionStore.session = null as any;
 
     render(<AssistantLayer />);
 
@@ -206,7 +206,7 @@ describe("AssistantLayer", () => {
       avatarUrl: null,
       avatarColor: null,
       mustChangePassword: false,
-    };
+    } as any;
 
     render(<AssistantLayer />);
 

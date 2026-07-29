@@ -328,7 +328,7 @@ describe("SyncScheduler", () => {
 
       // Verify no exchange was attempted — only /auth/refresh was called.
       const exchangeCalls = (mockFetch as ReturnType<typeof vi.fn>).mock.calls.filter(
-        ([url]: [string]) => typeof url === "string" && url.includes("/auth/token/exchange"),
+        (args: unknown[]) => typeof args[0] === "string" && (args[0] as string).includes("/auth/token/exchange"),
       );
       expect(exchangeCalls).toHaveLength(0);
 

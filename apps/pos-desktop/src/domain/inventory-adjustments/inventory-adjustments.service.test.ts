@@ -4,7 +4,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { InventoryAdjustmentsService, createInventoryAdjustmentsService, type CreateAdjustmentInput } from "./inventory-adjustments.service";
 import { AdjustmentNotFoundException, AdjustmentNotInDraftException, NoLotsForProductException, AdjustmentExceedsAvailableStockException, AdjustmentLotConflictException } from "./exceptions";
-import { RoleType } from "@pharmacy/shared-types";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -144,7 +143,7 @@ describe("InventoryAdjustmentsService", () => {
 
       const result = await service.create(validInput);
 
-      expect(result.state).toBe("DRAFT");
+      expect((result as any).state).toBe("DRAFT");
       expect(auth.requireRole).toHaveBeenCalledWith("INVENTORY_ASSISTANT", "ADMIN");
     });
 
@@ -211,7 +210,7 @@ describe("InventoryAdjustmentsService", () => {
 
       const result = await service.apply("adj-1", validInput);
 
-      expect(result.state).toBe("APPLIED");
+      expect((result as any).state).toBe("APPLIED");
       expect(tx.lot.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: "lot-1", version: 3, productId: "prod-1" },
@@ -370,7 +369,7 @@ describe("InventoryAdjustmentsService", () => {
         items: [{ productId: "prod-1", quantity: -5, lotId: "lot-1" }],
       });
 
-      expect(result.state).toBe("APPLIED");
+      expect((result as any).state).toBe("APPLIED");
       expect(tx.lot.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: "lot-1", version: 1 },
@@ -429,7 +428,7 @@ describe("InventoryAdjustmentsService", () => {
         items: [{ productId: "prod-1", quantity: -25 }],
       });
 
-      expect(result.state).toBe("APPLIED");
+      expect((result as any).state).toBe("APPLIED");
       // First lot should be fully consumed (10), second lot partially (15)
       expect(tx.lot.updateMany).toHaveBeenCalledTimes(2);
       expect(tx.inventoryMovement.create).toHaveBeenCalledTimes(2);

@@ -397,7 +397,7 @@ describe("useLoginPage", () => {
 
   describe("session redirect", () => {
     it("dispatches setActiveScreen('sales') when session becomes non-null", async () => {
-      const { result, rerender } = renderHook(() => useLoginPage());
+      const { rerender } = renderHook(() => useLoginPage());
 
       // Initially no dispatch
       expect(dispatch).not.toHaveBeenCalled();

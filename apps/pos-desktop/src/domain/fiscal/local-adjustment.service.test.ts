@@ -15,13 +15,9 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createLocalAdjustmentService } from './local-adjustment.service';
-import type { AdjustmentType } from './local-adjustment.types';
 import {
-  AdjustmentAuthorizationException,
   AdjustmentReasonTooShortException,
   AdjustmentNotAllowedForStatusException,
-  AdjustmentConflictException,
-  AdjustmentNotFoundException,
   AdjustmentAlreadyReversedException,
 } from './local-adjustment.exceptions';
 import { InsufficientRoleException } from '../auth/exceptions';
@@ -92,12 +88,6 @@ function makeFakeInvoice(overrides?: Record<string, unknown>): Record<string, un
 /**
  * Helper to create a mock transaction client that wraps the same store.
  */
-function createMockTransaction(store: Store) {
-  return {
-    invoiceLocalAdjustment: createMockAdjustmentMethods(store),
-  };
-}
-
 /**
  * Helper to create the mock invoiceLocalAdjustment methods.
  */
@@ -144,13 +134,13 @@ function createMockAdjustmentMethods(store: Store) {
     findMany: async (args?: { where?: Record<string, unknown>; orderBy?: Record<string, string> }) => {
       let results = Array.from(store.adjustments.values());
       if (args?.where?.invoiceId) {
-        results = results.filter((a) => a.invoiceId === args.where.invoiceId);
+        results = results.filter((a) => a.invoiceId === (args as any).where.invoiceId);
       }
       if (args?.where?.createdAt) {
         const gte = (args.where.createdAt as Record<string, unknown>)?.gte as Date | undefined;
         const lte = (args.where.createdAt as Record<string, unknown>)?.lte as Date | undefined;
-        if (gte) results = results.filter((a) => a.createdAt >= gte);
-        if (lte) results = results.filter((a) => a.createdAt <= lte);
+        if (gte) results = results.filter((a) => (a as any).createdAt >= gte);
+        if (lte) results = results.filter((a) => (a as any).createdAt <= lte);
       }
       if (args?.orderBy?.createdAt === 'asc') {
         results.sort((a, b) => (a.createdAt as Date).getTime() - (b.createdAt as Date).getTime());
@@ -160,7 +150,7 @@ function createMockAdjustmentMethods(store: Store) {
     count: async (args?: { where?: Record<string, unknown> }) => {
       let results = Array.from(store.adjustments.values());
       if (args?.where?.invoiceId) {
-        results = results.filter((a) => a.invoiceId === args.where.invoiceId);
+        results = results.filter((a) => a.invoiceId === (args as any).where.invoiceId);
       }
       // The service now counts ALL adjustments (monotonically increasing version),
       // so we don't filter by replacedByAdjustmentId or adjustmentType.
@@ -200,12 +190,12 @@ function createMockPrisma(store: Store) {
         return inv;
       },
       findMany: async (args: { where: Record<string, unknown>; select?: Record<string, unknown> }) => {
-        const ids = args.where?.id?.in as string[] | undefined;
+        const ids = (args as any).where?.id?.in as string[] | undefined;
         if (ids) {
           return ids.map((id) => store.invoices.get(id)).filter(Boolean);
         }
-        if (args.where?.saleId?.in) {
-          const saleIds = args.where.saleId.in as string[];
+        if ((args as any).where?.saleId?.in) {
+          const saleIds = (args as any).where.saleId.in as string[];
           return Array.from(store.invoices.values()).filter(
             (inv) => saleIds.includes(inv.saleId as string),
           );
@@ -235,9 +225,28 @@ function createMockAuth(role: string = 'ADMIN') {
       return session;
     },
     getCurrentSession: () => session,
-    logout: () => {},
-    login: async () => session,
-  };
+    logout: async () => {},
+    login: async () => ({ session, requiresTwoFactor: false, challengeToken: undefined }),
+    completeTwoFactor: async () => session,
+    refreshSession: async () => session,
+    requestStepUp: async () => ({}),
+    approveStepUp: async () => ({ approvalToken: 'token' }),
+    verifyStepUp: async () => true,
+    changePassword: async () => {},
+    changePin: async () => {},
+    forgotPassword: async () => ({ message: 'ok' }),
+    resetPassword: async () => {},
+    createUser: async () => ({}),
+    listUsers: async () => ({ users: [], total: 0 }),
+    disableUser: async () => ({ message: 'ok' }),
+    enableUser: async () => ({ message: 'ok' }),
+    unlockUser: async () => ({ message: 'ok' }),
+    resetUserPin: async () => ({ newPin: '1234', message: 'ok' }),
+    updateUser: async () => ({ message: 'ok' }),
+    deleteUser: async () => ({ message: 'ok' }),
+    getPendingStepUpRequests: async () => [],
+    getAuditLogs: async () => ({}),
+  } as any;
 }
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@
  * the wiring without real database or network access.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render, act } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import type { FC, ReactNode } from "react";
 
 // ---------------------------------------------------------------------------

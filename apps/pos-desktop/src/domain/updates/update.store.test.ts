@@ -2,7 +2,8 @@
  * Tests for the update Zustand store.
  */
 import { describe, expect, it, beforeEach, vi } from "vitest";
-import { useUpdateStore, getUpdateStoreState, DownloadStatus, InstallStatus } from "./update.store";
+import { useUpdateStore, getUpdateStoreState } from "./update.store";
+import { DownloadStatus, InstallStatus } from "@pharmacy/shared-types";
 
 beforeEach(() => {
   useUpdateStore.setState({

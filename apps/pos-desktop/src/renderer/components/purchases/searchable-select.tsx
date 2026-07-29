@@ -170,7 +170,8 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
 
   // ── Focus handler ────────────────────────────────────────────────────
 
-  const handleFocus = useCallback(() => {
+  const handleFocus = useCallback(
+    (_e: React.FocusEvent<HTMLInputElement>) => {
     if (options.length > 0 || query) {
       setIsOpen(true);
       updateDropdownPosition();
@@ -194,7 +195,7 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
   // ── Keyboard navigation ─────────────────────────────────────────────
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
       const filtered = options.filter((o) => !o.disabled);
 
       switch (e.key) {
@@ -252,15 +253,15 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
           placeholder={placeholder}
           disabled={disabled}
           className={`pos-input w-full pr-8 ${error ? 'border-error' : ''}`}
-          autoComplete="off"
-          role="combobox"
-          aria-expanded={showDropdown}
-          aria-haspopup="listbox"
-          aria-autocomplete="list"
-          aria-controls={listboxId}
-          aria-activedescendant={
-            highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined
-          }
+          {...{
+            autoComplete: 'off' as const,
+            role: 'combobox' as const,
+            'aria-expanded': showDropdown,
+            'aria-haspopup': 'listbox' as const,
+            'aria-autocomplete': 'list' as const,
+            'aria-controls': listboxId,
+            'aria-activedescendant': highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined,
+          } as React.AriaAttributes}
         />
 
         {/* Loading spinner */}

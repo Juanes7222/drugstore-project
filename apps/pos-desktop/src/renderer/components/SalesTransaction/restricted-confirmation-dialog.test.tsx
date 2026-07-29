@@ -9,6 +9,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RestrictedConfirmationDialog } from "./restricted-confirmation-dialog";
 import { formatShortDate } from "@/utils/format-date";
+import { SaleType } from "@pharmacy/shared-types";
 import type { CatalogItem } from "@/services/catalog-service";
 
 // ---------------------------------------------------------------------------
@@ -16,15 +17,22 @@ import type { CatalogItem } from "@/services/catalog-service";
 // ---------------------------------------------------------------------------
 
 const createItem = (overrides?: Partial<CatalogItem>): CatalogItem => ({
+  barcode: "7701234567890",
   id: "ITEM-001",
   name: "Amoxicilina 500mg",
   genericName: "Amoxicilina",
-  saleType: "RX",
+  saleType: SaleType.PRESCRIPTION,
   requiresPrescription: true,
+  isRestricted: false,
   invimaCertificate: "INVIMA-2024-12345",
   lotCode: "L2407A",
   lotExpirationDate: "2027-07-15",
   unitPriceCents: 15000,
+  costCents: null,
+  taxPercentage: 0,
+  currentStock: 100,
+  minimumStock: 10,
+  isActive: true,
   hasCompleteData: true,
   ...overrides,
 });
@@ -218,7 +226,7 @@ describe("RestrictedConfirmationDialog", () => {
   it("renders INVIMA certificate and sale type in the warning", () => {
     const item = createItem({
       invimaCertificate: "INVIMA-2024-XYZ",
-      saleType: "RX",
+  saleType: SaleType.PRESCRIPTION,
     });
 
     render(

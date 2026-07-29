@@ -377,7 +377,7 @@ export class ReturnsService {
     return {
       id: sale.id,
       localNumber: Number(sale.localNumber),
-      createdAt: sale.createdAt.toISOString(),
+      createdAt: sale.startedAt.toISOString(),
       clientName: sale.clientNameSnapshot ?? '',
       workstationId: sale.workstationId,
       items: sale.items.map((item) => ({
@@ -517,7 +517,7 @@ export class ReturnsService {
         subtotalReturned: clientReturn.subtotalReturned.toString(),
         taxReturned: clientReturn.taxReturned.toString(),
         reason: clientReturn.reason,
-        items: clientReturn.items.map((item) => ({
+        items: clientReturn.items.map((item: any) => ({
           saleItemId: item.saleItemId,
           quantity: item.quantity,
           unitPriceAtReturn: item.unitPriceAtReturn.toString(),

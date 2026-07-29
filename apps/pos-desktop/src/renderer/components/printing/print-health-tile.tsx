@@ -10,10 +10,7 @@
 
 import { type FC, useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  usePrintingMetricsService,
-  usePrintQueueService,
-} from '../common/service-context';
+import { usePrintingMetricsService } from '../common/service-context';
 import type { PrintQueueSummary, PrinterStatusSummary } from '../../../domain/printing';
 
 type HealthStatus = 'good' | 'warning' | 'error';
@@ -24,8 +21,6 @@ export const PrintHealthTile: FC<{
 }> = ({ onViewQueue, onConfigurePrinters }) => {
   const { t } = useTranslation();
   const printingMetricsService = usePrintingMetricsService();
-  const printQueueService = usePrintQueueService();
-
   const [queueSummary, setQueueSummary] = useState<PrintQueueSummary | null>(null);
   const [printerSummary, setPrinterSummary] = useState<PrinterStatusSummary | null>(null);
   const [loading, setLoading] = useState(true);

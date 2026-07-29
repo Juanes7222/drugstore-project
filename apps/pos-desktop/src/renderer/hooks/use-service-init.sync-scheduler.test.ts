@@ -13,25 +13,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 const {
-  mockFiscalNumberingService,
-  mockContingencyService,
   mockInvoiceService,
-  mockFiscalScheduler,
   mockFiscalServices,
-  mockPrinterConfig,
-  mockPrintQueue,
-  mockPrintRouter,
-  mockPrinterHealth,
-  mockConfigExport,
-  mockPrintingMetrics,
   mockPrintingServices,
-  mockCashDrawer,
-  mockCustomerDisplay,
   mockPeripheralServices,
-  mockReturnsService,
-  mockInventoryAdjustmentsService,
-  mockPrescriptionsService,
-  mockRecoveryLogService,
   mockDomainServices,
   mockBackupService,
   mockUpdateService,
@@ -316,7 +301,7 @@ describe("initializeServices — sync scheduler creation", () => {
   describe("syncScheduler in returned services", () => {
     it("includes syncScheduler in the returned Services object", async () => {
       const services = await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         apiBaseUrl: "http://localhost:3000",
         checkTechKey: () => false,
         currentVersion: "1.0.0",
@@ -334,7 +319,7 @@ describe("initializeServices — sync scheduler creation", () => {
   describe("createSyncScheduler arguments", () => {
     it("passes prisma client to createSyncScheduler", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         apiBaseUrl: "http://localhost:3000",
         checkTechKey: () => false,
         currentVersion: "1.0.0",
@@ -345,13 +330,13 @@ describe("initializeServices — sync scheduler creation", () => {
       });
 
       expect(mockCreateSyncScheduler).toHaveBeenCalledWith(
-        expect.objectContaining({ prisma: mockPrisma }),
+        expect.objectContaining({ client: {} as any, prisma: mockPrisma }),
       );
     });
 
     it("passes baseUrl to createSyncScheduler", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         apiBaseUrl: "http://custom.api:4000",
         checkTechKey: () => false,
         currentVersion: "1.0.0",
@@ -368,7 +353,7 @@ describe("initializeServices — sync scheduler creation", () => {
 
     it("passes accessToken from session when available", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         apiBaseUrl: "http://localhost:3000",
         checkTechKey: () => false,
         currentVersion: "1.0.0",
@@ -391,7 +376,7 @@ describe("initializeServices — sync scheduler creation", () => {
 
     it("sets accessToken to undefined when session is null", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         apiBaseUrl: "http://localhost:3000",
         checkTechKey: () => false,
         currentVersion: "1.0.0",
@@ -408,7 +393,7 @@ describe("initializeServices — sync scheduler creation", () => {
 
     it("passes invoiceService from fiscal services", async () => {
       await initializeServices({
-        getLocalDatabase: () => Promise.resolve({ prisma: mockPrisma }),
+        getLocalDatabase: () => Promise.resolve({ client: {} as any, prisma: mockPrisma }),
         apiBaseUrl: "http://localhost:3000",
         checkTechKey: () => false,
         currentVersion: "1.0.0",

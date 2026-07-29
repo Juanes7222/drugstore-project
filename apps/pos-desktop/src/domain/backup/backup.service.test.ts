@@ -4,7 +4,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { createBackupService, type BackupService, type BackupMetadata } from "./backup.service";
 import { BackupInProgressException, BackupFailedException, RestoreFailedException, UploadFailedException } from "./exceptions";
-import type { VerificationReport, RestoreReport } from "./backup.service";
+import type { RestoreReport } from "./backup.service";
 
 // Mock Tauri invoke
 const mockInvoke = vi.fn();
@@ -51,7 +51,7 @@ describe("BackupService", () => {
   });
 
   afterEach(() => {
-    // Restore global.fetch in case a test replaced it
+    // Restore globalThis.fetch in case a test replaced it
     delete (globalThis as any).fetch;
     vi.useRealTimers();
   });
@@ -68,11 +68,14 @@ describe("BackupService", () => {
         sha256: "abc123",
         reason: "MANUAL",
         containsUnpushedOperations: false,
+        permanentFailureCount: 0,
+        discardedCount: 0,
         pendingCount: 0,
         failedCount: 0,
         maxClientSequence: 42,
         note: null,
         clockSkewSeconds: null,
+        uploadedAt: null,
         status: "HEALTHY",
       };
       mockInvoke.mockResolvedValueOnce(mockMetadata);
@@ -84,7 +87,7 @@ describe("BackupService", () => {
         pendingCount: 0,
         failedCount: 0,
         maxClientSequence: 42,
-      });
+      } as any);
 
       expect(result).toEqual(mockMetadata);
       expect(mockInvoke).toHaveBeenCalledWith("create_backup_command", {
@@ -98,13 +101,13 @@ describe("BackupService", () => {
     it("throws BackupInProgressException when a backup is already running", async () => {
       mockInvoke.mockResolvedValueOnce({} as BackupMetadata);
       const request = {
-        reason: "MANUAL" as const,
+        reason: "MANUAL",
         workstationId: "ws-1",
         dbSchemaVersion: 1,
         pendingCount: 0,
         failedCount: 0,
         maxClientSequence: 0,
-      };
+      } as any;
 
       const firstBackup = service.createBackup(request);
       await expect(service.createBackup(request)).rejects.toThrow(BackupInProgressException);
@@ -123,7 +126,7 @@ describe("BackupService", () => {
           pendingCount: 0,
           failedCount: 0,
           maxClientSequence: 0,
-        }),
+        } as any),
       ).rejects.toThrow(BackupFailedException);
     });
   });
@@ -220,7 +223,7 @@ describe("BackupService", () => {
 
     it("returns null on HTTP error", async () => {
       const fakeFetch = vi.fn().mockResolvedValueOnce({ ok: false });
-      global.fetch = fakeFetch;
+      globalThis.fetch = fakeFetch;
 
       const result = await service.fetchLocalNumberHint("ws-1", "token");
 
@@ -232,7 +235,7 @@ describe("BackupService", () => {
         ok: true,
         json: () => Promise.resolve({ workstationId: "ws-1", maxLocalNumber: 42 }),
       });
-      global.fetch = fakeFetch;
+      globalThis.fetch = fakeFetch;
 
       const result = await service.fetchLocalNumberHint("ws-1", "token");
 
@@ -294,7 +297,7 @@ describe("BackupService", () => {
         ok: true,
         json: () => Promise.resolve({ uploadId: "upload-1", workstationId: "ws-1", createdAt: "now" }),
       });
-      global.fetch = fakeFetch;
+      globalThis.fetch = fakeFetch;
 
       const result = await service.uploadBackupToServer("backup-1", "password", "token");
 
@@ -339,7 +342,7 @@ describe("BackupService", () => {
         status: 413,
         text: () => Promise.resolve("Payload too large"),
       });
-      global.fetch = fakeFetch;
+      globalThis.fetch = fakeFetch;
 
       await expect(
         service.uploadBackupToServer("backup-2", "password", "token"),
@@ -549,7 +552,7 @@ describe("BackupService", () => {
         maxClientSequence: 0,
       });
 
-      service.startPeriodicBackup(factory, onSuccess);
+      (service as any).startPeriodicBackup(factory, onSuccess);
 
       // Wait for the initial tick
       await vi.advanceTimersByTimeAsync(0);
@@ -569,7 +572,7 @@ describe("BackupService", () => {
       });
 
       const factory = vi.fn();
-      service.startPeriodicBackup(factory);
+      (service as any).startPeriodicBackup(factory);
 
       await vi.advanceTimersByTimeAsync(0);
 
@@ -597,7 +600,7 @@ describe("BackupService", () => {
         maxClientSequence: 0,
       });
 
-      service.startPeriodicBackup(factory, undefined, onError);
+      (service as any).startPeriodicBackup(factory, undefined, onError);
 
       await vi.advanceTimersByTimeAsync(0);
 
@@ -622,8 +625,8 @@ describe("BackupService", () => {
         maxClientSequence: 0,
       });
 
-      service.startPeriodicBackup(factory);
-      service.startPeriodicBackup(factory); // second call should be no-op
+      (service as any).startPeriodicBackup(factory);
+      (service as any).startPeriodicBackup(factory); // second call should be no-op
 
       await vi.advanceTimersByTimeAsync(0);
 
@@ -656,13 +659,13 @@ describe("BackupService", () => {
         maxClientSequence: 0,
       });
 
-      service.startPeriodicBackup(factory);
+      (service as any).startPeriodicBackup(factory);
 
       // Let the initial tick run
       await vi.advanceTimersByTimeAsync(0);
       expect(factory).toHaveBeenCalledTimes(1);
 
-      service.stopPeriodicBackup();
+      (service as any).stopPeriodicBackup();
 
       // Advance far beyond the interval — no additional ticks
       await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000 + 100);
@@ -710,7 +713,7 @@ describe("BackupService", () => {
         pendingCount: 0,
         failedCount: 0,
         maxClientSequence: 42,
-      });
+      } as any);
 
       expect(eventSpy).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -750,6 +753,8 @@ describe("BackupService", () => {
         dbSchemaVersion: 1,
         pendingCount: 0,
         failedCount: 0,
+        permanentFailureCount: 0,
+        discardedCount: 0,
         maxClientSequence: 0,
       });
 
@@ -759,7 +764,7 @@ describe("BackupService", () => {
 
   describe("fetchLocalNumberHint (catch block)", () => {
     it("returns null when fetch throws", async () => {
-      global.fetch = vi.fn().mockRejectedValue(new Error("Network failure"));
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error("Network failure"));
 
       const result = await service.fetchLocalNumberHint("ws-1", "token");
 

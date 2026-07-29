@@ -4,7 +4,7 @@
  * Covers: test button per printer, test results display, loading state.
  */
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SetupWizardStepTestPrints } from "./setup-wizard-step-test-prints";
 import type { WizardState } from "./setup-wizard.page";

@@ -287,7 +287,7 @@ describe("Inventory adjustments — PGlite data layer", () => {
     });
 
     it("enforces foreign key to Product (ON DELETE RESTRICT)", async () => {
-      const lotId = await insertLot(pg, seeds.productId);
+      await insertLot(pg, seeds.productId);
 
       await expect(
         pg.exec(`DELETE FROM "Product" WHERE id = '${seeds.productId}'`),
@@ -337,9 +337,9 @@ describe("Inventory adjustments — PGlite data layer", () => {
     });
 
     it("stores multiple lots for the same product", async () => {
-      const lot1 = await insertLot(pg, seeds.productId, { batchNumber: "B-01" });
-      const lot2 = await insertLot(pg, seeds.productId, { batchNumber: "B-02" });
-      const lot3 = await insertLot(pg, seeds.productId, { batchNumber: "B-03" });
+      await insertLot(pg, seeds.productId, { batchNumber: "B-01" });
+      await insertLot(pg, seeds.productId, { batchNumber: "B-02" });
+      await insertLot(pg, seeds.productId, { batchNumber: "B-03" });
 
       const result = await pg.query(
         `SELECT COUNT(*) as cnt FROM "Lot" WHERE "productId" = $1`,

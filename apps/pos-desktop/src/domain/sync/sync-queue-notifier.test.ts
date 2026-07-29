@@ -3,7 +3,7 @@
  * domain services (creators of SyncQueue entries) to the push trigger
  * (SyncScheduler.triggerPush).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setPushTrigger, notifyPendingEntry } from './sync-queue-notifier';
 
 describe('sync-queue-notifier', () => {

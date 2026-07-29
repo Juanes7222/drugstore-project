@@ -37,6 +37,7 @@ const baseProduct = (overrides: Partial<CatalogItem> = {}): CatalogItem => ({
   requiresPrescription: false,
   isRestricted: false,
   unitPriceCents: 6_200,
+  costCents: null,
   taxPercentage: 19,
   currentStock: 45,
   minimumStock: 10,

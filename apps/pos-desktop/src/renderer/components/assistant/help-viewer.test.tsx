@@ -56,13 +56,13 @@ vi.mock("../../hooks/use-help-viewer", () => ({
 // ---------------------------------------------------------------------------
 
 vi.mock("./help-sidebar", () => ({
-  HelpSidebar: (props: Record<string, unknown>) => (
+  HelpSidebar: () => (
     <div data-testid="help-sidebar" />
   ),
 }));
 
 vi.mock("./help-content-area", () => ({
-  HelpContentArea: (props: Record<string, unknown>) => (
+  HelpContentArea: () => (
     <div data-testid="help-content-area" />
   ),
 }));
@@ -120,7 +120,7 @@ describe("HelpViewer", () => {
           },
         ],
       },
-    ];
+    ] as any;
 
     render(<HelpViewer />);
 
@@ -140,8 +140,8 @@ describe("HelpViewer", () => {
       title: "Cómo abrir turno",
       body: "# Pasos",
       type: "procedure",
-    };
-    mockHookReturn.selectedTopicId = "procedure-1";
+    } as any;
+    mockHookReturn.selectedTopicId = "procedure-1" as any;
 
     render(<HelpViewer />);
 

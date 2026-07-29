@@ -3,7 +3,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { ClientsService, createClientsService, type CreateClientInput } from "./clients.service";
-import { RoleType } from "@pharmacy/shared-types";
+
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -192,7 +192,7 @@ describe("ClientsService", () => {
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
 
-      const result = await service.create(validInput);
+      await service.create(validInput);
 
       expect(auth.requireRole).toHaveBeenCalledWith("CASHIER", "ADMIN");
       expect(tx.client.create).toHaveBeenCalledWith(
@@ -230,7 +230,7 @@ describe("ClientsService", () => {
         identificationNumber: "00000000",
       };
 
-      const result = await service.create(minimalInput);
+      await service.create(minimalInput);
 
       expect(tx.client.create).toHaveBeenCalledWith(
         expect.objectContaining({

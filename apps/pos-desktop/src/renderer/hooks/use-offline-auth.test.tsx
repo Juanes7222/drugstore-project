@@ -6,8 +6,8 @@
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useOfflineAuth, type UseOfflineAuthReturn } from "./use-offline-auth";
-import type { OfflineSession, OfflineLoginResult } from "../../domain/auth/offline/types";
+import { useOfflineAuth } from "./use-offline-auth";
+import type { OfflineSession } from "../../domain/auth/offline/types";
 import type { LocalSession } from "../../domain/auth/local-session.store";
 
 // ---------------------------------------------------------------------------
@@ -206,7 +206,7 @@ const makeOnlineSession = (overrides: Partial<LocalSession> = {}): LocalSession 
 // ---------------------------------------------------------------------------
 
 describe("useOfflineAuth", () => {
-  let useOnlineStatusMock: () => boolean;
+  let useOnlineStatusMock: ReturnType<typeof vi.fn<() => boolean>>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -219,8 +219,8 @@ describe("useOfflineAuth", () => {
     onlineSessionRef.current = null;
 
     // Default online status mock (browser is online)
-    const useOnlineStatusModule = await import("./use-online-status");
-    useOnlineStatusMock = vi.mocked(useOnlineStatusModule.useOnlineStatus);
+    void (await import("./use-online-status"));
+    useOnlineStatusMock = vi.fn() as unknown as typeof useOnlineStatusMock;
     useOnlineStatusMock.mockReturnValue(true);
 
     // Default auth service mock for getOfflineSessionStore
@@ -592,7 +592,7 @@ describe("useOfflineAuth", () => {
     });
 
     it("does not trigger blessing when browser was already online", async () => {
-      useOnlineStatusMock.mockReturnValue(true);
+      useOnlineStatusMock = vi.fn().mockReturnValue(true) as unknown as typeof useOnlineStatusMock;
 
       const pending = makeOfflineSession({ localSessionId: "sess-pending" });
       zustandSessionsMock.push(pending);

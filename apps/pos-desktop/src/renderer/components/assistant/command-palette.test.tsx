@@ -53,13 +53,13 @@ vi.mock("../../hooks/use-command-palette", () => ({
 // ---------------------------------------------------------------------------
 
 vi.mock("./palette-search-input", () => ({
-  PaletteSearchInput: (props: Record<string, unknown>) => (
+  PaletteSearchInput: () => (
     <div data-testid="palette-search-input" />
   ),
 }));
 
 vi.mock("./palette-search-result-group", () => ({
-  PaletteSearchResultGroup: (props: Record<string, unknown>) => (
+  PaletteSearchResultGroup: () => (
     <div data-testid="palette-search-result-group" />
   ),
 }));
@@ -69,13 +69,13 @@ vi.mock("./palette-footer", () => ({
 }));
 
 vi.mock("./palette-states", () => ({
-  PaletteEmptyResults: ({ query }: Record<string, unknown>) => (
+  PaletteEmptyResults: () => (
     <div data-testid="palette-empty-results" />
   ),
   PaletteIndexBuilding: () => (
     <div data-testid="palette-index-building" />
   ),
-  PaletteSearchError: ({ message }: Record<string, unknown>) => (
+  PaletteSearchError: () => (
     <div data-testid="palette-search-error" />
   ),
   PaletteWelcomeState: () => (
@@ -136,7 +136,7 @@ describe("CommandPalette", () => {
   it("does not render other states when index is building", () => {
     mockAssistantStore.paletteOpen = true;
     mockHookReturn.isIndexBuilding = true;
-    mockHookReturn.searchError = "error";
+    mockHookReturn.searchError = "error" as any;
 
     render(<CommandPalette />);
 
@@ -152,7 +152,7 @@ describe("CommandPalette", () => {
 
   it("renders search error when searchError is set", () => {
     mockAssistantStore.paletteOpen = true;
-    mockHookReturn.searchError = "Connection failed";
+    mockHookReturn.searchError = "Connection failed" as any;
 
     render(<CommandPalette />);
 
@@ -169,7 +169,7 @@ describe("CommandPalette", () => {
   it("renders empty results when query has no matches", () => {
     mockAssistantStore.paletteOpen = true;
     mockHookReturn.query = "xyz";
-    mockHookReturn.flatItems = [];
+    mockHookReturn.flatItems = [] as any;
 
     render(<CommandPalette />);
 
@@ -181,7 +181,7 @@ describe("CommandPalette", () => {
   it("renders welcome state when query is empty and no results", () => {
     mockAssistantStore.paletteOpen = true;
     mockHookReturn.query = "";
-    mockHookReturn.flatItems = [];
+    mockHookReturn.flatItems = [] as any;
 
     render(<CommandPalette />);
 
@@ -196,7 +196,7 @@ describe("CommandPalette", () => {
     mockAssistantStore.paletteOpen = true;
     mockHookReturn.flatItems = [
       { id: "nav-sales", label: "Ir a Ventas" },
-    ];
+    ] as any;
     mockHookReturn.groupedResults = [
       {
         category: "navigation",
@@ -205,7 +205,7 @@ describe("CommandPalette", () => {
           { id: "nav-sales", label: "Ir a Ventas" },
         ],
       },
-    ];
+    ] as any;
 
     render(<CommandPalette />);
 

@@ -233,7 +233,8 @@ export const StepUpModal: FC<StepUpModalProps> = ({
         {/* Tab content */}
         {tab === 'pin' && (
           <PinKeypad
-            length={6}
+            minLength={6}
+            maxLength={6}
             onComplete={handlePinComplete}
             error={pinError}
             isLoading={isLoading}

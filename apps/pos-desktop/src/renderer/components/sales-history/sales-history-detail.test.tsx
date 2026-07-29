@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { SalesHistoryDetail } from './sales-history-detail';
 import type { SaleHistoryDetail } from '../../../domain/sales-pos/sales-history.service';
 import type { OperationalInvoiceView } from '../../../domain/fiscal/local-adjustment.types';
+import type { InvoiceType, InvoiceStatus } from '../../../domain/fiscal/fiscal-types';
 import '@/i18n';
 
 // ---------------------------------------------------------------------------
@@ -17,10 +18,10 @@ const createInvoice = () => ({
   id: 'inv-1',
   saleId: 'sale-1',
   workstationId: 'ws-1',
-  invoiceType: 'ELECTRONIC_INVOICE',
+  invoiceType: 'ELECTRONIC_INVOICE' as InvoiceType,
   invoiceNumber: 'FE0001',
   contingencyNumber: null,
-  status: 'TRANSMITTED_AUTHORIZED',
+  status: 'TRANSMITTED_AUTHORIZED' as InvoiceStatus,
   cufeProvisional: 'cufe-1',
   cufeOfficial: null,
   issuedAt: new Date('2026-07-20T10:00:00Z'),
@@ -104,7 +105,7 @@ const createOperationalView = (
     id: 'inv-1',
     invoiceNumber: 'FE0001',
     invoiceType: 'ELECTRONIC_INVOICE',
-    status: 'TRANSMITTED_AUTHORIZED',
+    status: 'TRANSMITTED_AUTHORIZED' as InvoiceStatus,
     cufeProvisional: 'cufe-1',
     cufeOfficial: null,
     issuedAt: '2026-07-20T10:00:00.000Z',

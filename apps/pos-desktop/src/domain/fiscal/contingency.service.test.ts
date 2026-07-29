@@ -68,7 +68,7 @@ function createMockPrisma() {
         const e = eventStore.find((e: any) => e.id === where.id);
         return e ?? null;
       }),
-      findMany: vi.fn(async ({ where, orderBy, take }: any) => {
+      findMany: vi.fn(async ({ where, take }: any) => {
         let results = [...eventStore];
         if (where?.workstationId) {
           results = results.filter(
@@ -85,8 +85,7 @@ function createMockPrisma() {
       }),
     },
     invoice: {
-      count: vi.fn(async ({ where }: any) => {
-        // Return 0 for any query
+      count: vi.fn(async () => {
         return 0;
       }),
       findMany: vi.fn().mockResolvedValue([]),
@@ -390,7 +389,7 @@ describe("ContingencyService", () => {
     });
 
     it("stops listening and clears timers", () => {
-      const removeEventListenerSpy = vi.spyOn(window, "removeEventListener");
+      vi.spyOn(window, "removeEventListener");
       const abortSpy = vi.spyOn(AbortController.prototype, "abort");
 
       const service = createContingencyService({

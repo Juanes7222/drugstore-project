@@ -1,12 +1,11 @@
 /**
  * Unit tests for CashShiftService — open, close, and cash counts.
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { CashShiftService, createCashShiftService } from "./cash-shift.service";
 import { ShiftAlreadyOpenException, ShiftNotOpenException, MissingClosingCashCountsException, InvalidCashCountForNonCashMethodException, PaymentMethodNotFoundException } from "./exceptions";
 import { BackupFailedException } from "../backup/exceptions";
 import { Prisma } from "@pharmacy/database/local";
-import { RoleType } from "@pharmacy/shared-types";
 
 // Mock shift-close-html and print-payload-writer for printRouter tests
 vi.mock("./shift-close-html", () => ({
@@ -219,7 +218,7 @@ describe("CashShiftService", () => {
           }),
         }),
       );
-      expect(result.countType).toBe("PARTIAL");
+      expect((result as any).countType).toBe("PARTIAL");
     });
 
     it("creates a CLOSING cash count", async () => {
@@ -242,7 +241,7 @@ describe("CashShiftService", () => {
         declaredAmount: new Prisma.Decimal(505000),
       });
 
-      expect(result.countType).toBe("CLOSING");
+      expect((result as any).countType).toBe("CLOSING");
     });
 
     it("throws PaymentMethodNotFoundException when the payment method does not exist", async () => {
@@ -325,7 +324,7 @@ describe("CashShiftService", () => {
 
       const result = await service.closeShift("shift-1", {});
 
-      expect(result.state).toBe("CLOSED");
+      expect((result as any).state).toBe("CLOSED");
       expect(tx.cashShift.update).toHaveBeenCalled();
     });
 
@@ -436,7 +435,7 @@ describe("CashShiftService", () => {
 
       const result = await service.closeShift("shift-1", { closingNotes: "Test" });
 
-      expect(result.state).toBe("CLOSED");
+      expect((result as any).state).toBe("CLOSED");
       expect(printRouter.print).toHaveBeenCalledWith(
         "SHIFT_CLOSE_REPORT",
         expect.objectContaining({
@@ -829,7 +828,7 @@ describe("CashShiftService", () => {
         operational: {
           hasDifferences: true,
           payments: [
-            { paymentMethodName: "Tarjeta", paymentMethodName: "Tarjeta", amount: "50000" },
+            { paymentMethodName: "Tarjeta", amount: "50000" },
           ],
         },
       });
@@ -1085,7 +1084,7 @@ describe("CashShiftService", () => {
       });
 
       const result = await service.closeShift("shift-1", {});
-      expect(result.state).toBe("CLOSED");
+      expect((result as any).state).toBe("CLOSED");
     });
 
     it("excludes fully replaced method and includes the new method from PAYMENT_METHOD_CHANGE", async () => {
@@ -1144,7 +1143,7 @@ describe("CashShiftService", () => {
 
       // Should succeed with only CASH count — CARD no longer active
       const result = await service.closeShift("shift-1", {});
-      expect(result.state).toBe("CLOSED");
+      expect((result as any).state).toBe("CLOSED");
     });
 
     it("keeps both methods active when PAYMENT_METHOD_CHANGE is partial", async () => {
@@ -1296,7 +1295,7 @@ describe("CashShiftService", () => {
       });
 
       const result = await service.closeShift("shift-1", {});
-      expect(result.state).toBe("CLOSED");
+      expect((result as any).state).toBe("CLOSED");
       // Safety net code path executed: invoiceLocalAdjustment was queried
       expect(tx.invoiceLocalAdjustment.findMany).toHaveBeenCalled();
     });
@@ -1384,7 +1383,7 @@ describe("CashShiftService", () => {
       });
 
       const result = await service.closeShift("shift-1", {});
-      expect(result.state).toBe("CLOSED");
+      expect((result as any).state).toBe("CLOSED");
     });
   });
 
@@ -1468,7 +1467,7 @@ describe("CashShiftService", () => {
         }],
       });
 
-      expect(result.state).toBe("CLOSED");
+      expect((result as any).state).toBe("CLOSED");
     });
 
     it("succeeds with resolveOperationalView primary path when only new method has closing count", async () => {
@@ -1553,7 +1552,7 @@ describe("CashShiftService", () => {
         }],
       });
 
-      expect(result.state).toBe("CLOSED");
+      expect((result as any).state).toBe("CLOSED");
     });
   });
 

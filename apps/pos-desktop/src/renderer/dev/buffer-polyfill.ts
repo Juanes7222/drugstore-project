@@ -48,13 +48,13 @@ const bufferShim = {
 
 // ---------- set global ----------
 
-if (typeof globalThis.Buffer === 'undefined') {
-  (globalThis as Record<string, unknown>).Buffer = bufferShim;
+if (typeof (globalThis as any).Buffer === 'undefined') {
+  (globalThis as any).Buffer = bufferShim;
 }
 
 // ---------- named export (for `import { Buffer } from "node:buffer"`) ----------
 
-export const Buffer = globalThis.Buffer as typeof bufferShim;
+export const Buffer = (globalThis as any).Buffer as typeof bufferShim;
 
 // ---------- default export (for namespace imports) ----------
 

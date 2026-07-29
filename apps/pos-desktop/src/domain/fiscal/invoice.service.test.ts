@@ -69,7 +69,7 @@ function createMockPrisma() {
       findUnique: vi.fn(async ({ where }: any) => {
         return invoiceStore.find((i: any) => i.id === where.id) ?? null;
       }),
-      findMany: vi.fn(async ({ where, orderBy, take, skip }: any) => {
+      findMany: vi.fn(async ({ where, orderBy }: any) => {
         let results = [...invoiceStore];
         if (where?.saleId) {
           results = results.filter((i: any) => i.saleId === where.saleId);
@@ -163,7 +163,7 @@ function createMockPrisma() {
             invoiceStore.push(invoice);
             return invoice;
           }),
-          findMany: vi.fn(async ({ where, orderBy, take }: any) => {
+          findMany: vi.fn(async ({ where }: any) => {
             let results = [...invoiceStore];
             if (where?.saleId) {
               results = results.filter((i: any) => i.saleId === where.saleId);

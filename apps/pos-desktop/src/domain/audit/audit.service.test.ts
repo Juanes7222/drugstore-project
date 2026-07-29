@@ -29,7 +29,7 @@ const makeMockPrisma = () => {
 
 describe("getLocalAuditEntries", () => {
   let prisma: any;
-  let localAuditLog: ReturnType<typeof vi.fn> & { findMany: any; count: any };
+  let localAuditLog: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     const mocks = makeMockPrisma();

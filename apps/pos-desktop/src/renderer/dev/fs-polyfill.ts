@@ -23,7 +23,7 @@ export function mkdirSync(
 export function readFileSync(
   _path: string,
   _options?: { encoding?: string } | string | null,
-): string | Buffer {
+): string | Uint8Array {
   throw new Error(
     'fs.readFileSync is not available in browser/Tauri-webview context. ' +
     'Use fetch() or Tauri IPC for file access.',
@@ -61,7 +61,7 @@ export const promises = {
   readFile: async (
     _path: string,
     _options?: { encoding?: string } | string | null,
-  ): Promise<string | Buffer> => {
+  ): Promise<string | Uint8Array> => {
     throw new Error(
       'fs.promises.readFile is not available in browser/Tauri-webview context.',
     );
