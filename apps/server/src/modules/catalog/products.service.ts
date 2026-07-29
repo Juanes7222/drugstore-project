@@ -92,13 +92,14 @@ export class ProductsService {
     userId: string,
     dto: CreateProductDto,
     sourceOperationUuid?: string,
+    sourceProductId?: string | null,
   ): Promise<any> {
     const priceDecimal = new Prisma.Decimal(dto.initialPrice);
 
     return this.prisma.$transaction(async (tx: any) => {
       const product = await tx.product.create({
         data: {
-          id: this.generateId(),
+          id: sourceProductId ?? this.generateId(),
           internalCode: dto.internalCode,
           commercialName: dto.commercialName,
           genericName: dto.genericName,
@@ -120,6 +121,7 @@ export class ProductsService {
           currentTaxHistoryId: null,
           createdById: userId,
           sourceOperationUuid: sourceOperationUuid ?? null,
+          sourceProductId: sourceProductId ?? null,
           createdAt: new Date(),
           updatedAt: new Date(),
         },

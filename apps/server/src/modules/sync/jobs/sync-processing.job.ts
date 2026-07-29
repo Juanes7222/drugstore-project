@@ -11,6 +11,12 @@ import type { SyncQueueEntry } from '../entities/sync-queue-entry.entity';
  */
 const RETRY_FIXED_DELAY_SECONDS = 60;
 
+/**
+ * Maximum retry attempts before a FAILED entry is abandoned.
+ * Matches the POS side's MAX_RETRY_ATTEMPTS in sync-push.service.ts.
+ */
+const MAX_RETRY_ATTEMPTS = 10;
+
 /** Operation types that the cron job replays. */
 const SUPPORTED_TYPES: SyncQueueEntry['operationType'][] = [
   'SALE_CONFIRMATION',
@@ -55,6 +61,8 @@ export class SyncProcessingJob {
     return this.prisma.syncQueue.findMany({
       where: {
         operationType: { in: SUPPORTED_TYPES },
+        status: { notIn: ['COMPLETED', 'PROCESSING', 'PERMANENT_FAILURE', 'DISCARDED'] },
+        retryCount: { lt: MAX_RETRY_ATTEMPTS },
         OR: [
           { status: 'PENDING' },
           { status: 'FAILED', nextRetryAt: { lte: new Date() } },
@@ -99,23 +107,28 @@ export class SyncProcessingJob {
   /** Marks an entry as FAILED, increments retry count, schedules next retry. */
   private async markFailed(entry: SyncQueueEntry, error: unknown): Promise<void> {
     const retryCount = (entry.retryCount ?? 0) + 1;
-    const nextRetryAt = new Date(
-      Date.now() + RETRY_FIXED_DELAY_SECONDS * 1000,
-    );
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    const exhausted = retryCount >= MAX_RETRY_ATTEMPTS;
+    const data: Record<string, unknown> = {
+      status: exhausted ? 'PERMANENT_FAILURE' : 'FAILED',
+      retryCount,
+      lastErrorMessage: exhausted
+        ? `Exceeded max retry attempts (${MAX_RETRY_ATTEMPTS}): ${errorMessage}`
+        : errorMessage,
+      nextRetryAt: exhausted
+        ? null
+        : new Date(Date.now() + RETRY_FIXED_DELAY_SECONDS * 1000),
+    };
 
     await this.prisma.syncQueue.update({
       where: { id: entry.id },
-      data: {
-        status: 'FAILED',
-        retryCount,
-        lastErrorMessage: errorMessage,
-        nextRetryAt,
-      },
+      data,
     });
 
     this.logger.warn(
-      `Sync operation ${entry.id} (${entry.operationType}) failed: ${errorMessage}`,
+      `Sync operation ${entry.id} (${entry.operationType}) failed: ${errorMessage}` +
+        (exhausted ? ` — no more retries (max ${MAX_RETRY_ATTEMPTS})` : ` — retry ${retryCount}/${MAX_RETRY_ATTEMPTS}`),
     );
   }
 }

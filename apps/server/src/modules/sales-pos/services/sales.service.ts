@@ -77,7 +77,7 @@ export class SalesService {
     return sale;
   }
 
-  async create(createDto: CreateSaleDto, userId: string, workstationId: string): Promise<any> {
+  async create(createDto: CreateSaleDto, userId: string, workstationId: string, sourceOperationUuid?: string): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
       const cashShift = await this.getOpenCashShift(tx, userId, workstationId, createDto.cashShiftId);
       const clientData = createDto.clientId ? await this.getClientSnapshot(tx, createDto.clientId) : null;
@@ -115,6 +115,7 @@ export class SalesService {
               workstationId: cashShift.workstationId,
               userId,
               sourceWorkstationId: workstationId,
+              sourceOperationUuid,
               clientIdentificationTypeSnapshot: clientData?.identificationType || null,
               clientIdentificationNumberSnapshot: clientData?.identificationNumber || null,
               clientNameSnapshot: clientData?.fullName || null,
@@ -131,10 +132,22 @@ export class SalesService {
           });
           return sale;
         } catch (error: unknown) {
-          const err = error as { code?: string; meta?: Record<string, unknown> };
+          const err = error as { code?: string; meta?: Record<string, unknown>; message?: string };
           if (err.code === 'P2002' && err.meta?.target === 'ux_sale_local_per_ws') {
-            // Unique constraint violation, retry
+            // Local number unique constraint violation — retry with next number.
             continue;
+          }
+          if (err.code === 'P2002' && sourceOperationUuid && this.isSourceOperationUuidConflict(err)) {
+            // Another concurrent transaction already created a sale with this
+            // sourceOperationUuid.  Fetch and return the existing one instead of
+            // failing — the caller's idempotency guard also covers this case,
+            // but a race between the guard read and this create can still happen.
+            const existing = await tx.sale.findUnique({
+              where: { sourceOperationUuid },
+              include: { items: true },
+            });
+            if (existing) return existing;
+            // else fall through and throw — unexpected inconsistency.
           }
           throw error;
         }
@@ -466,5 +479,19 @@ export class SalesService {
 
     const totalCost = consumedLots.reduce((sum, cl) => sum.plus(cl.unitCostAtSale.times(cl.quantity)), new Prisma.Decimal(0));
     return totalCost.dividedBy(totalQuantity);
+  }
+
+  /**
+   * Check whether a Prisma P2002 error is a unique constraint violation on
+   * the `sourceOperationUuid` field.  Uses a best-effort heuristic on the
+   * error message because Prisma may report the constraint name
+   * (`Sale_sourceOperationUuid_key`) or the field name (`sourceOperationUuid`)
+   * depending on the engine version.
+   */
+  private isSourceOperationUuidConflict(error: { code?: string; meta?: Record<string, unknown>; message?: string }): boolean {
+    if (error.meta?.target === 'sourceOperationUuid') return true;
+    if (error.meta?.target === 'Sale_sourceOperationUuid_key') return true;
+    if (error.message?.includes('sourceOperationUuid')) return true;
+    return false;
   }
 }

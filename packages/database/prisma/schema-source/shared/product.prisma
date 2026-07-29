@@ -32,6 +32,15 @@ model Product {
   /// detect retries and return the existing entity id instead of
   /// creating a duplicate.
   sourceOperationUuid    String?   @unique
+  /// Local UUID of the product on the POS workstation that created it.
+  /// Set during PRODUCT_CREATION replay from the payload's
+  /// `metadata.productId`.  Used by the SALE_CONFIRMATION handler as a
+  /// fallback lookup when the sale payload carries the POS-local UUID
+  /// instead of the server-assigned id — without this field, every
+  /// offline-created product carries a different id on each side and
+  /// the server cannot find the product by the local UUID in the
+  /// sale payload.
+  sourceProductId        String?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   createdById            String

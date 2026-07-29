@@ -269,6 +269,36 @@ export class SyncOperationDispatcherService {
     const workstationId = entry.sourceWorkstationId;
     const createSaleDto = payload.createSaleDto as unknown as CreateSaleDto;
 
+    // ── Idempotency guard ───────────────────────────────────────────
+    // If this operationUuid already created a sale via a prior attempt,
+    // use the existing sale for confirmation instead of creating a
+    // duplicate. Without this guard, a transient failure after
+    // create() (e.g. confirm() throws due to stock issue) leaves the
+    // SyncQueue entry FAILED; the retry would create a new IN_PROGRESS
+    // orphan each time — the exact duplication pattern seen in the bug.
+    // Follows the same pattern as handleProductCreation.
+    const existingSale = await this.prisma.sale.findUnique({
+      where: { sourceOperationUuid: entry.operationUuid },
+      select: { id: true, operationalState: true },
+    });
+    if (existingSale) {
+      this.logger.log(
+        `SALE_CONFIRMATION idempotent: operationUuid=${entry.operationUuid} ` +
+        `already created sale ${existingSale.id} (${existingSale.operationalState}) — confirming existing`,
+      );
+      if (existingSale.operationalState === 'CONFIRMED') {
+        // Already confirmed — nothing to do.
+        return;
+      }
+      // Sale exists but is not yet confirmed — attempt confirmation.
+      await this.salesService.confirm(
+        existingSale.id,
+        payload.confirmSaleDto as unknown as ConfirmSaleDto,
+        userId,
+      );
+      return;
+    }
+
     // Ensure the cash shift exists on the server before replaying the sale.
     // The POS manages shifts entirely locally and never syncs SHIFT_OPEN.
     // Without this step, every SALE_CONFIRMATION fails with
@@ -292,10 +322,39 @@ export class SyncOperationDispatcherService {
       });
     }
 
+    // ── Product ID remapping ─────────────────────────────────────────
+    // The POS records the local UUID of each product in the sale item.
+    // When the product was created via PRODUCT_CREATION sync, the server
+    // may have assigned a different UUID (or, with the fix, used the
+    // local UUID directly via sourceProductId).  Remap every item's
+    // productId to the server's product id so the sale does not fail
+    // with ProductNotFoundException.
+    if (createSaleDto?.items?.length) {
+      for (const item of createSaleDto.items) {
+        const serverProduct = await this.prisma.product.findFirst({
+          where: {
+            OR: [
+              { id: item.productId },
+              { sourceProductId: item.productId },
+            ],
+          },
+          select: { id: true },
+        });
+        if (serverProduct) {
+          item.productId = serverProduct.id;
+        }
+        // If no product is found on the server at all, the subsequent
+        // salesService.create() will throw ProductNotFoundException with
+        // the original productId — that's the correct behaviour for a
+        // product that genuinely does not exist on the server.
+      }
+    }
+
     const sale = await this.salesService.create(
       createSaleDto,
       userId,
       workstationId,
+      entry.operationUuid, // sourceOperationUuid — stored on Sale for idempotency
     );
     await this.salesService.confirm(
       (sale as { id: string }).id,
@@ -559,6 +618,13 @@ export class SyncOperationDispatcherService {
       };
     }
 
+    // Capture the local product UUID from the sync payload metadata so the
+    // created product carries a forward-reference that the SALE_CONFIRMATION
+    // handler can use to find the server product when the sale payload
+    // references the POS-local UUID instead of the server-assigned id.
+    const metadata = (payload.metadata ?? {}) as Record<string, unknown>;
+    const localProductId = (metadata.productId as string | undefined) ?? null;
+
     const dto = { ...result.data };
     if (dto.internalCode.startsWith('OFFLINE-')) {
       dto.internalCode = await this.generateNextOfflineProductCode();
@@ -566,8 +632,14 @@ export class SyncOperationDispatcherService {
 
     // Pass the operationUuid so the created product carries a reference
     // back to the sync operation that created it, making future retries
-    // idempotent at the database level.
-    const product = await this.productsService.createProduct(userId, dto, entry.operationUuid);
+    // idempotent at the database level.  Also pass localProductId so the
+    // server can map the POS-local UUID back to this row.
+    const product = await this.productsService.createProduct(
+      userId,
+      dto,
+      entry.operationUuid,
+      localProductId,
+    );
     return {
       entityId: (product as { id: string }).id,
       entityInternalCode: (product as { internalCode: string }).internalCode,

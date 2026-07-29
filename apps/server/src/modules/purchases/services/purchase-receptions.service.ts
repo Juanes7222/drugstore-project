@@ -251,6 +251,13 @@ export class PurchaseReceptionsService {
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
+      // Serialize concurrent access to this reception ID via PostgreSQL
+      // advisory lock. BullMQ may deliver the same job to two workers
+      // concurrently — the lock ensures only one reaches the idempotency
+      // check + create section, preventing a P2002 race.
+      const lockKey = PurchaseReceptionsService.hashEntityId(payload.receptionId);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
+
       // Idempotency: check by POS-originated id first. If the same reception
       // was already created from an earlier sync attempt, return it. The
       // (sequentialNumber, supplierId) check is a fallback for receptions
@@ -576,5 +583,14 @@ export class PurchaseReceptionsService {
       select: { sequentialNumber: true },
     });
     return (latestReception?.sequentialNumber || 0) + 1;
+  }
+
+  /** Deterministic positive int4 hash of an entity ID for advisory lock key. */
+  private static hashEntityId(id: string): number {
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+      hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
+    }
+    return hash & 0x7FFFFFFF;
   }
 }

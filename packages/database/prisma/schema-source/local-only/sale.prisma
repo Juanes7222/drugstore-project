@@ -34,6 +34,10 @@ model Sale {
   userId                            String
   sourceWorkstationId               String
   sourceCreatedAt                   DateTime?
+  /// Sync operationUuid that created this sale via SALE_CONFIRMATION replay.
+  /// Used by SyncOperationDispatcherService.handleSaleConfirmation to detect
+  /// retries and prevent duplicate sale creation (same pattern as Product.sourceOperationUuid).
+  sourceOperationUuid               String?   @unique
   items                             SaleItem[]
   payments                          SalePayment[]
   movements                         InventoryMovement[]

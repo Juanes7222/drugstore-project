@@ -125,14 +125,80 @@ function createPrisma(): PrismaClient {
   return new PrismaClient({ adapter });
 }
 
+/** Lookup product by its UUID or sourceProductId (local POS UUID). */
+async function findProduct(
+  tx: Prisma.TransactionClient,
+  localProductId: string,
+): Promise<{ id: string; priceHistories: Array<{ price: Prisma.Decimal }>; taxHistories: Array<{ taxScheme: { rate: Prisma.Decimal } }> } | null> {
+  return tx.product.findFirst({
+    where: { OR: [{ id: localProductId }, { sourceProductId: localProductId }] },
+    include: {
+      priceHistories: { take: 1, orderBy: { effectiveFrom: 'desc' } },
+      taxHistories: { include: { taxScheme: true }, take: 1, orderBy: { effectiveFrom: 'desc' } },
+    },
+  }) as any;
+}
+
+/** Backfill sourceProductId from COMPLETED PRODUCT_CREATION SyncQueue payloads. */
+async function backfillSourceProductId(tx: Prisma.TransactionClient, dryRun: boolean): Promise<number> {
+  const productCreations = await (tx as any).syncQueue.findMany({
+    where: {
+      operationType: 'PRODUCT_CREATION',
+      status: 'COMPLETED',
+      entityId: { not: null },
+    },
+    select: { id: true, entityId: true, payload: true },
+  });
+
+  let backfilled = 0;
+  for (const entry of productCreations) {
+    if (!entry.entityId) continue;
+    const parsed = JSON.parse(entry.payload);
+    const localProductId = parsed.metadata?.productId as string | undefined;
+    if (!localProductId) continue;
+
+    const exists = await (tx as any).product.findUnique({
+      where: { id: entry.entityId },
+      select: { sourceProductId: true },
+    });
+    if (exists && exists.sourceProductId === localProductId) continue;
+
+    if (dryRun) {
+      console.log(`  DRY   would set sourceProductId=${localProductId} on product ${entry.entityId}`);
+      backfilled++;
+      continue;
+    }
+
+    await (tx as any).product.update({
+      where: { id: entry.entityId },
+      data: { sourceProductId: localProductId },
+    });
+    backfilled++;
+  }
+  return backfilled;
+}
+
 async function recoverSaleConfirmation(
   tx: Prisma.TransactionClient,
   entryId: string,
   payload: SaleConfirmationPayload,
-): Promise<{ subtotal: string; totalDiscount: string; totalTax: string; totalAmount: string }> {
+): Promise<{ subtotal: string; totalDiscount: string; totalTax: string; totalAmount: string; remapped: number }> {
   const items = payload.createSaleDto.items;
   if (!Array.isArray(items) || items.length === 0) {
     throw new Error('createSaleDto.items missing or empty');
+  }
+
+  // Remap local product IDs to server product IDs via sourceProductId
+  let remapped = 0;
+  for (const item of items) {
+    if (item.productId) {
+      const product = await findProduct(tx, item.productId);
+      if (product && product.id !== item.productId) {
+        console.log(`  MAP   ${item.productId} → ${product.id}`);
+        item.productId = product.id;
+        remapped++;
+      }
+    }
   }
 
   // Compute per-item totals the same way the server's
@@ -146,15 +212,10 @@ async function recoverSaleConfirmation(
   let totalDecimal = new Prisma.Decimal(0);
 
   for (const item of items) {
-    const product = await tx.product.findUnique({
-      where: { id: item.productId },
-      include: {
-        priceHistories: { take: 1, orderBy: { effectiveFrom: 'desc' } },
-        taxHistories: { include: { taxScheme: true }, take: 1, orderBy: { effectiveFrom: 'desc' } },
-      },
-    });
+    const product = await findProduct(tx, item.productId);
     if (!product) {
-      throw new Error(`Product ${item.productId} not found — cannot recover`);
+      throw new Error(`Product ${item.productId} not found on server — cannot recover. ` +
+        `Sync PRODUCT_CREATION first or create the product manually.`);
     }
 
     const unitPrice = item.unitPrice
@@ -189,6 +250,7 @@ async function recoverSaleConfirmation(
     totalAmount: payload.confirmSaleDto.payments
       .reduce((sum, p) => sum.plus(new Prisma.Decimal(p.amount)), new Prisma.Decimal(0))
       .toFixed(2),
+    remapped,
   };
 }
 
@@ -229,6 +291,14 @@ async function main(): Promise<void> {
     });
 
     console.log(`Found ${entries.length} eligible FAILED sync queue entries.`);
+
+    // Step 0: backfill sourceProductId on existing products so the
+    // product-ID remapping in recoverSaleConfirmation can find server
+    // products by their local POS UUID.
+    console.log('Backfilling sourceProductId from PRODUCT_CREATION payloads…');
+    const backfilled = await backfillSourceProductId(prisma, args.dryRun);
+    console.log(`Backfilled sourceProductId on ${backfilled} product(s).`);
+
     if (entries.length === 0) return;
 
     let recovered = 0;
@@ -248,7 +318,8 @@ async function main(): Promise<void> {
             continue;
           }
 
-          const totals = await recoverSaleConfirmation(prisma, entry.id, payload);
+          const { subtotal, totalDiscount, totalTax, totalAmount, remapped } = await recoverSaleConfirmation(prisma, entry.id, payload);
+          const totals = { subtotal, totalDiscount, totalTax, totalAmount };
           const newPayload = {
             ...payload,
             createSaleDto: {
@@ -258,7 +329,7 @@ async function main(): Promise<void> {
           };
 
           if (args.dryRun) {
-            console.log(`${header}  DRY   would inject totals=${JSON.stringify(totals)}`);
+            console.log(`${header}  DRY   would inject totals=${JSON.stringify(totals)} (remapped ${remapped} product(s))`);
             recovered += 1;
             continue;
           }
@@ -275,7 +346,7 @@ async function main(): Promise<void> {
               },
             });
           });
-          console.log(`${header}  OK    injected totals=${JSON.stringify(totals)}`);
+          console.log(`${header}  OK    injected totals=${JSON.stringify(totals)} (remapped ${remapped} product(s))`);
           recovered += 1;
         } else if (entry.operationType === 'PURCHASE_RECEPTION_CONFIRMATION') {
           const { items, changed } = recoverReceptionPayload(payload);
