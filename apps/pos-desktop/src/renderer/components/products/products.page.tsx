@@ -87,9 +87,11 @@ export const ProductsPage: FC = () => {
             (result.items as unknown as RawProduct[]).map(mapToDisplayProduct),
           );
         }
-      } catch {
-        if (!cancelled)
+      } catch (err) {
+        if (!cancelled) {
+          console.error("[ProductsPage] listProducts failed:", err);
           setError(t("products.load_error"));
+        }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
