@@ -243,6 +243,9 @@ export const ProductForm: FC<ProductFormProps> = ({
       if (product.currentPrice) {
         dispatch({ type: "SET_FIELD", field: "price", value: product.currentPrice });
       }
+      if (product.currentCost) {
+        dispatch({ type: "SET_FIELD", field: "cost", value: product.currentCost });
+      }
       if (product.currentTaxSchemeId) {
         dispatch({
           type: "SET_FIELD",

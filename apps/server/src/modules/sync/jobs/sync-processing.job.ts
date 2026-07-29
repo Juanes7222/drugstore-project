@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { DomainException } from '@/common/exceptions/domain.exception';
 import { SyncOperationDispatcherService } from '../sync-operation-dispatcher.service';
 import type { SyncQueueEntry } from '../entities/sync-queue-entry.entity';
 
@@ -100,8 +101,35 @@ export class SyncProcessingJob {
         },
       });
     } catch (error: unknown) {
+      // DomainException subclasses (ProductNotFoundException, etc.) are
+      // non-transient — the referenced entity genuinely does not exist
+      // on the server and retrying will never succeed. Mark as permanent
+      // failure immediately instead of burning 10 retries with 60s delays.
+      if (error instanceof DomainException) {
+        await this.markPermanentFailure(entry, error);
+        return;
+      }
       await this.markFailed(entry, error);
     }
+  }
+
+  /** Marks an entry as PERMANENT_FAILURE immediately — no more retries. */
+  private async markPermanentFailure(entry: SyncQueueEntry, error: unknown): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    await this.prisma.syncQueue.update({
+      where: { id: entry.id },
+      data: {
+        status: 'PERMANENT_FAILURE',
+        retryCount: (entry.retryCount ?? 0) + 1,
+        lastErrorMessage: `Permanent failure — no retry: ${errorMessage}`,
+        nextRetryAt: null,
+      },
+    });
+
+    this.logger.warn(
+      `Sync operation ${entry.id} (${entry.operationType}) permanently failed: ${errorMessage}`,
+    );
   }
 
   /** Marks an entry as FAILED, increments retry count, schedules next retry. */

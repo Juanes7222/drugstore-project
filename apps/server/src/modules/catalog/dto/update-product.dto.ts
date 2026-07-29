@@ -19,6 +19,11 @@ export const UpdateProductSchema = z.object({
   categoryId: z.string().min(1).optional().nullable(),
   pharmaceuticalFormId: z.string().min(1).optional().nullable(),
   isActive: z.boolean().optional(),
+  unitPrice: z.string().optional(),
+  initialPrice: z.string().optional(),
+  initialCost: z.string().optional(),
+  cost: z.string().optional(),
+  initialTaxSchemeId: z.string().min(1).optional(),
 });
 
 export type UpdateProductDto = z.infer<typeof UpdateProductSchema>;

@@ -21,6 +21,7 @@ export const CreateProductSchema = z.object({
   pharmaceuticalFormId: z.string().min(1).optional(),
   initialPrice: z.string().min(1, 'Initial price is required'),
   initialTaxSchemeId: z.string().min(1, 'Initial tax scheme ID is required'),
+  initialCost: z.string().optional(),
 });
 
 export type CreateProductDto = z.infer<typeof CreateProductSchema>;

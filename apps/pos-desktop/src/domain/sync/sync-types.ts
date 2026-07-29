@@ -226,12 +226,10 @@ export interface ProductCreationPayload {
  *
  * `updateProductDto` mirrors the server's `UpdateProductDto` shape
  * (apps/server/src/modules/catalog/dto/update-product.dto.ts). Price
- * and tax history changes are NOT sent over the sync queue — the
- * server's `UpdateProductDto` has no slots for them. The local
- * `ProductPriceHistory` / `ProductTaxHistory` rows created by the POS
- * remain authoritative for the POS and can be replayed through the
- * server's dedicated endpoints (register-product-price,
- * assign-product-tax-scheme) by a follow-up flow.
+ * and cost changes (`initialPrice`, `initialCost`) are included in the
+ * sync payload so the server creates corresponding price/cost history
+ * entries. Tax history changes remain local and are replayed through
+ * the server's dedicated endpoint (assign-product-tax-scheme).
  */
 export interface ProductUpdatePayload {
   operationType: 'PRODUCT_UPDATE';
@@ -256,6 +254,9 @@ export interface ProductUpdatePayload {
     internalNotes?: string | null;
     categoryId?: string | null;
     pharmaceuticalFormId?: string | null;
+    initialPrice?: string;
+    initialCost?: string;
+    initialTaxSchemeId?: string;
     barcodes?: Array<{
       barcode: string;
       barcodeType: string;

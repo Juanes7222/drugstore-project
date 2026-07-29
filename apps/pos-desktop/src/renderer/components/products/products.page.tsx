@@ -260,6 +260,10 @@ export const ProductsPage: FC = () => {
             updateInput.newTax = { taxSchemeId: data.taxSchemeId };
           }
 
+          if (data.cost.trim()) {
+            updateInput.newCost = { cost: data.cost };
+          }
+
           if (Object.keys(updateInput).length > 0) {
             await productService.updateProduct(
               selectedProduct.id,

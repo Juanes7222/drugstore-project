@@ -78,8 +78,9 @@ export class ProductsController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(UpdateProductSchema))
     dto: UpdateProductDto,
+    @CurrentUser() user: User,
   ): Promise<any> {
-    return this.productsService.updateProduct(id, dto);
+    return this.productsService.updateProduct(id, dto, user.id);
   }
 
   @Post(':id/price')

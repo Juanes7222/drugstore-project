@@ -358,16 +358,19 @@ export class ProductService {
           priceHistories: {
             where: { effectiveTo: null },
             select: { price: true },
+            orderBy: { effectiveFrom: 'desc' },
             take: 1,
           },
           costHistories: {
             where: { effectiveTo: null },
             select: { cost: true },
+            orderBy: { effectiveFrom: 'desc' },
             take: 1,
           },
           taxHistories: {
             where: { effectiveTo: null },
             select: { taxSchemeId: true },
+            orderBy: { effectiveFrom: 'desc' },
             take: 1,
           },
         },
@@ -425,15 +428,18 @@ export class ProductService {
         },
         priceHistories: {
           where: { effectiveTo: null },
+          orderBy: { effectiveFrom: 'desc' },
           take: 1,
         },
         costHistories: {
           where: { effectiveTo: null },
           select: { cost: true },
+          orderBy: { effectiveFrom: 'desc' },
           take: 1,
         },
         taxHistories: {
           where: { effectiveTo: null },
+          orderBy: { effectiveFrom: 'desc' },
           take: 1,
           include: {
             taxScheme: { select: { id: true, code: true, name: true, taxType: true, rate: true } },
@@ -463,11 +469,13 @@ export class ProductService {
         priceHistories: {
           where: { effectiveTo: null },
           select: { price: true },
+          orderBy: { effectiveFrom: 'desc' },
           take: 1,
         },
         costHistories: {
           where: { effectiveTo: null },
           select: { cost: true },
+          orderBy: { effectiveFrom: 'desc' },
           take: 1,
         },
       },
@@ -507,11 +515,13 @@ export class ProductService {
         priceHistories: {
           where: { effectiveTo: null },
           select: { price: true },
+          orderBy: { effectiveFrom: 'desc' },
           take: 1,
         },
         costHistories: {
           where: { effectiveTo: null },
           select: { cost: true },
+          orderBy: { effectiveFrom: 'desc' },
           take: 1,
         },
       },
@@ -1114,15 +1124,10 @@ export class ProductService {
 
       // 6. Create sync queue entry
       //
-      // Only Product scalar fields are sent — the server's
-      // `UpdateProductDto` (apps/server/src/modules/catalog/dto/update-product.dto.ts)
-      // does not have `initialPrice` / `initialTaxSchemeId`, so the
-      // nested `price` / `tax` objects the previous version emitted were
-      // silently dropped server-side.  Price and tax changes stay local
-      // until they are replayed through the server's dedicated endpoints
-      // (register-product-price, assign-product-tax-scheme); the local
-      // ProductPriceHistory / ProductTaxHistory rows created above are
-      // still authoritative for the POS.
+      // Price and cost changes (`initialPrice`, `initialCost`) are
+      // included so the server creates matching history entries.
+      // Tax changes remain local and replay through
+      // assign-product-tax-scheme.
       const syncPayload = {
         operationType: 'PRODUCT_UPDATE' as const,
         userId: session.userId,
@@ -1146,6 +1151,9 @@ export class ProductService {
           ...(sanitizedPharmaceuticalFormId !== undefined && {
             pharmaceuticalFormId: sanitizedPharmaceuticalFormId,
           }),
+          ...(input.newPrice?.price !== undefined && { initialPrice: new Prisma.Decimal(input.newPrice.price).toString() }),
+          ...(input.newCost?.cost !== undefined && { initialCost: new Prisma.Decimal(input.newCost.cost).toString() }),
+          ...(input.newTax?.taxSchemeId !== undefined && { initialTaxSchemeId: input.newTax.taxSchemeId }),
           ...(input.barcodes && {
             barcodes: input.barcodes.map((bc) => ({
               barcode: bc.barcode,

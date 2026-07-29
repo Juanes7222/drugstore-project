@@ -8,6 +8,7 @@ import { AssignProductTaxSchemeDto } from './dto/assign-product-tax-scheme.dto';
 import { AddProductBarcodeDto } from './dto/add-product-barcode.dto';
 import { DuplicateActiveTaxSchemeException } from './exceptions/duplicate-active-tax-scheme.exception';
 import { DuplicateBarcodeException } from './exceptions/duplicate-barcode.exception';
+import { ProductNotFoundException } from './exceptions/product-not-found.exception';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -39,6 +40,7 @@ export class ProductsService {
         pharmaceuticalForm: true,
         barcodes: { where: { isPrimary: true }, take: 1 },
         priceHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
+        costHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
         taxHistories: {
           include: { taxScheme: true },
           orderBy: { effectiveFrom: 'desc' },
@@ -51,8 +53,10 @@ export class ProductsService {
     return items.map((item) => ({
       ...item,
       currentPrice: item.priceHistories[0] ?? null,
+      currentCost: item.costHistories[0] ?? null,
       currentTax: item.taxHistories[0] ?? null,
       priceHistories: undefined,
+      costHistories: undefined,
       taxHistories: undefined,
     }));
   }
@@ -69,6 +73,7 @@ export class ProductsService {
         pharmaceuticalForm: true,
         barcodes: { orderBy: { isPrimary: 'desc' } },
         priceHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
+        costHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
         taxHistories: {
           include: { taxScheme: true },
           orderBy: { effectiveFrom: 'desc' },
@@ -82,8 +87,10 @@ export class ProductsService {
     return {
       ...item,
       currentPrice: item.priceHistories[0] ?? null,
+      currentCost: item.costHistories[0] ?? null,
       currentTax: item.taxHistories[0] ?? null,
       priceHistories: undefined,
+      costHistories: undefined,
       taxHistories: undefined,
     };
   }
@@ -149,12 +156,28 @@ export class ProductsService {
         },
       });
 
+      const updateData: Record<string, unknown> = {
+        currentPriceId: priceHistory.id,
+        currentTaxHistoryId: taxHistory.id,
+      };
+
+      if (dto.initialCost) {
+        const costHistory = await tx.productCostHistory.create({
+          data: {
+            id: this.generateId(),
+            productId: product.id,
+            cost: new Prisma.Decimal(dto.initialCost),
+            effectiveFrom: new Date(),
+            changedById: userId,
+            changedAt: new Date(),
+          },
+        });
+        updateData.currentCostId = costHistory.id;
+      }
+
       return tx.product.update({
         where: { id: product.id },
-        data: {
-          currentPriceId: priceHistory.id,
-          currentTaxHistoryId: taxHistory.id,
-        },
+        data: updateData,
       });
     });
   }
@@ -162,7 +185,16 @@ export class ProductsService {
   async updateProduct(
     productId: string,
     dto: UpdateProductDto,
+    userId?: string,
   ): Promise<any> {
+    const existing = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new ProductNotFoundException(productId);
+    }
+
     const updateData: any = {};
 
     if (dto.commercialName !== undefined) updateData.commercialName = dto.commercialName;
@@ -185,9 +217,80 @@ export class ProductsService {
 
     updateData.updatedAt = new Date();
 
-    return this.prisma.product.update({
-      where: { id: productId },
-      data: updateData,
+    // Accept multiple field name variants for price/cost/tax to handle
+    // both REST API and POS sync conventions.
+    const rawPrice = dto.unitPrice ?? dto.initialPrice;
+    const rawCost = dto.initialCost ?? dto.cost;
+    const rawTaxSchemeId = dto.initialTaxSchemeId;
+    const needsPriceUpdate = rawPrice !== undefined;
+    const needsCostUpdate = rawCost !== undefined;
+    const needsTaxUpdate = rawTaxSchemeId !== undefined;
+
+    if (!needsPriceUpdate && !needsCostUpdate && !needsTaxUpdate) {
+      return this.prisma.product.update({
+        where: { id: productId },
+        data: updateData,
+      });
+    }
+
+    return this.prisma.$transaction(async (tx: any) => {
+      const txUpdateData = { ...updateData };
+
+      if (needsPriceUpdate) {
+        await this.closeActivePriceHistory(tx, productId);
+
+        const priceHistory = await tx.productPriceHistory.create({
+          data: {
+            id: this.generateId(),
+            productId,
+            price: new Prisma.Decimal(rawPrice!),
+            effectiveFrom: new Date(),
+            changedById: userId ?? 'unknown',
+            changedAt: new Date(),
+            changeReason: 'Updated via product edit',
+          },
+        });
+        txUpdateData.currentPriceId = priceHistory.id;
+      }
+
+      if (needsCostUpdate) {
+        await this.closeActiveCostHistory(tx, productId);
+
+        const costHistory = await tx.productCostHistory.create({
+          data: {
+            id: this.generateId(),
+            productId,
+            cost: new Prisma.Decimal(rawCost!),
+            effectiveFrom: new Date(),
+            changedById: userId ?? 'unknown',
+            changedAt: new Date(),
+            changeReason: 'Updated via product edit',
+          },
+        });
+        txUpdateData.currentCostId = costHistory.id;
+      }
+
+      if (needsTaxUpdate) {
+        await this.closeActiveTaxHistory(tx, productId);
+
+        const taxHistory = await tx.productTaxHistory.create({
+          data: {
+            id: this.generateId(),
+            productId,
+            taxSchemeId: rawTaxSchemeId!,
+            effectiveFrom: new Date(),
+            changedById: userId ?? 'unknown',
+            changedAt: new Date(),
+            changeReason: 'Updated via product edit',
+          },
+        });
+        txUpdateData.currentTaxHistoryId = taxHistory.id;
+      }
+
+      return tx.product.update({
+        where: { id: productId },
+        data: txUpdateData,
+      });
     });
   }
 
@@ -196,6 +299,14 @@ export class ProductsService {
     userId: string,
     dto: RegisterProductPriceDto,
   ): Promise<any> {
+    const existing = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new ProductNotFoundException(productId);
+    }
+
     const priceDecimal = new Prisma.Decimal(dto.price);
     const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
 
@@ -228,6 +339,14 @@ export class ProductsService {
     userId: string,
     dto: AssignProductTaxSchemeDto,
   ): Promise<any> {
+    const existing = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new ProductNotFoundException(productId);
+    }
+
     const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
 
     return this.prisma.$transaction(async (tx: any) => {
@@ -319,6 +438,22 @@ export class ProductsService {
     if (activePrice) {
       await tx.productPriceHistory.update({
         where: { id: activePrice.id },
+        data: { effectiveTo: new Date() },
+      });
+    }
+  }
+
+  private async closeActiveCostHistory(tx: any, productId: string): Promise<void> {
+    const activeCost = await tx.productCostHistory.findFirst({
+      where: {
+        productId,
+        effectiveTo: null,
+      },
+    });
+
+    if (activeCost) {
+      await tx.productCostHistory.update({
+        where: { id: activeCost.id },
         data: { effectiveTo: new Date() },
       });
     }

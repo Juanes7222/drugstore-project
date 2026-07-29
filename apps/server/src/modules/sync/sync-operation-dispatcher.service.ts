@@ -693,8 +693,30 @@ export class SyncOperationDispatcherService {
     const metadata = payload.metadata as Record<string, unknown> | undefined;
     const productId = (payload.productId ?? metadata?.productId) as string;
     const updateProductDto = payload.updateProductDto as Record<string, unknown>;
+    const userId = payload.userId as string | undefined;
 
-    await this.productsService.updateProduct(productId, updateProductDto as any);
+    // Remap POS-local UUID to server-assigned UUID.
+    // The POS records its own local UUID for each product; when the product
+    // was created via PRODUCT_CREATION, the server may have assigned a
+    // different UUID and stored the POS-local one in `sourceProductId`.
+    // Without this remap, every PRODUCT_UPDATE from a POS-created product
+    // fails with ProductNotFoundException because the server doesn't have
+    // a product with that local UUID as its primary id.
+    const serverProduct = await this.prisma.product.findFirst({
+      where: {
+        OR: [
+          { id: productId },
+          { sourceProductId: productId },
+        ],
+      },
+      select: { id: true },
+    });
+
+    await this.productsService.updateProduct(
+      serverProduct?.id ?? productId,
+      updateProductDto as any,
+      userId,
+    );
   }
 
   /**

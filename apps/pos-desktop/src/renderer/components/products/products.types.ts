@@ -55,6 +55,7 @@ export interface DisplayProduct {
     isPrimary: boolean;
   }>;
   currentPrice: string | null;
+  currentCost: string | null;
   currentTaxSchemeId: string | null;
 }
 
@@ -147,6 +148,7 @@ export interface RawProduct extends Record<string, unknown> {
     isPrimary: boolean;
   }>;
   currentPrice: string | null;
+  currentCost: string | null;
 }
 
 export function mapToDisplayProduct(raw: RawProduct): DisplayProduct {
@@ -173,6 +175,7 @@ export function mapToDisplayProduct(raw: RawProduct): DisplayProduct {
     updatedAt: raw.updatedAt,
     barcodes: raw.barcodes,
     currentPrice: raw.currentPrice,
+    currentCost: raw.currentCost ?? null,
     currentTaxSchemeId: raw.currentTaxSchemeId ?? null,
   };
 }
