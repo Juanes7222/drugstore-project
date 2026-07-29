@@ -21,6 +21,7 @@ import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-n
 import { DiscountReasonRequiredException } from '@/modules/catalog/exceptions/discount-reason-required.exception';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
 import { toDecimal } from '@/common/to-decimal';
+import { GENERIC_CLIENT_UUID } from '@/modules/clients/constants/clients.constants';
 
 interface SaleItemCalculations {
   unitPrice: Prisma.Decimal;
@@ -80,7 +81,16 @@ export class SalesService {
   async create(createDto: CreateSaleDto, userId: string, workstationId: string, sourceOperationUuid?: string): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
       const cashShift = await this.getOpenCashShift(tx, userId, workstationId, createDto.cashShiftId);
-      const clientData = createDto.clientId ? await this.getClientSnapshot(tx, createDto.clientId) : null;
+
+      // Resolve client data: use the specified client, or fall back to the
+      // DIAN-mandated generic consumer (CONSUMIDOR FINAL) so the invoice
+      // always carries a buyer identification — never null snapshot fields.
+      // The generic client record is seeded by migration
+      // 20260730000001_seed_generic_client.
+      const useGeneric = !createDto.clientId;
+      const clientData = useGeneric
+        ? await this.resolveGenericClient(tx)
+        : await this.getClientSnapshot(tx, createDto.clientId!);
       const saleItems = await Promise.all(createDto.items.map(item => this.buildSaleItemFromRequest(tx, item, clientData?.classification?.discountPercentage)));
 
       const totalCalculations = this.calculateSaleTotals(saleItems as unknown as SaleItemTotals[]);
@@ -335,6 +345,55 @@ export class SalesService {
       where: { id: clientId },
       include: { classification: true },
     });
+  }
+
+  /**
+   * Resolve the DIAN-mandated generic consumer (CONSUMIDOR FINAL) record.
+   *
+   * Looks up the well-known GENERIC_CLIENT_UUID from the database.  If the
+   * seeded record is missing (e.g. before migration runs), returns inline
+   * DIAN-standard defaults so the sale still carries a valid buyer
+   * identification instead of null snapshot fields.
+   */
+  private async resolveGenericClient(tx: Prisma.TransactionClient): Promise<{
+    id: string | null;
+    identificationType: string;
+    identificationNumber: string;
+    fullName: string;
+    classification: { id: string | null; type: string | null; discountPercentage: Prisma.Decimal } | null;
+  }> {
+    const record = await tx.client.findUnique({
+      where: { id: GENERIC_CLIENT_UUID },
+      include: { classification: true },
+    });
+
+    if (record) {
+      return {
+        id: record.id,
+        identificationType: record.identificationType,
+        identificationNumber: record.identificationNumber,
+        fullName: record.fullName,
+        classification: record.classification
+          ? {
+              id: record.classification.id,
+              type: record.classification.type,
+              discountPercentage: new Prisma.Decimal(record.classification.discountPercentage.toString()),
+            }
+          : null,
+      };
+    }
+
+    // Fallback: DIAN-standard generic consumer snapshot values when the
+    // seeded record is not yet in the database (migration not run / test env).
+    // `id` is null to avoid a FK violation against Client — the snapshots
+    // are what DIAN requires on the invoice, not the FK itself.
+    return {
+      id: null,
+      identificationType: 'NIT' as const,
+      identificationNumber: '222222222222',
+      fullName: 'CONSUMIDOR FINAL',
+      classification: null,
+    };
   }
 
   private async buildSaleItemFromRequest(

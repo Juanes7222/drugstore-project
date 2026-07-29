@@ -14,6 +14,7 @@ import { DataSubjectRequestAlreadyPendingException } from './exceptions/data-sub
 import { NoPendingDataSubjectRequestException } from './exceptions/no-pending-data-subject-request.exception';
 import { ClientNotFoundException } from './exceptions/client-not-found.exception';
 import { ClientAlreadyInactiveException } from './exceptions/client-already-inactive.exception';
+import { GENERIC_CLIENT_UUID } from './constants/clients.constants';
 
 @Injectable()
 export class ClientsService {
@@ -193,6 +194,35 @@ export class ClientsService {
         updatedById: userId,
       },
     });
+  }
+
+  /**
+   * Resolve the generic consumer (CONSUMIDOR FINAL) record.
+   *
+   * Used by SalesService.create() when no clientId is provided — ensures
+   * every sale carries a DIAN-compliant buyer identification instead of
+   * null snapshot fields.
+   *
+   * The record is seeded by migration 20260730000001_seed_generic_client
+   * and referenced by the well-known GENERIC_CLIENT_UUID constant.
+   *
+   * Includes classification so client-level discounts are also resolved
+   * for generic-consumer sales.
+   */
+  async getGenericClient(): Promise<any> {
+    const client = await this.prisma.client.findUnique({
+      where: { id: GENERIC_CLIENT_UUID },
+      include: { classification: true },
+    });
+    // The generic client must exist — the migration ensures it.
+    // If it is missing, the system is not properly set up.
+    if (!client) {
+      throw new Error(
+        `Generic client record not found (UUID: ${GENERIC_CLIENT_UUID}). ` +
+        'Run migration 20260730000001_seed_generic_client to seed it.',
+      );
+    }
+    return client;
   }
 
   async findById(id: string): Promise<any> {

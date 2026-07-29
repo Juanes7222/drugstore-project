@@ -736,6 +736,43 @@ async function seedTaxSchemesIfEmpty(client: PGlite): Promise<void> {
   );
 }
 
+/**
+ * Insert the generic client (CONSUMIDOR FINAL) into the local Client table
+ * if it does not already exist.
+ *
+ * This ensures every sale without an explicit client has a valid
+ * DIAN-compliant Consumer record to reference.  The UUID and NIT match
+ * the seed migration on apps/server (20260730000001).
+ *
+ * Runs every startup — idempotent via ON CONFLICT DO NOTHING.
+ */
+async function seedGenericClientIfEmpty(client: PGlite): Promise<void> {
+  const existing = await client.query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM "Client" WHERE "id" = $1`,
+    ['00000000-0000-0000-0000-000000000001'],
+  );
+  if ((existing.rows[0]?.count ?? 0) > 0) return;
+
+  const now = new Date().toISOString();
+
+  await client.query(
+    `INSERT INTO "Client" ("id", "identificationType", "identificationNumber", "fullName", "isActive", "createdById", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, true, 'system', $5, $6)
+     ON CONFLICT ("id") DO NOTHING`,
+    [
+      '00000000-0000-0000-0000-000000000001',
+      'NIT',
+      '222222222222',
+      'CONSUMIDOR FINAL',
+      now,
+      now,
+    ],
+  );
+
+  // eslint-disable-next-line no-console
+  console.log('[local-database] Seeded generic client (CONSUMIDOR FINAL).');
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -997,6 +1034,10 @@ export async function getLocalDatabase(): Promise<{
       // Seed tax schemes so the product form works without a server.
       // Server sync later overwrites these with authoritative data.
       await seedTaxSchemesIfEmpty(client);
+
+      // Seed the generic client (CONSUMIDOR FINAL) so sales without a
+      // selected client always have a valid DIAN-compliant consumer record.
+      await seedGenericClientIfEmpty(client);
 
       let prisma: unknown;
 

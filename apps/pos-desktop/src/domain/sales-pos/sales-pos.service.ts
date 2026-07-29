@@ -35,6 +35,12 @@ import { RoleType } from '@pharmacy/shared-types';
 import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
 import { LocalAuditEvent } from '../audit/local-audit-writer.service';
 import {
+  GENERIC_CLIENT_UUID,
+  GENERIC_CLIENT_IDENTIFICATION_TYPE,
+  GENERIC_CLIENT_IDENTIFICATION_NUMBER,
+  GENERIC_CLIENT_NAME,
+} from '../../domain/clients/constants/clients.constants';
+import {
   SaleNotInProgressException,
   PrescriptionRequiredNotSupportedException,
   PaymentAmountMismatchException,
@@ -242,9 +248,11 @@ export class SalesPosService {
     return this.prisma.$transaction(async (tx) => {
       const cashShift = await this.getOpenCashShift(tx, session.userId, session.workstationId);
 
-      const clientData = input.clientId
-        ? await this.getClientSnapshot(tx, input.clientId)
-        : null;
+      const resolvedClientId = input.clientId ?? GENERIC_CLIENT_UUID;
+      // Defensive fallback for the generic client — getClientSnapshot normally
+      // finds it because seedGenericClientIfEmpty runs on startup.
+      const clientData = await this.getClientSnapshot(tx, resolvedClientId)
+        ?? this.buildInlineGenericClientSnapshot();
 
       const clientDiscountPct = clientData?.classification?.discountPercentage
         ? new Prisma.Decimal(clientData.classification.discountPercentage.toString())
@@ -700,6 +708,22 @@ export class SalesPosService {
   }
 
   /**
+   * Build an inline snapshot of the generic client for the defensive case
+   * where the DB lookup fails (should not happen — seedGenericClientIfEmpty
+   * runs on startup). The `as any` on identificationType is safe here since
+   * the value ('NIT') matches the Prisma enum label exactly.
+   */
+  private buildInlineGenericClientSnapshot() {
+    return {
+      id: GENERIC_CLIENT_UUID,
+      identificationType: GENERIC_CLIENT_IDENTIFICATION_TYPE as any,
+      identificationNumber: GENERIC_CLIENT_IDENTIFICATION_NUMBER,
+      fullName: GENERIC_CLIENT_NAME,
+      classification: null,
+    };
+  }
+
+  /**
    * Resolve a single sale item from the request: validate product, read
    * price and tax from the local catalog cache, compute discount and tax
    * amounts.
@@ -982,7 +1006,7 @@ export class SalesPosService {
       createSaleDto: {
         saleType: 'FREE_SALE',
         cashShiftId: sale.cashShiftId,
-        clientId: sale.clientId,
+        clientId: sale.clientId ?? GENERIC_CLIENT_UUID,
         items: sale.items.map((item) => ({
           productId: serverIdByLocal.get(item.productId) ?? item.productId,
           quantity: item.quantity,
