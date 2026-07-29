@@ -1,9 +1,27 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { DomainException } from '@/common/exceptions/domain.exception';
 import { SyncBatchDto } from '../dto/sync-batch.dto';
 import { QuerySyncQueueDto } from '../dto/query-sync-queue.dto';
-import { SyncOperationDispatcherService } from '../sync-operation-dispatcher.service';
+import {
+  SyncOperationDispatcherService,
+  type DispatchResult,
+} from '../sync-operation-dispatcher.service';
+
+/** Shape of a single entry in the POST /sync/batch response. */
+export interface BatchOperationResult {
+  operationUuid: string;
+  status: 'ACCEPTED' | 'ALREADY_ACCEPTED' | 'REJECTED';
+  error?: string;
+  /** Server-assigned id of the entity created by a *_CREATION handler. */
+  entityId?: string;
+  /**
+   * Server-chosen `internalCode` for PRODUCT_CREATION. Absent for every
+   * other operation type and for REJECTED results.
+   */
+  entityInternalCode?: string;
+}
 
 @Injectable()
 export class SyncService {
@@ -23,12 +41,20 @@ export class SyncService {
    * subsequent catalog pull sees the updated data rather than stale server
    * state.  If immediate dispatch fails the entry remains PENDING for the
    * background job to retry.
+   *
+   * The per-operation result includes `entityId` and `entityInternalCode`
+   * for `*_CREATION` operations so the POS can stamp `serverId` (and the
+   * server-chosen `internalCode` that replaced the offline provisional
+   * value) on its local rows in the same transaction that marks the
+   * SyncQueue entry COMPLETED. Without these fields, the
+   * `assertProductsSynced` / `assertClientsSynced` gates would block
+   * sales of cashier-created entities until the next full pull.
    */
   async receiveBatch(
     batchDto: SyncBatchDto,
     sourceWorkstationId: string,
-  ): Promise<any[]> {
-    const results: any[] = [];
+  ): Promise<BatchOperationResult[]> {
+    const results: BatchOperationResult[] = [];
     for (const op of batchDto.operations) {
       results.push(
         await this.ingestOperation(op, sourceWorkstationId),
@@ -110,11 +136,24 @@ export class SyncService {
   ]);
 
   /**
+   * Operation types whose handler returns a server-assigned entityId
+   * (and, for PRODUCT_CREATION, the server-chosen internalCode). Every
+   * other type returns the bare `{ operationUuid, status }` shape.
+   */
+  private readonly CREATION_TYPES = new Set<string>([
+    'PRODUCT_CREATION',
+    'CLIENT_CREATION',
+  ]);
+
+  /**
    * Validates hash, guards duplicates, inserts a single operation as PENDING.
    * Operations in IMMEDIATE_DISPATCH_TYPES are additionally dispatched
    * synchronously so a subsequent pull (e.g. catalog) sees the latest data.
+   * For `*_CREATION` operations the result includes the server-assigned
+   * entityId (and `entityInternalCode` for PRODUCT_CREATION) so the POS
+   * can stamp its local row in the same transaction.
    */
-  private async ingestOperation(op: any, sourceWorkstationId: string): Promise<any> {
+  private async ingestOperation(op: any, sourceWorkstationId: string): Promise<BatchOperationResult> {
     const computedHash = this.computePayloadHash(op.payload);
     if (computedHash !== op.payloadHash) {
       return { operationUuid: op.operationUuid, status: 'REJECTED', error: 'PAYLOAD_HASH_MISMATCH' };
@@ -124,13 +163,42 @@ export class SyncService {
       const entryId = await this.createQueueEntry(op, sourceWorkstationId);
 
       if (this.IMMEDIATE_DISPATCH_TYPES.has(op.operationType)) {
-        await this.tryImmediateDispatch(entryId, op, sourceWorkstationId);
+        const dispatchResult = await this.tryImmediateDispatch(entryId, op, sourceWorkstationId);
+        if (
+          dispatchResult !== null &&
+          this.CREATION_TYPES.has(op.operationType)
+        ) {
+          return {
+            operationUuid: op.operationUuid,
+            status: 'ACCEPTED',
+            entityId: dispatchResult.entityId,
+            entityInternalCode: dispatchResult.entityInternalCode,
+          };
+        }
       }
 
       return { operationUuid: op.operationUuid, status: 'ACCEPTED' };
     } catch (error: any) {
       if (error.code === 'P2002') {
-        return { operationUuid: op.operationUuid, status: 'ALREADY_ACCEPTED' };
+        // The same operationUuid was already inserted — surface the
+        // server-assigned entityId / entityInternalCode that the previous
+        // successful dispatch stamped on the row, so a retry whose first
+        // response was lost can still recover serverId locally.
+        const previous = await this.prisma.syncQueue.findUnique({
+          where: { operationUuid: op.operationUuid },
+          select: { entityId: true, entityInternalCode: true },
+        });
+        const result: BatchOperationResult = {
+          operationUuid: op.operationUuid,
+          status: 'ALREADY_ACCEPTED',
+        };
+        if (previous?.entityId) {
+          result.entityId = previous.entityId;
+          if (previous.entityInternalCode) {
+            result.entityInternalCode = previous.entityInternalCode;
+          }
+        }
+        return result;
       }
       return { operationUuid: op.operationUuid, status: 'REJECTED', error: error.message ?? 'INTERNAL_ERROR' };
     }
@@ -138,14 +206,23 @@ export class SyncService {
 
   /**
    * Attempts synchronous dispatch of a just-inserted operation.  If the
-   * handler succeeds the queue entry is marked COMPLETED; on failure it
-   * stays PENDING so the background job can retry it.
+   * handler succeeds the queue entry is marked COMPLETED and the
+   * dispatcher's `entityId` / `entityInternalCode` are stamped on the
+   * row.  If the handler throws a `DomainException` (validation,
+   * not-found, business-rule violation — anything the domain layer
+   * flagged as deterministic and non-retryable) the row is marked
+   * FAILED without `nextRetryAt` and the error is re-thrown so the
+   * caller can surface a `REJECTED` batch result; the POS then moves
+   * its local row to `PERMANENT_FAILURE` and stops re-sending.  Any
+   * other error (raw DB / network / framework exception) is treated
+   * as transient: the row stays PENDING and the background cron job
+   * will retry it.
    */
   private async tryImmediateDispatch(
     entryId: string,
     op: any,
     sourceWorkstationId: string,
-  ): Promise<void> {
+  ): Promise<DispatchResult | null> {
     const entry: import('../entities/sync-queue-entry.entity').SyncQueueEntry = {
       id: entryId,
       operationUuid: op.operationUuid,
@@ -161,13 +238,36 @@ export class SyncService {
     };
 
     try {
-      await this.dispatcher.dispatch(entry);
+      const result = await this.dispatcher.dispatch(entry);
       await this.prisma.syncQueue.update({
         where: { id: entryId },
-        data: { status: 'COMPLETED', processedAt: new Date() },
+        data: {
+          status: 'COMPLETED',
+          processedAt: new Date(),
+          entityId: result.entityId ?? null,
+          entityInternalCode: result.entityInternalCode ?? null,
+        },
       });
-    } catch {
-      // Leave as PENDING – the background cron job will retry.
+      return result;
+    } catch (error: unknown) {
+      if (error instanceof DomainException) {
+        // Permanent error — mark the row FAILED without a retry
+        // schedule so the cron job does not pick it up.  Re-throw so
+        // the batch response carries `status: 'REJECTED'` and the POS
+        // transitions its local row to PERMANENT_FAILURE.
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        await this.prisma.syncQueue.update({
+          where: { id: entryId },
+          data: {
+            status: 'FAILED',
+            lastErrorMessage: errorMessage,
+          },
+        });
+        throw error;
+      }
+      // Transient — leave the row PENDING and let the background cron
+      // job retry on its 30s tick.
+      return null;
     }
   }
 

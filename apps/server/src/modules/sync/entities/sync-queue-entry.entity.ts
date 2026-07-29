@@ -35,6 +35,13 @@ export interface SyncQueueEntry {
   nextRetryAt?: Date | null;
   correlationId?: string | null;
   operationSource: 'DIRECT' | 'LOCAL_HUB';
+  /** Server-assigned id of the entity created by a *_CREATION handler. */
+  entityId?: string | null;
+  /**
+   * Server-chosen `internalCode` that replaced the offline provisional
+   * value (e.g. `OFFLINE-{uuid}`). Populated for PRODUCT_CREATION.
+   */
+  entityInternalCode?: string | null;
 }
 
 export type SyncQueueEntryEntity = SyncQueueEntry;

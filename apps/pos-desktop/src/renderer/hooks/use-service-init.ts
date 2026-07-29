@@ -41,6 +41,7 @@ import {
   isContingencyTechKeyPlaceholder,
   IS_DEV_MODE,
 } from '../../config/fiscal';
+import { createDbDevtools } from '../../infrastructure/local-database-devtools';
 import { isOnline } from '../../common/is-online';
 
 import { createFiscalServices } from '../../domain/fiscal/fiscal-service.factory';
@@ -224,8 +225,22 @@ export async function initializeServices(
   } = input;
 
   // 1. Initialise the local database (PGlite + Prisma)
-  const { prisma } = await getDb();
+  const { client, prisma } = await getDb();
   const prismaClient = prisma as PrismaClient;
+
+  // ---- Devtools: expose window.__db for browser console inspection --------
+  // Only in Vite dev server; stripped from Tauri production builds by tree-shaking.
+  if (IS_DEV_MODE) {
+    const devtools = createDbDevtools(client, prisma);
+    (window as unknown as Record<string, unknown>).__db = devtools;
+    console.info(
+      '[devtools] window.__db ready — try:',
+      '\n  await __db.tables()       — list tables',
+      '\n  await __db.counts()       — row counts',
+      '\n  await __db.exportJSON()   — download all tables as JSON',
+      '\n  await __db.query("SELECT * FROM \"Product\" LIMIT 5") — raw SQL',
+    );
+  }
 
   // 2. Check contingency tech key
   if (checkTechKey()) {

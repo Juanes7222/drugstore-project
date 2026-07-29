@@ -76,6 +76,12 @@ const mockSyncOperationOutcome = {
 const mockPrisma = {
   syncOperationOutcome: mockSyncOperationOutcome,
   $transaction: jest.fn(),
+  product: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+    update: jest.fn(),
+  },
 } as unknown as PrismaService;
 
 /** Build a minimal SyncQueue entry with sensible defaults. */
@@ -484,6 +490,179 @@ describe('SyncOperationDispatcherService', () => {
 
       expect(mockFiscalDocumentsService.createPendingDocumentForContingency)
         .not.toHaveBeenCalled();
+    });
+  });
+
+  // ── entityId / entityInternalCode propagation ──────────────────────
+
+  describe('PRODUCT_CREATION entityId propagation', () => {
+    const basePayload = {
+      userId: 'u-1',
+      createProductDto: {
+        internalCode: 'OFFLINE-uuid-1',
+        commercialName: 'Test',
+        genericName: 'Test',
+        activePrinciple: 'Test',
+        laboratory: 'Lab',
+        saleType: 'FREE_SALE',
+        initialPrice: '1000',
+        initialTaxSchemeId: 'tax-1',
+      },
+    };
+
+    it('normalizes OFFLINE- internalCode to P000001 when no products exist', async () => {
+      (mockPrisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      mockProductsService.createProduct.mockResolvedValue({
+        id: 'p-1',
+        internalCode: 'P000001',
+      });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      const result = await service.dispatch(
+        buildEntry({
+          operationType: 'PRODUCT_CREATION',
+          payload: JSON.stringify(basePayload),
+        }),
+      );
+
+      expect(result).toEqual({ entityId: 'p-1', entityInternalCode: 'P000001' });
+      expect(mockProductsService.createProduct).toHaveBeenCalledWith(
+        'u-1',
+        expect.objectContaining({ internalCode: 'P000001' }),
+        'uuid-1',
+      );
+      // The OFFLINE- prefix must not survive normalization.
+      const calledDto = (mockProductsService.createProduct as jest.Mock).mock.calls[0][1];
+      expect(calledDto.internalCode).not.toMatch(/^OFFLINE-/);
+    });
+
+    it('normalizes to the next sequential when P-prefixed products exist', async () => {
+      (mockPrisma.product.findMany as jest.Mock).mockResolvedValue([
+        { internalCode: 'P000042' },
+      ]);
+      mockProductsService.createProduct.mockResolvedValue({
+        id: 'p-2',
+        internalCode: 'P000043',
+      });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      const result = await service.dispatch(
+        buildEntry({
+          operationType: 'PRODUCT_CREATION',
+          payload: JSON.stringify(basePayload),
+        }),
+      );
+
+      expect(result).toEqual({ entityId: 'p-2', entityInternalCode: 'P000043' });
+      expect(mockProductsService.createProduct).toHaveBeenCalledWith(
+        'u-1',
+        expect.objectContaining({ internalCode: 'P000043' }),
+        'uuid-1',
+      );
+    });
+
+    it('passes a non-OFFLINE internalCode through unchanged', async () => {
+      mockProductsService.createProduct.mockResolvedValue({
+        id: 'p-3',
+        internalCode: 'PROD-001',
+      });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      const result = await service.dispatch(
+        buildEntry({
+          operationType: 'PRODUCT_CREATION',
+          payload: JSON.stringify({
+            ...basePayload,
+            createProductDto: { ...basePayload.createProductDto, internalCode: 'PROD-001' },
+          }),
+        }),
+      );
+
+      // No normalization needed — the MAX read would be wasted work.
+      expect((mockPrisma.product.findMany as jest.Mock)).not.toHaveBeenCalled();
+      expect(result).toEqual({ entityId: 'p-3', entityInternalCode: 'PROD-001' });
+      expect(mockProductsService.createProduct).toHaveBeenCalledWith(
+        'u-1',
+        expect.objectContaining({ internalCode: 'PROD-001' }),
+        'uuid-1',
+      );
+    });
+
+    it('returns the server-assigned entityInternalCode even when it differs from the input', async () => {
+      // The dispatcher always returns the value the server actually
+      // stored, never the provisional OFFLINE-uuid the client sent —
+      // this is the field the POS stamps back on its local row.
+      (mockPrisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      mockProductsService.createProduct.mockResolvedValue({
+        id: 'p-4',
+        internalCode: 'P000001',
+      });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      const result = await service.dispatch(
+        buildEntry({
+          operationType: 'PRODUCT_CREATION',
+          payload: JSON.stringify(basePayload),
+        }),
+      );
+
+      expect(result.entityInternalCode).toBe('P000001');
+      expect(result.entityInternalCode).not.toBe('OFFLINE-uuid-1');
+    });
+  });
+
+  describe('CLIENT_CREATION entityId propagation', () => {
+    const clientPayload = JSON.stringify({
+      userId: 'u-1',
+      createClientDto: { identificationType: 'CC', identificationNumber: '123' },
+      localClientId: 'local-c-1',
+    });
+
+    it('returns the server-assigned client id and no entityInternalCode', async () => {
+      mockClientsService.create.mockResolvedValue({ id: 'c-1' });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      const result = await service.dispatch(
+        buildEntry({
+          operationType: 'CLIENT_CREATION',
+          payload: clientPayload,
+        }),
+      );
+
+      expect(result).toEqual({ entityId: 'c-1' });
+      expect(result.entityInternalCode).toBeUndefined();
+    });
+  });
+
+  describe('non-creation handlers return an empty DispatchResult', () => {
+    it('SALE_CONFIRMATION returns {}', async () => {
+      mockSalesService.create.mockResolvedValue({ id: 'sale-1' });
+      mockSalesService.confirm.mockResolvedValue(undefined);
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      const result = await service.dispatch(
+        buildEntry({
+          operationType: 'SALE_CONFIRMATION',
+          payload: JSON.stringify({ userId: 'u-1', createSaleDto: {}, confirmSaleDto: {} }),
+        }),
+      );
+
+      expect(result).toEqual({});
+    });
+
+    it('SHIFT_CLOSURE returns {}', async () => {
+      mockCashShiftService.registerCashCount.mockResolvedValue(undefined);
+      mockCashShiftService.closeShift.mockResolvedValue(undefined);
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      const result = await service.dispatch(
+        buildEntry({
+          operationType: 'SHIFT_CLOSURE',
+          payload: JSON.stringify({ userId: 'u-1', shiftId: 'shift-1' }),
+        }),
+      );
+
+      expect(result).toEqual({});
     });
   });
 

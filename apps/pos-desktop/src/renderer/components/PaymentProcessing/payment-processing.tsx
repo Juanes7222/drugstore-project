@@ -51,6 +51,8 @@ import {
 } from "@/store/slices/ui-slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useSalesPosService } from "@/components/common/service-context";
+import { useProductSyncWait } from "@/hooks/use-product-sync-wait";
+import { ProductNotSyncedYetException } from "../../../domain/sales-pos/exceptions";
 import { formatCurrency } from "@/utils/format-currency";
 import { createMockPaymentGatewayService } from "@/services/payment-gateway-service.mock";
 import { PaymentGatewayService } from "@/services/payment-gateway-service";
@@ -69,7 +71,9 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
   const dispatch = useAppDispatch();
   const timeoutRef = useRef<number | undefined>(undefined);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isSyncingProduct, setIsSyncingProduct] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const waitForProductSync = useProductSyncWait();
 
   const methods = useAppSelector(selectPaymentMethods);
   const totalDue = useAppSelector(selectTotalCents);
@@ -183,6 +187,41 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
 
   const cartItems = useAppSelector(selectCartItems);
 
+  const performConfirm = useCallback(async () => {
+    if (!currentSaleId) {
+      throw new Error('No se encontró la venta activa. Vuelva a intentarlo.');
+    }
+
+    // 1. Resolve frontend payment types → DB payment method UUIDs
+    const resolvedPayments = await Promise.all(
+      methods.map(async (m) => ({
+        paymentMethodId: await salesPosService.resolvePaymentMethodId(m.type),
+        amount: m.amountCents / 100, // cents → pesos (DB stores Decimal 15,2)
+        transactionReference: m.reference,
+        cardBrand: m.type === 'card' ? 'GENERIC' : undefined,
+        cardLastFour: undefined,
+        batchNumber: undefined,
+        processorResponseCode: m.authorizationStatus,
+      })),
+    );
+
+    // 2. Persist to DB — consumes stock, creates SalePayment, sets CONFIRMED
+    await salesPosService.confirm(currentSaleId, {
+      payments: resolvedPayments,
+    });
+
+    // 3. Clear sale & payment state now that it's persisted
+    dispatch(setCurrentSaleId(null));
+    dispatch(resetPayment());
+
+    // 4. Proceed with UI animation handoff
+    dispatch(initiateSaleCompletion());
+
+    timeoutRef.current = window.setTimeout(() => {
+      dispatch(navigateToReceipt());
+    }, SALE_COMPLETION_INITIATE_MS);
+  }, [methods, currentSaleId, salesPosService, dispatch]);
+
   const handleConfirm = useCallback(async () => {
     if (!canConfirm || isCompleting) {
       return;
@@ -220,42 +259,40 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     setActionError(null);
 
     try {
-      // 1. Resolve frontend payment types → DB payment method UUIDs
-      const resolvedPayments = await Promise.all(
-        methods.map(async (m) => ({
-          paymentMethodId: await salesPosService.resolvePaymentMethodId(m.type),
-          amount: m.amountCents / 100, // cents → pesos (DB stores Decimal 15,2)
-          transactionReference: m.reference,
-          cardBrand: m.type === 'card' ? 'GENERIC' : undefined,
-          cardLastFour: undefined,
-          batchNumber: undefined,
-          processorResponseCode: m.authorizationStatus,
-        })),
-      );
-
-      // 2. Persist to DB — consumes stock, creates SalePayment, sets CONFIRMED
-      await salesPosService.confirm(currentSaleId, {
-        payments: resolvedPayments,
-      });
-
-      // 3. Clear sale & payment state now that it's persisted
-      dispatch(setCurrentSaleId(null));
-      dispatch(resetPayment());
-
-      // 4. Proceed with UI animation handoff
-      dispatch(initiateSaleCompletion());
-
-      timeoutRef.current = window.setTimeout(() => {
-        dispatch(navigateToReceipt());
-      }, SALE_COMPLETION_INITIATE_MS);
+      await performConfirm();
     } catch (err) {
+      // If the failure is a single unsynced product, kick the sync
+      // engine and wait for the product to land on the server before
+      // re-running the confirm. The cashier sees "Sincronizando producto"
+      // and the retry happens transparently if it lands in time.
+      if (err instanceof ProductNotSyncedYetException) {
+        setIsSyncingProduct(true);
+        const synced = await waitForProductSync(err.productId);
+        setIsSyncingProduct(false);
+        if (synced) {
+          try {
+            await performConfirm();
+            return;
+          } catch (retryErr) {
+            console.error('[PaymentProcessing] retry after sync failed:', retryErr);
+            setActionError(
+              t('sales.cart.error_product_not_synced_yet'),
+            );
+            return;
+          }
+        }
+        setActionError(t('sales.cart.error_product_not_synced_yet'));
+        return;
+      }
+
       console.error('[PaymentProcessing] confirm failed:', err);
       setActionError(
         err instanceof Error ? err.message : 'Error al confirmar la venta.',
       );
+    } finally {
       setIsCompleting(false);
     }
-  }, [canConfirm, isCompleting, currentSaleId, cartItems, methods, salesPosService, dispatch]);
+  }, [canConfirm, isCompleting, currentSaleId, cartItems, performConfirm, waitForProductSync, t, dispatch]);
 
   const differenceText = useMemo(() => {
     if (difference < 0) {
@@ -414,7 +451,25 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
           </div>
         )}
 
-        {actionError && (
+        {isSyncingProduct && (
+          <div
+            className="mt-pos-md flex items-center gap-2 rounded-pos p-pos-md text-body-sm"
+            style={{
+              backgroundColor: 'color-mix(in srgb, var(--color-sync) 12%, transparent)',
+              color: 'var(--color-sync)',
+            }}
+            role="status"
+            aria-live="polite"
+          >
+            <span
+              className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
+              aria-hidden="true"
+            />
+            {t("sales.cart.syncing_product")}
+          </div>
+        )}
+
+        {actionError && !isSyncingProduct && (
           <div
             className="mt-pos-md rounded-pos p-pos-md text-body-sm"
             style={{

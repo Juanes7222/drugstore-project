@@ -26,6 +26,12 @@ model Product {
   currentPriceId         String?
   currentTaxHistoryId    String?
   currentCostId          String?
+  /// Sync operationUuid that created this product via PRODUCT_CREATION.
+  /// Nullable, set only for offline-created products that were synced.
+  /// Used by SyncOperationDispatcherService.handleProductCreation to
+  /// detect retries and return the existing entity id instead of
+  /// creating a duplicate.
+  sourceOperationUuid    String?   @unique
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   createdById            String

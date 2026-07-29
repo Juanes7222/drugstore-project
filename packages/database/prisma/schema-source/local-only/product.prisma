@@ -55,6 +55,11 @@ model Product {
   /// Indexed because the catalog pull matches by `serverId` to detect
   /// rows that already have a server mirror.
   serverId              String?   @unique
+  /// Sync operationUuid that created this product via PRODUCT_CREATION.
+  /// Nullable, set only for offline-created products that were synced.
+  /// Mirrors the server-only field; present on local so the schema
+  /// stays consistent across builds.
+  sourceOperationUuid    String?   @unique
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   createdById            String

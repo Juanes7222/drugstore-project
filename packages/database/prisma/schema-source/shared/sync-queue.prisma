@@ -21,6 +21,13 @@ model SyncQueue {
   operationSource       SyncSource @default(DIRECT)
   correlationId         String?
   workstationId         String?
+  // Server-assigned id of the entity created by *_CREATION operations, and
+  // the server-chosen internalCode that replaced the offline provisional
+  // value (e.g. "OFFLINE-{uuid}"). Stamped on first successful dispatch
+  // and read back on ALREADY_ACCEPTED retries so the POS can recover
+  // serverId/entityInternalCode even when the first response was lost.
+  entityId              String?
+  entityInternalCode    String?
 
   @@index([status, nextRetryAt])
   @@index([sourceWorkstationId, clientSequence])

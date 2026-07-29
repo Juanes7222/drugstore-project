@@ -181,7 +181,23 @@ interface BatchOperationResult {
   operationUuid: string;
   status: string;
   error?: string;
+  /**
+   * Server-assigned id of the created/mutated entity. The local row's
+   * `serverId` column is stamped with this value after a successful
+   * push — see `stampEntityIdFromResult` and the sales-pos
+   * `assertProductsSynced` gate that reads it.
+   */
   entityId?: string;
+  /**
+   * Server-chosen `internalCode` for the created entity. Only set for
+   * `*_CREATION` operations whose provisional local value (e.g.
+   * `OFFLINE-{uuid}`) the server is expected to replace with a
+   * tenant-scoped sequential or otherwise clean code. The local
+   * stamp pipeline applies this value only when the local row still
+   * carries the provisional code, so a later cashier-driven
+   * `internalCode` edit on the local row is never overwritten.
+   */
+  entityInternalCode?: string;
 }
 
 class SyncPushServiceImpl implements SyncPushService {
@@ -499,18 +515,28 @@ class SyncPushServiceImpl implements SyncPushService {
 
   /**
    * After a SyncQueue entry reaches COMPLETED, stamp the
-   * server-assigned id onto the local row so the rest of the app can
-   * treat the entity as "synced".
+   * server-assigned id (and `internalCode` when the server supplied
+   * one) onto the local row so the rest of the app can treat the
+   * entity as "synced" and display the canonical code instead of the
+   * provisional `OFFLINE-{uuid}` the cashier's offline create used.
    *
    * Currently only handles PRODUCT_CREATION. The payload's
    * `metadata.productId` carries the local UUID; the batch result's
-   * `entityId` carries the server-assigned id. Both writes happen
-   * inside the same transaction as the SyncQueue update so a crash
-   * between "server accepted" and "local stamp" cannot leave a
-   * perpetual orphan. If a future operation type needs the same
-   * treatment (CLIENT_CREATION, SUPPLIER_RETURN, etc.) extend the
-   * switch below — the rest of the pipeline already carries
-   * `entityId` through.
+   * `entityId` carries the server-assigned id and `entityInternalCode`
+   * the server-chosen clean code. Both writes happen inside the same
+   * transaction as the SyncQueue update so a crash between "server
+   * accepted" and "local stamp" cannot leave a perpetual orphan. If a
+   * future operation type needs the same treatment (CLIENT_CREATION,
+   * SUPPLIER_RETURN, etc.) extend the switch below — the rest of the
+   * pipeline already carries `entityId` and `entityInternalCode`
+   * through.
+   *
+   * The `internalCode` stamp is guarded by a `current internalCode
+   * starts with 'OFFLINE-'` check, so a later cashier-driven
+   * `internalCode` edit on the local row is never overwritten by a
+   * stale server echo. The OFFLINE- prefix is the marker that
+   * `createProduct` (see `product.service.ts:606`) uses to flag a
+   * row that has never been touched by a successful sync.
    *
    * Failures inside the stamp are swallowed: the entry is COMPLETED
    * and will not be re-pushed, so a stamp failure must not roll the
@@ -532,10 +558,34 @@ class SyncPushServiceImpl implements SyncPushService {
     );
     if (localProductId === null) return;
 
+    const updateData: Record<string, string> = {
+      serverId: result.entityId,
+    };
+    if (
+      result.entityInternalCode !== undefined &&
+      result.entityInternalCode.length > 0
+    ) {
+      // Read the current row so we can decide whether the server
+      // echo is replacing a provisional code or stomping a real one.
+      // The extra SELECT is cheap and avoids a blind `updateMany` that
+      // could clobber a manual edit the cashier made after sync.
+      const current = await tx.product.findUnique({
+        where: { id: localProductId },
+        select: { internalCode: true },
+      });
+      if (
+        current !== null &&
+        current.internalCode.startsWith('OFFLINE-') &&
+        current.internalCode !== result.entityInternalCode
+      ) {
+        updateData.internalCode = result.entityInternalCode;
+      }
+    }
+
     try {
       await tx.product.update({
         where: { id: localProductId },
-        data: { serverId: result.entityId },
+        data: updateData,
       });
     } catch (err) {
       // The local row may have been soft-deleted or its schema may
@@ -616,7 +666,11 @@ class SyncPushServiceImpl implements SyncPushService {
 
   /**
    * Parse the per-operation results from a batch response.
-   * The server returns an array of `{ operationUuid, status, error?, entityId? }`.
+   * The server returns an array of
+   * `{ operationUuid, status, error?, entityId?, entityInternalCode? }`.
+   * `entityInternalCode` is present only when the server is willing to
+   * overwrite the local provisional code (e.g. `OFFLINE-{uuid}`) with
+   * a tenant-scoped value — absent for every other operation type.
    */
   private parseBatchResults(bodyText: string): BatchOperationResult[] {
     try {
@@ -629,6 +683,10 @@ class SyncPushServiceImpl implements SyncPushService {
             error: item.error != null ? String(item.error) : undefined,
             entityId:
               item.entityId != null ? String(item.entityId) : undefined,
+            entityInternalCode:
+              item.entityInternalCode != null
+                ? String(item.entityInternalCode)
+                : undefined,
           }),
         );
       }

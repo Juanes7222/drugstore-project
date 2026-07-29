@@ -542,6 +542,13 @@ const mapTaxHistoryForUpdate = (tax: TaxHistoryRow): any => ({
 
 const mapProductForCreate = (prod: ProductRow): any => ({
   id: prod.id,
+  // serverId mirrors the server-assigned id for products that originated
+  // on the server (pulled via catalog sync). The local POS uses serverId
+  // IS NOT NULL as the gate that lets a product be sold — see
+  // ProductNotSyncedYetException. Without this, every server-mirror
+  // product would be unsellable until a no-op PRODUCT_CREATION round-trip
+  // stamped serverId on it.
+  serverId: prod.id,
   internalCode: prod.internalCode,
   commercialName: prod.commercialName,
   genericName: prod.genericName,
@@ -564,6 +571,11 @@ const mapProductForCreate = (prod: ProductRow): any => ({
 });
 
 const mapProductForUpdate = (prod: ProductRow): any => ({
+  // Stamping serverId on every pull-update is the safety net for rows
+  // that were created locally with a provisional id before the first
+  // pull landed — the pull matches by id (see upsert where clause) and
+  // here we record the server mirror.
+  serverId: prod.id,
   internalCode: prod.internalCode,
   commercialName: prod.commercialName,
   genericName: prod.genericName,

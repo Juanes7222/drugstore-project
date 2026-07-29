@@ -18,6 +18,10 @@ const makeMockPrisma = () => {
     syncAttempt: {
       create: vi.fn(),
     },
+    product: {
+      findUnique: vi.fn(),
+      update: vi.fn(),
+    },
   };
 
   const transaction = vi.fn(async (cb: (t: any) => unknown) => cb(tx));
@@ -26,6 +30,7 @@ const makeMockPrisma = () => {
     $transaction: transaction,
     syncQueue: tx.syncQueue,
     syncAttempt: tx.syncAttempt,
+    product: tx.product,
   } as any;
 
   return { prisma, tx };
@@ -726,6 +731,314 @@ describe("SyncPushService", () => {
         pushed: 1,
         accepted: 1,
       });
+
+      vi.unstubAllGlobals();
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // entityInternalCode stamping (PRODUCT_CREATION)
+  // ---------------------------------------------------------------
+
+  describe("stampEntityIdFromResult (PRODUCT_CREATION entityInternalCode handling)", () => {
+    const makeProductCreationEntry = (overrides: any = {}) =>
+      makePendingEntry({
+        operationType: "PRODUCT_CREATION",
+        payload: JSON.stringify({
+          metadata: { productId: "local-product-1" },
+        }),
+        ...overrides,
+      });
+
+    it("stamps both serverId and internalCode when local code starts with OFFLINE- and the server value differs", async () => {
+      const entry = makeProductCreationEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+      tx.product.findUnique.mockResolvedValueOnce({
+        internalCode: "OFFLINE-local-product-1",
+      });
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{
+            operationUuid: "uuid-1",
+            status: "ACCEPTED",
+            entityId: "server-product-1",
+            entityInternalCode: "PROD-001",
+          }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      await service.pushPending();
+
+      expect(tx.product.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "local-product-1" },
+          select: { internalCode: true },
+        }),
+      );
+      expect(tx.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "local-product-1" },
+          data: { serverId: "server-product-1", internalCode: "PROD-001" },
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("does not stomp internalCode when the local code does not start with OFFLINE-", async () => {
+      const entry = makeProductCreationEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+      tx.product.findUnique.mockResolvedValueOnce({
+        internalCode: "MANUAL-001",
+      });
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{
+            operationUuid: "uuid-1",
+            status: "ACCEPTED",
+            entityId: "server-product-1",
+            entityInternalCode: "PROD-001",
+          }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      await service.pushPending();
+
+      expect(tx.product.findUnique).toHaveBeenCalled();
+      const updateCall = tx.product.update.mock.calls[0][0];
+      expect(updateCall.data).toEqual({ serverId: "server-product-1" });
+      expect(updateCall.data).not.toHaveProperty("internalCode");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("does not stomp internalCode when the local OFFLINE- code already matches the server value", async () => {
+      const entry = makeProductCreationEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+      tx.product.findUnique.mockResolvedValueOnce({
+        internalCode: "OFFLINE-local-product-1",
+      });
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{
+            operationUuid: "uuid-1",
+            status: "ACCEPTED",
+            entityId: "server-product-1",
+            entityInternalCode: "OFFLINE-local-product-1",
+          }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      await service.pushPending();
+
+      expect(tx.product.findUnique).toHaveBeenCalled();
+      const updateCall = tx.product.update.mock.calls[0][0];
+      expect(updateCall.data).toEqual({ serverId: "server-product-1" });
+      expect(updateCall.data).not.toHaveProperty("internalCode");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("is a no-op for internalCode when the server result omits entityInternalCode", async () => {
+      const entry = makeProductCreationEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{
+            operationUuid: "uuid-1",
+            status: "ACCEPTED",
+            entityId: "server-product-1",
+          }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      await service.pushPending();
+
+      expect(tx.product.findUnique).not.toHaveBeenCalled();
+      expect(tx.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "local-product-1" },
+          data: { serverId: "server-product-1" },
+        }),
+      );
+      const updateCall = tx.product.update.mock.calls[0][0];
+      expect(updateCall.data).not.toHaveProperty("internalCode");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("is a no-op for internalCode when the server returns an empty entityInternalCode string", async () => {
+      const entry = makeProductCreationEntry();
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{
+            operationUuid: "uuid-1",
+            status: "ACCEPTED",
+            entityId: "server-product-1",
+            entityInternalCode: "",
+          }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      await service.pushPending();
+
+      expect(tx.product.findUnique).not.toHaveBeenCalled();
+      const updateCall = tx.product.update.mock.calls[0][0];
+      expect(updateCall.data).toEqual({ serverId: "server-product-1" });
+      expect(updateCall.data).not.toHaveProperty("internalCode");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("tolerates a mixed batch where some results carry entityInternalCode and others do not", async () => {
+      const entries = [
+        makeProductCreationEntry({ id: "entry-1", operationUuid: "uuid-1" }),
+        makeProductCreationEntry({
+          id: "entry-2",
+          operationUuid: "uuid-2",
+          payload: JSON.stringify({ metadata: { productId: "local-product-2" } }),
+        }),
+      ];
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce(entries)
+        .mockResolvedValueOnce([]);
+      tx.product.findUnique.mockResolvedValueOnce({
+        internalCode: "OFFLINE-local-product-1",
+      });
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([
+            {
+              operationUuid: "uuid-1",
+              status: "ACCEPTED",
+              entityId: "server-product-1",
+              entityInternalCode: "PROD-001",
+            },
+            {
+              operationUuid: "uuid-2",
+              status: "ACCEPTED",
+              entityId: "server-product-2",
+            },
+          ]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      const result = await service.pushPending();
+
+      expect(result).toEqual({ pushed: 2, accepted: 2 });
+      expect(tx.product.update).toHaveBeenCalledTimes(2);
+      expect(tx.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "local-product-1" },
+          data: { serverId: "server-product-1", internalCode: "PROD-001" },
+        }),
+      );
+      expect(tx.product.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "local-product-2" },
+          data: { serverId: "server-product-2" },
+        }),
+      );
+      const secondCall = tx.product.update.mock.calls[1][0];
+      expect(secondCall.data).not.toHaveProperty("internalCode");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("does not touch product tables for non-PRODUCT_CREATION operations", async () => {
+      const entry = makePendingEntry(); // SALE_CONFIRMATION
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry])
+        .mockResolvedValueOnce([]);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockResolvedValue(
+          JSON.stringify([{
+            operationUuid: "uuid-1",
+            status: "ACCEPTED",
+            entityId: "server-sale-1",
+            entityInternalCode: "SALE-XYZ",
+          }]),
+        ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      await service.pushPending();
+
+      expect(tx.product.findUnique).not.toHaveBeenCalled();
+      expect(tx.product.update).not.toHaveBeenCalled();
 
       vi.unstubAllGlobals();
     });

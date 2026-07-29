@@ -91,6 +91,7 @@ export class ProductsService {
   async createProduct(
     userId: string,
     dto: CreateProductDto,
+    sourceOperationUuid?: string,
   ): Promise<any> {
     const priceDecimal = new Prisma.Decimal(dto.initialPrice);
 
@@ -118,6 +119,7 @@ export class ProductsService {
           currentPriceId: null,
           currentTaxHistoryId: null,
           createdById: userId,
+          sourceOperationUuid: sourceOperationUuid ?? null,
           createdAt: new Date(),
           updatedAt: new Date(),
         },

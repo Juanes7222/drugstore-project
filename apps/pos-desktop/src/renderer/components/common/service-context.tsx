@@ -59,6 +59,10 @@ type InitState =
 
 const ServiceContext = createContext<Services | null>(null);
 
+/** Exported for hooks that want to consume the service context
+ *  defensively (e.g. graceful no-op when no provider is present). */
+export { ServiceContext };
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------

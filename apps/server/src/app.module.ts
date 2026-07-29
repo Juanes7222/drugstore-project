@@ -19,6 +19,11 @@ import { SyncModule } from './modules/sync/sync.module';
 import { UpdatesModule } from './modules/updates/updates.module';
 import { TenantConfigModule } from './modules/tenant-config/tenant-config.module';
 import { PrintModule } from './modules/print/print.module';
+import { DevModule } from './modules/dev/dev.module';
+
+/** Dev-only modules — only registered when NODE_ENV=development */
+const DEV_MODULES =
+  process.env.NODE_ENV === 'development' ? [DevModule] : [];
 
 @Module({
   imports: [
@@ -44,6 +49,7 @@ import { PrintModule } from './modules/print/print.module';
     TenantConfigModule,
     PrismaModule,
     PrintModule,
+    ...DEV_MODULES,
   ],
 })
 export class AppModule {}

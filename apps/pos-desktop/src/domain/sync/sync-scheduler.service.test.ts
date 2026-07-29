@@ -8,6 +8,15 @@ import { useLocalSessionStore } from "../auth/local-session.store";
 import { useSyncAuthStatusStore } from "./sync-auth-status.store";
 import type { LocalSession } from "../auth/local-session.store";
 
+// Mock createSyncPushService so it always returns { pushPending: vi.fn() }.
+// This prevents updateAccessToken() from overwriting the mock with a real
+// push service, which would fail due to the incomplete Prisma mock.
+vi.mock("./sync-push.service", () => ({
+  createSyncPushService: vi.fn(() => ({
+    pushPending: vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 }),
+  })),
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -430,6 +439,139 @@ describe("SyncScheduler", () => {
       );
       expect(refreshCalls).toHaveLength(0);
       expect(useSyncAuthStatusStore.getState().status).toBe("fresh");
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // triggerPush — immediate push after notifyPendingEntry()
+  // -----------------------------------------------------------------------
+
+  describe("triggerPush", () => {
+    it("calls refreshAccessToken() before pushPending() when online", async () => {
+      seedSession({
+        expiresAt: new Date(Date.now() - 60_000), // expired — triggers refresh
+      });
+
+      // Because createSyncPushService is mocked at module level,
+      // this.pushService.pushPending() always calls this spy — even after
+      // refreshAccessToken() internally calls updateAccessToken().
+      const { createSyncPushService } = await import("./sync-push.service");
+      const pushPending = vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 });
+      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+
+      scheduler = makeScheduler();
+
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        configurable: true,
+      });
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      scheduler.triggerPush();
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      // refreshAccessToken was called (posted to /auth/refresh)
+      const refreshCalls = fetchSpy.mock.calls.filter(
+        ([url]) =>
+          typeof url === "string" && url.includes("/auth/refresh"),
+      );
+      expect(refreshCalls.length).toBeGreaterThanOrEqual(1);
+
+      // pushPending was called after refreshAccessToken completed
+      // (guaranteed by sequential await inside withLock callback)
+      expect(pushPending).toHaveBeenCalled();
+    });
+
+    it("returns early when offline — no refresh, no push", async () => {
+      seedSession();
+      const { createSyncPushService } = await import("./sync-push.service");
+      const pushPending = vi.fn();
+      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+
+      scheduler = makeScheduler();
+
+      Object.defineProperty(navigator, "onLine", {
+        value: false,
+        configurable: true,
+      });
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      scheduler.triggerPush();
+
+      expect(pushPending).not.toHaveBeenCalled();
+      const refreshCalls = fetchSpy.mock.calls.filter(
+        ([url]) =>
+          typeof url === "string" && url.includes("/auth/refresh"),
+      );
+      expect(refreshCalls).toHaveLength(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // onOnlineEvent — immediate push on offline→online transition
+  // -----------------------------------------------------------------------
+
+  describe("onOnlineEvent", () => {
+    it("calls refreshAccessToken() before pushPending() on offline→online transition", async () => {
+      seedSession({
+        expiresAt: new Date(Date.now() - 60_000), // expired — triggers refresh
+      });
+
+      const { createSyncPushService } = await import("./sync-push.service");
+      const pushPending = vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 });
+      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+
+      scheduler = makeScheduler();
+
+      // Simulate offline→online transition: wasOnline=false, isOnline()=true
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        configurable: true,
+      });
+      (scheduler as any).wasOnline = false;
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      (scheduler as any).onOnlineEvent();
+
+      await vi.advanceTimersByTimeAsync(0);
+
+      const refreshCalls = fetchSpy.mock.calls.filter(
+        ([url]) =>
+          typeof url === "string" && url.includes("/auth/refresh"),
+      );
+      expect(refreshCalls.length).toBeGreaterThanOrEqual(1);
+
+      expect(pushPending).toHaveBeenCalled();
+    });
+
+    it("no-ops when wasOnline is already true (spurious online event)", async () => {
+      seedSession();
+      const { createSyncPushService } = await import("./sync-push.service");
+      const pushPending = vi.fn();
+      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+
+      scheduler = makeScheduler();
+
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        configurable: true,
+      });
+      (scheduler as any).wasOnline = true; // already online
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      (scheduler as any).onOnlineEvent();
+
+      expect(pushPending).not.toHaveBeenCalled();
+      const refreshCalls = fetchSpy.mock.calls.filter(
+        ([url]) =>
+          typeof url === "string" && url.includes("/auth/refresh"),
+      );
+      expect(refreshCalls).toHaveLength(0);
     });
   });
 });

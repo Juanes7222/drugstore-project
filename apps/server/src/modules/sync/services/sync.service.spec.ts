@@ -9,6 +9,11 @@ jest.mock('@pharmacy/database', () => {
 
 import { SyncService } from './sync.service';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import {
+  SyncOperationDispatcherService,
+  type DispatchResult,
+} from '../sync-operation-dispatcher.service';
+import { SyncPayloadValidationException } from '../exceptions/sync-payload-validation.exception';
 
 const mockSyncQueue = {
   aggregate: jest.fn(),
@@ -23,12 +28,16 @@ const mockPrisma = {
   syncQueue: mockSyncQueue,
 } as unknown as PrismaService;
 
+const mockDispatcher = {
+  dispatch: jest.fn<Promise<DispatchResult>, [unknown]>(),
+} as unknown as SyncOperationDispatcherService;
+
 describe('SyncService', () => {
   let service: SyncService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new SyncService(mockPrisma);
+    service = new SyncService(mockPrisma, mockDispatcher);
   });
 
   // ── getMaxClientSequence ──────────────────────────────────────────────
@@ -433,6 +442,248 @@ describe('SyncService', () => {
       expect(results).toHaveLength(3);
       expect(results.every((r) => r.status === 'ACCEPTED')).toBe(true);
       expect(mockSyncQueue.create).toHaveBeenCalledTimes(3);
+    });
+
+    // ── entityId / entityInternalCode propagation ──────────────────────
+
+    it('entityId: PRODUCT_CREATION ACCEPTED includes the server-assigned id and the normalized internalCode', async () => {
+      const pcPayload = {
+        userId: 'u-1',
+        createProductDto: { internalCode: 'OFFLINE-uuid-1' },
+      };
+      // SHA-256 of JSON.stringify(pcPayload)
+      const pcHash = 'a70d5a2c5ff4ee78e15cac468df2dd746696e777361459cfb8e8f6a8896ae675';
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'op-pc-1',
+            operationType: 'PRODUCT_CREATION',
+            payload: pcPayload,
+            payloadHash: pcHash,
+            clientSequence: 30,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      mockSyncQueue.create.mockResolvedValue({ id: 'entry-pc-1' });
+      (mockDispatcher.dispatch as jest.Mock).mockResolvedValue({
+        entityId: 'p-1',
+        entityInternalCode: 'P000001',
+      });
+      mockSyncQueue.update.mockResolvedValue({});
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results).toEqual([
+        {
+          operationUuid: 'op-pc-1',
+          status: 'ACCEPTED',
+          entityId: 'p-1',
+          entityInternalCode: 'P000001',
+        },
+      ]);
+      expect(mockDispatcher.dispatch).toHaveBeenCalledTimes(1);
+      // The COMPLETED update must stamp the new fields so a future
+      // ALREADY_ACCEPTED retry can echo them back. The entry id is
+      // generated inside `createQueueEntry` as a random UUID, so we
+      // match by call rather than by exact id.
+      const completedUpdate = mockSyncQueue.update.mock.calls.find(
+        ([args]) => args?.data?.status === 'COMPLETED',
+      );
+      expect(completedUpdate).toBeDefined();
+      expect(completedUpdate?.[0].data).toEqual(
+        expect.objectContaining({
+          status: 'COMPLETED',
+          entityId: 'p-1',
+          entityInternalCode: 'P000001',
+        }),
+      );
+    });
+
+    it('entityId: SALE_CONFIRMATION ACCEPTED does NOT include entityId', async () => {
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'op-sale-1',
+            operationType: 'SALE_CONFIRMATION',
+            payload: { amount: 100 },
+            payloadHash: VALID_HASH,
+            clientSequence: 31,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      mockSyncQueue.create.mockResolvedValue({ id: 'entry-sale-1' });
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results).toEqual([
+        { operationUuid: 'op-sale-1', status: 'ACCEPTED' },
+      ]);
+      expect(results[0]).not.toHaveProperty('entityId');
+      expect(results[0]).not.toHaveProperty('entityInternalCode');
+      // SALE_CONFIRMATION is not in IMMEDIATE_DISPATCH_TYPES — the
+      // dispatcher must not run on the inline path.
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+    });
+
+    it('entityId: PRODUCT_CREATION dispatcher validation failure returns REJECTED without entityId', async () => {
+      const badPayload = {
+        userId: 'u-1',
+        createProductDto: { internalCode: 'OFFLINE-uuid-2' },
+      };
+      // SHA-256 of JSON.stringify(badPayload)
+      const badHash = '41a4fa2381e1f7531c1de175bbfa288a81ac2891417a55bc90b003025638aabe';
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'op-pc-bad',
+            operationType: 'PRODUCT_CREATION',
+            payload: badPayload,
+            payloadHash: badHash,
+            clientSequence: 32,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      mockSyncQueue.create.mockResolvedValue({ id: 'entry-pc-bad' });
+      (mockDispatcher.dispatch as jest.Mock).mockRejectedValue(
+        new SyncPayloadValidationException('PRODUCT_CREATION', [
+          { field: 'commercialName', message: 'Commercial name is required' },
+        ]),
+      );
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results).toEqual([
+        {
+          operationUuid: 'op-pc-bad',
+          status: 'REJECTED',
+          error: expect.stringContaining('commercialName'),
+        },
+      ]);
+      expect(results[0]).not.toHaveProperty('entityId');
+      expect(results[0]).not.toHaveProperty('entityInternalCode');
+      // The SyncQueue row must NOT have been marked COMPLETED — the
+      // dispatch errored, so the cron job will retry.
+      const completedCall = mockSyncQueue.update.mock.calls.find(
+        ([args]) => args?.data?.status === 'COMPLETED',
+      );
+      expect(completedCall).toBeUndefined();
+    });
+
+    it('entityId: ALREADY_ACCEPTED for a duplicate operationUuid echoes the previously-stored entityId and entityInternalCode', async () => {
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'op-dup',
+            operationType: 'PRODUCT_CREATION',
+            payload: { amount: 100 },
+            payloadHash: VALID_HASH,
+            clientSequence: 33,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      const p2002 = new Error('Unique constraint violation');
+      (p2002 as any).code = 'P2002';
+      mockSyncQueue.create.mockRejectedValueOnce(p2002);
+      mockSyncQueue.findUnique.mockResolvedValue({
+        entityId: 'p-99',
+        entityInternalCode: 'P000007',
+      });
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results).toEqual([
+        {
+          operationUuid: 'op-dup',
+          status: 'ALREADY_ACCEPTED',
+          entityId: 'p-99',
+          entityInternalCode: 'P000007',
+        },
+      ]);
+      expect(mockSyncQueue.findUnique).toHaveBeenCalledWith({
+        where: { operationUuid: 'op-dup' },
+        select: { entityId: true, entityInternalCode: true },
+      });
+      // The dispatcher must not run on the duplicate path — the previous
+      // attempt already produced the entity.
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+    });
+
+    it('entityId: ALREADY_ACCEPTED falls back to the bare shape when the prior row has no stamped ids (older code path)', async () => {
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'op-dup-legacy',
+            operationType: 'PRODUCT_CREATION',
+            payload: { amount: 100 },
+            payloadHash: VALID_HASH,
+            clientSequence: 34,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      const p2002 = new Error('Unique constraint violation');
+      (p2002 as any).code = 'P2002';
+      mockSyncQueue.create.mockRejectedValueOnce(p2002);
+      mockSyncQueue.findUnique.mockResolvedValue({
+        entityId: null,
+        entityInternalCode: null,
+      });
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results).toEqual([
+        { operationUuid: 'op-dup-legacy', status: 'ALREADY_ACCEPTED' },
+      ]);
+      expect(results[0]).not.toHaveProperty('entityId');
+      expect(results[0]).not.toHaveProperty('entityInternalCode');
+    });
+
+    it('entityId: CLIENT_CREATION returns bare ACCEPTED today (CLIENT_CREATION is not in IMMEDIATE_DISPATCH_TYPES)', async () => {
+      // The current SyncService only stamps entityId for operations in
+      // IMMEDIATE_DISPATCH_TYPES (PRODUCT_CREATION, PRODUCT_UPDATE).
+      // CLIENT_CREATION is queued and processed by the cron job. This
+      // test pins that behavior so the eventual move of CLIENT_CREATION
+      // into IMMEDIATE_DISPATCH_TYPES is a deliberate, reviewable change.
+      const ccPayload = {
+        userId: 'u-1',
+        createClientDto: {
+          identificationType: 'CC',
+          identificationNumber: '123',
+        },
+        localClientId: 'local-c-1',
+      };
+      // SHA-256 of JSON.stringify(ccPayload)
+      const ccHash = 'dc7974f6414f0496b4afb71b27df0f98e3e1432afe78d3544142a01aaef12b6e';
+      const batchDto = {
+        operations: [
+          {
+            operationUuid: 'op-cc-1',
+            operationType: 'CLIENT_CREATION',
+            payload: ccPayload,
+            payloadHash: ccHash,
+            clientSequence: 35,
+            sourceCreatedAt: '2024-01-01T00:00:00Z',
+          },
+        ],
+      };
+
+      mockSyncQueue.create.mockResolvedValue({ id: 'entry-cc-1' });
+
+      const results = await service.receiveBatch(batchDto, 'ws-1');
+
+      expect(results).toEqual([
+        { operationUuid: 'op-cc-1', status: 'ACCEPTED' },
+      ]);
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
     });
   });
 });

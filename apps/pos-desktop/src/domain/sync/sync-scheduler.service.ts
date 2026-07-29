@@ -334,6 +334,11 @@ export class SyncScheduler {
    * transaction.  This fires a push immediately instead of waiting for
    * the next 5-minute scheduler tick.
    *
+   * Refreshes the access token first so the push does not use a stale/
+   * expired token — the regular `tick()` already does this, but the
+   * immediate-push path must too, otherwise a sale persisted when the
+   * token was near expiry will fail with 401 on the very first push.
+   *
    * Fire-and-forget — errors are logged internally by `pushPending()`.
    * No-op when offline (the scheduler's tick will eventually push when
    * connectivity returns).
@@ -341,7 +346,10 @@ export class SyncScheduler {
   triggerPush(): void {
     if (!isOnline()) return;
 
-    void this.withLock(() => this.pushService.pushPending()).catch(() => {
+    void this.withLock(async () => {
+      await this.refreshAccessToken();
+      await this.pushService.pushPending();
+    }).catch(() => {
       /* pushPending handles its own errors */
     });
   }
@@ -377,8 +385,13 @@ export class SyncScheduler {
     }
     this.wasOnline = online;
 
-    // 1. Immediate push (fire-and-forget).
-    void this.withLock(() => this.pushService.pushPending()).catch(() => {
+    // 1. Refresh token then immediate push (fire-and-forget).
+    //    Refreshing first ensures the push doesn't fail with 401 when the
+    //    access token expired during the offline window.
+    void this.withLock(async () => {
+      await this.refreshAccessToken();
+      await this.pushService.pushPending();
+    }).catch(() => {
       /* pushPending handles its own errors */
     });
 

@@ -73,16 +73,22 @@ export class SyncProcessingJob {
         data: { status: 'PROCESSING' },
       });
 
-      await this.dispatcher.dispatch(entry);
+      const result = await this.dispatcher.dispatch(entry);
 
       // Clear any previous error message from a prior failed attempt —
-      // a successful retry should not show stale error context.
+      // a successful retry should not show stale error context. The
+      // dispatcher's entityId / entityInternalCode are stamped here too
+      // so a *_CREATION retried after the immediate-dispatch path
+      // failed still surfaces the server-assigned ids in the eventual
+      // ALREADY_ACCEPTED response on a subsequent push.
       await this.prisma.syncQueue.update({
         where: { id: entry.id },
         data: {
           status: 'COMPLETED',
           processedAt: new Date(),
           lastErrorMessage: null,
+          entityId: result.entityId ?? null,
+          entityInternalCode: result.entityInternalCode ?? null,
         },
       });
     } catch (error: unknown) {

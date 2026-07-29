@@ -607,6 +607,57 @@ async function backfillEnumValues(client: PGlite): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Product.serverId backfill
+// ---------------------------------------------------------------------------
+
+/**
+ * Backfill `Product.serverId` for rows that pre-date the column.
+ *
+ * The `serverId` column and the `assertProductsSynced` sale-time gate
+ * were introduced together. Catalog pulls since then stamp
+ * `serverId = prod.id` on every upsert, but rows that were already
+ * present in a local PGlite database before the column existed have
+ * `serverId IS NULL` and therefore fail the gate, blocking every sale
+ * until the cashier manually intervenes.
+ *
+ * The fix is a one-shot UPDATE that runs on every startup:
+ *
+ * - Idempotent: the WHERE clause matches only rows with
+ *   `serverId IS NULL`, so re-running does nothing once the
+ *   database is in steady state.
+ * - Safe for offline-created products: the `internalCode NOT LIKE
+ *   'OFFLINE-%'` filter skips rows created by
+ *   `ProductService.createProduct`, which carry a provisional
+ *   `OFFLINE-{uuid}` code. Those rows genuinely have no server
+ *   mirror and must remain gated until their `PRODUCT_CREATION`
+ *   sync lands.
+ * - Correct for server-mirror rows: the catalog pull's
+ *   `mapProductForCreate` already uses the server's id as the
+ *   local id (`id: prod.id`), so `serverId = id` stamps the
+ *   correct value. The next pull reconfirms it.
+ */
+async function backfillProductServerId(client: PGlite): Promise<void> {
+  const result = await client.query<{ count: number }>(
+    `WITH updated AS (
+       UPDATE "Product"
+          SET "serverId" = "id"
+        WHERE "serverId" IS NULL
+          AND "internalCode" NOT LIKE 'OFFLINE-%'
+        RETURNING "id"
+     )
+     SELECT COUNT(*)::int AS count FROM updated`,
+  );
+  const count = result.rows[0]?.count ?? 0;
+  if (count > 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[local-database] Backfilled serverId on ${count} product row(s) ` +
+        '(pre-dating the serverId column).',
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Seed data for offline-first operation
 // ---------------------------------------------------------------------------
 
@@ -934,6 +985,13 @@ export async function getLocalDatabase(): Promise<{
       // added to SyncOperationType) are applied even when the schema hash
       // already matches.  Runs every startup — lightweight single query.
       await backfillEnumValues(client);
+
+      // ---- Backfill Product.serverId ----
+      // Stamps the server-mirror id on Product rows that pre-date the
+      // `serverId` column. Without this, the sale-time sync gate rejects
+      // every sale of those products because their `serverId IS NULL`.
+      // Idempotent — re-running is a single query that returns zero rows.
+      await backfillProductServerId(client);
 
       // ---- Seed reference data for offline-first operation ----
       // Seed tax schemes so the product form works without a server.

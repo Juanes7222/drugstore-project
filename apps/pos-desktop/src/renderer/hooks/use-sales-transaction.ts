@@ -17,6 +17,7 @@ import {
   PriceBelowCostException,
   DiscountExceedsRoleLimitException,
   PriceOverrideNotAllowedForRoleException,
+  ProductNotSyncedYetException,
 } from '../../domain/sales-pos/exceptions';
 import {
   addItem,
@@ -32,6 +33,7 @@ import {
   useClientsService,
   useSalesPosService,
 } from '../components/common/service-context';
+import { useProductSyncWait } from './use-product-sync-wait';
 import type { CreateClientInput } from '../../domain/clients';
 import {
   type CatalogItem,
@@ -61,6 +63,8 @@ export interface UseSalesTransactionReturn {
   selectedClient: ClientSelection | null;
   /** True while the sale is being created in the local DB. */
   isCreating: boolean;
+  /** True while a blocking product-sync is in progress. */
+  isSyncingProduct: boolean;
   /** Error message from a failed create() call, or null. */
   actionError: string | null;
   /** Clear the current action error. */
@@ -101,8 +105,10 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
   const [pendingItem, setPendingItem] = useState<CatalogItem | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isSyncingProduct, setIsSyncingProduct] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const clearActionError = useCallback(() => setActionError(null), []);
+  const waitForProductSync = useProductSyncWait();
 
   const addToCart = useCallback(
     (item: CatalogItem) => {
@@ -185,6 +191,29 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     [clientsService, dispatch],
   );
 
+  const performCreate = useCallback(async () => {
+    return await salesPosService.create({
+      clientId: selectedClient?.id ?? null,
+      items: cartItems.map((item) => {
+        const unitPriceOverride =
+          item.overrideUnitPriceCents !== null
+            ? new Prisma.Decimal(item.overrideUnitPriceCents).dividedBy(100)
+            : undefined;
+
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: unitPriceOverride,
+          discountPercentage: item.discountPercentage ?? undefined,
+          discountReason:
+            item.discountPercentage !== null && item.discountPercentage > 0
+              ? 'Ajuste manual en POS'
+              : undefined,
+        };
+      }),
+    });
+  }, [selectedClient, cartItems, salesPosService]);
+
   const handleCheckout = useCallback(async () => {
     if (isCreating || cartItems.length === 0) return;
 
@@ -192,37 +221,38 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     setActionError(null);
 
     try {
-      // Persist the sale (IN_PROGRESS) in the local DB
-      const sale = await salesPosService.create({
-        clientId: selectedClient?.id ?? null,
-        items: cartItems.map((item) => {
-          // Only send explicit `unitPrice` when the cashier overrode the
-          // catalog price.  When omitted the service falls back to the
-          // latest catalog price — and the role-based price-override
-          // permission check does NOT fire.
-          const unitPriceOverride =
-            item.overrideUnitPriceCents !== null
-              ? new Prisma.Decimal(item.overrideUnitPriceCents).dividedBy(100)
-              : undefined;
-
-          return {
-            productId: item.productId,
-            quantity: item.quantity,
-            unitPrice: unitPriceOverride,
-            discountPercentage: item.discountPercentage ?? undefined,
-            discountReason:
-              item.discountPercentage !== null && item.discountPercentage > 0
-                ? 'Ajuste manual en POS'
-                : undefined,
-          };
-        }),
-      });
+      const sale = await performCreate();
 
       // Store sale ID for the payment screen to consume on confirm()
       dispatch(setCurrentSaleId((sale as { id: string }).id));
       dispatch(initializePayment({ totalCents: totalDue }));
       dispatch(setActiveScreen('payment'));
     } catch (err) {
+      // If the failure is a single unsynced product, kick the sync
+      // engine and wait for the product to land on the server before
+      // re-running create(). The cashier sees the syncing indicator
+      // and the retry happens transparently if it lands in time.
+      if (err instanceof ProductNotSyncedYetException) {
+        setIsSyncingProduct(true);
+        const synced = await waitForProductSync(err.productId);
+        setIsSyncingProduct(false);
+        if (synced) {
+          try {
+            const sale = await performCreate();
+            dispatch(setCurrentSaleId((sale as { id: string }).id));
+            dispatch(initializePayment({ totalCents: totalDue }));
+            dispatch(setActiveScreen('payment'));
+            return;
+          } catch (retryErr) {
+            console.error('[useSalesTransaction] retry after sync failed:', retryErr);
+            setActionError(i18n.t("sales.cart.error_product_not_synced_yet"));
+            return;
+          }
+        }
+        setActionError(i18n.t("sales.cart.error_product_not_synced_yet"));
+        return;
+      }
+
       if (err instanceof PriceBelowCostException) {
         const itemName =
           cartItems.find((ci) => ci.productId === err.productId)?.name ??
@@ -248,8 +278,8 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
   }, [
     isCreating,
     cartItems,
-    selectedClient,
-    salesPosService,
+    performCreate,
+    waitForProductSync,
     dispatch,
     totalDue,
   ]);
@@ -260,6 +290,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     isDialogOpen,
     selectedClient,
     isCreating,
+    isSyncingProduct,
     actionError,
     clearActionError,
     handleSelect,

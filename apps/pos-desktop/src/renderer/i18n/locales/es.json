@@ -638,6 +638,7 @@
       "error_discount_exceeds_limit": "El descuento excede el límite permitido para tu rol.",
       "error_override_not_allowed": "No tienes permiso para modificar el precio de este producto.",
       "error_product_not_synced_yet": "El producto aún no se ha sincronizado con el servidor. Espera a que termine el próximo ciclo de sincronización y vuelve a intentarlo.",
+      "syncing_product": "Sincronizando producto con el servidor...",
       "error_checkout_failed": "No se pudo procesar el cobro.",
       "error_generic": "{{message}}",
       "error_dismiss": "Descartar error"

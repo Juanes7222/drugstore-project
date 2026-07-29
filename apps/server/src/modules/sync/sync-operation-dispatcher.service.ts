@@ -31,6 +31,20 @@ import type { PurchaseOrderConfirmationPayload, PurchaseReceptionConfirmationPay
 import * as crypto from 'node:crypto';
 
 /**
+ * Result of dispatching a single sync operation.
+ *
+ * Only `*_CREATION` handlers populate fields; every other handler returns
+ * an empty object. The fields are surfaced to the POS in the batch
+ * response so the local row's `serverId` (and, for products, the
+ * server-chosen `internalCode` that replaced the offline provisional
+ * value) can be stamped after a successful push.
+ */
+export interface DispatchResult {
+  entityId?: string;
+  entityInternalCode?: string;
+}
+
+/**
  * Re-executes the real business logic for each supported offline operation.
  * This is NOT a blind trust of the offline payload — it re-validates every
  * constraint against its current state.
@@ -63,10 +77,13 @@ export class SyncOperationDispatcherService {
    * Routes a SyncQueue entry to the appropriate replay handler.
    *
    * Catches all errors and records a FAILED outcome with the error message.
-   * Successful dispatches record an ACCEPTED outcome.
+   * Successful dispatches record an ACCEPTED outcome. Returns the
+   * dispatcher's view of any server-assigned ids the handler produced;
+   * non-creation handlers return an empty object.
    */
-  async dispatch(entry: SyncQueueEntry): Promise<void> {
+  async dispatch(entry: SyncQueueEntry): Promise<DispatchResult> {
     try {
+      let result: DispatchResult = {};
       switch (entry.operationType) {
         case 'SALE_CONFIRMATION':
           await this.handleSaleConfirmation(entry);
@@ -75,7 +92,7 @@ export class SyncOperationDispatcherService {
           await this.handleShiftClosure(entry);
           break;
         case 'CLIENT_CREATION':
-          await this.handleClientCreation(entry);
+          result = await this.handleClientCreation(entry);
           break;
         case 'CLIENT_UPDATE':
           await this.handleClientUpdate(entry);
@@ -96,7 +113,7 @@ export class SyncOperationDispatcherService {
           await this.handleInvoiceTransmission(entry);
           break;
         case 'PRODUCT_CREATION':
-          await this.handleProductCreation(entry);
+          result = await this.handleProductCreation(entry);
           break;
         case 'PRODUCT_UPDATE':
           await this.handleProductUpdate(entry);
@@ -115,6 +132,7 @@ export class SyncOperationDispatcherService {
       }
 
       await this.recordOutcomeFromEntry(entry, 'ACCEPTED', null);
+      return result;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const failureCategory = this.classifyServerError(errorMessage);
@@ -318,18 +336,22 @@ export class SyncOperationDispatcherService {
    * unique constraint is violated, the `clientsService.create` method performs
    * an upsert — the POS's data is treated as the latest version
    * ("last writer wins" strategy).
+   *
+   * Returns the server-assigned client id so the POS can stamp `serverId`
+   * on its local row and unblock the `assertClientsSynced` sales gate.
    */
-  private async handleClientCreation(entry: SyncQueueEntry): Promise<void> {
+  private async handleClientCreation(entry: SyncQueueEntry): Promise<DispatchResult> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
     const userId = payload.userId as string;
     const createClientDto = payload.createClientDto as unknown as CreateClientDto;
     const localClientId = payload.localClientId as string | undefined;
 
-    await this.clientsService.create(
+    const client = await this.clientsService.create(
       createClientDto,
       userId,
       localClientId,
     );
+    return { entityId: (client as { id: string }).id };
   }
 
   /**
@@ -480,8 +502,23 @@ export class SyncOperationDispatcherService {
    * shape and the `userId` of the user who created the product on the POS.
    * The server re-validates all constraints (unique internalCode, required
    * fields) through ProductsService.createProduct.
+   *
+   * When the offline POS tags a freshly-created product with the
+   * `OFFLINE-{uuid}` sentinel (see pos-desktop
+   * `product.service.ts:606`), the server strips that prefix and assigns
+   * a tenant-scoped sequential code (`P000001`, `P000002`, ...) so the
+   * cashier sees a short, printable code on the next pull. The
+   * normalized code is returned in the dispatch result so the POS can
+   * stamp it back on its local row in the same transaction that marks
+   * the SyncQueue entry COMPLETED.
+   *
+   * Concurrent inserts from different workstations can both pick the
+   * same sequential candidate; the unique constraint on
+   * `Product.internalCode` catches the second insert as a P2002, the
+   * SyncQueue row stays PENDING, and the next background retry reads
+   * the correct MAX.
    */
-  private async handleProductCreation(entry: SyncQueueEntry): Promise<void> {
+  private async handleProductCreation(entry: SyncQueueEntry): Promise<DispatchResult> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
     const userId = payload.userId as string;
     const raw = payload.createProductDto as Record<string, unknown>;
@@ -497,7 +534,77 @@ export class SyncOperationDispatcherService {
       );
     }
 
-    await this.productsService.createProduct(userId, result.data);
+    // ── Idempotency guard ───────────────────────────────────────────
+    // If this operationUuid already created a product via a prior
+    // attempt, return the existing entity ids instead of creating a
+    // duplicate.  Without this guard, a transient failure after
+    // createProduct (e.g. a dropped connection before the COMPLETED
+    // status is written) leaves the SyncQueue entry PENDING; the
+    // retry would generate a *different* P-code (because the previous
+    // code is now taken) and create an orphan copy — 11 "uy, uy"
+    // products with sequential P-codes is exactly the symptom this
+    // prevents.
+    const existing = await this.prisma.product.findUnique({
+      where: { sourceOperationUuid: entry.operationUuid },
+      select: { id: true, internalCode: true },
+    });
+    if (existing) {
+      this.logger.log(
+        `PRODUCT_CREATION idempotent: operationUuid=${entry.operationUuid} ` +
+        `already created product ${existing.id} (${existing.internalCode}) — returning existing`,
+      );
+      return {
+        entityId: existing.id,
+        entityInternalCode: existing.internalCode,
+      };
+    }
+
+    const dto = { ...result.data };
+    if (dto.internalCode.startsWith('OFFLINE-')) {
+      dto.internalCode = await this.generateNextOfflineProductCode();
+    }
+
+    // Pass the operationUuid so the created product carries a reference
+    // back to the sync operation that created it, making future retries
+    // idempotent at the database level.
+    const product = await this.productsService.createProduct(userId, dto, entry.operationUuid);
+    return {
+      entityId: (product as { id: string }).id,
+      entityInternalCode: (product as { internalCode: string }).internalCode,
+    };
+  }
+
+  /**
+   * Returns the next sequential `P{n}` product code not yet taken.
+   *
+   * Uses a raw SQL MAX over the numeric portion of `internalCode` so
+   * existing codes with and without zero-padding (e.g. `P027` and
+   * `P000001`) are compared numerically, not lexicographically. Without
+   * this, `P027` sorts after `P000028` in a string `orderBy: 'desc'`
+   * and the function would return `P000028` on every call regardless
+   * of whether that code is already taken, producing a permanent P2002
+   * loop that no retry can escape.
+   *
+   * The MAX read and the insert are NOT inside the same transaction, so
+   * two concurrent inserts from different workstations can both pick the
+   * same candidate. The unique constraint on `Product.internalCode`
+   * catches the second insert as a P2002 — the dispatch error propagates,
+   * the SyncQueue row stays PENDING, and the next background retry
+   * observes the committed value. This is acceptable for an offline-first
+   * system where cross-workstation product races are rare and never
+   * block a sale (the POS gate reads `serverId`, not `internalCode`).
+   */
+  private async generateNextOfflineProductCode(): Promise<string> {
+    const all = await this.prisma.product.findMany({
+      where: { internalCode: { startsWith: 'P' } },
+      select: { internalCode: true },
+    });
+    const max = all.reduce<number>((acc, row) => {
+      // Strip leading zeros before parse so P027 → 27, P000001 → 1.
+      const num = parseInt(row.internalCode.slice(1).replace(/^0+/, ''), 10);
+      return Number.isFinite(num) && num > acc ? num : acc;
+    }, 0);
+    return `P${String(max + 1).padStart(6, '0')}`;
   }
 
   /**

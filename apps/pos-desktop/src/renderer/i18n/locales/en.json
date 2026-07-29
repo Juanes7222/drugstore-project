@@ -568,6 +568,7 @@
       "error_discount_exceeds_limit": "Discount exceeds the limit for your role.",
       "error_override_not_allowed": "You are not allowed to override the price of this product.",
       "error_product_not_synced_yet": "Product has not been synced to the server yet. Wait for the next sync cycle to complete and retry.",
+      "syncing_product": "Syncing product with server...",
       "error_checkout_failed": "Checkout failed.",
       "error_generic": "{{message}}",
       "error_dismiss": "Dismiss error"

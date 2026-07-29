@@ -16,6 +16,7 @@ import { QueryProductDto } from './dto/query-product.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
+import { Public } from '@/common/decorators/public.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
@@ -26,14 +27,18 @@ import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 export class CatalogController {
   constructor(private catalogService: CatalogService) {}
 
+  // Reference data read endpoints: @Public lets the POS bootstrap on first install
+  // and resync with an expired token; @Roles is intentionally dropped so the
+  // downstream RolesGuard (which rejects requests without request.user) does not
+  // kill the request after JwtAuthGuard short-circuits.
   @Get('products')
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Public()
   async findAllProducts(@Query() query: QueryProductDto): Promise<any> {
     return this.catalogService.findAllProducts(query);
   }
 
   @Get('products/:id')
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Public()
   async findProductById(@Param('id') id: string): Promise<any> {
     return this.catalogService.findProductById(id);
   }
@@ -69,19 +74,19 @@ export class CatalogController {
   }
 
   @Get('categories')
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Public()
   async findAllCategories(): Promise<any> {
     return this.catalogService.findAllCategories();
   }
 
   @Get('pharmaceutical-forms')
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Public()
   async findAllPharmaceuticalForms(): Promise<any> {
     return this.catalogService.findAllPharmaceuticalForms();
   }
 
   @Get('tax-schemes')
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Public()
   async findAllTaxSchemes(): Promise<any> {
     return this.catalogService.findAllTaxSchemes();
   }
