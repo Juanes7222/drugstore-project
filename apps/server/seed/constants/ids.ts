@@ -68,6 +68,7 @@ const CLIENT_DIEGO = 'client_diego' as const;
 const CLIENT_SOFIA = 'client_sofia' as const;
 const CLIENT_CLINICA_SAN_JOSE = 'client_clinica_san_jose' as const;
 const CLIENT_HOGAR_GERIATRICO = 'client_hogar_geriatrico' as const;
+const CLIENT_GENERICO = '00000000-0000-0000-0000-000000000001' as const;
 
 const PROD_TRAMADOL_50 = 'prod_tramadol_50' as const;
 const PROD_CLONAZEPAM_2 = 'prod_clonazepam_2' as const;
@@ -327,6 +328,7 @@ export const IDS = {
   CLIENT_SOFIA,
   CLIENT_CLINICA_SAN_JOSE,
   CLIENT_HOGAR_GERIATRICO,
+  CLIENT_GENERICO,
   PROD_ACETAMINOFEN_500,
   PROD_IBUPROFENO_400,
   PROD_IBUPROFENO_800,

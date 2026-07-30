@@ -13,6 +13,7 @@ import { PurchaseOrdersService } from '@/modules/purchases/services/purchase-ord
 import { PurchaseReceptionsService } from '@/modules/purchases/services/purchase-receptions.service';
 import { SupplierReturnsService } from '@/modules/purchases/services/supplier-returns.service';
 import { InvoiceTransmissionPayloadSchema } from '@pharmacy/shared-validation';
+import { InvoiceAdjustmentPayloadSchema } from './dto/invoice-adjustment-payload.schema';
 import { SyncPayloadValidationException } from './exceptions/sync-payload-validation.exception';
 import {
   PurchaseOrderConfirmationPayloadSchema,
@@ -111,6 +112,9 @@ export class SyncOperationDispatcherService {
           break;
         case 'INVOICE_TRANSMISSION':
           await this.handleInvoiceTransmission(entry);
+          break;
+        case 'INVOICE_ADJUSTMENT':
+          await this.handleInvoiceAdjustment(entry);
           break;
         case 'PRODUCT_CREATION':
           result = await this.handleProductCreation(entry);
@@ -767,6 +771,55 @@ export class SyncOperationDispatcherService {
       `INVOICE_TRANSMISSION processed: invoiceId=${payload.invoiceId}, ` +
       `saleId=${payload.saleId}, fiscalDocumentId=${fiscalDoc.id}, ` +
       `workstationId=${entry.sourceWorkstationId}`,
+    );
+  }
+
+  /**
+   * Handles an INVOICE_ADJUSTMENT operation from offline sync.
+   *
+   * The POS has already recorded the adjustment locally. This handler
+   * stores the adjustment on the server for cross-workstation visibility
+   * and backoffice reporting. No DIAN/fiscal impact — operational only.
+   *
+   * Idempotent: if the same adjustmentId (used as the server row id)
+   * already exists, the upsert is a no-op. This prevents duplicate rows
+   * when the SyncQueue entry is retried after a transient failure.
+   */
+  private async handleInvoiceAdjustment(entry: SyncQueueEntry): Promise<void> {
+    const payload = this.parsePayload(
+      'INVOICE_ADJUSTMENT',
+      entry.payload,
+      InvoiceAdjustmentPayloadSchema,
+    );
+
+    // Use the shared InvoiceLocalAdjustment model — same structure on
+    // POS and server. The server stores these for cross-workstation
+    // visibility and backoffice reporting; they never affect DIAN.
+    await this.prisma.invoiceLocalAdjustment.upsert({
+      where: { id: payload.adjustmentId },
+      update: {},
+      create: {
+        id: payload.adjustmentId,
+        invoiceId: payload.invoiceId,
+        invoiceNumber: payload.invoiceNumber,
+        createdAt: new Date(payload.createdAt),
+        createdByUserId: payload.createdByUserId,
+        createdByUserName: payload.createdByUserName,
+        workstationId: payload.workstationId,
+        adjustmentType: payload.adjustmentType as any,
+        previousValue: payload.previousValue as Prisma.InputJsonValue,
+        newValue: payload.newValue as Prisma.InputJsonValue,
+        reason: payload.reason,
+        version: payload.version,
+        reversalOfAdjustmentId: payload.reversalOfAdjustmentId,
+        replacedByAdjustmentId: payload.replacedByAdjustmentId,
+      },
+    });
+
+    this.logger.log(
+      `INVOICE_ADJUSTMENT processed: adjustmentId=${payload.adjustmentId}, ` +
+      `invoiceId=${payload.invoiceId}, type=${payload.adjustmentType}, ` +
+      `workstationId=${payload.workstationId}`,
     );
   }
 

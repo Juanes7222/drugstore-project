@@ -287,6 +287,40 @@ export interface InvoiceTransmissionResultPayload {
 }
 
 // ---------------------------------------------------------------------------
+// Invoice adjustment sync operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Payload for INVOICE_ADJUSTMENT operations.
+ *
+ * Created by LocalAdjustmentService whenever an operational adjustment is
+ * applied or reversed on a fiscal invoice. The server stores these for
+ * cross-workstation visibility and backoffice reporting. They never affect
+ * DIAN or the fiscal invoice data.
+ *
+ * The payload mirrors the shape of the local InvoiceLocalAdjustment table
+ * so the server can store a faithful copy of what the POS recorded.
+ */
+export interface InvoiceAdjustmentPayload {
+  adjustmentId: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  adjustmentType: string;
+  previousValue: unknown | null;
+  newValue: unknown | null;
+  reason: string;
+  version: number;
+  /** Set when this adjustment reverses a prior one */
+  reversalOfAdjustmentId: string | null;
+  /** Set when this adjustment has been superseded by a reversal */
+  replacedByAdjustmentId: string | null;
+  createdByUserId: string;
+  createdByUserName: string;
+  workstationId: string;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Purchase sync operations
 // ---------------------------------------------------------------------------
 

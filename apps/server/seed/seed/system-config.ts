@@ -128,6 +128,14 @@ const CONFIGS: SeedConfig[] = [
     description: 'Plazo por defecto para pago a proveedores',
     isSensitive: false,
   },
+  {
+    key: 'GENERIC_CLIENT_ID',
+    value: '00000000-0000-0000-0000-000000000001',
+    valueType: 'STRING',
+    module: 'CLIENTS',
+    description: 'UUID del registro de consumidor final (CONSUMIDOR FINAL) para ventas sin cliente identificado',
+    isSensitive: false,
+  },
 ];
 
 export async function seedSystemConfig(): Promise<void> {

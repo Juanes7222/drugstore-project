@@ -64,6 +64,7 @@ export const SalesHistoryPage: FC = () => {
       setSales(result.items);
       setTotalCount(result.total);
     } catch (err) {
+      console.error('[SalesHistoryPage] loadSales failed:', err);
       setError(err instanceof Error ? err.message : t('error_load'));
     } finally {
       setLoading(false);
@@ -89,6 +90,7 @@ export const SalesHistoryPage: FC = () => {
           setAdjustmentHistory([]);
         }
       } catch (err) {
+        console.error('[SalesHistoryPage] loadDetail failed:', err);
         setError(err instanceof Error ? err.message : t('error_detail'));
         setSelectedDetail(null);
       } finally {
@@ -128,8 +130,8 @@ export const SalesHistoryPage: FC = () => {
       const { generateReceiptHtml, printReceipt } = await import('../fiscal/receipt-generator');
       const html = generateReceiptHtml(mainInvoice);
       printReceipt(html);
-    } catch {
-      // Silent: component handles its own error display.
+    } catch (err) {
+      console.error('[SalesHistoryPage] handleReprint failed:', err);
     }
   }, [selectedDetail]);
 
@@ -143,8 +145,8 @@ export const SalesHistoryPage: FC = () => {
       );
       await loadDetail(mainInvoice.saleId);
       await loadSales();
-    } catch {
-      // Silent: component handles its own error display.
+    } catch (err) {
+      console.error('[SalesHistoryPage] handleCancelInvoice failed:', err);
     }
   }, [selectedDetail, invoiceService, t, loadDetail, loadSales]);
 
@@ -157,6 +159,7 @@ export const SalesHistoryPage: FC = () => {
       setAllowedAdjustmentTypes(types);
       setShowAdjustmentModal(true);
     } catch (err) {
+      console.error('[SalesHistoryPage] handleOpenAdjustmentModal failed:', err);
       setAdjustmentModalError(
         err instanceof Error ? err.message : t('adjustment.error_load_types'),
       );
@@ -190,6 +193,7 @@ export const SalesHistoryPage: FC = () => {
         setShowAdjustmentModal(false);
         await loadSales();
       } catch (err) {
+        console.error('[SalesHistoryPage] handleApplyAdjustment failed:', err);
         setAdjustmentModalError(
           err instanceof Error ? err.message : t('adjustment.error_apply'),
         );

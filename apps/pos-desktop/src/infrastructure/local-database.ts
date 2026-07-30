@@ -178,6 +178,117 @@ function parseCreateTableColumns(stmt: string): { tableName: string; columnDefs:
 }
 
 /**
+ * Strip the `NOT NULL` constraint from a column definition fragment.
+ *
+ * Used when backfilling a column that already has rows: we first add the
+ * column as nullable, backfill values, then apply NOT NULL via a separate
+ * ALTER TABLE statement.
+ */
+function stripNotNull(colDef: string): string {
+  return colDef.replace(/\s+NOT\s+NULL\s*/i, ' ').trim();
+}
+
+/**
+ * Attempt to add a NOT NULL column to an existing table.
+ *
+ * If the column definition includes `NOT NULL` and there are existing rows,
+ * PostgreSQL rejects the ALTER TABLE.  This function:
+ *
+ *  1. Tries the full column definition (with NOT NULL).
+ *  2. On "contains null values", strips NOT NULL, adds the column as
+ *     nullable, runs a backfill UPDATE, then applies NOT NULL.
+ */
+async function addColumnWithBackfill(
+  client: PGlite,
+  tableName: string,
+  colDef: string,
+): Promise<void> {
+  const colNameMatch = colDef.match(/^"([^"]+)"/);
+  const colName = colNameMatch ? colNameMatch[1] : null;
+
+  // Try the full definition first (fast path: no existing rows).
+  try {
+    await client.exec(`ALTER TABLE "${tableName}" ADD COLUMN ${colDef};`);
+    return;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!msg.includes('contains null values')) {
+      // Some other error — rethrow.
+      throw err;
+    }
+    // Otherwise, proceed with the backfill path.
+    // eslint-disable-next-line no-console
+    console.log(
+      `[local-database] Column "${colName}" on "${tableName}" has existing NULL rows. ` +
+      'Adding as nullable, backfilling, then applying NOT NULL.',
+    );
+  }
+
+  // Strip NOT NULL and add the column as nullable.
+  const nullableDef = stripNotNull(colDef);
+  await client.exec(`ALTER TABLE "${tableName}" ADD COLUMN ${nullableDef};`);
+
+  // Backfill NULL values in the newly-added column, then apply NOT NULL.
+  if (colName) {
+    await backfillColumn(client, tableName, colName);
+    await client.exec(
+      `ALTER TABLE "${tableName}" ALTER COLUMN "${colName}" SET NOT NULL;`,
+    );
+  }
+}
+
+/**
+ * Backfill NULL values in a newly-added column.
+ *
+ * Uses table/column-specific logic when available, falling back to a
+ * placeholder value so the NOT NULL constraint can be applied.
+ */
+async function backfillColumn(
+  client: PGlite,
+  tableName: string,
+  colName: string,
+): Promise<void> {
+  // ---- InvoiceLocalAdjustment.invoiceNumber: derive from Invoice table ----
+  if (
+    tableName === 'InvoiceLocalAdjustment' &&
+    colName === 'invoiceNumber'
+  ) {
+    const result = await client.query(
+      `UPDATE "InvoiceLocalAdjustment" AS adj
+          SET "invoiceNumber" = COALESCE(
+                (SELECT inv."invoiceNumber"
+                   FROM "Invoice" AS inv
+                  WHERE inv."id" = adj."invoiceId"),
+                'MIGRATED-' || adj."id"
+              )
+        WHERE adj."invoiceNumber" IS NULL`,
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      `[local-database] Backfilled ${result.affectedRows ?? '?'} row(s) ` +
+      `on "${tableName}"."${colName}" from Invoice table.`,
+    );
+    return;
+  }
+
+  // ---- Fallback for unknown columns: use a placeholder ----
+  const result = await client.query(
+    `UPDATE "${tableName}"
+        SET "${colName}" = 'MIGRATED-' || "id"
+      WHERE "${colName}" IS NULL`,
+  );
+
+  const count = result.affectedRows ?? 0;
+  if (count > 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[local-database] Backfilled ${count} row(s) on "${tableName}"."${colName}" ` +
+      `with placeholder value.`,
+    );
+  }
+}
+
+/**
  * Extract the constraint name from an `ALTER TABLE … ADD CONSTRAINT "name" …` statement.
  */
 function parseConstraintName(stmt: string): string | null {
@@ -483,7 +594,7 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
         );
         try {
           // eslint-disable-next-line no-await-in-loop
-          await client.exec(`ALTER TABLE "${tableName}" ADD COLUMN ${colDef};`);
+          await addColumnWithBackfill(client, tableName, colDef);
         } catch (backfillErr: unknown) {
           const bMsg = backfillErr instanceof Error ? backfillErr.message : String(backfillErr);
           if (
@@ -1180,6 +1291,109 @@ function createDevPrismaWrapper(client: PGlite): unknown {
           return Promise.resolve(filtered.length);
         }
         return Promise.resolve(data.length);
+      },
+
+      findUnique: (args: {
+        where: Record<string, unknown>;
+        include?: Record<string, unknown>;
+      }) => {
+        const where = args.where as Record<string, unknown>;
+        const result = data.find((item) =>
+          Object.entries(where).every(([key, value]) => item[key] === value),
+        );
+        return Promise.resolve(result ?? null);
+      },
+
+      findFirst: (args: {
+        where?: Record<string, unknown>;
+        orderBy?: Record<string, 'asc' | 'desc'>;
+        include?: Record<string, unknown>;
+      } = {}) => {
+        const where = args.where as Record<string, unknown> | undefined;
+        let results = [...data];
+        if (where && Object.keys(where).length > 0) {
+          results = results.filter((item) =>
+            (Object.entries(where) as Array<[string, unknown]>).every(
+              ([key, value]) => item[key] === value,
+            ),
+          );
+        }
+        if (args.orderBy) {
+          const [[key, dir]] = Object.entries(args.orderBy);
+          results.sort((a, b) => {
+            const aVal = String(a[key] ?? '');
+            const bVal = String(b[key] ?? '');
+            return dir === 'desc'
+              ? bVal.localeCompare(aVal)
+              : aVal.localeCompare(bVal);
+          });
+        }
+        return Promise.resolve(results[0] ?? null);
+      },
+
+      groupBy: (args: {
+        by: string[];
+        where?: Record<string, unknown>;
+        _count?: Record<string, boolean>;
+        _sum?: Record<string, boolean>;
+      }) => {
+        const where = args.where as Record<string, unknown> | undefined;
+        let results = [...data];
+        if (where && Object.keys(where).length > 0) {
+          results = results.filter((item) =>
+            (Object.entries(where) as Array<[string, unknown]>).every(
+              ([key, value]) => {
+                // Handle Prisma-style in-clause
+                if (
+                  value !== null &&
+                  typeof value === 'object' &&
+                  !Array.isArray(value) &&
+                  'in' in value
+                ) {
+                  const inVals = (value as Record<string, unknown[]>).in;
+                  return inVals.includes(item[key] as unknown);
+                }
+                return item[key] === value;
+              },
+            ),
+          );
+        }
+
+        // Group by the specified fields
+        const groups = new Map<string, Array<Record<string, unknown>>>();
+        for (const item of results) {
+          const key = args.by.map((b) => String(item[b] ?? '')).join('::');
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key)!.push(item);
+        }
+
+        // Build result array
+        return Promise.resolve(
+          Array.from(groups.entries()).map(([_key, items]) => {
+            const group: Record<string, unknown> = {};
+            for (const field of args.by) {
+              group[field] = items[0][field];
+            }
+            if (args._count) {
+              const count: Record<string, number> = {};
+              for (const field of Object.keys(args._count)) {
+                count[field] = items.length;
+              }
+              group._count = count;
+            }
+            if (args._sum) {
+              const sum: Record<string, number> = {};
+              for (const field of Object.keys(args._sum)) {
+                sum[field] = items.reduce(
+                  (acc, item) => acc + (Number(item[field]) || 0),
+                  0,
+                );
+              }
+              group._sum = sum;
+            }
+            return group;
+          }),
+        );
       },
 
       create: (args: { data: Record<string, unknown> }) => {

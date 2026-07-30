@@ -8,8 +8,8 @@ interface SeedClient {
   identificationNumber: string;
   fullName: string;
   email: string | null;
-  phone: string;
-  classificationId: string;
+  phone: string | null;
+  classificationId: string | null;
 }
 
 const HABEAS_DATA_VERSION = 'v1.0-2025-01';
@@ -108,6 +108,18 @@ function buildClients(): SeedClient[] {
       phone: '6045556677',
       classificationId: IDS.CLASS_INSTITUCIONAL,
     },
+    // DIAN-mandated generic consumer (CONSUMIDOR FINAL) for sales without
+    // an identified customer.  Seeded with the well-known UUID so both the
+    // POS and server reference the same record.
+    {
+      id: IDS.CLIENT_GENERICO,
+      identificationType: 'NIT',
+      identificationNumber: '222222222222',
+      fullName: 'CONSUMIDOR FINAL',
+      email: null,
+      phone: null,
+      classificationId: null,
+    },
   ];
 }
 
@@ -130,5 +142,5 @@ export async function seedClients(): Promise<void> {
   await seedMany(prisma.client, clients, {
     create: createClientData,
   });
-  console.log('   10 clients (8 individuals, 2 institutional)');
+  console.log('   11 clients (8 individuals, 2 institutional, 1 generic consumer)');
 }

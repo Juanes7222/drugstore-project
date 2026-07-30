@@ -26,13 +26,29 @@ import { InsufficientRoleException } from '../auth/exceptions';
 // Mock helpers
 // ---------------------------------------------------------------------------
 
+interface SyncQueueRecord {
+  id: string;
+  operationUuid: string;
+  operationType: string;
+  payload: string;
+  payloadHash: string;
+  payloadSize: number;
+  versionSchema: number;
+  status: string;
+  retryCount: number;
+  sourceWorkstationId: string;
+  sourceCreatedAt: Date;
+  clientSequence: bigint;
+}
+
 interface Store {
   invoices: Map<string, Record<string, unknown>>;
   adjustments: Map<string, Record<string, unknown>>;
+  syncQueue: SyncQueueRecord[];
 }
 
 function createStore(): Store {
-  return { invoices: new Map(), adjustments: new Map() };
+  return { invoices: new Map(), adjustments: new Map(), syncQueue: [] };
 }
 
 function makeFakeInvoice(overrides?: Record<string, unknown>): Record<string, unknown> {
@@ -204,6 +220,38 @@ function createMockPrisma(store: Store) {
       },
     },
     invoiceLocalAdjustment: adjustmentMethods,
+    syncQueue: {
+      findFirst: async (args: {
+        where: { sourceWorkstationId: string };
+        orderBy: { clientSequence: 'desc' };
+        select: { clientSequence: true };
+      }) => {
+        const entries = store.syncQueue.filter(
+          (e) => e.sourceWorkstationId === args.where.sourceWorkstationId,
+        );
+        if (entries.length === 0) return null;
+        entries.sort((a, b) => Number(b.clientSequence - a.clientSequence));
+        return { clientSequence: entries[0].clientSequence };
+      },
+      create: async (args: { data: Record<string, unknown> }) => {
+        const record: SyncQueueRecord = {
+          id: args.data.id as string,
+          operationUuid: args.data.operationUuid as string,
+          operationType: args.data.operationType as string,
+          payload: args.data.payload as string,
+          payloadHash: args.data.payloadHash as string,
+          payloadSize: args.data.payloadSize as number,
+          versionSchema: args.data.versionSchema as number,
+          status: args.data.status as string,
+          retryCount: args.data.retryCount as number,
+          sourceWorkstationId: args.data.sourceWorkstationId as string,
+          sourceCreatedAt: args.data.sourceCreatedAt as Date,
+          clientSequence: args.data.clientSequence as bigint,
+        };
+        store.syncQueue.push(record);
+        return record;
+      },
+    },
   };
 }
 
@@ -1098,5 +1146,174 @@ describe('LocalAdjustmentService', () => {
     view = await service.resolveOperationalView('inv-1');
     expect(view.operational.client?.name).toBe(originalClientName);
     expect(view.operational.hasDifferences).toBe(false);
+  });
+
+  // -----------------------------------------------------------------------
+  // Sync queue enqueue behavior
+  // -----------------------------------------------------------------------
+
+  it('applyAdjustment enqueues an INVOICE_ADJUSTMENT sync entry with correct fields', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    const result = await service.applyAdjustment(
+      'inv-1',
+      'INTERNAL_NOTE',
+      'Nota de prueba para sincronización',
+      'Razón válida para probar sync queue',
+    );
+
+    expect(store.syncQueue).toHaveLength(1);
+    const entry = store.syncQueue[0];
+    expect(entry.operationType).toBe('INVOICE_ADJUSTMENT');
+    expect(entry.sourceWorkstationId).toBe('ws-1');
+    expect(entry.status).toBe('PENDING');
+    expect(entry.retryCount).toBe(0);
+    expect(entry.versionSchema).toBe(1);
+    expect(entry.payloadSize).toBeGreaterThan(0);
+    expect(entry.payloadHash).toMatch(/^[a-f0-9]{64}$/);
+
+    const payload = JSON.parse(entry.payload);
+    expect(payload.adjustmentId).toBe(result.id);
+    expect(payload.invoiceId).toBe('inv-1');
+    expect(payload.invoiceNumber).toBe('FE00000001');
+    expect(payload.adjustmentType).toBe('INTERNAL_NOTE');
+    expect(payload.previousValue).toBeNull();
+    expect(payload.newValue).toBe('Nota de prueba para sincronización');
+    expect(payload.reason).toBe('Razón válida para probar sync queue');
+    expect(payload.version).toBe(1);
+    expect(payload.reversalOfAdjustmentId).toBeNull();
+    expect(payload.replacedByAdjustmentId).toBeNull();
+    expect(payload.createdByUserId).toBe('user-admin-1');
+    expect(payload.createdByUserName).toBe('Admin User');
+    expect(payload.workstationId).toBe('ws-1');
+    expect(payload.createdAt).toBeDefined();
+  });
+
+  it('reverseAdjustment enqueues an INVOICE_ADJUSTMENT sync entry with REVERSAL type', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    const adj = await service.applyAdjustment(
+      'inv-1',
+      'INTERNAL_NOTE',
+      'Nota original para reversión',
+      'Razón válida para la nota original',
+    );
+
+    const reversal = await service.reverseAdjustment(
+      adj.id,
+      'Reversión de la nota original por error',
+    );
+
+    // Two sync entries: one for apply, one for reverse
+    expect(store.syncQueue).toHaveLength(2);
+    const reversalEntry = store.syncQueue[1];
+    expect(reversalEntry.operationType).toBe('INVOICE_ADJUSTMENT');
+    expect(reversalEntry.sourceWorkstationId).toBe('ws-1');
+    expect(reversalEntry.status).toBe('PENDING');
+
+    const payload = JSON.parse(reversalEntry.payload);
+    expect(payload.adjustmentId).toBe(reversal.id);
+    expect(payload.adjustmentType).toBe('REVERSAL');
+    expect(payload.reversalOfAdjustmentId).toBe(adj.id);
+    expect(payload.replacedByAdjustmentId).toBeNull();
+    expect(payload.reason).toBe('Reversión de la nota original por error');
+    expect(payload.createdByUserId).toBe('user-admin-1');
+    expect(payload.createdByUserName).toBe('Admin User');
+    expect(payload.workstationId).toBe('ws-1');
+  });
+
+  it('sync queue failure does not throw — adjustment still succeeds', async () => {
+    prisma.syncQueue.create = async () => {
+      throw new Error('Sync queue database connection lost');
+    };
+
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    const result = await service.applyAdjustment(
+      'inv-1',
+      'INTERNAL_NOTE',
+      'Nota que debe persistir a pesar del error de sync',
+      'Razón válida para probar tolerancia a fallos',
+    );
+
+    expect(result.adjustmentType).toBe('INTERNAL_NOTE');
+    expect(result.reason).toBe('Razón válida para probar tolerancia a fallos');
+    expect(result.createdByUserName).toBe('Admin User');
+    // No sync queue entry was created (the error was swallowed)
+    expect(store.syncQueue).toHaveLength(0);
+  });
+
+  it('sync queue payload contains expected InvoiceAdjustmentPayload fields for PAYMENT_METHOD_CHANGE', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    const paymentOverride = {
+      paymentMethodId: 'pm-card',
+      paymentMethodName: 'Tarjeta Débito',
+      category: 'DEBIT_CARD',
+      transactionReference: 'TXN-001',
+      authorizationCode: null,
+      cardBrand: 'VISA',
+      cardLastFour: '1234',
+    };
+
+    const result = await service.applyAdjustment(
+      'inv-1',
+      'PAYMENT_METHOD_CHANGE',
+      paymentOverride,
+      'Cambio de método de pago con verificación de payload',
+    );
+
+    expect(store.syncQueue).toHaveLength(1);
+    const payload = JSON.parse(store.syncQueue[0].payload);
+
+    expect(payload.adjustmentId).toBe(result.id);
+    expect(payload.invoiceId).toBe('inv-1');
+    expect(payload.invoiceNumber).toBe('FE00000001');
+    expect(payload.adjustmentType).toBe('PAYMENT_METHOD_CHANGE');
+    expect(payload.version).toBe(1);
+    // previousValue captures original payments + totalAmount
+    expect(payload.previousValue).toEqual({
+      payments: [
+        {
+          paymentMethodId: 'pm-cash',
+          paymentMethodName: 'Efectivo',
+          amount: '50000.00',
+          category: 'CASH',
+          transactionReference: null,
+          authorizationCode: null,
+          cardBrand: null,
+          cardLastFour: null,
+        },
+      ],
+      totalAmount: '50000.00',
+    });
+    expect(payload.newValue).toEqual(paymentOverride);
+    expect(payload.reason).toBe('Cambio de método de pago con verificación de payload');
+    expect(payload.reversalOfAdjustmentId).toBeNull();
+    expect(payload.replacedByAdjustmentId).toBeNull();
+    expect(payload.createdByUserId).toBe('user-admin-1');
+    expect(payload.createdByUserName).toBe('Admin User');
+    expect(payload.workstationId).toBe('ws-1');
+    expect(payload.createdAt).toBeDefined();
+  });
+
+  it('assigns sequential clientSequence values across multiple adjustments', async () => {
+    const auth = createMockAuth('ADMIN');
+    const service = createLocalAdjustmentService(prisma as never, auth);
+
+    await service.applyAdjustment(
+      'inv-1', 'INTERNAL_NOTE', 'Nota 1', 'Razón válida para nota uno',
+    );
+    await service.applyAdjustment(
+      'inv-1', 'TAG_ADD', 'tag1', 'Razón válida para agregar tag',
+    );
+
+    expect(store.syncQueue).toHaveLength(2);
+    expect(Number(store.syncQueue[0].clientSequence)).toBe(1);
+    expect(Number(store.syncQueue[1].clientSequence)).toBe(2);
   });
 });

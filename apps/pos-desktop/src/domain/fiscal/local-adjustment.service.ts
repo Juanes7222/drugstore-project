@@ -24,6 +24,8 @@ import type { PrismaClient, InvoiceAdjustmentType } from '@pharmacy/database/loc
 import { Prisma } from '@pharmacy/database/local';
 import { RoleType } from '@pharmacy/shared-types';
 import type { AuthService } from '../auth/auth.service';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
+import type { InvoiceAdjustmentPayload } from '../sync/sync-types';
 import type {
   AdjustmentType,
   AdjustmentRecord,
@@ -263,6 +265,7 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
       where: { id: invoiceId },
       select: {
         id: true,
+        invoiceNumber: true,
         status: true,
         invoiceType: true,
         fullData: true,
@@ -309,9 +312,11 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
           data: {
             id,
             invoiceId,
+            invoiceNumber: invoice.invoiceNumber,
             createdAt: new Date(),
             createdByUserId: session.userId,
             createdByUserName: session.fullName,
+            workstationId: session.workstationId,
             adjustmentType: type as InvoiceAdjustmentType,
             previousValue:
               previousValue != null
@@ -327,6 +332,32 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
             replacedByAdjustmentId: null,
           },
         });
+
+        // Enqueue sync entry for server-side visibility (best-effort).
+        // The adjustment is already committed locally; a sync queue failure
+        // does NOT roll back the adjustment.
+        try {
+          await this.enqueueSyncEntry(
+            {
+              id,
+              invoiceId,
+              adjustmentType: type,
+              previousValue,
+              newValue,
+              reason,
+              version: nextVersion,
+              reversalOfAdjustmentId: null,
+              replacedByAdjustmentId: null,
+              createdByUserId: session.userId,
+              createdByUserName: session.fullName,
+              workstationId: session.workstationId,
+              createdAt: new Date(),
+            },
+          );
+          notifyPendingEntry();
+        } catch {
+          // Sync is best-effort — the adjustment is already saved locally.
+        }
 
         // Success — return the record
         return this.toAdjustmentRecord(
@@ -381,7 +412,7 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
     // Verify the invoice still exists and is in a state that allows reversals
     const invoice = await this.prisma.invoice.findUnique({
       where: { id: original.invoiceId },
-      select: { status: true, invoiceType: true },
+      select: { invoiceNumber: true, status: true, invoiceType: true },
     });
 
     if (!invoice) {
@@ -402,10 +433,12 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
     // with a P2002 error; we retry with a fresh count.
     const MAX_RETRIES = 3;
     let reversalId: string | null = null;
+    let reversalVersion = 0;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       const currentVersion = await this.countNonReversedAdjustments(original.invoiceId);
       const nextVersion = currentVersion + 1;
+      reversalVersion = nextVersion;
       const newReversalId = globalThis.crypto.randomUUID();
 
       try {
@@ -415,9 +448,11 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
             data: {
               id: newReversalId,
               invoiceId: original.invoiceId,
+              invoiceNumber: invoice.invoiceNumber,
               createdAt: new Date(),
               createdByUserId: session.userId,
               createdByUserName: session.fullName,
+              workstationId: session.workstationId,
               adjustmentType: 'REVERSAL' as InvoiceAdjustmentType,
               previousValue:
                 original.newValue != null
@@ -464,6 +499,30 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
     if (!reversalId) {
       // Unreachable — the loop either succeeds or throws.
       throw new AdjustmentConflictException(original.invoiceId);
+    }
+
+    // Enqueue sync entry for the reversal (best-effort).
+    try {
+      await this.enqueueSyncEntry(
+        {
+          id: reversalId,
+          invoiceId: original.invoiceId,
+          adjustmentType: 'REVERSAL' as AdjustmentType,
+          previousValue: original.newValue,
+          newValue: original.previousValue,
+          reason,
+          version: reversalVersion,
+          reversalOfAdjustmentId: adjustmentId,
+          replacedByAdjustmentId: null,
+          createdByUserId: session.userId,
+          createdByUserName: session.fullName,
+          workstationId: session.workstationId,
+          createdAt: new Date(),
+        },
+      );
+      notifyPendingEntry();
+    } catch {
+      // Sync is best-effort — the reversal is already saved locally.
     }
 
     return this.toAdjustmentRecord(
@@ -971,5 +1030,91 @@ class LocalAdjustmentServiceImpl implements LocalAdjustmentService {
       value = `"${value.replace(/"/g, '""')}"`;
     }
     return value;
+  }
+
+  /**
+   * Create a SyncQueue entry for server-side visibility of this adjustment.
+   *
+   * Best-effort: if the write fails the adjustment is already committed
+   * locally and will be retried on the next sync cycle. The server stores
+   * the adjustment data for cross-workstation visibility and backoffice
+   * reporting — it never affects DIAN or the fiscal invoice.
+   */
+  private async enqueueSyncEntry(
+    data: {
+      id: string;
+      invoiceId: string;
+      adjustmentType: AdjustmentType;
+      previousValue: unknown | null;
+      newValue: unknown | null;
+      reason: string;
+      version: number;
+      reversalOfAdjustmentId: string | null;
+      replacedByAdjustmentId: string | null;
+      createdByUserId: string;
+      createdByUserName: string;
+      workstationId: string;
+      createdAt: Date;
+    },
+  ): Promise<void> {
+    // Resolve invoice number for the payload
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id: data.invoiceId },
+      select: { invoiceNumber: true },
+    });
+
+    const payloadObj: InvoiceAdjustmentPayload = {
+      adjustmentId: data.id,
+      invoiceId: data.invoiceId,
+      invoiceNumber: invoice?.invoiceNumber ?? data.invoiceId,
+      adjustmentType: data.adjustmentType,
+      previousValue: data.previousValue,
+      newValue: data.newValue,
+      reason: data.reason,
+      version: data.version,
+      reversalOfAdjustmentId: data.reversalOfAdjustmentId,
+      replacedByAdjustmentId: data.replacedByAdjustmentId,
+      createdByUserId: data.createdByUserId,
+      createdByUserName: data.createdByUserName,
+      workstationId: data.workstationId,
+      createdAt: data.createdAt.toISOString(),
+    };
+
+    const payload = JSON.stringify(payloadObj);
+    const payloadBytes = new TextEncoder().encode(payload);
+    const payloadHash = await this.computePayloadHash(payload);
+    const operationUuid = globalThis.crypto.randomUUID();
+
+    const latestSeq = await this.prisma.syncQueue.findFirst({
+      where: { sourceWorkstationId: data.workstationId },
+      orderBy: { clientSequence: 'desc' },
+      select: { clientSequence: true },
+    });
+    const clientSequence = latestSeq ? latestSeq.clientSequence + 1n : 1n;
+
+    await this.prisma.syncQueue.create({
+      data: {
+        id: globalThis.crypto.randomUUID(),
+        operationUuid,
+        operationType: 'INVOICE_ADJUSTMENT' as any,
+        payload,
+        payloadHash,
+        payloadSize: payloadBytes.length,
+        versionSchema: 1,
+        status: 'PENDING' as any,
+        retryCount: 0,
+        sourceWorkstationId: data.workstationId,
+        sourceCreatedAt: data.createdAt,
+        clientSequence,
+      },
+    });
+  }
+
+  private async computePayloadHash(payload: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(payload);
+    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 }

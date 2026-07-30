@@ -6,6 +6,9 @@ import { defineConfig } from 'prisma/config';
 export default defineConfig({
   // Points to the assembled directory containing schema.prisma + all .prisma files.
   schema: 'prisma/schema/',
+  migrations: {
+    path: './prisma/migrations',
+  },
   datasource: {
     // Optional when just generating — empty string prevents errors if DATABASE_URL is unset.
     url: process.env.DATABASE_URL ?? '',
