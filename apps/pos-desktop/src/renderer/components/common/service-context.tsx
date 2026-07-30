@@ -125,6 +125,22 @@ export const useFiscalNumberingService = (): Services['fiscalNumberingService'] 
 export const useLocalAdjustmentService = (): Services['localAdjustmentService'] =>
   useServiceContext().localAdjustmentService;
 
+/** Convenience hook — returns the ReportExecutionService instance. */
+export const useReportExecutionService = (): Services['reportExecutionService'] =>
+  useServiceContext().reportExecutionService;
+
+/** Convenience hook — returns the ReportExportService instance. */
+export const useReportExportService = (): Services['reportExportService'] =>
+  useServiceContext().reportExportService;
+
+/** Convenience hook — returns the ReportScheduler instance. */
+export const useReportScheduler = (): Services['reportScheduler'] =>
+  useServiceContext().reportScheduler;
+
+/** Convenience hook — returns the ShiftCloseDocumentService instance. */
+export const useShiftCloseDocumentService = (): Services['shiftCloseDocumentService'] =>
+  useServiceContext().shiftCloseDocumentService;
+
 /** Convenience hook — returns the PrinterConfigService instance. */
 export const usePrinterConfigService = (): Services['printerConfigService'] =>
   useServiceContext().printerConfigService;

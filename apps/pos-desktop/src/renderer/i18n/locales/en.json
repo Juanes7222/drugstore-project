@@ -315,7 +315,8 @@
     "sync_health": "Sync Health",
     "recovery": "Recovery",
     "local_network": "Local Network",
-    "suppliers": "Purchasing"
+    "suppliers": "Purchasing",
+    "reports": "Reports"
   },
   "productos_main": {
     "title": "Products & Inventory",
@@ -2012,5 +2013,428 @@
         "later_hint": "You can configure printers later from the admin menu."
       }
     }
+  },
+  "reports": {
+    "title": "Reports & Analytics",
+    "subtitle": "Reports generated locally from the workstation database",
+    "data_source": "Source: workstation local database",
+    "freshness": {
+      "last_sync": "Last synchronization",
+      "pending": "Pending operations",
+      "failures": "Permanent failures",
+      "never": "Never synchronized",
+      "successful": "Synchronization successful",
+      "warning": "There are pending operations or permanent failures. Data reflects the local state right now."
+    },
+    "sidebar": {
+      "search_placeholder": "Search report…",
+      "favorites": "Favorites",
+      "category_sales": "Sales",
+      "category_inventory": "Inventory",
+      "category_fiscal": "Fiscal",
+      "category_cash_shift": "Cash Shift",
+      "category_audit": "Audit",
+      "category_profitability": "Profitability",
+      "no_reports": "No reports are available for your role.",
+      "add_favorite": "Add to favorites",
+      "remove_favorite": "Remove from favorites"
+    },
+    "header": {
+      "active_filter": "Active filter",
+      "in_column": "in column",
+      "remove_filter": "Remove filter"
+    },
+    "saved_views": {
+      "label": "Saved views",
+      "name_placeholder": "View name",
+      "save": "Save",
+      "remove": "Delete view"
+    },
+    "viewer": {
+      "loading": "Loading report…",
+      "execute": "Run",
+      "empty": "No data for the selected filters.",
+      "warnings": "Warnings",
+      "previous_period": "Previous period",
+      "delta": "vs. previous period",
+      "from_cache": "Cached result (remaining TTL: {{seconds}}s)",
+      "generated_in": "Generated in {{ms}} ms",
+      "rows_total": "{{count}} rows in total",
+      "step_up_required": "This report requires step-up authentication.",
+      "chart_alt": "Chart for report {{title}}"
+    },
+    "filters": {
+      "preset_today": "Today",
+      "preset_yesterday": "Yesterday",
+      "preset_this_week": "This week",
+      "preset_this_month": "This month",
+      "preset_last_month": "Last month",
+      "preset_custom": "Custom",
+      "preset_label": "Period",
+      "date_from": "From",
+      "date_to": "To",
+      "compare_previous": "Compare with previous period",
+      "cashier": "Cashier",
+      "payment_method": "Payment method",
+      "category": "Category",
+      "product": "Product",
+      "lot": "Lot",
+      "movement_type": "Movement type",
+      "user": "User",
+      "low_stock": "Only low stock",
+      "top_n": "Top N",
+      "low_margin_percent": "Low margin threshold (%)",
+      "shift_id": "Shift ID",
+      "days_ahead": "Days ahead",
+      "days_without_movement": "Days without movement",
+      "action_prefix": "Action prefix",
+      "fiscal_status": "Status",
+      "fiscal_type": "Document type",
+      "low_margin_default": "Default threshold",
+      "status": "Status",
+      "all": "All",
+      "all_cashiers": "All cashiers"
+    },
+    "exports": {
+      "label": "Export",
+      "pdf": "PDF",
+      "excel": "Excel",
+      "csv": "CSV",
+      "print": "Print",
+      "generating": "Generating…",
+      "success": "Report exported as {{filename}}",
+      "sent_to_print": "Report sent to print",
+      "failure": "Could not export the report",
+      "save_title": "Save report",
+      "audit": "Export recorded in audit log",
+      "report": "Report",
+      "generated_at": "Generated",
+      "user": "User",
+      "source": "Source",
+      "local_source": "Local workstation database",
+      "kpi": "KPI",
+      "current_value": "Current value",
+      "previous_period": "Previous period",
+      "summary_sheet": "Summary",
+      "detail_sheet": "Detail",
+      "detail": "Detail",
+      "applied_filters": "Applied filters",
+      "from": "From",
+      "to": "To",
+      "compare_previous": "Compare previous period",
+      "yes": "Yes",
+      "no": "No",
+      "data_freshness": "Data freshness",
+      "last_sync": "Last sync",
+      "pending_operations": "Pending operations",
+      "permanent_failures": "Permanent failures",
+      "filters_sheet": "Filters",
+      "source_label": "Source: local workstation database",
+      "indicators": "Indicators",
+      "no_data": "No data for selected filters",
+      "page": "Page",
+      "of": "of"
+    },
+    "warnings": {
+      "empty": "No data for the selected filters.",
+      "pending_ops": "There are {{count}} operations pending synchronization. Data may change when syncing.",
+      "comparison": "Comparing against the immediately preceding period of equal length."
+    },
+    "units": {
+      "currency": "COP",
+      "integer": "",
+      "number": "",
+      "percent": "%",
+      "text": "",
+      "date": "",
+      "datetime": ""
+    },
+    "kpi": {
+      "total_sales": "Net sales",
+      "transaction_count": "Transactions",
+      "average_ticket": "Average ticket",
+      "discounts": "Discounts",
+      "taxes_collected": "Taxes collected",
+      "annulments": "Annulments",
+      "returns": "Returns",
+      "net_sales": "Net sales",
+      "net_collected": "Net collected",
+      "transactions": "Transactions",
+      "refunded": "Refunds",
+      "net_revenue": "Net revenue",
+      "units_sold": "Units sold",
+      "stock_value": "Stock value",
+      "units_in_stock": "Units in stock",
+      "low_stock_products": "Low-stock products",
+      "lots_expiring": "Expiring lots",
+      "value_at_risk": "Value at risk",
+      "estimated_loss": "Estimated loss",
+      "lots_expired": "Expired lots",
+      "avg_rotation": "Average rotation",
+      "days_of_inventory": "Days of inventory",
+      "gross_profit": "Gross profit",
+      "avg_margin": "Average margin",
+      "negative_margin_products": "Negative-margin products",
+      "shifts_with_variance": "Shifts with variance",
+      "total_variance": "Total variance",
+      "pending_operations": "Pending operations",
+      "permanent_failures": "Permanent failures"
+    },
+    "validation": {
+      "iso_date_format": "Expected YYYY-MM-DD",
+      "date_range_invalid": "dateFrom must be <= dateTo"
+    },
+    "chart": {
+      "net_sales": "Net sales",
+      "taxes": "Taxes",
+      "payment_methods": "Payment methods",
+      "net_revenue": "Net revenue",
+      "units_sold": "Units sold",
+      "total_amount": "Total amount",
+      "units": "Units",
+      "value": "Value",
+      "immobilized_value": "Immobilized value",
+      "tax_amount": "Tax amount",
+      "statuses": "Statuses",
+      "variance": "Variance",
+      "products": "Products"
+    },
+    "charts": {
+      "scatter_margin": "Margin (%)",
+      "scatter_profit": "Profit (COP)",
+      "tooltip_margin": "Margin: ",
+      "tooltip_profit": "<br/>Profit: ",
+      "summary_distribution": "Distribution with {count} categories. Total: {total}.",
+      "summary_numeric": "{count} points, total {total}, average {avg}.",
+      "net_sales": "Net sales",
+      "taxes": "Taxes",
+      "payment_methods": "Payment methods",
+      "net_revenue": "Net revenue",
+      "units_sold": "Units sold",
+      "total_amount": "Total amount",
+      "units": "Units",
+      "value": "Value",
+      "immobilized_value": "Immobilized value",
+      "tax_amount": "Tax amount",
+      "statuses": "Statuses",
+      "variance": "Variance",
+      "products": "Products"
+    },
+    "cols": {
+      "date": "Date",
+      "transactions": "Transactions",
+      "gross_sales": "Gross sales",
+      "discounts": "Discounts",
+      "taxes": "Taxes",
+      "returns": "Returns",
+      "annulled": "Annulments",
+      "net_sales": "Net sales",
+      "cashier": "Cashier",
+      "cashier_name": "Cashier name",
+      "payment_method_id": "Payment method ID",
+      "payment_method": "Payment method",
+      "collected": "Collected",
+      "refunded": "Refunded",
+      "net_collected": "Net collected",
+      "rank": "Rank",
+      "product_id": "Product ID",
+      "product": "Product",
+      "units_sold": "Units sold",
+      "gross_revenue": "Gross revenue",
+      "net_revenue": "Net revenue",
+      "contribution": "Contribution",
+      "hour": "Hour",
+      "total": "Total",
+      "weekday": "Weekday",
+      "category": "Category",
+      "laboratory": "Laboratory",
+      "cpp": "CPP",
+      "sale_price": "Sale price",
+      "stock": "Stock",
+      "stock_value": "Stock value",
+      "low_stock": "Low stock",
+      "lot_id": "Lot ID",
+      "batch_number": "Batch",
+      "quantity": "Quantity",
+      "estimated_value": "Estimated value",
+      "expiration_date": "Expiration",
+      "days_remaining": "Days remaining",
+      "estimated_loss": "Estimated loss",
+      "opening_stock": "Opening stock",
+      "closing_stock": "Closing stock",
+      "average_stock": "Average stock",
+      "rotation_index": "Rotation index",
+      "days_of_inventory": "Days of inventory",
+      "immobilized_value": "Immobilized value",
+      "last_movement": "Last movement",
+      "movement_id": "Movement ID",
+      "movement_type": "Movement type",
+      "previous_stock": "Previous stock",
+      "resulting_stock": "Resulting stock",
+      "user": "User",
+      "tax_type": "Tax type",
+      "taxable_base": "Taxable base",
+      "tax_amount": "Tax amount",
+      "invoice_id": "Invoice ID",
+      "invoice_number": "Number",
+      "invoice_type": "Type",
+      "issued_at": "Issued at",
+      "status": "Status",
+      "cufe": "CUFE",
+      "expected": "Expected",
+      "declared": "Declared",
+      "difference": "Difference",
+      "variance": "Variance",
+      "shift_id": "Shift ID",
+      "closed_at": "Closed at",
+      "action": "Action",
+      "entity_type": "Entity type",
+      "entity_id": "Entity ID",
+      "role": "Role",
+      "revenue": "Revenue",
+      "estimated_cost": "Estimated cost",
+      "gross_profit": "Gross profit",
+      "gross_margin": "Gross margin",
+      "margin_status": "Status"
+    },
+    "margins": {
+      "negative": "Negative margin",
+      "low": "Low margin",
+      "medium": "Medium margin",
+      "healthy": "Healthy margin"
+    },
+    "empty": {
+      "title": "No data",
+      "body": "No data for the selected filters. Adjust the range or criteria to get results."
+    },
+    "error": {
+      "title": "Report failed",
+      "body": "An error occurred while running the report. Try again or contact the administrator."
+    },
+    "schedules": {
+      "title": "Scheduled reports",
+      "new": "New schedule",
+      "weekday": "Day",
+      "time": "Time",
+      "format": "Format",
+      "last_run": "Last run",
+      "next_run": "Next run",
+      "remove": "Remove",
+      "create": "Create",
+      "no_schedules": "No scheduled reports."
+    },
+    "categories": {
+      "sales": "Sales",
+      "inventory": "Inventory",
+      "fiscal": "Fiscal",
+      "cash_shift": "Cash Shift",
+      "audit": "Audit",
+      "profitability": "Profitability"
+    },
+    "catalog": {
+      "sales_daily_summary": {
+        "title": "Daily sales summary",
+        "description": "Daily totals of confirmed sales, returns, and annulments."
+      },
+      "sales_by_cashier": {
+        "title": "Sales by cashier",
+        "description": "Totals per cashier, including shift close variance."
+      },
+      "sales_by_payment_method": {
+        "title": "Sales by payment method",
+        "description": "Collected, refunded, and net by payment method."
+      },
+      "sales_by_product": {
+        "title": "Sales by product",
+        "description": "Top products by units and revenue."
+      },
+      "sales_by_hour": {
+        "title": "Sales by hour",
+        "description": "Hourly distribution of transactions and amounts."
+      },
+      "sales_by_weekday": {
+        "title": "Sales by weekday",
+        "description": "Weekly distribution of transactions and amounts."
+      },
+      "inv_current_stock": {
+        "title": "Current stock",
+        "description": "Valued inventory with CPP, price, and stock per product."
+      },
+      "inv_expiring_lots": {
+        "title": "Expiring lots",
+        "description": "Active lots expiring within the configured threshold."
+      },
+      "inv_expired_with_loss": {
+        "title": "Expired with loss",
+        "description": "Expired lots with remaining stock and estimated loss."
+      },
+      "inv_rotation": {
+        "title": "Inventory rotation",
+        "description": "Rotation and days of inventory by product."
+      },
+      "inv_low_movement": {
+        "title": "Low-movement products",
+        "description": "Products without movements within the configured threshold."
+      },
+      "inv_movements": {
+        "title": "Inventory movements",
+        "description": "Immutable detail of inventory movements by product, lot, and type."
+      },
+      "fiscal_tax_summary": {
+        "title": "Fiscal tax summary",
+        "description": "Totals by tax type for the selected period."
+      },
+      "fiscal_dian_documents": {
+        "title": "DIAN documents",
+        "description": "Local view of invoices, notes, and documents with their known transmission state."
+      },
+      "cash_shift_close": {
+        "title": "Shift close",
+        "description": "Detailed view of a closed shift with variances per payment method."
+      },
+      "audit_shift_variances": {
+        "title": "Shift variances",
+        "description": "Closed shifts with non-zero variance, grouped by cashier."
+      },
+      "audit_traceability": {
+        "title": "Audit traceability",
+        "description": "Immutable audit events for the selected period."
+      },
+      "profit_margin_by_product": {
+        "title": "Profit margin by product",
+        "description": "Gross margin by product using the current CPP."
+      }
+    }
+  },
+  "kpi": {
+    "total_sales": "Net sales",
+    "transaction_count": "Transactions",
+    "average_ticket": "Average ticket",
+    "discounts": "Discounts",
+    "taxes_collected": "Taxes collected",
+    "annulments": "Annulments",
+    "returns": "Returns",
+    "net_sales": "Net sales",
+    "net_collected": "Net collected",
+    "transactions": "Transactions",
+    "refunded": "Refunds",
+    "net_revenue": "Net revenue",
+    "units_sold": "Units sold",
+    "total_variance": "Total variance",
+    "stock_value": "Stock value",
+    "units_in_stock": "Units in stock",
+    "low_stock_products": "Low-stock products",
+    "lots_expiring": "Expiring lots",
+    "value_at_risk": "Value at risk",
+    "estimated_loss": "Estimated loss",
+    "lots_expired": "Expired lots",
+    "avg_rotation": "Average rotation",
+    "days_of_inventory": "Days of inventory",
+    "gross_profit": "Gross profit",
+    "avg_margin": "Average margin",
+    "negative_margin_products": "Negative-margin products",
+    "shifts_with_variance": "Shifts with variance",
+    "pending_operations": "Pending operations",
+    "permanent_failures": "Permanent failures"
   }
 }

@@ -219,6 +219,24 @@ const PrinterIcon: FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const ReportsIcon: FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 3v18h18" />
+    <path d="M7 14l3-3 4 4 5-7" />
+  </svg>
+);
+
 const AdminIcon: FC<{ className?: string }> = ({ className }) => (
   <svg
     className={className}
@@ -392,6 +410,19 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "navigation.recovery",
     roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: getHealthIcon(),
+  },
+  {
+    screen: "reports",
+    labelKey: "navigation.reports",
+    roles: [
+      RoleType.CASHIER,
+      RoleType.MANAGER,
+      RoleType.OWNER,
+      RoleType.SAAS_ADMIN,
+      RoleType.ACCOUNTANT,
+      RoleType.INVENTORY_ASSISTANT,
+    ],
+    icon: ReportsIcon,
   },
 ];
 

@@ -111,6 +111,10 @@ export const uiSlice = createSlice({
       state.activeScreen = "supplier-returns";
     },
 
+    navigateToReports: (state) => {
+      state.activeScreen = "reports";
+    },
+
     navigateToRecovery: (state) => {
       state.activeScreen = "recovery";
     },
@@ -250,6 +254,7 @@ export const {
   navigateToPurchaseOrders,
   navigateToPurchaseReceptions,
   navigateToSupplierReturns,
+  navigateToReports,
   navigateToRecovery,
   navigateToUserManagement,
   navigateToAuditLog,

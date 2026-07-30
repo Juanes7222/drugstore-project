@@ -93,6 +93,10 @@ import type { ConfigExportService } from '../../domain/printing/config-export.se
 import type { PrintingMetricsService } from '../../domain/printing/printing-metrics.service';
 import type { CashDrawerService } from '../../domain/printing/cash-drawer.service';
 import type { CustomerDisplayService } from '../../domain/printing/customer-display.service';
+import { ReportExecutionService } from '../../domain/reports/report-execution.service';
+import { ReportExportService } from '../../domain/reports/report-export.service';
+import { ReportScheduler } from '../../domain/reports/report-scheduler.service';
+import { ShiftCloseDocumentService } from '../../domain/reports/shift-close-document.service';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -133,6 +137,10 @@ export interface Services {
   purchaseReceptionsService: PurchaseReceptionsService;
   supplierReturnsService: SupplierReturnsService;
   localAdjustmentService: LocalAdjustmentService;
+  reportExecutionService: ReportExecutionService;
+  reportExportService: ReportExportService;
+  reportScheduler: ReportScheduler;
+  shiftCloseDocumentService: ShiftCloseDocumentService;
 }
 
 export type InitState =
@@ -490,6 +498,18 @@ export async function initializeServices(
     purchaseReceptionsService: domainServices.purchaseReceptionsService,
     supplierReturnsService: domainServices.supplierReturnsService,
     localAdjustmentService,
+    reportExecutionService: new ReportExecutionService(prismaClient),
+    reportExportService: new ReportExportService(),
+    reportScheduler: new ReportScheduler(
+      prismaClient,
+      new ReportExecutionService(prismaClient),
+      new ReportExportService(),
+      () => {
+        const state = useLocalSessionStore.getState();
+        return state.session;
+      },
+    ),
+    shiftCloseDocumentService: new ShiftCloseDocumentService(prismaClient),
   };
 }
 

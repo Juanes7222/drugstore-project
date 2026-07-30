@@ -73,6 +73,11 @@ export const LocalAuditEvent = {
   FISCAL_INVOICE_EMITTED: 'FISCAL_INVOICE_EMITTED',
   FISCAL_CONTINGENCY_ACTIVATED: 'FISCAL_CONTINGENCY_ACTIVATED',
   FISCAL_TRANSMISSION_FAILED: 'FISCAL_TRANSMISSION_FAILED',
+
+  // ── Reports ──────────────────────────────────────────────────
+  REPORT_EXPORTED: 'REPORT_EXPORTED',
+  REPORT_SHIFT_CLOSE_DOCUMENT_PERSISTED: 'REPORT_SHIFT_CLOSE_DOCUMENT_PERSISTED',
+  REPORT_SHIFT_CLOSE_DOCUMENT_RECOVERED: 'REPORT_SHIFT_CLOSE_DOCUMENT_RECOVERED',
 } as const;
 
 export type LocalAuditEventType =
@@ -88,7 +93,8 @@ export type LocalAuditCategory =
   | 'sync'
   | 'inventory'
   | 'purchase'
-  | 'fiscal';
+  | 'fiscal'
+  | 'report';
 
 // ---------------------------------------------------------------------------
 // Write input

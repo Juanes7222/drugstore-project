@@ -56,6 +56,7 @@ impl LocalSyncModules {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             #[cfg(debug_assertions)]
             {
@@ -136,6 +137,8 @@ pub fn run() {
             commands::local_sync::push_to_hub,
             commands::local_sync::pull_from_hub,
             commands::local_sync::set_local_sync_enabled,
+            // Report export commands
+            commands::report::write_report_export,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

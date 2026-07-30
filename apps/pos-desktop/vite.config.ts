@@ -440,6 +440,12 @@ export default defineConfig(() => ({
     port: 5173,
     strictPort: true,
     host: host || false,
+    // Cross-Origin isolation headers so `SharedArrayBuffer` is available
+    // in the Vite dev server (jsPDF / fflate needs it).
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
     hmr: host
       ? {
           protocol: "ws",

@@ -385,7 +385,8 @@
     "license_status": "Estado de Licencia",
     "recovery": "Recuperación",
     "local_network": "Red Local",
-    "suppliers": "Compras"
+    "suppliers": "Compras",
+    "reports": "Reportes"
   },
   "productos_main": {
     "title": "Productos e Inventario",
@@ -2151,5 +2152,428 @@
         "later_hint": "Puede configurar las impresoras más tarde desde el menú de administración."
       }
     }
+  },
+  "reports": {
+    "title": "Reportes y Analítica",
+    "subtitle": "Reportes generados localmente sobre la base de datos del puesto de trabajo",
+    "data_source": "Fuente: base de datos local del puesto de trabajo",
+    "freshness": {
+      "last_sync": "Última sincronización",
+      "pending": "Operaciones pendientes",
+      "failures": "Fallos permanentes",
+      "never": "Nunca sincronizado",
+      "successful": "Sincronización exitosa",
+      "warning": "Hay operaciones pendientes o fallos permanentes. Los datos reflejan el estado local en este momento."
+    },
+    "sidebar": {
+      "search_placeholder": "Buscar reporte…",
+      "favorites": "Favoritos",
+      "category_sales": "Ventas",
+      "category_inventory": "Inventario",
+      "category_fiscal": "Fiscal",
+      "category_cash_shift": "Turno de Caja",
+      "category_audit": "Auditoría",
+      "category_profitability": "Rentabilidad",
+      "no_reports": "No hay reportes disponibles para tu rol.",
+      "add_favorite": "Agregar a favoritos",
+      "remove_favorite": "Quitar de favoritos"
+    },
+    "header": {
+      "active_filter": "Filtro activo",
+      "in_column": "en columna",
+      "remove_filter": "Quitar filtro"
+    },
+    "saved_views": {
+      "label": "Vistas guardadas",
+      "name_placeholder": "Nombre de la vista",
+      "save": "Guardar",
+      "remove": "Eliminar vista"
+    },
+    "viewer": {
+      "loading": "Cargando reporte…",
+      "execute": "Ejecutar",
+      "empty": "No hay datos para los filtros seleccionados.",
+      "warnings": "Advertencias",
+      "previous_period": "Período anterior",
+      "delta": "vs. período anterior",
+      "from_cache": "Resultado en caché (TTL restante: {{seconds}}s)",
+      "generated_in": "Generado en {{ms}} ms",
+      "rows_total": "{{count}} filas en total",
+      "step_up_required": "Este reporte requiere autenticación reforzada.",
+      "chart_alt": "Gráfico del reporte {{title}}"
+    },
+    "filters": {
+      "preset_today": "Hoy",
+      "preset_yesterday": "Ayer",
+      "preset_this_week": "Esta semana",
+      "preset_this_month": "Este mes",
+      "preset_last_month": "Mes pasado",
+      "preset_custom": "Personalizado",
+      "preset_label": "Período",
+      "date_from": "Desde",
+      "date_to": "Hasta",
+      "compare_previous": "Comparar con período anterior",
+      "cashier": "Cajero",
+      "payment_method": "Método de pago",
+      "category": "Categoría",
+      "product": "Producto",
+      "lot": "Lote",
+      "movement_type": "Tipo de movimiento",
+      "user": "Usuario",
+      "low_stock": "Solo stock bajo",
+      "top_n": "Top N",
+      "low_margin_percent": "Umbral de margen bajo (%)",
+      "shift_id": "ID de turno",
+      "days_ahead": "Días por vencer",
+      "days_without_movement": "Días sin movimiento",
+      "action_prefix": "Prefijo de acción",
+      "fiscal_status": "Estado",
+      "fiscal_type": "Tipo de documento",
+      "low_margin_default": "Umbral por defecto",
+      "status": "Estado",
+      "all": "Todos",
+      "all_cashiers": "Todos los cajeros"
+    },
+    "exports": {
+      "label": "Exportar",
+      "pdf": "PDF",
+      "excel": "Excel",
+      "csv": "CSV",
+      "print": "Imprimir",
+      "generating": "Generando…",
+      "success": "Reporte exportado como {{filename}}",
+      "sent_to_print": "Reporte enviado a impresión",
+      "failure": "No se pudo exportar el reporte",
+      "save_title": "Guardar reporte",
+      "audit": "Exportación registrada en auditoría",
+      "report": "Reporte",
+      "generated_at": "Generado",
+      "user": "Usuario",
+      "source": "Fuente",
+      "local_source": "Base de datos local del puesto de trabajo",
+      "kpi": "KPI",
+      "current_value": "Valor actual",
+      "previous_period": "Período anterior",
+      "summary_sheet": "Resumen",
+      "detail_sheet": "Detalle",
+      "detail": "Detalle",
+      "applied_filters": "Filtros aplicados",
+      "from": "Desde",
+      "to": "Hasta",
+      "compare_previous": "Comparar período anterior",
+      "yes": "Sí",
+      "no": "No",
+      "data_freshness": "Frescura de datos",
+      "last_sync": "Última sincronización",
+      "pending_operations": "Operaciones pendientes",
+      "permanent_failures": "Fallos permanentes",
+      "filters_sheet": "Filtros",
+      "source_label": "Fuente: base de datos local del puesto de trabajo",
+      "indicators": "Indicadores",
+      "no_data": "Sin datos para los filtros seleccionados",
+      "page": "Página",
+      "of": "de"
+    },
+    "warnings": {
+      "empty": "Sin datos para los filtros seleccionados.",
+      "pending_ops": "Hay {{count}} operaciones pendientes de sincronización. Los datos podrían cambiar al sincronizar.",
+      "comparison": "Comparando con el período inmediatamente anterior de igual duración."
+    },
+    "units": {
+      "currency": "COP",
+      "integer": "",
+      "number": "",
+      "percent": "%",
+      "text": "",
+      "date": "",
+      "datetime": ""
+    },
+    "kpi": {
+      "total_sales": "Ventas netas",
+      "transaction_count": "Transacciones",
+      "average_ticket": "Ticket promedio",
+      "discounts": "Descuentos",
+      "taxes_collected": "Impuestos recaudados",
+      "annulments": "Anulaciones",
+      "returns": "Devoluciones",
+      "net_sales": "Ventas netas",
+      "net_collected": "Recaudado neto",
+      "transactions": "Transacciones",
+      "refunded": "Reembolsos",
+      "net_revenue": "Ingresos netos",
+      "units_sold": "Unidades vendidas",
+      "stock_value": "Valor de inventario",
+      "units_in_stock": "Unidades en stock",
+      "low_stock_products": "Productos con stock bajo",
+      "lots_expiring": "Lotes por vencer",
+      "value_at_risk": "Valor en riesgo",
+      "estimated_loss": "Pérdida estimada",
+      "lots_expired": "Lotes vencidos",
+      "avg_rotation": "Rotación promedio",
+      "days_of_inventory": "Días de inventario",
+      "gross_profit": "Utilidad bruta",
+      "avg_margin": "Margen promedio",
+      "negative_margin_products": "Productos con margen negativo",
+      "shifts_with_variance": "Turnos con diferencia",
+      "total_variance": "Diferencia total",
+      "pending_operations": "Operaciones pendientes",
+      "permanent_failures": "Fallos permanentes"
+    },
+    "validation": {
+      "iso_date_format": "Formato YYYY-MM-DD esperado",
+      "date_range_invalid": "La fecha desde debe ser anterior a la fecha hasta"
+    },
+    "chart": {
+      "net_sales": "Ventas netas",
+      "taxes": "Impuestos",
+      "payment_methods": "Métodos de pago",
+      "net_revenue": "Ingresos netos",
+      "units_sold": "Unidades vendidas",
+      "total_amount": "Monto total",
+      "units": "Unidades",
+      "value": "Valor",
+      "immobilized_value": "Valor inmovilizado",
+      "tax_amount": "Monto del impuesto",
+      "statuses": "Estados",
+      "variance": "Diferencia",
+      "products": "Productos"
+    },
+    "charts": {
+      "scatter_margin": "Margen (%)",
+      "scatter_profit": "Utilidad (COP)",
+      "tooltip_margin": "Margen: ",
+      "tooltip_profit": "<br/>Utilidad: ",
+      "summary_distribution": "Distribución con {count} categorías. Total: {total}.",
+      "summary_numeric": "{count} puntos, total {total}, promedio {avg}.",
+      "net_sales": "Ventas netas",
+      "taxes": "Impuestos",
+      "payment_methods": "Métodos de pago",
+      "net_revenue": "Ingresos netos",
+      "units_sold": "Unidades vendidas",
+      "total_amount": "Monto total",
+      "units": "Unidades",
+      "value": "Valor",
+      "immobilized_value": "Valor inmovilizado",
+      "tax_amount": "Monto del impuesto",
+      "statuses": "Estados",
+      "variance": "Diferencia",
+      "products": "Productos"
+    },
+    "cols": {
+      "date": "Fecha",
+      "transactions": "Transacciones",
+      "gross_sales": "Ventas brutas",
+      "discounts": "Descuentos",
+      "taxes": "Impuestos",
+      "returns": "Devoluciones",
+      "annulled": "Anulaciones",
+      "net_sales": "Ventas netas",
+      "cashier": "Cajero",
+      "cashier_name": "Nombre del cajero",
+      "payment_method_id": "ID método de pago",
+      "payment_method": "Método de pago",
+      "collected": "Recaudado",
+      "refunded": "Reembolsado",
+      "net_collected": "Recaudado neto",
+      "rank": "Ranking",
+      "product_id": "ID producto",
+      "product": "Producto",
+      "units_sold": "Unidades vendidas",
+      "gross_revenue": "Ingresos brutos",
+      "net_revenue": "Ingresos netos",
+      "contribution": "Contribución",
+      "hour": "Hora",
+      "total": "Total",
+      "weekday": "Día de la semana",
+      "category": "Categoría",
+      "laboratory": "Laboratorio",
+      "cpp": "CPP",
+      "sale_price": "Precio de venta",
+      "stock": "Stock",
+      "stock_value": "Valor de stock",
+      "low_stock": "Stock bajo",
+      "lot_id": "ID lote",
+      "batch_number": "Lote",
+      "quantity": "Cantidad",
+      "estimated_value": "Valor estimado",
+      "expiration_date": "Vencimiento",
+      "days_remaining": "Días restantes",
+      "estimated_loss": "Pérdida estimada",
+      "opening_stock": "Stock inicial",
+      "closing_stock": "Stock final",
+      "average_stock": "Stock promedio",
+      "rotation_index": "Índice de rotación",
+      "days_of_inventory": "Días de inventario",
+      "immobilized_value": "Valor inmovilizado",
+      "last_movement": "Último movimiento",
+      "movement_id": "ID movimiento",
+      "movement_type": "Tipo de movimiento",
+      "previous_stock": "Stock anterior",
+      "resulting_stock": "Stock resultante",
+      "user": "Usuario",
+      "tax_type": "Tipo de impuesto",
+      "taxable_base": "Base gravable",
+      "tax_amount": "Monto del impuesto",
+      "invoice_id": "ID factura",
+      "invoice_number": "Número",
+      "invoice_type": "Tipo",
+      "issued_at": "Emitido",
+      "status": "Estado",
+      "cufe": "CUFE",
+      "expected": "Esperado",
+      "declared": "Declarado",
+      "difference": "Diferencia",
+      "variance": "Diferencia",
+      "shift_id": "ID turno",
+      "closed_at": "Cerrado",
+      "action": "Acción",
+      "entity_type": "Tipo entidad",
+      "entity_id": "ID entidad",
+      "role": "Rol",
+      "revenue": "Ingresos",
+      "estimated_cost": "Costo estimado",
+      "gross_profit": "Utilidad bruta",
+      "gross_margin": "Margen bruto",
+      "margin_status": "Estado"
+    },
+    "margins": {
+      "negative": "Margen negativo",
+      "low": "Margen bajo",
+      "medium": "Margen medio",
+      "healthy": "Margen saludable"
+    },
+    "empty": {
+      "title": "Sin datos",
+      "body": "No hay datos para los filtros seleccionados. Ajusta el rango o los criterios para obtener resultados."
+    },
+    "error": {
+      "title": "Error al ejecutar el reporte",
+      "body": "Ocurrió un error al ejecutar el reporte. Intenta nuevamente o contacta al administrador."
+    },
+    "schedules": {
+      "title": "Reportes programados",
+      "new": "Nueva programación",
+      "weekday": "Día",
+      "time": "Hora",
+      "format": "Formato",
+      "last_run": "Última ejecución",
+      "next_run": "Próxima ejecución",
+      "remove": "Eliminar",
+      "create": "Crear",
+      "no_schedules": "No hay reportes programados."
+    },
+    "categories": {
+      "sales": "Ventas",
+      "inventory": "Inventario",
+      "fiscal": "Fiscal",
+      "cash_shift": "Turno de Caja",
+      "audit": "Auditoría",
+      "profitability": "Rentabilidad"
+    },
+    "catalog": {
+      "sales_daily_summary": {
+        "title": "Resumen diario de ventas",
+        "description": "Totales diarios de ventas confirmadas, devoluciones y anulaciones."
+      },
+      "sales_by_cashier": {
+        "title": "Ventas por cajero",
+        "description": "Totales por cajero, incluyendo diferencia de cierre de turno."
+      },
+      "sales_by_payment_method": {
+        "title": "Ventas por método de pago",
+        "description": "Recaudo, reembolsos y neto por método de pago."
+      },
+      "sales_by_product": {
+        "title": "Ventas por producto",
+        "description": "Top de productos por unidades e ingresos."
+      },
+      "sales_by_hour": {
+        "title": "Ventas por hora",
+        "description": "Distribución horaria de transacciones y montos."
+      },
+      "sales_by_weekday": {
+        "title": "Ventas por día de la semana",
+        "description": "Distribución semanal de transacciones y montos."
+      },
+      "inv_current_stock": {
+        "title": "Stock actual",
+        "description": "Inventario valorizado con CPP, precio y stock por producto."
+      },
+      "inv_expiring_lots": {
+        "title": "Lotes por vencer",
+        "description": "Lotes activos con vencimiento dentro del umbral configurado."
+      },
+      "inv_expired_with_loss": {
+        "title": "Vencidos con pérdida",
+        "description": "Lotes vencidos con stock remanente y pérdida estimada."
+      },
+      "inv_rotation": {
+        "title": "Rotación de inventario",
+        "description": "Rotación y días de inventario por producto."
+      },
+      "inv_low_movement": {
+        "title": "Productos sin movimiento",
+        "description": "Productos sin movimientos dentro del umbral configurado."
+      },
+      "inv_movements": {
+        "title": "Movimientos de inventario",
+        "description": "Detalle inmutable de movimientos de inventario por producto, lote y tipo."
+      },
+      "fiscal_tax_summary": {
+        "title": "Resumen fiscal de impuestos",
+        "description": "Totales por tipo de impuesto para el período seleccionado."
+      },
+      "fiscal_dian_documents": {
+        "title": "Documentos DIAN",
+        "description": "Vista local de facturas, notas y documentos con estado de transmisión conocido."
+      },
+      "cash_shift_close": {
+        "title": "Cierre de turno",
+        "description": "Detalle de un turno cerrado, con diferencias por método de pago."
+      },
+      "audit_shift_variances": {
+        "title": "Diferencias en cierres de turno",
+        "description": "Turnos cerrados con diferencia distinta de cero, agrupados por cajero."
+      },
+      "audit_traceability": {
+        "title": "Trazabilidad de auditoría",
+        "description": "Eventos inmutables de auditoría del período seleccionado."
+      },
+      "profit_margin_by_product": {
+        "title": "Margen de ganancia por producto",
+        "description": "Margen bruto por producto utilizando el CPP actual."
+      }
+    }
+  },
+  "kpi": {
+    "total_sales": "Ventas netas",
+    "transaction_count": "Transacciones",
+    "average_ticket": "Ticket promedio",
+    "discounts": "Descuentos",
+    "taxes_collected": "Impuestos recaudados",
+    "annulments": "Anulaciones",
+    "returns": "Devoluciones",
+    "net_sales": "Ventas netas",
+    "net_collected": "Recaudado neto",
+    "transactions": "Transacciones",
+    "refunded": "Reembolsos",
+    "net_revenue": "Ingresos netos",
+    "units_sold": "Unidades vendidas",
+    "total_variance": "Diferencia total",
+    "stock_value": "Valor de inventario",
+    "units_in_stock": "Unidades en stock",
+    "low_stock_products": "Productos con stock bajo",
+    "lots_expiring": "Lotes por vencer",
+    "value_at_risk": "Valor en riesgo",
+    "estimated_loss": "Pérdida estimada",
+    "lots_expired": "Lotes vencidos",
+    "avg_rotation": "Rotación promedio",
+    "days_of_inventory": "Días de inventario",
+    "gross_profit": "Utilidad bruta",
+    "avg_margin": "Margen promedio",
+    "negative_margin_products": "Productos con margen negativo",
+    "shifts_with_variance": "Turnos con diferencia",
+    "pending_operations": "Operaciones pendientes",
+    "permanent_failures": "Fallos permanentes"
   }
 }

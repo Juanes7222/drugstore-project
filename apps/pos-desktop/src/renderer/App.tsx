@@ -33,6 +33,7 @@ import { PurchaseOrdersPage } from "@/components/purchases/purchase-orders.page"
 import { PurchaseReceptionsPage } from "@/components/purchases/purchase-receptions.page";
 import { SupplierReturnsPage } from "@/components/purchases/supplier-returns.page";
 import { PrescriptionsPage } from "@/components/prescriptions/prescriptions.page";
+import { ReportsPage } from "@/components/reports/reports.page";
 import { SyncHealthPage } from "@/components/sync/sync-health.page";
 import { LocalNetworkPage } from "@/components/local-sync/local-network.page";
 import { RecoveryPage } from "@/components/recovery/recovery.page";
@@ -99,6 +100,7 @@ const InnerApp: FC = () => {
   // sub-services.  start() is called only once (guarded by isSyncStarted).
   const svc = useServiceContext();
   const isSyncStarted = useRef(false);
+  const isReportSchedulerStarted = useRef(false);
   const prevTokenRef = useRef<string | undefined>(undefined);
   const prevWorkstationRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -123,6 +125,14 @@ const InnerApp: FC = () => {
     if (!isSyncStarted.current) {
       isSyncStarted.current = true;
       svc.syncScheduler.start();
+    }
+
+    // Start the local report scheduler once per session.  It evaluates
+    // every minute and runs any schedule whose `nextRunAt` is in the past
+    // while the application is open.
+    if (!isReportSchedulerStarted.current) {
+      isReportSchedulerStarted.current = true;
+      svc.reportScheduler.start();
     }
   }, [session?.accessToken, session?.workstationId, svc]);
 
@@ -630,6 +640,23 @@ const InnerApp: FC = () => {
                 }}
               >
                 <SupplierReturnsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "reports" && (
+              <motion.div
+                key="reports"
+                className="h-full"
+                variants={variants}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <ReportsPage />
               </motion.div>
             )}
 
