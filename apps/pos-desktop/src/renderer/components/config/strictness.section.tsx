@@ -40,8 +40,9 @@ const STRICTNESS_FIELDS: StrictnessField[] = [
     i18nDescKey: 'strictness.inventory_adjustment_reason_desc',
     type: 'select',
     options: [
-      { value: 'REQUIRED', i18nLabel: 'strictness.option_required' },
+      { value: 'STRICT', i18nLabel: 'strictness.option_strict' },
       { value: 'OPTIONAL', i18nLabel: 'strictness.option_optional' },
+      { value: 'OFF', i18nLabel: 'strictness.option_off' },
     ],
   },
   {
@@ -51,7 +52,10 @@ const STRICTNESS_FIELDS: StrictnessField[] = [
     type: 'select',
     options: [
       { value: 'STRICT', i18nLabel: 'strictness.option_strict' },
-      { value: 'OPTIONAL', i18nLabel: 'strictness.option_optional' },
+      {
+        value: 'WITH_MANAGER_AUTH',
+        i18nLabel: 'strictness.option_with_manager_auth',
+      },
       { value: 'OFF', i18nLabel: 'strictness.option_off' },
     ],
   },

@@ -15,6 +15,8 @@ interface ErrorResponse {
   statusCode: number;
   timestamp: string;
   path: string;
+  /** Detailed error information, e.g. Zod validation field-level errors. */
+  details?: unknown;
 }
 
 @Catch(HttpException)
@@ -29,6 +31,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const errorCode = this.extractErrorCode(exception);
     const message = this.extractMessage(exception);
+    const details = this.extractDetails(exception);
 
     const errorResponse: ErrorResponse = {
       errorCode,
@@ -36,6 +39,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       statusCode: status,
       timestamp: new Date().toISOString(),
       path: request.url,
+      ...(details !== undefined ? { details } : {}),
     };
 
     this.logger.error(
@@ -82,5 +86,22 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     return exception.message || 'An error occurred';
+  }
+
+  private extractDetails(exception: HttpException): unknown | undefined {
+    const response = exception.getResponse();
+    if (typeof response === 'object' && response !== null) {
+      const record = response as Record<string, unknown>;
+      // Return any extra fields beyond standard ones (errorCode, message, statusCode)
+      // for richer error context (e.g. Zod validation field-level errors).
+      const extras: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(record)) {
+        if (!['errorCode', 'message', 'statusCode'].includes(key)) {
+          extras[key] = value;
+        }
+      }
+      return Object.keys(extras).length > 0 ? extras : undefined;
+    }
+    return undefined;
   }
 }

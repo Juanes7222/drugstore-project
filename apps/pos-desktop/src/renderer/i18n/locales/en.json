@@ -1618,6 +1618,7 @@
       "option_above_amount": "Above amount",
       "option_never": "Never",
       "option_required": "Required",
+      "option_with_manager_auth": "With manager authorization",
       "option_cash_only": "Cash only",
       "option_manual": "Manual",
       "lots": "Lot numbers",

@@ -1757,6 +1757,7 @@
       "option_above_amount": "Sobre monto",
       "option_never": "Nunca",
       "option_required": "Requerido",
+      "option_with_manager_auth": "Con autorización de gerente",
       "option_cash_only": "Solo efectivo",
       "option_manual": "Manual",
       "lots": "Lotes",
