@@ -330,6 +330,25 @@ export class AuthService {
   // ---------------------------------------------------------------------------
 
   /**
+   * Look up a user by ID and return the safe public DTO.
+   * Validates that the user exists and is active (same checks as
+   * `validateActiveSession` minus the session token lookup).  Used by
+   * `SyncAuthGuard` to authenticate sync requests with an offline token
+   * when the short-lived access token has already expired.
+   *
+   * @throws `UnauthorizedException` if user not found or inactive
+   */
+  async getActiveUser(userId: string): Promise<User> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user || !user.isActive) {
+      throw new UnauthorizedException('User not found or inactive');
+    }
+    return this.toSafeUser(user);
+  }
+
+  /**
    * Issue a new session for a given user.
    */
   async issueSession(params: {

@@ -186,6 +186,7 @@ export class SyncScheduler {
       prisma: config.prisma,
       baseUrl: config.baseUrl,
       accessToken: config.accessToken,
+      offlineToken: useLocalSessionStore.getState().session?.offlineToken ?? undefined,
       auditWriter: config.auditWriter,
     });
     this.metricsService = createSyncMetricsService(config.prisma);
@@ -226,6 +227,7 @@ export class SyncScheduler {
       prisma: this.prisma,
       baseUrl: this.baseUrl,
       accessToken: token,
+      offlineToken: useLocalSessionStore.getState().session?.offlineToken ?? undefined,
       invoiceService: this.invoiceService,
       auditWriter: this.auditWriter,
     });

@@ -24,6 +24,7 @@ import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { SyncBatchSchema } from '../dto/sync-operation.schema';
 import { LocalNumberHintQuerySchema } from '../dto/local-number-hint-query.dto';
 import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
+import { SyncAuthGuard } from '../guards/sync-auth.guard';
 
 @Controller('sync')
 export class SyncController {
@@ -39,7 +40,7 @@ export class SyncController {
    * Each operation is validated against SyncOperationSchema.
    */
   @Post('batch')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SyncAuthGuard)
   @HttpCode(202)
   async receiveBatch(
     @Body(new ZodValidationPipe(SyncBatchSchema))
@@ -54,7 +55,7 @@ export class SyncController {
   }
 
   @Get('status')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SyncAuthGuard)
   async getStatus(@CurrentUser() user: User): Promise<any> {
     const sourceWorkstationId = (user as any).lastLoginWorkstationId ?? '';
     return this.syncService.getStatus(sourceWorkstationId);
@@ -109,7 +110,7 @@ export class SyncController {
   }
 
   @Get('local-number-hint')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(SyncAuthGuard)
   async getLocalNumberHint(
     @Query(new ZodValidationPipe(LocalNumberHintQuerySchema))
     query: { workstationId: string },
@@ -134,9 +135,10 @@ export class SyncController {
    * Results are ordered by createdAt ascending (oldest first).
    */
   @Get('invoice-results')
-  // Note: uses the same JWT auth as other sync endpoints so the workstation
-  // authenticates with its user's session token, same as POST /sync/batch.
-  @UseGuards(JwtAuthGuard)
+  // Uses the dual-path SyncAuthGuard (JWT or offline token) so the
+  // workstation can authenticate with either its user's session token
+  // or its long-lived offline token — same as POST /sync/batch.
+  @UseGuards(SyncAuthGuard)
   async getInvoiceResults(
     @Query(new ZodValidationPipe(InvoiceResultsQuerySchema))
     query: { workstationId: string; since?: string },

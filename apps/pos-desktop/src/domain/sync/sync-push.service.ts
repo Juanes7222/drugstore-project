@@ -135,6 +135,8 @@ export interface SyncPushServiceConfig {
   prisma: PrismaClient;
   baseUrl: string;
   accessToken?: string;
+  /** Long-lived JWT sent as X-Offline-Token alongside the Bearer access token. */
+  offlineToken?: string;
   invoiceService?: InvoiceService;
   auditWriter?: LocalAuditWriter;
 }
@@ -146,9 +148,9 @@ export interface SyncPushServiceConfig {
 export const createSyncPushService = (
   config: SyncPushServiceConfig,
 ): SyncPushService => {
-  const { prisma, baseUrl, accessToken, invoiceService, auditWriter } = config;
+  const { prisma, baseUrl, accessToken, offlineToken, invoiceService, auditWriter } = config;
   const normalizedBase = baseUrl.replace(/\/+$/, '');
-  return new SyncPushServiceImpl(prisma, normalizedBase, accessToken, invoiceService, auditWriter);
+  return new SyncPushServiceImpl(prisma, normalizedBase, accessToken, offlineToken, invoiceService, auditWriter);
 };
 
 // ---------------------------------------------------------------------------
@@ -204,6 +206,7 @@ class SyncPushServiceImpl implements SyncPushService {
   private readonly prisma: PrismaClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly offlineToken?: string;
   private readonly invoiceService?: InvoiceService;
   private readonly auditWriter?: LocalAuditWriter;
 
@@ -211,12 +214,14 @@ class SyncPushServiceImpl implements SyncPushService {
     prisma: PrismaClient,
     baseUrl: string,
     accessToken?: string,
+    offlineToken?: string,
     invoiceService?: InvoiceService,
     auditWriter?: LocalAuditWriter,
   ) {
     this.prisma = prisma;
     this.baseUrl = baseUrl;
     this.accessToken = accessToken;
+    this.offlineToken = offlineToken;
     this.invoiceService = invoiceService;
     this.auditWriter = auditWriter;
   }
@@ -243,6 +248,9 @@ class SyncPushServiceImpl implements SyncPushService {
     };
     if (this.accessToken) {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
+    }
+    if (this.offlineToken) {
+      headers['X-Offline-Token'] = this.offlineToken;
     }
 
     // --- Perform the HTTP request ---

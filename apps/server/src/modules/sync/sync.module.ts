@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/infrastructure/prisma/prisma.module';
+import { AuthModule } from '@/modules/auth/auth.module';
 import { CashShiftModule } from '@/modules/cash-shift/cash-shift.module';
 import { ClientsModule } from '@/modules/clients/clients.module';
 import { SalesPosModule } from '@/modules/sales-pos/sales-pos.module';
@@ -15,10 +16,12 @@ import { TerminalBackupService } from './services/terminal-backup.service';
 import { InvoiceTransmissionResultService } from './services/invoice-transmission-result.service';
 import { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
 import { SyncProcessingJob } from './jobs/sync-processing.job';
+import { SyncAuthGuard } from './guards/sync-auth.guard';
 
 @Module({
   imports: [
     PrismaModule,
+    AuthModule,
     CashShiftModule,
     ClientsModule,
     SalesPosModule,
@@ -35,6 +38,7 @@ import { SyncProcessingJob } from './jobs/sync-processing.job';
     SyncProcessingJob,
     TerminalBackupService,
     InvoiceTransmissionResultService,
+    SyncAuthGuard,
   ],
   exports: [SyncService, SyncHealthService, TerminalBackupService, InvoiceTransmissionResultService],
 })
