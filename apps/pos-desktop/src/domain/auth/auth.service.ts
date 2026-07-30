@@ -629,6 +629,7 @@ function mapServerResponseToSession(
     avatarColor: response.user.avatarColor,
     mustChangePassword: response.user.mustChangePassword,
     offlineToken: response.offlineToken?.token,
+    sessionTrust: 'SERVER_VERIFIED',
   };
 }
 

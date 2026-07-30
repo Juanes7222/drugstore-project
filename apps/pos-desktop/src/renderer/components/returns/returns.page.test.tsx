@@ -69,6 +69,7 @@ const baseSession: LocalSession = {
   avatarUrl: null,
   avatarColor: null,
   mustChangePassword: false,
+  sessionTrust: 'SERVER_VERIFIED',
 };
 
 const setSession = (session: LocalSession | null): void => {

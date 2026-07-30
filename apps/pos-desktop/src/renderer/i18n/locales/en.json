@@ -1030,6 +1030,29 @@
     "save_changes": "Save changes",
     "saving_changes": "Saving..."
   },
+  "add_local_user": {
+    "name_required": "Name is required",
+    "username_required": "Username is required",
+    "pin_min_length": "PIN must be at least 6 digits",
+    "pin_mismatch": "PINs do not match",
+    "username_exists": "This username already exists",
+    "invalid_pin": "Invalid PIN",
+    "error": "Error creating local user"
+  },
+  "local_users": {
+    "title": "Local Users",
+    "display_name": "Full name",
+    "display_name_placeholder": "Cashier name",
+    "username": "Username",
+    "username_placeholder": "username (lowercase, numbers, _)",
+    "pin": "PIN",
+    "pin_placeholder": "6-8 digit PIN",
+    "confirm_pin": "Confirm PIN",
+    "confirm_pin_placeholder": "Repeat PIN",
+    "create": "Create Local User",
+    "creating": "Creating...",
+    "success": "Local user created successfully"
+  },
   "clients": {
     "title": "Clients",
     "create": "New client",
@@ -2436,5 +2459,32 @@
     "shifts_with_variance": "Shifts with variance",
     "pending_operations": "Pending operations",
     "permanent_failures": "Permanent failures"
+  },
+  "terminal_init": {
+    "welcome_title": "Welcome to Pharmacy POS",
+    "welcome_description": "Set up your terminal to start operating. This process runs once.",
+    "welcome_feature_1": "Create local admin account",
+    "welcome_feature_2": "Configure offline-access PIN",
+    "welcome_feature_3": "Ready to invoice and sell",
+    "start": "Get started",
+    "create_admin_title": "Create Local Administrator",
+    "create_admin_description": "This user will manage the station. The PIN is used for offline login.",
+    "display_name": "Full name",
+    "display_name_placeholder": "e.g. Carlos Rodríguez",
+    "local_username": "Username",
+    "username_placeholder": "e.g. carlos.r",
+    "pin": "PIN (minimum 6 digits)",
+    "pin_placeholder": "Tap to enter PIN",
+    "back": "Back",
+    "continue": "Continue",
+    "confirm_pin_title": "Confirm PIN",
+    "confirm_pin_description": "Re-enter the PIN to confirm.",
+    "pin_confirm": "Repeat PIN",
+    "pin_confirm_placeholder": "Tap to enter PIN",
+    "pin_mismatch": "PINs do not match",
+    "finish": "Finish",
+    "initializing": "Initializing...",
+    "success_title": "Terminal Initialized",
+    "success_description": "The station is ready. Redirecting to home..."
   }
 }

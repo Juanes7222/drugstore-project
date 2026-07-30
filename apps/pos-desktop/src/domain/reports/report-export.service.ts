@@ -179,8 +179,9 @@ export class ReportExportService {
   // -----------------------------------------------------------------------
 
   renderCsv(input: ExportInput): string {
+    const { t } = input;
     const header = input.definition.columns
-      .map((c) => escapeCsv(c.titleKey))
+      .map((c) => escapeCsv(this.tr(t, c.titleKey, c.titleKey)))
       .join(COL_DELIMITER);
     const rows = input.response.rows.map((row) =>
       input.definition.columns
@@ -208,7 +209,7 @@ export class ReportExportService {
       [],
       [this.tr(t, 'reports.export.kpi', 'KPI'), this.tr(t, 'reports.export.current_value', 'Valor actual'), this.tr(t, 'reports.export.previous_period', 'Período anterior')],
       ...input.response.kpis.map((kpi) => [
-        kpi.titleKey,
+        this.tr(t, kpi.titleKey, kpi.titleKey),
         formatCellForExport(kpi.value, 'number', loc),
         formatCellForExport(kpi.previousValue ?? null, 'number', loc),
       ]),
@@ -216,12 +217,26 @@ export class ReportExportService {
     XLSX.utils.book_append_sheet(wb, summary, this.tr(t, 'reports.export.summary_sheet', 'Resumen'));
 
     // Detail sheet — the paginated rows.
-    const detail = XLSX.utils.aoa_to_sheet([
-      input.definition.columns.map((c) => c.titleKey),
-      ...input.response.rows.map((row) =>
-        input.definition.columns.map((col) => formatCellForExcel(row[col.id], col)),
-      ),
-    ]);
+    const detailHeaders = input.definition.columns.map((c) =>
+      this.tr(t, c.titleKey, c.titleKey),
+    );
+    const detailData = input.response.rows.map((row) =>
+      input.definition.columns.map((col) => formatCellForExcel(row[col.id], col)),
+    );
+    const detail = XLSX.utils.aoa_to_sheet([detailHeaders, ...detailData]);
+
+    // Auto-size columns — approximate widths based on content.
+    const colWidths = input.definition.columns.map((_col, ci) => {
+      const headerLen = detailHeaders[ci]?.length ?? 10;
+      let maxLen = headerLen;
+      for (const d of detailData) {
+        const cell = d[ci];
+        const len = cell != null ? String(cell).length : 0;
+        if (len > maxLen) maxLen = len;
+      }
+      return { wch: Math.min(Math.max(maxLen + 2, 10), 50) };
+    });
+    detail['!cols'] = colWidths;
     XLSX.utils.book_append_sheet(wb, detail, this.tr(t, 'reports.export.detail_sheet', 'Detalle'));
 
     // Applied filters + freshness.
@@ -254,89 +269,196 @@ export class ReportExportService {
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 32;
+    const usableWidth = pageWidth - margin * 2;
     const { t } = input;
     const loc = input.locale ?? 'es-CO';
 
-    // Header — tenant identity.
+    // --- Header — tenant identity ---
     doc.setFontSize(14);
     doc.text(tenant.name, margin, margin + 8);
     doc.setFontSize(9);
-    if (tenant.nit) doc.text(`NIT: ${tenant.nit}`, margin, margin + 22);
-    if (tenant.address) doc.text(tenant.address, margin, margin + 34);
+    let lineY = margin + 22;
+    if (tenant.nit) { doc.text(`NIT: ${tenant.nit}`, margin, lineY); lineY += 12; }
+    if (tenant.address) { doc.text(tenant.address, margin, lineY); lineY += 12; }
 
-    // Title + filters.
+    // --- Title + filters ---
     doc.setFontSize(12);
-    doc.text(input.definition.code, margin, 80);
+    doc.text(input.definition.code, margin, lineY + 8);
+    lineY += 22;
     doc.setFontSize(9);
     doc.text(
       `${this.tr(t, 'reports.export.from', 'Desde')} ${input.response.filters.dateFrom} ${this.tr(t, 'reports.export.to', 'hasta')} ${input.response.filters.dateTo}`,
       margin,
-      96,
+      lineY,
     );
+    lineY += 12;
     doc.text(
       `${this.tr(t, 'reports.export.generated_at', 'Generado')}: ${new Date(input.response.generatedAt).toLocaleString(loc)}`,
       margin,
-      110,
+      lineY,
     );
-    doc.text(`${this.tr(t, 'reports.export.user', 'Usuario')}: ${input.userDisplayName}`, margin, 124);
-    doc.text(this.tr(t, 'reports.export.source_label', 'Fuente: base de datos local del puesto de trabajo'), margin, 138);
+    lineY += 12;
+    doc.text(`${this.tr(t, 'reports.export.user', 'Usuario')}: ${input.userDisplayName}`, margin, lineY);
+    lineY += 12;
+    doc.text(this.tr(t, 'reports.export.source_label', 'Fuente: base de datos local del puesto de trabajo'), margin, lineY);
+    lineY += 16;
 
-    // KPI summary.
-    let cursorY = 158;
+    // --- KPI summary ---
     doc.setFontSize(10);
-    doc.text(this.tr(t, 'reports.export.indicators', 'Indicadores'), margin, cursorY);
-    cursorY += 12;
+    doc.text(this.tr(t, 'reports.export.indicators', 'Indicadores'), margin, lineY);
+    lineY += 12;
     doc.setFontSize(9);
-    for (const kpi of input.response.kpis) {
-      doc.text(
-        `• ${kpi.titleKey}: ${formatCellForExport(kpi.value, 'number', loc)}`,
-        margin,
-        cursorY,
-      );
-      cursorY += 11;
-    }
+    // Render KPIs in a compact 2-column layout to save vertical space.
+    const kpiCol1 = margin;
+    const kpiCol2 = margin + usableWidth / 2;
+    input.response.kpis.forEach((kpi, idx) => {
+      const x = idx % 2 === 0 ? kpiCol1 : kpiCol2;
+      if (idx > 0 && idx % 2 === 0) lineY += 11;
+      const label = this.tr(t, kpi.titleKey, kpi.titleKey);
+      const val = formatCellForExport(kpi.value, 'number', loc);
+      doc.text(`${label}: ${val}`, x, lineY);
+    });
+    lineY += (Math.ceil(input.response.kpis.length / 2) * 11) + 4;
 
-    // Chart image (when provided).
+    // --- Chart image (when provided) ---
     if (input.chartDataUrl) {
-      cursorY += 8;
+      lineY += 4;
       try {
-        doc.addImage(input.chartDataUrl, 'PNG', margin, cursorY, pageWidth - margin * 2, 200);
-        cursorY += 210;
+        doc.addImage(input.chartDataUrl, 'PNG', margin, lineY, usableWidth, 180);
+        lineY += 190;
       } catch {
-        // Image embed failures are non-fatal — the PDF still has the table.
+        // Non-fatal.
       }
     }
 
-    // Table — wrap to multiple pages.
+    // --- Table ---
     if (input.response.rows.length === 0) {
       doc.setFontSize(9);
-      doc.text(this.tr(t, 'reports.export.no_data', 'Sin datos para los filtros seleccionados.'), margin, cursorY + 12);
+      doc.text(this.tr(t, 'reports.export.no_data', 'Sin datos para los filtros seleccionados.'), margin, lineY + 8);
     } else {
-      cursorY += 8;
+      lineY += 8;
       const columnDefs = input.definition.columns;
-      const usableWidth = pageWidth - margin * 2;
-      const colWidth = usableWidth / columnDefs.length;
-      doc.setFontSize(9);
-      // Header
-      doc.setFont('helvetica', 'bold');
-      columnDefs.forEach((col, i) => doc.text(col.titleKey.slice(0, 24), margin + colWidth * i, cursorY));
-      doc.setFont('helvetica', 'normal');
-      cursorY += 12;
-      // Rows
-      for (const row of input.response.rows) {
-        if (cursorY > pageHeight - 32) {
-          doc.addPage();
-          cursorY = margin;
+
+      // Proportional column widths based on type.
+      const colWeights = columnDefs.map((col) => {
+        switch (col.type) {
+          case ReportColumnType.INTEGER:
+          case ReportColumnType.NUMBER:
+          case ReportColumnType.CURRENCY:
+          case ReportColumnType.PERCENT:
+            return 1;   // narrow
+          case ReportColumnType.DATE:
+            return 1.2;
+          case ReportColumnType.DATETIME:
+            return 1.5;
+          case ReportColumnType.BADGE:
+            return 1;
+          default:
+            return 3;   // text gets the most room
         }
-        columnDefs.forEach((col, i) => {
-          const value = formatCell(row, col, loc);
-          doc.text(value.slice(0, 24), margin + colWidth * i, cursorY);
+      });
+      const totalWeight = colWeights.reduce((a, b) => a + b, 0);
+      const colWidths = colWeights.map((w) => (w / totalWeight) * usableWidth);
+
+      // Translated headers.
+      const headers = columnDefs.map((col) =>
+        this.tr(t, col.titleKey, col.titleKey),
+      );
+
+      // Draw table header with background.
+      const rowGap = 4;    // vertical padding within rows
+      const minRowH = 11;  // minimum row height
+
+      // Compute header height.
+      const headerLines = headers.map((h) => doc.splitTextToSize(h, colWidths[headers.indexOf(h)] - rowGap * 2));
+      const headerH = Math.max(minRowH, Math.max(...headerLines.map((l) => l.length * 5)) + rowGap * 2);
+
+      // Check if header fits on current page; if not, new page.
+      if (lineY + headerH > pageHeight - margin) {
+        doc.addPage();
+        lineY = margin;
+      }
+
+      // Draw header.
+      doc.setFillColor(245, 245, 245);
+      doc.rect(margin, lineY - headerH + rowGap, usableWidth, headerH, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      let xCursor = margin;
+      headers.forEach((h, i) => {
+        const lines = doc.splitTextToSize(h, colWidths[i] - rowGap * 2);
+        lines.forEach((line: string, li: number) => {
+          doc.text(line, xCursor + rowGap, lineY - headerH + rowGap + 4 + li * 5);
         });
-        cursorY += 11;
+        xCursor += colWidths[i];
+      });
+      doc.setFont('helvetica', 'normal');
+      lineY += 3; // small gap below header
+
+      // Data rows.
+      const rows = input.response.rows;
+      for (let ri = 0; ri < rows.length; ri++) {
+        const row = rows[ri];
+
+        // Format all cells for this row.
+        const cellTexts = columnDefs.map((col) => formatCellForPdf(row, col, loc));
+
+        // Compute required height for this row (tallest cell).
+        let rowH = minRowH;
+        xCursor = margin;
+        columnDefs.forEach((_col, ci) => {
+          const lines = doc.splitTextToSize(cellTexts[ci], colWidths[ci] - rowGap * 2);
+          const needed = Math.max(minRowH, lines.length * 5 + rowGap * 2);
+          if (needed > rowH) rowH = needed;
+        });
+
+        // Check page break.
+        if (lineY + rowH > pageHeight - margin) {
+          doc.addPage();
+          lineY = margin;
+          // Redraw header on new page.
+          doc.setFillColor(245, 245, 245);
+          doc.rect(margin, lineY - headerH + rowGap, usableWidth, headerH, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          xCursor = margin;
+          headers.forEach((h, i) => {
+            const lines = doc.splitTextToSize(h, colWidths[i] - rowGap * 2);
+            lines.forEach((line: string, li: number) => {
+              doc.text(line, xCursor + rowGap, lineY - headerH + rowGap + 4 + li * 5);
+            });
+            xCursor += colWidths[i];
+          });
+          doc.setFont('helvetica', 'normal');
+          lineY += 3;
+        }
+
+        // Draw cell content.
+        doc.setFontSize(8);
+        xCursor = margin;
+        columnDefs.forEach((col, ci) => {
+          const lines = doc.splitTextToSize(cellTexts[ci], colWidths[ci] - rowGap * 2);
+          const align = col.align === 'right' ? 'right' : 'left';
+          const cellX = align === 'right'
+            ? xCursor + colWidths[ci] - rowGap
+            : xCursor + rowGap;
+          lines.forEach((line: string, li: number) => {
+            doc.text(line, cellX, lineY + rowGap + 4 + li * 5, { align });
+          });
+          xCursor += colWidths[ci];
+        });
+
+        // Alternating row background.
+        if (ri % 2 === 1) {
+          doc.setFillColor(250, 250, 250);
+          doc.rect(margin, lineY, usableWidth, rowH, 'F');
+        }
+
+        lineY += rowH;
       }
     }
 
-    // Page numbers.
+    // --- Page numbers ---
     const pages = doc.getNumberOfPages();
     for (let p = 1; p <= pages; p++) {
       doc.setPage(p);
@@ -372,7 +494,7 @@ export class ReportExportService {
     const { t } = input;
     const loc = input.locale ?? 'es-CO';
     const headers = input.definition.columns
-      .map((c) => `<th>${escapeHtml(c.titleKey)}</th>`)
+      .map((c) => `<th>${escapeHtml(this.tr(t, c.titleKey, c.titleKey))}</th>`)
       .join('');
     const body = input.response.rows
       .map(
@@ -385,7 +507,7 @@ export class ReportExportService {
     const kpis = input.response.kpis
       .map(
         (kpi) =>
-          `<li><strong>${escapeHtml(kpi.titleKey)}:</strong> ${escapeHtml(
+          `<li><strong>${escapeHtml(this.tr(t, kpi.titleKey, kpi.titleKey))}:</strong> ${escapeHtml(
             formatCellForExport(kpi.value, 'number', loc),
           )}</li>`,
       )
@@ -490,6 +612,43 @@ function formatCellForExport(
     return value.toLocaleString(loc, { maximumFractionDigits: 4 });
   }
   return String(value);
+}
+
+/**
+ * Format a cell value for PDF output, avoiding locale characters that
+ * jsPDF's built-in Helvetica font cannot render.
+ *
+ * Currency es-CO produces a non-breaking space between $ and amount;
+ * Helvetica renders that as "Â".  We use a plain "$" + formatted number
+ * instead.  Numbers use periods as thousand separators (Colombian style)
+ * and commas for decimals where applicable.
+ */
+function formatCellForPdf(row: AnyReportRow, col: ReportColumn, locale?: string): string {
+  const raw = row[col.id];
+  if (raw === null || raw === undefined) return '';
+  switch (col.type) {
+    case ReportColumnType.CURRENCY: {
+      const n = Number(raw);
+      if (n === 0) return '$0';
+      const intl = n.toLocaleString(locale ?? 'es-CO', { maximumFractionDigits: 0 });
+      return `$${intl}`;
+    }
+    case ReportColumnType.PERCENT:
+      return `${Number(raw).toFixed(2)}%`;
+    case ReportColumnType.INTEGER:
+      return Number(raw).toLocaleString(locale ?? 'es-CO');
+    case ReportColumnType.NUMBER:
+      return Number(raw).toLocaleString(locale ?? 'es-CO', { maximumFractionDigits: 4 });
+    case ReportColumnType.DATE:
+    case ReportColumnType.DATETIME: {
+      const d = new Date(raw as string);
+      if (Number.isNaN(d.getTime())) return String(raw);
+      if (col.type === ReportColumnType.DATE) return d.toLocaleDateString(locale ?? 'es-CO');
+      return d.toLocaleString(locale ?? 'es-CO');
+    }
+    default:
+      return String(raw);
+  }
 }
 
 function formatCellForExcel(value: unknown, col: ReportColumn): string | number | Date {

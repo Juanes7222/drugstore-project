@@ -435,6 +435,7 @@ describe("OfflineAuthService", () => {
         avatarUrl: null,
         avatarColor: null,
         mustChangePassword: false,
+        sessionTrust: 'SERVER_VERIFIED',
       };
 
       await service.updateCachedCredentials(
@@ -474,6 +475,7 @@ describe("OfflineAuthService", () => {
         avatarUrl: null,
         avatarColor: null,
         mustChangePassword: false,
+        sessionTrust: 'SERVER_VERIFIED',
       };
 
       await service.updateCachedCredentials(

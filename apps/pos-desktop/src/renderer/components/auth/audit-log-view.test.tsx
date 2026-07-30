@@ -117,6 +117,7 @@ const managerSession: LocalSession = {
   avatarUrl: null,
   avatarColor: null,
   mustChangePassword: false,
+  sessionTrust: 'SERVER_VERIFIED',
 };
 
 function makeLogEntry(

@@ -198,6 +198,7 @@ const makeOnlineSession = (overrides: Partial<LocalSession> = {}): LocalSession 
   avatarUrl: null,
   avatarColor: null,
   mustChangePassword: false,
+  sessionTrust: 'SERVER_VERIFIED',
   ...overrides,
 });
 

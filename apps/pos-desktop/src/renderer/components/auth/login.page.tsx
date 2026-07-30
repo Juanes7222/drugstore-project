@@ -14,7 +14,7 @@
  * When offline, the flow adapts: 2FA is bypassed and an informative
  * message is shown.
  */
-import { type FC, useState, useEffect } from 'react';
+import { type FC, useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
@@ -60,6 +60,7 @@ export const LoginPage: FC = () => {
     challengeToken,
     countdown,
     authService,
+    localUsers,
     handleUserSelect,
     handlePinComplete,
     handlePasswordLogin,
@@ -77,6 +78,32 @@ export const LoginPage: FC = () => {
     offlineLoginSkipped2fa,
   } = useLoginPage();
 
+  // Merge local PGlite users into the cached user list for the avatar grid.
+  // Local users take precedence over cached server users with the same id.
+  // When cache hasn't loaded yet (cachedUsers === null), mergedUsers is also null.
+  const mergedUsers = useMemo<LocalUserInfo[] | null>(() => {
+    if (cachedUsers === null) return null;
+
+    // Build a map keyed by id — local entries overwrite cached ones,
+    // giving local users precedence when ids collide.
+    const userMap = new Map<string, LocalUserInfo>();
+    for (const u of cachedUsers) {
+      userMap.set(u.id, u);
+    }
+    for (const u of localUsers) {
+      userMap.set(u.id, u);
+    }
+
+    return Array.from(userMap.values());
+  }, [cachedUsers, localUsers]);
+
+  // Track which user ids come from local PGlite so AvatarGrid can
+  // show a subtle "local" indicator on those cards.
+  const localUserIds = useMemo<Set<string>>(
+    () => new Set(localUsers.map((u) => u.id)),
+    [localUsers],
+  );
+
   // Already logged in — redirect handled by the hook
   if (session) return null;
 
@@ -93,9 +120,10 @@ export const LoginPage: FC = () => {
   }
 
   // Determine which content to show — memoized key for AnimatePresence
-  // If cachedUsers is null the cache is still loading; if it is an empty
-  // array no user has ever logged in on this device, so default to manual.
-  const showManual = showManualInput || (cachedUsers !== null && cachedUsers.length === 0 && !selectedUser);
+  // If cachedUsers is null the cache is still loading; if mergedUsers is
+  // an empty array no user exists (neither cached nor local), so default
+  // to the manual form so the cashier can log in via email/password.
+  const showManual = showManualInput || (mergedUsers !== null && mergedUsers.length === 0 && !selectedUser);
   const contentKey = showManual
     ? 'manual'
     : selectedUser
@@ -222,9 +250,10 @@ export const LoginPage: FC = () => {
                 </div>
               )}
 
-              {contentKey === 'selection' && cachedUsers !== null && (
+              {contentKey === 'selection' && mergedUsers !== null && (
                 <AvatarGrid
-                  users={cachedUsers}
+                  users={mergedUsers}
+                  localUserIds={localUserIds}
                   onSelect={handleUserSelect}
                   onOtherAccount={() => setShowManualInput(true)}
                 />

@@ -14,6 +14,15 @@ import { create } from 'zustand';
 import { RoleType } from '@pharmacy/shared-types';
 
 /**
+ * How much the server has confirmed this session.
+ *
+ * - `LOCAL_UNVERIFIED` — authenticated against local replica only.
+ * - `SERVER_VERIFIED` — server validated the session online.
+ * - `OFFLINE_BLESSED` — server blessed an offline-started session.
+ */
+export type SessionTrust = 'LOCAL_UNVERIFIED' | 'SERVER_VERIFIED' | 'OFFLINE_BLESSED';
+
+/**
  * Shape of the claims carried in a local session.
  */
 export interface LocalSession {
@@ -21,21 +30,25 @@ export interface LocalSession {
   username: string;
   fullName: string;
   displayName: string;
-  email: string | null;
+  email?: string | null;
   role: RoleType | string;
   subscriptionId: string | null;
   workstationId: string;
+  /** Server JWT — empty string until server verification. */
   accessToken: string;
+  /** Server refresh token — empty string until server verification. */
   refreshToken: string;
-  expiresAt: Date;
+  expiresAt?: Date;
   sessionId: string;
-  totpEnabled: boolean;
-  avatarUrl: string | null;
-  avatarColor: string | null;
-  mustChangePassword: boolean;
+  totpEnabled?: boolean;
+  avatarUrl?: string | null;
+  avatarColor?: string | null;
+  mustChangePassword?: boolean;
   locationIds?: string[];
   /** Long-lived offline JWT for credential recovery when the access token expires. */
-  offlineToken?: string;
+  offlineToken?: string | null;
+  /** Trust level of this session. */
+  sessionTrust: SessionTrust;
 }
 
 interface LocalSessionState {

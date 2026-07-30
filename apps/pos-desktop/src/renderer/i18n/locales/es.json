@@ -1133,6 +1133,29 @@
     "save_changes": "Guardar cambios",
     "saving_changes": "Guardando..."
   },
+  "add_local_user": {
+    "name_required": "El nombre es obligatorio",
+    "username_required": "El usuario es obligatorio",
+    "pin_min_length": "El PIN debe tener al menos 6 dígitos",
+    "pin_mismatch": "Los PIN no coinciden",
+    "username_exists": "Este nombre de usuario ya existe",
+    "invalid_pin": "El PIN no es válido",
+    "error": "Error al crear usuario local"
+  },
+  "local_users": {
+    "title": "Usuarios Locales",
+    "display_name": "Nombre completo",
+    "display_name_placeholder": "Nombre del cajero",
+    "username": "Nombre de usuario",
+    "username_placeholder": "usuario (minúsculas, números, _)",
+    "pin": "PIN",
+    "pin_placeholder": "PIN de 6-8 dígitos",
+    "confirm_pin": "Confirmar PIN",
+    "confirm_pin_placeholder": "Repetir el PIN",
+    "create": "Crear Usuario Local",
+    "creating": "Creando...",
+    "success": "Usuario local creado exitosamente"
+  },
   "clients": {
     "title": "Clientes",
     "create": "Nuevo cliente",
@@ -2575,5 +2598,32 @@
     "shifts_with_variance": "Turnos con diferencia",
     "pending_operations": "Operaciones pendientes",
     "permanent_failures": "Fallos permanentes"
+  },
+  "terminal_init": {
+    "welcome_title": "Bienvenido a la Farmacia POS",
+    "welcome_description": "Configure su terminal para comenzar a operar. Este proceso se realiza una sola vez.",
+    "welcome_feature_1": "Crear cuenta de administrador local",
+    "welcome_feature_2": "Configurar PIN de acceso sin conexión",
+    "welcome_feature_3": "Listo para facturar y vender",
+    "start": "Comenzar",
+    "create_admin_title": "Crear Administrador Local",
+    "create_admin_description": "Este usuario administrará la estación. El PIN se usa para iniciar sesión sin conexión.",
+    "display_name": "Nombre completo",
+    "display_name_placeholder": "Ej: Carlos Rodríguez",
+    "local_username": "Nombre de usuario",
+    "username_placeholder": "Ej: carlos.r",
+    "pin": "PIN (mínimo 6 dígitos)",
+    "pin_placeholder": "Toque para ingresar PIN",
+    "back": "Atrás",
+    "continue": "Continuar",
+    "confirm_pin_title": "Confirmar PIN",
+    "confirm_pin_description": "Ingrese nuevamente el PIN para confirmar.",
+    "pin_confirm": "Repetir PIN",
+    "pin_confirm_placeholder": "Toque para ingresar PIN",
+    "pin_mismatch": "Los PIN no coinciden",
+    "finish": "Finalizar",
+    "initializing": "Inicializando...",
+    "success_title": "Terminal Inicializado",
+    "success_description": "La estación está lista. Redirigiendo al inicio..."
   }
 }

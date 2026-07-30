@@ -163,11 +163,16 @@ const InnerApp: FC = () => {
       : { opacity: 0, x: -24, scale: 0.99 },
   };
 
-  if (!session && activeScreen !== "login" && activeScreen !== "forgot-password" && activeScreen !== "reset-password") {
+  if (
+    !session &&
+    activeScreen !== "login" &&
+    activeScreen !== "forgot-password" &&
+    activeScreen !== "reset-password"
+  ) {
     return <LoginPage />;
   }
 
-  // Render login/forgot-password/reset-password directly without app shell
+  // Render auth/setup screens directly without app shell
   if (activeScreen === "login") {
     return (
       <>

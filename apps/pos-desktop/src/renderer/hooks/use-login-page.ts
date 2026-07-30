@@ -1,16 +1,19 @@
 /**
  * Hook that owns all state, effects, and event handlers for the login page.
  *
- * Extracted from the monolithic login.page.tsx so the logic can be
- * unit-tested without rendering the full dialog tree, and to keep the
- * page component as a thin wiring container.
+ * The login flow:
+ * 1. User selects avatar or enters username + password manually.
+ * 2. The hook looks up the user in the local PGlite User cache.
+ * 3. If found, verifies the password against the local hash (PBKDF2).
+ * 4. If valid, creates a LocalSession with `sessionTrust = LOCAL_UNVERIFIED`.
+ * 5. If online, additionally validates with the server (2FA, password changes).
+ * 6. If the user is not in the local cache, falls back to server login
+ *    (which seeds the cache on success).
  *
- * Extended with offline login support: when the browser is offline,
- * the hook routes through the offline auth service instead of the
- * regular server-based login, and adjusts 2FA behaviour accordingly.
+ * @module
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@/store/hooks';
 import { setActiveScreen } from '@/store/slices/ui-slice';
@@ -23,9 +26,19 @@ import {
   OfflineTokenRevokedException,
 } from '../../domain/auth/offline';
 import { API_BASE_URL, WORKSTATION_ID } from '@infra/config';
-import type { LocalUserInfo } from '../../domain/auth/local-users';
+import {
+  type LocalUserInfo,
+  mapLocalUserDataToLocalUserInfo,
+} from '../../domain/auth/local-users';
 import { useOfflineAuth } from './use-offline-auth';
-
+import {
+  createUserCacheService,
+  PasswordInvalidException,
+  UserLockedException,
+  UserDisabledException,
+  UserMaxAttemptsException,
+} from '../../domain/auth/user-cache.service';
+import type { UserData } from '../../domain/auth/local-types';
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -55,13 +68,16 @@ export interface UseLoginPageReturn {
   /** Auth service instance — exposed for TwoFactorModal. */
   authService: AuthService;
 
+  /** Local PGlite users to show in the avatar grid alongside cached server users. */
+  localUsers: LocalUserInfo[];
+
   /** Manually clear the selected user (return to avatar grid). */
   setSelectedUser: (user: LocalUserInfo | null) => void;
 
   /** Select a user from the avatar grid. */
   handleUserSelect: (user: LocalUserInfo) => void;
-  /** Called when the PIN keypad auto-submits. */
-  handlePinComplete: (pin: string) => Promise<void>;
+  /** Called when the PIN keypad auto-submits (treats input as password). */
+  handlePinComplete: (password: string) => Promise<void>;
   /** Called when the password form is submitted. */
   handlePasswordLogin: () => Promise<void>;
   /** Called after 2FA verification succeeds. */
@@ -90,6 +106,10 @@ export interface UseLoginPageReturn {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
@@ -101,14 +121,16 @@ export function useLoginPage(): UseLoginPageReturn {
   // Offline auth hook
   const { connectionState, attemptOfflineLogin } = useOfflineAuth();
 
-  // Strict offline check: only use offline login when truly disconnected,
-  // not during the RECONNECTING transition (where the browser IS online).
+  // Strict offline check
   const isStrictlyOffline = connectionState === 'OFFLINE';
 
   // Auth service — created once via lazy initializer.
   const [authService] = useState<AuthService>(() =>
     createAuthService({ baseUrl: API_BASE_URL }),
   );
+
+  // User cache service — created once.
+  const [userCache] = useState(() => createUserCacheService());
 
   // -- Local state --
   const [selectedUser, setSelectedUser] = useState<LocalUserInfo | null>(null);
@@ -123,6 +145,23 @@ export function useLoginPage(): UseLoginPageReturn {
   const [countdown, setCountdown] = useState(0);
   const [offlineLoginSkipped2fa, setOfflineLoginSkipped2fa] = useState(false);
   const [offlineErrorMessage, setOfflineErrorMessage] = useState<string | null>(null);
+
+  // Local PGlite users for the avatar grid.
+  const [localUsers, setLocalUsers] = useState<LocalUserInfo[]>([]);
+
+  /** On mount: load locally-cached users for the avatar grid. */
+  const usersLoadedRef = useRef(false);
+  useEffect(() => {
+    if (usersLoadedRef.current) return;
+    usersLoadedRef.current = true;
+
+    userCache.getUsers().then((users) => {
+      const mapped = users.map(mapLocalUserDataToLocalUserInfo);
+      setLocalUsers(mapped);
+    }).catch((err) => {
+      console.warn('[use-login-page] Failed to load local users:', err);
+    });
+  }, [userCache]);
 
   // Redirect to home dashboard after login
   useEffect(() => {
@@ -159,6 +198,56 @@ export function useLoginPage(): UseLoginPageReturn {
     setShowManualInput(false);
   }, []);
 
+  /**
+   * Attempt local auth against the PGlite User cache.
+   * Returns true if the user was found and auth was attempted locally.
+   * If the user is not cached locally, returns false so the caller can
+   * fall through to server / offline token auth.
+   */
+  const attemptLocalPasswordAuth = useCallback(
+    async (userId: string, password: string): Promise<boolean> => {
+      let user: UserData;
+      try {
+        const cached = await userCache.getUser(userId);
+        if (!cached) return false; // Not in local cache — fall through
+        user = cached;
+      } catch {
+        return false;
+      }
+
+      const result = await userCache.verifyPassword(userId, password);
+
+      if (result.valid) {
+        await userCache.recordLogin(userId);
+        useLocalSessionStore.getState().setSession({
+          userId: user.id,
+          username: user.username,
+          fullName: user.displayName,
+          displayName: user.displayName,
+          role: user.role,
+          subscriptionId: null,
+          workstationId: WORKSTATION_ID,
+          accessToken: '',
+          refreshToken: '',
+          offlineToken: null,
+          sessionId: crypto.randomUUID(),
+          sessionTrust: 'LOCAL_UNVERIFIED',
+        });
+        return true;
+      }
+
+      if (result.locked) {
+        setLockoutUntil(new Date(user.lockedUntil ?? Date.now() + 5 * 60 * 1000));
+        setError(t('auth.too_many_attempts'));
+        return true;
+      }
+
+      // Invalid password — error already set by verifyPassword
+      throw new PasswordInvalidException();
+    },
+    [userCache, t],
+  );
+
   const handlePinComplete = useCallback(
     async (pin: string) => {
       if (!selectedUser) return;
@@ -166,8 +255,12 @@ export function useLoginPage(): UseLoginPageReturn {
       setError(null);
 
       try {
+        // ---- Local-first: try local PGlite User cache ----
+        const handled = await attemptLocalPasswordAuth(selectedUser.id, pin);
+        if (handled) return;
+
+        // ---- Fallback: offline or server auth ----
         if (isStrictlyOffline) {
-          // Offline login — skip server call
           await attemptOfflineLogin(
             selectedUser.id,
             pin,
@@ -194,24 +287,27 @@ export function useLoginPage(): UseLoginPageReturn {
           return;
         }
 
+        // authService.login() already set the session in the store.
         dispatch(setActiveScreen('home'));
       } catch (err) {
-        if (err instanceof InvalidCredentialsException) {
+        // ---- Local cache errors ----
+        if (err instanceof PasswordInvalidException) {
+          setError(t('auth.pin_incorrect'));
+        } else if (err instanceof UserLockedException) {
+          setError(t('auth.too_many_attempts'));
+        } else if (err instanceof UserDisabledException) {
+          setError(t('auth.account_disabled', 'Cuenta deshabilitada. Contactá al manager.'));
+        } else if (err instanceof UserMaxAttemptsException) {
+          setError(t('auth.too_many_attempts_admin', 'Demasiados intentos. Contactá al administrador.'));
+        // ---- Server/offline errors ----
+        } else if (err instanceof InvalidCredentialsException) {
           setError(t('auth.pin_incorrect'));
         } else if (err instanceof NetworkErrorException) {
-          // Server unreachable — attempt offline fallback with the same PIN.
-          // This covers the case where the browser reports as online but the
-          // server is actually down (connection refused, DNS failure, timeout).
           try {
             await attemptOfflineLogin(selectedUser.id, pin, 'PIN');
             setOfflineLoginSkipped2fa(false);
             dispatch(setActiveScreen('home'));
           } catch (_offlineErr) {
-            // Server is down AND offline fallback also failed.  The primary
-            // problem is connectivity — show a connection error regardless
-            // of the specific offline failure (no credentials, expired,
-            // token revoked, etc.).  Those details are only meaningful when
-            // the user explicitly chose offline mode via isStrictlyOffline.
             setError(t('auth.connection_error'));
             setOfflineErrorMessage(t('auth.connection_error'));
           }
@@ -254,7 +350,7 @@ export function useLoginPage(): UseLoginPageReturn {
         setIsLoading(false);
       }
     },
-    [selectedUser, authService, dispatch, t, isStrictlyOffline, attemptOfflineLogin],
+    [selectedUser, authService, dispatch, t, isStrictlyOffline, attemptOfflineLogin, userCache, attemptLocalPasswordAuth],
   );
 
   const handlePasswordLogin = useCallback(async () => {
@@ -263,8 +359,16 @@ export function useLoginPage(): UseLoginPageReturn {
     setError(null);
 
     try {
+      // ---- Local-first: try local PGlite User cache ----
+      // Look up by username first, then try local auth.
+      const cachedUser = await userCache.getUserByUsername(identifier);
+      if (cachedUser) {
+        const handled = await attemptLocalPasswordAuth(cachedUser.id, password);
+        if (handled) return;
+      }
+
+      // ---- Fallback: offline or server auth ----
       if (isStrictlyOffline) {
-        // Offline login — attempt via offline auth
         await attemptOfflineLogin(
           selectedUser?.id ?? identifier,
           password,
@@ -291,15 +395,22 @@ export function useLoginPage(): UseLoginPageReturn {
         return;
       }
 
+      // authService.login() already set the session in the store.
       dispatch(setActiveScreen('home'));
     } catch (err) {
-      if (err instanceof InvalidCredentialsException) {
+      // ---- Local cache errors ----
+      if (err instanceof PasswordInvalidException) {
+        setError(t('auth.password_incorrect'));
+      } else if (err instanceof UserLockedException) {
+        setError(t('auth.too_many_attempts'));
+      } else if (err instanceof UserDisabledException) {
+        setError(t('auth.account_disabled', 'Cuenta deshabilitada. Contactá al manager.'));
+      } else if (err instanceof UserMaxAttemptsException) {
+        setError(t('auth.too_many_attempts_admin', 'Demasiados intentos. Contactá al administrador.'));
+      // ---- Server/offline errors ----
+      } else if (err instanceof InvalidCredentialsException) {
         setError(t('auth.password_incorrect'));
       } else if (err instanceof NetworkErrorException) {
-        // Server unreachable — attempt offline fallback with the same
-        // password.  Uses selectedUser.id when available (avatar grid
-        // flow), otherwise falls back to identifier (manual form) which
-        // matches the existing offline-branch behaviour.
         try {
           await attemptOfflineLogin(
             selectedUser?.id ?? identifier,
@@ -309,8 +420,6 @@ export function useLoginPage(): UseLoginPageReturn {
           setOfflineLoginSkipped2fa(false);
           dispatch(setActiveScreen('home'));
         } catch (_offlineErr) {
-          // Server is down AND offline fallback also failed.  Show a
-          // connectivity error regardless of why offline login failed.
           setError(t('auth.connection_error'));
           setOfflineErrorMessage(t('auth.connection_error'));
         }
@@ -362,6 +471,8 @@ export function useLoginPage(): UseLoginPageReturn {
     t,
     isStrictlyOffline,
     attemptOfflineLogin,
+    userCache,
+    attemptLocalPasswordAuth,
   ]);
 
   const handleTwoFactorComplete = useCallback(() => {
@@ -395,6 +506,7 @@ export function useLoginPage(): UseLoginPageReturn {
     lockoutUntil,
     countdown,
     authService,
+    localUsers,
     setSelectedUser,
     handleUserSelect,
     handlePinComplete,

@@ -64,6 +64,7 @@ function seedSession(overrides?: Partial<LocalSession>) {
     avatarUrl: null,
     avatarColor: null,
     mustChangePassword: false,
+    sessionTrust: 'SERVER_VERIFIED',
     offlineToken: "offline-token-123",
     ...overrides,
   };

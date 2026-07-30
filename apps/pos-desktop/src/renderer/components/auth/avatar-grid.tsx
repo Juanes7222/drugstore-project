@@ -37,6 +37,7 @@ function getRoleAccent(role: string): string {
 
 interface AvatarGridProps {
   users: LocalUserInfo[];
+  localUserIds?: Set<string>;
   onSelect: (user: LocalUserInfo) => void;
   onOtherAccount: () => void;
 }
@@ -47,6 +48,7 @@ interface AvatarGridProps {
 
 export const AvatarGrid: FC<AvatarGridProps> = ({
   users,
+  localUserIds,
   onSelect,
   onOtherAccount,
 }) => {
@@ -150,6 +152,18 @@ export const AvatarGrid: FC<AvatarGridProps> = ({
             >
               {t(`roles.${user.role.toLowerCase()}`, user.role)}
             </span>
+
+            {/* Local-only indicator — subtle badge for PGlite users */}
+            {localUserIds?.has(user.id) && (
+              <span
+                className="text-caption"
+                style={{
+                  color: "var(--color-ink-muted)",
+                }}
+              >
+                {t("auth.local_account", "Local")}
+              </span>
+            )}
           </motion.button>
         ))}
       </div>

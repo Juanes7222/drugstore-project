@@ -588,6 +588,8 @@ export class SyncScheduler {
     }
 
     // Check if the token is still valid for at least one more interval.
+    // Local-only sessions (no accessToken) have no expiry — skip check.
+    if (!session.expiresAt) return false;
     const msUntilExpiry = session.expiresAt.getTime() - Date.now();
     const bufferMs = this.intervalMs * 2; // 2x interval as safety margin
     if (msUntilExpiry > bufferMs) {

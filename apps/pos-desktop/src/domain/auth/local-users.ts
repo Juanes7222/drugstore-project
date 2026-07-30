@@ -1,16 +1,12 @@
 /**
  * Local user info types and server-response mappers.
  *
- * The actual user data is now loaded from:
- * - The local user cache (`local-user-cache.ts`) when offline
- * - The server via `authService.listUsers()` when a session exists
- *
- * No hardcoded seed data lives here. The login page falls back to the
- * manual form when the cache is empty, which happens only on first-ever
- * use of the app on a device.
+ * Users from the local PGlite cache and from the server API are both mapped
+ * to the same `LocalUserInfo` shape for the avatar grid.  No dual identity.
  */
 
 import type { RoleType } from '@pharmacy/shared-types';
+import type { UserData } from './local-types';
 
 export interface LocalUserInfo {
   id: string;
@@ -22,12 +18,25 @@ export interface LocalUserInfo {
 }
 
 /**
- * Map a user object from a server API response to the POS `LocalUserInfo`
- * shape expected by `AvatarGrid` and `QuickSwitch`.
+ * Map a local PGlite User replica to the `LocalUserInfo` avatar-grid shape.
+ */
+export function mapLocalUserDataToLocalUserInfo(
+  user: UserData,
+): LocalUserInfo {
+  return {
+    id: user.id,
+    displayName: user.displayName,
+    role: user.role as RoleType,
+    avatarUrl: null,
+    avatarColor: null,
+    username: user.username,
+  };
+}
+
+/**
+ * Map a user from a server API response to `LocalUserInfo`.
  *
- * Works with:
- * - `/users` response items (full user list)
- * - `/auth/login` response's `user` field (single authenticated user)
+ * Works with `/users` list items and `/auth/login` response's `user` field.
  */
 export function mapServerUserToLocalUserInfo(
   serverUser: {

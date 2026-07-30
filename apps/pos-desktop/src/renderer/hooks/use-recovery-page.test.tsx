@@ -124,6 +124,7 @@ const makeAdminSession = (): LocalSession => ({
   avatarUrl: null,
   avatarColor: null,
   mustChangePassword: false,
+  sessionTrust: 'SERVER_VERIFIED',
 });
 
 const makeCashierSession = (): LocalSession => ({

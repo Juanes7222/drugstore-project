@@ -23,6 +23,7 @@ import { CreateUserModal } from "./create-user-modal";
 import { EditUserModal } from "./edit-user-modal";
 import { DeleteUserDialog } from "./delete-user-dialog";
 import { SetPinDialog } from "./set-pin-dialog";
+
 import type { UserRow, NewUserForm, EditUserFormData } from "./user-management.types";
 
 // ---------------------------------------------------------------------------
@@ -224,6 +225,9 @@ export const UserManagementPage: FC = () => {
         onClose={() => setPinTarget(null)}
         onSubmit={handleSetPinSubmit}
       />
+
+      {/* ----------------------------------------------------------------- */}
     </div>
   );
 };
+
