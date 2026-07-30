@@ -373,6 +373,22 @@ export class TenantConfigService {
       ? { ...(current.purchases as unknown as PurchasesConfig), ...dto.purchases }
       : (current.purchases as unknown as PurchasesConfig);
 
+    // Auto-adjust defaultTaxRate when taxRegime changes — Colombian fiscal rule.
+    // NO_RESPONSABLE and EXENTO regimes don't charge IVA; spreading the old rate
+    // from the frontend would incorrectly preserve it.
+    if (dto.fiscal?.taxRegime) {
+      const regimeDefaultRates: Record<string, number | undefined> = {
+        NO_RESPONSABLE: 0,
+        EXENTO: 0,
+        RESPONSABLE_IVA: 0.19,
+        // SIMPLE: keep current — rate varies per municipality
+      };
+      const rate = regimeDefaultRates[dto.fiscal.taxRegime];
+      if (rate !== undefined) {
+        mergedFiscal.defaultTaxRate = rate;
+      }
+    }
+
     // RBAC: MANAGER role cannot modify system-level fields
     if (actorRole === RoleType.MANAGER) {
       this.assertNoSystemFieldChanges(
@@ -1108,6 +1124,19 @@ export class TenantConfigService {
     const mergedPurchases: PurchasesConfig = dto.purchases
       ? { ...(defaults.purchases as PurchasesConfig), ...dto.purchases }
       : (defaults.purchases as PurchasesConfig);
+
+    // Auto-adjust defaultTaxRate when taxRegime changes — Colombian fiscal rule.
+    if (dto.fiscal?.taxRegime) {
+      const regimeDefaultRates: Record<string, number | undefined> = {
+        NO_RESPONSABLE: 0,
+        EXENTO: 0,
+        RESPONSABLE_IVA: 0.19,
+      };
+      const rate = regimeDefaultRates[dto.fiscal.taxRegime];
+      if (rate !== undefined) {
+        mergedFiscal.defaultTaxRate = rate;
+      }
+    }
 
     // Validate strictness and workflow (preset defaults are always valid,
     // cross-field rules like clientRequired + threshold need checking).

@@ -28,6 +28,7 @@ async function bootstrap(): Promise<void> {
       'X-Backup-Id',
       'X-Backup-Created-At',
       'X-Backup-Sha256',
+      'x-offline-token',
     ],
     credentials: true,
   });
