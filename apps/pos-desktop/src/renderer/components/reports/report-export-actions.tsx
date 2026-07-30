@@ -22,7 +22,7 @@ interface ReportExportActionsProps {
   definition: ReportDefinition;
   services: Services;
   userDisplayName: string;
-  chartRef: React.MutableRefObject<ReactECharts | null>;
+  chartRef: React.RefObject<ReactECharts | null>;
   isLoading: boolean;
 }
 
@@ -65,6 +65,7 @@ export const ReportExportActions: FC<ReportExportActionsProps> = ({
           chartDataUrl,
           filenamePrefix: definition.code.toLowerCase().replace(/_/gu, '-'),
           userDisplayName,
+          t: (key, options) => t(key, options) as string,
         });
         // User cancelled the save dialog — nothing to do.
         if (!savedPath && format !== 'print') return;
