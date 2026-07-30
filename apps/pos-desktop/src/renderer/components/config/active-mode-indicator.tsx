@@ -9,6 +9,7 @@ import { type FC, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import { useTenantConfig } from '../../../domain/config/use-tenant-config';
+import { EyeIcon } from "@/components/ui/icons";
 
 export interface ActiveModeIndicatorProps {
   /** Click handler — navigate to config page or show summary. */
@@ -88,22 +89,7 @@ export const ActiveModeIndicator: FC<ActiveModeIndicatorProps> = ({
     >
       <span className={`h-2 w-2 rounded-full ${colors.dot}`} aria-hidden="true" />
       <span>{t('config.' + colors.label)}</span>
-      {readOnly && (
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      )}
+      {readOnly && <EyeIcon size={12} />}
     </motion.button>
   );
 };

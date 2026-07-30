@@ -63,7 +63,7 @@ export const FiscalConfigTab: FC<FiscalConfigTabProps> = ({
 
         <TextField
           label={t("config.fiscal.default_tax_rate")}
-          value={((config?.fiscal.defaultTaxRate ?? 0.19) * 100).toString()}
+          value={((config?.fiscal.defaultTaxRate ?? 0.19) ).toString()}
           onChange={(v) =>
             onFieldChange("fiscal", "defaultTaxRate", (parseFloat(v) || 0) / 100)
           }

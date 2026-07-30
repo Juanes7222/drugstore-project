@@ -4,6 +4,7 @@
  */
 import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
+import { HelpCircleIcon } from "@/components/ui/icons";
 
 interface HelpNotFoundStateProps {
   onGoToIndex: () => void;
@@ -16,29 +17,12 @@ export const HelpNotFoundState: FC<HelpNotFoundStateProps> = ({
 
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
-      <svg
+      <HelpCircleIcon
         className="mb-4 h-10 w-10"
-        viewBox="0 0 24 24"
-        fill="none"
-        aria-hidden
         style={{
           color: 'color-mix(in srgb, var(--color-ink) 25%, transparent)',
         }}
-      >
-        <circle
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          d="M12 8v4M12 16h.007"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-      </svg>
+      />
       <p
         className="mb-2 text-body font-medium"
         style={{ color: 'var(--color-ink)' }}

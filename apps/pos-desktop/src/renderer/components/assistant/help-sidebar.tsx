@@ -5,6 +5,7 @@ import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EntryGroup } from '../../../domain/assistant/help-helpers';
 import { sectionLabelKey } from '../../../domain/assistant/help-helpers';
+import { SearchIcon } from "@/components/ui/icons";
 
 interface HelpSidebarProps {
   searchQuery: string;
@@ -49,24 +50,13 @@ export const HelpSidebar: FC<HelpSidebarProps> = ({
             '1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)',
         }}
       >
-        <svg
+        <SearchIcon
           className="h-3.5 w-3.5 shrink-0"
-          viewBox="0 0 16 16"
-          fill="none"
-          aria-hidden
           style={{
             color:
               'color-mix(in srgb, var(--color-ink) 40%, transparent)',
           }}
-        >
-          <path
-            d="M7.333 12.667A5.333 5.333 0 1 0 7.333 2a5.333 5.333 0 0 0 0 10.667ZM14 14l-2.9-2.9"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        />
 
         <input
           ref={searchInputRef}

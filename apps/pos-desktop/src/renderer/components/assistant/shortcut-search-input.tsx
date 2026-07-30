@@ -4,6 +4,7 @@
  */
 import type { ChangeEvent, FC, RefObject } from "react";
 import { useTranslation } from "react-i18next";
+import { SearchIcon, XIcon } from "@/components/ui/icons";
 
 export interface ShortcutSearchInputProps {
   value: string;
@@ -33,24 +34,13 @@ export const ShortcutSearchInput: FC<ShortcutSearchInputProps> = ({
       }}
     >
       {/* Search icon */}
-      <svg
+      <SearchIcon
         className="h-3.5 w-3.5 shrink-0"
-        viewBox="0 0 16 16"
-        fill="none"
-        aria-hidden
         style={{
           color:
             "color-mix(in srgb, var(--color-ink) 40%, transparent)",
         }}
-      >
-        <path
-          d="M7.333 12.667A5.333 5.333 0 1 0 7.333 2a5.333 5.333 0 0 0 0 10.667ZM14 14l-2.9-2.9"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      />
 
       <input
         ref={inputRef}
@@ -88,19 +78,7 @@ export const ShortcutSearchInput: FC<ShortcutSearchInputProps> = ({
           onClick={onClear}
           aria-label={t("common.close")}
         >
-          <svg
-            className="h-3 w-3"
-            viewBox="0 0 12 12"
-            fill="none"
-            aria-hidden
-          >
-            <path
-              d="M10 2L2 10M2 2l8 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
+          <XIcon className="h-3 w-3" />
         </button>
       )}
     </div>

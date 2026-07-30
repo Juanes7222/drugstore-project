@@ -21,7 +21,7 @@ import type {
   DisplayBarcode,
   ProductFormFieldRequirements,
 } from "./products.types";
-import { StarIcon, SparklesIcon } from "../ui/icons";
+import { StarIcon, SparklesIcon, XIcon } from "../ui/icons";
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -367,19 +367,7 @@ export const ProductForm: FC<ProductFormProps> = ({
           className="pos-button pos-button-secondary px-pos-sm py-pos-xs"
           aria-label={t("common.cancel")}
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
+          <XIcon size={16} />
         </button>
       </div>
 
@@ -955,7 +943,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                     const isDefault = defaultTaxSchemeId === ts.id;
                     return (
                       <option key={ts.id} value={ts.id}>
-                        {ts.name} ({ts.rate}%){isDefault ? ` — ${t("products.tax_default_label")}` : ""}
+                        {ts.name} {isDefault ? ` — ${t("products.tax_default_label")}` : ""}
                       </option>
                     );
                   })}

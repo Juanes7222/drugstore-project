@@ -10,6 +10,7 @@
 
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
+import { ArrowLeftIcon } from "@/components/ui/icons";
 
 interface ReturnsHeaderProps {
   /** Whether the terminal currently has a network connection. */
@@ -18,22 +19,7 @@ interface ReturnsHeaderProps {
   onBack: () => void;
 }
 
-const BackArrowIcon: FC = () => (
-  <svg
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2.5}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M19 12H5" />
-    <path d="M12 19l-7-7 7-7" />
-  </svg>
-);
+
 
 export const ReturnsHeader: FC<ReturnsHeaderProps> = ({
   isOnline,
@@ -69,7 +55,7 @@ export const ReturnsHeader: FC<ReturnsHeaderProps> = ({
               "transparent";
           }}
         >
-          <BackArrowIcon />
+          <ArrowLeftIcon size={20} strokeWidth={2.5} />
         </button>
         <h1 className="pos-page-title">{t("returns.title")}</h1>
       </div>

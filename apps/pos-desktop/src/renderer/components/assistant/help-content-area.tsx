@@ -9,6 +9,7 @@ import type { EntryGroup } from '../../../domain/assistant/help-helpers';
 import { TopicContent } from './help-topic-content';
 import { HelpNotFoundState } from './help-not-found-state';
 import { HelpWelcomeIndex } from './help-welcome-index';
+import { XIcon } from "@/components/ui/icons";
 
 interface HelpContentAreaProps {
   selectedTopic: HelpContentEntry | null;
@@ -79,20 +80,7 @@ export const HelpContentArea: FC<HelpContentAreaProps> = ({
               }}
               aria-label={t('common.close')}
             >
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden
-              >
-                <path
-                  d="M12 4L4 12M4 4l8 8"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <XIcon className="h-4 w-4" />
             </button>
           </Dialog.Close>
         </div>

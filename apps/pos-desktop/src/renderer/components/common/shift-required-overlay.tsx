@@ -15,6 +15,7 @@ import { useAppDispatch } from '@/store/hooks';
 import { navigateToCashShift } from '@/store/slices/ui-slice';
 import { useLocalSessionStore, hasMinRole } from '../../../domain/auth/local-session.store';
 import { RoleType } from '@pharmacy/shared-types';
+import { DollarSignIcon } from "@/components/ui/icons";
 
 export const ShiftRequiredOverlay: FC = () => {
   const { t } = useTranslation();
@@ -44,20 +45,7 @@ export const ShiftRequiredOverlay: FC = () => {
           }}
           aria-hidden="true"
         >
-          <svg
-            width="32"
-            height="32"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ color: 'var(--color-attention)' }}
-          >
-            <line x1="12" y1="1" x2="12" y2="23" />
-            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-          </svg>
+          <DollarSignIcon size={32} strokeWidth={1.5} style={{ color: 'var(--color-attention)' }} />
         </div>
 
         <h2
@@ -80,20 +68,7 @@ export const ShiftRequiredOverlay: FC = () => {
             onClick={handleGoToCashShift}
             className="pos-button pos-button-primary inline-flex items-center gap-2"
           >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <line x1="12" y1="1" x2="12" y2="23" />
-              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-            </svg>
+            <DollarSignIcon size={16} />
             {t('shift_guard.open_shift_button')}
           </button>
         )}

@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { useAssistantStore } from "../../../stores/assistant.store";
 import { useUserPreferencesStore } from "../../../stores/user-preferences.store";
 import type { ActiveSuggestion } from "../../../domain/assistant/assistant-types";
+import { ChevronDownIcon, XIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -171,21 +172,7 @@ const SuggestionItem: FC<SuggestionItemProps> = ({
           aria-label={t("common.close")}
         >
           {/* × icon */}
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M9 3L3 9M3 3l6 6"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <XIcon size={12} />
         </button>
       )}
     </div>
@@ -314,23 +301,11 @@ export const SuggestionBanner: FC = () => {
                 ? t("assistant.suggestion.showLess")
                 : t("assistant.suggestion.more", { count: hiddenCount })}
               {/* Chevron icon */}
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 10 10"
-                fill="none"
-                aria-hidden="true"
+              <ChevronDownIcon
+                size={10}
                 className={suggestionsExpanded ? "rotate-180" : ""}
                 style={{ transition: "transform 150ms ease" }}
-              >
-                <path
-                  d="M2 3.5l3 3 3-3"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              />
             </button>
           )}
         </div>

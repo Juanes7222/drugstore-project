@@ -16,6 +16,7 @@ import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import type { SaleSearchResult } from "./returns.types";
 import { formatCents } from "./returns.types";
+import { SearchIcon } from "@/components/ui/icons";
 
 interface VerifiedReturnFlowProps {
   /** The current sale search query string. */
@@ -42,22 +43,7 @@ interface VerifiedReturnFlowProps {
   canSubmit: boolean;
 }
 
-const SearchIcon: FC = () => (
-  <svg
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2.5}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <circle cx="11" cy="11" r="8" />
-    <path d="M21 21l-4.35-4.35" />
-  </svg>
-);
+
 
 export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
   searchQuery,
@@ -112,7 +98,7 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
             disabled={isProcessing || !searchQuery.trim()}
             aria-label={t("returns.search_label")}
           >
-            <SearchIcon />
+            <SearchIcon size={16} strokeWidth={2.5} />
             <span>{t("returns.search_label")}</span>
           </button>
         </div>

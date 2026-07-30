@@ -20,6 +20,26 @@ import { RoleType } from "@pharmacy/shared-types";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
 import type { PrismaClient } from "@pharmacy/database/local";
 import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
+import {
+  ArchiveIcon,
+  BarChartIcon,
+  ClockIcon,
+  CloudIcon,
+  CreditCardIcon,
+  DollarSignIcon,
+  HomeIcon as HomeIconModule,
+  MonitorIcon,
+  PackageIcon,
+  PrinterIcon as PrinterIconModule,
+  ReceiptIcon,
+  RefreshCwIcon,
+  RotateCcwIcon,
+  ScrollTextIcon,
+  SettingsIcon,
+  UserIcon,
+  UsersIcon as UsersIconModule,
+  WifiIcon,
+} from "@/components/ui/icons";
 
 interface NavItem {
   screen: PosScreen;
@@ -30,247 +50,80 @@ interface NavItem {
   relatedScreens?: PosScreen[];
 }
 
-const HomeIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-    <polyline points="9 22 9 12 15 12 15 22" />
-  </svg>
+// ── Nav icon adapters ────────────────────────────────────────────────────
+// Wrap the reusable icon components in FC<{ className?: string }> to match
+// the NavItem interface, passing size=20 as the sidebar standard.
+
+const NavHomeIcon: FC<{ className?: string }> = ({ className }) => (
+  <HomeIconModule className={className} size={20} />
 );
 
-const SalesIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-    <path d="M8 21h8" />
-    <path d="M12 17v4" />
-  </svg>
+const NavSalesIcon: FC<{ className?: string }> = ({ className }) => (
+  <MonitorIcon className={className} size={20} />
 );
 
-const ReturnsIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-    <polyline points="8 12 12 16 16 12" />
-    <line x1="12" y1="8" x2="12" y2="16" />
-  </svg>
+const NavReturnsIcon: FC<{ className?: string }> = ({ className }) => (
+  <RefreshCwIcon className={className} size={20} />
 );
 
-const InventoryIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 002 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
-    <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-    <line x1="12" y1="22.08" x2="12" y2="12" />
-  </svg>
+const NavInventoryIcon: FC<{ className?: string }> = ({ className }) => (
+  <PackageIcon className={className} size={20} />
 );
 
-const getHealthIcon = (): FC<{ className?: string }> => {
-  const HealthIcon: FC<{ className?: string }> = ({ className }) => (
-    <svg
-      className={className}
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-    </svg>
-  );
-  return HealthIcon;
-};
-
-const ClientsIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-    <circle cx="9" cy="7" r="4" />
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
+const NavClientsIcon: FC<{ className?: string }> = ({ className }) => (
+  <UsersIconModule className={className} size={20} />
 );
 
-const PurchasesIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" />
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <path d="M16 10a4 4 0 01-8 0" />
-  </svg>
+const NavPurchasesIcon: FC<{ className?: string }> = ({ className }) => (
+  <ArchiveIcon className={className} size={20} />
 );
 
-const CashShiftIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <line x1="12" y1="1" x2="12" y2="23" />
-    <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
-  </svg>
+const NavCashShiftIcon: FC<{ className?: string }> = ({ className }) => (
+  <DollarSignIcon className={className} size={20} />
 );
 
-const HistoryIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <circle cx="12" cy="12" r="10" />
-    <polyline points="12 6 12 12 16 14" />
-  </svg>
+const NavHistoryIcon: FC<{ className?: string }> = ({ className }) => (
+  <ClockIcon className={className} size={20} />
 );
 
-const PrinterIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-    <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
-    <rect x="6" y="14" width="12" height="8" rx="1" />
-  </svg>
+const NavPrinterIcon: FC<{ className?: string }> = ({ className }) => (
+  <PrinterIconModule className={className} size={20} />
 );
 
-const ReportsIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M3 3v18h18" />
-    <path d="M7 14l3-3 4 4 5-7" />
-  </svg>
+const NavReportsIcon: FC<{ className?: string }> = ({ className }) => (
+  <BarChartIcon className={className} size={20} />
 );
 
-const AdminIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.32 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
-  </svg>
+const NavAdminIcon: FC<{ className?: string }> = ({ className }) => (
+  <SettingsIcon className={className} size={20} />
 );
 
-const UsersIcon: FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth={2}
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M19 21v-2a4 4 0 00-4-4H9a4 4 0 00-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
-  </svg>
+const NavLicenseIcon: FC<{ className?: string }> = ({ className }) => (
+  <CreditCardIcon className={className} size={20} />
+);
+
+const NavUsersIcon: FC<{ className?: string }> = ({ className }) => (
+  <UserIcon className={className} size={20} />
+);
+
+const NavAuditIcon: FC<{ className?: string }> = ({ className }) => (
+  <ScrollTextIcon className={className} size={20} />
+);
+
+const NavSyncHealthIcon: FC<{ className?: string }> = ({ className }) => (
+  <CloudIcon className={className} size={20} />
+);
+
+const NavLocalNetworkIcon: FC<{ className?: string }> = ({ className }) => (
+  <WifiIcon className={className} size={20} />
+);
+
+const NavRecoveryIcon: FC<{ className?: string }> = ({ className }) => (
+  <RotateCcwIcon className={className} size={20} />
+);
+
+const NavFiscalIcon: FC<{ className?: string }> = ({ className }) => (
+  <ReceiptIcon className={className} size={20} />
 );
 
 /**
@@ -289,25 +142,25 @@ const NAV_ITEMS: NavItem[] = [
     screen: "home",
     labelKey: "navigation.home",
     roles: [RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ACCOUNTANT, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: HomeIcon,
+    icon: NavHomeIcon,
   },
   {
     screen: "sales",
     labelKey: "navigation.sales",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: SalesIcon,
+    icon: NavSalesIcon,
   },
   {
     screen: "sales-history",
     labelKey: "navigation.sales_history",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: HistoryIcon,
+    icon: NavHistoryIcon,
   },
   {
     screen: "returns",
     labelKey: "navigation.returns",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: ReturnsIcon,
+    icon: NavReturnsIcon,
   },
   {
     screen: "productos-main",
@@ -318,7 +171,7 @@ const NAV_ITEMS: NavItem[] = [
       RoleType.OWNER,
       RoleType.SAAS_ADMIN,
     ],
-    icon: InventoryIcon,
+    icon: NavInventoryIcon,
     relatedScreens: [
       "productos-main",
       "products",
@@ -335,7 +188,7 @@ const NAV_ITEMS: NavItem[] = [
       RoleType.OWNER,
       RoleType.SAAS_ADMIN,
     ],
-    icon: PurchasesIcon,
+    icon: NavPurchasesIcon,
     relatedScreens: [
       "purchases-main",
       "suppliers",
@@ -348,68 +201,68 @@ const NAV_ITEMS: NavItem[] = [
     screen: "cash-shift",
     labelKey: "navigation.cash_shift",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER],
-    icon: CashShiftIcon,
+    icon: NavCashShiftIcon,
   },
   {
     screen: "clients",
     labelKey: "navigation.clients",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: ClientsIcon,
+    icon: NavClientsIcon,
   },
   {
     screen: "user-management",
     labelKey: "navigation.user_management",
     roles: [RoleType.MANAGER, RoleType.OWNER],
-    icon: UsersIcon,
+    icon: NavUsersIcon,
   },
   {
     screen: "license-status",
     labelKey: "navigation.license_status",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: AdminIcon,
+    icon: NavLicenseIcon,
   },
   {
     screen: "printing",
     labelKey: "navigation.printing",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: PrinterIcon,
+    icon: NavPrinterIcon,
     relatedScreens: ["printers", "print-queue", "setup-wizard"],
   },
   {
     screen: "fiscal",
     labelKey: "navigation.fiscal",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: AdminIcon,
+    icon: NavFiscalIcon,
   },
   {
     screen: "audit-log",
     labelKey: "navigation.audit_log",
     roles: [RoleType.MANAGER, RoleType.OWNER],
-    icon: getHealthIcon(),
+    icon: NavAuditIcon,
   },
   {
     screen: "admin-menu",
     labelKey: "navigation.admin_menu",
     roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: AdminIcon,
+    icon: NavAdminIcon,
   },
   {
     screen: "sync-health",
     labelKey: "navigation.sync_health",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: getHealthIcon(),
+    icon: NavSyncHealthIcon,
   },
   {
     screen: "local-network",
     labelKey: "navigation.local_network",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: getHealthIcon(),
+    icon: NavLocalNetworkIcon,
   },
   {
     screen: "recovery",
     labelKey: "navigation.recovery",
     roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: getHealthIcon(),
+    icon: NavRecoveryIcon,
   },
   {
     screen: "reports",
@@ -422,7 +275,7 @@ const NAV_ITEMS: NavItem[] = [
       RoleType.ACCOUNTANT,
       RoleType.INVENTORY_ASSISTANT,
     ],
-    icon: ReportsIcon,
+    icon: NavReportsIcon,
   },
 ];
 

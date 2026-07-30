@@ -18,6 +18,7 @@ import {
   formatDate,
   countOrderedListItems,
 } from '../../../domain/assistant/help-helpers';
+import { AlertCircleIcon, CheckIcon } from "@/components/ui/icons";
 
 interface TopicContentProps {
   entry: HelpContentEntry;
@@ -132,20 +133,7 @@ export const TopicContent: FC<TopicContentProps> = ({
           }}
           role="alert"
         >
-          <svg
-            className="mt-0.5 h-3.5 w-3.5 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-          >
-            <path
-              d="M8 5v3.333M8 11.333h.007M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0Z"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <AlertCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
             {t('assistant.help.outdated', {
               date: formatDate(entry.lastUpdated),
@@ -164,20 +152,7 @@ export const TopicContent: FC<TopicContentProps> = ({
             color: 'var(--color-pharma)',
           }}
         >
-          <svg
-            className="h-3.5 w-3.5 shrink-0"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-          >
-            <path
-              d="M13.333 4L5.333 12 2.667 9.333"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <CheckIcon className="h-3.5 w-3.5 shrink-0" />
           <span>
             {checkedSteps.size}/{countOrderedListItems(entry.body)}{' '}
             {t('assistant.help.stepsCompleted')}

@@ -12,6 +12,7 @@
  */
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { t } from "i18next";
+import { AlertCircleIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Props & State
@@ -74,19 +75,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <div
             className="flex flex-col items-center gap-4 max-w-md text-center"
           >
-            <svg
-              width="48"
-              height="48"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.5}
-              style={{ color: "var(--color-error)" }}
-            >
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 8v4" strokeLinecap="round" />
-              <path d="M12 16h.01" strokeLinecap="round" />
-            </svg>
+            <AlertCircleIcon size={48} strokeWidth={1.5} style={{ color: "var(--color-error)" }} />
 
             <h2
               className="text-lg font-semibold"

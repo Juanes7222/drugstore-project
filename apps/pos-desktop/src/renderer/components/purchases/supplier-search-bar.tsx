@@ -15,6 +15,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
+import { XIcon } from "@/components/ui/icons";
 
 export interface SupplierSearchBarProps {
   value: string;
@@ -108,9 +109,7 @@ export const SupplierSearchBar: FC<SupplierSearchBarProps> = ({
             aria-label={t('common.clear')}
             tabIndex={-1}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
+            <XIcon size={14} strokeWidth={2.5} />
           </button>
         )}
       </div>

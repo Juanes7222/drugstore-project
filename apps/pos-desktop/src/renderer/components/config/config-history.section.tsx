@@ -6,6 +6,7 @@
  */
 import { type FC, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ClockIcon } from "@/components/ui/icons";
 import type { ConfigChangelogEntry } from '../../../domain/config';
 
 export interface ConfigHistorySectionProps {
@@ -98,21 +99,7 @@ export const ConfigHistorySection: FC<ConfigHistorySectionProps> = ({
 
       {entries.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <svg
-            width="40"
-            height="40"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="text-ink-muted/40"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 16 14" />
-          </svg>
+          <ClockIcon size={40} strokeWidth={1.5} className="text-ink-muted/40" />
           <p className="mt-pos-md text-body-sm text-ink-muted">
             {t('config.history.no_history')}
           </p>

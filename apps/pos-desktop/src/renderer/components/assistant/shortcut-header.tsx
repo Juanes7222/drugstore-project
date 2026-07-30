@@ -5,6 +5,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import type { FC } from "react";
 import { useTranslation } from "react-i18next";
+import { XIcon } from "@/components/ui/icons";
 
 export interface ShortcutHeaderProps {
   onClose: () => void;
@@ -48,20 +49,7 @@ export const ShortcutHeader: FC<ShortcutHeaderProps> = ({ onClose }) => {
           aria-label={t("assistant.shortcuts.close")}
           onClick={onClose}
         >
-          <svg
-            className="h-4 w-4"
-            viewBox="0 0 16 16"
-            fill="none"
-            aria-hidden
-          >
-            <path
-              d="M12 4L4 12M4 4l8 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <XIcon className="h-4 w-4" />
         </button>
       </Dialog.Close>
     </div>

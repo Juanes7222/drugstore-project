@@ -4,6 +4,7 @@
  */
 import type { FC } from "react";
 import { useTranslation } from "react-i18next";
+import { AlertCircleIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // ShortcutConflictWarning
@@ -29,20 +30,7 @@ export const ShortcutConflictWarning: FC<ShortcutConflictWarningProps> = ({
       role="alert"
     >
       {/* Warning icon */}
-      <svg
-        className="mt-0.5 h-3.5 w-3.5 shrink-0"
-        viewBox="0 0 16 16"
-        fill="none"
-        aria-hidden
-      >
-        <path
-          d="M8 5v3.333M8 11.333h.007M14 8A6 6 0 1 1 2 8a6 6 0 0 1 12 0Z"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <AlertCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
       <span>
         {t("assistant.shortcuts.conflict", {
           command: commandDescription,

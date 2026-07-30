@@ -7,6 +7,7 @@
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import type { DisplayProduct, CategoryOption } from "./products.types";
+import { SearchIcon } from "@/components/ui/icons";
 
 interface ProductListProps {
   /** Products already filtered by parent (search + category + status). */
@@ -61,25 +62,13 @@ export const ProductList: FC<ProductListProps> = ({
             disabled={isLoading}
             className="pos-input w-full pl-pos-lg"
           />
-          <svg
+          <SearchIcon
             className="absolute left-pos-sm top-1/2 -translate-y-1/2"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
             style={{
               color:
                 "color-mix(in srgb, var(--color-ink) 40%, transparent)",
             }}
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
+          />
         </div>
 
         {/* Category filter */}

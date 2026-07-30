@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { SearchIcon } from "@/components/ui/icons";
 
 export interface PaletteSearchInputProps {
   value: string;
@@ -40,24 +41,13 @@ export const PaletteSearchInput: FC<PaletteSearchInputProps> = ({
       }}
     >
       {/* Search icon */}
-      <svg
+      <SearchIcon
         className="h-4 w-4 shrink-0"
-        viewBox="0 0 16 16"
-        fill="none"
-        aria-hidden
         style={{
           color:
             "color-mix(in srgb, var(--color-ink) 40%, transparent)",
         }}
-      >
-        <path
-          d="M7.333 12.667A5.333 5.333 0 1 0 7.333 2a5.333 5.333 0 0 0 0 10.667ZM14 14l-2.9-2.9"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      />
 
       <input
         ref={inputRef}
