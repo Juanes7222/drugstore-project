@@ -2,20 +2,25 @@
  * NavigationSidebar — slim left-hand navigation for the POS terminal.
  *
  * Collapsed (48 px) by default, expands to 200 px on hover or focus-within.
- * Renders role-gated navigation items that dispatch screen-switching actions.
+ * Renders role-gated navigation items grouped by category; the list scrolls
+ * internally when it does not fit the window height.
  *
  * Items are grouped and shown/hidden based on the current session role:
  *   - Sales (CASHIER or above)
  *   - Returns (CASHIER or above)
  *   - Inventory Adjustments (INVENTORY_ASSISTANT or ADMIN)
  *   - Admin / Sync (ADMIN only)
+ *
+ * The pin button at the bottom keeps the rail expanded persistently
+ * (stored in the user-preferences store, so it survives restarts).
  */
-import { type FC, useCallback, useEffect, useState } from "react";
+import { type FC, Fragment, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { selectActiveScreen, setActiveScreen } from "@/store/slices/ui-slice";
 import type { PosScreen } from "@/store/slices/ui-types";
 import { useLocalSessionStore, hasMinRole } from "../../../domain/auth/local-session.store";
+import { useUserPreferencesStore } from "../../../stores/user-preferences.store";
 import { RoleType } from "@pharmacy/shared-types";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
 import type { PrismaClient } from "@pharmacy/database/local";
@@ -30,6 +35,7 @@ import {
   HomeIcon as HomeIconModule,
   MonitorIcon,
   PackageIcon,
+  PinIcon,
   PrinterIcon as PrinterIconModule,
   ReceiptIcon,
   RefreshCwIcon,
@@ -48,9 +54,28 @@ interface NavItem {
   icon: FC<{ className?: string }>;
   /** Additional screens that should highlight this nav item as active. */
   relatedScreens?: PosScreen[];
+  /** Group under which the item is rendered in the rail. */
+  category: NavCategory;
 }
 
-// ── Nav icon adapters ────────────────────────────────────────────────────
+// ── Nav categories ────────────────────────────────────────────────────
+type NavCategory = "operation" | "inventory" | "management" | "system";
+
+const CATEGORY_ORDER: NavCategory[] = [
+  "operation",
+  "inventory",
+  "management",
+  "system",
+];
+
+const CATEGORY_LABEL_KEY: Record<NavCategory, string> = {
+  operation: "navigation.category_operation",
+  inventory: "navigation.category_inventory",
+  management: "navigation.category_management",
+  system: "navigation.category_system",
+};
+
+// ── Nav icon adapters ────────────────────────────────────────────────
 // Wrap the reusable icon components in FC<{ className?: string }> to match
 // the NavItem interface, passing size=20 as the sidebar standard.
 
@@ -143,24 +168,28 @@ const NAV_ITEMS: NavItem[] = [
     labelKey: "navigation.home",
     roles: [RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ACCOUNTANT, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavHomeIcon,
+    category: "operation",
   },
   {
     screen: "sales",
     labelKey: "navigation.sales",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavSalesIcon,
+    category: "operation",
   },
   {
     screen: "sales-history",
     labelKey: "navigation.sales_history",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavHistoryIcon,
+    category: "operation",
   },
   {
     screen: "returns",
     labelKey: "navigation.returns",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavReturnsIcon,
+    category: "operation",
   },
   {
     screen: "productos-main",
@@ -178,6 +207,7 @@ const NAV_ITEMS: NavItem[] = [
       "inventory-lots",
       "inventory-adjustments",
     ],
+    category: "inventory",
   },
   {
     screen: "purchases-main",
@@ -196,30 +226,35 @@ const NAV_ITEMS: NavItem[] = [
       "purchase-receptions",
       "supplier-returns",
     ],
+    category: "inventory",
   },
   {
     screen: "cash-shift",
     labelKey: "navigation.cash_shift",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER],
     icon: NavCashShiftIcon,
+    category: "operation",
   },
   {
     screen: "clients",
     labelKey: "navigation.clients",
     roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavClientsIcon,
+    category: "operation",
   },
   {
     screen: "user-management",
     labelKey: "navigation.user_management",
     roles: [RoleType.MANAGER, RoleType.OWNER],
     icon: NavUsersIcon,
+    category: "management",
   },
   {
     screen: "license-status",
     labelKey: "navigation.license_status",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavLicenseIcon,
+    category: "management",
   },
   {
     screen: "printing",
@@ -227,42 +262,49 @@ const NAV_ITEMS: NavItem[] = [
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavPrinterIcon,
     relatedScreens: ["printers", "print-queue", "setup-wizard"],
+    category: "management",
   },
   {
     screen: "fiscal",
     labelKey: "navigation.fiscal",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavFiscalIcon,
+    category: "management",
   },
   {
     screen: "audit-log",
     labelKey: "navigation.audit_log",
     roles: [RoleType.MANAGER, RoleType.OWNER],
     icon: NavAuditIcon,
+    category: "management",
   },
   {
     screen: "admin-menu",
     labelKey: "navigation.admin_menu",
     roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavAdminIcon,
+    category: "system",
   },
   {
     screen: "sync-health",
     labelKey: "navigation.sync_health",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavSyncHealthIcon,
+    category: "system",
   },
   {
     screen: "local-network",
     labelKey: "navigation.local_network",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavLocalNetworkIcon,
+    category: "system",
   },
   {
     screen: "recovery",
     labelKey: "navigation.recovery",
     roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavRecoveryIcon,
+    category: "system",
   },
   {
     screen: "reports",
@@ -276,6 +318,7 @@ const NAV_ITEMS: NavItem[] = [
       RoleType.INVENTORY_ASSISTANT,
     ],
     icon: NavReportsIcon,
+    category: "management",
   },
 ];
 
@@ -291,7 +334,9 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
   const dispatch = useAppDispatch();
   const activeScreen = useAppSelector(selectActiveScreen);
   const [isHovered, setIsHovered] = useState(false);
-  const isExpanded = alwaysExpanded || isHovered;
+  const pinned = useUserPreferencesStore((s) => s.sidebarPinned);
+  const setSidebarPinned = useUserPreferencesStore((s) => s.setSidebarPinned);
+  const isExpanded = alwaysExpanded || pinned || isHovered;
   const [badgeCount, setBadgeCount] = useState(0);
 
   useEffect(() => {
@@ -336,6 +381,11 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
 
   const visibleItems = NAV_ITEMS.filter((item) => hasAccess(item.roles));
 
+  const groupedCategories = CATEGORY_ORDER.map((category) => ({
+    category,
+    items: visibleItems.filter((item) => item.category === category),
+  })).filter((group) => group.items.length > 0);
+
   return (
     <nav
       className="pos-sidebar"
@@ -346,44 +396,86 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
       onMouseLeave={() => setIsHovered(false)}
     >
       <ul className="pos-sidebar__list" role="menubar" aria-orientation="vertical">
-        {visibleItems.map((item) => {
-          const relatedScreens = item.relatedScreens ?? [];
-          const isActive =
-            relatedScreens.includes(activeScreen) || activeScreen === item.screen;
-          const Icon = item.icon;
-
-          return (
-            <li key={item.screen} role="none">
-              <button
-                type="button"
-                role="menuitem"
-                aria-current={isActive ? "page" : undefined}
-                aria-label={t(item.labelKey)}
-                className={`pos-sidebar__item ${isActive ? "pos-sidebar__item--active" : ""}`}
-                onClick={() => handleNav(item.screen)}
+        {groupedCategories.map(({ category, items }) => (
+          <Fragment key={category}>
+            <li role="none">
+              <span
+                className="pos-sidebar__group-label"
+                data-visible={isExpanded}
+                aria-hidden="true"
               >
-                <div className="pos-sidebar__item-icon-wrapper">
-                  <Icon className="pos-sidebar__item-icon" />
-                  {item.screen === "sync-health" && badgeCount > 0 && (
-                    <span
-                      className="pos-sidebar__badge"
-                      aria-label={`${badgeCount > 99 ? "99+" : badgeCount} permanent failures`}
-                    >
-                      {badgeCount > 99 ? "99+" : badgeCount}
-                    </span>
-                  )}
-                </div>
-                <span
-                  className="pos-sidebar__item-label"
-                  data-visible={isExpanded}
-                >
-                  {t(item.labelKey)}
-                </span>
-              </button>
+                {t(CATEGORY_LABEL_KEY[category])}
+              </span>
             </li>
-          );
-        })}
+            {items.map((item) => {
+              const relatedScreens = item.relatedScreens ?? [];
+              const isActive =
+                relatedScreens.includes(activeScreen) || activeScreen === item.screen;
+              const Icon = item.icon;
+
+              return (
+                <li key={item.screen} role="none">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-current={isActive ? "page" : undefined}
+                    aria-label={t(item.labelKey)}
+                    className={`pos-sidebar__item ${isActive ? "pos-sidebar__item--active" : ""}`}
+                    onClick={() => handleNav(item.screen)}
+                  >
+                    <div className="pos-sidebar__item-icon-wrapper">
+                      <Icon className="pos-sidebar__item-icon" />
+                      {item.screen === "sync-health" && badgeCount > 0 && (
+                        <span
+                          className="pos-sidebar__badge"
+                          aria-label={`${badgeCount > 99 ? "99+" : badgeCount} permanent failures`}
+                        >
+                          {badgeCount > 99 ? "99+" : badgeCount}
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className="pos-sidebar__item-label"
+                      data-visible={isExpanded}
+                    >
+                      {t(item.labelKey)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </Fragment>
+        ))}
       </ul>
+
+      {/* Pin toggle — keep the rail expanded across navigation */}
+      {!alwaysExpanded && (
+        <div className="pos-sidebar__footer">
+          <button
+            type="button"
+            className="pos-sidebar__pin"
+            data-active={pinned}
+            onClick={() => setSidebarPinned(!pinned)}
+            aria-pressed={pinned}
+            aria-label={t(
+              pinned ? "navigation.collapse_sidebar" : "navigation.expand_sidebar",
+            )}
+            title={t(
+              pinned ? "navigation.collapse_sidebar" : "navigation.expand_sidebar",
+            )}
+          >
+            <PinIcon className="pos-sidebar__pin-icon" size={16} />
+            <span
+              className="pos-sidebar__pin-label"
+              data-visible={isExpanded}
+            >
+              {t(
+                pinned ? "navigation.collapse_sidebar" : "navigation.expand_sidebar",
+              )}
+            </span>
+          </button>
+        </div>
+      )}
     </nav>
   );
 };

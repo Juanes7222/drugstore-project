@@ -57,7 +57,7 @@ export const DeleteUserDialog: FC<DeleteUserDialogProps> = ({
       onClick={handleOverlayClick}
     >
       <div
-        className="pos-panel w-full max-w-sm p-pos-xl"
+        className="pos-panel w-[calc(100%-2rem)] max-w-sm p-pos-xl"
         style={{ backgroundColor: "var(--color-surface)" }}
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
@@ -79,7 +79,7 @@ export const DeleteUserDialog: FC<DeleteUserDialogProps> = ({
           {t("user_management.delete_confirm_detail")}
         </p>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <button
             type="button"
             onClick={onClose}

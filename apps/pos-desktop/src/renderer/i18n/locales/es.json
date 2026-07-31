@@ -393,7 +393,13 @@
     "recovery": "Recuperación",
     "local_network": "Red Local",
     "suppliers": "Compras",
-    "reports": "Reportes"
+    "reports": "Reportes",
+    "category_operation": "Operación",
+    "category_inventory": "Inventario",
+    "category_management": "Gestión",
+    "category_system": "Sistema",
+    "expand_sidebar": "Expandir menú",
+    "collapse_sidebar": "Colapsar menú"
   },
   "productos_main": {
     "title": "Productos e Inventario",

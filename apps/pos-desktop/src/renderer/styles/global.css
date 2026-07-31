@@ -512,12 +512,14 @@
     border-right: 1px solid color-mix(in srgb, var(--color-ink) 8%, transparent);
     background-color: var(--color-panel);
     flex-shrink: 0;
+    min-height: 0;
   }
 
   .pos-sidebar[data-expanded="true"] {
     width: 200px;
   }
 
+  /* Scrollable item list — clips gracefully on short windows */
   .pos-sidebar__list {
     display: flex;
     flex-direction: column;
@@ -525,6 +527,101 @@
     padding: var(--spacing-pos-sm) 0;
     margin: 0;
     list-style: none;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  /* Slim scrollbar for the rail (no visible track) */
+  .pos-sidebar__list::-webkit-scrollbar {
+    width: 4px;
+  }
+  .pos-sidebar__list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .pos-sidebar__list::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-ink) 20%, transparent);
+    border-radius: 2px;
+  }
+  .pos-sidebar__list {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-ink) 20%, transparent) transparent;
+  }
+
+  /* Category header shown inside the rail when expanded */
+  .pos-sidebar__group-label {
+    display: block;
+    /* No vertical padding while collapsed — max-height alone does not
+       collapse padding, which would leave invisible gaps in the rail. */
+    padding: 0 var(--spacing-pos-md);
+    font-family: var(--font-ui);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: color-mix(in srgb, var(--color-ink) 40%, transparent);
+    white-space: nowrap;
+    overflow: hidden;
+    opacity: 0;
+    max-height: 0;
+    transition: opacity 150ms ease, max-height 200ms ease;
+  }
+
+  .pos-sidebar__group-label[data-visible="true"] {
+    opacity: 1;
+    max-height: 2rem;
+    padding-top: var(--spacing-pos-sm);
+    padding-bottom: var(--spacing-pos-xs);
+  }
+
+  /* Footer pin toggle */
+  .pos-sidebar__footer {
+    flex-shrink: 0;
+    border-top: 1px solid color-mix(in srgb, var(--color-ink) 8%, transparent);
+    padding: var(--spacing-pos-sm) 0;
+  }
+
+  .pos-sidebar__pin {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-pos-md);
+    width: 100%;
+    padding: var(--spacing-pos-sm) var(--spacing-pos-md);
+    font-family: var(--font-ui);
+    font-size: var(--text-caption);
+    font-weight: var(--font-weight-medium);
+    color: color-mix(in srgb, var(--color-ink) 50%, transparent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 100ms ease, color 100ms ease;
+  }
+
+  .pos-sidebar__pin:hover {
+    background-color: color-mix(in srgb, var(--color-surface) 60%, white);
+    color: var(--color-ink);
+  }
+
+  .pos-sidebar__pin[data-active="true"] {
+    color: var(--color-pharma);
+  }
+
+  .pos-sidebar__pin-icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+  }
+
+  .pos-sidebar__pin-label {
+    opacity: 0;
+    transition: opacity 150ms ease;
+    overflow: hidden;
+  }
+
+  .pos-sidebar__pin-label[data-visible="true"] {
+    opacity: 1;
   }
 
   .pos-sidebar__item {

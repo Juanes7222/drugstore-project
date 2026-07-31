@@ -51,9 +51,9 @@ export const ProductList: FC<ProductListProps> = ({
       aria-label={t("products.list_label")}
     >
       {/* ── Search & filter bar ─────────────────────────────────────── */}
-      <div className="mb-pos-sm flex items-center gap-pos-sm">
+      <div className="mb-pos-sm flex flex-wrap items-center gap-pos-sm">
         {/* Search input */}
-        <div className="relative flex-1">
+        <div className="relative min-w-[12rem] flex-1">
           <input
             id="product-search-input"
             type="text"
@@ -119,7 +119,7 @@ export const ProductList: FC<ProductListProps> = ({
       </div>
 
       {/* ── Product table ──────────────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         {isLoading && (
           <div className="flex items-center justify-center py-pos-xl">
             <p
@@ -152,7 +152,7 @@ export const ProductList: FC<ProductListProps> = ({
 
         {!isLoading && products.length > 0 && (
           <table
-            className="w-full border-collapse"
+            className="w-full min-w-[52rem] border-collapse"
             style={{
               color: "var(--color-ink)",
             }}

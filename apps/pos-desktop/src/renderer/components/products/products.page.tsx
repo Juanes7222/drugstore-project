@@ -322,13 +322,9 @@ export const ProductsPage: FC = () => {
         onCreateNew={handleCreateNew}
       />
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* Left: product list panel */}
-        <div
-          className={`flex flex-col overflow-hidden ${
-            showForm ? "w-3/5" : "w-full"
-          } px-pos-xl pb-pos-xl transition-all duration-200`}
-        >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-pos-xl pb-pos-xl transition-all duration-200">
           {error && !showForm && (
             <div
               className="mb-pos-sm rounded-pos px-pos-md py-pos-sm text-body-sm font-medium"
@@ -364,7 +360,7 @@ export const ProductsPage: FC = () => {
         {/* Right: form panel */}
         {showForm && (
           <div
-            className="w-2/5 overflow-hidden border-l"
+            className="h-1/2 min-h-0 w-full shrink-0 overflow-hidden border-t lg:h-auto lg:w-2/5 lg:border-l lg:border-t-0"
             style={{
               borderColor:
                 "color-mix(in srgb, var(--color-ink) 8%, transparent)",

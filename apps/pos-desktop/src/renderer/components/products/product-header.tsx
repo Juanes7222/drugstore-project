@@ -21,7 +21,7 @@ export const ProductHeader: FC<ProductHeaderProps> = ({
 
   return (
     <header
-      className="flex items-center gap-pos-md px-pos-xl py-pos-lg"
+      className="flex flex-wrap items-center gap-pos-md px-pos-xl py-pos-lg"
       style={{
         backgroundColor: "var(--color-panel)",
         borderBottom:
@@ -39,7 +39,7 @@ export const ProductHeader: FC<ProductHeaderProps> = ({
       </button>
 
       {/* Title */}
-      <h1 className="pos-page-title flex-1">
+      <h1 className="pos-page-title min-w-0 flex-1 truncate">
         {t("products.title")}
       </h1>
 
@@ -47,7 +47,7 @@ export const ProductHeader: FC<ProductHeaderProps> = ({
       <button
         type="button"
         onClick={onCreateNew}
-        className="pos-button pos-button-primary flex items-center gap-pos-xs"
+        className="pos-button pos-button-primary flex shrink-0 items-center gap-pos-xs"
       >
         <PlusIcon size={14} strokeWidth={2.5} />
         {t("products.new_product")}
@@ -55,7 +55,7 @@ export const ProductHeader: FC<ProductHeaderProps> = ({
 
       {/* Online/offline status */}
       <span
-        className="pos-badge"
+        className="pos-badge shrink-0"
         style={{
           backgroundColor: isOnline
             ? "color-mix(in srgb, var(--color-pharma) 10%, transparent)"

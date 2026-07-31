@@ -265,9 +265,9 @@ export const FiscalPage: FC = () => {
         onTabChange={setTab}
       />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         {/* Main content area */}
-        <div className={`flex-1 overflow-y-auto p-pos-xl ${selectedInvoice ? "pr-pos-sm" : ""}`}>
+        <div className={`min-h-0 flex-1 overflow-y-auto p-pos-xl ${selectedInvoice ? "lg:pr-pos-sm" : ""}`}>
           {tab === "invoices" && (
             <InvoiceListView
               invoices={invoices}
@@ -284,8 +284,9 @@ export const FiscalPage: FC = () => {
         {/* Invoice detail side panel */}
         {selectedInvoice && (
           <aside
-            className="flex flex-col overflow-hidden border-l border-ink/8 bg-panel"
-            style={{ width: detailView === "dual" ? "48rem" : "24rem" }}
+            className={`flex h-1/2 min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-ink/8 bg-panel lg:border-l lg:border-t-0 lg:h-auto ${
+              detailView === "dual" ? "lg:w-[40rem] xl:w-[48rem]" : "lg:w-[24rem] xl:w-[28rem]"
+            }`}
           >
             {/* Detail view toggle */}
             <div className="flex items-center justify-between border-b border-ink/8 px-pos-md py-pos-sm">
@@ -326,10 +327,14 @@ export const FiscalPage: FC = () => {
               </div>
             </div>
 
-            <div className="flex flex-1 overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
               {/* Fiscal panel (always visible) */}
               <div
-                className={`overflow-y-auto ${detailView === "dual" ? "w-1/2 border-r border-ink/8" : "flex-1"}`}
+                className={`min-h-0 overflow-y-auto ${
+                  detailView === "dual"
+                    ? "flex-1 border-b border-ink/8 lg:w-1/2 lg:flex-none lg:border-b-0 lg:border-r"
+                    : "flex-1"
+                }`}
               >
                 <FiscalInvoiceDetailPanel
                   invoice={selectedInvoice}
@@ -342,7 +347,7 @@ export const FiscalPage: FC = () => {
 
               {/* Operational panel (visible in dual mode) */}
               {detailView === "dual" && operationalView && (
-                <div className="flex w-1/2 flex-col overflow-y-auto">
+                <div className="flex h-1/2 min-h-0 w-full flex-col overflow-y-auto lg:h-auto lg:w-1/2">
                   <OperationalInvoiceDetailPanel
                     operationalView={operationalView}
                     adjustmentCount={adjustmentHistory.length}

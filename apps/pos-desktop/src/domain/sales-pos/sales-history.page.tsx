@@ -249,9 +249,9 @@ export const SalesHistoryPage: FC = () => {
 
   return (
     <section className="flex h-full flex-col overflow-hidden bg-gray-50">
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         {/* List */}
-        <div className={`flex-1 overflow-y-auto p-6 ${selectedSaleId ? 'pr-3' : ''}`}>
+        <div className={`min-h-0 flex-1 overflow-y-auto p-6 ${selectedSaleId ? 'lg:pr-3' : ''}`}>
           <SalesHistoryList
             sales={sales}
             totalCount={totalCount}
@@ -266,7 +266,9 @@ export const SalesHistoryPage: FC = () => {
 
         {/* Detail */}
         {selectedSaleId && (
-          <aside className="flex flex-col overflow-hidden border-l border-gray-200 bg-white" style={{ width: detailView === 'fiscal' ? '24rem' : '28rem' }}>
+          <aside className={`flex h-1/2 min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-gray-200 bg-white lg:h-auto lg:border-l lg:border-t-0 ${
+            detailView === 'fiscal' ? 'lg:w-[24rem]' : 'lg:w-[28rem]'
+          }`}>
             <SalesHistoryDetail
               saleId={selectedSaleId}
               detail={selectedDetail}

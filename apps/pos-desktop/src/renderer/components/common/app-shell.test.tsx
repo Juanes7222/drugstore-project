@@ -29,6 +29,12 @@ vi.mock("../auth/quick-switch.component", () => ({
   QuickSwitch: () => <div data-testid="quick-switch-mock" />,
 }));
 
+// LocalSyncBanner reads the Redux store via useAppDispatch — mock it to keep
+// the shell test focused on layout without needing a Redux provider.
+vi.mock("../local-sync/local-sync-banner", () => ({
+  LocalSyncBanner: () => <div data-testid="local-sync-banner-mock" />,
+}));
+
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
@@ -59,7 +65,8 @@ describe("AppShell", () => {
         </AppShell>,
       );
 
-      expect(screen.getByText(/\$\s*500\.000/)).toBeInTheDocument();
+      // openingBalanceCents=500_000 → 5000 COP → "$ 5.000"
+      expect(screen.getByText(/\$\s*5\.000/)).toBeInTheDocument();
     });
 
     it("renders the elapsed time indicator", () => {

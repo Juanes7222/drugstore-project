@@ -105,6 +105,7 @@ export type IconName =
   | "pencil"
   | "percent"
   | "phone"
+  | "pin"
   | "plug"
   | "plus"
   | "printer"
@@ -518,6 +519,12 @@ export const ICON_PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   phone: <path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233a14 14 0 0 0 6.392 6.384" />,
+  pin: (
+    <>
+      <path d="M12 17v5" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1z" />
+    </>
+  ),
   radio: (
     <>
       <path d="M16.247 7.761a6 6 0 0 1 0 8.478m2.828-11.306a10 10 0 0 1 0 14.134m-14.15 0a10 10 0 0 1 0-14.134m2.828 11.306a6 6 0 0 1 0-8.478" />
@@ -1162,6 +1169,11 @@ export const PhoneIcon: IconComponent = (props) => (
 /** Plug / connection icon. */
 export const PlugIcon: IconComponent = (props) => (
   <Icon name="plug" {...props} />
+);
+
+/** Pin / fix icon. */
+export const PinIcon: IconComponent = (props) => (
+  <Icon name="pin" {...props} />
 );
 
 /** Plus / increase icon. */

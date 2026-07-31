@@ -97,9 +97,9 @@ export const UpdateModal: FC<UpdateModalProps> = ({
         {/* Content */}
         <Dialog.Content
           className="
-            fixed left-1/2 top-1/2 z-50 w-full max-w-lg
+            fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-[calc(100%-2rem)] max-w-lg
             -translate-x-1/2 -translate-y-1/2
-            rounded-xl p-6 shadow-xl
+            overflow-y-auto rounded-xl p-6 shadow-xl
             data-[state=open]:animate-in data-[state=open]:fade-in
             data-[state=open]:zoom-in-95
             data-[state=closed]:animate-out data-[state=closed]:fade-out
@@ -183,7 +183,7 @@ export const UpdateModal: FC<UpdateModalProps> = ({
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
               {!isBlocking && onRemindLater && (
                 <button
                   type="button"

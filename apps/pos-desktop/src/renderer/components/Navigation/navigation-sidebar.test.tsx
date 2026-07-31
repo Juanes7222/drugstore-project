@@ -12,6 +12,7 @@ import { uiSlice } from "@/store/slices/ui-slice";
 import { NavigationSidebar } from "./navigation-sidebar";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import type { LocalSession } from "../../../domain/auth/local-session.store";
+import { useUserPreferencesStore } from "../../../stores/user-preferences.store";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -74,6 +75,8 @@ const setSessionRole = (role: string): void => {
 describe("NavigationSidebar", () => {
   beforeEach(() => {
     setSessionRole("CASHIER");
+    // Reset the persisted pin state so tests start from a collapsed rail.
+    useUserPreferencesStore.setState({ sidebarPinned: false });
   });
 
   describe("NAV-01: CASHIER visibility", () => {
@@ -116,15 +119,16 @@ describe("NavigationSidebar", () => {
     it("shows all navigation items for MANAGER role", () => {
       renderSidebar();
 
+      // Exact names — /ventas/i would also match "Historial Ventas".
       expect(
-        screen.getByRole("menuitem", { name: /ventas/i }),
+        screen.getByRole("menuitem", { name: "Ventas" }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("menuitem", { name: /devoluciones/i }),
+        screen.getByRole("menuitem", { name: "Devoluciones" }),
       ).toBeInTheDocument();
-      // MANAGER sees inventory-adjustments, sync-health, user-management, audit-log
+      // MANAGER sees productos (inventory hub), sync-health, user-management, audit-log
       expect(
-        screen.getByRole("menuitem", { name: /ajustes/i }),
+        screen.getByRole("menuitem", { name: "Productos" }),
       ).toBeInTheDocument();
       expect(
         screen.getByRole("menuitem", { name: /salud de sinc/i }),
@@ -136,7 +140,7 @@ describe("NavigationSidebar", () => {
       renderSidebar();
 
       expect(
-        screen.getByRole("menuitem", { name: /admin/i }),
+        screen.getByRole("menuitem", { name: "Configuración" }),
       ).toBeInTheDocument();
     });
   });
@@ -264,5 +268,78 @@ describe("NavigationSidebar", () => {
     expect(
       screen.getByRole("menubar"),
     ).toHaveAttribute("aria-orientation", "vertical");
+  });
+
+  describe("NAV-07: category grouping", () => {
+    it("renders category headers only when expanded", () => {
+      setSessionRole("OWNER");
+      renderSidebar();
+
+      // Collapsed: headers are present in the DOM but invisible.
+      const headers = document.querySelectorAll(".pos-sidebar__group-label");
+      expect(headers.length).toBeGreaterThan(0);
+
+      fireEvent.mouseEnter(screen.getByRole("navigation"));
+
+      expect(headers[0]).toHaveAttribute("data-visible", "true");
+    });
+
+    it("groups items under their category header", () => {
+      setSessionRole("OWNER");
+      renderSidebar();
+
+      // First category header should be "Operación" — home/ventas live under it.
+      const headers = document.querySelectorAll(".pos-sidebar__group-label");
+      expect(headers[0]).toHaveTextContent(/operación/i);
+    });
+  });
+
+  describe("NAV-08: pin toggle", () => {
+    it("starts collapsed when unpinned", () => {
+      renderSidebar();
+
+      expect(
+        screen.getByRole("navigation"),
+      ).toHaveAttribute("data-expanded", "false");
+    });
+
+    it("pins the sidebar open when the pin button is clicked", () => {
+      renderSidebar();
+
+      const pin = screen.getByRole("button", { name: /expandir menú/i });
+      fireEvent.click(pin);
+
+      expect(
+        screen.getByRole("navigation"),
+      ).toHaveAttribute("data-expanded", "true");
+      expect(
+        useUserPreferencesStore.getState().sidebarPinned,
+      ).toBe(true);
+    });
+
+    it("keeps the sidebar expanded after mouse leave when pinned", () => {
+      renderSidebar();
+
+      const pin = screen.getByRole("button", { name: /expandir menú/i });
+      fireEvent.click(pin);
+      fireEvent.mouseEnter(screen.getByRole("navigation"));
+      fireEvent.mouseLeave(screen.getByRole("navigation"));
+
+      expect(
+        screen.getByRole("navigation"),
+      ).toHaveAttribute("data-expanded", "true");
+    });
+
+    it("unpins when clicked again", () => {
+      renderSidebar();
+
+      const pin = screen.getByRole("button", { name: /expandir menú/i });
+      fireEvent.click(pin);
+      fireEvent.click(pin);
+
+      expect(
+        screen.getByRole("navigation"),
+      ).toHaveAttribute("data-expanded", "false");
+    });
   });
 });

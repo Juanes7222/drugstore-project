@@ -22,6 +22,7 @@ beforeEach(() => {
     receiptFontSize: 10,
     keyboardLayout: "STANDARD",
     quickButtons: [],
+    sidebarPinned: false,
   });
 });
 
@@ -409,5 +410,24 @@ describe("setQuickButtons", () => {
     useUserPreferencesStore.getState().setQuickButtons([]);
 
     expect(useUserPreferencesStore.getState().quickButtons).toEqual([]);
+  });
+});
+
+describe("setSidebarPinned", () => {
+  it("starts unpinned", () => {
+    expect(useUserPreferencesStore.getState().sidebarPinned).toBe(false);
+  });
+
+  it("pins the sidebar", () => {
+    useUserPreferencesStore.getState().setSidebarPinned(true);
+
+    expect(useUserPreferencesStore.getState().sidebarPinned).toBe(true);
+  });
+
+  it("unpins the sidebar", () => {
+    useUserPreferencesStore.getState().setSidebarPinned(true);
+    useUserPreferencesStore.getState().setSidebarPinned(false);
+
+    expect(useUserPreferencesStore.getState().sidebarPinned).toBe(false);
   });
 });

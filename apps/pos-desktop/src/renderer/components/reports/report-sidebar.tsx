@@ -54,7 +54,7 @@ export const ReportSidebar: FC = () => {
     .filter((d) => d.allowedRoles.includes(role as never));
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col gap-3 border-r border-border bg-surface px-4 py-4">
+    <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-r border-border bg-surface px-4 py-4 xl:w-72">
       <input
         type="search"
         value={search}

@@ -305,149 +305,150 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
               border: '1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)',
             }}
           >
-            <table className="w-full border-collapse text-body-sm">
-              <thead>
-                <tr
-                  style={{
-                    backgroundColor:
-                      'color-mix(in srgb, var(--color-surface) 70%, white)',
-                    borderBottom:
-                      '2px solid color-mix(in srgb, var(--color-pharma) 15%, transparent)',
-                  }}
-                >
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
-                    style={{
-                      color:
-                        'color-mix(in srgb, var(--color-ink) 50%, transparent)',
-                    }}
-                  >
-                    {t('salesHistory.list.number')}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
-                    style={{
-                      color:
-                        'color-mix(in srgb, var(--color-ink) 50%, transparent)',
-                    }}
-                  >
-                    {t('salesHistory.list.date')}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
-                    style={{
-                      color:
-                        'color-mix(in srgb, var(--color-ink) 50%, transparent)',
-                    }}
-                  >
-                    {t('salesHistory.list.client')}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-right text-caption font-semibold uppercase tracking-wider"
-                    style={{
-                      color:
-                        'color-mix(in srgb, var(--color-ink) 50%, transparent)',
-                    }}
-                  >
-                    {t('salesHistory.list.total')}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
-                    style={{
-                      color:
-                        'color-mix(in srgb, var(--color-ink) 50%, transparent)',
-                    }}
-                  >
-                    {t('salesHistory.list.invoice')}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
-                    style={{
-                      color:
-                        'color-mix(in srgb, var(--color-ink) 50%, transparent)',
-                    }}
-                  >
-                    {t('salesHistory.list.status')}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-center text-caption font-semibold uppercase tracking-wider"
-                    style={{
-                      color:
-                        'color-mix(in srgb, var(--color-ink) 50%, transparent)',
-                    }}
-                  >
-                    {t('salesHistory.list.has_adjustments')}
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-3 py-2 text-right text-caption font-semibold uppercase tracking-wider"
-                    style={{
-                      color:
-                        'color-mix(in srgb, var(--color-ink) 50%, transparent)',
-                    }}
-                  >
-                    <span className="sr-only">{t('common.actions')}</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSales.map((sale) => (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[56rem] border-collapse text-body-sm">
+                <thead>
                   <tr
-                    key={sale.saleId}
-                    className="cursor-pointer transition-colors"
                     style={{
+                      backgroundColor:
+                        'color-mix(in srgb, var(--color-surface) 70%, white)',
                       borderBottom:
-                        '1px solid color-mix(in srgb, var(--color-ink) 5%, transparent)',
-                    }}
-                    onClick={() => onSelect(sale.saleId)}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor =
-                        'color-mix(in srgb, var(--color-pharma) 4%, white)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
+                        '2px solid color-mix(in srgb, var(--color-pharma) 15%, transparent)',
                     }}
                   >
-                    <td
-                      className="px-3 py-2.5 font-data tabular-nums font-semibold"
-                      style={{ color: 'var(--color-pharma)' }}
-                    >
-                      #{sale.localNumber}
-                    </td>
-                    <td
-                      className="px-3 py-2.5"
+                    <th
+                      scope="col"
+                      className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
                       style={{
-                        color: 'color-mix(in srgb, var(--color-ink) 75%, transparent)',
+                        color:
+                          'color-mix(in srgb, var(--color-ink) 50%, transparent)',
                       }}
                     >
-                      {formatDateTime(sale.confirmedAt)}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex flex-col">
-                        <span
-                          className="max-w-[16rem] truncate font-medium"
-                          style={{ color: 'var(--color-ink)' }}
-                        >
-                          {sale.clientName}
-                        </span>
-                        {sale.clientIdentificationNumber && (
+                      {t('salesHistory.list.number')}
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
+                      style={{
+                        color:
+                          'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                      }}
+                    >
+                      {t('salesHistory.list.date')}
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
+                      style={{
+                        color:
+                          'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                      }}
+                    >
+                      {t('salesHistory.list.client')}
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-2 text-right text-caption font-semibold uppercase tracking-wider"
+                      style={{
+                        color:
+                          'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                      }}
+                    >
+                      {t('salesHistory.list.total')}
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
+                      style={{
+                        color:
+                          'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                      }}
+                    >
+                      {t('salesHistory.list.invoice')}
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-2 text-left text-caption font-semibold uppercase tracking-wider"
+                      style={{
+                        color:
+                          'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                      }}
+                    >
+                      {t('salesHistory.list.status')}
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-2 text-center text-caption font-semibold uppercase tracking-wider"
+                      style={{
+                        color:
+                          'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                      }}
+                    >
+                      {t('salesHistory.list.has_adjustments')}
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-2 text-right text-caption font-semibold uppercase tracking-wider"
+                      style={{
+                        color:
+                          'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                      }}
+                    >
+                      <span className="sr-only">{t('common.actions')}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSales.map((sale) => (
+                    <tr
+                      key={sale.saleId}
+                      className="cursor-pointer transition-colors"
+                      style={{
+                        borderBottom:
+                          '1px solid color-mix(in srgb, var(--color-ink) 5%, transparent)',
+                      }}
+                      onClick={() => onSelect(sale.saleId)}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor =
+                          'color-mix(in srgb, var(--color-pharma) 4%, white)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <td
+                        className="px-3 py-2.5 font-data tabular-nums font-semibold"
+                        style={{ color: 'var(--color-pharma)' }}
+                      >
+                        #{sale.localNumber}
+                      </td>
+                      <td
+                        className="px-3 py-2.5"
+                        style={{
+                          color: 'color-mix(in srgb, var(--color-ink) 75%, transparent)',
+                        }}
+                      >
+                        {formatDateTime(sale.confirmedAt)}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex flex-col">
                           <span
-                            className="font-data tabular-nums text-caption"
-                            style={{
-                              color:
-                                'color-mix(in srgb, var(--color-ink) 45%, transparent)',
-                            }}
+                            className="max-w-[16rem] truncate font-medium"
+                            style={{ color: 'var(--color-ink)' }}
                           >
-                            {sale.clientIdentificationNumber}
+                            {sale.clientName}
                           </span>
-                        )}
+                          {sale.clientIdentificationNumber && (
+                            <span
+                              className="font-data tabular-nums text-caption"
+                              style={{
+                                color:
+                                  'color-mix(in srgb, var(--color-ink) 45%, transparent)',
+                              }}
+                            >
+                              {sale.clientIdentificationNumber}
+                            </span>
+                          )}
                       </div>
                     </td>
                     <td
@@ -546,6 +547,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                 ))}
               </tbody>
             </table>
+            </div>
 
             {filteredSales.length < totalCount && (
               <div

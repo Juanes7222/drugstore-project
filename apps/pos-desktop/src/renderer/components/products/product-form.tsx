@@ -455,7 +455,7 @@ export const ProductForm: FC<ProductFormProps> = ({
 
       {/* Scrollable form body */}
       <div className="flex-1 overflow-y-auto px-pos-xl py-pos-lg">
-        <div className="mx-auto max-w-2xl space-y-pos-lg">
+        <div className="mx-auto max-w-2xl space-y-pos-lg @container">
           {/* ── Basic Information ────────────────────────────────────── */}
           <section>
             <h3
@@ -499,8 +499,8 @@ export const ProductForm: FC<ProductFormProps> = ({
               </div>
 
               {/* Concentration + Unit */}
-              <div className="flex gap-pos-md">
-                <div className="flex-1">
+              <div className="flex flex-col gap-pos-sm @sm:flex-row @sm:gap-pos-md">
+                <div className="@sm:flex-1">
                   <label
                     htmlFor="pf-concentration"
                     className="mb-pos-xs block text-body-sm font-medium"
@@ -523,7 +523,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                     className="pos-input w-full"
                   />
                 </div>
-                <div className="w-28">
+                <div className="w-full @sm:w-28">
                   <label
                     htmlFor="pf-concentration-unit"
                     className="mb-pos-xs block text-body-sm font-medium"
@@ -730,7 +730,7 @@ export const ProductForm: FC<ProductFormProps> = ({
               {state.barcodes.map((bc, index) => (
                 <div
                   key={index}
-                  className="flex items-center gap-pos-sm rounded-pos px-pos-md py-pos-sm"
+                  className="flex flex-col gap-pos-sm rounded-pos px-pos-md py-pos-sm @sm:flex-row @sm:items-center"
                   style={{
                     backgroundColor:
                       "color-mix(in srgb, var(--color-ink) 3%, transparent)",
@@ -750,7 +750,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                     }
                     placeholder={t("products.barcode_placeholder")}
                     disabled={isProcessing}
-                    className="pos-input flex-1"
+                    className="pos-input w-full @sm:flex-1"
                   />
 
                   {/* Barcode type */}
@@ -765,7 +765,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                       })
                     }
                     disabled={isProcessing}
-                    className="pos-input w-28"
+                    className="pos-input w-full @sm:w-28"
                   >
                     {BARCODE_TYPES.map((bt) => (
                       <option key={bt} value={bt}>
@@ -775,7 +775,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                   </select>
 
                   {/* Primary toggle */}
-                  <label className="flex cursor-pointer items-center gap-pos-xs text-caption">
+                  <label className="flex cursor-pointer items-center gap-pos-xs self-start text-caption @sm:self-auto">
                     <input
                       type="radio"
                       name="primary-barcode"
@@ -799,7 +799,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                       type="button"
                       onClick={() => dispatch({ type: "REMOVE_BARCODE", index })}
                       disabled={isProcessing}
-                      className="flex-shrink-0 rounded p-1 transition-colors hover:bg-red-100"
+                      className="self-start shrink-0 rounded p-1 transition-colors hover:bg-red-100 @sm:self-auto"
                       aria-label={t("products.remove_barcode")}
                     >
                       <XIcon size={14} color="#D32F2F" />
@@ -1107,7 +1107,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                     </div>
 
                     {/* Validity window — both bounds optional */}
-                    <div className="grid grid-cols-2 gap-pos-md">
+                    <div className="grid grid-cols-1 gap-pos-md @md:grid-cols-2">
                       <div>
                         <label
                           htmlFor="pf-commission-start"
@@ -1187,7 +1187,7 @@ export const ProductForm: FC<ProductFormProps> = ({
             >
               {t("products.section_optional")}
             </h3>
-            <div className="grid grid-cols-2 gap-pos-md">
+            <div className="grid grid-cols-1 gap-pos-md @sm:grid-cols-2">
               {/* Minimum stock — hidden when stock validation is OFF */}
               {fieldRequirements.minimumStock !== "HIDDEN" && (
                 <div>
@@ -1298,7 +1298,7 @@ export const ProductForm: FC<ProductFormProps> = ({
               )}
 
               {/* Storage conditions — always visible */}
-              <div className="col-span-2">
+              <div className="@sm:col-span-2">
                 <label
                   htmlFor="pf-storage"
                   className="mb-pos-xs block text-body-sm font-medium"
@@ -1323,7 +1323,7 @@ export const ProductForm: FC<ProductFormProps> = ({
               </div>
 
               {/* Internal notes — always visible */}
-              <div className="col-span-2">
+              <div className="@sm:col-span-2">
                 <label
                   htmlFor="pf-notes"
                   className="mb-pos-xs block text-body-sm font-medium"

@@ -68,7 +68,7 @@ export const DiscardEntryModal: FC<DiscardEntryModalProps> = ({
       aria-modal="true"
       aria-labelledby="discard-modal-title"
     >
-      <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-xl">
+      <div className="w-[calc(100%-2rem)] max-w-md rounded-lg border border-gray-200 bg-white shadow-xl">
         {/* Header */}
         <div className="border-b border-gray-100 px-5 py-4">
           <h2
@@ -109,7 +109,7 @@ export const DiscardEntryModal: FC<DiscardEntryModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-end gap-3 border-t border-gray-100 px-5 py-4">
           <button
             type="button"
             onClick={handleCancel}

@@ -32,9 +32,9 @@ export const FiscalHeader: FC<FiscalHeaderProps> = ({
 
   return (
     <header className="border-b border-ink/8 bg-panel px-pos-xl py-pos-md">
-      <div className="flex items-center justify-between">
-        <h1 className="text-ui text-ink">{t("fiscal.title")}</h1>
-        <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-pos-md">
+        <h1 className="min-w-0 truncate text-ui text-ink">{t("fiscal.title")}</h1>
+        <div className="flex shrink-0 items-center gap-4">
           {contingencyMode && (
             <span className="inline-flex items-center gap-2 rounded bg-danger px-3 py-1 text-sm font-bold text-white">
               <span className="h-2 w-2 rounded-full bg-white" />
@@ -45,7 +45,7 @@ export const FiscalHeader: FC<FiscalHeaderProps> = ({
       </div>
 
       {/* Tab navigation */}
-      <nav className="mt-pos-md flex gap-pos-md border-b border-ink/8">
+      <nav className="mt-pos-md flex flex-wrap gap-pos-md border-b border-ink/8">
         <button
           type="button"
           className={`pb-2 text-body-sm font-medium transition-colors ${

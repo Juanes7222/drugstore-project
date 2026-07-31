@@ -1415,17 +1415,17 @@ const ConfirmationDiff: FC<ConfirmationDiffProps> = ({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:gap-3">
         {renderDiffBlock(
           t("fiscal.adjustment_create_before"),
           beforeValue,
         )}
         <div
-          className="flex items-center self-stretch px-1"
+          className="flex items-center justify-center self-stretch px-1"
           aria-hidden="true"
         >
           <span
-            className="text-ui font-bold"
+            className="text-ui font-bold rotate-90 sm:rotate-0"
             style={{
               color:
                 "color-mix(in srgb, var(--color-ink) 30%, transparent)",
@@ -1584,7 +1584,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
 
     return (
       <nav aria-label={t("fiscal.adjustment_create_step_progress")} className="mb-4">
-        <ol className="flex items-center gap-1">
+        <ol className="flex flex-wrap items-center gap-1">
           {steps.map((s, idx) => {
             const isActive =
               (s.key === "select-type" && step === "select-type") ||
@@ -1928,7 +1928,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
 
         {/* Content */}
         <Dialog.Content
-          className="fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-pos shadow-pos-elevated"
+          className="fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-pos shadow-pos-elevated"
           style={{ backgroundColor: "var(--color-panel)" }}
           aria-describedby={undefined}
         >
@@ -1994,7 +1994,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
 
           {/* ---- Footer ---- */}
           <div
-            className="flex items-center justify-end gap-2 border-t px-4 py-3"
+            className="flex flex-wrap items-center justify-end gap-2 border-t px-4 py-3"
             style={{
               borderColor:
                 "color-mix(in srgb, var(--color-ink) 10%, transparent)",

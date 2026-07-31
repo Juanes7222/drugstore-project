@@ -80,6 +80,9 @@ export interface UserPreferences {
 
   /** Product IDs for quick-select buttons on the sales screen. */
   quickButtons: string[];
+
+  /** Whether the navigation sidebar is pinned open (persisted across restarts). */
+  sidebarPinned: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +167,9 @@ interface UserPreferencesStore extends UserPreferences {
 
   /** Replace all quick buttons. */
   setQuickButtons: (productIds: string[]) => void;
+
+  /** Pin or unpin the navigation sidebar. */
+  setSidebarPinned: (pinned: boolean) => void;
 }
 
 export const useUserPreferencesStore = create<UserPreferencesStore>()(
@@ -186,6 +192,7 @@ export const useUserPreferencesStore = create<UserPreferencesStore>()(
       receiptFontSize: 10,
       keyboardLayout: 'STANDARD' as KeyboardLayout,
       quickButtons: [],
+      sidebarPinned: false,
 
       // ---- Actions ----
 
@@ -338,6 +345,10 @@ export const useUserPreferencesStore = create<UserPreferencesStore>()(
       setQuickButtons: (productIds: string[]) => {
         set({ quickButtons: productIds });
       },
+
+      setSidebarPinned: (pinned: boolean) => {
+        set({ sidebarPinned: pinned });
+      },
     }),
     {
       name: "pos-user-preferences",
@@ -359,6 +370,7 @@ export const useUserPreferencesStore = create<UserPreferencesStore>()(
         receiptFontSize: state.receiptFontSize,
         keyboardLayout: state.keyboardLayout,
         quickButtons: state.quickButtons,
+        sidebarPinned: state.sidebarPinned,
       }),
     },
   ),

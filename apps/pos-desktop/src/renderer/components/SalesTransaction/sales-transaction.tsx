@@ -31,7 +31,7 @@ export const SalesTransaction: FC = () => {
   } = useSalesTransaction();
 
   return (
-    <div className="grid h-full grid-cols-[60%_40%] gap-pos-md p-pos-md">
+    <div className="grid h-full grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-pos-md p-pos-md lg:grid-cols-[minmax(0,60%)_minmax(0,40%)] lg:grid-rows-1">
       <ProductSearch
         catalogService={catalogService}
         onSelect={handleSelect}

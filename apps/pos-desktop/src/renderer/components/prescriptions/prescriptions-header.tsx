@@ -19,14 +19,14 @@ export const PrescriptionsHeader: FC<PrescriptionsHeaderProps> = ({
 
   return (
     <div
-      className="flex items-center justify-between px-pos-xl py-pos-lg"
+      className="flex flex-wrap items-center justify-between gap-pos-md px-pos-xl py-pos-lg"
       style={{ borderBottom: "1px solid color-mix(in srgb, var(--color-ink) 10%, transparent)" }}
     >
-      <h1 className="pos-page-title">{t("prescriptions.title")}</h1>
+      <h1 className="pos-page-title min-w-0 truncate">{t("prescriptions.title")}</h1>
 
       {itemsLeft > 1 && (
         <span
-          className="font-data text-caption tabular-nums"
+          className="shrink-0 font-data text-caption tabular-nums"
           style={{ color: "color-mix(in srgb, var(--color-ink) 55%, transparent)" }}
         >
           {t("prescriptions.items_left", { count: itemsLeft })}

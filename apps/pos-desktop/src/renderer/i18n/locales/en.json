@@ -323,7 +323,13 @@
     "recovery": "Recovery",
     "local_network": "Local Network",
     "suppliers": "Purchasing",
-    "reports": "Reports"
+    "reports": "Reports",
+    "category_operation": "Operations",
+    "category_inventory": "Inventory",
+    "category_management": "Management",
+    "category_system": "System",
+    "expand_sidebar": "Expand menu",
+    "collapse_sidebar": "Collapse menu"
   },
   "productos_main": {
     "title": "Products & Inventory",

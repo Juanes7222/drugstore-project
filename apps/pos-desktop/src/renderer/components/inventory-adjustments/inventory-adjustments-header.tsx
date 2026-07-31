@@ -19,7 +19,7 @@ export const InventoryAdjustmentsHeader: FC<InventoryAdjustmentsHeaderProps> = (
 
   return (
     <header
-      className="flex items-center gap-pos-md px-pos-xl py-pos-lg"
+      className="flex flex-wrap items-center gap-pos-md px-pos-xl py-pos-lg"
       style={{
         backgroundColor: "var(--color-panel)",
         borderBottom: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
@@ -36,11 +36,11 @@ export const InventoryAdjustmentsHeader: FC<InventoryAdjustmentsHeaderProps> = (
       </button>
 
       {/* Title */}
-      <h1 className="pos-page-title flex-1">{t("inventory_adjustments.title")}</h1>
+      <h1 className="pos-page-title min-w-0 flex-1 truncate">{t("inventory_adjustments.title")}</h1>
 
       {/* Online/offline status */}
       <span
-        className="pos-badge"
+        className="pos-badge shrink-0"
         style={{
           backgroundColor: isOnline
             ? "color-mix(in srgb, var(--color-pharma) 10%, transparent)"

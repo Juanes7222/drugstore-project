@@ -361,9 +361,9 @@ export const InventoryAdjustmentsPage: FC = () => {
         onBack={handleBack}
       />
 
-      <div className="flex min-h-0 flex-1 gap-pos-lg px-pos-xl pb-pos-xl">
+      <div className="flex min-h-0 flex-1 flex-col gap-pos-lg px-pos-xl pb-pos-xl lg:flex-row">
         {/* ── Left panel ──────────────────────────────────────────────── */}
-        <div className="flex w-3/5 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {lotManagementOff ? (
             /* ── No-lot mode: flat product list ─────────────────────── */
             <section
@@ -517,7 +517,7 @@ export const InventoryAdjustmentsPage: FC = () => {
         </div>
 
         {/* ── Right panel: adjustment form ────────────────────────────── */}
-        <div className="w-2/5 overflow-y-auto">
+        <div className="h-1/2 min-h-0 w-full shrink-0 overflow-y-auto lg:h-auto lg:w-2/5">
           {isLoading && (
             <div className="pos-panel flex items-center justify-center p-pos-xl">
               <p

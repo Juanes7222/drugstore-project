@@ -57,23 +57,23 @@ export const CashShiftHeader: FC<CashShiftHeaderProps> = ({
 
   return (
     <header
-      className="flex items-center justify-between px-pos-md py-pos-sm bg-panel"
+      className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-pos-md gap-y-pos-xs px-pos-md py-pos-sm bg-panel"
       style={{
         borderBottom: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
       }}
     >
-      <div className="flex items-center gap-pos-lg">
-        <span className="text-body font-semibold" style={{ color: "var(--color-ink)" }}>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-pos-lg gap-y-pos-xs">
+        <span className="min-w-0 truncate text-body font-semibold" style={{ color: "var(--color-ink)" }}>
           {t("cash_shift.label")}: {cashierName}
         </span>
-        <span className="text-caption" style={{ color: "color-mix(in srgb, var(--color-ink) 60%, transparent)" }}>
+        <span className="whitespace-nowrap text-caption" style={{ color: "color-mix(in srgb, var(--color-ink) 60%, transparent)" }}>
           {t("cash_shift.opening_balance")}:{" "}
           <span className="font-data tabular-nums">
             {formatCurrency(openingBalanceCents)}
           </span>
         </span>
         <span
-          className="font-data tabular-nums text-body"
+          className="whitespace-nowrap font-data tabular-nums text-body"
           style={{ color: "var(--color-pharma)" }}
         >
           {elapsed} {t("cash_shift.active")}
@@ -81,7 +81,7 @@ export const CashShiftHeader: FC<CashShiftHeaderProps> = ({
       </div>
 
       {onSyncStateChange && (
-        <div className="flex items-center gap-pos-xs" role="group" aria-label={t("sync.state_online")}>
+        <div className="flex shrink-0 items-center gap-pos-xs" role="group" aria-label={t("sync.state_online")}>
           {SYNC_STATES.map((state) => (
             <button
               key={state}

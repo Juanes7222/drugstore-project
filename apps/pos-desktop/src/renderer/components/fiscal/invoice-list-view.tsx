@@ -124,7 +124,7 @@ export const InvoiceListView: FC<InvoiceListViewProps> = ({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y text-body-sm" style={{ borderColor: "color-mix(in srgb, var(--color-ink) 10%, transparent)" }} role="table" aria-label={t("fiscal.invoices_title")}>
+          <table className="w-full min-w-[48rem] divide-y text-body-sm" style={{ borderColor: "color-mix(in srgb, var(--color-ink) 10%, transparent)" }} role="table" aria-label={t("fiscal.invoices_title")}>
             <thead>
               <tr>
                 <th scope="col" className="px-4 py-2 text-left text-caption font-semibold uppercase tracking-wide" style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)", backgroundColor: "color-mix(in srgb, var(--color-surface) 60%, white)" }}>

@@ -84,17 +84,17 @@ export const QuickClientForm: FC<QuickClientFormProps> = ({
   const isValid = data.fullName.trim().length > 0 && data.identificationNumber.trim().length > 0;
 
   return (
-    <div className="p-3">
+    <div className="p-3 @container">
       <h4 className="mb-2 text-caption font-semibold" style={{ color: LABEL_COLOR }}>
         {t("clients.create_title")}
       </h4>
 
-      <div className="mb-2 grid grid-cols-2 gap-2">
+      <div className="mb-2 grid grid-cols-1 gap-2 @sm:grid-cols-2">
         {FIELDS.map((field) => {
           const value = (data[field.key] ?? "") as string;
 
           return (
-            <div key={field.key} className={field.colSpan === "full" ? "col-span-2" : ""}>
+            <div key={field.key} className={field.colSpan === "full" ? "@sm:col-span-2" : ""}>
               <label className={LABEL_CLASS} style={{ color: LABEL_COLOR }}>
                 {t(field.labelKey)}
                 {field.required && (

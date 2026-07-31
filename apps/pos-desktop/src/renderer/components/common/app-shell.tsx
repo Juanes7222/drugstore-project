@@ -36,7 +36,10 @@ export const AppShell: FC<AppShellProps> = ({
       className="flex h-screen flex-col overflow-hidden"
       style={{ backgroundColor: "var(--color-surface)" }}
     >
-      <div className="flex items-center justify-between" style={{ borderBottom: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)" }}>
+      <div
+        className="flex items-center justify-between gap-pos-sm"
+        style={{ borderBottom: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)" }}
+      >
         <CashShiftHeader
           cashierName={cashierName}
           openingBalanceCents={openingBalanceCents}
@@ -44,7 +47,7 @@ export const AppShell: FC<AppShellProps> = ({
           syncState={syncState}
           onSyncStateChange={setSyncState}
         />
-        <div className="px-pos-md">
+        <div className="shrink-0 px-pos-md">
           <QuickSwitch />
         </div>
       </div>

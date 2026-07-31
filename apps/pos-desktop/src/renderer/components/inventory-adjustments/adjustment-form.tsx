@@ -71,7 +71,7 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
   const showReason = reasonRequirement !== "HIDDEN";
 
   return (
-    <section className="pos-panel mt-pos-lg p-pos-md">
+    <section className="pos-panel mt-pos-lg p-pos-md @container">
       {/* Selected heading */}
       {showLotInfo ? (
         <h2
@@ -92,7 +92,7 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
 
       {/* Info grid */}
       <div
-        className="mt-pos-md grid grid-cols-2 gap-pos-sm text-body-sm"
+        className="mt-pos-md grid grid-cols-1 gap-pos-sm text-body-sm @sm:grid-cols-2"
         style={{ color: "color-mix(in srgb, var(--color-ink) 60%, transparent)" }}
       >
         {showLotInfo ? (
@@ -128,7 +128,7 @@ export const AdjustmentForm: FC<AdjustmentFormProps> = ({
         ) : (
           <>
             {/* Total stock (product-level) */}
-            <div className="col-span-2">
+            <div className="@sm:col-span-2">
               <span className="block text-caption font-semibold uppercase tracking-wider">
                 {t("inventory_adjustments.stock")}
               </span>

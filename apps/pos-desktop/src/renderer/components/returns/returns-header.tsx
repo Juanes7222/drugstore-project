@@ -29,14 +29,14 @@ export const ReturnsHeader: FC<ReturnsHeaderProps> = ({
 
   return (
     <header
-      className="flex items-center justify-between px-pos-xl py-pos-md"
+      className="flex flex-wrap items-center justify-between gap-pos-md px-pos-xl py-pos-md"
       style={{
         borderBottom: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
         backgroundColor: "var(--color-panel)",
       }}
     >
       {/* Left: back button + title */}
-      <div className="flex items-center gap-pos-md">
+      <div className="flex min-w-0 items-center gap-pos-md">
         <button
           type="button"
           onClick={onBack}
@@ -57,12 +57,12 @@ export const ReturnsHeader: FC<ReturnsHeaderProps> = ({
         >
           <ArrowLeftIcon size={20} strokeWidth={2.5} />
         </button>
-        <h1 className="pos-page-title">{t("returns.title")}</h1>
+        <h1 className="pos-page-title min-w-0 truncate">{t("returns.title")}</h1>
       </div>
 
       {/* Right: online/offline indicator */}
       <div
-        className="flex items-center gap-pos-xs tabular-nums"
+        className="flex shrink-0 items-center gap-pos-xs tabular-nums"
         style={{
           fontSize: "var(--text-caption)",
           fontWeight: "var(--font-weight-medium)",

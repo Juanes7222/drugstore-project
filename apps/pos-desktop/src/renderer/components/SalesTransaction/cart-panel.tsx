@@ -116,8 +116,9 @@ export const CartPanel: FC<CartPanelProps> = ({
         {t("sales.cart.title_with_count", { count })}
       </h2>
 
-      {/* Cart items area — scrollable */}
-      <div className="mt-pos-sm min-h-0 flex-1 overflow-y-auto">
+      {/* Cart items area — scrollable (both axes so the 6-column table
+          never crushes its columns on narrow panels) */}
+      <div className="mt-pos-sm min-h-0 flex-1 overflow-auto">
         {isEmpty ? (
           <p
             className="mt-pos-md text-body"
@@ -126,7 +127,7 @@ export const CartPanel: FC<CartPanelProps> = ({
             {t("sales.cart.empty")}
           </p>
         ) : (
-          <table className="w-full border-collapse">
+          <table className="w-full min-w-[34rem] border-collapse">
             <thead className="sr-only">
               <tr>
                 <th>{t("sales.cart.title")}</th>

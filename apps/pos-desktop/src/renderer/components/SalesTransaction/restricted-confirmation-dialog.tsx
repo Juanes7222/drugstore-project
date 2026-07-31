@@ -39,7 +39,7 @@ export const RestrictedConfirmationDialog: FC<
           style={{ backgroundColor: "color-mix(in srgb, var(--color-ink) 40%, transparent)" }}
         />
         <Dialog.Content
-          className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-pos p-pos-lg shadow-pos-elevated focus-visible:outline-none"
+          className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-pos p-pos-lg shadow-pos-elevated focus-visible:outline-none"
           style={{
             backgroundColor: "var(--color-restrict-surface)",
             border: "2px solid var(--color-restrict)",
@@ -88,7 +88,7 @@ export const RestrictedConfirmationDialog: FC<
             </p>
           </div>
 
-          <div className="mt-pos-lg flex justify-end gap-pos-sm">
+          <div className="mt-pos-lg flex flex-wrap justify-end gap-pos-sm">
             <button
               type="button"
               onClick={onCancel}

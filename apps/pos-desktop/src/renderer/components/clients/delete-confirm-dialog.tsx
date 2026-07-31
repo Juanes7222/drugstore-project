@@ -74,7 +74,7 @@ export const DeleteConfirmDialog: FC<DeleteConfirmDialogProps> = ({
         {/* Content */}
         <Dialog.Content asChild>
           <motion.div
-            className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2"
+            className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2"
             variants={contentVariants}
             initial="hidden"
             animate="visible"
@@ -120,7 +120,7 @@ export const DeleteConfirmDialog: FC<DeleteConfirmDialogProps> = ({
               </div>
 
               {/* Buttons */}
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <Dialog.Close asChild>
                   <button
                     type="button"
