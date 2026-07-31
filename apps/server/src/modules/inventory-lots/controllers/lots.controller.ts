@@ -25,6 +25,20 @@ import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 export class LotsController {
   constructor(private lotsService: LotsService) {}
 
+  @Get('sync')
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  async syncLots(
+    @Query('updatedSince') updatedSince?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ): Promise<any> {
+    return this.lotsService.findSync({
+      updatedSince,
+      cursor: cursor ?? null,
+      limit: limit ? Math.min(Math.max(Number(limit), 1), 500) : 200,
+    });
+  }
+
   @Get()
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findAll(@Query() query: QueryLotDto): Promise<any> {

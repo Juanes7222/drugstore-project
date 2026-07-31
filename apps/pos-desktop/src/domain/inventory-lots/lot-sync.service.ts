@@ -22,7 +22,7 @@
 
 import { PrismaClient, LotState } from '@pharmacy/database/local';
 import { isOnline } from '../../common/is-online';
-import { setLotsLastSyncedAt } from '../../common/sync-metadata';
+import { getLotsLastSyncedAt, setLotsLastSyncedAt } from '../../common/sync-metadata';
 import type { SyncHttpClient } from '../catalog/catalog-sync.service';
 
 // ---------------------------------------------------------------------------
@@ -140,10 +140,47 @@ export class LotSyncService {
   }
 
   /**
-   * Fetch all lots from the paginated server endpoint.
-   * Uses a large page size to minimise round-trips.
+   * Fetch all lots from the cursor-paginated sync endpoint.
+   *
+   * Uses `updatedSince` from the last sync timestamp for incremental
+   * pulls. Falls back to legacy offset pagination when the cursor
+   * endpoint is unavailable.
    */
   private async fetchAllLots(authHeaders: Record<string, string>): Promise<unknown[]> {
+    const limit = 200;
+    const updatedSince = getLotsLastSyncedAt();
+    const all: unknown[] = [];
+
+    let cursor: string | null = null;
+
+    while (true) {
+      let url = `${this.baseUrl}/inventory-lots/lots/sync?limit=${limit}`;
+      if (updatedSince) url += `&updatedSince=${encodeURIComponent(updatedSince)}`;
+      if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+
+      try {
+        const response = await this.http.get<{
+          data: unknown[];
+          nextCursor: string | null;
+          hasMore: boolean;
+        }>(url, authHeaders);
+
+        all.push(...response.data);
+        if (!response.hasMore || !response.nextCursor) break;
+        cursor = response.nextCursor;
+      } catch {
+        // Cursor endpoint unavailable — fall back to legacy offset pagination.
+        return this.fetchAllLotsLegacy(authHeaders);
+      }
+    }
+
+    return all;
+  }
+
+  /**
+   * Legacy fallback: offset-based lot pull.
+   */
+  private async fetchAllLotsLegacy(authHeaders: Record<string, string>): Promise<unknown[]> {
     const pageSize = 500;
     let page = 1;
     let totalPages = 1;
@@ -156,7 +193,7 @@ export class LotSyncService {
         page: number;
         pageSize: number;
       }>(
-        `${this.baseUrl}/inventory-lots/lots?page=${page}&pageSize=${pageSize}&sort=expirationDate&order=asc`,
+        `${this.baseUrl}/inventory-lots/lots?page=${page}&pageSize=${pageSize}`,
         authHeaders,
       );
 

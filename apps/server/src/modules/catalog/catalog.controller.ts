@@ -37,6 +37,20 @@ export class CatalogController {
     return this.catalogService.findAllProducts(query);
   }
 
+  @Get('products/sync')
+  @Public()
+  async syncProducts(
+    @Query('updatedSince') updatedSince?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ): Promise<any> {
+    return this.catalogService.findProductsSync({
+      updatedSince,
+      cursor: cursor ?? null,
+      limit: limit ? Math.min(Math.max(Number(limit), 1), 500) : 200,
+    });
+  }
+
   @Get('products/:id')
   @Public()
   async findProductById(@Param('id') id: string): Promise<any> {

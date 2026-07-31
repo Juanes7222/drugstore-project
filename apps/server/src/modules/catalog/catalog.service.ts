@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { QueryProductDto } from './dto/query-product.dto';
@@ -102,6 +103,79 @@ export class CatalogService {
       page,
       pageSize,
       totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  /**
+   * Sync-pull products with cursor-based pagination.
+   *
+   * Designed for POS/hub sync clients that track their position with an
+   * opaque cursor instead of page numbers. Supports incremental pulls
+   * via `updatedSince` and resumable pulls via `cursor`.
+   *
+   * Response includes the `updatedAt`+`id` compound index cursor so the
+   * client can resume from where it left off, even on partial reads.
+   */
+  async findProductsSync(input: {
+    updatedSince?: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{
+    items: unknown[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const baseWhere: Prisma.ProductWhereInput = {};
+    if (input.updatedSince) {
+      baseWhere.updatedAt = { gte: new Date(input.updatedSince) };
+    }
+
+    const page = await paginateWithCursor<unknown, Prisma.ProductWhereInput, Prisma.ProductOrderByWithRelationInput>({
+      model: this.prisma.product,
+      baseWhere,
+      limit: input.limit ?? 200,
+      cursor: input.cursor ?? null,
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+    });
+
+    // Attach relations for each product
+    const items = await this.prisma.product.findMany({
+      where: { id: { in: (page.items as Array<{ id: string }>).map((i) => i.id) } },
+      include: {
+        category: true,
+        pharmaceuticalForm: true,
+        barcodes: { where: { isPrimary: true }, take: 1 },
+        priceHistories: {
+          orderBy: { effectiveFrom: 'desc' },
+          take: 1,
+        },
+        taxHistories: {
+          include: { taxScheme: true },
+          orderBy: { effectiveFrom: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    const itemMap = new Map(items.map((p) => [p.id, p]));
+
+    // Preserve cursor sort order and transform to match findAllProducts shape
+    const enriched = (page.items as Array<{ id: string }>).map((base) => {
+      const full = itemMap.get(base.id);
+      if (!full) return base;
+      return {
+        ...full,
+        currentPrice: full.priceHistories[0] ?? null,
+        currentTax: full.taxHistories[0] ?? null,
+        priceHistories: undefined,
+        taxHistories: undefined,
+      };
+    });
+
+    return {
+      items: enriched,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
     };
   }
 

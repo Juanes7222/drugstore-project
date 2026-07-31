@@ -60,6 +60,7 @@
     "dev:db:push": "pnpm --filter @pharmacy/server exec npx prisma db push --schema ../../packages/database/prisma/schema --config ../../packages/database/prisma.full.config.ts",
     "dev:db:seed": "pnpm --filter @pharmacy/server exec npx tsx seed/main.ts",
     "dev:db:setup": "pnpm dev:infra && pnpm dev:db:push && pnpm dev:db:seed",
+    "dev:multi": "node scripts/dev-multi-station.mjs",
     "dev:start": "pnpm --filter @pharmacy/server dev",
     "docker:build": "turbo run docker:build",
     "docker:up": "docker compose up -d",

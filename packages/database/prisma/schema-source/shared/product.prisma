@@ -57,4 +57,5 @@ model Product {
   @@index([isActive])
   @@index([categoryId, isActive])
   @@index([invimaRegistry])
+  @@index([updatedAt, id])
 }

@@ -33,6 +33,49 @@ import { LocalAuditEvent } from '../audit/local-audit-writer.service';
 export const PUSH_BATCH_LIMIT = 10;
 export const MAX_RETRY_ATTEMPTS = 10;
 
+/**
+ * Priority groups for operation types.
+ *
+ * Groups ensure operations are pushed in dependency-safe order without
+ * needing to parse every payload to trace references. Operations that
+ * other operations depend on are in the highest priority groups.
+ *
+ * The sort within a group uses clientSequence so the original order
+ * within the same dependency level is preserved.
+ *
+ * | Priority | Group | Operation types |
+ * |---|---|---|
+ * | 1 (highest) | Entity creation | PRODUCT_CREATION, CLIENT_CREATION |
+ * | 2 | Entity update  | PRODUCT_UPDATE, CLIENT_UPDATE |
+ * | 3 | Sales          | SALE_CONFIRMATION, SHIFT_CLOSURE |
+ * | 4 | Post-sale ops  | INVENTORY_ADJUSTMENT, CLIENT_RETURN, PRESCRIPTION_REGISTRATION |
+ * | 5 | Fiscal         | INVOICE_TRANSMISSION, INVOICE_ADJUSTMENT, FISCAL_DOCUMENT_SYNC |
+ * | 6 | Purchases      | PURCHASE_ORDER_CONFIRMATION, PURCHASE_RECEPTION_CONFIRMATION, SUPPLIER_RETURN_CONFIRMATION |
+ * | 7 (lowest) | Misc  | CLIENT_DEACTIVATE, RESOLUTION_ALLOCATION, INVOICE_TRANSMISSION_RESULT |
+ */
+const OPERATION_PRIORITY: Record<string, number> = {
+  PRODUCT_CREATION: 1,
+  CLIENT_CREATION: 1,
+  PRODUCT_UPDATE: 2,
+  CLIENT_UPDATE: 2,
+  SALE_CONFIRMATION: 3,
+  SHIFT_CLOSURE: 3,
+  INVENTORY_ADJUSTMENT: 4,
+  CLIENT_RETURN: 4,
+  PRESCRIPTION_REGISTRATION: 4,
+  INVOICE_TRANSMISSION: 5,
+  INVOICE_ADJUSTMENT: 5,
+  FISCAL_DOCUMENT_SYNC: 5,
+  PURCHASE_ORDER_CONFIRMATION: 6,
+  PURCHASE_RECEPTION_CONFIRMATION: 6,
+  SUPPLIER_RETURN_CONFIRMATION: 6,
+  CLIENT_DEACTIVATE: 7,
+  RESOLUTION_ALLOCATION: 7,
+  INVOICE_TRANSMISSION_RESULT: 7,
+};
+
+const DEFAULT_PRIORITY = 99;
+
 /** The local-only failure category values. */
 export type SyncFailureCategory =
   | 'NETWORK'
@@ -331,6 +374,12 @@ class SyncPushServiceImpl implements SyncPushService {
    * - PENDING entries (never sent)
    * - FAILED entries with retryCount < MAX_RETRY_ATTEMPTS and nextRetryAt <= now
    *
+   * Sorted by dependency-safe priority (creations first, then edits, then
+   * sales, then post-sale operations), then by clientSequence within each
+   * priority group. This ensures PRODUCT_CREATION and CLIENT_CREATION are
+   * pushed before SALE_CONFIRMATION entries that reference them, without
+   * needing to parse every payload to trace entity references.
+   *
    * Defense-in-depth: the pending query uses `status = 'PENDING'` explicitly,
    * never `status != 'COMPLETED'`, so discarded/permanent-failure entries
    * are automatically excluded (they have different status values).
@@ -345,7 +394,7 @@ class SyncPushServiceImpl implements SyncPushService {
 
     const remaining = PUSH_BATCH_LIMIT - pending.length;
     if (remaining <= 0) {
-      return pending as unknown as SyncEntryForPush[];
+      return this.sortByPriority(pending as unknown as SyncEntryForPush[]);
     }
 
     const retryable = await this.prisma.syncQueue.findMany({
@@ -358,10 +407,28 @@ class SyncPushServiceImpl implements SyncPushService {
       take: remaining,
     });
 
-    return [
+    const combined = [
       ...(pending as unknown as SyncEntryForPush[]),
       ...(retryable as unknown as SyncEntryForPush[]),
     ];
+    return this.sortByPriority(combined);
+  }
+
+  /**
+   * Sort entries by dependency-safe priority, then by clientSequence
+   * within each priority group.
+   *
+   * Stable for entries with same priority+sequence: their original order
+   * from the DB (which respects insertion order within the same
+   * clientSequence) is preserved.
+   */
+  private sortByPriority(entries: SyncEntryForPush[]): SyncEntryForPush[] {
+    return entries.sort((a, b) => {
+      const pA = OPERATION_PRIORITY[a.operationType] ?? DEFAULT_PRIORITY;
+      const pB = OPERATION_PRIORITY[b.operationType] ?? DEFAULT_PRIORITY;
+      if (pA !== pB) return pA - pB;
+      return Number(a.clientSequence) - Number(b.clientSequence);
+    });
   }
 
   /**
@@ -710,15 +777,19 @@ class SyncPushServiceImpl implements SyncPushService {
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the next retry delay in milliseconds using exponential backoff.
+ * Compute the next retry delay in milliseconds using exponential backoff
+ * with ±20% jitter.
  *
- * | Retry count (post-increment) | Wait  |
- * |---|---|
- * | 1 | 30 seconds |
- * | 2 | 2 minutes  |
- * | 3 | 5 minutes  |
- * | 4 | 10 minutes |
- * | 5+ | 30 minutes (capped) |
+ * Jitter prevents synchronized retry storms when multiple workstations
+ * lose connectivity simultaneously and all come back online at once.
+ *
+ * | Retry count (post-increment) | Base wait | Range (with jitter) |
+ * |---|---|---|
+ * | 1 | 30 seconds | 24 s – 36 s |
+ * | 2 | 2 minutes  | 96 s – 144 s |
+ * | 3 | 5 minutes  | 4 min – 6 min |
+ * | 4 | 10 minutes | 8 min – 12 min |
+ * | 5+ | 30 minutes (capped) | 24 min – 36 min |
  */
 export function computeNextRetryDelay(retryCount: number): number {
   const delays: Record<number, number> = {
@@ -727,7 +798,9 @@ export function computeNextRetryDelay(retryCount: number): number {
     3: 300_000,
     4: 600_000,
   };
-  return delays[retryCount] ?? 1_800_000;
+  const base = delays[retryCount] ?? 1_800_000;
+  const jitter = base * (0.8 + Math.random() * 0.4); // ±20%
+  return Math.round(jitter);
 }
 
 // ---------------------------------------------------------------------------

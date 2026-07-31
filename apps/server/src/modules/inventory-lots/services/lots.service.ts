@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { Prisma, LotState, MovementType } from '@pharmacy/database';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import * as crypto from 'crypto';
 import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 import { QueryLotDto } from '../dto/query-lot.dto';
@@ -46,6 +47,41 @@ export class LotsService {
       this.prisma.lot.count({ where }),
     ]);
     return { data: lots, total, page: query.page, pageSize: query.pageSize };
+  }
+
+  /**
+   * Sync-pull lots with cursor-based pagination.
+   *
+   * Designed for POS/hub sync clients. Supports incremental pulls via
+   * `updatedSince` and resumable pulls via opaque `cursor`.
+   */
+  async findSync(input: {
+    updatedSince?: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{
+    data: unknown[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const baseWhere: Prisma.LotWhereInput = {};
+    if (input.updatedSince) {
+      baseWhere.updatedAt = { gte: new Date(input.updatedSince) };
+    }
+
+    const page = await paginateWithCursor<unknown, Prisma.LotWhereInput, Prisma.LotOrderByWithRelationInput>({
+      model: this.prisma.lot,
+      baseWhere,
+      limit: input.limit ?? 200,
+      cursor: input.cursor ?? null,
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+    });
+
+    return {
+      data: page.items,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
   }
 
   async findById(id: string): Promise<any> {

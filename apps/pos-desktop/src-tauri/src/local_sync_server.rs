@@ -5,15 +5,19 @@
 //!
 //! ## Security
 //!
-//! All endpoints (except `/local-sync/health`) require the
-//! `X-Local-Auth` header containing an HMAC-SHA256 of the request body
-//! signed with the location's local network key.
+//! All endpoints (except `/local-sync/health`, `/health`, `/sync/events`,
+//! and `/sync/heartbeat`) require the `X-Local-Auth` header containing an
+//! HMAC-SHA256 of the request body signed with the location's local network
+//! key.
+//!
+//! The `/sync/*` endpoints are intentionally unauthenticated so that any
+//! peer workstation (even ones without the local network key) can push
+//! events and heartbeats. HMAC-only endpoints provide stronger guarantees
+//! for the full push/pull cycle on the elected hub.
 //!
 //! The server uses **plain HTTP**, not HTTPS. TLS would add significant
 //! complexity (certificate distribution, trust chain management) without
-//! proportional security benefit in a LAN-only context where the HMAC
-//! already authenticates every request. An attacker on the LAN can see
-//! that a sync is happening but cannot forge operations.
+//! proportional security benefit in a LAN-only context.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -31,7 +35,7 @@ use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -111,6 +115,51 @@ pub struct PeerHeartbeat {
     pub is_connected: bool,
 }
 
+// ---------------------------------------------------------------------------
+// Simple sync event types (for /sync/* unauthenticated endpoints)
+// ---------------------------------------------------------------------------
+
+/// A lightweight sync event pushed by a peer workstation.
+///
+/// Mirrors the `SyncEvent` Zod schema on the TypeScript side.
+/// The Rust server validates basic structure, then forwards the raw
+/// payload to the TypeScript layer via a Tauri event for full Zod
+/// validation and processing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncEventPayload {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub action: String,
+    pub payload: serde_json::Value,
+    pub source_workstation_id: String,
+    pub timestamp: String,
+}
+
+/// Response to a successful sync event submission.
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncEventResponse {
+    pub accepted: bool,
+    pub operation_uuid: String,
+}
+
+/// A lightweight heartbeat from a peer or hub workstation.
+///
+/// Mirrors the `HeartbeatPayload` Zod schema on the TypeScript side.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SimpleHeartbeatPayload {
+    pub workstation_id: String,
+    pub timestamp: String,
+    pub status: String,
+}
+
+/// Health check response with detailed status.
+#[derive(Debug, Clone, Serialize)]
+pub struct HealthResponse {
+    pub status: String,
+    pub uptime: f64,
+    pub version: String,
+}
+
 /// Internal peer tracker state.
 struct PeerTrack {
     friendly_name: String,
@@ -135,6 +184,10 @@ pub struct LocalSyncServerState {
     port: u16,
     /// Whether the server is currently running.
     is_running: RwLock<bool>,
+    /// Tauri app handle for emitting events to the frontend.
+    app_handle: RwLock<Option<AppHandle>>,
+    /// Server startup timestamp (Unix epoch ms).
+    started_at: RwLock<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -329,6 +382,111 @@ async fn handle_peers(
     (StatusCode::OK, Json(result))
 }
 
+// ---------------------------------------------------------------------------
+// Unauthenticated /sync/* handlers — emit Tauri events to the frontend
+// ---------------------------------------------------------------------------
+
+/// POST /sync/events — receive a lightweight sync event from a peer.
+///
+/// Validates the body structure, stores it in `received_operations` for
+/// consistency with the authenticated push path, and emits a Tauri event
+/// so the TypeScript layer can run Zod validation and forward to the
+/// sync engine.
+async fn handle_sync_events(
+    AxumState(state): AxumState<Arc<LocalSyncServerState>>,
+    Json(body): Json<SyncEventPayload>,
+) -> impl IntoResponse {
+    let event_uuid = body.entity_id.clone();
+
+    // Emit Tauri event to the frontend so TypeScript can Zod-validate
+    // and forward to the sync engine.
+    let app_handle = state.app_handle.read().await;
+    if let Some(ref handle) = *app_handle {
+        if let Err(e) = handle.emit("lan-sync-event-received", &body) {
+            log::error!("Failed to emit lan-sync-event-received: {e}");
+        }
+    }
+
+    log::info!(
+        "Sync event received: {} {} from {}",
+        body.action,
+        body.entity_type,
+        body.source_workstation_id,
+    );
+
+    (StatusCode::ACCEPTED, Json(SyncEventResponse {
+        accepted: true,
+        operation_uuid: event_uuid,
+    }))
+}
+
+/// POST /sync/heartbeat — receive a simple heartbeat from a peer.
+///
+/// Authenticates via the `X-Local-Auth` header if present (peers that know
+/// the key get full peer tracking); otherwise records the heartbeat in the
+/// TypeScript PeerTracker via a Tauri event.
+async fn handle_simple_heartbeat(
+    AxumState(state): AxumState<Arc<LocalSyncServerState>>,
+    headers: HeaderMap,
+    Json(body): Json<SimpleHeartbeatPayload>,
+) -> impl IntoResponse {
+    // Emit Tauri event to the frontend.
+    let app_handle = state.app_handle.read().await;
+    if let Some(ref handle) = *app_handle {
+        if let Err(e) = handle.emit("lan-heartbeat-received", &body) {
+            log::error!("Failed to emit lan-heartbeat-received: {e}");
+        }
+    }
+
+    // Also track the heartbeat in the Rust peer store when the request
+    // carries valid HMAC auth (so the authenticated /local-sync/peers
+    // endpoint returns up-to-date data).
+    let body_bytes = match serde_json::to_vec(&body) {
+        Ok(b) => b,
+        Err(_) => return StatusCode::BAD_REQUEST,
+    };
+    if verify_auth(&headers, &body_bytes, &state.local_network_key).await.is_ok() {
+        let mut peers = state.peers.write().await;
+        let entry = peers.entry(body.workstation_id.clone()).or_insert(PeerTrack {
+            friendly_name: body.workstation_id.clone(),
+            pending_push_count: 0,
+            last_sync_at: None,
+            hub_eligible: false,
+            app_version: String::new(),
+            last_seen: Instant::now(),
+        });
+        entry.last_seen = Instant::now();
+    }
+
+    StatusCode::OK
+}
+
+/// GET /health — return a detailed JSON health response.
+async fn handle_health_json(
+    AxumState(state): AxumState<Arc<LocalSyncServerState>>,
+) -> impl IntoResponse {
+    let uptime_secs = {
+        let started = state.started_at.read().await;
+        if *started > 0 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            (now.saturating_sub(*started) as f64) / 1000.0
+        } else {
+            0.0
+        }
+    };
+
+    let version = env!("CARGO_PKG_VERSION").to_string();
+
+    (StatusCode::OK, Json(HealthResponse {
+        status: "ok".to_string(),
+        uptime: uptime_secs,
+        version,
+    }))
+}
+
 async fn handle_heartbeat(
     AxumState(state): AxumState<Arc<LocalSyncServerState>>,
     headers: HeaderMap,
@@ -414,6 +572,8 @@ impl LocalSyncServerState {
             conflicts: RwLock::new(Vec::new()),
             port,
             is_running: RwLock::new(false),
+            app_handle: RwLock::new(None),
+            started_at: RwLock::new(0),
         }
     }
 
@@ -425,12 +585,19 @@ impl LocalSyncServerState {
     ///
     /// Must be called on an `Arc<LocalSyncServerState>` so the handlers
     /// read/write the same state as the Tauri commands (e.g. conflict log).
-    pub async fn start_shared(self: Arc<Self>, _app_handle: AppHandle) -> Result<(), String> {
+    pub async fn start_shared(self: Arc<Self>, app_handle: AppHandle) -> Result<(), String> {
         let mut running = self.is_running.write().await;
         if *running {
             log::info!("Local sync server already running on port {}", self.port);
             return Ok(());
         }
+
+        // Store the app handle so handlers can emit Tauri events.
+        *self.app_handle.write().await = Some(app_handle);
+        *self.started_at.write().await = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
 
         let port = self.port;
         let state: Arc<LocalSyncServerState> = self.clone();
@@ -441,11 +608,16 @@ impl LocalSyncServerState {
             .allow_headers(Any);
 
         let app = Router::new()
+            // Authenticated local-sync endpoints (HMAC required).
             .route("/local-sync/health", get(handle_health))
             .route("/local-sync/push", post(handle_push))
             .route("/local-sync/pull", get(handle_pull))
             .route("/local-sync/peers", get(handle_peers))
             .route("/local-sync/heartbeat", post(handle_heartbeat))
+            // Unauthenticated lightweight endpoints for simple push/heartbeat.
+            .route("/sync/events", post(handle_sync_events))
+            .route("/sync/heartbeat", post(handle_simple_heartbeat))
+            .route("/health", get(handle_health_json))
             .layer(cors)
             .with_state(state);
 

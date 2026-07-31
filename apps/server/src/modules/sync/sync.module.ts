@@ -10,8 +10,12 @@ import { CatalogModule } from '@/modules/catalog/catalog.module';
 import { PurchasesModule } from '@/modules/purchases/purchases.module';
 import { SyncController } from './controllers/sync.controller';
 import { TerminalsController } from './controllers/terminals.controller';
+import { SyncEventController } from './controllers/sync-event.controller';
+import { HeartbeatController } from './controllers/heartbeat.controller';
 import { SyncService } from './services/sync.service';
 import { SyncHealthService } from './services/sync-health.service';
+import { SyncEventService } from './services/sync-event.service';
+import { WorkstationHeartbeatService } from './services/workstation-heartbeat.service';
 import { TerminalBackupService } from './services/terminal-backup.service';
 import { InvoiceTransmissionResultService } from './services/invoice-transmission-result.service';
 import { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
@@ -30,16 +34,25 @@ import { SyncAuthGuard } from './guards/sync-auth.guard';
     CatalogModule,
     PurchasesModule,
   ],
-  controllers: [SyncController, TerminalsController],
+  controllers: [SyncController, TerminalsController, SyncEventController, HeartbeatController],
   providers: [
     SyncService,
     SyncHealthService,
+    SyncEventService,
+    WorkstationHeartbeatService,
     SyncOperationDispatcherService,
     SyncProcessingJob,
     TerminalBackupService,
     InvoiceTransmissionResultService,
     SyncAuthGuard,
   ],
-  exports: [SyncService, SyncHealthService, TerminalBackupService, InvoiceTransmissionResultService],
+  exports: [
+    SyncService,
+    SyncHealthService,
+    SyncEventService,
+    WorkstationHeartbeatService,
+    TerminalBackupService,
+    InvoiceTransmissionResultService,
+  ],
 })
 export class SyncModule {}

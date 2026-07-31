@@ -23,4 +23,5 @@ model Lot {
   @@index([productId])
   @@index([productId, state])
   @@index([expirationDate])
+  @@index([updatedAt, id])
 }

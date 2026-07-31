@@ -35,6 +35,7 @@
 import { PrismaClient, Prisma } from '@pharmacy/database/local';
 import { isOnline } from '../../common/is-online';
 import {
+  getCatalogLastSyncedAt,
   setCatalogLastSyncedAt,
 } from '../../common/sync-metadata';
 
@@ -301,10 +302,51 @@ export class CatalogSyncService {
   }
 
   /**
-   * Fetch all products from the paginated server endpoint.
-   * Uses `pageSize: 200` to minimise round-trips.
+   * Fetch all products from the cursor-paginated sync endpoint.
+   *
+   * Uses `updatedSince` from the last sync timestamp to get only
+   * recently-modified products. Falls back to the legacy offset-paginated
+   * endpoint when the cursor-based endpoint is unavailable (backward
+   * compatibility with older server versions).
+   *
+   * Rate: up to 200 products per request (configurable via `limit`).
    */
   private async fetchAllProducts(authHeaders: Record<string, string>): Promise<unknown[]> {
+    const limit = 200;
+    const updatedSince = getCatalogLastSyncedAt();
+    const all: unknown[] = [];
+
+    let cursor: string | null = null;
+
+    while (true) {
+      let url = `${this.baseUrl}/catalog/products/sync?limit=${limit}`;
+      if (updatedSince) url += `&updatedSince=${encodeURIComponent(updatedSince)}`;
+      if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+
+      try {
+        const response = await this.http.get<{
+          items: unknown[];
+          nextCursor: string | null;
+          hasMore: boolean;
+        }>(url, authHeaders);
+
+        all.push(...response.items);
+        if (!response.hasMore || !response.nextCursor) break;
+        cursor = response.nextCursor;
+      } catch {
+        // Cursor endpoint unavailable — fall back to legacy offset pagination.
+        return this.fetchAllProductsLegacy(authHeaders);
+      }
+    }
+
+    return all;
+  }
+
+  /**
+   * Legacy fallback: offset-based product pull.
+   * Used when the server does not support the cursor-paginated endpoint.
+   */
+  private async fetchAllProductsLegacy(authHeaders: Record<string, string>): Promise<unknown[]> {
     const pageSize = 200;
     let page = 1;
     let totalPages = 1;
