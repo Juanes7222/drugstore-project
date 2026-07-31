@@ -10,10 +10,13 @@
  *   2. QuickActionsCard (role-gated shortcuts)
  *   3. Stats / role-specific panels below
  */
-import { type FC } from "react";
+import { type FC, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertTriangleIcon, ClockIcon, FileTextIcon, ShoppingCartIcon, UsersIcon, WifiIcon, WifiOffIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, ClockIcon, FileTextIcon, ShoppingCartIcon, UsersIcon, WifiOffIcon } from "@/components/ui/icons";
+import { WifiPulseIcon } from "@/components/ui/icons/animated";
+import { PrismaClient, SaleOperationalState, UserStatus } from "@pharmacy/database/local";
+import { getLocalDatabase } from "../../../infrastructure/local-database";
 import { useAppDispatch } from "@/store/hooks";
 import { navigateToSales } from "@/store/slices/ui-slice";
 import { useLocalSessionStore, hasMinRole } from "../../../domain/auth";
@@ -57,6 +60,52 @@ function subtitleKey(sessionRole: string): string {
 /** Stagger delay for entrance animations */
 const STAGGER_BASE = 0.06;
 
+/**
+ * Advisory counts for the Home stats section, loaded from the local database.
+ * Returns `undefined` until loaded (or on failure) so cards can keep their
+ * placeholder; both values resolve together. Kept out of the critical path
+ * — the dashboard renders immediately and the counts fill in when ready.
+ */
+function useHomeCounts(): {
+  todaySales: number | undefined;
+  activeUsers: number | undefined;
+} {
+  const [todaySales, setTodaySales] = useState<number | undefined>(undefined);
+  const [activeUsers, setActiveUsers] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { prisma } = await getLocalDatabase();
+        const db = prisma as PrismaClient;
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const [sales, users] = await Promise.all([
+          db.sale.count({
+            where: {
+              operationalState: SaleOperationalState.CONFIRMED,
+              confirmedAt: { gte: startOfToday },
+            },
+          }),
+          db.user.count({ where: { status: UserStatus.ACTIVE } }),
+        ]);
+        if (!cancelled) {
+          setTodaySales(sales);
+          setActiveUsers(users);
+        }
+      } catch {
+        // Advisory stat — keep the placeholder on failure.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { todaySales, activeUsers };
+}
+
 /* ──────────────────────────────────────────────────────────────── */
 /* Component                                                        */
 /* ──────────────────────────────────────────────────────────────── */
@@ -77,6 +126,7 @@ export const Home: FC = () => {
   // NOTE: MANAGER and ACCOUNTANT share hierarchy level 1, so hasMinRole(MANAGER)
   // returns true for both. We exclude ACCOUNTANT from full manager section.
   const isManagerOrAbove = hasMinRole(session, RoleType.MANAGER);
+  const { todaySales, activeUsers } = useHomeCounts();
 
   // If there's no session, render nothing (App.tsx handles redirect to login).
   if (!session) {
@@ -105,7 +155,8 @@ export const Home: FC = () => {
         label={t("home.today_stats")}
         value="—"
         icon={ShoppingCartIcon}
-        description={t("home.transactions") + ": 0"}
+        description={t("home.transactions") + ": " + (todaySales ?? 0)}
+        countUp={todaySales}
         numeric
       />
       <StatsCard
@@ -117,7 +168,7 @@ export const Home: FC = () => {
       <StatsCard
         label={t("home.sync_status")}
         value={isOnline ? t("sync.state_online") : t("sync.state_offline")}
-        icon={isOnline ? WifiIcon : WifiOffIcon}
+        icon={isOnline ? WifiPulseIcon : WifiOffIcon}
         description={
           isOnline
             ? t("home.sync_healthy")
@@ -166,11 +217,12 @@ export const Home: FC = () => {
         value="—"
         icon={UsersIcon}
         description={t("home.shift_status")}
+        countUp={activeUsers}
       />
       <StatsCard
         label={t("home.sync_status")}
         value={isOnline ? t("sync.state_online") : t("sync.state_offline")}
-        icon={isOnline ? WifiIcon : WifiOffIcon}
+        icon={isOnline ? WifiPulseIcon : WifiOffIcon}
         description={isOnline ? t("home.sync_healthy") : t("home.sync_offline")}
       />
       <StatsCard
@@ -198,7 +250,7 @@ export const Home: FC = () => {
       <StatsCard
         label={t("home.sync_status")}
         value={isOnline ? t("sync.state_online") : t("sync.state_offline")}
-        icon={isOnline ? WifiIcon : WifiOffIcon}
+        icon={isOnline ? WifiPulseIcon : WifiOffIcon}
         description={isOnline ? t("home.sync_healthy") : t("home.sync_offline")}
       />
     </motion.section>

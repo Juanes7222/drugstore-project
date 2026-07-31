@@ -8,8 +8,8 @@
  * the <ServiceProvider> wrapper so every page can call the real
  * Prisma-backed services instead of hardcoded mocks.
  */
-import { type FC, useEffect, useRef } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { type FC, useEffect, useMemo, useRef } from "react";
+import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { Toaster } from "sileo";
 import { AppShell } from "@/components/common/app-shell";
 import { DatabaseProof } from "@/components/DatabaseProof/database-proof";
@@ -58,6 +58,7 @@ import { ServiceProvider, useServiceContext } from "./components/common/service-
 import { AssistantLayer } from "./components/assistant/assistant-layer";
 import { useAppSelector } from "@/store/hooks";
 import { selectActiveScreen } from "@/store/slices/ui-slice";
+import type { PosScreen } from "@/store/slices/ui-types";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useRequireActiveShift } from "@/hooks/use-require-active-shift";
 import { ShiftRequiredOverlay } from "@/components/common/shift-required-overlay";
@@ -70,6 +71,51 @@ import { DB_PROOF_ENABLED } from "@infra/config";
 
 const SCREEN_TRANSITION_DURATION_S = 0.3;
 
+/**
+ * Navigation order for directional screen transitions.
+ *
+ * Screens earlier in the list are conceptually "to the left" of later ones.
+ * Moving forward (later index) slides the incoming screen in from the right;
+ * moving backward slides it in from the left. Screens not listed (auth
+ * screens) keep the default forward direction — they render outside the
+ * AnimatePresence router anyway.
+ */
+const SCREEN_ORDER: PosScreen[] = [
+  "home",
+  "sales",
+  "payment",
+  "receipt",
+  "prescriptions",
+  "cash-shift",
+  "returns",
+  "productos-main",
+  "products",
+  "inventory-lots",
+  "inventory-adjustments",
+  "purchases-main",
+  "suppliers",
+  "purchase-orders",
+  "purchase-receptions",
+  "supplier-returns",
+  "clients",
+  "sales-history",
+  "reports",
+  "admin-menu",
+  "fiscal",
+  "sync-health",
+  "local-network",
+  "recovery",
+  "about",
+  "user-management",
+  "audit-log",
+  "license-status",
+  "printing",
+  "printers",
+  "print-queue",
+  "setup-wizard",
+  "offline-sessions",
+];
+
 // ---------------------------------------------------------------------------
 // InnerApp — the actual screen router, rendered once ServiceProvider is ready
 // ---------------------------------------------------------------------------
@@ -78,6 +124,24 @@ const InnerApp: FC = () => {
   const activeScreen = useAppSelector(selectActiveScreen);
   const isOnline = useOnlineStatus();
   const shouldReduceMotion = useReducedMotion();
+
+  // Directional transitions — slides depend on whether the new screen sits
+  // before or after the previous one in the navigation order. The previous
+  // screen is tracked in a ref (updated after render) so the direction is
+  // computed for the exact transition being rendered.
+  const prevScreenRef = useRef<PosScreen>(activeScreen);
+  const navDirection = useMemo(() => {
+    const prevIdx = SCREEN_ORDER.indexOf(prevScreenRef.current);
+    const nextIdx = SCREEN_ORDER.indexOf(activeScreen);
+    if (prevIdx !== -1 && nextIdx !== -1 && prevIdx !== nextIdx) {
+      return nextIdx > prevIdx ? 1 : -1;
+    }
+    return 1;
+  }, [activeScreen]);
+
+  useEffect(() => {
+    prevScreenRef.current = activeScreen;
+  }, [activeScreen]);
 
   // Assistant layer renders overlays and registers global shortcuts.
   // Must be mounted at this level (inside ServiceProvider, outside screen router).
@@ -151,16 +215,18 @@ const InnerApp: FC = () => {
     svc.restoreLicense();
   }, [session?.accessToken]);
 
-  const variants = {
-    initial: shouldReduceMotion
-      ? { opacity: 0 }
-      : { opacity: 0, x: 24, scale: 0.99 },
+  const variants: Variants = {
+    initial: (direction: number) =>
+      shouldReduceMotion
+        ? { opacity: 0 }
+        : { opacity: 0, x: 24 * direction, scale: 0.99 },
     animate: shouldReduceMotion
       ? { opacity: 1 }
       : { opacity: 1, x: 0, scale: 1 },
-    exit: shouldReduceMotion
-      ? { opacity: 0 }
-      : { opacity: 0, x: -24, scale: 0.99 },
+    exit: (direction: number) =>
+      shouldReduceMotion
+        ? { opacity: 0 }
+        : { opacity: 0, x: -24 * direction, scale: 0.99 },
   };
 
   if (
@@ -382,12 +448,13 @@ const InnerApp: FC = () => {
         <NavigationSidebar />
 
         <div className="flex-1 overflow-hidden">
-          <AnimatePresence mode="wait" initial={false}>
+          <AnimatePresence mode="wait" initial={false} custom={navDirection}>
             {activeScreen === "home" && (
               <motion.div
                 key="home"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -405,6 +472,7 @@ const InnerApp: FC = () => {
                 key="sales"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -432,6 +500,7 @@ const InnerApp: FC = () => {
                 key="payment"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -449,6 +518,7 @@ const InnerApp: FC = () => {
                 key="receipt"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -466,6 +536,7 @@ const InnerApp: FC = () => {
                 key="cash-shift"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -483,6 +554,7 @@ const InnerApp: FC = () => {
                 key="clients"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -500,6 +572,7 @@ const InnerApp: FC = () => {
                 key="returns"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -517,6 +590,7 @@ const InnerApp: FC = () => {
                 key="inventory-adjustments"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -534,6 +608,7 @@ const InnerApp: FC = () => {
                 key="inventory-lots"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -551,6 +626,7 @@ const InnerApp: FC = () => {
                 key="productos-main"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -568,6 +644,7 @@ const InnerApp: FC = () => {
                 key="purchases-main"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -585,6 +662,7 @@ const InnerApp: FC = () => {
                 key="suppliers"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -602,6 +680,7 @@ const InnerApp: FC = () => {
                 key="purchase-orders"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -619,6 +698,7 @@ const InnerApp: FC = () => {
                 key="purchase-receptions"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -636,6 +716,7 @@ const InnerApp: FC = () => {
                 key="supplier-returns"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -653,6 +734,7 @@ const InnerApp: FC = () => {
                 key="reports"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -670,6 +752,7 @@ const InnerApp: FC = () => {
                 key="products"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -687,6 +770,7 @@ const InnerApp: FC = () => {
                 key="prescriptions"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -704,6 +788,7 @@ const InnerApp: FC = () => {
                 key="admin-menu"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -721,6 +806,7 @@ const InnerApp: FC = () => {
                 key="fiscal"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -738,6 +824,7 @@ const InnerApp: FC = () => {
                 key="sales-history"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -755,6 +842,7 @@ const InnerApp: FC = () => {
                 key="sync-health"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -772,6 +860,7 @@ const InnerApp: FC = () => {
                 key="recovery"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"
@@ -789,6 +878,7 @@ const InnerApp: FC = () => {
                 key="about"
                 className="h-full"
                 variants={variants}
+                custom={navDirection}
                 initial="initial"
                 animate="animate"
                 exit="exit"

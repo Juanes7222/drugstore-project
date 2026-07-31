@@ -18,6 +18,21 @@ import { useUserPreferencesStore } from "../../../stores/user-preferences.store"
 // Mocks
 // ---------------------------------------------------------------------------
 
+// Provide matchMedia so motion/react's useReducedMotion works in jsdom.
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
+
 // Mock the local database and sync metrics to avoid PGlite initialisation
 // in the badge polling effect.
 vi.mock(

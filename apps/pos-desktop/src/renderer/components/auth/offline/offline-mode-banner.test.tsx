@@ -51,8 +51,15 @@ vi.mock("motion/react", () => ({
       const { initial, animate, exit, transition, ...safeProps } = props;
       return <span {...safeProps}>{children}</span>;
     },
+    // The icon system renders every icon through motion.svg.
+    svg: ({ children, ...props }: any) => {
+      const { initial, animate, transition, ...safeProps } = props;
+      return <svg {...safeProps}>{children}</svg>;
+    },
   },
   AnimatePresence: ({ children }: any) => <>{children}</>,
+  // The icon system reads reduced-motion state through useReducedMotion.
+  useReducedMotion: () => false,
 }));
 
 // Mock hasMinRole and useLocalSessionStore

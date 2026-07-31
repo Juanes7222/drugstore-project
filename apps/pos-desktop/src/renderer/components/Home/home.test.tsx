@@ -15,6 +15,7 @@ import {
   useLocalSessionStore,
   type LocalSession,
 } from "../../../domain/auth";
+import { getLocalDatabase } from "../../../infrastructure/local-database";
 
 // ---------------------------------------------------------------------------
 // Stub browser APIs used by motion/react
@@ -41,6 +42,17 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
+
+// Mock the local database so the Home stats counts resolve deterministically
+// without PGlite initialisation in jsdom.
+vi.mock("../../../infrastructure/local-database", () => ({
+  getLocalDatabase: vi.fn().mockResolvedValue({
+    prisma: {
+      sale: { count: vi.fn().mockResolvedValue(0) },
+      user: { count: vi.fn().mockResolvedValue(0) },
+    },
+  }),
+}));
 
 // Control online status independently of navigator.onLine so tests are
 // deterministic and don't depend on the test runner's connectivity.
@@ -276,6 +288,26 @@ describe("Home", () => {
       expect(
         screen.queryByText("Actividad reciente"),
       ).not.toBeInTheDocument();
+    });
+
+    it("shows the loaded today-sales count on the stats card", async () => {
+      // Override the default zero-count mock so the real-data wiring is
+      // exercised end-to-end (countUp receives the loaded value).
+      vi.mocked(getLocalDatabase).mockResolvedValueOnce({
+        prisma: {
+          sale: { count: vi.fn().mockResolvedValue(12) },
+          user: { count: vi.fn().mockResolvedValue(0) },
+        },
+        // The component only reads `prisma`; the partial mock is cast to
+        // the full handle shape for typechecking.
+      } as unknown as Awaited<ReturnType<typeof getLocalDatabase>>);
+      renderHome();
+
+      // The description reflects the loaded count immediately (no
+      // animation), while the main value counts up toward it.
+      expect(
+        await screen.findByText(/transacciones: 12/i),
+      ).toBeInTheDocument();
     });
 
     it("does not show inventory section", () => {

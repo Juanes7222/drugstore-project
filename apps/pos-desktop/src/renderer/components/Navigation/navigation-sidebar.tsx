@@ -16,6 +16,7 @@
  */
 import { type FC, Fragment, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { motion, useReducedMotion } from "motion/react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { selectActiveScreen, setActiveScreen } from "@/store/slices/ui-slice";
 import type { PosScreen } from "@/store/slices/ui-types";
@@ -74,6 +75,10 @@ const CATEGORY_LABEL_KEY: Record<NavCategory, string> = {
   management: "navigation.category_management",
   system: "navigation.category_system",
 };
+
+// Rail widths in px — must match the .pos-sidebar base width in global.css.
+const SIDEBAR_WIDTH_COLLAPSED = 48;
+const SIDEBAR_WIDTH_EXPANDED = 200;
 
 // ── Nav icon adapters ────────────────────────────────────────────────
 // Wrap the reusable icon components in FC<{ className?: string }> to match
@@ -337,6 +342,7 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
   const pinned = useUserPreferencesStore((s) => s.sidebarPinned);
   const setSidebarPinned = useUserPreferencesStore((s) => s.setSidebarPinned);
   const isExpanded = alwaysExpanded || pinned || isHovered;
+  const shouldReduceMotion = useReducedMotion();
   const [badgeCount, setBadgeCount] = useState(0);
 
   useEffect(() => {
@@ -387,13 +393,21 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
   })).filter((group) => group.items.length > 0);
 
   return (
-    <nav
+    <motion.nav
       className="pos-sidebar"
       data-expanded={isExpanded}
       role="navigation"
       aria-label={t("navigation.label")}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      animate={{
+        width: isExpanded ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED,
+      }}
+      transition={
+        shouldReduceMotion
+          ? { duration: 0 }
+          : { type: "spring", stiffness: 380, damping: 34, mass: 0.8 }
+      }
     >
       <ul className="pos-sidebar__list" role="menubar" aria-orientation="vertical">
         {groupedCategories.map(({ category, items }) => (
@@ -423,6 +437,18 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
                     className={`pos-sidebar__item ${isActive ? "pos-sidebar__item--active" : ""}`}
                     onClick={() => handleNav(item.screen)}
                   >
+                    {isActive && (
+                      <motion.span
+                        layoutId="pos-sidebar-active-indicator"
+                        className="pos-sidebar__active-indicator"
+                        transition={
+                          shouldReduceMotion
+                            ? { duration: 0 }
+                            : { type: "spring", stiffness: 480, damping: 40 }
+                        }
+                        aria-hidden="true"
+                      />
+                    )}
                     <div className="pos-sidebar__item-icon-wrapper">
                       <Icon className="pos-sidebar__item-icon" />
                       {item.screen === "sync-health" && badgeCount > 0 && (
@@ -476,6 +502,6 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
           </button>
         </div>
       )}
-    </nav>
+    </motion.nav>
   );
 };

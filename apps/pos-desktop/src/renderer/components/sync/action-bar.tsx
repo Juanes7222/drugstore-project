@@ -12,7 +12,7 @@ import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import { CheckCircleIcon, FileDownIcon, FileJsonIcon, RadioIcon, RefreshCwIcon, XCircleIcon } from "@/components/ui/icons";
-import { LoaderIcon } from "@/components/ui/icons/animated";
+import { SyncPulseIcon } from "@/components/ui/icons/animated";
 import type { ConnectionStatus } from "./sync-health.types";
 import { AuthStatusBadge } from "./auth-status-badge";
 
@@ -95,7 +95,7 @@ export const ActionBar: FC<ActionBarProps> = ({
         className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-body-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2 ${testBtnStyle}`}
       >
         {isTesting ? (
-          <LoaderIcon className="h-4 w-4 animate-spin" aria-hidden="true" />
+          <SyncPulseIcon className="h-4 w-4" aria-hidden="true" />
         ) : isReachable ? (
           <CheckCircleIcon className="h-4 w-4" aria-hidden="true" />
         ) : isUnreachable ? (

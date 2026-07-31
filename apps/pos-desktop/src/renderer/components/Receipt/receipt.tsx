@@ -45,7 +45,8 @@ import type {
   InvoicePayment,
   InvoiceTaxSummary,
 } from "../../../domain/fiscal/fiscal-types";
-import { CheckIcon, PrinterIcon } from "@/components/ui/icons";
+import { PrinterIcon } from "@/components/ui/icons";
+import { SuccessCheckIcon } from "@/components/ui/icons/animated";
 
 const COMPLETING_ENTRY_DURATION_S = 0.35;
 
@@ -240,7 +241,7 @@ export const Receipt: FC = () => {
               "color-mix(in srgb, var(--color-pharma) 12%, transparent)",
           }}
         >
-          <CheckIcon className="h-5 w-5" color="var(--color-pharma)" strokeWidth={2.5} />
+          <SuccessCheckIcon size={20} color="var(--color-pharma)" strokeWidth={2.5} />
         </div>
 
         <h2

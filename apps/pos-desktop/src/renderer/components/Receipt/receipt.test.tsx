@@ -52,6 +52,30 @@ vi.mock("motion/react", () => ({
       }
       return <section {...props}>{children}</section>;
     },
+    // Pass-through for SVG motion elements used by the animated icons
+    // (SuccessCheckIcon draws its checkmark stroke).
+    path: ({
+      children,
+      initial: _initial,
+      animate: _animate,
+      transition: _transition,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => <path {...props}>{children}</path>,
+    // The icon system renders every icon through motion.svg for its
+    // entrance pop, so the mock needs an svg passthrough as well.
+    svg: ({
+      children,
+      initial: _initial,
+      animate: _animate,
+      transition: _transition,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      [key: string]: unknown;
+    }) => <svg {...props}>{children}</svg>,
   },
   useReducedMotion: vi.fn(() => false),
 }));

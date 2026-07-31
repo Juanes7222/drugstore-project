@@ -241,12 +241,32 @@
     border-radius: var(--radius-pos);
     border: 1px solid transparent;
     cursor: pointer;
-    transition: filter 150ms ease, background-color 150ms ease;
+    will-change: transform;
+    transition:
+      filter 150ms ease,
+      background-color 150ms ease,
+      box-shadow 150ms ease,
+      transform 100ms ease;
+
+    /* Press feedback — a quick squash that returns via the transition above */
+    &:active:not(:disabled) {
+      transform: scale(0.97);
+    }
 
     &:disabled {
       opacity: 0.5;
       cursor: not-allowed;
     }
+  }
+
+  /* Icon micro-interaction — the leading icon pops on hover (never spinners) */
+  @keyframes pos-button-icon-pop {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.12); }
+  }
+
+  .pos-button:hover:not(:disabled) > svg:not(.animate-spin) {
+    animation: pos-button-icon-pop 300ms ease;
   }
 
   .pos-button-primary {
@@ -255,6 +275,7 @@
 
     &:hover:not(:disabled) {
       filter: brightness(1.05);
+      box-shadow: var(--shadow-pos-elevated);
     }
   }
 
@@ -265,6 +286,7 @@
 
     &:hover:not(:disabled) {
       background-color: var(--color-surface);
+      box-shadow: var(--shadow-pos-panel);
     }
   }
 
@@ -503,20 +525,19 @@
    * Slim left-hand navigation. Collapsed at 48px, expands to 200px
    * on hover. Each item is a full-width button with an icon and label.
    */
+  /*
+   * Width animation is driven by Framer Motion on <motion.nav> (spring,
+   * respects prefers-reduced-motion). 48px is the base / fallback width.
+   */
   .pos-sidebar {
     display: flex;
     flex-direction: column;
     width: 48px;
     overflow: hidden;
-    transition: width 200ms ease;
     border-right: 1px solid color-mix(in srgb, var(--color-ink) 8%, transparent);
     background-color: var(--color-panel);
     flex-shrink: 0;
     min-height: 0;
-  }
-
-  .pos-sidebar[data-expanded="true"] {
-    width: 200px;
   }
 
   /* Scrollable item list — clips gracefully on short windows */
@@ -625,6 +646,7 @@
   }
 
   .pos-sidebar__item {
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--spacing-pos-md);
@@ -643,6 +665,16 @@
     transition: background-color 100ms ease, color 100ms ease;
   }
 
+  /* Icon nudge on hover — subtle forward push for the active motion language */
+  @keyframes pos-sidebar-icon-nudge {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(2px); }
+  }
+
+  .pos-sidebar__item:hover .pos-sidebar__item-icon {
+    animation: pos-sidebar-icon-nudge 400ms ease;
+  }
+
   .pos-sidebar__item:hover {
     background-color: color-mix(in srgb, var(--color-surface) 60%, white);
     color: var(--color-ink);
@@ -652,7 +684,20 @@
     background-color: color-mix(in srgb, var(--color-pharma) 10%, white);
     color: var(--color-pharma);
     font-weight: var(--font-weight-semibold);
-    border-right: 3px solid var(--color-pharma);
+  }
+
+  /*
+   * Animated active-item indicator — a motion.span with layoutId that
+   * slides between nav items when the active screen changes.
+   */
+  .pos-sidebar__active-indicator {
+    position: absolute;
+    right: 0;
+    top: var(--spacing-pos-sm);
+    bottom: var(--spacing-pos-sm);
+    width: 3px;
+    border-radius: 2px;
+    background-color: var(--color-pharma);
   }
 
   .pos-sidebar__item-icon {
