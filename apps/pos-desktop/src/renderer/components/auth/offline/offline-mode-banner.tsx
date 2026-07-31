@@ -15,6 +15,7 @@ import { useAppSelector } from '@/store/hooks';
 import { selectConnectionState } from '@/store/slices/offline-auth-slice';
 import { useLocalSessionStore, hasMinRole } from '../../../../domain/auth';
 import { RoleType } from '@pharmacy/shared-types';
+import { WifiOffIcon, XIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -66,21 +67,7 @@ export const OfflineModeBanner: FC = () => {
               transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
             />
           ) : (
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M1 10.5a5 5 0 0 1 7.5-4.3m-3 8.3A5 5 0 0 1 8 3c2.1 0 3.9 1.3 4.7 3.1M13 13a3 3 0 1 0-6 0m6 0a3 3 0 0 0-6 0m6 0h3m-9 0H1"
-                stroke="currentColor"
-                strokeWidth="1.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <WifiOffIcon size={16} strokeWidth={1.2} />
           )}
         </span>
 
@@ -102,20 +89,7 @@ export const OfflineModeBanner: FC = () => {
             className="flex-shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-full hover:opacity-70 transition-opacity"
             aria-label={t('offline_banner.dismiss', 'Descartar')}
           >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 14 14"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M1 1l12 12M13 1L1 13"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
+            <XIcon size={14} strokeWidth={1.5} />
           </button>
         )}
       </motion.div>

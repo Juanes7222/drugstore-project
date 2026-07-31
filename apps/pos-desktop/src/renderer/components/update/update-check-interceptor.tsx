@@ -16,7 +16,7 @@
 
 import { type FC, useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Package, AlertTriangle } from 'lucide-react';
+import { AlertTriangleIcon, PackageIcon } from "@/components/ui/icons";
 import { useUpdateService } from '../common/service-context';
 import { useUpdateStore } from '../../../domain/updates/update.store';
 import { getLocalDatabase } from '../../../infrastructure/local-database';
@@ -122,7 +122,7 @@ export const UpdateCheckInterceptor: FC = () => {
             notify.action({
               title: t('update.toast.hotfix_available', { version }),
               description: t('update.toast.install_on_close'),
-              icon: <AlertTriangle size={20} />,
+              icon: <AlertTriangleIcon size={20} />,
               duration: null,
               action: {
                 title: t('update.toast.view_details'),
@@ -138,7 +138,7 @@ export const UpdateCheckInterceptor: FC = () => {
             // OPTIONAL — auto-dismissing info toast with action
             notify.show({
               type: 'info',
-              icon: <Package size={20} />,
+              icon: <PackageIcon size={20} />,
               title: t('update.toast.optional_available', { version }),
               description: t('update.toast.install_on_close'),
               duration: 8000,

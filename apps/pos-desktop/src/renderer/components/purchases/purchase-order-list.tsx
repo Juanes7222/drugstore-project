@@ -18,7 +18,7 @@ import {
   TableSkeletonRows,
   TablePagination,
 } from './purchases-helpers';
-import { Eye } from 'lucide-react';
+import { EyeIcon } from "@/components/ui/icons";
 
 export interface PurchaseOrderListProps {
   orders: PurchaseOrderResult[];
@@ -136,7 +136,7 @@ export const PurchaseOrderList: FC<PurchaseOrderListProps> = ({
                         className="inline-flex items-center gap-1 text-pharma hover:text-pharma/80 text-xs font-semibold transition-colors"
                         aria-label={`${t('purchases.orders.viewOrder')} #${o.sequentialNumber}`}
                       >
-                        <Eye size={14} aria-hidden="true" />
+                        <EyeIcon size={14} aria-hidden="true" />
                         {t('common.edit')}
                       </button>
                     </td>

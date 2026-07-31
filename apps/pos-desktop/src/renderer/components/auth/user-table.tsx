@@ -19,6 +19,7 @@ import {
   isDeletedUser,
 } from "./user-management.helpers";
 import type { UserRow } from "./user-management.types";
+import { ChevronDownIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -133,16 +134,7 @@ export const UserTable: FC<UserTableProps> = ({
               </option>
             ))}
           </select>
-          <svg
-            className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-            aria-hidden="true"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
+          <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
         </div>
 
         <div className="relative">
@@ -159,16 +151,7 @@ export const UserTable: FC<UserTableProps> = ({
               </option>
             ))}
           </select>
-          <svg
-            className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-            aria-hidden="true"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
+          <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
         </div>
       </div>
 

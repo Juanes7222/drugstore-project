@@ -9,11 +9,11 @@
 
 import { type FC, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Server, ArrowUpFromLine } from 'lucide-react';
+import { ArrowUpFromLineIcon, ServerIcon } from "@/components/ui/icons";
 import { useLocalSync } from '../../hooks/use-local-sync';
 import { useAppDispatch } from '../../store/hooks';
 import { navigateToLocalNetwork } from '../../store/slices/ui-slice';
-import { HubStatusIcon } from './hub-status-icon';
+import { HubStatusIcon } from "@/components/ui/icons/animated";
 
 // ---------------------------------------------------------------------------
 // Style helpers
@@ -109,7 +109,7 @@ export const LocalSyncBanner: FC = () => {
         {isThisWorkstationHub && (
           <>
             <HubStatusIcon status="connected" size={14} ariaLabel="" />
-            <Server size={12} strokeWidth={2} />
+            <ServerIcon size={12} strokeWidth={2} />
           </>
         )}
         {isReconnecting && (
@@ -119,7 +119,7 @@ export const LocalSyncBanner: FC = () => {
           <HubStatusIcon status="disconnected" size={14} ariaLabel="" />
         )}
         {hasPendingOps && !isDisconnected && (
-          <ArrowUpFromLine size={12} strokeWidth={2} className="text-amber-600" />
+          <ArrowUpFromLineIcon size={12} strokeWidth={2} className="text-amber-600" />
         )}
         {isConnected && !hasPendingOps && !isThisWorkstationHub && (
           <HubStatusIcon status="connected" size={14} ariaLabel="" />

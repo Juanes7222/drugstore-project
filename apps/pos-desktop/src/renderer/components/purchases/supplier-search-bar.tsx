@@ -14,7 +14,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search } from 'lucide-react';
+import { SearchIcon } from "@/components/ui/icons";
 import { XIcon } from "@/components/ui/icons";
 
 export interface SupplierSearchBarProps {
@@ -85,7 +85,7 @@ export const SupplierSearchBar: FC<SupplierSearchBarProps> = ({
           style={{ color: 'color-mix(in srgb, var(--color-ink) 40%, transparent)' }}
           aria-hidden="true"
         >
-          <Search size={14} aria-hidden="true" />
+          <SearchIcon size={14} aria-hidden="true" />
         </span>
 
         <input

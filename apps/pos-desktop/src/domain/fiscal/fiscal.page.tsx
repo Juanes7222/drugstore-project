@@ -37,6 +37,7 @@ import { OperationalInvoiceDetailPanel } from "../../renderer/components/fiscal/
 import { AdjustmentHistoryPanel } from "../../renderer/components/fiscal/adjustment-history-panel";
 import { AdjustmentCreationModal } from "../../renderer/components/fiscal/adjustment-creation-modal";
 import { FiscalHeader } from "../../renderer/components/fiscal/fiscal-header";
+import { XIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -320,17 +321,7 @@ export const FiscalPage: FC = () => {
                   onClick={handleCloseDetail}
                   aria-label={t("common.close")}
                 >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    aria-hidden="true"
-                  >
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
+                  <XIcon size={20} />
                 </button>
               </div>
             </div>

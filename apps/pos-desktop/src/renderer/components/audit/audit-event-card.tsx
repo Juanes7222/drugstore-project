@@ -9,7 +9,7 @@
  */
 import { type FC, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDownIcon, ChevronRightIcon } from "@/components/ui/icons";
 import {
   getEventConfig,
   getCategoryColor,
@@ -560,9 +560,9 @@ export const AuditEventCard: FC<AuditEventCardProps> = ({ log }) => {
             aria-label={expanded ? t('audit_log.collapse_details') : t('audit_log.expand_details')}
           >
             {expanded ? (
-              <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" />
+              <ChevronDownIcon size={12} strokeWidth={1.5} aria-hidden="true" />
             ) : (
-              <ChevronRight size={12} strokeWidth={1.5} aria-hidden="true" />
+              <ChevronRightIcon size={12} strokeWidth={1.5} aria-hidden="true" />
             )}
             <span>{expanded ? t('audit_log.collapse_details') : t('audit_log.expand_details')}</span>
           </button>

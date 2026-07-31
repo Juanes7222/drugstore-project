@@ -131,7 +131,7 @@ describe("LicenseCheckinPanel", () => {
       expect(screen.getByText("Fin del período de gracia:")).toBeInTheDocument();
       expect(screen.getByText("5 días restantes")).toBeInTheDocument();
 
-      const triangleIcon = document.querySelector("svg.lucide-triangle-alert");
+      const triangleIcon = document.querySelector("svg[data-icon=\"alert-triangle\"]");
       expect(triangleIcon).toBeInTheDocument();
       expect(triangleIcon).toHaveAttribute("aria-hidden", "true");
     });
@@ -192,7 +192,7 @@ describe("LicenseCheckinPanel", () => {
     it("shows CheckCircle2 icon for active healthy status", () => {
       render(<LicenseCheckinPanel {...defaultProps()} />);
 
-      const checkIcon = document.querySelector("svg.lucide-circle-check");
+      const checkIcon = document.querySelector("svg[data-icon=\"check-circle\"]");
       expect(checkIcon).toBeInTheDocument();
     });
 
@@ -237,7 +237,7 @@ describe("LicenseCheckinPanel", () => {
         screen.getByText("Historial de check-in"),
       ).toBeInTheDocument();
 
-      const headerIcon = document.querySelector("svg.lucide-history");
+      const headerIcon = document.querySelector("svg[data-icon=\"history\"]");
       expect(headerIcon).toBeInTheDocument();
       expect(headerIcon).toHaveAttribute("aria-hidden", "true");
     });

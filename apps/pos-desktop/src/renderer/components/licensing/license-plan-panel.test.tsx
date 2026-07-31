@@ -40,7 +40,7 @@ describe("LicensePlanPanel", () => {
 
       expect(screen.getByText("Plan contratado")).toBeInTheDocument();
 
-      const headerIcon = document.querySelector("svg.lucide-circle-check");
+      const headerIcon = document.querySelector("svg[data-icon=\"check-circle\"]");
       expect(headerIcon).toBeInTheDocument();
       expect(headerIcon).toHaveAttribute("aria-hidden", "true");
     });
@@ -131,7 +131,7 @@ describe("LicensePlanPanel", () => {
     it("renders Building2 icon in capacity section", () => {
       render(<LicensePlanPanel {...defaultProps()} />);
 
-      const buildingIcon = document.querySelector("svg.lucide-building-2");
+      const buildingIcon = document.querySelector("svg[data-icon=\"building-2\"]");
       expect(buildingIcon).toBeInTheDocument();
       expect(buildingIcon).toHaveAttribute("aria-hidden", "true");
     });
@@ -139,7 +139,7 @@ describe("LicensePlanPanel", () => {
     it("renders Monitor icon in capacity section", () => {
       render(<LicensePlanPanel {...defaultProps()} />);
 
-      const monitorIcon = document.querySelector("svg.lucide-monitor");
+      const monitorIcon = document.querySelector("svg[data-icon=\"monitor\"]");
       expect(monitorIcon).toBeInTheDocument();
       expect(monitorIcon).toHaveAttribute("aria-hidden", "true");
     });
@@ -165,7 +165,7 @@ describe("LicensePlanPanel", () => {
       expect(screen.getByText("Reportes avanzados")).toBeInTheDocument();
 
       // Each feature should have a CheckCircle2 icon
-      const checkIcons = document.querySelectorAll("svg.lucide-circle-check");
+      const checkIcons = document.querySelectorAll("svg[data-icon=\"check-circle\"]");
       // One for the header, plus one per feature = 3
       expect(checkIcons.length).toBe(3);
     });
@@ -178,7 +178,7 @@ describe("LicensePlanPanel", () => {
         />,
       );
 
-      const featureIcons = document.querySelectorAll("svg.lucide-circle-check");
+      const featureIcons = document.querySelectorAll("svg[data-icon=\"check-circle\"]");
       featureIcons.forEach((icon) => {
         expect(icon).toHaveAttribute("aria-hidden", "true");
       });

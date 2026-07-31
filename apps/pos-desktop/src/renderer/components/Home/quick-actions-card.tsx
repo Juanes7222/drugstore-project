@@ -8,17 +8,8 @@
  */
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  ShoppingCart,
-  RefreshCw,
-  Package,
-  Search,
-  Users,
-  Settings,
-  FileText,
-  Activity,
-  type LucideIcon,
-} from "lucide-react";
+import { ActivityIcon, FileTextIcon, PackageIcon, RefreshCwIcon, SearchIcon, SettingsIcon, ShoppingCartIcon, UsersIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { useAppDispatch } from "@/store/hooks";
 import {
   navigateToSales,
@@ -35,7 +26,7 @@ import { RoleType } from "@pharmacy/shared-types";
 interface QuickAction {
   id: string;
   labelKey: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   roles: RoleType[];
   onClick: () => void;
 }
@@ -65,21 +56,21 @@ export const QuickActionsCard: FC<QuickActionsCardProps> = ({ className = "" }) 
     {
       id: "new-sale",
       labelKey: "home.new_sale",
-      icon: ShoppingCart,
+      icon: ShoppingCartIcon,
       roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
       onClick: goToSales,
     },
     {
       id: "new-return",
       labelKey: "home.new_return",
-      icon: RefreshCw,
+      icon: RefreshCwIcon,
       roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
       onClick: goToReturns,
     },
     {
       id: "inventory",
       labelKey: "home.inventory",
-      icon: Package,
+      icon: PackageIcon,
       roles: [
         RoleType.INVENTORY_ASSISTANT,
         RoleType.MANAGER,
@@ -91,35 +82,35 @@ export const QuickActionsCard: FC<QuickActionsCardProps> = ({ className = "" }) 
     {
       id: "search-product",
       labelKey: "home.search_product",
-      icon: Search,
+      icon: SearchIcon,
       roles: [RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.OWNER],
       onClick: goToSales,
     },
     {
       id: "users",
       labelKey: "home.users",
-      icon: Users,
+      icon: UsersIcon,
       roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
       onClick: goToUsers,
     },
     {
       id: "audit",
       labelKey: "home.audit",
-      icon: FileText,
+      icon: FileTextIcon,
       roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
       onClick: goToAudit,
     },
     {
       id: "sync",
       labelKey: "home.sync_status",
-      icon: Activity,
+      icon: ActivityIcon,
       roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
       onClick: goToSync,
     },
     {
       id: "config",
       labelKey: "home.config",
-      icon: Settings,
+      icon: SettingsIcon,
       roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
       onClick: goToConfig,
     },

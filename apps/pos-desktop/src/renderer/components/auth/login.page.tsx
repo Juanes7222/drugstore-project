@@ -27,6 +27,7 @@ import { ManualLoginForm } from './manual-login-form';
 import { SelectedUserCredential } from './selected-user-credential';
 import { ErrorBanner } from './error-banner';
 import { TwoFactorModal } from './two-factor-modal';
+import { WifiIcon } from "@/components/ui/icons";
 
 export const LoginPage: FC = () => {
   const { t } = useTranslation();
@@ -178,22 +179,7 @@ export const LoginPage: FC = () => {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
-                className="shrink-0"
-              >
-                <path
-                  d="M1 10.5a5 5 0 0 1 7.5-4.3m-3 8.3A5 5 0 0 1 8 3c2.1 0 3.9 1.3 4.7 3.1M13 13a3 3 0 1 0-6 0m6 0a3 3 0 0 0-6 0"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <WifiIcon size={14} strokeWidth={1.2} className="shrink-0" />
               <span>
                 {t(
                   'offline_login.banner',

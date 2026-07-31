@@ -7,7 +7,7 @@
 import { type FC, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
-import { Eye, Bookmark, RotateCcw, Plus, X } from 'lucide-react';
+import { BookmarkIcon, EyeIcon, PlusIcon, RotateCcwIcon, XIcon } from "@/components/ui/icons";
 import {
   useTenantConfig,
   PRESET_LIST,
@@ -248,7 +248,7 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
             whileTap={{ scale: 0.97 }}
             transition={{ duration: 0.1 }}
           >
-            <RotateCcw size={14} strokeWidth={1.5} aria-hidden="true" />
+            <RotateCcwIcon size={14} strokeWidth={1.5} aria-hidden="true" />
             {t('config.presets.reset_all')}
           </motion.button>
         )}
@@ -364,7 +364,7 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
               onClick={() => setCustomToggleEditorOpen(true)}
               className="pos-button pos-button-primary gap-pos-xs"
             >
-              <Plus size={14} strokeWidth={1.5} aria-hidden="true" />
+              <PlusIcon size={14} strokeWidth={1.5} aria-hidden="true" />
               {t('config.custom_toggles.add')}
             </button>
           )}
@@ -407,7 +407,7 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
                     className="pos-button pos-button-secondary p-1.5 hover:bg-error-container hover:text-error focus-visible:outline-error"
                     aria-label={`${t('config.custom_fields.remove')} ${toggle.name}`}
                   >
-                    <X size={14} strokeWidth={1.5} aria-hidden="true" />
+                    <XIcon size={14} strokeWidth={1.5} aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -424,7 +424,7 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
           onClick={() => setPreviewOpen(true)}
           className="pos-button pos-button-secondary gap-pos-xs"
         >
-          <Eye size={14} strokeWidth={1.5} aria-hidden="true" />
+          <EyeIcon size={14} strokeWidth={1.5} aria-hidden="true" />
           {t('config.preview.title')}
         </button>
 
@@ -433,7 +433,7 @@ export const StrictnessSection: FC<StrictnessSectionProps> = ({
             type="button"
             className="pos-button pos-button-primary gap-pos-xs"
           >
-            <Bookmark size={14} strokeWidth={1.5} aria-hidden="true" />
+            <BookmarkIcon size={14} strokeWidth={1.5} aria-hidden="true" />
             {t('config.named_presets.save')}
           </button>
         )}

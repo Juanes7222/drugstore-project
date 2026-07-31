@@ -40,6 +40,7 @@ import {
 import { getTenantInfo } from "../../../domain/configuration/local-config.store";
 import { generateReceiptHtml, printReceipt } from "../../../domain/fiscal/receipt-generator";
 import type {
+import { CheckIcon, PrinterIcon } from "@/components/ui/icons";
   InvoiceFullData,
   InvoiceLineItem,
   InvoicePayment,
@@ -239,17 +240,7 @@ export const Receipt: FC = () => {
               "color-mix(in srgb, var(--color-pharma) 12%, transparent)",
           }}
         >
-          <svg
-            className="h-5 w-5"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="var(--color-pharma)"
-            strokeWidth={2.5}
-            aria-hidden="true"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
+          <CheckIcon className="h-5 w-5" color="var(--color-pharma)" strokeWidth={2.5} />
         </div>
 
         <h2
@@ -292,17 +283,7 @@ export const Receipt: FC = () => {
           disabled={!receiptHtml}
           className="pos-button pos-button-secondary w-full"
         >
-          <svg
-            className="mr-2 inline h-4 w-4"
-            xmlns="http://www.w3.org/2000/svg"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-            aria-hidden="true"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-          </svg>
+          <PrinterIcon className="mr-2 inline h-4 w-4" />
           {t("receipt.print")}
         </button>
         <button

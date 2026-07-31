@@ -17,6 +17,7 @@ import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
 import { createAuthService } from '../../../domain/auth/auth.service';
 import { InvalidCredentialsException } from '../../../domain/auth/exceptions';
 import { API_BASE_URL } from '@infra/config';
+import { ChevronDownIcon } from "@/components/ui/icons";
 
 interface QuickUser {
   id: string;
@@ -252,21 +253,7 @@ export const QuickSwitch: FC = () => {
         >
           {session.displayName || session.fullName}
         </span>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          style={{
-            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.15s',
-            color: 'var(--color-ink-muted)',
-          }}
-        >
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        <ChevronDownIcon size={12} style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s', color: 'var(--color-ink-muted)' }} />
       </button>
 
       {/* Dropdown */}

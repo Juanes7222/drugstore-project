@@ -12,7 +12,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2 } from 'lucide-react';
+import { PlusIcon, Trash2Icon } from "@/components/ui/icons";
 import type { CreateSupplierReturnInput } from '../../../domain/purchases';
 import { SearchableSelect, type SearchableSelectOption } from './searchable-select';
 
@@ -187,7 +187,7 @@ export const SupplierReturnForm: FC<SupplierReturnFormProps> = ({
             disabled={isSaving || !data.supplierId}
             className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-pharma/10 text-pharma rounded hover:bg-pharma/20 transition-colors font-semibold"
           >
-            <Plus size={14} aria-hidden="true" />
+            <PlusIcon size={14} aria-hidden="true" />
             {t('purchases.supplierReturns.addItem')}
           </button>
         </div>
@@ -240,7 +240,7 @@ export const SupplierReturnForm: FC<SupplierReturnFormProps> = ({
                   className="pt-1 text-error/60 hover:text-error transition-colors shrink-0"
                   aria-label={t('common.remove')}
                 >
-                  <Trash2 size={14} aria-hidden="true" />
+                  <Trash2Icon size={14} aria-hidden="true" />
                 </button>
               </div>
             ))}

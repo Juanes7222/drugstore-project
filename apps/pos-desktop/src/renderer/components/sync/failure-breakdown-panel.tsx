@@ -12,7 +12,7 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangleIcon } from "@/components/ui/icons";
 import type { FailureBreakdownEntry } from "../../../domain/sync/sync-metrics.service";
 import { formatRelativeTimeEs } from "../../hooks/use-relative-time";
 
@@ -70,7 +70,7 @@ export const FailureBreakdownPanel: FC<FailureBreakdownPanelProps> = ({
                     : "bg-surface text-ink hover:bg-surface-variant focus:ring-pharma"
                 }`}
               >
-                <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+                <AlertTriangleIcon className="h-3.5 w-3.5" aria-hidden="true" />
                 <span>{t(`sync.failure_cat.${entry.category}`, { defaultValue: entry.category })}</span>
                 <span
                   className={`inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-caption font-bold tabular-nums ${

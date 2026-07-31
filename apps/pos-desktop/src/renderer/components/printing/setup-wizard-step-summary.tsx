@@ -9,6 +9,7 @@ import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import type { WizardState } from './setup-wizard.page';
+import { BookIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -201,23 +202,7 @@ export const SetupWizardStepSummary: FC<
 
               {/* Fallback */}
               <div className="mt-2 flex items-center gap-1.5 text-caption text-ink-muted">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20" />
-                  <path d="M4 15h1" />
-                  <path d="M8 15h1" />
-                  <path d="M12 15h1" />
-                </svg>
+                <BookIcon size={12} />
                 <span>
                   {t(
                     'printing.wizard.summary.fallback_label',

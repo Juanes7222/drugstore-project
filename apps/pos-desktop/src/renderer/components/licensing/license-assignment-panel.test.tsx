@@ -41,7 +41,7 @@ describe("LicenseAssignmentPanel", () => {
 
       expect(screen.getByText("Asignación")).toBeInTheDocument();
 
-      const headerIcon = document.querySelector("svg.lucide-store");
+      const headerIcon = document.querySelector("svg[data-icon=\"store\"]");
       expect(headerIcon).toBeInTheDocument();
       expect(headerIcon).toHaveAttribute("aria-hidden", "true");
     });
@@ -170,7 +170,7 @@ describe("LicenseAssignmentPanel", () => {
     it("renders Monitor icon for workstation", () => {
       render(<LicenseAssignmentPanel {...defaultProps()} />);
 
-      const monitorIcon = document.querySelector("svg.lucide-monitor");
+      const monitorIcon = document.querySelector("svg[data-icon=\"monitor\"]");
       expect(monitorIcon).toBeInTheDocument();
       expect(monitorIcon).toHaveAttribute("aria-hidden", "true");
     });
@@ -178,7 +178,7 @@ describe("LicenseAssignmentPanel", () => {
     it("renders Calendar icon when activatedAt is present", () => {
       render(<LicenseAssignmentPanel {...defaultProps()} />);
 
-      const calendarIcon = document.querySelector("svg.lucide-calendar");
+      const calendarIcon = document.querySelector("svg[data-icon=\"calendar\"]");
       expect(calendarIcon).toBeInTheDocument();
       expect(calendarIcon).toHaveAttribute("aria-hidden", "true");
     });

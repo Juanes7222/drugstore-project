@@ -7,7 +7,7 @@
 
 import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Package } from 'lucide-react';
+import { ArrowLeftIcon, PackageIcon } from "@/components/ui/icons";
 import type { PurchaseOrderResult } from '../../../domain/purchases';
 import {
   formatCOP,
@@ -46,10 +46,10 @@ export const PurchaseOrderDetail: FC<PurchaseOrderDetailProps> = ({
   if (!order) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-ink-muted">
-        <Package size={32} aria-hidden="true" />
+        <PackageIcon size={32} aria-hidden="true" />
         <p className="mt-2 text-sm">{t('purchases.orders.orderNotFound')}</p>
         <button onClick={onBack} className="mt-3 inline-flex items-center gap-1 text-pharma text-sm hover:underline">
-          <ArrowLeft size={14} aria-hidden="true" />
+          <ArrowLeftIcon size={14} aria-hidden="true" />
           {t('common.back')}
         </button>
       </div>
@@ -68,7 +68,7 @@ export const PurchaseOrderDetail: FC<PurchaseOrderDetailProps> = ({
             className="text-ink-muted hover:text-ink transition-colors"
             aria-label={t('common.back')}
           >
-            <ArrowLeft size={20} aria-hidden="true" />
+            <ArrowLeftIcon size={20} aria-hidden="true" />
           </button>
           <div>
             <h2 className="pos-page-title">

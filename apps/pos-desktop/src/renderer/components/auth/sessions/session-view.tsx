@@ -16,6 +16,7 @@ import { setActiveScreen } from '@/store/slices/ui-slice';
 import { useOfflineAuth } from '../../../hooks/use-offline-auth';
 import { useLocalSessionStore } from '../../../../domain/auth';
 import { useOfflineSessionStore } from '../../../../domain/auth/offline';
+import { ChevronLeftIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -130,21 +131,7 @@ export const SessionView: FC = () => {
             className="p-1.5 rounded-md hover:opacity-70 transition-opacity"
             aria-label={t('common.back', 'Volver')}
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 20 20"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M12 4l-6 6 6 6"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <ChevronLeftIcon size={20} strokeWidth={1.5} />
           </button>
           <h1
             className="text-heading font-bold"

@@ -11,7 +11,7 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import { RefreshCw, RotateCw, Trash2, ChevronUp, ChevronDown, ArrowUpDown } from "lucide-react";
+import { ArrowUpDownIcon, ChevronDownIcon, ChevronUpIcon, RefreshCwIcon, RotateCwIcon, Trash2Icon } from "@/components/ui/icons";
 import type { PermanentFailureEntry } from "../../../domain/sync/sync-metrics.service";
 import { RoleType } from "@pharmacy/shared-types";
 import { formatRelativeTimeEs } from "../../hooks/use-relative-time";
@@ -51,11 +51,11 @@ const SORTABLE_COLUMNS: SortableColumn[] = [
 
 function getSortIndicator(field: SortField, sortField: SortField, sortDir: SortDir): React.ReactNode {
   if (sortField !== field) {
-    return <ArrowUpDown className="h-3 w-3 text-ink-muted/50" aria-hidden="true" />;
+    return <ArrowUpDownIcon className="h-3 w-3 text-ink-muted/50" aria-hidden="true" />;
   }
   return sortDir === "asc"
-    ? <ChevronUp className="h-3 w-3 text-pharma" aria-hidden="true" />
-    : <ChevronDown className="h-3 w-3 text-pharma" aria-hidden="true" />;
+    ? <ChevronUpIcon className="h-3 w-3 text-pharma" aria-hidden="true" />
+    : <ChevronDownIcon className="h-3 w-3 text-pharma" aria-hidden="true" />;
 }
 
 function getRowBorderClass(entry: PermanentFailureEntry): string {
@@ -202,9 +202,9 @@ export const EntriesSection: FC<EntriesSectionProps> = ({
                               className="inline-flex items-center gap-1 rounded px-2 py-1 text-caption font-medium text-pharma transition-colors hover:bg-pharma/10 focus:outline-none focus:ring-2 focus:ring-pharma disabled:cursor-not-allowed disabled:text-ink-muted/40 disabled:hover:bg-transparent"
                             >
                               {isLoading ? (
-                                <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                <RefreshCwIcon className="h-3 w-3 animate-spin" aria-hidden="true" />
                               ) : (
-                                <RotateCw className="h-3 w-3" aria-hidden="true" />
+                                <RotateCwIcon className="h-3 w-3" aria-hidden="true" />
                               )}
                               {isLoading ? t("common.loading") : t("common.retry")}
                             </button>
@@ -214,7 +214,7 @@ export const EntriesSection: FC<EntriesSectionProps> = ({
                               disabled={isLoading || actionLoading !== null}
                               className="inline-flex items-center gap-1 rounded px-2 py-1 text-caption font-medium text-error transition-colors hover:bg-error-container focus:outline-none focus:ring-2 focus:ring-error disabled:cursor-not-allowed disabled:text-ink-muted/40 disabled:hover:bg-transparent"
                             >
-                              <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              <Trash2Icon className="h-3 w-3" aria-hidden="true" />
                               {t("sync.discard")}
                             </button>
                           </div>
@@ -251,7 +251,7 @@ export const EntriesSection: FC<EntriesSectionProps> = ({
           disabled={actionLoading !== null}
           className="inline-flex items-center gap-1.5 rounded-md border border-border bg-panel px-3 py-1.5 text-body-sm font-medium text-ink shadow-sm transition-colors hover:bg-surface focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <RefreshCw className={`h-4 w-4 ${actionLoading ? "animate-spin" : ""}`} aria-hidden="true" />
+          <RefreshCwIcon className={`h-4 w-4 ${actionLoading ? "animate-spin" : ""}`} aria-hidden="true" />
           {t("common.refresh")}
         </button>
       </div>

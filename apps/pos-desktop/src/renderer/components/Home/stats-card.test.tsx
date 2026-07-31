@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ShoppingCart } from "lucide-react";
+import { ShoppingCartIcon } from "@/components/ui/icons";
 import { StatsCard } from "./stats-card";
 
 describe("StatsCard", () => {
@@ -36,7 +36,7 @@ describe("StatsCard", () => {
       <StatsCard
         label="Ventas hoy"
         value="$45.200"
-        icon={ShoppingCart}
+        icon={ShoppingCartIcon}
       />,
     );
 

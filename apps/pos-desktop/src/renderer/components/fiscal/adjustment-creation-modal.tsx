@@ -10,7 +10,7 @@
 import { type FC, useState, useCallback, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X, ChevronLeft, AlertCircle } from "lucide-react";
+import { AlertCircleIcon, ChevronLeftIcon, XIcon } from "@/components/ui/icons";
 import type {
   AdjustmentType,
   OperationalInvoiceView,
@@ -1661,7 +1661,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
         }}
         role="alert"
       >
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+        <AlertCircleIcon className="mt-0.5 h-4 w-4 shrink-0" />
         <span>{error}</span>
       </div>
     );
@@ -1953,7 +1953,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
                   onClick={handleBack}
                   aria-label={t("fiscal.adjustment_create_back")}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeftIcon className="h-4 w-4" />
                 </button>
               )}
 
@@ -1977,7 +1977,7 @@ export const AdjustmentCreationModal: FC<AdjustmentCreationModalProps> = ({
                 }}
                 aria-label={t("common.close")}
               >
-                <X className="h-4 w-4" />
+                <XIcon className="h-4 w-4" />
               </button>
             </Dialog.Close>
           </div>

@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { type CatalogItem, type CatalogService } from "@/services/catalog-service";
 import { ProductSearchResults } from "./product-search-results";
 import { HelpBar } from "./help-bar";
+import { SearchIcon } from "@/components/ui/icons";
 
 const PRINTABLE_KEY_RE = /^[a-zA-Z0-9ñáéíóúü.,;:ñÑ\-_@#$%&*()+=<>?¡¿!]/;
 
@@ -160,24 +161,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
       {/* Search input row */}
       <div className="flex items-center gap-pos-sm">
         <div className="relative flex-1">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 35%, transparent)",
-            }}
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
+          <SearchIcon size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "color-mix(in srgb, var(--color-ink) 35%, transparent)" }} />
           <input
             ref={inputRef}
             type="search"

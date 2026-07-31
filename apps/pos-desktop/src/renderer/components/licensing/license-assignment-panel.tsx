@@ -8,7 +8,7 @@
 
 import type { FC } from "react";
 import { useTranslation } from "react-i18next";
-import { Store, Monitor, Calendar } from "lucide-react";
+import { CalendarIcon, MonitorIcon, StoreIcon } from "@/components/ui/icons";
 import { formatDate } from "./license-status.helpers";
 
 export interface LicenseAssignmentPanelProps {
@@ -36,7 +36,7 @@ export const LicenseAssignmentPanel: FC<LicenseAssignmentPanelProps> = ({
   return (
     <div className="rounded-pos border border-border bg-panel p-pos-lg shadow-pos-panel">
       <div className="mb-pos-md flex items-center gap-pos-sm">
-        <Store className="h-5 w-5 text-pharma" aria-hidden="true" />
+        <StoreIcon className="h-5 w-5 text-pharma" aria-hidden="true" />
         <h2 className="text-ui font-semibold text-ink">
           {t("licensing.status_page.assignment_section")}
         </h2>
@@ -57,7 +57,7 @@ export const LicenseAssignmentPanel: FC<LicenseAssignmentPanelProps> = ({
       {/* Workstation */}
       <div className="mb-pos-md">
         <div className="flex items-center gap-pos-sm">
-          <Monitor className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <MonitorIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
           <div>
             <p className="text-caption font-medium text-ink-muted">
               {t("licensing.status_page.workstation_label")}
@@ -72,7 +72,7 @@ export const LicenseAssignmentPanel: FC<LicenseAssignmentPanelProps> = ({
       {/* Activated date */}
       {activatedAt && (
         <div className="flex items-center gap-pos-sm">
-          <Calendar className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <CalendarIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
           <div>
             <p className="text-caption font-medium text-ink-muted">
               {t("licensing.status_page.activated_label")}

@@ -9,7 +9,8 @@ import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertTriangle, Loader2, X } from "lucide-react";
+import { AlertTriangleIcon, XIcon } from "@/components/ui/icons";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -94,7 +95,7 @@ export const DeleteConfirmDialog: FC<DeleteConfirmDialogProps> = ({
                   aria-label={t("common.close")}
                   disabled={isDeleting}
                 >
-                  <X className="size-4" />
+                  <XIcon className="size-4" />
                 </button>
               </Dialog.Close>
 
@@ -104,7 +105,7 @@ export const DeleteConfirmDialog: FC<DeleteConfirmDialogProps> = ({
                   className="flex size-10 shrink-0 items-center justify-center rounded-full"
                   style={{ backgroundColor: "var(--color-urgency-surface)" }}
                 >
-                  <AlertTriangle className="size-5" style={{ color: "var(--color-urgency)" }} />
+                  <AlertTriangleIcon className="size-5" style={{ color: "var(--color-urgency)" }} />
                 </div>
                 <div className="min-w-0 pt-0.5">
                   <Dialog.Title className="m-0 text-body font-semibold" style={{ color: "var(--color-ink)" }}>
@@ -144,12 +145,12 @@ export const DeleteConfirmDialog: FC<DeleteConfirmDialogProps> = ({
                 >
                   {isDeleting ? (
                     <>
-                      <Loader2 className="size-4 animate-spin" />
+                      <LoaderIcon className="size-4 animate-spin" />
                       {t("common.loading")}
                     </>
                   ) : (
                     <>
-                      <AlertTriangle className="size-4" />
+                      <AlertTriangleIcon className="size-4" />
                       {t("clients.delete")}
                     </>
                   )}

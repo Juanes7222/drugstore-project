@@ -9,7 +9,7 @@
 
 import type { FC } from "react";
 import { useTranslation } from "react-i18next";
-import { Clock, History, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { AlertTriangleIcon, CheckCircleIcon, ClockIcon, HistoryIcon } from "@/components/ui/icons";
 import { LicenseStatus } from "@pharmacy/shared-types";
 import { formatDateTime } from "./license-status.helpers";
 
@@ -33,7 +33,7 @@ export const LicenseCheckinPanel: FC<LicenseCheckinPanelProps> = ({
   return (
     <div className="rounded-pos border border-border bg-panel p-pos-lg shadow-pos-panel">
       <div className="mb-pos-md flex items-center gap-pos-sm">
-        <History className="h-5 w-5 text-pharma" aria-hidden="true" />
+        <HistoryIcon className="h-5 w-5 text-pharma" aria-hidden="true" />
         <h2 className="text-ui font-semibold text-ink">
           {t("licensing.status_page.checkin_section")}
         </h2>
@@ -42,7 +42,7 @@ export const LicenseCheckinPanel: FC<LicenseCheckinPanelProps> = ({
       <div className="space-y-pos-md">
         {/* Last check-in */}
         <div className="flex items-center gap-pos-sm">
-          <Clock className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <ClockIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
           <div>
             <p className="text-caption font-medium text-ink-muted">
               {t("licensing.status_page.last_checkin")}
@@ -55,7 +55,7 @@ export const LicenseCheckinPanel: FC<LicenseCheckinPanelProps> = ({
 
         {/* Days until expiry */}
         <div className="flex items-center gap-pos-sm">
-          <Clock className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <ClockIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
           <div>
             <p className="text-caption font-medium text-ink-muted">
               {t("licensing.status_page.days_until_expiry")}
@@ -70,7 +70,7 @@ export const LicenseCheckinPanel: FC<LicenseCheckinPanelProps> = ({
 
         {/* Check-ins in last 30 days */}
         <div className="flex items-center gap-pos-sm">
-          <History className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+          <HistoryIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
           <div>
             <p className="text-caption font-medium text-ink-muted">
               {t("licensing.status_page.checkins_30d")}
@@ -84,7 +84,7 @@ export const LicenseCheckinPanel: FC<LicenseCheckinPanelProps> = ({
         {/* Grace period warning */}
         {status === LicenseStatus.GRACE_PERIOD && daysUntilGracePeriodEnd !== null && (
           <div className="flex items-center gap-pos-sm">
-            <AlertTriangle className="h-4 w-4 text-urgency" aria-hidden="true" />
+            <AlertTriangleIcon className="h-4 w-4 text-urgency" aria-hidden="true" />
             <div>
               <p className="text-caption font-medium text-ink-muted">
                 {t("licensing.status_page.grace_ends")}
@@ -103,7 +103,7 @@ export const LicenseCheckinPanel: FC<LicenseCheckinPanelProps> = ({
         {/* Active check indicator */}
         {status === LicenseStatus.ACTIVE && (
           <div className="flex items-center gap-pos-sm">
-            <CheckCircle2 className="h-4 w-4 text-pharma" aria-hidden="true" />
+            <CheckCircleIcon className="h-4 w-4 text-pharma" aria-hidden="true" />
             <p className="text-body-sm text-pharma">
               {t("licensing.status_page.checkin_healthy")}
             </p>

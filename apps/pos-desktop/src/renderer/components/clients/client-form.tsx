@@ -7,7 +7,8 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertTriangle, Check, Loader2, Save, User, FileText, Mail, Phone, MapPin, Building, X } from "lucide-react";
+import { AlertTriangleIcon, BuildingIcon, CheckIcon, FileTextIcon, MailIcon, MapPinIcon, PhoneIcon, SaveIcon, UserIcon, XIcon } from "@/components/ui/icons";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 import type { CreateClientInput } from "../../../domain/clients/clients.service";
 
 // ---------------------------------------------------------------------------
@@ -62,14 +63,14 @@ interface FieldDef {
 }
 
 const FIELDS: FieldDef[] = [
-  { key: "fullName", labelKey: "clients.full_name", type: "text", required: true, colSpan: "full", icon: <User className="size-4" /> },
-  { key: "identificationType", labelKey: "clients.id_type", type: "select", required: true, colSpan: "half", icon: <FileText className="size-4" />, options: ID_TYPES },
-  { key: "identificationNumber", labelKey: "clients.id_number", type: "text", required: true, colSpan: "half", icon: <FileText className="size-4" /> },
-  { key: "email", labelKey: "clients.email", type: "email", colSpan: "half", icon: <Mail className="size-4" /> },
-  { key: "phone", labelKey: "clients.phone", type: "tel", colSpan: "half", icon: <Phone className="size-4" /> },
-  { key: "address", labelKey: "clients.address", type: "text", colSpan: "full", icon: <MapPin className="size-4" /> },
-  { key: "municipality", labelKey: "clients.municipality", type: "text", colSpan: "half", icon: <Building className="size-4" /> },
-  { key: "department", labelKey: "clients.department", type: "text", colSpan: "half", icon: <Building className="size-4" /> },
+  { key: "fullName", labelKey: "clients.full_name", type: "text", required: true, colSpan: "full", icon: <UserIcon className="size-4" /> },
+  { key: "identificationType", labelKey: "clients.id_type", type: "select", required: true, colSpan: "half", icon: <FileTextIcon className="size-4" />, options: ID_TYPES },
+  { key: "identificationNumber", labelKey: "clients.id_number", type: "text", required: true, colSpan: "half", icon: <FileTextIcon className="size-4" /> },
+  { key: "email", labelKey: "clients.email", type: "email", colSpan: "half", icon: <MailIcon className="size-4" /> },
+  { key: "phone", labelKey: "clients.phone", type: "tel", colSpan: "half", icon: <PhoneIcon className="size-4" /> },
+  { key: "address", labelKey: "clients.address", type: "text", colSpan: "full", icon: <MapPinIcon className="size-4" /> },
+  { key: "municipality", labelKey: "clients.municipality", type: "text", colSpan: "half", icon: <BuildingIcon className="size-4" /> },
+  { key: "department", labelKey: "clients.department", type: "text", colSpan: "half", icon: <BuildingIcon className="size-4" /> },
 ];
 
 // ---------------------------------------------------------------------------
@@ -129,8 +130,8 @@ export const ClientForm: FC<ClientFormProps> = ({
               }}
             >
               {mode === "create"
-                ? <User className="size-4" style={{ color: "var(--color-pharma)" }} />
-                : <Save className="size-4" style={{ color: "var(--color-restrict)" }} />
+                ? <UserIcon className="size-4" style={{ color: "var(--color-pharma)" }} />
+                : <SaveIcon className="size-4" style={{ color: "var(--color-restrict)" }} />
               }
             </div>
             <h3 className="m-0 text-body font-semibold">
@@ -143,7 +144,7 @@ export const ClientForm: FC<ClientFormProps> = ({
             className="flex size-6 items-center justify-center rounded-sm opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
             aria-label={t("common.close")}
           >
-            <X className="size-4" />
+            <XIcon className="size-4" />
           </button>
         </div>
 
@@ -217,7 +218,7 @@ export const ClientForm: FC<ClientFormProps> = ({
             style={{ color: "var(--color-urgency)" }}
             role="alert"
           >
-            <AlertTriangle className="size-4 shrink-0" />
+            <AlertTriangleIcon className="size-4 shrink-0" />
             {error}
           </motion.p>
         )}
@@ -237,7 +238,7 @@ export const ClientForm: FC<ClientFormProps> = ({
               borderColor: "color-mix(in srgb, var(--color-ink) 15%, transparent)",
             }}
           >
-            <X className="size-4" />
+            <XIcon className="size-4" />
             {t("common.cancel")}
           </button>
 
@@ -253,12 +254,12 @@ export const ClientForm: FC<ClientFormProps> = ({
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="size-4 animate-spin" />
+                <LoaderIcon className="size-4 animate-spin" />
                 {t("common.saving")}
               </>
             ) : (
               <>
-                {mode === "create" ? <User className="size-4" /> : <Check className="size-4" />}
+                {mode === "create" ? <UserIcon className="size-4" /> : <CheckIcon className="size-4" />}
                 {mode === "create" ? t("clients.create") : t("clients.save")}
               </>
             )}

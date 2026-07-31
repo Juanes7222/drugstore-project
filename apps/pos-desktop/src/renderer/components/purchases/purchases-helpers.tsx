@@ -119,7 +119,7 @@ export const DetailSkeleton: FC = () => (
 
 // ── Pagination component ───────────────────────────────────────────────
 
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/ui/icons";
 import { useTranslation } from 'react-i18next';
 
 interface PaginationProps {
@@ -158,7 +158,7 @@ export const TablePagination: FC<PaginationProps> = ({
           className="pos-button pos-button-secondary text-xs py-1 px-3"
           aria-label={t('common.previous')}
         >
-          <ChevronLeft size={14} aria-hidden="true" />
+          <ChevronLeftIcon size={14} aria-hidden="true" />
           {t('common.previous')}
         </button>
         <button
@@ -169,7 +169,7 @@ export const TablePagination: FC<PaginationProps> = ({
           aria-label={t('common.next')}
         >
           {t('common.next')}
-          <ChevronRight size={14} aria-hidden="true" />
+          <ChevronRightIcon size={14} aria-hidden="true" />
         </button>
       </div>
     </div>

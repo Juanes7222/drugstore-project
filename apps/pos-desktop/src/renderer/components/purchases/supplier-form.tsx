@@ -16,7 +16,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Check, AlertTriangle } from 'lucide-react';
+import { AlertTriangleIcon, CheckIcon, XIcon } from "@/components/ui/icons";
 import type { SupplierIdentificationType } from '@pharmacy/database/local';
 import type { FormData } from './suppliers.page';
 
@@ -83,7 +83,7 @@ export const SupplierForm: FC<SupplierFormProps> = ({
   const FieldError = ({ field }: { field: string }) =>
     errors[field] ? (
       <p className="mt-0.5 text-xs text-error flex items-center gap-1" role="alert">
-        <AlertTriangle size={10} aria-hidden="true" />
+        <AlertTriangleIcon size={10} aria-hidden="true" />
         {errors[field]}
       </p>
     ) : null;
@@ -97,7 +97,7 @@ export const SupplierForm: FC<SupplierFormProps> = ({
       {/* Server error banner */}
       {error && (
         <div className="mb-4 p-3 bg-error-container text-error rounded text-sm border border-error/20 flex items-center gap-2" role="alert">
-          <AlertTriangle size={14} aria-hidden="true" />
+          <AlertTriangleIcon size={14} aria-hidden="true" />
           {error}
         </div>
       )}
@@ -105,7 +105,7 @@ export const SupplierForm: FC<SupplierFormProps> = ({
       {/* Validation summary */}
       {hasErrors && (
         <div className="mb-4 p-3 bg-urgency-surface text-urgency rounded text-sm border border-urgency/20 flex items-center gap-2" role="alert">
-          <AlertTriangle size={14} aria-hidden="true" />
+          <AlertTriangleIcon size={14} aria-hidden="true" />
           {Object.values(errors).join('. ')}
         </div>
       )}
@@ -339,7 +339,7 @@ export const SupplierForm: FC<SupplierFormProps> = ({
           disabled={isSaving}
           className="pos-button pos-button-secondary"
         >
-          <X size={14} aria-hidden="true" />
+          <XIcon size={14} aria-hidden="true" />
           {t('common.cancel')}
         </button>
         <button
@@ -347,7 +347,7 @@ export const SupplierForm: FC<SupplierFormProps> = ({
           disabled={isSaving}
           className="pos-button pos-button-primary"
         >
-          <Check size={14} aria-hidden="true" />
+          <CheckIcon size={14} aria-hidden="true" />
           {isSaving
             ? t('common.saving')
             : mode === 'create'

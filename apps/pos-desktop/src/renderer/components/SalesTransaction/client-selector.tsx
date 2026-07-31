@@ -23,6 +23,7 @@ import type { ClientSearchResult } from "../../../domain/clients";
 import type { CreateClientInput } from "../../../domain/clients";
 import type { ClientSelection } from "../../hooks/use-sales-transaction";
 import { QuickClientForm } from "./quick-client-form";
+import { PlusIcon, SearchIcon, UserIcon, XIcon } from "@/components/ui/icons";
 
 interface ClientSelectorProps {
   selectedClient: ClientSelection | null;
@@ -245,22 +246,7 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
         }}
       >
         <div className="flex items-center gap-pos-sm">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="shrink-0"
-            style={{ color: "var(--color-pharma)" }}
-            aria-hidden="true"
-          >
-            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
+          <UserIcon size={16} className="shrink-0" style={{ color: "var(--color-pharma)" }} />
           <div className="min-w-0">
             <p
               className="truncate text-body-sm font-medium"
@@ -286,20 +272,7 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
           aria-label={t("sales.client.clear")}
           title={t("sales.client.change")}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
+          <XIcon size={14} />
         </button>
       </div>
     );
@@ -311,25 +284,7 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
       {isOpen ? (
         <div className="relative">
           <div className="relative">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"
-              style={{
-                color:
-                  "color-mix(in srgb, var(--color-ink) 40%, transparent)",
-              }}
-              aria-hidden="true"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
+            <SearchIcon size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "color-mix(in srgb, var(--color-ink) 40%, transparent)" }} />
             <input
               ref={inputRef}
               type="search"
@@ -377,20 +332,7 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
                           : undefined,
                     }}
                   >
-                    <svg
-                      width="15"
-                      height="15"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 5v14" />
-                      <path d="M5 12h14" />
-                    </svg>
+                    <PlusIcon size={15} />
                     <span>
                       {t("sales.client.create_new", { query: query.trim() })}
                     </span>
@@ -416,25 +358,7 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
                     color: "var(--color-ink)",
                   }}
                 >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="shrink-0"
-                    style={{
-                      color:
-                        "color-mix(in srgb, var(--color-ink) 40%, transparent)",
-                    }}
-                    aria-hidden="true"
-                  >
-                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
+                  <UserIcon size={14} className="shrink-0" style={{ color: "color-mix(in srgb, var(--color-ink) 40%, transparent)" }} />
                   <div className="min-w-0 flex-1">
                     <span className="truncate font-medium">
                       {client.fullName}
@@ -485,20 +409,7 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
                       color: "var(--color-pharma)",
                     }}
                   >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 5v14" />
-                      <path d="M5 12h14" />
-                    </svg>
+                    <PlusIcon size={14} />
                     <span>
                       {t("sales.client.create_new", { query: query.trim() })}
                     </span>
@@ -576,20 +487,7 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
                 : "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
+          <UserIcon size={14} />
           <span>
             {clientRequirement === "REQUIRED"
               ? t("sales.client.required")

@@ -20,6 +20,7 @@ import {
 import { useOfflineAuth } from '../../../hooks/use-offline-auth';
 import { useOfflineSessionStore } from '../../../../domain/auth/offline';
 import type { OfflineSession } from '../../../../domain/auth';
+import { XIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -328,20 +329,7 @@ const SessionRow: FC<SessionRowProps> = ({ session, onDismissRejected }) => {
           className="flex-shrink-0 p-1 rounded hover:opacity-70 transition-opacity"
           aria-label={t('common.dismiss', 'Descartar')}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 14 14"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M1 1l12 12M13 1L1 13"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
+          <XIcon size={14} strokeWidth={1.5} />
         </button>
       )}
     </li>

@@ -25,6 +25,7 @@ import { CartLineItem } from "./cart-line-item";
 import { TotalsSummary } from "./totals-summary";
 import type { ClientSelection } from "../../hooks/use-sales-transaction";
 import type { CreateClientInput } from "../../../domain/clients";
+import { InfoIcon, ShoppingBagIcon } from "@/components/ui/icons";
 
 interface CartPanelProps {
   onCheckout: () => void;
@@ -159,11 +160,7 @@ export const CartPanel: FC<CartPanelProps> = ({
           className="mx-0 my-pos-sm flex items-start gap-2 rounded-pos-sm px-pos-md py-pos-sm text-body"
           style={{ backgroundColor: "color-mix(in srgb, var(--color-danger) 12%, transparent)", color: "var(--color-danger)" }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="mt-0.5 shrink-0">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
+          <InfoIcon size={16} className="mt-0.5 shrink-0" />
           <span className="flex-1">{actionError}</span>
           <button
             type="button"
@@ -194,21 +191,7 @@ export const CartPanel: FC<CartPanelProps> = ({
             className="pos-button pos-button-primary mt-pos-md w-full text-ui py-pos-md"
           >
             <span className="flex items-center justify-center gap-2">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
-                <path d="M3 6h18" />
-                <path d="M16 10a4 4 0 0 1-8 0" />
-              </svg>
+              <ShoppingBagIcon size={18} />
               {isCreating ? t("common.processing") : t("sales.cart.checkout")}
             </span>
           </button>

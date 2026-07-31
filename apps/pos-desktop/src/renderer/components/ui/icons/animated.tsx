@@ -1,24 +1,80 @@
 /**
- * HubStatusIcon — animated SVG indicator for local hub connectivity.
+ * Animated icon components.
  *
- * Three states with distinct visual language:
- * - connected:    pulsing green dot + radiating rings (hub present)
- * - disconnected: static gray dot with dashed ring (no hub)
- * - electing:     spinning arc with dashed orbit (election in progress)
+ * Home for icons that animate on their own (spinners, live indicators).
+ * All components respect `prefers-reduced-motion` and render a static
+ * fallback when motion is disabled.
  *
- * Respects prefers-reduced-motion: static fallback for each state.
+ * ## Usage
  *
- * @category Local Sync
+ * ```tsx
+ * <LoaderIcon size={20} className="text-ink-muted" />
+ * <HubStatusIcon status="connected" />
+ * ```
  */
 
-import { type FC } from 'react';
-import { motion, useReducedMotion } from 'motion/react';
+import { type FC } from "react";
+import { motion, useReducedMotion } from "motion/react";
 
 // ---------------------------------------------------------------------------
-// Types
+// LoaderIcon — spinning progress arc
 // ---------------------------------------------------------------------------
 
-export type HubStatus = 'connected' | 'disconnected' | 'electing';
+export interface LoaderIconProps {
+  /** Icon width/height in pixels. Default 16. */
+  size?: number;
+  /** Optional className for the SVG element. */
+  className?: string;
+  /** Optional inline styles. */
+  style?: React.CSSProperties;
+  /** Stroke color. Default "currentColor". */
+  color?: string;
+  /** Stroke width. Default 2. */
+  strokeWidth?: number;
+  /** Accessibility: hide from screen readers. Default true (decorative). */
+  'aria-hidden'?: boolean | 'true' | 'false';
+  /** Optional test id for assertions. */
+  'data-testid'?: string;
+}
+
+/** Spinning loader arc. Falls back to a static arc under reduced motion. */
+export const LoaderIcon: FC<LoaderIconProps> = ({
+  size = 16,
+  className,
+  style,
+  color,
+  strokeWidth = 2,
+  'aria-hidden': ariaHidden = true,
+  'data-testid': dataTestId,
+}) => {
+  const prefersReducedMotion = useReducedMotion();
+
+  return (
+    <motion.svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color ?? "currentColor"}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden={ariaHidden}
+      data-icon="loader-circle"
+      data-testid={dataTestId}
+      className={`${prefersReducedMotion ? "" : "animate-spin"} ${className ?? ""}`}
+      style={style}
+    >
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </motion.svg>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// HubStatusIcon — local hub connectivity indicator
+// ---------------------------------------------------------------------------
+
+export type HubStatus = "connected" | "disconnected" | "electing";
 
 export interface HubStatusIconProps {
   /** Current hub connectivity state. */
@@ -29,10 +85,7 @@ export interface HubStatusIconProps {
   size?: number;
 }
 
-// ---------------------------------------------------------------------------
 // Color tokens — must match design-system.md palette
-// ---------------------------------------------------------------------------
-
 const COLORS = {
   connected:    '#0B6E6B', // Pharma Teal — trust
   disconnected: '#B0AD9E', // Slate Muted — inactive
@@ -45,19 +98,12 @@ const RING_COLORS = {
   electing:     'rgba(232, 166, 0, 0.30)',
 } as const;
 
-// ---------------------------------------------------------------------------
 // SVG constants
-// ---------------------------------------------------------------------------
-
 const DOT_CX = 12;
 const DOT_CY = 12;
 const DOT_R = 4;
 const RING_R = 10;
 const RING_W = 1.5;
-
-// ---------------------------------------------------------------------------
-// Static state renderers (used when reduced-motion is preferred)
-// ---------------------------------------------------------------------------
 
 /** Connected — solid ring + dot, no animation. */
 const StaticConnected: FC<{ color: string; ringColor: string }> = ({
@@ -88,10 +134,6 @@ const StaticElecting: FC<{ color: string; ringColor: string }> = ({
     <circle cx={DOT_CX} cy={DOT_CY} r={DOT_R} fill={color} />
   </>
 );
-
-// ---------------------------------------------------------------------------
-// Animated state renderers
-// ---------------------------------------------------------------------------
 
 /** Connected — two radiating rings + pulsing center. */
 const AnimatedConnected: FC<{ color: string; ringColor: string }> = ({
@@ -163,10 +205,16 @@ const AnimatedElecting: FC<{ color: string; ringColor: string }> = ({
   </>
 );
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
-
+/**
+ * HubStatusIcon — animated SVG indicator for local hub connectivity.
+ *
+ * Three states with distinct visual language:
+ * - connected:    pulsing green dot + radiating rings (hub present)
+ * - disconnected: static gray dot with dashed ring (no hub)
+ * - electing:     spinning arc with dashed orbit (election in progress)
+ *
+ * Respects prefers-reduced-motion: static fallback for each state.
+ */
 export const HubStatusIcon: FC<HubStatusIconProps> = ({
   status,
   ariaLabel,

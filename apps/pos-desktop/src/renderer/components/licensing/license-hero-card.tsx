@@ -9,7 +9,8 @@
 
 import type { FC } from "react";
 import { useTranslation } from "react-i18next";
-import { Shield, ShieldAlert, ShieldOff, Clock, Loader2 } from "lucide-react";
+import { ClockIcon, ShieldAlertIcon, ShieldIcon, ShieldOffIcon } from "@/components/ui/icons";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 import { LicenseStatus } from "@pharmacy/shared-types";
 
 export interface LicenseHeroCardProps {
@@ -35,35 +36,35 @@ const STATUS_STYLES: Record<
   [LicenseStatus.ACTIVE]: {
     border: "border-l-pharma",
     bg: "bg-pharma/5",
-    icon: Shield,
+    icon: ShieldIcon,
     iconColor: "text-pharma",
     labelKey: "licensing.status_page.active_label",
   },
   [LicenseStatus.GRACE_PERIOD]: {
     border: "border-l-urgency",
     bg: "bg-urgency/5",
-    icon: ShieldAlert,
+    icon: ShieldAlertIcon,
     iconColor: "text-urgency",
     labelKey: "licensing.status_page.grace_period_label",
   },
   [LicenseStatus.LOCKED]: {
     border: "border-l-error",
     bg: "bg-error/5",
-    icon: ShieldOff,
+    icon: ShieldOffIcon,
     iconColor: "text-error",
     labelKey: "licensing.status_page.locked_label",
   },
   [LicenseStatus.REVOKED]: {
     border: "border-l-error",
     bg: "bg-error/5",
-    icon: ShieldOff,
+    icon: ShieldOffIcon,
     iconColor: "text-error",
     labelKey: "licensing.status_page.revoked_label",
   },
   [LicenseStatus.UNACTIVATED]: {
     border: "border-l-sync",
     bg: "bg-sync/5",
-    icon: Shield,
+    icon: ShieldIcon,
     iconColor: "text-sync",
     labelKey: "licensing.status_page.unknown_label",
   },
@@ -108,7 +109,7 @@ export const LicenseHeroCard: FC<LicenseHeroCardProps> = ({
             <h2 className="text-ui font-semibold text-ink">{displayName}</h2>
             {isRenewalInProgress && (
               <span className="inline-flex items-center gap-pos-xs rounded-pos bg-sync/10 px-pos-sm py-0.5 text-caption font-medium text-sync">
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                <LoaderIcon className="h-3 w-3 animate-spin" aria-hidden="true" />
                 {t("licensing.status_page.renewal_pending")}
               </span>
             )}
@@ -123,7 +124,7 @@ export const LicenseHeroCard: FC<LicenseHeroCardProps> = ({
           <div className="flex items-center gap-pos-md">
             {(status === LicenseStatus.ACTIVE || status === LicenseStatus.GRACE_PERIOD) && (
               <div className="flex items-center gap-pos-xs">
-                <Clock className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+                <ClockIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
                 <span className="font-data text-body-sm tabular-nums text-ink">
                   {status === LicenseStatus.GRACE_PERIOD
                     ? formatDays(daysUntilGracePeriodEnd)

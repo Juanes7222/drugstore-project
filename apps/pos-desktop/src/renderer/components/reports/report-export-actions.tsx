@@ -10,7 +10,7 @@
 import { type FC, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type ReactECharts from "echarts-for-react";
-import { FileDown, FileSpreadsheet, FileText, Printer } from "lucide-react";
+import { FileDownIcon, FileSpreadsheetIcon, FileTextIcon, PrinterIcon } from "@/components/ui/icons";
 import type { Services } from "../common/service-context";
 import type { ReportDefinition, ReportExportFormat, ReportResponse } from "../../../domain/reports/report-types";
 import { createLocalAuditWriter } from "../../../domain/audit/local-audit-writer.service";
@@ -104,10 +104,10 @@ export const ReportExportActions: FC<ReportExportActionsProps> = ({
   void isLoading;
 
   const ICONS: Record<ReportExportFormat, React.ComponentType<{ className?: string }>> = {
-    pdf: FileText,
-    excel: FileSpreadsheet,
-    csv: FileDown,
-    print: Printer,
+    pdf: FileTextIcon,
+    excel: FileSpreadsheetIcon,
+    csv: FileDownIcon,
+    print: PrinterIcon,
   };
 
   return (

@@ -8,7 +8,7 @@
 
 import { type FC, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowDown, ArrowUp, Minus } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, MinusIcon } from "@/components/ui/icons";
 import type { ReportKpi } from "../../../domain/reports/report-types";
 import { useReportsLocale } from "./use-reports-locale";
 
@@ -57,11 +57,11 @@ const KpiCard: FC<{ kpi: ReportKpi; fromCache: boolean }> = ({ kpi, fromCache })
           }`}
         >
           {delta.direction === 'up' ? (
-            <ArrowUp className="h-3 w-3" />
+            <ArrowUpIcon className="h-3 w-3" />
           ) : delta.direction === 'down' ? (
-            <ArrowDown className="h-3 w-3" />
+            <ArrowDownIcon className="h-3 w-3" />
           ) : (
-            <Minus className="h-3 w-3" />
+            <MinusIcon className="h-3 w-3" />
           )}
           <span>{delta.text}</span>
           <span className="text-muted">{t('reports.viewer.delta')}</span>

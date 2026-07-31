@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { PrintJobRecord, PrintJobStatus } from '../../../domain/printing';
+import { ChevronRightIcon, XIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Status badge definitions
@@ -254,23 +255,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
                 onClick={() => setLogExpanded((p) => !p)}
                 aria-expanded={logExpanded}
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className={`transition-transform ${
-                    logExpanded ? 'rotate-90' : ''
-                  }`}
-                  aria-hidden="true"
-                >
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
+                <ChevronRightIcon size={12} className={`transition-transform ${logExpanded ? 'rotate-90' : ''}`} />
                 {t(
                   'printing.queue.row.routing_log',
                   'Bitácora de enrutamiento',
@@ -381,20 +366,7 @@ export const PrintJobRow: FC<PrintJobRowProps> = ({
                       className="absolute right-3 top-3 text-ink-muted hover:text-ink"
                       aria-label={t('common.close', 'Cerrar')}
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M18 6 6 18" />
-                        <path d="m6 6 12 12" />
-                      </svg>
+                      <XIcon size={16} />
                     </button>
                   </Dialog.Close>
                 </Dialog.Content>

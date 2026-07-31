@@ -13,15 +13,7 @@
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
-import {
-  ShoppingCart,
-  Clock,
-  Wifi,
-  WifiOff,
-  AlertTriangle,
-  Users,
-  FileText,
-} from "lucide-react";
+import { AlertTriangleIcon, ClockIcon, FileTextIcon, ShoppingCartIcon, UsersIcon, WifiIcon, WifiOffIcon } from "@/components/ui/icons";
 import { useAppDispatch } from "@/store/hooks";
 import { navigateToSales } from "@/store/slices/ui-slice";
 import { useLocalSessionStore, hasMinRole } from "../../../domain/auth";
@@ -112,20 +104,20 @@ export const Home: FC = () => {
       <StatsCard
         label={t("home.today_stats")}
         value="—"
-        icon={ShoppingCart}
+        icon={ShoppingCartIcon}
         description={t("home.transactions") + ": 0"}
         numeric
       />
       <StatsCard
         label={t("home.active_shift")}
         value="—"
-        icon={Clock}
+        icon={ClockIcon}
         description={session.fullName}
       />
       <StatsCard
         label={t("home.sync_status")}
         value={isOnline ? t("sync.state_online") : t("sync.state_offline")}
-        icon={isOnline ? Wifi : WifiOff}
+        icon={isOnline ? WifiIcon : WifiOffIcon}
         description={
           isOnline
             ? t("home.sync_healthy")
@@ -138,7 +130,7 @@ export const Home: FC = () => {
         onClick={() => dispatch(navigateToSales())}
         className="pos-button pos-button-primary flex items-center justify-center gap-pos-sm min-h-[100px]"
       >
-        <ShoppingCart size={24} strokeWidth={1.5} aria-hidden="true" />
+        <ShoppingCartIcon size={24} strokeWidth={1.5} aria-hidden="true" />
         <span className="text-ui font-bold">{t("home.new_sale")}</span>
       </button>
     </motion.section>
@@ -152,7 +144,7 @@ export const Home: FC = () => {
       transition={{ delay: STAGGER_BASE * 4, duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
     >
       <h3 className="text-ui font-semibold mb-pos-md flex items-center gap-pos-sm">
-        <AlertTriangle size={18} style={{ color: "var(--color-urgency)" }} aria-hidden="true" />
+        <AlertTriangleIcon size={18} style={{ color: "var(--color-urgency)" }} aria-hidden="true" />
         {t("home.low_stock_alerts")}
       </h3>
       <div className="flex flex-col gap-pos-xs text-body-sm" style={{ color: "var(--color-ink-muted)" }}>
@@ -172,19 +164,19 @@ export const Home: FC = () => {
       <StatsCard
         label={t("home.active_users")}
         value="—"
-        icon={Users}
+        icon={UsersIcon}
         description={t("home.shift_status")}
       />
       <StatsCard
         label={t("home.sync_status")}
         value={isOnline ? t("sync.state_online") : t("sync.state_offline")}
-        icon={isOnline ? Wifi : WifiOff}
+        icon={isOnline ? WifiIcon : WifiOffIcon}
         description={isOnline ? t("home.sync_healthy") : t("home.sync_offline")}
       />
       <StatsCard
         label={t("home.recent_activity")}
         value={t("home.audit")}
-        icon={FileText}
+        icon={FileTextIcon}
         description="—"
       />
     </motion.section>
@@ -200,13 +192,13 @@ export const Home: FC = () => {
       <StatsCard
         label={t("home.fiscal")}
         value="—"
-        icon={FileText}
+        icon={FileTextIcon}
         description={t("home.sync_status")}
       />
       <StatsCard
         label={t("home.sync_status")}
         value={isOnline ? t("sync.state_online") : t("sync.state_offline")}
-        icon={isOnline ? Wifi : WifiOff}
+        icon={isOnline ? WifiIcon : WifiOffIcon}
         description={isOnline ? t("home.sync_healthy") : t("home.sync_offline")}
       />
     </motion.section>

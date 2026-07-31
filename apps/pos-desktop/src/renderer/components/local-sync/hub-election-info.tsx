@@ -9,8 +9,8 @@
 
 import { type FC, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Minus } from 'lucide-react';
-import { HubStatusIcon } from './hub-status-icon';
+import { CheckIcon, MinusIcon } from "@/components/ui/icons";
+import { HubStatusIcon } from "@/components/ui/icons/animated";
 import type { HubScore } from '@pharmacy/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -168,8 +168,8 @@ export const HubElectionInfo: FC<HubElectionInfoProps> = ({ scores, currentHubId
                   <span className="text-[10px] tabular-nums" style={{ color: 'var(--color-ink-muted)' }}>
                     {typeof score[col.key as keyof HubScoreFactor] === 'boolean'
                       ? (score[col.key as keyof HubScoreFactor]
-                        ? <Check size={10} strokeWidth={2.5} aria-hidden="true" />
-                        : <Minus size={10} strokeWidth={2} aria-hidden="true" />)
+                        ? <CheckIcon size={10} strokeWidth={2.5} aria-hidden="true" />
+                        : <MinusIcon size={10} strokeWidth={2} aria-hidden="true" />)
                       : (score[col.key as keyof HubScoreFactor] as number).toFixed(1)}
                   </span>
                 </div>

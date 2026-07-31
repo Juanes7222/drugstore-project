@@ -4,22 +4,7 @@
  */
 import { type FC, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  ArrowLeft,
-  Building2,
-  CreditCard,
-  Edit3,
-  Mail,
-  MapPin,
-  Phone,
-  Printer,
-  Receipt,
-  StickyNote,
-  Tag,
-  Truck,
-  User,
-  X,
-} from 'lucide-react';
+import { ArrowLeftIcon, Building2Icon, CreditCardIcon, Edit3Icon, MailIcon, MapPinIcon, PhoneIcon, PrinterIcon, ReceiptIcon, StickyNoteIcon, TagIcon, TruckIcon, UserIcon, XIcon } from "@/components/ui/icons";
 import type { SaleHistoryDetail } from '../../../domain/sales-pos/sales-history.service';
 import type {
   AdjustmentHistoryEntry,
@@ -111,7 +96,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
   if (!detail) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <Receipt
+        <ReceiptIcon
           className="size-10"
           style={{ color: 'var(--color-ink-muted)' }}
           aria-hidden="true"
@@ -175,7 +160,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
             }}
             aria-label={t('common.back')}
           >
-            <ArrowLeft className="size-4" aria-hidden="true" />
+            <ArrowLeftIcon className="size-4" aria-hidden="true" />
           </button>
           <div>
             <h2
@@ -201,7 +186,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
             onClick={onReprint}
             className="pos-button pos-button-secondary inline-flex items-center gap-1.5 py-1 px-2 text-body-sm"
           >
-            <Printer className="size-4" aria-hidden="true" />
+            <PrinterIcon className="size-4" aria-hidden="true" />
             <span className="hidden sm:inline">
               {t('salesHistory.detail.actions.reprint')}
             </span>
@@ -215,7 +200,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
             }}
             aria-label={t('common.close')}
           >
-            <X className="size-4" aria-hidden="true" />
+            <XIcon className="size-4" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -292,7 +277,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                   }}
                 >
                   <div className="mb-2 flex items-center gap-2">
-                    <Receipt
+                    <ReceiptIcon
                       className="size-4"
                       style={{ color: 'var(--color-pharma)' }}
                       aria-hidden="true"
@@ -370,7 +355,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
 
                 {/* Buyer */}
                 <InfoCard
-                  icon={<User className="size-4" />}
+                  icon={<UserIcon className="size-4" />}
                   title={t('salesHistory.detail.buyer_label')}
                 >
                   <div className="space-y-1 text-caption">
@@ -408,7 +393,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
 
                 {/* Seller */}
                 <InfoCard
-                  icon={<Building2 className="size-4" />}
+                  icon={<Building2Icon className="size-4" />}
                   title={t('salesHistory.detail.seller_label')}
                 >
                   <div className="space-y-1 text-caption">
@@ -626,7 +611,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
               <>
                 {/* Operational client */}
                 <InfoCard
-                  icon={<User className="size-4" />}
+                  icon={<UserIcon className="size-4" />}
                   title={t('salesHistory.adjustment.client_change_label')}
                   action={
                     <button
@@ -634,7 +619,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       onClick={onCreateAdjustment}
                       className="pos-button pos-button-secondary inline-flex items-center gap-1 py-1 px-2 text-caption"
                     >
-                      <Edit3 className="size-3.5" aria-hidden="true" />
+                      <Edit3Icon className="size-3.5" aria-hidden="true" />
                       {t('salesHistory.detail.actions.adjust')}
                     </button>
                   }
@@ -690,13 +675,13 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
 
                 {/* Contact info */}
                 <InfoCard
-                  icon={<Mail className="size-4" />}
+                  icon={<MailIcon className="size-4" />}
                   title={t('salesHistory.detail.contact_title')}
                 >
                   <div className="space-y-1 text-caption">
                     {operationalView.operational.contactInfo.email && (
                       <div className="flex items-center gap-1.5">
-                        <Mail
+                        <MailIcon
                           className="size-3.5"
                           style={{
                             color:
@@ -711,7 +696,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                     )}
                     {operationalView.operational.contactInfo.phone && (
                       <div className="flex items-center gap-1.5">
-                        <Phone
+                        <PhoneIcon
                           className="size-3.5"
                           style={{
                             color:
@@ -726,7 +711,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                     )}
                     {operationalView.operational.contactInfo.address && (
                       <div className="flex items-center gap-1.5">
-                        <MapPin
+                        <MapPinIcon
                           className="size-3.5"
                           style={{
                             color:
@@ -755,7 +740,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
 
                 {/* Payments */}
                 <InfoCard
-                  icon={<CreditCard className="size-4" />}
+                  icon={<CreditCardIcon className="size-4" />}
                   title={t('salesHistory.detail.payments')}
                 >
                   <div
@@ -812,7 +797,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 {/* Delivery info */}
                 {operationalView.operational.deliveryInfo && (
                   <InfoCard
-                    icon={<Truck className="size-4" />}
+                    icon={<TruckIcon className="size-4" />}
                     title={t('salesHistory.detail.delivery_title')}
                   >
                     <div className="space-y-1 text-caption">
@@ -849,7 +834,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
 
                 {/* Notes */}
                 <InfoCard
-                  icon={<StickyNote className="size-4" />}
+                  icon={<StickyNoteIcon className="size-4" />}
                   title={t('salesHistory.detail.notes_title')}
                 >
                   {operationalView.operational.notes.length > 0 ? (
@@ -891,7 +876,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
 
                 {/* Tags */}
                 <InfoCard
-                  icon={<Tag className="size-4" />}
+                  icon={<TagIcon className="size-4" />}
                   title={t('salesHistory.detail.tags_title')}
                 >
                   {operationalView.operational.tags.length > 0 ? (
@@ -924,7 +909,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 {/* Custom fields */}
                 {Object.keys(operationalView.operational.customFields).length > 0 && (
                   <InfoCard
-                    icon={<StickyNote className="size-4" />}
+                    icon={<StickyNoteIcon className="size-4" />}
                     title={t('salesHistory.detail.custom_fields_title')}
                   >
                     <div className="grid grid-cols-2 gap-2 text-caption">
@@ -1008,7 +993,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
             border: '1px solid',
           }}
         >
-          <X className="size-4" aria-hidden="true" />
+          <XIcon className="size-4" aria-hidden="true" />
           {t('salesHistory.detail.actions.cancel_invoice')}
         </button>
         <button
@@ -1016,7 +1001,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
           onClick={onReprint}
           className="pos-button pos-button-secondary inline-flex items-center gap-1.5 py-1 px-3 text-body-sm"
         >
-          <Printer className="size-4" aria-hidden="true" />
+          <PrinterIcon className="size-4" aria-hidden="true" />
           {t('salesHistory.detail.actions.reprint')}
         </button>
         <button
@@ -1024,7 +1009,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
           onClick={onCreateAdjustment}
           className="pos-button pos-button-primary inline-flex items-center gap-1.5 py-1 px-3 text-body-sm"
         >
-          <Edit3 className="size-4" aria-hidden="true" />
+          <Edit3Icon className="size-4" aria-hidden="true" />
           {t('salesHistory.detail.actions.adjust')}
         </button>
       </div>

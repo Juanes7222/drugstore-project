@@ -15,7 +15,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import type { SupplierSearchResult } from '../../../domain/purchases';
 import type { OrderFormItem, OrderFormData } from './purchase-orders.page';
-import { Plus, Package, X } from 'lucide-react';
+import { PackageIcon, PlusIcon, XIcon } from "@/components/ui/icons";
 import { SearchableSelect } from './searchable-select';
 import type { SearchableSelectOption } from './searchable-select';
 import { formatCOP } from './purchases-helpers';
@@ -228,7 +228,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
                 className="text-xs px-2 py-1 bg-pharma/10 text-pharma rounded hover:bg-pharma/20 transition-colors font-semibold"
                 title={t('purchases.orders.createProduct')}
               >
-                <Package size={12} aria-hidden="true" />
+                <PackageIcon size={12} aria-hidden="true" />
                 {t('purchases.orders.newProduct')}
               </button>
             )}
@@ -238,7 +238,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
               disabled={isSaving || !data.supplierId || (maxItems > 0 && data.items.length >= maxItems)}
               className="pos-button pos-button-secondary text-xs px-2 py-1"
             >
-              <Plus size={14} aria-hidden="true" />
+              <PlusIcon size={14} aria-hidden="true" />
               {maxItems > 0
                 ? `${t('purchases.orders.addItem')} (${data.items.length}/${maxItems})`
                 : t('purchases.orders.addItem')}
@@ -349,7 +349,7 @@ export const PurchaseOrderForm: FC<PurchaseOrderFormProps> = ({
                   className="pt-4 text-error/60 hover:text-error transition-colors shrink-0"
                   aria-label={t('common.remove')}
                 >
-                  <X size={14} aria-hidden="true" />
+                  <XIcon size={14} aria-hidden="true" />
                 </button>
               </div>
             ))}

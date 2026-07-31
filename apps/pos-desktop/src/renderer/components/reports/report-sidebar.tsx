@@ -13,7 +13,7 @@ import { useReportsUiStore } from "../../stores/reports.store";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { listReportsByCategory, getReportDefinition } from "../../../domain/reports/report-catalog";
 import type { ReportCategory, ReportDefinition } from "../../../domain/reports/report-types";
-import { Star } from "lucide-react";
+import { StarIcon } from "@/components/ui/icons";
 
 const CATEGORY_KEY: Record<ReportCategory, string> = {
   sales: "reports.categories.sales",
@@ -151,7 +151,7 @@ const ReportItem: FC<ReportItemProps> = ({ def, active, favorite, onSelect, onTo
             favorite ? "text-amber-500" : "text-muted hover:text-amber-500"
           }`}
         >
-          <Star className="h-4 w-4" fill={favorite ? "currentColor" : "none"} />
+          <StarIcon className="h-4 w-4" fill={favorite ? "currentColor" : "none"} />
         </span>
       </button>
     </li>

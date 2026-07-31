@@ -9,14 +9,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Calendar,
-  ChevronDown,
-  FileText,
-  RefreshCw,
-  Search,
-  X,
-} from 'lucide-react';
+import { CalendarIcon, ChevronDownIcon, FileTextIcon, RefreshCwIcon, SearchIcon, XIcon } from "@/components/ui/icons";
 import type {
   SaleHistoryListItem,
   SaleHistoryFilters,
@@ -163,7 +156,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
             className="pos-button pos-button-secondary inline-flex items-center gap-1.5 text-body-sm"
             aria-label={t('salesHistory.retry')}
           >
-            <RefreshCw
+            <RefreshCwIcon
               className={`size-4 ${loading ? 'animate-spin' : ''}`}
               aria-hidden="true"
             />
@@ -174,7 +167,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
         {/* Filters */}
         <div className="flex flex-wrap items-end gap-2">
           <div className="relative flex-1 min-w-[12rem]">
-            <Search
+            <SearchIcon
               className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2"
               style={{
                 color: 'color-mix(in srgb, var(--color-ink) 35%, transparent)',
@@ -196,7 +189,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                 className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm opacity-50 transition-opacity hover:opacity-100"
                 aria-label={t('common.clear')}
               >
-                <X className="size-4" aria-hidden="true" />
+                <XIcon className="size-4" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -211,7 +204,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
               {t('salesHistory.filters.from_date')}
             </span>
             <div className="relative">
-              <Calendar
+              <CalendarIcon
                 className="absolute left-2 top-1/2 size-4 -translate-y-1/2"
                 style={{
                   color:
@@ -239,7 +232,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
               {t('salesHistory.filters.to_date')}
             </span>
             <div className="relative">
-              <Calendar
+              <CalendarIcon
                 className="absolute left-2 top-1/2 size-4 -translate-y-1/2"
                 style={{
                   color:
@@ -263,7 +256,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
               onClick={handleReset}
               className="pos-button pos-button-secondary inline-flex items-center gap-1 text-body-sm"
             >
-              <X className="size-4" aria-hidden="true" />
+              <XIcon className="size-4" aria-hidden="true" />
               {t('salesHistory.filters.reset')}
             </button>
           )}
@@ -465,7 +458,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1.5">
-                        <FileText
+                        <FileTextIcon
                           className="size-3.5"
                           style={{
                             color:
@@ -543,7 +536,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                         aria-label={t('salesHistory.detail.title', { number: sale.localNumber })}
                       >
                         {t('salesHistory.detail.title')}
-                        <ChevronDown
+                        <ChevronDownIcon
                           className="ml-1 size-3.5 rotate-[-90deg]"
                           aria-hidden="true"
                         />

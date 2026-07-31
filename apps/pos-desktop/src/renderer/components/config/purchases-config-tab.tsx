@@ -10,13 +10,8 @@
 
 import { type FC, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  ShoppingCart,
-  PackageCheck,
-  Building2,
-  type LucideIcon,
-  CheckCircle2,
-} from 'lucide-react';
+import { Building2Icon, CheckCircleIcon, PackageCheckIcon, ShoppingCartIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import {
   useLocalConfigStore,
 } from '../../../domain/configuration';
@@ -38,7 +33,7 @@ interface FieldDef {
 
 interface SectionDef {
   id: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   titleKey: string;
   fields: FieldDef[];
 }
@@ -93,19 +88,19 @@ const SUPPLIER_FIELDS: FieldDef[] = [
 const SECTIONS: SectionDef[] = [
   {
     id: 'orders',
-    icon: ShoppingCart,
+    icon: ShoppingCartIcon,
     titleKey: 'purchases.config.sectionOrder',
     fields: ORDER_FIELDS,
   },
   {
     id: 'reception',
-    icon: PackageCheck,
+    icon: PackageCheckIcon,
     titleKey: 'purchases.config.sectionReception',
     fields: RECEPTION_FIELDS,
   },
   {
     id: 'supplier',
-    icon: Building2,
+    icon: Building2Icon,
     titleKey: 'purchases.config.sectionSupplier',
     fields: SUPPLIER_FIELDS,
   },
@@ -217,7 +212,7 @@ export const PurchasesConfigTab: FC = () => {
           {t('purchases.config.description')}
         </p>
         <span className="inline-flex items-center gap-1.5 text-body-xs text-ink-muted">
-          <CheckCircle2 size={12} aria-hidden="true" strokeWidth={1.5} />
+          <CheckCircleIcon size={12} aria-hidden="true" strokeWidth={1.5} />
           {t('purchases.config.autoSave')}
         </span>
       </div>

@@ -9,7 +9,7 @@
 import { useReportsUiStore } from "../../stores/reports.store";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
-import { Bookmark, Trash2 } from "lucide-react";
+import { BookmarkIcon, Trash2Icon } from "@/components/ui/icons";
 import type { ReportCode } from "../../../domain/reports/report-types";
 
 interface SavedView {
@@ -80,7 +80,7 @@ export const SavedReportViews: React.FC<SavedReportViewsProps> = ({ reportCode, 
   useReportsUiStore((s) => s.activeReportCode); // re-render trigger
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-white px-3 py-2">
-      <Bookmark className="h-4 w-4 text-muted" />
+      <BookmarkIcon className="h-4 w-4 text-muted" />
       <span className="text-caption text-muted">{t("reports.saved_views.label")}:</span>
       <input
         type="text"
@@ -107,7 +107,7 @@ export const SavedReportViews: React.FC<SavedReportViewsProps> = ({ reportCode, 
             onClick={() => handleRemove(v.id)}
             className="text-muted hover:text-rose-600"
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2Icon className="h-3 w-3" />
           </button>
         </span>
       ))}

@@ -7,14 +7,7 @@
  */
 import { type FC, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  RefreshCw,
-  Calendar,
-  SearchX,
-  X,
-  Info,
-  Filter,
-} from 'lucide-react';
+import { CalendarIcon, FilterIcon, InfoIcon, RefreshCwIcon, SearchXIcon, XIcon } from "@/components/ui/icons";
 import { useLocalSessionStore, hasMinRole } from '../../../domain/auth/local-session.store';
 import { createAuthService, type AuthService } from '../../../domain/auth/auth.service';
 import { getLocalAuditEntries } from '../../../domain/audit/audit.service';
@@ -277,7 +270,7 @@ export const AuditLogView: FC = () => {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center max-w-sm">
-          <Info size={40} strokeWidth={1.5} aria-hidden="true" className="mx-auto mb-3" style={{ color: 'var(--color-ink-muted)' }} />
+          <InfoIcon size={40} strokeWidth={1.5} aria-hidden="true" className="mx-auto mb-3" style={{ color: 'var(--color-ink-muted)' }} />
           <p className="text-body font-medium" style={{ color: 'var(--color-ink-muted)' }}>
             {t('audit_log.no_permission')}
           </p>
@@ -328,7 +321,7 @@ export const AuditLogView: FC = () => {
             aria-label={t('audit_log.category_legend')}
             title={t('audit_log.category_legend')}
           >
-            <Info size={14} strokeWidth={1.5} aria-hidden="true" />
+            <InfoIcon size={14} strokeWidth={1.5} aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -336,7 +329,7 @@ export const AuditLogView: FC = () => {
             className="pos-button pos-button-secondary text-caption flex items-center gap-1"
             aria-label={t('common.refresh')}
           >
-            <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" />
+            <RefreshCwIcon size={14} strokeWidth={1.5} aria-hidden="true" />
             <span>{t('common.refresh')}</span>
           </button>
         </div>
@@ -375,7 +368,7 @@ export const AuditLogView: FC = () => {
         role="search"
         aria-label={t('audit_log.title')}
       >
-        <Filter size={14} strokeWidth={1.5} aria-hidden="true" style={{ color: 'var(--color-ink-muted)' }} />
+        <FilterIcon size={14} strokeWidth={1.5} aria-hidden="true" style={{ color: 'var(--color-ink-muted)' }} />
         <select
           value={eventFilter}
           onChange={(e) => {
@@ -414,7 +407,7 @@ export const AuditLogView: FC = () => {
         </select>
 
         <div className="flex items-center gap-1">
-          <Calendar size={14} strokeWidth={1.5} aria-hidden="true" style={{ color: 'var(--color-ink-muted)' }} />
+          <CalendarIcon size={14} strokeWidth={1.5} aria-hidden="true" style={{ color: 'var(--color-ink-muted)' }} />
           <input
             type="date"
             value={fromDate}
@@ -449,7 +442,7 @@ export const AuditLogView: FC = () => {
             className="pos-button pos-button-secondary text-caption flex items-center gap-1 px-2 py-1"
             aria-label={t('audit_log.clear_filters')}
           >
-            <X size={12} strokeWidth={1.5} aria-hidden="true" />
+            <XIcon size={12} strokeWidth={1.5} aria-hidden="true" />
             <span>{t('audit_log.clear_filters')}</span>
           </button>
         )}
@@ -473,7 +466,7 @@ export const AuditLogView: FC = () => {
               backgroundColor: 'color-mix(in srgb, var(--color-ink) 6%, transparent)',
             }}
           >
-            <SearchX size={28} strokeWidth={1.5} aria-hidden="true" style={{ color: 'var(--color-ink-muted)' }} />
+            <SearchXIcon size={28} strokeWidth={1.5} aria-hidden="true" style={{ color: 'var(--color-ink-muted)' }} />
           </div>
           <div className="text-center">
             <p className="text-body font-medium" style={{ color: 'var(--color-ink-muted)' }}>

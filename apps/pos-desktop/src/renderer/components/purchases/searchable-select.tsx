@@ -19,7 +19,8 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Loader2, Plus } from 'lucide-react';
+import { ChevronDownIcon, PlusIcon } from "@/components/ui/icons";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -267,14 +268,14 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
         {/* Loading spinner */}
         {isLoading && (
           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-sync">
-            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+            <LoaderIcon size={14} className="animate-spin" aria-hidden="true" />
           </span>
         )}
 
         {/* Chevron when not loading */}
         {!isLoading && (
           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none">
-            <ChevronDown size={14} aria-hidden="true" />
+            <ChevronDownIcon size={14} aria-hidden="true" />
           </span>
         )}
       </div>
@@ -329,7 +330,7 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
               onClick={(e) => { e.stopPropagation(); setIsOpen(false); onCreateNew(); }}
               onMouseEnter={() => setHighlightedIndex(options.length)}
             >
-              <Plus size={14} aria-hidden="true" />
+              <PlusIcon size={14} aria-hidden="true" />
               {createNewLabel ?? 'Crear nuevo'}
             </li>
           )}

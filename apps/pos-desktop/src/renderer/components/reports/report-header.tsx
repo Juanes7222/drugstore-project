@@ -5,7 +5,7 @@
 
 import { type FC, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
+import { XIcon } from "@/components/ui/icons";
 import type { ReportDefinition, ReportResponse } from "../../../domain/reports/report-types";
 import type { ChartFilter } from "../../stores/reports.store";
 
@@ -60,7 +60,7 @@ export const ReportHeader: FC<ReportHeaderProps> = ({
             onClick={onClearChartFilter}
             className="rounded-full p-0.5 hover:bg-amber-200"
           >
-            <X className="h-3 w-3" />
+            <XIcon className="h-3 w-3" />
           </button>
         </div>
       ) : null}

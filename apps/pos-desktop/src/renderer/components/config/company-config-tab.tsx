@@ -6,7 +6,7 @@
 
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { PencilIcon, PlusIcon, Trash2Icon } from "@/components/ui/icons";
 import { TextField } from "./config-form-fields";
 import { FieldRequirementIndicator } from "./field-requirement-indicator";
 import type { TenantConfig, EffectiveConfig, CustomCompanyField } from "../../../domain/config";
@@ -100,7 +100,7 @@ export const CompanyConfigTab: FC<CompanyConfigTabProps> = ({
               onClick={onAddCustomField}
               className="pos-button pos-button-primary flex items-center gap-pos-xs"
             >
-              <Plus size={14} strokeWidth={1.5} aria-hidden="true" />
+              <PlusIcon size={14} strokeWidth={1.5} aria-hidden="true" />
               {t("config.custom_fields.add")}
             </button>
           )}
@@ -145,7 +145,7 @@ export const CompanyConfigTab: FC<CompanyConfigTabProps> = ({
                       className="pos-button pos-button-secondary p-1.5"
                       aria-label={`${t("config.custom_fields.edit")} ${field.name}`}
                     >
-                      <Pencil size={14} strokeWidth={1.5} aria-hidden="true" />
+                      <PencilIcon size={14} strokeWidth={1.5} aria-hidden="true" />
                     </button>
                     <button
                       type="button"
@@ -153,7 +153,7 @@ export const CompanyConfigTab: FC<CompanyConfigTabProps> = ({
                       className="pos-button pos-button-secondary p-1.5 hover:bg-error-container hover:text-error focus-visible:outline-error"
                       aria-label={`${t("config.custom_fields.remove")} ${field.name}`}
                     >
-                      <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
+                      <Trash2Icon size={14} strokeWidth={1.5} aria-hidden="true" />
                     </button>
                   </div>
                 )}

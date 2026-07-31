@@ -11,15 +11,8 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
-import {
-  Radio,
-  RefreshCw,
-  FileDown,
-  FileJson,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-} from "lucide-react";
+import { CheckCircleIcon, FileDownIcon, FileJsonIcon, RadioIcon, RefreshCwIcon, XCircleIcon } from "@/components/ui/icons";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 import type { ConnectionStatus } from "./sync-health.types";
 import { AuthStatusBadge } from "./auth-status-badge";
 
@@ -102,13 +95,13 @@ export const ActionBar: FC<ActionBarProps> = ({
         className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-body-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2 ${testBtnStyle}`}
       >
         {isTesting ? (
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          <LoaderIcon className="h-4 w-4 animate-spin" aria-hidden="true" />
         ) : isReachable ? (
-          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+          <CheckCircleIcon className="h-4 w-4" aria-hidden="true" />
         ) : isUnreachable ? (
-          <XCircle className="h-4 w-4" aria-hidden="true" />
+          <XCircleIcon className="h-4 w-4" aria-hidden="true" />
         ) : (
-          <Radio className="h-4 w-4" aria-hidden="true" />
+          <RadioIcon className="h-4 w-4" aria-hidden="true" />
         )}
         {isReachable
           ? t("sync.connected_label")
@@ -150,7 +143,7 @@ export const ActionBar: FC<ActionBarProps> = ({
         onClick={handleRunSyncNow}
         className="inline-flex items-center gap-2 rounded-md bg-pharma px-3 py-1.5 text-body-sm font-medium text-panel shadow-sm transition-colors hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2"
       >
-        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+        <RefreshCwIcon className="h-4 w-4" aria-hidden="true" />
         {t("sync.run_sync_now")}
       </button>
 
@@ -160,7 +153,7 @@ export const ActionBar: FC<ActionBarProps> = ({
         onClick={handleExportCsv}
         className="inline-flex items-center gap-2 rounded-md border border-border bg-panel px-3 py-1.5 text-body-sm font-medium text-ink shadow-sm transition-colors hover:bg-surface focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2"
       >
-        <FileDown className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+        <FileDownIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
         {t("sync.export_csv")}
       </button>
 
@@ -170,7 +163,7 @@ export const ActionBar: FC<ActionBarProps> = ({
         onClick={handleExportJson}
         className="inline-flex items-center gap-2 rounded-md border border-border bg-panel px-3 py-1.5 text-body-sm font-medium text-ink shadow-sm transition-colors hover:bg-surface focus:outline-none focus:ring-2 focus:ring-pharma focus:ring-offset-2"
       >
-        <FileJson className="h-4 w-4 text-ink-muted" aria-hidden="true" />
+        <FileJsonIcon className="h-4 w-4 text-ink-muted" aria-hidden="true" />
         {t("sync.export_json")}
       </button>
 

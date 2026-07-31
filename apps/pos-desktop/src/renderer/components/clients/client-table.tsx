@@ -5,13 +5,8 @@
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion, type Variants } from "motion/react";
-import {
-  Pencil,
-  Trash2,
-  SearchX,
-  Loader2,
-  Users,
-} from "lucide-react";
+import { PencilIcon, SearchXIcon, Trash2Icon, UsersIcon } from "@/components/ui/icons";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 import type { ClientSearchResult } from "../../../domain/clients/clients.service";
 
 // ---------------------------------------------------------------------------
@@ -61,7 +56,7 @@ export const ClientTable: FC<ClientTableProps> = ({
   if (isSearching) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2">
-        <Loader2 className="size-6 animate-spin" style={{ color: "var(--color-pharma)" }} />
+        <LoaderIcon className="size-6 animate-spin" style={{ color: "var(--color-pharma)" }} />
         <p className="text-body-sm" style={{ color: "var(--color-ink-muted)" }}>
           {t("common.loading")}
         </p>
@@ -77,7 +72,7 @@ export const ClientTable: FC<ClientTableProps> = ({
           className="flex size-12 items-center justify-center rounded-full"
           style={{ backgroundColor: "color-mix(in srgb, var(--color-ink) 5%, transparent)" }}
         >
-          <Users className="size-6" style={{ color: "var(--color-ink-muted)" }} />
+          <UsersIcon className="size-6" style={{ color: "var(--color-ink-muted)" }} />
         </div>
         <p className="text-body-sm" style={{ color: "var(--color-ink-muted)" }}>
           {t("clients.type_to_search")}
@@ -94,7 +89,7 @@ export const ClientTable: FC<ClientTableProps> = ({
           className="flex size-12 items-center justify-center rounded-full"
           style={{ backgroundColor: "color-mix(in srgb, var(--color-urgency) 8%, transparent)" }}
         >
-          <SearchX className="size-6" style={{ color: "var(--color-urgency)" }} />
+          <SearchXIcon className="size-6" style={{ color: "var(--color-urgency)" }} />
         </div>
         <p className="text-body-sm font-medium" style={{ color: "var(--color-ink-muted)" }}>
           {t("clients.no_results")}
@@ -183,13 +178,13 @@ export const ClientTable: FC<ClientTableProps> = ({
               <Td className="text-right">
                 <div className="inline-flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
                   <IconButton
-                    icon={<Pencil className="size-3.5" />}
+                    icon={<PencilIcon className="size-3.5" />}
                     label={t("clients.edit")}
                     onClick={() => onEdit(client)}
                     color="var(--color-pharma)"
                   />
                   <IconButton
-                    icon={<Trash2 className="size-3.5" />}
+                    icon={<Trash2Icon className="size-3.5" />}
                     label={t("clients.delete")}
                     onClick={() => onDelete(client.id)}
                     color="var(--color-urgency)"

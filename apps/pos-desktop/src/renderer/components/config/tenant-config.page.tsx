@@ -14,16 +14,8 @@
 import { type FC, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
-import {
-  Building2,
-  Receipt,
-  ToggleLeft,
-  Settings2,
-  ShoppingCart,
-  Percent,
-  UserCircle,
-  type LucideIcon,
-} from "lucide-react";
+import { Building2Icon, PercentIcon, ReceiptIcon, Settings2Icon, ShoppingCartIcon, ToggleLeftIcon, UserCircleIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { AlertCircleIcon } from "@/components/ui/icons";
 import {
   useTenantConfig,
@@ -39,6 +31,7 @@ import { FiscalConfigTab } from "./fiscal-config-tab";
 import { SystemPreferencesTab } from "./system-preferences-tab";
 import { PurchasesConfigTab } from "./purchases-config-tab";
 import { SalesConfigTab } from "./sales-config-tab";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 
 // ---------------------------------------------------------------------------
 // Tab definitions
@@ -49,17 +42,17 @@ type TabId = "company" | "fiscal" | "operation" | "preferences" | "user-preferen
 interface TabDefinition {
   id: TabId;
   i18nKey: string;
-  Icon: LucideIcon;
+  Icon: IconComponent;
 }
 
 const TABS: TabDefinition[] = [
-  { id: "company", i18nKey: "tabs.company", Icon: Building2 },
-  { id: "fiscal", i18nKey: "tabs.fiscal", Icon: Receipt },
-  { id: "operation", i18nKey: "tabs.operation", Icon: ToggleLeft },
-  { id: "preferences", i18nKey: "tabs.preferences", Icon: Settings2 },
-  { id: "user-preferences", i18nKey: "tabs.user_preferences", Icon: UserCircle },
-  { id: "purchases", i18nKey: "tabs.purchases", Icon: ShoppingCart },
-  { id: "sales", i18nKey: "tabs.sales", Icon: Percent },
+  { id: "company", i18nKey: "tabs.company", Icon: Building2Icon },
+  { id: "fiscal", i18nKey: "tabs.fiscal", Icon: ReceiptIcon },
+  { id: "operation", i18nKey: "tabs.operation", Icon: ToggleLeftIcon },
+  { id: "preferences", i18nKey: "tabs.preferences", Icon: Settings2Icon },
+  { id: "user-preferences", i18nKey: "tabs.user_preferences", Icon: UserCircleIcon },
+  { id: "purchases", i18nKey: "tabs.purchases", Icon: ShoppingCartIcon },
+  { id: "sales", i18nKey: "tabs.sales", Icon: PercentIcon },
 ];
 
 // ---------------------------------------------------------------------------
@@ -190,26 +183,7 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
     return (
       <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center gap-pos-md">
-          <svg
-            className="h-8 w-8 animate-spin text-ink-muted"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
+          <LoaderIcon className="h-8 w-8 text-ink-muted" />
           <p className="text-body-sm text-ink-muted">
             {t("common.loading")}
           </p>

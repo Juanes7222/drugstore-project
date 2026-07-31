@@ -50,7 +50,7 @@ describe("LicenseHeroCard", () => {
       render(<LicenseHeroCard {...defaultProps()} />);
 
       const card = screen.getByRole("status");
-      const icon = card.querySelector("svg.lucide-shield");
+      const icon = card.querySelector("svg[data-icon=\"shield\"]");
       expect(icon).toBeInTheDocument();
       expect(icon).toHaveAttribute("aria-hidden", "true");
     });
@@ -66,7 +66,7 @@ describe("LicenseHeroCard", () => {
 
       const card = screen.getByRole("status");
       expect(card.classList.contains("border-l-pharma")).toBe(true);
-      expect(card.querySelector("svg.lucide-shield")).toBeInTheDocument();
+      expect(card.querySelector("svg[data-icon=\"shield\"]")).toBeInTheDocument();
     });
 
     it("renders grace period with urgency amber border and ShieldAlert icon", () => {
@@ -80,7 +80,7 @@ describe("LicenseHeroCard", () => {
 
       const card = screen.getByRole("status");
       expect(card.classList.contains("border-l-urgency")).toBe(true);
-      expect(card.querySelector("svg.lucide-shield-alert")).toBeInTheDocument();
+      expect(card.querySelector("svg[data-icon=\"shield-alert\"]")).toBeInTheDocument();
     });
 
     it("renders locked status with error red border and ShieldOff icon", () => {
@@ -94,7 +94,7 @@ describe("LicenseHeroCard", () => {
 
       const card = screen.getByRole("status");
       expect(card.classList.contains("border-l-error")).toBe(true);
-      expect(card.querySelector("svg.lucide-shield-off")).toBeInTheDocument();
+      expect(card.querySelector("svg[data-icon=\"shield-off\"]")).toBeInTheDocument();
     });
 
     it("renders revoked status with error red border and ShieldOff icon", () => {
@@ -108,7 +108,7 @@ describe("LicenseHeroCard", () => {
 
       const card = screen.getByRole("status");
       expect(card.classList.contains("border-l-error")).toBe(true);
-      expect(card.querySelector("svg.lucide-shield-off")).toBeInTheDocument();
+      expect(card.querySelector("svg[data-icon=\"shield-off\"]")).toBeInTheDocument();
     });
   });
 

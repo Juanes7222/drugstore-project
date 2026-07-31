@@ -6,8 +6,10 @@
 import { type FC, useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
-import { Plus, Trash2, Check } from 'lucide-react';
+import { CheckIcon, PlusIcon, Trash2Icon } from "@/components/ui/icons";
+
 import type { NamedPreset } from '../../../domain/config';
+import { LoaderIcon } from "@/components/ui/icons/animated";
 
 export interface NamedPresetsSectionProps {
   /** List of saved presets. */
@@ -75,7 +77,7 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
             onClick={() => setShowSaveForm((v) => !v)}
             className="pos-button pos-button-primary gap-pos-xs"
           >
-            <Plus size={14} strokeWidth={1.5} aria-hidden="true" />
+            <PlusIcon size={14} strokeWidth={1.5} aria-hidden="true" />
             {t('config.named_presets.save')}
           </button>
         )}
@@ -136,26 +138,7 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
       {/* Presets list */}
       {loading ? (
         <div className="flex items-center justify-center py-8">
-          <svg
-            className="h-6 w-6 animate-spin text-ink-muted"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
+          <LoaderIcon className="h-6 w-6 text-ink-muted" />
         </div>
       ) : presets.length === 0 ? (
         <p className="py-pos-md text-body-sm text-ink-muted">
@@ -188,7 +171,7 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
                   onClick={() => onApply(preset.id)}
                   className="pos-button pos-button-primary gap-pos-xs text-caption"
                 >
-                  <Check size={12} strokeWidth={1.5} aria-hidden="true" />
+                  <CheckIcon size={12} strokeWidth={1.5} aria-hidden="true" />
                   {t('config.named_presets.apply')}
                 </button>
                 {!readOnly && (
@@ -198,7 +181,7 @@ export const NamedPresetsSection: FC<NamedPresetsSectionProps> = ({
                     className="pos-button pos-button-secondary p-1.5 hover:bg-error-container hover:text-error focus-visible:outline-error"
                     aria-label={`${t('config.named_presets.delete')} ${preset.name}`}
                   >
-                    <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
+                    <Trash2Icon size={14} strokeWidth={1.5} aria-hidden="true" />
                   </button>
                 )}
               </div>

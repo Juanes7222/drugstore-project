@@ -16,12 +16,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
-import {
-  Plus,
-  RefreshCw,
-  Search,
-  X,
-} from "lucide-react";
+import { PlusIcon, RefreshCwIcon, SearchIcon, XIcon } from "@/components/ui/icons";
 import { useClientsService } from "../common/service-context";
 import type { ClientSearchResult, CreateClientInput } from "../../../domain/clients/clients.service";
 import type { UpdateClientInput } from "../../../domain/clients/clients.service";
@@ -307,7 +302,7 @@ export const ClientsPage: FC = () => {
             }}
             title={t("clients.sync_tooltip")}
           >
-            <RefreshCw className={`size-4 ${isSyncing ? "animate-spin" : ""}`} />
+            <RefreshCwIcon className={`size-4 ${isSyncing ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">{isSyncing ? t("common.loading") : t("clients.sync")}</span>
           </button>
 
@@ -318,7 +313,7 @@ export const ClientsPage: FC = () => {
               className="inline-flex items-center gap-1.5 rounded-sm border px-3 py-1.5 text-body-sm font-semibold text-white transition-all hover:brightness-110"
               style={{ backgroundColor: "var(--color-pharma)" }}
             >
-              <Plus className="size-4" />
+              <PlusIcon className="size-4" />
               {t("clients.create")}
             </button>
           )}
@@ -331,7 +326,7 @@ export const ClientsPage: FC = () => {
         variants={headerVariants}
       >
         <div className="relative">
-          <Search
+          <SearchIcon
             className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2"
             style={{ color: "color-mix(in srgb, var(--color-ink) 35%, transparent)", pointerEvents: "none" }}
           />
@@ -355,7 +350,7 @@ export const ClientsPage: FC = () => {
               className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm opacity-50 transition-opacity hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-pharma"
               aria-label={t("common.clear")}
             >
-              <X className="size-4" />
+              <XIcon className="size-4" />
             </button>
           )}
         </div>

@@ -14,7 +14,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeftIcon } from "@/components/ui/icons";
 import { useAppDispatch } from '@/store/hooks';
 import { navigateToPurchasesMain } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
@@ -290,7 +290,7 @@ export const SupplierReturnsPage: FC = () => {
             className="text-ink-muted hover:text-ink transition-colors"
             aria-label={t('common.back')}
           >
-            <ArrowLeft size={20} aria-hidden="true" />
+            <ArrowLeftIcon size={20} aria-hidden="true" />
           </button>
           <h1 className="pos-page-title">
             {viewMode === 'create'

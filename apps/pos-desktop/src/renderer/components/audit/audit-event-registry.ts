@@ -10,38 +10,8 @@
  * @module audit-event-registry
  */
 
-import {
-  LogIn,
-  LogOut,
-  Shield,
-  Package,
-  AlertTriangle,
-  UserPlus,
-  UserX,
-  Lock,
-  KeyRound,
-  Network,
-  DollarSign,
-  Receipt,
-  FileText,
-  ShoppingCart,
-  Printer,
-  ClipboardList,
-  TrendingUp,
-  TrendingDown,
-  Ban,
-  Undo2,
-  Check,
-  CheckCheck,
-  Plus,
-  Minus,
-  Calendar,
-  Unlock,
-  ArrowLeft,
-  Edit,
-  X,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { AlertTriangleIcon, ArrowLeftIcon, BanIcon, CalendarIcon, CheckCheckIcon, CheckIcon, ClipboardListIcon, DollarSignIcon, EditIcon, FileTextIcon, KeyRoundIcon, LockIcon, LogInIcon, LogOutIcon, MinusIcon, NetworkIcon, PackageIcon, PlusIcon, PrinterIcon, ReceiptIcon, ShieldIcon, ShoppingCartIcon, TrendingDownIcon, TrendingUpIcon, Undo2Icon, UnlockIcon, UserPlusIcon, UserXIcon, XIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -517,45 +487,45 @@ export const AUDIT_EVENT_CONFIGS: Readonly<Record<string, AuditEventConfig>> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Icon name → LucideIcon component resolver.
+ * Icon name → IconComponent component resolver.
  * Centralised so the registry is the only place with lucide icon imports.
  */
-const ICON_RESOLVER: Readonly<Record<string, LucideIcon>> = {
-  LogIn,
-  LogOut,
-  Shield,
-  Package,
-  AlertTriangle,
-  UserPlus,
-  UserX,
-  Lock,
-  KeyRound,
-  Network,
-  DollarSign,
-  Receipt,
-  FileText,
-  ShoppingCart,
-  Printer,
-  ClipboardList,
-  TrendingUp,
-  TrendingDown,
-  Ban,
-  Undo2,
-  Check,
-  CheckCheck,
-  Plus,
-  Minus,
-  Calendar,
-  Unlock,
-  ArrowLeft,
-  Edit,
-  X,
+const ICON_RESOLVER: Readonly<Record<string, IconComponent>> = {
+  LogIn: LogInIcon,
+  LogOut: LogOutIcon,
+  Shield: ShieldIcon,
+  Package: PackageIcon,
+  AlertTriangle: AlertTriangleIcon,
+  UserPlus: UserPlusIcon,
+  UserX: UserXIcon,
+  Lock: LockIcon,
+  KeyRound: KeyRoundIcon,
+  Network: NetworkIcon,
+  DollarSign: DollarSignIcon,
+  Receipt: ReceiptIcon,
+  FileText: FileTextIcon,
+  ShoppingCart: ShoppingCartIcon,
+  Printer: PrinterIcon,
+  ClipboardList: ClipboardListIcon,
+  TrendingUp: TrendingUpIcon,
+  TrendingDown: TrendingDownIcon,
+  Ban: BanIcon,
+  Undo2: Undo2Icon,
+  Check: CheckIcon,
+  CheckCheck: CheckCheckIcon,
+  Plus: PlusIcon,
+  Minus: MinusIcon,
+  Calendar: CalendarIcon,
+  Unlock: UnlockIcon,
+  ArrowLeft: ArrowLeftIcon,
+  Edit: EditIcon,
+  X: XIcon,
 };
 
-const FALLBACK_ICON: LucideIcon = Package;
+const FALLBACK_ICON: IconComponent = PackageIcon;
 
-/** Resolve a config icon name to a LucideIcon component. */
-export function resolveIcon(iconName: string): LucideIcon {
+/** Resolve a config icon name to a IconComponent component. */
+export function resolveIcon(iconName: string): IconComponent {
   return ICON_RESOLVER[iconName] ?? FALLBACK_ICON;
 }
 

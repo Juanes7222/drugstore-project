@@ -7,6 +7,7 @@
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
+import { LogoIcon } from "@/components/ui/icons";
 
 export const LoginHeader: FC = () => {
   const { t } = useTranslation();
@@ -23,16 +24,7 @@ export const LoginHeader: FC = () => {
         className="flex items-center justify-center"
         style={{ color: "var(--color-pharma)" }}
       >
-        <svg
-          width="36"
-          height="36"
-          viewBox="0 0 36 36"
-          fill="none"
-          aria-hidden="true"
-        >
-          <rect x="14" y="4" width="8" height="28" rx="2" fill="currentColor" />
-          <rect x="4" y="14" width="28" height="8" rx="2" fill="currentColor" />
-        </svg>
+        <LogoIcon size={36} />
       </div>
 
       <h1

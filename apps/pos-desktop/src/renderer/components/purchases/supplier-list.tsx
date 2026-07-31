@@ -9,7 +9,7 @@
 
 import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Building2, Edit3, UserX } from 'lucide-react';
+import { Building2Icon, Edit3Icon, UserXIcon } from "@/components/ui/icons";
 import type { SupplierSearchResult } from '../../../domain/purchases';
 import { TableSkeletonRows } from './purchases-helpers';
 
@@ -51,7 +51,7 @@ export const SupplierList: FC<SupplierListProps> = ({
     return (
       <div className="flex flex-col items-center justify-center py-12 text-ink-muted">
         <div className="w-12 h-12 rounded-full bg-pharma/10 flex items-center justify-center mb-3">
-          <Building2 size={24} className="text-pharma" aria-hidden="true" />
+          <Building2Icon size={24} className="text-pharma" aria-hidden="true" />
         </div>
         <p className="text-sm">
           {t('purchases.suppliers.emptyState')}
@@ -94,7 +94,7 @@ export const SupplierList: FC<SupplierListProps> = ({
                       className="inline-flex items-center gap-1 text-pharma hover:text-pharma/80 text-xs font-semibold transition-colors"
                       aria-label={`${t('common.edit')} ${s.businessName}`}
                     >
-                      <Edit3 size={12} aria-hidden="true" />
+                      <Edit3Icon size={12} aria-hidden="true" />
                       {t('common.edit')}
                     </button>
                   )}
@@ -104,7 +104,7 @@ export const SupplierList: FC<SupplierListProps> = ({
                       className="inline-flex items-center gap-1 text-error hover:text-error/80 text-xs font-semibold transition-colors"
                       aria-label={`${t('purchases.suppliers.deactivate')} ${s.businessName}`}
                     >
-                      <UserX size={12} aria-hidden="true" />
+                      <UserXIcon size={12} aria-hidden="true" />
                       {t('purchases.suppliers.deactivate')}
                     </button>
                   )}

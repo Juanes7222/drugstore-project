@@ -15,6 +15,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import type { WizardState } from './setup-wizard.page';
+import { FileTextIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -177,28 +178,7 @@ export const SetupWizardStepTestPrints: FC<
                   </p>
                   {/* Paper size label */}
                   <span className="mt-0.5 inline-flex items-center gap-1 text-caption text-ink-muted">
-                    <svg
-                      viewBox="0 0 14 14"
-                      fill="none"
-                      className="h-3 w-3"
-                      aria-hidden="true"
-                    >
-                      <rect
-                        x="1.5"
-                        y="2.5"
-                        width="11"
-                        height="9"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <path
-                        d="M4.5 5.5h5M4.5 7.5h3"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                        strokeLinecap="round"
-                      />
-                    </svg>
+                    <FileTextIcon size={12} />
                     {PAPER_SIZE_LABELS[
                       state.paperSizes[printer.systemName] ?? 'UNKNOWN'
                     ] ?? 'Automático'}

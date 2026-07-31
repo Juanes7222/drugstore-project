@@ -7,7 +7,8 @@
 import { type FC, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
-import { Sun, Globe, CalendarDays, Clock, Volume2, Ruler, Keyboard, type LucideIcon } from 'lucide-react';
+import { CalendarDaysIcon, ClockIcon, GlobeIcon, KeyboardIcon, RulerIcon, SunIcon, Volume2Icon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import { useUserPreferences } from '../../../domain/config/use-user-preferences';
 import type {
   UserTheme,
@@ -58,7 +59,7 @@ const KEYBOARD_OPTIONS: Option<KeyboardLayout>[] = [
 // ---------------------------------------------------------------------------
 
 interface PreferenceRowProps {
-  icon: LucideIcon;
+  icon: IconComponent;
   label: string;
   children: React.ReactNode;
 }
@@ -122,7 +123,7 @@ export const UserPreferencesSection: FC<UserPreferencesSectionProps> = ({
 
       <div className="space-y-pos-xs">
         {/* Theme */}
-        <PreferenceRow icon={Sun} label="Tema">
+        <PreferenceRow icon={SunIcon} label="Tema">
           <SelectControl
             value={theme}
             options={THEME_OPTIONS}
@@ -131,7 +132,7 @@ export const UserPreferencesSection: FC<UserPreferencesSectionProps> = ({
         </PreferenceRow>
 
         {/* Language */}
-        <PreferenceRow icon={Globe} label="Idioma">
+        <PreferenceRow icon={GlobeIcon} label="Idioma">
           <SelectControl
             value={language}
             options={LANGUAGE_OPTIONS}
@@ -140,7 +141,7 @@ export const UserPreferencesSection: FC<UserPreferencesSectionProps> = ({
         </PreferenceRow>
 
         {/* Date format */}
-        <PreferenceRow icon={CalendarDays} label="Formato de fecha">
+        <PreferenceRow icon={CalendarDaysIcon} label="Formato de fecha">
           <SelectControl
             value={dateFormat}
             options={DATE_FORMAT_OPTIONS}
@@ -149,7 +150,7 @@ export const UserPreferencesSection: FC<UserPreferencesSectionProps> = ({
         </PreferenceRow>
 
         {/* Time format */}
-        <PreferenceRow icon={Clock} label="Formato de hora">
+        <PreferenceRow icon={ClockIcon} label="Formato de hora">
           <SelectControl
             value={timeFormat}
             options={TIME_FORMAT_OPTIONS}
@@ -158,7 +159,7 @@ export const UserPreferencesSection: FC<UserPreferencesSectionProps> = ({
         </PreferenceRow>
 
         {/* Sound toggle */}
-        <PreferenceRow icon={Volume2} label="Sonido">
+        <PreferenceRow icon={Volume2Icon} label="Sonido">
           <label className="relative inline-flex cursor-pointer items-center">
             <input
               type="checkbox"
@@ -175,7 +176,7 @@ export const UserPreferencesSection: FC<UserPreferencesSectionProps> = ({
         <div className="rounded-sm border border-border bg-panel px-pos-md py-pos-sm transition-colors hover:bg-surface-variant">
           <div className="flex items-center gap-pos-md">
             <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-pharma/10 text-pharma">
-              <Ruler size={16} strokeWidth={1.5} aria-hidden="true" />
+              <RulerIcon size={16} strokeWidth={1.5} aria-hidden="true" />
             </div>
             <span className="text-body-sm font-medium text-ink">
               Tamaño de letra del recibo
@@ -209,7 +210,7 @@ export const UserPreferencesSection: FC<UserPreferencesSectionProps> = ({
         </div>
 
         {/* Keyboard layout */}
-        <PreferenceRow icon={Keyboard} label="Distribución del teclado">
+        <PreferenceRow icon={KeyboardIcon} label="Distribución del teclado">
           <SelectControl
             value={keyboardLayout}
             options={KEYBOARD_OPTIONS}

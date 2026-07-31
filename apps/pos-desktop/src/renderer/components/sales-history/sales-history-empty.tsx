@@ -4,7 +4,7 @@
  */
 import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileSearch, X } from 'lucide-react';
+import { FileSearchIcon, XIcon } from "@/components/ui/icons";
 
 export interface SalesHistoryEmptyProps {
   hasFilters: boolean;
@@ -26,7 +26,7 @@ export const SalesHistoryEmpty: FC<SalesHistoryEmptyProps> = ({
             'color-mix(in srgb, var(--color-ink) 5%, transparent)',
         }}
       >
-        <FileSearch
+        <FileSearchIcon
           className="size-7"
           style={{ color: 'var(--color-ink-muted)' }}
           aria-hidden="true"
@@ -55,7 +55,7 @@ export const SalesHistoryEmpty: FC<SalesHistoryEmptyProps> = ({
           onClick={onReset}
           className="pos-button pos-button-secondary mt-4 inline-flex items-center gap-1.5 text-body-sm"
         >
-          <X className="size-4" aria-hidden="true" />
+          <XIcon className="size-4" aria-hidden="true" />
           {t('salesHistory.empty.reset')}
         </button>
       )}

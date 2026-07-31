@@ -20,13 +20,8 @@
 
 import { type FC, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Percent,
-  Tag,
-  Shield,
-  CheckCircle2,
-  type LucideIcon,
-} from 'lucide-react';
+import { CheckCircleIcon, PercentIcon, ShieldIcon, TagIcon } from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
 import {
   useLocalConfigStore,
   type DiscountLimitRole,
@@ -41,7 +36,7 @@ import {
 
 interface SectionDef {
   id: string;
-  Icon: LucideIcon;
+  Icon: IconComponent;
   titleKey: string;
   descKey: string;
 }
@@ -49,19 +44,19 @@ interface SectionDef {
 const SECTIONS: SectionDef[] = [
   {
     id: 'discounts',
-    Icon: Percent,
+    Icon: PercentIcon,
     titleKey: 'config.sales.sectionDiscounts',
     descKey: 'config.sales.sectionDiscountsDesc',
   },
   {
     id: 'overrides',
-    Icon: Tag,
+    Icon: TagIcon,
     titleKey: 'config.sales.sectionOverrides',
     descKey: 'config.sales.sectionOverridesDesc',
   },
   {
     id: 'floor',
-    Icon: Shield,
+    Icon: ShieldIcon,
     titleKey: 'config.sales.sectionFloor',
     descKey: 'config.sales.sectionFloorDesc',
   },
@@ -227,7 +222,7 @@ export const SalesConfigTab: FC = () => {
           {t('config.sales.description')}
         </p>
         <span className="inline-flex items-center gap-1.5 text-body-xs text-ink-muted">
-          <CheckCircle2 size={12} aria-hidden="true" strokeWidth={1.5} />
+          <CheckCircleIcon size={12} aria-hidden="true" strokeWidth={1.5} />
           {t('config.sales.autoSave')}
         </span>
       </div>

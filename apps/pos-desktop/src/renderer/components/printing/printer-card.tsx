@@ -17,6 +17,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { PrinterConfigRecord } from '../../../domain/printing';
 import { PrinterStatusBadge } from './printer-status-badge';
+import { ClockIcon, XIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Job-type labels for display
@@ -182,21 +183,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
       {/* Pending count */}
       {pendingCount > 0 && (
         <div className="mt-2 flex items-center gap-1.5 text-caption text-urgency">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 6v6l4 2" />
-          </svg>
+          <ClockIcon size={12} />
           <span className="font-medium">
             {t('printing.card.pending_count', '{{count}} pendiente(s)', {
               count: pendingCount,
@@ -292,20 +279,7 @@ export const PrinterCard: FC<PrinterCardProps> = ({
                   className="absolute right-3 top-3 text-ink-muted hover:text-ink"
                   aria-label={t('common.close', 'Cerrar')}
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                  </svg>
+                  <XIcon size={16} />
                 </button>
               </Dialog.Close>
             </Dialog.Content>

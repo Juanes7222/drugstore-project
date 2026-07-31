@@ -6,7 +6,7 @@
 
 import type { FC } from "react";
 import { useTranslation } from "react-i18next";
-import { CheckCircle2, Building2, Monitor } from "lucide-react";
+import { Building2Icon, CheckCircleIcon, MonitorIcon } from "@/components/ui/icons";
 import { FEATURE_LABELS } from "./license-status.helpers";
 
 export interface LicensePlanPanelProps {
@@ -30,7 +30,7 @@ export const LicensePlanPanel: FC<LicensePlanPanelProps> = ({
   return (
     <div className="rounded-pos border border-border bg-panel p-pos-lg shadow-pos-panel">
       <div className="mb-pos-md flex items-center gap-pos-sm">
-        <CheckCircle2 className="h-5 w-5 text-pharma" aria-hidden="true" />
+        <CheckCircleIcon className="h-5 w-5 text-pharma" aria-hidden="true" />
         <h2 className="text-ui font-semibold text-ink">
           {t("licensing.status_page.plan_section")}
         </h2>
@@ -49,7 +49,7 @@ export const LicensePlanPanel: FC<LicensePlanPanelProps> = ({
       {/* Capacity */}
       <div className="mb-pos-md space-y-pos-xs">
         <div className="flex items-center gap-pos-sm text-body-sm text-ink-muted">
-          <Building2 className="h-4 w-4" aria-hidden="true" />
+          <Building2Icon className="h-4 w-4" aria-hidden="true" />
           <span>
             {t("licensing.status_page.max_locations", {
               count: maxLocations ?? 0,
@@ -57,7 +57,7 @@ export const LicensePlanPanel: FC<LicensePlanPanelProps> = ({
           </span>
         </div>
         <div className="flex items-center gap-pos-sm text-body-sm text-ink-muted">
-          <Monitor className="h-4 w-4" aria-hidden="true" />
+          <MonitorIcon className="h-4 w-4" aria-hidden="true" />
           <span>
             {t("licensing.status_page.max_workstations", {
               count: maxWorkstationsPerLocation ?? 0,
@@ -78,7 +78,7 @@ export const LicensePlanPanel: FC<LicensePlanPanelProps> = ({
                 key={feature}
                 className="flex items-center gap-pos-sm text-body-sm text-ink"
               >
-                <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-pharma" aria-hidden="true" />
+                <CheckCircleIcon className="h-4 w-4 flex-shrink-0 text-pharma" aria-hidden="true" />
                 {t(FEATURE_LABELS[feature] ?? feature)}
               </li>
             ))}

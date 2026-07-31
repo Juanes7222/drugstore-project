@@ -17,12 +17,7 @@
 import { type FC, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
-import {
-  TriangleAlert,
-  AlertTriangle,
-  Clock,
-  Trash2,
-} from "lucide-react";
+import { AlertTriangleIcon, ClockIcon, Trash2Icon } from "@/components/ui/icons";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
 import type { PrismaClient } from "@pharmacy/database/local";
 import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
@@ -37,7 +32,7 @@ const bannerConfig: Record<
     bg: string;
     border: string;
     text: string;
-    icon: typeof Clock;
+    icon: typeof ClockIcon;
     titleKey: string;
     descKey: string;
   }
@@ -46,7 +41,7 @@ const bannerConfig: Record<
     bg: "bg-urgency/10",
     border: "border-urgency/40",
     text: "text-urgency",
-    icon: AlertTriangle,
+    icon: AlertTriangleIcon,
     titleKey: "sync.attention_banner.permanent_failure_title",
     descKey: "sync.attention_banner.permanent_failure_description",
   },
@@ -54,7 +49,7 @@ const bannerConfig: Record<
     bg: "bg-sync/8",
     border: "border-sync/30",
     text: "text-sync",
-    icon: Clock,
+    icon: ClockIcon,
     titleKey: "sync.attention_banner.pending_title",
     descKey: "sync.attention_banner.pending_description",
   },
@@ -62,7 +57,7 @@ const bannerConfig: Record<
     bg: "bg-error-container",
     border: "border-error/40",
     text: "text-error",
-    icon: TriangleAlert,
+    icon: AlertTriangleIcon,
     titleKey: "sync.attention_banner.backup_critical_title",
     descKey: "sync.attention_banner.backup_critical_description",
   },
@@ -172,7 +167,7 @@ export const SyncAttentionBanner: FC = () => {
   }
 
   const config = variant ? bannerConfig[variant] : null;
-  const Icon = config?.icon ?? Clock;
+  const Icon = config?.icon ?? ClockIcon;
   const show = mounted && variant !== null;
 
   return (
@@ -231,7 +226,7 @@ export const SyncAttentionBanner: FC = () => {
                   disabled={discardAllSubmitting}
                   className="flex items-center gap-1 rounded border border-red-500 bg-red-600 px-2 py-0.5 text-caption font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
                 >
-                  <Trash2 className="h-3 w-3" aria-hidden="true" />
+                  <Trash2Icon className="h-3 w-3" aria-hidden="true" />
                   {discardAllSubmitting
                     ? t("common.processing", "Procesando…")
                     : t("sync.attention_banner.discard_all_confirm_button")}

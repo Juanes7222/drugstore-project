@@ -10,16 +10,7 @@
 
 import { type FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Building2,
-  FileText,
-  PackageCheck,
-  Undo2,
-  ArrowRight,
-  ClipboardList,
-  Truck,
-  AlertTriangle,
-} from 'lucide-react';
+import { AlertTriangleIcon, ArrowRightIcon, Building2Icon, ClipboardListIcon, FileTextIcon, PackageCheckIcon, TruckIcon, Undo2Icon } from "@/components/ui/icons";
 import { useAppDispatch } from '@/store/hooks';
 import {
   navigateToSuppliers,
@@ -60,7 +51,7 @@ export const PurchasesMainPage: FC = () => {
         key: 'suppliers',
         titleKey: 'purchases.main.suppliersTitle',
         descriptionKey: 'purchases.main.suppliersDesc',
-        icon: Building2,
+        icon: Building2Icon,
         onClick: () => dispatch(navigateToSuppliers()),
         requiredRole: RoleType.INVENTORY_ASSISTANT,
       },
@@ -68,7 +59,7 @@ export const PurchasesMainPage: FC = () => {
         key: 'purchase-orders',
         titleKey: 'purchases.main.ordersTitle',
         descriptionKey: 'purchases.main.ordersDesc',
-        icon: FileText,
+        icon: FileTextIcon,
         onClick: () => dispatch(navigateToPurchaseOrders()),
         requiredRole: RoleType.INVENTORY_ASSISTANT,
         badge: pendingOrdersCount,
@@ -78,7 +69,7 @@ export const PurchasesMainPage: FC = () => {
         key: 'purchase-receptions',
         titleKey: 'purchases.main.receptionsTitle',
         descriptionKey: 'purchases.main.receptionsDesc',
-        icon: PackageCheck,
+        icon: PackageCheckIcon,
         onClick: () => dispatch(navigateToPurchaseReceptions()),
         requiredRole: RoleType.INVENTORY_ASSISTANT,
         badge: pendingReceptionsCount,
@@ -88,7 +79,7 @@ export const PurchasesMainPage: FC = () => {
         key: 'supplier-returns',
         titleKey: 'purchases.main.returnsTitle',
         descriptionKey: 'purchases.main.returnsDesc',
-        icon: Undo2,
+        icon: Undo2Icon,
         onClick: () => dispatch(navigateToSupplierReturns()),
         requiredRole: RoleType.INVENTORY_ASSISTANT,
       },
@@ -128,7 +119,7 @@ export const PurchasesMainPage: FC = () => {
 
       {visibleCards.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-ink-muted">
-          <AlertTriangle size={40} aria-hidden="true" />
+          <AlertTriangleIcon size={40} aria-hidden="true" />
           <p className="mt-3 text-sm">{t('purchases.main.noAccess')}</p>
         </div>
       ) : (
@@ -159,7 +150,7 @@ export const PurchasesMainPage: FC = () => {
 
                 {/* Arrow indicator */}
                 <span className="absolute bottom-4 right-4 text-ink-muted group-hover:text-pharma transition-colors">
-                  <ArrowRight size={16} aria-hidden="true" />
+                  <ArrowRightIcon size={16} aria-hidden="true" />
                 </span>
 
                 {/* Badge */}
@@ -183,11 +174,11 @@ export const PurchasesMainPage: FC = () => {
       {/* Module info footer */}
       <div className="mt-auto pt-8 border-t border-border text-xs text-ink-muted flex items-center gap-4">
         <span className="inline-flex items-center gap-1">
-          <ClipboardList size={12} aria-hidden="true" />
+          <ClipboardListIcon size={12} aria-hidden="true" />
           {t('purchases.main.moduleLabel')}
         </span>
         <span className="inline-flex items-center gap-1">
-          <Truck size={12} aria-hidden="true" />
+          <TruckIcon size={12} aria-hidden="true" />
           {t('purchases.main.offlineReady')}
         </span>
       </div>

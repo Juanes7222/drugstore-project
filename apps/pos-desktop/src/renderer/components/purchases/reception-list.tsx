@@ -8,7 +8,7 @@
 
 import { type FC, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye } from 'lucide-react';
+import { EyeIcon } from "@/components/ui/icons";
 import type { ReceptionResult } from '../../../domain/purchases';
 import {
   formatCOP,
@@ -109,7 +109,7 @@ export const ReceptionList: FC<ReceptionListProps> = ({
                         className="inline-flex items-center gap-1 text-pharma hover:text-pharma/80 text-xs font-semibold transition-colors"
                         aria-label={`${t('purchases.receptions.viewReception')} #${r.sequentialNumber}`}
                       >
-                        <Eye size={14} aria-hidden="true" />
+                        <EyeIcon size={14} aria-hidden="true" />
                         {t('common.edit')}
                       </button>
                     </td>

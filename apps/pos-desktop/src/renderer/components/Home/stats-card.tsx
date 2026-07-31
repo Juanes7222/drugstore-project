@@ -6,7 +6,7 @@
  * "Resumen del día" section.
  */
 import { type FC } from "react";
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/components/ui/icons";
 
 interface StatsCardProps {
   /** Translation key or direct label text */
@@ -14,7 +14,7 @@ interface StatsCardProps {
   /** The primary value to display (e.g. "$45.200", "12") */
   value: string;
   /** Optional lucide icon rendered above the value */
-  icon?: LucideIcon;
+  icon?: IconComponent;
   /** Optional description / secondary text */
   description?: string;
   /** Use the JetBrains Mono data face for the value (prices, counts) */

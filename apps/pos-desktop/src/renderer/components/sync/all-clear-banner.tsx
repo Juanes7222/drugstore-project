@@ -11,7 +11,7 @@
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircleIcon } from "@/components/ui/icons";
 
 export const AllClearBanner: FC = () => {
   const { t } = useTranslation();
@@ -23,7 +23,7 @@ export const AllClearBanner: FC = () => {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: "easeOut" }}
     >
-      <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-success" aria-hidden="true" />
+      <CheckCircleIcon className="h-5 w-5 flex-shrink-0 text-success" aria-hidden="true" />
       <p className="text-body-sm font-medium text-success">
         {t("sync.all_clear")}
       </p>

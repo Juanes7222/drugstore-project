@@ -16,7 +16,8 @@
 
 import { type FC, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Shield, RefreshCw, Download, Loader2 } from "lucide-react";
+import { DownloadIcon, RefreshCwIcon, ShieldIcon } from "@/components/ui/icons";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 import { useLicenseStore } from "../../../domain/licensing/license.store";
 import { createLicenseService } from "../../../domain/licensing/license.service";
 import { API_BASE_URL } from "../../../infrastructure/config";
@@ -87,7 +88,7 @@ export const LicenseStatusPage: FC = () => {
     return (
       <section aria-label={t("licensing.status_page.title")} className="flex h-full flex-col items-center justify-center p-pos-lg">
         <div className="max-w-md text-center">
-          <Shield className="mx-auto mb-pos-lg h-12 w-12 text-sync" aria-hidden="true" />
+          <ShieldIcon className="mx-auto mb-pos-lg h-12 w-12 text-sync" aria-hidden="true" />
           <h1 className="mb-pos-md text-heading font-semibold text-ink">{t("licensing.status_page.title")}</h1>
           <p className="mb-pos-lg text-body text-ink-muted">{t("licensing.status_page.not_activated")}</p>
         </div>
@@ -100,7 +101,7 @@ export const LicenseStatusPage: FC = () => {
       {/* ---- Header ---- */}
       <div className="mb-pos-lg flex items-center justify-between">
         <div className="flex items-center gap-pos-md">
-          <Shield className="h-6 w-6 text-pharma" aria-hidden="true" />
+          <ShieldIcon className="h-6 w-6 text-pharma" aria-hidden="true" />
           <h1 className="text-heading font-semibold text-ink">{t("licensing.status_page.title")}</h1>
         </div>
 
@@ -114,9 +115,9 @@ export const LicenseStatusPage: FC = () => {
             aria-busy={isCheckingIn}
           >
             {isCheckingIn ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              <LoaderIcon className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              <RefreshCwIcon className="h-4 w-4" aria-hidden="true" />
             )}
             {isCheckingIn ? t("licensing.status_page.renewing") : t("licensing.status_page.renew_now")}
           </button>
@@ -127,7 +128,7 @@ export const LicenseStatusPage: FC = () => {
             className="inline-flex items-center gap-pos-xs rounded-pos border border-border bg-panel px-pos-md py-pos-sm text-body-sm font-medium text-ink transition-colors hover:bg-surface-variant"
             onClick={handleExport}
           >
-            <Download className="h-4 w-4" aria-hidden="true" />
+            <DownloadIcon className="h-4 w-4" aria-hidden="true" />
             {t("licensing.status_page.export_data")}
           </button>
         </div>
@@ -166,7 +167,7 @@ export const LicenseStatusPage: FC = () => {
 
       {exportMessage && (
         <div className="mb-pos-md flex items-center gap-pos-sm rounded-pos border border-sync/30 bg-sync/5 px-pos-md py-pos-sm text-body-sm text-sync" role="status">
-          <Download className="h-4 w-4" aria-hidden="true" />
+          <DownloadIcon className="h-4 w-4" aria-hidden="true" />
           {exportMessage}
         </div>
       )}

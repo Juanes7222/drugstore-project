@@ -4,6 +4,7 @@
  */
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 
 /**
  * Full-page spinner shown while the search index is being built.
@@ -13,28 +14,7 @@ export const PaletteIndexBuilding: FC = () => {
 
   return (
     <div className="flex flex-col items-center justify-center px-4 py-12">
-      <svg
-        className="mb-3 h-6 w-6 animate-spin"
-        viewBox="0 0 24 24"
-        fill="none"
-        style={{
-          color:
-            "color-mix(in srgb, var(--color-ink) 40%, transparent)",
-        }}
-        aria-hidden
-      >
-        <circle
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeDasharray="50"
-          strokeDashoffset="15"
-          strokeLinecap="round"
-          fill="none"
-        />
-      </svg>
+      <LoaderIcon className="mb-3 h-6 w-6" style={{ color: "color-mix(in srgb, var(--color-ink) 40%, transparent)" }} />
       <p
         className="mt-3 text-body"
         style={{

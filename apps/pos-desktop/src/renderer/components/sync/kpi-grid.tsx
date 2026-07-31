@@ -12,13 +12,7 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import {
-  Clock,
-  AlertTriangle,
-  Ban,
-  TrendingUp,
-  HardDrive,
-} from "lucide-react";
+import { AlertTriangleIcon, BanIcon, ClockIcon, HardDriveIcon, TrendingUpIcon } from "@/components/ui/icons";
 import type { QueueCounts } from "../../../domain/sync/sync-metrics.service";
 
 interface KpiGridProps {
@@ -38,18 +32,18 @@ interface TileDef {
   borderClass: string;
   /** Tailwind text-{color} class for the icon */
   iconColor: string;
-  icon: typeof Clock;
+  icon: typeof ClockIcon;
   subLabel?: string;
   onClick?: () => void;
   testId?: string;
 }
 
 const TILE_ICONS = {
-  pending: Clock,
-  failed: AlertTriangle,
-  permanent: Ban,
-  successRate: TrendingUp,
-  backup: HardDrive,
+  pending: ClockIcon,
+  failed: AlertTriangleIcon,
+  permanent: BanIcon,
+  successRate: TrendingUpIcon,
+  backup: HardDriveIcon,
 } as const;
 
 export const KpiGrid: FC<KpiGridProps> = ({

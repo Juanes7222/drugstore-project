@@ -12,7 +12,7 @@
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import { X, AlertTriangle, RotateCw, CalendarClock } from "lucide-react";
+import { AlertTriangleIcon, CalendarClockIcon, RotateCwIcon, XIcon } from "@/components/ui/icons";
 import type { PermanentFailureEntry } from "../../../domain/sync/sync-metrics.service";
 import { formatRelativeTimeEs } from "../../hooks/use-relative-time";
 import { summarizePayload, truncateError } from "./sync-utils";
@@ -73,7 +73,7 @@ export const EntryDetailDrawer: FC<EntryDetailDrawerProps> = ({
             className="rounded p-1 text-ink-muted transition-colors hover:bg-surface hover:text-ink focus:outline-none focus:ring-2 focus:ring-pharma"
             aria-label={t("common.close")}
           >
-            <X className="h-5 w-5" aria-hidden="true" />
+            <XIcon className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
@@ -88,13 +88,13 @@ export const EntryDetailDrawer: FC<EntryDetailDrawerProps> = ({
                 </p>
                 {translatedCategory && (
                   <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-error-container px-2 py-0.5 text-caption font-medium text-error">
-                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                    <AlertTriangleIcon className="h-3 w-3" aria-hidden="true" />
                     {translatedCategory}
                   </span>
                 )}
               </div>
               <span className="inline-flex items-center gap-1 rounded-full bg-pharma/10 px-2 py-0.5 text-caption font-medium text-pharma">
-                <RotateCw className="h-3 w-3" aria-hidden="true" />
+                <RotateCwIcon className="h-3 w-3" aria-hidden="true" />
                 {entry.retryCount.toLocaleString()}{" "}
                 {entry.retryCount === 1
                   ? t("sync.detail_retry_singular")
@@ -118,7 +118,7 @@ export const EntryDetailDrawer: FC<EntryDetailDrawerProps> = ({
           {/* ── Timeline ── */}
           <section>
             <h3 className="mb-2 text-caption font-semibold uppercase tracking-wider text-ink-muted">
-              <CalendarClock className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden="true" />
+              <CalendarClockIcon className="mr-1 inline h-3.5 w-3.5 align-text-bottom" aria-hidden="true" />
               {t("sync.detail_timeline")}
             </h3>
             <dl className="space-y-2 text-body-sm">

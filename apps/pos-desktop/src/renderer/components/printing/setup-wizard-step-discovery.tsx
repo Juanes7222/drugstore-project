@@ -9,6 +9,7 @@ import { type FC, type Dispatch, type SetStateAction } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import type { WizardState } from './setup-wizard.page';
+import { CheckIcon, CirclePlusIcon, MicIcon, PlugIcon, PrinterIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -72,23 +73,7 @@ export const SetupWizardStepDiscovery: FC<
               ease: 'linear',
             }}
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-pharma"
-              aria-hidden="true"
-            >
-              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-              <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
-              <rect x="6" y="14" width="12" height="8" rx="1" />
-            </svg>
+            <PrinterIcon size={28} strokeWidth={1.5} className="text-pharma" />
           </motion.div>
         </div>
 
@@ -137,61 +122,16 @@ export const SetupWizardStepDiscovery: FC<
                 {/* Connection icon */}
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-surface-variant">
                   {printer.connection === 'USB' && (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="text-ink-muted"
-                    >
-                      <rect x="7" y="2" width="10" height="7" rx="1" />
-                      <path d="M12 9v5" />
-                      <path d="M5 16a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z" />
-                    </svg>
+                    <PlugIcon size={16} strokeWidth={1.5} className="text-ink-muted" />
                   )}
                   {(printer.connection === 'NETWORK' ||
                     printer.connection === 'BLUETOOTH') && (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="text-ink-muted"
-                    >
-                      <path d="M12 2a4 4 0 0 0-4 4v4a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4Z" />
-                      <path d="M5 14a7 7 0 0 0 14 0" />
-                      <path d="M12 18v4" />
-                    </svg>
+                    <MicIcon size={16} strokeWidth={1.5} className="text-ink-muted" />
                   )}
                   {!['USB', 'NETWORK', 'BLUETOOTH'].includes(
                     printer.connection,
                   ) && (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="text-ink-muted"
-                    >
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 8v8" />
-                      <path d="M8 12h8" />
-                    </svg>
+                    <CirclePlusIcon size={16} strokeWidth={1.5} className="text-ink-muted" />
                   )}
                 </span>
 
@@ -246,19 +186,7 @@ export const SetupWizardStepDiscovery: FC<
           aria-hidden="true"
         >
           {state.networkScanEnabled && (
-            <svg
-              viewBox="0 0 14 14"
-              fill="none"
-              className="text-white"
-            >
-              <path
-                d="M3 7L6 10L11 4"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+            <CheckIcon size={14} className="text-white" />
           )}
         </span>
         {t(

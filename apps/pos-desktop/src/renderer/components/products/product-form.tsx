@@ -22,6 +22,7 @@ import type {
   ProductFormFieldRequirements,
 } from "./products.types";
 import { StarIcon, SparklesIcon, XIcon } from "../ui/icons";
+import { XIcon } from "@/components/ui/icons";
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -710,19 +711,7 @@ export const ProductForm: FC<ProductFormProps> = ({
                       className="flex-shrink-0 rounded p-1 transition-colors hover:bg-red-100"
                       aria-label={t("products.remove_barcode")}
                     >
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="#D32F2F"
-                        strokeWidth={2}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M18 6L6 18M6 6l12 12" />
-                      </svg>
+                      <XIcon size={14} color="#D32F2F" />
                     </button>
                   )}
                 </div>
