@@ -53,7 +53,6 @@ const FUSE_OPTIONS: any = {
     { name: "title", weight: 3 },
     { name: "keywords", weight: 2 },
     { name: "barcode", weight: 2 },
-    { name: "genericName", weight: 1 },
     { name: "excerpt", weight: 1 },
     { name: "categoryName", weight: 1 },
     { name: "document", weight: 1 },
@@ -367,7 +366,6 @@ class FuseSearchIndexService implements SearchIndexService {
         select: {
           id: true,
           commercialName: true,
-          genericName: true,
           internalCode: true,
           barcodes: {
             take: 1,
@@ -387,7 +385,6 @@ class FuseSearchIndexService implements SearchIndexService {
           category: "PRODUCT",
           id: p.id,
           name: p.commercialName,
-          genericName: p.genericName ?? undefined,
           barcode: p.barcodes?.[0]?.barcode ?? undefined,
           categoryName: p.category?.name ?? undefined,
           laboratory: p.laboratory?.name ?? undefined,

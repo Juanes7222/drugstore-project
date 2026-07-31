@@ -20,7 +20,6 @@ const createItem = (overrides?: Partial<CatalogItem>): CatalogItem => ({
   barcode: "7701234567890",
   id: "ITEM-001",
   name: "Amoxicilina 500mg",
-  genericName: "Amoxicilina",
   saleType: SaleType.PRESCRIPTION,
   requiresPrescription: true,
   isRestricted: false,
@@ -116,7 +115,7 @@ describe("RestrictedConfirmationDialog", () => {
 
   // ── Content ──────────────────────────────────────────────────────────
 
-  it("displays the product name and generic name", () => {
+  it("displays the product name and INVIMA certificate", () => {
     const item = createItem();
 
     render(
@@ -129,7 +128,11 @@ describe("RestrictedConfirmationDialog", () => {
     );
 
     expect(screen.getByText(item.name)).toBeInTheDocument();
-    expect(screen.getByText(item.genericName)).toBeInTheDocument();
+    // INVIMA appears inside the interpolated warning string
+    // ("INVIMA: INVIMA-2024-12345 - Tipo de venta: PRESCRIPTION").
+    expect(
+      screen.getByText(/INVIMA-2024-12345/),
+    ).toBeInTheDocument();
   });
 
   it("displays the formatted price (es-CO, COP)", () => {
@@ -241,6 +244,9 @@ describe("RestrictedConfirmationDialog", () => {
     expect(
       screen.getByText(/INVIMA-2024-XYZ/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/RX/)).toBeInTheDocument();
+    // Sale type is interpolated verbatim ("Tipo de venta: PRESCRIPTION").
+    expect(
+      screen.getByText(new RegExp(`Tipo de venta: ${item.saleType}`)),
+    ).toBeInTheDocument();
   });
 });

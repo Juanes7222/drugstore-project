@@ -416,8 +416,6 @@ interface ProductRow {
   id: string;
   internalCode: string;
   commercialName: string;
-  genericName: string;
-  activePrinciple: string;
   concentration?: string | null;
   concentrationUnit?: string | null;
   laboratory: string;
@@ -593,8 +591,6 @@ const mapProductForCreate = (prod: ProductRow): any => ({
   serverId: prod.id,
   internalCode: prod.internalCode,
   commercialName: prod.commercialName,
-  genericName: prod.genericName,
-  activePrinciple: prod.activePrinciple,
   concentration: prod.concentration ?? null,
   concentrationUnit: prod.concentrationUnit ?? null,
   laboratory: prod.laboratory,
@@ -620,8 +616,6 @@ const mapProductForUpdate = (prod: ProductRow): any => ({
   serverId: prod.id,
   internalCode: prod.internalCode,
   commercialName: prod.commercialName,
-  genericName: prod.genericName,
-  activePrinciple: prod.activePrinciple,
   concentration: prod.concentration,
   concentrationUnit: prod.concentrationUnit,
   laboratory: prod.laboratory,

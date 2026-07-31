@@ -142,17 +142,7 @@ describe('getItemLabel', () => {
 // ---------------------------------------------------------------------------
 
 describe('getItemDescription', () => {
-  it('returns genericName for a PRODUCT when available', () => {
-    const item = {
-      category: 'PRODUCT' as const,
-      id: 'prod-1',
-      name: 'Ibuprofeno 400mg',
-      genericName: 'Ibuprofeno',
-    };
-    expect(getItemDescription(item)).toBe('Ibuprofeno');
-  });
-
-  it('returns laboratory for a PRODUCT when genericName is absent', () => {
+  it('returns laboratory for a PRODUCT when available', () => {
     const item = {
       category: 'PRODUCT' as const,
       id: 'prod-1',
@@ -162,7 +152,7 @@ describe('getItemDescription', () => {
     expect(getItemDescription(item)).toBe('Genfar');
   });
 
-  it('returns null for a PRODUCT when both genericName and laboratory are absent', () => {
+  it('returns null for a PRODUCT when laboratory is absent', () => {
     const item = {
       category: 'PRODUCT' as const,
       id: 'prod-1',

@@ -39,11 +39,11 @@ async function seedLotDependencies(pg: PGlite): Promise<{
 
   // Product
   await pg.exec(`
-    INSERT INTO "Product" (id, "internalCode", "commercialName", "genericName",
-      "activePrinciple", "laboratory", "saleType", "isActive", "createdById",
+    INSERT INTO "Product" (id, "internalCode", "commercialName",
+      "laboratory", "saleType", "isActive", "createdById",
       "createdAt", "updatedAt")
-    VALUES ('${productId}', 'INV001', 'Ibuprofeno 400mg', 'Ibuprofeno',
-      'Ibuprofeno', 'Laboratorio Genérico', 'FREE_SALE', true,
+    VALUES ('${productId}', 'INV001', 'Ibuprofeno 400mg',
+      'Laboratorio Genérico', 'FREE_SALE', true,
       '${userId}', '${now}', '${now}');
   `);
 

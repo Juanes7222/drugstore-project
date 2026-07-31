@@ -23,7 +23,6 @@ export interface IndexableProduct {
   id: string;
   name: string;
   barcode?: string;
-  genericName?: string;
   categoryName?: string;
   laboratory?: string;
 }

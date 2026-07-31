@@ -113,8 +113,6 @@ export const ProductsPage: FC = () => {
       if (!q) return true;
       return (
         p.commercialName.toLowerCase().includes(q) ||
-        p.genericName.toLowerCase().includes(q) ||
-        p.activePrinciple.toLowerCase().includes(q) ||
         p.internalCode.toLowerCase().includes(q) ||
         p.laboratory.toLowerCase().includes(q) ||
         p.barcodes.some((bc) => bc.barcode.includes(q))
@@ -166,8 +164,6 @@ export const ProductsPage: FC = () => {
         if (formMode === "create") {
           await productService.createProduct({
             commercialName: data.commercialName,
-            genericName: data.genericName,
-            activePrinciple: data.activePrinciple,
             concentration: data.concentration || null,
             concentrationUnit: data.concentrationUnit || null,
             laboratory: data.laboratory,
@@ -201,10 +197,6 @@ export const ProductsPage: FC = () => {
 
           if (data.commercialName !== selectedProduct.commercialName)
             updateInput.commercialName = data.commercialName;
-          if (data.genericName !== selectedProduct.genericName)
-            updateInput.genericName = data.genericName;
-          if (data.activePrinciple !== selectedProduct.activePrinciple)
-            updateInput.activePrinciple = data.activePrinciple;
           if (data.concentration !== (selectedProduct.concentration ?? ""))
             updateInput.concentration = data.concentration || null;
           if (

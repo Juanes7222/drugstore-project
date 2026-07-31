@@ -23,7 +23,6 @@ const baseItem = (
   id: "line-1",
   productId: "p-001",
   name: "Paracetamol 500mg",
-  genericName: "Paracetamol",
   invimaCertificate: "INVIMA-2025-001",
   saleType: SaleType.FREE_SALE,
   requiresPrescription: false,

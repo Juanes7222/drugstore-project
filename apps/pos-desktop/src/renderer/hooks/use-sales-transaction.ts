@@ -119,7 +119,6 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
           id: `${item.id}::${item.lotCode}`,
           productId: item.id,
           name: item.name,
-          genericName: item.genericName,
           invimaCertificate: item.invimaCertificate ?? '',
           saleType: item.saleType,
           requiresPrescription: item.requiresPrescription,

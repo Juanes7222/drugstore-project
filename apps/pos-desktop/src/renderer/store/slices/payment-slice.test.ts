@@ -27,7 +27,6 @@ const baseCartItem = {
   id: "line-1",
   productId: "p-001",
   name: "Test product",
-  genericName: "Test generic",
   invimaCertificate: "INVIMA-TEST",
   saleType: SaleType.FREE_SALE,
   requiresPrescription: false,

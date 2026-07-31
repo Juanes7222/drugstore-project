@@ -31,8 +31,6 @@ export interface DisplayProduct {
   id: string;
   internalCode: string;
   commercialName: string;
-  genericName: string;
-  activePrinciple: string;
   concentration: string | null;
   concentrationUnit: string | null;
   laboratory: string;
@@ -61,8 +59,6 @@ export interface DisplayProduct {
 
 export interface ProductFormData {
   commercialName: string;
-  genericName: string;
-  activePrinciple: string;
   concentration: string;
   concentrationUnit: string;
   laboratory: string;
@@ -123,8 +119,6 @@ export interface RawProduct extends Record<string, unknown> {
   id: string;
   internalCode: string;
   commercialName: string;
-  genericName: string;
-  activePrinciple: string;
   currentTaxSchemeId?: string | null;
   concentration: string | null;
   concentrationUnit: string | null;
@@ -156,8 +150,6 @@ export function mapToDisplayProduct(raw: RawProduct): DisplayProduct {
     id: raw.id,
     internalCode: raw.internalCode,
     commercialName: raw.commercialName,
-    genericName: raw.genericName,
-    activePrinciple: raw.activePrinciple,
     concentration: raw.concentration,
     concentrationUnit: raw.concentrationUnit,
     laboratory: raw.laboratory,

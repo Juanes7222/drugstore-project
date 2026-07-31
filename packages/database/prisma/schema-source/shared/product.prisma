@@ -5,8 +5,6 @@ model Product {
   id                    String    @id
   internalCode          String    @unique
   commercialName        String
-  genericName           String
-  activePrinciple       String
   concentration         String?
   concentrationUnit     String?
   laboratory            String
@@ -52,8 +50,6 @@ model Product {
   saleItems              SaleItem[]
 
   @@index([commercialName])
-  @@index([genericName])
-  @@index([activePrinciple])
   @@index([isActive])
   @@index([categoryId, isActive])
   @@index([invimaRegistry])

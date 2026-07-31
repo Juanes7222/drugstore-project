@@ -69,8 +69,6 @@ describe("InventoryAdjustmentsService — PrismaClient + PGlite integration", ()
         id: productId,
         internalCode: "INT-P001",
         commercialName: "Ibuprofeno 600mg",
-        genericName: "Ibuprofeno",
-        activePrinciple: "Ibuprofeno",
         laboratory: "Lab Integración",
         saleType: "FREE_SALE",
         isActive: true,

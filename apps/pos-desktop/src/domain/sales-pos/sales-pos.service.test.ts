@@ -16,6 +16,7 @@ import {
 import { Prisma } from "@pharmacy/database/local";
 import { useLocalConfigStore, type DiscountLimits, type SalesConfig } from "../configuration/local-config.store";
 import { RoleType } from "@pharmacy/shared-types";
+import { GENERIC_CLIENT_UUID } from "../clients/constants/clients.constants";
 
 // ---------------------------------------------------------------------------
 // Factory helpers
@@ -47,6 +48,7 @@ const makeMockPrisma = () => {
     },
     product: {
       findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     paymentMethod: {
       findUnique: vi.fn(),
@@ -120,7 +122,6 @@ const makeProduct = () => ({
   id: "prod-1",
   internalCode: "P001",
   commercialName: "Acetaminofén 500mg",
-  genericName: "Acetaminofén",
   concentration: "500mg",
   saleType: "FREE_SALE",
   priceHistories: [{ price: new Prisma.Decimal(5000) }],
@@ -210,16 +211,21 @@ describe("SalesPosService", () => {
       );
     });
 
-    it("creates a sale without client snapshot when clientId is omitted", async () => {
+    it("creates a sale with the generic client snapshot when clientId is omitted", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
       tx.product.findUnique.mockResolvedValue(makeProduct());
       tx.sale.findFirst.mockResolvedValue(null);
+      tx.client.findUnique.mockResolvedValue({ id: GENERIC_CLIENT_UUID });
       tx.sale.create.mockResolvedValue({ id: "sale-1", localNumber: 1n, items: [] });
 
       await service.create({ items: [{ productId: "prod-1", quantity: 1 }] });
 
-      expect(tx.client.findUnique).not.toHaveBeenCalled();
+      // The service resolves the generic ("walk-in") client for the sale
+      // snapshots instead of skipping the lookup entirely.
+      expect(tx.client.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: GENERIC_CLIENT_UUID } }),
+      );
     });
 
     it("throws PrescriptionRequiredNotSupportedException when a product requires prescription", async () => {
@@ -384,7 +390,6 @@ describe("SalesPosService", () => {
         productSnapshot: {
           internalCode: "P001",
           commercialName: "Acetaminofén",
-          genericName: "Acetaminofén",
           concentration: "500mg",
         },
       }],
@@ -417,11 +422,14 @@ describe("SalesPosService", () => {
       const result = await service.confirm("sale-1", validConfirmInput) as { operationalState: string };
 
       expect(result.operationalState).toBe("CONFIRMED");
-      expect(inventoryLots.consumeStockForSale).toHaveBeenCalledWith({
-        productId: "prod-1",
-        quantity: 2,
-        saleId: "sale-1",
-      });
+      expect(inventoryLots.consumeStockForSale).toHaveBeenCalledWith(
+        {
+          productId: "prod-1",
+          quantity: 2,
+          saleId: "sale-1",
+        },
+        expect.anything(), // transaction client passed to avoid a nested $transaction
+      );
     });
 
     it("throws SaleNotFoundException when the sale does not exist", async () => {
@@ -571,7 +579,6 @@ describe("SalesPosService", () => {
         productSnapshot: {
           internalCode: "P001",
           commercialName: "Acetaminofén",
-          genericName: "Acetaminofén",
           concentration: "500mg",
         },
       }],

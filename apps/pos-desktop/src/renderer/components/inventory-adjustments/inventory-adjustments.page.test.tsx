@@ -137,7 +137,6 @@ const baseSession: LocalSession = {
 const group1: ProductLotGroup = {
   productId: "p-001",
   commercialName: "Acetaminofén 500mg",
-  genericName: "Acetaminofén",
   internalCode: "ACET-500",
   totalStock: 50,
   lotCount: 1,
@@ -159,7 +158,6 @@ const group1: ProductLotGroup = {
     updatedAt: new Date(),
     product: {
       commercialName: "Acetaminofén 500mg",
-      genericName: "Acetaminofén",
       internalCode: "ACET-500",
     },
   } as unknown as ProductLotGroup["lots"][number]],
@@ -168,7 +166,6 @@ const group1: ProductLotGroup = {
 const group2: ProductLotGroup = {
   productId: "p-002",
   commercialName: "Ibuprofeno 400mg",
-  genericName: "Ibuprofeno",
   internalCode: "IBU-400",
   totalStock: 5,
   lotCount: 1,
@@ -190,7 +187,6 @@ const group2: ProductLotGroup = {
     updatedAt: new Date(),
     product: {
       commercialName: "Ibuprofeno 400mg",
-      genericName: "Ibuprofeno",
       internalCode: "IBU-400",
     },
   } as unknown as ProductLotGroup["lots"][number]],

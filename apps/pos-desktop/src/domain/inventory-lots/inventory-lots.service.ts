@@ -88,7 +88,6 @@ export interface LotMovementRecord {
 export interface ProductLotGroup {
   productId: string;
   commercialName: string;
-  genericName: string;
   internalCode: string;
   totalStock: number;
   lotCount: number;
@@ -114,7 +113,7 @@ export const createInventoryLotsService = (
 // ---------------------------------------------------------------------------
 
 export type LotWithProduct = Prisma.LotGetPayload<{
-  include: { product: { select: { commercialName: true; genericName: true; internalCode: true } } };
+  include: { product: { select: { commercialName: true; internalCode: true } } };
 }>;
 
 export class InventoryLotsService {
@@ -144,7 +143,6 @@ export class InventoryLotsService {
       where.OR = [
         { batchNumber: { contains: q, mode: 'insensitive' } },
         { product: { commercialName: { contains: q, mode: 'insensitive' } } },
-        { product: { genericName: { contains: q, mode: 'insensitive' } } },
         { product: { internalCode: { contains: q, mode: 'insensitive' } } },
       ];
     }
@@ -155,7 +153,6 @@ export class InventoryLotsService {
         product: {
           select: {
             commercialName: true,
-            genericName: true,
             internalCode: true,
           },
         },
@@ -174,7 +171,6 @@ export class InventoryLotsService {
         product: {
           select: {
             commercialName: true,
-            genericName: true,
             internalCode: true,
           },
         },
@@ -434,7 +430,6 @@ export class InventoryLotsService {
       result.push({
         productId,
         commercialName: first.product.commercialName,
-        genericName: first.product.genericName,
         internalCode: first.product.internalCode,
         totalStock,
         lotCount: lots.length,

@@ -342,7 +342,6 @@ export const InventoryAdjustmentsPage: FC = () => {
     return productGroups.filter(
       (g) =>
         g.commercialName.toLowerCase().includes(q) ||
-        g.genericName.toLowerCase().includes(q) ||
         g.internalCode.toLowerCase().includes(q),
     );
   }, [productGroups, searchQuery, lotManagementOff]);
@@ -474,12 +473,12 @@ export const InventoryAdjustmentsPage: FC = () => {
                           </span>
                         </div>
 
-                        {/* Generic name */}
+                        {/* Internal code */}
                         <p
                           className="mt-pos-xs text-caption truncate"
                           style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}
                         >
-                          {group.genericName} · {group.internalCode}
+                          {group.internalCode}
                         </p>
 
                         {/* Alert badges */}

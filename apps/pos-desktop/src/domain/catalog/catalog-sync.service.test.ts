@@ -13,11 +13,18 @@ const makeMockPrisma = () => {
   const tx: any = {
     category: { upsert: vi.fn() },
     pharmaceuticalForm: { upsert: vi.fn() },
-    product: { upsert: vi.fn() },
+    taxScheme: { upsert: vi.fn() },
+    product: {
+      upsert: vi.fn(),
+      update: vi.fn(),
+    },
     productBarcode: {
       deleteMany: vi.fn(),
       create: vi.fn(),
     },
+    productPriceHistory: { upsert: vi.fn() },
+    productTaxHistory: { upsert: vi.fn() },
+    syncQueue: { findFirst: vi.fn().mockResolvedValue(null) },
   };
 
   const transaction = vi.fn(async (cb: (t: any) => unknown) => cb(tx));
@@ -26,8 +33,12 @@ const makeMockPrisma = () => {
     $transaction: transaction,
     category: tx.category,
     pharmaceuticalForm: tx.pharmaceuticalForm,
+    taxScheme: tx.taxScheme,
     product: tx.product,
     productBarcode: tx.productBarcode,
+    productPriceHistory: tx.productPriceHistory,
+    productTaxHistory: tx.productTaxHistory,
+    syncQueue: tx.syncQueue,
   } as any;
 
   return { prisma, tx };
@@ -65,6 +76,9 @@ describe("CatalogSyncService", () => {
   describe("pullCatalog", () => {
     it("fetches categories, forms, and products; upserts them locally", async () => {
       vi.stubGlobal("navigator", { onLine: true });
+      // fetchTaxSchemes uses the native fetch, not the mocked http client.
+      // Stub it so the test does not depend on a server at localhost:3000.
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
 
       vi.mocked(http.get)
         .mockResolvedValueOnce([{ id: "cat-1", name: "Analgésicos", sortOrder: 1 }]) // categories
@@ -74,8 +88,6 @@ describe("CatalogSyncService", () => {
             id: "prod-1",
             internalCode: "P001",
             commercialName: "Acetaminofén",
-            genericName: "Acetaminofén",
-            activePrinciple: "Acetaminofén",
             laboratory: "Genfar",
             saleType: "FREE_SALE",
             minimumStock: 10,
@@ -133,19 +145,20 @@ describe("CatalogSyncService", () => {
       vi.unstubAllGlobals();
     });
 
-    it("paginates through all product pages", async () => {
+    it("paginates through all product pages (cursor-based sync endpoint)", async () => {
       vi.stubGlobal("navigator", { onLine: true });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
 
       vi.mocked(http.get)
         .mockResolvedValueOnce([])  // categories
         .mockResolvedValueOnce([])  // forms
-        .mockResolvedValueOnce({    // page 1
-          items: [{ id: "prod-1", internalCode: "P001", commercialName: "A", genericName: "A", activePrinciple: "A", laboratory: "L", saleType: "FREE_SALE", minimumStock: 5, isActive: true, createdById: "u1" }],
-          total: 3, page: 1, pageSize: 2, totalPages: 2,
+        .mockResolvedValueOnce({    // products page 1 (cursor)
+          items: [{ id: "prod-1", internalCode: "P001", commercialName: "A", laboratory: "L", saleType: "FREE_SALE", minimumStock: 5, isActive: true, createdById: "u1" }],
+          nextCursor: "cursor-1", hasMore: true,
         })
-        .mockResolvedValueOnce({    // page 2
-          items: [{ id: "prod-2", internalCode: "P002", commercialName: "B", genericName: "B", activePrinciple: "B", laboratory: "L", saleType: "FREE_SALE", minimumStock: 5, isActive: true, createdById: "u1" }],
-          total: 3, page: 2, pageSize: 2, totalPages: 2,
+        .mockResolvedValueOnce({    // products page 2 (cursor, last)
+          items: [{ id: "prod-2", internalCode: "P002", commercialName: "B", laboratory: "L", saleType: "FREE_SALE", minimumStock: 5, isActive: true, createdById: "u1" }],
+          nextCursor: null, hasMore: false,
         });
 
       await service.pullCatalog();

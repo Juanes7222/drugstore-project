@@ -28,8 +28,6 @@ function buildProduct(overrides: Record<string, unknown> = {}) {
     id: 'product-uuid-1',
     internalCode: 'P001',
     commercialName: 'Paracetamol',
-    genericName: 'Paracetamol 500mg',
-    activePrinciple: 'Paracetamol',
     concentration: '500',
     concentrationUnit: 'mg',
     laboratory: 'Genfar',
@@ -126,6 +124,7 @@ const mockPrisma = {
     async (cb: (tx: typeof mockTx) => unknown) => cb(mockTx),
   ),
   product: {
+    findUnique: jest.fn().mockResolvedValue({ id: 'product-uuid-1' }),
     update: jest.fn(),
   },
   productBarcode: {
@@ -154,8 +153,6 @@ describe('ProductsService', () => {
     const dto = {
       internalCode: 'P001',
       commercialName: 'Paracetamol',
-      genericName: 'Paracetamol 500mg',
-      activePrinciple: 'Paracetamol',
       concentration: '500',
       concentrationUnit: 'mg',
       laboratory: 'Genfar',
@@ -211,8 +208,6 @@ describe('ProductsService', () => {
           data: expect.objectContaining({
             internalCode: 'P001',
             commercialName: 'Paracetamol',
-            genericName: 'Paracetamol 500mg',
-            activePrinciple: 'Paracetamol',
             saleType: 'FREE_SALE',
             createdById: USER_ID,
           }),
@@ -224,8 +219,6 @@ describe('ProductsService', () => {
       const minimalDto = {
         internalCode: 'P002',
         commercialName: 'Ibuprofeno',
-        genericName: 'Ibuprofeno 400mg',
-        activePrinciple: 'Ibuprofeno',
         laboratory: 'MK',
         saleType: 'FREE_SALE' as const,
         initialPrice: '3000.00',
@@ -351,14 +344,12 @@ describe('ProductsService', () => {
       mockPrisma.product.update.mockResolvedValue(
         buildProduct({
           commercialName: 'New Name',
-          genericName: 'New Generic',
           minimumStock: 20,
         }),
       );
 
       await service.updateProduct(PRODUCT_ID, {
         commercialName: 'New Name',
-        genericName: 'New Generic',
         minimumStock: 20,
       } as any);
 
@@ -366,7 +357,6 @@ describe('ProductsService', () => {
         where: { id: PRODUCT_ID },
         data: expect.objectContaining({
           commercialName: 'New Name',
-          genericName: 'New Generic',
           minimumStock: 20,
         }),
       });

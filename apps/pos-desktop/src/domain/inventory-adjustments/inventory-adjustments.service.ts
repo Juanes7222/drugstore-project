@@ -95,15 +95,12 @@ export class InventoryAdjustmentsService {
   ) {}
 
   /**
-   * Search for active lots by product name (commercial, generic, active
-   * principle) or batch number.
+   * Search for active lots by product name (commercial) or batch number.
    *
    * ✅ Real Prisma query — no mock data, no fallback.
    *
    * Searches the Lot table joined with Product, filtering by:
    * - `product.commercialName` (contains, case-insensitive)
-   * - `product.genericName` (contains, case-insensitive)
-   * - `product.activePrinciple` (contains, case-insensitive)
    * - `lot.batchNumber` (contains, case-insensitive)
    *
    * Only returns lots in ACTIVE state.
@@ -122,8 +119,6 @@ export class InventoryAdjustmentsService {
         OR: [
           { batchNumber: { contains: q, mode: 'insensitive' } },
           { product: { commercialName: { contains: q, mode: 'insensitive' } } },
-          { product: { genericName: { contains: q, mode: 'insensitive' } } },
-          { product: { activePrinciple: { contains: q, mode: 'insensitive' } } },
         ],
       },
       include: {

@@ -36,7 +36,6 @@ const defaultProps = {
 const groupNormal: ProductLotGroup = {
   productId: "p-a",
   commercialName: "Acetaminofén 500mg",
-  genericName: "Acetaminofén",
   internalCode: "ACET-500",
   totalStock: 50,
   lotCount: 1,
@@ -58,7 +57,6 @@ const groupNormal: ProductLotGroup = {
     updatedAt: new Date(),
     product: {
       commercialName: "Acetaminofén 500mg",
-      genericName: "Acetaminofén",
       internalCode: "ACET-500",
     },
   } as unknown as ProductLotGroup["lots"][number]],
@@ -67,7 +65,6 @@ const groupNormal: ProductLotGroup = {
 const groupLowStock: ProductLotGroup = {
   productId: "p-b",
   commercialName: "Ibuprofeno 400mg",
-  genericName: "Ibuprofeno",
   internalCode: "IBU-400",
   totalStock: 3,
   lotCount: 1,
@@ -89,7 +86,6 @@ const groupLowStock: ProductLotGroup = {
     updatedAt: new Date(),
     product: {
       commercialName: "Ibuprofeno 400mg",
-      genericName: "Ibuprofeno",
       internalCode: "IBU-400",
     },
   } as unknown as ProductLotGroup["lots"][number]],
@@ -99,7 +95,6 @@ const groupLowStock: ProductLotGroup = {
 const groupNearExpiry: ProductLotGroup = {
   productId: "p-c",
   commercialName: "Metformina 850mg",
-  genericName: "Metformina",
   internalCode: "MET-850",
   totalStock: 30,
   lotCount: 1,
@@ -121,7 +116,6 @@ const groupNearExpiry: ProductLotGroup = {
     updatedAt: new Date(),
     product: {
       commercialName: "Metformina 850mg",
-      genericName: "Metformina",
       internalCode: "MET-850",
     },
   } as unknown as ProductLotGroup["lots"][number]],

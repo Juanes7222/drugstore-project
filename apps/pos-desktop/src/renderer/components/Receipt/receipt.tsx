@@ -90,7 +90,7 @@ export const Receipt: FC = () => {
         productId: item.productId,
         internalCode: item.productId,
         commercialName: item.name,
-        genericName: item.genericName,
+        genericName: null,
         concentration: null,
         quantity: item.quantity,
         unitPrice: centsToDecimalStr(item.unitPriceCents),

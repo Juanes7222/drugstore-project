@@ -10,7 +10,6 @@ export interface CartItem {
   id: string;
   productId: string;
   name: string;
-  genericName: string;
   invimaCertificate: string;
   saleType: SaleType;
   requiresPrescription: boolean;

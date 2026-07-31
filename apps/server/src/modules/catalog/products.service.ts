@@ -29,7 +29,6 @@ export class ProductsService {
       where.OR = [
         { commercialName: { contains: search, mode: 'insensitive' } },
         { internalCode: { contains: search, mode: 'insensitive' } },
-        { genericName: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -109,8 +108,6 @@ export class ProductsService {
           id: sourceProductId ?? this.generateId(),
           internalCode: dto.internalCode,
           commercialName: dto.commercialName,
-          genericName: dto.genericName,
-          activePrinciple: dto.activePrinciple,
           concentration: dto.concentration || null,
           concentrationUnit: dto.concentrationUnit || null,
           laboratory: dto.laboratory,
@@ -198,8 +195,6 @@ export class ProductsService {
     const updateData: any = {};
 
     if (dto.commercialName !== undefined) updateData.commercialName = dto.commercialName;
-    if (dto.genericName !== undefined) updateData.genericName = dto.genericName;
-    if (dto.activePrinciple !== undefined) updateData.activePrinciple = dto.activePrinciple;
     if (dto.concentration !== undefined) updateData.concentration = dto.concentration;
     if (dto.concentrationUnit !== undefined) updateData.concentrationUnit = dto.concentrationUnit;
     if (dto.laboratory !== undefined) updateData.laboratory = dto.laboratory;

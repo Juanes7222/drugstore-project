@@ -56,8 +56,8 @@ async function seedSaleDependencies(pg: PGlite): Promise<{
 
   // Product
   await pg.exec(`
-    INSERT INTO "Product" (id, "internalCode", "commercialName", "genericName", "activePrinciple", "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
-    VALUES ('${productId}', 'P001', 'Acetaminofén 500mg', 'Acetaminofén', 'Acetaminofén', 'Laboratorio Genérico', 'FREE_SALE', true, '${userId}', '${now}', '${now}');
+    INSERT INTO "Product" (id, "internalCode", "commercialName", "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
+    VALUES ('${productId}', 'P001', 'Acetaminofén 500mg', 'Laboratorio Genérico', 'FREE_SALE', true, '${userId}', '${now}', '${now}');
   `);
 
   // Price history
@@ -578,10 +578,10 @@ describe("PGlite data integrity", () => {
       const now = new Date().toISOString();
 
       await pg.exec(`
-        INSERT INTO "Product" (id, "internalCode", "commercialName", "genericName",
-          "activePrinciple", "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
-        VALUES ('${productId}', 'DEL-TEST', 'Delete test', 'Generic',
-          'Generic', 'Lab', 'FREE_SALE', true, '${seeds.userId}', '${now}', '${now}');
+        INSERT INTO "Product" (id, "internalCode", "commercialName",
+          "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
+        VALUES ('${productId}', 'DEL-TEST', 'Delete test',
+          'Lab', 'FREE_SALE', true, '${seeds.userId}', '${now}', '${now}');
       `);
       await pg.exec(`
         INSERT INTO "ProductPriceHistory" (id, "productId", "price", "effectiveFrom", "changedById", "changedAt")
@@ -669,10 +669,10 @@ describe("PGlite data integrity", () => {
       // Create a controlled-substance product requiring prescription
       const controlledProductId = crypto.randomUUID();
       await pg.exec(`
-        INSERT INTO "Product" (id, "internalCode", "commercialName", "genericName",
-          "activePrinciple", "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
-        VALUES ('${controlledProductId}', 'P-RES-001', 'Tramadol 50mg', 'Tramadol',
-          'Tramadol', 'Lab Pharma', 'CONTROLLED_SUBSTANCE', true, '${seeds.userId}', '${now}', '${now}');
+        INSERT INTO "Product" (id, "internalCode", "commercialName",
+          "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
+        VALUES ('${controlledProductId}', 'P-RES-001', 'Tramadol 50mg',
+          'Lab Pharma', 'CONTROLLED_SUBSTANCE', true, '${seeds.userId}', '${now}', '${now}');
       `);
 
       await pg.exec(`
@@ -711,10 +711,10 @@ describe("PGlite data integrity", () => {
 
       await expect(
         pg.exec(`
-          INSERT INTO "Product" (id, "internalCode", "commercialName", "genericName",
-            "activePrinciple", "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
-          VALUES ('${crypto.randomUUID()}', 'P-INVALID', 'Invalid', 'Invalid',
-            'Invalid', 'Lab', 'INVALID_TYPE', true, '${seeds.userId}', '${now}', '${now}');
+          INSERT INTO "Product" (id, "internalCode", "commercialName",
+            "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
+          VALUES ('${crypto.randomUUID()}', 'P-INVALID', 'Invalid',
+            'Lab', 'INVALID_TYPE', true, '${seeds.userId}', '${now}', '${now}');
         `),
       ).rejects.toThrow();
     });

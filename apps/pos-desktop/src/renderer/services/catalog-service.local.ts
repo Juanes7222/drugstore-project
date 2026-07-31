@@ -81,7 +81,6 @@ interface LocalLotRow {
 interface LocalProductRow {
   id: string;
   commercialName: string;
-  genericName: string;
   saleType: SaleType;
   minimumStock: number;
   isActive: boolean;
@@ -134,7 +133,6 @@ const mapLocalProductToCatalogItem = (
   return {
     id: product.id,
     name: product.commercialName,
-    genericName: product.genericName,
     barcode: primaryBarcode,
     invimaCertificate: product.invimaRegistry,
     saleType: product.saleType,
@@ -172,8 +170,6 @@ export const createLocalCatalogService = (
         isActive: true,
         OR: [
           { commercialName: { contains: q, mode: 'insensitive' } },
-          { genericName: { contains: q, mode: 'insensitive' } },
-          { activePrinciple: { contains: q, mode: 'insensitive' } },
           { internalCode: { contains: q, mode: 'insensitive' } },
           { barcodes: { some: { barcode: { contains: q, mode: 'insensitive' } } } },
         ],

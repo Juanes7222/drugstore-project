@@ -3,8 +3,6 @@ import { SaleType } from '@pharmacy/shared-types';
 
 export const UpdateProductSchema = z.object({
   commercialName: z.string().min(1).optional(),
-  genericName: z.string().min(1).optional(),
-  activePrinciple: z.string().min(1).optional(),
   concentration: z.string().optional(),
   concentrationUnit: z.string().optional(),
   laboratory: z.string().min(1).optional(),

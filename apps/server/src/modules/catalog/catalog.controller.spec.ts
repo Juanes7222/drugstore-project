@@ -71,7 +71,7 @@ describe('CatalogController (integration)', () => {
 
   describe('POST /catalog/products', () => {
     it('should call createProduct with userId and DTO', async () => {
-      const dto = { commercialName: 'Producto prueba', genericName: 'Genérico' };
+      const dto = { commercialName: 'Producto prueba' };
       const expected = { id: 'p-2', ...dto };
       service.createProduct.mockResolvedValue(expected);
 

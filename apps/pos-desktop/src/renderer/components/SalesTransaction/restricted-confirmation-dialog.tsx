@@ -68,12 +68,6 @@ export const RestrictedConfirmationDialog: FC<
               {item.name}
             </p>
             <p
-              className="text-caption"
-              style={{ color: "color-mix(in srgb, var(--color-ink) 60%, transparent)" }}
-            >
-              {item.genericName}
-            </p>
-            <p
               className="mt-pos-sm text-caption"
               style={{ color: "color-mix(in srgb, var(--color-ink) 60%, transparent)" }}
             >

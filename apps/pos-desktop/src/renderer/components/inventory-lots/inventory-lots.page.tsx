@@ -385,8 +385,7 @@ export const InventoryLotsPage: FC = () => {
                             className="text-caption"
                             style={{ color: 'var(--color-ink-muted)' }}
                           >
-                            {group.genericName}
-                            <span className="ml-pos-xs font-data">
+                            <span className="font-data">
                               {group.internalCode}
                             </span>
                           </span>

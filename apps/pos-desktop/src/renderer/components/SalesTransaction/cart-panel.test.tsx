@@ -28,14 +28,14 @@ const baseItem = (overrides: Partial<CartItem> = {}): CartItem => ({
   id: "line-1",
   productId: "p-001",
   name: "Acetaminofén 500mg",
-  genericName: "Paracetamol",
   invimaCertificate: "INVIMA-2019M-001234",
   saleType: SaleType.FREE_SALE,
   requiresPrescription: false,
   isRestricted: false,
   lotCode: "L24056",
   lotExpirationDate: "2027-06-01",
-  unitPriceCents: 6_200,
+  // 620 000 cents = $ 6.200 (formatCurrency divides by 100).
+  unitPriceCents: 620_000,
   overrideUnitPriceCents: null,
   discountPercentage: null,
   costCents: 3_000,
@@ -103,13 +103,14 @@ describe("CartPanel", () => {
       expect(screen.getByText("El carrito está vacío")).toBeInTheDocument();
     });
 
-    it("disables the checkout button when the cart is empty", () => {
+    // The checkout button only renders when the cart has items.
+    it("does not render the checkout button when the cart is empty", () => {
       const store = createTestStore([]);
       renderCartPanel(store);
 
       expect(
-        screen.getByRole("button", { name: /COBRAR/ }),
-      ).toBeDisabled();
+        screen.queryByRole("button", { name: /COBRAR/ }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -126,7 +127,7 @@ describe("CartPanel", () => {
       const store = createTestStore([baseItem()]);
       renderCartPanel(store);
 
-      // unitPriceCents = 6 200 → es-CO format: "$ 6.200"
+      // unitPriceCents = 620 000 → es-CO format: "$ 6.200"
       // With qty=1, the unit price, line total, and subtotal all match, so
       // getAllByText is used to avoid the "multiple elements" error.
       const matches = screen.getAllByText(/\$\s*6\.200/);
@@ -137,7 +138,7 @@ describe("CartPanel", () => {
       const store = createTestStore([baseItem({ quantity: 3 })]);
       renderCartPanel(store);
 
-      // 6 200 * 3 = 18 600 → "$ 18.600"
+      // 620 000 * 3 = 1 860 000 cents → "$ 18.600"
       // The line total and the subtotal both display the same amount, so
       // getAllByText is used to avoid the "multiple elements" error.
       const matches = screen.getAllByText(/\$\s*18\.600/);

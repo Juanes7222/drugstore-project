@@ -4,8 +4,6 @@ import { SaleType } from '@pharmacy/shared-types';
 export const CreateProductSchema = z.object({
   internalCode: z.string().min(1, 'Internal code is required'),
   commercialName: z.string().min(1, 'Commercial name is required'),
-  genericName: z.string().min(1, 'Generic name is required'),
-  activePrinciple: z.string().min(1, 'Active principle is required'),
   concentration: z.string().optional(),
   concentrationUnit: z.string().optional(),
   laboratory: z.string().min(1, 'Laboratory is required'),

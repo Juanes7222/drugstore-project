@@ -17,7 +17,6 @@ import {
 const createItem = (overrides: Partial<CatalogItem> = {}): CatalogItem => ({
   id: "p-001",
   name: "Generic Product",
-  genericName: "Generic",
   barcode: "7701234567890",
   invimaCertificate: null,
   saleType: SaleType.FREE_SALE,

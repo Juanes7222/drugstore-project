@@ -13,7 +13,6 @@ interface PrescriptionItemInfoProps {
   item: {
     id: string;
     name: string;
-    genericName: string;
     isRestricted?: boolean;
   };
 }
@@ -32,13 +31,6 @@ export const PrescriptionItemInfo: FC<PrescriptionItemInfoProps> = ({
             style={{ color: "var(--color-ink)" }}
           >
             {item.name}
-          </p>
-
-          <p
-            className="text-caption mt-pos-xs truncate"
-            style={{ color: "color-mix(in srgb, var(--color-ink) 55%, transparent)" }}
-          >
-            {t("prescriptions.generic_name")}: {item.genericName}
           </p>
         </div>
 

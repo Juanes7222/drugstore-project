@@ -24,7 +24,6 @@ interface ServerCatalogResponse {
 interface ServerProduct {
   id: string;
   commercialName: string;
-  genericName: string;
   saleType: SaleType;
   minimumStock: number;
   isActive: boolean;
@@ -152,7 +151,6 @@ const mapServerProductToCatalogItem = async (
   return {
     id: product.id,
     name: product.commercialName,
-    genericName: product.genericName,
     barcode: resolveBarcode(product),
     invimaCertificate: product.invimaRegistry,
     saleType: product.saleType,

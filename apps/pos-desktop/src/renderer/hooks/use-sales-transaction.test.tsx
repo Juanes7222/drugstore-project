@@ -6,6 +6,7 @@
  * handleCheckout.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { createContext } from "react";
 import { renderHook, act } from "@testing-library/react";
 import { useSalesTransaction } from "./use-sales-transaction";
 import { addItem, setClient } from "@/store/slices/sales-slice";
@@ -13,23 +14,39 @@ import { initializePayment } from "@/store/slices/payment-slice";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import { SaleType } from "@pharmacy/shared-types";
 import type { CatalogItem } from "@/services/catalog-service";
+import type { CartItem, SalesState } from "@/store/slices/sales-types";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks for Redux hooks and infrastructure
 // ---------------------------------------------------------------------------
 
 const mockDispatch = vi.fn();
-let mockTotalCents = 0;
+let mockSalesState: SalesState = { items: [], selectedClient: null };
 
 vi.mock("@/store/hooks", () => ({
   useAppDispatch: () => mockDispatch,
-  useAppSelector: () => mockTotalCents,
+  // Invoke the real selector against a mutable state so each selector
+  // returns its own slice of state.
+  useAppSelector: (selector: unknown) =>
+    (selector as (state: { sales: SalesState }) => unknown)({
+      sales: mockSalesState,
+    }),
 }));
 
 const mockCatalogService = { search: vi.fn() };
 
 vi.mock("@infra/catalog-service-factory", () => ({
   createCatalogService: () => mockCatalogService,
+}));
+
+const mockSalesPosService = { create: vi.fn() };
+const mockClientsService = { create: vi.fn() };
+
+vi.mock("../components/common/service-context", () => ({
+  // useProductSyncWait reads the raw context; null context makes it a no-op.
+  ServiceContext: createContext(null),
+  useSalesPosService: () => mockSalesPosService,
+  useClientsService: () => mockClientsService,
 }));
 
 // ---------------------------------------------------------------------------
@@ -39,7 +56,6 @@ vi.mock("@infra/catalog-service-factory", () => ({
 const unrestrictedItem: CatalogItem = {
   id: "p-001",
   name: "Acetaminofén 500mg",
-  genericName: "Paracetamol",
   barcode: "7701234567890",
   invimaCertificate: null,
   saleType: SaleType.FREE_SALE,
@@ -59,7 +75,6 @@ const unrestrictedItem: CatalogItem = {
 const restrictedItem: CatalogItem = {
   id: "p-005",
   name: "Clonazepam 2mg",
-  genericName: "Clonazepam",
   barcode: "7705678901234",
   invimaCertificate: "RS-2024-001",
   saleType: SaleType.CONTROLLED_SUBSTANCE,
@@ -83,6 +98,26 @@ const incompleteItem: CatalogItem = {
   hasCompleteData: false,
 };
 
+// Cart item for the checkout test. Tax-exempt so selectTotalCents
+// equals the plain unit price (50 000).
+const checkoutCartItem: CartItem = {
+  id: "line-1",
+  productId: "p-001",
+  name: "Acetaminofén 500mg",
+  invimaCertificate: "",
+  saleType: SaleType.FREE_SALE,
+  requiresPrescription: false,
+  isRestricted: false,
+  lotCode: "L24056",
+  lotExpirationDate: "2026-08-30",
+  unitPriceCents: 50_000,
+  overrideUnitPriceCents: null,
+  discountPercentage: null,
+  costCents: null,
+  taxPercentage: 0,
+  quantity: 1,
+};
+
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
@@ -90,7 +125,7 @@ const incompleteItem: CatalogItem = {
 describe("useSalesTransaction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockTotalCents = 0;
+    mockSalesState = { items: [], selectedClient: null };
   });
 
   describe("initial state", () => {
@@ -100,8 +135,8 @@ describe("useSalesTransaction", () => {
       expect(result.current.catalogService).toBe(mockCatalogService);
       expect(result.current.pendingItem).toBeNull();
       expect(result.current.isDialogOpen).toBe(false);
-      // selectedClient depends on useAppSelector mock which returns
-      // mockTotalCents for any selector — not asserted here.
+      // selectedClient derives from mockSalesState via the real selector —
+      // not asserted here.
     });
   });
 
@@ -119,7 +154,6 @@ describe("useSalesTransaction", () => {
           id: `${unrestrictedItem.id}::${unrestrictedItem.lotCode}`,
           productId: unrestrictedItem.id,
           name: unrestrictedItem.name,
-          genericName: unrestrictedItem.genericName,
           invimaCertificate: "",
           saleType: unrestrictedItem.saleType,
           requiresPrescription: unrestrictedItem.requiresPrescription,
@@ -183,7 +217,6 @@ describe("useSalesTransaction", () => {
           id: `${restrictedItem.id}::${restrictedItem.lotCode}`,
           productId: restrictedItem.id,
           name: restrictedItem.name,
-          genericName: restrictedItem.genericName,
           invimaCertificate: restrictedItem.invimaCertificate ?? "",
           saleType: restrictedItem.saleType,
           requiresPrescription: restrictedItem.requiresPrescription,
@@ -236,14 +269,27 @@ describe("useSalesTransaction", () => {
   });
 
   describe("handleCheckout", () => {
-    it("dispatches initializePayment with totalDue then navigates to payment screen", () => {
-      mockTotalCents = 50_000;
+    it("dispatches initializePayment with totalDue then navigates to payment screen", async () => {
+      mockSalesState = { items: [checkoutCartItem], selectedClient: null };
+      mockSalesPosService.create.mockResolvedValue({ id: "sale-1" });
       const { result } = renderHook(() => useSalesTransaction());
 
-      act(() => {
-        result.current.handleCheckout();
+      await act(async () => {
+        await result.current.handleCheckout();
       });
 
+      expect(mockSalesPosService.create).toHaveBeenCalledWith({
+        clientId: null,
+        items: [
+          {
+            productId: "p-001",
+            quantity: 1,
+            unitPrice: undefined,
+            discountPercentage: undefined,
+            discountReason: undefined,
+          },
+        ],
+      });
       expect(mockDispatch).toHaveBeenCalledWith(
         initializePayment({ totalCents: 50_000 }),
       );

@@ -54,8 +54,6 @@ const CONCENTRATION_UNITS = [
 
 interface FormState {
   commercialName: string;
-  genericName: string;
-  activePrinciple: string;
   concentration: string;
   concentrationUnit: string;
   laboratory: string;
@@ -87,8 +85,6 @@ type FormAction =
 
 const emptyFormData = (): FormState => ({
   commercialName: "",
-  genericName: "",
-  activePrinciple: "",
   concentration: "",
   concentrationUnit: "mg",
   laboratory: "",
@@ -153,8 +149,6 @@ const validateForm = (
 ): Record<string, string> => {
   const errors: Record<string, string> = {};
   if (!state.commercialName.trim()) errors.commercialName = "required";
-  if (!state.genericName.trim()) errors.genericName = "required";
-  if (!state.activePrinciple.trim()) errors.activePrinciple = "required";
   if (!state.laboratory.trim()) errors.laboratory = "required";
   if (!state.price.trim() || Number(state.price) <= 0)
     errors.price = "required";
@@ -218,8 +212,6 @@ export const ProductForm: FC<ProductFormProps> = ({
         field: "commercialName",
         value: product.commercialName,
       });
-      dispatch({ type: "SET_FIELD", field: "genericName", value: product.genericName });
-      dispatch({ type: "SET_FIELD", field: "activePrinciple", value: product.activePrinciple });
       dispatch({ type: "SET_FIELD", field: "concentration", value: product.concentration ?? "" });
       dispatch({ type: "SET_FIELD", field: "concentrationUnit", value: product.concentrationUnit ?? "mg" });
       dispatch({ type: "SET_FIELD", field: "laboratory", value: product.laboratory });
@@ -289,8 +281,6 @@ export const ProductForm: FC<ProductFormProps> = ({
 
     onSave({
       commercialName: state.commercialName.trim(),
-      genericName: state.genericName.trim(),
-      activePrinciple: state.activePrinciple.trim(),
       concentration: state.concentration.trim(),
       concentrationUnit: state.concentrationUnit,
       laboratory: state.laboratory.trim(),
@@ -410,66 +400,6 @@ export const ProductForm: FC<ProductFormProps> = ({
                   className={`pos-input w-full ${fieldError("commercialName") ? "border-red-500" : ""}`}
                 />
                 {fieldError("commercialName") && (
-                  <p className="mt-pos-xs text-caption text-red-500">
-                    {t("products.field_required")}
-                  </p>
-                )}
-              </div>
-
-              {/* Generic name */}
-              <div>
-                <label
-                  htmlFor="pf-generic-name"
-                  className="mb-pos-xs block text-body-sm font-medium"
-                  style={{ color: "var(--color-ink)" }}
-                >
-                  {t("products.generic_name")} *
-                </label>
-                <input
-                  id="pf-generic-name"
-                  type="text"
-                  value={state.genericName}
-                  onChange={(e) =>
-                    dispatch({
-                      type: "SET_FIELD",
-                      field: "genericName",
-                      value: e.target.value,
-                    })
-                  }
-                  disabled={isProcessing}
-                  className={`pos-input w-full ${fieldError("genericName") ? "border-red-500" : ""}`}
-                />
-                {fieldError("genericName") && (
-                  <p className="mt-pos-xs text-caption text-red-500">
-                    {t("products.field_required")}
-                  </p>
-                )}
-              </div>
-
-              {/* Active principle */}
-              <div>
-                <label
-                  htmlFor="pf-active-principle"
-                  className="mb-pos-xs block text-body-sm font-medium"
-                  style={{ color: "var(--color-ink)" }}
-                >
-                  {t("products.active_principle")} *
-                </label>
-                <input
-                  id="pf-active-principle"
-                  type="text"
-                  value={state.activePrinciple}
-                  onChange={(e) =>
-                    dispatch({
-                      type: "SET_FIELD",
-                      field: "activePrinciple",
-                      value: e.target.value,
-                    })
-                  }
-                  disabled={isProcessing}
-                  className={`pos-input w-full ${fieldError("activePrinciple") ? "border-red-500" : ""}`}
-                />
-                {fieldError("activePrinciple") && (
                   <p className="mt-pos-xs text-caption text-red-500">
                     {t("products.field_required")}
                   </p>

@@ -769,6 +769,62 @@ async function backfillProductServerId(client: PGlite): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Legacy column removal
+// ---------------------------------------------------------------------------
+
+/**
+ * Drop the legacy `genericName` / `activePrinciple` columns from Product and
+ * relax `SaleItem.productGenericNameSnapshot` to nullable.
+ *
+ * The product data model now keeps only `commercialName` as a name field.
+ * `applyMissingSchema` only ever adds objects, so column removals must be
+ * handled here explicitly. `DROP COLUMN IF EXISTS` / `DROP NOT NULL` keep
+ * this idempotent — a no-op on databases that never had the columns.
+ *
+ * The snapshot column stays (historical fiscal records reference it) but new
+ * sales store NULL, so the NOT NULL constraint must go.
+ */
+async function dropLegacyProductNameColumns(client: PGlite): Promise<void> {
+  const productColumns = await client.query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'Product'
+        AND column_name IN ('genericName', 'activePrinciple')`,
+  );
+  if ((productColumns.rows[0]?.count ?? 0) > 0) {
+    await client.query(
+      `ALTER TABLE "Product"
+          DROP COLUMN IF EXISTS "genericName",
+          DROP COLUMN IF EXISTS "activePrinciple"`,
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      `[local-database] Dropped legacy product name column(s) ` +
+        `("genericName" / "activePrinciple").`,
+    );
+  }
+
+  const snapshotColumn = await client.query<{ isNullable: string }>(
+    `SELECT is_nullable AS "isNullable"
+       FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'SaleItem'
+        AND column_name = 'productGenericNameSnapshot'`,
+  );
+  if (snapshotColumn.rows[0]?.isNullable === 'NO') {
+    await client.query(
+      `ALTER TABLE "SaleItem"
+          ALTER COLUMN "productGenericNameSnapshot" DROP NOT NULL`,
+    );
+    // eslint-disable-next-line no-console
+    console.log(
+      `[local-database] Relaxed "SaleItem"."productGenericNameSnapshot" to nullable.`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Seed data for offline-first operation
 // ---------------------------------------------------------------------------
 
@@ -1140,6 +1196,12 @@ export async function getLocalDatabase(): Promise<{
       // every sale of those products because their `serverId IS NULL`.
       // Idempotent — re-running is a single query that returns zero rows.
       await backfillProductServerId(client);
+
+      // ---- Drop legacy product name columns ----
+      // `genericName` / `activePrinciple` were removed from the Product
+      // model; the auto-upgrader only adds objects, so drop them here.
+      // Idempotent via DROP COLUMN IF EXISTS.
+      await dropLegacyProductNameColumns(client);
 
       // ---- Seed reference data for offline-first operation ----
       // Seed tax schemes so the product form works without a server.

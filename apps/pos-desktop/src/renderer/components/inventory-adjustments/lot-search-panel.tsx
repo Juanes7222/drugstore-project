@@ -159,7 +159,6 @@ export const LotSearchPanel: FC<LotSearchPanelProps> = ({
         const matchingLots = group.lots.filter(
           (lot) =>
             lot.product.commercialName.toLowerCase().includes(q) ||
-            lot.product.genericName.toLowerCase().includes(q) ||
             lot.product.internalCode.toLowerCase().includes(q) ||
             lot.batchNumber.toLowerCase().includes(q),
         );
@@ -305,8 +304,7 @@ export const LotSearchPanel: FC<LotSearchPanelProps> = ({
                     className="truncate text-caption"
                     style={{ color: 'var(--color-ink-muted)' }}
                   >
-                    {group.genericName}
-                    <span className="ml-pos-xs font-data">{group.internalCode}</span>
+                    <span className="font-data">{group.internalCode}</span>
                   </span>
                 </div>
 

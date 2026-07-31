@@ -30,7 +30,6 @@ const createMockService = (
 const baseProduct = (overrides: Partial<CatalogItem> = {}): CatalogItem => ({
   id: "p-001",
   name: "Acetaminofén 500mg",
-  genericName: "Paracetamol",
   barcode: "7701234567890",
   invimaCertificate: "INVIMA-2019M-001234",
   saleType: SaleType.FREE_SALE,

@@ -36,7 +36,6 @@ const createMockHttpClient = (
 const baseServerProduct = {
   id: "prod-001",
   commercialName: "Acetaminofén 500mg",
-  genericName: "Paracetamol",
   saleType: SaleType.FREE_SALE,
   minimumStock: 10,
   isActive: true,
@@ -95,7 +94,6 @@ describe("createHttpCatalogService", () => {
       expect(result[0]).toMatchObject({
         id: "prod-001",
         name: "Acetaminofén 500mg",
-        genericName: "Paracetamol",
         barcode: "",
         invimaCertificate: "INVIMA-2020M-001234",
         saleType: SaleType.FREE_SALE,
@@ -209,13 +207,14 @@ describe("createHttpCatalogService", () => {
       expect(result[0]?.hasCompleteData).toBe(false);
     });
 
-    it("defaults taxPercentage to 19 when server tax data is null", async () => {
+    it("defaults taxPercentage to 0 when server tax data is null", async () => {
       const product = { ...baseServerProduct, currentTax: null };
       const httpClient = createMockHttpClient([product], { data: [baseServerLot] });
       const service = createHttpCatalogService({ httpClient });
 
       const result = await service.search("no-tax");
-      expect(result[0]?.taxPercentage).toBe(19);
+      // Unknown tax → treated as exempt (0%), matching the cart slice.
+      expect(result[0]?.taxPercentage).toBe(0);
     });
 
     it("handles numeric price and tax rate strings", async () => {

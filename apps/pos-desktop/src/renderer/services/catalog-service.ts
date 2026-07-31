@@ -18,7 +18,6 @@ const NEAR_EXPIRY_DAYS = 30;
 export interface CatalogItem {
   id: string;
   name: string;
-  genericName: string;
   barcode: string;
   invimaCertificate: string | null;
   saleType: SaleType;
@@ -39,7 +38,7 @@ export interface CatalogItem {
 
 export interface CatalogService {
   /**
-   * Search products by name, generic name, barcode, or lot code.
+   * Search products by name, barcode, or lot code.
    * Returns a promise so the UI can treat local mocks and remote calls identically.
    */
   search(query: string): Promise<CatalogItem[]>;

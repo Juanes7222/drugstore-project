@@ -102,7 +102,6 @@ export interface ConfirmSaleInput {
 interface ProductSnapshot {
   internalCode: string;
   commercialName: string;
-  genericName: string;
   concentration: string | null;
 }
 
@@ -315,7 +314,10 @@ export class SalesPosService {
                   productId: item.productId,
                   productInternalCodeSnapshot: item.productSnapshot.internalCode,
                   productCommercialNameSnapshot: item.productSnapshot.commercialName,
-                  productGenericNameSnapshot: item.productSnapshot.genericName,
+                  // The Product model no longer has a generic-name field.
+                  // The snapshot column stays (historical fiscal records
+                  // reference it) but new sales store NULL.
+                  productGenericNameSnapshot: null,
                   productConcentrationSnapshot: item.productSnapshot.concentration,
                   quantity: item.quantity,
                   unitPrice: item.unitPrice,
@@ -749,7 +751,6 @@ export class SalesPosService {
         id: true,
         internalCode: true,
         commercialName: true,
-        genericName: true,
         concentration: true,
         saleType: true,
         priceHistories: {
@@ -847,7 +848,6 @@ export class SalesPosService {
       productSnapshot: {
         internalCode: product.internalCode,
         commercialName: product.commercialName,
-        genericName: product.genericName,
         concentration: product.concentration,
       },
     };

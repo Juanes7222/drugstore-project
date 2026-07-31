@@ -6,18 +6,34 @@
  * PP-11 (completing state).
  */
 import { describe, expect, it, vi, afterEach } from "vitest";
+import { createContext } from "react";
 import { Provider } from "react-redux";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { configureStore } from "@reduxjs/toolkit";
 import { PaymentProcessing } from "./payment-processing";
 import { addItem, salesSlice } from "@/store/slices/sales-slice";
 import { paymentSlice, initializePayment, setCashReceived } from "@/store/slices/payment-slice";
-import { uiSlice } from "@/store/slices/ui-slice";
+import { uiSlice, setCurrentSaleId } from "@/store/slices/ui-slice";
 import { PaymentGatewayService } from "@/services/payment-gateway-service";
 import { SaleType } from "@pharmacy/shared-types";
 import type { CartItem } from "@/store/slices/sales-types";
 // Initialize i18n singleton so formatCurrency can resolve the active locale.
 import "@/i18n";
+
+// ---------------------------------------------------------------------------
+// Service-context mock — the component reads SalesPosService from context.
+// ---------------------------------------------------------------------------
+
+const mockSalesPosService = {
+  resolvePaymentMethodId: vi.fn().mockResolvedValue("pm-cash"),
+  confirm: vi.fn().mockResolvedValue(undefined),
+};
+
+vi.mock("@/components/common/service-context", () => ({
+  // useProductSyncWait reads the raw context; null context makes it a no-op.
+  ServiceContext: createContext(null),
+  useSalesPosService: () => mockSalesPosService,
+}));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -27,7 +43,6 @@ const baseCartItem = {
   id: "line-1",
   productId: "p-001",
   name: "Test product",
-  genericName: "Test generic",
   invimaCertificate: "INVIMA-TEST",
   saleType: SaleType.FREE_SALE,
   requiresPrescription: false,
@@ -97,9 +112,10 @@ describe("PaymentProcessing", () => {
   // --- PP-01 ---
 
   it("displays the total due and the initial cash method", () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
     renderPayment(store);
 
+    // 6 616 400 cents = $ 66.164
     expect(screen.getByTestId("payment-total-due")).toHaveTextContent(
       /\$\s*66\.164/,
     );
@@ -109,7 +125,7 @@ describe("PaymentProcessing", () => {
   // --- PP-02 / PP-03 ---
 
   it("keeps the confirm button disabled until the split matches the total", () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
     renderPayment(store);
 
     const amountInput = screen.getAllByLabelText(/Valor|Amount/)[0] as HTMLInputElement;
@@ -121,6 +137,7 @@ describe("PaymentProcessing", () => {
     expect(confirmButton).not.toBeDisabled();
 
     // Reduce the cash amount → disabled because the split is short.
+    // The input accepts pesos; the component converts to cents (×100).
     fireEvent.change(amountInput, { target: { value: "50000" } });
     expect(confirmButton).toBeDisabled();
 
@@ -132,11 +149,12 @@ describe("PaymentProcessing", () => {
   // --- PP-04 ---
 
   it("recalculates change on every keystroke of the received amount", () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
     renderPayment(store);
 
     const receivedInput = screen.getByLabelText(/Recibido|Received/) as HTMLInputElement;
 
+    // $ 100.000 received, $ 66.164 owed → change $ 33.836
     fireEvent.change(receivedInput, { target: { value: "100000" } });
     expect(screen.getByText(/\$\s*33\.836/)).toBeInTheDocument();
 
@@ -150,11 +168,12 @@ describe("PaymentProcessing", () => {
   // --- PP-05: change display ---
 
   it("displays positive change when cash received exceeds cash owed", () => {
-    // Total = 66 164, single CASH method matches it.
+    // Total = 6 616 400 cents ($ 66.164), single CASH method matches it.
     // Setting cashReceived higher than owed shows positive change.
-    const store = createTestStore(66_164);
-    // Pre-set cash received so the change is visible immediately.
-    store.dispatch(setCashReceived(100_000));
+    const store = createTestStore(6_616_400);
+    // Pre-set cash received ($ 100.000 = 10 000 000 cents) so the change
+    // is visible immediately.
+    store.dispatch(setCashReceived(10_000_000));
     renderPayment(store);
 
     // Owed = 66 164, received = 100 000 → change = 33 836
@@ -164,7 +183,7 @@ describe("PaymentProcessing", () => {
   // --- PP-07: add payment method ---
 
   it("adds a new card method when the add-method button is clicked", () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
     renderPayment(store);
 
     // Only one method row (CASH) should be visible initially.
@@ -181,7 +200,7 @@ describe("PaymentProcessing", () => {
   // --- PP-08 / PP-09: authorizations (already covered in existing test) ---
 
   it("shows distinct visual states for pending, approved, and rejected authorizations", async () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
 
     const gatewayService: PaymentGatewayService = {
       authorize: vi
@@ -248,21 +267,20 @@ describe("PaymentProcessing", () => {
       {
         ...baseCartItem,
         id: "line-1",
-        unitPriceCents: 50_000,
+        unitPriceCents: 5_000_000,
         quantity: 1,
       },
       {
         id: "line-2",
         productId: "p-004",
         name: "Losartán 50mg",
-        genericName: "Losartán potásico",
         invimaCertificate: "INVIMA-2019M-004567",
         saleType: SaleType.PRESCRIPTION,
         requiresPrescription: true,
         isRestricted: false,
         lotCode: "LS-2409",
         lotExpirationDate: "2027-06-01",
-        unitPriceCents: 24_300,
+        unitPriceCents: 2_430_000,
         taxPercentage: 19,
         quantity: 1,
         overrideUnitPriceCents: null,
@@ -327,7 +345,7 @@ describe("PaymentProcessing", () => {
   });
 
   it("does not intercept when cart has no prescription-required items", () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
     const dispatch = vi.spyOn(store, "dispatch");
     renderPayment(store);
 
@@ -347,7 +365,9 @@ describe("PaymentProcessing", () => {
   // --- PP-11: completing state ---
 
   it("shows 'Procesando pago...' on the button after confirming", () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
+    // The confirm flow requires an active sale created by the checkout step.
+    store.dispatch(setCurrentSaleId("sale-1"));
     renderPayment(store);
 
     const confirmButton = screen.getByRole("button", {
@@ -360,7 +380,8 @@ describe("PaymentProcessing", () => {
   });
 
   it("disables the confirm button while completing", () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
+    store.dispatch(setCurrentSaleId("sale-1"));
     renderPayment(store);
 
     const confirmButton = screen.getByRole("button", {
@@ -372,7 +393,8 @@ describe("PaymentProcessing", () => {
   });
 
   it("disables the cancel button while completing", () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
+    store.dispatch(setCurrentSaleId("sale-1"));
     renderPayment(store);
 
     const cancelButton = screen.getByRole("button", { name: /Cancelar/ });
@@ -384,7 +406,7 @@ describe("PaymentProcessing", () => {
   });
 
   it("renders the cancel button that resets payment and navigates back", () => {
-    const store = createTestStore(66_164);
+    const store = createTestStore(6_616_400);
     const dispatch = vi.spyOn(store, "dispatch");
     renderPayment(store);
 

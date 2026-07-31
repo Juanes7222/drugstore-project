@@ -255,12 +255,6 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
           >
             {item.name}
           </p>
-          <p
-            className="text-caption"
-            style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}
-          >
-            {item.genericName}
-          </p>
         </div>
         <div className="flex flex-col items-end gap-1">
           {justAdded && (

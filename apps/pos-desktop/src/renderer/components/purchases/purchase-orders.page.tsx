@@ -564,8 +564,6 @@ export const PurchaseOrdersPage: FC = () => {
 
       const input: CreateProductInput = {
         commercialName: inlineProductForm.commercialName,
-        genericName: inlineProductForm.commercialName,
-        activePrinciple: inlineProductForm.commercialName,
         laboratory: inlineProductForm.laboratory,
         saleType: 'OTC' as SaleType,
         barcodes,

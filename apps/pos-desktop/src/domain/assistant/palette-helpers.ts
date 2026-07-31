@@ -70,7 +70,7 @@ export function getItemLabel(item: IndexableItem): string {
 export function getItemDescription(item: IndexableItem): string | null {
   switch (item.category) {
     case 'PRODUCT':
-      return item.genericName ?? item.laboratory ?? null;
+      return item.laboratory ?? null;
     case 'CLIENT':
       return item.document ?? item.phone ?? null;
     case 'SALE':

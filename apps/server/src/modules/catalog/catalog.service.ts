@@ -41,9 +41,7 @@ export class CatalogService {
     if (query.search) {
       where.OR = [
         { commercialName: { contains: query.search, mode: 'insensitive' } },
-        { genericName: { contains: query.search, mode: 'insensitive' } },
         { internalCode: { contains: query.search, mode: 'insensitive' } },
-        { activePrinciple: { contains: query.search, mode: 'insensitive' } },
       ];
     }
 

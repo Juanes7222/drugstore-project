@@ -188,8 +188,6 @@ export interface ProductCreationPayload {
   createProductDto: {
     internalCode: string;
     commercialName: string;
-    genericName: string;
-    activePrinciple: string;
     concentration?: string;
     concentrationUnit?: string;
     laboratory: string;
@@ -238,8 +236,6 @@ export interface ProductUpdatePayload {
   updateProductDto: {
     internalCode: string;
     commercialName?: string;
-    genericName?: string;
-    activePrinciple?: string;
     concentration?: string | null;
     concentrationUnit?: string | null;
     laboratory?: string;

@@ -92,8 +92,6 @@ export interface CreateProductTaxInput {
 
 export interface CreateProductInput {
   commercialName: string;
-  genericName: string;
-  activePrinciple: string;
   concentration?: string | null;
   concentrationUnit?: string | null;
   laboratory: string;
@@ -118,8 +116,6 @@ export interface CreateProductInput {
 
 export interface UpdateProductInput {
   commercialName?: string;
-  genericName?: string;
-  activePrinciple?: string;
   concentration?: string | null;
   concentrationUnit?: string | null;
   laboratory?: string;
@@ -146,8 +142,6 @@ export interface ProductListItem {
   id: string;
   internalCode: string;
   commercialName: string;
-  genericName: string;
-  activePrinciple: string;
   concentration: string | null;
   concentrationUnit: string | null;
   laboratory: string;
@@ -176,8 +170,6 @@ export interface ProductSearchResult {
   id: string;
   internalCode: string;
   commercialName: string;
-  genericName: string;
-  activePrinciple: string;
   concentration: string | null;
   laboratory: string;
   saleType: SaleType;
@@ -301,8 +293,8 @@ export class ProductService {
   /**
    * List products with optional search and pagination.
    *
-   * Searches across `commercialName`, `genericName`, `activePrinciple`,
-   * and `internalCode`. Optionally filters by `isActive`.
+   * Searches across `commercialName` and `internalCode`. Optionally filters
+   * by `isActive`.
    *
    * Returns a flat list with primary barcode and active price.
    *
@@ -340,8 +332,6 @@ export class ProductService {
       const q = query.trim().toLowerCase();
       where.OR = [
         { commercialName: { contains: q, mode: 'insensitive' } },
-        { genericName: { contains: q, mode: 'insensitive' } },
-        { activePrinciple: { contains: q, mode: 'insensitive' } },
         { internalCode: { contains: q, mode: 'insensitive' } },
         { barcodes: { some: { barcode: { contains: q, mode: 'insensitive' } } } },
       ];
@@ -386,8 +376,6 @@ export class ProductService {
         id: p.id,
         internalCode: p.internalCode,
         commercialName: p.commercialName,
-        genericName: p.genericName,
-        activePrinciple: p.activePrinciple,
         concentration: p.concentration,
         concentrationUnit: p.concentrationUnit,
         laboratory: p.laboratory,
@@ -487,8 +475,6 @@ export class ProductService {
       id: product.id,
       internalCode: product.internalCode,
       commercialName: product.commercialName,
-      genericName: product.genericName,
-      activePrinciple: product.activePrinciple,
       concentration: product.concentration,
       laboratory: product.laboratory,
       saleType: product.saleType as SaleType,
@@ -533,8 +519,6 @@ export class ProductService {
       id: product.id,
       internalCode: product.internalCode,
       commercialName: product.commercialName,
-      genericName: product.genericName,
-      activePrinciple: product.activePrinciple,
       concentration: product.concentration,
       laboratory: product.laboratory,
       saleType: product.saleType as SaleType,
@@ -621,8 +605,6 @@ export class ProductService {
           id: productId,
           internalCode,
           commercialName: input.commercialName,
-          genericName: input.genericName,
-          activePrinciple: input.activePrinciple,
           concentration: input.concentration ?? null,
           concentrationUnit: input.concentrationUnit ?? null,
           laboratory: input.laboratory,
@@ -733,8 +715,6 @@ export class ProductService {
       const createProductDto: Record<string, unknown> = {
         internalCode,
         commercialName: input.commercialName,
-        genericName: input.genericName,
-        activePrinciple: input.activePrinciple,
         concentration: input.concentration ?? undefined,
         concentrationUnit: input.concentrationUnit ?? undefined,
         laboratory: input.laboratory,
@@ -965,8 +945,6 @@ export class ProductService {
       const updateData: Prisma.ProductUpdateInput = {};
 
       if (input.commercialName !== undefined) updateData.commercialName = input.commercialName;
-      if (input.genericName !== undefined) updateData.genericName = input.genericName;
-      if (input.activePrinciple !== undefined) updateData.activePrinciple = input.activePrinciple;
       if (input.concentration !== undefined) updateData.concentration = input.concentration;
       if (input.concentrationUnit !== undefined) updateData.concentrationUnit = input.concentrationUnit;
       if (input.laboratory !== undefined) updateData.laboratory = input.laboratory;
@@ -1135,8 +1113,6 @@ export class ProductService {
         updateProductDto: {
           internalCode: updated.internalCode,
           ...(input.commercialName !== undefined && { commercialName: input.commercialName }),
-          ...(input.genericName !== undefined && { genericName: input.genericName }),
-          ...(input.activePrinciple !== undefined && { activePrinciple: input.activePrinciple }),
           ...(input.concentration !== undefined && { concentration: input.concentration }),
           ...(input.concentrationUnit !== undefined && { concentrationUnit: input.concentrationUnit }),
           ...(input.laboratory !== undefined && { laboratory: input.laboratory }),
@@ -1423,8 +1399,6 @@ export class ProductService {
     id: string;
     internalCode: string;
     commercialName: string;
-    genericName: string;
-    activePrinciple: string;
     concentration: string | null;
     concentrationUnit: string | null;
     laboratory: string;
@@ -1458,8 +1432,6 @@ export class ProductService {
         id: true,
         internalCode: true,
         commercialName: true,
-        genericName: true,
-        activePrinciple: true,
         concentration: true,
         concentrationUnit: true,
         laboratory: true,
@@ -1526,8 +1498,6 @@ export class ProductService {
       id: row.id,
       internalCode: row.internalCode,
       commercialName: row.commercialName,
-      genericName: row.genericName,
-      activePrinciple: row.activePrinciple,
       concentration: row.concentration,
       concentrationUnit: row.concentrationUnit,
       laboratory: row.laboratory,
@@ -1569,8 +1539,6 @@ export class ProductService {
       id: string;
       internalCode: string;
       commercialName: string;
-      genericName: string;
-      activePrinciple: string;
       concentration: string | null;
       concentrationUnit: string | null;
       laboratory: string;
@@ -1598,8 +1566,6 @@ export class ProductService {
     const createProductDto: Record<string, unknown> = {
       internalCode: row.internalCode,
       commercialName: row.commercialName,
-      genericName: row.genericName,
-      activePrinciple: row.activePrinciple,
       concentration: row.concentration ?? undefined,
       concentrationUnit: row.concentrationUnit ?? undefined,
       laboratory: row.laboratory,

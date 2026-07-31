@@ -75,7 +75,6 @@ describe('SalesService', () => {
     id: 'prod-1',
     internalCode: 'P001',
     commercialName: 'Test Product',
-    genericName: 'Test Generic',
     concentration: '500mg',
     saleType: 'FREE_SALE',
     requiresPrescription: false,

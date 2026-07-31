@@ -3,7 +3,6 @@ import { SaleType } from "./enums";
 export interface Product {
   id: string;
   name: string;
-  genericName: string;
   barcode: string;
   invimaCertificate: string;
   saleType: SaleType;

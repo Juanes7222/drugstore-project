@@ -216,15 +216,6 @@ export const ProductList: FC<ProductListProps> = ({
                         <p className="text-body-sm font-medium">
                           {product.commercialName}
                         </p>
-                        <p
-                          className="text-caption"
-                          style={{
-                            color:
-                              "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-                          }}
-                        >
-                          {product.genericName}
-                        </p>
                       </div>
                     </td>
                     <td className="px-pos-md py-pos-sm text-body-sm">

@@ -501,8 +501,6 @@ describe('SyncOperationDispatcherService', () => {
       createProductDto: {
         internalCode: 'OFFLINE-uuid-1',
         commercialName: 'Test',
-        genericName: 'Test',
-        activePrinciple: 'Test',
         laboratory: 'Lab',
         saleType: 'FREE_SALE',
         initialPrice: '1000',

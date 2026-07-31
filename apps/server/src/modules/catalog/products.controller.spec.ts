@@ -31,8 +31,6 @@ function buildMockProduct(overrides: Partial<Record<string, unknown>> = {}) {
     id: 'prod-uuid-1',
     internalCode: 'PROD-001',
     commercialName: 'Acetaminofén 500mg',
-    genericName: 'Acetaminofén',
-    activePrinciple: 'Acetaminofén',
     laboratory: 'Genfar',
     saleType: 'FREE_SALE' as const,
     minimumStock: 10,
@@ -168,8 +166,6 @@ describe('ProductsController (integration)', () => {
     const createDto = {
       internalCode: 'PROD-002',
       commercialName: 'Ibuprofeno 400mg',
-      genericName: 'Ibuprofeno',
-      activePrinciple: 'Ibuprofeno',
       laboratory: 'MK',
       saleType: 'FREE_SALE' as const,
       initialPrice: '5000.00',
@@ -211,9 +207,10 @@ describe('ProductsController (integration)', () => {
       const updated = buildMockProduct({ commercialName: updateDto.commercialName });
       service.updateProduct.mockResolvedValue(updated);
 
-      const result = await controller.update('prod-123', updateDto);
+      const user = buildMockUser();
+      const result = await controller.update('prod-123', updateDto, user as any);
 
-      expect(service.updateProduct).toHaveBeenCalledWith('prod-123', updateDto);
+      expect(service.updateProduct).toHaveBeenCalledWith('prod-123', updateDto, user.id);
       expect(result).toEqual(updated);
     });
   });

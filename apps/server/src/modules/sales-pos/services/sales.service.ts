@@ -447,7 +447,9 @@ export class SalesService {
       product: { connect: { id: itemDto.productId } },
       productInternalCodeSnapshot: product.internalCode,
       productCommercialNameSnapshot: product.commercialName,
-      productGenericNameSnapshot: product.genericName,
+      // Product no longer carries a generic name; the snapshot column is
+      // kept (nullable) only for historical fiscal documents.
+      productGenericNameSnapshot: null,
       productConcentrationSnapshot: product.concentration,
       quantity: itemDto.quantity,
       unitPrice,
