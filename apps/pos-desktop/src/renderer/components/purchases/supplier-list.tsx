@@ -2,7 +2,7 @@
  * SupplierList — table with NIT, business name, contact, phone, actions.
  *
  * Loading skeleton, empty state. Actions (edit/deactivate) shown only when
- * callbacks are provided. Uses lucide-react icons per design system.
+ * callbacks are provided. Uses shared ui/icons components.
  *
  * @category Component
  */

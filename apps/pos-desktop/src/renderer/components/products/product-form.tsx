@@ -21,8 +21,7 @@ import type {
   DisplayBarcode,
   ProductFormFieldRequirements,
 } from "./products.types";
-import { StarIcon, SparklesIcon, XIcon } from "../ui/icons";
-import { XIcon } from "@/components/ui/icons";
+import { SparklesIcon, StarIcon, XIcon } from "@/components/ui/icons";
 
 // ── Constants ────────────────────────────────────────────────────────────
 

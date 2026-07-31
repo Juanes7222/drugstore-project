@@ -1,7 +1,7 @@
 /**
  * Table section for sync error entries with sorting, filtering, and actions.
  *
- * Uses design-system tokens, lucide-react icons, motion staggered entrance,
+ * Uses design-system tokens, shared ui/icons components, motion staggered entrance,
  * and truncated error messages to avoid leaking stack traces. Admin-level
  * actions (retry, discard) render only for ADMIN roles.
  *

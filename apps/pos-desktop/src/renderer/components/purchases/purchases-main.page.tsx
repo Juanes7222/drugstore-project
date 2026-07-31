@@ -2,7 +2,7 @@
  * Purchases-main page — hub for purchase-related sub-pages.
  *
  * Role-gated cards navigate to Suppliers, Purchase Orders, Receptions,
- * and Supplier Returns. Uses lucide-react icons per design-system.md.
+ * and Supplier Returns. Uses shared ui/icons components.
  * Shows pending counts for each section.
  *
  * @category Page

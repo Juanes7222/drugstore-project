@@ -3,7 +3,7 @@
  *
  * Displays summary metrics (pending, failed, permanent failures, success
  * rate, last backup) in a responsive 2–4 column grid of accent-bordered
- * tiles. Uses design-system tokens for colours and lucide-react icons per
+ * tiles. Uses design-system tokens for colours and shared ui/icons components.
  * tile. The Last Backup tile is clickable.
  *
  * @category Component

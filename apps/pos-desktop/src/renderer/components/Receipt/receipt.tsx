@@ -40,12 +40,12 @@ import {
 import { getTenantInfo } from "../../../domain/configuration/local-config.store";
 import { generateReceiptHtml, printReceipt } from "../../../domain/fiscal/receipt-generator";
 import type {
-import { CheckIcon, PrinterIcon } from "@/components/ui/icons";
   InvoiceFullData,
   InvoiceLineItem,
   InvoicePayment,
   InvoiceTaxSummary,
 } from "../../../domain/fiscal/fiscal-types";
+import { CheckIcon, PrinterIcon } from "@/components/ui/icons";
 
 const COMPLETING_ENTRY_DURATION_S = 0.35;
 

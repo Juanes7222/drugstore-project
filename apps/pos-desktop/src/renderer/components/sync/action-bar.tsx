@@ -3,7 +3,7 @@
  *
  * Connection testing (with animated spinner), manual sync trigger, CSV/JSON
  * export, and toggles for retry-without-check and showing discarded entries.
- * Uses design-system tokens and lucide-react icons.
+ * Uses design-system tokens and shared ui/icons components.
  *
  * @category Component
  */

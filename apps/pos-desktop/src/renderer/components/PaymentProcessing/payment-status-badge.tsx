@@ -7,11 +7,11 @@
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import {
-import { CheckIcon, XIcon } from "@/components/ui/icons";
-import { LoaderIcon } from "@/components/ui/icons/animated";
   AuthorizationStatus,
   PaymentMethodEntry,
 } from "@/store/slices/payment-types";
+import { CheckIcon, XIcon } from "@/components/ui/icons";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 
 interface PaymentStatusBadgeProps {
   method: PaymentMethodEntry;
@@ -44,7 +44,7 @@ export const PaymentStatusBadge: FC<PaymentStatusBadgeProps> = ({
           color: "var(--color-pharma)",
         }}
       >
-        <CheckIcon />
+        <CheckIcon className="h-3.5 w-3.5" strokeWidth={3} />
         {t("payment.status.approved")}
         {method.reference && (
           <span
@@ -70,7 +70,7 @@ export const PaymentStatusBadge: FC<PaymentStatusBadgeProps> = ({
             color: "#D32F2F",
           }}
         >
-          <CrossIcon />
+          <XIcon className="h-3.5 w-3.5" strokeWidth={3} />
           {t("payment.status.rejected")}
         </span>
         {method.rejectionReason && (
@@ -109,10 +109,4 @@ const SpinnerIcon: FC = () => (
   <LoaderIcon className="h-3.5 w-3.5" />
 );
 
-const CheckIcon: FC = () => (
-  <CheckIcon className="h-3.5 w-3.5" strokeWidth={3} />
-);
 
-const CrossIcon: FC = () => (
-  <XIcon className="h-3.5 w-3.5" strokeWidth={3} />
-);
