@@ -433,6 +433,11 @@ interface ProductRow {
   createdAt: string;
   updatedAt: string;
   createdById: string;
+  /** Sales-commission configuration (defaults when absent). */
+  commissionType?: string | null;
+  commissionValue?: string | number | null;
+  commissionStartsAt?: string | null;
+  commissionEndsAt?: string | null;
   barcodes?: BarcodeRow[];
   /** Active price history record from the server (or null). */
   currentPrice: PriceHistoryRow | null;
@@ -605,6 +610,16 @@ const mapProductForCreate = (prod: ProductRow): any => ({
   internalNotes: prod.internalNotes ?? null,
   categoryId: prod.categoryId ?? null,
   pharmaceuticalFormId: prod.pharmaceuticalFormId ?? null,
+  commissionType: prod.commissionType ?? 'NONE',
+  commissionValue: prod.commissionValue
+    ? new Prisma.Decimal(prod.commissionValue)
+    : new Prisma.Decimal(0),
+  commissionStartsAt: prod.commissionStartsAt
+    ? new Date(prod.commissionStartsAt)
+    : null,
+  commissionEndsAt: prod.commissionEndsAt
+    ? new Date(prod.commissionEndsAt)
+    : null,
   createdById: prod.createdById,
 });
 
@@ -630,4 +645,14 @@ const mapProductForUpdate = (prod: ProductRow): any => ({
   internalNotes: prod.internalNotes,
   categoryId: prod.categoryId,
   pharmaceuticalFormId: prod.pharmaceuticalFormId,
+  commissionType: prod.commissionType ?? 'NONE',
+  commissionValue: prod.commissionValue
+    ? new Prisma.Decimal(prod.commissionValue)
+    : new Prisma.Decimal(0),
+  commissionStartsAt: prod.commissionStartsAt
+    ? new Date(prod.commissionStartsAt)
+    : null,
+  commissionEndsAt: prod.commissionEndsAt
+    ? new Date(prod.commissionEndsAt)
+    : null,
 });

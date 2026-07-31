@@ -2,6 +2,7 @@
  * Unit tests for CatalogSyncService — pulling product catalog from server.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { Prisma } from "@pharmacy/database/local";
 import { createCatalogSyncService, type CatalogSyncService, CatalogSyncHttpError } from "./catalog-sync.service";
 import type { SyncHttpClient } from "./catalog-sync.service";
 
@@ -165,6 +166,96 @@ describe("CatalogSyncService", () => {
 
       // Should have upserted both products
       expect(tx.product.upsert).toHaveBeenCalledTimes(2);
+
+      vi.unstubAllGlobals();
+    });
+
+    it("maps commission fields into product upserts (create and update)", async () => {
+      vi.stubGlobal("navigator", { onLine: true });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+
+      vi.mocked(http.get)
+        .mockResolvedValueOnce([])  // categories
+        .mockResolvedValueOnce([])  // forms
+        .mockResolvedValueOnce({    // products page 1 (cursor, last)
+          items: [{
+            id: "prod-1",
+            internalCode: "P001",
+            commercialName: "Acetaminofén",
+            laboratory: "Genfar",
+            saleType: "FREE_SALE",
+            minimumStock: 10,
+            isActive: true,
+            createdById: "user-1",
+            commissionType: "PERCENTAGE",
+            commissionValue: "5",
+            commissionStartsAt: "2026-07-01T00:00:00.000Z",
+            commissionEndsAt: "2026-07-31T00:00:00.000Z",
+          }],
+          nextCursor: null, hasMore: false,
+        });
+
+      await service.pullCatalog();
+
+      expect(tx.product.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            commissionType: "PERCENTAGE",
+            commissionValue: new Prisma.Decimal(5),
+            commissionStartsAt: new Date("2026-07-01T00:00:00.000Z"),
+            commissionEndsAt: new Date("2026-07-31T00:00:00.000Z"),
+          }),
+          update: expect.objectContaining({
+            commissionType: "PERCENTAGE",
+            commissionValue: new Prisma.Decimal(5),
+            commissionStartsAt: new Date("2026-07-01T00:00:00.000Z"),
+            commissionEndsAt: new Date("2026-07-31T00:00:00.000Z"),
+          }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("defaults commission to NONE and 0 when the row omits commission fields", async () => {
+      vi.stubGlobal("navigator", { onLine: true });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+
+      vi.mocked(http.get)
+        .mockResolvedValueOnce([])  // categories
+        .mockResolvedValueOnce([])  // forms
+        .mockResolvedValueOnce({    // products page 1 (cursor, last)
+          items: [{
+            id: "prod-1",
+            internalCode: "P001",
+            commercialName: "Acetaminofén",
+            laboratory: "Genfar",
+            saleType: "FREE_SALE",
+            minimumStock: 10,
+            isActive: true,
+            createdById: "user-1",
+          }],
+          nextCursor: null, hasMore: false,
+        });
+
+      await service.pullCatalog();
+
+      expect(tx.product.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            commissionType: "NONE",
+            commissionValue: new Prisma.Decimal(0),
+            commissionStartsAt: null,
+            commissionEndsAt: null,
+          }),
+          update: expect.objectContaining({
+            commissionType: "NONE",
+            commissionValue: new Prisma.Decimal(0),
+            commissionStartsAt: null,
+            commissionEndsAt: null,
+          }),
+        }),
+      );
 
       vi.unstubAllGlobals();
     });

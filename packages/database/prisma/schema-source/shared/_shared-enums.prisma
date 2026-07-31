@@ -7,6 +7,12 @@ enum SaleType {
   CONTROLLED_SUBSTANCE
 }
 
+enum CommissionType {
+  NONE
+  PERCENTAGE
+  FIXED
+}
+
 enum TaxSchemeType {
   IVA
   INC

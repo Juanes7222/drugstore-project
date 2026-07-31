@@ -6,6 +6,7 @@ import { CashShiftService, createCashShiftService } from "./cash-shift.service";
 import { ShiftAlreadyOpenException, ShiftNotOpenException, MissingClosingCashCountsException, InvalidCashCountForNonCashMethodException, PaymentMethodNotFoundException } from "./exceptions";
 import { BackupFailedException } from "../backup/exceptions";
 import { Prisma } from "@pharmacy/database/local";
+import { RoleType } from "@pharmacy/shared-types";
 
 // Mock shift-close-html and print-payload-writer for printRouter tests
 vi.mock("./shift-close-html", () => ({
@@ -56,7 +57,9 @@ const makeMockPrisma = () => {
       create: vi.fn(),
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       update: vi.fn(),
+      count: vi.fn(),
     },
     shiftCashCount: {
       create: vi.fn(),
@@ -1771,6 +1774,33 @@ describe("CashShiftService", () => {
       expect(result.totalsByPaymentMethod[0].methodName).toBe("Transferencia");
       expect(result.totalsByPaymentMethod[0].expectedAmount).toBe("100");
       expect(result.totalsByPaymentMethod[0].isCash).toBe(false);
+    });
+  });
+
+  describe("getShiftHistory", () => {
+    it("returns workstation shifts for a MANAGER session without a permission exception", async () => {
+      // A session whose only allowed role is MANAGER proves the guard
+      // accepts the manager role instead of throwing.
+      auth.requireRole.mockImplementation((...roles: string[]) => {
+        if (!roles.includes(RoleType.MANAGER)) {
+          throw new Error("insufficient role");
+        }
+        return makeMockSession();
+      });
+      const shift = { id: "shift-1", workstationId: "ws-1", state: "CLOSED" };
+      tx.cashShift.findMany.mockResolvedValue([shift]);
+      tx.cashShift.count.mockResolvedValue(1);
+
+      const result = await service.getShiftHistory({ limit: 50, offset: 0 });
+
+      expect(result.shifts).toEqual([shift]);
+      expect(result.total).toBe(1);
+      expect(tx.cashShift.findMany).toHaveBeenCalledWith({
+        where: { workstationId: "ws-1" },
+        orderBy: { openedAt: "desc" },
+        take: 50,
+        skip: 0,
+      });
     });
   });
 });

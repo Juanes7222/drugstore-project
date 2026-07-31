@@ -131,6 +131,10 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
           costCents: item.costCents,
           taxPercentage: item.taxPercentage,
           quantity: 1,
+          commissionType: item.commissionType,
+          commissionValue: item.commissionValue,
+          commissionStartsAt: item.commissionStartsAt,
+          commissionEndsAt: item.commissionEndsAt,
         }),
       );
     },

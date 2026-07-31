@@ -39,6 +39,16 @@ model Product {
   /// the server cannot find the product by the local UUID in the
   /// sale payload.
   sourceProductId        String?
+  /// Sales-commission configuration. `commissionValue` is a percentage
+  /// when `commissionType` is PERCENTAGE, or a fixed per-unit amount in
+  /// COP when FIXED. The commission applies only while the sale date is
+  /// within the optional `commissionStartsAt` / `commissionEndsAt`
+  /// window — outside it (or when the window is unset and the type is
+  /// NONE) no commission accrues and the sale is not blocked.
+  commissionType           CommissionType @default(NONE)
+  commissionValue          Decimal        @db.Decimal(15, 2) @default(0)
+  commissionStartsAt       DateTime?
+  commissionEndsAt         DateTime?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
   createdById            String

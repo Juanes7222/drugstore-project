@@ -37,6 +37,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SALE_TYPE_RE = /^(FREE_SALE|PRESCRIPTION|CONTROLLED_SUBSTANCE)$/;
 const DECIMAL_RE = /^\d+(\.\d{1,2})?$/;
 const ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+const COMMISSION_TYPE_RE = /^(NONE|PERCENTAGE|FIXED)$/;
 
 function assertValidCreateSaleDto(value: unknown): void {
   const obj = value as Record<string, unknown>;
@@ -54,6 +55,21 @@ function assertValidCreateSaleDto(value: unknown): void {
     expect(item.unitPrice).toMatch(DECIMAL_RE);
     expect(typeof item.discount).toBe("string");
     expect(item.discount).toMatch(DECIMAL_RE);
+    // Commission snapshot: type/value are null when no commission was
+    // active at sale time; amount is always a decimal string (0 when
+    // inactive) so the server persists the same figure verbatim.
+    expect(
+      item.commissionType === null ||
+        (typeof item.commissionType === "string" &&
+          COMMISSION_TYPE_RE.test(item.commissionType as string)),
+    ).toBe(true);
+    expect(
+      item.commissionValue === null ||
+        (typeof item.commissionValue === "string" &&
+          DECIMAL_RE.test(item.commissionValue as string)),
+    ).toBe(true);
+    expect(typeof item.commissionAmount).toBe("string");
+    expect(item.commissionAmount).toMatch(DECIMAL_RE);
   }
   expect(
     obj.prescriptionNumber === null ||
@@ -124,6 +140,10 @@ interface PosItemInput {
   unitPrice: string;
   discount: string;
   discountReason?: string | null;
+  /** Snapshot of the active commission at sale time (null when inactive). */
+  commissionType: string | null;
+  commissionValue: string | null;
+  commissionAmount: string;
 }
 
 interface PosPaymentInput {
@@ -179,6 +199,10 @@ function makePosSyncPayload(overrides?: Partial<PosSyncPayload>): PosSyncPayload
           unitPrice: "5000.00",
           discount: "0",
           discountReason: null,
+          // 2 × 5000, no discount → 5 % of 10000 = 500.
+          commissionType: "PERCENTAGE",
+          commissionValue: "5",
+          commissionAmount: "500",
         },
       ],
       prescriptionNumber: null,
@@ -260,6 +284,9 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
               unitPrice: "5000.00",
               discount: "10",
               discountReason: "Promoción del día",
+              commissionType: "PERCENTAGE",
+              commissionValue: "5",
+              commissionAmount: "225",
             },
           ],
         },
@@ -267,6 +294,41 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
 
       expect(payload.createSaleDto.items[0]?.discount).toBe("10");
       expect(payload.createSaleDto.items[0]?.discountReason).toBe("Promoción del día");
+    });
+
+    it("includes the commission snapshot fields on every item", () => {
+      const payload = makePosSyncPayload();
+
+      expect(payload.createSaleDto.items[0]).toMatchObject({
+        commissionType: "PERCENTAGE",
+        commissionValue: "5",
+        commissionAmount: "500",
+      });
+    });
+
+    it("carries null commission type/value and 0 amount when no commission was active", () => {
+      const payload = makePosSyncPayload({
+        createSaleDto: {
+          ...makePosSyncPayload().createSaleDto,
+          items: [
+            {
+              productId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+              quantity: 1,
+              unitPrice: "5000.00",
+              discount: "0",
+              discountReason: null,
+              commissionType: null,
+              commissionValue: null,
+              commissionAmount: "0",
+            },
+          ],
+        },
+      });
+
+      expect(() => assertValidSaleConfirmationPayload(payload)).not.toThrow();
+      expect(payload.createSaleDto.items[0]?.commissionType).toBeNull();
+      expect(payload.createSaleDto.items[0]?.commissionValue).toBeNull();
+      expect(payload.createSaleDto.items[0]?.commissionAmount).toBe("0");
     });
   });
 

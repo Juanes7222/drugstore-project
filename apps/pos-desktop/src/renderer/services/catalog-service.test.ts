@@ -31,6 +31,10 @@ const createItem = (overrides: Partial<CatalogItem> = {}): CatalogItem => ({
   lotCode: "LOT-001",
   lotExpirationDate: "2027-12-31",
   hasCompleteData: true,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
   ...overrides,
 });
 

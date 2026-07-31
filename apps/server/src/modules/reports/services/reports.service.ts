@@ -174,6 +174,7 @@ export class ReportsService {
         averageTicket: totals.totalSales > 0
           ? totals.totalAmount.dividedBy(totals.totalSales).toFixed(2)
           : '0.00',
+        totalCommission: totals.totalCommission.toFixed(2),
       },
       dailyEntries: dailyEntries.map((d) => ({
         date: d.date,
@@ -181,6 +182,7 @@ export class ReportsService {
         totalAmount: d.totalAmount.toFixed(2),
         totalTax: d.totalTax.toFixed(2),
         quantity: d.quantity,
+        commissionAmount: d.commissionAmount.toFixed(2),
         averageTicket: d.salesCount > 0
           ? d.totalAmount.dividedBy(d.salesCount).toFixed(2)
           : '0.00',
@@ -287,6 +289,7 @@ export class ReportsService {
         items: {
           select: {
             quantity: true,
+            commissionAmount: true,
           },
         },
       },
@@ -549,12 +552,14 @@ function aggregateDailySales(
   totalAmount: Prisma.Decimal;
   totalTax: Prisma.Decimal;
   quantity: number;
+  commissionAmount: Prisma.Decimal;
 }> {
   const dayMap = new Map<string, {
     salesCount: number;
     totalAmount: Prisma.Decimal;
     totalTax: Prisma.Decimal;
     quantity: number;
+    commissionAmount: Prisma.Decimal;
   }>();
 
   for (const sale of sales) {
@@ -567,6 +572,7 @@ function aggregateDailySales(
         totalAmount: new Prisma.Decimal(0),
         totalTax: new Prisma.Decimal(0),
         quantity: 0,
+        commissionAmount: new Prisma.Decimal(0),
       };
       dayMap.set(dateKey, entry);
     }
@@ -575,6 +581,7 @@ function aggregateDailySales(
     entry.totalTax = entry.totalTax.plus(sale.totalTax ?? 0);
     for (const item of sale.items ?? []) {
       entry.quantity += item.quantity ?? 0;
+      entry.commissionAmount = entry.commissionAmount.plus(item.commissionAmount ?? 0);
     }
   }
 
@@ -590,26 +597,30 @@ function computeDailyTotals(
     totalAmount: Prisma.Decimal;
     totalTax: Prisma.Decimal;
     quantity: number;
+    commissionAmount: Prisma.Decimal;
   }>,
 ): {
   totalSales: number;
   totalAmount: Prisma.Decimal;
   totalTax: Prisma.Decimal;
   totalQuantity: number;
+  totalCommission: Prisma.Decimal;
 } {
   let totalSales = 0;
   let totalAmount = new Prisma.Decimal(0);
   let totalTax = new Prisma.Decimal(0);
   let totalQuantity = 0;
+  let totalCommission = new Prisma.Decimal(0);
 
   for (const entry of entries) {
     totalSales += entry.salesCount;
     totalAmount = totalAmount.plus(entry.totalAmount);
     totalTax = totalTax.plus(entry.totalTax);
     totalQuantity += entry.quantity;
+    totalCommission = totalCommission.plus(entry.commissionAmount);
   }
 
-  return { totalSales, totalAmount, totalTax, totalQuantity };
+  return { totalSales, totalAmount, totalTax, totalQuantity, totalCommission };
 }
 
 /** Formats a Date or ISO string as YYYY-MM-DD. */

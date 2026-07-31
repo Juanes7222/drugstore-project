@@ -24,6 +24,7 @@ export class DailyReportResponseDto {
     totalTax: string;
     totalQuantity: number;
     averageTicket: string;
+    totalCommission: string;
   };
 
   /** Day-by-day breakdown. */
@@ -38,6 +39,8 @@ export class DailyReportResponseDto {
     totalTax: string;
     /** Total quantity of items sold this day. */
     quantity: number;
+    /** Sum of SaleItem.commissionAmount for this day (snapshot at sale time). */
+    commissionAmount: string;
     /** Average ticket (totalAmount / salesCount) for this day. */
     averageTicket: string;
   }>;

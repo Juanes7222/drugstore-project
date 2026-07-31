@@ -641,7 +641,13 @@ export class CashShiftService {
     limit?: number;
     offset?: number;
   }): Promise<{ shifts: CashShiftRecord[]; total: number }> {
-    const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+    const session = this.auth.requireRole(
+      RoleType.CASHIER,
+      RoleType.MANAGER,
+      RoleType.OWNER,
+      RoleType.SAAS_ADMIN,
+      RoleType.ADMIN,
+    );
     const { limit = 20, offset = 0 } = options ?? {};
 
     const [shifts, total] = await Promise.all([

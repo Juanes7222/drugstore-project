@@ -127,7 +127,12 @@ export function buildSalesDailySummaryQuery(
     WITH confirmed AS (
       SELECT
         date_trunc('day', s."confirmedAt" AT TIME ZONE 'UTC') AS day,
-        ${MONEY_AGGS}
+        ${MONEY_AGGS},
+        COALESCE(SUM((
+          SELECT COALESCE(SUM(si."commissionAmount"), 0)::numeric
+            FROM "SaleItem" si
+           WHERE si."saleId" = s."id"
+        )), 0)::numeric AS total_commission
       FROM "Sale" s
       WHERE ${whereClause}
         AND s."confirmedAt" >= $1
@@ -161,6 +166,7 @@ export function buildSalesDailySummaryQuery(
              taxes,
              net_sales,
              transaction_count,
+             total_commission,
              COALESCE(a.annulled_count, 0) AS annulled,
              COALESCE(r.returns_amount, 0) AS returns
       FROM confirmed
@@ -201,7 +207,12 @@ export function buildSalesByCashierQuery(
     WITH per_cashier AS (
       SELECT
         s."userId" AS cashier_user_id,
-        ${MONEY_AGGS}
+        ${MONEY_AGGS},
+        COALESCE(SUM((
+          SELECT COALESCE(SUM(si."commissionAmount"), 0)::numeric
+            FROM "SaleItem" si
+           WHERE si."saleId" = s."id"
+        )), 0)::numeric AS commission_amount
       FROM "Sale" s
       WHERE ${whereClause}
         AND s."confirmedAt" >= $1
@@ -239,7 +250,8 @@ export function buildSalesByCashierQuery(
       CASE WHEN p.transaction_count > 0
            THEN (p.gross_sales - COALESCE(r.returns, 0)) / p.transaction_count
            ELSE 0 END AS average_ticket,
-      COALESCE(v.total_variance, 0) AS total_variance
+      COALESCE(v.total_variance, 0) AS total_variance,
+      p.commission_amount
     FROM per_cashier p
     LEFT JOIN returns r USING (cashier_user_id)
     LEFT JOIN variance v USING (cashier_user_id)
@@ -348,7 +360,8 @@ export function buildSalesByProductQuery(
         p."commercialName" AS product_name,
         COALESCE(SUM(si."quantity"), 0)::int AS units_sold,
         COALESCE(SUM(si."subtotal"), 0)::numeric AS gross_revenue,
-        COALESCE(SUM(si."total"), 0)::numeric AS net_revenue
+        COALESCE(SUM(si."total"), 0)::numeric AS net_revenue,
+        COALESCE(SUM(si."commissionAmount"), 0)::numeric AS commission_amount
       FROM "SaleItem" si
       JOIN "Sale" s ON s."id" = si."saleId"
       JOIN "Product" p ON p."id" = si."productId"
@@ -1159,20 +1172,23 @@ export function buildPendingOpsCountQuery(): QueryFragment {
 }
 
 /** Compute the totals row for a report, ignoring pagination.
- *  Caller passes the same params used for the data query, but with the
- *  offset/limit values removed. */
+ *  Caller passes the same params used for the data query.  When the query
+ *  ends with a LIMIT/OFFSET tail the last two params (offset, limit) are
+ *  stripped so the count reuses every filter placeholder; queries without
+ *  a pagination tail (e.g. CASH_SHIFT_CLOSE) keep their params untouched,
+ *  otherwise their placeholders would be left unbound. */
 export function buildCountQuery(
   baseQuery: QueryFragment,
   countExpr: string,
   dataParams: unknown[],
 ): QueryFragment {
   const inner = baseQuery.sql.replace(/LIMIT\s+\$\d+\s+OFFSET\s+\$\d+\s*$/iu, '');
-  // Data params carry the data filters plus the LIMIT/OFFSET tail;
-  // strip the last two elements (offset, limit) so the count reuses
-  // every filter placeholder.
+  const strippedPagination = inner !== baseQuery.sql;
   return {
     sql: `SELECT ${countExpr} AS total FROM (${inner}) AS count_subquery`,
-    params: dataParams.slice(0, Math.max(0, dataParams.length - 2)),
+    params: strippedPagination
+      ? dataParams.slice(0, Math.max(0, dataParams.length - 2))
+      : dataParams,
   };
 }
 

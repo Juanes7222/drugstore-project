@@ -10,7 +10,7 @@
  * Everything offline-first.  No network calls.
  */
 
-import { type FC, useCallback, useEffect, useMemo } from "react";
+import { type FC, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useReportsUiStore } from "../../stores/reports.store";
 import { useServiceContext } from "../common/service-context";
@@ -20,7 +20,7 @@ import { ReportViewer } from "./report-viewer";
 import { ReportFreshnessBanner } from "./report-freshness-banner";
 import { ReportErrorState } from "./report-error-state";
 import { ReportEmptyState } from "./report-empty-state";
-import { ReportExecutionException, ReportPermissionDeniedException } from "../../../domain/reports/exceptions";
+import { ReportExecutionException, ReportFiltersNotReadyException, ReportPermissionDeniedException } from "../../../domain/reports/exceptions";
 import { getReportDefinition, listReportsForRole } from "../../../domain/reports/report-catalog";
 import { assertReportAccess } from "../../../domain/reports/report-permissions";
 import type { ReportResponse } from "../../../domain/reports/report-types";
@@ -41,6 +41,7 @@ export const ReportsPage: FC = () => {
   const isLoading = useReportsUiStore((s) => s.isLoading);
   const error = useReportsUiStore((s) => s.error);
   const lastResponse = useReportsUiStore((s) => s.lastResponse);
+  const [notReady, setNotReady] = useState(false);
 
   const availableReports = useMemo(() => listReportsForRole(role), [role]);
   const hasReports = availableReports.length > 0;
@@ -67,6 +68,7 @@ export const ReportsPage: FC = () => {
       throw err;
     }
     setLoading(true);
+    setNotReady(false);
     try {
       const response: ReportResponse = await services.reportExecutionService.run({
         code: activeCode,
@@ -76,7 +78,9 @@ export const ReportsPage: FC = () => {
       });
       setResponse(response);
     } catch (err) {
-      if (err instanceof ReportExecutionException) {
+      if (err instanceof ReportFiltersNotReadyException) {
+        setNotReady(true);
+      } else if (err instanceof ReportExecutionException) {
         setError(err.message);
       } else if (err instanceof ReportPermissionDeniedException) {
         setError(t("reports.error.title"));
@@ -116,7 +120,7 @@ export const ReportsPage: FC = () => {
           ) : (
             <>
               {lastResponse ? <ReportFreshnessBanner freshness={lastResponse.freshness} /> : null}
-              <ReportViewer onExecute={execute} isLoading={isLoading} />
+              <ReportViewer onExecute={execute} isLoading={isLoading} notReady={notReady} />
             </>
           )}
         </section>

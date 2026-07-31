@@ -16,15 +16,26 @@ import {
   type ReportDefinition,
 } from "../../../domain/reports/report-types";
 import { resolvePresetDates } from "../../../domain/reports/report-filter-schemas";
+import { ShiftPicker, type ShiftOption } from "./shift-picker";
 
 interface ReportFiltersProps {
   definition: ReportDefinition;
   value: unknown;
   onChange: (next: unknown) => void;
   onApply: () => void;
+  /** Options for the CASH_SHIFT_CLOSE shift selector. */
+  shiftOptions?: ShiftOption[];
+  shiftsLoading?: boolean;
 }
 
-export const ReportFilters: FC<ReportFiltersProps> = ({ definition, value, onChange, onApply }) => {
+export const ReportFilters: FC<ReportFiltersProps> = ({
+  definition,
+  value,
+  onChange,
+  onApply,
+  shiftOptions = [],
+  shiftsLoading = false,
+}) => {
   const { t } = useTranslation();
   const base = (value as DateRangeFilter) ?? (definition.defaultFilters as DateRangeFilter);
   const [preset, setPreset] = useState<ReportDatePreset>(base.preset ?? ReportDatePreset.THIS_MONTH);
@@ -205,13 +216,12 @@ export const ReportFilters: FC<ReportFiltersProps> = ({ definition, value, onCha
       ) : null}
       {definition.code === 'CASH_SHIFT_CLOSE' ? (
         <div className="flex flex-col gap-1">
-          <label className="text-caption text-muted" htmlFor="shiftId">{t("reports.filters.shift_id")}</label>
-          <input
-            id="shiftId"
-            type="text"
+          <span className="text-caption text-muted">{t("reports.filters.shift_label")}</span>
+          <ShiftPicker
+            options={shiftOptions}
             value={shiftId}
-            onChange={(e) => setShiftId(e.target.value)}
-            className="w-64 rounded-md border border-border bg-white px-2 py-1 text-body-sm"
+            onChange={setShiftId}
+            loading={shiftsLoading}
           />
         </div>
       ) : null}

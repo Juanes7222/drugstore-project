@@ -11,6 +11,7 @@ import { CartItem } from "@/store/slices/sales-types";
 import { isNearExpiry } from "@/services/catalog-service";
 import { formatCurrency } from "@/utils/format-currency";
 import { formatShortDate } from "@/utils/format-date";
+import { CommissionBadge } from "@/components/common/commission-badge";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 
 interface CartLineItemProps {
@@ -180,6 +181,12 @@ export const CartLineItem: FC<CartLineItemProps> = ({
           {formatShortDate(item.lotExpirationDate)}
         </p>
         <div className="mt-pos-xs flex flex-wrap gap-pos-xs">
+          <CommissionBadge
+            commissionType={item.commissionType}
+            commissionValue={item.commissionValue}
+            commissionStartsAt={item.commissionStartsAt}
+            commissionEndsAt={item.commissionEndsAt}
+          />
           {nearExpiry && (
             <span className="pos-badge pos-badge-urgency">
               {t("sales.product.near_expiry")}

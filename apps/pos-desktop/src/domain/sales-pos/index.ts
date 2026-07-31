@@ -40,3 +40,11 @@ export {
   type DiscountLimitKey,
   type PriceOverrideRoleKey,
 } from './sales-pricing-validator';
+
+export {
+  calculateCommission,
+  isCommissionWindowActive,
+  type CommissionConfigInput,
+  type CommissionCalculationInput,
+  type CommissionCalculationResult,
+} from './commission';

@@ -33,6 +33,10 @@ const createItem = (overrides?: Partial<CatalogItem>): CatalogItem => ({
   minimumStock: 10,
   isActive: true,
   hasCompleteData: true,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
   ...overrides,
 });
 

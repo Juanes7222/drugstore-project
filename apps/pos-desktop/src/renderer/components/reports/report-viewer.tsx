@@ -3,7 +3,7 @@
  * and export actions.  Pure UI; the page wires data into it.
  */
 
-import { type FC, useCallback, useMemo, useRef } from "react";
+import { type FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type ReactECharts from "echarts-for-react";
 import { useReportsUiStore } from "../../stores/reports.store";
@@ -11,6 +11,8 @@ import { useServiceContext } from "../common/service-context";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { getReportDefinition } from "../../../domain/reports/report-catalog";
 import type { ReportResponse } from "../../../domain/reports/report-types";
+import { createFormatters } from "./use-reports-locale";
+import type { ShiftOption } from "./shift-picker";
 import { ReportHeader } from "./report-header";
 import { ReportFilters } from "./report-filters";
 import { ReportKpis } from "./report-kpis";
@@ -23,10 +25,12 @@ import type { ReportChartData } from "./charts/chart-types";
 interface ReportViewerProps {
   onExecute: () => void;
   isLoading: boolean;
+  /** A required filter is not selected yet; show the calm hint instead of running. */
+  notReady?: boolean;
 }
 
-export const ReportViewer: FC<ReportViewerProps> = ({ onExecute, isLoading }) => {
-  const { t } = useTranslation();
+export const ReportViewer: FC<ReportViewerProps> = ({ onExecute, isLoading, notReady = false }) => {
+  const { t, i18n } = useTranslation();
   const services = useServiceContext();
   const session = useLocalSessionStore((s) => s.session);
   const activeCode = useReportsUiStore((s) => s.activeReportCode);
@@ -39,6 +43,47 @@ export const ReportViewer: FC<ReportViewerProps> = ({ onExecute, isLoading }) =>
 
   const def = activeCode ? getReportDefinition(activeCode) : null;
   const chartRef = useRef<ReactECharts | null>(null);
+  const [shiftOptions, setShiftOptions] = useState<ShiftOption[]>([]);
+  const [shiftsLoading, setShiftsLoading] = useState(false);
+
+  // Load the shift list for the CASH_SHIFT_CLOSE selector (closed shifts only:
+  // an open shift has no closing document to report on).
+  useEffect(() => {
+    if (!def || def.code !== 'CASH_SHIFT_CLOSE') return;
+    let cancelled = false;
+    setShiftsLoading(true);
+    const dateTime = createFormatters(i18n.language).dateTime;
+    services.cashShiftService
+      .getShiftHistory({ limit: 50, offset: 0 })
+      .then(({ shifts }) => {
+        if (cancelled) return;
+        setShiftOptions(
+          shifts
+            .filter((s) => s.state === 'CLOSED' || s.state === 'FORCED_CLOSE')
+            .map((s) => ({
+              id: s.id,
+              label:
+                s.closedAt !== null
+                  ? `${dateTime.format(s.openedAt)} - ${dateTime.format(s.closedAt)}`
+                  : dateTime.format(s.openedAt),
+              stateLabel:
+                s.state === 'FORCED_CLOSE'
+                  ? t('cash_shift.state_forced_close')
+                  : t('cash_shift.state_closed'),
+              forced: s.state === 'FORCED_CLOSE',
+            })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setShiftOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setShiftsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [def, services, t, i18n.language]);
 
   const chartData: ReportChartData | null = useMemo(() => {
     if (!lastResponse) return null;
@@ -87,7 +132,16 @@ export const ReportViewer: FC<ReportViewerProps> = ({ onExecute, isLoading }) =>
         value={appliedFilters ?? def.defaultFilters}
         onChange={(f) => setFilters(f)}
         onApply={onExecute}
+        shiftOptions={shiftOptions}
+        shiftsLoading={shiftsLoading}
       />
+
+      {notReady && !lastResponse ? (
+        <ReportEmptyState
+          title={t("reports.filters.select_shift")}
+          body={t("reports.filters.select_shift_hint")}
+        />
+      ) : null}
 
       {lastResponse ? (
         <>

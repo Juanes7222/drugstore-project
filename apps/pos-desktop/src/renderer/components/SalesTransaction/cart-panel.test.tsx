@@ -41,6 +41,10 @@ const baseItem = (overrides: Partial<CartItem> = {}): CartItem => ({
   costCents: 3_000,
   taxPercentage: 19,
   quantity: 1,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
   ...overrides,
 });
 

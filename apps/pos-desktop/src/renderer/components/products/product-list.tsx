@@ -8,6 +8,7 @@ import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import type { DisplayProduct, CategoryOption } from "./products.types";
 import { SearchIcon } from "@/components/ui/icons";
+import { CommissionBadge } from "@/components/common/commission-badge";
 
 interface ProductListProps {
   /** Products already filtered by parent (search + category + status). */
@@ -212,10 +213,16 @@ export const ProductList: FC<ProductListProps> = ({
                         : product.internalCode}
                     </td>
                     <td className="px-pos-md py-pos-sm">
-                      <div>
+                      <div className="flex items-center gap-pos-sm">
                         <p className="text-body-sm font-medium">
                           {product.commercialName}
                         </p>
+                        <CommissionBadge
+                          commissionType={product.commissionType}
+                          commissionValue={product.commissionValue}
+                          commissionStartsAt={product.commissionStartsAt}
+                          commissionEndsAt={product.commissionEndsAt}
+                        />
                       </div>
                     </td>
                     <td className="px-pos-md py-pos-sm text-body-sm">

@@ -11,7 +11,7 @@
  * the fields the cart/totals code needs, mapped from whatever the server
  * returns. If the server's response shape changes, only the mapper changes.
  */
-import { SaleType } from "@pharmacy/shared-types";
+import { CommissionType, SaleType } from "@pharmacy/shared-types";
 
 const NEAR_EXPIRY_DAYS = 30;
 
@@ -34,6 +34,14 @@ export interface CatalogItem {
   lotExpirationDate: string;
   /** True only when all POS-critical fields (price, tax, stock, lot) are present. */
   hasCompleteData: boolean;
+  /** Commission configuration; null when the data source has no commission info. */
+  commissionType: CommissionType | null;
+  /** Percentage points (PERCENTAGE) or COP per unit (FIXED) as decimal string. */
+  commissionValue: string | null;
+  /** Optional validity window start (inclusive), ISO, or null. */
+  commissionStartsAt: string | null;
+  /** Optional validity window end (inclusive), ISO, or null. */
+  commissionEndsAt: string | null;
 }
 
 export interface CatalogService {

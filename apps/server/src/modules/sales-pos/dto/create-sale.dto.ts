@@ -10,6 +10,11 @@ export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
     quantity: number;
     unitPrice: string;
     discount?: string;
+    discountPercentage?: number;
+    discountReason?: string;
+    commissionType?: 'NONE' | 'PERCENTAGE' | 'FIXED' | null;
+    commissionValue?: string | null;
+    commissionAmount?: string;
   }>;
   prescriptionNumber?: string | null;
   /**
@@ -47,4 +52,13 @@ export type CreateSaleItemDto = {
   discount?: string;
   discountPercentage?: number;
   discountReason?: string;
+  /**
+   * Commission evaluated by the offline POS at real sale time. When present
+   * the server persists these verbatim on the SaleItem; when absent it
+   * computes them from the product configuration (see
+   * CommissionCalculatorService).
+   */
+  commissionType?: 'NONE' | 'PERCENTAGE' | 'FIXED' | null;
+  commissionValue?: string | null;
+  commissionAmount?: string;
 };

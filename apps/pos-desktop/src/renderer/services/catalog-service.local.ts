@@ -23,7 +23,7 @@
  *     the server; product discovery in the POS UI should never do it.
  */
 import { type PrismaClient, LotState } from '@pharmacy/database/local';
-import { SaleType } from '@pharmacy/shared-types';
+import { CommissionType, SaleType } from '@pharmacy/shared-types';
 import { type CatalogItem, type CatalogService } from './catalog-service';
 
 const SEARCH_LIMIT = 20;
@@ -62,6 +62,16 @@ const priceToCents = (price: unknown): number | null => {
   return Math.round(numeric * 100);
 };
 
+/**
+ * Normalise a commission window bound to an ISO string. Prisma returns
+ * `Date` instances; the row cast keeps `string` as a possibility, and both
+ * are handled here. Null / undefined map to null.
+ */
+const toIsoStringOrNull = (value: Date | string | null | undefined): string | null => {
+  if (value == null) return null;
+  return value instanceof Date ? value.toISOString() : value;
+};
+
 export interface LocalCatalogServiceOptions {
   /**
    * Resolver for the Prisma client. Called on every `search()` because the
@@ -90,6 +100,10 @@ interface LocalProductRow {
   costHistories: Array<{ cost: unknown }>;
   taxHistories: Array<{ taxScheme: { rate: unknown } | null }>;
   lots: LocalLotRow[];
+  commissionType: CommissionType;
+  commissionValue: unknown;
+  commissionStartsAt: Date | string | null;
+  commissionEndsAt: Date | string | null;
 }
 
 const mapLocalProductToCatalogItem = (
@@ -150,6 +164,13 @@ const mapLocalProductToCatalogItem = (
         ? nearestLot.expirationDate.toISOString()
         : new Date().toISOString(),
     hasCompleteData,
+    commissionType: product.commissionType ?? null,
+    commissionValue:
+      product.commissionValue == null
+        ? null
+        : String(product.commissionValue),
+    commissionStartsAt: toIsoStringOrNull(product.commissionStartsAt),
+    commissionEndsAt: toIsoStringOrNull(product.commissionEndsAt),
   };
 };
 

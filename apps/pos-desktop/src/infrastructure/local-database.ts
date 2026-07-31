@@ -515,14 +515,20 @@ async function storeSchemaHash(
  *     learn what already exists in the live database.
  *  3. Skip every object that already exists; execute DDL only for
  *     genuinely missing objects.
- *  4. Phase 1: backfill missing columns via `ALTER TABLE ADD COLUMN`.
- *  5. Phase 2: execute all remaining DDL statements that still have
+ *  4. Phase 0: create missing enum types first — a backfilled column
+ *     typed by a Prisma enum cannot be added before its type exists.
+ *  5. Phase 1: backfill missing columns via `ALTER TABLE ADD COLUMN`.
+ *  6. Phase 2: execute all remaining DDL statements that still have
  *     work to do (new tables, new enums, new indexes, new FKs).
  *
  * This is entirely automatic — no manual version bump or migration script
  * is needed.  The caller decides when to run based on a schema-hash change.
+ *
+ * Exported for tests: driving the module through `getLocalDatabase()` requires
+ * a browser/Tauri environment (fetch of `/pglite/` assets), so the upgrade
+ * path is exercised directly against an in-memory PGlite instance instead.
  */
-async function applyMissingSchema(client: PGlite): Promise<void> {
+export async function applyMissingSchema(client: PGlite): Promise<void> {
   const sql = LOCAL_SCHEMA_SQL
     .replace(/^--\s*CreateSchema[\s\S]*?CREATE SCHEMA IF NOT EXISTS "public";\s*/m, '')
     .trim();
@@ -539,6 +545,27 @@ async function applyMissingSchema(client: PGlite): Promise<void> {
       getExistingEnumTypeNames(client),
       getExistingTableNames(client),
     ]);
+
+  // ---- Phase 0: create missing enum types BEFORE column backfill ----
+  // Phase 1 adds columns with `ALTER TABLE ADD COLUMN`, and a column
+  // typed by a Prisma enum requires that enum type to already exist.
+  // New enums (e.g. CommissionType on an upgraded install) would
+  // otherwise fail Phase 1 with `type "X" does not exist`. PostgreSQL
+  // has no `CREATE TYPE IF NOT EXISTS`, so run the genuinely-missing
+  // enum statements first and remember them — Phase 2 skips enums it
+  // knows about, and this set is checked before executing.
+  for (const stmt of statements) {
+    if (!stmt.includes('CREATE TYPE') || !stmt.includes('AS ENUM')) {
+      continue;
+    }
+    const name = parseEnumTypeName(stmt);
+    if (name === null || existingEnums.has(name)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await client.exec(stmt);
+    existingEnums.add(name);
+    // eslint-disable-next-line no-console
+    console.log(`[local-database] Phase 0: created enum type "${name}"`);
+  }
 
   // ---- Phase 1: introspect and backfill missing columns ----
   const expectedColumns = new Map<string, Map<string, string>>();

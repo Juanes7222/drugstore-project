@@ -1,6 +1,7 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient, Prisma } from '@pharmacy/database';
 import { SalesService } from './sales.service';
+import { CommissionCalculatorService } from './commission-calculator.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
 import { SaleNotFoundException } from '../exceptions/sale-not-found.exception';
@@ -44,6 +45,7 @@ describe('SalesService', () => {
   let prisma: DeepMockProxy<PrismaClient>;
   let lotsService: DeepMockProxy<LotsService>;
   let fiscalDocumentsService: DeepMockProxy<FiscalDocumentsService>;
+  let commissionCalculatorService: DeepMockProxy<CommissionCalculatorService>;
 
   const mockCashShift = { id: 'shift-1', workstationId: 'ws-1', userId: 'user-1', state: 'OPEN' };
   const mockSale = {
@@ -101,7 +103,15 @@ describe('SalesService', () => {
     prisma = mockDeep<PrismaClient>();
     lotsService = mockDeep<LotsService>();
     fiscalDocumentsService = mockDeep<FiscalDocumentsService>();
-    service = new SalesService(prisma as any, lotsService as any, fiscalDocumentsService as any);
+    commissionCalculatorService = mockDeep<CommissionCalculatorService>();
+    // Default: no commission accrued — keeps pre-existing assertions on the
+    // sale-item payload stable for items without commission fields.
+    commissionCalculatorService.compute.mockReturnValue({
+      commissionTypeSnapshot: null,
+      commissionValueSnapshot: null,
+      commissionAmount: new Prisma.Decimal(0),
+    });
+    service = new SalesService(prisma as any, lotsService as any, fiscalDocumentsService as any, commissionCalculatorService);
   });
 
   describe('findAll', () => {

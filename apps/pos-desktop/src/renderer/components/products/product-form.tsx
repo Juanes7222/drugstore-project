@@ -11,6 +11,7 @@ import {
   useReducer,
 } from "react";
 import { useTranslation } from "react-i18next";
+import type { CommissionType } from "@pharmacy/database/local";
 import type {
   ProductFormMode,
   ProductFormData,
@@ -21,7 +22,11 @@ import type {
   DisplayBarcode,
   ProductFormFieldRequirements,
 } from "./products.types";
-import { SparklesIcon, StarIcon, XIcon } from "@/components/ui/icons";
+import { SparklesIcon, StarIcon, XIcon, ChevronDownIcon } from "@/components/ui/icons";
+import {
+  toIsoDateTime,
+  toLocalDateTimeInput,
+} from "./commission-date";
 
 // ── Constants ────────────────────────────────────────────────────────────
 
@@ -37,6 +42,12 @@ const SALE_TYPE_OPTIONS = [
   { value: "FREE_SALE" as const, labelKey: "products.sale_type_free_sale" },
   { value: "PRESCRIPTION" as const, labelKey: "products.sale_type_prescription" },
   { value: "CONTROLLED_SUBSTANCE" as const, labelKey: "products.sale_type_controlled_substance" },
+] as const;
+
+const COMMISSION_TYPE_OPTIONS = [
+  { value: "NONE" as const, labelKey: "products.commission_type_none" },
+  { value: "PERCENTAGE" as const, labelKey: "products.commission_type_percentage" },
+  { value: "FIXED" as const, labelKey: "products.commission_type_fixed" },
 ] as const;
 
 const CONCENTRATION_UNITS = [
@@ -70,12 +81,27 @@ interface FormState {
   price: string;
   cost: string;
   taxSchemeId: string;
+  /** Sales commission: NONE disables, PERCENTAGE/FIXED configure it. */
+  commissionType: CommissionType;
+  /** Percentage points or COP per unit, as typed ("" when unset). */
+  commissionValue: string;
+  /** Validity window start, in local `datetime-local` format ("" when unset). */
+  commissionStartsAt: string;
+  /** Validity window end, in local `datetime-local` format ("" when unset). */
+  commissionEndsAt: string;
+  /** Whether the collapsible commission section is expanded. */
+  commissionOpen: boolean;
   errors: Record<string, string>;
 }
 
 type FormAction =
   | { type: "SET_FIELD"; field: keyof ProductFormData; value: string }
   | { type: "SET_NUMBER"; field: "minimumStock"; value: number }
+  | { type: "SET_COMMISSION_TYPE"; value: CommissionType }
+  | { type: "SET_COMMISSION_VALUE"; value: string }
+  | { type: "SET_COMMISSION_START"; value: string }
+  | { type: "SET_COMMISSION_END"; value: string }
+  | { type: "SET_COMMISSION_OPEN"; open: boolean }
   | { type: "SET_BARCODES"; barcodes: DisplayBarcode[] }
   | { type: "ADD_BARCODE" }
   | { type: "REMOVE_BARCODE"; index: number }
@@ -101,6 +127,11 @@ const emptyFormData = (): FormState => ({
   price: "",
   cost: "",
   taxSchemeId: "",
+  commissionType: "NONE",
+  commissionValue: "",
+  commissionStartsAt: "",
+  commissionEndsAt: "",
+  commissionOpen: false,
   errors: {},
 });
 
@@ -110,6 +141,16 @@ const formReducer = (state: FormState, action: FormAction): FormState => {
       return { ...state, [action.field]: action.value, errors: { ...state.errors, [action.field]: "" } };
     case "SET_NUMBER":
       return { ...state, minimumStock: action.value, errors: { ...state.errors, minimumStock: "" } };
+    case "SET_COMMISSION_TYPE":
+      return { ...state, commissionType: action.value, errors: { ...state.errors, commissionValue: "" } };
+    case "SET_COMMISSION_VALUE":
+      return { ...state, commissionValue: action.value, errors: { ...state.errors, commissionValue: "" } };
+    case "SET_COMMISSION_START":
+      return { ...state, commissionStartsAt: action.value, errors: { ...state.errors, commissionEndsAt: "" } };
+    case "SET_COMMISSION_END":
+      return { ...state, commissionEndsAt: action.value, errors: { ...state.errors, commissionEndsAt: "" } };
+    case "SET_COMMISSION_OPEN":
+      return { ...state, commissionOpen: action.open };
     case "SET_BARCODES":
       return { ...state, barcodes: action.barcodes };
     case "ADD_BARCODE":
@@ -159,6 +200,27 @@ const validateForm = (
 
   const hasPrimaryBarcode = state.barcodes.some((bc) => bc.isPrimary && bc.barcode.trim());
   if (!hasPrimaryBarcode) errors.barcodes = "primary_required";
+
+  // Commission: value required and non-negative when a type is selected;
+  // window start must not be after window end when both are set.
+  if (state.commissionType !== "NONE") {
+    const commissionValue = Number(state.commissionValue);
+    if (!state.commissionValue.trim() || Number.isNaN(commissionValue)) {
+      errors.commissionValue = "required";
+    } else if (commissionValue < 0) {
+      errors.commissionValue = "negative";
+    }
+  }
+
+  const startsAt = state.commissionStartsAt
+    ? new Date(state.commissionStartsAt)
+    : null;
+  const endsAt = state.commissionEndsAt
+    ? new Date(state.commissionEndsAt)
+    : null;
+  if (startsAt && endsAt && startsAt.getTime() > endsAt.getTime()) {
+    errors.commissionEndsAt = "window_inverted";
+  }
 
   return errors;
 };
@@ -245,6 +307,30 @@ export const ProductForm: FC<ProductFormProps> = ({
           value: product.currentTaxSchemeId,
         });
       }
+      dispatch({
+        type: "SET_COMMISSION_TYPE",
+        value: product.commissionType,
+      });
+      dispatch({
+        type: "SET_COMMISSION_VALUE",
+        value: product.commissionValue,
+      });
+      dispatch({
+        type: "SET_COMMISSION_START",
+        value: toLocalDateTimeInput(product.commissionStartsAt),
+      });
+      dispatch({
+        type: "SET_COMMISSION_END",
+        value: toLocalDateTimeInput(product.commissionEndsAt),
+      });
+      // Expand the section when the product already has a commission configured.
+      dispatch({
+        type: "SET_COMMISSION_OPEN",
+        open:
+          product.commissionType !== "NONE" ||
+          product.commissionStartsAt !== null ||
+          product.commissionEndsAt !== null,
+      });
     } else {
       dispatch({ type: "RESET" });
     }
@@ -300,6 +386,12 @@ export const ProductForm: FC<ProductFormProps> = ({
       price: state.price,
       cost: state.cost,
       taxSchemeId: state.taxSchemeId,
+      // Always send the type explicitly; NONE clears value and window.
+      commissionType: state.commissionType,
+      commissionValue:
+        state.commissionType === "NONE" ? "0" : state.commissionValue.trim(),
+      commissionStartsAt: toIsoDateTime(state.commissionStartsAt),
+      commissionEndsAt: toIsoDateTime(state.commissionEndsAt),
     });
   }, [state, onSave]);
 
@@ -886,6 +978,200 @@ export const ProductForm: FC<ProductFormProps> = ({
                 )}
               </div>
             </div>
+          </section>
+
+          <hr className="pos-divider" />
+
+          {/* ── Sales commission ────────────────────────────────────── */}
+          <section>
+            <details
+              open={state.commissionOpen}
+              onToggle={(e) =>
+                dispatch({
+                  type: "SET_COMMISSION_OPEN",
+                  open: e.currentTarget.open,
+                })
+              }
+              className="group"
+            >
+              <summary className="flex cursor-pointer list-none select-none items-center justify-between py-pos-xs [&::-webkit-details-marker]:hidden">
+                <h3
+                  className="text-body-sm font-semibold uppercase tracking-wider"
+                  style={{
+                    color:
+                      "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+                  }}
+                >
+                  {t("products.commission_title")}
+                </h3>
+                <ChevronDownIcon
+                  size={16}
+                  color="color-mix(in srgb, var(--color-ink) 45%, transparent)"
+                  className="shrink-0 transition-transform duration-200 group-open:rotate-180"
+                />
+              </summary>
+
+              <div className="space-y-pos-md pt-pos-xs">
+                {/* Commission type */}
+                <div>
+                  <label
+                    htmlFor="pf-commission-type"
+                    className="mb-pos-xs block text-body-sm font-medium"
+                    style={{ color: "var(--color-ink)" }}
+                  >
+                    {t("products.commission_type")}
+                  </label>
+                  <select
+                    id="pf-commission-type"
+                    value={state.commissionType}
+                    onChange={(e) =>
+                      dispatch({
+                        type: "SET_COMMISSION_TYPE",
+                        value: e.target.value as CommissionType,
+                      })
+                    }
+                    disabled={isProcessing}
+                    className="pos-input w-full"
+                  >
+                    {COMMISSION_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {t(option.labelKey)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {state.commissionType !== "NONE" && (
+                  <>
+                    {/* Commission value — label follows the selected type */}
+                    <div>
+                      <label
+                        htmlFor="pf-commission-value"
+                        className="mb-pos-xs block text-body-sm font-medium"
+                        style={{ color: "var(--color-ink)" }}
+                      >
+                        {state.commissionType === "PERCENTAGE"
+                          ? t("products.commission_value_percentage")
+                          : t("products.commission_value_fixed")}
+                      </label>
+                      <div className="relative">
+                        {state.commissionType === "FIXED" && (
+                          <span
+                            className="absolute left-pos-sm top-1/2 -translate-y-1/2 text-body-sm"
+                            style={{
+                              color:
+                                "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                            }}
+                          >
+                            $
+                          </span>
+                        )}
+                        <input
+                          id="pf-commission-value"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          lang="es-CO"
+                          value={state.commissionValue}
+                          onChange={(e) =>
+                            dispatch({
+                              type: "SET_COMMISSION_VALUE",
+                              value: e.target.value,
+                            })
+                          }
+                          disabled={isProcessing}
+                          className={`pos-input w-full font-data tabular-nums ${state.commissionType === "FIXED" ? "pl-pos-lg" : ""} ${fieldError("commissionValue") ? "border-red-500" : ""}`}
+                        />
+                        {state.commissionType === "PERCENTAGE" && (
+                          <span
+                            className="absolute right-pos-sm top-1/2 -translate-y-1/2 text-body-sm"
+                            style={{
+                              color:
+                                "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                            }}
+                          >
+                            %
+                          </span>
+                        )}
+                      </div>
+                      {fieldError("commissionValue") === "negative" && (
+                        <p className="mt-pos-xs text-caption text-red-500">
+                          {t("products.commission_value_negative")}
+                        </p>
+                      )}
+                      {fieldError("commissionValue") === "required" && (
+                        <p className="mt-pos-xs text-caption text-red-500">
+                          {t("products.field_required")}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Validity window — both bounds optional */}
+                    <div className="grid grid-cols-2 gap-pos-md">
+                      <div>
+                        <label
+                          htmlFor="pf-commission-start"
+                          className="mb-pos-xs block text-body-sm font-medium"
+                          style={{ color: "var(--color-ink)" }}
+                        >
+                          {t("products.commission_starts_at")}
+                        </label>
+                        <input
+                          id="pf-commission-start"
+                          type="datetime-local"
+                          value={state.commissionStartsAt}
+                          onChange={(e) =>
+                            dispatch({
+                              type: "SET_COMMISSION_START",
+                              value: e.target.value,
+                            })
+                          }
+                          disabled={isProcessing}
+                          className={`pos-input w-full font-data tabular-nums ${fieldError("commissionEndsAt") === "window_inverted" ? "border-red-500" : ""}`}
+                        />
+                      </div>
+                      <div>
+                        <label
+                          htmlFor="pf-commission-end"
+                          className="mb-pos-xs block text-body-sm font-medium"
+                          style={{ color: "var(--color-ink)" }}
+                        >
+                          {t("products.commission_ends_at")}
+                        </label>
+                        <input
+                          id="pf-commission-end"
+                          type="datetime-local"
+                          value={state.commissionEndsAt}
+                          onChange={(e) =>
+                            dispatch({
+                              type: "SET_COMMISSION_END",
+                              value: e.target.value,
+                            })
+                          }
+                          disabled={isProcessing}
+                          className={`pos-input w-full font-data tabular-nums ${fieldError("commissionEndsAt") === "window_inverted" ? "border-red-500" : ""}`}
+                        />
+                        {fieldError("commissionEndsAt") === "window_inverted" && (
+                          <p className="mt-pos-xs text-caption text-red-500">
+                            {t("products.commission_window_inverted")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <p
+                      className="text-caption"
+                      style={{
+                        color:
+                          "color-mix(in srgb, var(--color-ink) 45%, transparent)",
+                      }}
+                    >
+                      {t("products.commission_hint")}
+                    </p>
+                  </>
+                )}
+              </div>
+            </details>
           </section>
 
           <hr className="pos-divider" />

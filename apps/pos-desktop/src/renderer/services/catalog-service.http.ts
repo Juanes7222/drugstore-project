@@ -9,7 +9,7 @@
  * mapping is defensive: if a field the POS needs is missing, `hasCompleteData`
  * becomes false and the UI disables the add-to-cart action for that result.
  */
-import { SaleType } from "@pharmacy/shared-types";
+import { CommissionType, SaleType } from "@pharmacy/shared-types";
 import { HttpClient } from "@infra/http-client";
 import { CatalogItem, CatalogService } from "./catalog-service";
 
@@ -31,6 +31,10 @@ interface ServerProduct {
   barcodes?: Array<{ barcode: string; isPrimary: boolean }> | null;
   currentPrice?: { price: string | number } | null;
   currentTax?: { taxScheme?: { rate: string | number } | null } | null;
+  commissionType?: CommissionType | null;
+  commissionValue?: string | number | null;
+  commissionStartsAt?: string | null;
+  commissionEndsAt?: string | null;
 }
 
 interface ServerLot {
@@ -165,6 +169,10 @@ const mapServerProductToCatalogItem = async (
     lotCode: nearestLot?.batchNumber ?? "",
     lotExpirationDate: nearestLot?.expirationDate ?? new Date().toISOString(),
     hasCompleteData,
+    commissionType: product.commissionType ?? null,
+    commissionValue: product.commissionValue?.toString() ?? null,
+    commissionStartsAt: product.commissionStartsAt ?? null,
+    commissionEndsAt: product.commissionEndsAt ?? null,
   };
 };
 

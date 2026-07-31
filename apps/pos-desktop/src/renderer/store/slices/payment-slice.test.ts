@@ -38,6 +38,10 @@ const baseCartItem = {
   overrideUnitPriceCents: null,
   discountPercentage: null,
   costCents: null,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
 };
 
 interface TestRootState {

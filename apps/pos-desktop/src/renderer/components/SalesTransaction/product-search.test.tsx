@@ -44,6 +44,10 @@ const baseProduct = (overrides: Partial<CatalogItem> = {}): CatalogItem => ({
   lotCode: "L24056",
   lotExpirationDate: "2027-06-01",
   hasCompleteData: true,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
   ...overrides,
 });
 

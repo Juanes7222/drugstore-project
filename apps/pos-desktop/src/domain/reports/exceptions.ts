@@ -43,3 +43,21 @@ export class ReportExecutionException extends DomainError {
     super('REPORT_EXECUTION_FAILED', `Report ${reportCode} failed: ${message}`);
   }
 }
+
+/**
+ * A required filter has not been selected yet (e.g. CASH_SHIFT_CLOSE
+ * without a shift picked).  Not a failure — the UI should prompt the
+ * user to complete the filter instead of rendering an error state.
+ */
+export class ReportFiltersNotReadyException extends DomainError {
+  constructor(
+    public readonly reportCode: string,
+    public readonly messageKey = 'reports.filters.select_shift',
+    public readonly params: Record<string, string | number> = {},
+  ) {
+    super(
+      'REPORT_FILTERS_NOT_READY',
+      `Report ${reportCode} cannot run: a required filter is not selected yet (${messageKey}).`,
+    );
+  }
+}

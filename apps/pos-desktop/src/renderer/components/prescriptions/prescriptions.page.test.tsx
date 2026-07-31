@@ -48,6 +48,10 @@ const baseCartItem: CartItem = {
   overrideUnitPriceCents: null,
   discountPercentage: null,
   costCents: null,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
 } as CartItem;
 
 const createTestStore = (

@@ -46,6 +46,29 @@ export class DuplicateBarcodeException extends DomainError {
 }
 
 /**
+ * Thrown when a product's commission configuration is not coherent.
+ *
+ * Two failure modes:
+ * - `negative_value` — commissionValue is negative (a commission can be
+ *   0 to disable, never negative).
+ * - `inverted_window` — commissionStartsAt is after commissionEndsAt,
+ *   which would make the commission permanently inactive. The operator
+ *   must fix the window in the product form.
+ */
+export class InvalidCommissionException extends DomainError {
+  readonly reason: 'negative_value' | 'inverted_window';
+
+  constructor(reason: 'negative_value' | 'inverted_window') {
+    const message =
+      reason === 'negative_value'
+        ? 'Commission value must be zero or positive.'
+        : 'Commission start date must be before the end date.';
+    super('INVALID_COMMISSION', message);
+    this.reason = reason;
+  }
+}
+
+/**
  * Thrown when a product reference (tax scheme, pharmaceutical form, or
  * category) cannot be synced to the server.
  *

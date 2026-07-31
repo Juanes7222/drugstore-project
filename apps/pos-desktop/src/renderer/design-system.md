@@ -985,3 +985,44 @@ The sync module encompasses three visible surfaces: the Ambient Sync Pulse (full
 │  └──────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Phase 7 - Sales-commission mark (added with the commission feature)
+
+### New token
+
+| Name | Hex | Rationale |
+|------|-----|-----------|
+| **Commission Gold** | `#A16207` | Money/incentive signal, deliberately distinct from Urgency Amber `#E8780A` (attention) and Pharma Teal (trust). Deep gold reads as "this line earns a bonus", never as a warning. Used only for the commission badge and its surface tint `#FEF6E0` (AA ~5:1 on white). |
+
+### Badge behavior
+
+One recurring element, three placements, one rule:
+
+- **`CommissionBadge`** (`components/common/commission-badge.tsx`) renders "COMISION" only when a product has a commission configured (type != NONE and value > 0). Same label in every state - only intensity changes:
+  - solid gold - the validity window contains now (the line is accruing commission);
+  - 50 % opacity - window set but not yet started / already expired (configured, not earning).
+- Placement: product search cards and cart lines (the cashier sees the mark before and after adding to cart) and the product-management table next to the commercial name (the person configuring the catalog sees which products earn).
+- Tooltip / `aria-label` always carries the detail: rate ("5 %") or per-unit amount ("$2.000/unidad"), window bounds ("desde X - hasta Y"), and "fuera de vigencia" when the window does not contain now. Never color alone.
+- Computed against the current moment at render; the badge does not force re-renders and is not on the scan/add critical path - it is a static mark, no animation.
+
+## Phase 8 - Commission in reports
+
+Commission surfaces in three existing sales reports as a plain currency column, reusing the same column machinery (catalog -> table, exports, print) so the report engine needed no new UI:
+
+- **Sales daily summary**: `totalCommission` column ("Comision total") - the day's accrued commission, after `netSales`. Scalar subquery over `SaleItem.commissionAmount` per sale so the `Sale`-level sums are not row-multiplied by the join.
+- **Sales by cashier**: `commissionAmount` column, after `netSales` - this is the accrual per cashier (`Sale.userId`), the number a shift-close conversation will reference.
+- **Sales by product**: `commissionAmount` column, after `netRevenue` - which catalog products actually earn.
+
+Snapshots, not live config: values come from `SaleItem.commissionAmount` (frozen at sale time), so historical reports are stable even if a product's commission window or rate later changes. Zero accrual rows just show $0; no special styling, no chart series - commission is a number column, not a highlighted signal.
+
+## Phase 9 - Shift picker for the cash-shift close report
+
+The CASH_SHIFT_CLOSE report's filter is no longer a raw ID text input - cashiers do not carry shift IDs in their heads. It is now a searchable selector (Radix Popover hosting a cmdk Command list) that loads the workstation's shift history (`cashShiftService.getShiftHistory`, closed/forced-close shifts only - an open shift has no closing document) and lets the cashier type a date fragment or shift ID to filter:
+
+- Trigger button shows the selected shift as a date range ("01/07/2026, 08:00 - 01/07/2026, 18:00") or the placeholder text.
+- Options render the same date-range label plus a state chip; forced closes carry the urgency amber tint (`text-amber-700`), normal closes stay muted - the same "pair color with a label" rule as lot/commission signals, applied to a selector row.
+- Typing filters by label and by shift ID fragment (cmdk `keywords`), so both "yesterday's shift" and "the ID on the receipt" paths work.
+- List is capped at the 50 most recent shifts (`getShiftHistory` limit) - a closing document is always recent, and an unbounded list would defeat the search.
+- The empty/loading states are calm text ("Cargando turnos..." / "No hay turnos cerrados"), never an error; the not-ready hint from Phase 8 still appears until a shift is chosen.

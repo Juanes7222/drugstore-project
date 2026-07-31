@@ -386,6 +386,9 @@ describe("SalesPosService", () => {
         discountPercentage: new Prisma.Decimal(0),
         discountAmount: new Prisma.Decimal(0),
         discountReason: null,
+        commissionTypeSnapshot: null,
+        commissionValueSnapshot: null,
+        commissionAmount: new Prisma.Decimal(0),
         requiresPrescription: false,
         productSnapshot: {
           internalCode: "P001",
@@ -575,6 +578,9 @@ describe("SalesPosService", () => {
         discountPercentage: new Prisma.Decimal(0),
         discountAmount: new Prisma.Decimal(0),
         discountReason: null,
+        commissionTypeSnapshot: null,
+        commissionValueSnapshot: null,
+        commissionAmount: new Prisma.Decimal(0),
         requiresPrescription: false,
         productSnapshot: {
           internalCode: "P001",

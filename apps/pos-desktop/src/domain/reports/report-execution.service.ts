@@ -48,6 +48,7 @@ import { ReportCacheService } from './report-cache.service';
 import { ReportFreshnessService } from './report-freshness.service';
 import {
   ReportExecutionException,
+  ReportFiltersNotReadyException,
   ReportShiftNotFoundException,
 } from './exceptions';
 import {
@@ -104,6 +105,18 @@ export class ReportExecutionService {
   async run(input: RunReportInput): Promise<ReportResponse> {
     const def = getReportDefinition(input.code);
     assertReportAccess(input.code, input.session.role);
+
+    // CASH_SHIFT_CLOSE only runs once the cashier has picked a shift —
+    // its catalog default is the empty-string sentinel, which the Zod
+    // schema would otherwise reject as a generic "invalid filters"
+    // failure.  Surface that as "not ready yet" instead, so the UI can
+    // prompt for the filter rather than erroring out.
+    if (
+      input.code === ReportCode.CASH_SHIFT_CLOSE &&
+      !hasSelectedShiftId(input.filters)
+    ) {
+      throw new ReportFiltersNotReadyException(input.code);
+    }
 
     let validated: FiltersFor<typeof input.code>;
     try {
@@ -1218,6 +1231,13 @@ export class ReportExecutionService {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** True when the filter object carries a non-blank `shiftId`. */
+function hasSelectedShiftId(filters: unknown): boolean {
+  if (typeof filters !== 'object' || filters === null) return false;
+  const shiftId = (filters as Record<string, unknown>).shiftId;
+  return typeof shiftId === 'string' && shiftId.trim().length > 0;
+}
 
 function clampPagination(input?: { limit?: number; offset?: number }): {
   limit: number;

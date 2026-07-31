@@ -35,6 +35,10 @@ const baseItem = (
   overrideUnitPriceCents: null,
   discountPercentage: null,
   costCents: null,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
   ...overrides,
 });
 

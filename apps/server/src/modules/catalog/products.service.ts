@@ -121,6 +121,10 @@ export class ProductsService {
           internalNotes: dto.internalNotes || null,
           categoryId: dto.categoryId || null,
           pharmaceuticalFormId: dto.pharmaceuticalFormId || null,
+          commissionType: dto.commissionType,
+          commissionValue: new Prisma.Decimal(dto.commissionValue),
+          commissionStartsAt: dto.commissionStartsAt ? new Date(dto.commissionStartsAt) : null,
+          commissionEndsAt: dto.commissionEndsAt ? new Date(dto.commissionEndsAt) : null,
           currentPriceId: null,
           currentTaxHistoryId: null,
           createdById: userId,
@@ -209,6 +213,11 @@ export class ProductsService {
     if (dto.categoryId !== undefined) updateData.categoryId = dto.categoryId;
     if (dto.pharmaceuticalFormId !== undefined) updateData.pharmaceuticalFormId = dto.pharmaceuticalFormId;
     if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
+    if (dto.commissionType !== undefined) updateData.commissionType = dto.commissionType;
+    if (dto.commissionValue !== undefined) updateData.commissionValue = new Prisma.Decimal(dto.commissionValue);
+    // Explicit null clears the window bound; undefined leaves it untouched.
+    if (dto.commissionStartsAt !== undefined) updateData.commissionStartsAt = dto.commissionStartsAt === null ? null : new Date(dto.commissionStartsAt);
+    if (dto.commissionEndsAt !== undefined) updateData.commissionEndsAt = dto.commissionEndsAt === null ? null : new Date(dto.commissionEndsAt);
 
     updateData.updatedAt = new Date();
 

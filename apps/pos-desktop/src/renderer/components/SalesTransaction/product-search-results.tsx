@@ -26,6 +26,7 @@ import {
 } from "@/services/catalog-service";
 import { formatCurrency } from "@/utils/format-currency";
 import { formatShortDate } from "@/utils/format-date";
+import { CommissionBadge } from "@/components/common/commission-badge";
 
 interface ProductSearchResultsProps {
   results: CatalogItem[];
@@ -318,6 +319,12 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
             {t("sales.product.restricted")}
           </span>
         )}
+        <CommissionBadge
+          commissionType={item.commissionType}
+          commissionValue={item.commissionValue}
+          commissionStartsAt={item.commissionStartsAt}
+          commissionEndsAt={item.commissionEndsAt}
+        />
       </div>
     </div>
   );

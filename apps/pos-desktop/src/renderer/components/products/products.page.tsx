@@ -183,6 +183,10 @@ export const ProductsPage: FC = () => {
             })),
             price: { price: data.price },
             tax: { taxSchemeId: data.taxSchemeId },
+            commissionType: data.commissionType,
+            commissionValue: data.commissionValue,
+            commissionStartsAt: data.commissionStartsAt,
+            commissionEndsAt: data.commissionEndsAt,
             ...(data.cost.trim()
               ? {
                   initialCost: {
@@ -254,6 +258,20 @@ export const ProductsPage: FC = () => {
 
           if (data.cost.trim()) {
             updateInput.newCost = { cost: data.cost };
+          }
+
+          // Commission block — send as a unit when anything changed, so
+          // switching to NONE also clears value and window on the server.
+          if (
+            data.commissionType !== selectedProduct.commissionType ||
+            data.commissionValue !== selectedProduct.commissionValue ||
+            data.commissionStartsAt !== selectedProduct.commissionStartsAt ||
+            data.commissionEndsAt !== selectedProduct.commissionEndsAt
+          ) {
+            updateInput.commissionType = data.commissionType;
+            updateInput.commissionValue = data.commissionValue;
+            updateInput.commissionStartsAt = data.commissionStartsAt;
+            updateInput.commissionEndsAt = data.commissionEndsAt;
           }
 
           if (Object.keys(updateInput).length > 0) {

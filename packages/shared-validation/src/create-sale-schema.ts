@@ -21,6 +21,25 @@ const SaleItemInputSchema = z.object({
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, "Descuento invalido")
     .optional(),
+  /**
+   * Commission evaluated by the offline POS at real sale time. When present,
+   * the server persists these values verbatim on the SaleItem (client-
+   * authoritative). When absent (direct HTTP API, legacy payloads), the
+   * server computes the commission from the product configuration instead.
+   */
+  commissionType: z
+    .enum(["NONE", "PERCENTAGE", "FIXED"])
+    .nullable()
+    .optional(),
+  commissionValue: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Valor de comision invalido")
+    .nullable()
+    .optional(),
+  commissionAmount: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "Monto de comision invalido")
+    .optional(),
 });
 
 export const CreateSaleSchema = z.object({

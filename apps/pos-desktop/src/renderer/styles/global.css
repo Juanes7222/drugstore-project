@@ -27,6 +27,10 @@
   --color-restrict-surface: #F0EBFA;
   --color-panel: #FFFFFF;
 
+  /* ---- Commission gold (added Phase 7 — sales-commission feature) ---- */
+  --color-commission: #A16207;          /* Deep gold — incentive/money signal, distinct from urgency amber */
+  --color-commission-surface: #FEF6E0;  /* Soft gold tint for badge backgrounds */
+
   /* ---- Surface & ink variants (added Phase 5) ---- */
   --color-surface-variant: #EDE9E1;   /* Slightly darker than surface for inset areas like PIN display */
   --color-ink-muted: #8B8A87;         /* Secondary/muted text — 50% of ink against surface */
@@ -294,6 +298,11 @@
   .pos-badge-restrict {
     background-color: var(--color-restrict-surface);
     color: var(--color-restrict);
+  }
+
+  .pos-badge-commission {
+    background-color: var(--color-commission-surface);
+    color: var(--color-commission);
   }
 
   .pos-divider {

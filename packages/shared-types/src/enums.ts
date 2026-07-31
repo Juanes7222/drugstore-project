@@ -53,6 +53,12 @@ export enum SaleType {
   CONTROLLED_SUBSTANCE = "CONTROLLED_SUBSTANCE",
 }
 
+export enum CommissionType {
+  NONE = "NONE",
+  PERCENTAGE = "PERCENTAGE",
+  FIXED = "FIXED",
+}
+
 export enum SaleOperationalState {
   IN_PROGRESS = "IN_PROGRESS",
   CONFIRMED = "CONFIRMED",

@@ -4,7 +4,7 @@
  * Extends the shared Product type with the lot selected for this line and
  * derived numeric values needed for fast totals calculation.
  */
-import { SaleType } from "@pharmacy/shared-types";
+import { CommissionType, SaleType } from "@pharmacy/shared-types";
 
 export interface CartItem {
   id: string;
@@ -26,6 +26,14 @@ export interface CartItem {
   costCents: number | null;
   taxPercentage: number;
   quantity: number;
+  /** Commission configuration snapshot from the catalog item; null when none. */
+  commissionType: CommissionType | null;
+  /** Percentage points (PERCENTAGE) or COP per unit (FIXED) as decimal string. */
+  commissionValue: string | null;
+  /** Optional validity window start (inclusive), ISO, or null. */
+  commissionStartsAt: string | null;
+  /** Optional validity window end (inclusive), ISO, or null. */
+  commissionEndsAt: string | null;
 }
 
 export interface SelectedClient {

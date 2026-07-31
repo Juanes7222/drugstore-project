@@ -22,7 +22,7 @@
  * rationale. The provisional local figure is discarded and replaced
  * when sync replays the sale against the server.
  */
-import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState, PaymentMethodCategory } from '@pharmacy/database/local';
+import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState, PaymentMethodCategory, CommissionType } from '@pharmacy/database/local';
 import { dbWriteLock } from '../../infrastructure/write-lock';
 import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import type { AuthService } from '../auth/auth.service';
@@ -51,6 +51,7 @@ import {
   validateItemPricing,
   validateSalePricing,
 } from './sales-pricing-validator';
+import { calculateCommission } from './commission';
 import {
   getDiscountLimits,
   getSalesConfig,
@@ -116,6 +117,10 @@ interface BuiltSaleItem {
   discountReason: string | null;
   subtotal: Prisma.Decimal;
   total: Prisma.Decimal;
+  /** Active commission snapshot at sale time, or null when inactive. */
+  commissionTypeSnapshot: CommissionType | null;
+  commissionValueSnapshot: Prisma.Decimal | null;
+  commissionAmount: Prisma.Decimal;
   productSnapshot: ProductSnapshot;
 }
 
@@ -328,6 +333,9 @@ export class SalesPosService {
                   discountReason: item.discountReason,
                   subtotal: item.subtotal,
                   total: item.total,
+                  commissionTypeSnapshot: item.commissionTypeSnapshot,
+                  commissionValueSnapshot: item.commissionValueSnapshot,
+                  commissionAmount: item.commissionAmount,
                   requiresPrescription: false,
                 })),
               },
@@ -753,6 +761,10 @@ export class SalesPosService {
         commercialName: true,
         concentration: true,
         saleType: true,
+        commissionType: true,
+        commissionValue: true,
+        commissionStartsAt: true,
+        commissionEndsAt: true,
         priceHistories: {
           take: 1,
           orderBy: { effectiveFrom: 'desc' },
@@ -834,6 +846,23 @@ export class SalesPosService {
     const taxAmount = priceAfterDiscount.times(taxRate).dividedBy(100);
     const total = priceAfterDiscount.plus(taxAmount);
 
+    // Commission accrues on the subtotal after discount, evaluated
+    // against the moment the sale is being built — not against sync
+    // time. Inactive windows yield a null snapshot and 0 COP, never a
+    // blocked sale.
+    const commission = calculateCommission({
+      config: {
+        type: product.commissionType,
+        value: product.commissionValue,
+        startsAt: product.commissionStartsAt,
+        endsAt: product.commissionEndsAt,
+      },
+      unitPrice,
+      quantity: item.quantity,
+      discountAmount,
+      at: new Date(),
+    });
+
     return {
       productId: product.id,
       quantity: item.quantity,
@@ -845,6 +874,9 @@ export class SalesPosService {
       discountReason,
       subtotal: itemSubtotal,
       total,
+      commissionTypeSnapshot: commission.type,
+      commissionValueSnapshot: commission.value,
+      commissionAmount: commission.amount,
       productSnapshot: {
         internalCode: product.internalCode,
         commercialName: product.commercialName,
@@ -975,6 +1007,9 @@ export class SalesPosService {
         unitPrice: Prisma.Decimal;
         discountPercentage: Prisma.Decimal;
         discountReason: string | null;
+        commissionTypeSnapshot: CommissionType | null;
+        commissionValueSnapshot: Prisma.Decimal | null;
+        commissionAmount: Prisma.Decimal;
       }>;
     },
     input: ConfirmSaleInput,
@@ -1013,6 +1048,17 @@ export class SalesPosService {
           unitPrice: item.unitPrice.toString(),
           discount: item.discountPercentage.toString(),
           discountReason: item.discountReason,
+          // Commission is evaluated on the POS at sale time (the only
+          // correct reference for the validity window) and replayed
+          // verbatim so the server persists the same amount even if
+          // the product configuration changed before the sync landed.
+          // `commissionType` / `commissionValue` are null when no
+          // commission was active; `commissionAmount` is always a
+          // decimal string (0 when inactive).
+          commissionType: item.commissionTypeSnapshot,
+          commissionValue:
+            item.commissionValueSnapshot?.toString() ?? null,
+          commissionAmount: item.commissionAmount.toString(),
         })),
         prescriptionNumber: null,
         // Snapshotted sale-header totals. The server uses these as the

@@ -51,7 +51,7 @@
  * cache existence check is what actually protects against pushing an id
  * the server has never seen.
  */
-import { PrismaClient, Prisma, SaleType } from '@pharmacy/database/local';
+import { PrismaClient, Prisma, SaleType, CommissionType } from '@pharmacy/database/local';
 import type { AuthService } from '../auth/auth.service';
 import { RoleType } from '@pharmacy/shared-types';
 import { notifyPendingEntry } from '../sync/sync-queue-notifier';
@@ -60,6 +60,7 @@ import {
   ProductUpdateException,
   DuplicateBarcodeException,
   UnsyncedReferenceException,
+  InvalidCommissionException,
 } from './exceptions';
 
 // ---------------------------------------------------------------------------
@@ -104,6 +105,14 @@ export interface CreateProductInput {
   internalNotes?: string | null;
   categoryId?: string | null;
   pharmaceuticalFormId?: string | null;
+  /** Sales commission: PERCENTAGE or FIXED. Defaults to NONE. */
+  commissionType?: CommissionType;
+  /** Percentage points (PERCENTAGE) or COP per unit (FIXED). */
+  commissionValue?: number | string | Prisma.Decimal;
+  /** Optional validity window start (inclusive). */
+  commissionStartsAt?: Date | string | null;
+  /** Optional validity window end (inclusive). */
+  commissionEndsAt?: Date | string | null;
   /** Default price entry. Required for offline creation. */
   price: CreateProductPriceInput;
   /** Default tax entry. Required for offline creation. */
@@ -128,6 +137,14 @@ export interface UpdateProductInput {
   internalNotes?: string | null;
   categoryId?: string | null;
   pharmaceuticalFormId?: string | null;
+  /** Sales commission: PERCENTAGE or FIXED. NONE disables it. */
+  commissionType?: CommissionType;
+  /** Percentage points (PERCENTAGE) or COP per unit (FIXED). */
+  commissionValue?: number | string | Prisma.Decimal;
+  /** Optional validity window start (inclusive). Pass null to clear. */
+  commissionStartsAt?: Date | string | null;
+  /** Optional validity window end (inclusive). Pass null to clear. */
+  commissionEndsAt?: Date | string | null;
   /** If set, replaces the full barcode set (delete stale, upsert new). */
   barcodes?: ProductBarcodeInput[];
   /** New price entry (creates a new ProductPriceHistory, updates currentPriceId). */
@@ -164,6 +181,11 @@ export interface ProductListItem {
   currentCost: string | null;
   /** Active tax scheme id, or null if no tax set. */
   currentTaxSchemeId: string | null;
+  /** Commission configuration (NONE when the product has none). */
+  commissionType: CommissionType;
+  commissionValue: string;
+  commissionStartsAt: string | null;
+  commissionEndsAt: string | null;
 }
 
 export interface ProductSearchResult {
@@ -176,6 +198,14 @@ export interface ProductSearchResult {
   isActive: boolean;
   currentPrice: string | null;
   currentCost: string | null;
+  /** Commission configuration (NONE when the product has none). */
+  commissionType: CommissionType;
+  /** Percentage points (PERCENTAGE) or COP per unit (FIXED) as decimal string. */
+  commissionValue: string;
+  /** Optional validity window start (inclusive), ISO, or null. */
+  commissionStartsAt: string | null;
+  /** Optional validity window end (inclusive), ISO, or null. */
+  commissionEndsAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +276,43 @@ export const sanitizeOptionalReferenceId = (
     );
   }
   return trimmed;
+};
+
+/**
+ * Validate a commission configuration before it is persisted.
+ *
+ * Rules:
+ * - `commissionValue` must never be negative (0 disables the
+ *   commission).
+ * - When both window bounds are set, `commissionStartsAt` must be
+ *   before or equal to `commissionEndsAt` — an inverted window would
+ *   silently disable the commission forever.
+ *
+ * Throws `InvalidCommissionException` with a structured `reason` so
+ * the UI can branch on it.
+ */
+const assertCommissionConfigValid = (
+  input: Pick<
+    CreateProductInput | UpdateProductInput,
+    'commissionValue' | 'commissionStartsAt' | 'commissionEndsAt'
+  >,
+): void => {
+  const value =
+    input.commissionValue == null ? null : new Prisma.Decimal(input.commissionValue);
+  if (value != null && value.isNegative()) {
+    throw new InvalidCommissionException('negative_value');
+  }
+  if (input.commissionStartsAt != null && input.commissionEndsAt != null) {
+    const startsAt = new Date(input.commissionStartsAt);
+    const endsAt = new Date(input.commissionEndsAt);
+    if (
+      !Number.isNaN(startsAt.getTime()) &&
+      !Number.isNaN(endsAt.getTime()) &&
+      startsAt.getTime() > endsAt.getTime()
+    ) {
+      throw new InvalidCommissionException('inverted_window');
+    }
+  }
 };
 
 /**
@@ -395,6 +462,10 @@ export class ProductService {
         currentPrice: p.priceHistories[0]?.price.toString() ?? null,
         currentCost: p.costHistories[0]?.cost.toString() ?? null,
         currentTaxSchemeId: p.taxHistories[0]?.taxSchemeId ?? null,
+        commissionType: p.commissionType,
+        commissionValue: p.commissionValue.toString(),
+        commissionStartsAt: p.commissionStartsAt?.toISOString() ?? null,
+        commissionEndsAt: p.commissionEndsAt?.toISOString() ?? null,
       })),
     };
   }
@@ -481,6 +552,10 @@ export class ProductService {
       isActive: product.isActive,
       currentPrice: product.priceHistories[0]?.price.toString() ?? null,
       currentCost: product.costHistories[0]?.cost.toString() ?? null,
+      commissionType: product.commissionType,
+      commissionValue: product.commissionValue.toString(),
+      commissionStartsAt: product.commissionStartsAt?.toISOString() ?? null,
+      commissionEndsAt: product.commissionEndsAt?.toISOString() ?? null,
     };
   }
 
@@ -525,6 +600,10 @@ export class ProductService {
       isActive: product.isActive,
       currentPrice: product.priceHistories[0]?.price.toString() ?? null,
       currentCost: product.costHistories[0]?.cost.toString() ?? null,
+      commissionType: product.commissionType,
+      commissionValue: product.commissionValue.toString(),
+      commissionStartsAt: product.commissionStartsAt?.toISOString() ?? null,
+      commissionEndsAt: product.commissionEndsAt?.toISOString() ?? null,
     };
   }
 
@@ -570,6 +649,9 @@ export class ProductService {
         throw new DuplicateBarcodeException(bc.barcode);
       }
     }
+
+    // Pre-validate commission configuration (value + window coherence).
+    assertCommissionConfigValid(input);
 
     // Pre-validate reference ids.  These checks happen before the
     // transaction so a sync-incompatible reference fails the create
@@ -618,6 +700,16 @@ export class ProductService {
           internalNotes: input.internalNotes ?? null,
           categoryId: sanitizedCategoryId ?? null,
           pharmaceuticalFormId: sanitizedPharmaceuticalFormId ?? null,
+          commissionType: input.commissionType ?? CommissionType.NONE,
+          commissionValue: input.commissionValue
+            ? new Prisma.Decimal(input.commissionValue)
+            : new Prisma.Decimal(0),
+          commissionStartsAt: input.commissionStartsAt
+            ? new Date(input.commissionStartsAt)
+            : null,
+          commissionEndsAt: input.commissionEndsAt
+            ? new Date(input.commissionEndsAt)
+            : null,
           createdById: session.userId,
         },
       });
@@ -727,6 +819,19 @@ export class ProductService {
         internalNotes: input.internalNotes ?? undefined,
         categoryId: sanitizedCategoryId,
         pharmaceuticalFormId: sanitizedPharmaceuticalFormId,
+        // Commission config mirrors the server's CreateProductSchema
+        // (see the backend agent's create-product.dto.ts). NONE is sent
+        // explicitly so the server row matches the local row exactly.
+        commissionType: input.commissionType ?? CommissionType.NONE,
+        commissionValue: input.commissionValue
+          ? new Prisma.Decimal(input.commissionValue).toString()
+          : '0',
+        commissionStartsAt: input.commissionStartsAt
+          ? new Date(input.commissionStartsAt).toISOString()
+          : undefined,
+        commissionEndsAt: input.commissionEndsAt
+          ? new Date(input.commissionEndsAt).toISOString()
+          : undefined,
         initialPrice: new Prisma.Decimal(input.price.price).toString(),
         initialTaxSchemeId: sanitizedTaxSchemeId,
         barcodes: input.barcodes.map((bc) => ({
@@ -908,6 +1013,9 @@ export class ProductService {
     });
     if (!existing) throw new ProductNotFoundException(id);
 
+    // Pre-validate commission configuration (value + window coherence).
+    assertCommissionConfigValid(input);
+
     // Sanitize optional reference ids.  Same rule as createProduct:
     // empty strings are dropped (so the server skips the optional field
     // instead of rejecting it as "must not be empty") and `seed-*`
@@ -955,6 +1063,20 @@ export class ProductService {
       if (input.therapeuticIndication !== undefined) updateData.therapeuticIndication = input.therapeuticIndication;
       if (input.storageConditions !== undefined) updateData.storageConditions = input.storageConditions;
       if (input.internalNotes !== undefined) updateData.internalNotes = input.internalNotes;
+      if (input.commissionType !== undefined) updateData.commissionType = input.commissionType;
+      if (input.commissionValue !== undefined) {
+        updateData.commissionValue = new Prisma.Decimal(input.commissionValue);
+      }
+      if (input.commissionStartsAt !== undefined) {
+        updateData.commissionStartsAt = input.commissionStartsAt
+          ? new Date(input.commissionStartsAt)
+          : null;
+      }
+      if (input.commissionEndsAt !== undefined) {
+        updateData.commissionEndsAt = input.commissionEndsAt
+          ? new Date(input.commissionEndsAt)
+          : null;
+      }
       if (sanitizedCategoryId !== undefined) {
         updateData.category = { connect: { id: sanitizedCategoryId } };
       }
@@ -1123,6 +1245,20 @@ export class ProductService {
           ...(input.therapeuticIndication !== undefined && { therapeuticIndication: input.therapeuticIndication }),
           ...(input.storageConditions !== undefined && { storageConditions: input.storageConditions }),
           ...(input.internalNotes !== undefined && { internalNotes: input.internalNotes }),
+          ...(input.commissionType !== undefined && { commissionType: input.commissionType }),
+          ...(input.commissionValue !== undefined && {
+            commissionValue: new Prisma.Decimal(input.commissionValue).toString(),
+          }),
+          ...(input.commissionStartsAt !== undefined && {
+            commissionStartsAt: input.commissionStartsAt
+              ? new Date(input.commissionStartsAt).toISOString()
+              : null,
+          }),
+          ...(input.commissionEndsAt !== undefined && {
+            commissionEndsAt: input.commissionEndsAt
+              ? new Date(input.commissionEndsAt).toISOString()
+              : null,
+          }),
           ...(sanitizedCategoryId !== undefined && { categoryId: sanitizedCategoryId }),
           ...(sanitizedPharmaceuticalFormId !== undefined && {
             pharmaceuticalFormId: sanitizedPharmaceuticalFormId,
@@ -1414,12 +1550,15 @@ export class ProductService {
     barcodes: Array<{ barcode: string; barcodeType: string; isPrimary: boolean }>;
     initialPrice: string;
     initialTaxSchemeId: string;
+    commissionType: CommissionType;
+    commissionValue: string;
+    commissionStartsAt: Date | null;
+    commissionEndsAt: Date | null;
     createdById: string;
     createdAt: Date;
     session: { userId: string; workstationId: string };
     workstationId: string;
-  } | null> {
-    const row = await tx.product.findUnique({
+  } | null> {    const row = await tx.product.findUnique({
       where: { id: productId },
       select: {
         // Scalar fields needed for the payload — `serverId` is also
@@ -1446,6 +1585,10 @@ export class ProductService {
         pharmaceuticalFormId: true,
         createdById: true,
         createdAt: true,
+        commissionType: true,
+        commissionValue: true,
+        commissionStartsAt: true,
+        commissionEndsAt: true,
         barcodes: {
           select: { barcode: true, barcodeType: true, isPrimary: true },
         },
@@ -1517,6 +1660,10 @@ export class ProductService {
       })),
       initialPrice: row.priceHistories[0].price.toString(),
       initialTaxSchemeId: row.taxHistories[0].taxSchemeId,
+      commissionType: row.commissionType,
+      commissionValue: row.commissionValue.toString(),
+      commissionStartsAt: row.commissionStartsAt,
+      commissionEndsAt: row.commissionEndsAt,
       createdById: row.createdById,
       createdAt: row.createdAt,
       session: { userId: row.createdById, workstationId: lastWorkstationId ?? 'unknown' },
@@ -1554,6 +1701,10 @@ export class ProductService {
       barcodes: Array<{ barcode: string; barcodeType: string; isPrimary: boolean }>;
       initialPrice: string;
       initialTaxSchemeId: string;
+      commissionType: CommissionType;
+      commissionValue: string;
+      commissionStartsAt: Date | null;
+      commissionEndsAt: Date | null;
       createdAt: Date;
     },
     session: { userId: string; workstationId: string },
@@ -1578,6 +1729,10 @@ export class ProductService {
       internalNotes: row.internalNotes ?? undefined,
       categoryId: row.categoryId ?? undefined,
       pharmaceuticalFormId: row.pharmaceuticalFormId ?? undefined,
+      commissionType: row.commissionType,
+      commissionValue: row.commissionValue,
+      commissionStartsAt: row.commissionStartsAt?.toISOString() ?? undefined,
+      commissionEndsAt: row.commissionEndsAt?.toISOString() ?? undefined,
       initialPrice: row.initialPrice,
       initialTaxSchemeId: row.initialTaxSchemeId,
       barcodes: row.barcodes.map((bc) => ({

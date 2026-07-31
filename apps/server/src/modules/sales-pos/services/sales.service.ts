@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { Prisma, SaleOperationalState, SaleType, ShiftState, IdentificationType, ClientType, AuditAction, SystemModule } from '@pharmacy/database';
+import { Prisma, SaleOperationalState, SaleType, ShiftState, IdentificationType, ClientType, AuditAction, SystemModule, CommissionType } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreateSaleDto, CreateSaleItemDto } from '../dto/create-sale.dto';
 import { QuerySaleDto } from '../dto/query-sale.dto';
@@ -20,6 +20,7 @@ import { LotNotFoundException } from '@/modules/inventory-lots/exceptions/lot-no
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 import { DiscountReasonRequiredException } from '@/modules/catalog/exceptions/discount-reason-required.exception';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
+import { CommissionCalculatorService } from './commission-calculator.service';
 import { toDecimal } from '@/common/to-decimal';
 import { GENERIC_CLIENT_UUID } from '@/modules/clients/constants/clients.constants';
 
@@ -41,6 +42,7 @@ export class SalesService {
     private prisma: PrismaService,
     private lotsService: LotsService,
     private fiscalDocumentsService: FiscalDocumentsService,
+    private commissionCalculatorService: CommissionCalculatorService,
   ) {}
 
   async findAll(query: QuerySaleDto): Promise<any> {
@@ -442,6 +444,8 @@ export class SalesService {
     const taxAmount = priceAfterDiscount.times(taxRate.dividedBy(100));
     const total = priceAfterDiscount.plus(taxAmount);
 
+    const commission = this.resolveCommission(itemDto, product, unitPrice, quantity, discountAmount);
+
     return {
       id: crypto.randomUUID(),
       product: { connect: { id: itemDto.productId } },
@@ -461,6 +465,53 @@ export class SalesService {
       subtotal: itemSubtotal,
       total,
       requiresPrescription: false,
+      ...commission,
+    };
+  }
+
+  /**
+   * Decide the commission snapshots for one sale line.
+   *
+   * The offline POS evaluated the commission at real sale time, so when the
+   * payload item carries any of the three commission fields those values are
+   * persisted verbatim (client-authoritative). Direct HTTP API sales and
+   * legacy payloads omit them — the server then recomputes with the same
+   * rules: active only while the product commission type is not NONE, the
+   * value is positive, and the sale moment falls inside the configured
+   * window. An expired window never blocks the sale; it just yields no
+   * commission.
+   */
+  private resolveCommission(
+    itemDto: CreateSaleItemDto,
+    product: { commissionType: CommissionType; commissionValue: Prisma.Decimal; commissionStartsAt: Date | null; commissionEndsAt: Date | null },
+    unitPrice: Prisma.Decimal,
+    quantity: Prisma.Decimal,
+    discountAmount: Prisma.Decimal,
+  ): { commissionTypeSnapshot: CommissionType | null; commissionValueSnapshot: Prisma.Decimal | null; commissionAmount: Prisma.Decimal } {
+    const carriesPayloadValues =
+      itemDto.commissionType !== undefined ||
+      itemDto.commissionValue !== undefined ||
+      itemDto.commissionAmount !== undefined;
+
+    if (!carriesPayloadValues) {
+      return this.commissionCalculatorService.compute(
+        {
+          commissionType: product.commissionType,
+          commissionValue: product.commissionValue,
+          commissionStartsAt: product.commissionStartsAt,
+          commissionEndsAt: product.commissionEndsAt,
+        },
+        { unitPrice, quantity: quantity.toNumber(), discountAmount },
+      );
+    }
+
+    return {
+      commissionTypeSnapshot: itemDto.commissionType ?? null,
+      commissionValueSnapshot:
+        itemDto.commissionValue === undefined || itemDto.commissionValue === null
+          ? null
+          : toDecimal(itemDto.commissionValue, { fieldName: 'items[].commissionValue' }),
+      commissionAmount: toDecimal(itemDto.commissionAmount ?? '0', { fieldName: 'items[].commissionAmount' }),
     };
   }
 

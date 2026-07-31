@@ -7,6 +7,7 @@ export {
   StepUpStatus,
   TwoFactorMethod,
   SaleType,
+  CommissionType,
   SaleOperationalState,
   FiscalDocumentType,
   FiscalDocumentState,

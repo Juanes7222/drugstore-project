@@ -22,6 +22,13 @@ model SaleItem {
   discountReason                    String?
   subtotal                          Decimal   @db.Decimal(15, 2)
   total                             Decimal   @db.Decimal(15, 2)
+  /// Commission accrued on this line, snapshotted at sale time. NULL
+  /// when the product had no active commission — the three snapshot
+  /// fields are always set together and never rewritten by later
+  /// catalog changes.
+  commissionTypeSnapshot            CommissionType?
+  commissionValueSnapshot           Decimal?  @db.Decimal(15, 2)
+  commissionAmount                  Decimal   @db.Decimal(15, 2) @default(0)
   requiresPrescription              Boolean   @default(false)
   saleItemPrescriptionId            String?
   prescription                      Prescription? @relation("PrescriptionFromSaleItem")

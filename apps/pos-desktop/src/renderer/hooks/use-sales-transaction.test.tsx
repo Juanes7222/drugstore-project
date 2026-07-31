@@ -70,6 +70,10 @@ const unrestrictedItem: CatalogItem = {
   lotCode: "L24056",
   lotExpirationDate: "2026-08-30",
   hasCompleteData: true,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
 };
 
 const restrictedItem: CatalogItem = {
@@ -89,6 +93,10 @@ const restrictedItem: CatalogItem = {
   lotCode: "CZ-2401",
   lotExpirationDate: "2027-01-10",
   hasCompleteData: true,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
 };
 
 const incompleteItem: CatalogItem = {
@@ -116,6 +124,10 @@ const checkoutCartItem: CartItem = {
   costCents: null,
   taxPercentage: 0,
   quantity: 1,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -166,6 +178,10 @@ describe("useSalesTransaction", () => {
           overrideUnitPriceCents: null,
           discountPercentage: null,
           costCents: null,
+          commissionType: null,
+          commissionValue: null,
+          commissionStartsAt: null,
+          commissionEndsAt: null,
         }),
       );
       expect(result.current.pendingItem).toBeNull();
@@ -229,6 +245,10 @@ describe("useSalesTransaction", () => {
           overrideUnitPriceCents: null,
           discountPercentage: null,
           costCents: null,
+          commissionType: null,
+          commissionValue: null,
+          commissionStartsAt: null,
+          commissionEndsAt: null,
         }),
       );
       expect(result.current.pendingItem).toBeNull();

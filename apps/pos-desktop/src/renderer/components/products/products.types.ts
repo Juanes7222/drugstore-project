@@ -4,7 +4,7 @@
  * @module products.types
  */
 
-import type { SaleType } from '@pharmacy/database/local';
+import type { CommissionType, SaleType } from '@pharmacy/database/local';
 
 export type ProductFormMode = 'create' | 'edit';
 
@@ -55,6 +55,14 @@ export interface DisplayProduct {
   currentPrice: string | null;
   currentCost: string | null;
   currentTaxSchemeId: string | null;
+  /** Sales-commission configuration (NONE when the product has none). */
+  commissionType: CommissionType;
+  /** Percentage points (PERCENTAGE) or COP per unit (FIXED). */
+  commissionValue: string;
+  /** ISO date-time start of the validity window, or null when unbounded. */
+  commissionStartsAt: string | null;
+  /** ISO date-time end of the validity window, or null when unbounded. */
+  commissionEndsAt: string | null;
 }
 
 export interface ProductFormData {
@@ -75,6 +83,14 @@ export interface ProductFormData {
   price: string;
   cost: string;
   taxSchemeId: string;
+  /** Always sent explicitly, even when NONE (server default matches). */
+  commissionType: CommissionType;
+  /** Percentage points (PERCENTAGE) or COP per unit (FIXED). "0" when NONE. */
+  commissionValue: string;
+  /** ISO date-time or null when the window start is unset. */
+  commissionStartsAt: string | null;
+  /** ISO date-time or null when the window end is unset. */
+  commissionEndsAt: string | null;
 }
 
 export interface CategoryOption {
@@ -143,6 +159,10 @@ export interface RawProduct extends Record<string, unknown> {
   }>;
   currentPrice: string | null;
   currentCost: string | null;
+  commissionType?: CommissionType | null;
+  commissionValue?: string | number | null;
+  commissionStartsAt?: string | null;
+  commissionEndsAt?: string | null;
 }
 
 export function mapToDisplayProduct(raw: RawProduct): DisplayProduct {
@@ -169,5 +189,10 @@ export function mapToDisplayProduct(raw: RawProduct): DisplayProduct {
     currentPrice: raw.currentPrice,
     currentCost: raw.currentCost ?? null,
     currentTaxSchemeId: raw.currentTaxSchemeId ?? null,
+    commissionType: raw.commissionType ?? 'NONE',
+    commissionValue:
+      raw.commissionValue != null ? String(raw.commissionValue) : '0',
+    commissionStartsAt: raw.commissionStartsAt ?? null,
+    commissionEndsAt: raw.commissionEndsAt ?? null,
   };
 }
