@@ -61,8 +61,8 @@ describe("evaluateRules", () => {
     isOfflineBlessingInProgress: false,
     lastConfirmedSaleId: null,
     lastConfirmedSaleNumber: null,
-    localSyncActive: false,
-    localHubAvailable: false,
+    localSyncActive: true,
+    localHubAvailable: true,
   };
 
   it("returns empty array when no rules match", () => {

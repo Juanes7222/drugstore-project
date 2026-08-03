@@ -15,6 +15,7 @@ vi.mock("../../config/fiscal", () => ({
   CONTINGENCY_TECH_KEY: "test-tech-key-12345",
   CONTINGENCY_TRANSMISSION_WINDOW_HOURS: 48,
   isContingencyTechKeyPlaceholder: vi.fn(() => false),
+  IS_DEV_MODE: false,
 }));
 
 // Mock cufe module

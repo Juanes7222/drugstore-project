@@ -76,6 +76,14 @@ const OPERATION_PRIORITY: Record<string, number> = {
 
 const DEFAULT_PRIORITY = 99;
 
+/**
+ * Synthetic client-error status used to classify per-operation REJECTED
+ * results. Those arrive inside an HTTP-200 batch response, so the batch
+ * status carries no signal — routing the error body through a generic
+ * 4xx branch lets conflict/business-rule keywords drive the category.
+ */
+const REJECTED_OPERATION_STATUS = 412;
+
 /** The local-only failure category values. */
 export type SyncFailureCategory =
   | 'NETWORK'
@@ -473,9 +481,11 @@ class SyncPushServiceImpl implements SyncPushService {
           continue;
         }
 
-        // REJECTED — permanent failure from server
+        // REJECTED — permanent failure from server. The batch HTTP status
+        // (typically 200) says nothing about an individual operation, so
+        // classify from the error body alone via a generic client-error status.
         const rejectionCategory = classifyFailure(
-          httpStatus,
+          REJECTED_OPERATION_STATUS,
           result.error ?? '',
         );
         await tx.syncQueue.update({

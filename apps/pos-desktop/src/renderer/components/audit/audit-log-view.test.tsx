@@ -234,10 +234,10 @@ describe('AuditLogView — filter routing logic', () => {
     });
   });
 
-  // ── BUG #3: action vs event param name mismatch for server ────────────
+  // ── Event param name for server queries ────────────────────────────────
 
-  describe('BUG: commonQuery.action param name mismatch with server API', () => {
-    it('sends "action" key to getAuditLogs but server expects "event"', async () => {
+  describe('server query uses the "event" param name', () => {
+    it('sends the selected event under the "event" key to getAuditLogs', async () => {
       render(<AuditLogView />);
       await waitForInitialFetchAndReset();
 
@@ -250,11 +250,13 @@ describe('AuditLogView — filter routing logic', () => {
       });
 
       const serverArgs = mockGetAuditLogs.mock.calls.at(-1)?.[0];
-      expect(serverArgs!.action).toBe('AUTH_LOGIN_SUCCESS');
-      // BUG: the param name is "action" but server.getAuditLogs reads "filters.event"
+      // server.getAuditLogs reads "filters.event" — the component must use
+      // the same key so the filter is not silently dropped.
+      expect(serverArgs!.event).toBe('AUTH_LOGIN_SUCCESS');
+      expect(serverArgs!.action).toBeUndefined();
     });
 
-    it('server getAuditLogs does NOT receive an "event" key when filter is set', async () => {
+    it('passes the "event" key through when a filter is set', async () => {
       render(<AuditLogView />);
       await waitForInitialFetchAndReset();
 
@@ -266,9 +268,8 @@ describe('AuditLogView — filter routing logic', () => {
       });
 
       const serverArgs = mockGetAuditLogs.mock.calls.at(-1)?.[0];
-      // Server expects serverArgs.event, but the component sends serverArgs.action
-      expect(serverArgs!.event).toBeUndefined();
-      // The event filter is SILENTLY DROPPED for server queries
+      // The server expects serverArgs.event — the component now sends it.
+      expect(serverArgs!.event).toBe('AUTH_LOGIN_SUCCESS');
     });
   });
 

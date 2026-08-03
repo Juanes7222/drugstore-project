@@ -57,7 +57,7 @@ describe("EntriesSection", () => {
     render(<EntriesSection {...baseProps} entries={[]} />);
 
     expect(
-      screen.getByText("No error entries found."),
+      screen.getByText("No se encontraron entradas con error."),
     ).toBeInTheDocument();
   });
 
@@ -74,7 +74,7 @@ describe("EntriesSection", () => {
   it("renders the table title", () => {
     render(<EntriesSection {...baseProps} />);
 
-    expect(screen.getByText("Error Entries")).toBeInTheDocument();
+    expect(screen.getByText("Entradas con error")).toBeInTheDocument();
   });
 
   it("renders entry data in table rows", () => {
@@ -82,7 +82,7 @@ describe("EntriesSection", () => {
 
     expect(screen.getByText("SALE_CREATION")).toBeInTheDocument();
     expect(screen.getByText("SYNC_PULL")).toBeInTheDocument();
-    expect(screen.getByText("NETWORK")).toBeInTheDocument();
+    expect(screen.getByText("Red")).toBeInTheDocument();
   });
 
   it("renders entry count when entries exist", () => {
@@ -90,7 +90,7 @@ describe("EntriesSection", () => {
 
     // The count is rendered inline as "2 entries"
     expect(
-      screen.getByText((content) => content.includes("2") && content.includes("entries")),
+      screen.getByText((content) => content.includes("2") && content.includes("entradas")),
     ).toBeInTheDocument();
   });
 
@@ -99,16 +99,19 @@ describe("EntriesSection", () => {
   it("renders sortable column headers", () => {
     render(<EntriesSection {...baseProps} />);
 
-    expect(screen.getByText("Operation")).toBeInTheDocument();
-    expect(screen.getByText("Last Attempt")).toBeInTheDocument();
-    expect(screen.getByText("Retries")).toBeInTheDocument();
+    expect(screen.getByText("Operación")).toBeInTheDocument();
+    expect(screen.getByText("Últ. intento")).toBeInTheDocument();
+    expect(screen.getByText("Reintentos")).toBeInTheDocument();
   });
 
   it("shows ↓ indicator on the active sorted column (desc)", () => {
     render(<EntriesSection {...baseProps} />);
 
-    const lastAttemptHeader = screen.getByText("Last Attempt");
-    expect(lastAttemptHeader.parentElement?.textContent).toContain("\u2193");
+    const lastAttemptHeader = screen.getByText("Últ. intento");
+    // Desc sort renders a chevron-down indicator in the header
+    expect(
+      lastAttemptHeader.closest("th")?.querySelector('svg[data-icon="chevron-down"]'),
+    ).not.toBeNull();
   });
 
   it("shows ↑ indicator when sortDir is asc", () => {
@@ -120,8 +123,11 @@ describe("EntriesSection", () => {
       />,
     );
 
-    const retriesHeader = screen.getByText("Retries");
-    expect(retriesHeader.parentElement?.textContent).toContain("\u2191");
+    const retriesHeader = screen.getByText("Reintentos");
+    // Asc sort renders a chevron-up indicator in the header
+    expect(
+      retriesHeader.closest("th")?.querySelector('svg[data-icon="chevron-up"]'),
+    ).not.toBeNull();
   });
 
   it("calls onSort when a sortable header is clicked", async () => {
@@ -130,7 +136,7 @@ describe("EntriesSection", () => {
 
     render(<EntriesSection {...baseProps} onSort={onSort} />);
 
-    await user.click(screen.getByText("Operation"));
+    await user.click(screen.getByText("Operación"));
     expect(onSort).toHaveBeenCalledWith("operationType");
   });
 
@@ -140,16 +146,16 @@ describe("EntriesSection", () => {
     const { container } = render(<EntriesSection {...baseProps} />);
 
     const rows = container.querySelectorAll("tbody tr");
-    // entry-001 has retryCount > 0 → red border
-    expect(rows[0].className).toContain("border-l-red-500");
+    // entry-001 has retryCount > 0 → error border
+    expect(rows[0].className).toContain("border-l-error");
   });
 
   it("applies yellow left border to stale-pending entries", () => {
     const { container } = render(<EntriesSection {...baseProps} />);
 
     const rows = container.querySelectorAll("tbody tr");
-    // entry-002 has retryCount=0 and lastErrorMessage=null → yellow border
-    expect(rows[1].className).toContain("border-l-yellow-400");
+    // entry-002 has retryCount=0 and lastErrorMessage=null → warning border
+    expect(rows[1].className).toContain("border-l-warning");
   });
 
   // ── Admin column ──────────────────────────────────────────────────
@@ -160,7 +166,7 @@ describe("EntriesSection", () => {
     );
 
     const retryButtons = screen.getAllByText("Reintentar");
-    const discardButtons = screen.getAllByText("Discard");
+    const discardButtons = screen.getAllByText("Descartar");
     expect(retryButtons).toHaveLength(2);
     expect(discardButtons).toHaveLength(2);
   });
@@ -171,7 +177,7 @@ describe("EntriesSection", () => {
     );
 
     expect(screen.queryByText("Reintentar")).not.toBeInTheDocument();
-    expect(screen.queryByText("Discard")).not.toBeInTheDocument();
+    expect(screen.queryByText("Descartar")).not.toBeInTheDocument();
   });
 
   // ── Action interactions ───────────────────────────────────────────
@@ -193,7 +199,7 @@ describe("EntriesSection", () => {
 
     render(<EntriesSection {...baseProps} onDiscard={onDiscard} />);
 
-    const discardButtons = screen.getAllByText("Discard");
+    const discardButtons = screen.getAllByText("Descartar");
     await user.click(discardButtons[0]);
     expect(onDiscard).toHaveBeenCalledWith("entry-001");
   });
@@ -204,9 +210,10 @@ describe("EntriesSection", () => {
 
     render(<EntriesSection {...baseProps} onSelect={onSelect} />);
 
-    // Both entries share payloadPreview '{"saleId":"abc"}'; pick first button
+    // summarizePayload turns the raw JSON into the translated preview
+    // 'venta: abc' — both entries render it inside a button.
     const previewBtns = screen.getAllByText(
-      mockEntries[0].payloadPreview,
+      "venta: abc",
       { selector: "button" },
     );
     await user.click(previewBtns[0]);
@@ -241,7 +248,7 @@ describe("EntriesSection", () => {
       <EntriesSection {...baseProps} actionLoading="entry-001" />,
     );
 
-    const discardButtons = screen.getAllByText("Discard");
+    const discardButtons = screen.getAllByText("Descartar");
     expect(discardButtons[0]).toBeDisabled();
   });
 
@@ -269,7 +276,7 @@ describe("EntriesSection", () => {
     render(<EntriesSection {...baseProps} hasMore={true} />);
 
     expect(
-      screen.getByText("Load more"),
+      screen.getByText("Cargar más"),
     ).toBeInTheDocument();
   });
 
@@ -285,7 +292,7 @@ describe("EntriesSection", () => {
       />,
     );
 
-    await user.click(screen.getByText("Load more"));
+    await user.click(screen.getByText("Cargar más"));
     expect(onLoadMore).toHaveBeenCalledTimes(1);
   });
 
@@ -293,7 +300,7 @@ describe("EntriesSection", () => {
     render(<EntriesSection {...baseProps} hasMore={false} />);
 
     expect(
-      screen.queryByText("Load more"),
+      screen.queryByText("Cargar más"),
     ).not.toBeInTheDocument();
   });
 
@@ -306,7 +313,7 @@ describe("EntriesSection", () => {
       />,
     );
 
-    expect(screen.getByText("Load more")).toBeDisabled();
+    expect(screen.getByText("Cargar más")).toBeDisabled();
   });
 
   // ── Refresh button ────────────────────────────────────────────────
@@ -351,7 +358,7 @@ describe("EntriesSection", () => {
     );
 
     expect(
-      screen.getByText(/filtered: NETWORK/i),
+      screen.getByText(/filtrado: Red/i),
     ).toBeInTheDocument();
   });
 
@@ -361,7 +368,7 @@ describe("EntriesSection", () => {
     );
 
     expect(
-      screen.getByText("Showing discarded"),
+      screen.getByText("Mostrando descartados"),
     ).toBeInTheDocument();
   });
 });

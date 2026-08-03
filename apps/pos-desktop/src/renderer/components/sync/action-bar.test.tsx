@@ -50,7 +50,7 @@ describe("ActionBar", () => {
     const user = userEvent.setup();
 
     // Find by visible text instead of testid
-    const csvButton = screen.getByRole("button", { name: /export csv/i });
+    const csvButton = screen.getByRole("button", { name: /exportar csv/i });
     await user.click(csvButton);
 
     expect(onExportCsv).toHaveBeenCalledTimes(1);
@@ -61,7 +61,7 @@ describe("ActionBar", () => {
     renderBar({ onExportJson });
     const user = userEvent.setup();
 
-    const jsonButton = screen.getByRole("button", { name: /export json/i });
+    const jsonButton = screen.getByRole("button", { name: /exportar json/i });
     await user.click(jsonButton);
 
     expect(onExportJson).toHaveBeenCalledTimes(1);
@@ -73,7 +73,7 @@ describe("ActionBar", () => {
     const user = userEvent.setup();
 
     const checkbox = screen.getByRole("checkbox", {
-      name: /retry without server check/i,
+      name: /reintentar sin verificar servidor/i,
     });
     await user.click(checkbox);
 
@@ -87,7 +87,7 @@ describe("ActionBar", () => {
     const user = userEvent.setup();
 
     const checkbox = screen.getByRole("checkbox", {
-      name: /show discarded/i,
+      name: /mostrar descartados/i,
     });
     await user.click(checkbox);
 
@@ -100,7 +100,7 @@ describe("ActionBar", () => {
     renderBar({ onTestConnection });
     const user = userEvent.setup();
 
-    const button = screen.getByRole("button", { name: /test connection/i });
+    const button = screen.getByRole("button", { name: /probar conexión/i });
     await user.click(button);
 
     expect(onTestConnection).toHaveBeenCalledTimes(1);
@@ -111,7 +111,7 @@ describe("ActionBar", () => {
     renderBar({ onRunSyncNow });
     const user = userEvent.setup();
 
-    const button = screen.getByRole("button", { name: /run sync now/i });
+    const button = screen.getByRole("button", { name: /sincronizar ahora/i });
     await user.click(button);
 
     expect(onRunSyncNow).toHaveBeenCalledTimes(1);
@@ -122,7 +122,7 @@ describe("ActionBar", () => {
       connectionStatus: makeStatus({ type: "testing" }),
     });
 
-    const button = screen.getByRole("button", { name: /test connection/i });
+    const button = screen.getByRole("button", { name: /probar conexión/i });
     expect(button).toBeDisabled();
   });
 
@@ -131,7 +131,7 @@ describe("ActionBar", () => {
       connectionStatus: makeStatus({ type: "reachable" }),
     });
 
-    const button = screen.getByRole("button", { name: /test connection/i });
+    const button = screen.getByRole("button", { name: /conectado/i });
     expect(button).toBeInTheDocument();
     // The reachable status renders a green check icon — the exact
     // styling is hard to assert in jsdom, so we just verify presence.

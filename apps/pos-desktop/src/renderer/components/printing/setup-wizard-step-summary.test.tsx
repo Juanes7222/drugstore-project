@@ -115,9 +115,9 @@ describe("SetupWizardStepSummary", () => {
       <SetupWizardStepSummary state={state} onComplete={vi.fn()} />,
     );
 
-    expect(screen.getByText("Recibos de venta")).toBeInTheDocument();
+    expect(screen.getByText("Recibo de venta")).toBeInTheDocument();
     expect(
-      screen.getByText("Recibos de contingencia"),
+      screen.getByText("Recibo contingencia"),
     ).toBeInTheDocument();
   });
 

@@ -158,6 +158,9 @@ const {
     listBackups: vi.fn(),
     getHealth: vi.fn(),
     getStatus: vi.fn(),
+    setUploadWorker: vi.fn(),
+    kickUploadWorker: vi.fn(),
+    getUploadQueue: vi.fn(),
   };
 
   const mockUpdateService = {
@@ -260,6 +263,7 @@ vi.mock("../../config/fiscal", () => ({
   isContingencyTechKeyPlaceholder: vi.fn(() => false),
   CONTINGENCY_TECH_KEY: "test-tech-key-not-placeholder",
   CONTINGENCY_TRANSMISSION_WINDOW_HOURS: 48,
+  IS_DEV_MODE: false,
 }));
 
 vi.mock("../../domain/sync/sync-scheduler.service", () => ({
@@ -330,7 +334,10 @@ describe("initializeServices — sync scheduler creation", () => {
       });
 
       expect(mockCreateSyncScheduler).toHaveBeenCalledWith(
-        expect.objectContaining({ client: {} as any, prisma: mockPrisma }),
+        expect.objectContaining({
+          prisma: mockPrisma,
+          baseUrl: "http://localhost:3000",
+        }),
       );
     });
 

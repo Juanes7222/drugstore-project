@@ -32,6 +32,7 @@ describe("sync-metadata", () => {
         catalogLastSyncedAt: null,
         lotsLastSyncedAt: null,
         clientsLastSyncedAt: null,
+        classificationsLastSyncedAt: null,
       });
     });
 
@@ -44,6 +45,7 @@ describe("sync-metadata", () => {
         catalogLastSyncedAt: null,
         lotsLastSyncedAt: null,
         clientsLastSyncedAt: null,
+        classificationsLastSyncedAt: null,
       });
     });
 
@@ -57,6 +59,7 @@ describe("sync-metadata", () => {
           catalogLastSyncedAt: null,
           lotsLastSyncedAt: null,
           clientsLastSyncedAt: null,
+          classificationsLastSyncedAt: null,
         });
       } finally {
         (globalThis as any).localStorage = originalLocalStorage;

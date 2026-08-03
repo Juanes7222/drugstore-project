@@ -27,7 +27,7 @@ describe("FailureBreakdownPanel", () => {
     render(<FailureBreakdownPanel {...baseProps} />);
 
     expect(
-      screen.getByText("Failure Breakdown"),
+      screen.getByText("Desglose de fallos"),
     ).toBeInTheDocument();
   });
 
@@ -35,13 +35,13 @@ describe("FailureBreakdownPanel", () => {
     render(<FailureBreakdownPanel {...baseProps} />);
 
     expect(
-      screen.getByRole("button", { name: /NETWORK/ }),
+      screen.getByRole("button", { name: /Red/ }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /VALIDATION/ }),
+      screen.getByRole("button", { name: /Validación/ }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /AUTH/ }),
+      screen.getByRole("button", { name: /Autenticación/ }),
     ).toBeInTheDocument();
   });
 
@@ -62,15 +62,15 @@ describe("FailureBreakdownPanel", () => {
     const pills = screen.getAllByRole("button");
     // Each pill contains the category, count, and optionally the time text
     const networkPill = pills[0];
-    expect(networkPill.textContent).toMatch(/latest/i);
+    expect(networkPill.textContent).toMatch(/último/i);
   });
 
   it("does NOT show 'latest' for entries without mostRecent", () => {
     render(<FailureBreakdownPanel {...baseProps} />);
 
-    // AUTH has mostRecent: null — its pill should not show "latest"
-    const authPill = screen.getByRole("button", { name: /AUTH/ });
-    expect(authPill.textContent).not.toMatch(/latest/i);
+    // AUTH has mostRecent: null — its pill should not show "último"
+    const authPill = screen.getByRole("button", { name: /Autenticación/ });
+    expect(authPill.textContent).not.toMatch(/último/i);
   });
 
   // ── Empty state ───────────────────────────────────────────────────
@@ -79,7 +79,7 @@ describe("FailureBreakdownPanel", () => {
     render(<FailureBreakdownPanel {...baseProps} data={[]} />);
 
     expect(
-      screen.getByText("No failure data available"),
+      screen.getByText("No hay datos de fallos disponibles."),
     ).toBeInTheDocument();
   });
 
@@ -101,9 +101,9 @@ describe("FailureBreakdownPanel", () => {
       />,
     );
 
-    const selectedPill = screen.getByRole("button", { name: /NETWORK/ });
-    // Selected pill has blue background class
-    expect(selectedPill.className).toContain("bg-blue-600");
+    const selectedPill = screen.getByRole("button", { name: /Red/ });
+    // Selected pill uses the pharma brand background class
+    expect(selectedPill.className).toContain("bg-pharma");
   });
 
   it("applies default styling to unselected pills", () => {
@@ -115,9 +115,9 @@ describe("FailureBreakdownPanel", () => {
     );
 
     const unselectedPill = screen.getByRole("button", {
-      name: /VALIDATION/,
+      name: /Validación/,
     });
-    expect(unselectedPill.className).toContain("bg-gray-100");
+    expect(unselectedPill.className).toContain("bg-surface");
   });
 
   // ── Interactions ──────────────────────────────────────────────────
@@ -134,7 +134,7 @@ describe("FailureBreakdownPanel", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: /NETWORK/ }),
+      screen.getByRole("button", { name: /Red/ }),
     );
     expect(onSelectCategory).toHaveBeenCalledWith("NETWORK");
   });
@@ -152,7 +152,7 @@ describe("FailureBreakdownPanel", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: /NETWORK/ }),
+      screen.getByRole("button", { name: /Red/ }),
     );
     expect(onSelectCategory).toHaveBeenCalledWith(null);
   });
@@ -170,7 +170,7 @@ describe("FailureBreakdownPanel", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: /VALIDATION/ }),
+      screen.getByRole("button", { name: /Validación/ }),
     );
     expect(onSelectCategory).toHaveBeenCalledWith("VALIDATION");
   });

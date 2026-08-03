@@ -1,51 +1,28 @@
 /**
- * Bug-hunting tests for getInventoryMovements.
+ * Tests for getInventoryMovements (INVENTORY module of getLocalAuditEntries).
  *
- * The real getInventoryMovements IGNORES the _prisma parameter and uses
- * getLocalDatabase() directly (PGlite raw SQL). It ALSO ignores query.action
- * — the WHERE clause only includes date range, never movement type.
- *
- * These tests expose both bugs by mocking getLocalDatabase and inspecting
- * the SQL that would be sent to PGlite.
+ * The INVENTORY reader runs raw SQL against the PGlite client passed by the
+ * caller (third argument). It:
+ *   - maps an `action` filter (e.g. INVENTORY_SALE) back to the
+ *     InventoryMovement `movementType` and adds it to the WHERE clause,
+ *   - includes date-range filters as positional parameters,
+ *   - runs two statements: COUNT then SELECT (with LIMIT/OFFSET),
+ *   - throws when no PGlite client is provided.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { getLocalAuditEntries } from './audit.service';
 
 // ---------------------------------------------------------------------------
-// Hoisted mocks — vi.mock is hoisted to top of file, so we need vi.hoisted
-// for references shared between factory and test bodies.
-// ---------------------------------------------------------------------------
-
-const mockQuery = vi.hoisted(() => vi.fn());
-const mockGetLocalDatabase = vi.hoisted(() =>
-  vi.fn(() => Promise.resolve({ client: { query: mockQuery } })),
-);
-
-vi.mock('../../infrastructure/local-database', () => ({
-  getLocalDatabase: mockGetLocalDatabase,
-}));
-
-// ---------------------------------------------------------------------------
-// Fake Prisma — still needed as first argument, even though getInventoryMovements
-// IGNORES it.  That's part of the bug.
+// Helpers
 // ---------------------------------------------------------------------------
 
 function makeFakePrisma() {
   return { localAuditLog: { findMany: vi.fn(), count: vi.fn() } } as any;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Extract the SQL string from the first client.query() call. */
-function capturedSQL(): string {
-  return mockQuery.mock.calls[0]?.[0] ?? '';
-}
-
-/** Extract the params array from the first client.query() call. */
-function capturedParams(): unknown[] {
-  return mockQuery.mock.calls[0]?.[1] ?? [];
+/** PGlite-like client whose query() is fully mocked. */
+function makeMockClient() {
+  return { query: vi.fn() };
 }
 
 describe('getInventoryMovements (getLocalAuditEntries with module=INVENTORY)', () => {
@@ -53,52 +30,60 @@ describe('getInventoryMovements (getLocalAuditEntries with module=INVENTORY)', (
 
   beforeEach(() => {
     prisma = makeFakePrisma();
-    mockQuery.mockReset();
-    mockGetLocalDatabase.mockClear();
   });
 
-  // ── BUG #1: action filter silently dropped ────────────────────────────
+  // ── Action filter ────────────────────────────────────────────────────
 
-  describe('BUG: action filter is ignored', () => {
-    it('does NOT include "movementType" or "action" in WHERE when action filter is provided', async () => {
-      mockQuery
+  describe('action filter', () => {
+    it('includes the movementType filter in WHERE when an action is provided', async () => {
+      const client = makeMockClient();
+      client.query
         .mockResolvedValueOnce({ rows: [{ count: 0 }] })   // COUNT
-        .mockResolvedValueOnce({ rows: [] });                // DATA
+        .mockResolvedValueOnce({ rows: [] });               // DATA
 
       await getLocalAuditEntries(prisma, {
         module: 'INVENTORY',
         action: 'INVENTORY_SALE',
-      });
+      }, client as any);
 
-      const sql = capturedSQL();
-      expect(sql).not.toContain('movementType');
-      expect(sql).not.toContain('movement_type');
-      expect(sql).not.toContain('action');
-      expect(sql).not.toContain('INVENTORY_SALE');
+      const sql = client.query.mock.calls[0][0] as string;
+      expect(sql).toContain('"movementType"');
+      expect(sql).toContain('= $1');
     });
 
-    it('returns all movements regardless of action filter value', async () => {
-      const rows = [
-        { id: 'm1', movement_type: 'SALE', quantity: 1, previous_stock: 10, resulting_stock: 9, created_by_id: 'u1', created_at: new Date(), lot_id: 'l1', reason: null, batch_number: null, product_name: null },
-        { id: 'm2', movement_type: 'PURCHASE_RECEIPT', quantity: 5, previous_stock: 9, resulting_stock: 14, created_by_id: 'u2', created_at: new Date(), lot_id: 'l2', reason: null, batch_number: null, product_name: null },
-      ];
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ count: rows.length }] })
-        .mockResolvedValueOnce({ rows });
+    it('maps the action label back to the movementType in the parameters', async () => {
+      const client = makeMockClient();
+      client.query
+        .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+        .mockResolvedValueOnce({ rows: [] });
 
-      const resultActionFiltered = await getLocalAuditEntries(prisma, {
+      await getLocalAuditEntries(prisma, {
         module: 'INVENTORY',
-        action: 'INVENTORY_SALE',
-      });
+        action: 'INVENTORY_PURCHASE_RECEIPT',
+      }, client as any);
 
-      // Both movement types returned despite action=INVENTORY_SALE
-      expect(resultActionFiltered.rows).toHaveLength(2);
-      expect(resultActionFiltered.rows[0].action).toBe('INVENTORY_SALE');
-      expect(resultActionFiltered.rows[1].action).toBe('INVENTORY_PURCHASE_RECEIPT');
+      const params = client.query.mock.calls[0][1] as unknown[];
+      expect(params).toContain('PURCHASE_RECEIPT');
     });
 
-    it('builds WHERE only from date filters, never from action', async () => {
-      mockQuery
+    it('does not add a movementType condition for an unknown action label', async () => {
+      const client = makeMockClient();
+      client.query
+        .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      await getLocalAuditEntries(prisma, {
+        module: 'INVENTORY',
+        action: 'UNKNOWN_LABEL',
+      }, client as any);
+
+      const sql = client.query.mock.calls[0][0] as string;
+      expect(sql).not.toContain('movementType');
+    });
+
+    it('builds WHERE from both date filters and the action filter', async () => {
+      const client = makeMockClient();
+      client.query
         .mockResolvedValueOnce({ rows: [{ count: 0 }] })
         .mockResolvedValueOnce({ rows: [] });
 
@@ -107,56 +92,36 @@ describe('getInventoryMovements (getLocalAuditEntries with module=INVENTORY)', (
         fromDate: '2026-01-01',
         toDate: '2026-01-31',
         action: 'INVENTORY_ADJUSTMENT_POSITIVE',
-      });
+      }, client as any);
 
-      const sql = capturedSQL();
-      // Date filter present
+      const sql = client.query.mock.calls[0][0] as string;
       expect(sql).toContain('"createdAt"');
-      // No action filter
-      expect(sql).not.toContain('movementType');
-      expect(sql).not.toContain('movement_type');
+      expect(sql).toContain('"movementType"');
     });
   });
 
-  // ── BUG #2: _prisma parameter is ignored; uses getLocalDatabase() ─────
+  // ── Client usage ─────────────────────────────────────────────────────
 
-  describe('BUG: _prisma parameter is ignored (uses getLocalDatabase instead)', () => {
-    it('calls getLocalDatabase() even though prisma was passed', async () => {
-      mockQuery
+  describe('PGlite client usage', () => {
+    it('queries through the passed client (COUNT then SELECT)', async () => {
+      const client = makeMockClient();
+      client.query
         .mockResolvedValueOnce({ rows: [{ count: 0 }] })
         .mockResolvedValueOnce({ rows: [] });
 
-      await getLocalAuditEntries(prisma, { module: 'INVENTORY' });
+      await getLocalAuditEntries(prisma, { module: 'INVENTORY' }, client as any);
 
-      expect(mockGetLocalDatabase).toHaveBeenCalledTimes(1);
-    });
-
-    it('calls getLocalDatabase() instead of using _prisma parameter', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ count: 0 }] })
-        .mockResolvedValueOnce({ rows: [] });
-
-      await getLocalAuditEntries(prisma, { module: 'INVENTORY' });
-
-      // BUG: _prisma is marked with underscore (unused) — the function
-      // bypasses it entirely and goes straight to PGlite via getLocalDatabase()
-      expect(mockGetLocalDatabase).toHaveBeenCalledTimes(1);
-    });
-
-    it('sends two SQL statements via client.query(): COUNT then SELECT', async () => {
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ count: 0 }] })
-        .mockResolvedValueOnce({ rows: [] });
-
-      await getLocalAuditEntries(prisma, { module: 'INVENTORY' });
-
-      expect(mockQuery).toHaveBeenCalledTimes(2);
-      // First call: COUNT
-      expect(capturedSQL()).toMatch(/COUNT/i);
-      // Verify data query (second call) — multiline SQL, use toContain
-      const dataSQL = mockQuery.mock.calls[1][0] as string;
+      expect(client.query).toHaveBeenCalledTimes(2);
+      expect(client.query.mock.calls[0][0]).toMatch(/COUNT/i);
+      const dataSQL = client.query.mock.calls[1][0] as string;
       expect(dataSQL).toContain('SELECT');
       expect(dataSQL).toContain('FROM "InventoryMovement"');
+    });
+
+    it('throws when INVENTORY is queried without a PGlite client', async () => {
+      await expect(
+        getLocalAuditEntries(prisma, { module: 'INVENTORY' }),
+      ).rejects.toThrow('PGlite client is required for INVENTORY module');
     });
   });
 
@@ -164,7 +129,8 @@ describe('getInventoryMovements (getLocalAuditEntries with module=INVENTORY)', (
 
   describe('parameterised SQL', () => {
     it('passes date range as positional parameters', async () => {
-      mockQuery
+      const client = makeMockClient();
+      client.query
         .mockResolvedValueOnce({ rows: [{ count: 0 }] })
         .mockResolvedValueOnce({ rows: [] });
 
@@ -172,15 +138,16 @@ describe('getInventoryMovements (getLocalAuditEntries with module=INVENTORY)', (
         module: 'INVENTORY',
         fromDate: '2026-06-01',
         toDate: '2026-06-30',
-      });
+      }, client as any);
 
-      const params = capturedParams();
+      const params = client.query.mock.calls[0][1] as unknown[];
       expect(params).toContain('2026-06-01');
       expect(params).toContain('2026-06-30T23:59:59.999Z');
     });
 
-    it('uses LIMIT and OFFSET in data query', async () => {
-      mockQuery
+    it('uses LIMIT and OFFSET in the data query', async () => {
+      const client = makeMockClient();
+      client.query
         .mockResolvedValueOnce({ rows: [{ count: 0 }] })
         .mockResolvedValueOnce({ rows: [] });
 
@@ -188,11 +155,11 @@ describe('getInventoryMovements (getLocalAuditEntries with module=INVENTORY)', (
         module: 'INVENTORY',
         limit: 25,
         offset: 10,
-      });
+      }, client as any);
 
       // Second call = data query
-      const dataSQL = mockQuery.mock.calls[1][0];
-      const dataParams = mockQuery.mock.calls[1][1];
+      const dataSQL = client.query.mock.calls[1][0] as string;
+      const dataParams = client.query.mock.calls[1][1] as unknown[];
       expect(dataSQL).toMatch(/LIMIT\s+\$\d+/i);
       expect(dataSQL).toMatch(/OFFSET\s+\$\d+/i);
       expect(dataParams).toContain(25);
@@ -203,7 +170,8 @@ describe('getInventoryMovements (getLocalAuditEntries with module=INVENTORY)', (
   // ── Edge: empty results ──────────────────────────────────────────────
 
   it('returns empty rows when no movements match', async () => {
-    mockQuery
+    const client = makeMockClient();
+    client.query
       .mockResolvedValueOnce({ rows: [{ count: 0 }] })
       .mockResolvedValueOnce({ rows: [] });
 
@@ -211,7 +179,7 @@ describe('getInventoryMovements (getLocalAuditEntries with module=INVENTORY)', (
       module: 'INVENTORY',
       fromDate: '2020-01-01',
       toDate: '2020-01-02',
-    });
+    }, client as any);
 
     expect(result.total).toBe(0);
     expect(result.rows).toHaveLength(0);

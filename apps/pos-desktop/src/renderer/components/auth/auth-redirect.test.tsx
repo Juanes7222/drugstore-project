@@ -30,6 +30,7 @@ vi.mock("@/store/hooks", () => ({
 vi.mock("../../../domain/auth/local-session.store", () => ({
   useLocalSessionStore: (selector: (s: typeof mockSessionState) => unknown) =>
     selector(mockSessionState),
+  hasMinRole: () => true,
 }));
 
 // ---------------------------------------------------------------------------

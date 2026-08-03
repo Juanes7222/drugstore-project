@@ -40,17 +40,18 @@ describe("CurrencyInput", () => {
     expect(screen.getByText("$")).toBeInTheDocument();
   });
 
-  it("calls onChange with the parsed integer when the value changes", () => {
+  it("calls onChange with the parsed amount in cents when the value changes", () => {
     const onChange = vi.fn();
 
     render(
       <CurrencyInput value={0} onChange={onChange} label="Amount" />,
     );
 
+    // The input is displayed in pesos, but onChange reports cents.
     const input = screen.getByLabelText("Amount");
     fireEvent.change(input, { target: { value: "5000" } });
 
-    expect(onChange).toHaveBeenCalledWith(5000);
+    expect(onChange).toHaveBeenCalledWith(500000);
   });
 
   it("calls onChange with 0 when the input is cleared", async () => {

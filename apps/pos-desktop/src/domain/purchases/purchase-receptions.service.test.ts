@@ -56,7 +56,7 @@ const makeMockPrisma = () => {
     },
     product: {
       findUnique: vi.fn(),
-      findMany: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       update: vi.fn(),
     },
     productCostHistory: {

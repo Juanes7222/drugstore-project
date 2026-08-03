@@ -57,6 +57,12 @@ const { onlineSessionRef } = vi.hoisted(() => ({
   onlineSessionRef: { current: null as LocalSession | null },
 }));
 
+// Shared mutable mock for useOnlineStatus so tests can flip the browser
+// online/offline state per test.
+const { useOnlineStatusMock } = vi.hoisted(() => ({
+  useOnlineStatusMock: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // vi.mock calls
 // ---------------------------------------------------------------------------
@@ -80,7 +86,7 @@ vi.mock("../store/hooks", () => ({
 }));
 
 vi.mock("./use-online-status", () => ({
-  useOnlineStatus: vi.fn(),
+  useOnlineStatus: useOnlineStatusMock,
 }));
 
 vi.mock("../store/slices/offline-auth-slice", () => ({
@@ -205,10 +211,7 @@ const makeOnlineSession = (overrides: Partial<LocalSession> = {}): LocalSession 
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
-
 describe("useOfflineAuth", () => {
-  let useOnlineStatusMock: ReturnType<typeof vi.fn<() => boolean>>;
-
   beforeEach(async () => {
     vi.clearAllMocks();
     // Reset mutable refs
@@ -220,8 +223,6 @@ describe("useOfflineAuth", () => {
     onlineSessionRef.current = null;
 
     // Default online status mock (browser is online)
-    void (await import("./use-online-status"));
-    useOnlineStatusMock = vi.fn() as unknown as typeof useOnlineStatusMock;
     useOnlineStatusMock.mockReturnValue(true);
 
     // Default auth service mock for getOfflineSessionStore
@@ -593,7 +594,7 @@ describe("useOfflineAuth", () => {
     });
 
     it("does not trigger blessing when browser was already online", async () => {
-      useOnlineStatusMock = vi.fn().mockReturnValue(true) as unknown as typeof useOnlineStatusMock;
+      useOnlineStatusMock.mockReturnValue(true);
 
       const pending = makeOfflineSession({ localSessionId: "sess-pending" });
       zustandSessionsMock.push(pending);

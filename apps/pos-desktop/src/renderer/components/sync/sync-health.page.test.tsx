@@ -255,7 +255,7 @@ describe("SyncHealthPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /run sync now/i }),
+          screen.getByRole("button", { name: /sincronizar ahora/i }),
         ).toBeInTheDocument();
       });
     });
@@ -273,11 +273,11 @@ describe("SyncHealthPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /run sync now/i }),
+          screen.getByRole("button", { name: /sincronizar ahora/i }),
         ).toBeInTheDocument();
       });
 
-      const syncButton = screen.getByRole("button", { name: /run sync now/i });
+      const syncButton = screen.getByRole("button", { name: /sincronizar ahora/i });
       fireEvent.click(syncButton);
 
       await waitFor(() => {
@@ -300,7 +300,7 @@ describe("SyncHealthPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /test connection/i }),
+          screen.getByRole("button", { name: /probar conexión/i }),
         ).toBeInTheDocument();
       });
     });
@@ -310,11 +310,11 @@ describe("SyncHealthPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /test connection/i }),
+          screen.getByRole("button", { name: /probar conexión/i }),
         ).toBeInTheDocument();
       });
 
-      const testButton = screen.getByRole("button", { name: /test connection/i });
+      const testButton = screen.getByRole("button", { name: /probar conexión/i });
       fireEvent.click(testButton);
 
       await waitFor(() => {
@@ -332,10 +332,10 @@ describe("SyncHealthPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByRole("button", { name: /export csv/i }),
+          screen.getByRole("button", { name: /exportar csv/i }),
         ).toBeInTheDocument();
         expect(
-          screen.getByRole("button", { name: /export json/i }),
+          screen.getByRole("button", { name: /exportar json/i }),
         ).toBeInTheDocument();
       });
     });
@@ -347,7 +347,7 @@ describe("SyncHealthPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByLabelText(/show discarded/i),
+          screen.getByLabelText(/mostrar descartados/i),
         ).toBeInTheDocument();
       });
     });
@@ -357,7 +357,7 @@ describe("SyncHealthPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByLabelText(/retry without server check/i),
+          screen.getByLabelText(/reintentar sin verificar servidor/i),
         ).toBeInTheDocument();
       });
     });

@@ -161,7 +161,7 @@ describe("PrintersPage", () => {
     render(<PrintersPage />);
 
     await waitFor(() => {
-      const section = screen.getByLabelText("Impresoras");
+      const section = screen.getByLabelText("Impresoras configuradas");
       expect(section).toBeInTheDocument();
     });
   });

@@ -200,8 +200,9 @@ describe('AuditLogView', () => {
       render(<AuditLogView />);
 
       await waitFor(() => {
+        // Without filters the empty state uses the generic message.
         expect(
-          screen.getByText('No se encontraron eventos para los filtros seleccionados'),
+          screen.getByText('No hay eventos'),
         ).toBeInTheDocument();
         expect(
           screen.getByText('Intenta ajustar las fechas o cambiar el tipo de evento'),
@@ -217,7 +218,9 @@ describe('AuditLogView', () => {
 
       render(<AuditLogView />);
 
-      expect(screen.getByText('Cargando...')).toBeInTheDocument();
+      // Loading state renders skeleton cards (pulse animation), not a
+      // literal "Cargando..." text.
+      expect(document.querySelector('.animate-pulse')).not.toBeNull();
     });
   });
 
@@ -255,7 +258,7 @@ describe('AuditLogView', () => {
         screen.getByRole('article', { name: /Inicio de sesión/ }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole('article', { name: /Autorización step-up/ }),
+        screen.getByRole('article', { name: /Autorización de supervisor/ }),
       ).toBeInTheDocument();
     });
   });
@@ -454,6 +457,7 @@ describe('AuditLogView', () => {
         expect(mockGetLocalAuditEntries).toHaveBeenLastCalledWith(
           expect.anything(),
           expect.objectContaining({ action: 'AUTH_LOGIN_SUCCESS' }),
+          undefined,
         );
       });
     });
@@ -487,6 +491,7 @@ describe('AuditLogView', () => {
         expect(mockGetLocalAuditEntries).toHaveBeenLastCalledWith(
           expect.anything(),
           expect.objectContaining({ fromDate: '2026-07-01' }),
+          undefined,
         );
       });
     });
@@ -514,6 +519,7 @@ describe('AuditLogView', () => {
         expect(mockGetLocalAuditEntries).toHaveBeenLastCalledWith(
           expect.anything(),
           expect.objectContaining({ toDate: '2026-07-31' }),
+          undefined,
         );
       });
     });

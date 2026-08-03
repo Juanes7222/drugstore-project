@@ -11,12 +11,21 @@ import type { SyncHttpClient } from "../catalog/catalog-sync.service";
 
 const makeMockPrisma = () => {
   const tx: any = {
-    client: { upsert: vi.fn() },
+    client: {
+      upsert: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    clientClassification: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   };
 
   const prisma = {
     $transaction: vi.fn(async (cb: (t: any) => unknown) => cb(tx)),
     client: tx.client,
+    clientClassification: tx.clientClassification,
   } as any;
 
   return { prisma, tx };
@@ -85,10 +94,11 @@ describe("ClientPullService", () => {
 
       await service.pullClients();
 
-      expect(tx.client.upsert).toHaveBeenCalledWith(
+      // No existing local client matches the business key, so the service
+      // inserts the row via create.
+      expect(tx.client.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: "client-1" },
-          create: expect.objectContaining({
+          data: expect.objectContaining({
             fullName: "Juan Pérez",
             identificationNumber: "12345678",
           }),
@@ -132,8 +142,9 @@ describe("ClientPullService", () => {
 
       await service.pullClients();
 
-      // No upserts should have happened
-      expect(tx.client.upsert).not.toHaveBeenCalled();
+      // No writes should have happened
+      expect(tx.client.create).not.toHaveBeenCalled();
+      expect(tx.client.update).not.toHaveBeenCalled();
 
       vi.unstubAllGlobals();
     });

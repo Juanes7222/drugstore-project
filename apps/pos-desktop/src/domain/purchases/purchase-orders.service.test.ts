@@ -35,6 +35,9 @@ const makeMockPrisma = () => {
     purchaseOrderItem: {
       findMany: vi.fn(),
     },
+    product: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     syncQueue: {
       create: vi.fn(),
       findFirst: vi.fn(),
@@ -55,6 +58,7 @@ const makeMockPrisma = () => {
     supplier: tx.supplier,
     purchaseOrder: tx.purchaseOrder,
     purchaseOrderItem: tx.purchaseOrderItem,
+    product: tx.product,
     syncQueue: tx.syncQueue,
   } as any;
 

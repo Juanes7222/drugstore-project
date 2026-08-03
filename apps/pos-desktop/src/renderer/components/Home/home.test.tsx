@@ -482,25 +482,21 @@ describe("Home", () => {
       ).toBeInTheDocument();
     });
 
-    // NOTE: Accountant-specific section (Gestión fiscal) does NOT render because
-    // ACCOUNTANT (level 1) passes hasMinRole(MANAGER, level 1), so
-    // isManagerOrAbove is true and !isManagerOrAbove blocks the accountant
-    // section. The MANAGER section renders instead. This is existing behaviour
-    // in the source code – the hierarchy lumps ACCOUNTANT with MANAGER.
-    // If the accountant-specific section should appear for ACCOUNTANT role
-    // without the manager section, the hierarchy or role check logic needs
-    // updating in home.tsx.
+    // NOTE: ACCOUNTANT (level 1) passes hasMinRole(MANAGER, level 1), so
+    // isManagerOrAbove is true. home.tsx explicitly excludes ACCOUNTANT from
+    // the manager section (role !== "ACCOUNTANT"), and the accountant section
+    // is gated behind !isManagerOrAbove — which is false for ACCOUNTANT. As a
+    // result neither section renders for the ACCOUNTANT role.
 
-    it("shows manager section instead of accountant section (hierarchy quirk)", () => {
+    it("does not render the manager section for ACCOUNTANT (hierarchy quirk)", () => {
       renderHome();
 
-      // Manager section renders because ACCOUNTANT (level 1) >= MANAGER (level 1)
       expect(
-        screen.getByText("Usuarios activos"),
-      ).toBeInTheDocument();
+        screen.queryByText("Usuarios activos"),
+      ).not.toBeInTheDocument();
       expect(
-        screen.getByText("Actividad reciente"),
-      ).toBeInTheDocument();
+        screen.queryByText("Actividad reciente"),
+      ).not.toBeInTheDocument();
     });
 
     it("does not show the fiscal management card (accountant section blocked)", () => {

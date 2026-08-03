@@ -234,7 +234,7 @@ describe("ReturnsService", () => {
       tx.sale.findFirst.mockResolvedValue({
         id: "sale-1",
         localNumber: 1n,
-        createdAt: new Date("2026-07-10"),
+        startedAt: new Date("2026-07-10"),
         clientNameSnapshot: "Juan Pérez",
         workstationId: "ws-1",
         totalAmount: new Prisma.Decimal(11900),

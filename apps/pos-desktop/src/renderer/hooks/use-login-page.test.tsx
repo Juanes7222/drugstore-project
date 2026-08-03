@@ -64,6 +64,7 @@ vi.mock("@/store/hooks", () => ({
 vi.mock("../../domain/auth/local-session.store", () => ({
   useLocalSessionStore: (selector: (s: { session: LocalSession | null }) => unknown) =>
     selector({ session: mockSessionRef.current }),
+  hasMinRole: () => true,
 }));
 
 vi.mock("./use-offline-auth", () => ({
@@ -76,6 +77,29 @@ vi.mock("./use-offline-auth", () => ({
 vi.mock("../../domain/auth/auth.service", () => ({
   createAuthService: () => mockAuthService,
 }));
+
+// Mock the local user cache so the login flow skips PGlite and goes
+// straight to the server auth path (the cache queries would otherwise
+// attempt a real PGlite initialisation in jsdom and fail).
+const { mockUserCache } = vi.hoisted(() => ({
+  mockUserCache: {
+    getUsers: vi.fn().mockResolvedValue([]),
+    getUser: vi.fn().mockResolvedValue(null),
+    getUserByUsername: vi.fn().mockResolvedValue(null),
+    verifyPassword: vi.fn().mockResolvedValue({ valid: false }),
+    recordLogin: vi.fn(),
+  },
+}));
+
+vi.mock("../../domain/auth/user-cache.service", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../../domain/auth/user-cache.service")
+  >();
+  return {
+    ...actual,
+    createUserCacheService: () => mockUserCache,
+  };
+});
 
 vi.mock("@infra/config", () => ({
   API_BASE_URL: "http://test",
@@ -179,7 +203,7 @@ describe("useLoginPage", () => {
         undefined,
         "pos-desktop",
       );
-      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("sales"));
+      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
       expect(result.current.isLoading).toBe(false);
     });
 
@@ -263,7 +287,7 @@ describe("useLoginPage", () => {
         undefined,
         "pos-desktop",
       );
-      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("sales"));
+      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
       expect(result.current.isLoading).toBe(false);
     });
 
@@ -364,7 +388,7 @@ describe("useLoginPage", () => {
 
       expect(result.current.requiresTwoFactor).toBe(false);
       expect(result.current.challengeToken).toBeNull();
-      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("sales"));
+      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
     });
   });
 
@@ -397,7 +421,7 @@ describe("useLoginPage", () => {
   });
 
   describe("session redirect", () => {
-    it("dispatches setActiveScreen('sales') when session becomes non-null", async () => {
+    it("dispatches setActiveScreen('home') when session becomes non-null", async () => {
       const { rerender } = renderHook(() => useLoginPage());
 
       // Initially no dispatch
@@ -410,7 +434,7 @@ describe("useLoginPage", () => {
       rerender();
 
       await waitFor(() => {
-        expect(dispatch).toHaveBeenCalledWith(setActiveScreen("sales"));
+        expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
       });
     });
 

@@ -26,9 +26,9 @@ describe("store configuration", () => {
     expect(state.payment.cashReceivedCents).toBe(0);
   });
 
-  it("initialises ui with sales as the active screen and idle completion", () => {
+  it("initialises ui with home as the active screen and idle completion", () => {
     const state = store.getState() as RootState;
-    expect(state.ui.activeScreen).toBe("sales");
+    expect(state.ui.activeScreen).toBe("home");
     expect(state.ui.saleCompletionPhase).toBe("idle");
   });
 

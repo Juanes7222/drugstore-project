@@ -53,7 +53,7 @@ describe("AvatarGrid", () => {
 
     expect(screen.getByText("Administrador del Sistema")).toBeInTheDocument();
     expect(screen.getByText("María Rodríguez")).toBeInTheDocument();
-    expect(screen.getByText("ADMIN")).toBeInTheDocument();
+    expect(screen.getByText("Administrador")).toBeInTheDocument();
     expect(screen.getByText("Cajero")).toBeInTheDocument();
   });
 

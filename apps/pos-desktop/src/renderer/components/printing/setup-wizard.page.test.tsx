@@ -191,6 +191,6 @@ describe("SetupWizardPage", () => {
     render(<SetupWizardPage onComplete={vi.fn()} />);
 
     // Welcome should be visible, and it's the current step so it has bold
-    expect(screen.getByText("welcome")).toBeInTheDocument();
+    expect(screen.getByText("Bienvenida")).toBeInTheDocument();
   });
 });

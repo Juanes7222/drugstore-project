@@ -59,13 +59,11 @@ describe('formatAge', () => {
     expect(formatAge(futureDate)).toBe('just now');
   });
 
-  it('returns "NaNd ago" for an empty string (NaN diff)', () => {
+  it('returns "just now" for an empty string (invalid date guard)', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-14T12:00:00.000Z'));
 
-    const result = formatAge('');
-    expect(result).toContain('NaN');
-    // The function does not guard against invalid dates;
-    // this test documents the current behaviour.
+    // The function guards against invalid dates and falls back to "just now".
+    expect(formatAge('')).toBe('just now');
   });
 });

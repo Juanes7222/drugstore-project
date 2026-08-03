@@ -90,18 +90,18 @@ describe("SetupWizardStepJobAssignment", () => {
       />,
     );
 
-    expect(screen.getByText("Recibos de venta")).toBeInTheDocument();
+    expect(screen.getByText("Recibo de venta")).toBeInTheDocument();
     expect(
-      screen.getByText("Facturas electrónicas"),
+      screen.getByText("Factura electrónica"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Notas crédito")).toBeInTheDocument();
+    expect(screen.getByText("Nota crédito")).toBeInTheDocument();
     expect(
-      screen.getByText("Recibos de contingencia"),
+      screen.getByText("Recibo contingencia"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Reportes de inventario"),
+      screen.getByText("Reporte inventario"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Cierres de turno")).toBeInTheDocument();
+    expect(screen.getByText("Cierre de turno")).toBeInTheDocument();
   });
 
   it("shows suggested badge for default assignments", () => {
@@ -131,7 +131,7 @@ describe("SetupWizardStepJobAssignment", () => {
       />,
     );
 
-    const checkbox = screen.getByLabelText("Facturas electrónicas");
+    const checkbox = screen.getByLabelText("Factura electrónica");
     await userEvent.click(checkbox);
 
     expect(setState).toHaveBeenCalled();

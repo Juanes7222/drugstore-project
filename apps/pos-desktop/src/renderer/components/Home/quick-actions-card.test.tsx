@@ -70,7 +70,7 @@ describe("QuickActionsCard", () => {
   // ── CASHIER actions ──────────────────────────────────────────────
 
   describe("CASHIER role", () => {
-    it("shows new-sale, new-return, inventory, and search-product buttons", () => {
+    it("shows new-sale, new-return, and search-product buttons", () => {
       renderCard();
 
       expect(
@@ -80,11 +80,12 @@ describe("QuickActionsCard", () => {
         screen.getByRole("button", { name: /nueva devolución/i }),
       ).toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: /inventario/i }),
-      ).toBeInTheDocument();
-      expect(
         screen.getByRole("button", { name: /buscar producto/i }),
       ).toBeInTheDocument();
+      // Inventory is INVENTORY_ASSISTANT+ only — not offered to CASHIER
+      expect(
+        screen.queryByRole("button", { name: /inventario/i }),
+      ).not.toBeInTheDocument();
     });
 
     it("does not show users, audit, sync, or config for CASHIER", () => {

@@ -134,6 +134,9 @@ const mockBackupService = {
   listBackups: vi.fn(),
   getHealth: vi.fn(),
   getStatus: vi.fn(),
+  setUploadWorker: vi.fn(),
+  kickUploadWorker: vi.fn(),
+  getUploadQueue: vi.fn(),
 };
 
 vi.mock("../../domain/backup/backup.service", () => ({
@@ -180,6 +183,7 @@ vi.mock("../../config/fiscal", () => ({
   isContingencyTechKeyPlaceholder: vi.fn(() => false),
   CONTINGENCY_TECH_KEY: "test-tech-key-not-placeholder",
   CONTINGENCY_TRANSMISSION_WINDOW_HOURS: 48,
+  IS_DEV_MODE: false,
 }));
 
 // ---------------------------------------------------------------------------

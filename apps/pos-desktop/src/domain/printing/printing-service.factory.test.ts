@@ -193,7 +193,6 @@ describe("createPrintingServices", () => {
     expect(createPrinterHealthService).toHaveBeenCalledWith(
       mockPrinterConfig,
       mockPrintQueue,
-      mockIsOnline,
     );
   });
 
@@ -224,7 +223,7 @@ describe("createPrintingServices", () => {
     expect(createPrintingMetricsService).toHaveBeenCalledWith(mockPrisma);
   });
 
-  it("defaults isOnline to a function when omitted", () => {
+  it("does not require an isOnline callback", () => {
     createPrintingServices({
       prisma: mockPrisma as any,
       io: {
@@ -234,9 +233,8 @@ describe("createPrintingServices", () => {
     });
 
     expect(createPrinterHealthService).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.any(Function),
+      mockPrinterConfig,
+      mockPrintQueue,
     );
   });
 

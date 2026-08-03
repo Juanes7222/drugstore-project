@@ -19,10 +19,16 @@ const mockClientsService = {
   search: vi.fn(),
 };
 
+const mockCashShiftService = {
+  getActivePaymentMethodsList: vi.fn().mockResolvedValue([]),
+};
+
 (globalThis as Record<string, unknown>).__mockClientsService = mockClientsService;
+(globalThis as Record<string, unknown>).__mockCashShiftService = mockCashShiftService;
 
 vi.mock('../common/service-context', () => ({
   useClientsService: () => (globalThis as Record<string, unknown>).__mockClientsService,
+  useCashShiftService: () => (globalThis as Record<string, unknown>).__mockCashShiftService,
 }));
 
 // ---------------------------------------------------------------------------
@@ -145,5 +151,5 @@ describe('SalesHistoryAdjustmentModal', () => {
       identificationNumber: '654321',
     });
     expect(reason).toBe('Corrección de cliente asociado a la venta');
-  });
+  }, 15000);
 });

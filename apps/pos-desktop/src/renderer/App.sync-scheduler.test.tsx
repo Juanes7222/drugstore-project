@@ -113,6 +113,8 @@ const mockServices: Record<string, unknown> = {
   customerDisplayService: { showWelcome: vi.fn() },
   updateService: { checkForUpdates: vi.fn() },
   syncScheduler: mockSyncScheduler,
+  cashShiftService: { hydrateStore: vi.fn() },
+  reportScheduler: { start: vi.fn() },
 };
 
 // Replace ServiceProvider with a pass-through and useServiceContext

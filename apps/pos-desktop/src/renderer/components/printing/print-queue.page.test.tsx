@@ -149,11 +149,20 @@ describe("PrintQueuePage", () => {
       expect(screen.getByText("Todos")).toBeInTheDocument();
     });
 
-    // Filter labels use the raw filter name as default i18n value
-    expect(screen.getByText("Pending")).toBeInTheDocument();
-    expect(screen.getByText("Failed")).toBeInTheDocument();
-    expect(screen.getByText("Completed")).toBeInTheDocument();
-    expect(screen.getByText("Discarded")).toBeInTheDocument();
+    // Filter buttons (Spanish labels; summary-bar spans share the same
+    // text, so query by role to target the actual buttons)
+    expect(
+      screen.getByRole("button", { name: "Pendientes" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Fallidos" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Completados" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Descartados" }),
+    ).toBeInTheDocument();
   });
 
   it("renders the refresh button", async () => {

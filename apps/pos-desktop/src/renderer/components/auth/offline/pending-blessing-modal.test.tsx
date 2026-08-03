@@ -67,8 +67,13 @@ vi.mock("motion/react", () => ({
       const { initial, animate, exit, transition, ...safeProps } = props;
       return <span {...safeProps}>{children}</span>;
     },
+    svg: ({ children, ...props }: any) => {
+      const { initial, animate, exit, transition, ...safeProps } = props;
+      return <svg {...safeProps}>{children}</svg>;
+    },
   },
   AnimatePresence: ({ children }: any) => <>{children}</>,
+  useReducedMotion: () => false,
 }));
 
 vi.mock("../../../hooks/use-offline-auth", () => ({

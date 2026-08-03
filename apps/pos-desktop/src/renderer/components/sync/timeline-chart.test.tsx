@@ -3,6 +3,26 @@ import { render, screen } from "@testing-library/react";
 import { TimelineChart } from "./timeline-chart";
 import type { HealthTimelineBucket } from "../../../domain/sync/sync-metrics.service";
 
+// ECharts renders an empty <svg> in jsdom, so chart internals are asserted
+// on the option object passed to echarts-for-react instead.
+const capturedOptions: Array<Record<string, any>> = [];
+
+vi.mock("echarts-for-react", () => ({
+  default: ({ option }: { option: Record<string, any> }) => {
+    capturedOptions.push(option);
+    return <div data-testid="echarts-chart" />;
+  },
+}));
+
+/** Last captured option, asserted to exist (chart was rendered). */
+function lastOption(): Record<string, any> {
+  const option = capturedOptions.at(-1);
+  if (!option) {
+    throw new Error("Expected the ECharts option to have been captured");
+  }
+  return option;
+}
+
 const mockBuckets: HealthTimelineBucket[] = [
   { id: "2026-07-14T08:00:00.000Z", completed: 10, nonCompleted: 2 },
   { id: "2026-07-14T09:00:00.000Z", completed: 5, nonCompleted: 1 },
@@ -14,6 +34,7 @@ const mockBuckets: HealthTimelineBucket[] = [
 describe("TimelineChart", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedOptions.length = 0;
   });
 
   // ── Empty state ───────────────────────────────────────────────────
@@ -22,14 +43,16 @@ describe("TimelineChart", () => {
     render(<TimelineChart data={[]} />);
 
     expect(
-      screen.getByText("No timeline data available"),
+      screen.getByText("Sin datos de actividad"),
     ).toBeInTheDocument();
   });
 
-  it("does not render SVG when data is empty", () => {
-    const { container } = render(<TimelineChart data={[]} />);
+  it("does not render the chart when data is empty", () => {
+    render(<TimelineChart data={[]} />);
 
-    expect(container.querySelector("svg")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("echarts-chart"),
+    ).not.toBeInTheDocument();
   });
 
   // ── Render structure ──────────────────────────────────────────────
@@ -38,83 +61,85 @@ describe("TimelineChart", () => {
     render(<TimelineChart data={mockBuckets} />);
 
     expect(
-      screen.getByText("Sync Timeline (24h)"),
+      screen.getByText("Actividad de sincronización (24h)"),
     ).toBeInTheDocument();
   });
 
-  it("renders an SVG element with chart data", () => {
-    const { container } = render(
-      <TimelineChart data={mockBuckets} />,
-    );
+  it("passes the chart data to ECharts", () => {
+    render(<TimelineChart data={mockBuckets} />);
 
-    const svg = container.querySelector("svg");
-    expect(svg).toBeInTheDocument();
-    expect(svg).toHaveAttribute("role", "img");
-    expect(svg).toHaveAttribute(
-      "aria-label",
-      "Sync activity timeline chart",
-    );
+    const option = lastOption();
+    expect(option.series).toHaveLength(2);
+    expect(option.series[0].data).toEqual([10, 5, 0, 8, 3]);
+    expect(option.series[1].data).toEqual([2, 1, 0, 0, 3]);
   });
 
-  // ── Legend ─────────────────────────────────────────────────────────
+  // ── Legend ────────────────────────────────────────────────────────
 
   it("renders legend labels", () => {
     render(<TimelineChart data={mockBuckets} />);
 
-    expect(screen.getByText("Completed")).toBeInTheDocument();
-    expect(screen.getByText("Failed")).toBeInTheDocument();
+    const option = lastOption();
+    expect(option.legend.data.map((d: any) => d.name)).toEqual([
+      "Completadas",
+      "Fallidas",
+    ]);
   });
 
-  // ── Y-axis ────────────────────────────────────────────────────────
+  // ── Axes ──────────────────────────────────────────────────────────
 
-  it("renders y-axis labels based on max value", () => {
+  it("builds x-axis labels from bucket hour boundaries", () => {
     render(<TimelineChart data={mockBuckets} />);
 
-    // max value is 10 (from bucket 0: completed=10)
-    // Y-axis fractions: 0, 0.25, 0.5, 0.75, 1 → 0, 3, 5, 8, 10
-    expect(screen.getByText("0")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
-    expect(screen.getByText("5")).toBeInTheDocument();
-    expect(screen.getByText("8")).toBeInTheDocument();
-    expect(screen.getByText("10")).toBeInTheDocument();
+    const option = lastOption();
+    expect(option.xAxis.data).toEqual([
+      "08:00",
+      "09:00",
+      "10:00",
+      "11:00",
+      "12:00",
+    ]);
+    // Show every 4th label to avoid crowding
+    expect(option.xAxis.axisLabel.interval).toBe(3);
   });
 
-  // ── X-axis labels ─────────────────────────────────────────────────
-
-  it("renders x-axis labels for every 4th bucket", () => {
+  it("configures the y-axis as a value axis", () => {
     render(<TimelineChart data={mockBuckets} />);
 
-    // Buckets at index 0, 4 get labels (idx % 4 === 0)
-    // Bucket 0: "2026-07-14T08:00:00.000Z" → length >= 13 → slice(11,16) = "08:00"
-    // Bucket 4: "2026-07-14T12:00:00.000Z" → slice(11,16) = "12:00"
-    expect(screen.getByText("08:00")).toBeInTheDocument();
-    expect(screen.getByText("12:00")).toBeInTheDocument();
+    const option = lastOption();
+    expect(option.yAxis.type).toBe("value");
+    expect(option.yAxis.minInterval).toBe(1);
   });
 
-  it("does not render x-axis labels for non-4th buckets", () => {
+  // ── Bar series styling ────────────────────────────────────────────
+
+  it("renders green bars for completed and red bars for non-completed", () => {
     render(<TimelineChart data={mockBuckets} />);
 
-    // Bucket 1 (idx=1), 2 (idx=2), 3 (idx=3) should not have labels
-    expect(screen.queryByText("09:00")).not.toBeInTheDocument();
-    expect(screen.queryByText("10:00")).not.toBeInTheDocument();
-    expect(screen.queryByText("11:00")).not.toBeInTheDocument();
+    const option = lastOption();
+    expect(option.series[0].itemStyle.color).toBe("#0B6E6B");
+    expect(option.series[1].itemStyle.color).toBe("#D32F2F");
+  });
+
+  it("keeps the completed series for every bucket even when completed is 0", () => {
+    render(<TimelineChart data={mockBuckets} />);
+
+    const option = lastOption();
+    expect(option.series[0].data).toHaveLength(5);
   });
 
   // ── Edge cases ────────────────────────────────────────────────────
 
-  it("handles single bucket", () => {
+  it("handles a single bucket", () => {
     const singleBucket: HealthTimelineBucket[] = [
       { id: "2026-07-14T08:00:00.000Z", completed: 5, nonCompleted: 1 },
     ];
 
-    const { container } = render(
-      <TimelineChart data={singleBucket} />,
-    );
+    render(<TimelineChart data={singleBucket} />);
 
-    const svg = container.querySelector("svg");
-    expect(svg).toBeInTheDocument();
-    // X-axis label at index 0
-    expect(screen.getByText("08:00")).toBeInTheDocument();
+    const option = lastOption();
+    expect(option.xAxis.data).toEqual(["08:00"]);
+    expect(option.series[0].data).toEqual([5]);
   });
 
   it("handles all-zero buckets without crashing", () => {
@@ -123,17 +148,14 @@ describe("TimelineChart", () => {
       { id: "2026-07-14T09:00:00.000Z", completed: 0, nonCompleted: 0 },
     ];
 
-    const { container } = render(
-      <TimelineChart data={zeroBuckets} />,
-    );
+    render(<TimelineChart data={zeroBuckets} />);
 
-    const svg = container.querySelector("svg");
-    expect(svg).toBeInTheDocument();
-    // Y-axis has multiple "0" labels when maxValue rounds; just check SVG renders
-    expect(svg).toBeInTheDocument();
+    const option = lastOption();
+    expect(option.series[0].data).toEqual([0, 0]);
+    expect(option.series[1].data).toEqual([0, 0]);
   });
 
-  it("uses short bucket id format when length < 13", () => {
+  it("passes short bucket ids through as labels", () => {
     const shortIdBuckets: HealthTimelineBucket[] = [
       { id: "08:00", completed: 5, nonCompleted: 1 },
       { id: "09:00", completed: 3, nonCompleted: 0 },
@@ -144,35 +166,13 @@ describe("TimelineChart", () => {
 
     render(<TimelineChart data={shortIdBuckets} />);
 
-    // idx=0 → "08:00" slice(0,5) = "08:00"
-    // idx=4 → "12:00" slice(0,5) = "12:00"
-    expect(screen.getByText("08:00")).toBeInTheDocument();
-    expect(screen.getByText("12:00")).toBeInTheDocument();
-  });
-
-  it("renders green bars for completed and red bars for non-completed", () => {
-    const { container } = render(
-      <TimelineChart data={mockBuckets} />,
-    );
-
-    const greenRects = container.querySelectorAll("rect.fill-green-400");
-    const redRects = container.querySelectorAll("rect.fill-red-400");
-
-    // 5 buckets all have completed bars (green) + 1 green legend rect = 6
-    expect(greenRects.length).toBe(6);
-    // 3 buckets have nonCompleted > 0 (indices 0, 1, 4) + 1 red legend rect = 4
-    expect(redRects.length).toBe(4);
-  });
-
-  it("renders a completed bar rect for each bucket even when completed is 0", () => {
-    const { container } = render(
-      <TimelineChart data={mockBuckets} />,
-    );
-
-    // Every bucket renders a green rect (completed bar) even if height is 0
-    // 5 buckets + 1 legend = 6 rects (excluding the legend one counted above)
-    // The legend uses rect too, so total green rects = 5 bars + 1 legend = 6
-    const allGreenRects = container.querySelectorAll("rect.fill-green-400");
-    expect(allGreenRects.length).toBeGreaterThanOrEqual(5);
+    const option = lastOption();
+    expect(option.xAxis.data).toEqual([
+      "08:00",
+      "09:00",
+      "10:00",
+      "11:00",
+      "12:00",
+    ]);
   });
 });

@@ -50,6 +50,7 @@ vi.mock("../../../domain/auth/local-session.store", () => ({
   useLocalSessionStore: (
     selector: (s: { session: unknown }) => unknown,
   ) => selector({ session: mockSessionRef.current }),
+  hasMinRole: () => true,
 }));
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,10 @@ const createMockReturn = (overrides?: Record<string, unknown>) => ({
   challengeToken: null as string | null,
   countdown: 0,
   authService: { login: vi.fn(), completeTwoFactor: vi.fn() } as unknown as AuthService,
+  localUsers: [],
+  isOfflineMode: false,
+  offlineErrorMessage: null as string | null,
+  offlineLoginSkipped2fa: false,
   setSelectedUser: vi.fn(),
   handleUserSelect: vi.fn(),
   handlePinComplete: vi.fn(),

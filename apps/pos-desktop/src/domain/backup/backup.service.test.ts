@@ -27,9 +27,12 @@ vi.mock("../../infrastructure/startup-health", () => ({
   runLocalDatabaseIntegrityCheck: vi.fn(),
 }));
 
-// Mock local-database (for restoreBackup)
+// Mock local-database (for createBackup / restoreBackup)
 vi.mock("../../infrastructure/local-database", () => ({
   closeLocalDatabase: vi.fn(),
+  getLocalDatabase: vi.fn().mockResolvedValue({
+    client: { query: vi.fn().mockResolvedValue({ rows: [] }) },
+  }),
 }));
 
 // Mock PGlite (used in verifyBackup) — must be callable with `new`
@@ -46,6 +49,9 @@ describe("BackupService", () => {
 
   beforeEach(() => {
     mockInvoke.mockReset();
+    // The service fire-and-forgets the temp-file cleanup with `.catch()`,
+    // so the mock must always resolve a promise for unmatched calls.
+    mockInvoke.mockImplementation(async () => undefined);
     vi.clearAllMocks();
     service = createBackupService();
   });
@@ -78,7 +84,9 @@ describe("BackupService", () => {
         uploadedAt: null,
         status: "HEALTHY",
       };
-      mockInvoke.mockResolvedValueOnce(mockMetadata);
+      mockInvoke
+        .mockResolvedValueOnce(undefined) // write_data_dir_file_command
+        .mockResolvedValueOnce(mockMetadata); // create_backup_command
 
       const result = await service.createBackup({
         reason: "MANUAL",
@@ -352,27 +360,20 @@ describe("BackupService", () => {
 
   describe("verifyBackup", () => {
     it("returns passed=true when hash matches and integrity passes", async () => {
-      const mockIntegrityReport = {
-        passed: true,
-        expectedTables: ["Client"],
-        actualCounts: { Client: 5 },
-        missingTables: [],
-      };
-
       mockInvoke
         .mockResolvedValueOnce({ hashMatched: true }) // verify_backup_command
-        .mockResolvedValueOnce({ tempDataDir: "/tmp/backup-check" }) // copy_backup_to_temp_command
-        .mockResolvedValueOnce(undefined); // remove_temp_dir_command
-
-      const { runLocalDatabaseIntegrityCheck } = await import("../../infrastructure/startup-health");
-      (runLocalDatabaseIntegrityCheck as any).mockResolvedValue(mockIntegrityReport);
+        .mockResolvedValueOnce(JSON.stringify({ // read_backup_dump_command
+          schemaVersion: 1,
+          createdAt: "2026-07-13T10:00:00Z",
+          tables: { Client: [{ id: "c1" }], Sale: [] },
+        }));
 
       const result = await service.verifyBackup("backup-1");
 
       expect(result.passed).toBe(true);
       expect(result.hashMatched).toBe(true);
       expect(result.integrityCheckPassed).toBe(true);
-      expect(result.tableCounts).toEqual({ Client: 5 });
+      expect(result.tableCounts).toEqual({ Client: 1, Sale: 0 });
       expect(mockInvoke).toHaveBeenCalledWith("verify_backup_command", { id: "backup-1" });
     });
 
@@ -389,63 +390,42 @@ describe("BackupService", () => {
       expect(mockInvoke).toHaveBeenCalledWith("mark_backup_corrupt_command", { id: "backup-no-hash" });
     });
 
-    it("marks backup as corrupt when integrity check fails", async () => {
-      const mockIntegrityReport = {
-        passed: false,
-        expectedTables: ["Client", "Sale"],
-        actualCounts: { Client: 5 },
-        missingTables: ["Sale"],
-        error: undefined,
-      };
-
+    it("marks backup as corrupt when the dump JSON is unreadable", async () => {
       mockInvoke
         .mockResolvedValueOnce({ hashMatched: true })
-        .mockResolvedValueOnce({ tempDataDir: "/tmp/backup-check" })
-        .mockResolvedValueOnce(undefined) // remove_temp_dir_command
+        .mockResolvedValueOnce("not-valid-json") // read_backup_dump_command
         .mockResolvedValueOnce(undefined); // mark_backup_corrupt_command
-
-      const { runLocalDatabaseIntegrityCheck } = await import("../../infrastructure/startup-health");
-      (runLocalDatabaseIntegrityCheck as any).mockResolvedValue(mockIntegrityReport);
 
       const result = await service.verifyBackup("backup-2");
 
       expect(result.passed).toBe(false);
       expect(result.hashMatched).toBe(true);
       expect(result.integrityCheckPassed).toBe(false);
-      expect(result.error).toContain("Missing or unreadable tables");
+      expect(result.error).toContain("not valid JSON");
       expect(mockInvoke).toHaveBeenCalledWith("mark_backup_corrupt_command", { id: "backup-2" });
     });
 
-    it("handles PGlite failure during integrity check gracefully", async () => {
+    it("handles a failure while reading the dump gracefully", async () => {
       mockInvoke
         .mockResolvedValueOnce({ hashMatched: true })
-        .mockResolvedValueOnce({ tempDataDir: "/tmp/backup-check" })
-        .mockResolvedValueOnce(undefined) // remove_temp_dir_command
-        .mockResolvedValueOnce(undefined); // mark_backup_corrupt_command
-
-      const { runLocalDatabaseIntegrityCheck } = await import("../../infrastructure/startup-health");
-      (runLocalDatabaseIntegrityCheck as any).mockRejectedValue(new Error("Corrupt file"));
+        .mockRejectedValueOnce(new Error("Corrupt file")); // read_backup_dump_command
 
       const result = await service.verifyBackup("backup-3");
 
       expect(result.passed).toBe(false);
       expect(result.hashMatched).toBe(true);
+      expect(result.integrityCheckPassed).toBe(false);
       expect(result.error).toBe("Corrupt file");
     });
 
-    it("cleans up temp dir even when integrity check throws", async () => {
+    it("marks backup as corrupt when the dump read throws", async () => {
       mockInvoke
         .mockResolvedValueOnce({ hashMatched: true })
-        .mockResolvedValueOnce({ tempDataDir: "/tmp/backup-check" })
-        .mockResolvedValueOnce(undefined) // remove_temp_dir_command
-        .mockResolvedValueOnce(undefined);
-
-      const { runLocalDatabaseIntegrityCheck } = await import("../../infrastructure/startup-health");
-      (runLocalDatabaseIntegrityCheck as any).mockRejectedValue(new Error("DB error"));
+        .mockRejectedValueOnce(new Error("DB error")); // read_backup_dump_command
 
       await service.verifyBackup("backup-4");
 
-      expect(mockInvoke).toHaveBeenCalledWith("remove_temp_dir_command", { path: "/tmp/backup-check" });
+      expect(mockInvoke).toHaveBeenCalledWith("mark_backup_corrupt_command", { id: "backup-4" });
     });
   });
 
@@ -456,7 +436,13 @@ describe("BackupService", () => {
         success: true,
         restarted: true,
       };
-      mockInvoke.mockResolvedValueOnce(restoreReport);
+      mockInvoke
+        .mockResolvedValueOnce(JSON.stringify({ // read_backup_dump_command
+          schemaVersion: 1,
+          createdAt: "2026-07-13T10:00:00Z",
+          tables: {},
+        }))
+        .mockResolvedValueOnce(restoreReport); // restore_backup_command
 
       const reloadSpy = vi.fn();
       Object.defineProperty(window, "location", {
@@ -477,7 +463,13 @@ describe("BackupService", () => {
     });
 
     it("throws BackupInProgressException when a restore is already running", async () => {
-      mockInvoke.mockResolvedValueOnce({ success: true, restarted: true, id: "b1" });
+      mockInvoke
+        .mockResolvedValueOnce(JSON.stringify({
+          schemaVersion: 1,
+          createdAt: "2026-07-13T10:00:00Z",
+          tables: {},
+        }))
+        .mockResolvedValueOnce({ success: true, restarted: true, id: "b1" });
 
       const firstRestore = service.restoreBackup("b1");
       await expect(service.restoreBackup("b2")).rejects.toThrow(BackupInProgressException);
@@ -493,7 +485,13 @@ describe("BackupService", () => {
     });
 
     it("passes skipSchemaVersionCheck option", async () => {
-      mockInvoke.mockResolvedValueOnce({ id: "b1", success: true, restarted: true });
+      mockInvoke
+        .mockResolvedValueOnce(JSON.stringify({
+          schemaVersion: 1,
+          createdAt: "2026-07-13T10:00:00Z",
+          tables: {},
+        }))
+        .mockResolvedValueOnce({ id: "b1", success: true, restarted: true });
 
       const reloadSpy = vi.fn();
       Object.defineProperty(window, "location", {
@@ -524,6 +522,7 @@ describe("BackupService", () => {
           oldestBackupAt: null,
           totalBackupSizeBytes: 0,
         })
+        .mockResolvedValueOnce(undefined) // write_data_dir_file_command
         .mockResolvedValueOnce({
           id: "backup-auto-1",
           createdAt: new Date().toISOString(),

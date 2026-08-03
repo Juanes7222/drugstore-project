@@ -24,6 +24,9 @@ const { mockBackupService, mockRecoveryLogService } = vi.hoisted(() => ({
     verifyBackup: vi.fn<() => Promise<VerificationReport>>(),
     restoreBackup: vi.fn<() => Promise<void>>(),
     fetchLocalNumberHint: vi.fn<() => Promise<number | null>>(),
+    getUploadQueue: vi.fn<() => Promise<unknown[]>>(),
+    setUploadWorker: vi.fn(),
+    kickUploadWorker: vi.fn(),
   },
   mockRecoveryLogService: {
     list: vi.fn<() => Promise<RecoveryLogEntry[]>>(),
@@ -52,6 +55,24 @@ vi.mock('../../domain/auth/local-session.store', () => ({
   useLocalSessionStore: (
     selector: (s: { session: LocalSession | null }) => unknown,
   ) => selector({ session: mockSessionRef.current }),
+  hasMinRole: (
+    session: LocalSession | null,
+    minRole: RoleType,
+  ): boolean => {
+    if (!session) return false;
+    const hierarchy: Record<string, number> = {
+      CASHIER: 0,
+      INVENTORY_ASSISTANT: 0,
+      MANAGER: 1,
+      ACCOUNTANT: 1,
+      OWNER: 2,
+      ADMIN: 2,
+      SAAS_ADMIN: 3,
+    };
+    const userLevel = hierarchy[session.role as string] ?? -1;
+    const requiredLevel = hierarchy[minRole] ?? -1;
+    return userLevel >= requiredLevel;
+  },
 }));
 
 vi.mock('../../renderer/components/common/service-context', () => ({
@@ -145,6 +166,7 @@ describe('useRecoveryPage', () => {
     mockBackupService.listBackups.mockResolvedValue([]);
     mockRecoveryLogService.list.mockResolvedValue([]);
     mockBackupService.getBackupHealth.mockResolvedValue('HEALTHY');
+    mockBackupService.getUploadQueue.mockResolvedValue([]);
     mockGetLocalDatabase.mockResolvedValue({
       client: {},
       prisma: { syncQueue: { count: vi.fn(), aggregate: vi.fn() } },

@@ -42,13 +42,13 @@ const buildRoot = (
 });
 
 describe("ui slice — initial state", () => {
-  it("defaults activeScreen to sales and phase to idle", () => {
+  it("defaults activeScreen to home and phase to idle", () => {
     const state = uiSlice.reducer(
       uiSlice.getInitialState(),
       { type: "unknown" },
     );
 
-    expect(state.activeScreen).toBe("sales");
+    expect(state.activeScreen).toBe("home");
     expect(state.saleCompletionPhase).toBe("idle");
     expect(state.prescriptionFlow).toEqual({
       pendingSaleId: null,
@@ -140,7 +140,7 @@ describe("ui slice — sale completion handoff", () => {
     );
 
     expect(state.saleCompletionPhase).toBe("initiating");
-    expect(state.activeScreen).toBe("sales"); // unchanged
+    expect(state.activeScreen).toBe("home"); // unchanged
   });
 
   it("navigateToReceipt sets screen to receipt and phase to completing", () => {

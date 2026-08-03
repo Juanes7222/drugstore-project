@@ -59,6 +59,7 @@ const { mockSessionState, mockAuthService } = vi.hoisted(() => {
 vi.mock("../../../domain/auth/local-session.store", () => ({
   useLocalSessionStore: (selector: (s: typeof mockSessionState) => unknown) =>
     selector(mockSessionState),
+  hasMinRole: () => true,
 }));
 
 vi.mock("@infra/config", () => ({
@@ -165,7 +166,7 @@ describe("QuickSwitch", () => {
     expect(await screen.findByText("Pedro Contreras")).toBeInTheDocument();
   });
 
-  it("shows password input for any selected user (ALL roles use password)", async () => {
+  it("shows PIN keypad for CASHIER users (role-based credentials)", async () => {
     mockSessionState.session = cashierSession;
 
     render(<QuickSwitch />);
@@ -174,13 +175,16 @@ describe("QuickSwitch", () => {
       screen.getByRole("button", { name: /cambiar de usuario|cambiar usuario|switch user/i }),
     );
 
-    // Wait for the async listUsers effect to resolve, then select a user
+    // Wait for the async listUsers effect to resolve, then select a cashier
     fireEvent.click(await screen.findByText("Carlos Méndez"));
 
-    // Password input should be shown (no PIN keypad)
+    // Cashiers authenticate with a numeric PIN keypad, not a password input
     expect(
-      await screen.findByPlaceholderText(/contrase.a|password/i),
+      await screen.findByLabelText("Ingrese su PIN"),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByPlaceholderText(/contrase.a|password/i),
+    ).not.toBeInTheDocument();
   });
 
   it("calls authService.login with PASSWORD when switching to another user", async () => {

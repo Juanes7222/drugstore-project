@@ -135,7 +135,10 @@ describe("PrintHealthTile", () => {
     render(<PrintHealthTile />);
 
     await waitFor(() => {
-      expect(screen.getByText("Requiere acción")).toBeInTheDocument();
+      // The status badge and the printer-error column label share this text
+      expect(
+        screen.getAllByText("Requiere acción").length,
+      ).toBeGreaterThan(0);
     });
   });
 
@@ -149,7 +152,10 @@ describe("PrintHealthTile", () => {
     render(<PrintHealthTile />);
 
     await waitFor(() => {
-      expect(screen.getByText("Requiere acción")).toBeInTheDocument();
+      // The status badge and the printer-error column label share this text
+      expect(
+        screen.getAllByText("Requiere acción").length,
+      ).toBeGreaterThan(0);
     });
   });
 

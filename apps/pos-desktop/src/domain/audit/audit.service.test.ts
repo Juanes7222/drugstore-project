@@ -38,10 +38,15 @@ describe("getLocalAuditEntries", () => {
   });
 
   describe("INVENTORY module", () => {
-    it("reads from InventoryMovement via $queryRawUnsafe", async () => {
-      prisma.$queryRawUnsafe
-        .mockResolvedValueOnce([{ count: 2n }])  // COUNT query
-        .mockResolvedValueOnce([                   // data query
+    const makeMockClient = () => ({
+      query: vi.fn(),
+    });
+
+    it("reads from InventoryMovement via the PGlite client", async () => {
+      const client = makeMockClient();
+      client.query
+        .mockResolvedValueOnce({ rows: [{ count: 2 }] })   // COUNT query
+        .mockResolvedValueOnce({ rows: [                   // data query
           {
             id: "mov-1",
             movement_type: "SALE",
@@ -68,13 +73,13 @@ describe("getLocalAuditEntries", () => {
             batch_number: "BATCH-002",
             product_name: "Ibuprofeno 400mg",
           },
-        ]);
+        ] });
 
       const result = await getLocalAuditEntries(prisma, {
         module: "INVENTORY",
         fromDate: "2026-07-01",
         toDate: "2026-07-31",
-      });
+      }, client as any);
 
       expect(result.total).toBe(2);
       expect(result.rows).toHaveLength(2);
@@ -97,42 +102,44 @@ describe("getLocalAuditEntries", () => {
     });
 
     it("passes date filters as raw SQL parameters", async () => {
-      prisma.$queryRawUnsafe
-        .mockResolvedValueOnce([{ count: 0n }])
-        .mockResolvedValueOnce([]);
+      const client = makeMockClient();
+      client.query
+        .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+        .mockResolvedValueOnce({ rows: [] });
 
       await getLocalAuditEntries(prisma, {
         module: "INVENTORY",
         fromDate: "2026-07-01",
         toDate: "2026-07-15",
-      });
+      }, client as any);
 
-      // First call = COUNT, second = data query
-      // Both should receive the date params
-      const countCall = prisma.$queryRawUnsafe.mock.calls[0];
-      expect(countCall[1]).toBe("2026-07-01");
-      expect(countCall[2]).toBe("2026-07-15T23:59:59.999Z");
+      // First call = COUNT, second = data query.
+      // The params array is passed as the second argument to client.query.
+      const countCall = client.query.mock.calls[0];
+      expect(countCall[1]).toEqual(["2026-07-01", "2026-07-15T23:59:59.999Z"]);
     });
 
     it("returns empty result when no inventory movements match", async () => {
-      prisma.$queryRawUnsafe
-        .mockResolvedValueOnce([{ count: 0n }])
-        .mockResolvedValueOnce([]);
+      const client = makeMockClient();
+      client.query
+        .mockResolvedValueOnce({ rows: [{ count: 0 }] })
+        .mockResolvedValueOnce({ rows: [] });
 
       const result = await getLocalAuditEntries(prisma, {
         module: "INVENTORY",
         fromDate: "2025-01-01",
         toDate: "2025-01-02",
-      });
+      }, client as any);
 
       expect(result.total).toBe(0);
       expect(result.rows).toHaveLength(0);
     });
 
     it("maps unknown movement_type to the raw value", async () => {
-      prisma.$queryRawUnsafe
-        .mockResolvedValueOnce([{ count: 1n }])
-        .mockResolvedValueOnce([
+      const client = makeMockClient();
+      client.query
+        .mockResolvedValueOnce({ rows: [{ count: 1 }] })
+        .mockResolvedValueOnce({ rows: [
           {
             id: "mov-3",
             movement_type: "CUSTOM_TYPE",
@@ -146,13 +153,19 @@ describe("getLocalAuditEntries", () => {
             batch_number: null,
             product_name: null,
           },
-        ]);
+        ] });
 
       const result = await getLocalAuditEntries(prisma, {
         module: "INVENTORY",
-      });
+      }, client as any);
 
       expect(result.rows[0].action).toBe("CUSTOM_TYPE");
+    });
+
+    it("throws when no PGlite client is provided", async () => {
+      await expect(
+        getLocalAuditEntries(prisma, { module: "INVENTORY" }),
+      ).rejects.toThrow("PGlite client is required for INVENTORY module");
     });
   });
 

@@ -45,99 +45,102 @@ describe("EntryDetailDrawer", () => {
   it("renders the title", () => {
     render(<EntryDetailDrawer entry={baseEntry} onClose={onClose} />);
 
-    expect(screen.getByText("Entry Detail")).toBeInTheDocument();
+    expect(screen.getByText("Detalle de entrada")).toBeInTheDocument();
   });
 
   // ── Metadata fields ───────────────────────────────────────────────
 
-  it("renders operation type and UUID", () => {
+  it("renders the operation type but not the raw UUID", () => {
     render(<EntryDetailDrawer entry={baseEntry} onClose={onClose} />);
 
+    // Unknown op types fall back to the raw value; raw UUIDs are
+    // deliberately excluded from the non-technical drawer.
     expect(screen.getByText("SALE_CREATION")).toBeInTheDocument();
     expect(
-      screen.getByText("550e8400-e29b-41d4-a716-446655440000"),
-    ).toBeInTheDocument();
+      screen.queryByText("550e8400-e29b-41d4-a716-446655440000"),
+    ).not.toBeInTheDocument();
   });
 
-  it("renders PERMANENT_FAILURE status badge", () => {
+  it("renders the retry count badge", () => {
     render(<EntryDetailDrawer entry={baseEntry} onClose={onClose} />);
 
-    expect(screen.getByText("PERMANENT_FAILURE")).toBeInTheDocument();
+    expect(screen.getByText(/3 intentos/)).toBeInTheDocument();
+  });
+
+  it("uses the singular retry label for a single retry", () => {
+    render(
+      <EntryDetailDrawer
+        entry={{ ...baseEntry, retryCount: 1 }}
+        onClose={onClose}
+      />,
+    );
+
+    expect(screen.getByText(/1 intento/)).toBeInTheDocument();
   });
 
   it("renders failure category and error message", () => {
     render(<EntryDetailDrawer entry={baseEntry} onClose={onClose} />);
 
-    expect(screen.getByText("NETWORK")).toBeInTheDocument();
+    expect(screen.getByText("Red")).toBeInTheDocument();
     expect(screen.getByText("Connection timed out")).toBeInTheDocument();
   });
 
-  it("renders retry count and created/last attempt timestamps", () => {
+  it("renders the timeline labels", () => {
     render(<EntryDetailDrawer entry={baseEntry} onClose={onClose} />);
 
-    expect(screen.getByText("3")).toBeInTheDocument();
-    // formatRelativeTime is called but the output is locale-dependent;
-    // just verify the labels exist
-    expect(screen.getByText("Operation")).toBeInTheDocument();
-    expect(screen.getByText("Retries")).toBeInTheDocument();
-    expect(screen.getByText("Created")).toBeInTheDocument();
-    expect(screen.getByText("Last Attempt")).toBeInTheDocument();
+    expect(screen.getByText("Cronología")).toBeInTheDocument();
+    expect(screen.getByText("Creado")).toBeInTheDocument();
+    expect(screen.getByText("Último intento")).toBeInTheDocument();
   });
 
-  it("renders payload preview", () => {
+  it("renders the human-readable payload summary instead of raw JSON", () => {
     render(<EntryDetailDrawer entry={baseEntry} onClose={onClose} />);
 
+    expect(screen.getByText("venta: abc-123")).toBeInTheDocument();
     expect(
-      screen.getByText('{"saleId":"abc-123"}'),
-    ).toBeInTheDocument();
+      screen.queryByText('{"saleId":"abc-123"}'),
+    ).not.toBeInTheDocument();
   });
 
   it("renders retry history and recovery actions sections", () => {
     render(<EntryDetailDrawer entry={baseEntry} onClose={onClose} />);
 
-    expect(screen.getByText("Retry History")).toBeInTheDocument();
-    expect(screen.getByText("Recovery Actions")).toBeInTheDocument();
+    expect(screen.getByText("Historial de reintentos")).toBeInTheDocument();
+    expect(screen.getByText("Acciones de recuperación")).toBeInTheDocument();
   });
 
   it("shows empty messages for retry history and recovery actions", () => {
     render(<EntryDetailDrawer entry={baseEntry} onClose={onClose} />);
 
     expect(
-      screen.getByText("No retry history available for this entry."),
+      screen.getByText("No hay historial de reintentos disponible."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("No recovery actions have been recorded."),
+      screen.getByText("No se han registrado acciones de recuperación."),
     ).toBeInTheDocument();
   });
 
   // ── Null/fallback values ──────────────────────────────────────────
 
-  it("shows em dash when failureCategory is null", () => {
-    const entry = { ...baseEntry, failureCategory: null };
-    render(<EntryDetailDrawer entry={entry} onClose={onClose} />);
-
-    expect(screen.getByText("\u2014")).toBeInTheDocument();
-  });
-
-  it("shows em dash when lastErrorMessage is null", () => {
-    const entry = { ...baseEntry, lastErrorMessage: null };
-    render(<EntryDetailDrawer entry={entry} onClose={onClose} />);
-
-    expect(screen.getByText("\u2014")).toBeInTheDocument();
-  });
-
   it("shows em dash when lastAttemptAt is null", () => {
     const entry = { ...baseEntry, lastAttemptAt: null };
     render(<EntryDetailDrawer entry={entry} onClose={onClose} />);
 
-    expect(screen.getByText("\u2014")).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 
-  it("shows placeholder when payloadPreview is empty", () => {
+  it("does not render a category badge when failureCategory is null", () => {
+    const entry = { ...baseEntry, failureCategory: null };
+    render(<EntryDetailDrawer entry={entry} onClose={onClose} />);
+
+    expect(screen.queryByText("Red")).not.toBeInTheDocument();
+  });
+
+  it("does not render the payload section when payloadPreview is empty", () => {
     const entry = { ...baseEntry, payloadPreview: "" };
     render(<EntryDetailDrawer entry={entry} onClose={onClose} />);
 
-    expect(screen.getByText("No payload data")).toBeInTheDocument();
+    expect(screen.queryByText("Sin datos de payload")).not.toBeInTheDocument();
   });
 
   // ── Interactions ──────────────────────────────────────────────────
@@ -160,7 +163,7 @@ describe("EntryDetailDrawer", () => {
       <EntryDetailDrawer entry={baseEntry} onClose={onClose} />,
     );
 
-    // Backdrop is the first child of the fragment (the div with bg-black/20)
+    // Backdrop is the first child of the fragment (the div with bg-ink/20)
     const backdrop = container.firstElementChild!;
     await user.click(backdrop);
     expect(onClose).toHaveBeenCalledTimes(1);

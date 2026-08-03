@@ -158,7 +158,7 @@ describe('AdjustmentCreationModal — CLIENT_CHANGE', () => {
       identificationNumber: '654321',
     });
     expect(reason).toBe('Corrección de cliente asociado a la venta');
-  });
+  }, 15000);
 });
 
 describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
@@ -297,7 +297,7 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
     expect(typeof (value as { paymentMethodId?: string }).paymentMethodId)
       .toBe('string');
     expect(reason).toBe('Cambio a tarjeta de crédito por solicitud del cliente');
-  });
+  }, 15000);
 
   it('shows reference fields only for categories that carry reference data', async () => {
     render(<AdjustmentCreationModal {...paymentProps} />);

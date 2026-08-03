@@ -156,6 +156,8 @@ describe("PGlite schema bootstrapping", () => {
     await pg.close();
   });
 
+  // PGlite WASM bootstrap is slow under full-suite parallel load; the
+  // schema-bootstrap tests below get a generous timeout.
   it("creates all expected tables from LOCAL_SCHEMA_SQL", async () => {
     await pg.exec(LOCAL_SCHEMA_SQL);
 
@@ -187,7 +189,7 @@ describe("PGlite schema bootstrapping", () => {
     expect(tables).toContain("TaxScheme");
     expect(tables).toContain("Invoice");
     expect(tables).toContain("ContingencyEvent");
-  });
+  }, 20000);
 
   it("creates all expected enum types", async () => {
     await pg.exec(LOCAL_SCHEMA_SQL);
@@ -211,7 +213,7 @@ describe("PGlite schema bootstrapping", () => {
     expect(enums).toContain("SaleType");
     expect(enums).toContain("MovementType");
     expect(enums).toContain("LotState");
-  });
+  }, 20000);
 
   it("re-applying LOCAL_SCHEMA_SQL errors on duplicate enum (PGlite limitation)", async () => {
     await pg.exec(LOCAL_SCHEMA_SQL);
@@ -222,7 +224,7 @@ describe("PGlite schema bootstrapping", () => {
     // migration tooling (IF NOT EXISTS or DROP ... IF EXISTS), which is
     // handled by Prisma Migrate, not by this SQL file.
     await expect(pg.exec(LOCAL_SCHEMA_SQL)).rejects.toThrow(/already exists/);
-  });
+  }, 20000);
 });
 
 // ---------------------------------------------------------------------------

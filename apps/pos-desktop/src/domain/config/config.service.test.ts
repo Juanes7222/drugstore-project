@@ -222,7 +222,7 @@ describe("ConfigService", () => {
 
       expect(http.patch).toHaveBeenCalledWith(
         "/tenant-config/custom-toggles/toggle-1",
-        { label: "Updated" },
+        { name: "Updated" },
       );
       expect(result).toEqual(expected);
     });

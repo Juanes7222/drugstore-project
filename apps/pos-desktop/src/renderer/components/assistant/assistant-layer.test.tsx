@@ -55,6 +55,7 @@ vi.mock("../../../domain/auth/local-session.store", () => ({
   useLocalSessionStore: (
     selector: (s: { session: unknown }) => unknown,
   ) => selector(mockSessionStore),
+  hasMinRole: () => true,
 }));
 
 vi.mock("../../../stores/assistant.store", () => ({

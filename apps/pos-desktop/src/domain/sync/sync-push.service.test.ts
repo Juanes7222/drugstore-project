@@ -265,6 +265,12 @@ describe("SyncPushService", () => {
   });
 
   describe("computeNextRetryDelay", () => {
+    beforeEach(() => {
+      // Pin Math.random to 0.5 so the ±20% jitter factor is exactly 1.0,
+      // making the delay deterministic (base * (0.8 + 0.5 * 0.4) = base).
+      vi.spyOn(Math, "random").mockReturnValue(0.5);
+    });
+
     it("returns increasing delays based on retry count", () => {
       expect(computeNextRetryDelay(1)).toBe(30_000);
       expect(computeNextRetryDelay(2)).toBe(120_000);

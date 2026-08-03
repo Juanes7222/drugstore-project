@@ -279,7 +279,7 @@ describe("PrintJobRow", () => {
       <PrintJobRow {...defaultProps} job={failedJob} />,
     );
 
-    const row = container.querySelector('[class*="border-l-red"]');
+    const row = container.querySelector('[class*="border-l-error"]');
     expect(row).toBeInTheDocument();
   });
 
@@ -307,6 +307,6 @@ describe("PrintJobRow", () => {
     });
     fireEvent.click(retryButton);
 
-    expect(screen.getByText("...")).toBeInTheDocument();
+    expect(screen.getByText("Reintentando...")).toBeInTheDocument();
   });
 });

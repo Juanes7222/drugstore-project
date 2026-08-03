@@ -85,6 +85,25 @@ vi.mock("../../../domain/auth/auth.service", () => ({
   createAuthService: vi.fn(() => mockAuthService),
 }));
 
+// Mock notify so we can assert on calls rather than depending on sileo DOM
+const mockNotifySuccess = vi.fn();
+const mockNotifyError = vi.fn();
+
+vi.mock("@/utils/notify", () => ({
+  notify: {
+    success: (...args: unknown[]) => {
+      mockNotifySuccess(...args);
+      return "toast-id";
+    },
+    error: (...args: unknown[]) => {
+      mockNotifyError(...args);
+      return "toast-id";
+    },
+    warning: vi.fn(),
+    info: vi.fn(),
+  },
+}));
+
 const managerSession: LocalSession = {
   userId: "u-1",
   username: "maria.garcia",
@@ -212,7 +231,7 @@ describe("UserManagementPage", () => {
       expect(screen.getByText(/cargando|loading/i)).toBeInTheDocument();
     });
 
-    it("shows an error message when the fetch fails", async () => {
+    it("notifies with an error message when the fetch fails", async () => {
       mockSessionState.session = managerSession;
       mockAuthService.listUsers = vi
         .fn()
@@ -221,9 +240,9 @@ describe("UserManagementPage", () => {
       render(<UserManagementPage />);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/error.*cargar|load.error/i),
-        ).toBeInTheDocument();
+        expect(mockNotifyError).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Error al cargar usuarios" }),
+        );
       });
     });
   });
@@ -367,9 +386,11 @@ describe("UserManagementPage", () => {
       );
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/usuario.*creado|user.*created/i),
-        ).toBeInTheDocument();
+        expect(mockNotifySuccess).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Usuario creado exitosamente",
+          }),
+        );
       });
     });
   });
@@ -470,9 +491,9 @@ describe("UserManagementPage", () => {
       fireEvent.click(disableBtn);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/usuario desactivado|user disabled/i),
-        ).toBeInTheDocument();
+        expect(mockNotifySuccess).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Usuario desactivado" }),
+        );
       });
     });
 
@@ -509,9 +530,9 @@ describe("UserManagementPage", () => {
       fireEvent.click(enableBtn);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/usuario activado|user enabled/i),
-        ).toBeInTheDocument();
+        expect(mockNotifySuccess).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Usuario activado" }),
+        );
       });
     });
 
@@ -519,7 +540,7 @@ describe("UserManagementPage", () => {
     // Reset PIN
     // -----------------------------------------------------------------
 
-    it("calls authService.resetUserPin when resetting a user's PIN", async () => {
+    it("calls authService.resetUserPin with the new PIN when resetting a user's PIN", async () => {
       render(<UserManagementPage />);
 
       await screen.findByText("Carlos López");
@@ -530,8 +551,19 @@ describe("UserManagementPage", () => {
       });
       fireEvent.click(resetPinBtns[0]);
 
+      // Type the new PIN in the dialog and confirm
+      fireEvent.change(screen.getByPlaceholderText(/4-6 dígitos/i), {
+        target: { value: "654321" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Confirmar" }),
+      );
+
       await waitFor(() => {
-        expect(mockAuthService.resetUserPin).toHaveBeenCalledWith("u-2");
+        expect(mockAuthService.resetUserPin).toHaveBeenCalledWith(
+          "u-2",
+          "654321",
+        );
       });
     });
 
@@ -550,13 +582,19 @@ describe("UserManagementPage", () => {
       });
       fireEvent.click(resetPinBtns[0]);
 
-      // Success message contains "PIN reseteado" — avoid matching button text
+      fireEvent.change(screen.getByPlaceholderText(/4-6 dígitos/i), {
+        target: { value: "654321" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Confirmar" }),
+      );
+
       await waitFor(() => {
-        expect(
-          screen.getByText((content) =>
-            /PIN reseteado/i.test(content) || /PIN.+reset/i.test(content),
-          ),
-        ).toBeInTheDocument();
+        expect(mockNotifySuccess).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "PIN actualizado correctamente",
+          }),
+        );
       });
     });
 
@@ -579,9 +617,9 @@ describe("UserManagementPage", () => {
       fireEvent.click(disableBtn);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/error.*desactivar|disable.*error/i),
-        ).toBeInTheDocument();
+        expect(mockNotifyError).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Error al desactivar usuario" }),
+        );
       });
     });
 
@@ -599,10 +637,17 @@ describe("UserManagementPage", () => {
       });
       fireEvent.click(resetPinBtns[0]);
 
+      fireEvent.change(screen.getByPlaceholderText(/4-6 dígitos/i), {
+        target: { value: "654321" },
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Confirmar" }),
+      );
+
       await waitFor(() => {
-        expect(
-          screen.getByText(/error.*reset.*pin|reset.*error.*pin/i),
-        ).toBeInTheDocument();
+        expect(mockNotifyError).toHaveBeenCalledWith(
+          expect.objectContaining({ title: "Error al resetear PIN" }),
+        );
       });
     });
   });

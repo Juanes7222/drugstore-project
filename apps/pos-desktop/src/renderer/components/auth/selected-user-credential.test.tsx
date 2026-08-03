@@ -24,6 +24,15 @@ const cashierUser: LocalUserInfo = {
   username: "cashier1",
 };
 
+const ownerUser: LocalUserInfo = {
+  id: "user_owner1",
+  displayName: "Juan Pérez",
+  role: RoleType.OWNER,
+  avatarUrl: null,
+  avatarColor: "#5B3E96",
+  username: "owner1",
+};
+
 const defaultProps = {
   user: cashierUser,
   password: "",
@@ -71,12 +80,48 @@ describe("SelectedUserCredential", () => {
     expect(onChangeUser).toHaveBeenCalledOnce();
   });
 
-  describe("password entry (all roles)", () => {
-    it("renders password input with label for CASHIER", () => {
+  describe("credential entry (role-based)", () => {
+    it("renders PIN keypad with label for CASHIER", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
           user={cashierUser}
+        />,
+      );
+
+      expect(screen.getByText("Ingrese su PIN")).toBeInTheDocument();
+      expect(
+        screen.queryByPlaceholderText("••••••••"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("calls onPinComplete when a full PIN is submitted", () => {
+      const onPinComplete = vi.fn();
+      render(
+        <SelectedUserCredential
+          {...defaultProps}
+          user={cashierUser}
+          onPinComplete={onPinComplete}
+        />,
+      );
+
+      // Type digits into the hidden PIN input, then confirm
+      const pinInput = screen.getByLabelText("Ingrese su PIN");
+      for (const digit of "1234") {
+        fireEvent.keyDown(pinInput, { key: digit });
+      }
+      fireEvent.click(
+        screen.getByRole("button", { name: "Ingresar" }),
+      );
+
+      expect(onPinComplete).toHaveBeenCalledWith("1234");
+    });
+
+    it("renders password input with label for OWNER", () => {
+      render(
+        <SelectedUserCredential
+          {...defaultProps}
+          user={ownerUser}
         />,
       );
 
@@ -91,7 +136,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={cashierUser}
+          user={ownerUser}
           onPasswordChange={onPasswordChange}
         />,
       );
@@ -107,7 +152,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={cashierUser}
+          user={ownerUser}
           onPasswordSubmit={onPasswordSubmit}
         />,
       );
@@ -123,7 +168,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={cashierUser}
+          user={ownerUser}
           onForgotPassword={onForgotPassword}
         />,
       );
@@ -139,7 +184,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={cashierUser}
+          user={ownerUser}
           password=""
         />,
       );
@@ -153,7 +198,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={cashierUser}
+          user={ownerUser}
           password="secret"
         />,
       );
@@ -167,7 +212,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={cashierUser}
+          user={ownerUser}
           password="secret"
           isLoading
         />,
@@ -183,7 +228,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={cashierUser}
+          user={ownerUser}
           error="Usuario o contraseña incorrectos."
         />,
       );
@@ -197,7 +242,7 @@ describe("SelectedUserCredential", () => {
       render(
         <SelectedUserCredential
           {...defaultProps}
-          user={cashierUser}
+          user={ownerUser}
           password="secret"
           countdown={125}
         />,

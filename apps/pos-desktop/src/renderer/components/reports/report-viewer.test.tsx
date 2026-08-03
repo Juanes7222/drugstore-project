@@ -40,6 +40,7 @@ vi.mock("../../stores/reports.store", () => ({
 vi.mock("../../../domain/auth/local-session.store", () => ({
   useLocalSessionStore: (selector: (state: { session: null }) => unknown) =>
     selector({ session: null }),
+  hasMinRole: () => true,
 }));
 
 // Stable services object so the viewer's shift-loading effect does not

@@ -86,9 +86,11 @@ describe("LotSyncService", () => {
             batchNumber: "B001",
             currentStock: 100,
           }),
+          // currentStock/version are intentionally NOT overwritten by the
+          // sync pull — local adjustments and sales change stock locally
+          // and the server's copy is stale until replay (see service).
           update: expect.objectContaining({
             batchNumber: "B001",
-            currentStock: 100,
           }),
         }),
       );

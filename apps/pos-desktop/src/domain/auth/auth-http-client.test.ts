@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createAuthHttpClient } from "./auth-http-client";
-import { InvalidCredentialsException } from "./exceptions";
+import { InvalidCredentialsException, NetworkErrorException } from "./exceptions";
 
 const BASE_URL = "https://api.example.com/auth";
 
@@ -73,11 +73,11 @@ describe("createAuthHttpClient", () => {
       await expect(client.post("/login", {})).rejects.toThrow(InvalidCredentialsException);
     });
 
-    it("propagates a network error (fetch throws TypeError)", async () => {
+    it("throws NetworkErrorException when fetch fails (server unreachable)", async () => {
       vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Network failure"));
 
       const client = createAuthHttpClient(BASE_URL);
-      await expect(client.post("/login", {})).rejects.toThrow(TypeError);
+      await expect(client.post("/login", {})).rejects.toThrow(NetworkErrorException);
     });
   });
 
@@ -116,7 +116,7 @@ describe("createAuthHttpClient", () => {
       vi.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse as unknown as Response);
 
       const client = createAuthHttpClient(BASE_URL);
-      await expect(client.postWithAuth("/refresh", {}, "token")).rejects.toThrow("HTTP 403: Forbidden");
+      await expect(client.postWithAuth("/refresh", {}, "token")).rejects.toThrow("[403] Forbidden");
     });
 
     it("includes the server error message in the thrown Error when available", async () => {
@@ -172,7 +172,7 @@ describe("createAuthHttpClient", () => {
       vi.spyOn(globalThis, "fetch").mockResolvedValue(fakeResponse as unknown as Response);
 
       const client = createAuthHttpClient(BASE_URL);
-      await expect(client.getWithAuth("/me", "token")).rejects.toThrow("HTTP 500: Server Error");
+      await expect(client.getWithAuth("/me", "token")).rejects.toThrow("[500] Server Error");
     });
 
     it("includes the server error message when available", async () => {
