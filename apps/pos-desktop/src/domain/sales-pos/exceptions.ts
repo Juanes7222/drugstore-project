@@ -170,3 +170,59 @@ export class ProductNotSyncedYetException extends DomainError {
     );
   }
 }
+
+/**
+ * Thrown when a domicilio is attached to a sale but the tenant has the
+ * delivery feature disabled. Guards the service against callers that
+ * bypassed the UI toggle.
+ */
+export class DeliveryDisabledException extends DomainError {
+  constructor() {
+    super(
+      'DELIVERY_DISABLED',
+      'Delivery (domicilio) is not enabled for this tenant.',
+    );
+  }
+}
+
+/**
+ * Thrown when a sale marked as a domicilio has no client and the tenant
+ * requires one (`delivery.requiresClient`).
+ */
+export class DeliveryRequiresClientException extends DomainError {
+  constructor() {
+    super(
+      'DELIVERY_REQUIRES_CLIENT',
+      'A client must be selected to attach a domicilio to this sale.',
+    );
+  }
+}
+
+/**
+ * Thrown when a sale marked as a domicilio is missing a delivery address
+ * and the tenant requires one (`delivery.addressRequired`).
+ */
+export class DeliveryAddressRequiredException extends DomainError {
+  constructor() {
+    super(
+      'DELIVERY_ADDRESS_REQUIRED',
+      'A delivery address is required to confirm this domicilio.',
+    );
+  }
+}
+
+/**
+ * Thrown when the attached delivery fee violates the tenant's fee policy —
+ * nonzero fee under `deliveryFeeMode: DISABLED`, a fee different from the
+ * fixed amount under `FIXED`, or a fee above `maxDeliveryFeeCents` under
+ * `MANUAL`.
+ */
+export class DeliveryFeePolicyException extends DomainError {
+  constructor(
+    message: string,
+    public readonly feeCents: number,
+    public readonly maxFeeCents: number | null,
+  ) {
+    super('DELIVERY_FEE_POLICY', message);
+  }
+}

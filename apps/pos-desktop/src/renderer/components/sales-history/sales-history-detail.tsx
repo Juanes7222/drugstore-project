@@ -2,26 +2,41 @@
  * Sales history detail — dual-pane fiscal (DIAN) and operational (droguería) view
  * with adjustment history and a button to create a new operational adjustment.
  */
-import { type FC, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
-import { ArrowLeftIcon, Building2Icon, CreditCardIcon, Edit3Icon, MailIcon, MapPinIcon, PhoneIcon, PrinterIcon, ReceiptIcon, StickyNoteIcon, TagIcon, TruckIcon, UserIcon, XIcon } from "@/components/ui/icons";
-import type { SaleHistoryDetail } from '../../../domain/sales-pos/sales-history.service';
+import { type FC, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  ArrowLeftIcon,
+  Building2Icon,
+  CreditCardIcon,
+  Edit3Icon,
+  MailIcon,
+  MapPinIcon,
+  PhoneIcon,
+  PrinterIcon,
+  ReceiptIcon,
+  StickyNoteIcon,
+  TagIcon,
+  TruckIcon,
+  UserIcon,
+  XIcon,
+} from "@/components/ui/icons";
+import type { SaleHistoryDetail } from "../../../domain/sales-pos/sales-history.service";
 import type {
   AdjustmentHistoryEntry,
   OperationalInvoiceView,
-} from '../../../domain/fiscal/local-adjustment.types';
-import type { InvoiceFullData } from '../../../domain/fiscal/fiscal-types';
-import { AdjustmentHistoryPanel } from '../fiscal/adjustment-history-panel';
+} from "../../../domain/fiscal/local-adjustment.types";
+import type { InvoiceFullData } from "../../../domain/fiscal/fiscal-types";
+import { AdjustmentHistoryPanel } from "../fiscal/adjustment-history-panel";
 
 export interface SalesHistoryDetailProps {
   saleId: string;
   detail: SaleHistoryDetail | null;
   loading: boolean;
-  viewMode: 'fiscal' | 'operational';
+  viewMode: "fiscal" | "operational";
   operationalView: OperationalInvoiceView | null;
   adjustmentHistory: AdjustmentHistoryEntry[];
   adjustmentHistoryLoading: boolean;
-  onViewModeChange: (mode: 'fiscal' | 'operational') => void;
+  onViewModeChange: (mode: "fiscal" | "operational") => void;
   onClose: () => void;
   onCreateAdjustment: () => void;
   onReprint: () => void;
@@ -29,11 +44,11 @@ export interface SalesHistoryDetailProps {
 }
 
 const statusKeyMap: Record<string, string> = {
-  CONTINGENCY_PENDING_TRANSMISSION: 'fiscal.status_pending',
-  TRANSMITTED_AUTHORIZED: 'fiscal.status_authorized',
-  TRANSMITTED_REJECTED: 'fiscal.status_rejected',
-  EXPIRED_CONTINGENCY: 'fiscal.status_expired',
-  CANCELLED: 'fiscal.status_cancelled',
+  CONTINGENCY_PENDING_TRANSMISSION: "fiscal.status_pending",
+  TRANSMITTED_AUTHORIZED: "fiscal.status_authorized",
+  TRANSMITTED_REJECTED: "fiscal.status_rejected",
+  EXPIRED_CONTINGENCY: "fiscal.status_expired",
+  CANCELLED: "fiscal.status_cancelled",
 };
 
 export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
@@ -50,7 +65,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
   onCancelInvoice,
 }) => {
   const { t, i18n } = useTranslation();
-  const locale = i18n.language === 'en' ? 'en-US' : 'es-CO';
+  const locale = i18n.language === "en" ? "en-US" : "es-CO";
 
   const formatCurrency = (amount: string): string => {
     const n = Number(amount);
@@ -65,8 +80,8 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
     return d.toLocaleString(locale, {
-      dateStyle: 'short',
-      timeStyle: 'short',
+      dateStyle: "short",
+      timeStyle: "short",
     });
   };
 
@@ -81,13 +96,10 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6">
         <div
           className="size-8 animate-spin rounded-full border-2 border-current border-r-transparent"
-          style={{ color: 'var(--color-pharma)' }}
+          style={{ color: "var(--color-pharma)" }}
         />
-        <p
-          className="text-body-sm"
-          style={{ color: 'var(--color-ink-muted)' }}
-        >
-          {t('salesHistory.loading')}
+        <p className="text-body-sm" style={{ color: "var(--color-ink-muted)" }}>
+          {t("salesHistory.loading")}
         </p>
       </div>
     );
@@ -98,14 +110,14 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
         <ReceiptIcon
           className="size-10"
-          style={{ color: 'var(--color-ink-muted)' }}
+          style={{ color: "var(--color-ink-muted)" }}
           aria-hidden="true"
         />
         <p
           className="text-body-sm font-medium"
-          style={{ color: 'var(--color-ink-muted)' }}
+          style={{ color: "var(--color-ink-muted)" }}
         >
-          {t('salesHistory.error_detail')}
+          {t("salesHistory.error_detail")}
         </p>
       </div>
     );
@@ -113,13 +125,14 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
 
   const { sale, invoices } = detail;
   const mainInvoice = invoices[0] ?? null;
-  const fullData = (mainInvoice?.fullData as unknown as InvoiceFullData | undefined) ?? undefined;
-  const hasOperationalDifferences = operationalView?.operational.hasDifferences ?? false;
+  const fullData =
+    (mainInvoice?.fullData as unknown as InvoiceFullData | undefined) ??
+    undefined;
+  const hasOperationalDifferences =
+    operationalView?.operational.hasDifferences ?? false;
 
   const fiscalClientName =
-    fullData?.buyer.name ??
-    sale.clientNameSnapshot ??
-    t('fiscal.client_final');
+    fullData?.buyer.name ?? sale.clientNameSnapshot ?? t("fiscal.client_final");
 
   const operationalClient = operationalView?.operational.client ?? {
     clientId: sale.clientId,
@@ -134,7 +147,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
       paymentMethodId: p.paymentMethodId,
       paymentMethodName: p.paymentMethodName,
       amount: p.amount,
-      category: '',
+      category: "",
       transactionReference: p.transactionReference,
       authorizationCode: p.authorizationCode,
       cardBrand: p.cardBrand,
@@ -147,7 +160,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
       <div
         className="flex items-center justify-between border-b px-4 py-3"
         style={{
-          borderColor: 'color-mix(in srgb, var(--color-ink) 8%, transparent)',
+          borderColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
         }}
       >
         <div className="flex items-center gap-2">
@@ -156,26 +169,26 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
             onClick={onClose}
             className="inline-flex size-7 items-center justify-center rounded-pos transition-colors hover:opacity-70"
             style={{
-              color: 'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
             }}
-            aria-label={t('common.back')}
+            aria-label={t("common.back")}
           >
             <ArrowLeftIcon className="size-4" aria-hidden="true" />
           </button>
           <div>
             <h2
               className="text-ui font-semibold"
-              style={{ color: 'var(--color-ink)' }}
+              style={{ color: "var(--color-ink)" }}
             >
-              {t('salesHistory.detail.title')}
+              {t("salesHistory.detail.title")}
             </h2>
             <p
               className="text-caption"
               style={{
-                color: 'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
               }}
             >
-              {t('salesHistory.detail.sale_number_label')} #{sale.localNumber}
+              {t("salesHistory.detail.sale_number_label")} #{sale.localNumber}
             </p>
           </div>
         </div>
@@ -188,7 +201,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
           >
             <PrinterIcon className="size-4" aria-hidden="true" />
             <span className="hidden sm:inline">
-              {t('salesHistory.detail.actions.reprint')}
+              {t("salesHistory.detail.actions.reprint")}
             </span>
           </button>
           <button
@@ -196,9 +209,9 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
             onClick={onClose}
             className="inline-flex size-7 items-center justify-center rounded-pos transition-colors hover:opacity-70"
             style={{
-              color: 'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
             }}
-            aria-label={t('common.close')}
+            aria-label={t("common.close")}
           >
             <XIcon className="size-4" aria-hidden="true" />
           </button>
@@ -209,53 +222,54 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
       <div
         className="flex items-center gap-1 border-b px-4 py-2"
         role="tablist"
-        aria-label={t('salesHistory.detail.title')}
+        aria-label={t("salesHistory.detail.title")}
         style={{
-          borderColor: 'color-mix(in srgb, var(--color-ink) 8%, transparent)',
-          backgroundColor: 'color-mix(in srgb, var(--color-surface) 60%, white)',
+          borderColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
+          backgroundColor:
+            "color-mix(in srgb, var(--color-surface) 60%, white)",
         }}
       >
         <button
           type="button"
           role="tab"
-          aria-selected={viewMode === 'fiscal'}
-          onClick={() => onViewModeChange('fiscal')}
+          aria-selected={viewMode === "fiscal"}
+          onClick={() => onViewModeChange("fiscal")}
           className="rounded-pos px-3 py-1.5 text-body-sm font-medium transition-colors"
           style={{
             color:
-              viewMode === 'fiscal'
-                ? 'var(--color-pharma)'
-                : 'color-mix(in srgb, var(--color-ink) 55%, transparent)',
+              viewMode === "fiscal"
+                ? "var(--color-pharma)"
+                : "color-mix(in srgb, var(--color-ink) 55%, transparent)",
             backgroundColor:
-              viewMode === 'fiscal'
-                ? 'color-mix(in srgb, var(--color-pharma) 8%, white)'
-                : 'transparent',
+              viewMode === "fiscal"
+                ? "color-mix(in srgb, var(--color-pharma) 8%, white)"
+                : "transparent",
           }}
         >
-          {t('salesHistory.detail.fiscal_tab')}
+          {t("salesHistory.detail.fiscal_tab")}
         </button>
         <button
           type="button"
           role="tab"
-          aria-selected={viewMode === 'operational'}
-          onClick={() => onViewModeChange('operational')}
+          aria-selected={viewMode === "operational"}
+          onClick={() => onViewModeChange("operational")}
           className="rounded-pos px-3 py-1.5 text-body-sm font-medium transition-colors"
           style={{
             color:
-              viewMode === 'operational'
-                ? 'var(--color-pharma)'
-                : 'color-mix(in srgb, var(--color-ink) 55%, transparent)',
+              viewMode === "operational"
+                ? "var(--color-pharma)"
+                : "color-mix(in srgb, var(--color-ink) 55%, transparent)",
             backgroundColor:
-              viewMode === 'operational'
-                ? 'color-mix(in srgb, var(--color-pharma) 8%, white)'
-                : 'transparent',
+              viewMode === "operational"
+                ? "color-mix(in srgb, var(--color-pharma) 8%, white)"
+                : "transparent",
           }}
         >
-          {t('salesHistory.detail.operational_tab')}
+          {t("salesHistory.detail.operational_tab")}
           {hasOperationalDifferences && (
             <span
               className="ml-1.5 inline-flex size-2 rounded-full"
-              style={{ backgroundColor: 'var(--color-urgency)' }}
+              style={{ backgroundColor: "var(--color-urgency)" }}
               aria-hidden="true"
             />
           )}
@@ -264,7 +278,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4">
-        {viewMode === 'fiscal' && (
+        {viewMode === "fiscal" && (
           <div className="space-y-4">
             {mainInvoice && fullData ? (
               <>
@@ -272,21 +286,22 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 <div
                   className="rounded-pos p-3"
                   style={{
-                    backgroundColor: 'var(--color-panel)',
-                    border: '1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)',
+                    backgroundColor: "var(--color-panel)",
+                    border:
+                      "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
                   }}
                 >
                   <div className="mb-2 flex items-center gap-2">
                     <ReceiptIcon
                       className="size-4"
-                      style={{ color: 'var(--color-pharma)' }}
+                      style={{ color: "var(--color-pharma)" }}
                       aria-hidden="true"
                     />
                     <h3
                       className="text-body font-semibold"
-                      style={{ color: 'var(--color-ink)' }}
+                      style={{ color: "var(--color-ink)" }}
                     >
-                      {t('salesHistory.detail.fiscal_invoice_title')}
+                      {t("salesHistory.detail.fiscal_invoice_title")}
                     </h3>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-caption">
@@ -294,14 +309,14 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       <span
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 50%, transparent)",
                         }}
                       >
-                        {t('salesHistory.detail.invoice_number_label')}
+                        {t("salesHistory.detail.invoice_number_label")}
                       </span>
                       <p
                         className="font-data tabular-nums font-semibold"
-                        style={{ color: 'var(--color-ink)' }}
+                        style={{ color: "var(--color-ink)" }}
                       >
                         {mainInvoice.invoiceNumber}
                       </p>
@@ -310,28 +325,32 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       <span
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 50%, transparent)",
                         }}
                       >
-                        {t('salesHistory.detail.status_label')}
+                        {t("salesHistory.detail.status_label")}
                       </span>
-                      <p style={{ color: 'var(--color-ink)' }}>
-                        {t(statusKeyMap[mainInvoice.status] ?? mainInvoice.status)}
+                      <p style={{ color: "var(--color-ink)" }}>
+                        {t(
+                          statusKeyMap[mainInvoice.status] ??
+                            mainInvoice.status,
+                        )}
                       </p>
                     </div>
                     <div>
                       <span
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 50%, transparent)",
                         }}
                       >
-                        {t('salesHistory.detail.cufe_label')}
+                        {t("salesHistory.detail.cufe_label")}
                       </span>
                       <p
                         className="break-all font-data text-caption"
                         style={{
-                          color: 'color-mix(in srgb, var(--color-ink) 75%, transparent)',
+                          color:
+                            "color-mix(in srgb, var(--color-ink) 75%, transparent)",
                         }}
                       >
                         {mainInvoice.cufeProvisional}
@@ -341,12 +360,12 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       <span
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 50%, transparent)",
                         }}
                       >
-                        {t('salesHistory.detail.issued_label')}
+                        {t("salesHistory.detail.issued_label")}
                       </span>
-                      <p style={{ color: 'var(--color-ink)' }}>
+                      <p style={{ color: "var(--color-ink)" }}>
                         {formatDateTime(mainInvoice.issuedAt.toISOString())}
                       </p>
                     </div>
@@ -356,12 +375,12 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 {/* Buyer */}
                 <InfoCard
                   icon={<UserIcon className="size-4" />}
-                  title={t('salesHistory.detail.buyer_label')}
+                  title={t("salesHistory.detail.buyer_label")}
                 >
                   <div className="space-y-1 text-caption">
                     <p
                       className="font-medium"
-                      style={{ color: 'var(--color-ink)' }}
+                      style={{ color: "var(--color-ink)" }}
                     >
                       {fiscalClientName}
                     </p>
@@ -371,10 +390,10 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           className="font-data tabular-nums"
                           style={{
                             color:
-                              'color-mix(in srgb, var(--color-ink) 65%, transparent)',
+                              "color-mix(in srgb, var(--color-ink) 65%, transparent)",
                           }}
                         >
-                          {fullData.buyer.identificationType}:{' '}
+                          {fullData.buyer.identificationType}:{" "}
                           {fullData.buyer.identificationNumber}
                         </p>
                       )}
@@ -382,7 +401,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       <p
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 65%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 65%, transparent)",
                         }}
                       >
                         {fullData.buyer.email}
@@ -394,12 +413,12 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 {/* Seller */}
                 <InfoCard
                   icon={<Building2Icon className="size-4" />}
-                  title={t('salesHistory.detail.seller_label')}
+                  title={t("salesHistory.detail.seller_label")}
                 >
                   <div className="space-y-1 text-caption">
                     <p
                       className="font-medium"
-                      style={{ color: 'var(--color-ink)' }}
+                      style={{ color: "var(--color-ink)" }}
                     >
                       {fullData.seller.name}
                     </p>
@@ -407,10 +426,10 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       className="font-data tabular-nums"
                       style={{
                         color:
-                          'color-mix(in srgb, var(--color-ink) 65%, transparent)',
+                          "color-mix(in srgb, var(--color-ink) 65%, transparent)",
                       }}
                     >
-                      {t('fiscal.detail_seller_nit')}: {fullData.seller.nit}
+                      {t("fiscal.detail_seller_nit")}: {fullData.seller.nit}
                     </p>
                   </div>
                 </InfoCard>
@@ -419,15 +438,15 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 <section>
                   <h3
                     className="mb-2 text-body font-semibold"
-                    style={{ color: 'var(--color-ink)' }}
+                    style={{ color: "var(--color-ink)" }}
                   >
-                    {t('salesHistory.detail.items')}
+                    {t("salesHistory.detail.items")}
                   </h3>
                   <div
                     className="overflow-hidden rounded-pos"
                     style={{
                       border:
-                        '1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)',
+                        "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
                     }}
                   >
                     <table className="w-full border-collapse text-body-sm">
@@ -435,20 +454,20 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                         <tr
                           style={{
                             backgroundColor:
-                              'color-mix(in srgb, var(--color-surface) 70%, white)',
+                              "color-mix(in srgb, var(--color-surface) 70%, white)",
                           }}
                         >
                           <th className="px-2 py-1.5 text-left text-caption font-semibold uppercase">
-                            {t('salesHistory.detail.items_table_product')}
+                            {t("salesHistory.detail.items_table_product")}
                           </th>
                           <th className="px-2 py-1.5 text-right text-caption font-semibold uppercase">
-                            {t('salesHistory.detail.items_table_qty')}
+                            {t("salesHistory.detail.items_table_qty")}
                           </th>
                           <th className="px-2 py-1.5 text-right text-caption font-semibold uppercase">
-                            {t('salesHistory.detail.items_table_price')}
+                            {t("salesHistory.detail.items_table_price")}
                           </th>
                           <th className="px-2 py-1.5 text-right text-caption font-semibold uppercase">
-                            {t('salesHistory.detail.items_table_total')}
+                            {t("salesHistory.detail.items_table_total")}
                           </th>
                         </tr>
                       </thead>
@@ -458,13 +477,13 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                             key={item.productId}
                             style={{
                               borderBottom:
-                                '1px solid color-mix(in srgb, var(--color-ink) 5%, transparent)',
+                                "1px solid color-mix(in srgb, var(--color-ink) 5%, transparent)",
                             }}
                           >
                             <td className="px-2 py-1.5">
                               <p
                                 className="font-medium"
-                                style={{ color: 'var(--color-ink)' }}
+                                style={{ color: "var(--color-ink)" }}
                               >
                                 {item.commercialName}
                               </p>
@@ -473,7 +492,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                                   className="text-caption"
                                   style={{
                                     color:
-                                      'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                                      "color-mix(in srgb, var(--color-ink) 50%, transparent)",
                                   }}
                                 >
                                   {item.genericName} {item.concentration}
@@ -500,8 +519,9 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 <div
                   className="rounded-pos p-3"
                   style={{
-                    backgroundColor: 'var(--color-panel)',
-                    border: '1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)',
+                    backgroundColor: "var(--color-panel)",
+                    border:
+                      "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
                   }}
                 >
                   <div className="space-y-1 text-body-sm">
@@ -509,14 +529,14 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       <span
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 65%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 65%, transparent)",
                         }}
                       >
-                        {t('salesHistory.detail.totals_subtotal')}
+                        {t("salesHistory.detail.totals_subtotal")}
                       </span>
                       <span
                         className="font-data tabular-nums"
-                        style={{ color: 'var(--color-ink)' }}
+                        style={{ color: "var(--color-ink)" }}
                       >
                         {formatCurrency(fullData.subtotal)}
                       </span>
@@ -525,14 +545,14 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       <span
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 65%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 65%, transparent)",
                         }}
                       >
-                        {t('salesHistory.detail.totals_discount')}
+                        {t("salesHistory.detail.totals_discount")}
                       </span>
                       <span
                         className="font-data tabular-nums"
-                        style={{ color: 'var(--color-ink)' }}
+                        style={{ color: "var(--color-ink)" }}
                       >
                         {formatCurrency(fullData.totalDiscount)}
                       </span>
@@ -541,14 +561,14 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       <span
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 65%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 65%, transparent)",
                         }}
                       >
-                        {t('salesHistory.detail.totals_tax')}
+                        {t("salesHistory.detail.totals_tax")}
                       </span>
                       <span
                         className="font-data tabular-nums"
-                        style={{ color: 'var(--color-ink)' }}
+                        style={{ color: "var(--color-ink)" }}
                       >
                         {formatCurrency(fullData.totalTax)}
                       </span>
@@ -557,18 +577,18 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       className="flex justify-between border-t pt-2"
                       style={{
                         borderColor:
-                          'color-mix(in srgb, var(--color-ink) 10%, transparent)',
+                          "color-mix(in srgb, var(--color-ink) 10%, transparent)",
                       }}
                     >
                       <span
                         className="font-semibold"
-                        style={{ color: 'var(--color-ink)' }}
+                        style={{ color: "var(--color-ink)" }}
                       >
-                        {t('salesHistory.detail.totals_total')}
+                        {t("salesHistory.detail.totals_total")}
                       </span>
                       <span
                         className="font-data tabular-nums text-price font-bold"
-                        style={{ color: 'var(--color-ink)' }}
+                        style={{ color: "var(--color-ink)" }}
                       >
                         {formatCurrency(fullData.totalAmount)}
                       </span>
@@ -577,14 +597,14 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       <span
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 65%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 65%, transparent)",
                         }}
                       >
-                        {t('salesHistory.detail.totals_change')}
+                        {t("salesHistory.detail.totals_change")}
                       </span>
                       <span
                         className="font-data tabular-nums"
-                        style={{ color: 'var(--color-ink)' }}
+                        style={{ color: "var(--color-ink)" }}
                       >
                         {formatCurrency(fullData.changeAmount)}
                       </span>
@@ -596,23 +616,23 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
               <div className="py-8 text-center">
                 <p
                   className="text-body-sm"
-                  style={{ color: 'var(--color-ink-muted)' }}
+                  style={{ color: "var(--color-ink-muted)" }}
                 >
-                  {t('salesHistory.detail.no_invoice')}
+                  {t("salesHistory.detail.no_invoice")}
                 </p>
               </div>
             )}
           </div>
         )}
 
-        {viewMode === 'operational' && (
+        {viewMode === "operational" && (
           <div className="space-y-4">
             {operationalView ? (
               <>
                 {/* Operational client */}
                 <InfoCard
                   icon={<UserIcon className="size-4" />}
-                  title={t('salesHistory.adjustment.client_change_label')}
+                  title={t("salesHistory.adjustment.client_change_label")}
                   action={
                     <button
                       type="button"
@@ -620,18 +640,18 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       className="pos-button pos-button-secondary inline-flex items-center gap-1 py-1 px-2 text-caption"
                     >
                       <Edit3Icon className="size-3.5" aria-hidden="true" />
-                      {t('salesHistory.detail.actions.adjust')}
+                      {t("salesHistory.detail.actions.adjust")}
                     </button>
                   }
                 >
                   <div className="space-y-1 text-caption">
                     <p
                       className="font-medium"
-                      style={{ color: 'var(--color-ink)' }}
+                      style={{ color: "var(--color-ink)" }}
                     >
                       {operationalClient.name ??
                         sale.clientNameSnapshot ??
-                        t('fiscal.client_final')}
+                        t("fiscal.client_final")}
                     </p>
                     {operationalClient.identificationType &&
                       operationalClient.identificationNumber && (
@@ -639,10 +659,10 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           className="font-data tabular-nums"
                           style={{
                             color:
-                              'color-mix(in srgb, var(--color-ink) 65%, transparent)',
+                              "color-mix(in srgb, var(--color-ink) 65%, transparent)",
                           }}
                         >
-                          {operationalClient.identificationType}:{' '}
+                          {operationalClient.identificationType}:{" "}
                           {operationalClient.identificationNumber}
                         </p>
                       )}
@@ -651,7 +671,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                         className="font-data tabular-nums"
                         style={{
                           color:
-                            'color-mix(in srgb, var(--color-ink) 45%, transparent)',
+                            "color-mix(in srgb, var(--color-ink) 45%, transparent)",
                         }}
                       >
                         ID: {operationalClient.clientId}
@@ -663,12 +683,12 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       className="mt-2 rounded-pos p-2 text-caption"
                       style={{
                         backgroundColor:
-                          'color-mix(in srgb, var(--color-urgency) 8%, white)',
-                        color: 'var(--color-urgency)',
+                          "color-mix(in srgb, var(--color-urgency) 8%, white)",
+                        color: "var(--color-urgency)",
                       }}
                       role="status"
                     >
-                      {t('salesHistory.detail.difference_banner')}
+                      {t("salesHistory.detail.difference_banner")}
                     </div>
                   )}
                 </InfoCard>
@@ -676,7 +696,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 {/* Contact info */}
                 <InfoCard
                   icon={<MailIcon className="size-4" />}
-                  title={t('salesHistory.detail.contact_title')}
+                  title={t("salesHistory.detail.contact_title")}
                 >
                   <div className="space-y-1 text-caption">
                     {operationalView.operational.contactInfo.email && (
@@ -685,11 +705,11 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           className="size-3.5"
                           style={{
                             color:
-                              'color-mix(in srgb, var(--color-ink) 40%, transparent)',
+                              "color-mix(in srgb, var(--color-ink) 40%, transparent)",
                           }}
                           aria-hidden="true"
                         />
-                        <span style={{ color: 'var(--color-ink)' }}>
+                        <span style={{ color: "var(--color-ink)" }}>
                           {operationalView.operational.contactInfo.email}
                         </span>
                       </div>
@@ -700,11 +720,11 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           className="size-3.5"
                           style={{
                             color:
-                              'color-mix(in srgb, var(--color-ink) 40%, transparent)',
+                              "color-mix(in srgb, var(--color-ink) 40%, transparent)",
                           }}
                           aria-hidden="true"
                         />
-                        <span style={{ color: 'var(--color-ink)' }}>
+                        <span style={{ color: "var(--color-ink)" }}>
                           {operationalView.operational.contactInfo.phone}
                         </span>
                       </div>
@@ -715,11 +735,11 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           className="size-3.5"
                           style={{
                             color:
-                              'color-mix(in srgb, var(--color-ink) 40%, transparent)',
+                              "color-mix(in srgb, var(--color-ink) 40%, transparent)",
                           }}
                           aria-hidden="true"
                         />
-                        <span style={{ color: 'var(--color-ink)' }}>
+                        <span style={{ color: "var(--color-ink)" }}>
                           {operationalView.operational.contactInfo.address}
                         </span>
                       </div>
@@ -729,10 +749,10 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       !operationalView.operational.contactInfo.address && (
                         <p
                           style={{
-                            color: 'var(--color-ink-muted)',
+                            color: "var(--color-ink-muted)",
                           }}
                         >
-                          {t('fiscal.operational_no_contact')}
+                          {t("fiscal.operational_no_contact")}
                         </p>
                       )}
                   </div>
@@ -741,13 +761,13 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 {/* Payments */}
                 <InfoCard
                   icon={<CreditCardIcon className="size-4" />}
-                  title={t('salesHistory.detail.payments')}
+                  title={t("salesHistory.detail.payments")}
                 >
                   <div
                     className="overflow-hidden rounded-pos"
                     style={{
                       border:
-                        '1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)',
+                        "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
                     }}
                   >
                     <table className="w-full border-collapse text-caption">
@@ -755,17 +775,17 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                         <tr
                           style={{
                             backgroundColor:
-                              'color-mix(in srgb, var(--color-surface) 70%, white)',
+                              "color-mix(in srgb, var(--color-surface) 70%, white)",
                           }}
                         >
                           <th className="px-2 py-1 text-left text-caption font-semibold uppercase">
-                            {t('salesHistory.detail.payments_table_method')}
+                            {t("salesHistory.detail.payments_table_method")}
                           </th>
                           <th className="px-2 py-1 text-right text-caption font-semibold uppercase">
-                            {t('salesHistory.detail.payments_table_amount')}
+                            {t("salesHistory.detail.payments_table_amount")}
                           </th>
                           <th className="px-2 py-1 text-right text-caption font-semibold uppercase">
-                            {t('salesHistory.detail.payments_table_reference')}
+                            {t("salesHistory.detail.payments_table_reference")}
                           </th>
                         </tr>
                       </thead>
@@ -775,7 +795,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                             key={`${payment.paymentMethodId}-${idx}`}
                             style={{
                               borderBottom:
-                                '1px solid color-mix(in srgb, var(--color-ink) 5%, transparent)',
+                                "1px solid color-mix(in srgb, var(--color-ink) 5%, transparent)",
                             }}
                           >
                             <td className="px-2 py-1 font-medium">
@@ -785,7 +805,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                               {formatCurrency(payment.amount)}
                             </td>
                             <td className="px-2 py-1 text-right font-data tabular-nums">
-                              {payment.transactionReference ?? '—'}
+                              {payment.transactionReference ?? "—"}
                             </td>
                           </tr>
                         ))}
@@ -798,36 +818,54 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 {operationalView.operational.deliveryInfo && (
                   <InfoCard
                     icon={<TruckIcon className="size-4" />}
-                    title={t('salesHistory.detail.delivery_title')}
+                    title={t("salesHistory.detail.delivery_title")}
                   >
                     <div className="space-y-1 text-caption">
                       {operationalView.operational.deliveryInfo.address && (
-                        <p style={{ color: 'var(--color-ink)' }}>
+                        <p style={{ color: "var(--color-ink)" }}>
                           {operationalView.operational.deliveryInfo.address}
                         </p>
                       )}
                       {operationalView.operational.deliveryInfo.contactName && (
-                        <p style={{ color: 'var(--color-ink)' }}>
+                        <p style={{ color: "var(--color-ink)" }}>
                           {operationalView.operational.deliveryInfo.contactName}
                         </p>
                       )}
-                      {operationalView.operational.deliveryInfo.contactPhone && (
-                        <p style={{ color: 'var(--color-ink)' }}>
-                          {operationalView.operational.deliveryInfo.contactPhone}
+                      {operationalView.operational.deliveryInfo
+                        .contactPhone && (
+                        <p style={{ color: "var(--color-ink)" }}>
+                          {
+                            operationalView.operational.deliveryInfo
+                              .contactPhone
+                          }
                         </p>
                       )}
-                      {operationalView.operational.deliveryInfo.scheduledDate && (
-                        <p style={{ color: 'var(--color-ink)' }}>
+                      {operationalView.operational.deliveryInfo
+                        .scheduledDate && (
+                        <p style={{ color: "var(--color-ink)" }}>
                           {formatShortDate(
-                            operationalView.operational.deliveryInfo.scheduledDate,
+                            operationalView.operational.deliveryInfo
+                              .scheduledDate,
                           )}
                         </p>
                       )}
                       {operationalView.operational.deliveryInfo.notes && (
-                        <p style={{ color: 'var(--color-ink)' }}>
+                        <p style={{ color: "var(--color-ink)" }}>
                           {operationalView.operational.deliveryInfo.notes}
                         </p>
                       )}
+                      {detail.sale.delivery &&
+                        detail.sale.delivery.feeCents > 0 && (
+                          <p
+                            className="font-data tabular-nums"
+                            style={{ color: "var(--color-ink)" }}
+                          >
+                            {t("salesHistory.detail.delivery_fee")}:{" "}
+                            {formatCurrency(
+                              String(detail.sale.delivery.feeCents / 100),
+                            )}
+                          </p>
+                        )}
                     </div>
                   </InfoCard>
                 )}
@@ -835,7 +873,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 {/* Notes */}
                 <InfoCard
                   icon={<StickyNoteIcon className="size-4" />}
-                  title={t('salesHistory.detail.notes_title')}
+                  title={t("salesHistory.detail.notes_title")}
                 >
                   {operationalView.operational.notes.length > 0 ? (
                     <ul className="space-y-2">
@@ -845,17 +883,17 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           className="rounded-pos p-2 text-caption"
                           style={{
                             backgroundColor:
-                              'color-mix(in srgb, var(--color-surface) 60%, white)',
+                              "color-mix(in srgb, var(--color-surface) 60%, white)",
                           }}
                         >
-                          <p style={{ color: 'var(--color-ink)' }}>
+                          <p style={{ color: "var(--color-ink)" }}>
                             {note.text}
                           </p>
                           <p
                             className="mt-1 text-caption"
                             style={{
                               color:
-                                'color-mix(in srgb, var(--color-ink) 45%, transparent)',
+                                "color-mix(in srgb, var(--color-ink) 45%, transparent)",
                             }}
                           >
                             {note.authorName} · {formatDateTime(note.createdAt)}
@@ -866,10 +904,10 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                   ) : (
                     <p
                       style={{
-                        color: 'var(--color-ink-muted)',
+                        color: "var(--color-ink-muted)",
                       }}
                     >
-                      {t('fiscal.operational_no_notes')}
+                      {t("fiscal.operational_no_notes")}
                     </p>
                   )}
                 </InfoCard>
@@ -877,7 +915,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                 {/* Tags */}
                 <InfoCard
                   icon={<TagIcon className="size-4" />}
-                  title={t('salesHistory.detail.tags_title')}
+                  title={t("salesHistory.detail.tags_title")}
                 >
                   {operationalView.operational.tags.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
@@ -887,8 +925,8 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           className="pos-badge"
                           style={{
                             backgroundColor:
-                              'color-mix(in srgb, var(--color-pharma) 10%, white)',
-                            color: 'var(--color-pharma)',
+                              "color-mix(in srgb, var(--color-pharma) 10%, white)",
+                            color: "var(--color-pharma)",
                           }}
                         >
                           {tag}
@@ -898,19 +936,20 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                   ) : (
                     <p
                       style={{
-                        color: 'var(--color-ink-muted)',
+                        color: "var(--color-ink-muted)",
                       }}
                     >
-                      {t('fiscal.operational_no_tags')}
+                      {t("fiscal.operational_no_tags")}
                     </p>
                   )}
                 </InfoCard>
 
                 {/* Custom fields */}
-                {Object.keys(operationalView.operational.customFields).length > 0 && (
+                {Object.keys(operationalView.operational.customFields).length >
+                  0 && (
                   <InfoCard
                     icon={<StickyNoteIcon className="size-4" />}
-                    title={t('salesHistory.detail.custom_fields_title')}
+                    title={t("salesHistory.detail.custom_fields_title")}
                   >
                     <div className="grid grid-cols-2 gap-2 text-caption">
                       {Object.entries(
@@ -920,14 +959,14 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           <span
                             style={{
                               color:
-                                'color-mix(in srgb, var(--color-ink) 50%, transparent)',
+                                "color-mix(in srgb, var(--color-ink) 50%, transparent)",
                             }}
                           >
                             {key}
                           </span>
                           <p
                             className="font-medium"
-                            style={{ color: 'var(--color-ink)' }}
+                            style={{ color: "var(--color-ink)" }}
                           >
                             {value}
                           </p>
@@ -942,15 +981,15 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                   <section>
                     <h3
                       className="mb-2 text-body font-semibold"
-                      style={{ color: 'var(--color-ink)' }}
+                      style={{ color: "var(--color-ink)" }}
                     >
-                      {t('salesHistory.detail.adjustments')}
+                      {t("salesHistory.detail.adjustments")}
                     </h3>
                     <div
                       className="rounded-pos"
                       style={{
                         border:
-                          '1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)',
+                          "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
                       }}
                     >
                       <AdjustmentHistoryPanel
@@ -965,9 +1004,9 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
               <div className="py-8 text-center">
                 <p
                   className="text-body-sm"
-                  style={{ color: 'var(--color-ink-muted)' }}
+                  style={{ color: "var(--color-ink-muted)" }}
                 >
-                  {t('salesHistory.detail.no_operational_view')}
+                  {t("salesHistory.detail.no_operational_view")}
                 </p>
               </div>
             )}
@@ -979,7 +1018,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
       <div
         className="flex items-center justify-end gap-2 border-t px-4 py-3"
         style={{
-          borderColor: 'color-mix(in srgb, var(--color-ink) 8%, transparent)',
+          borderColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
         }}
       >
         <button
@@ -987,14 +1026,14 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
           onClick={onCancelInvoice}
           className="pos-button inline-flex items-center gap-1.5 py-1 px-3 text-body-sm"
           style={{
-            backgroundColor: 'var(--color-error-container)',
-            color: 'var(--color-error)',
-            borderColor: 'var(--color-error)',
-            border: '1px solid',
+            backgroundColor: "var(--color-error-container)",
+            color: "var(--color-error)",
+            borderColor: "var(--color-error)",
+            border: "1px solid",
           }}
         >
           <XIcon className="size-4" aria-hidden="true" />
-          {t('salesHistory.detail.actions.cancel_invoice')}
+          {t("salesHistory.detail.actions.cancel_invoice")}
         </button>
         <button
           type="button"
@@ -1002,7 +1041,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
           className="pos-button pos-button-secondary inline-flex items-center gap-1.5 py-1 px-3 text-body-sm"
         >
           <PrinterIcon className="size-4" aria-hidden="true" />
-          {t('salesHistory.detail.actions.reprint')}
+          {t("salesHistory.detail.actions.reprint")}
         </button>
         <button
           type="button"
@@ -1010,7 +1049,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
           className="pos-button pos-button-primary inline-flex items-center gap-1.5 py-1 px-3 text-body-sm"
         >
           <Edit3Icon className="size-4" aria-hidden="true" />
-          {t('salesHistory.detail.actions.adjust')}
+          {t("salesHistory.detail.actions.adjust")}
         </button>
       </div>
     </div>
@@ -1028,16 +1067,16 @@ const InfoCard: FC<InfoCardProps> = ({ icon, title, children, action }) => (
   <div
     className="rounded-pos p-3"
     style={{
-      backgroundColor: 'var(--color-panel)',
-      border: '1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)',
+      backgroundColor: "var(--color-panel)",
+      border: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
     }}
   >
     <div className="mb-2 flex items-center justify-between">
       <div className="flex items-center gap-2">
-        <span style={{ color: 'var(--color-pharma)' }}>{icon}</span>
+        <span style={{ color: "var(--color-pharma)" }}>{icon}</span>
         <h3
           className="text-body-sm font-semibold"
-          style={{ color: 'var(--color-ink)' }}
+          style={{ color: "var(--color-ink)" }}
         >
           {title}
         </h3>
@@ -1047,4 +1086,3 @@ const InfoCard: FC<InfoCardProps> = ({ icon, title, children, action }) => (
     {children}
   </div>
 );
-

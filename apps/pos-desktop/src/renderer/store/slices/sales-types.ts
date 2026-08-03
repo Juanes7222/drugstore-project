@@ -4,7 +4,7 @@
  * Extends the shared Product type with the lot selected for this line and
  * derived numeric values needed for fast totals calculation.
  */
-import { CommissionType, SaleType } from "@pharmacy/shared-types";
+import { CommissionType, DeliveryState, SaleType } from "@pharmacy/shared-types";
 
 export interface CartItem {
   id: string;
@@ -48,7 +48,25 @@ export const GENERIC_CLIENT: SelectedClient = {
   identification: "0000000000-0",
 };
 
+/**
+ * In-progress domicilio capture for the active sale, mirroring the
+ * persisted `SaleDeliveryInfo` shape (minus the client, which lives on the
+ * sale itself via `selectedClient`). Null = the sale is not a domicilio.
+ */
+export interface SaleDeliveryDraft {
+  state: DeliveryState;
+  address: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  notes: string | null;
+  /** ISO-8601 delivery date/time, only when the tenant allows scheduling. */
+  scheduledAt: string | null;
+  /** Delivery fee in COP cents; 0 when the tenant charges no fee. */
+  feeCents: number;
+}
+
 export interface SalesState {
   items: CartItem[];
   selectedClient: SelectedClient | null;
+  delivery: SaleDeliveryDraft | null;
 }

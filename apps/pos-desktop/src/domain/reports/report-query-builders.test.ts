@@ -8,6 +8,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  buildCashShiftCloseQuery,
+  buildCountQuery,
   buildSalesByCashierQuery,
   buildSalesByProductQuery,
   buildSalesDailySummaryQuery,
@@ -110,5 +112,36 @@ describe('buildSalesByProductQuery', () => {
     expect(params[1]).toBe(endOfDayUtcExclusive(range.dateTo));
     expect(sql).toContain('s."confirmedAt" >= $1');
     expect(sql).toContain('s."confirmedAt" < $2');
+  });
+});
+
+describe('buildCountQuery', () => {
+  it('keeps every param when the base query has no LIMIT/OFFSET tail', () => {
+    const base = buildCashShiftCloseQuery('shift-abc');
+    const { sql, params } = buildCountQuery(base, 'COUNT(*)', base.params);
+
+    expect(sql).toContain('SELECT COUNT(*) AS total FROM (');
+    // Regression pin: the shift filter placeholder stays bound inside the
+    // wrapped subquery — previously the last two params were sliced
+    // unconditionally, leaving $1 unbound (Postgres error 08P01).
+    expect(sql).toContain('WHERE cs."id" = $1');
+    expect(params).toEqual(['shift-abc']);
+  });
+
+  it('strips only the pagination tail params from a LIMIT/OFFSET query', () => {
+    const base = buildSalesByCashierQuery(
+      range,
+      { restrictToUserId: 'user-cashier-01' },
+      { limit: 20, offset: 5 },
+    );
+    const { sql, params } = buildCountQuery(base, 'COUNT(*)', base.params);
+
+    expect(params).toEqual([
+      startOfDayUtc(range.dateFrom),
+      endOfDayUtcExclusive(range.dateTo),
+      'user-cashier-01',
+    ]);
+    expect(sql).not.toMatch(/LIMIT\s+\$\d+\s+OFFSET\s+\$\d+\s*$/i);
+    expect(sql).toContain('s."userId" = $3');
   });
 });

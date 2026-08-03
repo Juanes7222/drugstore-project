@@ -31,7 +31,7 @@ import type { InvoiceService } from '../fiscal/invoice.service';
 import type { PrintRouter } from '../printing/print-router';
 import { PrintJobType, PrintPayloadType } from '../printing/printing-types';
 import { writePrintPayload } from '../printing/print-payload-writer';
-import { RoleType } from '@pharmacy/shared-types';
+import { RoleType, SaleDeliveryInfo } from '@pharmacy/shared-types';
 import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
 import { LocalAuditEvent } from '../audit/local-audit-writer.service';
 import {
@@ -46,6 +46,10 @@ import {
   PaymentAmountMismatchException,
   ChangeRequiresCashPaymentException,
   SaleNotFoundException,
+  DeliveryDisabledException,
+  DeliveryRequiresClientException,
+  DeliveryAddressRequiredException,
+  DeliveryFeePolicyException,
 } from './exceptions';
 import {
   validateItemPricing,
@@ -56,6 +60,7 @@ import {
   getDiscountLimits,
   getSalesConfig,
 } from '../configuration/local-config.store';
+import { getEffectiveDeliveryConfig } from '../config';
 
 // ---------------------------------------------------------------------------
 // Public input types
@@ -78,6 +83,12 @@ export interface CreateSaleInput {
   clientId?: string | null;
   /** Line items. At least one is required. */
   items: CreateSaleItemInput[];
+  /**
+   * Delivery (domicilio) data for this sale. Null/undefined = regular
+   * in-store sale. When present, the delivery fee is added to the total
+   * the customer must pay at confirm time.
+   */
+  delivery?: SaleDeliveryInfo | null;
 }
 
 export interface PaymentInput {
@@ -288,6 +299,13 @@ export class SalesPosService {
         discountLimits: getDiscountLimits(),
       });
 
+      // Delivery (domicilio) policy validation — run before any state is
+      // written so an invalid domicilio never creates a sale row.
+      const delivery = input.delivery ?? null;
+      if (delivery) {
+        this.validateDeliveryAgainstPolicy(delivery, input.clientId ?? null);
+      }
+
       // Retry loop for the `ux_sale_local_per_ws` unique constraint
       for (let attempt = 0; attempt < 5; attempt++) {
         const localNumber = await this.getNextLocalNumber(tx, session.workstationId);
@@ -313,6 +331,9 @@ export class SalesPosService {
               totalDiscount: totals.totalDiscount,
               totalTax: totals.totalTax,
               totalAmount: totals.totalAmount,
+              delivery: delivery
+                ? (delivery as unknown as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
               items: {
                 create: saleItems.map((item) => ({
                   id: globalThis.crypto.randomUUID(),
@@ -426,7 +447,14 @@ export class SalesPosService {
       // Round DB-stored total too — sales created before the cents→pesos fix
       // (old JS division) stored imprecise values like 124.949999… instead of
       // exactly 124.95. Rounding both sides eliminates the ghost difference.
-      const saleTotalDecimal = sale.totalAmount.toDecimalPlaces(
+      // When the sale is a domicilio, the delivery fee (stored on the
+      // `delivery` JSON column) is part of the amount the customer owes and
+      // is included in the comparison.
+      const deliveryFeeDecimal = new Prisma.Decimal(
+        this.deliveryFeeCentsFromJson(sale.delivery),
+      ).dividedBy(100);
+      const dueTotalDecimal = sale.totalAmount.plus(deliveryFeeDecimal);
+      const saleTotalDecimal = dueTotalDecimal.toDecimalPlaces(
         2, Prisma.Decimal.ROUND_HALF_UP,
       );
       const saleTotalNumber = Number(saleTotalDecimal.toString());
@@ -554,7 +582,26 @@ export class SalesPosService {
       //    queueing. If the router is not configured, printing is skipped.
       if (this.printRouter) {
         try {
-          const resultData = result as { id: string; localNumber: bigint };
+          const resultData = result as {
+            id: string;
+            localNumber: bigint;
+            delivery?: Prisma.JsonValue | null;
+          };
+          // The receipt prints the delivery section when this sale is a
+          // domicilio, and includes the fee line in the totals.
+          const deliveryJson = resultData.delivery ?? null;
+          const deliveryForReceipt =
+            deliveryJson !== null &&
+            typeof deliveryJson === 'object' &&
+            !Array.isArray(deliveryJson)
+              ? (deliveryJson as {
+                  address?: unknown;
+                  contactName?: unknown;
+                  contactPhone?: unknown;
+                  notes?: unknown;
+                  scheduledAt?: unknown;
+                })
+              : null;
           // The receipt payload is generated as HTML for thermal printers.
           // At this point the invoice may have been generated above with a
           // fiscal PDF — we print the SALE_RECEIPT version.
@@ -569,6 +616,31 @@ export class SalesPosService {
               cufeOfficial: null,
               issuedAt: new Date(),
               fullData: null,
+              delivery: deliveryForReceipt
+                ? {
+                    address:
+                      typeof deliveryForReceipt.address === 'string'
+                        ? deliveryForReceipt.address
+                        : null,
+                    contactName:
+                      typeof deliveryForReceipt.contactName === 'string'
+                        ? deliveryForReceipt.contactName
+                        : null,
+                    contactPhone:
+                      typeof deliveryForReceipt.contactPhone === 'string'
+                        ? deliveryForReceipt.contactPhone
+                        : null,
+                    notes:
+                      typeof deliveryForReceipt.notes === 'string'
+                        ? deliveryForReceipt.notes
+                        : null,
+                    scheduledAt:
+                      typeof deliveryForReceipt.scheduledAt === 'string'
+                        ? deliveryForReceipt.scheduledAt
+                        : null,
+                  }
+                : null,
+              deliveryFeeCents: this.deliveryFeeCentsFromJson(deliveryJson),
             });
 
           // Write receipt HTML to a temp file for the print router
@@ -927,6 +999,84 @@ export class SalesPosService {
   }
 
   /**
+   * Enforce the tenant's delivery policy against a delivery attempt.
+   *
+   * Throws a domain exception on the first rule that fails:
+   * - feature disabled → DeliveryDisabledException
+   * - client required but none selected → DeliveryRequiresClientException
+   * - address required but empty → DeliveryAddressRequiredException
+   * - fee that violates `deliveryFeeMode` (non-zero when DISABLED, not
+   *   equal to the fixed amount when FIXED, above the cap when MANUAL)
+   *   → DeliveryFeePolicyException
+   */
+  private validateDeliveryAgainstPolicy(
+    delivery: SaleDeliveryInfo,
+    clientId: string | null,
+  ): void {
+    const policy = getEffectiveDeliveryConfig();
+
+    if (!policy.enabled) {
+      throw new DeliveryDisabledException();
+    }
+
+    if (policy.requiresClient && !clientId) {
+      throw new DeliveryRequiresClientException();
+    }
+
+    if (policy.addressRequired && !delivery.address?.trim()) {
+      throw new DeliveryAddressRequiredException();
+    }
+
+    const feeCents = Math.max(0, Math.round(delivery.feeCents));
+    switch (policy.deliveryFeeMode) {
+      case 'DISABLED':
+        if (feeCents > 0) {
+          throw new DeliveryFeePolicyException(
+            `Delivery fee (${feeCents}) is not allowed because the tenant has delivery fees disabled.`,
+            feeCents,
+            null,
+          );
+        }
+        break;
+      case 'FIXED':
+        if (feeCents !== policy.fixedDeliveryFeeCents) {
+          throw new DeliveryFeePolicyException(
+            `Delivery fee (${feeCents}) does not match the tenant's fixed fee of ${policy.fixedDeliveryFeeCents}.`,
+            feeCents,
+            policy.fixedDeliveryFeeCents,
+          );
+        }
+        break;
+      case 'MANUAL': {
+        const cap = policy.maxDeliveryFeeCents;
+        if (cap > 0 && feeCents > cap) {
+          throw new DeliveryFeePolicyException(
+            `Delivery fee (${feeCents}) exceeds the tenant cap of ${cap}.`,
+            feeCents,
+            cap,
+          );
+        }
+        break;
+      }
+    }
+  }
+
+  /**
+   * Extract the delivery fee in whole COP cents from a `Sale.delivery`
+   * JSON column value. Missing column or malformed JSON → 0 (no fee).
+   */
+  private deliveryFeeCentsFromJson(value: Prisma.JsonValue | null): number {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      return 0;
+    }
+    const parsed = value as Record<string, unknown>;
+    const raw = parsed.feeCents;
+    return typeof raw === 'number' && Number.isFinite(raw)
+      ? Math.max(0, Math.round(raw))
+      : 0;
+  }
+
+  /**
    * Check whether at least one of the given payment methods has `isCash = true`.
    */
   private async hasAnyCashPaymentMethod(
@@ -996,6 +1146,7 @@ export class SalesPosService {
       startedAt: Date;
       cashShiftId: string;
       clientId: string | null;
+      delivery: Prisma.JsonValue | null;
       subtotal: Prisma.Decimal;
       totalDiscount: Prisma.Decimal;
       totalTax: Prisma.Decimal;
@@ -1061,6 +1212,10 @@ export class SalesPosService {
           commissionAmount: item.commissionAmount.toString(),
         })),
         prescriptionNumber: null,
+        // Domicilio data replayed verbatim so the server persists the
+        // same address/fee the cashier captured at the register. Null
+        // when the sale is a regular in-store sale.
+        delivery: sale.delivery ?? null,
         // Snapshotted sale-header totals. The server uses these as the
         // authoritative figures (CreateSaleSchema.subtotal/totalDiscount/
         // totalTax/totalAmount) when all four are present, so a drifted

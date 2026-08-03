@@ -1,10 +1,12 @@
 /**
- * Totals summary block: subtotal, IVA, and grand total.
+ * Card totals with the IVA rate and an optional delivery-fee line.
  *
- * All monetary values are rendered with the data/mono face and tabular
- * figures so the cashier can read them at a glance while the customer watches.
+ * `totalCents` is the grand total (already fee-inclusive); the fee is
+ * rendered as its own row above the divider so subtotal, tax, fee and
+ * total stay unambiguous at a glance.
  */
-import { type FC } from "react";
+
+import { type CSSProperties, type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { formatCurrency } from "@/utils/format-currency";
 
@@ -12,12 +14,9 @@ interface TotalsSummaryProps {
   subtotalCents: number;
   taxCents: number;
   totalCents: number;
-  /**
-   * Unique taxPercentage that all cart items share.
-   * null when items have mixed rates — shows "IVA" without percentage.
-   * Example: 19 → "IVA (19%)", null → "IVA".
-   */
   uniqueRate: number | null;
+  /** Delivery fee in cents; 0 renders no fee row. */
+  deliveryFeeCents?: number;
 }
 
 export const TotalsSummary: FC<TotalsSummaryProps> = ({
@@ -25,45 +24,65 @@ export const TotalsSummary: FC<TotalsSummaryProps> = ({
   taxCents,
   totalCents,
   uniqueRate,
+  deliveryFeeCents = 0,
 }) => {
   const { t } = useTranslation();
-
+  const mutedStyle: CSSProperties = {
+    color: "color-mix(in srgb, var(--color-ink) 70%, transparent)",
+  };
   const taxLabel =
     uniqueRate !== null
       ? t("sales.cart.tax", { rate: uniqueRate })
       : t("sales.cart.tax_mixed");
 
   return (
-    <div className="mt-auto pt-pos-md">
-      <div
-        className="pos-divider mb-pos-md"
-        style={{ borderTopColor: "color-mix(in srgb, var(--color-ink) 15%, transparent)" }}
-      />
-
-      <div className="flex justify-between text-body">
-        <span style={{ color: "color-mix(in srgb, var(--color-ink) 70%, transparent)" }}>
+    <div className="space-y-pos-sm">
+      <div className="flex justify-between">
+        <span className="text-body-sm" style={mutedStyle}>
           {t("sales.cart.subtotal")}
         </span>
-        <span className="font-data tabular-nums">
+        <span className="font-data text-body tabular-nums" style={mutedStyle}>
           {formatCurrency(subtotalCents)}
         </span>
       </div>
-
-      <div className="mt-pos-xs flex justify-between text-body">
-        <span style={{ color: "color-mix(in srgb, var(--color-ink) 70%, transparent)" }}>
+      <div className="flex justify-between">
+        <span className="text-body-sm" style={mutedStyle}>
           {taxLabel}
         </span>
-        <span className="font-data tabular-nums">{formatCurrency(taxCents)}</span>
+        <span className="font-data text-body tabular-nums" style={mutedStyle}>
+          {formatCurrency(taxCents)}
+        </span>
       </div>
-
+      {deliveryFeeCents > 0 && (
+        <div className="flex justify-between">
+          <span className="text-body-sm" style={mutedStyle}>
+            {t("delivery.fee")}
+          </span>
+          <span className="font-data text-body tabular-nums" style={mutedStyle}>
+            {formatCurrency(deliveryFeeCents)}
+          </span>
+        </div>
+      )}
       <div
-        className="pos-divider my-pos-md"
-        style={{ borderTopColor: "color-mix(in srgb, var(--color-ink) 25%, transparent)" }}
+        className="h-px"
+        style={{
+          backgroundColor:
+            "color-mix(in srgb, var(--color-ink) 15%, transparent)",
+        }}
       />
-
-      <div className="flex justify-between text-total font-bold">
-        <span style={{ color: "var(--color-ink)" }}>{t("sales.cart.total")}</span>
-        <span className="font-data tabular-nums">{formatCurrency(totalCents)}</span>
+      <div className="flex justify-between">
+        <span
+          className="text-title font-medium"
+          style={{ color: "var(--color-ink)" }}
+        >
+          {t("sales.cart.total")}
+        </span>
+        <span
+          className="font-data text-title tabular-nums"
+          style={{ color: "var(--color-ink)" }}
+        >
+          {formatCurrency(totalCents)}
+        </span>
       </div>
     </div>
   );

@@ -14,14 +14,22 @@ import { initializePayment } from "@/store/slices/payment-slice";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import { SaleType } from "@pharmacy/shared-types";
 import type { CatalogItem } from "@/services/catalog-service";
-import type { CartItem, SalesState } from "@/store/slices/sales-types";
+import type {
+  CartItem,
+  SaleDeliveryDraft,
+  SalesState,
+} from "@/store/slices/sales-types";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks for Redux hooks and infrastructure
 // ---------------------------------------------------------------------------
 
 const mockDispatch = vi.fn();
-let mockSalesState: SalesState = { items: [], selectedClient: null };
+let mockSalesState: SalesState = {
+  items: [],
+  selectedClient: null,
+  delivery: null,
+};
 
 vi.mock("@/store/hooks", () => ({
   useAppDispatch: () => mockDispatch,
@@ -137,7 +145,11 @@ const checkoutCartItem: CartItem = {
 describe("useSalesTransaction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockSalesState = { items: [], selectedClient: null };
+    mockSalesState = {
+      items: [],
+      selectedClient: null,
+      delivery: null,
+    };
   });
 
   describe("initial state", () => {
@@ -290,7 +302,11 @@ describe("useSalesTransaction", () => {
 
   describe("handleCheckout", () => {
     it("dispatches initializePayment with totalDue then navigates to payment screen", async () => {
-      mockSalesState = { items: [checkoutCartItem], selectedClient: null };
+      mockSalesState = {
+        items: [checkoutCartItem],
+        selectedClient: null,
+        delivery: null,
+      };
       mockSalesPosService.create.mockResolvedValue({ id: "sale-1" });
       const { result } = renderHook(() => useSalesTransaction());
 
@@ -300,6 +316,7 @@ describe("useSalesTransaction", () => {
 
       expect(mockSalesPosService.create).toHaveBeenCalledWith({
         clientId: null,
+        delivery: null,
         items: [
           {
             productId: "p-001",
@@ -312,6 +329,48 @@ describe("useSalesTransaction", () => {
       });
       expect(mockDispatch).toHaveBeenCalledWith(
         initializePayment({ totalCents: 50_000 }),
+      );
+      expect(mockDispatch).toHaveBeenCalledWith(setActiveScreen("payment"));
+    });
+
+    it("forwards the delivery draft to create and charges its fee in the grand total", async () => {
+      const deliveryDraft: SaleDeliveryDraft = {
+        state: "PENDING",
+        address: "Calle 10 #20-30",
+        contactName: "Ana Gómez",
+        contactPhone: "5551234",
+        notes: null,
+        scheduledAt: null,
+        feeCents: 5_000,
+      };
+      mockSalesState = {
+        items: [checkoutCartItem],
+        selectedClient: null,
+        delivery: deliveryDraft,
+      };
+      mockSalesPosService.create.mockResolvedValue({ id: "sale-2" });
+      const { result } = renderHook(() => useSalesTransaction());
+
+      await act(async () => {
+        await result.current.handleCheckout();
+      });
+
+      expect(mockSalesPosService.create).toHaveBeenCalledWith({
+        clientId: null,
+        delivery: deliveryDraft,
+        items: [
+          {
+            productId: "p-001",
+            quantity: 1,
+            unitPrice: undefined,
+            discountPercentage: undefined,
+            discountReason: undefined,
+          },
+        ],
+      });
+      // 50_000 item total + 5_000 delivery fee
+      expect(mockDispatch).toHaveBeenCalledWith(
+        initializePayment({ totalCents: 55_000 }),
       );
       expect(mockDispatch).toHaveBeenCalledWith(setActiveScreen("payment"));
     });

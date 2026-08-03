@@ -14,6 +14,7 @@ import type {
   PurchasesConfig,
   CustomCompanyField,
   CustomStrictnessToggle,
+  DeliveryConfig,
 } from './types';
 
 // ---------------------------------------------------------------------------
@@ -63,6 +64,27 @@ export const DEFAULT_FISCAL: FiscalConfig = {
 };
 
 // ---------------------------------------------------------------------------
+// Default delivery (domicilio) policy
+// ---------------------------------------------------------------------------
+
+/**
+ * Default delivery handling policy. The feature is OFF by default — a
+ * tenant must enable it explicitly in configuration.
+ */
+export const DEFAULT_DELIVERY: DeliveryConfig = {
+  enabled: false,
+  requiresClient: false,
+  addressRequired: true,
+  phoneRequired: false,
+  allowScheduling: false,
+  deliveryFeeMode: 'DISABLED',
+  fixedDeliveryFeeCents: 0,
+  maxDeliveryFeeCents: 0,
+  printOnReceipt: true,
+  enableStatusTracking: false,
+};
+
+// ---------------------------------------------------------------------------
 // Default workflow
 // ---------------------------------------------------------------------------
 
@@ -77,6 +99,7 @@ export const DEFAULT_WORKFLOW: WorkflowConfig = {
   sessionIdleTimeouts: { cashier: 600, manager: 1800, owner: 3600 },
   suggestionEngineEnabled: true,
   autoReprintLastReceiptOnReprint: true,
+  delivery: DEFAULT_DELIVERY,
 };
 
 // ---------------------------------------------------------------------------

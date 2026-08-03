@@ -16,6 +16,7 @@ import { createSelector, createSlice, PayloadAction } from "@reduxjs/toolkit";
 import {
   CartItem,
   GENERIC_CLIENT,
+  SaleDeliveryDraft,
   SalesState,
   SelectedClient,
 } from "./sales-types";
@@ -23,6 +24,7 @@ import {
 const initialState: SalesState = {
   items: [],
   selectedClient: null,
+  delivery: null,
 };
 
 export const salesSlice = createSlice({
@@ -108,9 +110,24 @@ export const salesSlice = createSlice({
       state.selectedClient = action.payload;
     },
 
+    /**
+     * Set or replace the delivery (domicilio) draft attached to the sale.
+     * Passing null clears it and makes the sale a regular in-store sale.
+     */
+    setDelivery: (
+      state,
+      action: PayloadAction<SaleDeliveryDraft | null>,
+    ) => {
+      const draft = action.payload;
+      state.delivery = draft
+        ? { ...draft, feeCents: Math.max(0, Math.round(draft.feeCents)) }
+        : null;
+    },
+
     clearCart: (state) => {
       state.items = [];
       state.selectedClient = null;
+      state.delivery = null;
     },
   },
 });
@@ -123,6 +140,7 @@ export const {
   updateItemDiscount,
   clearCart,
   setClient,
+  setDelivery,
 } = salesSlice.actions;
 
 /* ------------------------------------------------------------------ */
@@ -180,4 +198,27 @@ export const selectSelectedClient = createSelector(
 export const selectEffectiveClient = createSelector(
   [selectSelectedClient],
   (selected) => selected ?? GENERIC_CLIENT,
+);
+
+export const selectDeliveryDraft = createSelector(
+  [selectSalesState],
+  (sales) => sales.delivery,
+);
+
+/**
+ * Delivery fee in cents for the active sale. 0 when the sale is not a
+ * domicilio or the tenant charges no fee.
+ */
+export const selectDeliveryFeeCents = createSelector(
+  [selectDeliveryDraft],
+  (delivery) => delivery?.feeCents ?? 0,
+);
+
+/**
+ * Total due including any delivery fee. This is the amount the customer
+ * actually pays and the number payment captures/validates against.
+ */
+export const selectGrandTotalCents = createSelector(
+  [selectTotalCents, selectDeliveryFeeCents],
+  (total, deliveryFee) => total + deliveryFee,
 );

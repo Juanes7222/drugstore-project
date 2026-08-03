@@ -8,6 +8,8 @@
  */
 
 import { PrismaClient, SaleOperationalState } from '@pharmacy/database/local';
+import type { Prisma } from '@pharmacy/database/local';
+import type { SaleDeliveryInfo } from '@pharmacy/shared-types';
 import type { InvoiceModel } from '../fiscal/fiscal-types';
 import type { LocalAdjustmentService } from '../fiscal/local-adjustment.service';
 import type {
@@ -31,6 +33,10 @@ export interface SaleHistoryListItem {
   invoiceStatus: string | null;
   invoiceType: string | null;
   hasAdjustments: boolean;
+  /** Delivery fee in COP cents; 0 = not a domicilio or no fee. */
+  deliveryFeeCents: number;
+  /** Delivery address, when the sale is a domicilio. */
+  deliveryAddress: string | null;
 }
 
 export interface SaleHistoryFilters {
@@ -92,6 +98,8 @@ export interface SaleHistoryDetail {
     cashShiftId: string;
     workstationId: string;
     userId: string;
+    /** Delivery (domicilio) info; null when the sale was in-store. */
+    delivery: SaleDeliveryInfo | null;
     items: SaleHistoryItem[];
     payments: SaleHistoryPayment[];
   };
@@ -194,6 +202,7 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
       const mainInvoice = saleInvoices[0] ?? null;
       const fullData = mainInvoice?.fullData as Record<string, unknown> | undefined;
       const buyer = (fullData?.buyer ?? {}) as Record<string, unknown>;
+      const delivery = deliveryFromJson(sale.delivery);
 
       return {
         saleId: sale.id,
@@ -215,6 +224,8 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
         hasAdjustments: mainInvoice
           ? (adjustmentCountByInvoiceId.get(mainInvoice.id) ?? 0) > 0
           : false,
+        deliveryFeeCents: delivery?.feeCents ?? 0,
+        deliveryAddress: delivery?.address ?? null,
       };
     });
 
@@ -268,6 +279,7 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
         cashShiftId: sale.cashShiftId,
         workstationId: sale.workstationId,
         userId: sale.userId,
+        delivery: deliveryFromJson(sale.delivery),
         items: sale.items.map((item) => ({
           id: item.id,
           productId: item.productId,
@@ -301,4 +313,28 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
       adjustmentHistory,
     };
   }
+}
+
+/**
+ * Parse a `Sale.delivery` JSON column value into the typed delivery info.
+ * Null, malformed, or missing-typed fields → null (in-store sale).
+ */
+function deliveryFromJson(value: Prisma.JsonValue | null): SaleDeliveryInfo | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const parsed = value as Record<string, unknown>;
+  if (typeof parsed.state !== 'string') {
+    return null;
+  }
+  const feeCents = typeof parsed.feeCents === 'number' ? Math.max(0, Math.round(parsed.feeCents)) : 0;
+  return {
+    state: parsed.state as SaleDeliveryInfo['state'],
+    address: typeof parsed.address === 'string' ? parsed.address : null,
+    contactName: typeof parsed.contactName === 'string' ? parsed.contactName : null,
+    contactPhone: typeof parsed.contactPhone === 'string' ? parsed.contactPhone : null,
+    notes: typeof parsed.notes === 'string' ? parsed.notes : null,
+    scheduledAt: typeof parsed.scheduledAt === 'string' ? parsed.scheduledAt : null,
+    feeCents,
+  };
 }

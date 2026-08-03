@@ -88,6 +88,7 @@ const createDetail = (
     cashShiftId: 'cs-1',
     workstationId: 'ws-1',
     userId: 'user-1',
+    delivery: null,
     items: [],
     payments: [],
   },

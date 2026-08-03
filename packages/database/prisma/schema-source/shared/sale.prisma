@@ -37,6 +37,9 @@ model Sale {
   /// Used by SyncOperationDispatcherService.handleSaleConfirmation to detect
   /// retries and prevent duplicate sale creation (same pattern as Product.sourceOperationUuid).
   sourceOperationUuid               String?   @unique
+  /// Json: SaleDeliveryInfo — domicilio data (state, address, contact, fee).
+  /// Null when the sale is not a domicilio. Never part of the fiscal payload.
+  delivery                          Json?
   items                             SaleItem[]
   payments                          SalePayment[]
   movements                         InventoryMovement[]

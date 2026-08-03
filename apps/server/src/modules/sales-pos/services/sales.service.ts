@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { Prisma, SaleOperationalState, SaleType, ShiftState, IdentificationType, ClientType, AuditAction, SystemModule, CommissionType } from '@pharmacy/database';
 import * as crypto from 'crypto';
@@ -23,6 +23,7 @@ import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-do
 import { CommissionCalculatorService } from './commission-calculator.service';
 import { toDecimal } from '@/common/to-decimal';
 import { GENERIC_CLIENT_UUID } from '@/modules/clients/constants/clients.constants';
+import { SaleDeliveryInfoSchema, SaleDeliveryInfoInput } from '../dto/sale-delivery.schema';
 
 interface SaleItemCalculations {
   unitPrice: Prisma.Decimal;
@@ -81,6 +82,11 @@ export class SalesService {
   }
 
   async create(createDto: CreateSaleDto, userId: string, workstationId: string, sourceOperationUuid?: string): Promise<any> {
+    // Validate the optional domicilio payload before opening the transaction so
+    // an invalid shape fails fast and surfaces as a 400 (BadRequestException)
+    // on both the HTTP path and the SALE_CONFIRMATION sync replay path.
+    const delivery = this.parseDeliveryOrThrow(createDto.delivery);
+
     return this.prisma.$transaction(async (tx) => {
       const cashShift = await this.getOpenCashShift(tx, userId, workstationId, createDto.cashShiftId);
 
@@ -138,6 +144,9 @@ export class SalesService {
               totalDiscount: headerTotals.totalDiscount,
               totalTax: headerTotals.totalTax,
               totalAmount: headerTotals.totalAmount,
+              // Delivery JSON persisted verbatim from the payload; SQL NULL
+              // when the sale is not a domicilio.
+              delivery: delivery ?? Prisma.DbNull,
               items: { create: saleItems.map(item => ({ ...item, saleItemPrescriptionId: null })) },
             },
             include: { items: true },
@@ -190,11 +199,15 @@ export class SalesService {
       }
 
       const totalPaid = confirmDto.payments.reduce((sum, p) => sum + p.amount, 0);
-      if (totalPaid < sale.totalAmount.toNumber()) {
-        throw new PaymentAmountMismatchException(sale.totalAmount.toNumber(), totalPaid);
+      // A domicilio sale charges the item total plus the delivery fee —
+      // the POS validates the same way locally (totalAmount + feeCents).
+      const deliveryFee = this.deliveryFeeAmount(sale.delivery);
+      const amountDue = sale.totalAmount.plus(deliveryFee);
+      if (totalPaid < amountDue.toNumber()) {
+        throw new PaymentAmountMismatchException(amountDue.toNumber(), totalPaid);
       }
 
-      const changeAmount = new Prisma.Decimal(totalPaid).minus(sale.totalAmount);
+      const changeAmount = new Prisma.Decimal(totalPaid).minus(amountDue);
       if (changeAmount.greaterThan(0)) {
         const hasCashPayment = await this.hasCashPaymentMethod(tx, confirmDto.payments);
         if (!hasCashPayment) {
@@ -538,6 +551,43 @@ export class SalesService {
       totalTax: toDecimal(createDto.totalTax!, { fieldName: 'totalTax' }),
       totalAmount: toDecimal(createDto.totalAmount!, { fieldName: 'totalAmount' }),
     };
+  }
+
+  /**
+   * Validates the optional domicilio payload for both the HTTP and the sync
+   * replay path. Null/absent means the sale is not a domicilio. Invalid
+   * shapes are rejected with a 400 (BadRequestException) so the POS maps the
+   * failure to a VALIDATION category without leaking server internals.
+   */
+  private parseDeliveryOrThrow(
+    delivery: CreateSaleDto['delivery'],
+  ): SaleDeliveryInfoInput | null {
+    if (delivery === undefined || delivery === null) return null;
+    const result = SaleDeliveryInfoSchema.safeParse(delivery);
+    if (!result.success) {
+      const detail = result.error.issues
+        .map((i) => `delivery.${i.path.join('.')}: ${i.message}`)
+        .join('; ');
+      throw new BadRequestException(`Delivery validation failed: ${detail}`);
+    }
+    return result.data;
+  }
+
+  /**
+   * Delivery fee in COP pesos for a sale's stored delivery JSON. The fee is a
+   * surcharge on top of the item total — the POS charges totalAmount +
+   * feeCents, so the confirmation gate must compare paid against the same
+   * amount. Malformed or absent delivery JSON yields 0 (no fee).
+   */
+  private deliveryFeeAmount(delivery: Prisma.JsonValue | null): Prisma.Decimal {
+    if (!delivery || typeof delivery !== 'object' || Array.isArray(delivery)) {
+      return new Prisma.Decimal(0);
+    }
+    const feeCents = (delivery as Record<string, unknown>).feeCents;
+    if (typeof feeCents !== 'number' || !Number.isFinite(feeCents) || feeCents < 0) {
+      return new Prisma.Decimal(0);
+    }
+    return new Prisma.Decimal(feeCents).dividedBy(100);
   }
 
   private calculateSaleTotals(

@@ -1,5 +1,6 @@
 import { CreateSaleSchema } from '@pharmacy/shared-validation';
 import { z } from 'zod';
+import type { SaleDeliveryInfo } from '@pharmacy/shared-types';
 
 export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
   saleType!: 'FREE_SALE' | 'PRESCRIPTION' | 'CONTROLLED_SUBSTANCE';
@@ -29,8 +30,17 @@ export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
   totalDiscount?: string;
   totalTax?: string;
   totalAmount?: string;
+  /**
+   * Domicilio (delivery) data attached to the sale. Null or absent when the
+   * sale is not a domicilio. Persisted verbatim into the Sale.delivery JSON
+   * column; the delivery fee is added on top of totalAmount by the
+   * confirmation flow's amount-due validation.
+   */
+  delivery?: SaleDeliveryInfo | null;
 
-  constructor(data?: z.infer<typeof CreateSaleSchema>) {
+  constructor(
+    data?: (z.infer<typeof CreateSaleSchema> & { delivery?: SaleDeliveryInfo | null }) | null,
+  ) {
     if (data) {
       this.saleType = data.saleType;
       this.cashShiftId = data.cashShiftId;
@@ -41,6 +51,7 @@ export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
       this.totalDiscount = data.totalDiscount;
       this.totalTax = data.totalTax;
       this.totalAmount = data.totalAmount;
+      this.delivery = data.delivery;
     }
   }
 }

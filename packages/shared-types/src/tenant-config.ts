@@ -70,6 +70,34 @@ export interface FiscalConfig {
   qrCustomContent: string | null;
 }
 
+// --- Delivery (domicilios) ---
+
+export type DeliveryFeeMode = 'DISABLED' | 'FIXED' | 'MANUAL';
+export type DeliveryState = 'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
+
+export interface DeliveryConfig {
+  /** Master switch — shows/hides the "Domicilio" option in checkout. */
+  enabled: boolean;
+  /** Client selection is required to mark a sale as a domicilio. */
+  requiresClient: boolean;
+  /** Address is mandatory when the sale is a domicilio. */
+  addressRequired: boolean;
+  /** Contact phone is mandatory when the sale is a domicilio. */
+  phoneRequired: boolean;
+  /** Allow scheduling a delivery date/time. */
+  allowScheduling: boolean;
+  /** Delivery fee policy: no fee / fixed amount / cashier-entered. */
+  deliveryFeeMode: DeliveryFeeMode;
+  /** Fixed fee in COP cents when deliveryFeeMode === FIXED. */
+  fixedDeliveryFeeCents: number;
+  /** Cap for cashier-entered fees in COP cents; 0 = unlimited. */
+  maxDeliveryFeeCents: number;
+  /** Print delivery details on the receipt. */
+  printOnReceipt: boolean;
+  /** Enable the status workflow (pending → in transit → delivered). */
+  enableStatusTracking: boolean;
+}
+
 // --- Workflow ---
 
 export type WorkflowAutoOpenDrawer = 'ALWAYS' | 'CASH_ONLY' | 'NEVER';
@@ -91,6 +119,8 @@ export interface WorkflowConfig {
   sessionIdleTimeouts: SessionIdleTimeouts;
   suggestionEngineEnabled: boolean;
   autoReprintLastReceiptOnReprint: boolean;
+  /** Delivery (domicilio) handling policy — global, not per-workstation. */
+  delivery: DeliveryConfig;
 }
 
 // --- Purchases ---

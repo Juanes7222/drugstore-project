@@ -22,6 +22,18 @@ import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { CreateSaleSchema } from '@pharmacy/shared-validation';
+import { SaleDeliveryInfoSchema } from '../dto/sale-delivery.schema';
+
+/**
+ * CreateSaleSchema (shared-validation) plus the optional domicilio payload.
+ * The shared schema predates delivery support; extending it here keeps the
+ * shared contract untouched while allowing both delivery and non-delivery
+ * sales through the HTTP endpoint. The same shape is validated again — and
+ * persisted — by SalesService.create for the sync replay path.
+ */
+const CreateSaleWithDeliverySchema = CreateSaleSchema.extend({
+  delivery: SaleDeliveryInfoSchema.nullable().optional(),
+});
 
 @Controller('sales-pos')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -51,7 +63,7 @@ export class SalesController {
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @Auditable({ action: AuditAction.CREATE, module: SystemModule.SALES, entityType: 'Sale' })
   async create(
-    @Body(new ZodValidationPipe(CreateSaleSchema)) createDto: CreateSaleDto,
+    @Body(new ZodValidationPipe(CreateSaleWithDeliverySchema)) createDto: CreateSaleDto,
     @CurrentUser() user: User,
     @Headers('x-workstation-id') workstationId?: string,
   ): Promise<any> {

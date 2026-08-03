@@ -39,6 +39,19 @@ export function generateReceiptHtml(invoice: {
   cufeOfficial: string | null;
   issuedAt: Date | string;
   fullData: unknown;
+  /**
+   * Delivery (domicilio) details for the receipt's delivery section.
+   * Omit for in-store sales (regular checkout receipts).
+   */
+  delivery?: {
+    address: string | null;
+    contactName: string | null;
+    contactPhone: string | null;
+    notes: string | null;
+    scheduledAt: string | null;
+  } | null;
+  /** Delivery fee in whole COP cents; 0 or omitted when no fee applies. */
+  deliveryFeeCents?: number;
 }): string {
   const data = invoice.fullData as InvoiceFullData | null;
   const isContingency = invoice.status === 'CONTINGENCY_PENDING_TRANSMISSION';
@@ -56,6 +69,16 @@ export function generateReceiptHtml(invoice: {
   const buyer = data?.buyer;
   const taxSummaries = data?.taxSummaries ?? [];
   const payments = data?.payments ?? [];
+
+  const delivery = invoice.delivery ?? null;
+  const deliveryFeeCents = Math.max(0, Math.round(invoice.deliveryFeeCents ?? 0));
+  const hasDeliveryFee = deliveryFeeCents > 0;
+  const grandTotal = hasDeliveryFee
+    ? (Number(data?.totalAmount ?? 0) + deliveryFeeCents / 100).toFixed(2)
+    : (data?.totalAmount ?? '0');
+  const scheduledAt = delivery?.scheduledAt
+    ? formatDateTime(delivery.scheduledAt)
+    : null;
 
   // ── Build document ───────────────────────────────────────────────────────
 
@@ -119,6 +142,10 @@ export function generateReceiptHtml(invoice: {
   .buyer-info { margin-bottom: 2mm; }
   .buyer-info .name { font-weight: bold; }
 
+  .delivery-info { margin-bottom: 2mm; }
+  .delivery-info .delivery-label { font-weight: bold; text-transform: uppercase; }
+  .delivery-info .delivery-address { font-weight: bold; }
+
   .prescription-note { font-size: 8px; color: #666; text-align: center; margin: 1mm 0; }
   .page-break { page-break-before: always; }
 </style>
@@ -159,6 +186,17 @@ ${buyer ? `
 </div>
 ` : ''}
 
+${delivery ? `
+<div class="delivery-info">
+  <span class="delivery-label">*** DOMICILIO ***</span>
+  ${delivery.address ? `<br><span class="delivery-address">${escapeHtml(delivery.address)}</span>` : ''}
+  ${delivery.contactName ? `<br>${escapeHtml(delivery.contactName)}` : ''}
+  ${delivery.contactPhone ? `<br>Tel: ${escapeHtml(delivery.contactPhone)}` : ''}
+  ${delivery.notes ? `<br>Nota: ${escapeHtml(delivery.notes)}` : ''}
+  ${scheduledAt ? `<br>Entrega: ${escapeHtml(scheduledAt)}` : ''}
+</div>
+` : ''}
+
 <div class="dashed"></div>
 
 <table class="items">
@@ -184,7 +222,8 @@ ${buyer ? `
   ${taxSummaries.map(t => `
     <tr><td class="label">${escapeHtml(t.scheme)} ${Number(t.rate) * 100}%</td><td class="value">${formatCurrency(t.taxAmount)}</td></tr>
   `).join('')}
-  <tr class="total"><td class="label">TOTAL</td><td class="value">${formatCurrency(data?.totalAmount ?? '0')}</td></tr>
+  ${hasDeliveryFee ? `<tr><td class="label">Domicilio</td><td class="value">${formatCurrency(deliveryFeeCents.toFixed(2))}</td></tr>` : ''}
+  <tr class="total"><td class="label">TOTAL${hasDeliveryFee ? ' + DOMICILIO' : ''}</td><td class="value">${formatCurrency(grandTotal)}</td></tr>
 </table>
 
 <div class="separator"></div>
@@ -248,6 +287,15 @@ function formatDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return iso;
   const pad = (n: number) => n.toString().padStart(2, '0');
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+/**
+ * Format an ISO-8601 date-time string to DD/MM/YYYY HH:MM.
+ */
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return `${formatDate(iso)} ${formatTime(iso)}`;
 }
 
 /**

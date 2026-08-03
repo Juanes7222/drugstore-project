@@ -26,6 +26,8 @@ const createSale = (
   invoiceStatus: 'TRANSMITTED_AUTHORIZED',
   invoiceType: 'ELECTRONIC_INVOICE',
   hasAdjustments: false,
+  deliveryFeeCents: 0,
+  deliveryAddress: null,
   ...overrides,
 });
 

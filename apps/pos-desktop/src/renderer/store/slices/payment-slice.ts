@@ -17,7 +17,7 @@ import {
   PaymentMethodType,
   PaymentState,
 } from "./payment-types";
-import { selectTotalCents } from "./sales-slice";
+import { selectGrandTotalCents } from "./sales-slice";
 
 const ELECTRONIC_METHODS: readonly PaymentMethodType[] = [
   PaymentMethodType.CARD,
@@ -191,8 +191,13 @@ export const selectPaymentTotalPaidCents = createSelector(
   (methods) => methods.reduce((sum, method) => sum + method.amountCents, 0),
 );
 
+/**
+ * Paid minus total due. The total is the grand total — cart + tax + any
+ * delivery fee — so the difference stays 0 when a domicilio fee is present
+ * and correctly drives `selectCanConfirmPayment`.
+ */
 export const selectPaymentDifferenceCents = createSelector(
-  [selectPaymentTotalPaidCents, selectTotalCents],
+  [selectPaymentTotalPaidCents, selectGrandTotalCents],
   (paid, total) => paid - total,
 );
 

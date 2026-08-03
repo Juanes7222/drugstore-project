@@ -12,7 +12,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { LOCAL_SCHEMA_SQL } from '@pharmacy/database/local-schema';
-import { buildSalesDailySummaryQuery } from './report-query-builders';
+import {
+  buildCashShiftCloseQuery,
+  buildCountQuery,
+  buildSalesDailySummaryQuery,
+} from './report-query-builders';
 import { ReportDatePreset } from './report-types';
 import type { DateRangeFilter } from './report-types';
 
@@ -131,5 +135,68 @@ describe('buildSalesDailySummaryQuery (PGlite)', () => {
       transaction_count: 1,
       annulled: 1,
     });
+  });
+});
+
+describe('buildCashShiftCloseQuery (PGlite)', () => {
+  const SHIFT_ID = 'shift-0001';
+  let pg: PGlite;
+
+  beforeEach(async () => {
+    pg = new PGlite('memory://');
+    await pg.exec(LOCAL_SCHEMA_SQL);
+
+    const now = new Date().toISOString();
+    const userId = 'user-cashier-01';
+    const workstationId = 'ws-001';
+
+    await pg.exec(`
+      INSERT INTO "CashShift" (id, "workstationId", "userId", "state", "openedAt", "createdAt", "updatedAt")
+      VALUES ('${SHIFT_ID}', '${workstationId}', '${userId}', 'CLOSED', '${now}', '${now}', '${now}');
+    `);
+
+    for (const [id, code, name, category, isCash] of [
+      ['pm-cash', 'CASH-01', 'Efectivo', 'CASH', 'true'],
+      ['pm-card', 'CARD-01', 'Tarjeta', 'DEBIT_CARD', 'false'],
+    ] as const) {
+      await pg.exec(`
+        INSERT INTO "PaymentMethod" (id, "internalCode", "name", "category", "isCash", "createdAt", "updatedAt")
+        VALUES ('${id}', '${code}', '${name}', '${category}', ${isCash}, '${now}', '${now}');
+      `);
+      await pg.exec(`
+        INSERT INTO "ShiftCashCount" (id, "cashShiftId", "countType", "paymentMethodId",
+          "paymentMethodIsCash", "expectedAmount", "declaredAmount", "difference", "createdById")
+        VALUES ('scc-${id}', '${SHIFT_ID}', 'CLOSING', '${id}',
+          ${isCash}, 1000.00, 1000.00, 0.00, '${userId}');
+      `);
+    }
+  });
+
+  afterEach(async () => {
+    await pg.close();
+  });
+
+  it('returns one CLOSING count row per payment method and a matching total', async () => {
+    const fragment = buildCashShiftCloseQuery(SHIFT_ID);
+    const countFragment = buildCountQuery(fragment, 'COUNT(*)', fragment.params);
+
+    const result = await pg.query(fragment.sql, fragment.params);
+    const countResult = await pg.query(countFragment.sql, countFragment.params);
+    const rows = result.rows as Array<Record<string, unknown>>;
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.payment_method_name).sort()).toEqual(['Efectivo', 'Tarjeta']);
+    expect(Number((countResult.rows[0] as Record<string, unknown>).total)).toBe(2);
+  });
+
+  it('returns zero rows and a zero total for an unknown shift id', async () => {
+    const fragment = buildCashShiftCloseQuery('shift-unknown');
+    const countFragment = buildCountQuery(fragment, 'COUNT(*)', fragment.params);
+
+    const result = await pg.query(fragment.sql, fragment.params);
+    const countResult = await pg.query(countFragment.sql, countFragment.params);
+
+    expect(result.rows).toHaveLength(0);
+    expect(Number((countResult.rows[0] as Record<string, unknown>).total)).toBe(0);
   });
 });

@@ -13,7 +13,10 @@ import { paymentSlice } from "@/store/slices/payment-slice";
 import { uiSlice } from "@/store/slices/ui-slice";
 import { SaleType } from "@pharmacy/shared-types";
 import { CartPanel } from "./cart-panel";
-import type { CartItem } from "@/store/slices/sales-types";
+import type {
+  CartItem,
+  SaleDeliveryDraft,
+} from "@/store/slices/sales-types";
 
 // Mock ClientSelector since it requires ServiceContext not needed here
 vi.mock("./client-selector", () => ({
@@ -48,7 +51,23 @@ const baseItem = (overrides: Partial<CartItem> = {}): CartItem => ({
   ...overrides,
 });
 
-const createTestStore = (items: CartItem[]) =>
+const deliveryDraft = (
+  overrides: Partial<SaleDeliveryDraft> = {},
+): SaleDeliveryDraft => ({
+  state: "PENDING",
+  address: "Calle 10 #20-30",
+  contactName: null,
+  contactPhone: null,
+  notes: null,
+  scheduledAt: null,
+  feeCents: 5_000,
+  ...overrides,
+});
+
+const createTestStore = (
+  items: CartItem[],
+  delivery: SaleDeliveryDraft | null = null,
+) =>
   configureStore({
     reducer: {
       sales: salesSlice.reducer,
@@ -56,7 +75,7 @@ const createTestStore = (items: CartItem[]) =>
       ui: uiSlice.reducer,
     },
     preloadedState: {
-      sales: { items, selectedClient: null },
+      sales: { items, selectedClient: null, delivery },
       payment: paymentSlice.reducer(
         paymentSlice.getInitialState(),
         { type: "unknown" },
@@ -236,5 +255,31 @@ describe("CartPanel", () => {
     renderCartPanel(store);
 
     expect(screen.getByText("Carrito (1 items)")).toBeInTheDocument();
+  });
+
+  describe("CP-06: delivery fee in totals", () => {
+    it("renders the delivery fee row and the fee-inclusive grand total", () => {
+      const store = createTestStore([baseItem()], deliveryDraft());
+      renderCartPanel(store);
+
+      // subtotal 620 000 + IVA 117 800 = 737 800; + fee 5 000 = 742 800 cents
+      // → "$ 7.428"; the fee itself renders as "$ 50".
+      expect(screen.getByText("Domicilio")).toBeInTheDocument();
+      expect(screen.getByText(/\$\s*50$/)).toBeInTheDocument();
+      expect(screen.getByText(/\$\s*7\.428/)).toBeInTheDocument();
+    });
+
+    it("omits the fee row and the fee when the draft carries no fee", () => {
+      const store = createTestStore(
+        [baseItem()],
+        deliveryDraft({ feeCents: 0 }),
+      );
+      renderCartPanel(store);
+
+      // grand total stays at 737 800 cents → "$ 7.378"
+      expect(screen.queryByText("Domicilio")).not.toBeInTheDocument();
+      expect(screen.queryByText(/\$\s*50$/)).not.toBeInTheDocument();
+      expect(screen.getByText(/\$\s*7\.378/)).toBeInTheDocument();
+    });
   });
 });

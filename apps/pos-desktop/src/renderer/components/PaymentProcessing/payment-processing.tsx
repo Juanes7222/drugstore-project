@@ -39,7 +39,10 @@ import {
   selectPaymentTotalPaidCents,
   selectCashReceivedCents,
 } from "@/store/slices/payment-slice";
-import { selectCartItems, selectTotalCents } from "@/store/slices/sales-slice";
+import {
+  selectCartItems,
+  selectGrandTotalCents,
+} from "@/store/slices/sales-slice";
 import { SaleType } from "@pharmacy/shared-types";
 import {
   initiateSaleCompletion,
@@ -76,7 +79,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
   const waitForProductSync = useProductSyncWait();
 
   const methods = useAppSelector(selectPaymentMethods);
-  const totalDue = useAppSelector(selectTotalCents);
+  const totalDue = useAppSelector(selectGrandTotalCents);
   const totalPaid = useAppSelector(selectPaymentTotalPaidCents);
   const difference = useAppSelector(selectPaymentDifferenceCents);
   const cashOwed = useAppSelector(selectCashOwedCents);
@@ -189,7 +192,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
 
   const performConfirm = useCallback(async () => {
     if (!currentSaleId) {
-      throw new Error('No se encontró la venta activa. Vuelva a intentarlo.');
+      throw new Error("No se encontró la venta activa. Vuelva a intentarlo.");
     }
 
     // 1. Resolve frontend payment types → DB payment method UUIDs
@@ -198,7 +201,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
         paymentMethodId: await salesPosService.resolvePaymentMethodId(m.type),
         amount: m.amountCents / 100, // cents → pesos (DB stores Decimal 15,2)
         transactionReference: m.reference,
-        cardBrand: m.type === 'card' ? 'GENERIC' : undefined,
+        cardBrand: m.type === "card" ? "GENERIC" : undefined,
         cardLastFour: undefined,
         batchNumber: undefined,
         processorResponseCode: m.authorizationStatus,
@@ -235,9 +238,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
 
     if (itemsNeedingPrescription.length > 0) {
       const pendingSaleId = globalThis.crypto.randomUUID();
-      const incompleteItemIds = itemsNeedingPrescription.map(
-        (item) => item.id,
-      );
+      const incompleteItemIds = itemsNeedingPrescription.map((item) => item.id);
 
       dispatch(
         setPrescriptionFlow({
@@ -251,7 +252,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
 
     // ---- Guard: must have a sale ID from create() ----
     if (!currentSaleId) {
-      setActionError('No se encontró la venta activa. Vuelva a intentarlo.');
+      setActionError("No se encontró la venta activa. Vuelva a intentarlo.");
       return;
     }
 
@@ -274,25 +275,35 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
             await performConfirm();
             return;
           } catch (retryErr) {
-            console.error('[PaymentProcessing] retry after sync failed:', retryErr);
-            setActionError(
-              t('sales.cart.error_product_not_synced_yet'),
+            console.error(
+              "[PaymentProcessing] retry after sync failed:",
+              retryErr,
             );
+            setActionError(t("sales.cart.error_product_not_synced_yet"));
             return;
           }
         }
-        setActionError(t('sales.cart.error_product_not_synced_yet'));
+        setActionError(t("sales.cart.error_product_not_synced_yet"));
         return;
       }
 
-      console.error('[PaymentProcessing] confirm failed:', err);
+      console.error("[PaymentProcessing] confirm failed:", err);
       setActionError(
-        err instanceof Error ? err.message : 'Error al confirmar la venta.',
+        err instanceof Error ? err.message : "Error al confirmar la venta.",
       );
     } finally {
       setIsCompleting(false);
     }
-  }, [canConfirm, isCompleting, currentSaleId, cartItems, performConfirm, waitForProductSync, t, dispatch]);
+  }, [
+    canConfirm,
+    isCompleting,
+    currentSaleId,
+    cartItems,
+    performConfirm,
+    waitForProductSync,
+    t,
+    dispatch,
+  ]);
 
   const differenceText = useMemo(() => {
     if (difference < 0) {
@@ -440,9 +451,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
                 className="font-data tabular-nums text-total font-semibold"
                 style={{
                   color:
-                    change < 0
-                      ? "var(--color-urgency)"
-                      : "var(--color-pharma)",
+                    change < 0 ? "var(--color-urgency)" : "var(--color-pharma)",
                 }}
               >
                 {formatCurrency(change)}
@@ -455,8 +464,9 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
           <div
             className="mt-pos-md flex items-center gap-2 rounded-pos p-pos-md text-body-sm"
             style={{
-              backgroundColor: 'color-mix(in srgb, var(--color-sync) 12%, transparent)',
-              color: 'var(--color-sync)',
+              backgroundColor:
+                "color-mix(in srgb, var(--color-sync) 12%, transparent)",
+              color: "var(--color-sync)",
             }}
             role="status"
             aria-live="polite"
@@ -473,8 +483,9 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
           <div
             className="mt-pos-md rounded-pos p-pos-md text-body-sm"
             style={{
-              backgroundColor: 'color-mix(in srgb, var(--color-urgency) 12%, transparent)',
-              color: 'var(--color-urgency)',
+              backgroundColor:
+                "color-mix(in srgb, var(--color-urgency) 12%, transparent)",
+              color: "var(--color-urgency)",
             }}
             role="alert"
           >

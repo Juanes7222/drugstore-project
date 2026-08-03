@@ -270,6 +270,124 @@ describe("generateReceiptHtml", () => {
   });
 });
 
+describe("generateReceiptHtml — delivery (domicilio)", () => {
+  const baseDelivery = {
+    address: "Calle 10 #20-30",
+    contactName: "Ana Gómez",
+    contactPhone: "5551234",
+    notes: "Entregar en portería",
+    scheduledAt: null,
+  };
+
+  it("renders the delivery section and fee row when delivery is provided", () => {
+    const html = generateReceiptHtml({
+      id: "inv-delivery-1",
+      invoiceNumber: "FE-DOM-0001",
+      contingencyNumber: null,
+      invoiceType: "ELECTRONIC_INVOICE",
+      status: "TRANSMITTED_AUTHORIZED",
+      cufeProvisional: "CUFE-HASH",
+      cufeOfficial: null,
+      issuedAt: new Date("2026-06-15T14:30:00.000Z"),
+      fullData: makeFullData(),
+      delivery: baseDelivery,
+      deliveryFeeCents: 5_000,
+    });
+
+    expect(html).toContain("*** DOMICILIO ***");
+    expect(html).toContain("Calle 10 #20-30");
+    expect(html).toContain("Ana Gómez");
+    expect(html).toContain("Tel: 5551234");
+    expect(html).toContain("Nota: Entregar en portería");
+    // Fee row: 5 000 cents = $50.00, grand total = 11900.00 + 50.00
+    expect(html).toContain("Domicilio");
+    expect(html).toContain("TOTAL + DOMICILIO");
+    expect(html).toContain("11.950");
+  });
+
+  it("renders the delivery section without a fee row when the fee is 0", () => {
+    const html = generateReceiptHtml({
+      id: "inv-delivery-2",
+      invoiceNumber: "FE-DOM-0002",
+      contingencyNumber: null,
+      invoiceType: "ELECTRONIC_INVOICE",
+      status: "TRANSMITTED_AUTHORIZED",
+      cufeProvisional: "CUFE-HASH",
+      cufeOfficial: null,
+      issuedAt: new Date("2026-06-15T14:30:00.000Z"),
+      fullData: makeFullData(),
+      delivery: baseDelivery,
+      deliveryFeeCents: 0,
+    });
+
+    expect(html).toContain("*** DOMICILIO ***");
+    expect(html).not.toContain("TOTAL + DOMICILIO");
+    // The fee row label must not appear when no fee is charged.
+    expect(html).not.toMatch(/<td class="label">Domicilio<\/td>/);
+    expect(html).toContain("$11.900,00");
+  });
+
+  it("renders the scheduled delivery time when scheduledAt is set", () => {
+    const html = generateReceiptHtml({
+      id: "inv-delivery-3",
+      invoiceNumber: "FE-DOM-0003",
+      contingencyNumber: null,
+      invoiceType: "ELECTRONIC_INVOICE",
+      status: "TRANSMITTED_AUTHORIZED",
+      cufeProvisional: "CUFE-HASH",
+      cufeOfficial: null,
+      issuedAt: new Date("2026-06-15T14:30:00.000Z"),
+      fullData: makeFullData(),
+      delivery: {
+        ...baseDelivery,
+        scheduledAt: "2026-06-17T09:00:00.000Z",
+      },
+    });
+
+    // formatDateTime renders in the machine's local timezone, so only the
+    // date and the label are stable across environments.
+    expect(html).toContain("Entrega:");
+    expect(html).toContain("17/06/2026");
+  });
+
+  it("omits the delivery section entirely when delivery is absent", () => {
+    const html = generateReceiptHtml({
+      id: "inv-delivery-4",
+      invoiceNumber: "FE-REG-0001",
+      contingencyNumber: null,
+      invoiceType: "ELECTRONIC_INVOICE",
+      status: "TRANSMITTED_AUTHORIZED",
+      cufeProvisional: "CUFE-HASH",
+      cufeOfficial: null,
+      issuedAt: new Date("2026-06-15T14:30:00.000Z"),
+      fullData: makeFullData(),
+    });
+
+    expect(html).not.toContain("DOMICILIO");
+    expect(html).not.toMatch(/<td class="label">Domicilio<\/td>/);
+    expect(html).not.toContain("TOTAL + DOMICILIO");
+  });
+
+  it("omits the delivery section when delivery is explicitly null", () => {
+    const html = generateReceiptHtml({
+      id: "inv-delivery-5",
+      invoiceNumber: "FE-REG-0002",
+      contingencyNumber: null,
+      invoiceType: "ELECTRONIC_INVOICE",
+      status: "TRANSMITTED_AUTHORIZED",
+      cufeProvisional: "CUFE-HASH",
+      cufeOfficial: null,
+      issuedAt: new Date("2026-06-15T14:30:00.000Z"),
+      fullData: makeFullData(),
+      delivery: null,
+    });
+
+    expect(html).not.toContain("DOMICILIO");
+    expect(html).not.toMatch(/<td class="label">Domicilio<\/td>/);
+    expect(html).not.toContain("TOTAL + DOMICILIO");
+  });
+});
+
 describe("printReceipt", () => {
   beforeEach(() => {
     document.body.innerHTML = "";

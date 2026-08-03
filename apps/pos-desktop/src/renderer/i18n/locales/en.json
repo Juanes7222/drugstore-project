@@ -102,6 +102,7 @@
       "payments_table_reference": "Ref.",
       "contact_title": "Contact",
       "delivery_title": "Delivery",
+      "delivery_fee": "Delivery fee",
       "notes_title": "Notes",
       "tags_title": "Tags",
       "custom_fields_title": "Custom fields",
@@ -623,6 +624,32 @@
       "create_new": "Create new client",
       "quick_add": "Quick client"
     }
+  },
+  "delivery": {
+    "title": "Delivery",
+    "enable": "Delivery",
+    "dialogDescription": "Enter the delivery details for this order.",
+    "address": "Address",
+    "address_placeholder": "Neighborhood, street, apt, reference point...",
+    "addressRequiredError": "Delivery address is required.",
+    "contactName": "Contact name",
+    "contactName_placeholder": "Who receives the order",
+    "contactPhone": "Contact phone",
+    "contactPhone_placeholder": "Phone number",
+    "phoneRequiredError": "Contact phone is required.",
+    "notes": "Notes",
+    "notes_placeholder": "Instructions for the courier...",
+    "scheduledAt": "Schedule delivery",
+    "fee": "Delivery",
+    "fee_placeholder": "Delivery fee amount",
+    "fee_max_hint": "Maximum {{max}}",
+    "feeTooHighError": "Delivery fee cannot exceed {{max}}.",
+    "clientRequiredHint": "Select a client to enable delivery",
+    "clientRequiredError": "Select a client before confirming the delivery.",
+    "confirm": "Confirm delivery",
+    "cancel": "Cancel",
+    "edit": "Edit delivery",
+    "remove": "Remove delivery"
   },
   "payment": {
     "title": "Payment",
@@ -2353,7 +2380,8 @@
       "estimated_cost": "Estimated cost",
       "gross_profit": "Gross profit",
       "gross_margin": "Gross margin",
-      "margin_status": "Status"
+      "margin_status": "Status",
+      "average_ticket": "Average ticket"
     },
     "margins": {
       "negative": "Negative margin",

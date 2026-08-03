@@ -10,13 +10,7 @@
  * mounts when activeScreen = "receipt" with phase "completing", plays the
  * entry choreography, then dispatches completeSaleCompletion.
  */
-import {
-  type FC,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
+import { type FC, useCallback, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -28,6 +22,7 @@ import {
 import {
   clearCart,
   selectCartItems,
+  selectDeliveryDraft,
   selectEffectiveClient,
   selectSubtotalCents,
   selectTaxCents,
@@ -38,7 +33,10 @@ import {
   selectPaymentChangeCents,
 } from "@/store/slices/payment-slice";
 import { getTenantInfo } from "../../../domain/configuration/local-config.store";
-import { generateReceiptHtml, printReceipt } from "../../../domain/fiscal/receipt-generator";
+import {
+  generateReceiptHtml,
+  printReceipt,
+} from "../../../domain/fiscal/receipt-generator";
 import type {
   InvoiceFullData,
   InvoiceLineItem,
@@ -55,7 +53,11 @@ const COMPLETING_ENTRY_DURATION_S = 0.35;
  * Format: FE-XXXXXX where X is a base-36 alphanumeric character.
  */
 const generatePreviewInvoiceNumber = (): string => {
-  const suffix = Date.now().toString(36).toUpperCase().slice(-6).padStart(6, "0");
+  const suffix = Date.now()
+    .toString(36)
+    .toUpperCase()
+    .slice(-6)
+    .padStart(6, "0");
   return `FE-${suffix}`;
 };
 
@@ -72,6 +74,7 @@ export const Receipt: FC = () => {
   const subtotalCents = useAppSelector(selectSubtotalCents);
   const taxCents = useAppSelector(selectTaxCents);
   const totalCents = useAppSelector(selectTotalCents);
+  const delivery = useAppSelector(selectDeliveryDraft);
   const paymentMethods = useAppSelector(selectPaymentMethods);
   const changeCents = useAppSelector(selectPaymentChangeCents);
 
@@ -108,8 +111,7 @@ export const Receipt: FC = () => {
 
     const payments: InvoicePayment[] = paymentMethods.map((pm) => ({
       paymentMethodId: pm.id,
-      paymentMethodName:
-        pm.type.charAt(0).toUpperCase() + pm.type.slice(1),
+      paymentMethodName: pm.type.charAt(0).toUpperCase() + pm.type.slice(1),
       amount: centsToDecimalStr(pm.amountCents),
       category: pm.type,
       transactionReference: null,
@@ -168,7 +170,7 @@ export const Receipt: FC = () => {
         name: client.name,
         email: null,
         phone: null,
-        address: null,
+        address: delivery?.address ?? null,
       },
       lineItems,
       taxSummaries,
@@ -194,8 +196,20 @@ export const Receipt: FC = () => {
       cufeOfficial: null,
       issuedAt: new Date(),
       fullData,
+      delivery,
+      deliveryFeeCents: delivery?.feeCents ?? 0,
     });
-  }, [items, client, subtotalCents, taxCents, totalCents, paymentMethods, changeCents, tenant]);
+  }, [
+    items,
+    client,
+    subtotalCents,
+    taxCents,
+    totalCents,
+    paymentMethods,
+    changeCents,
+    tenant,
+    delivery,
+  ]);
 
   // ---- Handoff ----
   useEffect(() => {
@@ -241,7 +255,11 @@ export const Receipt: FC = () => {
               "color-mix(in srgb, var(--color-pharma) 12%, transparent)",
           }}
         >
-          <SuccessCheckIcon size={20} color="var(--color-pharma)" strokeWidth={2.5} />
+          <SuccessCheckIcon
+            size={20}
+            color="var(--color-pharma)"
+            strokeWidth={2.5}
+          />
         </div>
 
         <h2
@@ -270,7 +288,12 @@ export const Receipt: FC = () => {
             style={{ display: "block", border: "none" }}
           />
         ) : (
-          <div className="flex items-center justify-center h-full text-body-sm" style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}>
+          <div
+            className="flex items-center justify-center h-full text-body-sm"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+            }}
+          >
             {t("receipt.no_items")}
           </div>
         )}

@@ -11,7 +11,7 @@ import { Provider } from "react-redux";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { configureStore } from "@reduxjs/toolkit";
 import { PaymentProcessing } from "./payment-processing";
-import { addItem, salesSlice } from "@/store/slices/sales-slice";
+import { addItem, salesSlice, setDelivery } from "@/store/slices/sales-slice";
 import { paymentSlice, initializePayment, setCashReceived } from "@/store/slices/payment-slice";
 import { uiSlice, setCurrentSaleId } from "@/store/slices/ui-slice";
 import { PaymentGatewayService } from "@/services/payment-gateway-service";
@@ -407,6 +407,49 @@ describe("PaymentProcessing", () => {
     );
 
     expect(cancelButton).toBeDisabled();
+  });
+
+  it("shows the fee-inclusive grand total as total due when a delivery fee is set", () => {
+    // 5 000 000 cents item (19% IVA) + 50 000 cents delivery fee
+    let salesState = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem({ ...baseCartItem, unitPriceCents: 5_000_000 }),
+    );
+    salesState = salesSlice.reducer(
+      salesState,
+      setDelivery({
+        state: "PENDING",
+        address: "Calle 10 #20-30",
+        contactName: null,
+        contactPhone: null,
+        notes: null,
+        scheduledAt: null,
+        feeCents: 50_000,
+      }),
+    );
+    const totalCents = Math.round(5_000_000 * 1.19) + 50_000;
+
+    const store = configureStore({
+      reducer: {
+        sales: salesSlice.reducer,
+        payment: paymentSlice.reducer,
+        ui: uiSlice.reducer,
+      },
+      preloadedState: {
+        sales: salesState,
+        payment: paymentSlice.reducer(
+          paymentSlice.getInitialState(),
+          initializePayment({ totalCents }),
+        ),
+        ui: uiSlice.getInitialState(),
+      },
+    });
+    renderPayment(store);
+
+    // selectGrandTotalCents = 5 950 000 + 50 000 = 6 000 000 cents → "$ 60.000"
+    expect(screen.getByTestId("payment-total-due")).toHaveTextContent(
+      /\$\s*60\.000/,
+    );
   });
 
   it("renders the cancel button that resets payment and navigates back", () => {

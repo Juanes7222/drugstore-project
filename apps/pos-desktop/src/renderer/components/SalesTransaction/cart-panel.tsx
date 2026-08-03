@@ -13,7 +13,8 @@ import {
   selectCartItemCount,
   selectSubtotalCents,
   selectTaxCents,
-  selectTotalCents,
+  selectGrandTotalCents,
+  selectDeliveryFeeCents,
   selectSelectedClient,
   updateItemDiscount,
   updateItemPrice,
@@ -23,6 +24,7 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { ClientSelector } from "./client-selector";
 import { CartLineItem } from "./cart-line-item";
 import { TotalsSummary } from "./totals-summary";
+import { DeliveryToggle } from "./delivery-toggle";
 import type { ClientSelection } from "../../hooks/use-sales-transaction";
 import type { CreateClientInput } from "../../../domain/clients";
 import { InfoIcon, ShoppingBagIcon } from "@/components/ui/icons";
@@ -53,7 +55,8 @@ export const CartPanel: FC<CartPanelProps> = ({
   const count = useAppSelector(selectCartItemCount);
   const subtotal = useAppSelector(selectSubtotalCents);
   const tax = useAppSelector(selectTaxCents);
-  const total = useAppSelector(selectTotalCents);
+  const grandTotal = useAppSelector(selectGrandTotalCents);
+  const deliveryFee = useAppSelector(selectDeliveryFeeCents);
   const selectedClient = useAppSelector(selectSelectedClient);
 
   const handleUpdateQuantity = (id: string, quantity: number) => {
@@ -122,7 +125,9 @@ export const CartPanel: FC<CartPanelProps> = ({
         {isEmpty ? (
           <p
             className="mt-pos-md text-body"
-            style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+            }}
           >
             {t("sales.cart.empty")}
           </p>
@@ -159,7 +164,11 @@ export const CartPanel: FC<CartPanelProps> = ({
         <div
           role="alert"
           className="mx-0 my-pos-sm flex items-start gap-2 rounded-pos-sm px-pos-md py-pos-sm text-body"
-          style={{ backgroundColor: "color-mix(in srgb, var(--color-danger) 12%, transparent)", color: "var(--color-danger)" }}
+          style={{
+            backgroundColor:
+              "color-mix(in srgb, var(--color-danger) 12%, transparent)",
+            color: "var(--color-danger)",
+          }}
         >
           <InfoIcon size={16} className="mt-0.5 shrink-0" />
           <span className="flex-1">{actionError}</span>
@@ -175,14 +184,18 @@ export const CartPanel: FC<CartPanelProps> = ({
         </div>
       )}
 
+      {/* Domicilio (delivery) control — optional, tenant-policy aware */}
+      {!isEmpty && <DeliveryToggle />}
+
       {/* Totals & checkout — always at bottom */}
       {!isEmpty && (
         <>
           <TotalsSummary
             subtotalCents={subtotal}
             taxCents={tax}
-            totalCents={total}
+            totalCents={grandTotal}
             uniqueRate={uniqueRate}
+            deliveryFeeCents={deliveryFee}
           />
 
           <button

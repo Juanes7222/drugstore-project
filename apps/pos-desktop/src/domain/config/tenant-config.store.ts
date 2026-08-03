@@ -7,9 +7,10 @@
 
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { TenantConfig, EffectiveConfig, OverrideMap, WorkstationConfig } from './types';
+import type { TenantConfig, EffectiveConfig, OverrideMap, WorkstationConfig, DeliveryConfig } from './types';
 import { computeEffectiveConfig, getOverriddenFields, hasOverrides } from './effective-config';
 import { PRESET_LIST } from './presets';
+import { DEFAULT_DELIVERY } from './defaults';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -175,3 +176,12 @@ export const useTenantConfigStore: StoreApi<TenantConfigState> =
  */
 export const getTenantConfigState = (): TenantConfigState =>
   useTenantConfigStore.getState();
+
+/**
+ * Read the effective delivery (domicilio) policy for non-React code —
+ * services, slices, thunks. Falls back to the feature-disabled defaults
+ * while the config is still loading or never synced.
+ */
+export const getEffectiveDeliveryConfig = (): DeliveryConfig =>
+  useTenantConfigStore.getState().effectiveConfig?.workflow.delivery ??
+  DEFAULT_DELIVERY;

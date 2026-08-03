@@ -326,6 +326,79 @@ describe('SalesHistoryService', () => {
         new Date('2026-07-20T09:55:00Z').toISOString(),
       );
     });
+
+    it('reports zero fee and null address when no delivery data is stored', async () => {
+      prisma.sale.findMany.mockResolvedValue([createSaleRow()]);
+      prisma.sale.count.mockResolvedValue(1);
+      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items[0]?.deliveryFeeCents).toBe(0);
+      expect(result.items[0]?.deliveryAddress).toBeNull();
+    });
+
+    it('projects the fee and address from a stored delivery JSON object', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        createSaleRow({
+          delivery: {
+            state: 'PENDING',
+            address: 'Calle 10 #20-30',
+            contactName: 'Ana Gómez',
+            contactPhone: '5551234',
+            notes: null,
+            scheduledAt: null,
+            feeCents: 4000,
+          },
+        }),
+      ]);
+      prisma.sale.count.mockResolvedValue(1);
+      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items[0]?.deliveryFeeCents).toBe(4000);
+      expect(result.items[0]?.deliveryAddress).toBe('Calle 10 #20-30');
+    });
+
+    it('treats malformed delivery JSON as an in-store sale', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        createSaleRow({ delivery: 'not-an-object' }),
+      ]);
+      prisma.sale.count.mockResolvedValue(1);
+      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items[0]?.deliveryFeeCents).toBe(0);
+      expect(result.items[0]?.deliveryAddress).toBeNull();
+    });
+
+    it('clamps a negative stored fee to 0', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        createSaleRow({
+          delivery: {
+            state: 'PENDING',
+            address: null,
+            contactName: null,
+            contactPhone: null,
+            notes: null,
+            scheduledAt: null,
+            feeCents: -500,
+          },
+        }),
+      ]);
+      prisma.sale.count.mockResolvedValue(1);
+      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items[0]?.deliveryFeeCents).toBe(0);
+    });
   });
 
   describe('getSaleHistoryDetail', () => {
@@ -419,6 +492,56 @@ describe('SalesHistoryService', () => {
       expect(
         detail?.mainInvoiceOperationalView?.operational.hasDifferences,
       ).toBe(false);
+    });
+
+    it('returns the parsed delivery object with its fee from the stored JSON', async () => {
+      const storedDelivery = {
+        state: 'PENDING',
+        address: 'Carrera 5 #10-20',
+        contactName: 'Luis García',
+        contactPhone: '3001234567',
+        notes: 'Entregar al edificio azul',
+        scheduledAt: '2026-07-21T15:00:00.000Z',
+        feeCents: 6000,
+      };
+      const sale = createSaleRow({
+        items: [],
+        delivery: storedDelivery,
+      });
+      prisma.sale.findUnique.mockResolvedValue(sale);
+      prisma.invoice.findMany.mockResolvedValue([]);
+      adjustmentService.resolveOperationalView.mockResolvedValue(null);
+      adjustmentService.getAdjustmentHistory.mockResolvedValue([]);
+
+      const detail = await service.getSaleHistoryDetail('sale-1');
+
+      expect(detail?.sale.delivery).toEqual(storedDelivery);
+    });
+
+    it('returns null delivery when the stored JSON is missing required fields', async () => {
+      const sale = createSaleRow({
+        delivery: { address: 'Carrera 10' },
+      });
+      prisma.sale.findUnique.mockResolvedValue(sale);
+      prisma.invoice.findMany.mockResolvedValue([]);
+      adjustmentService.resolveOperationalView.mockResolvedValue(null);
+      adjustmentService.getAdjustmentHistory.mockResolvedValue([]);
+
+      const detail = await service.getSaleHistoryDetail('sale-1');
+
+      expect(detail?.sale.delivery).toBeNull();
+    });
+
+    it('returns null delivery when the stored column is null', async () => {
+      const sale = createSaleRow({ delivery: null });
+      prisma.sale.findUnique.mockResolvedValue(sale);
+      prisma.invoice.findMany.mockResolvedValue([]);
+      adjustmentService.resolveOperationalView.mockResolvedValue(null);
+      adjustmentService.getAdjustmentHistory.mockResolvedValue([]);
+
+      const detail = await service.getSaleHistoryDetail('sale-1');
+
+      expect(detail?.sale.delivery).toBeNull();
     });
   });
 });

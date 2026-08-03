@@ -77,6 +77,28 @@ const applyPaymentAction = (
   payment: paymentSlice.reducer(root.payment, action),
 });
 
+const createRootStateWithDeliveryFee = (
+  totalCents: number,
+  feeCents: number,
+): TestRootState => {
+  const root = createRootState(totalCents);
+  return {
+    ...root,
+    sales: salesSlice.reducer(
+      root.sales,
+      salesSlice.actions.setDelivery({
+        state: "PENDING" as const,
+        address: "Calle 10 #20-30",
+        contactName: null,
+        contactPhone: null,
+        notes: null,
+        scheduledAt: null,
+        feeCents,
+      }),
+    ),
+  };
+};
+
 describe("payment slice", () => {
   it("initializes with a single cash method covering the total", () => {
     const state = paymentSlice.reducer(
@@ -167,6 +189,30 @@ describe("payment selectors", () => {
 
     expect(selectPaymentDifferenceCents(nextRoot)).toBe(3_836);
     expect(selectCanConfirmPayment(nextRoot)).toBe(false);
+  });
+
+  it("blocks confirmation until a domicilio fee is covered", () => {
+    const root = createRootStateWithDeliveryFee(66_164, 5_000);
+    const cashId = root.payment.methods[0]?.id as string;
+
+    // Payment covers only the item total, not the delivery fee.
+    expect(selectPaymentDifferenceCents(root)).toBe(-5_000);
+    expect(selectCanConfirmPayment(root)).toBe(false);
+
+    const coveredRoot = applyPaymentAction(
+      root,
+      updatePaymentMethodAmount({ id: cashId, amountCents: 71_164 }),
+    );
+
+    expect(selectPaymentDifferenceCents(coveredRoot)).toBe(0);
+    expect(selectCanConfirmPayment(coveredRoot)).toBe(true);
+  });
+
+  it("treats a zero delivery fee as an in-store sale for confirmation", () => {
+    const root = createRootStateWithDeliveryFee(66_164, 0);
+
+    expect(selectPaymentDifferenceCents(root)).toBe(0);
+    expect(selectCanConfirmPayment(root)).toBe(true);
   });
 
   it("blocks confirmation until electronic methods are approved", () => {

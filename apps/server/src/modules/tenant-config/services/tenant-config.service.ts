@@ -27,6 +27,7 @@ import type {
   WorkstationConfig,
   PresetDefinition,
   PresetCode,
+  DeliveryConfig,
 } from '@pharmacy/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -62,7 +63,26 @@ type PresetWorkflow = Pick<
   | 'sessionIdleTimeouts'
   | 'suggestionEngineEnabled'
   | 'autoReprintLastReceiptOnReprint'
+  | 'delivery'
 >;
+
+/**
+ * Default delivery (domicilio) policy — the feature is OFF by default; a
+ * tenant must enable it explicitly. Mirrors the POS DEFAULT_DELIVERY in
+ * apps/pos-desktop/src/domain/config/defaults.ts.
+ */
+const DEFAULT_DELIVERY: DeliveryConfig = {
+  enabled: false,
+  requiresClient: false,
+  addressRequired: true,
+  phoneRequired: false,
+  allowScheduling: false,
+  deliveryFeeMode: 'DISABLED',
+  fixedDeliveryFeeCents: 0,
+  maxDeliveryFeeCents: 0,
+  printOnReceipt: true,
+  enableStatusTracking: false,
+};
 
 interface PresetData {
   strictness: PresetStrictness;
@@ -102,6 +122,19 @@ const PRESETS: Record<string, PresetData> = {
       },
       suggestionEngineEnabled: false,
       autoReprintLastReceiptOnReprint: false,
+      // SIMPLE: domicilios allowed, no client/address/phone requirement.
+      delivery: {
+        enabled: true,
+        requiresClient: false,
+        addressRequired: false,
+        phoneRequired: false,
+        allowScheduling: false,
+        deliveryFeeMode: 'DISABLED',
+        fixedDeliveryFeeCents: 0,
+        maxDeliveryFeeCents: 0,
+        printOnReceipt: true,
+        enableStatusTracking: false,
+      },
     },
     purchases: {
       autoConfirmOnCreate: true,
@@ -145,6 +178,19 @@ const PRESETS: Record<string, PresetData> = {
       },
       suggestionEngineEnabled: true,
       autoReprintLastReceiptOnReprint: true,
+      // BALANCED: domicilios require a client and an address; scheduling allowed.
+      delivery: {
+        enabled: true,
+        requiresClient: true,
+        addressRequired: true,
+        phoneRequired: false,
+        allowScheduling: true,
+        deliveryFeeMode: 'DISABLED',
+        fixedDeliveryFeeCents: 0,
+        maxDeliveryFeeCents: 0,
+        printOnReceipt: true,
+        enableStatusTracking: false,
+      },
     },
     purchases: {
       autoConfirmOnCreate: false,
@@ -188,6 +234,19 @@ const PRESETS: Record<string, PresetData> = {
       },
       suggestionEngineEnabled: true,
       autoReprintLastReceiptOnReprint: true,
+      // STRICT: domicilios require client, address AND phone; status tracking on.
+      delivery: {
+        enabled: true,
+        requiresClient: true,
+        addressRequired: true,
+        phoneRequired: true,
+        allowScheduling: false,
+        deliveryFeeMode: 'DISABLED',
+        fixedDeliveryFeeCents: 0,
+        maxDeliveryFeeCents: 0,
+        printOnReceipt: true,
+        enableStatusTracking: true,
+      },
     },
     purchases: {
       autoConfirmOnCreate: false,
@@ -367,8 +426,8 @@ export class TenantConfigService {
       ? { ...(current.fiscal as unknown as FiscalConfig), ...dto.fiscal }
       : (current.fiscal as unknown as FiscalConfig);
     const mergedWorkflow: WorkflowConfig = dto.workflow
-      ? { ...(current.workflow as unknown as WorkflowConfig), ...dto.workflow }
-      : (current.workflow as unknown as WorkflowConfig);
+      ? this.withDeliveryDefaults({ ...(current.workflow as unknown as WorkflowConfig), ...dto.workflow })
+      : this.withDeliveryDefaults(current.workflow as unknown as WorkflowConfig);
     const mergedPurchases: PurchasesConfig = dto.purchases
       ? { ...(current.purchases as unknown as PurchasesConfig), ...dto.purchases }
       : (current.purchases as unknown as PurchasesConfig);
@@ -1119,8 +1178,8 @@ export class TenantConfigService {
       ? { ...(defaults.fiscal as FiscalConfig), ...dto.fiscal }
       : (defaults.fiscal as FiscalConfig);
     const mergedWorkflow: WorkflowConfig = dto.workflow
-      ? { ...(defaults.workflow as WorkflowConfig), ...dto.workflow }
-      : (defaults.workflow as WorkflowConfig);
+      ? this.withDeliveryDefaults({ ...(defaults.workflow as WorkflowConfig), ...dto.workflow })
+      : this.withDeliveryDefaults(defaults.workflow as WorkflowConfig);
     const mergedPurchases: PurchasesConfig = dto.purchases
       ? { ...(defaults.purchases as PurchasesConfig), ...dto.purchases }
       : (defaults.purchases as PurchasesConfig);
@@ -1342,7 +1401,7 @@ export class TenantConfigService {
       activePresetCode: raw.activePresetCode ?? null,
       strictness: raw.strictness as StrictnessConfig,
       fiscal: safeFiscal,
-      workflow: raw.workflow as WorkflowConfig,
+      workflow: this.withDeliveryDefaults(raw.workflow as WorkflowConfig),
       purchases: raw.purchases as PurchasesConfig,
       customCompanyFields: (raw.customCompanyFields ?? []) as CustomCompanyField[],
       customStrictnessToggles: (raw.customStrictnessToggles ?? []) as CustomStrictnessToggle[],
@@ -1393,6 +1452,19 @@ export class TenantConfigService {
       f.dianResolutionDate &&
       f.dianResolutionPrefix
     );
+  }
+
+  /**
+   * Fill the delivery section of a workflow with defaults so legacy stored
+   * configs written before the delivery feature never surface
+   * `workflow.delivery === undefined` to the POS or backoffice. Stored
+   * values win over defaults; only missing keys are filled.
+   */
+  private withDeliveryDefaults(workflow: WorkflowConfig): WorkflowConfig {
+    return {
+      ...workflow,
+      delivery: { ...DEFAULT_DELIVERY, ...(workflow.delivery ?? {}) },
+    };
   }
 
   private emptyPurchasesConfig(): PurchasesConfig {

@@ -30,6 +30,19 @@ export const SessionIdleTimeoutsSchema = z.object({
   owner: z.number().int().min(0),
 });
 
+export const DeliveryConfigSchema = z.object({
+  enabled: z.boolean(),
+  requiresClient: z.boolean(),
+  addressRequired: z.boolean(),
+  phoneRequired: z.boolean(),
+  allowScheduling: z.boolean(),
+  deliveryFeeMode: z.enum(['DISABLED', 'FIXED', 'MANUAL']),
+  fixedDeliveryFeeCents: z.number().min(0),
+  maxDeliveryFeeCents: z.number().min(0),
+  printOnReceipt: z.boolean(),
+  enableStatusTracking: z.boolean(),
+});
+
 export const WorkflowConfigSchema = z.object({
   defaultPaymentMethodId: z.string().nullable(),
   autoPrintOnConfirm: z.boolean(),
@@ -41,6 +54,7 @@ export const WorkflowConfigSchema = z.object({
   sessionIdleTimeouts: SessionIdleTimeoutsSchema,
   suggestionEngineEnabled: z.boolean(),
   autoReprintLastReceiptOnReprint: z.boolean(),
+  delivery: DeliveryConfigSchema,
 });
 
 export const AdditionalTaxSchema = z.object({

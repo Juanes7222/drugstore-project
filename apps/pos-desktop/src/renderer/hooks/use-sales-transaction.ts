@@ -23,7 +23,8 @@ import {
   addItem,
   selectCartItems,
   selectSelectedClient,
-  selectTotalCents,
+  selectGrandTotalCents,
+  selectDeliveryDraft,
   setClient,
 } from '@/store/slices/sales-slice';
 import { initializePayment } from '@/store/slices/payment-slice';
@@ -61,6 +62,8 @@ export interface UseSalesTransactionReturn {
   isDialogOpen: boolean;
   /** Client selected for the current sale, or null. */
   selectedClient: ClientSelection | null;
+  /** Total due including any delivery fee (what payment validates against). */
+  grandTotalCents: number;
   /** True while the sale is being created in the local DB. */
   isCreating: boolean;
   /** True while a blocking product-sync is in progress. */
@@ -94,9 +97,10 @@ export interface UseSalesTransactionReturn {
 
 export function useSalesTransaction(): UseSalesTransactionReturn {
   const dispatch = useAppDispatch();
-  const totalDue = useAppSelector(selectTotalCents);
+  const grandTotalCents = useAppSelector(selectGrandTotalCents);
   const selectedClient = useAppSelector(selectSelectedClient);
   const cartItems = useAppSelector(selectCartItems);
+  const deliveryDraft = useAppSelector(selectDeliveryDraft);
   const salesPosService = useSalesPosService();
   const clientsService = useClientsService();
 
@@ -197,6 +201,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
   const performCreate = useCallback(async () => {
     return await salesPosService.create({
       clientId: selectedClient?.id ?? null,
+      delivery: deliveryDraft ?? null,
       items: cartItems.map((item) => {
         const unitPriceOverride =
           item.overrideUnitPriceCents !== null
@@ -215,7 +220,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
         };
       }),
     });
-  }, [selectedClient, cartItems, salesPosService]);
+  }, [selectedClient, cartItems, deliveryDraft, salesPosService]);
 
   const handleCheckout = useCallback(async () => {
     if (isCreating || cartItems.length === 0) return;
@@ -228,7 +233,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
 
       // Store sale ID for the payment screen to consume on confirm()
       dispatch(setCurrentSaleId((sale as { id: string }).id));
-      dispatch(initializePayment({ totalCents: totalDue }));
+      dispatch(initializePayment({ totalCents: grandTotalCents }));
       dispatch(setActiveScreen('payment'));
     } catch (err) {
       // If the failure is a single unsynced product, kick the sync
@@ -243,7 +248,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
           try {
             const sale = await performCreate();
             dispatch(setCurrentSaleId((sale as { id: string }).id));
-            dispatch(initializePayment({ totalCents: totalDue }));
+            dispatch(initializePayment({ totalCents: grandTotalCents }));
             dispatch(setActiveScreen('payment'));
             return;
           } catch (retryErr) {
@@ -284,7 +289,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     performCreate,
     waitForProductSync,
     dispatch,
-    totalDue,
+    grandTotalCents,
   ]);
 
   return {
@@ -292,6 +297,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
     pendingItem,
     isDialogOpen,
     selectedClient,
+    grandTotalCents,
     isCreating,
     isSyncingProduct,
     actionError,

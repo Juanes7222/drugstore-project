@@ -48,6 +48,18 @@ const SIMPLE_WORKFLOW: WorkflowConfig = {
   sessionIdleTimeouts: { cashier: 3600, manager: 7200, owner: 14400 },
   suggestionEngineEnabled: false,
   autoReprintLastReceiptOnReprint: false,
+  delivery: {
+    enabled: true,
+    requiresClient: false,
+    addressRequired: false,
+    phoneRequired: false,
+    allowScheduling: false,
+    deliveryFeeMode: 'DISABLED',
+    fixedDeliveryFeeCents: 0,
+    maxDeliveryFeeCents: 0,
+    printOnReceipt: true,
+    enableStatusTracking: false,
+  },
 };
 
 export const PRESET_SIMPLE: PresetDefinition & { purchases: Partial<PurchasesConfig> } = {
@@ -92,6 +104,18 @@ const BALANCED_WORKFLOW: WorkflowConfig = {
   sessionIdleTimeouts: { cashier: 600, manager: 1800, owner: 3600 },
   suggestionEngineEnabled: true,
   autoReprintLastReceiptOnReprint: true,
+  delivery: {
+    enabled: true,
+    requiresClient: true,
+    addressRequired: true,
+    phoneRequired: false,
+    allowScheduling: true,
+    deliveryFeeMode: 'DISABLED',
+    fixedDeliveryFeeCents: 0,
+    maxDeliveryFeeCents: 0,
+    printOnReceipt: true,
+    enableStatusTracking: false,
+  },
 };
 
 const BALANCED_PURCHASES: Partial<PurchasesConfig> = {
@@ -147,6 +171,18 @@ const STRICT_WORKFLOW: WorkflowConfig = {
   sessionIdleTimeouts: { cashier: 300, manager: 900, owner: 1800 },
   suggestionEngineEnabled: true,
   autoReprintLastReceiptOnReprint: true,
+  delivery: {
+    enabled: true,
+    requiresClient: true,
+    addressRequired: true,
+    phoneRequired: true,
+    allowScheduling: false,
+    deliveryFeeMode: 'DISABLED',
+    fixedDeliveryFeeCents: 0,
+    maxDeliveryFeeCents: 0,
+    printOnReceipt: true,
+    enableStatusTracking: true,
+  },
 };
 
 const STRICT_PURCHASES: Partial<PurchasesConfig> = {

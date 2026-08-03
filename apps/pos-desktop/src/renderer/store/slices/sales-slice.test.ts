@@ -9,12 +9,15 @@ import {
   salesSlice,
   selectCartItemCount,
   selectCartItems,
+  selectDeliveryFeeCents,
+  selectGrandTotalCents,
   selectSubtotalCents,
   selectTaxCents,
   selectTotalCents,
+  setDelivery,
   updateQuantity,
 } from "./sales-slice";
-import { CartItem, SelectedClient } from "./sales-types";
+import { CartItem, SaleDeliveryDraft, SelectedClient } from "./sales-types";
 import { SaleType } from "@pharmacy/shared-types";
 
 const baseItem = (
@@ -43,11 +46,28 @@ const baseItem = (
 });
 
 interface RootState {
-  sales: { items: CartItem[]; selectedClient: SelectedClient | null };
+  sales: {
+    items: CartItem[];
+    selectedClient: SelectedClient | null;
+    delivery: SaleDeliveryDraft | null;
+  };
 }
 
 const buildRoot = (items: CartItem[]): RootState => ({
-  sales: { items, selectedClient: null },
+  sales: { items, selectedClient: null, delivery: null },
+});
+
+const deliveryDraft = (
+  overrides: Partial<SaleDeliveryDraft> = {},
+): SaleDeliveryDraft => ({
+  state: "PENDING",
+  address: "Calle 10 #20-30",
+  contactName: "Juan Pérez",
+  contactPhone: "5551234",
+  notes: null,
+  scheduledAt: null,
+  feeCents: 5_000,
+  ...overrides,
 });
 
 describe("sales slice — reducers", () => {
@@ -189,6 +209,60 @@ describe("sales slice — reducers", () => {
 
     expect(state.items).toEqual([]);
   });
+
+  it("setDelivery stores the delivery draft on the sale", () => {
+    const draft = deliveryDraft();
+
+    const state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      setDelivery(draft),
+    );
+
+    expect(state.delivery).toEqual(draft);
+  });
+
+  it("setDelivery with null clears any existing draft", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      setDelivery(deliveryDraft()),
+    );
+
+    state = salesSlice.reducer(state, setDelivery(null));
+
+    expect(state.delivery).toBeNull();
+  });
+
+  it("setDelivery clamps a negative fee to 0", () => {
+    const state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      setDelivery(deliveryDraft({ feeCents: -2_000 })),
+    );
+
+    expect(state.delivery?.feeCents).toBe(0);
+  });
+
+  it("setDelivery rounds a fractional fee to whole cents", () => {
+    const state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      setDelivery(deliveryDraft({ feeCents: 1_234.56 })),
+    );
+
+    expect(state.delivery?.feeCents).toBe(1_235);
+  });
+
+  it("clearCart resets the delivery draft", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+    state = salesSlice.reducer(state, setDelivery(deliveryDraft()));
+
+    state = salesSlice.reducer(state, clearCart());
+
+    expect(state.items).toEqual([]);
+    expect(state.selectedClient).toBeNull();
+    expect(state.delivery).toBeNull();
+  });
 });
 
 describe("sales selectors", () => {
@@ -272,5 +346,47 @@ describe("sales selectors", () => {
   it("selectTotalCents is 0 for an empty cart", () => {
     const root = buildRoot([]);
     expect(selectTotalCents(root)).toBe(0);
+  });
+
+  it("selectDeliveryFeeCents returns 0 when there is no delivery", () => {
+    const root = buildRoot([baseItem()]);
+
+    expect(selectDeliveryFeeCents(root)).toBe(0);
+  });
+
+  it("selectDeliveryFeeCents returns the draft fee when a delivery is set", () => {
+    const root: RootState = {
+      sales: {
+        items: [],
+        selectedClient: null,
+        delivery: deliveryDraft({ feeCents: 7_500 }),
+      },
+    };
+
+    expect(selectDeliveryFeeCents(root)).toBe(7_500);
+  });
+
+  it("selectGrandTotalCents is the item total when there is no fee", () => {
+    const root = buildRoot([
+      baseItem({ id: "a", unitPriceCents: 100_000, quantity: 1 }),
+    ]);
+
+    // subtotal = 100_000, tax = 19_000, total = 119_000, no fee
+    expect(selectGrandTotalCents(root)).toBe(119_000);
+  });
+
+  it("selectGrandTotalCents adds the delivery fee to the item total", () => {
+    const root: RootState = {
+      sales: {
+        items: [
+          baseItem({ id: "a", unitPriceCents: 100_000, quantity: 1 }),
+        ],
+        selectedClient: null,
+        delivery: deliveryDraft({ feeCents: 5_000 }),
+      },
+    };
+
+    // total = 119_000, fee = 5_000 → 124_000
+    expect(selectGrandTotalCents(root)).toBe(124_000);
   });
 });

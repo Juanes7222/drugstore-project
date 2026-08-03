@@ -13,6 +13,7 @@ import {
   DEFAULT_STRICTNESS,
   DEFAULT_FISCAL,
   DEFAULT_WORKFLOW,
+  DEFAULT_DELIVERY,
   EMPTY_CUSTOM_FIELDS,
   EMPTY_CUSTOM_TOGGLES,
 } from './defaults';
@@ -58,15 +59,30 @@ export function computeEffectiveConfig(
   const mergedFiscal = { ...baseFiscal, ...config.fiscal };
   const mergedWorkflow = { ...baseWorkflow, ...config.workflow };
 
+  // Normalize the nested delivery object. Stored configs created before the
+  // delivery section existed (or servers that never send it) fall back to
+  // the defaults, and a partially-saved delivery object still fills every
+  // field instead of leaving undefined holes.
+  mergedWorkflow.delivery = {
+    ...DEFAULT_DELIVERY,
+    ...(config.workflow.delivery ?? {}),
+  };
+
   // Merge per-workstation overrides on top (highest precedence)
   // Server already strips system-level fields, so only non-system
-  // operational preferences reach this point.
+  // operational preferences reach this point. Delivery policy is global —
+  // if a workstation object ever carried it, the object-level merge would
+  // replace the whole normalized section, so re-normalize afterwards.
   if (workstationConfig) {
     if (workstationConfig.strictness) {
       Object.assign(mergedStrictness, workstationConfig.strictness);
     }
     if (workstationConfig.workflow) {
       Object.assign(mergedWorkflow, workstationConfig.workflow);
+      mergedWorkflow.delivery = {
+        ...DEFAULT_DELIVERY,
+        ...(mergedWorkflow.delivery ?? {}),
+      };
     }
   }
 
@@ -113,6 +129,12 @@ export function getOverriddenFields(config: TenantConfig): OverrideMap {
 
   // Check workflow fields that are defined in the preset
   for (const [key, presetValue] of Object.entries(preset.workflow)) {
+    // Skip nested object sections (e.g. delivery) — a stored object would
+    // always differ from the preset reference and is never a per-field
+    // "customization" badge; the UI compares those sections separately.
+    if (typeof presetValue === 'object' && presetValue !== null) {
+      continue;
+    }
     const storedValue = (config.workflow as unknown as Record<string, unknown>)[key];
     if (storedValue !== undefined && storedValue !== presetValue) {
       overrides[`workflow.${key}`] = true;

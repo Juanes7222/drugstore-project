@@ -12,6 +12,7 @@ import type {
   PurchasesConfig,
   CustomCompanyField,
   CustomStrictnessToggle,
+  DeliveryConfig,
 } from '@pharmacy/shared-types';
 
 export interface ValidationError {
@@ -169,11 +170,69 @@ export class ConfigValidationService {
   }
 
   private validateWorkflow(
-    _w: WorkflowConfig,
-    _errors: ValidationError[],
+    w: WorkflowConfig,
+    errors: ValidationError[],
   ): void {
     // Workflow validation is mostly structural (Zod handles it).
-    // Business cross-validation goes here as needed.
+    if (w.delivery) {
+      this.validateDelivery(w.delivery, errors);
+    }
+  }
+
+  /**
+   * Delivery (domicilio) policy checks — mirrors the POS local rules
+   * (apps/pos-desktop/src/domain/config/validation.ts -> validateDelivery):
+   * valid fee mode, non-negative cents, FIXED requires a positive fixed fee,
+   * and a manual cap cannot sit below the fixed reference fee.
+   */
+  private validateDelivery(
+    d: DeliveryConfig,
+    errors: ValidationError[],
+  ): void {
+    const validFeeModes: readonly string[] = ['DISABLED', 'FIXED', 'MANUAL'];
+    if (!validFeeModes.includes(d.deliveryFeeMode)) {
+      errors.push({
+        path: 'workflow.delivery.deliveryFeeMode',
+        message: `Invalid delivery fee mode: ${d.deliveryFeeMode}`,
+        code: 'INVALID_VALUE',
+      });
+    }
+
+    if (d.fixedDeliveryFeeCents < 0) {
+      errors.push({
+        path: 'workflow.delivery.fixedDeliveryFeeCents',
+        message: 'Fixed delivery fee cannot be negative',
+        code: 'INVALID_VALUE',
+      });
+    }
+
+    if (d.deliveryFeeMode === 'FIXED' && d.fixedDeliveryFeeCents <= 0) {
+      errors.push({
+        path: 'workflow.delivery.fixedDeliveryFeeCents',
+        message: 'A fixed delivery fee greater than zero is required when the mode is FIXED',
+        code: 'CROSS_FIELD_MISSING',
+      });
+    }
+
+    if (d.maxDeliveryFeeCents < 0) {
+      errors.push({
+        path: 'workflow.delivery.maxDeliveryFeeCents',
+        message: 'Maximum delivery fee cannot be negative',
+        code: 'INVALID_VALUE',
+      });
+    }
+
+    if (
+      d.deliveryFeeMode === 'MANUAL' &&
+      d.maxDeliveryFeeCents > 0 &&
+      d.maxDeliveryFeeCents < d.fixedDeliveryFeeCents
+    ) {
+      errors.push({
+        path: 'workflow.delivery.maxDeliveryFeeCents',
+        message: 'Maximum delivery fee cannot be lower than the fixed reference fee',
+        code: 'INVALID_VALUE',
+      });
+    }
   }
 
   private validatePurchases(

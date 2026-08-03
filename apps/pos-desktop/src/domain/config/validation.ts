@@ -11,6 +11,7 @@ import type {
   StrictnessConfig,
   FiscalConfig,
   WorkflowConfig,
+  DeliveryConfig,
   CustomCompanyField,
   CustomStrictnessToggle,
 } from './types';
@@ -166,6 +167,61 @@ function validateWorkflow(w?: Partial<WorkflowConfig>): ConfigValidationError[] 
       path: 'workflow.maxOfflineLoginDays',
       message: 'Los dias de login offline deben estar entre 1 y 365',
       code: 'OUT_OF_RANGE',
+    });
+  }
+
+  if (w.delivery) {
+    errors.push(...validateDelivery(w.delivery));
+  }
+
+  return errors;
+}
+
+// ---------------------------------------------------------------------------
+// Delivery (domicilios) validation
+// ---------------------------------------------------------------------------
+
+function validateDelivery(d: DeliveryConfig): ConfigValidationError[] {
+  const errors: ConfigValidationError[] = [];
+
+  const validFeeModes = ['DISABLED', 'FIXED', 'MANUAL'];
+  if (!validFeeModes.includes(d.deliveryFeeMode)) {
+    errors.push({
+      path: 'workflow.delivery.deliveryFeeMode',
+      message: `Modo de tarifa de domicilio invalido: ${d.deliveryFeeMode}`,
+      code: 'INVALID_VALUE',
+    });
+  }
+
+  if (d.fixedDeliveryFeeCents < 0) {
+    errors.push({
+      path: 'workflow.delivery.fixedDeliveryFeeCents',
+      message: 'La tarifa fija de domicilio no puede ser negativa',
+      code: 'INVALID_VALUE',
+    });
+  }
+
+  if (d.deliveryFeeMode === 'FIXED' && d.fixedDeliveryFeeCents <= 0) {
+    errors.push({
+      path: 'workflow.delivery.fixedDeliveryFeeCents',
+      message: 'Debe especificar una tarifa fija mayor a cero cuando el modo es FIXED',
+      code: 'CROSS_FIELD_MISSING',
+    });
+  }
+
+  if (d.maxDeliveryFeeCents < 0) {
+    errors.push({
+      path: 'workflow.delivery.maxDeliveryFeeCents',
+      message: 'El tope de tarifa de domicilio no puede ser negativo',
+      code: 'INVALID_VALUE',
+    });
+  }
+
+  if (d.deliveryFeeMode === 'MANUAL' && d.maxDeliveryFeeCents > 0 && d.maxDeliveryFeeCents < d.fixedDeliveryFeeCents) {
+    errors.push({
+      path: 'workflow.delivery.maxDeliveryFeeCents',
+      message: 'El tope no puede ser menor a la tarifa fija de referencia',
+      code: 'INVALID_VALUE',
     });
   }
 

@@ -65,7 +65,7 @@ const createTestStore = (
       ui: uiSlice.reducer,
     },
     preloadedState: {
-      sales: { items, selectedClient: null },
+      sales: { items, selectedClient: null, delivery: null },
       ui: {
         activeScreen: "prescriptions" as const,
         saleCompletionPhase: "idle" as const,

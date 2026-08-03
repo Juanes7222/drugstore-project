@@ -143,6 +143,7 @@
       "payments_table_reference": "Ref.",
       "contact_title": "Contacto",
       "delivery_title": "Entrega",
+      "delivery_fee": "Domicilio",
       "notes_title": "Notas",
       "tags_title": "Etiquetas",
       "custom_fields_title": "Campos personalizados",
@@ -644,7 +645,7 @@
       "empty": "El carrito está vacío",
       "checkout": "COBRAR",
       "subtotal": "Subtotal",
-"tax": "IVA ({{rate}}%)",
+      "tax": "IVA ({{rate}}%)",
       "tax_mixed": "IVA",
       "total": "TOTAL",
       "discount": "Descuento",
@@ -695,6 +696,32 @@
       "create_new": "Crear nuevo cliente",
       "quick_add": "Cliente rápido"
     }
+  },
+  "delivery": {
+    "title": "Domicilio",
+    "enable": "Domicilio",
+    "dialogDescription": "Registre los datos de entrega del pedido.",
+    "address": "Dirección",
+    "address_placeholder": "Barrio, calle, apto, punto de referencia...",
+    "addressRequiredError": "La dirección de entrega es obligatoria.",
+    "contactName": "Nombre de contacto",
+    "contactName_placeholder": "Quién recibe el pedido",
+    "contactPhone": "Teléfono de contacto",
+    "contactPhone_placeholder": "Número de teléfono",
+    "phoneRequiredError": "El teléfono de contacto es obligatorio.",
+    "notes": "Notas",
+    "notes_placeholder": "Instrucciones para el mensajero...",
+    "scheduledAt": "Programar entrega",
+    "fee": "Domicilio",
+    "fee_placeholder": "Valor del domicilio",
+    "fee_max_hint": "Máximo {{max}}",
+    "feeTooHighError": "El valor del domicilio no puede superar {{max}}.",
+    "clientRequiredHint": "Seleccione un cliente para activar el domicilio",
+    "clientRequiredError": "Seleccione un cliente antes de confirmar el domicilio.",
+    "confirm": "Confirmar domicilio",
+    "cancel": "Cancelar",
+    "edit": "Editar domicilio",
+    "remove": "Quitar domicilio"
   },
   "payment": {
     "title": "Pago",
@@ -2492,7 +2519,8 @@
       "estimated_cost": "Costo estimado",
       "gross_profit": "Utilidad bruta",
       "gross_margin": "Margen bruto",
-      "margin_status": "Estado"
+      "margin_status": "Estado",
+      "average_ticket": "Ticket promedio"
     },
     "margins": {
       "negative": "Margen negativo",

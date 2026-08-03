@@ -20,6 +20,8 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = ResizeObserverStub;
 }
 
-if (typeof Element.prototype.scrollIntoView !== "function") {
+// Node-environment suites (e.g. PGlite integration tests) have no DOM;
+// guard the Element reference so setup runs in both environments.
+if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = () => {};
 }

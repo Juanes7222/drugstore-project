@@ -1026,3 +1026,49 @@ The CASH_SHIFT_CLOSE report's filter is no longer a raw ID text input - cashiers
 - Typing filters by label and by shift ID fragment (cmdk `keywords`), so both "yesterday's shift" and "the ID on the receipt" paths work.
 - List is capped at the 50 most recent shifts (`getShiftHistory` limit) - a closing document is always recent, and an unbounded list would defeat the search.
 - The empty/loading states are calm text ("Cargando turnos..." / "No hay turnos cerrados"), never an error; the not-ready hint from Phase 8 still appears until a shift is chosen.
+
+## Phase 10 - Domicilio (delivery) checkout control
+
+Domicilio is an optional second lane of checkout: the cart stays the center of truth and delivery adds a fee line above the grand total. It is tenant-policy-driven, entirely from `effectiveConfig.workflow.delivery` (no local policy logic in the view layer).
+
+### Pass 1 - brief
+
+- **Palette:** None new. Reuses Sync Slate `#4A6572` (delivery is a location connotation already used for the sync ambient) for the toggle and summary accents, Panel White for the form dialog — same surface language as the restricted-sale dialog.
+- **Type:** existing UI (Inter) for labels, JetBrains Mono `tabular-nums` for the fee and the totals row.
+- **Layout:** inside the cart panel's totals cluster, above the TotalsSummary divider:
+
+```
+CartPanel (right 40%)
+┌──────────────────────────────┐
+│ CARRITO (3)                  │
+│ ...line items...             │
+│ ┤ Domicilio ───────────────┐ │   dashed toggle → opens dialog
+│ │ [🚚 Domicilio]           │ │
+│ └──────────────────────────┘ │
+│ ┤ Domicilio ───────────────┐ │   set: card w/ address, fee · schedule,
+│ │ 🚚 Cra 14 #47-20         │ │   [✎ edit] [✕ remove]
+│ │    $8.000 · 05/08 2:00pm │ │
+│ └──────────────────────────┘ │
+│ Subtotal:  $55.600           │
+│ IVA (19%): $10.564           │
+│ Domicilio: $8.000            │
+│ ─────────────────────────    │
+│ TOTAL:     $74.164           │
+│ [COBRAR →]                   │
+└──────────────────────────────┘
+```
+
+- **Signature interplay:** fee line and summary reuse Sync Slate accents so "delivery present" reads consistently at a glance mid-transaction; the dialog is the only modal in the cart flow (restricted-sale already owns modal space in the search flow), so the two regulatory/optional confirmations never collide.
+
+### Pass 2 - critique
+
+- Not a generic togglist: the enable toggle only exists when the tenant ships a delivery policy (`enabled`), auto-disables with a hint while a client is required but none is selected (`requiresClient`), and the dialog's field set is a 1:1 of the policy flags (`addressRequired`, `phoneRequired`, `allowScheduling`, `FIXED`/`MANUAL` fee with `maxDeliveryFeeCents` cap). A CRM's "shipping toggle" has none of these regulatory couplings.
+- Validation mirrors the sales-pos service exception codes (`DELIVERY_REQUIRES_CLIENT`, `DELIVERY_ADDRESS_REQUIRED`, `DELIVERY_PHONE_REQUIRED`, `DELIVERY_FEE_POLICY`) so the UI never enforces a stricter (or looser) rule than the service.
+- Numbers stay unambiguous: fee and totals are `font-data` `tabular-nums`, and the total row switches to the grand total (`selectGrandTotalCents`) everywhere money is due (cart + payment screen).
+
+### Files
+
+- `renderer/hooks/use-delivery-config.ts` - subscription to `tenantConfigStore` → `effectiveConfig.workflow.delivery`, falling back to `DEFAULT_DELIVERY` (feature off) while the config loads.
+- `renderer/components/SalesTransaction/delivery-form-dialog.tsx` - Radix Dialog form; seeds from the existing draft when editing; fee input via the shared `CurrencyInput` (MANUAL mode), read-only line for FIXED mode.
+- `renderer/components/SalesTransaction/delivery-toggle.tsx` - toggle/card + remove, owns dialog open state and dispatches `sales-slice` `setDelivery`.
+- Cart/payment/receipt/history wiring: `cart-panel` + `totals-summary` fee line + grand total, `payment-processing` total due = grand total, `receipt` passes the draft + fee to `generateReceiptHtml` (which already prints the `*** DOMICILIO ***` block and fee), sales-history operational card shows the fee.

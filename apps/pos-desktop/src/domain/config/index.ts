@@ -30,6 +30,9 @@ export type {
   FiscalConfig,
   AdditionalTax,
   WorkflowConfig,
+  DeliveryFeeMode,
+  DeliveryState,
+  DeliveryConfig,
   CustomCompanyField,
   CustomStrictnessToggle,
   PresetDefinition,
@@ -65,6 +68,7 @@ export {
   DEFAULT_STRICTNESS,
   DEFAULT_FISCAL,
   DEFAULT_WORKFLOW,
+  DEFAULT_DELIVERY,
   EMPTY_CUSTOM_FIELDS,
   EMPTY_CUSTOM_TOGGLES,
 } from './defaults';
@@ -106,6 +110,7 @@ export {
 export {
   useTenantConfigStore,
   getTenantConfigState,
+  getEffectiveDeliveryConfig,
   type TenantConfigState,
 } from './tenant-config.store';
 

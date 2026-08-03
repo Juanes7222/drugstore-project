@@ -11,16 +11,26 @@ import { configureStore } from "@reduxjs/toolkit";
 import { uiSlice, resetSaleFlow, completeSaleCompletion } from "@/store/slices/ui-slice";
 import { salesSlice } from "@/store/slices/sales-slice";
 import { paymentSlice } from "@/store/slices/payment-slice";
+import { SaleType } from "@pharmacy/shared-types";
+import { generateReceiptHtml } from "../../../domain/fiscal/receipt-generator";
 import { Receipt } from "./receipt";
+import type { CartItem } from "@/store/slices/sales-types";
+import type { SaleDeliveryDraft } from "@/store/slices/sales-types";
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock("../../../domain/fiscal/receipt-generator", () => ({
-  generateReceiptHtml: vi.fn(() => "<div>mock receipt</div>"),
-  printReceipt: vi.fn(),
-}));
+vi.mock("../../../domain/fiscal/receipt-generator", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../../../domain/fiscal/receipt-generator")
+  >();
+  return {
+    ...actual,
+    generateReceiptHtml: vi.fn(() => "<div>mock receipt</div>"),
+    printReceipt: vi.fn(),
+  };
+});
 
 vi.mock("../../../domain/configuration/local-config.store", () => ({
   getTenantInfo: () => ({
@@ -84,7 +94,42 @@ vi.mock("motion/react", () => ({
 // Helpers
 // ---------------------------------------------------------------------------
 
-const createTestStore = (phase: "idle" | "initiating" | "completing" | "completed") =>
+const cartItem = (): CartItem => ({
+  id: "line-1",
+  productId: "p-001",
+  name: "Acetaminofén 500mg",
+  invimaCertificate: "INVIMA-2019M-001234",
+  saleType: SaleType.FREE_SALE,
+  requiresPrescription: false,
+  isRestricted: false,
+  lotCode: "L24056",
+  lotExpirationDate: "2027-06-01",
+  unitPriceCents: 620_000,
+  overrideUnitPriceCents: null,
+  discountPercentage: null,
+  costCents: null,
+  taxPercentage: 19,
+  quantity: 1,
+  commissionType: null,
+  commissionValue: null,
+  commissionStartsAt: null,
+  commissionEndsAt: null,
+});
+
+const deliveryDraft = (): SaleDeliveryDraft => ({
+  state: "PENDING",
+  address: "Calle 10 #20-30",
+  contactName: "Ana Gómez",
+  contactPhone: "5551234",
+  notes: "Entregar antes de las 6pm",
+  scheduledAt: null,
+  feeCents: 12_500,
+});
+
+const createTestStore = (
+  phase: "idle" | "initiating" | "completing" | "completed",
+  options: { items?: CartItem[]; delivery?: SaleDeliveryDraft | null } = {},
+) =>
   configureStore({
     reducer: {
       ui: uiSlice.reducer,
@@ -104,8 +149,9 @@ const createTestStore = (phase: "idle" | "initiating" | "completing" | "complete
         },
       },
       sales: {
-        items: [],
+        items: options.items ?? [],
         selectedClient: null,
+        delivery: options.delivery ?? null,
       },
       payment: {
         methods: [],
@@ -185,5 +231,62 @@ describe("Receipt", () => {
     expect(
       screen.getByRole("region", { name: /Pago confirmado/ }),
     ).toBeInTheDocument();
+  });
+
+  it("passes the delivery draft and its fee to the receipt generator", () => {
+    const draft = deliveryDraft();
+    const store = createTestStore("completing", {
+      items: [cartItem()],
+      delivery: draft,
+    });
+    renderReceipt(store);
+
+    expect(vi.mocked(generateReceiptHtml)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        delivery: draft,
+        deliveryFeeCents: 12_500,
+      }),
+    );
+  });
+
+  it("emits the DOMICILIO section and the Domicilio fee row in the generated HTML", async () => {
+    const store = createTestStore("completing", {
+      items: [cartItem()],
+      delivery: deliveryDraft(),
+    });
+    renderReceipt(store);
+
+    const { generateReceiptHtml: realGenerateReceiptHtml } =
+      await vi.importActual<
+        typeof import("../../../domain/fiscal/receipt-generator")
+      >("../../../domain/fiscal/receipt-generator");
+    // The latest call is this render's — earlier tests accumulate calls.
+    const html = realGenerateReceiptHtml(
+      vi.mocked(generateReceiptHtml).mock.calls.at(-1)![0],
+    );
+
+    expect(html).toContain("*** DOMICILIO ***");
+    expect(html).toContain("Calle 10 #20-30");
+    expect(html).toContain("Tel: 5551234");
+    expect(html).toContain('<td class="label">Domicilio</td>');
+    // The generator formats feeCents as a peso decimal: 12 500 → "$12.500,00"
+    expect(html).toContain("$12.500,00");
+    expect(html).toContain("TOTAL + DOMICILIO");
+  });
+
+  it("omits the DOMICILIO section when the sale has no delivery", async () => {
+    const store = createTestStore("completing", { items: [cartItem()] });
+    renderReceipt(store);
+
+    const { generateReceiptHtml: realGenerateReceiptHtml } =
+      await vi.importActual<
+        typeof import("../../../domain/fiscal/receipt-generator")
+      >("../../../domain/fiscal/receipt-generator");
+    const html = realGenerateReceiptHtml(
+      vi.mocked(generateReceiptHtml).mock.calls.at(-1)![0],
+    );
+
+    expect(html).not.toContain("*** DOMICILIO ***");
+    expect(html).not.toContain('<td class="label">Domicilio</td>');
   });
 });
