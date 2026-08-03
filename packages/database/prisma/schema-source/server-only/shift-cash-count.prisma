@@ -1,0 +1,22 @@
+// SERVER-ONLY OVERRIDE of shared/shift-cash-count.prisma — only included in the full build.
+// Adds the tenant column. Keep in sync with shared/shift-cash-count.prisma.
+
+model ShiftCashCount {
+  id                    String    @id
+  subscriptionId        String
+  cashShiftId           String
+  cashShift             CashShift @relation(fields: [cashShiftId], references: [id])
+  countType             CashCountType
+  paymentMethodId       String
+  paymentMethod         PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  paymentMethodIsCash   Boolean   @default(false)
+  expectedAmount        Decimal   @db.Decimal(15, 2)
+  declaredAmount        Decimal   @db.Decimal(15, 2)
+  difference            Decimal   @db.Decimal(15, 2)
+  denominationsBreakdown Json?
+  createdAt             DateTime  @default(now())
+  createdById           String
+
+  @@index([subscriptionId])
+  @@index([cashShiftId, countType])
+}

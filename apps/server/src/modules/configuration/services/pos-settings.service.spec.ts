@@ -29,6 +29,8 @@ describe('PosSettingsService', () => {
         admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
         inventoryAssistant: { itemMaxPercent: 15, globalMaxPercent: 10 },
         accountant: { itemMaxPercent: 0, globalMaxPercent: 0 },
+        manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
+        owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
       };
       const mockAlertThresholds = { expirationWarningDays: 30, lowStockAlertEnabled: true };
       const mockSyncDefaults = { batchSize: 50, maxRetryAttempts: 5, retryDelaysSeconds: [30, 60] };

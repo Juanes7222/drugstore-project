@@ -1,0 +1,17 @@
+// SERVER-ONLY OVERRIDE of shared/product-barcode.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId). Keep in sync with shared/product-barcode.prisma.
+
+model ProductBarcode {
+  id          String    @id
+  subscriptionId String
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  barcode     String
+  barcodeType BarcodeType
+  isPrimary   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@index([subscriptionId])
+  @@index([productId])
+  @@unique([subscriptionId, barcode])
+}

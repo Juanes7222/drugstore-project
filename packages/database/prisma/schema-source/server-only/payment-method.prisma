@@ -1,0 +1,21 @@
+// SERVER-ONLY OVERRIDE of shared/payment-method.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId). Keep in sync with shared/payment-method.prisma.
+
+model PaymentMethod {
+  id           String                  @id
+  subscriptionId String
+  internalCode String
+  name         String
+  dianCode     String?
+  category     PaymentMethodCategory
+  isCash       Boolean                 @default(false)
+  sortOrder    Int                     @default(0)
+  isActive     Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  shiftCashCounts ShiftCashCount[]
+  salePayments  SalePayment[]
+
+  @@index([subscriptionId])
+  @@unique([subscriptionId, internalCode])
+}

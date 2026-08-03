@@ -15,6 +15,7 @@ import { InvoiceTransmissionResultService } from '../services/invoice-transmissi
 import { LocalNumberHintQuerySchema } from '../dto/local-number-hint-query.dto';
 import { SyncBatchDto } from '../dto/sync-batch.dto';
 import { SyncBatchSchema, SyncOperationSchema } from '../dto/sync-operation.schema';
+import { SyncAuthGuard } from '../guards/sync-auth.guard';
 
 const mockSyncService = {
   receiveBatch: jest.fn(),
@@ -52,7 +53,14 @@ describe('SyncController', () => {
         { provide: SyncHealthService, useValue: mockSyncHealthService },
         { provide: InvoiceTransmissionResultService, useValue: mockInvoiceTransmissionResultService },
       ],
-    }).compile();
+    })
+      // The controller is decorated with @UseGuards(SyncAuthGuard), whose
+      // real dependencies (OfflineTokenService, AuthService) are not part of
+      // this unit test. Guard behaviour is covered by its own spec; here we
+      // let every request through and assert on the controller directly.
+      .overrideGuard(SyncAuthGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<SyncController>(SyncController);
     service = module.get(SyncService) as jest.Mocked<typeof mockSyncService>;

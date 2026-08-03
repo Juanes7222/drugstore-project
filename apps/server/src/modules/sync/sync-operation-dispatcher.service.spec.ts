@@ -82,6 +82,11 @@ const mockPrisma = {
     findUnique: jest.fn(),
     update: jest.fn(),
   },
+  sale: {
+    findUnique: jest.fn().mockResolvedValue(null),
+    findFirst: jest.fn().mockResolvedValue(null),
+    update: jest.fn(),
+  },
 } as unknown as PrismaService;
 
 /** Build a minimal SyncQueue entry with sensible defaults. */
@@ -528,6 +533,7 @@ describe('SyncOperationDispatcherService', () => {
         'u-1',
         expect.objectContaining({ internalCode: 'P000001' }),
         'uuid-1',
+        null, // localProductId — absent from this payload's metadata
       );
       // The OFFLINE- prefix must not survive normalization.
       const calledDto = (mockProductsService.createProduct as jest.Mock).mock.calls[0][1];
@@ -556,6 +562,7 @@ describe('SyncOperationDispatcherService', () => {
         'u-1',
         expect.objectContaining({ internalCode: 'P000043' }),
         'uuid-1',
+        null, // localProductId — absent from this payload's metadata
       );
     });
 
@@ -583,6 +590,7 @@ describe('SyncOperationDispatcherService', () => {
         'u-1',
         expect.objectContaining({ internalCode: 'PROD-001' }),
         'uuid-1',
+        null, // localProductId — absent from this payload's metadata
       );
     });
 

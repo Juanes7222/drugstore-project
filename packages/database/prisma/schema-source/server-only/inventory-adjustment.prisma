@@ -1,0 +1,47 @@
+// SERVER-ONLY OVERRIDE of shared/inventory-adjustment.prisma — only included in the full build.
+// Keeps the full User relations (the local build strips them via
+// local-only/inventory-adjustment.prisma) and adds the tenant column.
+// sequentialNumber is now unique per subscription.
+// Keep in sync with shared/inventory-adjustment.prisma.
+
+model InventoryAdjustmentDocument {
+  id                      String    @id
+  subscriptionId          String
+  sequentialNumber        Int
+  state                   AdjustmentState @default(DRAFT)
+  reason                  String?
+  notes                   String?
+  createdAt               DateTime  @default(now())
+  createdByUserId         String
+  createdByUser           User      @relation("CreatedByUser", fields: [createdByUserId], references: [id], onDelete: NoAction)
+  submittedForApprovalAt  DateTime?
+  approvedAt              DateTime?
+  approvedByUserId        String?
+  approvedByUser          User?     @relation("ApprovedByUser", fields: [approvedByUserId], references: [id], onDelete: NoAction)
+  approvalNotes           String?
+  rejectedAt              DateTime?
+  rejectedByUserId        String?
+  rejectedByUser          User?     @relation("RejectedByUser", fields: [rejectedByUserId], references: [id], onDelete: NoAction)
+  rejectionReason         String?
+  appliedAt               DateTime?
+  annulledAt              DateTime?
+  annulledByUserId        String?
+  annulledByUser          User?     @relation("AnnulledByUser", fields: [annulledByUserId], references: [id], onDelete: NoAction)
+  annulmentReason         String?
+  physicalCountId         String?
+  physicalCount           PhysicalCount? @relation(fields: [physicalCountId], references: [id])
+
+  @@index([subscriptionId])
+  @@unique([subscriptionId, sequentialNumber])
+}
+
+// Single-row counter that allocates sequentialNumber for InventoryAdjustmentDocument.
+// The row id is now the subscriptionId — each subscription has its own
+// counter row, so the "singleton" pattern from the shared schema is gone.
+// Incremented atomically via `update({ increment: 1 })` so concurrent creates
+// (sync cron vs UI, or multiple app instances) serialize and never collide on
+// the @unique sequentialNumber field.
+model InventoryAdjustmentCounter {
+  id                   String @id // subscriptionId
+  lastSequentialNumber Int    @default(0)
+}

@@ -1,0 +1,31 @@
+// SERVER-ONLY OVERRIDE of shared/inventory-movement.prisma — only included in the full build.
+// Adds the tenant column. Keep in sync with shared/inventory-movement.prisma.
+
+model InventoryMovement {
+  id                    String    @id
+  subscriptionId        String
+  movementType          MovementType
+  quantity              Int
+  previousStock         Int
+  resultingStock        Int
+  createdById           String
+  createdAt             DateTime
+  lotId                 String
+  lot                   Lot       @relation(fields: [lotId], references: [id])
+  adjustmentDocumentId  String?
+  autoExpirationJobId   String?
+  reason                String?
+  approvedByUserId      String?
+  purchaseReceptionId   String?
+  saleId                String?
+  sale                  Sale? @relation(fields: [saleId], references: [id])
+  supplierReturnId      String?
+  clientReturnId        String?
+
+  @@index([subscriptionId])
+  @@index([lotId])
+  @@index([lotId, createdAt])
+  @@index([createdAt])
+  @@index([movementType, createdAt])
+  @@index([adjustmentDocumentId])
+}

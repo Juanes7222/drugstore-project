@@ -1,0 +1,29 @@
+// SERVER-ONLY OVERRIDE of shared/supplier.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId). Keep in sync with shared/supplier.prisma.
+
+model Supplier {
+  id                    String    @id
+  subscriptionId        String
+  identificationType    SupplierIdentificationType
+  identificationNumber  String
+  businessName          String
+  contactName           String?
+  phone                 String?
+  email                 String?
+  address               String?
+  city                  String?
+  country               String    @default("CO")
+  paymentTermsDays      Int       @default(0)
+  creditLimit           Decimal   @db.Decimal(15, 2) @default(0)
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  createdById           String
+  purchaseOrders        PurchaseOrder[]
+  purchaseReceptions    PurchaseReception[]
+  supplierReturns       SupplierReturn[]
+
+  @@index([subscriptionId])
+  @@unique([subscriptionId, identificationType, identificationNumber])
+  @@index([businessName])
+}

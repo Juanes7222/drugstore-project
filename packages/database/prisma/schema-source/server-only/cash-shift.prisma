@@ -1,0 +1,30 @@
+// SERVER-ONLY OVERRIDE of shared/cash-shift.prisma — only included in the full build.
+// Adds the tenant column. Keep in sync with shared/cash-shift.prisma.
+
+model CashShift {
+  id                        String    @id
+  subscriptionId            String
+  workstationId             String
+  userId                    String
+  state                     ShiftState @default(OPEN)
+  openedAt                  DateTime
+  closedAt                  DateTime?
+  closedByUserId            String?
+  openingBalance            Decimal   @db.Decimal(15, 2) @default(0)
+  openingNotes              String?
+  expectedClosingAmount     Decimal   @db.Decimal(15, 2) @default(0)
+  actualClosingAmount       Decimal   @db.Decimal(15, 2) @default(0)
+  closingDifference         Decimal   @db.Decimal(15, 2) @default(0)
+  closingNotes              String?
+  forcedClose               Boolean   @default(false)
+  hasExtendedAlert          Boolean   @default(false)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  cashCounts                ShiftCashCount[]
+  sales                     Sale[]
+
+  @@index([subscriptionId])
+  @@index([workstationId, state])
+  @@index([userId, state])
+  @@index([closedAt])
+}

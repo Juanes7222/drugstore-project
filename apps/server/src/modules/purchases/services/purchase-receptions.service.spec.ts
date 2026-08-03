@@ -40,6 +40,7 @@ import type { PurchaseReceptionConfirmationPayload } from '@/modules/sync/dto/pu
 
 function createTxMock() {
   return {
+    $executeRaw: jest.fn(),
     supplier: { findUnique: jest.fn() },
     product: { findUnique: jest.fn() },
     purchaseOrder: { findUnique: jest.fn(), update: jest.fn() },

@@ -1,0 +1,31 @@
+// SERVER-ONLY OVERRIDE of shared/lot.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId). Lots are physically stored per
+// drugstore, so the tenant column is required together with Product.
+// Keep in sync with shared/lot.prisma.
+
+model Lot {
+  id                String    @id
+  subscriptionId    String
+  batchNumber       String
+  expirationDate    DateTime
+  entryDate         DateTime
+  state             LotState  @default(ACTIVE)
+  currentStock      Int       @default(0)
+  version           Int       @default(0)
+  productId         String
+  product           Product   @relation(fields: [productId], references: [id])
+  locationCode      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  blockedAt         DateTime?
+  blockedByUserId   String?
+  blockReason       String?
+  movements         InventoryMovement[]
+  saleItemLots      SaleItemLot[]
+
+  @@index([subscriptionId])
+  @@index([productId])
+  @@index([productId, state])
+  @@index([expirationDate])
+  @@index([updatedAt, id])
+}

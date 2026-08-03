@@ -1,0 +1,22 @@
+// SERVER-ONLY OVERRIDE of shared/product-tax-history.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId). Keep in sync with shared/product-tax-history.prisma.
+
+model ProductTaxHistory {
+  id                   String    @id
+  subscriptionId       String
+  productId            String
+  product              Product   @relation(fields: [productId], references: [id])
+  previousTaxHistoryId String?
+  previousTaxHistory   ProductTaxHistory? @relation("TaxHistoryChain", fields: [previousTaxHistoryId], references: [id])
+  nextTaxHistories     ProductTaxHistory[] @relation("TaxHistoryChain")
+  taxSchemeId          String
+  taxScheme            TaxScheme @relation(fields: [taxSchemeId], references: [id])
+  effectiveFrom        DateTime
+  effectiveTo          DateTime?
+  changedById          String
+  changedAt            DateTime
+  changeReason         String?
+
+  @@index([subscriptionId])
+  @@index([productId])
+}

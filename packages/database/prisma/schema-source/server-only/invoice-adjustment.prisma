@@ -1,0 +1,57 @@
+// SERVER-ONLY OVERRIDE of shared/invoice-adjustment.prisma — only included in the full build.
+// Adds the tenant column. Keep in sync with shared/invoice-adjustment.prisma.
+
+enum InvoiceAdjustmentType {
+  PAYMENT_METHOD_CHANGE
+  PAYMENT_SPLIT_CHANGE
+  INTERNAL_NOTE
+  CONTACT_UPDATE
+  CLIENT_CHANGE
+  DELIVERY_INFO
+  TAG_ADD
+  TAG_REMOVE
+  CUSTOM_FIELD_SET
+  CUSTOM_FIELD_CLEAR
+  REVERSAL
+}
+
+/// Operational annotation layer that sits alongside the immutable fiscal
+/// Invoice record. These adjustments never affect DIAN — they only change
+/// how the POS interprets the invoice for operational purposes.
+///
+/// On the POS this is the source of truth for the adjustment chain. On the
+/// server this is a read-only replica synced from the POS for visibility.
+model InvoiceLocalAdjustment {
+  id                        String                   @id
+  subscriptionId            String
+  invoiceId                 String
+  /// Denormalized invoice number for query convenience.
+  invoiceNumber             String
+  createdAt                 DateTime
+  createdByUserId           String
+  /// Denormalized actor name for audit trail resilience.
+  createdByUserName         String
+  /// Workstation where the adjustment was made.
+  workstationId             String
+  adjustmentType            InvoiceAdjustmentType
+  /// The previous value being changed (null for additions like TAG_ADD).
+  previousValue             Json?
+  /// The new value being applied (null for REVERSAL and TAG_REMOVE).
+  newValue                  Json?
+  /// Required reason for the adjustment (validated at service level).
+  reason                    String
+  /// Optimistic concurrency version within the invoice's non-reversed chain.
+  version                   Int
+  /// When adjustmentType = REVERSAL, FK to the original adjustment being reversed.
+  reversalOfAdjustmentId    String?
+  /// When this adjustment is later reversed, FK to the reversal adjustment.
+  replacedByAdjustmentId    String?
+
+  @@index([subscriptionId])
+  @@unique([invoiceId, version])
+  @@index([invoiceId, createdAt])
+  @@index([createdByUserId])
+  @@index([adjustmentType])
+  @@index([reversalOfAdjustmentId])
+  @@index([replacedByAdjustmentId])
+}

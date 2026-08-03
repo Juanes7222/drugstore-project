@@ -1,0 +1,31 @@
+// SERVER-ONLY OVERRIDE of shared/catalog-base.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId) so every drugstore keeps its own
+// category and pharmaceutical-form catalog. Keep in sync with shared/catalog-base.prisma.
+
+model Category {
+  id        String    @id
+  subscriptionId String
+  name      String
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@index([subscriptionId])
+  @@unique([subscriptionId, name])
+}
+
+model PharmaceuticalForm {
+  id        String    @id
+  subscriptionId String
+  name      String
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@index([subscriptionId])
+  @@unique([subscriptionId, name])
+}

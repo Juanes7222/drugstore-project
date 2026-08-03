@@ -1,0 +1,21 @@
+// SERVER-ONLY OVERRIDE of shared/tax-scheme.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId). Keep in sync with shared/tax-scheme.prisma.
+
+model TaxScheme {
+  id            String          @id
+  subscriptionId String
+  code          String
+  name          String
+  taxType       TaxSchemeType
+  rate          Decimal         @db.Decimal(6, 4)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  createdById   String
+  productTaxHistories ProductTaxHistory[]
+
+  @@index([subscriptionId])
+  @@index([subscriptionId, code, rate])
+}

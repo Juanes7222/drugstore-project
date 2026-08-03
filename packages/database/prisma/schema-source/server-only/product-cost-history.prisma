@@ -1,0 +1,22 @@
+// SERVER-ONLY OVERRIDE of shared/product-cost-history.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId). Keep in sync with shared/product-cost-history.prisma.
+
+model ProductCostHistory {
+  id                    String    @id
+  subscriptionId        String
+  productId             String
+  product               Product   @relation(fields: [productId], references: [id])
+  previousCostHistoryId String?
+  previousCostHistory   ProductCostHistory? @relation("CostHistoryChain", fields: [previousCostHistoryId], references: [id])
+  nextCostHistories     ProductCostHistory[] @relation("CostHistoryChain")
+  cost                  Decimal   @db.Decimal(15, 2)
+  effectiveFrom         DateTime
+  effectiveTo           DateTime?
+  changedById           String
+  changedAt             DateTime
+  changeReason          String?
+
+  @@index([subscriptionId])
+  @@index([productId])
+  @@index([productId, effectiveFrom])
+}

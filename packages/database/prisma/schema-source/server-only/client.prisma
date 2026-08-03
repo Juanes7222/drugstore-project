@@ -1,0 +1,51 @@
+// SERVER-ONLY OVERRIDE of shared/client.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId) so client data and classifications
+// never cross subscription boundaries. Keep in sync with shared/client.prisma.
+
+model ClientClassification {
+  id                String    @id
+  subscriptionId    String
+  type              ClientType
+  discountPercentage Decimal   @db.Decimal(5, 2) @default(0)
+  sortOrder         Int       @default(0)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  clients           Client[]
+  salesSnapshots    Sale[]
+
+  @@index([subscriptionId])
+  @@unique([subscriptionId, type])
+}
+
+model Client {
+  id                        String    @id
+  subscriptionId            String
+  identificationType        IdentificationType
+  identificationNumber      String
+  fullName                  String
+  email                     String?
+  phone                     String?
+  address                   String?
+  municipality              String?
+  department                String?
+  isActive                  Boolean   @default(true)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  createdById               String
+  updatedById               String?
+  classificationId          String?
+  classification            ClientClassification? @relation(fields: [classificationId], references: [id])
+  consentGivenAt            DateTime?
+  consentVersion            String?
+  consentScope              Json?
+  dataSubjectRequestStatus  DataSubjectRequestStatus @default(NONE)
+  dataSubjectRequestAt      DateTime?
+  sales                     Sale[]
+
+  @@index([subscriptionId])
+  @@unique([subscriptionId, identificationType, identificationNumber])
+  @@index([fullName])
+  @@index([classificationId])
+  @@index([municipality])
+}

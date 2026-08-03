@@ -1,0 +1,72 @@
+// SERVER-ONLY OVERRIDE of shared/product.prisma — only included in the full build.
+// Adds the tenant column (subscriptionId) that scopes every operational row to
+// its Subscription. The shared fragment keeps the local/PGlite build tenant-free.
+// Keep this file in sync with shared/product.prisma.
+
+model Product {
+  id                    String    @id
+  subscriptionId        String
+  internalCode          String
+  commercialName        String
+  concentration         String?
+  concentrationUnit     String?
+  laboratory            String
+  saleType              SaleType
+  minimumStock          Int       @default(0)
+  isActive              Boolean   @default(true)
+  discontinuationReason String?
+  invimaRegistry        String?
+  atcCode               String?
+  therapeuticIndication String?
+  storageConditions     String?
+  internalNotes         String?
+  categoryId            String?
+  category              Category? @relation(fields: [categoryId], references: [id])
+  pharmaceuticalFormId  String?
+  pharmaceuticalForm    PharmaceuticalForm? @relation(fields: [pharmaceuticalFormId], references: [id])
+  currentPriceId         String?
+  currentTaxHistoryId    String?
+  currentCostId          String?
+  /// Sync operationUuid that created this product via PRODUCT_CREATION.
+  /// Nullable, set only for offline-created products that were synced.
+  /// Used by SyncOperationDispatcherService.handleProductCreation to
+  /// detect retries and return the existing entity id instead of
+  /// creating a duplicate.
+  sourceOperationUuid    String?   @unique
+  /// Local UUID of the product on the POS workstation that created it.
+  /// Set during PRODUCT_CREATION replay from the payload's
+  /// `metadata.productId`.  Used by the SALE_CONFIRMATION handler as a
+  /// fallback lookup when the sale payload carries the POS-local UUID
+  /// instead of the server-assigned id — without this field, every
+  /// offline-created product carries a different id on each side and
+  /// the server cannot find the product by the local UUID in the
+  /// sale payload.
+  sourceProductId        String?
+  /// Sales-commission configuration. `commissionValue` is a percentage
+  /// when `commissionType` is PERCENTAGE, or a fixed per-unit amount in
+  /// COP when FIXED. The commission applies only while the sale date is
+  /// within the optional `commissionStartsAt` / `commissionEndsAt`
+  /// window — outside it (or when the window is unset and the type is
+  /// NONE) no commission accrues and the sale is not blocked.
+  commissionType           CommissionType @default(NONE)
+  commissionValue          Decimal        @db.Decimal(15, 2) @default(0)
+  commissionStartsAt       DateTime?
+  commissionEndsAt         DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  createdById            String
+  priceHistories         ProductPriceHistory[]
+  taxHistories           ProductTaxHistory[]
+  costHistories          ProductCostHistory[]
+  barcodes               ProductBarcode[]
+  lots                   Lot[]
+  saleItems              SaleItem[]
+
+  @@index([subscriptionId])
+  @@unique([subscriptionId, internalCode])
+  @@index([commercialName])
+  @@index([isActive])
+  @@index([categoryId, isActive])
+  @@index([invimaRegistry])
+  @@index([updatedAt, id])
+}
