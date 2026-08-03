@@ -35,6 +35,7 @@
   },
   "salesHistory": {
     "title": "Sales history",
+    "detail_resize_label": "Resize detail panel width",
     "subtitle": "Confirmed sales with DIAN fiscal invoice and pharmacy operational view",
     "loading": "Loading sales...",
     "error_title": "Error loading sales",
@@ -252,6 +253,7 @@
     "discard": "Discard",
     "load_more": "Load more",
     "entry_detail_title": "Entry detail",
+    "entry_detail_resize_label": "Resize panel width",
     "detail_metadata": "Details",
     "detail_operation": "Operation",
     "detail_status": "Status",
@@ -1119,7 +1121,8 @@
     "no_permission": "You do not have permission to manage clients.",
     "sync": "Sync",
     "sync_tooltip": "Pull clients from server",
-    "sync_done": "Sync complete. {{count}} client(s) in local database."
+    "sync_done": "Sync complete. {{count}} client(s) in local database.",
+    "edit_panel_resize_label": "Resize edit panel width"
   },
   "audit_log": {
     "title": "Audit log",
@@ -1251,6 +1254,7 @@
   },
   "fiscal": {
     "title": "Fiscal Management / DIAN",
+    "detail_resize_label": "Resize detail panel width",
     "tab_invoices": "Invoices ({{count}})",
     "tab_contingency": "Contingency History",
     "invoices_title": "Invoices",

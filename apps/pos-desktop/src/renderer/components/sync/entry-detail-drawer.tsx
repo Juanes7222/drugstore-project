@@ -15,6 +15,8 @@ import { motion } from "motion/react";
 import { AlertTriangleIcon, CalendarClockIcon, RotateCwIcon, XIcon } from "@/components/ui/icons";
 import type { PermanentFailureEntry } from "../../../domain/sync/sync-metrics.service";
 import { formatRelativeTimeEs } from "../../hooks/use-relative-time";
+import { useResizableWidth } from "../../hooks/use-resizable-width";
+import { ResizeHandle } from "../ui/resize-handle";
 import { summarizePayload, truncateError } from "./sync-utils";
 
 interface EntryDetailDrawerProps {
@@ -27,6 +29,14 @@ export const EntryDetailDrawer: FC<EntryDetailDrawerProps> = ({
   onClose,
 }) => {
   const { t } = useTranslation();
+
+  const { width, isResizing, handleProps } = useResizableWidth({
+    storageKey: "sync-entry-detail-drawer",
+    defaultWidth: 384,
+    minWidth: 320,
+    maxWidth: 720,
+    label: t("sync.entry_detail_resize_label"),
+  });
 
   const translatedOpType = t(`sync.op_type.${entry.operationType}`, {
     defaultValue: entry.operationType,
@@ -53,7 +63,8 @@ export const EntryDetailDrawer: FC<EntryDetailDrawerProps> = ({
 
       {/* Drawer panel */}
       <motion.aside
-        className="fixed right-0 top-0 z-50 flex h-full w-96 flex-col overflow-y-auto border-l border-border bg-panel shadow-pos-panel"
+        className="fixed right-0 top-0 z-50 flex h-full flex-col border-l border-border bg-panel shadow-pos-panel"
+        style={{ width: `min(${width}px, 100vw)` }}
         role="dialog"
         aria-modal="true"
         aria-label={t("sync.entry_detail_title")}
@@ -62,6 +73,12 @@ export const EntryDetailDrawer: FC<EntryDetailDrawerProps> = ({
         exit={{ x: "100%" }}
         transition={{ type: "spring", damping: 28, stiffness: 300 }}
       >
+        {/* Resize handle */}
+        <ResizeHandle
+          handleProps={handleProps}
+          isResizing={isResizing}
+          className="absolute -left-1.5 top-0 bottom-0 z-30"
+        />
         {/* ── Header ── */}
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-body font-semibold text-ink">
@@ -78,7 +95,7 @@ export const EntryDetailDrawer: FC<EntryDetailDrawerProps> = ({
         </div>
 
         {/* ── Content ── */}
-        <div className="flex-1 space-y-5 p-4">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
           {/* ── Summary card ── */}
           <section className="rounded-lg border border-border bg-surface p-4">
             <div className="flex items-start justify-between gap-2">

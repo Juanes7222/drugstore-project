@@ -16,7 +16,7 @@
  * @category Page
  */
 
-import { type FC, useCallback, useState } from "react";
+import { type CSSProperties, type FC, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocalSessionStore } from "../auth/local-session.store";
 import { useContingencyStore } from "./contingency.store";
@@ -37,6 +37,8 @@ import { OperationalInvoiceDetailPanel } from "../../renderer/components/fiscal/
 import { AdjustmentHistoryPanel } from "../../renderer/components/fiscal/adjustment-history-panel";
 import { AdjustmentCreationModal } from "../../renderer/components/fiscal/adjustment-creation-modal";
 import { FiscalHeader } from "../../renderer/components/fiscal/fiscal-header";
+import { useResizableWidth } from "../../renderer/hooks/use-resizable-width";
+import { ResizeHandle } from "../../renderer/components/ui/resize-handle";
 import { XIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
@@ -60,6 +62,15 @@ export const FiscalPage: FC = () => {
 
   // Detail panel sub-tab
   const [detailView, setDetailView] = useState<"fiscal" | "dual">("fiscal");
+
+  // Invoice detail side-panel width (resizable, persisted)
+  const { width: detailPanelWidth, isResizing, handleProps } = useResizableWidth({
+    storageKey: "fiscal-invoice-detail-panel",
+    defaultWidth: detailView === "dual" ? 640 : 448,
+    minWidth: 320,
+    maxWidth: 960,
+    label: t("fiscal.detail_resize_label"),
+  });
 
   // Adjustment creation modal state
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
@@ -284,10 +295,15 @@ export const FiscalPage: FC = () => {
         {/* Invoice detail side panel */}
         {selectedInvoice && (
           <aside
-            className={`flex h-1/2 min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-ink/8 bg-panel lg:border-l lg:border-t-0 lg:h-auto ${
-              detailView === "dual" ? "lg:w-[40rem] xl:w-[48rem]" : "lg:w-[24rem] xl:w-[28rem]"
-            }`}
+            className="relative flex h-1/2 min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-ink/8 bg-panel lg:h-auto lg:w-[var(--panel-width)] lg:border-l lg:border-t-0"
+            style={{ "--panel-width": `${detailPanelWidth}px`, maxWidth: "100vw" } as CSSProperties}
           >
+            {/* Resize handle */}
+            <ResizeHandle
+              handleProps={handleProps}
+              isResizing={isResizing}
+              className="absolute left-0 top-0 bottom-0 z-30"
+            />
             {/* Detail view toggle */}
             <div className="flex items-center justify-between border-b border-ink/8 px-pos-md py-pos-sm">
               <h2 className="text-body-sm font-semibold text-ink">{t("fiscal.invoice_detail")}</h2>

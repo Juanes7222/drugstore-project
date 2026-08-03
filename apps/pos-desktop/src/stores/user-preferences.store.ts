@@ -17,6 +17,7 @@
  * - `receiptFontSize`: receipt print font size
  * - `keyboardLayout`: keyboard layout preference
  * - `quickButtons`: product IDs for quick-select buttons
+ * - `panelWidths`: persisted widths (px) for resizable side panels
  */
 
 import { create } from "zustand";
@@ -83,6 +84,9 @@ export interface UserPreferences {
 
   /** Whether the navigation sidebar is pinned open (persisted across restarts). */
   sidebarPinned: boolean;
+
+  /** Persisted widths (px) for resizable side panels, keyed by panel id. */
+  panelWidths: Record<string, number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +174,9 @@ interface UserPreferencesStore extends UserPreferences {
 
   /** Pin or unpin the navigation sidebar. */
   setSidebarPinned: (pinned: boolean) => void;
+
+  /** Persist the width of a resizable side panel. */
+  setPanelWidth: (panelKey: string, width: number) => void;
 }
 
 export const useUserPreferencesStore = create<UserPreferencesStore>()(
@@ -193,6 +200,7 @@ export const useUserPreferencesStore = create<UserPreferencesStore>()(
       keyboardLayout: 'STANDARD' as KeyboardLayout,
       quickButtons: [],
       sidebarPinned: false,
+      panelWidths: {},
 
       // ---- Actions ----
 
@@ -349,6 +357,12 @@ export const useUserPreferencesStore = create<UserPreferencesStore>()(
       setSidebarPinned: (pinned: boolean) => {
         set({ sidebarPinned: pinned });
       },
+
+      setPanelWidth: (panelKey: string, width: number) => {
+        set((state) => ({
+          panelWidths: { ...state.panelWidths, [panelKey]: Math.round(width) },
+        }));
+      },
     }),
     {
       name: "pos-user-preferences",
@@ -371,6 +385,7 @@ export const useUserPreferencesStore = create<UserPreferencesStore>()(
         keyboardLayout: state.keyboardLayout,
         quickButtons: state.quickButtons,
         sidebarPinned: state.sidebarPinned,
+        panelWidths: state.panelWidths,
       }),
     },
   ),

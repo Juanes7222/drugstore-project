@@ -21,6 +21,8 @@ import { useClientsService } from "../common/service-context";
 import type { ClientSearchResult, CreateClientInput } from "../../../domain/clients/clients.service";
 import type { UpdateClientInput } from "../../../domain/clients/clients.service";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
+import { useResizableWidth } from "../../hooks/use-resizable-width";
+import { ResizeHandle } from "../ui/resize-handle";
 import { notify } from "@/utils/notify";
 import { ClientForm } from "./client-form";
 import { ClientTable } from "./client-table";
@@ -86,6 +88,15 @@ export const ClientsPage: FC = () => {
   const session = useLocalSessionStore((s) => s.session);
   const canCreate = !!session;
   const shouldReduceMotion = useReducedMotion();
+
+  // ---- Edit slide-in panel width (resizable, persisted) ----
+  const { width: editPanelWidth, isResizing, handleProps } = useResizableWidth({
+    storageKey: "clients-edit-panel",
+    defaultWidth: 512,
+    minWidth: 384,
+    maxWidth: 768,
+    label: t("clients.edit_panel_resize_label"),
+  });
 
   // ---- Search state ----
   const [searchQuery, setSearchQuery] = useState("");
@@ -397,16 +408,23 @@ export const ClientsPage: FC = () => {
             {/* Slide-in panel */}
             <motion.div
               key="edit-panel"
-              className="fixed right-0 top-0 z-50 h-full w-full max-w-lg overflow-y-auto bg-white shadow-lg"
+              className="fixed right-0 top-0 z-50 flex h-full flex-col bg-white shadow-lg"
               variants={slideInVariants}
               initial={shouldReduceMotion ? undefined : "hidden"}
               animate="visible"
               exit="exit"
               style={{
+                width: `min(${editPanelWidth}px, 100vw)`,
                 borderLeft: "1px solid color-mix(in srgb, var(--color-ink) 10%, transparent)",
               }}
             >
-              <div className="p-5">
+              {/* Resize handle */}
+              <ResizeHandle
+                handleProps={handleProps}
+                isResizing={isResizing}
+                className="absolute -left-1.5 top-0 bottom-0 z-30"
+              />
+              <div className="min-h-0 flex-1 overflow-y-auto p-5">
                 <ClientForm
                   mode="edit"
                   data={editFormData}

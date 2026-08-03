@@ -8,7 +8,7 @@
  * Role-gated to MANAGER, OWNER, or SAAS_ADMIN.
  */
 
-import { type FC, useCallback, useEffect, useState } from 'react';
+import { type CSSProperties, type FC, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocalSessionStore } from '../auth/local-session.store';
 import { useLocalAdjustmentService, useSalesHistoryService, useInvoiceService } from '../../renderer/components/common/service-context';
@@ -20,6 +20,8 @@ import type { SaleHistoryListItem, SaleHistoryDetail, SaleHistoryFilters } from 
 import { SalesHistoryList } from '../../renderer/components/sales-history/sales-history-list';
 import { SalesHistoryDetail } from '../../renderer/components/sales-history/sales-history-detail';
 import { SalesHistoryAdjustmentModal } from '../../renderer/components/sales-history/sales-history-adjustment-modal';
+import { useResizableWidth } from '../../renderer/hooks/use-resizable-width';
+import { ResizeHandle } from '../../renderer/components/ui/resize-handle';
 
 const PAGE_SIZE = 50;
 
@@ -40,6 +42,15 @@ export const SalesHistoryPage: FC = () => {
   const [selectedDetail, setSelectedDetail] = useState<SaleHistoryDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailView, setDetailView] = useState<'fiscal' | 'operational'>('operational');
+
+  // Detail side-panel width (resizable, persisted)
+  const { width: detailPanelWidth, isResizing, handleProps } = useResizableWidth({
+    storageKey: 'sales-history-detail-panel',
+    defaultWidth: detailView === 'fiscal' ? 384 : 448,
+    minWidth: 320,
+    maxWidth: 768,
+    label: t('detail_resize_label'),
+  });
 
   const [operationalView, setOperationalView] = useState<OperationalInvoiceView | null>(null);
   const [adjustmentHistory, setAdjustmentHistory] = useState<AdjustmentHistoryEntry[]>([]);
@@ -266,9 +277,16 @@ export const SalesHistoryPage: FC = () => {
 
         {/* Detail */}
         {selectedSaleId && (
-          <aside className={`flex h-1/2 min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-gray-200 bg-white lg:h-auto lg:border-l lg:border-t-0 ${
-            detailView === 'fiscal' ? 'lg:w-[24rem]' : 'lg:w-[28rem]'
-          }`}>
+          <aside
+            className="relative flex h-1/2 min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-gray-200 bg-white lg:h-auto lg:w-[var(--panel-width)] lg:border-l lg:border-t-0"
+            style={{ '--panel-width': `${detailPanelWidth}px`, maxWidth: '100vw' } as CSSProperties}
+          >
+            {/* Resize handle */}
+            <ResizeHandle
+              handleProps={handleProps}
+              isResizing={isResizing}
+              className="absolute left-0 top-0 bottom-0 z-30"
+            />
             <SalesHistoryDetail
               saleId={selectedSaleId}
               detail={selectedDetail}

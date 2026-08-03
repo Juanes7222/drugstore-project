@@ -23,6 +23,7 @@ beforeEach(() => {
     keyboardLayout: "STANDARD",
     quickButtons: [],
     sidebarPinned: false,
+    panelWidths: {},
   });
 });
 
@@ -429,5 +430,40 @@ describe("setSidebarPinned", () => {
     useUserPreferencesStore.getState().setSidebarPinned(false);
 
     expect(useUserPreferencesStore.getState().sidebarPinned).toBe(false);
+  });
+});
+
+describe("setPanelWidth", () => {
+  it("starts with no panel widths", () => {
+    expect(useUserPreferencesStore.getState().panelWidths).toEqual({});
+  });
+
+  it("stores a width for a panel key", () => {
+    useUserPreferencesStore.getState().setPanelWidth("sync-entry-drawer", 480);
+
+    expect(useUserPreferencesStore.getState().panelWidths["sync-entry-drawer"]).toBe(480);
+  });
+
+  it("rounds fractional widths", () => {
+    useUserPreferencesStore.getState().setPanelWidth("fiscal-panel", 640.6);
+
+    expect(useUserPreferencesStore.getState().panelWidths["fiscal-panel"]).toBe(641);
+  });
+
+  it("keeps distinct widths per panel", () => {
+    useUserPreferencesStore.getState().setPanelWidth("panel-a", 400);
+    useUserPreferencesStore.getState().setPanelWidth("panel-b", 600);
+
+    expect(useUserPreferencesStore.getState().panelWidths).toEqual({
+      "panel-a": 400,
+      "panel-b": 600,
+    });
+  });
+
+  it("overwrites the width for an existing panel", () => {
+    useUserPreferencesStore.getState().setPanelWidth("panel-a", 400);
+    useUserPreferencesStore.getState().setPanelWidth("panel-a", 500);
+
+    expect(useUserPreferencesStore.getState().panelWidths["panel-a"]).toBe(500);
   });
 });

@@ -76,6 +76,7 @@
   },
   "salesHistory": {
     "title": "Historial de ventas",
+    "detail_resize_label": "Ajustar ancho del panel de detalle",
     "subtitle": "Ventas confirmadas con factura DIAN y vista operativa de droguería",
     "loading": "Cargando ventas...",
     "error_title": "Error al cargar ventas",
@@ -293,6 +294,7 @@
     "discard": "Descartar",
     "load_more": "Cargar más",
     "entry_detail_title": "Detalle de entrada",
+    "entry_detail_resize_label": "Ajustar ancho del panel",
     "detail_metadata": "Detalles",
     "detail_operation": "Operación",
     "detail_status": "Estado",
@@ -1222,7 +1224,8 @@
     "no_permission": "No tiene permisos para gestionar clientes.",
     "sync": "Sincronizar",
     "sync_tooltip": "Traer clientes del servidor",
-    "sync_done": "Sincronización completa. {{count}} cliente(s) en base local."
+    "sync_done": "Sincronización completa. {{count}} cliente(s) en base local.",
+    "edit_panel_resize_label": "Ajustar ancho del panel de edición"
   },
   "audit_log": {
     "title": "Registro de auditoría",
@@ -1381,6 +1384,7 @@
   },
   "fiscal": {
     "title": "Gestión Fiscal / DIAN",
+    "detail_resize_label": "Ajustar ancho del panel de detalle",
     "tab_invoices": "Facturas ({{count}})",
     "tab_contingency": "Historial de Contingencia",
     "invoices_title": "Facturas",
