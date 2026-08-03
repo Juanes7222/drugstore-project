@@ -55,7 +55,7 @@ export class WorkstationConfigService {
   ): Promise<WorkstationConfig | null> {
     const key = configKey(subscriptionId, workstationId);
     const row = await this.prisma.systemConfig.findUnique({
-      where: { key },
+      where: { subscriptionId_key: { subscriptionId, key } },
     });
     if (!row) return null;
     return this.toEntity(row.value as Record<string, unknown>, subscriptionId, workstationId);
@@ -67,7 +67,7 @@ export class WorkstationConfigService {
   async listBySubscription(subscriptionId: string): Promise<WorkstationConfig[]> {
     const prefix = `ws_config:${subscriptionId}:`;
     const all = await this.prisma.systemConfig.findMany({
-      where: { key: { startsWith: prefix } },
+      where: { subscriptionId, key: { startsWith: prefix } },
       orderBy: { updatedAt: 'desc' },
     });
     return all.map((r: any) => {
@@ -105,15 +105,18 @@ export class WorkstationConfigService {
     };
 
     // Upsert via SystemConfig
-    const existing = await this.prisma.systemConfig.findUnique({ where: { key } });
+    const existing = await this.prisma.systemConfig.findUnique({
+      where: { subscriptionId_key: { subscriptionId, key } },
+    });
     if (existing) {
       await this.prisma.systemConfig.update({
-        where: { key },
+        where: { subscriptionId_key: { subscriptionId, key } },
         data: { value: this.json(value), updatedAt: new Date() },
       });
     } else {
       await this.prisma.systemConfig.create({
         data: {
+          subscriptionId,
           key,
           value: this.json(value),
           valueType: 'OBJECT',
@@ -134,13 +137,17 @@ export class WorkstationConfigService {
    */
   async delete(subscriptionId: string, workstationId: string): Promise<void> {
     const key = configKey(subscriptionId, workstationId);
-    const existing = await this.prisma.systemConfig.findUnique({ where: { key } });
+    const existing = await this.prisma.systemConfig.findUnique({
+      where: { subscriptionId_key: { subscriptionId, key } },
+    });
     if (!existing) {
       throw new NotFoundException(
         `Workstation config not found for workstation "${workstationId}".`,
       );
     }
-    await this.prisma.systemConfig.delete({ where: { key } });
+    await this.prisma.systemConfig.delete({
+      where: { subscriptionId_key: { subscriptionId, key } },
+    });
   }
 
   // -- Validation helpers --------------------------------------------------

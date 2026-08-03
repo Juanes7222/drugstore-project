@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma } from '@pharmacy/database';
 import { OpenCashShiftDto } from './dto/open-cash-shift.dto';
 import { RegisterCashCountDto } from './dto/register-cash-count.dto';
@@ -16,7 +17,10 @@ const EXTENDED_SHIFT_THRESHOLD_HOURS = 6;
 
 @Injectable()
 export class CashShiftService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   async openShift(
     workstationId: string,
@@ -28,6 +32,7 @@ export class CashShiftService {
     return this.prisma.cashShift.create({
       data: {
         id: this.generateId(),
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         workstationId,
         userId,
         openingBalance: dto.openingBalance,
@@ -62,6 +67,7 @@ export class CashShiftService {
     return this.prisma.shiftCashCount.create({
       data: {
         id: this.generateId(),
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         cashShiftId: shiftId,
         countType: dto.countType,
         paymentMethodId: dto.paymentMethodId,
@@ -163,19 +169,34 @@ export class CashShiftService {
     });
   }
 
+  /**
+   * Flags shifts that have stayed OPEN past the threshold, tenant by tenant.
+   *
+   * The @Cron job (ExtendedShiftAlertJob) runs outside any request context,
+   * so CashShift rows — which are RLS-scoped — are unreachable unless the
+   * update runs inside a per-subscription tenant transaction.
+   */
   async flagExtendedShifts(): Promise<void> {
-    const thresholdTime = new Date(
-      Date.now() - EXTENDED_SHIFT_THRESHOLD_HOURS * 60 * 60 * 1000,
-    );
-
-    await this.prisma.cashShift.updateMany({
-      where: {
-        state: 'OPEN',
-        openedAt: { lt: thresholdTime },
-        hasExtendedAlert: false,
-      },
-      data: { hasExtendedAlert: true },
+    const subscriptions = await this.prisma.subscription.findMany({
+      select: { id: true },
     });
+
+    for (const subscription of subscriptions) {
+      await this.prisma.withTenant(subscription.id, async (tx) => {
+        const thresholdTime = new Date(
+          Date.now() - EXTENDED_SHIFT_THRESHOLD_HOURS * 60 * 60 * 1000,
+        );
+
+        await tx.cashShift.updateMany({
+          where: {
+            state: 'OPEN',
+            openedAt: { lt: thresholdTime },
+            hasExtendedAlert: false,
+          },
+          data: { hasExtendedAlert: true },
+        });
+      });
+    }
   }
 
   private async getOpenShift(shiftId: string): Promise<any> {

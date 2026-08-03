@@ -3,6 +3,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { QueryFiscalDocumentsDto } from '../dto/query-fiscal-documents.dto';
 import { DocumentNotRetryableException } from '../exceptions/document-not-retryable.exception';
 import { DuplicateFiscalDocumentException } from '../exceptions/duplicate-fiscal-document.exception';
@@ -19,6 +20,7 @@ export class FiscalDocumentsService {
   constructor(
     @Inject(PrismaService) private prisma: PrismaService,
     @InjectQueue('fiscal-documents') private queue: Queue,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async findAll(query: QueryFiscalDocumentsDto): Promise<any> {
@@ -591,9 +593,18 @@ export class FiscalDocumentsService {
 
   /**
    * Enqueues a generation job onto the fiscal-documents BullMQ queue.
-   * Must be called only after the sale transaction has committed.
+   * Must be called only after the sale transaction has committed. Inside a
+   * request the handler already runs in the request-scoped transaction, so
+   * the job is registered as an afterCommit callback instead. Outside any
+   * tenant context (unit tests, standalone tooling) it enqueues directly.
    */
   async enqueueGenerationJob(fiscalDocumentId: string): Promise<void> {
+    if (this.tenantContext.hasTenant()) {
+      this.tenantContext.registerAfterCommit(async () => {
+        await this.queue.add('generate', { fiscalDocumentId });
+      });
+      return;
+    }
     await this.queue.add('generate', { fiscalDocumentId });
   }
 

@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   async findAll(): Promise<any> {
     return this.prisma.category.findMany({
@@ -24,6 +28,7 @@ export class CategoriesService {
     return this.prisma.category.create({
       data: {
         id: this.generateId(),
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         name: dto.name,
         sortOrder: dto.sortOrder || 0,
         isActive: true,

@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { CreatePharmaceuticalFormDto } from './dto/create-pharmaceutical-form.dto';
 import { UpdatePharmaceuticalFormDto } from './dto/update-pharmaceutical-form.dto';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class PharmaceuticalFormsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   async findAll(): Promise<any> {
     return this.prisma.pharmaceuticalForm.findMany({
@@ -24,6 +28,7 @@ export class PharmaceuticalFormsService {
     return this.prisma.pharmaceuticalForm.create({
       data: {
         id: this.generateId(),
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         name: dto.name,
         sortOrder: dto.sortOrder || 0,
         isActive: true,

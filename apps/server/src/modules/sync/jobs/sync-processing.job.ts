@@ -52,9 +52,19 @@ export class SyncProcessingJob {
    */
   @Cron(CronExpression.EVERY_30_SECONDS)
   async processPendingOperations(): Promise<void> {
-    const entries = await this.fetchSupportedEntries();
-    for (const entry of entries) {
-      await this.processEntry(entry);
+    // The cron tick has no request context, and SyncQueue rows are
+    // RLS-scoped — iterate tenant by tenant inside withTenant.
+    const subscriptions = await this.prisma.subscription.findMany({
+      select: { id: true },
+    });
+
+    for (const subscription of subscriptions) {
+      await this.prisma.withTenant(subscription.id, async () => {
+        const entries = await this.fetchSupportedEntries();
+        for (const entry of entries) {
+          await this.processEntry(entry);
+        }
+      });
     }
   }
 

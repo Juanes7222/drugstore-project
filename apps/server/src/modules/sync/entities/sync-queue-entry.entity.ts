@@ -8,6 +8,8 @@
  */
 export interface SyncQueueEntry {
   id: string;
+  /** Tenant that owns the queued operation; the RLS scope for replay. */
+  subscriptionId: string;
   operationUuid: string;
   operationType:
     | 'SALE_CONFIRMATION'

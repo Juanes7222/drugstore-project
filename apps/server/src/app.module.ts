@@ -18,6 +18,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { SyncModule } from './modules/sync/sync.module';
 import { UpdatesModule } from './modules/updates/updates.module';
 import { TenantConfigModule } from './modules/tenant-config/tenant-config.module';
+import { TenantModule } from './modules/tenant/tenant.module';
 import { PrintModule } from './modules/print/print.module';
 import { DevModule } from './modules/dev/dev.module';
 
@@ -47,6 +48,7 @@ const DEV_MODULES =
     SyncModule,
     UpdatesModule,
     TenantConfigModule,
+    TenantModule,
     PrismaModule,
     PrintModule,
     ...DEV_MODULES,

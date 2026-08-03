@@ -6,6 +6,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
+import { TenantContextInterceptor } from './modules/tenant/tenant-context.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { EnvConfig } from './config/env.schema';
 
@@ -37,6 +38,7 @@ async function bootstrap(): Promise<void> {
   app.use(compression() as any);
 
   app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalInterceptors(app.get(TenantContextInterceptor));
 
   // Global ValidationPipe with transform enables the `@Type(() => Number)`
   // decorators in query DTOs to convert string query params to numbers.

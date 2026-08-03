@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { CashCountType } from '@pharmacy/shared-types';
 import { CashShiftService } from '@/modules/cash-shift/cash-shift.service';
 import { ClientsService } from '@/modules/clients/clients.service';
@@ -62,6 +63,7 @@ export class SyncOperationDispatcherService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
     @Inject(CashShiftService) private readonly cashShiftService: CashShiftService,
     @Inject(ClientsService) private readonly clientsService: ClientsService,
     @Inject(SalesService) private readonly salesService: SalesService,
@@ -162,6 +164,7 @@ export class SyncOperationDispatcherService {
       await this.prisma.syncOperationOutcome.create({
         data: {
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           operationUuid,
           workstationId,
           outcome,
@@ -317,6 +320,7 @@ export class SyncOperationDispatcherService {
         update: {},
         create: {
           id: createSaleDto.cashShiftId,
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           workstationId,
           userId,
           state: 'OPEN',
@@ -800,6 +804,7 @@ export class SyncOperationDispatcherService {
       update: {},
       create: {
         id: payload.adjustmentId,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         invoiceId: payload.invoiceId,
         invoiceNumber: payload.invoiceNumber,
         createdAt: new Date(payload.createdAt),

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { DomainException } from '@/common/exceptions/domain.exception';
 import { SyncBatchDto } from '../dto/sync-batch.dto';
 import { QuerySyncQueueDto } from '../dto/query-sync-queue.dto';
@@ -28,6 +29,7 @@ export class SyncService {
   constructor(
     private prisma: PrismaService,
     private dispatcher: SyncOperationDispatcherService,
+    private tenantContext: TenantContextService,
   ) {}
 
   /**
@@ -225,6 +227,7 @@ export class SyncService {
   ): Promise<DispatchResult | null> {
     const entry: import('../entities/sync-queue-entry.entity').SyncQueueEntry = {
       id: entryId,
+      subscriptionId: this.tenantContext.getSubscriptionId(),
       operationUuid: op.operationUuid,
       operationType: op.operationType as import('../entities/sync-queue-entry.entity').SyncQueueEntry['operationType'],
       payload: JSON.stringify(op.payload),
@@ -280,6 +283,7 @@ export class SyncService {
     await this.prisma.syncQueue.create({
       data: {
         id,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         operationUuid: op.operationUuid,
         operationType: op.operationType,
         payload: JSON.stringify(op.payload),

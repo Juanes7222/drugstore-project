@@ -921,7 +921,7 @@ export class TenantConfigService {
     if (workstationId) {
       const key = `ws_config:${subscriptionId}:${workstationId}`;
       const row = await this.prisma.systemConfig.findUnique({
-        where: { key },
+        where: { subscriptionId_key: { subscriptionId, key } },
       });
       if (row) {
         const val = row.value as Record<string, unknown>;
