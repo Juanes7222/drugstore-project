@@ -864,3 +864,56 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Sticky horizontal scrollbar (StickyScrollX)                         */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Tables wrapped in StickyScrollX hide their native horizontal scrollbar
+   * and get a slim sticky strip pinned to the bottom of the viewport
+   * instead. The viewport keeps overflow-x so wheel/trackpad scrolling and
+   * programmatic scrollLeft still work — only the native visual bar is
+   * removed.
+   */
+  .pos-sticky-scroll__viewport {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* Legacy Edge */
+  }
+
+  .pos-sticky-scroll__viewport::-webkit-scrollbar {
+    display: none; /* WebKit / Blink */
+  }
+
+  /* The sticky strip is itself a thin horizontal scroll container. Its
+     native thumb is styled to look like the POS scrollbars elsewhere
+     (sidebar rail): a subtle ink-tinted thumb on a transparent track. */
+  .pos-sticky-scroll__bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    height: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    background-color: var(--color-panel);
+    border-top: 1px solid color-mix(in srgb, var(--color-ink) 10%, transparent);
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-ink) 25%, transparent) transparent;
+  }
+
+  .pos-sticky-scroll__bar::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  .pos-sticky-scroll__bar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .pos-sticky-scroll__bar::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-ink) 25%, transparent);
+    border-radius: 4px;
+  }
+
+  .pos-sticky-scroll__bar:hover::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--color-ink) 35%, transparent);
+  }
+

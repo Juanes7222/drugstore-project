@@ -8,6 +8,7 @@ import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { formatCurrency } from "../../utils/format-currency";
 import type { CashShiftRecord } from "../../../domain/cash-shift/cash-shift.service";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -81,8 +82,9 @@ export const ShiftHistorySection: FC<ShiftHistorySectionProps> = ({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-body-sm">
+        <>
+          <StickyScrollX radius={4}>
+            <table className="w-full text-left text-body-sm">
             <thead>
               <tr
                 style={{
@@ -175,16 +177,17 @@ export const ShiftHistorySection: FC<ShiftHistorySectionProps> = ({
               ))}
             </tbody>
           </table>
+        </StickyScrollX>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div
-              className="flex items-center justify-between px-pos-xl py-pos-md"
-              style={{
-                borderTop:
-                  "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
-              }}
-            >
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div
+            className="flex items-center justify-between rounded-b-pos px-pos-xl py-pos-md"
+            style={{
+              borderTop:
+                "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
+            }}
+          >
               <button
                 type="button"
                 onClick={onPrevPage}
@@ -212,7 +215,7 @@ export const ShiftHistorySection: FC<ShiftHistorySectionProps> = ({
               </button>
             </div>
           )}
-        </div>
+        </>
       )}
     </section>
   );

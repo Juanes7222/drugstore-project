@@ -16,6 +16,7 @@ import type { PermanentFailureEntry } from "../../../domain/sync/sync-metrics.se
 import { RoleType } from "@pharmacy/shared-types";
 import { formatRelativeTimeEs } from "../../hooks/use-relative-time";
 import { summarizePayload, truncateError } from "./sync-utils";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 import type { SortField, SortDir } from "./sync-health.types";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -123,7 +124,7 @@ export const EntriesSection: FC<EntriesSectionProps> = ({
             <p className="text-body-sm text-ink-muted">{t("sync.entries_empty")}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <StickyScrollX>
             <table className="w-full text-left text-body-sm">
               <thead>
                 <tr className="border-b border-border bg-surface/60">
@@ -225,7 +226,7 @@ export const EntriesSection: FC<EntriesSectionProps> = ({
                 })}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         )}
 
         {/* ── Load more ── */}

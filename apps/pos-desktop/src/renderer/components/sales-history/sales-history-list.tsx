@@ -15,6 +15,7 @@ import type {
   SaleHistoryFilters,
 } from '../../../domain/sales-pos/sales-history.service';
 import { SalesHistoryEmpty } from './sales-history-empty';
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 export interface SalesHistoryListProps {
   sales: SaleHistoryListItem[];
@@ -300,12 +301,12 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
           <SalesHistoryEmpty hasFilters={hasFilters} onReset={handleReset} />
         ) : (
           <div
-            className="overflow-hidden rounded-pos"
+            className="rounded-pos"
             style={{
               border: '1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)',
             }}
           >
-            <div className="overflow-x-auto">
+            <StickyScrollX radius={4}>
               <table className="w-full min-w-[56rem] border-collapse text-body-sm">
                 <thead>
                   <tr
@@ -546,12 +547,12 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                   </tr>
                 ))}
               </tbody>
-            </table>
-            </div>
+              </table>
+            </StickyScrollX>
 
             {filteredSales.length < totalCount && (
               <div
-                className="flex justify-center border-t px-4 py-3"
+                className="flex justify-center rounded-b-pos border-t px-4 py-3"
                 style={{
                   borderColor:
                     'color-mix(in srgb, var(--color-ink) 8%, transparent)',

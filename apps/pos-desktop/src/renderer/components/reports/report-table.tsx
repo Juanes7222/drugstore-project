@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import type { AnyReportRow, ReportColumn, ReportColumnType, ReportDefinition } from "../../../domain/reports/report-types";
 import type { ChartFilter } from "../../stores/reports.store";
 import { useReportsLocale } from "./use-reports-locale";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 interface ReportTableProps {
   definition: ReportDefinition;
@@ -61,7 +62,7 @@ export const ReportTable: FC<ReportTableProps> = ({ definition, rows, total, cha
           </button>
         </div>
       </header>
-      <div className="overflow-x-auto">
+      <StickyScrollX>
         <table className="w-full text-body-sm">
           <thead>
             <tr>
@@ -104,7 +105,7 @@ export const ReportTable: FC<ReportTableProps> = ({ definition, rows, total, cha
             )}
           </tbody>
         </table>
-      </div>
+      </StickyScrollX>
     </div>
   );
 };

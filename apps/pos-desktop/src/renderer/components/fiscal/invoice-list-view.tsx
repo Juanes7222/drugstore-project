@@ -7,6 +7,7 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import type { InvoiceListItem, InvoiceModel } from "../../../domain/fiscal/fiscal-types";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 interface InvoiceListViewProps {
   invoices: InvoiceListItem[];
@@ -123,7 +124,7 @@ export const InvoiceListView: FC<InvoiceListViewProps> = ({
           {t("fiscal.no_invoices")}
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <StickyScrollX>
           <table className="w-full min-w-[48rem] divide-y text-body-sm" style={{ borderColor: "color-mix(in srgb, var(--color-ink) 10%, transparent)" }} role="table" aria-label={t("fiscal.invoices_title")}>
             <thead>
               <tr>
@@ -197,7 +198,7 @@ export const InvoiceListView: FC<InvoiceListViewProps> = ({
               ))}
             </tbody>
           </table>
-        </div>
+        </StickyScrollX>
       )}
     </div>
   );

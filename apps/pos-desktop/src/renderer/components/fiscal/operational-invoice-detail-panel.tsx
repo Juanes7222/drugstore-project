@@ -11,6 +11,7 @@ import type {
   OperationalNote,
 } from "../../../domain/fiscal/local-adjustment.types";
 import type { InvoicePayment } from "../../../domain/fiscal/fiscal-types";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 interface OperationalInvoiceDetailPanelProps {
   operationalView: OperationalInvoiceView;
@@ -110,7 +111,7 @@ export const OperationalInvoiceDetailPanel: FC<OperationalInvoiceDetailPanelProp
           <h3 className="text-caption font-bold uppercase tracking-wide mb-2" style={{ color: "color-mix(in srgb, var(--color-ink) 55%, transparent)" }}>
             {t("fiscal.operational_payments_title")}
           </h3>
-          <div className="overflow-x-auto">
+          <StickyScrollX>
             <table className="w-full text-caption" role="table" aria-label={t("fiscal.operational_payments_title")}>
               <thead>
                 <tr className="text-left" style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}>
@@ -174,7 +175,7 @@ export const OperationalInvoiceDetailPanel: FC<OperationalInvoiceDetailPanelProp
                 )}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
 
         {/* Internal notes */}

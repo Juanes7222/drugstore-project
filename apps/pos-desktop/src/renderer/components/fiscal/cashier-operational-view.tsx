@@ -13,6 +13,7 @@ import type {
   OperationalNote,
 } from "../../../domain/fiscal/local-adjustment.types";
 import type { InvoicePayment } from "../../../domain/fiscal/fiscal-types";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 interface CashierOperationalViewProps {
   operationalView: OperationalInvoiceView;
@@ -185,7 +186,7 @@ export const CashierOperationalView: FC<CashierOperationalViewProps> = ({
   // ------------------------------------------------------------------
   return (
     <section
-      className="rounded-pos overflow-hidden"
+      className="rounded-pos"
       aria-label={t("fiscal.cashier_operational_title")}
       style={{
         backgroundColor: "var(--color-panel)",
@@ -228,7 +229,7 @@ export const CashierOperationalView: FC<CashierOperationalViewProps> = ({
           >
             {t("fiscal.operational_payments_title")}
           </h4>
-          <div className="overflow-x-auto">
+          <StickyScrollX radius={4}>
             <table
               className="w-full text-caption"
               role="table"
@@ -302,7 +303,7 @@ export const CashierOperationalView: FC<CashierOperationalViewProps> = ({
                 )}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
         </div>
 
         {/* Internal notes */}

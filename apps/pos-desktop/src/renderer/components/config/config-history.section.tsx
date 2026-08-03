@@ -10,6 +10,7 @@ import { ClockIcon } from "@/components/ui/icons";
 
 import type { ConfigChangelogEntry } from '../../../domain/config';
 import { LoaderIcon } from "@/components/ui/icons/animated";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 export interface ConfigHistorySectionProps {
   /** List of changelog entries. */
@@ -88,7 +89,7 @@ export const ConfigHistorySection: FC<ConfigHistorySectionProps> = ({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-sm border border-border">
+        <StickyScrollX className="rounded-sm border border-border" radius={6}>
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-surface-variant">
               <tr>
@@ -172,7 +173,7 @@ export const ConfigHistorySection: FC<ConfigHistorySectionProps> = ({
               })}
             </tbody>
           </table>
-        </div>
+        </StickyScrollX>
       )}
     </div>
   );

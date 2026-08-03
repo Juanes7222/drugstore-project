@@ -7,6 +7,7 @@
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import type { ContingencyEventSummary } from "../../../domain/fiscal/fiscal-types";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 interface ContingencyHistoryViewProps {
   history: ContingencyEventSummary[];
@@ -46,7 +47,7 @@ export const ContingencyHistoryView: FC<ContingencyHistoryViewProps> = ({
           {t("fiscal.no_contingency")}
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <StickyScrollX>
           <table className="min-w-full divide-y text-body-sm" style={{ borderColor: "color-mix(in srgb, var(--color-ink) 10%, transparent)" }} role="table" aria-label={t("fiscal.tab_contingency")}>
             <thead>
               <tr>
@@ -99,7 +100,7 @@ export const ContingencyHistoryView: FC<ContingencyHistoryViewProps> = ({
               ))}
             </tbody>
           </table>
-        </div>
+        </StickyScrollX>
       )}
     </div>
   );

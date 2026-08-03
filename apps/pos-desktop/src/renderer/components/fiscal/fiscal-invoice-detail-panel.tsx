@@ -7,6 +7,7 @@
 import { type FC, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { InvoiceModel, InvoiceFullData, InvoiceLineItem, InvoicePayment, InvoiceTaxSummary } from "../../../domain/fiscal/fiscal-types";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 interface FiscalInvoiceDetailPanelProps {
   invoice: InvoiceModel;
@@ -160,7 +161,7 @@ export const FiscalInvoiceDetailPanel: FC<FiscalInvoiceDetailPanelProps> = ({
                 <h3 className="text-caption font-bold uppercase tracking-wide mb-2" style={{ color: "color-mix(in srgb, var(--color-ink) 55%, transparent)" }}>
                   {t("fiscal.detail_line_items")}
                 </h3>
-                <div className="overflow-x-auto">
+                <StickyScrollX>
                   <table className="w-full text-caption" role="table" aria-label={t("fiscal.detail_line_items")}>
                     <thead>
                       <tr className="text-left" style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}>
@@ -181,7 +182,7 @@ export const FiscalInvoiceDetailPanel: FC<FiscalInvoiceDetailPanelProps> = ({
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </StickyScrollX>
               </div>
             )}
 
@@ -217,7 +218,7 @@ export const FiscalInvoiceDetailPanel: FC<FiscalInvoiceDetailPanelProps> = ({
                 <h3 className="text-caption font-bold uppercase tracking-wide mb-2" style={{ color: "color-mix(in srgb, var(--color-ink) 55%, transparent)" }}>
                   {t("fiscal.detail_tax")}
                 </h3>
-                <div className="overflow-x-auto">
+                <StickyScrollX>
                   <table className="w-full text-caption" role="table" aria-label={t("fiscal.detail_tax")}>
                     <thead>
                       <tr className="text-left" style={{ color: "color-mix(in srgb, var(--color-ink) 50%, transparent)" }}>
@@ -238,7 +239,7 @@ export const FiscalInvoiceDetailPanel: FC<FiscalInvoiceDetailPanelProps> = ({
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </StickyScrollX>
               </div>
             )}
 

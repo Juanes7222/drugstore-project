@@ -14,6 +14,7 @@ import type {
   VerificationReport,
 } from "../../../domain/backup/backup.service";
 import type { RecoveryLogEntry } from "../../../domain/backup/recovery-log.service";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 export type RecoveryHealthStatus = "HEALTHY" | "UNHEALTHY_SHUTDOWN" | "INTEGRITY_FAILED";
 
@@ -363,7 +364,7 @@ const BackupList: FC<BackupListProps> = ({ backups, onVerify, onSelect }) => {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <StickyScrollX radius={8}>
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
@@ -448,7 +449,7 @@ const BackupList: FC<BackupListProps> = ({ backups, onVerify, onSelect }) => {
           })}
         </tbody>
       </table>
-    </div>
+    </StickyScrollX>
   );
 };
 
@@ -650,7 +651,7 @@ const AuditLog: FC<AuditLogProps> = ({ entries }) => {
   }
 
   return (
-    <div className="overflow-x-auto">
+    <StickyScrollX radius={8}>
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
@@ -687,7 +688,7 @@ const AuditLog: FC<AuditLogProps> = ({ entries }) => {
           ))}
         </tbody>
       </table>
-    </div>
+    </StickyScrollX>
   );
 };
 

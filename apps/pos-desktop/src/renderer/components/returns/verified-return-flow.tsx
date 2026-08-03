@@ -17,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import type { SaleSearchResult } from "./returns.types";
 import { formatCents } from "./returns.types";
 import { SearchIcon } from "@/components/ui/icons";
+import { StickyScrollX } from "../ui/sticky-scroll-x";
 
 interface VerifiedReturnFlowProps {
   /** The current sale search query string. */
@@ -121,7 +122,7 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
 
       {/* ── Sale Details Panel ── */}
       {foundSale && (
-        <div className="pos-panel overflow-hidden">
+        <div className="pos-panel">
           {/* Sale header */}
           <div
             className="flex items-center justify-between px-pos-lg py-pos-md"
@@ -175,7 +176,7 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
           </div>
 
           {/* Items table */}
-          <div className="overflow-x-auto">
+          <StickyScrollX radius={4}>
             <table className="pos-return-table w-full">
               <thead>
                 <tr>
@@ -245,7 +246,7 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
                 })}
               </tbody>
             </table>
-          </div>
+          </StickyScrollX>
 
           {/* Process return button */}
           <div
