@@ -1252,7 +1252,9 @@
     "sync": "Sincronizar",
     "sync_tooltip": "Traer clientes del servidor",
     "sync_done": "Sincronización completa. {{count}} cliente(s) en base local.",
-    "edit_panel_resize_label": "Ajustar ancho del panel de edición"
+    "edit_panel_resize_label": "Ajustar ancho del panel de edición",
+    "details": "Detalles del cliente",
+    "view_details": "Ver detalles"
   },
   "audit_log": {
     "title": "Registro de auditoría",

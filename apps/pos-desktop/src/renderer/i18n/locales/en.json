@@ -1149,7 +1149,9 @@
     "sync": "Sync",
     "sync_tooltip": "Pull clients from server",
     "sync_done": "Sync complete. {{count}} client(s) in local database.",
-    "edit_panel_resize_label": "Resize edit panel width"
+    "edit_panel_resize_label": "Resize edit panel width",
+    "details": "Client details",
+    "view_details": "View details"
   },
   "audit_log": {
     "title": "Audit log",

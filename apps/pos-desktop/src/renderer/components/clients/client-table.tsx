@@ -1,11 +1,16 @@
 /**
  * Client results table with animated rows, icon action buttons,
  * and proper empty / loading states.
+ *
+ * Rows are clickable — clicking anywhere on a row opens the read-only
+ * detail dialog (via `onView`); the action buttons stop propagation so
+ * they never trigger the row click. A dedicated eye button covers
+ * keyboard / screen-reader users.
  */
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion, type Variants } from "motion/react";
-import { PencilIcon, SearchXIcon, Trash2Icon, UsersIcon } from "@/components/ui/icons";
+import { EyeIcon, PencilIcon, SearchXIcon, Trash2Icon, UsersIcon } from "@/components/ui/icons";
 import { LoaderIcon } from "@/components/ui/icons/animated";
 import type { ClientSearchResult } from "../../../domain/clients/clients.service";
 
@@ -17,6 +22,7 @@ export interface ClientTableProps {
   results: ClientSearchResult[];
   isSearching: boolean;
   hasLoaded: boolean;
+  onView: (client: ClientSearchResult) => void;
   onEdit: (client: ClientSearchResult) => void;
   onDelete: (clientId: string) => void;
 }
@@ -46,6 +52,7 @@ export const ClientTable: FC<ClientTableProps> = ({
   results,
   isSearching,
   hasLoaded,
+  onView,
   onEdit,
   onDelete,
 }) => {
@@ -130,7 +137,9 @@ export const ClientTable: FC<ClientTableProps> = ({
                 backgroundColor: "#F5F9F9",
                 transition: { duration: 0.15 },
               }}
-              className="group cursor-default"
+              className="group cursor-pointer"
+              onClick={() => onView(client)}
+              title={t("clients.view_details")}
               style={{
                 borderBottom: "1px solid color-mix(in srgb, var(--color-ink) 6%, transparent)",
                 transition: "background-color 0.15s ease",
@@ -176,7 +185,16 @@ export const ClientTable: FC<ClientTableProps> = ({
                 {[client.municipality, client.department].filter(Boolean).join(", ") || "—"}
               </Td>
               <Td className="text-right">
-                <div className="inline-flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+                <div
+                  className="inline-flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100"
+                  onClickCapture={(e) => e.stopPropagation()}
+                >
+                  <IconButton
+                    icon={<EyeIcon className="size-3.5" />}
+                    label={t("clients.view_details")}
+                    onClick={() => onView(client)}
+                    color="var(--color-sync)"
+                  />
                   <IconButton
                     icon={<PencilIcon className="size-3.5" />}
                     label={t("clients.edit")}

@@ -26,6 +26,7 @@ import { ResizeHandle } from "../ui/resize-handle";
 import { notify } from "@/utils/notify";
 import { ClientForm } from "./client-form";
 import { ClientTable } from "./client-table";
+import { ClientDetailDialog } from "./client-detail-dialog";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
 
 // ---------------------------------------------------------------------------
@@ -121,6 +122,9 @@ export const ClientsPage: FC = () => {
   const [editFormData, setEditFormData] = useState<UpdateClientInput>(INITIAL_FORM);
   const [isUpdating, setIsUpdating] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // ---- Detail view state (read-only modal) ----
+  const [viewClient, setViewClient] = useState<ClientSearchResult | null>(null);
 
   // ---- Delete state ----
   const [deleteConfirmClient, setDeleteConfirmClient] = useState<ClientSearchResult | null>(null);
@@ -251,6 +255,22 @@ export const ClientsPage: FC = () => {
       setIsUpdating(false);
     }
   }, [editingClient, editFormData, clientsService, doSearch, searchQuery, t]);
+
+  // ---- Detail view (read-only modal) ----
+  const handleViewDetails = useCallback((client: ClientSearchResult) => {
+    setShowCreateForm(false);
+    setEditingClient(null);
+    setViewClient(client);
+  }, []);
+
+  const handleCloseDetails = useCallback(() => {
+    setViewClient(null);
+  }, []);
+
+  const handleEditFromDetails = useCallback((client: ClientSearchResult) => {
+    setViewClient(null);
+    handleStartEdit(client);
+  }, [handleStartEdit]);
 
   // ---- Delete ----
   const handleStartDelete = useCallback((clientId: string) => {
@@ -472,10 +492,18 @@ export const ClientsPage: FC = () => {
           results={results}
           isSearching={isSearching}
           hasLoaded={hasLoaded}
+          onView={handleViewDetails}
           onEdit={handleStartEdit}
           onDelete={handleStartDelete}
         />
       </motion.div>
+
+      {/* ===== Client details dialog ===== */}
+      <ClientDetailDialog
+        client={viewClient}
+        onClose={handleCloseDetails}
+        onEdit={handleEditFromDetails}
+      />
 
       {/* ===== Delete confirmation dialog ===== */}
       <DeleteConfirmDialog

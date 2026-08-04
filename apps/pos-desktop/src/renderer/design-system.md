@@ -725,6 +725,30 @@ Three distinct empty states, each with an illustrated icon circle:
   background color change (no JS‑driven hover).
 - All animations respect `prefers-reduced-motion` via `useReducedMotion()`.
 
+### Client details dialog (added 2026-08-03)
+
+Clicking anywhere on a client row opens a read-only details modal
+(`ClientDetailDialog`) so the cashier can inspect a client without
+entering the edit panel. A dedicated eye (👁) icon button — visible on
+row hover, like edit/delete — covers keyboard and screen-reader users,
+and the action buttons stop propagation so they never trigger the row
+click.
+
+| Decision | Rationale |
+|----------|-----------|
+| **Overlay modal via `@radix-ui/react-dialog`** | Same pattern as the delete dialog: focus-trapping, Esc-to-close, `role="dialog"`. The edit panel stays reserved for editing — viewing is a lighter, faster read-only action. |
+| **Avatar + name + status badge header** | Mirrors the table row's avatar treatment; the Active/Inactive badge (colored dot + label, never color alone) gives status at a glance. |
+| **Document as Dialog description** | The ID type badge + tabular-nums number sits directly under the name, serving as the accessible dialog description. |
+| **Detail rows with leading icons** | Email, phone, address, and city reuse the form's icon language so the modal feels like the same module, not a new screen. |
+| **Created / updated meta line** | Muted captions with calendar/clock icons, dates via `formatShortDate` (locale-aware). |
+| **Edit hand-off button** | The footer's primary action closes the modal and opens the slide-in edit panel with the same client — one click from view to edit, no re-finding the row. |
+
+### Motion
+
+- Fade + scale entrance (0.2s easeOut) on overlay and content, identical
+  to the delete dialog; collapses to instant with `prefers-reduced-motion`.
+- No periodic or decorative motion — a read-only inspection surface.
+
 ---
 
 ## Sales History (added 2026-07-24)
