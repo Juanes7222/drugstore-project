@@ -51,6 +51,34 @@ describe('TenantContextService', () => {
     expect(afterInner).toBe(outerTx);
   });
 
+  it('reports hasTenant false outside any context', () => {
+    expect(service.hasTenant()).toBe(false);
+  });
+
+  it('reports hasTenant true inside runWithTenant and false after', async () => {
+    let seenInside: boolean;
+    await service.runWithTenant('sub-1', () => {
+      seenInside = service.hasTenant();
+    });
+    expect(seenInside).toBe(true);
+    expect(service.hasTenant()).toBe(false);
+  });
+
+  it('unbinds the tx on clearTx', async () => {
+    const fakeTx = { sale: { findMany: 1 } };
+    let afterClear: unknown;
+    await service.runWithTenant('sub-1', () => {
+      service.setTx(fakeTx as never);
+      service.clearTx();
+      afterClear = service.getTx();
+    });
+    expect(afterClear).toBeNull();
+  });
+
+  it('does not throw when clearTx runs outside any context', () => {
+    expect(() => service.clearTx()).not.toThrow();
+  });
+
   it('drains afterCommit callbacks in registration order', async () => {
     const order: string[] = [];
     await service.runWithTenant('sub-1', async () => {

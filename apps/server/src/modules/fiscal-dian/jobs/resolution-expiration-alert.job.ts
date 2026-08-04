@@ -16,18 +16,30 @@ export class ResolutionExpirationAlertJob {
 
   /**
    * Runs once daily. Transitions ACTIVE resolutions to EXPIRING when their
-   * validTo is within the threshold, and ACTIVE or EXPIRING to EXPIRED once
+   * validTo is within a threshold, and ACTIVE or EXPIRING to EXPIRED once
    * validTo has passed.
+   *
+   * The cron tick has no request context, and FiscalResolution rows are
+   * RLS-scoped — iterate tenant by tenant inside withTenant so the
+   * updateMany is not silently empty.
    */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async checkExpirations(): Promise<void> {
-    const now = new Date();
-    const threshold = new Date(
-      now.getTime() + EXPIRING_THRESHOLD_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const subscriptions = await this.prisma.subscription.findMany({
+      select: { id: true },
+    });
 
-    await this.markExpiring(now, threshold);
-    await this.markExpired(now);
+    for (const subscription of subscriptions) {
+      await this.prisma.withTenant(subscription.id, async () => {
+        const now = new Date();
+        const threshold = new Date(
+          now.getTime() + EXPIRING_THRESHOLD_DAYS * 24 * 60 * 60 * 1000,
+        );
+
+        await this.markExpiring(now, threshold);
+        await this.markExpired(now);
+      });
+    }
   }
 
   /** Marks ACTIVE resolutions whose validTo falls within the threshold as EXPIRING. */

@@ -33,6 +33,12 @@ const DEV_MODULES =
       validate: (config) => envSchema.parse(config),
     }),
     ScheduleModule.forRoot(),
+    // Global modules must be imported before any module that consumes them:
+    // Nest resolves module providers in import order, so AuthModule (and
+    // every domain module) below can only see PrismaService and
+    // TenantContextService once their @Global modules are registered.
+    TenantModule,
+    PrismaModule,
     AuthModule,
     BackofficeModule,
     CashShiftModule,
@@ -48,8 +54,6 @@ const DEV_MODULES =
     SyncModule,
     UpdatesModule,
     TenantConfigModule,
-    TenantModule,
-    PrismaModule,
     PrintModule,
     ...DEV_MODULES,
   ],
