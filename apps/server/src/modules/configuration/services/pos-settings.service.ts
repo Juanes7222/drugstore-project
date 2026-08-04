@@ -8,11 +8,15 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import type { PosSettingsResponse } from '../dto/pos-settings-response.dto';
 
 @Injectable()
 export class PosSettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /**
    * Build the full POS settings response.
@@ -95,8 +99,19 @@ export class PosSettingsService {
    * Returns `null` when the key does not exist.
    */
   private async findConfigValue<T>(key: string): Promise<T | null> {
+    // The endpoint is deliberately JWT-free, so a request may arrive without
+    // a tenant context. Fall back to defaults in that case — consistent with
+    // RLS fail-closed behavior when the DB role cannot read tenant rows.
+    if (!this.tenantContext.hasTenant()) {
+      return null;
+    }
     const row = await this.prisma.systemConfig.findUnique({
-      where: { key },
+      where: {
+        subscriptionId_key: {
+          subscriptionId: this.tenantContext.getSubscriptionId(),
+          key,
+        },
+      },
       select: { value: true },
     });
     if (!row) return null;

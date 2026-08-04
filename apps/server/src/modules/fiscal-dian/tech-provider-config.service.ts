@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { TECH_PROVIDER_CONFIG_ID } from './constants/fiscal-singleton-ids';
 import { UpsertTechProviderConfigDto } from './dto/upsert-tech-provider-config.dto';
 import { TechProviderConfigNotSetException } from './exceptions/tech-provider-config-not-set.exception';
 
 @Injectable()
 export class TechProviderConfigService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /** Returns the singleton TechProviderConfig, or throws if never set. */
   async find(): Promise<any> {
@@ -28,6 +32,7 @@ export class TechProviderConfigService {
       where: { id: TECH_PROVIDER_CONFIG_ID },
       create: {
         id: TECH_PROVIDER_CONFIG_ID,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         ...dto,
         updatedById,
       },

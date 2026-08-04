@@ -141,6 +141,7 @@ export async function seedClients(): Promise<void> {
   const clients = buildClients();
   await seedMany(prisma.client, clients, {
     create: createClientData,
+    subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
   });
   console.log('   11 clients (8 individuals, 2 institutional, 1 generic consumer)');
 }

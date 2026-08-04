@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma } from '@pharmacy/database';
 import { CreateTaxSchemeDto } from './dto/create-tax-scheme.dto';
 import { DuplicateActiveTaxSchemeException } from './exceptions/duplicate-active-tax-scheme.exception';
@@ -7,7 +8,10 @@ import * as crypto from 'crypto';
 
 @Injectable()
 export class TaxSchemesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   async findAll(): Promise<any> {
     return this.prisma.taxScheme.findMany({
@@ -39,6 +43,7 @@ export class TaxSchemesService {
     return this.prisma.taxScheme.create({
       data: {
         id: this.generateId(),
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         code: dto.code,
         name: dto.name,
         taxType: dto.taxType,

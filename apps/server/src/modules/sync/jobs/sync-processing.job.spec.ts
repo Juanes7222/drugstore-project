@@ -14,12 +14,17 @@ describe('SyncProcessingJob', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
+    // withTenant executes the callback with the mock itself (no real tenant transaction).
+    (prisma.withTenant as jest.Mock).mockImplementation(
+      async (_subscriptionId: string, fn: () => Promise<void>) => fn(),
+    );
     dispatcher = { dispatch: jest.fn() } as any;
     job = new SyncProcessingJob(prisma as any, dispatcher);
   });
 
   describe('processPendingOperations', () => {
     it('processes PENDING and retryable FAILED entries', async () => {
+      (prisma.subscription.findMany as jest.Mock).mockResolvedValue([{ id: 'sub-1' }]);
       const mockEntries = [
         {
           id: 'q-pending',
@@ -46,6 +51,7 @@ describe('SyncProcessingJob', () => {
     });
 
     it('marks entry as FAILED when dispatch throws', async () => {
+      (prisma.subscription.findMany as jest.Mock).mockResolvedValue([{ id: 'sub-1' }]);
       const mockEntries = [
         { id: 'q-err', operationType: 'SALE_CONFIRMATION', status: 'PENDING', retryCount: 0 },
       ];
@@ -66,6 +72,7 @@ describe('SyncProcessingJob', () => {
     });
 
     it('does nothing when no entries are available', async () => {
+      (prisma.subscription.findMany as jest.Mock).mockResolvedValue([{ id: 'sub-1' }]);
       (prisma.syncQueue.findMany as jest.Mock).mockResolvedValue([]);
 
       await job.processPendingOperations();

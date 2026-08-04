@@ -37,6 +37,11 @@ describe('FiscalDocumentsService', () => {
   let service: FiscalDocumentsService;
   let prisma: DeepMockProxy<PrismaClient>;
   let queue: { add: jest.Mock };
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'sub-test'),
+    hasTenant: jest.fn(() => false),
+    registerAfterCommit: jest.fn(),
+  };
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
@@ -45,7 +50,7 @@ describe('FiscalDocumentsService', () => {
     // Wire $transaction to execute its callback with the mock itself
     prisma.$transaction.mockImplementation(async (cb: any) => cb(prisma));
 
-    service = new FiscalDocumentsService(prisma as any, queue as any);
+    service = new FiscalDocumentsService(prisma as any, queue as any, mockTenantContext as any);
   });
 
   // ── findAll ─────────────────────────────────────────────────────────────
@@ -825,6 +830,19 @@ describe('FiscalDocumentsService', () => {
       await service.enqueueGenerationJob('fd-enq-1');
 
       expect(queue.add).toHaveBeenCalledWith('generate', { fiscalDocumentId: 'fd-enq-1' });
+    });
+
+    it('registers an afterCommit callback instead of enqueueing directly when inside a tenant context', async () => {
+      mockTenantContext.hasTenant.mockReturnValueOnce(true);
+      const afterCommit = jest.fn();
+      mockTenantContext.registerAfterCommit.mockImplementation(afterCommit);
+
+      await service.enqueueGenerationJob('fd-enq-2');
+
+      expect(queue.add).not.toHaveBeenCalled();
+      expect(mockTenantContext.registerAfterCommit).toHaveBeenCalledWith(
+        expect.any(Function),
+      );
     });
   });
 });

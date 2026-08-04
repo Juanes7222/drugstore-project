@@ -73,6 +73,7 @@ async function seedProductBase(product: SeedProductData): Promise<void> {
     },
     create: {
       id: product.id,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       internalCode: product.internalCode,
       commercialName: product.commercialName,
       genericName: product.genericName,
@@ -97,6 +98,7 @@ async function seedProductPrice(product: SeedProductData): Promise<void> {
     update: { price: product.price },
     create: {
       id: product.priceHistoryId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       productId: product.id,
       price: product.price,
       effectiveFrom: COMMON_PRICE_DATE,
@@ -118,6 +120,7 @@ async function seedProductTax(product: SeedProductData): Promise<void> {
     update: { taxSchemeId: product.taxSchemeId },
     create: {
       id: product.taxHistoryId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       productId: product.id,
       taxSchemeId: product.taxSchemeId,
       effectiveFrom: COMMON_PRICE_DATE,
@@ -139,6 +142,7 @@ async function seedProductCost(product: SeedProductData): Promise<void> {
     update: { cost: product.cost },
     create: {
       id: product.costHistoryId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       productId: product.id,
       cost: product.cost,
       effectiveFrom: COMMON_PRICE_DATE,
@@ -160,6 +164,7 @@ async function seedProductBarcode(product: SeedProductData): Promise<void> {
     update: { barcode: product.barcode },
     create: {
       id: product.barcodeId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       productId: product.id,
       barcode: product.barcode,
       barcodeType: product.barcodeType,

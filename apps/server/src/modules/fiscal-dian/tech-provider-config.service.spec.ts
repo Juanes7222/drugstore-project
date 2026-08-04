@@ -12,9 +12,14 @@ describe('TechProviderConfigService', () => {
   let service: TechProviderConfigService;
   let prisma: DeepMockProxy<PrismaClient>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new TechProviderConfigService(prisma as any);
+    service = new TechProviderConfigService(prisma as any, mockTenantContext as any);
   });
 
   // ── find ──────────────────────────────────────────────────────────────
@@ -67,7 +72,7 @@ describe('TechProviderConfigService', () => {
       expect(result).toBeDefined();
       expect(prisma.techProviderConfig.upsert).toHaveBeenCalledWith({
         where: { id: TECH_PROVIDER_CONFIG_ID },
-        create: { id: TECH_PROVIDER_CONFIG_ID, ...dto, updatedById: 'user-1' },
+        create: { id: TECH_PROVIDER_CONFIG_ID, subscriptionId: 'test-subscription-id', ...dto, updatedById: 'user-1' },
         update: { ...dto, updatedById: 'user-1' },
       });
     });
@@ -89,7 +94,7 @@ describe('TechProviderConfigService', () => {
       expect(result).toBeDefined();
       expect(prisma.techProviderConfig.upsert).toHaveBeenCalledWith({
         where: { id: TECH_PROVIDER_CONFIG_ID },
-        create: { id: TECH_PROVIDER_CONFIG_ID, ...updatedDto, updatedById: 'user-2' },
+        create: { id: TECH_PROVIDER_CONFIG_ID, subscriptionId: 'test-subscription-id', ...updatedDto, updatedById: 'user-2' },
         update: { ...updatedDto, updatedById: 'user-2' },
       });
     });

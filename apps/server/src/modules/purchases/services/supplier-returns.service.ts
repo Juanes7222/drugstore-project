@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { Prisma, PurchaseReturnState } from '@pharmacy/database';
 import * as crypto from 'crypto';
@@ -21,6 +22,7 @@ export class SupplierReturnsService {
     private prisma: PrismaService,
     private lotsService: LotsService,
     private suppliersService: SuppliersService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async findAll(query: QuerySupplierReturnDto): Promise<any> {
@@ -89,7 +91,7 @@ export class SupplierReturnsService {
       }
 
       const itemsData: Array<{
-        id: string; productId: string; lotId: string; quantity: number;
+        id: string; subscriptionId: string; productId: string; lotId: string; quantity: number;
         unitCost: Prisma.Decimal; totalAmount: Prisma.Decimal;
       }> = [];
 
@@ -109,6 +111,7 @@ export class SupplierReturnsService {
 
         itemsData.push({
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           productId: item.productId,
           lotId: item.lotId,
           quantity: item.quantity,
@@ -123,6 +126,7 @@ export class SupplierReturnsService {
       return tx.supplierReturn.create({
         data: {
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           sequentialNumber,
           supplierId: createDto.supplierId,
           purchaseReceptionId: createDto.purchaseReceptionId || null,
@@ -216,6 +220,7 @@ export class SupplierReturnsService {
 
       const itemsData: Array<{
         id: string;
+        subscriptionId: string;
         productId: string;
         lotId: string;
         quantity: number;
@@ -234,6 +239,7 @@ export class SupplierReturnsService {
 
           itemsData.push({
             id: crypto.randomUUID(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
             productId: item.productId,
             lotId: item.lotId,
             quantity: item.quantity,
@@ -257,6 +263,7 @@ export class SupplierReturnsService {
       return tx.supplierReturn.create({
         data: {
           id: payload.returnId,
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           sequentialNumber: payload.sequentialNumber,
           supplierId: payload.supplierId,
           purchaseReceptionId: payload.purchaseReceptionId || null,

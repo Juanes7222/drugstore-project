@@ -25,6 +25,7 @@ export async function seedUsers(): Promise<void> {
       update: { fullName: user.fullName, passwordHash, passwordChangedAt: SEED_USER_CREATED_AT, lastPasswordChangeAt: SEED_USER_CREATED_AT },
       create: {
         id: user.id,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         username: user.username,
         fullName: user.fullName,
         email: user.email,

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { Prisma, ClientReturnState, ShiftState, SaleOperationalState } from '@pharmacy/database';
 import * as crypto from 'crypto';
@@ -23,6 +24,7 @@ export class ClientReturnsService {
     private lotsService: LotsService,
     private calc: ClientReturnCalculatorService,
     private fiscalDocumentsService: FiscalDocumentsService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async findAll(query: { page?: number; pageSize?: number; state?: string }): Promise<any> {
@@ -72,14 +74,14 @@ export class ClientReturnsService {
       const sequentialNumber = await this.calc.getNextSequentialNumber(tx);
       return tx.clientReturn.create({
         data: {
-          id: crypto.randomUUID(), sequentialNumber, saleId: sale.id, clientId: sale.clientId!,
+          id: crypto.randomUUID(), subscriptionId: this.tenantContext.getSubscriptionId(), sequentialNumber, saleId: sale.id, clientId: sale.clientId!,
           refundAmount, subtotalReturned, taxReturned, refundMethodId, reason: createDto.reason,
           cashShiftId: cashShift.id, workstationId: cashShift.workstationId, createdById: userId,
           items: { create: itemsData.map((item) => ({
-            id: crypto.randomUUID(), saleItemId: item.saleItemId, quantity: item.quantity,
+            id: crypto.randomUUID(), subscriptionId: this.tenantContext.getSubscriptionId(), saleItemId: item.saleItemId, quantity: item.quantity,
             unitPriceAtSale: item.unitPriceAtSale, unitPriceAtReturn: item.unitPriceAtReturn,
             taxAmount: item.taxAmount, totalAmount: item.totalAmount,
-            lots: { create: item.lots.map((l) => ({ id: crypto.randomUUID(), lotId: l.lotId, quantity: l.quantity })) },
+            lots: { create: item.lots.map((l) => ({ id: crypto.randomUUID(), subscriptionId: this.tenantContext.getSubscriptionId(), lotId: l.lotId, quantity: l.quantity })) },
           })) },
         },
         include: { items: { include: { lots: true } } },

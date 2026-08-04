@@ -13,6 +13,7 @@
  * @category Seed
  */
 
+import { Prisma } from '@pharmacy/database';
 import { prisma } from '../helpers/db';
 import { IDS } from '../constants/ids';
 import { NOW, SIX_MONTHS_AGO, YESTERDAY } from '../constants/dates';
@@ -25,7 +26,7 @@ export async function seedLicensing(): Promise<void> {
   console.log('Seeding licensing...');
 
   // ---- Plans ----
-  const plans = [
+  const plans: Prisma.PlanCreateManyInput[] = [
     {
       id: IDS.PLAN_STARTER,
       code: 'STARTER',
@@ -122,7 +123,7 @@ export async function seedLicensing(): Promise<void> {
   console.log('   3 plans');
 
   // ---- Subscription ----
-  const subscription = {
+  const subscription: Prisma.SubscriptionCreateManyInput = {
     id: IDS.SUBSCRIPTION_DEFAULT,
     planId: IDS.PLAN_PROFESSIONAL,
     customerName: 'Droguería La Esperanza',
@@ -172,7 +173,7 @@ export async function seedLicensing(): Promise<void> {
 
   // ---- Activation codes ----
   // One used code per workstation, plus one spare unused code.
-  const activationCodes = [
+  const activationCodes: Prisma.ActivationCodeCreateManyInput[] = [
     {
       id: IDS.ACT_CODE_WS1,
       subscriptionId: IDS.SUBSCRIPTION_DEFAULT,

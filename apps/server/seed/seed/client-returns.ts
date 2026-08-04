@@ -18,6 +18,7 @@ async function seedClientReturn(): Promise<void> {
     update: {},
     create: {
       id: returnId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       sequentialNumber: 1,
       state: 'CONFIRMED',
       saleId,
@@ -42,6 +43,7 @@ async function seedClientReturn(): Promise<void> {
     update: {},
     create: {
       id: `${returnId}_it_1`,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       clientReturnId: returnId,
       saleItemId,
       quantity: 20,
@@ -58,6 +60,7 @@ async function seedClientReturn(): Promise<void> {
     update: {},
     create: {
       id: `${returnId}_it_1_lot`,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       clientReturnItemId: `${returnId}_it_1`,
       lotId: IDS.LOT_JERINGA_001,
       quantity: 20,
@@ -70,6 +73,7 @@ async function seedClientReturn(): Promise<void> {
     update: {},
     create: {
       id: `mov_return_jeringa`,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       movementType: 'CLIENT_RETURN',
       quantity: 20,
       previousStock: 500,

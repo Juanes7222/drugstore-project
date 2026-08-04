@@ -17,6 +17,7 @@ async function seedSyncItems(): Promise<void> {
     update: {},
     create: {
       id: IDS.SYNC_SALE_001,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       operationUuid: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
       operationType: 'SALE_CONFIRMATION',
       payload: JSON.stringify({
@@ -44,6 +45,7 @@ async function seedSyncItems(): Promise<void> {
     update: {},
     create: {
       id: IDS.SYNC_SALE_002,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       operationUuid: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
       operationType: 'SALE_CONFIRMATION',
       payload: JSON.stringify({
@@ -71,6 +73,7 @@ async function seedSyncItems(): Promise<void> {
     update: {},
     create: {
       id: IDS.SYNC_CLIENT_001,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       operationUuid: 'c3d4e5f6-a7b8-9012-cdef-123456789012',
       operationType: 'CLIENT_CREATION',
       payload: JSON.stringify({

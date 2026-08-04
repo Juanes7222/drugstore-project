@@ -30,10 +30,17 @@ jest.mock('@pharmacy/database', () => {
 describe('CashShiftService', () => {
   let service: CashShiftService;
   let prisma: DeepMockProxy<PrismaClient>;
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'sub-test'),
+  };
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new CashShiftService(prisma as any);
+    // withTenant executes the callback with the mock itself (no real tenant transaction).
+    (prisma.withTenant as jest.Mock).mockImplementation(
+      async (_subscriptionId: string, fn: (tx: any) => Promise<void>) => fn(prisma),
+    );
+    service = new CashShiftService(prisma as any, mockTenantContext as any);
   });
 
   const mockShift = {
@@ -292,10 +299,15 @@ describe('CashShiftService', () => {
 
   describe('flagExtendedShifts', () => {
     it('marks open shifts older than threshold as extended', async () => {
+      (prisma.subscription.findMany as jest.Mock).mockResolvedValue([{ id: 'sub-1' }]);
       (prisma.cashShift.updateMany as jest.Mock).mockResolvedValue({ count: 2 });
 
       await service.flagExtendedShifts();
 
+      expect(prisma.withTenant).toHaveBeenCalledWith(
+        'sub-1',
+        expect.any(Function),
+      );
       expect(prisma.cashShift.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({

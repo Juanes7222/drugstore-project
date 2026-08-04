@@ -137,6 +137,10 @@ const MINIMAL_FULL_INVOICE_DATA = {
   currency: 'COP',
 };
 
+const mockTenantContext = {
+  getSubscriptionId: jest.fn(() => 'sub-test'),
+};
+
 describe('SyncOperationDispatcherService', () => {
   let service: SyncOperationDispatcherService;
 
@@ -144,6 +148,7 @@ describe('SyncOperationDispatcherService', () => {
     jest.clearAllMocks();
     service = new SyncOperationDispatcherService(
       mockPrisma,
+      mockTenantContext as any,
       mockCashShiftService,
       mockClientsService,
       mockSalesService,

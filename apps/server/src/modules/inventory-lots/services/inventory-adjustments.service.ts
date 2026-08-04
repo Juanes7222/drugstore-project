@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, AdjustmentState, MovementType, LotState } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import {
@@ -41,6 +42,7 @@ export class InventoryAdjustmentsService {
   constructor(
     private prisma: PrismaService,
     private lotsService: LotsService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async findAll(query: QueryInventoryAdjustmentDto): Promise<any> {
@@ -96,6 +98,7 @@ export class InventoryAdjustmentsService {
       const doc = await tx.inventoryAdjustmentDocument.create({
         data: {
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           sequentialNumber,
           reason: createDto.reason,
           notes: createDto.notes,
@@ -110,6 +113,7 @@ export class InventoryAdjustmentsService {
           tx.inventoryMovement.create({
             data: {
               id: crypto.randomUUID(),
+              subscriptionId: this.tenantContext.getSubscriptionId(),
               lotId: m.lotId,
               movementType: m.movementType,
               quantity: m.quantity,

@@ -128,6 +128,7 @@ export async function seedAuditLog(): Promise<void> {
       update: {},
       create: {
         id: entry.id,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         action: entry.action as Parameters<typeof prisma.auditLog.create>[0]['data']['action'],
         module: entry.module as Parameters<typeof prisma.auditLog.create>[0]['data']['module'],
         entityType: entry.entityType,

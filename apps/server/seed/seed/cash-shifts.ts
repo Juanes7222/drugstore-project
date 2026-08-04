@@ -10,6 +10,7 @@ export async function seedCashShifts(): Promise<void> {
     update: {},
     create: {
       id: IDS.SHIFT_OPEN,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       workstationId: IDS.WS_PRINCIPAL,
       userId: IDS.USER_CASHIER1,
       state: 'OPEN',
@@ -32,6 +33,7 @@ export async function seedCashShifts(): Promise<void> {
     update: {},
     create: {
       id: IDS.SHIFT_CLOSED_YESTERDAY,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       workstationId: IDS.WS_PRINCIPAL,
       userId: IDS.USER_CASHIER1,
       state: 'CLOSED',
@@ -58,6 +60,7 @@ export async function seedCashShifts(): Promise<void> {
     },
     create: {
       id: IDS.SHIFT_COUNT_CLOSED_1,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       cashShiftId: IDS.SHIFT_CLOSED_YESTERDAY,
       countType: 'CLOSING',
       paymentMethodId: IDS.PAY_EFECTIVO,

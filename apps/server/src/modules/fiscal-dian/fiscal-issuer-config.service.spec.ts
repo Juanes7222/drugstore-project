@@ -12,9 +12,14 @@ describe('FiscalIssuerConfigService', () => {
   let service: FiscalIssuerConfigService;
   let prisma: DeepMockProxy<PrismaClient>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new FiscalIssuerConfigService(prisma as any);
+    service = new FiscalIssuerConfigService(prisma as any, mockTenantContext as any);
   });
 
   // ── find ──────────────────────────────────────────────────────────────
@@ -76,7 +81,7 @@ describe('FiscalIssuerConfigService', () => {
       expect(result).toBeDefined();
       expect(prisma.fiscalIssuerConfig.upsert).toHaveBeenCalledWith({
         where: { id: FISCAL_ISSUER_CONFIG_ID },
-        create: { id: FISCAL_ISSUER_CONFIG_ID, ...dto, updatedById: 'user-1' },
+        create: { id: FISCAL_ISSUER_CONFIG_ID, subscriptionId: 'test-subscription-id', ...dto, updatedById: 'user-1' },
         update: { ...dto, updatedById: 'user-1' },
       });
     });
@@ -94,7 +99,7 @@ describe('FiscalIssuerConfigService', () => {
       expect(result).toBeDefined();
       expect(prisma.fiscalIssuerConfig.upsert).toHaveBeenCalledWith({
         where: { id: FISCAL_ISSUER_CONFIG_ID },
-        create: { id: FISCAL_ISSUER_CONFIG_ID, ...updatedDto, updatedById: 'user-2' },
+        create: { id: FISCAL_ISSUER_CONFIG_ID, subscriptionId: 'test-subscription-id', ...updatedDto, updatedById: 'user-2' },
         update: { ...updatedDto, updatedById: 'user-2' },
       });
     });

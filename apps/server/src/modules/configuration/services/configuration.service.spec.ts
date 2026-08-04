@@ -14,6 +14,11 @@ describe('ConfigurationService', () => {
   let service: ConfigurationService;
   let prisma: DeepMockProxy<PrismaClient>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   const adminUser = { id: 'u1', role: RoleType.ADMIN } as any;
   const cashierUser = { id: 'u2', role: RoleType.CASHIER } as any;
 
@@ -37,7 +42,7 @@ describe('ConfigurationService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new ConfigurationService(prisma as any);
+    service = new ConfigurationService(prisma as any, mockTenantContext as any);
   });
 
   // ── findAll ──────────────────────────────────────────────────────────

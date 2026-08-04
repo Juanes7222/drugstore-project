@@ -47,6 +47,11 @@ describe('SalesService', () => {
   let fiscalDocumentsService: DeepMockProxy<FiscalDocumentsService>;
   let commissionCalculatorService: DeepMockProxy<CommissionCalculatorService>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   const mockCashShift = { id: 'shift-1', workstationId: 'ws-1', userId: 'user-1', state: 'OPEN' };
   const mockSale = {
     id: 'sale-1',
@@ -111,7 +116,7 @@ describe('SalesService', () => {
       commissionValueSnapshot: null,
       commissionAmount: new Prisma.Decimal(0),
     });
-    service = new SalesService(prisma as any, lotsService as any, fiscalDocumentsService as any, commissionCalculatorService);
+    service = new SalesService(prisma as any, lotsService as any, fiscalDocumentsService as any, commissionCalculatorService, mockTenantContext as any);
   });
 
   describe('findAll', () => {

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, PurchaseOrderState } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreatePurchaseOrderDto, CreatePurchaseOrderItemDto } from '../dto/create-purchase-order.dto';
@@ -16,6 +17,7 @@ export class PurchaseOrdersService {
   constructor(
     private prisma: PrismaService,
     private suppliersService: SuppliersService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async findAll(query: QueryPurchaseOrderDto): Promise<any> {
@@ -80,6 +82,7 @@ export class PurchaseOrdersService {
         }
         return {
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           productId: itemDto.productId,
           requestedQuantity: itemDto.requestedQuantity,
           receivedQuantity: 0,
@@ -98,6 +101,7 @@ export class PurchaseOrdersService {
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           sequentialNumber,
           state: PurchaseOrderState.DRAFT,
           supplierId: createDto.supplierId,
@@ -197,6 +201,7 @@ export class PurchaseOrdersService {
       // reference this PO. A note is appended to signal the gap.
       let itemsData: Array<{
         id: string;
+        subscriptionId: string;
         productId: string;
         requestedQuantity: number;
         receivedQuantity: number;
@@ -214,6 +219,7 @@ export class PurchaseOrdersService {
             }
             return {
               id: crypto.randomUUID(),
+              subscriptionId: this.tenantContext.getSubscriptionId(),
               productId: item.productId,
               requestedQuantity: item.requestedQuantity,
               receivedQuantity: 0,
@@ -243,6 +249,7 @@ export class PurchaseOrdersService {
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
           id: payload.orderId,
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           sequentialNumber: payload.sequentialNumber,
           state: PurchaseOrderState.CONFIRMED,
           supplierId: payload.supplierId,

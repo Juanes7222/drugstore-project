@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { CreateFiscalResolutionDto } from '../dto/create-fiscal-resolution.dto';
 import { QueryFiscalResolutionsDto } from '../dto/query-fiscal-resolutions.dto';
 import { InvalidResolutionRangeException } from '../exceptions/invalid-resolution-range.exception';
@@ -8,7 +9,10 @@ import { OverlappingActiveResolutionException } from '../exceptions/overlapping-
 
 @Injectable()
 export class FiscalResolutionsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /** Paginated list of fiscal resolutions, optionally filtered by state. */
   async findAll(query: QueryFiscalResolutionsDto): Promise<any> {
@@ -49,6 +53,7 @@ export class FiscalResolutionsService {
     return this.prisma.fiscalResolution.create({
       data: {
         id: crypto.randomUUID(),
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         resolutionNumber: dto.resolutionNumber,
         documentType: dto.documentType,
         prefix: dto.prefix,

@@ -302,6 +302,7 @@ export class FiscalDocumentsService {
     return tx.fiscalDocument.create({
       data: {
         id: docId,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         documentType,
         consecutiveNumber,
         fullNumber: `${resolution.prefix}${consecutiveNumber}`,
@@ -386,6 +387,7 @@ export class FiscalDocumentsService {
     const doc = await tx.fiscalDocument.create({
       data: {
         id: docId,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         documentType,
         consecutiveNumber,
         fullNumber: `${resolution.prefix}${consecutiveNumber}`,
@@ -465,6 +467,7 @@ export class FiscalDocumentsService {
     await tx.fiscalDocument.create({
       data: {
         id: docId,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         documentType,
         consecutiveNumber,
         fullNumber: `${resolution.prefix}${consecutiveNumber}`,
@@ -562,6 +565,7 @@ export class FiscalDocumentsService {
     const doc = await tx.fiscalDocument.create({
       data: {
         id: docId,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         documentType,
         consecutiveNumber,
         fullNumber: `${resolution.prefix}${consecutiveNumber}`,

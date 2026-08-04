@@ -12,9 +12,14 @@ describe('FiscalResolutionAllocationsService', () => {
   let service: FiscalResolutionAllocationsService;
   let prisma: DeepMockProxy<PrismaClient>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new FiscalResolutionAllocationsService(prisma as any);
+    service = new FiscalResolutionAllocationsService(prisma as any, mockTenantContext as any);
   });
 
   // ── findAll ───────────────────────────────────────────────────────────

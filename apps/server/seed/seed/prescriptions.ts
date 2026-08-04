@@ -15,6 +15,7 @@ async function seedPrescriptionLosartan(): Promise<void> {
     update: {},
     create: {
       id: IDS.PRESC_SALE1_IT,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       saleItemId,
       prescriptionNumber: 'RX-2025-004567',
       prescriberIdType: 'CC',
@@ -42,6 +43,7 @@ async function seedPrescriptionAmox(): Promise<void> {
     update: {},
     create: {
       id: IDS.PRESC_SALE2_AMOX,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       saleItemId,
       prescriptionNumber: 'RX-2025-005678',
       prescriberIdType: 'CC',

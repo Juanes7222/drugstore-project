@@ -78,6 +78,11 @@ describe('PurchaseOrdersService', () => {
     resolveSupplierForSync: jest.fn(),
   };
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   function setupTransactionMock(): void {
     (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
       if (typeof cb === 'function') return cb(prisma);
@@ -88,7 +93,7 @@ describe('PurchaseOrdersService', () => {
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
     mockSuppliersService.resolveSupplierForSync.mockReset();
-    service = new PurchaseOrdersService(prisma as any, mockSuppliersService as any);
+    service = new PurchaseOrdersService(prisma as any, mockSuppliersService as any, mockTenantContext as any);
   });
 
   // -------------------------------------------------------------------------

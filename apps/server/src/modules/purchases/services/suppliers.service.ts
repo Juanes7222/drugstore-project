@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, SupplierIdentificationType } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreateSupplierDto } from '../dto/create-supplier.dto';
@@ -10,7 +11,10 @@ import type { SupplierSyncData } from '@/modules/sync/dto/purchase-sync-payloads
 
 @Injectable()
 export class SuppliersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   async findAll(query: any): Promise<any> {
     const where: Prisma.SupplierWhereInput = {};
@@ -49,6 +53,7 @@ export class SuppliersService {
       return await this.prisma.supplier.create({
         data: {
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           ...createDto,
           createdById: userId,
         },
@@ -116,6 +121,7 @@ export class SuppliersService {
       return tx.supplier.create({
         data: {
           id: supplierId,
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           businessName: data.businessName,
           identificationType: data.identificationType as SupplierIdentificationType,
           identificationNumber: data.identificationNumber,
@@ -141,6 +147,7 @@ export class SuppliersService {
     return tx.supplier.create({
       data: {
         id: supplierId,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         businessName: `Proveedor POS (${shortId})`,
         identificationType: SupplierIdentificationType.NIT,
         identificationNumber: `SYNC-${shortId}`,

@@ -17,7 +17,7 @@ async function seedCategories(): Promise<void> {
     { id: IDS.CAT_MATERIAL_CURACION, name: 'MATERIAL DE CURACIÓN', sortOrder: 10 },
     { id: IDS.CAT_SISTEMA_NERVIOSO, name: 'SISTEMA NERVIOSO', sortOrder: 11 },
   ];
-  await seedMany(prisma.category, categories);
+  await seedMany(prisma.category, categories, { subscriptionId: IDS.SUBSCRIPTION_DEFAULT });
 }
 
 async function seedPharmaceuticalForms(): Promise<void> {
@@ -32,7 +32,7 @@ async function seedPharmaceuticalForms(): Promise<void> {
     { id: IDS.FORM_SOBRE, name: 'SOBRE', sortOrder: 8 },
     { id: IDS.FORM_SPRAY, name: 'SPRAY', sortOrder: 9 },
   ];
-  await seedMany(prisma.pharmaceuticalForm, forms);
+  await seedMany(prisma.pharmaceuticalForm, forms, { subscriptionId: IDS.SUBSCRIPTION_DEFAULT });
 }
 
 async function seedTaxSchemes(): Promise<void> {
@@ -41,7 +41,7 @@ async function seedTaxSchemes(): Promise<void> {
     { id: IDS.TAX_IVA_5, code: 'IVA-5', name: 'IVA 5%', taxType: 'IVA' as const, rate: '5.0000', effectiveFrom: TAX_EFFECTIVE_DATE, createdById: IDS.USER_ADMIN },
     { id: IDS.TAX_EXENTO, code: 'EXENTO', name: 'Exento de IVA', taxType: 'EXENTO' as const, rate: '0.0000', effectiveFrom: TAX_EFFECTIVE_DATE, createdById: IDS.USER_ADMIN },
   ];
-  await seedMany(prisma.taxScheme, schemes);
+  await seedMany(prisma.taxScheme, schemes, { subscriptionId: IDS.SUBSCRIPTION_DEFAULT });
 }
 
 async function seedPaymentMethods(): Promise<void> {
@@ -54,7 +54,7 @@ async function seedPaymentMethods(): Promise<void> {
     { id: IDS.PAY_NEQUI, internalCode: 'PM006', name: 'Nequi', dianCode: '102', category: 'DIGITAL_WALLET' as const, sortOrder: 6 },
     { id: IDS.PAY_DAVIPLATA, internalCode: 'PM007', name: 'Daviplata', dianCode: '103', category: 'DIGITAL_WALLET' as const, sortOrder: 7 },
   ];
-  await seedMany(prisma.paymentMethod, methods);
+  await seedMany(prisma.paymentMethod, methods, { subscriptionId: IDS.SUBSCRIPTION_DEFAULT });
 }
 
 async function seedClientClassifications(): Promise<void> {
@@ -63,7 +63,7 @@ async function seedClientClassifications(): Promise<void> {
     { id: IDS.CLASS_FRECUENTE, type: 'FREQUENT' as const, discountPercentage: '5.00', sortOrder: 2 },
     { id: IDS.CLASS_INSTITUCIONAL, type: 'INSTITUTIONAL' as const, discountPercentage: '10.00', sortOrder: 3 },
   ];
-  await seedMany(prisma.clientClassification, classifications);
+  await seedMany(prisma.clientClassification, classifications, { subscriptionId: IDS.SUBSCRIPTION_DEFAULT });
 }
 
 export async function seedReferenceData(): Promise<void> {

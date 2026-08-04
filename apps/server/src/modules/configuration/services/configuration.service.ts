@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { $Enums } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { RoleType, User } from '@pharmacy/shared-types';
 import { SystemConfigValueSchema } from '../dto/system-config-value.schema';
 import { UpsertSystemConfigDto } from '../dto/upsert-system-config.dto';
@@ -9,7 +10,10 @@ import { ImmutableConfigFieldException } from '../exceptions/immutable-config-fi
 
 @Injectable()
 export class ConfigurationService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /**
    * Returns all system configuration entries. For entries marked isSensitive,
@@ -26,7 +30,7 @@ export class ConfigurationService {
    */
   async findByKey(key: string, user: User): Promise<any> {
     const config = await this.prisma.systemConfig.findUnique({
-      where: { key },
+      where: { subscriptionId_key: { subscriptionId: this.tenantContext.getSubscriptionId(), key } },
     });
     if (!config) {
       return null;
@@ -53,13 +57,13 @@ export class ConfigurationService {
     this.assertValidValueType(key, dto.configValue.valueType, dto.configValue.value);
 
     const existing = await this.prisma.systemConfig.findUnique({
-      where: { key },
+      where: { subscriptionId_key: { subscriptionId: this.tenantContext.getSubscriptionId(), key } },
     });
 
     if (existing) {
       this.assertIdentityFieldsUnchanged(key, existing, dto);
       return this.prisma.systemConfig.update({
-        where: { key },
+        where: { subscriptionId_key: { subscriptionId: this.tenantContext.getSubscriptionId(), key } },
         data: {
           value: dto.configValue.value,
           description: dto.description ?? existing.description,
@@ -70,6 +74,7 @@ export class ConfigurationService {
 
     return this.prisma.systemConfig.create({
       data: {
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         key,
         value: dto.configValue.value,
         valueType: dto.configValue.valueType,

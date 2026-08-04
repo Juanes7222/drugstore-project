@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, DataSubjectRequestStatus } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreateClientDto } from './dto/create-client.dto';
@@ -18,7 +19,10 @@ import { GENERIC_CLIENT_UUID } from './constants/clients.constants';
 
 @Injectable()
 export class ClientsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /**
    * Create a client record.
@@ -41,6 +45,7 @@ export class ClientsService {
       return await this.prisma.client.create({
         data: {
           id: recordId,
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           ...dto,
           createdById: userId,
         },
@@ -55,7 +60,8 @@ export class ClientsService {
         if (clientId) {
           return this.prisma.client.update({
             where: {
-              identificationType_identificationNumber: {
+              subscriptionId_identificationType_identificationNumber: {
+                subscriptionId: this.tenantContext.getSubscriptionId(),
                 identificationType: dto.identificationType,
                 identificationNumber: dto.identificationNumber,
               },
@@ -326,6 +332,7 @@ export class ClientsService {
     await tx.syncQueue.create({
       data: {
         id: crypto.randomUUID(),
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         operationUuid,
         operationType: operationType as any,
         payload,

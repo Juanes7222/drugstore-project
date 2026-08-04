@@ -32,12 +32,16 @@ const mockDispatcher = {
   dispatch: jest.fn<Promise<DispatchResult>, [unknown]>(),
 } as unknown as SyncOperationDispatcherService;
 
+const mockTenantContext = {
+  getSubscriptionId: jest.fn(() => 'sub-test'),
+};
+
 describe('SyncService', () => {
   let service: SyncService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new SyncService(mockPrisma, mockDispatcher);
+    service = new SyncService(mockPrisma, mockDispatcher, mockTenantContext as any);
   });
 
   // ── getMaxClientSequence ──────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, SaleOperationalState, SaleType, ShiftState, IdentificationType, ClientType, AuditAction, SystemModule, CommissionType } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreateSaleDto, CreateSaleItemDto } from '../dto/create-sale.dto';
@@ -44,6 +45,7 @@ export class SalesService {
     private lotsService: LotsService,
     private fiscalDocumentsService: FiscalDocumentsService,
     private commissionCalculatorService: CommissionCalculatorService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async findAll(query: QuerySaleDto): Promise<any> {
@@ -125,6 +127,7 @@ export class SalesService {
           const sale = await tx.sale.create({
             data: {
               id: crypto.randomUUID(),
+              subscriptionId: this.tenantContext.getSubscriptionId(),
               localNumber,
               operationalState: SaleOperationalState.IN_PROGRESS,
               startedAt: new Date(),
@@ -231,6 +234,7 @@ export class SalesService {
           await tx.saleItemLot.create({
             data: {
               id: crypto.randomUUID(),
+              subscriptionId: this.tenantContext.getSubscriptionId(),
               saleItemId: item.id,
               lotId: cl.lotId,
               quantity: cl.quantity,
@@ -243,6 +247,7 @@ export class SalesService {
       await tx.salePayment.createMany({
         data: confirmDto.payments.map(p => ({
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           saleId: sale.id,
           paymentMethodId: p.paymentMethodId,
           amount: new Prisma.Decimal(p.amount),
@@ -461,6 +466,7 @@ export class SalesService {
 
     return {
       id: crypto.randomUUID(),
+      subscriptionId: this.tenantContext.getSubscriptionId(),
       product: { connect: { id: itemDto.productId } },
       productInternalCodeSnapshot: product.internalCode,
       productCommercialNameSnapshot: product.commercialName,

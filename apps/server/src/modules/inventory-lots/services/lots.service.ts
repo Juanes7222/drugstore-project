@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, LotState, MovementType } from '@pharmacy/database';
 import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import * as crypto from 'crypto';
@@ -24,7 +25,10 @@ import type { LotSyncData } from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
 export class LotsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   async findAll(query: QueryLotDto): Promise<any> {
     const where: Prisma.LotWhereInput = {};
@@ -231,6 +235,7 @@ export class LotsService {
     const newLot = await tx.lot.create({
       data: {
         id: newLotId,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         productId,
         batchNumber,
         expirationDate,
@@ -239,7 +244,6 @@ export class LotsService {
         version: 0,
         state: LotState.ACTIVE,
         locationCode,
-        createdById: 'system',
       },
     });
 
@@ -329,6 +333,7 @@ export class LotsService {
     const created = await tx.lot.create({
       data: {
         id: lotId,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         productId: data.productId,
         batchNumber: data.batchNumber,
         expirationDate: new Date(data.expirationDate),
@@ -451,6 +456,7 @@ export class LotsService {
     // relation declarations). Use UncheckedCreateInput to set scalar fields directly.
     const movementData: Prisma.InventoryMovementUncheckedCreateInput = {
       id: crypto.randomUUID(),
+      subscriptionId: this.tenantContext.getSubscriptionId(),
       lotId: data.lotId,
       movementType: data.movementType,
       quantity: data.quantity,

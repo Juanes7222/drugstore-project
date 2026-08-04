@@ -71,6 +71,11 @@ const mockSuppliersService = {
   resolveSupplierForSync: jest.fn(),
 };
 
+const mockTenantContext = {
+  getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+  hasTenant: jest.fn(() => true),
+};
+
 const UUID = '00000000-0000-4000-8000-000000000001';
 
 describe('SupplierReturnsService', () => {
@@ -80,7 +85,7 @@ describe('SupplierReturnsService', () => {
     jest.clearAllMocks();
     Object.assign(mockTx, createTxMock());
     mockSuppliersService.resolveSupplierForSync.mockReset();
-    service = new SupplierReturnsService(mockPrisma, mockLotsService, mockSuppliersService as any);
+    service = new SupplierReturnsService(mockPrisma, mockLotsService, mockSuppliersService as any, mockTenantContext as any);
   });
 
   // ── findAll ─────────────────────────────────────────────────────────

@@ -41,6 +41,11 @@ describe('ClientReturnsService', () => {
   let calc: DeepMockProxy<ClientReturnCalculatorService>;
   let fiscalDocumentsService: DeepMockProxy<FiscalDocumentsService>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   const mockSale = {
     id: 'sale-1',
     operationalState: 'CONFIRMED',
@@ -96,7 +101,7 @@ describe('ClientReturnsService', () => {
     lotsService = mockDeep<LotsService>();
     calc = mockDeep<ClientReturnCalculatorService>();
     fiscalDocumentsService = mockDeep<FiscalDocumentsService>();
-    service = new ClientReturnsService(prisma as any, lotsService as any, calc as any, fiscalDocumentsService as any);
+    service = new ClientReturnsService(prisma as any, lotsService as any, calc as any, fiscalDocumentsService as any, mockTenantContext as any);
   });
 
   function mockFindUniqueReturn(returnData: any): void {

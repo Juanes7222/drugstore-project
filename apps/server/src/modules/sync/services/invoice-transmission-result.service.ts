@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import * as crypto from 'node:crypto';
 
 /**
@@ -39,6 +40,7 @@ export class InvoiceTransmissionResultService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   /**
@@ -64,6 +66,7 @@ export class InvoiceTransmissionResultService {
       where: { id },
       create: {
         id,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         invoiceId,
         workstationId,
         status,

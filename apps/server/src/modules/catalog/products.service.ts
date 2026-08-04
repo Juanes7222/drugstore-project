@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma } from '@pharmacy/database';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -13,7 +14,10 @@ import * as crypto from 'crypto';
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /**
    * List products with optional filtering and search.
@@ -106,6 +110,7 @@ export class ProductsService {
       const product = await tx.product.create({
         data: {
           id: sourceProductId ?? this.generateId(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           internalCode: dto.internalCode,
           commercialName: dto.commercialName,
           concentration: dto.concentration || null,
@@ -138,6 +143,7 @@ export class ProductsService {
       const priceHistory = await tx.productPriceHistory.create({
         data: {
           id: this.generateId(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           productId: product.id,
           price: priceDecimal,
           effectiveFrom: new Date(),
@@ -149,6 +155,7 @@ export class ProductsService {
       const taxHistory = await tx.productTaxHistory.create({
         data: {
           id: this.generateId(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           productId: product.id,
           taxSchemeId: dto.initialTaxSchemeId,
           effectiveFrom: new Date(),
@@ -166,6 +173,7 @@ export class ProductsService {
         const costHistory = await tx.productCostHistory.create({
           data: {
             id: this.generateId(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
             productId: product.id,
             cost: new Prisma.Decimal(dto.initialCost),
             effectiveFrom: new Date(),
@@ -246,6 +254,7 @@ export class ProductsService {
         const priceHistory = await tx.productPriceHistory.create({
           data: {
             id: this.generateId(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
             productId,
             price: new Prisma.Decimal(rawPrice!),
             effectiveFrom: new Date(),
@@ -263,6 +272,7 @@ export class ProductsService {
         const costHistory = await tx.productCostHistory.create({
           data: {
             id: this.generateId(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
             productId,
             cost: new Prisma.Decimal(rawCost!),
             effectiveFrom: new Date(),
@@ -280,6 +290,7 @@ export class ProductsService {
         const taxHistory = await tx.productTaxHistory.create({
           data: {
             id: this.generateId(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
             productId,
             taxSchemeId: rawTaxSchemeId!,
             effectiveFrom: new Date(),
@@ -320,6 +331,7 @@ export class ProductsService {
       const newPriceHistory = await tx.productPriceHistory.create({
         data: {
           id: this.generateId(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           productId,
           price: priceDecimal,
           effectiveFrom,
@@ -359,6 +371,7 @@ export class ProductsService {
       const newTaxHistory = await tx.productTaxHistory.create({
         data: {
           id: this.generateId(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           productId,
           taxSchemeId: dto.taxSchemeId,
           effectiveFrom,
@@ -388,6 +401,7 @@ export class ProductsService {
         return tx.productBarcode.create({
           data: {
             id: this.generateId(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
             productId,
             barcode: dto.barcode,
             barcodeType: dto.barcodeType,
@@ -402,6 +416,7 @@ export class ProductsService {
       return await this.prisma.productBarcode.create({
         data: {
           id: this.generateId(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           productId,
           barcode: dto.barcode,
           barcodeType: dto.barcodeType,

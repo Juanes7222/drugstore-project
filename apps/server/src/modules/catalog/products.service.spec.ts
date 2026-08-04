@@ -119,6 +119,11 @@ const mockTx = {
 // ---------------------------------------------------------------------------
 // Prisma mock
 // ---------------------------------------------------------------------------
+const mockTenantContext = {
+  getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+  hasTenant: jest.fn(() => true),
+};
+
 const mockPrisma = {
   $transaction: jest.fn().mockImplementation(
     async (cb: (tx: typeof mockTx) => unknown) => cb(mockTx),
@@ -143,7 +148,7 @@ describe('ProductsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new ProductsService(mockPrisma);
+    service = new ProductsService(mockPrisma, mockTenantContext as any);
   });
 
   // -----------------------------------------------------------------------

@@ -41,6 +41,11 @@ describe('LotsService', () => {
   let service: LotsService;
   let prisma: DeepMockProxy<PrismaClient>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   const mockLot = {
     id: 'lot-1',
     productId: 'prod-1',
@@ -69,7 +74,7 @@ describe('LotsService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new LotsService(prisma as any);
+    service = new LotsService(prisma as any, mockTenantContext as any);
   });
 
   describe('findAll', () => {

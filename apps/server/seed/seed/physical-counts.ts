@@ -16,6 +16,7 @@ async function seedPhysicalCount(): Promise<void> {
     update: {},
     create: {
       id: IDS.PHYS_COUNT_001,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       sequentialNumber: 1,
       state: 'APPLIED',
       startedAt: PHYS_COUNT_DATE,
@@ -34,6 +35,7 @@ async function seedPhysicalCount(): Promise<void> {
     update: {},
     create: {
       id: IDS.ADJ_DOC_001,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       sequentialNumber: 1,
       state: 'APPLIED',
       reason: 'Diferencia encontrada en conteo físico mensual',
@@ -54,6 +56,7 @@ async function seedPhysicalCount(): Promise<void> {
     update: {},
     create: {
       id: 'mov_adj_amox',
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       movementType: 'POSITIVE_ADJUSTMENT',
       quantity: 15,
       previousStock: 200,
@@ -78,6 +81,7 @@ async function seedPhysicalCount(): Promise<void> {
     update: {},
     create: {
       id: 'mov_adj_azit',
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       movementType: 'NEGATIVE_ADJUSTMENT',
       quantity: 5,
       previousStock: 40,

@@ -44,6 +44,11 @@ const mockTaxSchemeModel = {
   update: jest.fn(),
 };
 
+const mockTenantContext = {
+  getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+  hasTenant: jest.fn(() => true),
+};
+
 const mockPrisma = {
   taxScheme: mockTaxSchemeModel,
 } as any;
@@ -54,7 +59,7 @@ describe('TaxSchemesService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new TaxSchemesService(mockPrisma);
+    service = new TaxSchemesService(mockPrisma, mockTenantContext as any);
   });
 
   describe('findAll', () => {

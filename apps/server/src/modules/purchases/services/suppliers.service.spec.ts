@@ -29,6 +29,11 @@ describe('SuppliersService', () => {
   let service: SuppliersService;
   let prisma: DeepMockProxy<PrismaClient>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   const mockSupplier = {
     id: 'sup-1',
     identificationType: 'NIT',
@@ -50,7 +55,7 @@ describe('SuppliersService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new SuppliersService(prisma as any);
+    service = new SuppliersService(prisma as any, mockTenantContext as any);
   });
 
   // -------------------------------------------------------------------------
@@ -178,6 +183,7 @@ describe('SuppliersService', () => {
       expect(prisma.supplier.create).toHaveBeenCalledWith({
         data: {
           id: expect.any(String),
+          subscriptionId: 'test-subscription-id',
           ...createDto,
           createdById: 'user-1',
         },

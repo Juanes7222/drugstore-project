@@ -28,6 +28,10 @@ const mockCategoryModel = {
   update: jest.fn(),
 };
 
+const mockTenantContext = {
+  getSubscriptionId: jest.fn(() => 'sub-test'),
+};
+
 const mockPrisma = {
   category: mockCategoryModel,
 } as any;
@@ -37,7 +41,7 @@ describe('CategoriesService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new CategoriesService(mockPrisma);
+    service = new CategoriesService(mockPrisma, mockTenantContext as any);
   });
 
   describe('findAll', () => {

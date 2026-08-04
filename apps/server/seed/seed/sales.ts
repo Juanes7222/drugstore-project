@@ -29,6 +29,7 @@ async function seedSaleClosed001(): Promise<void> {
     update: {},
     create: {
       id: saleId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       localNumber: BigInt(1),
       internalNumber: 1001,
       operationalState: 'CONFIRMED',
@@ -73,6 +74,7 @@ async function seedSaleClosed001(): Promise<void> {
       update: {},
       create: {
         id: it.id,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         saleId,
         productId: it.productId,
         productInternalCodeSnapshot: '',
@@ -97,6 +99,7 @@ async function seedSaleClosed001(): Promise<void> {
       update: {},
       create: {
         id: `${it.id}_lot`,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         saleItemId: it.id,
         lotId: it.lotId,
         quantity: it.qty,
@@ -110,6 +113,7 @@ async function seedSaleClosed001(): Promise<void> {
       update: {},
       create: {
         id: `mov_sale_${it.id}`,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         movementType: 'SALE',
         quantity: it.qty,
         previousStock: it.previousStock,
@@ -135,6 +139,7 @@ async function seedSaleClosed001(): Promise<void> {
     update: {},
     create: {
       id: `${saleId}_pay_1`,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       saleId,
       paymentMethodId: IDS.PAY_TRANSFERENCIA,
       amount: '639875.00',
@@ -156,6 +161,7 @@ async function seedSaleClosed002(): Promise<void> {
     update: {},
     create: {
       id: saleId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       localNumber: BigInt(2),
       internalNumber: 1002,
       operationalState: 'CONFIRMED',
@@ -198,6 +204,7 @@ async function seedSaleClosed002(): Promise<void> {
       update: {},
       create: {
         id: it.id,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         saleId,
         productId: it.productId,
         productInternalCodeSnapshot: '',
@@ -222,6 +229,7 @@ async function seedSaleClosed002(): Promise<void> {
       update: {},
       create: {
         id: `${it.id}_lot`,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         saleItemId: it.id,
         lotId: it.lotId,
         quantity: it.qty,
@@ -235,6 +243,7 @@ async function seedSaleClosed002(): Promise<void> {
       update: {},
       create: {
         id: `mov_sale_${it.id}`,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         movementType: 'SALE',
         quantity: it.qty,
         previousStock: it.previousStock,
@@ -260,6 +269,7 @@ async function seedSaleClosed002(): Promise<void> {
     update: {},
     create: {
       id: `${saleId}_pay_1`,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       saleId,
       paymentMethodId: IDS.PAY_EFECTIVO,
       amount: '263000.00',
@@ -271,6 +281,7 @@ async function seedSaleClosed002(): Promise<void> {
     update: {},
     create: {
       id: `${saleId}_pay_2`,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       saleId,
       paymentMethodId: IDS.PAY_TARJETA_DEBITO,
       amount: '250000.00',
@@ -295,6 +306,7 @@ async function seedSaleOpen001(): Promise<void> {
     update: {},
     create: {
       id: saleId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       localNumber: BigInt(3),
       operationalState: 'CONFIRMED',
       startedAt,
@@ -335,6 +347,7 @@ async function seedSaleOpen001(): Promise<void> {
       update: {},
       create: {
         id: it.id,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         saleId,
         productId: it.productId,
         productInternalCodeSnapshot: '',
@@ -358,6 +371,7 @@ async function seedSaleOpen001(): Promise<void> {
       update: {},
       create: {
         id: `${it.id}_lot`,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         saleItemId: it.id,
         lotId: it.lotId,
         quantity: it.qty,
@@ -371,6 +385,7 @@ async function seedSaleOpen001(): Promise<void> {
       update: {},
       create: {
         id: `mov_sale_${it.id}`,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         movementType: 'SALE',
         quantity: it.qty,
         previousStock: it.previousStock,
@@ -396,6 +411,7 @@ async function seedSaleOpen001(): Promise<void> {
     update: {},
     create: {
       id: `${saleId}_pay_1`,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       saleId,
       paymentMethodId: IDS.PAY_EFECTIVO,
       amount: '100000.00',
@@ -407,6 +423,7 @@ async function seedSaleOpen001(): Promise<void> {
     update: {},
     create: {
       id: `${saleId}_pay_2`,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       saleId,
       paymentMethodId: IDS.PAY_NEQUI,
       amount: '30186.00',

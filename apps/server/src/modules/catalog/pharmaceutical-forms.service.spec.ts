@@ -10,10 +10,13 @@ import { PharmaceuticalFormsService } from './pharmaceutical-forms.service';
 describe('PharmaceuticalFormsService', () => {
   let service: PharmaceuticalFormsService;
   let prisma: DeepMockProxy<PrismaClient>;
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'sub-test'),
+  };
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new PharmaceuticalFormsService(prisma as any);
+    service = new PharmaceuticalFormsService(prisma as any, mockTenantContext as any);
   });
 
   // ── findAll ──────────────────────────────────────────────────────────

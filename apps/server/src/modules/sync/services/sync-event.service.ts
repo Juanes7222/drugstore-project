@@ -8,6 +8,7 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { DomainException } from '@/common/exceptions/domain.exception';
 
 export type SyncEventType =
@@ -45,7 +46,10 @@ export interface PendingEventResult {
 export class SyncEventService {
   private readonly logger = new Logger(SyncEventService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /**
    * Create a new SyncEvent for one or all workstations.
@@ -63,6 +67,7 @@ export class SyncEventService {
 
     const event = await this.prisma.syncEvent.create({
       data: {
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         eventType,
         entityType,
         entityId,

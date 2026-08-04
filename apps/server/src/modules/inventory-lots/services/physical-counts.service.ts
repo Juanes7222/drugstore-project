@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { InventoryAdjustmentsService } from './inventory-adjustments.service';
 import { Prisma, PhysicalCountState, AdjustmentState, MovementType } from '@pharmacy/database';
 import * as crypto from 'crypto';
@@ -18,6 +19,7 @@ export class PhysicalCountsService {
   constructor(
     private prisma: PrismaService,
     private inventoryAdjustmentsService: InventoryAdjustmentsService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async findAll(query: { page?: number; pageSize?: number; state?: string }): Promise<any> {
@@ -74,6 +76,7 @@ export class PhysicalCountsService {
     return this.prisma.physicalCount.create({
       data: {
         id: crypto.randomUUID(),
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         sequentialNumber,
         startedAt: new Date(),
         startedByUserId: userId,

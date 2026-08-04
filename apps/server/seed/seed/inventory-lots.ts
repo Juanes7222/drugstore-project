@@ -61,6 +61,7 @@ export async function seedInventoryLots(): Promise<void> {
     update: {},
     create: {
       id: RECEPTION_ID,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       sequentialNumber: 1,
       state: 'CONFIRMED',
       receivedAt: ONE_MONTH_AGO,
@@ -85,6 +86,7 @@ export async function seedInventoryLots(): Promise<void> {
       update: { currentStock: lot.currentStock, expirationDate: lot.expirationDate, batchNumber: lot.batchNumber },
       create: {
         id: lot.id,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         batchNumber: lot.batchNumber,
         expirationDate: lot.expirationDate,
         entryDate: ONE_MONTH_AGO,
@@ -101,6 +103,7 @@ export async function seedInventoryLots(): Promise<void> {
       update: { realUnitCost: new Prisma.Decimal(lot.unitCost) },
       create: {
         id: `pri_${lot.id}`,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         purchaseReceptionId: RECEPTION_ID,
         productId: lot.productId,
         lotId: lot.id,
@@ -120,6 +123,7 @@ export async function seedInventoryLots(): Promise<void> {
       update: { quantity: lot.currentStock },
       create: {
         id: `mov_init_${lot.id}`,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         lotId: lot.id,
         movementType: 'INITIAL_STOCK',
         quantity: lot.currentStock,

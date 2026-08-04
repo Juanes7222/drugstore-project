@@ -13,6 +13,7 @@ async function seedFiscalIssuer(): Promise<void> {
     update: {},
     create: {
       id: IDS.FISCAL_ISSUER,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       nit: '900123456-7',
       verificationDigit: '7',
       businessName: 'Droguería Farmacia Central S.A.S.',
@@ -36,6 +37,7 @@ async function seedTechProvider(): Promise<void> {
     update: {},
     create: {
       id: IDS.TECH_PROVIDER,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       endpointUrl: 'https://vpfe-hab-dian-v2-0-1-2.pymedigital.com/v1/',
       environment: 'TEST',
       timeoutSeconds: 30,
@@ -51,6 +53,7 @@ async function seedResolutions(): Promise<void> {
     update: {},
     create: {
       id: IDS.RESOLUTION_INVOICE,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       resolutionNumber: 'RES-2025-001',
       documentType: 'INVOICE',
       prefix: 'FC',
@@ -69,6 +72,7 @@ async function seedResolutions(): Promise<void> {
     update: {},
     create: {
       id: IDS.RESOLUTION_POS,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       resolutionNumber: 'RES-2025-002',
       documentType: 'POS_TICKET',
       prefix: 'PT',
@@ -89,6 +93,7 @@ async function seedAllocations(): Promise<void> {
     update: {},
     create: {
       id: IDS.ALLOC_INVOICE_WS1,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       resolutionId: IDS.RESOLUTION_INVOICE,
       workstationId: IDS.WS_PRINCIPAL,
       rangeFrom: 1,
@@ -105,6 +110,7 @@ async function seedAllocations(): Promise<void> {
     update: {},
     create: {
       id: IDS.ALLOC_POS_WS1,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       resolutionId: IDS.RESOLUTION_POS,
       workstationId: IDS.WS_PRINCIPAL,
       rangeFrom: 1,
@@ -121,6 +127,7 @@ async function seedAllocations(): Promise<void> {
     update: {},
     create: {
       id: IDS.ALLOC_INVOICE_WS2,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       resolutionId: IDS.RESOLUTION_INVOICE,
       workstationId: IDS.WS_SECUNDARIA,
       rangeFrom: 501,

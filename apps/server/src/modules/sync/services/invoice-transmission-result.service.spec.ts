@@ -20,12 +20,17 @@ const mockPrisma = {
   syncInvoiceResult: mockSyncInvoiceResult,
 } as unknown as PrismaService;
 
+const mockTenantContext = {
+  getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+  hasTenant: jest.fn(() => true),
+};
+
 describe('InvoiceTransmissionResultService', () => {
   let service: InvoiceTransmissionResultService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new InvoiceTransmissionResultService(mockPrisma);
+    service = new InvoiceTransmissionResultService(mockPrisma, mockTenantContext as any);
   });
 
   // ── saveResult ─────────────────────────────────────────────────────────

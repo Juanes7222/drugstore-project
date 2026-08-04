@@ -25,6 +25,11 @@ describe('PhysicalCountsService', () => {
   let prisma: DeepMockProxy<PrismaClient>;
   let adjustmentsService: jest.Mocked<InventoryAdjustmentsService>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
     adjustmentsService = {
@@ -34,7 +39,7 @@ describe('PhysicalCountsService', () => {
       apply: jest.fn(),
       annul: jest.fn(),
     } as any;
-    service = new PhysicalCountsService(prisma as any, adjustmentsService);
+    service = new PhysicalCountsService(prisma as any, adjustmentsService, mockTenantContext as any);
   });
 
   // ── findAll ──────────────────────────────────────────────────────────

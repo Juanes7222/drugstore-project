@@ -11,9 +11,14 @@ describe('PosSettingsService', () => {
   let service: PosSettingsService;
   let prisma: DeepMockProxy<PrismaClient>;
 
+  const mockTenantContext = {
+    getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+    hasTenant: jest.fn(() => true),
+  };
+
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new PosSettingsService(prisma as any);
+    service = new PosSettingsService(prisma as any, mockTenantContext as any);
   });
 
   describe('getPosSettings', () => {

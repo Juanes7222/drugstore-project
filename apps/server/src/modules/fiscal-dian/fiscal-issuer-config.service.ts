@@ -1,12 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { FISCAL_ISSUER_CONFIG_ID } from './constants/fiscal-singleton-ids';
 import { UpsertFiscalIssuerConfigDto } from './dto/upsert-fiscal-issuer-config.dto';
 import { FiscalIssuerConfigNotSetException } from './exceptions/fiscal-issuer-config-not-set.exception';
 
 @Injectable()
 export class FiscalIssuerConfigService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /** Returns the singleton FiscalIssuerConfig, or throws if never set. */
   async find(): Promise<any> {
@@ -28,6 +32,7 @@ export class FiscalIssuerConfigService {
       where: { id: FISCAL_ISSUER_CONFIG_ID },
       create: {
         id: FISCAL_ISSUER_CONFIG_ID,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         ...dto,
         updatedById,
       },

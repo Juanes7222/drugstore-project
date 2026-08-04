@@ -83,6 +83,11 @@ const mockSuppliersService = {
   resolveSupplierForSync: jest.fn(),
 };
 
+const mockTenantContext = {
+  getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+  hasTenant: jest.fn(() => true),
+};
+
 const UUID = '00000000-0000-4000-8000-000000000001';
 
 describe('PurchaseReceptionsService', () => {
@@ -98,6 +103,7 @@ describe('PurchaseReceptionsService', () => {
       mockLotsService,
       mockFiscalDocumentsService,
       mockSuppliersService as any,
+      mockTenantContext as any,
     );
   });
 

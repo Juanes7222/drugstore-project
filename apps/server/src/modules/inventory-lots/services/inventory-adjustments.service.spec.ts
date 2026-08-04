@@ -25,6 +25,11 @@ const mockLotsService = {
   resolveLotForSync: jest.fn(),
 };
 
+const mockTenantContext = {
+  getSubscriptionId: jest.fn(() => 'test-subscription-id'),
+  hasTenant: jest.fn(() => true),
+};
+
 describe('InventoryAdjustmentsService', () => {
   let service: InventoryAdjustmentsService;
   let prisma: DeepMockProxy<PrismaClient>;
@@ -32,7 +37,7 @@ describe('InventoryAdjustmentsService', () => {
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
     mockLotsService.resolveLotForSync.mockReset();
-    service = new InventoryAdjustmentsService(prisma as any, mockLotsService as any);
+    service = new InventoryAdjustmentsService(prisma as any, mockLotsService as any, mockTenantContext as any);
   });
 
   // ── findAll ──────────────────────────────────────────────────────────

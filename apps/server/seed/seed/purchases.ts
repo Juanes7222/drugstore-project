@@ -15,6 +15,7 @@ async function seedPoDisfarma(): Promise<void> {
     update: {},
     create: {
       id: poId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       sequentialNumber: 1,
       state: 'CONFIRMED',
       supplierId: IDS.SUP_DISFARMA,
@@ -56,6 +57,7 @@ async function seedPoDisfarma(): Promise<void> {
       update: {},
       create: {
         id: it.id,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         purchaseOrderId: poId,
         productId: it.productId,
         requestedQuantity: it.requested,
@@ -75,6 +77,7 @@ async function seedPoColvan(): Promise<void> {
     update: {},
     create: {
       id: poId,
+      subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       sequentialNumber: 2,
       state: 'CONFIRMED',
       supplierId: IDS.SUP_COLVAN,
@@ -116,6 +119,7 @@ async function seedPoColvan(): Promise<void> {
       update: {},
       create: {
         id: it.id,
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         purchaseOrderId: poId,
         productId: it.productId,
         requestedQuantity: it.requested,

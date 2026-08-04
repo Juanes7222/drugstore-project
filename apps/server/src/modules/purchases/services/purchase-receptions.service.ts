@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, PurchaseReceptionState, PurchaseOrderState, MovementType, LotState } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreatePurchaseReceptionDto, CreatePurchaseReceptionItemDto } from '../dto/create-purchase-reception.dto';
@@ -26,6 +27,7 @@ export class PurchaseReceptionsService {
     private lotsService: LotsService,
     private fiscalDocumentsService: FiscalDocumentsService,
     private suppliersService: SuppliersService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async findAll(query: QueryPurchaseReceptionDto): Promise<any> {
@@ -109,6 +111,7 @@ export class PurchaseReceptionsService {
 
         return {
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           productId: itemDto.productId,
           purchaseOrderItemId: itemDto.purchaseOrderItemId || null,
           receivedQuantity: itemDto.receivedQuantity,
@@ -127,6 +130,7 @@ export class PurchaseReceptionsService {
       const reception = await tx.purchaseReception.create({
         data: {
           id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           sequentialNumber,
           state: PurchaseReceptionState.DRAFT,
           supplierId: createDto.supplierId,
@@ -302,6 +306,7 @@ export class PurchaseReceptionsService {
           purchaseOrder = await tx.purchaseOrder.create({
             data: {
               id: payload.purchaseOrderId,
+              subscriptionId: this.tenantContext.getSubscriptionId(),
               sequentialNumber: stubSeq,
               state: PurchaseOrderState.CONFIRMED,
               supplierId: payload.supplierId,
@@ -372,6 +377,7 @@ export class PurchaseReceptionsService {
             await tx.inventoryMovement.create({
               data: {
                 id: crypto.randomUUID(),
+                subscriptionId: this.tenantContext.getSubscriptionId(),
                 lotId: resolvedLotId,
                 movementType: MovementType.PURCHASE_RECEIPT,
                 quantity: item.quantity,
@@ -422,6 +428,7 @@ export class PurchaseReceptionsService {
       const reception = await tx.purchaseReception.create({
         data: {
           id: receptionId,
+          subscriptionId: this.tenantContext.getSubscriptionId(),
           sequentialNumber: payload.sequentialNumber,
           state: PurchaseReceptionState.CONFIRMED,
           supplierId: payload.supplierId,
@@ -437,6 +444,7 @@ export class PurchaseReceptionsService {
                 items: {
                   create: itemsData.map((item) => ({
                     id: item.id,
+                    subscriptionId: this.tenantContext.getSubscriptionId(),
                     productId: item.productId,
                     receivedQuantity: item.receivedQuantity,
                     lotNumber: item.lotNumber,
@@ -500,6 +508,7 @@ export class PurchaseReceptionsService {
         await tx.inventoryMovement.create({
           data: {
             id: crypto.randomUUID(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
             lotId: item.lotId,
             movementType: MovementType.NEGATIVE_ADJUSTMENT,
             quantity: item.receivedQuantity,

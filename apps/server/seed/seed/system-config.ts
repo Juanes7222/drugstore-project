@@ -1,4 +1,6 @@
 import { prisma } from '../helpers/db';
+import { IDS } from '../constants/ids';
+import { Prisma } from '@pharmacy/database';
 
 /**
  * Seeds base SystemConfig entries that modules expect at runtime.
@@ -142,11 +144,14 @@ export async function seedSystemConfig(): Promise<void> {
   console.log('Seeding system configuration...');
   for (const cfg of CONFIGS) {
     await prisma.systemConfig.upsert({
-      where: { key: cfg.key },
-      update: { value: cfg.value as Record<string, unknown> },
+      where: {
+        subscriptionId_key: { subscriptionId: IDS.SUBSCRIPTION_DEFAULT, key: cfg.key },
+      },
+      update: { value: cfg.value as Prisma.InputJsonValue },
       create: {
+        subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
         key: cfg.key,
-        value: cfg.value as Record<string, unknown>,
+        value: cfg.value as Prisma.InputJsonValue,
         valueType: cfg.valueType,
         module: cfg.module as Parameters<typeof prisma.systemConfig.create>[0]['data']['module'],
         description: cfg.description,

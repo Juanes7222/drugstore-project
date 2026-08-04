@@ -56,7 +56,7 @@ describe('WorkstationConfigService', () => {
       expect(result!.workflow.autoPrintOnConfirm).toBe(false);
       expect(result!.strictness.cashShiftRequired).toBe(false);
       expect(prisma.systemConfig.findUnique).toHaveBeenCalledWith({
-        where: { key: CONFIG_KEY },
+        where: { subscriptionId_key: { subscriptionId: SUBSCRIPTION_ID, key: CONFIG_KEY } },
       });
     });
 
@@ -80,7 +80,7 @@ describe('WorkstationConfigService', () => {
       expect(result).toHaveLength(1);
       expect(result[0].workstationId).toBe(WORKSTATION_ID);
       expect(prisma.systemConfig.findMany).toHaveBeenCalledWith({
-        where: { key: { startsWith: `ws_config:${SUBSCRIPTION_ID}:` } },
+        where: { subscriptionId: SUBSCRIPTION_ID, key: { startsWith: `ws_config:${SUBSCRIPTION_ID}:` } },
         orderBy: { updatedAt: 'desc' },
       });
     });
@@ -166,7 +166,7 @@ describe('WorkstationConfigService', () => {
       await service.delete(SUBSCRIPTION_ID, WORKSTATION_ID);
 
       expect(prisma.systemConfig.delete).toHaveBeenCalledWith({
-        where: { key: CONFIG_KEY },
+        where: { subscriptionId_key: { subscriptionId: SUBSCRIPTION_ID, key: CONFIG_KEY } },
       });
     });
 

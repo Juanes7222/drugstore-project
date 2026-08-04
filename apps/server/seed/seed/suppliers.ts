@@ -13,7 +13,7 @@ export async function seedSuppliers(): Promise<void> {
     await prisma.supplier.upsert({
       where: { id: supplier.id },
       update: { businessName: supplier.businessName, phone: supplier.phone, email: supplier.email },
-      create: supplier,
+      create: { ...supplier, subscriptionId: IDS.SUBSCRIPTION_DEFAULT },
     });
   }
   console.log('   3 suppliers');

@@ -1,11 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { CreateFiscalResolutionAllocationDto } from './dto/create-fiscal-resolution-allocation.dto';
 import { AllocationRangeInvalidException } from './exceptions/allocation-range-invalid.exception';
 
 @Injectable()
 export class FiscalResolutionAllocationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /** Paginated list of all allocations. */
   async findAll(page = 1, pageSize = 20): Promise<any> {
@@ -59,6 +63,7 @@ export class FiscalResolutionAllocationsService {
     return this.prisma.fiscalResolutionAllocation.create({
       data: {
         id: crypto.randomUUID(),
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         resolutionId: dto.resolutionId,
         workstationId: dto.workstationId,
         rangeFrom: dto.rangeFrom,
