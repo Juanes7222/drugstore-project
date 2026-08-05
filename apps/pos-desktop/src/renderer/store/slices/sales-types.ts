@@ -40,12 +40,17 @@ export interface SelectedClient {
   id: string;
   name: string;
   identification: string;
+  /** Contact data used to prefill the delivery form; null when unknown. */
+  address?: string | null;
+  phone?: string | null;
 }
 
 export const GENERIC_CLIENT: SelectedClient = {
   id: "generic-consumidor-final",
   name: "CONSUMIDOR FINAL",
   identification: "0000000000-0",
+  address: null,
+  phone: null,
 };
 
 /**

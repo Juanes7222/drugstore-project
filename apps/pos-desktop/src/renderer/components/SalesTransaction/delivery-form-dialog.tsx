@@ -22,7 +22,10 @@ import { CurrencyInput } from "@/components/common/currency-input";
 import { TruckIcon } from "@/components/ui/icons";
 import { formatCurrency } from "@/utils/format-currency";
 import type { DeliveryConfig } from "../../../domain/config/types";
-import type { SaleDeliveryDraft } from "@/store/slices/sales-types";
+import type {
+  SaleDeliveryDraft,
+  SelectedClient,
+} from "@/store/slices/sales-types";
 
 /** Mirrors the sales-pos service exception codes for delivery validation. */
 type DeliveryValidationError =
@@ -37,7 +40,8 @@ interface DeliveryFormDialogProps {
   deliveryConfig: DeliveryConfig;
   /** Existing draft when editing; `null` when creating a new one. */
   delivery: SaleDeliveryDraft | null;
-  clientSelected: boolean;
+  /** Selected client, used to prefill the form when there is no draft yet. */
+  client: SelectedClient | null;
   onSave: (draft: SaleDeliveryDraft) => void;
 }
 
@@ -62,7 +66,7 @@ export const DeliveryFormDialog: FC<DeliveryFormDialogProps> = ({
   onOpenChange,
   deliveryConfig,
   delivery,
-  clientSelected,
+  client,
   onSave,
 }) => {
   const { t } = useTranslation();
@@ -85,17 +89,26 @@ export const DeliveryFormDialog: FC<DeliveryFormDialogProps> = ({
 
   useEffect(() => {
     if (!open) return;
-    setAddress(delivery?.address ?? "");
-    setContactName(delivery?.contactName ?? "");
-    setContactPhone(delivery?.contactPhone ?? "");
+    if (delivery === null) {
+      // No draft yet: prefill from the selected client; the cashier stays
+      // free to override any prefilled value before confirming.
+      setAddress(client?.address ?? "");
+      setContactName(client?.name ?? "");
+      setContactPhone(client?.phone ?? "");
+    } else {
+      // An existing draft always wins over client data.
+      setAddress(delivery.address ?? "");
+      setContactName(delivery.contactName ?? "");
+      setContactPhone(delivery.contactPhone ?? "");
+    }
     setNotes(delivery?.notes ?? "");
     setScheduledAt(toLocalInputValue(delivery?.scheduledAt ?? null));
     setFeeCents(delivery?.feeCents ?? 0);
     setErrorCode(null);
-  }, [open, delivery]);
+  }, [open, delivery, client]);
 
   const validate = useCallback((): DeliveryValidationError | null => {
-    if (deliveryConfig.requiresClient && !clientSelected) {
+    if (deliveryConfig.requiresClient && !client) {
       return "DELIVERY_REQUIRES_CLIENT";
     }
     if (deliveryConfig.addressRequired && !address.trim()) {
@@ -112,7 +125,7 @@ export const DeliveryFormDialog: FC<DeliveryFormDialogProps> = ({
       return "DELIVERY_FEE_POLICY";
     }
     return null;
-  }, [address, contactPhone, deliveryConfig, clientSelected, feeCents]);
+  }, [address, contactPhone, deliveryConfig, client, feeCents]);
 
   const handleSubmit = useCallback(
     (event: FormEvent) => {

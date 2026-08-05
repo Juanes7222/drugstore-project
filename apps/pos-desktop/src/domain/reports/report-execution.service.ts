@@ -41,6 +41,7 @@ import {
   buildSalesByProductQuery,
   buildSalesByWeekdayQuery,
   buildSalesDailySummaryQuery,
+  DELIVERY_SALE_PREDICATE,
   type QueryFragment,
 } from './report-query-builders';
 import { ReportAggregationsService } from './report-aggregations.service';
@@ -54,6 +55,7 @@ import {
 import {
   ReportCode,
   ReportKpi,
+  ReportKpiTone,
   ReportResponse,
   ReportWarning,
   type AnyReportRow,
@@ -366,6 +368,22 @@ export class ReportExecutionService {
         kpi('kpi.taxes_collected', aggs.taxes.toString(), null, 'currency'),
         kpi('kpi.annulments', aggs.annulled.toString(), null, 'integer'),
         kpi('kpi.returns', aggs.returns.toString(), null, 'currency'),
+        {
+          id: 'deliverySalesCount',
+          titleKey: 'reports.kpis.delivery_sales_count',
+          value: aggs.deliverySalesCount.toString(),
+          previousValue: prev?.deliverySalesCount?.toString() ?? null,
+          unitKey: 'reports.units.integer',
+          tone: ReportKpiTone.BRAND,
+        },
+        {
+          id: 'deliveryFeeCollected',
+          titleKey: 'reports.kpis.delivery_fee_collected',
+          value: aggs.deliveryFeeCollected.toString(),
+          previousValue: prev?.deliveryFeeCollected?.toString() ?? null,
+          unitKey: 'reports.units.currency',
+          tone: ReportKpiTone.NEUTRAL,
+        },
       );
     } else if (code === ReportCode.SALES_BY_PAYMENT_METHOD) {
       const aggs = await this.runAggregateSalesByPaymentMethod(
@@ -489,6 +507,8 @@ export class ReportExecutionService {
     taxes: number;
     annulled: number;
     returns: number;
+    deliverySalesCount: number;
+    deliveryFeeCollected: number;
   }> {
     const range = filters as DateRangeFilter;
     const result = await this.prisma.$queryRawUnsafe<
@@ -499,6 +519,8 @@ export class ReportExecutionService {
         taxes: number | bigint;
         annulled: number | bigint;
         returns: number | bigint;
+        delivery_sales_count: number | bigint;
+        delivery_fee_collected: number | bigint;
       }>
     >(
       `WITH agg AS (
@@ -506,7 +528,10 @@ export class ReportExecutionService {
           COALESCE(SUM(s."totalAmount"), 0)::numeric AS net_sales,
           COUNT(*)::int AS transaction_count,
           COALESCE(SUM(s."totalDiscount"), 0)::numeric AS discounts,
-          COALESCE(SUM(s."totalTax"), 0)::numeric AS taxes
+          COALESCE(SUM(s."totalTax"), 0)::numeric AS taxes,
+          COUNT(*) FILTER (WHERE ${DELIVERY_SALE_PREDICATE})::int AS delivery_sales_count,
+          COALESCE(SUM((s."delivery" ->> 'feeCents')::numeric)
+                   FILTER (WHERE ${DELIVERY_SALE_PREDICATE}), 0)::numeric AS delivery_fee_collected
         FROM "Sale" s
         WHERE s."operationalState" = 'CONFIRMED'
           AND s."confirmedAt" >= $1 AND s."confirmedAt" < $2
@@ -535,6 +560,8 @@ export class ReportExecutionService {
       taxes: Number(row?.taxes ?? 0),
       annulled: Number(row?.annulled ?? 0),
       returns: Number(row?.returns ?? 0),
+      deliverySalesCount: Number(row?.delivery_sales_count ?? 0),
+      deliveryFeeCollected: Number(row?.delivery_fee_collected ?? 0),
     };
   }
 
@@ -1271,13 +1298,15 @@ function kpi(
 function computePreviousKpi(filters: FiltersFor<typeof ReportCode.SALES_DAILY_SUMMARY>): {
   netSales: number;
   transactionCount: number;
+  deliverySalesCount: number;
+  deliveryFeeCollected: number;
 } | null {
   if (!filters.comparePrevious) return null;
   // The actual previous-period totals are computed by the frontend when
   // toggling `comparePrevious` — we expose placeholders here so the
   // service signature stays consistent.  A follow-up would issue a
   // second query using `computePreviousRange`.
-  return { netSales: 0, transactionCount: 0 };
+  return { netSales: 0, transactionCount: 0, deliverySalesCount: 0, deliveryFeeCollected: 0 };
 }
 
 // Re-exports — keep a single import surface.

@@ -91,6 +91,8 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
       col('returns', 'reports.cols.returns', ReportColumnType.CURRENCY, 'right'),
       col('annulled', 'reports.cols.annulled', ReportColumnType.INTEGER, 'right'),
       col('netSales', 'reports.cols.net_sales', ReportColumnType.CURRENCY, 'right'),
+      col('deliveryCount', 'reports.cols.delivery_count', ReportColumnType.INTEGER, 'right'),
+      col('deliveryFeeCollected', 'reports.cols.delivery_fee', ReportColumnType.CURRENCY, 'right'),
       col('totalCommission', 'reports.cols.total_commission', ReportColumnType.CURRENCY, 'right'),
     ],
     cacheTtlMs: 30_000,

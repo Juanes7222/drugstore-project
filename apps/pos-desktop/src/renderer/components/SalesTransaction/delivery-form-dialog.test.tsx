@@ -9,7 +9,10 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DEFAULT_DELIVERY } from "../../../domain/config/defaults";
 import type { DeliveryConfig } from "../../../domain/config/types";
-import type { SaleDeliveryDraft } from "@/store/slices/sales-types";
+import type {
+  SaleDeliveryDraft,
+  SelectedClient,
+} from "@/store/slices/sales-types";
 import { DeliveryFormDialog } from "./delivery-form-dialog";
 
 // ---------------------------------------------------------------------------
@@ -35,11 +38,20 @@ const deliveryDraft = (
   ...overrides,
 });
 
+/** Client with no address/phone so prefill never masks a validation path. */
+const clientWithoutAddress = (): SelectedClient => ({
+  id: "client-1",
+  name: "Ana Gómez",
+  identification: "CC: 100200300",
+  address: null,
+  phone: null,
+});
+
 const renderDialog = (
   deliveryConfig: DeliveryConfig,
   options: {
     delivery?: SaleDeliveryDraft | null;
-    clientSelected?: boolean;
+    client?: SelectedClient | null;
   } = {},
 ) => {
   const onSave = vi.fn();
@@ -49,7 +61,7 @@ const renderDialog = (
       onOpenChange={vi.fn()}
       deliveryConfig={deliveryConfig}
       delivery={options.delivery ?? null}
-      clientSelected={options.clientSelected ?? false}
+      client={options.client ?? null}
       onSave={onSave}
     />,
   );
@@ -135,7 +147,7 @@ describe("DeliveryFormDialog", () => {
 
   it("shows the client-required error when a client is required but none is selected", () => {
     const onSave = renderDialog(config({ requiresClient: true }), {
-      clientSelected: false,
+      client: null,
     });
 
     fireEvent.click(confirmButton());
@@ -148,7 +160,7 @@ describe("DeliveryFormDialog", () => {
 
   it("shows the address-required error when the address is empty", () => {
     const onSave = renderDialog(config({ addressRequired: true }), {
-      clientSelected: true,
+      client: clientWithoutAddress(),
     });
 
     fireEvent.click(confirmButton());
@@ -161,7 +173,7 @@ describe("DeliveryFormDialog", () => {
 
   it("shows the phone-required error when the phone is empty", () => {
     const onSave = renderDialog(config({ phoneRequired: true }), {
-      clientSelected: true,
+      client: clientWithoutAddress(),
     });
     fireEvent.change(screen.getByLabelText(/Dirección/), {
       target: { value: "Calle 10 #20-30" },
@@ -182,7 +194,7 @@ describe("DeliveryFormDialog", () => {
         deliveryFeeMode: "MANUAL",
         maxDeliveryFeeCents: 50_000,
       }),
-      { clientSelected: true },
+      { client: null },
     );
     // 600 pesos = 60 000 cents > 50 000 cents cap
     fireEvent.change(screen.getByLabelText(/Valor del domicilio/), {
@@ -204,7 +216,7 @@ describe("DeliveryFormDialog", () => {
         deliveryFeeMode: "MANUAL",
         maxDeliveryFeeCents: 50_000,
       }),
-      { clientSelected: true },
+      { client: null },
     );
     fireEvent.change(screen.getByLabelText(/Valor del domicilio/), {
       target: { value: "400" },
@@ -221,7 +233,7 @@ describe("DeliveryFormDialog", () => {
   it("saves the draft with trimmed values and the resolved fixed fee", () => {
     const onSave = renderDialog(
       config({ deliveryFeeMode: "FIXED", fixedDeliveryFeeCents: 12_500 }),
-      { clientSelected: true },
+      { client: null },
     );
     fireEvent.change(screen.getByLabelText(/Dirección/), {
       target: { value: "  Calle 10 #20-30  " },
@@ -252,7 +264,7 @@ describe("DeliveryFormDialog", () => {
   it("saves the scheduledAt as an ISO string when scheduling is allowed", () => {
     const onSave = renderDialog(
       config({ addressRequired: false, allowScheduling: true }),
-      { clientSelected: true },
+      { client: null },
     );
     fireEvent.change(screen.getByLabelText("Programar entrega"), {
       target: { value: "2026-08-10T15:30" },

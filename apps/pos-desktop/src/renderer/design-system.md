@@ -742,12 +742,49 @@ click.
 | **Detail rows with leading icons** | Email, phone, address, and city reuse the form's icon language so the modal feels like the same module, not a new screen. |
 | **Created / updated meta line** | Muted captions with calendar/clock icons, dates via `formatShortDate` (locale-aware). |
 | **Edit hand-off button** | The footer's primary action closes the modal and opens the slide-in edit panel with the same client — one click from view to edit, no re-finding the row. |
+| **Recent sales history section** | The modal shows the client's 5 most recent confirmed sales (number, date, invoice, total) via `SalesHistoryService.listConfirmedSales({ clientId, limit: 5 })` — no new backend surface, reuses the sales-history module conventions for currency and date formatting. A count badge shows the full total of confirmed sales for the client. |
+
+### Sales history section states
+
+| State | Render |
+|-------|--------|
+| Loading | Inline Pharma-Teal spinner + "Cargando..." |
+| Error | Muted urgency text — the failure never blocks the rest of the modal |
+| Empty | "Sin ventas registradas" caption |
+| Items | Rows: `#número` (Pharma Teal, `font-data`) · date + invoice number (muted captions) · total (right-aligned `font-data`, es-CO `$` format, 2 decimals, same as the sales-history module) |
+
+Fetched on open with a cancellation guard keyed to `client.id`; the list is
+read-only and intentionally compact — the full sales-history screen is the
+place for pagination, filters, and fiscal/operational detail.
 
 ### Motion
 
 - Fade + scale entrance (0.2s easeOut) on overlay and content, identical
   to the delete dialog; collapses to instant with `prefers-reduced-motion`.
 - No periodic or decorative motion — a read-only inspection surface.
+
+---
+
+## Supplier details dialog (added 2026-08-03)
+
+Clicking anywhere on a supplier row opens a read-only details modal
+(`SupplierDetailDialog`) so the user can inspect a supplier without
+entering the edit form. The pattern mirrors the client detail dialog
+(see above).
+
+| Decision | Rationale |
+|----------|-----------|
+| **Overlay modal via `@radix-ui/react-dialog`** | Same Radix Dialog pattern as the delete dialog and client detail dialog: focus-trapping, Esc-to-close, `role="dialog"`. |
+| **Avatar icon** | Uses a `Building2` icon in a Pharma‑Teal circle instead of an initial-letter avatar — suppliers are organisations, not individuals. |
+| **Detail rows with leading icons** | Same icon‑enhanced grid as the client detail dialog, reusing the purchases module's `formatCOP` for the credit limit field. |
+| **Commercial terms footer** | Payment terms days and credit limit shown in a muted caption row below the contact grid — key procurement info at a glance. |
+| **Edit hand-off button** | Closes the modal and opens the supplier edit form with the same supplier — one click from view to edit. |
+| **Stops propagation on action buttons** | The view/edit/deactivate buttons use `onClickCapture` with `e.stopPropagation()` so clicking them never triggers the row's `onView` handler. |
+
+### Motion
+
+- Fade + scale entrance (0.2s easeOut) on overlay and content, identical
+  to the delete dialog; collapses to instant with `prefers-reduced-motion`.
 
 ---
 

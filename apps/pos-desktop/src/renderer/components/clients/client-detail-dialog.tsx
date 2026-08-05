@@ -2,12 +2,14 @@
  * Client details dialog — read-only overlay modal.
  *
  * Opens when a client row is clicked so the cashier can inspect all fields
- * at a glance without entering the edit panel. Uses Radix Dialog for
- * focus-trapping, Esc-to-close, and ARIA compliance, animated with motion
- * (fade + scale) and respecting prefers-reduced-motion. The "Edit" action
- * hands off to the slide-in edit panel.
+ * at a glance without entering the edit panel. It also shows the client's
+ * recent confirmed sales (number, date, invoice, total) loaded from the
+ * local sales history service. Uses Radix Dialog for focus-trapping,
+ * Esc-to-close, and ARIA compliance, animated with motion (fade + scale)
+ * and respecting prefers-reduced-motion. The "Edit" action hands off to
+ * the slide-in edit panel.
  */
-import { type FC } from "react";
+import { type FC, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";
 import { motion, useReducedMotion } from "motion/react";
@@ -19,10 +21,14 @@ import {
   MapPinIcon,
   PencilIcon,
   PhoneIcon,
+  ReceiptIcon,
   XIcon,
 } from "@/components/ui/icons";
+import { LoaderIcon } from "@/components/ui/icons/animated";
 import { formatShortDate } from "@/utils/format-date";
+import { useSalesHistoryService } from "../common/service-context";
 import type { ClientSearchResult } from "../../../domain/clients/clients.service";
+import type { SaleHistoryListItem } from "../../../domain/sales-pos/sales-history.service";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -49,6 +55,25 @@ const contentVariants = {
 };
 
 // ---------------------------------------------------------------------------
+// Formatters (mirrors the sales-history module conventions)
+// ---------------------------------------------------------------------------
+
+const formatSaleAmount = (amount: string, locale: string): string => {
+  const n = Number(amount);
+  if (Number.isNaN(n)) return amount;
+  return `$${n.toLocaleString(locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+const formatSaleDate = (iso: string, locale: string): string => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(locale, { dateStyle: "short", timeStyle: "short" });
+};
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -57,13 +82,55 @@ export const ClientDetailDialog: FC<ClientDetailDialogProps> = ({
   onClose,
   onEdit,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const shouldReduceMotion = useReducedMotion();
   const isOpen = client !== null;
+  const locale = i18n.language === "en" ? "en-US" : "es-CO";
 
-  const city =
-    [client?.municipality, client?.department].filter(Boolean).join(", ") ||
-    "—";
+  // ---- Sales history (recent confirmed sales for this client) ----
+  const salesHistoryService = useSalesHistoryService();
+  const [sales, setSales] = useState<SaleHistoryListItem[]>([]);
+  const [salesTotal, setSalesTotal] = useState(0);
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [salesFailed, setSalesFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const clientId = client?.id;
+    if (!clientId) {
+      setSales([]);
+      setSalesTotal(0);
+      setSalesFailed(false);
+      setSalesLoading(false);
+      return;
+    }
+
+    setSalesLoading(true);
+    setSalesFailed(false);
+    void salesHistoryService
+      .listConfirmedSales({ clientId, limit: 5 })
+      .then((result) => {
+        if (cancelled) return;
+        setSales(result.items);
+        setSalesTotal(result.total);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.error("[ClientDetailDialog] sales history failed:", err);
+        setSales([]);
+        setSalesTotal(0);
+        setSalesFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setSalesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client?.id, salesHistoryService]);
+
+  const city = [client?.municipality, client?.department].filter(Boolean).join(", ") || "—";
 
   return (
     <Dialog.Root
@@ -224,6 +291,114 @@ export const ClientDetailDialog: FC<ClientDetailDialogProps> = ({
                       className="sm:col-span-2"
                     />
                   </div>
+                </div>
+
+                {/* ===== Sales history ===== */}
+                <div
+                  className="mt-4 border-t pt-4"
+                  style={{
+                    borderColor:
+                      "color-mix(in srgb, var(--color-ink) 8%, transparent)",
+                  }}
+                >
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <h4
+                      className="m-0 flex items-center gap-1.5 text-body-sm font-semibold"
+                      style={{ color: "var(--color-ink)" }}
+                    >
+                      <ReceiptIcon
+                        className="size-4"
+                        style={{ color: "var(--color-pharma)" }}
+                        aria-hidden="true"
+                      />
+                      {t("clients.sales_history")}
+                    </h4>
+                    {salesTotal > 0 && (
+                      <span
+                        className="text-caption font-medium"
+                        style={{ color: "var(--color-ink-muted)" }}
+                      >
+                        {t("clients.sales_count", { count: salesTotal })}
+                      </span>
+                    )}
+                  </div>
+
+                  {salesLoading ? (
+                    <div className="flex items-center gap-2 py-1.5">
+                      <LoaderIcon
+                        className="size-4 animate-spin"
+                        style={{ color: "var(--color-pharma)" }}
+                        aria-hidden="true"
+                      />
+                      <span
+                        className="text-caption"
+                        style={{ color: "var(--color-ink-muted)" }}
+                      >
+                        {t("common.loading")}
+                      </span>
+                    </div>
+                  ) : salesFailed ? (
+                    <p
+                      className="m-0 py-1 text-caption"
+                      style={{ color: "var(--color-urgency)" }}
+                      role="alert"
+                    >
+                      {t("clients.sales_history_error")}
+                    </p>
+                  ) : sales.length === 0 ? (
+                    <p
+                      className="m-0 py-1 text-caption"
+                      style={{ color: "var(--color-ink-muted)" }}
+                    >
+                      {t("clients.sales_history_empty")}
+                    </p>
+                  ) : (
+                    <ul className="m-0 list-none p-0">
+                      {sales.map((sale, idx) => (
+                        <li
+                          key={sale.saleId}
+                          className="flex items-center gap-3 py-1.5"
+                          style={
+                            idx > 0
+                              ? {
+                                  borderTop:
+                                    "1px solid color-mix(in srgb, var(--color-ink) 6%, transparent)",
+                                }
+                              : undefined
+                          }
+                        >
+                          <span
+                            className="w-12 shrink-0 font-data tabular-nums font-semibold"
+                            style={{ color: "var(--color-pharma)" }}
+                          >
+                            #{sale.localNumber}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className="m-0 truncate text-caption font-medium"
+                              style={{ color: "var(--color-ink)" }}
+                            >
+                              {formatSaleDate(sale.confirmedAt, locale)}
+                            </p>
+                            {sale.invoiceNumber && (
+                              <p
+                                className="m-0 truncate font-data text-caption"
+                                style={{ color: "var(--color-ink-muted)" }}
+                              >
+                                {sale.invoiceNumber}
+                              </p>
+                            )}
+                          </div>
+                          <span
+                            className="shrink-0 font-data tabular-nums font-semibold"
+                            style={{ color: "var(--color-ink)" }}
+                          >
+                            {formatSaleAmount(sale.totalAmount, locale)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
 
                 {/* ===== Registry meta ===== */}

@@ -14,7 +14,7 @@
 import { type FC, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
-import { Building2Icon, PercentIcon, ReceiptIcon, Settings2Icon, ShoppingCartIcon, ToggleLeftIcon, UserCircleIcon } from "@/components/ui/icons";
+import { Building2Icon, PercentIcon, ReceiptIcon, Settings2Icon, ShoppingCartIcon, ToggleLeftIcon, TruckIcon, UserCircleIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import { AlertCircleIcon } from "@/components/ui/icons";
 import {
@@ -31,13 +31,14 @@ import { FiscalConfigTab } from "./fiscal-config-tab";
 import { SystemPreferencesTab } from "./system-preferences-tab";
 import { PurchasesConfigTab } from "./purchases-config-tab";
 import { SalesConfigTab } from "./sales-config-tab";
+import { DeliveryConfigTab } from "./delivery-config-tab";
 import { LoaderIcon } from "@/components/ui/icons/animated";
 
 // ---------------------------------------------------------------------------
 // Tab definitions
 // ---------------------------------------------------------------------------
 
-type TabId = "company" | "fiscal" | "operation" | "preferences" | "user-preferences" | "purchases" | "sales";
+type TabId = "company" | "fiscal" | "operation" | "preferences" | "user-preferences" | "purchases" | "sales" | "delivery";
 
 interface TabDefinition {
   id: TabId;
@@ -53,6 +54,7 @@ const TABS: TabDefinition[] = [
   { id: "user-preferences", i18nKey: "tabs.user_preferences", Icon: UserCircleIcon },
   { id: "purchases", i18nKey: "tabs.purchases", Icon: ShoppingCartIcon },
   { id: "sales", i18nKey: "tabs.sales", Icon: PercentIcon },
+  { id: "delivery", i18nKey: "tabs.delivery", Icon: TruckIcon },
 ];
 
 // ---------------------------------------------------------------------------
@@ -174,6 +176,14 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
         return <PurchasesConfigTab />;
       case "sales":
         return <SalesConfigTab />;
+      case "delivery":
+        return (
+          <DeliveryConfigTab
+            config={config}
+            readOnly={readOnly}
+            onFieldChange={handleFieldChange}
+          />
+        );
     }
   };
 

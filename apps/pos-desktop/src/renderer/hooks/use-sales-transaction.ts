@@ -51,6 +51,9 @@ export interface ClientSelection {
   id: string;
   name: string;
   identification: string;
+  /** Contact data used to prefill the delivery form; null when unknown. */
+  address?: string | null;
+  phone?: string | null;
 }
 
 export interface UseSalesTransactionReturn {
@@ -191,6 +194,8 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
         id: created.id,
         name: created.fullName,
         identification: `${created.identificationType}: ${created.identificationNumber}`,
+        address: created.address,
+        phone: created.phone,
       };
       dispatch(setClient(selection));
       return selection;

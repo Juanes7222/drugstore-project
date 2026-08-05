@@ -91,7 +91,7 @@ export const DeliveryToggle: FC = () => {
           onOpenChange={setIsFormOpen}
           deliveryConfig={deliveryConfig}
           delivery={null}
-          clientSelected={selectedClient !== null}
+          client={selectedClient}
           onSave={handleSave}
         />
       </div>
@@ -163,7 +163,7 @@ export const DeliveryToggle: FC = () => {
         onOpenChange={setIsFormOpen}
         deliveryConfig={deliveryConfig}
         delivery={delivery}
-        clientSelected={selectedClient !== null}
+        client={selectedClient}
         onSave={handleSave}
       />
     </div>

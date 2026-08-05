@@ -148,6 +148,8 @@ const ClientSelectorInner: FC<ClientSelectorInnerProps> = ({
         id: client.id,
         name: client.fullName,
         identification: `${client.identificationType}: ${client.identificationNumber}`,
+        address: client.address,
+        phone: client.phone,
       });
       setIsOpen(false);
       setQuery("");

@@ -75,6 +75,16 @@ export const CONFIRMED_SALE_PREDICATE =
 export const ANNULLED_SALE_PREDICATE =
   `s."operationalState" = '${SaleOperationalState.ANNULLED}'`;
 
+/**
+ * Predicate for domicilio sales: the `delivery` JSONB column carries a
+ * SaleDeliveryInfo object. Non-domicilio sales are persisted as
+ * `'null'::jsonb` (Prisma `JsonNull`), so a bare `IS NOT NULL` check
+ * would count every in-store sale — the `jsonb_typeof` guard excludes
+ * JSON nulls and only matches real delivery objects.
+ */
+export const DELIVERY_SALE_PREDICATE =
+  `s."delivery" IS NOT NULL AND jsonb_typeof(s."delivery") = 'object'`;
+
 /** Returns predicate for sales included in gross revenue. */
 export const REVENUE_SALE_PREDICATE = CONFIRMED_SALE_PREDICATE;
 
@@ -128,6 +138,9 @@ export function buildSalesDailySummaryQuery(
       SELECT
         date_trunc('day', s."confirmedAt" AT TIME ZONE 'UTC') AS day,
         ${MONEY_AGGS},
+        COUNT(*) FILTER (WHERE ${DELIVERY_SALE_PREDICATE})::int AS delivery_count,
+        COALESCE(SUM((s."delivery" ->> 'feeCents')::numeric)
+                 FILTER (WHERE ${DELIVERY_SALE_PREDICATE}), 0)::numeric AS delivery_fee_collected,
         COALESCE(SUM((
           SELECT COALESCE(SUM(si."commissionAmount"), 0)::numeric
             FROM "SaleItem" si
@@ -166,6 +179,8 @@ export function buildSalesDailySummaryQuery(
              taxes,
              net_sales,
              transaction_count,
+             delivery_count,
+             delivery_fee_collected,
              total_commission,
              COALESCE(a.annulled_count, 0) AS annulled,
              COALESCE(r.returns_amount, 0) AS returns

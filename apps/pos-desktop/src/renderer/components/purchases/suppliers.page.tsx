@@ -33,6 +33,7 @@ import { SupplierIdentificationType } from '@pharmacy/database/local';
 import { SupplierList } from './supplier-list';
 import { SupplierForm } from './supplier-form';
 import { SupplierSearchBar } from './supplier-search-bar';
+import { SupplierDetailDialog } from './supplier-detail-dialog';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -94,6 +95,9 @@ export const SuppliersPage: FC = () => {
     reset: resetSave,
   } = useAsyncAction();
 
+  // Detail view state (read-only modal)
+  const [viewingSupplier, setViewingSupplier] = useState<SupplierSearchResult | null>(null);
+
   // Confirmation dialog
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const {
@@ -135,6 +139,8 @@ export const SuppliersPage: FC = () => {
     resetSave();
     setShowForm(true);
   }, [resetSave]);
+
+  // ── Create / Edit form handlers ───────────────────────────────────────
 
   const handleEditClick = useCallback(async (id: string) => {
     setFormMode('edit');
@@ -210,6 +216,22 @@ export const SuppliersPage: FC = () => {
     setShowForm(false);
     resetSave();
   }, [resetSave]);
+
+  // ── Detail view (read-only modal) ─────────────────────────────────────
+
+  const handleViewDetails = useCallback((supplier: SupplierSearchResult) => {
+    setShowForm(false);
+    setViewingSupplier(supplier);
+  }, []);
+
+  const handleCloseDetails = useCallback(() => {
+    setViewingSupplier(null);
+  }, []);
+
+  const handleEditFromDetails = useCallback((supplier: SupplierSearchResult) => {
+    setViewingSupplier(null);
+    handleEditClick(supplier.id);
+  }, [handleEditClick]);
 
   // ── Deactivate handler ────────────────────────────────────────────────
 
@@ -292,11 +314,19 @@ export const SuppliersPage: FC = () => {
           <SupplierList
             suppliers={suppliers}
             isLoading={isLoading}
+            onView={handleViewDetails}
             onEdit={canEdit ? handleEditClick : undefined}
             onDeactivate={canEdit ? setDeletingId : undefined}
           />
         )}
       </div>
+
+      {/* Supplier details dialog */}
+      <SupplierDetailDialog
+        supplier={viewingSupplier}
+        onClose={handleCloseDetails}
+        onEdit={handleEditFromDetails}
+      />
 
       {/* Deactivate confirmation dialog */}
       {deletingId && (

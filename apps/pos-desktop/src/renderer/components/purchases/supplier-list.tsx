@@ -1,21 +1,25 @@
 /**
  * SupplierList — table with NIT, business name, contact, phone, actions.
  *
- * Loading skeleton, empty state. Actions (edit/deactivate) shown only when
- * callbacks are provided. Uses shared ui/icons components.
+ * Loading skeleton, empty state. Actions (view/edit/deactivate) shown only
+ * when callbacks are provided. Rows are clickable — clicking anywhere on a
+ * row opens the read-only detail dialog (via `onView`); the action buttons
+ * stop propagation so they never trigger the row click. Uses shared
+ * ui/icons components.
  *
  * @category Component
  */
 
 import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Building2Icon, Edit3Icon, UserXIcon } from "@/components/ui/icons";
+import { Building2Icon, Edit3Icon, EyeIcon, UserXIcon } from "@/components/ui/icons";
 import type { SupplierSearchResult } from '../../../domain/purchases';
 import { TableSkeletonRows } from './purchases-helpers';
 
 export interface SupplierListProps {
   suppliers: SupplierSearchResult[];
   isLoading: boolean;
+  onView?: (supplier: SupplierSearchResult) => void;
   onEdit?: (id: string) => void;
   onDeactivate?: (id: string) => void;
 }
@@ -23,6 +27,7 @@ export interface SupplierListProps {
 export const SupplierList: FC<SupplierListProps> = ({
   suppliers,
   isLoading,
+  onView,
   onEdit,
   onDeactivate,
 }) => {
@@ -76,7 +81,9 @@ export const SupplierList: FC<SupplierListProps> = ({
           {suppliers.map((s) => (
             <tr
               key={s.id}
-              className="border-b border-border/40 hover:bg-surface/50 transition-colors"
+              className="border-b border-border/40 cursor-pointer hover:bg-surface/50 transition-colors"
+              onClick={() => onView?.(s)}
+              title={t('purchases.suppliers.view_details')}
             >
               <td className="py-3 px-3 font-data tabular-nums text-xs">
                 {s.identificationNumber}
@@ -87,7 +94,21 @@ export const SupplierList: FC<SupplierListProps> = ({
                 {s.phone ?? '—'}
               </td>
               <td className="py-3 px-3">
-                <div className="flex items-center gap-2">
+                <div
+                  className="flex items-center gap-2"
+                  onClickCapture={(e) => e.stopPropagation()}
+                >
+                  {onView && (
+                    <button
+                      onClick={() => onView(s)}
+                      className="inline-flex items-center gap-1 text-xs font-semibold transition-colors"
+                      style={{ color: "var(--color-sync)" }}
+                      aria-label={`${t('purchases.suppliers.view_details')} ${s.businessName}`}
+                    >
+                      <EyeIcon size={12} aria-hidden="true" />
+                      {t('purchases.suppliers.view_details')}
+                    </button>
+                  )}
                   {onEdit && (
                     <button
                       onClick={() => onEdit(s.id)}

@@ -67,6 +67,28 @@ describe('buildSalesDailySummaryQuery', () => {
     expect(params[2]).toBe('user-cashier-01');
     expect(sql).toContain('s."userId" = $3');
   });
+
+  it('exposes delivery_count and delivery_fee_collected threaded through the days CTE', () => {
+    const { sql } = buildSalesDailySummaryQuery(range, {}, pagination);
+
+    // The domicilio predicate guards against Prisma JsonNull (`'null'::jsonb`)
+    // rows — a bare `IS NOT NULL` would count every in-store sale.
+    expect(sql).toContain(`jsonb_typeof(s."delivery") = 'object'`);
+    // Fee is read as COP cents straight out of the JSONB column, never rounded.
+    expect(sql).toContain(`(s."delivery" ->> 'feeCents')::numeric`);
+    // One alias in the confirmed CTE, one selection in the days CTE.
+    expect(sql.match(/delivery_count/g)).toHaveLength(2);
+    expect(sql.match(/delivery_fee_collected/g)).toHaveLength(2);
+  });
+
+  it('counts domicilios with COUNT ... FILTER instead of a WHERE clause', () => {
+    const { sql } = buildSalesDailySummaryQuery(range, {}, pagination);
+
+    expect(sql).toContain('COUNT(*) FILTER (WHERE s."delivery" IS NOT NULL');
+    expect(sql).toContain(
+      'COALESCE(SUM((s."delivery" ->> \'feeCents\')::numeric)\n                 FILTER (WHERE s."delivery" IS NOT NULL',
+    );
+  });
 });
 
 describe('buildSalesByCashierQuery', () => {
