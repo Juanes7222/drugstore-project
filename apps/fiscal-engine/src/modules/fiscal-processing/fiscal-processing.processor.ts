@@ -98,6 +98,7 @@ export class FiscalProcessingProcessor extends WorkerHost {
         where: { id: fiscalDocumentId },
         select: {
           id: true,
+          subscriptionId: true,
           cufeCude: true,
           signedXml: true,
           fiscalState: true,
@@ -134,6 +135,9 @@ export class FiscalProcessingProcessor extends WorkerHost {
         where: { id: resultId },
         create: {
           id: resultId,
+          // SyncInvoiceResult is tenant-scoped; the subscription is carried
+          // by the originating fiscal document.
+          subscriptionId: doc.subscriptionId,
           // invoiceId is the FiscalDocument id — the workstation correlates
           // by looking up the CUFE or by the saleId through its local records.
           invoiceId: doc.saleId ?? fiscalDocumentId,

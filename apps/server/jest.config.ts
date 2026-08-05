@@ -20,6 +20,8 @@ const config: Config = {
       '<rootDir>/../../packages/shared-validation/src/index.ts',
     '^@pharmacy/database$':
       '<rootDir>/../../packages/database/src/index.ts',
+    '^@pharmacy/infisical-config$':
+      '<rootDir>/../../packages/infisical-config/src/index.ts',
   },
   collectCoverageFrom: [
     'src/**/*.ts',

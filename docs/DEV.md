@@ -80,6 +80,36 @@ The Vite dev server starts at `http://localhost:5174` and connects to the server
 
 ---
 
+### Infisical (production secrets)
+
+In **development** the server and fiscal engine read secrets from their local
+`.env` files and never contact Infisical.
+
+In **production** (`NODE_ENV=production`) secrets are resolved **exclusively**
+from Infisical using a Machine Identity (Universal Auth). The deployment
+platform must inject these environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `INFISICAL_CLIENT_ID` | Machine Identity client ID |
+| `INFISICAL_CLIENT_SECRET` | Machine Identity client secret |
+| `INFISICAL_PROJECT_ID` | Infisical project that holds the secrets |
+| `INFISICAL_ENVIRONMENT` | Infisical environment slug (default `prod`) |
+| `INFISICAL_SITE_URL` | Self-hosted instance URL (default `https://app.infisical.com`) |
+| `INFISICAL_SECRET_PATH` | Secret folder (default `/`) |
+
+If these are missing the app fails to boot — there is no fallback to `.env`.
+The secrets stored in Infisical must use the same key names as the `.env.example`
+files. Prisma CLI commands during deploys can pull them with:
+
+```bash
+infisical run -- pnpm db:migrate:deploy
+```
+
+To exercise the integration locally without touching production secrets, set
+`INFISICAL_ENABLED=true` plus the credentials above in your local `.env` — the
+app will then load the `dev` Infisical environment on top of the local values.
+
 ### For E2E tests
 
 The existing script still works the same:

@@ -6,6 +6,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
+import { loadInfisicalSecretsIfNeeded } from '@pharmacy/infisical-config';
 import { TenantContextInterceptor } from './modules/tenant/tenant-context.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { EnvConfig } from './config/env.schema';
@@ -16,6 +17,13 @@ import { EnvConfig } from './config/env.schema';
 };
 
 async function bootstrap(): Promise<void> {
+  // In production, secrets are resolved exclusively from Infisical. In
+  // development this is a no-op (the local .env keeps providing secrets).
+  const secrets = await loadInfisicalSecretsIfNeeded();
+  if (!secrets.skipped) {
+    console.log(`Loaded ${secrets.injectedCount} secrets from Infisical`);
+  }
+
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService<EnvConfig>);
 

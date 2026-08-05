@@ -30,6 +30,10 @@ const DEV_MODULES =
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      // In production, secrets can only come from Infisical (injected into
+      // process.env by loadInfisicalSecretsIfNeeded in main.ts) — never from
+      // a local .env file.
+      ignoreEnvFile: process.env.NODE_ENV === 'production',
       validate: (config) => envSchema.parse(config),
     }),
     ScheduleModule.forRoot(),

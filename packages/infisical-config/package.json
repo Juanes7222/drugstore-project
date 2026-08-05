@@ -1,0 +1,32 @@
+{
+  "name": "@pharmacy/infisical-config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Infisical secrets loader shared by backend apps (production-only source of secrets)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --forceExit --detectOpenHandles",
+    "test:cov": "jest --coverage --forceExit --detectOpenHandles"
+  },
+  "dependencies": {
+    "@infisical/sdk": "^5.0.2",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.1.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
+    "typescript": "^6.0.3"
+  }
+}

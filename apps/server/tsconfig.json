@@ -12,7 +12,8 @@
       "@/*": ["./src/*"],
       "@pharmacy/shared-types": ["../../packages/shared-types/src"],
       "@pharmacy/shared-validation": ["../../packages/shared-validation/src"],
-      "@pharmacy/database": ["../../packages/database/src"]
+      "@pharmacy/database": ["../../packages/database/src"],
+      "@pharmacy/infisical-config": ["../../packages/infisical-config/src"]
     }
   },
   "include": ["src/**/*"],
