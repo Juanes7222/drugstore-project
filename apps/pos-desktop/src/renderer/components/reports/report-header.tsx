@@ -30,6 +30,14 @@ export const ReportHeader: FC<ReportHeaderProps> = ({
     return Math.max(0, Math.round(definition.cacheTtlMs / 1000 - elapsed));
   }, [definition.cacheTtlMs, response]);
 
+  // The chip must show the translated column title, never the internal
+  // column id (a technical identifier the user should not see).
+  const chartFilterColumnTitle = useMemo(() => {
+    if (!chartFilter) return "";
+    const column = definition.columns.find((c) => c.id === chartFilter.columnId);
+    return column ? t(column.titleKey) : chartFilter.columnId;
+  }, [chartFilter, definition.columns, t]);
+
   return (
     <header className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between gap-4">
@@ -52,7 +60,7 @@ export const ReportHeader: FC<ReportHeaderProps> = ({
       {chartFilter ? (
         <div className="mt-1 inline-flex w-fit items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-caption text-amber-800">
           <span>
-            {t("reports.header.active_filter")}: <b>{chartFilter.value}</b> {t("reports.header.in_column")} {chartFilter.columnId}
+            {t("reports.header.active_filter")}: <b>{chartFilter.value}</b> {t("reports.header.in_column")} {chartFilterColumnTitle}
           </span>
           <button
             type="button"

@@ -112,7 +112,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.BAR_HORIZONTAL, dataZoom: true, showSummary: true },
     columns: [
-      col('cashierUserId', 'reports.cols.cashier', ReportColumnType.TEXT, 'left'),
       col('cashierName', 'reports.cols.cashier_name', ReportColumnType.TEXT, 'left'),
       col('transactionCount', 'reports.cols.transactions', ReportColumnType.INTEGER, 'right'),
       col('grossSales', 'reports.cols.gross_sales', ReportColumnType.CURRENCY, 'right'),
@@ -140,7 +139,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.DONUT, showSummary: true },
     columns: [
-      col('paymentMethodId', 'reports.cols.payment_method_id', ReportColumnType.TEXT, 'left'),
       col('paymentMethodName', 'reports.cols.payment_method', ReportColumnType.TEXT, 'left'),
       col('transactionCount', 'reports.cols.transactions', ReportColumnType.INTEGER, 'right'),
       col('collected', 'reports.cols.collected', ReportColumnType.CURRENCY, 'right'),
@@ -166,7 +164,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     chart: { kind: ReportChartKind.BAR_HORIZONTAL, dataZoom: true, showSummary: true },
     columns: [
       col('rank', 'reports.cols.rank', ReportColumnType.INTEGER, 'right'),
-      col('productId', 'reports.cols.product_id', ReportColumnType.TEXT, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('unitsSold', 'reports.cols.units_sold', ReportColumnType.INTEGER, 'right'),
       col('grossRevenue', 'reports.cols.gross_revenue', ReportColumnType.CURRENCY, 'right'),
@@ -238,7 +235,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.NONE },
     columns: [
-      col('productId', 'reports.cols.product_id', ReportColumnType.TEXT, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('categoryName', 'reports.cols.category', ReportColumnType.TEXT, 'left'),
       col('laboratory', 'reports.cols.laboratory', ReportColumnType.TEXT, 'left'),
@@ -266,7 +262,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.STACKED_BAR, showSummary: true },
     columns: [
-      col('lotId', 'reports.cols.lot_id', ReportColumnType.TEXT, 'left'),
       col('batchNumber', 'reports.cols.batch_number', ReportColumnType.TEXT, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('quantity', 'reports.cols.quantity', ReportColumnType.INTEGER, 'right'),
@@ -293,7 +288,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.NONE },
     columns: [
-      col('lotId', 'reports.cols.lot_id', ReportColumnType.TEXT, 'left'),
       col('batchNumber', 'reports.cols.batch_number', ReportColumnType.TEXT, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('quantity', 'reports.cols.quantity', ReportColumnType.INTEGER, 'right'),
@@ -318,7 +312,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.SCATTER, showSummary: true },
     columns: [
-      col('productId', 'reports.cols.product_id', ReportColumnType.TEXT, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('unitsSold', 'reports.cols.units_sold', ReportColumnType.INTEGER, 'right'),
       col('openingStock', 'reports.cols.opening_stock', ReportColumnType.INTEGER, 'right'),
@@ -344,7 +337,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.BAR_HORIZONTAL, dataZoom: true, showSummary: true },
     columns: [
-      col('productId', 'reports.cols.product_id', ReportColumnType.TEXT, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('stock', 'reports.cols.stock', ReportColumnType.INTEGER, 'right'),
       col('cpp', 'reports.cols.cpp', ReportColumnType.CURRENCY, 'right'),
@@ -368,7 +360,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.STACKED_BAR, showSummary: true },
     columns: [
-      col('movementId', 'reports.cols.movement_id', ReportColumnType.TEXT, 'left'),
       col('createdAt', 'reports.cols.date', ReportColumnType.DATETIME, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('batchNumber', 'reports.cols.batch_number', ReportColumnType.TEXT, 'left'),
@@ -376,7 +367,7 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
       col('quantity', 'reports.cols.quantity', ReportColumnType.INTEGER, 'right'),
       col('previousStock', 'reports.cols.previous_stock', ReportColumnType.INTEGER, 'right'),
       col('resultingStock', 'reports.cols.resulting_stock', ReportColumnType.INTEGER, 'right'),
-      col('createdById', 'reports.cols.user', ReportColumnType.TEXT, 'left'),
+      col('createdByName', 'reports.cols.user', ReportColumnType.TEXT, 'left'),
     ],
     cacheTtlMs: 30_000,
   },
@@ -420,7 +411,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.DONUT, showSummary: true },
     columns: [
-      col('invoiceId', 'reports.cols.invoice_id', ReportColumnType.TEXT, 'left'),
       col('invoiceNumber', 'reports.cols.invoice_number', ReportColumnType.TEXT, 'left'),
       col('invoiceType', 'reports.cols.invoice_type', ReportColumnType.TEXT, 'left'),
       col('issuedAt', 'reports.cols.issued_at', ReportColumnType.DATETIME, 'left'),
@@ -466,9 +456,8 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.DIVERGING_BAR, showSummary: true },
     columns: [
-      col('shiftId', 'reports.cols.shift_id', ReportColumnType.TEXT, 'left'),
+      col('cashierName', 'reports.cols.cashier_name', ReportColumnType.TEXT, 'left'),
       col('closedAt', 'reports.cols.closed_at', ReportColumnType.DATETIME, 'left'),
-      col('cashierUserId', 'reports.cols.cashier', ReportColumnType.TEXT, 'left'),
       col('totalVariance', 'reports.cols.variance', ReportColumnType.CURRENCY, 'right'),
     ],
     cacheTtlMs: 30_000,
@@ -491,8 +480,7 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
       col('action', 'reports.cols.action', ReportColumnType.TEXT, 'left'),
       col('category', 'reports.cols.category', ReportColumnType.TEXT, 'left'),
       col('entityType', 'reports.cols.entity_type', ReportColumnType.TEXT, 'left'),
-      col('entityId', 'reports.cols.entity_id', ReportColumnType.TEXT, 'left'),
-      col('userId', 'reports.cols.user', ReportColumnType.TEXT, 'left'),
+      col('userName', 'reports.cols.user', ReportColumnType.TEXT, 'left'),
       col('userRole', 'reports.cols.role', ReportColumnType.TEXT, 'left'),
     ],
     cacheTtlMs: 15_000,
@@ -513,7 +501,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.SCATTER, showSummary: true },
     columns: [
-      col('productId', 'reports.cols.product_id', ReportColumnType.TEXT, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('cpp', 'reports.cols.cpp', ReportColumnType.CURRENCY, 'right'),
       col('salePrice', 'reports.cols.sale_price', ReportColumnType.CURRENCY, 'right'),

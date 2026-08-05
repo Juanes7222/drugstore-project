@@ -32,6 +32,8 @@ describe('SALES_DAILY_SUMMARY catalog columns', () => {
       'returns',
       'annulled',
       'netSales',
+      'deliveryCount',
+      'deliveryFeeCollected',
       'totalCommission',
     ]);
   });
@@ -48,7 +50,6 @@ describe('SALES_DAILY_SUMMARY catalog columns', () => {
 describe('SALES_BY_CASHIER catalog columns', () => {
   it('places commissionAmount between netSales and averageTicket', () => {
     expect(columnIds(ReportCode.SALES_BY_CASHIER)).toEqual([
-      'cashierUserId',
       'cashierName',
       'transactionCount',
       'grossSales',
@@ -73,7 +74,6 @@ describe('SALES_BY_PRODUCT catalog columns', () => {
   it('places commissionAmount between netRevenue and contributionPercent', () => {
     expect(columnIds(ReportCode.SALES_BY_PRODUCT)).toEqual([
       'rank',
-      'productId',
       'productName',
       'unitsSold',
       'grossRevenue',

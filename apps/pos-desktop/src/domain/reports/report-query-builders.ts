@@ -257,7 +257,7 @@ export function buildSalesByCashierQuery(
     )
     SELECT
       p.cashier_user_id,
-      p.cashier_user_id AS cashier_name,
+      COALESCE(NULLIF(u."displayName", ''), u."username", p.cashier_user_id) AS cashier_name,
       p.transaction_count,
       p.gross_sales,
       COALESCE(r.returns, 0) AS returns,
@@ -270,6 +270,7 @@ export function buildSalesByCashierQuery(
     FROM per_cashier p
     LEFT JOIN returns r USING (cashier_user_id)
     LEFT JOIN variance v USING (cashier_user_id)
+    LEFT JOIN "User" u ON u."id" = p.cashier_user_id
     ORDER BY net_sales DESC
     LIMIT $${limitParam} OFFSET $${offsetParam}
   `;
@@ -853,10 +854,11 @@ export function buildInventoryMovementsQuery(
       m."quantity",
       m."previousStock",
       m."resultingStock",
-      m."createdById"
+      COALESCE(NULLIF(u."displayName", ''), u."username", m."createdById") AS created_by_name
     FROM "InventoryMovement" m
     JOIN "Lot" l ON l."id" = m."lotId"
     JOIN "Product" p ON p."id" = l."productId"
+    LEFT JOIN "User" u ON u."id" = m."createdById"
     WHERE ${whereClause}
     ORDER BY m."createdAt" DESC
     LIMIT $${limitParam} OFFSET $${offsetParam}
@@ -1020,9 +1022,10 @@ export function buildAuditShiftVariancesQuery(
     SELECT
       cs."id" AS shift_id,
       cs."closedAt",
-      cs."userId" AS cashier_user_id,
+      COALESCE(NULLIF(u."displayName", ''), u."username", cs."userId") AS cashier_name,
       cs."closingDifference"::numeric AS total_variance
     FROM "CashShift" cs
+    LEFT JOIN "User" u ON u."id" = cs."userId"
     WHERE ${whereClause}
     ORDER BY ABS(cs."closingDifference") DESC
     LIMIT $${limitParam} OFFSET $${offsetParam}
@@ -1074,9 +1077,10 @@ export function buildAuditTraceabilityQuery(
       l."category",
       l."entityType",
       l."entityId",
-      l."userId",
+      COALESCE(NULLIF(u."displayName", ''), u."username", l."userId") AS user_name,
       l."userRole"
     FROM "LocalAuditLog" l
+    LEFT JOIN "User" u ON u."id" = l."userId"
     WHERE ${whereClause}
     ORDER BY l."createdAt" DESC
     LIMIT $${limitParam} OFFSET $${offsetParam}

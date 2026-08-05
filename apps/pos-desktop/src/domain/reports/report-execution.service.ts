@@ -923,7 +923,7 @@ export class ReportExecutionService {
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'bar_horizontal',
-          xAxis: result.rows.map((r) => String(r.cashier_user_id ?? '')),
+          xAxis: result.rows.map((r) => String(r.cashier_name ?? r.cashier_user_id ?? '')),
           series: [
             { name: t ? t('reports.chart.net_sales', 'net_sales') : 'net_sales', data: result.rows.map((r) => Number(r.net_sales ?? 0)) },
           ],
@@ -1112,7 +1112,7 @@ export class ReportExecutionService {
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'diverging_bar',
-          xAxis: result.rows.map((r) => String(r.cashier_user_id ?? '')),
+          xAxis: result.rows.map((r) => String(r.cashier_name ?? r.cashier_user_id ?? '')),
           series: [
             { name: t ? t('reports.chart.variance', 'variance') : 'variance', data: result.rows.map((r) => Number(r.total_variance ?? 0)) },
           ],
