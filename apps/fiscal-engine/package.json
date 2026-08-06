@@ -8,14 +8,17 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/apps/fiscal-engine/src/main.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest --forceExit --detectOpenHandles",
+    "test:cov": "jest --coverage --forceExit --detectOpenHandles",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@infisical/sdk": "^5.0.2",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.1.27",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.27",
-    "@infisical/sdk": "^5.0.2",
     "@pharmacy/database": "workspace:*",
     "@pharmacy/infisical-config": "workspace:*",
     "@pharmacy/shared-types": "workspace:*",
@@ -32,10 +35,16 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^26.1.0",
     "@types/node-forge": "^1.3.14",
+    "@types/supertest": "^6.0.3",
     "@types/xml-crypto": "^1.4.6",
+    "jest": "^30.4.2",
+    "jest-mock-extended": "^4.0.1",
     "prisma": "^7.8.0",
+    "supertest": "^7.2.2",
+    "ts-jest": "^29.4.11",
     "typescript": "^6.0.3"
   }
 }

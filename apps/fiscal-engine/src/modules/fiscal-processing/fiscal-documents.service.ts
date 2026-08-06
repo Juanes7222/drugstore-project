@@ -183,7 +183,7 @@ export class FiscalDocumentsService {
   }
 
   private async loadIssuerConfig(fiscalDocumentId: string): Promise<any> {
-    const config = await (this.prisma.fiscalIssuerConfig as any).findFirst();
+    const config = await this.prisma.fiscalIssuerConfig.findFirst();
     if (!config) {
       throw new FiscalDocumentGenerationFailedException(
         fiscalDocumentId,
@@ -206,7 +206,7 @@ export class FiscalDocumentsService {
   private async loadTechProviderConfig(
     fiscalDocumentId: string,
   ): Promise<any> {
-    const config = await (this.prisma as any).techProviderConfig.findFirst();
+    const config = await this.prisma.techProviderConfig.findFirst();
     if (!config) {
       throw new FiscalDocumentGenerationFailedException(
         fiscalDocumentId,

@@ -59,7 +59,11 @@ export class FiscalTransmissionService {
 
     this.logger.log(`Transmitting document ${doc.fullNumber} (${fiscalDocumentId})`);
 
-    await this.transitionToInTransmission(fiscalDocumentId);
+    // Atomic claim: only one worker can move the document out of
+    // PENDING_SIGNATURE. Without this, a retry and a manual re-trigger could
+    // both pass loadPendingDocument and transmit the same document twice —
+    // DIAN offers no idempotency for a re-sent document.
+    await this.claimDocument(fiscalDocumentId);
 
     // The SDK performs XAdES-EPES signing as part of the send call below.
     let result;
@@ -118,7 +122,7 @@ export class FiscalTransmissionService {
   }
 
   private async loadTechProviderConfig(): Promise<any> {
-    const config = await (this.prisma as any).techProviderConfig.findFirst();
+    const config = await this.prisma.techProviderConfig.findFirst();
     if (!config) {
       throw new Error('No TechProviderConfig found in the database');
     }
@@ -130,16 +134,27 @@ export class FiscalTransmissionService {
     return `${safe}.xml`;
   }
 
-  private async transitionToInTransmission(
-    fiscalDocumentId: string,
-  ): Promise<void> {
-    await this.prisma.fiscalDocument.update({
-      where: { id: fiscalDocumentId },
+  /**
+   * Atomically claims a PENDING_SIGNATURE document for transmission.
+   *
+   * The conditional updateMany is the concurrency guard: if another worker
+   * (or a manual re-trigger) already claimed the document, the update
+   * affects zero rows and this worker aborts instead of double-transmitting.
+   */
+  private async claimDocument(fiscalDocumentId: string): Promise<void> {
+    const claimed = await this.prisma.fiscalDocument.updateMany({
+      where: { id: fiscalDocumentId, fiscalState: 'PENDING_SIGNATURE' },
       data: {
         fiscalState: 'IN_TRANSMISSION',
         lastRetryAt: new Date(),
       },
     });
+    if (claimed.count === 0) {
+      throw new FiscalTransmissionFailedException(
+        fiscalDocumentId,
+        'Document is not in PENDING_SIGNATURE state - another worker may have claimed it',
+      );
+    }
   }
 
   private async transitionToValidated(

@@ -44,7 +44,13 @@ export class CertificateLoader {
       p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, false, password);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (message.includes('mac check failed')) {
+      // Wrong-password heuristics across node-forge versions: pre-1.4 used
+      // 'mac check failed'; 1.4+ throws 'PKCS#12 MAC could not be verified.
+      // Invalid password?'. Anything else is a malformed-bundle error.
+      if (
+        message.toLowerCase().includes('mac check failed') ||
+        message.includes('PKCS#12 MAC could not be verified')
+      ) {
         throw new Error(`Certificate password is incorrect: ${message}`);
       }
       throw new Error(`Failed to parse PKCS#12 bundle: ${message}`);
