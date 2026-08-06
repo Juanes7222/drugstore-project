@@ -53,6 +53,8 @@ model Sale {
   @@index([subscriptionId])
   @@index([cashShiftId, operationalState])
   @@index([workstationId, confirmedAt])
+  /// Descending so getNextLocalNumber (findFirst orderBy localNumber desc filtered by workstationId) avoids a sort on every confirmed sale.
+  @@index([workstationId, localNumber(sort: Desc)])
   @@index([confirmedAt])
   @@index([operationalState, confirmedAt])
   @@index([clientId, confirmedAt])

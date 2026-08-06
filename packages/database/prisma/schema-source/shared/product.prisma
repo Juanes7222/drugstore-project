@@ -60,6 +60,8 @@ model Product {
   saleItems              SaleItem[]
 
   @@index([commercialName])
+  /// GIN trigram index so ILIKE %term% searches use the index instead of a seq scan (FIX-014).
+  @@index([commercialName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Product_commercialName_trgm_idx")
   @@index([isActive])
   @@index([categoryId, isActive])
   @@index([invimaRegistry])

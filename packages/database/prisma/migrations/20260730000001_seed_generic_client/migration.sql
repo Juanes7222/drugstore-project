@@ -7,6 +7,10 @@
 -- This record is seeded here so both the direct HTTP API and the offline
 -- sync replay path populate the Sale.clientNameSnapshot and related
 -- snapshot fields instead of storing null.
+--
+-- Guard: Client.createdById is NOT NULL, so on a fresh database (no users
+-- yet) the insert would violate the constraint. The record is then created
+-- lazily by ClientsService.getGenericClient() once the first user exists.
 
 INSERT INTO "Client" (
   "id",
@@ -18,7 +22,7 @@ INSERT INTO "Client" (
   "createdAt",
   "updatedAt"
 )
-VALUES (
+SELECT
   '00000000-0000-0000-0000-000000000001',
   'NIT',
   '222222222222',
@@ -27,7 +31,7 @@ VALUES (
   (SELECT "id" FROM "User" ORDER BY "createdAt" ASC LIMIT 1),
   NOW(),
   NOW()
-)
+WHERE EXISTS (SELECT 1 FROM "User")
 ON CONFLICT ("id") DO NOTHING;
 
 -- SystemConfig entry so the server can retrieve the generic client UUID

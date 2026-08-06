@@ -48,4 +48,6 @@ model Client {
   @@index([fullName])
   @@index([classificationId])
   @@index([municipality])
+  /// Keyset pagination for findAll (updatedAt, id) — see docs/db-query-fixes.md FIX-001.
+  @@index([updatedAt, id])
 }
