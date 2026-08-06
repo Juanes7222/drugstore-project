@@ -27,16 +27,15 @@ const CATEGORY_BY_REPORT: Record<ReportCode, ReportCategory> = {
   SALES_BY_HOUR: 'sales',
   SALES_BY_WEEKDAY: 'sales',
   INV_CURRENT_STOCK: 'inventory',
+  INV_STOCK_BY_CATEGORY: 'inventory',
   INV_EXPIRING_LOTS: 'inventory',
   INV_EXPIRED_WITH_LOSS: 'inventory',
   INV_ROTATION: 'inventory',
   INV_LOW_MOVEMENT: 'inventory',
   INV_MOVEMENTS: 'inventory',
   FISCAL_TAX_SUMMARY: 'fiscal',
-  FISCAL_DIAN_DOCUMENTS: 'fiscal',
   CASH_SHIFT_CLOSE: 'cash_shift',
   AUDIT_SHIFT_VARIANCES: 'cash_shift',
-  AUDIT_TRACEABILITY: 'audit',
   PROFIT_MARGIN_BY_PRODUCT: 'profitability',
 };
 

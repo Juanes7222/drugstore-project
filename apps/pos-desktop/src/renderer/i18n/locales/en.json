@@ -2190,7 +2190,11 @@
       "generated_in": "Generated in {{ms}} ms",
       "rows_total": "{{count}} rows in total",
       "step_up_required": "This report requires step-up authentication.",
-      "chart_alt": "Chart for report {{title}}"
+      "chart_alt": "Chart for report {{title}}",
+      "detail": "Detail",
+      "rows_count": "{{total}} rows",
+      "show": "Show",
+      "hide": "Hide"
     },
     "filters": {
       "preset_today": "Today",
@@ -2310,7 +2314,7 @@
       "gross_profit": "Gross profit",
       "avg_margin": "Average margin",
       "negative_margin_products": "Negative-margin products",
-      "shifts_with_variance": "Shifts with variance",
+      "shifts_closed": "Shift closures",
       "total_variance": "Total variance",
       "pending_operations": "Pending operations",
       "permanent_failures": "Permanent failures"
@@ -2323,6 +2327,9 @@
       "net_sales": "Net sales",
       "taxes": "Taxes",
       "payment_methods": "Payment methods",
+      "categories": "Categories",
+      "uncategorized": "Uncategorized",
+      "others": "Others",
       "net_revenue": "Net revenue",
       "units_sold": "Units sold",
       "total_amount": "Total amount",
@@ -2337,6 +2344,13 @@
     "charts": {
       "scatter_margin": "Margin (%)",
       "scatter_profit": "Profit (COP)",
+      "scatter_rotation_x": "Rotation index",
+      "scatter_rotation_y": "Units sold",
+      "margin_negative": "Loss",
+      "margin_low": "0–{low}",
+      "margin_medium": "{low}–{low2}",
+      "margin_high": "{low2}–{low3}",
+      "margin_strong": ">{low3}",
       "tooltip_margin": "Margin: ",
       "tooltip_profit": "<br/>Profit: ",
       "summary_distribution": "Distribution with {count} categories. Total: {total}.",
@@ -2413,25 +2427,36 @@
       "tax_type": "Tax type",
       "taxable_base": "Taxable base",
       "tax_amount": "Tax amount",
-      "invoice_number": "Number",
-      "invoice_type": "Type",
-      "issued_at": "Issued at",
-      "status": "Status",
-      "cufe": "CUFE",
       "expected": "Expected",
       "declared": "Declared",
       "difference": "Difference",
       "variance": "Variance",
       "closed_at": "Closed at",
-      "action": "Action",
-      "entity_type": "Entity type",
-      "role": "Role",
       "revenue": "Revenue",
       "estimated_cost": "Estimated cost",
       "gross_profit": "Gross profit",
       "gross_margin": "Gross margin",
       "margin_status": "Status",
       "average_ticket": "Average ticket"
+    },
+    "movement_types": {
+      "PURCHASE_RECEIPT": "Purchase receipt",
+      "SALE": "Sale",
+      "POSITIVE_ADJUSTMENT": "Positive adjustment",
+      "NEGATIVE_ADJUSTMENT": "Negative adjustment",
+      "CLIENT_RETURN": "Client return",
+      "SUPPLIER_RETURN": "Supplier return",
+      "ADMIN_BLOCK": "Admin block",
+      "ADMIN_UNBLOCK": "Admin unblock",
+      "AUTO_EXPIRATION": "Auto expiration",
+      "PHYSICAL_COUNT": "Physical count",
+      "INITIAL_STOCK": "Initial stock"
+    },
+    "badges": {
+      "low_stock": {
+        "true": "Low stock",
+        "false": "In stock"
+      }
     },
     "margins": {
       "negative": "Negative margin",
@@ -2445,7 +2470,9 @@
     },
     "error": {
       "title": "Report failed",
-      "body": "An error occurred while running the report. Try again or contact the administrator."
+      "body": "An error occurred while running the report. Try again or contact the administrator.",
+      "config_disabled_title": "Report not enabled",
+      "config_disabled": "This report is not enabled by the current purchases configuration. Enable lot or expiry-date tracking under Settings → Purchases to use it."
     },
     "schedules": {
       "title": "Scheduled reports",
@@ -2496,6 +2523,10 @@
         "title": "Current stock",
         "description": "Valued inventory with CPP, price, and stock per product."
       },
+      "inv_stock_by_category": {
+        "title": "Stock by category",
+        "description": "Inventory value and units grouped by category."
+      },
       "inv_expiring_lots": {
         "title": "Expiring lots",
         "description": "Active lots expiring within the configured threshold."
@@ -2520,21 +2551,13 @@
         "title": "Fiscal tax summary",
         "description": "Totals by tax type for the selected period."
       },
-      "fiscal_dian_documents": {
-        "title": "DIAN documents",
-        "description": "Local view of invoices, notes, and documents with their known transmission state."
-      },
       "cash_shift_close": {
         "title": "Shift close",
         "description": "Detailed view of a closed shift with variances per payment method."
       },
       "audit_shift_variances": {
         "title": "Shift variances",
-        "description": "Closed shifts with non-zero variance, grouped by cashier."
-      },
-      "audit_traceability": {
-        "title": "Audit traceability",
-        "description": "Immutable audit events for the selected period."
+        "description": "Comparison of every shift closure: expected, declared and variance."
       },
       "profit_margin_by_product": {
         "title": "Profit margin by product",
@@ -2569,7 +2592,7 @@
     "gross_profit": "Gross profit",
     "avg_margin": "Average margin",
     "negative_margin_products": "Negative-margin products",
-    "shifts_with_variance": "Shifts with variance",
+    "shifts_closed": "Shift closures",
     "pending_operations": "Pending operations",
     "permanent_failures": "Permanent failures"
   },

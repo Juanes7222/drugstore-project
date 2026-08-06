@@ -2329,7 +2329,11 @@
       "generated_in": "Generado en {{ms}} ms",
       "rows_total": "{{count}} filas en total",
       "step_up_required": "Este reporte requiere autenticación reforzada.",
-      "chart_alt": "Gráfico del reporte {{title}}"
+      "chart_alt": "Gráfico del reporte {{title}}",
+      "detail": "Detalle",
+      "rows_count": "{{total}} filas",
+      "show": "Mostrar",
+      "hide": "Ocultar"
     },
     "filters": {
       "preset_today": "Hoy",
@@ -2449,7 +2453,7 @@
       "gross_profit": "Utilidad bruta",
       "avg_margin": "Margen promedio",
       "negative_margin_products": "Productos con margen negativo",
-      "shifts_with_variance": "Turnos con diferencia",
+      "shifts_closed": "Cierres de turno",
       "total_variance": "Diferencia total",
       "pending_operations": "Operaciones pendientes",
       "permanent_failures": "Fallos permanentes"
@@ -2462,6 +2466,9 @@
       "net_sales": "Ventas netas",
       "taxes": "Impuestos",
       "payment_methods": "Métodos de pago",
+      "categories": "Categorías",
+      "uncategorized": "Sin categoría",
+      "others": "Otros",
       "net_revenue": "Ingresos netos",
       "units_sold": "Unidades vendidas",
       "total_amount": "Monto total",
@@ -2476,6 +2483,13 @@
     "charts": {
       "scatter_margin": "Margen (%)",
       "scatter_profit": "Utilidad (COP)",
+      "scatter_rotation_x": "Índice de rotación",
+      "scatter_rotation_y": "Unidades vendidas",
+      "margin_negative": "Pérdida",
+      "margin_low": "0–{low}",
+      "margin_medium": "{low}–{low2}",
+      "margin_high": "{low2}–{low3}",
+      "margin_strong": ">{low3}",
       "tooltip_margin": "Margen: ",
       "tooltip_profit": "<br/>Utilidad: ",
       "summary_distribution": "Distribución con {count} categorías. Total: {total}.",
@@ -2552,25 +2566,36 @@
       "tax_type": "Tipo de impuesto",
       "taxable_base": "Base gravable",
       "tax_amount": "Monto del impuesto",
-      "invoice_number": "Número",
-      "invoice_type": "Tipo",
-      "issued_at": "Emitido",
-      "status": "Estado",
-      "cufe": "CUFE",
       "expected": "Esperado",
       "declared": "Declarado",
       "difference": "Diferencia",
       "variance": "Diferencia",
       "closed_at": "Cerrado",
-      "action": "Acción",
-      "entity_type": "Tipo entidad",
-      "role": "Rol",
       "revenue": "Ingresos",
       "estimated_cost": "Costo estimado",
       "gross_profit": "Utilidad bruta",
       "gross_margin": "Margen bruto",
       "margin_status": "Estado",
       "average_ticket": "Ticket promedio"
+    },
+    "movement_types": {
+      "PURCHASE_RECEIPT": "Recepción de compra",
+      "SALE": "Venta",
+      "POSITIVE_ADJUSTMENT": "Ajuste positivo",
+      "NEGATIVE_ADJUSTMENT": "Ajuste negativo",
+      "CLIENT_RETURN": "Devolución de cliente",
+      "SUPPLIER_RETURN": "Devolución a proveedor",
+      "ADMIN_BLOCK": "Bloqueo administrativo",
+      "ADMIN_UNBLOCK": "Desbloqueo administrativo",
+      "AUTO_EXPIRATION": "Vencimiento automático",
+      "PHYSICAL_COUNT": "Conteo físico",
+      "INITIAL_STOCK": "Stock inicial"
+    },
+    "badges": {
+      "low_stock": {
+        "true": "Stock bajo",
+        "false": "En nivel"
+      }
     },
     "margins": {
       "negative": "Margen negativo",
@@ -2584,7 +2609,9 @@
     },
     "error": {
       "title": "Error al ejecutar el reporte",
-      "body": "Ocurrió un error al ejecutar el reporte. Intenta nuevamente o contacta al administrador."
+      "body": "Ocurrió un error al ejecutar el reporte. Intenta nuevamente o contacta al administrador.",
+      "config_disabled_title": "Reporte no habilitado",
+      "config_disabled": "Este reporte no está habilitado para la configuración de compras actual. Activa el registro de lotes o de fechas de vencimiento en Configuración → Compras para usarlo."
     },
     "schedules": {
       "title": "Reportes programados",
@@ -2635,6 +2662,10 @@
         "title": "Stock actual",
         "description": "Inventario valorizado con CPP, precio y stock por producto."
       },
+      "inv_stock_by_category": {
+        "title": "Stock por categoría",
+        "description": "Valor de inventario y unidades agrupados por categoría."
+      },
       "inv_expiring_lots": {
         "title": "Lotes por vencer",
         "description": "Lotes activos con vencimiento dentro del umbral configurado."
@@ -2659,21 +2690,13 @@
         "title": "Resumen fiscal de impuestos",
         "description": "Totales por tipo de impuesto para el período seleccionado."
       },
-      "fiscal_dian_documents": {
-        "title": "Documentos DIAN",
-        "description": "Vista local de facturas, notas y documentos con estado de transmisión conocido."
-      },
       "cash_shift_close": {
         "title": "Cierre de turno",
         "description": "Detalle de un turno cerrado, con diferencias por método de pago."
       },
       "audit_shift_variances": {
         "title": "Diferencias en cierres de turno",
-        "description": "Turnos cerrados con diferencia distinta de cero, agrupados por cajero."
-      },
-      "audit_traceability": {
-        "title": "Trazabilidad de auditoría",
-        "description": "Eventos inmutables de auditoría del período seleccionado."
+        "description": "Comparación de cada cierre de turno: esperado, declarado y diferencia."
       },
       "profit_margin_by_product": {
         "title": "Margen de ganancia por producto",
@@ -2708,7 +2731,7 @@
     "gross_profit": "Utilidad bruta",
     "avg_margin": "Margen promedio",
     "negative_margin_products": "Productos con margen negativo",
-    "shifts_with_variance": "Turnos con diferencia",
+    "shifts_closed": "Cierres de turno",
     "pending_operations": "Operaciones pendientes",
     "permanent_failures": "Fallos permanentes"
   },

@@ -16,7 +16,7 @@
 
 import type { PrismaClient } from '@pharmacy/database/local';
 import { Prisma } from '@pharmacy/database/local';
-import { getReportDefinition } from './report-catalog';
+import { getReportDefinition, reportConfigSatisfied } from './report-catalog';
 import {
   assertReportAccess,
   resolveCashierScope,
@@ -24,12 +24,11 @@ import {
 import { validateFilters } from './report-filter-schemas';
 import {
   buildAuditShiftVariancesQuery,
-  buildAuditTraceabilityQuery,
   buildCashShiftCloseQuery,
   buildCurrentStockQuery,
   buildExpiredWithLossQuery,
+  buildStockByCategoryQuery,
   buildExpiringLotsQuery,
-  buildFiscalDianDocumentsQuery,
   buildFiscalTaxSummaryQuery,
   buildInventoryMovementsQuery,
   buildLowMovementQuery,
@@ -42,12 +41,15 @@ import {
   buildSalesByWeekdayQuery,
   buildSalesDailySummaryQuery,
   DELIVERY_SALE_PREDICATE,
+  endOfDayUtcExclusive,
+  startOfDayUtc,
   type QueryFragment,
 } from './report-query-builders';
 import { ReportAggregationsService } from './report-aggregations.service';
 import { ReportCacheService } from './report-cache.service';
 import { ReportFreshnessService } from './report-freshness.service';
 import {
+  ReportConfigDisabledException,
   ReportExecutionException,
   ReportFiltersNotReadyException,
   ReportShiftNotFoundException,
@@ -60,6 +62,7 @@ import {
   ReportWarning,
   type AnyReportRow,
   type DateRangeFilter,
+  type ReportConfigContext,
   type ReportFilters,
   type ReportFreshness,
   type FiltersFor,
@@ -74,6 +77,10 @@ export interface RunReportInput {
   filters: unknown;
   pagination?: { limit?: number; offset?: number };
   session: LocalSession;
+  /** Effective purchases config used to gate config-required reports.
+   *  When omitted (or null — config not loaded yet), gating is skipped so
+   *  reports are never denied before the tenant config arrives. */
+  effectiveConfig?: ReportConfigContext | null;
   /** Optional translate function for chart series names and other
    *  i18n-able labels.  When omitted, raw identifier strings are used
    *  (backward compatible). */
@@ -107,6 +114,12 @@ export class ReportExecutionService {
   async run(input: RunReportInput): Promise<ReportResponse> {
     const def = getReportDefinition(input.code);
     assertReportAccess(input.code, input.session.role);
+
+    // Config-gated reports (lot / expiry tracking) reject when the
+    // effective purchases config does not enable them.
+    if (!reportConfigSatisfied(def, input.effectiveConfig)) {
+      throw new ReportConfigDisabledException(input.code);
+    }
 
     // CASH_SHIFT_CLOSE only runs once the cashier has picked a shift —
     // its catalog default is the empty-string sentinel, which the Zod
@@ -256,6 +269,11 @@ export class ReportExecutionService {
           filters as FiltersFor<typeof ReportCode.INV_CURRENT_STOCK>,
           page,
         );
+      case ReportCode.INV_STOCK_BY_CATEGORY:
+        return buildStockByCategoryQuery(
+          filters as FiltersFor<typeof ReportCode.INV_STOCK_BY_CATEGORY>,
+          page,
+        );
       case ReportCode.INV_EXPIRING_LOTS:
         return buildExpiringLotsQuery(
           filters as FiltersFor<typeof ReportCode.INV_EXPIRING_LOTS>,
@@ -296,15 +314,6 @@ export class ReportExecutionService {
           filters as FiltersFor<typeof ReportCode.FISCAL_TAX_SUMMARY> as DateRangeFilter,
           page,
         );
-      case ReportCode.FISCAL_DIAN_DOCUMENTS:
-        return buildFiscalDianDocumentsQuery(
-          (filters as FiltersFor<typeof ReportCode.FISCAL_DIAN_DOCUMENTS>) as DateRangeFilter,
-          (filters as FiltersFor<typeof ReportCode.FISCAL_DIAN_DOCUMENTS>) as {
-            status?: string;
-            invoiceType?: string;
-          },
-          page,
-        );
       case ReportCode.CASH_SHIFT_CLOSE:
         return buildCashShiftCloseQuery(
           (filters as FiltersFor<typeof ReportCode.CASH_SHIFT_CLOSE>).shiftId,
@@ -312,19 +321,6 @@ export class ReportExecutionService {
       case ReportCode.AUDIT_SHIFT_VARIANCES:
         return buildAuditShiftVariancesQuery(
           (filters as FiltersFor<typeof ReportCode.AUDIT_SHIFT_VARIANCES>) as DateRangeFilter,
-          (filters as FiltersFor<typeof ReportCode.AUDIT_SHIFT_VARIANCES>) as {
-            cashierUserId?: string;
-          },
-          page,
-        );
-      case ReportCode.AUDIT_TRACEABILITY:
-        return buildAuditTraceabilityQuery(
-          (filters as FiltersFor<typeof ReportCode.AUDIT_TRACEABILITY>) as DateRangeFilter,
-          (filters as FiltersFor<typeof ReportCode.AUDIT_TRACEABILITY>) as {
-            userId?: string;
-            category?: string;
-            actionPrefix?: string;
-          },
           page,
         );
       case ReportCode.PROFIT_MARGIN_BY_PRODUCT:
@@ -422,6 +418,17 @@ export class ReportExecutionService {
         kpi('kpi.units_in_stock', aggs.units.toString(), null, 'integer'),
         kpi('kpi.low_stock_products', aggs.lowStockCount.toString(), null, 'integer'),
       );
+    } else if (code === ReportCode.INV_STOCK_BY_CATEGORY) {
+      // Same totals as the current-stock report — the donut breaks them
+      // down by category, the KPIs keep the global picture.
+      const aggs = await this.runAggregateCurrentStock(
+        filters as FiltersFor<typeof ReportCode.INV_STOCK_BY_CATEGORY>,
+      );
+      kpis.push(
+        kpi('kpi.stock_value', aggs.stockValue.toString(), null, 'currency'),
+        kpi('kpi.units_in_stock', aggs.units.toString(), null, 'integer'),
+        kpi('kpi.low_stock_products', aggs.lowStockCount.toString(), null, 'integer'),
+      );
     } else if (code === ReportCode.INV_EXPIRING_LOTS) {
       const aggs = await this.runAggregateExpiring(
         filters as FiltersFor<typeof ReportCode.INV_EXPIRING_LOTS>,
@@ -460,7 +467,7 @@ export class ReportExecutionService {
         filters as FiltersFor<typeof ReportCode.AUDIT_SHIFT_VARIANCES>,
       );
       kpis.push(
-        kpi('kpi.shifts_with_variance', aggs.shiftsWithVariance.toString(), null, 'integer'),
+        kpi('kpi.shifts_closed', aggs.shifts.toString(), null, 'integer'),
         kpi('kpi.total_variance', aggs.totalVariance.toString(), null, 'currency'),
       );
     }
@@ -861,7 +868,7 @@ export class ReportExecutionService {
 
   private async runAggregateVariances(
     filters: FiltersFor<typeof ReportCode.AUDIT_SHIFT_VARIANCES>,
-  ): Promise<{ shiftsWithVariance: number; totalVariance: number }> {
+  ): Promise<{ shifts: number; totalVariance: number }> {
     const range = filters as DateRangeFilter;
     const result = await this.prisma.$queryRawUnsafe<
       Array<{ shifts: number | bigint; total: number | bigint }>
@@ -871,14 +878,13 @@ export class ReportExecutionService {
          COALESCE(SUM("closingDifference"), 0)::numeric AS total
        FROM "CashShift"
        WHERE "state" IN ('CLOSED', 'FORCED_CLOSE')
-         AND "closingDifference" <> 0
          AND "closedAt" >= $1 AND "closedAt" < $2`,
-      `${range.dateFrom}T00:00:00.000Z`,
-      `${range.dateTo}T00:00:00.000Z`,
+      startOfDayUtc(range.dateFrom),
+      endOfDayUtcExclusive(range.dateTo),
     );
     const row = result?.[0];
     return {
-      shiftsWithVariance: Number(row?.shifts ?? 0),
+      shifts: Number(row?.shifts ?? 0),
       totalVariance: Number(row?.total ?? 0),
     };
   }
@@ -907,6 +913,7 @@ export class ReportExecutionService {
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'line',
+          unit: 'currency',
           xAxis: result.rows.map((r) => String(r.date ?? r.day ?? '').slice(0, 10)),
           series: [
             { name: t ? t('reports.chart.net_sales', 'net_sales') : 'net_sales', data: result.rows.map((r) => Number(r.net_sales ?? 0)) },
@@ -923,6 +930,7 @@ export class ReportExecutionService {
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'bar_horizontal',
+          unit: 'currency',
           xAxis: result.rows.map((r) => String(r.cashier_name ?? r.cashier_user_id ?? '')),
           series: [
             { name: t ? t('reports.chart.net_sales', 'net_sales') : 'net_sales', data: result.rows.map((r) => Number(r.net_sales ?? 0)) },
@@ -940,6 +948,7 @@ export class ReportExecutionService {
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'donut',
+          unit: 'currency',
           series: [{
             name: t ? t('reports.chart.payment_methods', 'Métodos de pago') : 'Métodos de pago',
             data: result.rows.map((r) => ({
@@ -959,12 +968,21 @@ export class ReportExecutionService {
           { limit: Math.min(50, (filters as { topN?: number }).topN ?? 20), offset: 0 },
         );
         const result = await this.aggregations.run(fragment, { count: false });
+        // A single revenue series keeps money and counts off the same
+        // axis; the units ride along as a tooltip-only secondary label.
+        const unitLabel = t ? t('sales.product.unit', 'units') : 'units';
         return {
           kind: 'bar_horizontal',
+          unit: 'currency',
           xAxis: result.rows.map((r) => String(r.product_name ?? r.product_id ?? '')),
           series: [
-            { name: t ? t('reports.chart.net_revenue', 'net_revenue') : 'net_revenue', data: result.rows.map((r) => Number(r.net_revenue ?? 0)) },
-            { name: t ? t('reports.chart.units_sold', 'units_sold') : 'units_sold', data: result.rows.map((r) => Number(r.units_sold ?? 0)) },
+            {
+              name: t ? t('reports.chart.net_revenue', 'net_revenue') : 'net_revenue',
+              data: result.rows.map((r) => ({
+                value: Number(r.net_revenue ?? 0),
+                secondary: `${Number(r.units_sold ?? 0)} ${unitLabel}`,
+              })),
+            },
           ],
         };
       }
@@ -976,6 +994,7 @@ export class ReportExecutionService {
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'area',
+          unit: 'currency',
           xAxis: result.rows.map((r) => String(r.hour ?? 0)),
           series: [
             { name: t ? t('reports.chart.total_amount', 'total_amount') : 'total_amount', data: result.rows.map((r) => Number(r.total_amount ?? 0)) },
@@ -990,10 +1009,44 @@ export class ReportExecutionService {
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'bar_vertical',
+          unit: 'currency',
           xAxis: result.rows.map((r) => String(r.weekday ?? '')),
           series: [
             { name: t ? t('reports.chart.total_amount', 'total_amount') : 'total_amount', data: result.rows.map((r) => Number(r.total_amount ?? 0)) },
           ],
+        };
+      }
+      case ReportCode.INV_STOCK_BY_CATEGORY: {
+        const fragment = buildStockByCategoryQuery(
+          filters as FiltersFor<typeof ReportCode.INV_STOCK_BY_CATEGORY>,
+          { limit: 50, offset: 0 },
+        );
+        const result = await this.aggregations.run(fragment, { count: false });
+        // Products without a category produce a NULL category_name — the
+        // fallback label is resolved here so the SQL stays language-free.
+        const fallbackName = t ? t('reports.chart.uncategorized', 'Sin categoría') : '';
+        const slices = result.rows.map((r) => ({
+          name: String(r.category_name ?? fallbackName),
+          value: Number(r.stock_value ?? 0),
+        }));
+        // Cap the donut at 8 slices and fold the tail into "Others" so a
+        // long category list never renders as an unreadable pie.
+        const MAX_DONUT_SLICES = 8;
+        const top = slices.slice(0, MAX_DONUT_SLICES);
+        const tail = slices.slice(MAX_DONUT_SLICES);
+        if (tail.length) {
+          top.push({
+            name: t ? t('reports.chart.others', 'Otros') : 'Otros',
+            value: tail.reduce((acc, s) => acc + s.value, 0),
+          });
+        }
+        return {
+          kind: 'donut',
+          unit: 'currency',
+          series: [{
+            name: t ? t('reports.chart.categories', 'Categorías') : 'Categorías',
+            data: top,
+          }],
         };
       }
       case ReportCode.INV_EXPIRING_LOTS: {
@@ -1002,21 +1055,20 @@ export class ReportExecutionService {
           { limit: 200, offset: 0 },
         );
         const result = await this.aggregations.run(fragment, { count: false });
-        // Bucket by week (YYYY-WW) to render a stacked area / bar.
-        const buckets = new Map<string, { units: number; value: number }>();
+        // Bucket by month (YYYY-MM) and plot a single units series — the
+        // estimated value stays in the table/KPIs so units and money are
+        // never mixed on the same axis.
+        const buckets = new Map<string, number>();
         for (const r of result.rows) {
-          const key = String(r.expiration_date ?? '').slice(0, 10);
-          const cur = buckets.get(key) ?? { units: 0, value: 0 };
-          cur.units += Number(r.quantity ?? 0);
-          cur.value += Number(r.estimated_value ?? 0);
-          buckets.set(key, cur);
+          const key = String(r.expiration_date ?? '').slice(0, 7);
+          buckets.set(key, (buckets.get(key) ?? 0) + Number(r.quantity ?? 0));
         }
         return {
-          kind: 'stacked_bar',
+          kind: 'bar_vertical',
+          unit: 'number',
           xAxis: [...buckets.keys()].sort(),
           series: [
-            { name: t ? t('reports.chart.units', 'units') : 'units', data: [...buckets.values()].map((v) => v.units) },
-            { name: t ? t('reports.chart.value', 'value') : 'value', data: [...buckets.values()].map((v) => v.value) },
+            { name: t ? t('reports.chart.units', 'units') : 'units', data: [...buckets.values()] },
           ],
         };
       }
@@ -1044,11 +1096,13 @@ export class ReportExecutionService {
         const dayKeys = [...days.keys()].sort();
         const typeKeys = new Set<string>();
         days.forEach((m) => m.forEach((_v, k) => typeKeys.add(k)));
-        const series = [...typeKeys].map((t) => ({
-          name: t,
-          data: dayKeys.map((d) => days.get(d)?.get(t) ?? 0),
+        // Series names are MovementType enum values — translate them so the
+        // legend and tooltips never leak raw identifiers like "SALE".
+        const series = [...typeKeys].map((mt) => ({
+          name: t ? t(`reports.movement_types.${mt}`, mt) : mt,
+          data: dayKeys.map((d) => days.get(d)?.get(mt) ?? 0),
         }));
-        return { kind: 'stacked_bar', xAxis: dayKeys, series };
+        return { kind: 'stacked_bar', unit: 'number', xAxis: dayKeys, series };
       }
       case ReportCode.INV_LOW_MOVEMENT: {
         const fragment = buildLowMovementQuery(
@@ -1058,6 +1112,7 @@ export class ReportExecutionService {
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'bar_horizontal',
+          unit: 'currency',
           xAxis: result.rows.map((r) => String(r.product_name ?? r.product_id ?? '')),
           series: [
             { name: t ? t('reports.chart.immobilized_value', 'immobilized_value') : 'immobilized_value', data: result.rows.map((r) => Number(r.immobilized_value ?? 0)) },
@@ -1072,47 +1127,26 @@ export class ReportExecutionService {
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'bar_vertical',
+          unit: 'currency',
           xAxis: result.rows.map((r) => String(r.tax_type ?? '')),
           series: [
             { name: t ? t('reports.chart.tax_amount', 'tax_amount') : 'tax_amount', data: result.rows.map((r) => Number(r.tax_amount ?? 0)) },
           ],
         };
       }
-      case ReportCode.FISCAL_DIAN_DOCUMENTS: {
-        const fragment = buildFiscalDianDocumentsQuery(
-          (filters as FiltersFor<typeof ReportCode.FISCAL_DIAN_DOCUMENTS>) as DateRangeFilter,
-          (filters as FiltersFor<typeof ReportCode.FISCAL_DIAN_DOCUMENTS>) as {
-            status?: string;
-            invoiceType?: string;
-          },
-          { limit: 200, offset: 0 },
-        );
-        const result = await this.aggregations.run(fragment, { count: false });
-        const counts = new Map<string, number>();
-        for (const r of result.rows) {
-          const s = String(r.status ?? 'UNKNOWN');
-          counts.set(s, (counts.get(s) ?? 0) + 1);
-        }
-        return {
-          kind: 'donut',
-          series: [{
-            name: t ? t('reports.chart.statuses', 'Estados') : 'Estados',
-            data: [...counts.entries()].map(([name, value]) => ({ name, value })),
-          }],
-        };
-      }
       case ReportCode.AUDIT_SHIFT_VARIANCES: {
         const fragment = buildAuditShiftVariancesQuery(
           (filters as FiltersFor<typeof ReportCode.AUDIT_SHIFT_VARIANCES>) as DateRangeFilter,
-          (filters as FiltersFor<typeof ReportCode.AUDIT_SHIFT_VARIANCES>) as {
-            cashierUserId?: string;
-          },
           { limit: 50, offset: 0 },
         );
         const result = await this.aggregations.run(fragment, { count: false });
         return {
           kind: 'diverging_bar',
-          xAxis: result.rows.map((r) => String(r.cashier_name ?? r.cashier_user_id ?? '')),
+          unit: 'currency',
+          // One bar per closure, labeled with its closing date — the cashier
+          // is (for now) always the same system admin, so a user axis would
+          // just repeat one label over and over.
+          xAxis: result.rows.map((r) => String(r.closed_on ?? '')),
           series: [
             { name: t ? t('reports.chart.variance', 'variance') : 'variance', data: result.rows.map((r) => Number(r.total_variance ?? 0)) },
           ],
@@ -1125,22 +1159,48 @@ export class ReportExecutionService {
             categoryId?: string;
             productId?: string;
           },
-          { limit: 200, offset: 0 },
+          { limit: 500, offset: 0 },
         );
         const result = await this.aggregations.run(fragment, { count: false });
+        // A margin histogram is far more readable than a scatter for a
+        // non-expert: how many products fall in each margin bracket.
+        // The brackets derive from the report's low-margin threshold so
+        // the chart always agrees with the table's margin-status badges.
+        const low = (filters as { lowMarginPercent?: number }).lowMarginPercent ?? 5;
+        const pct = (v: number): string => `${v}%`;
+        const tpl = (key: string, fallback: string): string =>
+          (t ? t(key, fallback) : fallback)
+            .replaceAll('{low}', pct(low))
+            .replaceAll('{low2}', pct(low * 2))
+            .replaceAll('{low3}', pct(low * 3));
+        const labels = [
+          tpl('reports.charts.margin_negative', 'Pérdida'),
+          tpl('reports.charts.margin_low', '0–{low}'),
+          tpl('reports.charts.margin_medium', '{low}–{low2}'),
+          tpl('reports.charts.margin_high', '{low2}–{low3}'),
+          tpl('reports.charts.margin_strong', '>{low3}'),
+        ];
+        const buckets = [0, 0, 0, 0, 0];
+        for (const r of result.rows) {
+          const margin = Number(r.gross_margin_percent ?? 0);
+          const idx =
+            margin < 0
+              ? 0
+              : margin < low
+                ? 1
+                : margin < low * 2
+                  ? 2
+                  : margin < low * 3
+                    ? 3
+                    : 4;
+          buckets[idx] += 1;
+        }
         return {
-          kind: 'scatter',
-          xAxis: result.rows.map((r) => Number(r.gross_margin_percent ?? 0)),
+          kind: 'bar_vertical',
+          unit: 'number',
+          xAxis: labels,
           series: [
-            {
-              name: t ? t('reports.chart.products', 'products') : 'products',
-              data: result.rows.map((r, i) => [
-                Number(r.gross_margin_percent ?? 0),
-                Number(r.gross_profit ?? 0),
-                i,
-                String(r.product_name ?? r.product_id ?? ''),
-              ]),
-            },
+            { name: t ? t('reports.chart.products', 'Productos') : 'Productos', data: buckets },
           ],
         };
       }
@@ -1154,8 +1214,21 @@ export class ReportExecutionService {
           { limit: 200, offset: 0 },
         );
         const result = await this.aggregations.run(fragment, { count: false });
+        // Rotation is a ratio (not a percent): give the scatter its own
+        // axis labels/units instead of inheriting the profit-margin ones.
         return {
           kind: 'scatter',
+          unit: 'number',
+          scatterAxes: {
+            x: {
+              label: t ? t('reports.charts.scatter_rotation_x', 'Índice de rotación') : 'Índice de rotación',
+              unit: 'ratio',
+            },
+            y: {
+              label: t ? t('reports.charts.scatter_rotation_y', 'Unidades vendidas') : 'Unidades vendidas',
+              unit: 'number',
+            },
+          },
           xAxis: result.rows.map((r) => Number(r.rotation_index ?? 0)),
           series: [
             {

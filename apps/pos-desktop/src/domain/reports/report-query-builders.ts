@@ -541,6 +541,79 @@ export function buildCurrentStockQuery(
 }
 
 // ---------------------------------------------------------------------------
+// Report 7b: INV_STOCK_BY_CATEGORY
+// ---------------------------------------------------------------------------
+
+export function buildStockByCategoryQuery(
+  options: {
+    categoryId?: string;
+    laboratory?: string;
+    productId?: string;
+    includeInactive?: boolean;
+  },
+  pagination: { limit: number; offset: number },
+): QueryFragment {
+  const params: unknown[] = [];
+  let idx = 1;
+  const filters: string[] = [
+    `l."state" = 'ACTIVE'`,
+    `l."currentStock" > 0`,
+  ];
+  if (!options.includeInactive) {
+    filters.push(`p."isActive" = true`);
+  }
+  if (options.categoryId) {
+    filters.push(`p."categoryId" = $${idx++}`);
+    params.push(options.categoryId);
+  }
+  if (options.laboratory) {
+    filters.push(`p."laboratory" = $${idx++}`);
+    params.push(options.laboratory);
+  }
+  if (options.productId) {
+    filters.push(`p."id" = $${idx++}`);
+    params.push(options.productId);
+  }
+  const whereClause = filters.join(' AND ');
+
+  const cppExpr = `COALESCE((
+    SELECT c."cost" FROM "ProductCostHistory" c
+    WHERE c."productId" = p."id"
+      AND c."effectiveFrom" <= NOW()
+      AND (c."effectiveTo" IS NULL OR c."effectiveTo" > NOW())
+    ORDER BY c."effectiveFrom" DESC LIMIT 1
+  ), 0)::numeric`;
+
+  const offsetParam = idx++;
+  const limitParam = idx++;
+  params.push(pagination.offset, pagination.limit);
+
+  const sql = `
+    WITH per_product AS (
+      SELECT
+        p."id" AS product_id,
+        c."name" AS category_name,
+        COALESCE(SUM(l."currentStock"), 0)::int AS stock,
+        (COALESCE(SUM(l."currentStock"), 0) * ${cppExpr})::numeric AS stock_value
+      FROM "Product" p
+      LEFT JOIN "Category" c ON c."id" = p."categoryId"
+      LEFT JOIN "Lot" l ON l."productId" = p."id"
+      WHERE ${whereClause}
+      GROUP BY p."id", c."name"
+    )
+    SELECT
+      category_name,
+      SUM(stock)::int AS stock,
+      SUM(stock_value)::numeric AS stock_value
+    FROM per_product
+    GROUP BY category_name
+    ORDER BY stock_value DESC
+    LIMIT $${limitParam} OFFSET $${offsetParam}
+  `;
+  return { sql, params };
+}
+
+// ---------------------------------------------------------------------------
 // Report 8: INV_EXPIRING_LOTS
 // ---------------------------------------------------------------------------
 
@@ -907,55 +980,7 @@ export function buildFiscalTaxSummaryQuery(
 }
 
 // ---------------------------------------------------------------------------
-// Report 14: FISCAL_DIAN_DOCUMENTS
-// ---------------------------------------------------------------------------
-
-export function buildFiscalDianDocumentsQuery(
-  range: DateRangeFilter,
-  options: { status?: string; invoiceType?: string },
-  pagination: { limit: number; offset: number },
-): QueryFragment {
-  const params: unknown[] = [
-    startOfDayUtc(range.dateFrom),
-    endOfDayUtcExclusive(range.dateTo),
-  ];
-  let idx = 3;
-  const filters: string[] = [
-    `i."issuedAt" >= $1`,
-    `i."issuedAt" < $2`,
-  ];
-  if (options.status) {
-    filters.push(`i."status" = $${idx++}::"InvoiceStatus"`);
-    params.push(options.status);
-  }
-  if (options.invoiceType) {
-    filters.push(`i."invoiceType" = $${idx++}::"InvoiceType"`);
-    params.push(options.invoiceType);
-  }
-  const whereClause = filters.join(' AND ');
-
-  const offsetParam = idx++;
-  const limitParam = idx++;
-  params.push(pagination.offset, pagination.limit);
-
-  const sql = `
-    SELECT
-      i."id" AS invoice_id,
-      i."invoiceNumber",
-      i."invoiceType"::text AS invoice_type,
-      i."issuedAt",
-      i."status"::text AS status,
-      COALESCE(i."cufeOfficial", i."cufeProvisional") AS cufe
-    FROM "Invoice" i
-    WHERE ${whereClause}
-    ORDER BY i."issuedAt" DESC
-    LIMIT $${limitParam} OFFSET $${offsetParam}
-  `;
-  return { sql, params };
-}
-
-// ---------------------------------------------------------------------------
-// Report 15: CASH_SHIFT_CLOSE
+// Report 14: CASH_SHIFT_CLOSE
 // ---------------------------------------------------------------------------
 
 export function buildCashShiftCloseQuery(shiftId: string): QueryFragment {
@@ -990,12 +1015,11 @@ export function buildCashShiftCloseQuery(shiftId: string): QueryFragment {
 }
 
 // ---------------------------------------------------------------------------
-// Report 16: AUDIT_SHIFT_VARIANCES
+// Report 15: AUDIT_SHIFT_VARIANCES
 // ---------------------------------------------------------------------------
 
 export function buildAuditShiftVariancesQuery(
   range: DateRangeFilter,
-  options: { cashierUserId?: string },
   pagination: { limit: number; offset: number },
 ): QueryFragment {
   const params: unknown[] = [
@@ -1005,91 +1029,40 @@ export function buildAuditShiftVariancesQuery(
   let idx = 3;
   const filters: string[] = [
     `cs."state" IN ('CLOSED', 'FORCED_CLOSE')`,
-    `cs."closingDifference" <> 0`,
     `cs."closedAt" >= $1`,
     `cs."closedAt" < $2`,
   ];
-  if (options.cashierUserId) {
-    filters.push(`cs."userId" = $${idx++}`);
-    params.push(options.cashierUserId);
-  }
   const whereClause = filters.join(' AND ');
   const offsetParam = idx++;
   const limitParam = idx++;
   params.push(pagination.offset, pagination.limit);
 
+  // Every closed shift in the range is reported with its expected, declared
+  // and variance amounts so the report reads as a closure-by-closure
+  // comparison — not just the shifts that came up short or over.  No user
+  // dimension: today the same system admin opens and closes every shift, so
+  // a cashier column/axis would only repeat one label.
   const sql = `
     SELECT
-      cs."id" AS shift_id,
       cs."closedAt",
-      COALESCE(NULLIF(u."displayName", ''), u."username", cs."userId") AS cashier_name,
+      -- Day label computed in SQL so chart labels never shift with the
+      -- reading client's timezone.  The column is stored UTC-aligned (the
+      -- same wall clock the report filters compare against), so formatting
+      -- the naive value directly is timezone-independent.
+      to_char(cs."closedAt", 'YYYY-MM-DD') AS closed_on,
+      cs."expectedClosingAmount"::numeric AS expected_amount,
+      cs."actualClosingAmount"::numeric AS actual_amount,
       cs."closingDifference"::numeric AS total_variance
     FROM "CashShift" cs
-    LEFT JOIN "User" u ON u."id" = cs."userId"
     WHERE ${whereClause}
-    ORDER BY ABS(cs."closingDifference") DESC
+    ORDER BY cs."closedAt" DESC
     LIMIT $${limitParam} OFFSET $${offsetParam}
   `;
   return { sql, params };
 }
 
 // ---------------------------------------------------------------------------
-// Report 17: AUDIT_TRACEABILITY
-// ---------------------------------------------------------------------------
-
-export function buildAuditTraceabilityQuery(
-  range: DateRangeFilter,
-  options: { userId?: string; category?: string; actionPrefix?: string },
-  pagination: { limit: number; offset: number },
-): QueryFragment {
-  const params: unknown[] = [
-    startOfDayUtc(range.dateFrom),
-    endOfDayUtcExclusive(range.dateTo),
-  ];
-  let idx = 3;
-  const filters: string[] = [
-    `l."createdAt" >= $1`,
-    `l."createdAt" < $2`,
-  ];
-  if (options.userId) {
-    filters.push(`l."userId" = $${idx++}`);
-    params.push(options.userId);
-  }
-  if (options.category) {
-    filters.push(`l."category" = $${idx++}`);
-    params.push(options.category);
-  }
-  if (options.actionPrefix) {
-    filters.push(`l."action" LIKE $${idx++}`);
-    params.push(`${options.actionPrefix}%`);
-  }
-  const whereClause = filters.join(' AND ');
-
-  const offsetParam = idx++;
-  const limitParam = idx++;
-  params.push(pagination.offset, pagination.limit);
-
-  const sql = `
-    SELECT
-      l."id" AS audit_id,
-      l."createdAt",
-      l."action",
-      l."category",
-      l."entityType",
-      l."entityId",
-      COALESCE(NULLIF(u."displayName", ''), u."username", l."userId") AS user_name,
-      l."userRole"
-    FROM "LocalAuditLog" l
-    LEFT JOIN "User" u ON u."id" = l."userId"
-    WHERE ${whereClause}
-    ORDER BY l."createdAt" DESC
-    LIMIT $${limitParam} OFFSET $${offsetParam}
-  `;
-  return { sql, params };
-}
-
-// ---------------------------------------------------------------------------
-// Report 18: PROFIT_MARGIN_BY_PRODUCT
+// Report 16: PROFIT_MARGIN_BY_PRODUCT
 // ---------------------------------------------------------------------------
 
 export function buildProfitMarginQuery(

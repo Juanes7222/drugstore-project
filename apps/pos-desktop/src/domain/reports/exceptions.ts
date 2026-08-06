@@ -44,6 +44,19 @@ export class ReportExecutionException extends DomainError {
   }
 }
 
+/** The report is gated by a purchases-config flag that is not enabled. */
+export class ReportConfigDisabledException extends DomainError {
+  constructor(
+    public readonly reportCode: string,
+    public readonly messageKey = 'reports.error.config_disabled',
+  ) {
+    super(
+      'REPORT_CONFIG_DISABLED',
+      `Report ${reportCode} requires a purchases config flag that is not enabled.`,
+    );
+  }
+}
+
 /**
  * A required filter has not been selected yet (e.g. CASH_SHIFT_CLOSE
  * without a shift picked).  Not a failure — the UI should prompt the

@@ -13,8 +13,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 import { LOCAL_SCHEMA_SQL } from '@pharmacy/database/local-schema';
 import {
+  buildAuditShiftVariancesQuery,
   buildCashShiftCloseQuery,
   buildCountQuery,
+  buildExpiredWithLossQuery,
+  buildExpiringLotsQuery,
   buildSalesDailySummaryQuery,
 } from './report-query-builders';
 import { ReportDatePreset } from './report-types';
@@ -198,5 +201,119 @@ describe('buildCashShiftCloseQuery (PGlite)', () => {
 
     expect(result.rows).toHaveLength(0);
     expect(Number((countResult.rows[0] as Record<string, unknown>).total)).toBe(0);
+  });
+});
+
+describe('lot expiry queries (PGlite)', () => {
+  let pg: PGlite;
+
+  beforeEach(async () => {
+    pg = new PGlite('memory://');
+    await pg.exec(LOCAL_SCHEMA_SQL);
+
+    const now = new Date().toISOString();
+    const userId = 'user-cashier-01';
+    const productId = crypto.randomUUID();
+
+    await pg.exec(`
+      INSERT INTO "Product" (id, "internalCode", "commercialName", "laboratory", "saleType", "isActive", "createdById", "createdAt", "updatedAt")
+      VALUES ('${productId}', 'P001', 'Acetaminofén 500mg', 'Laboratorio Genérico', 'FREE_SALE', true, '${userId}', '${now}', '${now}');
+    `);
+
+    const inDays = (days: number): string =>
+      new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+
+    // One lot expiring soon, one already expired, one far in the future.
+    for (const [lotId, batch, days] of [
+      ['lot-soon', 'ACE-2026-SOON', 20],
+      ['lot-expired', 'ACE-2026-EXPIRED', -10],
+      ['lot-far', 'ACE-2028-FAR', 400],
+    ] as const) {
+      await pg.exec(`
+        INSERT INTO "Lot" (id, "batchNumber", "expirationDate", "entryDate", "state", "currentStock", "version", "productId", "createdAt", "updatedAt")
+        VALUES ('${lotId}', '${batch}', '${inDays(days)}', '${now}', 'ACTIVE', 10, 0, '${productId}', '${now}', '${now}');
+      `);
+    }
+  });
+
+  afterEach(async () => {
+    await pg.close();
+  });
+
+  it('buildExpiringLotsQuery returns only lots expiring within the window', async () => {
+    const fragment = buildExpiringLotsQuery(
+      { daysAhead: 60 },
+      { limit: 100, offset: 0 },
+    );
+    const result = await pg.query(fragment.sql, fragment.params);
+    const rows = result.rows as Array<Record<string, unknown>>;
+
+    expect(rows.map((r) => r.batchNumber).sort()).toEqual(['ACE-2026-SOON']);
+  });
+
+  it('buildExpiredWithLossQuery returns only lots already expired with stock', async () => {
+    const fragment = buildExpiredWithLossQuery({}, { limit: 100, offset: 0 });
+    const result = await pg.query(fragment.sql, fragment.params);
+    const rows = result.rows as Array<Record<string, unknown>>;
+
+    expect(rows.map((r) => r.batchNumber)).toEqual(['ACE-2026-EXPIRED']);
+    expect(Number(rows[0].quantity)).toBe(10);
+  });
+});
+
+describe('buildAuditShiftVariancesQuery (PGlite)', () => {
+  let pg: PGlite;
+
+  beforeEach(async () => {
+    pg = new PGlite('memory://');
+    await pg.exec(LOCAL_SCHEMA_SQL);
+
+    const now = new Date().toISOString();
+    const userId = 'user-cashier-01';
+    const workstationId = 'ws-001';
+
+    const insertClosedShift = async (id: string, closedAt: string, expected: string, actual: string): Promise<void> => {
+      await pg.exec(`
+        INSERT INTO "CashShift" (id, "workstationId", "userId", "state", "openedAt", "closedAt",
+          "expectedClosingAmount", "actualClosingAmount", "closingDifference", "createdAt", "updatedAt")
+        VALUES ('${id}', '${workstationId}', '${userId}', 'CLOSED', '${closedAt}', '${closedAt}',
+          ${expected}, ${actual}, ${Number(actual) - Number(expected)}, '${now}', '${now}');
+      `);
+    };
+
+    // Last month: one short by 1000, one perfectly balanced.
+    await insertClosedShift('shift-jun-10', '2026-06-10T20:00:00.000Z', '10000.00', '9000.00');
+    await insertClosedShift('shift-jun-20', '2026-06-20T20:00:00.000Z', '5000.00', '5000.00');
+    // Last day of the range (boundary inclusive behaviour of the upper bound).
+    await insertClosedShift('shift-jun-30', '2026-06-30T22:00:00.000Z', '3000.00', '3100.00');
+    // This month: outside the requested range.
+    await insertClosedShift('shift-jul-05', '2026-07-05T20:00:00.000Z', '2000.00', '4500.00');
+  });
+
+  afterEach(async () => {
+    await pg.close();
+  });
+
+  it('reports every closed shift in range — balanced and variance — with expected/actual/variance', async () => {
+    const fragment = buildAuditShiftVariancesQuery(
+      { preset: ReportDatePreset.CUSTOM, dateFrom: '2026-06-01', dateTo: '2026-06-30', comparePrevious: false },
+      { limit: 100, offset: 0 },
+    );
+    const result = await pg.query(fragment.sql, fragment.params);
+    const rows = result.rows as Array<Record<string, unknown>>;
+
+    const closedDay = (r: Record<string, unknown>): string => String(r.closed_on ?? r.closedOn ?? '');
+
+    // Three closures in June (including the balanced one), sorted newest first.
+    expect(rows.map(closedDay)).toEqual(['2026-06-30', '2026-06-20', '2026-06-10']);
+
+    const byDate = new Map(rows.map((r) => [closedDay(r), r]));
+    const balanced = byDate.get('2026-06-20')!;
+    expect(balanced.expected_amount).toBe('5000.00');
+    expect(balanced.actual_amount).toBe('5000.00');
+    expect(balanced.total_variance).toBe('0.00');
+
+    expect(byDate.get('2026-06-10')!.total_variance).toBe('-1000.00');
+    expect(byDate.get('2026-06-30')!.total_variance).toBe('100.00');
   });
 });

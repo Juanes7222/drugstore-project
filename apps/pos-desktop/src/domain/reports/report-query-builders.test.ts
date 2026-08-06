@@ -13,6 +13,7 @@ import {
   buildSalesByCashierQuery,
   buildSalesByProductQuery,
   buildSalesDailySummaryQuery,
+  buildStockByCategoryQuery,
   endOfDayUtcExclusive,
   startOfDayUtc,
 } from './report-query-builders';
@@ -134,6 +135,33 @@ describe('buildSalesByProductQuery', () => {
     expect(params[1]).toBe(endOfDayUtcExclusive(range.dateTo));
     expect(sql).toContain('s."confirmedAt" >= $1');
     expect(sql).toContain('s."confirmedAt" < $2');
+  });
+});
+
+describe('buildStockByCategoryQuery', () => {
+  it('aggregates value per product before summing by category so CPP is never mixed', () => {
+    const { sql } = buildStockByCategoryQuery({}, pagination);
+
+    // The per-product CTE computes value with that product's CPP; the
+    // outer query only sums already-computed values.
+    expect(sql).toContain('WITH per_product AS (');
+    expect(sql).toContain('(COALESCE(SUM(l."currentStock"), 0) * COALESCE((\n    SELECT c."cost" FROM "ProductCostHistory" c');
+    expect(sql).toContain('GROUP BY p."id", c."name"');
+    expect(sql).toContain('SUM(stock_value)::numeric AS stock_value');
+    expect(sql).toContain('GROUP BY category_name');
+    expect(sql).toContain('ORDER BY stock_value DESC');
+  });
+
+  it('applies the same inventory filters as current-stock', () => {
+    const { sql, params } = buildStockByCategoryQuery(
+      { categoryId: 'cat-1', laboratory: 'Lab A' },
+      pagination,
+    );
+
+    expect(params).toEqual(['cat-1', 'Lab A', 0, 20]);
+    expect(sql).toContain('p."categoryId" = $1');
+    expect(sql).toContain('p."laboratory" = $2');
+    expect(sql).toContain('l."state" = \'ACTIVE\'');
   });
 });
 

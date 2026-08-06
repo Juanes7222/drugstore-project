@@ -135,24 +135,12 @@ const inventoryMovementsFilters = dateRangeFilterSchema.extend({
 });
 
 const fiscalTaxSummaryFilters = dateRangeFilterSchema;
-const fiscalDianDocumentsFilters = dateRangeFilterSchema.extend({
-  status: z.string().min(1).optional(),
-  invoiceType: z.string().min(1).optional(),
-});
 
 const cashShiftCloseFilters = z.object({
   shiftId: z.string().min(1),
 });
 
-const auditShiftVariancesFilters = dateRangeFilterSchema.extend({
-  cashierUserId: z.string().min(1).optional(),
-});
-
-const auditTraceabilityFilters = dateRangeFilterSchema.extend({
-  userId: z.string().min(1).optional(),
-  category: z.string().min(1).optional(),
-  actionPrefix: z.string().min(1).optional(),
-});
+const auditShiftVariancesFilters = dateRangeFilterSchema;
 
 const profitMarginFilters = dateRangeFilterSchema.extend({
   categoryId: z.string().min(1).optional(),
@@ -174,16 +162,15 @@ const FILTERS_BY_REPORT: {
   [ReportCode.SALES_BY_HOUR]: hourFilters,
   [ReportCode.SALES_BY_WEEKDAY]: weekdayFilters,
   [ReportCode.INV_CURRENT_STOCK]: currentStockFilters,
+  [ReportCode.INV_STOCK_BY_CATEGORY]: currentStockFilters,
   [ReportCode.INV_EXPIRING_LOTS]: expiringLotsFilters,
   [ReportCode.INV_EXPIRED_WITH_LOSS]: expiredWithLossFilters,
   [ReportCode.INV_ROTATION]: rotationFilters,
   [ReportCode.INV_LOW_MOVEMENT]: lowMovementFilters,
   [ReportCode.INV_MOVEMENTS]: inventoryMovementsFilters,
   [ReportCode.FISCAL_TAX_SUMMARY]: fiscalTaxSummaryFilters,
-  [ReportCode.FISCAL_DIAN_DOCUMENTS]: fiscalDianDocumentsFilters,
   [ReportCode.CASH_SHIFT_CLOSE]: cashShiftCloseFilters,
   [ReportCode.AUDIT_SHIFT_VARIANCES]: auditShiftVariancesFilters,
-  [ReportCode.AUDIT_TRACEABILITY]: auditTraceabilityFilters,
   [ReportCode.PROFIT_MARGIN_BY_PRODUCT]: profitMarginFilters,
 };
 

@@ -17,7 +17,7 @@
  *   that prevent a report from running — those throw domain errors.
  */
 
-import { RoleType } from '@pharmacy/shared-types';
+import { RoleType, type PurchasesConfig } from '@pharmacy/shared-types';
 import { MovementType, SaleOperationalState, ShiftState } from '@pharmacy/database/local';
 
 // ---------------------------------------------------------------------------
@@ -34,6 +34,7 @@ export const ReportCode = {
   SALES_BY_WEEKDAY: 'SALES_BY_WEEKDAY',
 
   INV_CURRENT_STOCK: 'INV_CURRENT_STOCK',
+  INV_STOCK_BY_CATEGORY: 'INV_STOCK_BY_CATEGORY',
   INV_EXPIRING_LOTS: 'INV_EXPIRING_LOTS',
   INV_EXPIRED_WITH_LOSS: 'INV_EXPIRED_WITH_LOSS',
   INV_ROTATION: 'INV_ROTATION',
@@ -41,11 +42,8 @@ export const ReportCode = {
   INV_MOVEMENTS: 'INV_MOVEMENTS',
 
   FISCAL_TAX_SUMMARY: 'FISCAL_TAX_SUMMARY',
-  FISCAL_DIAN_DOCUMENTS: 'FISCAL_DIAN_DOCUMENTS',
   CASH_SHIFT_CLOSE: 'CASH_SHIFT_CLOSE',
   AUDIT_SHIFT_VARIANCES: 'AUDIT_SHIFT_VARIANCES',
-
-  AUDIT_TRACEABILITY: 'AUDIT_TRACEABILITY',
   PROFIT_MARGIN_BY_PRODUCT: 'PROFIT_MARGIN_BY_PRODUCT',
 } as const;
 
@@ -168,24 +166,11 @@ export interface InventoryMovementsFilters extends DateRangeFilter {
 
 export interface FiscalTaxSummaryFilters extends DateRangeFilter {}
 
-export interface FiscalDianDocumentsFilters extends DateRangeFilter {
-  status?: string;
-  invoiceType?: string;
-}
-
 export interface CashShiftCloseFilters {
   shiftId: string;
 }
 
-export interface AuditShiftVariancesFilters extends DateRangeFilter {
-  cashierUserId?: string;
-}
-
-export interface AuditTraceabilityFilters extends DateRangeFilter {
-  userId?: string;
-  category?: string;
-  actionPrefix?: string;
-}
+export interface AuditShiftVariancesFilters extends DateRangeFilter {}
 
 export interface ProfitMarginFilters extends DateRangeFilter {
   categoryId?: string;
@@ -202,16 +187,15 @@ export type ReportFilters =
   | { code: typeof ReportCode.SALES_BY_HOUR; filters: HourFilters }
   | { code: typeof ReportCode.SALES_BY_WEEKDAY; filters: WeekdayFilters }
   | { code: typeof ReportCode.INV_CURRENT_STOCK; filters: CurrentStockFilters }
+  | { code: typeof ReportCode.INV_STOCK_BY_CATEGORY; filters: CurrentStockFilters }
   | { code: typeof ReportCode.INV_EXPIRING_LOTS; filters: ExpiringLotsFilters }
   | { code: typeof ReportCode.INV_EXPIRED_WITH_LOSS; filters: ExpiredWithLossFilters }
   | { code: typeof ReportCode.INV_ROTATION; filters: RotationFilters }
   | { code: typeof ReportCode.INV_LOW_MOVEMENT; filters: LowMovementFilters }
   | { code: typeof ReportCode.INV_MOVEMENTS; filters: InventoryMovementsFilters }
   | { code: typeof ReportCode.FISCAL_TAX_SUMMARY; filters: FiscalTaxSummaryFilters }
-  | { code: typeof ReportCode.FISCAL_DIAN_DOCUMENTS; filters: FiscalDianDocumentsFilters }
   | { code: typeof ReportCode.CASH_SHIFT_CLOSE; filters: CashShiftCloseFilters }
   | { code: typeof ReportCode.AUDIT_SHIFT_VARIANCES; filters: AuditShiftVariancesFilters }
-  | { code: typeof ReportCode.AUDIT_TRACEABILITY; filters: AuditTraceabilityFilters }
   | { code: typeof ReportCode.PROFIT_MARGIN_BY_PRODUCT; filters: ProfitMarginFilters };
 
 /** Helper to extract filters from a ReportFilters discriminated union. */
@@ -235,6 +219,23 @@ export const ReportChartKind = {
 } as const;
 
 export type ReportChartKind = (typeof ReportChartKind)[keyof typeof ReportChartKind];
+
+/**
+ * The unit of a chart's numeric series values.  The renderer uses it to
+ * format axes and tooltips — currency series get COP formatting, counts
+ * get plain integers, margins get a percent sign, rotation indices get
+ * a plain decimal.  Absent means "currency" for line/area and the
+ * profit-margin defaults for scatter.
+ */
+export const ReportChartAxisUnit = {
+  CURRENCY: 'currency',
+  NUMBER: 'number',
+  PERCENT: 'percent',
+  RATIO: 'ratio',
+} as const;
+
+export type ReportChartAxisUnit =
+  (typeof ReportChartAxisUnit)[keyof typeof ReportChartAxisUnit];
 
 export interface ReportChartConfig {
   kind: ReportChartKind;
@@ -271,7 +272,35 @@ export interface ReportColumn {
   align?: 'left' | 'right' | 'center';
   /** Optional fixed width, in characters. */
   width?: number;
+  /** When the cell value is an enum (BADGE columns), the i18n key prefix
+   *  under which the raw value is translated (`${prefix}.${value}`).
+   *  Falls back to the raw value when the key is missing. */
+  badgeKeyPrefix?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Config-gated reports
+// ---------------------------------------------------------------------------
+
+/**
+ * Purchases-config flags that gate a report's visibility.  A report that
+ * depends on lot tracking only makes sense when the tenant requires lots
+ * on reception; an expiry-based report makes sense when expiry dates are
+ * collected.  The sidebar hides gated reports and the execution service
+ * rejects them when the effective config does not enable them.
+ */
+export const ReportConfigFlag = {
+  LOT_ON_RECEPTION: 'requireLotOnReception',
+  EXPIRY_ON_RECEPTION: 'requireExpiryOnReception',
+} as const;
+
+export type ReportConfigFlag =
+  (typeof ReportConfigFlag)[keyof typeof ReportConfigFlag];
+
+/** The slice of the effective purchases config the report gating reads. */
+export type ReportConfigContext = Partial<
+  Pick<PurchasesConfig, 'requireLotOnReception' | 'requireExpiryOnReception'>
+>;
 
 // ---------------------------------------------------------------------------
 // Report definition
@@ -298,6 +327,9 @@ export interface ReportDefinition {
   cacheTtlMs: number;
   /** When true, requires a step-up authentication before the report can run. */
   requiresStepUp?: boolean;
+  /** Purchases-config flags that must be enabled for the report to appear
+   *  in the sidebar and run.  Absent = always available. */
+  requiresConfig?: readonly ReportConfigFlag[];
 }
 
 // ---------------------------------------------------------------------------
@@ -380,7 +412,20 @@ export interface ReportResponseBase {
   kpis: ReportKpi[];
   /** Chart series in ECharts-friendly shape (raw data only — the
    *  renderer maps these to options via the chart-option factories). */
-  chart: { kind: ReportChartKind; series: unknown; xAxis?: unknown; yAxis?: unknown };
+  chart: {
+    kind: ReportChartKind;
+    series: unknown;
+    xAxis?: unknown;
+    yAxis?: unknown;
+    /** Numeric unit of the series values — drives axis/tooltip formatting. */
+    unit?: ReportChartAxisUnit;
+    /** Per-axis scatter configuration (labels + units).  Falls back to
+     *  the profit-margin defaults when absent. */
+    scatterAxes?: {
+      x: { label: string; unit: 'percent' | 'number' | 'ratio' };
+      y: { label: string; unit: 'currency' | 'number' };
+    };
+  };
   /** Paginated detail table data. */
   rows: AnyReportRow[];
   total: number;

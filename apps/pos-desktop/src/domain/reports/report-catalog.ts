@@ -20,6 +20,8 @@ import {
   ReportCode,
   ReportColumn,
   ReportColumnType,
+  ReportConfigContext,
+  ReportConfigFlag,
   ReportDefinition,
 } from './report-types';
 
@@ -57,7 +59,8 @@ const col = (
   type: ReportColumnType,
   align?: 'left' | 'right' | 'center',
   width?: number,
-): ReportColumn => ({ id, titleKey, type, align, width });
+  badgeKeyPrefix?: string,
+): ReportColumn => ({ id, titleKey, type, align, width, badgeKeyPrefix });
 
 // ---------------------------------------------------------------------------
 // Catalog
@@ -242,7 +245,29 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
       col('salePrice', 'reports.cols.sale_price', ReportColumnType.CURRENCY, 'right'),
       col('stock', 'reports.cols.stock', ReportColumnType.INTEGER, 'right'),
       col('stockValue', 'reports.cols.stock_value', ReportColumnType.CURRENCY, 'right'),
-      col('lowStock', 'reports.cols.low_stock', ReportColumnType.BADGE, 'center'),
+      col('lowStock', 'reports.cols.low_stock', ReportColumnType.BADGE, 'center', undefined, 'reports.badges.low_stock'),
+    ],
+    cacheTtlMs: 15_000,
+  },
+  {
+    code: ReportCode.INV_STOCK_BY_CATEGORY,
+    titleKey: 'reports.catalog.inv_stock_by_category.title',
+    descriptionKey: 'reports.catalog.inv_stock_by_category.description',
+    category: ReportCategory.INVENTORY,
+    allowedRoles: [
+      RoleType.INVENTORY_ASSISTANT,
+      RoleType.MANAGER,
+      RoleType.OWNER,
+      RoleType.SAAS_ADMIN,
+      RoleType.ACCOUNTANT,
+    ],
+    defaultFilters: {},
+    exportFormats: ['pdf', 'excel', 'csv', 'print'],
+    chart: { kind: ReportChartKind.DONUT, showSummary: true },
+    columns: [
+      col('categoryName', 'reports.cols.category', ReportColumnType.TEXT, 'left'),
+      col('stock', 'reports.cols.stock', ReportColumnType.INTEGER, 'right'),
+      col('stockValue', 'reports.cols.stock_value', ReportColumnType.CURRENCY, 'right'),
     ],
     cacheTtlMs: 15_000,
   },
@@ -260,7 +285,11 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     ],
     defaultFilters: { daysAhead: 60 },
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
-    chart: { kind: ReportChartKind.STACKED_BAR, showSummary: true },
+    // Lot tracking is opt-in via the purchases config — a business that
+    // does not collect lot numbers has no meaningful expiring-lots view.
+    requiresConfig: [ReportConfigFlag.LOT_ON_RECEPTION],
+    // Single units series bucketed by month — value stays in the table.
+    chart: { kind: ReportChartKind.BAR_VERTICAL, showSummary: true },
     columns: [
       col('batchNumber', 'reports.cols.batch_number', ReportColumnType.TEXT, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
@@ -286,6 +315,9 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     ],
     defaultFilters: {},
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
+    // Expiry-date tracking is opt-in via the purchases config — without
+    // it the expired-with-loss view has no signal to report on.
+    requiresConfig: [ReportConfigFlag.EXPIRY_ON_RECEPTION],
     chart: { kind: ReportChartKind.NONE },
     columns: [
       col('batchNumber', 'reports.cols.batch_number', ReportColumnType.TEXT, 'left'),
@@ -363,7 +395,7 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
       col('createdAt', 'reports.cols.date', ReportColumnType.DATETIME, 'left'),
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('batchNumber', 'reports.cols.batch_number', ReportColumnType.TEXT, 'left'),
-      col('movementType', 'reports.cols.movement_type', ReportColumnType.BADGE, 'center'),
+      col('movementType', 'reports.cols.movement_type', ReportColumnType.BADGE, 'center', undefined, 'reports.movement_types'),
       col('quantity', 'reports.cols.quantity', ReportColumnType.INTEGER, 'right'),
       col('previousStock', 'reports.cols.previous_stock', ReportColumnType.INTEGER, 'right'),
       col('resultingStock', 'reports.cols.resulting_stock', ReportColumnType.INTEGER, 'right'),
@@ -393,29 +425,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
       col('taxType', 'reports.cols.tax_type', ReportColumnType.TEXT, 'left'),
       col('taxableBase', 'reports.cols.taxable_base', ReportColumnType.CURRENCY, 'right'),
       col('taxAmount', 'reports.cols.tax_amount', ReportColumnType.CURRENCY, 'right'),
-    ],
-    cacheTtlMs: 30_000,
-  },
-  {
-    code: ReportCode.FISCAL_DIAN_DOCUMENTS,
-    titleKey: 'reports.catalog.fiscal_dian_documents.title',
-    descriptionKey: 'reports.catalog.fiscal_dian_documents.description',
-    category: ReportCategory.FISCAL,
-    allowedRoles: [
-      RoleType.ACCOUNTANT,
-      RoleType.MANAGER,
-      RoleType.OWNER,
-      RoleType.SAAS_ADMIN,
-    ],
-    defaultFilters: { ...thisMonth() },
-    exportFormats: ['pdf', 'excel', 'csv', 'print'],
-    chart: { kind: ReportChartKind.DONUT, showSummary: true },
-    columns: [
-      col('invoiceNumber', 'reports.cols.invoice_number', ReportColumnType.TEXT, 'left'),
-      col('invoiceType', 'reports.cols.invoice_type', ReportColumnType.TEXT, 'left'),
-      col('issuedAt', 'reports.cols.issued_at', ReportColumnType.DATETIME, 'left'),
-      col('status', 'reports.cols.status', ReportColumnType.BADGE, 'center'),
-      col('cufe', 'reports.cols.cufe', ReportColumnType.TEXT, 'left'),
     ],
     cacheTtlMs: 30_000,
   },
@@ -456,8 +465,9 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
     chart: { kind: ReportChartKind.DIVERGING_BAR, showSummary: true },
     columns: [
-      col('cashierName', 'reports.cols.cashier_name', ReportColumnType.TEXT, 'left'),
       col('closedAt', 'reports.cols.closed_at', ReportColumnType.DATETIME, 'left'),
+      col('expectedAmount', 'reports.cols.expected', ReportColumnType.CURRENCY, 'right'),
+      col('actualAmount', 'reports.cols.declared', ReportColumnType.CURRENCY, 'right'),
       col('totalVariance', 'reports.cols.variance', ReportColumnType.CURRENCY, 'right'),
     ],
     cacheTtlMs: 30_000,
@@ -466,26 +476,6 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
   // -----------------------------------------------------------------------
   // Audit & profitability
   // -----------------------------------------------------------------------
-  {
-    code: ReportCode.AUDIT_TRACEABILITY,
-    titleKey: 'reports.catalog.audit_traceability.title',
-    descriptionKey: 'reports.catalog.audit_traceability.description',
-    category: ReportCategory.AUDIT,
-    allowedRoles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN, RoleType.ACCOUNTANT],
-    defaultFilters: { ...thisMonth() },
-    exportFormats: ['pdf', 'excel', 'csv', 'print'],
-    chart: { kind: ReportChartKind.NONE },
-    columns: [
-      col('createdAt', 'reports.cols.date', ReportColumnType.DATETIME, 'left'),
-      col('action', 'reports.cols.action', ReportColumnType.TEXT, 'left'),
-      col('category', 'reports.cols.category', ReportColumnType.TEXT, 'left'),
-      col('entityType', 'reports.cols.entity_type', ReportColumnType.TEXT, 'left'),
-      col('userName', 'reports.cols.user', ReportColumnType.TEXT, 'left'),
-      col('userRole', 'reports.cols.role', ReportColumnType.TEXT, 'left'),
-    ],
-    cacheTtlMs: 15_000,
-    requiresStepUp: true,
-  },
   {
     code: ReportCode.PROFIT_MARGIN_BY_PRODUCT,
     titleKey: 'reports.catalog.profit_margin_by_product.title',
@@ -499,7 +489,9 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
     ],
     defaultFilters: { ...thisMonth(), lowMarginPercent: 5 },
     exportFormats: ['pdf', 'excel', 'csv', 'print'],
-    chart: { kind: ReportChartKind.SCATTER, showSummary: true },
+    // Histogram of margin brackets — a scatter of points is not readable
+    // for non-analyst users.
+    chart: { kind: ReportChartKind.BAR_VERTICAL, showSummary: true },
     columns: [
       col('productName', 'reports.cols.product', ReportColumnType.TEXT, 'left'),
       col('cpp', 'reports.cols.cpp', ReportColumnType.CURRENCY, 'right'),
@@ -509,7 +501,7 @@ export const REPORT_CATALOG: readonly ReportDefinition[] = [
       col('estimatedCost', 'reports.cols.estimated_cost', ReportColumnType.CURRENCY, 'right'),
       col('grossProfit', 'reports.cols.gross_profit', ReportColumnType.CURRENCY, 'right'),
       col('grossMarginPercent', 'reports.cols.gross_margin', ReportColumnType.PERCENT, 'right'),
-      col('marginStatus', 'reports.cols.margin_status', ReportColumnType.BADGE, 'center'),
+      col('marginStatus', 'reports.cols.margin_status', ReportColumnType.BADGE, 'center', undefined, 'reports.margins'),
     ],
     cacheTtlMs: 60_000,
   },
@@ -524,25 +516,45 @@ const CATALOG_BY_CODE: Map<ReportCode, ReportDefinition> = new Map(
   REPORT_CATALOG.map((r) => [r.code, r]),
 );
 
+
 export function getReportDefinition(code: ReportCode): ReportDefinition {
   const def = CATALOG_BY_CODE.get(code);
   if (!def) throw new Error(`Unknown report code: ${code}`);
   return def;
 }
 
-export function listReportsForRole(role: string | null | undefined): readonly ReportDefinition[] {
+/** True when the effective purchases config enables every flag the report
+ *  requires.  A null/absent config does NOT gate — before the tenant config
+ *  loads we must not hide reports the user may legitimately use. */
+export function reportConfigSatisfied(
+  def: ReportDefinition,
+  config?: ReportConfigContext | null,
+): boolean {
+  if (!def.requiresConfig || !config) return true;
+  return def.requiresConfig.every((flag) => config[flag] === true);
+}
+
+export function listReportsForRole(
+  role: string | null | undefined,
+  config?: ReportConfigContext | null,
+): readonly ReportDefinition[] {
   if (!role) return [];
-  return REPORT_CATALOG.filter((r) => r.allowedRoles.includes(role as RoleType));
+  return REPORT_CATALOG.filter(
+    (r) => r.allowedRoles.includes(role as RoleType) && reportConfigSatisfied(r, config),
+  );
 }
 
 export function listReportsByCategory(
   role: string | null | undefined,
+  config?: ReportConfigContext | null,
 ): ReadonlyMap<ReportCategory, readonly ReportDefinition[]> {
   const grouped = new Map<ReportCategory, ReportDefinition[]>();
-  for (const def of listReportsForRole(role)) {
+  for (const def of listReportsForRole(role, config)) {
     const bucket = grouped.get(def.category) ?? [];
     bucket.push(def);
     grouped.set(def.category, bucket);
   }
   return grouped as ReadonlyMap<ReportCategory, readonly ReportDefinition[]>;
 }
+
+
