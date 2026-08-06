@@ -177,6 +177,10 @@ export class CashShiftService {
    * update runs inside a per-subscription tenant transaction.
    */
   async flagExtendedShifts(): Promise<void> {
+    // One tenant transaction per subscription is required by RLS: the cron
+    // runs outside any request context and CashShift rows are only visible
+    // inside a per-tenant `SET LOCAL app.current_tenant`. Cost is O(#tenants)
+    // commits, which is acceptable for a nightly job.
     const subscriptions = await this.prisma.subscription.findMany({
       select: { id: true },
     });

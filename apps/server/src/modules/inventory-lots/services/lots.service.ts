@@ -181,7 +181,7 @@ export class LotsService {
       : [];
     const costByLotId = new Map(receptionItems.map((r) => [r.lotId, r.realUnitCost]));
 
-    let totalAvailable = availableLots.reduce((sum, lot) => sum + lot.currentStock, 0);
+    const totalAvailable = availableLots.reduce((sum, lot) => sum + lot.currentStock, 0);
     if (totalAvailable < quantity) {
       throw new InsufficientStockException(productId, quantity, totalAvailable);
     }

@@ -130,6 +130,8 @@ const mockPrisma = {
   ),
   product: {
     findUnique: jest.fn().mockResolvedValue({ id: 'product-uuid-1' }),
+    findMany: jest.fn(),
+    count: jest.fn(),
     update: jest.fn(),
   },
   productBarcode: {
@@ -309,6 +311,92 @@ describe('ProductsService', () => {
           currentTaxHistoryId: 'tax-hist-uuid-1',
         },
       });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // findAll
+  // -----------------------------------------------------------------------
+  describe('findAll', () => {
+    // FIX-014: findAll returns a bounded paginated envelope instead of every
+    // matching product; page/pageSize default to 1/50.
+    beforeEach(() => {
+      // cb form is used by the write flows, array form by findAll
+      mockPrisma.$transaction.mockImplementation(async (arg: unknown) => {
+        if (typeof arg === 'function') return (arg as (tx: unknown) => unknown)(mockTx);
+        return Promise.all(arg as unknown[]);
+      });
+    });
+
+    it('returns paginated products with current price, cost, and tax mapped', async () => {
+      const item = buildProduct({
+        priceHistories: [{ id: 'ph-1', price: { value: '5000.00' } }],
+        costHistories: [{ id: 'ch-1', cost: { value: '3000.00' } }],
+        taxHistories: [{ id: 'th-1', taxScheme: { id: 'tax-scheme-uuid-1' } }],
+      });
+      mockPrisma.product.findMany.mockResolvedValue([item]);
+      mockPrisma.product.count.mockResolvedValue(1);
+
+      const result = await service.findAll({}, undefined, 1, 50);
+
+      expect(result).toEqual({
+        data: [
+          {
+            ...item,
+            currentPrice: { id: 'ph-1', price: { value: '5000.00' } },
+            currentCost: { id: 'ch-1', cost: { value: '3000.00' } },
+            currentTax: { id: 'th-1', taxScheme: { id: 'tax-scheme-uuid-1' } },
+            priceHistories: undefined,
+            costHistories: undefined,
+            taxHistories: undefined,
+          },
+        ],
+        total: 1,
+        page: 1,
+        pageSize: 50,
+      });
+    });
+
+    it('searches commercialName and internalCode case-insensitively when search is provided', async () => {
+      mockPrisma.product.findMany.mockResolvedValue([]);
+      mockPrisma.product.count.mockResolvedValue(0);
+
+      await service.findAll({}, 'para');
+
+      expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { commercialName: { contains: 'para', mode: 'insensitive' } },
+              { internalCode: { contains: 'para', mode: 'insensitive' } },
+            ],
+          },
+        }),
+      );
+    });
+
+    it('defaults to page 1 and pageSize 50', async () => {
+      mockPrisma.product.findMany.mockResolvedValue([]);
+      mockPrisma.product.count.mockResolvedValue(0);
+
+      await service.findAll({});
+
+      expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 50 }),
+      );
+    });
+
+    it('passes raw filters through to the where clause', async () => {
+      mockPrisma.product.findMany.mockResolvedValue([]);
+      mockPrisma.product.count.mockResolvedValue(0);
+
+      await service.findAll({ saleType: 'FREE_SALE' });
+
+      expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ saleType: 'FREE_SALE' }),
+        }),
+      );
     });
   });
 

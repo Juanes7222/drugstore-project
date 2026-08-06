@@ -155,6 +155,9 @@ describe('TenantConfigService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
+    // FIX-004: the version-guarded write is an updateMany with a
+    // configVersion predicate — count 1 means the CAS succeeded.
+    (prisma.tenantConfig.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
     validationService = {
       validate: jest.fn().mockReturnValue([]),
     } as unknown as jest.Mocked<ConfigValidationService>;
@@ -173,12 +176,15 @@ describe('TenantConfigService', () => {
     describe('fiscal validation guard', () => {
       it('skips fiscal validation on partial update when DB fiscal is empty (initial setup)', async () => {
         const dbRow = configRowWithEmptyFiscal();
-        (prisma.tenantConfig.findUnique as jest.Mock).mockResolvedValue(dbRow);
         const updatedRow = configRowWithEmptyFiscal({
           configVersion: 2,
           fiscal: { ...EMPTY_FISCAL, companyName: 'Mi Farmacia' },
         });
-        (prisma.tenantConfig.update as jest.Mock).mockResolvedValue(updatedRow);
+        // FIX-004: read once for the merge, once for the version-guarded
+        // write's post-update re-fetch (the write itself is updateMany).
+        (prisma.tenantConfig.findUnique as jest.Mock)
+          .mockResolvedValueOnce(dbRow)
+          .mockResolvedValueOnce(updatedRow);
 
         const result = await service.update(
           SUBSCRIPTION_ID,
@@ -193,17 +199,18 @@ describe('TenantConfigService', () => {
         // in the validation input (only strictness and workflow are present)
         const validateCallArgs = validationService.validate.mock.calls[0][0];
         expect(validateCallArgs.fiscal).toBeUndefined();
-        expect(prisma.tenantConfig.update).toHaveBeenCalled();
+        expect(prisma.tenantConfig.updateMany).toHaveBeenCalled();
       });
 
       it('validates merged fiscal on partial update when DB has fully-configured fiscal', async () => {
         const dbRow = configRowWithFullFiscal();
-        (prisma.tenantConfig.findUnique as jest.Mock).mockResolvedValue(dbRow);
         const updatedRow = configRowWithFullFiscal({
           configVersion: 2,
           fiscal: { ...FULL_FISCAL, companyName: 'Nueva Razón Social' },
         });
-        (prisma.tenantConfig.update as jest.Mock).mockResolvedValue(updatedRow);
+        (prisma.tenantConfig.findUnique as jest.Mock)
+          .mockResolvedValueOnce(dbRow)
+          .mockResolvedValueOnce(updatedRow);
 
         const result = await service.update(
           SUBSCRIPTION_ID,
@@ -217,12 +224,11 @@ describe('TenantConfigService', () => {
         const validateCallArgs = validationService.validate.mock.calls[0][0];
         expect(validateCallArgs.fiscal).toBeDefined();
         expect(validateCallArgs.fiscal!.companyName).toBe('Nueva Razón Social');
-        expect(prisma.tenantConfig.update).toHaveBeenCalled();
+        expect(prisma.tenantConfig.updateMany).toHaveBeenCalled();
       });
 
       it('validates fiscal when single request provides all required fields on empty DB', async () => {
         const dbRow = configRowWithEmptyFiscal();
-        (prisma.tenantConfig.findUnique as jest.Mock).mockResolvedValue(dbRow);
         const allFields = {
           companyName: 'Mi Farmacia',
           nit: '123456789',
@@ -239,7 +245,9 @@ describe('TenantConfigService', () => {
           configVersion: 2,
           fiscal: mergedFiscal,
         });
-        (prisma.tenantConfig.update as jest.Mock).mockResolvedValue(updatedRow);
+        (prisma.tenantConfig.findUnique as jest.Mock)
+          .mockResolvedValueOnce(dbRow)
+          .mockResolvedValueOnce(updatedRow);
 
         const result = await service.update(
           SUBSCRIPTION_ID,
@@ -254,7 +262,7 @@ describe('TenantConfigService', () => {
         const validateCallArgs = validationService.validate.mock.calls[0][0];
         expect(validateCallArgs.fiscal).toBeDefined();
         expect(validateCallArgs.fiscal!.nit).toBe('123456789');
-        expect(prisma.tenantConfig.update).toHaveBeenCalled();
+        expect(prisma.tenantConfig.updateMany).toHaveBeenCalled();
       });
 
       it('throws ConfigValidationException when partial update wipes required field on fully-configured DB', async () => {
@@ -283,18 +291,19 @@ describe('TenantConfigService', () => {
         expect(validateCallArgs.fiscal).toBeDefined();
         // The merged fiscal should have companyName empty
         expect(validateCallArgs.fiscal!.companyName).toBe('');
-        // update should NOT be called since validation fails
-        expect(prisma.tenantConfig.update).not.toHaveBeenCalled();
+        // updateMany should NOT be called since validation fails
+        expect(prisma.tenantConfig.updateMany).not.toHaveBeenCalled();
       });
 
       it('does not add fiscal to validation when neither DB nor merged fiscal is fully configured', async () => {
         const dbRow = configRowWithEmptyFiscal();
-        (prisma.tenantConfig.findUnique as jest.Mock).mockResolvedValue(dbRow);
         const updatedRow = configRowWithEmptyFiscal({
           configVersion: 2,
           fiscal: { ...EMPTY_FISCAL, companyName: 'Partial', nit: '123' },
         });
-        (prisma.tenantConfig.update as jest.Mock).mockResolvedValue(updatedRow);
+        (prisma.tenantConfig.findUnique as jest.Mock)
+          .mockResolvedValueOnce(dbRow)
+          .mockResolvedValueOnce(updatedRow);
 
         // Two fields provided but not all 9 — still not fully configured
         await service.update(
@@ -327,8 +336,8 @@ describe('TenantConfigService', () => {
           ),
         ).rejects.toThrow(ConfigVersionConflictException);
 
-        // update should NOT be called — guard fires before any write
-        expect(prisma.tenantConfig.update).not.toHaveBeenCalled();
+        // updateMany should NOT be called — guard fires before any write
+        expect(prisma.tenantConfig.updateMany).not.toHaveBeenCalled();
       });
     });
 
@@ -339,12 +348,13 @@ describe('TenantConfigService', () => {
     describe('without fiscal in DTO', () => {
       it('does not call fiscal validation when DTO omits fiscal entirely', async () => {
         const dbRow = configRowWithEmptyFiscal();
-        (prisma.tenantConfig.findUnique as jest.Mock).mockResolvedValue(dbRow);
         const updatedRow = configRowWithEmptyFiscal({
           configVersion: 2,
           strictness: { ...FULL_STRICTNESS, lots: 'STRICT' },
         });
-        (prisma.tenantConfig.update as jest.Mock).mockResolvedValue(updatedRow);
+        (prisma.tenantConfig.findUnique as jest.Mock)
+          .mockResolvedValueOnce(dbRow)
+          .mockResolvedValueOnce(updatedRow);
 
         await service.update(
           SUBSCRIPTION_ID,
@@ -382,9 +392,6 @@ describe('TenantConfigService', () => {
       (prisma.tenantConfig.create as jest.Mock).mockResolvedValueOnce(created);
       // Step 4 — changelog entry for creation
       (prisma.configChangelog.create as jest.Mock).mockResolvedValueOnce({} as any);
-      // Step 5 — re-fetch before the final update
-      (prisma.tenantConfig.findUnique as jest.Mock).mockResolvedValueOnce(created);
-      // Step 6 — final update (merging the DTO on top of defaults)
       const updated = configRowWithEmptyFiscal({
         configVersion: 2,
         fiscal: {
@@ -400,9 +407,11 @@ describe('TenantConfigService', () => {
           dianResolutionPrefix: 'PRE',
         },
       });
-      (prisma.tenantConfig.update as jest.Mock).mockResolvedValueOnce(updated);
-      // Step 7 — changelog for the update
-      (prisma.configChangelog.create as jest.Mock).mockResolvedValueOnce({} as any);
+      // Step 5 — re-fetch before the version-guarded write
+      (prisma.tenantConfig.findUnique as jest.Mock).mockResolvedValueOnce(updated);
+      // Step 6 — version-guarded write's post-update re-fetch (FIX-004:
+      // the write itself is an updateMany, stubbed to count 1 in beforeEach)
+      (prisma.tenantConfig.findUnique as jest.Mock).mockResolvedValueOnce(updated);
     }
 
     it('skips fiscal validation during initial creation even when all fiscal fields are provided', async () => {
@@ -436,7 +445,7 @@ describe('TenantConfigService', () => {
         expect(args[0].fiscal).toBeUndefined();
       }
       // Update must have happened
-      expect(prisma.tenantConfig.update).toHaveBeenCalled();
+      expect(prisma.tenantConfig.updateMany).toHaveBeenCalled();
     });
 
     it('applies fiscal fields to DB during initial creation even though validation is skipped', async () => {

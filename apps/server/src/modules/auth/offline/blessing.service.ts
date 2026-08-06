@@ -19,6 +19,7 @@ import { ConfigService } from '@nestjs/config';
 import { EnvConfig } from '@/config/env.schema';
 import { OfflineTokenService } from './offline-token.service';
 import { AuditService, AuditEvent } from '../services/audit.service';
+import type { OfflineTokenClaims } from './offline-token.service';
 import * as crypto from 'node:crypto';
 
 // ---------------------------------------------------------------------------
@@ -82,28 +83,80 @@ export class BlessingService {
       requests = requests.slice(0, 50);
     }
 
-    const results: BlessingResult[] = [];
-
+    // Pre-verify tokens (synchronous JWT verification, no DB) so the
+    // revocation-list and user lookups can be batched into two queries
+    // instead of two sequential queries per session.
+    const claimsBySession = new Map<string, OfflineTokenClaims>();
+    const jtis: string[] = [];
+    const userIds: string[] = [];
     for (const req of requests) {
-      try {
-        const result = await this.blessSingleSession(
-          req,
-          requestWorkstationFingerprint,
-        );
-        results.push(result);
-
-        // Record the blessing result in the database
-        await this.recordBlessing(req, result);
-      } catch (error) {
-        this.logger.error(
-          `Error blessing session ${req.localSessionId}: ${(error as Error).message}`,
-        );
-        results.push({
-          localSessionId: req.localSessionId,
-          status: 'REJECTED',
-          reason: 'INTERNAL_ERROR',
-        });
+      const claims = this.offlineTokenService.verifyToken(req.offlineTokenJwt);
+      if (claims) {
+        claimsBySession.set(req.localSessionId, claims);
+        jtis.push(claims.jti);
+        userIds.push(req.userId);
       }
+    }
+
+    const [revokedRows, users] = await Promise.all([
+      jtis.length > 0
+        ? this.prisma.offlineTokenRevocation.findMany({
+            where: { jti: { in: jtis } },
+            select: { jti: true },
+          })
+        : Promise.resolve([]),
+      userIds.length > 0
+        ? this.prisma.user.findMany({
+            where: { id: { in: userIds } },
+            select: {
+              id: true,
+              isActive: true,
+              status: true,
+              role: true,
+              subscriptionId: true,
+              lockedUntil: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+    const revokedJtis = new Set(revokedRows.map((r) => r.jti));
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    // Sessions are independent of each other, so process them in bounded
+    // parallel batches (max 5) instead of fully sequentially; each session
+    // keeps its own error isolation so one failure cannot affect the rest.
+    const results: BlessingResult[] = [];
+    const batchSize = 5;
+    for (let i = 0; i < requests.length; i += batchSize) {
+      const chunk = requests.slice(i, i + batchSize);
+      const chunkResults = await Promise.all(
+        chunk.map(async (req) => {
+          try {
+            const result = await this.blessSingleSession(
+              req,
+              requestWorkstationFingerprint,
+              {
+                claims: claimsBySession.get(req.localSessionId) ?? null,
+                revokedJtis,
+                user: userMap.get(req.userId) ?? null,
+              },
+            );
+            // Record the blessing result in the database
+            await this.recordBlessing(req, result);
+            return result;
+          } catch (error) {
+            this.logger.error(
+              `Error blessing session ${req.localSessionId}: ${(error as Error).message}`,
+            );
+            return {
+              localSessionId: req.localSessionId,
+              status: 'REJECTED',
+              reason: 'INTERNAL_ERROR',
+            } as BlessingResult;
+          }
+        }),
+      );
+      results.push(...chunkResults);
     }
 
     return { results };
@@ -111,13 +164,31 @@ export class BlessingService {
 
   /**
    * Bless a single offline session.
+   *
+   * `precomputed` carries the batched lookup results from blessSessions so
+   * this method performs only the checks that genuinely depend on the
+   * individual session.
    */
   private async blessSingleSession(
     req: BlessingRequest,
     requestWorkstationFingerprint: string,
+    precomputed: {
+      claims: OfflineTokenClaims | null;
+      revokedJtis: Set<string>;
+      user:
+        | {
+            id: string;
+            isActive: boolean;
+            status: string;
+            role: string;
+            subscriptionId: string | null;
+            lockedUntil: Date | null;
+          }
+        | null;
+    },
   ): Promise<BlessingResult> {
     // Step 1: Verify the offline token signature
-    const claims = this.offlineTokenService.verifyToken(req.offlineTokenJwt);
+    const claims = precomputed.claims;
     if (!claims) {
       return {
         localSessionId: req.localSessionId,
@@ -136,9 +207,8 @@ export class BlessingService {
       };
     }
 
-    // Step 3: Check revocation list
-    const isRevoked = await this.offlineTokenService.isRevoked(claims.jti);
-    if (isRevoked) {
+    // Step 3: Check revocation list (batched across the whole request)
+    if (precomputed.revokedJtis.has(claims.jti)) {
       return {
         localSessionId: req.localSessionId,
         status: 'REJECTED',
@@ -167,17 +237,7 @@ export class BlessingService {
     }
 
     // Step 5: Check that user exists and is active
-    const user = await this.prisma.user.findUnique({
-      where: { id: req.userId },
-      select: {
-        id: true,
-        isActive: true,
-        status: true,
-        role: true,
-        subscriptionId: true,
-        lockedUntil: true,
-      },
-    });
+    const user = precomputed.user;
 
     if (!user) {
       return {

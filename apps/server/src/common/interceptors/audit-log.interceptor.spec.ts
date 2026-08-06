@@ -13,9 +13,11 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { of } from 'rxjs';
+import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { AuditLogInterceptor } from './audit-log.interceptor';
 import { AUDITABLE_KEY, AuditableMetadata } from '../decorators/auditable.decorator';
 import { AuditAction, SystemModule } from '@pharmacy/shared-types';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 
 const mockPrisma = {
   auditLog: {
@@ -60,11 +62,18 @@ function createCallHandler(returnValue: unknown = { success: true }) {
 describe('AuditLogInterceptor', () => {
   let interceptor: AuditLogInterceptor;
   let reflector: Reflector;
+  let tenantContext: DeepMockProxy<TenantContextService>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     reflector = new Reflector();
-    interceptor = new AuditLogInterceptor(reflector, mockPrisma as any);
+    tenantContext = mockDeep<TenantContextService>();
+    tenantContext.getTx.mockReturnValue(null);
+    interceptor = new AuditLogInterceptor(
+      reflector,
+      mockPrisma as any,
+      tenantContext,
+    );
   });
 
   describe('when request method is non-mutating', () => {
@@ -417,6 +426,32 @@ describe('AuditLogInterceptor', () => {
           data: expect.objectContaining({ userId: null, userRole: null }),
         }),
       );
+    });
+  });
+
+  describe('when a request-scoped transaction is active', () => {
+    it('writes the audit entry through the transaction client instead of the root prisma client', async () => {
+      const txAuditCreate = jest.fn().mockResolvedValue({ id: 'tx-log-uuid' });
+      tenantContext.getTx.mockReturnValue({
+        auditLog: { create: txAuditCreate },
+      } as any);
+
+      const meta: AuditableMetadata = {
+        action: AuditAction.CREATE,
+        module: SystemModule.CATALOG,
+        entityType: 'Product',
+      };
+      const ctx = createMockContext('POST', '/products', {
+        id: 'user-1',
+        role: 'ADMIN',
+      });
+      const next = createCallHandler();
+      jest.spyOn(reflector, 'get').mockReturnValue(meta);
+
+      await interceptor.intercept(ctx, next).toPromise();
+
+      expect(txAuditCreate).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
     });
   });
 });

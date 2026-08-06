@@ -34,6 +34,7 @@ import { PurchaseReceptionsService } from './purchase-receptions.service';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
+import { MissingExpirationDateException } from '../exceptions/missing-expiration-date.exception';
 import type { PurchaseReceptionConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 // ── Mock objects ──────────────────────────────────────────────────────
@@ -342,6 +343,13 @@ describe('PurchaseReceptionsService', () => {
         mockTx.purchaseOrderItem.findMany.mockResolvedValue([
           { id: UUID, pendingQuantity: 0 }, // all received
         ]);
+        // FIX-010: the loop applies per-item increments and tracks them in
+        // memory — the update must return the post-increment row.
+        mockTx.purchaseOrderItem.update.mockResolvedValue({
+          id: UUID,
+          receivedQuantity: 10,
+          pendingQuantity: 10,
+        });
         mockTx.purchaseReception.update.mockResolvedValue({ id: 'r1', state: 'CONFIRMED' });
         mockLotsService.receiveStock.mockResolvedValue({ lotId: 'lot-1' });
         mockFiscalDocumentsService.createPendingDocumentForPurchaseReception
@@ -384,7 +392,7 @@ describe('PurchaseReceptionsService', () => {
       await expect(service.confirm('r1', 'user-1', 'ws-1')).rejects.toThrow(/not in DRAFT/);
     });
 
-    it('throws Error when an item lacks expiration date', async () => {
+    it('throws MissingExpirationDateException when an item lacks expiration date', async () => {
       configureConfirmMocks({
         items: [{
           id: 'item-1',
@@ -398,7 +406,15 @@ describe('PurchaseReceptionsService', () => {
         }],
       });
 
-      await expect(service.confirm('r1', 'user-1', 'ws-1')).rejects.toThrow('missing expiration date');
+      // FIX-018: the domain exception carries a stable error code.
+      await expect(
+        service.confirm('r1', 'user-1', 'ws-1'),
+      ).rejects.toThrow(MissingExpirationDateException);
+      await expect(
+        service.confirm('r1', 'user-1', 'ws-1'),
+      ).rejects.toMatchObject({
+        errorCode: 'RECEPTION_ITEM_MISSING_EXPIRATION_DATE',
+      });
     });
   });
 
@@ -856,6 +872,42 @@ describe('PurchaseReceptionsService', () => {
 
       expect(mockLotsService.resolveLotForSync).not.toHaveBeenCalled();
       expect(mockTx.inventoryMovement.create).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the documented nil sentinel tax scheme when no default exists', async () => {
+      // FIX-022: without an active default tax scheme the sync path writes
+      // '00000000-0000-0000-0000-000000000000' so item rows never carry a
+      // null taxSchemeId (the column is NOT NULL in the schema).
+      mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
+        mockTx.purchaseReception.findFirst.mockResolvedValue(null);
+        mockTx.product.findUnique.mockResolvedValue({ id: 'prod-1' });
+        mockTx.taxScheme.findFirst.mockResolvedValue(null);
+        mockLotsService.resolveLotForSync.mockResolvedValue({
+          id: 'lot-sync-1',
+          currentStock: 25,
+          version: 1,
+          state: 'ACTIVE',
+        });
+        mockTx.inventoryMovement.create.mockResolvedValue({ id: 'mov-1' });
+        mockTx.purchaseReception.create.mockResolvedValue({ id: 'new-rec' });
+        return cb(mockTx);
+      });
+
+      await service.confirmReceptionFromSync(syncPayload, 'user-1');
+
+      expect(mockTx.purchaseReception.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            items: {
+              create: [
+                expect.objectContaining({
+                  taxSchemeId: '00000000-0000-0000-0000-000000000000',
+                }),
+              ],
+            },
+          }),
+        }),
+      );
     });
 
     it('throws ProductNotFoundException when a product does not exist', async () => {

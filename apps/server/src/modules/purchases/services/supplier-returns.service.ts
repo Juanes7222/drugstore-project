@@ -14,6 +14,7 @@ import { SupplierReturnNotDraftException } from '../exceptions/supplier-return-n
 import { SupplierReturnCannotBeAnnulledException } from '../exceptions/supplier-return-cannot-be-annulled.exception';
 import { LotNotFoundException } from '@/modules/inventory-lots/exceptions/lot-not-found.exception';
 import { SuppliersService } from './suppliers.service';
+import { acquireAdvisoryLock } from '@/common/utils/advisory-lock';
 import type { SupplierReturnConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
@@ -121,6 +122,14 @@ export class SupplierReturnsService {
       }
 
       const subtotal = itemsData.reduce((sum, it) => sum.plus(it.totalAmount), new Prisma.Decimal(0));
+
+      // Serialize sequential-number allocation per tenant so two concurrent
+      // cashier creations cannot read the same MAX and produce duplicates.
+      await acquireAdvisoryLock(
+        tx,
+        `${this.tenantContext.getSubscriptionId()}:supplier-return:seq`,
+      );
+
       const sequentialNumber = await this.getNextSequentialNumber(tx);
 
       return tx.supplierReturn.create({
@@ -181,6 +190,16 @@ export class SupplierReturnsService {
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
+      // Serialize concurrent access to this return ID via PostgreSQL advisory
+      // lock, mirroring the PO/reception sync paths. BullMQ may deliver the
+      // same job to two workers concurrently — the lock ensures only one
+      // reaches the idempotency check + create section, preventing a P2002
+      // race on (sequentialNumber, supplierId).
+      await acquireAdvisoryLock(
+        tx,
+        `${this.tenantContext.getSubscriptionId()}:supplier-return:${payload.returnId}`,
+      );
+
       // Idempotency: check by POS-originated id first. If the same return
       // was already created from an earlier sync attempt, return it. The
       // (sequentialNumber, supplierId) check is a fallback for returns that

@@ -69,12 +69,42 @@ describe('ClientsService', () => {
   });
 
   describe('findAll', () => {
-    it('returns all clients', async () => {
+    it('returns paginated clients with total count', async () => {
+      // FIX-001: findMany + count run in a single $transaction array and the
+      // response is the bounded { data, total, page, pageSize } envelope.
       (prisma.client.findMany as jest.Mock).mockResolvedValue([mockClient]);
+      (prisma.client.count as jest.Mock).mockResolvedValue(1);
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        (operations: Promise<unknown>[]) => Promise.all(operations),
+      );
 
       const result = await service.findAll({ page: 1, pageSize: 20 });
 
-      expect(result).toEqual([mockClient]);
+      expect(result).toEqual({
+        data: [mockClient],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+      });
+    });
+
+    it('applies skip, take and updatedAt ordering for pagination', async () => {
+      // FIX-001: page 2 of size 20 must skip 20 rows, never fetch all clients.
+      (prisma.client.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.client.count as jest.Mock).mockResolvedValue(0);
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        (operations: Promise<unknown>[]) => Promise.all(operations),
+      );
+
+      await service.findAll({ page: 2, pageSize: 20 });
+
+      expect(prisma.client.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 20,
+          take: 20,
+          orderBy: { updatedAt: 'desc' },
+        }),
+      );
     });
   });
 

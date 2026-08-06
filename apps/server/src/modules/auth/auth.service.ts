@@ -128,7 +128,7 @@ export class AuthService {
 
     this.assertAccountIsUsable(user);
 
-    let isValid = false;
+    let isValid: boolean;
 
     if (sessionType === 'PIN') {
       if (!user.pinHash) {
@@ -998,13 +998,25 @@ export class AuthService {
     identifier: string,
     sessionType: 'PASSWORD' | 'PIN',
   ): Promise<void> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    // Atomic increment, then re-read: two concurrent failed logins must not
+    // both read the same count and write the same successor, which would let
+    // an attacker drift past the lockout thresholds without ever triggering
+    // them (read-modify-write race).
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: { increment: 1 } },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { failedLoginAttempts: true, role: true },
+    });
 
     if (!user) {
       return;
     }
 
-    const newFailedAttempts = user.failedLoginAttempts + 1;
+    const newFailedAttempts = user.failedLoginAttempts;
 
     // Escalating lockout durations
     let lockDurationMinutes = ACCOUNT_LOCK_DURATION_MINUTES;
@@ -1023,7 +1035,6 @@ export class AuthService {
       await this.prisma.user.update({
         where: { id: userId },
         data: {
-          failedLoginAttempts: newFailedAttempts,
           lockedUntil,
           status: UserStatus.LOCKED,
         },
@@ -1047,11 +1058,6 @@ export class AuthService {
 
       throw new AccountLockedException(lockedUntil);
     }
-
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { failedLoginAttempts: newFailedAttempts },
-    });
 
     await this.auditService.log(AuditEvent.LOGIN_FAILURE, {
       actorId: userId,

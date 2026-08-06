@@ -35,6 +35,8 @@ export class ProductsController {
     @Query('isActive') isActive?: string,
     @Query('saleType') saleType?: string,
     @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ): Promise<any> {
     const filters: Record<string, unknown> = {};
 
@@ -42,7 +44,12 @@ export class ProductsController {
     if (isActive !== undefined) filters.isActive = isActive === 'true';
     if (saleType) filters.saleType = saleType;
 
-    return this.productsService.findAll(filters, search);
+    return this.productsService.findAll(
+      filters,
+      search,
+      page ? Number(page) : 1,
+      pageSize ? Number(pageSize) : 50,
+    );
   }
 
   @Get(':id')

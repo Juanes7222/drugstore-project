@@ -16,6 +16,11 @@ import { NoPendingDataSubjectRequestException } from './exceptions/no-pending-da
 import { ClientNotFoundException } from './exceptions/client-not-found.exception';
 import { ClientAlreadyInactiveException } from './exceptions/client-already-inactive.exception';
 import { GENERIC_CLIENT_UUID } from './constants/clients.constants';
+import {
+  GENERIC_CLIENT_IDENTIFICATION_TYPE,
+  GENERIC_CLIENT_IDENTIFICATION_NUMBER,
+  GENERIC_CLIENT_NAME,
+} from './constants/clients.constants';
 
 @Injectable()
 export class ClientsService {
@@ -220,15 +225,36 @@ export class ClientsService {
       where: { id: GENERIC_CLIENT_UUID },
       include: { classification: true },
     });
-    // The generic client must exist — the migration ensures it.
-    // If it is missing, the system is not properly set up.
-    if (!client) {
+    if (client) {
+      return client;
+    }
+    // Fresh environments: the seed migration only inserts this record when
+    // a user already exists (createdById is NOT NULL), so an empty user
+    // table at deploy time skips it. By the time a sale can happen, at
+    // least one user exists — seed the record on demand under the active
+    // tenant instead of failing every anonymous sale.
+    const creator = await this.prisma.user.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!creator) {
       throw new Error(
         `Generic client record not found (UUID: ${GENERIC_CLIENT_UUID}). ` +
         'Run migration 20260730000001_seed_generic_client to seed it.',
       );
     }
-    return client;
+    return this.prisma.client.create({
+      data: {
+        id: GENERIC_CLIENT_UUID,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
+        identificationType: GENERIC_CLIENT_IDENTIFICATION_TYPE,
+        identificationNumber: GENERIC_CLIENT_IDENTIFICATION_NUMBER,
+        fullName: GENERIC_CLIENT_NAME,
+        isActive: true,
+        createdById: creator.id,
+      },
+      include: { classification: true },
+    });
   }
 
   async findById(id: string): Promise<any> {
@@ -238,7 +264,34 @@ export class ClientsService {
   }
 
   async findAll(query: QueryClientDto): Promise<any> {
-    return this.prisma.client.findMany();
+    // Bounded query: the previous unbounded findMany() returned every client
+    // (full PII) on a single response. Reuses the keyset-friendly, paginated
+    // sync query shape.
+    const { page = 1, pageSize = 20, since, search } = query;
+
+    const where: Record<string, unknown> = {};
+    if (since) {
+      where.updatedAt = { gte: new Date(since) };
+    }
+    if (search) {
+      where.OR = [
+        { fullName: { contains: search, mode: 'insensitive' } },
+        { businessName: { contains: search, mode: 'insensitive' } },
+        { identificationNumber: { contains: search } },
+      ];
+    }
+
+    const [data, total] = await this.prisma.$transaction([
+      this.prisma.client.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { updatedAt: 'desc' },
+      }),
+      this.prisma.client.count({ where }),
+    ]);
+
+    return { data, total, page, pageSize };
   }
 
   /**

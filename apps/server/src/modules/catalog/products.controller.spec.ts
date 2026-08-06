@@ -88,7 +88,8 @@ describe('ProductsController (integration)', () => {
 
       const result = await controller.findAll();
 
-      expect(service.findAll).toHaveBeenCalledWith({}, undefined);
+      // FIX-014: bounded pagination defaults — page 1, pageSize 50.
+      expect(service.findAll).toHaveBeenCalledWith({}, undefined, 1, 50);
       expect(result).toEqual(expected);
     });
 
@@ -101,6 +102,8 @@ describe('ProductsController (integration)', () => {
       expect(service.findAll).toHaveBeenCalledWith(
         { categoryId: 'cat-uuid-1' },
         undefined,
+        1,
+        50,
       );
       expect(result).toEqual(expected);
     });
@@ -113,6 +116,8 @@ describe('ProductsController (integration)', () => {
       expect(service.findAll).toHaveBeenCalledWith(
         { isActive: true },
         undefined,
+        1,
+        50,
       );
     });
 
@@ -121,7 +126,7 @@ describe('ProductsController (integration)', () => {
 
       await controller.findAll(undefined, undefined, undefined, 'acetamin');
 
-      expect(service.findAll).toHaveBeenCalledWith({}, 'acetamin');
+      expect(service.findAll).toHaveBeenCalledWith({}, 'acetamin', 1, 50);
     });
 
     it('should combine multiple filters', async () => {
@@ -132,7 +137,19 @@ describe('ProductsController (integration)', () => {
       expect(service.findAll).toHaveBeenCalledWith(
         { categoryId: 'cat-uuid-1', isActive: true, saleType: 'FREE_SALE' },
         'acetamin',
+        1,
+        50,
       );
+    });
+
+    it('should pass page and pageSize through to the service', async () => {
+      service.findAll.mockResolvedValue([]);
+
+      await controller.findAll(undefined, undefined, undefined, undefined, '2', '25');
+
+      // FIX-014: pagination must reach the service — an unbounded findMany
+      // would return the full catalog in one response.
+      expect(service.findAll).toHaveBeenCalledWith({}, undefined, 2, 25);
     });
   });
 

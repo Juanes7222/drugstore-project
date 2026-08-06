@@ -6,6 +6,7 @@ import { PurchaseOrderNotDraftException } from '../exceptions/purchase-order-not
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 import type { PurchaseOrderConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
+import { hashAdvisoryKey } from '@/common/utils/advisory-lock';
 
 jest.mock('@pharmacy/database', () => {
   class Decimal {
@@ -279,6 +280,23 @@ describe('PurchaseOrdersService', () => {
         }),
       );
     });
+
+    it('acquires a per-tenant advisory lock before allocating the sequential number', async () => {
+      setupTransactionMock();
+      (prisma.supplier.findUnique as jest.Mock).mockResolvedValue(mockSupplier);
+      (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);
+      (prisma.purchaseOrder.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.purchaseOrder.create as jest.Mock).mockResolvedValue(mockPurchaseOrder);
+
+      await service.create(createDto, 'user-1');
+
+      // FIX-006: two concurrent creates must serialize on the same lock key
+      // (tenant + entity scope), not race on the MAX read.
+      expect(prisma.$executeRaw).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.stringContaining('pg_advisory_xact_lock')]),
+        hashAdvisoryKey('test-subscription-id:purchase-order:seq'),
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -398,6 +416,12 @@ describe('PurchaseOrdersService', () => {
       expect(result).toEqual({ id: 'existing-po', state: 'CONFIRMED' });
       expect(mockSuppliersService.resolveSupplierForSync).not.toHaveBeenCalled();
       expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
+      // FIX-007: the lock is acquired even on the idempotent path, so
+      // duplicate BullMQ deliveries serialize instead of double-creating.
+      expect(prisma.$executeRaw).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.stringContaining('pg_advisory_xact_lock')]),
+        hashAdvisoryKey('test-subscription-id:purchase-order:po-sync-1'),
+      );
     });
 
     it('resolves supplier via resolver when supplier does not exist but payload has supplier data', async () => {

@@ -452,7 +452,7 @@ export class SalesService {
     const quantity = new Prisma.Decimal(itemDto.quantity);
     const itemSubtotal = unitPrice.times(quantity);
 
-    let discountPercentage = itemDto.discountPercentage ? new Prisma.Decimal(itemDto.discountPercentage) : clientDiscountPercentage;
+    const discountPercentage = itemDto.discountPercentage ? new Prisma.Decimal(itemDto.discountPercentage) : clientDiscountPercentage;
     if (itemDto.discountPercentage && itemDto.discountReason === undefined) {
       throw new DiscountReasonRequiredException();
     }

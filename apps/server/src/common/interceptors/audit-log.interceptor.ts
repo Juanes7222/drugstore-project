@@ -11,6 +11,7 @@ import { tap } from 'rxjs/operators';
 import { Request } from 'express';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import type { AuditAction as PrismaAuditAction, SystemModule as PrismaSystemModule } from '@pharmacy/database';
 import { AUDITABLE_KEY, AuditableMetadata } from '../decorators/auditable.decorator';
 import { User } from '@pharmacy/shared-types';
@@ -30,6 +31,7 @@ export class AuditLogInterceptor implements NestInterceptor {
   constructor(
     private reflector: Reflector,
     private prisma: PrismaService,
+    private tenantContext: TenantContextService,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -76,7 +78,11 @@ export class AuditLogInterceptor implements NestInterceptor {
     userRole: string | null,
   ): Promise<void> {
     try {
-      await this.prisma.auditLog.create({
+      // Join the request-scoped transaction when one is active so the audit
+      // row commits (or rolls back) atomically with the mutation it records.
+      // Falls back to the root client outside request context (cron jobs).
+      const db = this.tenantContext.getTx() ?? this.prisma;
+      await db.auditLog.create({
         data: {
           id: this.generateId(),
           action: metadata.action as unknown as PrismaAuditAction,

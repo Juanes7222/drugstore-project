@@ -8,6 +8,7 @@ import { QueryPurchaseReceptionDto } from '../dto/query-purchase-reception.dto';
 import { PurchaseReceptionNotConfirmedException } from '../exceptions/purchase-reception-not-confirmed.exception';
 import { PurchaseReceptionNotDraftException } from '../exceptions/purchase-reception-not-draft.exception';
 import { PurchaseReceptionNotFoundException } from '../exceptions/purchase-reception-not-found.exception';
+import { MissingExpirationDateException } from '../exceptions/missing-expiration-date.exception';
 import { OverReceptionException } from '../exceptions/over-reception.exception';
 import { PurchaseOrderItemMismatchException } from '../exceptions/purchase-order-item-mismatch.exception';
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
@@ -18,6 +19,7 @@ import { SuppliersService } from './suppliers.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
 import { toDecimal } from '@/common/to-decimal';
+import { acquireAdvisoryLock } from '@/common/utils/advisory-lock';
 import type { PurchaseReceptionConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
@@ -73,7 +75,7 @@ export class PurchaseReceptionsService {
         throw new SupplierNotFoundException(createDto.supplierId);
       }
 
-      let purchaseOrder = null;
+      let purchaseOrder: Prisma.PurchaseOrderGetPayload<{ include: { items: true } }> | null;
       if (createDto.purchaseOrderId) {
         purchaseOrder = await tx.purchaseOrder.findUnique({
           where: { id: createDto.purchaseOrderId },
@@ -90,7 +92,7 @@ export class PurchaseReceptionsService {
           throw new ProductNotFoundException(itemDto.productId);
         }
 
-        let purchaseOrderItem = null;
+        let purchaseOrderItem: Awaited<ReturnType<typeof tx.purchaseOrderItem.findUnique>>;
         if (itemDto.purchaseOrderItemId) {
           purchaseOrderItem = await tx.purchaseOrderItem.findUnique({
             where: { id: itemDto.purchaseOrderItemId },
@@ -125,6 +127,14 @@ export class PurchaseReceptionsService {
       }));
 
       const { subtotal, totalTax, totalAmount } = this.calculateReceptionTotals(itemsData);
+
+      // Serialize sequential-number allocation per tenant so two concurrent
+      // cashier creations cannot read the same MAX and produce duplicates.
+      await acquireAdvisoryLock(
+        tx,
+        `${this.tenantContext.getSubscriptionId()}:purchase-reception:seq`,
+      );
+
       const sequentialNumber = await this.getNextSequentialNumber(tx);
 
       const reception = await tx.purchaseReception.create({
@@ -163,9 +173,14 @@ export class PurchaseReceptionsService {
         throw new PurchaseReceptionNotDraftException(id);
       }
 
+      // Track received increments in memory so the PO state can be derived
+      // after the loop without re-fetching its items per reception item
+      // (the previous per-item findMany made confirm O(n²)).
+      const receivedByOrderItemId = new Map<string, number>();
+
       for (const item of reception.items) {
         if (!item.expirationDate) {
-          throw new Error(`Item ${item.id} is missing expiration date`);
+          throw new MissingExpirationDateException(item.id);
         }
         const lot = await this.lotsService.receiveStock({
           productId: item.productId,
@@ -191,21 +206,28 @@ export class PurchaseReceptionsService {
               pendingQuantity: { decrement: item.receivedQuantity },
             },
           });
+          receivedByOrderItemId.set(
+            item.purchaseOrderItemId,
+            updatedOrderItem.receivedQuantity,
+          );
+        }
+      }
 
-          // Update parent PurchaseOrder state
-          const purchaseOrder = reception.purchaseOrder;
-          if (purchaseOrder) {
-            const allItems = await tx.purchaseOrderItem.findMany({ where: { purchaseOrderId: purchaseOrder.id } });
-            const hasPendingItems = allItems.some(poItem => poItem.pendingQuantity > 0);
-            const newOrderState = hasPendingItems ? PurchaseOrderState.PARTIALLY_RECEIVED : PurchaseOrderState.FULLY_RECEIVED;
+      // Update parent PurchaseOrder state once, from the items already loaded
+      // in the include above plus the increments applied during this loop.
+      const purchaseOrder = reception.purchaseOrder;
+      if (purchaseOrder) {
+        const hasPendingItems = purchaseOrder.items.some((poItem) => {
+          const receivedNow = receivedByOrderItemId.get(poItem.id) ?? poItem.receivedQuantity;
+          return poItem.requestedQuantity - receivedNow > 0;
+        });
+        const newOrderState = hasPendingItems ? PurchaseOrderState.PARTIALLY_RECEIVED : PurchaseOrderState.FULLY_RECEIVED;
 
-            if (purchaseOrder.state !== newOrderState) {
-              await tx.purchaseOrder.update({
-                where: { id: purchaseOrder.id },
-                data: { state: newOrderState },
-              });
-            }
-          }
+        if (purchaseOrder.state !== newOrderState) {
+          await tx.purchaseOrder.update({
+            where: { id: purchaseOrder.id },
+            data: { state: newOrderState },
+          });
         }
       }
 
@@ -259,8 +281,10 @@ export class PurchaseReceptionsService {
       // advisory lock. BullMQ may deliver the same job to two workers
       // concurrently — the lock ensures only one reaches the idempotency
       // check + create section, preventing a P2002 race.
-      const lockKey = PurchaseReceptionsService.hashEntityId(payload.receptionId);
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
+      await acquireAdvisoryLock(
+        tx,
+        `${this.tenantContext.getSubscriptionId()}:purchase-reception:${payload.receptionId}`,
+      );
 
       // Idempotency: check by POS-originated id first. If the same reception
       // was already created from an earlier sync attempt, return it. The
@@ -290,7 +314,7 @@ export class PurchaseReceptionsService {
         userId,
       );
 
-      let purchaseOrder = null;
+      let purchaseOrder: Prisma.PurchaseOrderGetPayload<{ include: { items: true } }> | null;
       if (payload.purchaseOrderId) {
         purchaseOrder = await tx.purchaseOrder.findUnique({
           where: { id: payload.purchaseOrderId },
@@ -303,7 +327,7 @@ export class PurchaseReceptionsService {
         if (!purchaseOrder) {
           const nextSeq = await tx.purchaseOrder.aggregate({ _max: { sequentialNumber: true } });
           const stubSeq = (nextSeq._max.sequentialNumber ?? 0) + 1;
-          purchaseOrder = await tx.purchaseOrder.create({
+          await tx.purchaseOrder.create({
             data: {
               id: payload.purchaseOrderId,
               subscriptionId: this.tenantContext.getSubscriptionId(),
@@ -592,14 +616,5 @@ export class PurchaseReceptionsService {
       select: { sequentialNumber: true },
     });
     return (latestReception?.sequentialNumber || 0) + 1;
-  }
-
-  /** Deterministic positive int4 hash of an entity ID for advisory lock key. */
-  private static hashEntityId(id: string): number {
-    let hash = 0;
-    for (let i = 0; i < id.length; i++) {
-      hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
-    }
-    return hash & 0x7FFFFFFF;
   }
 }

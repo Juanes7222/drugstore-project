@@ -675,16 +675,17 @@ export class SyncOperationDispatcherService {
    * block a sale (the POS gate reads `serverId`, not `internalCode`).
    */
   private async generateNextOfflineProductCode(): Promise<string> {
-    const all = await this.prisma.product.findMany({
-      where: { internalCode: { startsWith: 'P' } },
-      select: { internalCode: true },
-    });
-    const max = all.reduce<number>((acc, row) => {
-      // Strip leading zeros before parse so P027 → 27, P000001 → 1.
-      const num = parseInt(row.internalCode.slice(1).replace(/^0+/, ''), 10);
-      return Number.isFinite(num) && num > acc ? num : acc;
-    }, 0);
-    return `P${String(max + 1).padStart(6, '0')}`;
+    // MAX over the numeric portion of internalCode, evaluated in SQL so
+    // zero-padded codes (P027, P000001) compare numerically, not
+    // lexicographically. Loading every P-code row into memory (the previous
+    // implementation) made each offline product creation a full scan.
+    const rows = await this.prisma.$queryRaw<Array<{ max: bigint | null }>>`
+      SELECT MAX(CAST(SUBSTRING("internalCode" FROM 2) AS BIGINT)) AS max
+      FROM "Product"
+      WHERE "internalCode" LIKE 'P%' AND "internalCode" ~ '^P[0-9]+$'
+    `;
+    const max = rows[0]?.max ?? 0n;
+    return `P${String(max + 1n).padStart(6, '0')}`;
   }
 
   /**

@@ -22,11 +22,16 @@ export class ProductsService {
   /**
    * List products with optional filtering and search.
    * Used by ProductsController (GET /products).
+   *
+   * Bounded: the previous implementation returned every matching product on
+   * one response. `page`/`pageSize` default to 1/50.
    */
   async findAll(
     filters: Record<string, unknown>,
     search?: string,
-  ): Promise<unknown[]> {
+    page: number = 1,
+    pageSize: number = 50,
+  ): Promise<{ data: unknown[]; total: number; page: number; pageSize: number }> {
     const where: Prisma.ProductWhereInput = { ...filters };
 
     if (search) {
@@ -36,24 +41,29 @@ export class ProductsService {
       ];
     }
 
-    const items = await this.prisma.product.findMany({
-      where,
-      include: {
-        category: true,
-        pharmaceuticalForm: true,
-        barcodes: { where: { isPrimary: true }, take: 1 },
-        priceHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
-        costHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
-        taxHistories: {
-          include: { taxScheme: true },
-          orderBy: { effectiveFrom: 'desc' },
-          take: 1,
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.product.findMany({
+        where,
+        include: {
+          category: true,
+          pharmaceuticalForm: true,
+          barcodes: { where: { isPrimary: true }, take: 1 },
+          priceHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
+          costHistories: { orderBy: { effectiveFrom: 'desc' }, take: 1 },
+          taxHistories: {
+            include: { taxScheme: true },
+            orderBy: { effectiveFrom: 'desc' },
+            take: 1,
+          },
         },
-      },
-      orderBy: { commercialName: 'asc' },
-    });
+        orderBy: { commercialName: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.product.count({ where }),
+    ]);
 
-    return items.map((item) => ({
+    const data = items.map((item) => ({
       ...item,
       currentPrice: item.priceHistories[0] ?? null,
       currentCost: item.costHistories[0] ?? null,
@@ -62,6 +72,8 @@ export class ProductsService {
       costHistories: undefined,
       taxHistories: undefined,
     }));
+
+    return { data, total, page, pageSize };
   }
 
   /**

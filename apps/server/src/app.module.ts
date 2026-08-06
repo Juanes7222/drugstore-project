@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { envSchema, EnvConfig } from './config/env.schema';
@@ -21,6 +22,7 @@ import { TenantConfigModule } from './modules/tenant-config/tenant-config.module
 import { TenantModule } from './modules/tenant/tenant.module';
 import { PrintModule } from './modules/print/print.module';
 import { DevModule } from './modules/dev/dev.module';
+import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
 /** Dev-only modules — only registered when NODE_ENV=development */
 const DEV_MODULES =
@@ -61,5 +63,9 @@ const DEV_MODULES =
     PrintModule,
     ...DEV_MODULES,
   ],
+  // Registered as APP_INTERCEPTOR so it runs inside the request-scoped
+  // tenant transaction (TenantContextInterceptor is bound in main.ts and
+  // wraps it) — the audit row then commits atomically with the mutation.
+  providers: [{ provide: APP_INTERCEPTOR, useClass: AuditLogInterceptor }],
 })
 export class AppModule {}

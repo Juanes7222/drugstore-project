@@ -76,6 +76,7 @@ const mockSyncOperationOutcome = {
 const mockPrisma = {
   syncOperationOutcome: mockSyncOperationOutcome,
   $transaction: jest.fn(),
+  $queryRaw: jest.fn(),
   product: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
@@ -519,7 +520,8 @@ describe('SyncOperationDispatcherService', () => {
     };
 
     it('normalizes OFFLINE- internalCode to P000001 when no products exist', async () => {
-      (mockPrisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      // FIX-009: next-code lookup is a raw SQL MAX — no P-code rows → null.
+      (mockPrisma.$queryRaw as jest.Mock).mockResolvedValue([{ max: null }]);
       mockProductsService.createProduct.mockResolvedValue({
         id: 'p-1',
         internalCode: 'P000001',
@@ -546,9 +548,8 @@ describe('SyncOperationDispatcherService', () => {
     });
 
     it('normalizes to the next sequential when P-prefixed products exist', async () => {
-      (mockPrisma.product.findMany as jest.Mock).mockResolvedValue([
-        { internalCode: 'P000042' },
-      ]);
+      // FIX-009: raw SQL MAX over the numeric portion — P000042 → max 42.
+      (mockPrisma.$queryRaw as jest.Mock).mockResolvedValue([{ max: 42n }]);
       mockProductsService.createProduct.mockResolvedValue({
         id: 'p-2',
         internalCode: 'P000043',
@@ -589,7 +590,7 @@ describe('SyncOperationDispatcherService', () => {
       );
 
       // No normalization needed — the MAX read would be wasted work.
-      expect((mockPrisma.product.findMany as jest.Mock)).not.toHaveBeenCalled();
+      expect((mockPrisma.$queryRaw as jest.Mock)).not.toHaveBeenCalled();
       expect(result).toEqual({ entityId: 'p-3', entityInternalCode: 'PROD-001' });
       expect(mockProductsService.createProduct).toHaveBeenCalledWith(
         'u-1',
@@ -600,10 +601,10 @@ describe('SyncOperationDispatcherService', () => {
     });
 
     it('returns the server-assigned entityInternalCode even when it differs from the input', async () => {
-      // The dispatcher always returns the value the server actually
+      // FIX-009: the dispatcher always returns the value the server actually
       // stored, never the provisional OFFLINE-uuid the client sent —
       // this is the field the POS stamps back on its local row.
-      (mockPrisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (mockPrisma.$queryRaw as jest.Mock).mockResolvedValue([{ max: null }]);
       mockProductsService.createProduct.mockResolvedValue({
         id: 'p-4',
         internalCode: 'P000001',

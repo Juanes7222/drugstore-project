@@ -107,8 +107,9 @@ export async function paginateWithCursor<T, Where = Record<string, unknown>, Ord
   const effectiveOrderBy = orderBy ?? [{ updatedAt: 'asc' as const }, { id: 'asc' as const }] as any;
 
   // Fetch limit + 1 to detect if there are more items
-  const items = await (model.findMany as Function)({
-    where,
+  const items = await model.findMany({
+    // `where` is built as a plain record but the delegate expects `Where`
+    where: where as Where,
     orderBy: effectiveOrderBy,
     take: limit + 1,
   });

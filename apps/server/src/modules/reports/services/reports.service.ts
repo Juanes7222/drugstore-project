@@ -3,7 +3,6 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { Prisma } from '@pharmacy/database';
 import { ReportDateRangeQueryDto } from '../dto/report-date-range.query.dto';
 import { ReportInvalidDateRangeException } from '../exceptions/report-invalid-date-range.exception';
-import { SaleType } from '@pharmacy/shared-types';
 
 /** Number of days from the valuation date beyond which a lot is not considered expiring soon. */
 const EXPIRING_SOON_DAYS = 90;
@@ -22,13 +21,52 @@ export class ReportsService {
    */
   async getSalesSummary(query: ReportDateRangeQueryDto): Promise<any> {
     assertValidDateRange(query.dateFrom, query.dateTo);
-    const sales = await this.fetchConfirmedSales(query);
-    const breakdown = buildSalesBreakdown(sales);
-    const totals = computeSalesTotals(sales);
+    const dateFrom = new Date(query.dateFrom);
+    const dateTo = new Date(query.dateTo);
+
+    // Aggregate in SQL instead of loading every CONFIRMED sale (with items
+    // and products) into memory — the previous implementation fetched all
+    // rows and summed them in JS.
+    const [totals, breakdown] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ totalSales: Prisma.Decimal; totalQuantity: number }>>`
+        SELECT COALESCE(SUM(s."totalAmount"), 0)::numeric(15,2) AS "totalSales",
+               COALESCE((
+                 SELECT SUM(si.quantity) FROM "SaleItem" si
+                 WHERE si."saleId" = s.id
+               ), 0)::int AS "totalQuantity"
+        FROM "Sale" s
+        WHERE s."operationalState" = 'CONFIRMED'
+          AND s."confirmedAt" >= ${dateFrom}
+          AND s."confirmedAt" <= ${dateTo}
+      `,
+      this.prisma.$queryRaw<Array<{ saleType: string; count: number; totalAmount: Prisma.Decimal }>>`
+        SELECT p."saleType" AS "saleType",
+               COUNT(*)::int AS "count",
+               COALESCE(SUM(si."total"), 0)::numeric(15,2) AS "totalAmount"
+        FROM "Sale" s
+        JOIN "SaleItem" si ON si."saleId" = s.id
+        JOIN "Product" p ON p.id = si."productId"
+        WHERE s."operationalState" = 'CONFIRMED'
+          AND s."confirmedAt" >= ${dateFrom}
+          AND s."confirmedAt" <= ${dateTo}
+        GROUP BY p."saleType"
+      `,
+    ]);
+
+    const totalRow = totals[0] ?? { totalSales: new Prisma.Decimal(0), totalQuantity: 0 };
+    const breakdownBySaleType = breakdown.map((b) => ({
+      saleType: b.saleType,
+      count: b.count,
+      totalAmount: new Prisma.Decimal(b.totalAmount).toFixed(2),
+      averageAmount: b.count > 0
+        ? new Prisma.Decimal(b.totalAmount).dividedBy(b.count).toFixed(2)
+        : '0.00',
+    }));
+
     return {
-      totalSales: totals.totalSales.toFixed(2),
-      totalQuantity: totals.totalQuantity,
-      breakdownBySaleType: formatBreakdownEntries(breakdown),
+      totalSales: new Prisma.Decimal(totalRow.totalSales).toFixed(2),
+      totalQuantity: totalRow.totalQuantity,
+      breakdownBySaleType,
     };
   }
 
@@ -192,16 +230,6 @@ export class ReportsService {
 
   // ── Private database-access helpers ──────────────────────────────
 
-  private async fetchConfirmedSales(query: ReportDateRangeQueryDto): Promise<any[]> {
-    return this.prisma.sale.findMany({
-      where: {
-        operationalState: 'CONFIRMED',
-        confirmedAt: { gte: new Date(query.dateFrom), lte: new Date(query.dateTo) },
-      },
-      include: { items: { include: { product: { select: { saleType: true } } } } },
-    });
-  }
-
   private async fetchClosedShifts(query: ReportDateRangeQueryDto): Promise<any[]> {
     return this.prisma.cashShift.findMany({
       where: {
@@ -310,45 +338,6 @@ function expiryThreshold(from: Date): Date {
   const t = new Date(from);
   t.setDate(t.getDate() + EXPIRING_SOON_DAYS);
   return t;
-}
-
-function buildSalesBreakdown(
-  sales: any[],
-): Map<string, { saleType: string; count: number; totalAmount: Prisma.Decimal }> {
-  const map = new Map<string, { saleType: string; count: number; totalAmount: Prisma.Decimal }>();
-  for (const sale of sales) {
-    for (const item of sale.items ?? []) {
-      const st = item.product?.saleType ?? SaleType.FREE_SALE;
-      const entry = map.get(st) ?? { saleType: st, count: 0, totalAmount: new Prisma.Decimal(0) };
-      entry.count += 1;
-      entry.totalAmount = entry.totalAmount.plus(item.total ?? 0);
-      map.set(st, entry);
-    }
-  }
-  return map;
-}
-
-function computeSalesTotals(sales: any[]): { totalSales: Prisma.Decimal; totalQuantity: number } {
-  let totalSales = new Prisma.Decimal(0);
-  let totalQuantity = 0;
-  for (const sale of sales) {
-    totalSales = totalSales.plus(sale.totalAmount ?? 0);
-    for (const item of sale.items ?? []) {
-      totalQuantity += item.quantity ?? 0;
-    }
-  }
-  return { totalSales, totalQuantity };
-}
-
-function formatBreakdownEntries(
-  map: Map<string, { saleType: string; count: number; totalAmount: Prisma.Decimal }>,
-): any[] {
-  return Array.from(map.values()).map((e) => ({
-    saleType: e.saleType,
-    count: e.count,
-    totalAmount: e.totalAmount.toFixed(2),
-    averageAmount: e.count > 0 ? e.totalAmount.dividedBy(e.count).toFixed(2) : '0.00',
-  }));
 }
 
 function formatPaymentEntries(sales: any[]): any[] {

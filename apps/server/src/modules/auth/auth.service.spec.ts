@@ -355,9 +355,11 @@ describe('AuthService', () => {
         service.validateCredentials(USERNAME, 'WrongPassword'),
       ).rejects.toThrow(InvalidCredentialsException);
 
+      // FIX-005: the increment is atomic — the service never writes an
+      // absolute count it read earlier (read-modify-write race).
       expect(mockUserModel.update).toHaveBeenCalledWith({
         where: { id: USER_ID },
-        data: { failedLoginAttempts: 3 },
+        data: { failedLoginAttempts: { increment: 1 } },
       });
     });
 
@@ -366,7 +368,11 @@ describe('AuthService', () => {
         failedLoginAttempts: MAX_FAILED_LOGIN_ATTEMPTS - 1,
       });
       mockUserModel.findFirst.mockResolvedValue(user);
-      mockUserModel.findUnique.mockResolvedValue(user);
+      // FIX-005: the post-increment re-read decides the lockout — it must
+      // observe the new count (5), not the pre-increment value.
+      mockUserModel.findUnique.mockResolvedValue(
+        buildUser({ failedLoginAttempts: MAX_FAILED_LOGIN_ATTEMPTS }),
+      );
       mockPasswordHasher.verify.mockResolvedValue(false);
 
       await expect(
@@ -376,8 +382,13 @@ describe('AuthService', () => {
       expect(mockUserModel.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: USER_ID },
+          data: { failedLoginAttempts: { increment: 1 } },
+        }),
+      );
+      expect(mockUserModel.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: USER_ID },
           data: expect.objectContaining({
-            failedLoginAttempts: MAX_FAILED_LOGIN_ATTEMPTS,
             lockedUntil: expect.any(Date),
           }),
         }),
@@ -389,7 +400,10 @@ describe('AuthService', () => {
         failedLoginAttempts: MAX_FAILED_LOGIN_ATTEMPTS - 1,
       });
       mockUserModel.findFirst.mockResolvedValue(user);
-      mockUserModel.findUnique.mockResolvedValue(user);
+      // FIX-005: lockout decision comes from the post-increment re-read.
+      mockUserModel.findUnique.mockResolvedValue(
+        buildUser({ failedLoginAttempts: MAX_FAILED_LOGIN_ATTEMPTS }),
+      );
       mockPasswordHasher.verify.mockResolvedValue(false);
 
       const before = Date.now();
@@ -400,7 +414,8 @@ describe('AuthService', () => {
 
       const after = Date.now();
       const lockDurationMs = ACCOUNT_LOCK_DURATION_MINUTES * 60 * 1000;
-      const updateCall = mockUserModel.update.mock.calls[0][0];
+      // Second update call = the lock write (first is the atomic increment).
+      const updateCall = mockUserModel.update.mock.calls[1][0];
       const lockedUntil: Date = updateCall.data.lockedUntil;
       const diff = lockedUntil.getTime() - before;
 
@@ -421,7 +436,7 @@ describe('AuthService', () => {
 
       expect(mockUserModel.update).toHaveBeenCalledWith({
         where: { id: USER_ID },
-        data: { failedLoginAttempts: 2 },
+        data: { failedLoginAttempts: { increment: 1 } },
       });
       // lockedUntil should NOT have been set
       expect(mockUserModel.update).not.toHaveBeenCalledWith(

@@ -22,6 +22,7 @@ jest.mock('@pharmacy/database', () => {
 });
 
 import { SupplierReturnsService } from './supplier-returns.service';
+import { hashAdvisoryKey } from '@/common/utils/advisory-lock';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import type { SupplierReturnConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
@@ -30,6 +31,9 @@ import type { SupplierReturnConfirmationPayload } from '@/modules/sync/dto/purch
 
 function createTxMock() {
   return {
+    // FIX-006/007: sequential-number allocation and the sync confirm path
+    // run under a PostgreSQL advisory lock (pg_advisory_xact_lock).
+    $executeRaw: jest.fn(),
     supplier: { findUnique: jest.fn() },
     purchaseReception: { findUnique: jest.fn() },
     purchaseReceptionItem: { findFirst: jest.fn() },
@@ -195,6 +199,12 @@ describe('SupplierReturnsService', () => {
             createdById: 'user-1',
           }),
         }),
+      );
+      // FIX-006: sequential-number allocation runs under a per-tenant advisory
+      // lock so concurrent creates cannot both read the same MAX.
+      expect(mockTx.$executeRaw).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.stringContaining('pg_advisory_xact_lock')]),
+        hashAdvisoryKey('test-subscription-id:supplier-return:seq'),
       );
     });
 
@@ -417,6 +427,12 @@ describe('SupplierReturnsService', () => {
       expect(result).toEqual({ id: 'existing-sr', state: 'CONFIRMED' });
       expect(mockSuppliersService.resolveSupplierForSync).not.toHaveBeenCalled();
       expect(mockTx.supplierReturn.create).not.toHaveBeenCalled();
+      // FIX-007: the lock is acquired even on the idempotent path, so
+      // duplicate BullMQ deliveries serialize instead of double-creating.
+      expect(mockTx.$executeRaw).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.stringContaining('pg_advisory_xact_lock')]),
+        hashAdvisoryKey('test-subscription-id:supplier-return:sr-sync-1'),
+      );
     });
 
     it('resolves supplier via resolver when supplier does not exist but payload has supplier data', async () => {

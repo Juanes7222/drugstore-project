@@ -231,6 +231,12 @@ export class SubscriptionsService {
   /**
    * Daily cron job to evaluate status transitions.
    * Runs every day at 02:00.
+   *
+   * Cross-tenant by design: Subscription is the platform-owned parent table
+   * and is intentionally NOT RLS-protected (verified against migration
+   * 20260804000002_enable_row_level_security) — these global UPDATEs run on
+   * the root client without a tenant context and affect all subscriptions.
+   * Do not wrap them in withTenant().
    */
   @Cron(CronExpression.EVERY_DAY_AT_2AM)
   async evaluateStatusTransitions() {

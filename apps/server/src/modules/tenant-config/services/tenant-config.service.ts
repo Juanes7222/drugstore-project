@@ -538,10 +538,11 @@ export class TenantConfigService {
       updateData.purchases = this.json(mergedPurchases);
     }
 
-    const updated = await this.prisma.tenantConfig.update({
-      where: { id: current.id },
-      data: updateData as any,
-    });
+    const updated = await this.updateConfigWithVersionGuard(
+      current.id,
+      current.configVersion,
+      updateData,
+    );
 
     if (changes.length > 0) {
       for (const c of changes) {
@@ -588,9 +589,10 @@ export class TenantConfigService {
     const newVersion = current.configVersion + 1;
     const now = new Date();
 
-    const updated = await this.prisma.tenantConfig.update({
-      where: { id: current.id },
-      data: {
+    const updated = await this.updateConfigWithVersionGuard(
+      current.id,
+      current.configVersion,
+      {
         strictness: this.json(preset.strictness),
         workflow: this.json(preset.workflow),
         purchases: this.json(preset.purchases),
@@ -599,7 +601,7 @@ export class TenantConfigService {
         lastModifiedById: actorUserId,
         lastModifiedAt: now,
       },
-    });
+    );
 
     await this.prisma.configChangelog.create({
       data: {
@@ -640,9 +642,10 @@ export class TenantConfigService {
     const newVersion = current.configVersion + 1;
     const now = new Date();
 
-    const updated = await this.prisma.tenantConfig.update({
-      where: { id: current.id },
-      data: {
+    const updated = await this.updateConfigWithVersionGuard(
+      current.id,
+      current.configVersion,
+      {
         strictness: this.json(preset.strictness),
         workflow: this.json(preset.workflow),
         purchases: this.json(preset.purchases),
@@ -650,7 +653,7 @@ export class TenantConfigService {
         lastModifiedById: actorUserId,
         lastModifiedAt: now,
       },
-    });
+    );
 
     await this.prisma.configChangelog.create({
       data: {
@@ -879,9 +882,10 @@ export class TenantConfigService {
     const newVersion = config.configVersion + 1;
     const now = new Date();
 
-    const updated = await this.prisma.tenantConfig.update({
-      where: { id: config.id },
-      data: {
+    const updated = await this.updateConfigWithVersionGuard(
+      config.id,
+      config.configVersion,
+      {
         strictness: this.json(newStrictness),
         fiscal: this.json(newFiscal),
         workflow: this.json(newWorkflow),
@@ -890,7 +894,7 @@ export class TenantConfigService {
         lastModifiedById: actorUserId,
         lastModifiedAt: now,
       },
-    });
+    );
 
     await this.prisma.configChangelog.create({
       data: {
@@ -1128,10 +1132,11 @@ export class TenantConfigService {
     updateData.lastModifiedById = actorUserId;
     updateData.lastModifiedAt = new Date();
 
-    const updated = await this.prisma.tenantConfig.update({
-      where: { id: config.id },
-      data: updateData as any,
-    });
+    const updated = await this.updateConfigWithVersionGuard(
+      config.id,
+      config.configVersion,
+      updateData,
+    );
 
     await this.prisma.configChangelog.create({
       data: {
@@ -1276,10 +1281,11 @@ export class TenantConfigService {
         where: { subscriptionId },
       });
       if (raw) {
-        const updated = await this.prisma.tenantConfig.update({
-          where: { id: raw.id },
-          data: updateData as any,
-        });
+        const updated = await this.updateConfigWithVersionGuard(
+          raw.id,
+          raw.configVersion,
+          updateData,
+        );
 
         if (changes.length > 0) {
           for (const c of changes) {
@@ -1352,6 +1358,31 @@ export class TenantConfigService {
     return config;
   }
 
+  /**
+   * Compare-and-swap version guard for JSONB config writes.
+   *
+   * The read-modify-write of a config section only persists if the row still
+   * carries the version the caller read; otherwise a concurrent write won and
+   * the caller must retry with fresh data (ConfigVersionConflictException).
+   * Without the guard, two concurrent auto-saves could both pass the version
+   * check and the second would silently overwrite the first's section
+   * (lost update on the JSONB merge).
+   */
+  private async updateConfigWithVersionGuard(
+    id: string,
+    expectedConfigVersion: number,
+    data: Record<string, unknown>,
+  ): Promise<any> {
+    const result = await this.prisma.tenantConfig.updateMany({
+      where: { id, configVersion: expectedConfigVersion },
+      data: data as any,
+    });
+    if (result.count === 0) {
+      throw new ConfigVersionConflictException(expectedConfigVersion);
+    }
+    return this.prisma.tenantConfig.findUnique({ where: { id } });
+  }
+
   private async updateCustomArray(
     config: any,
     fieldName: 'customCompanyFields' | 'customStrictnessToggles',
@@ -1364,15 +1395,16 @@ export class TenantConfigService {
     const newVersion = config.configVersion + 1;
     const now = new Date();
 
-    const updated = await this.prisma.tenantConfig.update({
-      where: { id: config.id },
-      data: {
+    const updated = await this.updateConfigWithVersionGuard(
+      config.id,
+      config.configVersion,
+      {
         [fieldName]: this.json(newArray),
         configVersion: newVersion,
         lastModifiedById: actorUserId,
         lastModifiedAt: now,
       },
-    });
+    );
 
     await this.prisma.configChangelog.create({
       data: {

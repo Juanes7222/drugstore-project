@@ -79,7 +79,7 @@ export class DevController {
     for (const table of requested) {
       try {
         const rows = await this.prisma.$queryRawUnsafe<unknown[]>(
-          `SELECT * FROM "${table}" ORDER BY (SELECT NULL)`,
+          `SELECT * FROM "${table}" ORDER BY (SELECT NULL) LIMIT 10000`,
         );
         // $queryRawUnsafe returns BigInt for bigint columns; JSON.stringify
         // cannot serialise BigInt. Convert all BigInt values to string.

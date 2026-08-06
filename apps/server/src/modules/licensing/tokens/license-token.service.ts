@@ -92,10 +92,10 @@ export class LicenseTokenService {
       return decoded as Record<string, unknown>;
     } catch (error) {
       if (error instanceof jwt.TokenExpiredError) {
-        throw new Error('License token expired');
+        throw new Error('License token expired', { cause: error });
       }
       if (error instanceof jwt.JsonWebTokenError) {
-        throw new Error('Invalid license token');
+        throw new Error('Invalid license token', { cause: error });
       }
       throw error;
     }

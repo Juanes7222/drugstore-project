@@ -11,6 +11,7 @@ import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-n
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
 import { SuppliersService } from './suppliers.service';
 import type { PurchaseOrderConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
+import { acquireAdvisoryLock } from '@/common/utils/advisory-lock';
 
 @Injectable()
 export class PurchaseOrdersService {
@@ -96,6 +97,13 @@ export class PurchaseOrdersService {
       const totalTax = new Prisma.Decimal(0);
       const totalAmount = subtotal;
 
+      // Serialize sequential-number allocation per tenant so two concurrent
+      // cashier creations cannot read the same MAX and produce duplicates.
+      await acquireAdvisoryLock(
+        tx,
+        `${this.tenantContext.getSubscriptionId()}:purchase-order:seq`,
+      );
+
       const sequentialNumber = await this.getNextSequentialNumber(tx);
 
       const purchaseOrder = await tx.purchaseOrder.create({
@@ -164,8 +172,10 @@ export class PurchaseOrdersService {
       // lock. BullMQ may deliver the same job to two workers concurrently; the
       // lock ensures only one worker reaches the idempotency check + create
       // section at a time, preventing a P2002 race.
-      const lockKey = PurchaseOrdersService.hashEntityId(payload.orderId);
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
+      await acquireAdvisoryLock(
+        tx,
+        `${this.tenantContext.getSubscriptionId()}:purchase-order:${payload.orderId}`,
+      );
 
       // Idempotency: check by POS-originated id first. If the same PO was
       // already created from an earlier sync attempt, return it. The
@@ -271,15 +281,6 @@ export class PurchaseOrdersService {
   async annul(id: string): Promise<any> {
     // Annulment logic is deferred
     throw new Error('Annulment not implemented for this phase.');
-  }
-
-  /** Deterministic positive int4 hash of an entity ID for advisory lock key. */
-  private static hashEntityId(id: string): number {
-    let hash = 0;
-    for (let i = 0; i < id.length; i++) {
-      hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
-    }
-    return hash & 0x7FFFFFFF;
   }
 
   private async getNextSequentialNumber(tx: Prisma.TransactionClient): Promise<number> {

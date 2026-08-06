@@ -43,14 +43,14 @@ describe('ReportsService', () => {
 
   describe('getSalesSummary', () => {
     it('returns aggregated sales summary for the date range', async () => {
-      const mockSales = [{
-        totalAmount: 10000,
-        items: [
-          { quantity: 2, total: 5000, product: { saleType: 'FREE_SALE' } },
-          { quantity: 1, total: 5000, product: { saleType: 'PRESCRIPTION' } },
-        ],
-      }];
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue(mockSales);
+      // FIX-013: totals and breakdown are aggregated via raw SQL ($queryRaw),
+      // not by loading every CONFIRMED sale into memory.
+      (prisma.$queryRaw as jest.Mock)
+        .mockResolvedValueOnce([{ totalSales: '10000', totalQuantity: 3 }])
+        .mockResolvedValueOnce([
+          { saleType: 'FREE_SALE', count: 1, totalAmount: '5000' },
+          { saleType: 'PRESCRIPTION', count: 1, totalAmount: '5000' },
+        ]);
       const result = await service.getSalesSummary(validQuery());
       expect(result.totalSales).toBe('10000.00');
       expect(result.totalQuantity).toBe(3);
@@ -63,34 +63,37 @@ describe('ReportsService', () => {
     });
 
     it('handles items with null product saleType', async () => {
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([
-        { totalAmount: 5000, items: [{ quantity: 1, total: 5000, product: null }] },
-      ]);
+      (prisma.$queryRaw as jest.Mock)
+        .mockResolvedValueOnce([{ totalSales: '5000', totalQuantity: 1 }])
+        .mockResolvedValueOnce([{ saleType: null, count: 1, totalAmount: '5000' }]);
       const result = await service.getSalesSummary(validQuery());
       expect(result.totalSales).toBe('5000.00');
       expect(result.breakdownBySaleType).toHaveLength(1);
     });
 
     it('handles items with missing quantity and total', async () => {
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([
-        { totalAmount: 0, items: [{ product: { saleType: 'FREE_SALE' } }] },
-      ]);
+      (prisma.$queryRaw as jest.Mock)
+        .mockResolvedValueOnce([{ totalSales: '0', totalQuantity: 0 }])
+        .mockResolvedValueOnce([]);
       const result = await service.getSalesSummary(validQuery());
       expect(result.totalQuantity).toBe(0);
       expect(result.totalSales).toBe('0.00');
     });
 
     it('handles sales with undefined totalAmount and items', async () => {
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([{ items: undefined }]);
+      // No rows at all → the service falls back to zeroed totals.
+      (prisma.$queryRaw as jest.Mock)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
       const result = await service.getSalesSummary(validQuery());
       expect(result.totalQuantity).toBe(0);
       expect(result.totalSales).toBe('0.00');
     });
 
     it('returns zero average amount when breakdown entry has zero count', async () => {
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([
-        { totalAmount: 0, items: [{ quantity: 0, total: 0, product: { saleType: 'FREE_SALE' } }] },
-      ]);
+      (prisma.$queryRaw as jest.Mock)
+        .mockResolvedValueOnce([{ totalSales: '0', totalQuantity: 0 }])
+        .mockResolvedValueOnce([{ saleType: 'FREE_SALE', count: 0, totalAmount: '0' }]);
       const result = await service.getSalesSummary(validQuery());
       expect(result.breakdownBySaleType[0].averageAmount).toBe('0.00');
     });

@@ -56,12 +56,35 @@ export class SyncService {
     batchDto: SyncBatchDto,
     sourceWorkstationId: string,
   ): Promise<BatchOperationResult[]> {
-    const results: BatchOperationResult[] = [];
-    for (const op of batchDto.operations) {
-      results.push(
-        await this.ingestOperation(op, sourceWorkstationId),
-      );
-    }
+    // Operations are independent (each validates, inserts its own queue row
+    // and optionally dispatches), so process them in a bounded worker pool
+    // instead of fully sequentially — batch latency no longer scales 1:1
+    // with operation count. Duplicate operationUuids within one batch race
+    // safely: the loser hits the unique constraint and surfaces as
+    // ALREADY_ACCEPTED via the P2002 handler in ingestOperation.
+    const operations = batchDto.operations;
+    const results: BatchOperationResult[] = new Array(operations.length);
+    const WORKERS = 5;
+    let nextIndex = 0;
+
+    const worker = async (): Promise<void> => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= operations.length) return;
+        results[index] = await this.ingestOperation(
+          operations[index],
+          sourceWorkstationId,
+        );
+      }
+    };
+
+    await Promise.all(
+      Array.from(
+        { length: Math.min(WORKERS, operations.length) },
+        () => worker(),
+      ),
+    );
+
     return results;
   }
 

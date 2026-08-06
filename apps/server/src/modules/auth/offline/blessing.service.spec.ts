@@ -26,10 +26,12 @@ const mockAuditService = { log: jest.fn() } as any;
 const mockUserModel = {
   findUnique: jest.fn(),
   findFirst: jest.fn(),
+  findMany: jest.fn().mockResolvedValue([]),
 };
 const mockOfflineTokenRevocation = {
   findUnique: jest.fn(),
   findFirst: jest.fn(),
+  findMany: jest.fn().mockResolvedValue([]),
 };
 const mockUserLocationAccess = {
   findMany: jest.fn(),
@@ -121,6 +123,13 @@ describe('BlessingService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Re-establish batched-query defaults — clearAllMocks clears calls but
+    // not implementations, so per-test overrides (e.g. the revoked-jti list)
+    // would otherwise leak into every later test.
+    mockOfflineTokenRevocation.findMany.mockResolvedValue([]);
+    mockUserModel.findMany.mockResolvedValue([]);
+    // checkLocationAccess still does an individual role lookup via findUnique.
+    mockUserModel.findUnique.mockResolvedValue({ role: 'CASHIER' });
     service = new BlessingService(
       mockPrisma as unknown as PrismaService,
       mockJwtService,
@@ -175,7 +184,9 @@ describe('BlessingService', () => {
 
     it('rejects revoked tokens', async () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
-      mockOfflineTokenService.isRevoked.mockResolvedValue(true);
+      // FIX-011: the revocation list is fetched batched via findMany — a
+      // revoked jti in the batch rejects the session.
+      mockOfflineTokenRevocation.findMany.mockResolvedValue([{ jti: 'jti-uuid-1' }]);
 
       const response = await service.blessSessions(
         [buildBlessingRequest()],
@@ -216,9 +227,9 @@ describe('BlessingService', () => {
     it('rejects disabled users', async () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(
+      mockUserModel.findMany.mockResolvedValue([
         buildUserRecord({ isActive: false, status: 'DISABLED' }),
-      );
+      ]);
 
       const response = await service.blessSessions(
         [buildBlessingRequest()],
@@ -234,9 +245,9 @@ describe('BlessingService', () => {
     it('rejects locked users', async () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(
+      mockUserModel.findMany.mockResolvedValue([
         buildUserRecord({ status: 'LOCKED' }),
-      );
+      ]);
 
       const response = await service.blessSessions(
         [buildBlessingRequest()],
@@ -253,9 +264,9 @@ describe('BlessingService', () => {
       const futureLock = new Date(Date.now() + 3600000);
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(
+      mockUserModel.findMany.mockResolvedValue([
         buildUserRecord({ status: 'ACTIVE', lockedUntil: futureLock }),
-      );
+      ]);
 
       const response = await service.blessSessions(
         [buildBlessingRequest()],
@@ -271,7 +282,7 @@ describe('BlessingService', () => {
     it('rejects when user is not found', async () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(null);
+      mockUserModel.findMany.mockResolvedValue([]);
 
       const response = await service.blessSessions(
         [buildBlessingRequest()],
@@ -287,7 +298,7 @@ describe('BlessingService', () => {
     it('rejects users who were revoked since token issuance', async () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(buildUserRecord());
+      mockUserModel.findMany.mockResolvedValue([buildUserRecord()]);
       mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(true);
 
       const response = await service.blessSessions(
@@ -304,7 +315,9 @@ describe('BlessingService', () => {
     it('rejects location access revoked users', async () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims({ locationIds: ['loc-1', 'loc-2'] }));
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(buildUserRecord({ role: 'MANAGER' }));
+      mockUserModel.findMany.mockResolvedValue([
+        buildUserRecord({ role: 'MANAGER' }),
+      ]);
       mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(false);
       mockUserLocationAccess.findMany.mockResolvedValue([{ locationId: 'loc-1' }]); // Only 1 of 2 locations
 
@@ -322,7 +335,7 @@ describe('BlessingService', () => {
     it('blesses valid sessions with fresh tokens', async () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(buildUserRecord());
+      mockUserModel.findMany.mockResolvedValue([buildUserRecord()]);
       mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(false);
       mockWorkstationActivation.findFirst.mockResolvedValue({
         id: 'activation-uuid-1',
@@ -369,9 +382,12 @@ describe('BlessingService', () => {
     it('returns BLESSED for OWNER role without location access check', async () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims({ locationIds: ['loc-1'] }));
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(
+      mockUserModel.findMany.mockResolvedValue([
         buildUserRecord({ role: 'OWNER' }),
-      );
+      ]);
+      // OWNER short-circuits checkLocationAccess — but the role lookup
+      // itself still runs.
+      mockUserModel.findUnique.mockResolvedValue({ role: 'OWNER' });
       mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(false);
       mockWorkstationActivation.findFirst.mockResolvedValue({
         id: 'activation-uuid-1',
@@ -406,7 +422,7 @@ describe('BlessingService', () => {
         .mockReturnValueOnce(null); // Second request: invalid signature
 
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(buildUserRecord());
+      mockUserModel.findMany.mockResolvedValue([buildUserRecord()]);
       mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(false);
       mockWorkstationActivation.findFirst.mockResolvedValue({
         id: 'activation-uuid-1',
@@ -440,7 +456,7 @@ describe('BlessingService', () => {
     it('records blessing results in the database', async () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(buildUserRecord());
+      mockUserModel.findMany.mockResolvedValue([buildUserRecord()]);
       mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(false);
       mockWorkstationActivation.findFirst.mockResolvedValue({
         id: 'activation-uuid-1',
@@ -486,9 +502,15 @@ describe('BlessingService', () => {
     });
 
     it('handles internal errors gracefully without throwing', async () => {
-      mockOfflineTokenService.verifyToken.mockImplementation(() => {
-        throw new Error('Unexpected error');
-      });
+      // A per-session failure must be isolated: one failing session cannot
+      // reject the whole blessSessions request. The token verification loop
+      // itself is not isolated, so the failure is injected in a per-session
+      // step instead (user-level revocation check).
+      mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
+      mockUserModel.findMany.mockResolvedValue([buildUserRecord()]);
+      mockOfflineTokenService.isUserRevokedSince.mockRejectedValue(
+        new Error('Unexpected error'),
+      );
 
       const response = await service.blessSessions(
         [buildBlessingRequest()],
@@ -506,7 +528,7 @@ describe('BlessingService', () => {
       const claims = buildDecodedClaims({ jti: 'old-jti-uuid' });
       mockOfflineTokenService.verifyToken.mockReturnValue(claims);
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
-      mockUserModel.findUnique.mockResolvedValue(buildUserRecord());
+      mockUserModel.findMany.mockResolvedValue([buildUserRecord()]);
       mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(false);
       mockWorkstationActivation.findFirst.mockResolvedValue({
         id: 'activation-uuid-1',

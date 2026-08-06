@@ -55,30 +55,45 @@ export class WorkstationHeartbeatService {
   ): Promise<{ recorded: number }> {
     const now = new Date();
 
-    for (const hb of heartbeats) {
+    // Batch inserts in chunks of 200. If a whole chunk fails (e.g. one
+    // malformed row), fall back to per-row inserts so the rest of the
+    // batch is still recorded — matching the previous per-row tolerance.
+    let recorded = 0;
+    for (let i = 0; i < heartbeats.length; i += 200) {
+      const chunk = heartbeats.slice(i, i + 200);
+      const rows = chunk.map((hb) => ({
+        workstationId: hb.workstationId,
+        friendlyName: hb.friendlyName ?? null,
+        appVersion: hb.appVersion ?? null,
+        queueDepth: hb.queueDepth,
+        oldestPendingAt: hb.oldestPendingAt ? new Date(hb.oldestPendingAt) : null,
+        permanentFailures: hb.permanentFailures,
+        diskSpaceMb: hb.diskSpaceMb ?? null,
+        lastLanSyncAt: hb.lastLanSyncAt ? new Date(hb.lastLanSyncAt) : null,
+        reportedBy: hb.reportedBy,
+        receivedAt: now,
+      }));
+
       try {
-        await this.prisma.workstationHeartbeat.create({
-          data: {
-            workstationId: hb.workstationId,
-            friendlyName: hb.friendlyName ?? null,
-            appVersion: hb.appVersion ?? null,
-            queueDepth: hb.queueDepth,
-            oldestPendingAt: hb.oldestPendingAt ? new Date(hb.oldestPendingAt) : null,
-            permanentFailures: hb.permanentFailures,
-            diskSpaceMb: hb.diskSpaceMb ?? null,
-            lastLanSyncAt: hb.lastLanSyncAt ? new Date(hb.lastLanSyncAt) : null,
-            reportedBy: hb.reportedBy,
-            receivedAt: now,
-          },
+        const result = await this.prisma.workstationHeartbeat.createMany({
+          data: rows,
         });
+        recorded += result.count;
       } catch (err) {
-        this.logger.warn(
-          `Failed to record heartbeat for ${hb.workstationId}: ${err instanceof Error ? err.message : 'Unknown'}`,
-        );
+        for (const row of rows) {
+          try {
+            await this.prisma.workstationHeartbeat.create({ data: row });
+            recorded += 1;
+          } catch (rowErr) {
+            this.logger.warn(
+              `Failed to record heartbeat for ${row.workstationId}: ${rowErr instanceof Error ? rowErr.message : 'Unknown'}`,
+            );
+          }
+        }
       }
     }
 
-    return { recorded: heartbeats.length };
+    return { recorded };
   }
 
   /**
