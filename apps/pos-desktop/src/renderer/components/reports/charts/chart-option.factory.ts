@@ -10,9 +10,19 @@
  * Every builder accepts an optional `locale` (default `'es-CO'`) so
  * callers can pass the current i18n language — stops dates appearing
  * in English when the UI is in Spanish and vice‑versa.
+ *
+ * ## Unit-aware formatting
+ *
+ * `ReportChartData.unit` tells the factory how to format the numeric
+ * values on axes, tooltips and summaries: `currency` (COP), `number`
+ * (plain integer), `percent`, or `ratio` (plain decimal).  Bar items
+ * may carry a pre-formatted `secondary` label that the tooltip appends
+ * below the value — this is how reports show a second dimension (e.g.
+ * units sold on a revenue bar) without mixing units on the axis.
  */
 
 import type { EChartsOption } from 'echarts';
+import type { ReportChartAxisUnit } from '../../../../domain/reports/report-types';
 import { reportChartTheme, type ReportChartTheme } from './chart-theme';
 import type { ReportChartData } from './chart-types';
 
@@ -59,6 +69,56 @@ function fmt(locale: string) {
   };
 }
 
+type Fmt = ReturnType<typeof fmt>;
+
+/** Format a numeric axis value according to the chart unit.  Absent
+ *  means currency (the historical default for line/area charts). */
+function valueFormatter(unit: ReportChartAxisUnit | undefined, f: Fmt): (v: number) => string {
+  switch (unit) {
+    case 'currency':
+      return (v) => f.COP.format(v);
+    case 'percent':
+      return (v) => `${v.toFixed(1)}%`;
+    case 'ratio':
+      return (v) => `${v.toFixed(2)}`;
+    default:
+      return (v) => f.INT.format(v);
+  }
+}
+
+/** Tooltip for bar charts: formats the value by unit and appends the
+ *  per-item `secondary` label when present (e.g. units on a revenue
+ *  bar).  Bar items are objects `{ value, secondary? }`. */
+function barTooltip(unit: ReportChartAxisUnit | undefined, f: Fmt): EChartsOption['tooltip'] {
+  const format = valueFormatter(unit, f);
+  return {
+    trigger: 'axis',
+    backgroundColor: '#FFFFFF',
+    borderColor: reportChartTheme.border,
+    textStyle: { color: reportChartTheme.textPrimary, fontSize: 12 },
+    formatter: (params: unknown) => {
+      const items = (Array.isArray(params) ? params : [params]) as Array<{
+        name?: string;
+        seriesName?: string;
+        value?: unknown;
+        data?: unknown;
+      }>;
+      const first = items[0];
+      const lines = items.map((p) => {
+        const raw = p.data ?? p.value;
+        const d =
+          typeof raw === 'object' && raw !== null
+            ? (raw as { value?: number; secondary?: string })
+            : {};
+        const num = typeof d.value === 'number' ? d.value : Number(p.value ?? 0);
+        const sec = typeof d.secondary === 'string' ? d.secondary : undefined;
+        return `${p.seriesName ?? ''}: ${format(num)}${sec ? `<br/>${sec}` : ''}`;
+      });
+      return `<b>${first?.name ?? ''}</b><br/>${lines.join('<br/>')}`;
+    },
+  };
+}
+
 const baseOption = (theme: ReportChartTheme): Partial<EChartsOption> => ({
   color: theme.series,
   backgroundColor: 'transparent',
@@ -80,6 +140,7 @@ export function buildLineOption(
 ): EChartsOption {
   const theme = reportChartTheme;
   const f = fmt(locale);
+  const format = valueFormatter(data.unit ?? 'currency', f);
   return {
     ...baseOption(theme),
     xAxis: {
@@ -92,7 +153,7 @@ export function buildLineOption(
       type: 'value',
       axisLine: { show: false },
       splitLine: { lineStyle: { color: theme.border, type: 'dashed' } },
-      axisLabel: { color: theme.textMuted, formatter: (v: number) => f.COP.format(v) },
+      axisLabel: { color: theme.textMuted, formatter: (v: number) => format(v) },
     },
     series: data.series.map((s, idx) => ({
       name: s.name,
@@ -114,14 +175,16 @@ export function buildAreaOption(data: ReportChartData, locale = 'es-CO'): EChart
 export function buildBarHorizontalOption(data: ReportChartData, locale = 'es-CO'): EChartsOption {
   const theme = reportChartTheme;
   const f = fmt(locale);
+  const format = valueFormatter(data.unit, f);
   return {
     ...baseOption(theme),
+    tooltip: barTooltip(data.unit, f),
     legend: { ...baseOption(theme).legend, show: data.series.length > 1 },
     xAxis: {
       type: 'value',
       axisLine: { show: false },
       splitLine: { lineStyle: { color: theme.border, type: 'dashed' } },
-      axisLabel: { color: theme.textMuted, formatter: (v: number) => f.INT.format(v) },
+      axisLabel: { color: theme.textMuted, formatter: (v: number) => format(v) },
     },
     yAxis: {
       type: 'category',
@@ -142,8 +205,10 @@ export function buildBarHorizontalOption(data: ReportChartData, locale = 'es-CO'
 export function buildBarVerticalOption(data: ReportChartData, locale = 'es-CO'): EChartsOption {
   const theme = reportChartTheme;
   const f = fmt(locale);
+  const format = valueFormatter(data.unit, f);
   return {
     ...baseOption(theme),
+    tooltip: barTooltip(data.unit, f),
     xAxis: {
       type: 'category',
       data: data.xAxis ?? [],
@@ -154,7 +219,7 @@ export function buildBarVerticalOption(data: ReportChartData, locale = 'es-CO'):
       type: 'value',
       axisLine: { show: false },
       splitLine: { lineStyle: { color: theme.border, type: 'dashed' } },
-      axisLabel: { color: theme.textMuted, formatter: (v: number) => f.INT.format(v) },
+      axisLabel: { color: theme.textMuted, formatter: (v: number) => format(v) },
     },
     series: data.series.map((s, idx) => ({
       name: s.name,
@@ -183,6 +248,8 @@ export function buildDonutOption(data: ReportChartData, locale = 'es-CO'): EChar
   const f = fmt(locale);
   const first = data.series[0];
   const rawData = first?.data;
+  const formatValue =
+    data.unit === 'currency' ? (v: number) => f.COP.format(v) : (v: number) => f.INT.format(v);
   const pieData = Array.isArray(rawData)
     ? (rawData as ReadonlyArray<number | string | { name: string; value: number }>).map((d, i) => {
         if (typeof d === 'object' && d !== null) {
@@ -203,7 +270,7 @@ export function buildDonutOption(data: ReportChartData, locale = 'es-CO'): EChar
       borderColor: theme.border,
       formatter: (params) => {
         const p = params as { name: string; value: number; percent: number };
-        return `<b>${p.name}</b><br/>${f.COP.format(p.value)} (${p.percent.toFixed(1)}%)`;
+        return `<b>${p.name}</b><br/>${formatValue(p.value)} (${p.percent.toFixed(1)}%)`;
       },
     },
     series: [
@@ -228,28 +295,38 @@ export function buildScatterOption(
   const theme = reportChartTheme;
   const f = fmt(locale);
   const l = { ...DEFAULT_LABELS, ...labels };
+  // The report can override the axis labels/units (e.g. inventory
+  // rotation: "Índice de rotación" vs "Unidades vendidas").  Without an
+  // override the profit-margin defaults apply.
+  const axes = data.scatterAxes;
+  const xLabel = axes?.x.label ?? l.scatterMargin;
+  const yLabel = axes?.y.label ?? l.scatterProfit;
+  const xFormat = axes ? valueFormatter(axes.x.unit, f) : (v: number) => `${v.toFixed(1)}%`;
+  const yFormat = axes ? valueFormatter(axes.y.unit, f) : (v: number) => f.COP.format(v);
+  const tooltipXPrefix = axes ? `${xLabel}: ` : l.tooltipMargin;
+  const tooltipYPrefix = axes ? `${yLabel}: ` : l.tooltipProfit.replace(/^<br\/>/u, '');
   return {
     ...baseOption(theme),
     legend: { ...baseOption(theme).legend, show: false },
     xAxis: {
       type: 'value',
-      name: l.scatterMargin,
+      name: xLabel,
       nameLocation: 'middle',
       nameGap: 24,
       nameTextStyle: { color: theme.textMuted },
       axisLine: { show: false },
       splitLine: { lineStyle: { color: theme.border, type: 'dashed' } },
-      axisLabel: { color: theme.textMuted, formatter: (v: number) => `${v.toFixed(1)}%` },
+      axisLabel: { color: theme.textMuted, formatter: (v: number) => xFormat(v) },
     },
     yAxis: {
       type: 'value',
-      name: l.scatterProfit,
+      name: yLabel,
       nameLocation: 'middle',
       nameGap: 48,
       nameTextStyle: { color: theme.textMuted },
       axisLine: { show: false },
       splitLine: { lineStyle: { color: theme.border, type: 'dashed' } },
-      axisLabel: { color: theme.textMuted, formatter: (v: number) => f.COP.format(v) },
+      axisLabel: { color: theme.textMuted, formatter: (v: number) => yFormat(v) },
     },
     series: data.series.map((s, idx) => ({
       name: s.name,
@@ -263,8 +340,11 @@ export function buildScatterOption(
       trigger: 'item',
       formatter: (params) => {
         const p = params as unknown as { data: [number, number, number?, string?] };
-        const name = p.data[3] ?? `${p.data[0]?.toFixed(1)}%`;
-        return `<b>${name}</b><br/>${l.tooltipMargin}${p.data[0]?.toFixed(1)}%${l.tooltipProfit}${f.COP.format(p.data[1] ?? 0)}`;
+        const x = Number(p.data?.[0] ?? 0);
+        const y = Number(p.data?.[1] ?? 0);
+        const name = p.data?.[3] ?? p.data?.[2];
+        const label = name !== undefined && name !== '' ? String(name) : xFormat(x);
+        return `<b>${label}</b><br/>${tooltipXPrefix}${xFormat(x)}<br/>${tooltipYPrefix}${yFormat(y)}`;
       },
     },
   } as EChartsOption;
@@ -275,12 +355,16 @@ export function buildDivergingBarOption(data: ReportChartData, locale = 'es-CO')
   const f = fmt(locale);
   return {
     ...baseOption(theme),
+    tooltip: barTooltip('currency', f),
     legend: { ...baseOption(theme).legend, show: false },
     xAxis: {
       type: 'value',
       axisLine: { show: false },
       splitLine: { lineStyle: { color: theme.border, type: 'dashed' } },
-      axisLabel: { color: theme.textMuted, formatter: (v: number) => f.COP.format(v) },
+      axisLabel: {
+        color: theme.textMuted,
+        formatter: (v: number) => f.COP.format(v),
+      },
     },
     yAxis: {
       type: 'category',
@@ -335,7 +419,8 @@ export function buildGaugeOption(value: number, max: number, label: string, loca
  *  `chart_alt` slot in the viewer.
  *
  *  `labels` can provide translated template strings; otherwise Spanish
- *  defaults are used. */
+ *  defaults are used.  Totals are formatted by `data.unit` so count
+ *  charts never display COP figures. */
 export function buildChartSummary(
   data: ReportChartData,
   locale = 'es-CO',
@@ -344,6 +429,7 @@ export function buildChartSummary(
   if (!data.series.length) return '';
   const f = fmt(locale);
   const l = { ...DEFAULT_LABELS, ...labels };
+  const formatValue = valueFormatter(data.unit, f);
   const first = data.series[0];
   if (typeof first.data[0] === 'object') {
     const total = (first.data as ReadonlyArray<unknown>).reduce<number>(
@@ -352,7 +438,7 @@ export function buildChartSummary(
     );
     return l.summaryDistribution
       .replace('{count}', String(first.data.length))
-      .replace('{total}', f.COP.format(total));
+      .replace('{total}', formatValue(total));
   }
   const nums = first.data as ReadonlyArray<number>;
   if (!nums.length) return '';
@@ -360,8 +446,8 @@ export function buildChartSummary(
   const avg = total / nums.length;
   return l.summaryNumeric
     .replace('{count}', String(nums.length))
-    .replace('{total}', f.COP.format(total))
-    .replace('{avg}', f.COP.format(avg));
+    .replace('{total}', formatValue(total))
+    .replace('{avg}', formatValue(avg));
 }
 
 // Re-export for external use (e.g. simple formatting without building an option).

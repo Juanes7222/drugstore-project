@@ -20,9 +20,10 @@ import { ReportViewer } from "./report-viewer";
 import { ReportFreshnessBanner } from "./report-freshness-banner";
 import { ReportErrorState } from "./report-error-state";
 import { ReportEmptyState } from "./report-empty-state";
-import { ReportExecutionException, ReportFiltersNotReadyException, ReportPermissionDeniedException } from "../../../domain/reports/exceptions";
-import { getReportDefinition, listReportsForRole } from "../../../domain/reports/report-catalog";
+import { ReportConfigDisabledException, ReportExecutionException, ReportFiltersNotReadyException, ReportPermissionDeniedException } from "../../../domain/reports/exceptions";
+import { getReportDefinition, listReportsForRole, reportConfigSatisfied } from "../../../domain/reports/report-catalog";
 import { assertReportAccess } from "../../../domain/reports/report-permissions";
+import { useReportConfigContext } from "./use-report-config-context";
 import type { ReportResponse } from "../../../domain/reports/report-types";
 
 export const ReportsPage: FC = () => {
@@ -42,8 +43,12 @@ export const ReportsPage: FC = () => {
   const error = useReportsUiStore((s) => s.error);
   const lastResponse = useReportsUiStore((s) => s.lastResponse);
   const [notReady, setNotReady] = useState(false);
+  const configContext = useReportConfigContext();
 
-  const availableReports = useMemo(() => listReportsForRole(role), [role]);
+  const availableReports = useMemo(
+    () => listReportsForRole(role, configContext),
+    [role, configContext],
+  );
   const hasReports = availableReports.length > 0;
 
   // Auto-select the first available report if none is chosen yet.
@@ -67,6 +72,13 @@ export const ReportsPage: FC = () => {
       }
       throw err;
     }
+    // Config-gated reports must not even attempt to run when the purchases
+    // config does not enable them — avoids a transient error flash while
+    // the auto-select effect resets a stale active report.
+    if (!reportConfigSatisfied(def, configContext)) {
+      setError(t("reports.error.config_disabled"));
+      return;
+    }
     setLoading(true);
     setNotReady(false);
     try {
@@ -74,12 +86,15 @@ export const ReportsPage: FC = () => {
         code: activeCode,
         filters: appliedFilters ?? def.defaultFilters,
         session,
+        effectiveConfig: configContext,
         t: t as (key: string, fallback?: string) => string,
       });
       setResponse(response);
     } catch (err) {
       if (err instanceof ReportFiltersNotReadyException) {
         setNotReady(true);
+      } else if (err instanceof ReportConfigDisabledException) {
+        setError(t(err.messageKey));
       } else if (err instanceof ReportExecutionException) {
         setError(err.message);
       } else if (err instanceof ReportPermissionDeniedException) {
@@ -88,7 +103,7 @@ export const ReportsPage: FC = () => {
         setError(t("reports.error.body"));
       }
     }
-  }, [activeCode, appliedFilters, role, session, services, setError, setLoading, setResponse, t]);
+  }, [activeCode, appliedFilters, role, session, services, configContext, setError, setLoading, setResponse, t]);
 
   // Run the report whenever the active code or filter changes.
   useEffect(() => {

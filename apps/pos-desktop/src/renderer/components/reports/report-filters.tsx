@@ -97,7 +97,10 @@ export const ReportFilters: FC<ReportFiltersProps> = ({
   ]);
 
   const showDateRange = useMemo(
-    () => definition.code !== 'CASH_SHIFT_CLOSE' && definition.code !== 'INV_CURRENT_STOCK',
+    () =>
+      definition.code !== 'CASH_SHIFT_CLOSE' &&
+      definition.code !== 'INV_CURRENT_STOCK' &&
+      definition.code !== 'INV_STOCK_BY_CATEGORY',
     [definition.code],
   );
 

@@ -11,8 +11,9 @@ import { type FC, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useReportsUiStore } from "../../stores/reports.store";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
-import { listReportsByCategory, getReportDefinition } from "../../../domain/reports/report-catalog";
+import { listReportsByCategory, getReportDefinition, reportConfigSatisfied } from "../../../domain/reports/report-catalog";
 import type { ReportCategory, ReportDefinition } from "../../../domain/reports/report-types";
+import { useReportConfigContext } from "./use-report-config-context";
 import { StarIcon } from "@/components/ui/icons";
 
 const CATEGORY_KEY: Record<ReportCategory, string> = {
@@ -31,10 +32,11 @@ export const ReportSidebar: FC = () => {
   const setActive = useReportsUiStore((s) => s.setActiveReport);
   const favorites = useReportsUiStore((s) => s.favorites);
   const toggleFavorite = useReportsUiStore((s) => s.toggleFavorite);
+  const configContext = useReportConfigContext();
   const [search, setSearch] = useState("");
 
   const grouped = useMemo(() => {
-    const map = listReportsByCategory(role);
+    const map = listReportsByCategory(role, configContext);
     if (!search.trim()) return map;
     const needle = search.toLowerCase();
     const filtered = new Map<ReportCategory, readonly ReportDefinition[]>();
@@ -47,11 +49,14 @@ export const ReportSidebar: FC = () => {
       if (matched.length) filtered.set(cat, matched);
     }
     return filtered;
-  }, [role, search, t]);
+  }, [role, search, t, configContext]);
 
   const favoriteReports = favorites
     .map((code) => getReportDefinition(code))
-    .filter((d) => d.allowedRoles.includes(role as never));
+    .filter(
+      (d) =>
+        d.allowedRoles.includes(role as never) && reportConfigSatisfied(d, configContext),
+    );
 
   return (
     <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-r border-border bg-surface px-4 py-4 xl:w-72">

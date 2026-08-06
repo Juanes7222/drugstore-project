@@ -9,8 +9,9 @@ import type ReactECharts from "echarts-for-react";
 import { useReportsUiStore } from "../../stores/reports.store";
 import { useServiceContext } from "../common/service-context";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
-import { getReportDefinition } from "../../../domain/reports/report-catalog";
+import { getReportDefinition, reportConfigSatisfied } from "../../../domain/reports/report-catalog";
 import type { ReportResponse } from "../../../domain/reports/report-types";
+import { useReportConfigContext } from "./use-report-config-context";
 import { createFormatters } from "./use-reports-locale";
 import type { ShiftOption } from "./shift-picker";
 import { ReportHeader } from "./report-header";
@@ -29,6 +30,14 @@ interface ReportViewerProps {
   notReady?: boolean;
 }
 
+/**
+ * Maximum KPI cards rendered in the grid.  The execution service may
+ * return more (e.g. delivery KPIs, sync warnings); the detail still
+ * reaches the export.  Keeping the on-screen set short prevents the
+ * "wall of numbers" the reports module is meant to avoid.
+ */
+const MAX_VISIBLE_KPIS = 6;
+
 export const ReportViewer: FC<ReportViewerProps> = ({ onExecute, isLoading, notReady = false }) => {
   const { t, i18n } = useTranslation();
   const services = useServiceContext();
@@ -42,9 +51,23 @@ export const ReportViewer: FC<ReportViewerProps> = ({ onExecute, isLoading, notR
   const clearChartFilter = useReportsUiStore((s) => s.clearChartFilter);
 
   const def = activeCode ? getReportDefinition(activeCode) : null;
+  const configContext = useReportConfigContext();
+  // Config-gated reports (lot / expiry tracking) must never render when
+  // the effective purchases config does not enable them — even if a
+  // stale active report survived from a previous configuration.
+  // (`reportConfigSatisfied` never gates while the config is still null.)
+  const configDisabled = def !== null && !reportConfigSatisfied(def, configContext);
   const chartRef = useRef<ReactECharts | null>(null);
   const [shiftOptions, setShiftOptions] = useState<ShiftOption[]>([]);
   const [shiftsLoading, setShiftsLoading] = useState(false);
+  // The detail table is collapsed by default when a chart carries the
+  // message; table-only reports (chart kind 'none') open it right away.
+  const [showTable, setShowTable] = useState<boolean>(() => def?.chart.kind === 'none');
+
+  // Reset the table visibility whenever the active report changes.
+  useEffect(() => {
+    setShowTable(def?.chart.kind === 'none');
+  }, [def]);
 
   // Load the shift list for the CASH_SHIFT_CLOSE selector (closed shifts only:
   // an open shift has no closing document to report on).
@@ -91,6 +114,8 @@ export const ReportViewer: FC<ReportViewerProps> = ({ onExecute, isLoading, notR
       kind: lastResponse.chart.kind,
       xAxis: (lastResponse.chart.xAxis as Array<string | number> | undefined) ?? [],
       series: lastResponse.chart.series as ReportChartData['series'],
+      unit: lastResponse.chart.unit,
+      scatterAxes: lastResponse.chart.scatterAxes,
     };
   }, [lastResponse]);
 
@@ -114,6 +139,15 @@ export const ReportViewer: FC<ReportViewerProps> = ({ onExecute, isLoading, notR
       <ReportEmptyState
         title={t("reports.empty.title")}
         body={t("reports.empty.body")}
+      />
+    );
+  }
+
+  if (configDisabled) {
+    return (
+      <ReportEmptyState
+        title={t("reports.error.config_disabled_title")}
+        body={t("reports.error.config_disabled")}
       />
     );
   }
@@ -145,24 +179,57 @@ export const ReportViewer: FC<ReportViewerProps> = ({ onExecute, isLoading, notR
 
       {lastResponse ? (
         <>
-          <ReportKpis kpis={lastResponse.kpis} fromCache={lastResponse.fromCache} />
-          {chartData && def.chart.kind !== 'none' ? (
-            <div className="rounded-lg border border-border bg-white p-4">
-              <ReportChart
-                data={chartData}
-                title={t(def.titleKey)}
-                echartsRef={chartRef}
-                showSummary
-                onDataPointClick={handleChartClick}
-              />
-            </div>
-          ) : null}
-          <ReportTable
-            definition={def}
-            rows={lastResponse.rows}
-            total={lastResponse.total}
-            chartFilter={chartFilter}
+          <ReportKpis
+            kpis={lastResponse.kpis.slice(0, MAX_VISIBLE_KPIS)}
+            fromCache={lastResponse.fromCache}
           />
+          {lastResponse.rows.length === 0 ? (
+            // A report that ran but found nothing must say so explicitly —
+            // an empty chart/table reads as a rendering bug, not as "no
+            // products without movement in this period".
+            <ReportEmptyState
+              title={t("reports.empty.title")}
+              body={t("reports.warnings.empty")}
+            />
+          ) : (
+            <>
+              {chartData && def.chart.kind !== 'none' ? (
+                <div className="rounded-lg border border-border bg-white p-4">
+                  <ReportChart
+                    data={chartData}
+                    title={t(def.titleKey)}
+                    echartsRef={chartRef}
+                    showSummary
+                    onDataPointClick={handleChartClick}
+                  />
+                </div>
+              ) : null}
+              <div className="flex flex-col gap-2 rounded-lg border border-border bg-white">
+                <button
+                  type="button"
+                  onClick={() => setShowTable((v) => !v)}
+                  aria-expanded={showTable}
+                  className="flex items-center justify-between gap-2 px-4 py-2.5 text-body-sm font-medium text-ink transition hover:bg-amber-50"
+                >
+                  <span>{t("reports.viewer.detail")}</span>
+                  <span className="text-caption text-muted">
+                    {t("reports.viewer.rows_count", { total: lastResponse.total })}
+                    <span className="ml-2 inline-flex items-center rounded bg-surface px-2 py-0.5 text-muted">
+                      {showTable ? t("reports.viewer.hide") : t("reports.viewer.show")}
+                    </span>
+                  </span>
+                </button>
+                {showTable ? (
+                  <ReportTable
+                    definition={def}
+                    rows={lastResponse.rows}
+                    total={lastResponse.total}
+                    chartFilter={chartFilter}
+                  />
+                ) : null}
+              </div>
+            </>
+          )}
           <ReportExportActions
             response={lastResponse}
             definition={def}

@@ -37,10 +37,26 @@ vi.mock("../../stores/reports.store", () => ({
     selector(storeState),
 }));
 
+const sessionState = vi.hoisted(() => ({ role: null as string | null }));
+
 vi.mock("../../../domain/auth/local-session.store", () => ({
-  useLocalSessionStore: (selector: (state: { session: null }) => unknown) =>
-    selector({ session: null }),
+  useLocalSessionStore: (
+    selector: (state: {
+      session: { role: string | null; userId: string | null } | null;
+    }) => unknown,
+  ) =>
+    selector({
+      session: sessionState.role
+        ? { role: sessionState.role, userId: "user-1" }
+        : null,
+    }),
   hasMinRole: () => true,
+}));
+
+// The viewer reads the effective tenant config to gate config-required
+// reports; tests drive the CASH_SHIFT_CLOSE path, which is never gated.
+vi.mock("../../../domain/config/use-tenant-config", () => ({
+  useTenantConfig: () => ({ effectiveConfig: null }),
 }));
 
 // Stable services object so the viewer's shift-loading effect does not
@@ -159,6 +175,8 @@ describe("ReportViewer", () => {
   afterEach(() => {
     storeState.lastResponse = null;
     storeState.appliedFilters = null;
+    storeState.activeReportCode = "CASH_SHIFT_CLOSE" as ReportCode | null;
+    sessionState.role = null;
   });
 
   describe("not-ready state", () => {
@@ -186,7 +204,10 @@ describe("ReportViewer", () => {
       render(<ReportViewer onExecute={vi.fn()} isLoading={false} notReady />);
 
       expect(screen.queryByText(selectShiftHint)).not.toBeInTheDocument();
-      expect(screen.getByText("table-stub")).toBeInTheDocument();
+      // The fixture has zero rows → the explicit no-data empty state is
+      // shown instead of the chart/table.
+      expect(screen.getByText(es.reports.empty.title)).toBeInTheDocument();
+      expect(screen.getByText(es.reports.warnings.empty)).toBeInTheDocument();
     });
   });
 
@@ -286,6 +307,19 @@ describe("ReportViewer", () => {
         ),
       ).not.toBeInTheDocument();
       expect(screen.getByText("filters-stub")).toBeInTheDocument();
+    });
+  });
+
+  describe("no-data state", () => {
+    it("shows an explicit message instead of an empty chart/table when a report has zero rows", () => {
+      storeState.lastResponse = lastResponseFixture();
+
+      render(<ReportViewer onExecute={vi.fn()} isLoading={false} />);
+
+      expect(screen.getByText(es.reports.empty.title)).toBeInTheDocument();
+      expect(screen.getByText(es.reports.warnings.empty)).toBeInTheDocument();
+      expect(screen.queryByText("chart-stub")).not.toBeInTheDocument();
+      expect(screen.queryByText("table-stub")).not.toBeInTheDocument();
     });
   });
 

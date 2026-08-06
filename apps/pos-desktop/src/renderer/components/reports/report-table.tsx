@@ -13,6 +13,7 @@
 
 import { type FC, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import type { AnyReportRow, ReportColumn, ReportColumnType, ReportDefinition } from "../../../domain/reports/report-types";
 import type { ChartFilter } from "../../stores/reports.store";
 import { useReportsLocale } from "./use-reports-locale";
@@ -97,7 +98,7 @@ export const ReportTable: FC<ReportTableProps> = ({ definition, rows, total, cha
                           : 'px-2 py-1.5 text-ink'
                       }
                     >
-                      {renderCell(col, row, f)}
+                      {renderCell(col, row, f, t)}
                     </td>
                   ))}
                 </tr>
@@ -120,6 +121,7 @@ const renderCell = (
   col: ReportColumn,
   row: AnyReportRow,
   f: { currency: Intl.NumberFormat; integer: Intl.NumberFormat; numeric: Intl.NumberFormat; date: Intl.DateTimeFormat; dateTime: Intl.DateTimeFormat },
+  t: TFunction,
 ): string => {
   const raw = row[col.id];
   if (raw === null || raw === undefined || raw === '') return '—';
@@ -143,6 +145,13 @@ const renderCell = (
       return f.dateTime.format(d);
     }
     case 'badge':
+      // Enum cells (movement types, stock status, margin status) resolve
+      // through a column i18n prefix; plain values fall back to raw text.
+      if (col.badgeKeyPrefix) {
+        const key = `${col.badgeKeyPrefix}.${String(raw)}`;
+        const translated = t(key);
+        return translated === key ? String(raw) : translated;
+      }
       return String(raw);
     case 'text':
     default:
