@@ -17,7 +17,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@/store/hooks';
 import { setActiveScreen } from '@/store/slices/ui-slice';
-import { useLocalSessionStore } from '../../domain/auth/local-session.store';
+import { useLocalSessionStore, type LocalSession } from '../../domain/auth/local-session.store';
 import { createAuthService, type AuthService } from '../../domain/auth/auth.service';
 import { InvalidCredentialsException, NetworkErrorException } from '../../domain/auth/exceptions';
 import {
@@ -199,6 +199,25 @@ export function useLoginPage(): UseLoginPageReturn {
   }, []);
 
   /**
+   * Persist the authenticated user's identity into the local PGlite User
+   * table so reports (sales by cashier, shift variances, movements) can
+   * resolve display names instead of raw IDs.  Best-effort and non-fatal
+   * — the server stays authoritative for credentials.
+   */
+  const persistSessionIdentity = (session: LocalSession): void => {
+    userCache
+      .upsertUserIdentity({
+        id: session.userId,
+        username: session.username,
+        displayName: session.displayName || session.fullName || session.username,
+        role: session.role,
+      })
+      .catch(() => {
+        // Non-fatal — the session is already established.
+      });
+  };
+
+  /**
    * Attempt local auth against the PGlite User cache.
    * Returns true if the user was found and auth was attempted locally.
    * If the user is not cached locally, returns false so the caller can
@@ -242,8 +261,10 @@ export function useLoginPage(): UseLoginPageReturn {
         return true;
       }
 
-      // Invalid password — error already set by verifyPassword
-      throw new PasswordInvalidException();
+      // Local hash mismatch.  Identity-only rows (created for name
+      // resolution, no credentials) must never block login — fall through
+      // to the offline/server flow, which is authoritative.
+      return false;
     },
     [userCache, t],
   );
@@ -288,6 +309,7 @@ export function useLoginPage(): UseLoginPageReturn {
         }
 
         // authService.login() already set the session in the store.
+        if (result.session) persistSessionIdentity(result.session);
         dispatch(setActiveScreen('home'));
       } catch (err) {
         // ---- Local cache errors ----
@@ -396,6 +418,7 @@ export function useLoginPage(): UseLoginPageReturn {
       }
 
       // authService.login() already set the session in the store.
+      if (result.session) persistSessionIdentity(result.session);
       dispatch(setActiveScreen('home'));
     } catch (err) {
       // ---- Local cache errors ----
@@ -478,8 +501,11 @@ export function useLoginPage(): UseLoginPageReturn {
   const handleTwoFactorComplete = useCallback(() => {
     setRequiresTwoFactor(false);
     setChallengeToken(null);
+    // After the second factor the session is already in the store —
+    // persist its identity so reports can resolve names locally.
+    if (session) persistSessionIdentity(session);
     dispatch(setActiveScreen('home'));
-  }, [dispatch]);
+  }, [dispatch, session]);
 
   const handleTwoFactorCancel = useCallback(() => {
     setRequiresTwoFactor(false);

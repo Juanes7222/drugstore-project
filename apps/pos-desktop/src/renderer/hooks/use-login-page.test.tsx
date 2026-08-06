@@ -88,6 +88,7 @@ const { mockUserCache } = vi.hoisted(() => ({
     getUserByUsername: vi.fn().mockResolvedValue(null),
     verifyPassword: vi.fn().mockResolvedValue({ valid: false }),
     recordLogin: vi.fn(),
+    upsertUserIdentity: vi.fn().mockResolvedValue(undefined),
   },
 }));
 

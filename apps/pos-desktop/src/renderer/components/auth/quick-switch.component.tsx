@@ -95,6 +95,20 @@ export const QuickSwitch: FC = () => {
         const { cacheUsers } = await import('../../../domain/auth/local-user-cache');
         const { mapServerUserToLocalUserInfo } = await import('../../../domain/auth/local-users');
         await cacheUsers(mapped.map((u) => mapServerUserToLocalUserInfo(u)));
+
+        // Persist identities into the local PGlite User table so reports
+        // (sales by cashier, shift variances) resolve names, not raw IDs.
+        // Best-effort: identity-only rows can never authenticate locally.
+        const { createUserCacheService } = await import('../../../domain/auth/user-cache.service');
+        const identityCache = createUserCacheService();
+        for (const u of mapped) {
+          identityCache.upsertUserIdentity({
+            id: u.id,
+            username: u.username,
+            displayName: u.displayName || u.username,
+            role: u.role,
+          }).catch(() => { /* non-fatal */ });
+        }
       } catch (err) {
         if (cancelled) return;
 

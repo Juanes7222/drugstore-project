@@ -120,6 +120,18 @@ export interface UserCacheService {
   /** Find user by user ID. */
   getUser(userId: string): Promise<UserData | null>;
 
+  /** Create or refresh a User row's identity (id, username, displayName,
+   *  role) without touching credentials.  Rows created this way cannot
+   *  authenticate locally — they exist so reports and the avatar grid can
+   *  resolve names for users who authenticated on this device (or were
+   *  listed through QuickSwitch).  Best-effort: callers swallow failures. */
+  upsertUserIdentity(params: {
+    id: string;
+    username: string;
+    displayName: string;
+    role: string;
+  }): Promise<void>;
+
   /** Find user by username. */
   getUserByUsername(username: string): Promise<UserData | null>;
 
@@ -294,6 +306,28 @@ const SQL_INSERT_USER = `
   ON CONFLICT (id) DO NOTHING;
 `;
 
+const SQL_UPSERT_IDENTITY = `
+  INSERT INTO "User" (
+    id, username, "displayName", role, status,
+    "passwordHash", "passwordVersion",
+    "credentialMode", "createdLocally", "syncStatus",
+    "failedLoginAttempts", "mustChangePassword",
+    "createdAt", "updatedAt"
+  ) VALUES (
+    $1, $2, $3, $4, 'ACTIVE',
+    '', 1,
+    'PASSWORD', false, 'SYNCED',
+    0, false,
+    $5, $5
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    username = EXCLUDED.username,
+    "displayName" = EXCLUDED."displayName",
+    role = EXCLUDED.role,
+    "deletedAt" = NULL,
+    "updatedAt" = EXCLUDED."updatedAt";
+`;
+
 const SQL_UPDATE_PASSWORD = `
   UPDATE "User" SET
     "passwordHash" = $1,
@@ -395,6 +429,18 @@ export function createUserCacheService(): UserCacheService {
       return rowToUserData(result.rows[0] as Record<string, unknown>);
     },
 
+    upsertUserIdentity: async (params) => {
+      const { client } = await getLocalDatabase();
+      const now = new Date().toISOString();
+      await client.query(SQL_UPSERT_IDENTITY, [
+        params.id,
+        params.username,
+        params.displayName,
+        params.role,
+        now,
+      ]);
+    },
+
     getUserByUsername: async (username) => {
       const { client } = await getLocalDatabase();
       const result = await client.query(SQL_GET_USER_BY_USERNAME, [username]);
@@ -439,6 +485,15 @@ export function createUserCacheService(): UserCacheService {
       }
 
       const passwordHash = (user.passwordHash ?? user.passwordHash) as string;
+      // Identity-only rows (created by `upsertUserIdentity` for name
+      // resolution) carry an empty placeholder hash.  They must never
+      // count attempts or lock — otherwise every login would increment
+      // the counter and a legit user would get locked out every few
+      // logins without ever being able to verify locally.
+      if (passwordHash.split(':').length < 4) {
+        return { valid: false, locked: false, remainingAttempts: MAX_ATTEMPTS };
+      }
+
       const isValid = await verifyHash(password, passwordHash);
 
       if (isValid) {
