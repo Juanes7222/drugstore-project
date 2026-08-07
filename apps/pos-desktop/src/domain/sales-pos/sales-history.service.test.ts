@@ -106,6 +106,22 @@ const createInvoiceRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+/**
+ * Shape returned by the raw invoice-summary query used by the list view.
+ */
+const createInvoiceSummaryRow = (overrides: Record<string, unknown> = {}) => ({
+  id: 'inv-1',
+  saleId: 'sale-1',
+  invoiceNumber: 'FE0001',
+  contingencyNumber: null,
+  status: 'TRANSMITTED_AUTHORIZED',
+  invoiceType: 'ELECTRONIC_INVOICE',
+  buyerName: 'Juan Pérez',
+  buyerIdentificationNumber: '123456',
+  adjustmentCount: 0,
+  ...overrides,
+});
+
 const createSaleItem = (overrides: Record<string, unknown> = {}) => ({
   id: 'si-1',
   saleId: 'sale-1',
@@ -166,6 +182,7 @@ const createOperationalView = (
 // ---------------------------------------------------------------------------
 
 type MockPrisma = {
+  $queryRawUnsafe: ReturnType<typeof vi.fn>;
   sale: {
     findMany: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
@@ -181,6 +198,7 @@ type MockPrisma = {
 
 function createMockPrisma(): MockPrisma {
   return {
+    $queryRawUnsafe: vi.fn(),
     sale: {
       findMany: vi.fn(),
       count: vi.fn(),
@@ -231,7 +249,7 @@ describe('SalesHistoryService', () => {
     it('returns confirmed sales with invoice and adjustment flags', async () => {
       prisma.sale.findMany.mockResolvedValue([createSaleRow()]);
       prisma.sale.count.mockResolvedValue(1);
-      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
       prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
 
       const result = await service.listConfirmedSales();
@@ -254,7 +272,7 @@ describe('SalesHistoryService', () => {
     it('limits the number of returned sales', async () => {
       prisma.sale.findMany.mockResolvedValue([]);
       prisma.sale.count.mockResolvedValue(0);
-      prisma.invoice.findMany.mockResolvedValue([]);
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
       prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
 
       await service.listConfirmedSales({ limit: 10, offset: 5 });
@@ -269,7 +287,7 @@ describe('SalesHistoryService', () => {
       const until = new Date('2026-07-31T23:59:59Z');
       prisma.sale.findMany.mockResolvedValue([]);
       prisma.sale.count.mockResolvedValue(0);
-      prisma.invoice.findMany.mockResolvedValue([]);
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
       prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
 
       await service.listConfirmedSales({ since, until });
@@ -287,7 +305,7 @@ describe('SalesHistoryService', () => {
     it('filters by clientId', async () => {
       prisma.sale.findMany.mockResolvedValue([]);
       prisma.sale.count.mockResolvedValue(0);
-      prisma.invoice.findMany.mockResolvedValue([]);
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
       prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
 
       await service.listConfirmedSales({ clientId: 'client-1' });
@@ -299,12 +317,79 @@ describe('SalesHistoryService', () => {
       );
     });
 
+    it('uses keyset cursor pagination when a cursor is provided', async () => {
+      prisma.sale.findMany.mockResolvedValue([]);
+      prisma.sale.count.mockResolvedValue(0);
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+      await service.listConfirmedSales({ limit: 10, cursor: { id: 'sale-5' } });
+
+      expect(prisma.sale.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 10, skip: 1, cursor: { id: 'sale-5' } }),
+      );
+    });
+
+    it('filters by free-text query over client name and ID', async () => {
+      prisma.sale.findMany.mockResolvedValue([]);
+      prisma.sale.count.mockResolvedValue(0);
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+      await service.listConfirmedSales({ query: 'juan' });
+
+      expect(prisma.sale.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              expect.objectContaining({
+                clientNameSnapshot: { contains: 'juan', mode: 'insensitive' },
+              }),
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('resolves numeric local-number and invoice matches through SQL', async () => {
+      prisma.sale.findMany.mockResolvedValue([]);
+      prisma.sale.count.mockResolvedValue(0);
+      prisma.$queryRawUnsafe
+        .mockResolvedValueOnce([{ id: 'sale-10' }])
+        .mockResolvedValueOnce([{ saleId: 'sale-11' }]);
+
+      await service.listConfirmedSales({ query: '10' });
+
+      expect(prisma.sale.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              { id: { in: ['sale-10', 'sale-11'] } },
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('falls back to the invoice buyer when the client snapshot is missing', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        createSaleRow({
+          clientNameSnapshot: null,
+          clientIdentificationNumberSnapshot: null,
+        }),
+      ]);
+      prisma.sale.count.mockResolvedValue(1);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items[0]?.clientName).toBe('Juan Pérez');
+      expect(result.items[0]?.clientIdentificationNumber).toBe('123456');
+    });
+
     it('marks sales whose invoice has adjustments', async () => {
       prisma.sale.findMany.mockResolvedValue([createSaleRow()]);
       prisma.sale.count.mockResolvedValue(1);
-      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
-      prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([
-        { invoiceId: 'inv-1', _count: { invoiceId: 2 } },
+      prisma.$queryRawUnsafe.mockResolvedValue([
+        createInvoiceSummaryRow({ adjustmentCount: 2 }),
       ]);
 
       const result = await service.listConfirmedSales();
@@ -317,7 +402,7 @@ describe('SalesHistoryService', () => {
         createSaleRow({ confirmedAt: null }),
       ]);
       prisma.sale.count.mockResolvedValue(1);
-      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
       prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
 
       const result = await service.listConfirmedSales();
@@ -330,7 +415,7 @@ describe('SalesHistoryService', () => {
     it('reports zero fee and null address when no delivery data is stored', async () => {
       prisma.sale.findMany.mockResolvedValue([createSaleRow()]);
       prisma.sale.count.mockResolvedValue(1);
-      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
       prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
 
       const result = await service.listConfirmedSales();
@@ -354,7 +439,7 @@ describe('SalesHistoryService', () => {
         }),
       ]);
       prisma.sale.count.mockResolvedValue(1);
-      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
       prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
 
       const result = await service.listConfirmedSales();
@@ -368,7 +453,7 @@ describe('SalesHistoryService', () => {
         createSaleRow({ delivery: 'not-an-object' }),
       ]);
       prisma.sale.count.mockResolvedValue(1);
-      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
       prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
 
       const result = await service.listConfirmedSales();
@@ -392,7 +477,7 @@ describe('SalesHistoryService', () => {
         }),
       ]);
       prisma.sale.count.mockResolvedValue(1);
-      prisma.invoice.findMany.mockResolvedValue([createInvoiceRow()]);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
       prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
 
       const result = await service.listConfirmedSales();

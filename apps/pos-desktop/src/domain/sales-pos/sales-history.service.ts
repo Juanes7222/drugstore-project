@@ -43,6 +43,10 @@ export interface SaleHistoryFilters {
   since?: Date;
   until?: Date;
   clientId?: string;
+  /** Free-text search over local number, client name/ID, invoice number, status. */
+  query?: string;
+  /** Keyset pagination cursor (last row of the previous page). */
+  cursor?: { id: string };
   limit?: number;
   offset?: number;
 }
@@ -50,6 +54,26 @@ export interface SaleHistoryFilters {
 export interface SaleHistoryListResult {
   items: SaleHistoryListItem[];
   total: number;
+}
+
+/**
+ * Lightweight invoice projection for the history grid.
+ *
+ * Produced by a single raw SQL query that extracts the buyer fallback from
+ * the `fullData` JSONB payload via path expressions and counts the
+ * adjustments in a correlated sub-query — none of the heavy fiscal columns
+ * (`fullData`, `fiscalXml`) are ever materialized for the list.
+ */
+interface InvoiceSummaryRow {
+  id: string;
+  saleId: string;
+  invoiceNumber: string;
+  contingencyNumber: string | null;
+  status: string;
+  invoiceType: string;
+  buyerName: string | null;
+  buyerIdentificationNumber: string | null;
+  adjustmentCount: number | null;
 }
 
 export interface SaleHistoryPayment {
@@ -145,13 +169,14 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
   async listConfirmedSales(filters: SaleHistoryFilters = {}): Promise<SaleHistoryListResult> {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
+    const query = filters.query?.trim();
 
-    const where: Record<string, unknown> = {
+    const where: Prisma.SaleWhereInput = {
       operationalState: SaleOperationalState.CONFIRMED,
     };
 
     if (filters.since || filters.until) {
-      const confirmedAt: Record<string, Date> = {};
+      const confirmedAt: Prisma.DateTimeFilter = {};
       if (filters.since) confirmedAt.gte = filters.since;
       if (filters.until) confirmedAt.lte = filters.until;
       where.confirmedAt = confirmedAt;
@@ -161,62 +186,89 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
       where.clientId = filters.clientId;
     }
 
+    if (query) {
+      where.OR = await this.buildSearchWhere(query);
+    }
+
+    // Minimal projection — the list view never reads payments, and loading
+    // them per row (JOIN + row materialization) is pure waste for the grid.
+    // Keyset pagination (cursor on the unique sale id, ordered by confirmedAt)
+    // replaces OFFSET so "load more" does not re-scan and discard rows.
     const [sales, total] = await Promise.all([
       this.prisma.sale.findMany({
         where,
-        orderBy: { confirmedAt: 'desc' as const },
+        orderBy: [{ confirmedAt: 'desc' as const }, { id: 'desc' as const }],
         take: limit,
-        skip: offset,
-        include: {
-          payments: { include: { paymentMethod: { select: { name: true } } } },
+        ...(filters.cursor
+          ? { skip: 1, cursor: { id: filters.cursor.id } }
+          : { skip: offset }),
+        select: {
+          id: true,
+          localNumber: true,
+          startedAt: true,
+          confirmedAt: true,
+          totalAmount: true,
+          clientNameSnapshot: true,
+          clientIdentificationNumberSnapshot: true,
+          delivery: true,
         },
       }),
       this.prisma.sale.count({ where }),
     ]);
 
     const saleIds = sales.map((s) => s.id);
-    const invoices = await this.prisma.invoice.findMany({
-      where: { saleId: { in: saleIds } },
-      orderBy: { issuedAt: 'desc' as const },
-    });
 
-    const adjustmentCounts = await this.prisma.invoiceLocalAdjustment.groupBy({
-      by: ['invoiceId'],
-      where: { invoiceId: { in: invoices.map((i) => i.id) } },
-      _count: { invoiceId: true },
-    });
+    // Invoice summaries via a single raw query: only the columns the grid
+    // renders, plus the buyer fallback extracted from the fullData JSONB via
+    // a path expression (never materializing the whole payload) and the
+    // adjustment count folded in as a correlated subquery.
+    let invoicesBySaleId = new Map<string, InvoiceSummaryRow[]>();
+    let adjustmentCountByInvoiceId = new Map<string, number>();
+    if (saleIds.length > 0) {
+      const placeholders = saleIds.map((_, i) => `$${i + 1}`).join(', ');
+      const rows = await this.prisma.$queryRawUnsafe<InvoiceSummaryRow[]>(
+        `SELECT i."id", i."saleId", i."invoiceNumber", i."contingencyNumber", i."status", i."invoiceType",
+                i."fullData"->'buyer'->>'name' AS "buyerName",
+                i."fullData"->'buyer'->>'identificationNumber' AS "buyerIdentificationNumber",
+                (SELECT COUNT(*)::int
+                   FROM "InvoiceLocalAdjustment" a
+                  WHERE a."invoiceId" = i."id") AS "adjustmentCount"
+           FROM "Invoice" i
+          WHERE i."saleId" IN (${placeholders})
+          ORDER BY i."issuedAt" DESC`,
+        ...saleIds,
+      );
 
-    const invoicesBySaleId = new Map<string, (typeof invoices)[number][]>();
-    for (const invoice of invoices) {
-      const list = invoicesBySaleId.get(invoice.saleId) ?? [];
-      list.push(invoice);
-      invoicesBySaleId.set(invoice.saleId, list);
+      invoicesBySaleId = new Map<string, InvoiceSummaryRow[]>();
+      adjustmentCountByInvoiceId = new Map<string, number>();
+      for (const row of rows) {
+        const list = invoicesBySaleId.get(row.saleId) ?? [];
+        list.push(row);
+        invoicesBySaleId.set(row.saleId, list);
+        if (!adjustmentCountByInvoiceId.has(row.id)) {
+          adjustmentCountByInvoiceId.set(row.id, row.adjustmentCount ?? 0);
+        }
+      }
     }
-
-    const adjustmentCountByInvoiceId = new Map(
-      adjustmentCounts.map((ac) => [ac.invoiceId, ac._count.invoiceId]),
-    );
 
     const items: SaleHistoryListItem[] = sales.map((sale) => {
       const saleInvoices = invoicesBySaleId.get(sale.id) ?? [];
       const mainInvoice = saleInvoices[0] ?? null;
-      const fullData = mainInvoice?.fullData as Record<string, unknown> | undefined;
-      const buyer = (fullData?.buyer ?? {}) as Record<string, unknown>;
       const delivery = deliveryFromJson(sale.delivery);
 
       return {
         saleId: sale.id,
-        localNumber: sale.localNumber.toString(),
+        localNumber: String(sale.localNumber),
         confirmedAt: sale.confirmedAt?.toISOString() ?? sale.startedAt.toISOString(),
         totalAmount: sale.totalAmount.toString(),
         clientName:
           sale.clientNameSnapshot ??
-          (typeof buyer.name === 'string' ? buyer.name : 'CONSUMIDOR FINAL'),
+          mainInvoice?.buyerName ??
+          'CONSUMIDOR FINAL',
         clientIdentificationNumber:
           sale.clientIdentificationNumberSnapshot ??
-          (typeof buyer.identificationNumber === 'string'
-            ? buyer.identificationNumber
-            : null),
+          mainInvoice?.buyerIdentificationNumber ??
+          null,
         invoiceId: mainInvoice?.id ?? null,
         invoiceNumber: mainInvoice?.invoiceNumber ?? mainInvoice?.contingencyNumber ?? null,
         invoiceStatus: mainInvoice?.status ?? null,
@@ -230,6 +282,45 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
     });
 
     return { items, total };
+  }
+
+  /**
+   * Build the search OR-clause. Free-text over client name/ID is a plain
+   * Prisma contains filter; substring matches over the numeric local number
+   * and the invoice number/status need SQL casts/sub-queries, so the matching
+   * sale ids are resolved first with targeted raw queries.
+   */
+  private async buildSearchWhere(query: string): Promise<Prisma.SaleWhereInput[]> {
+    const or: Prisma.SaleWhereInput[] = [
+      { clientNameSnapshot: { contains: query, mode: 'insensitive' } },
+      { clientIdentificationNumberSnapshot: { contains: query, mode: 'insensitive' } },
+    ];
+
+    const saleIds: string[] = [];
+
+    // Substring match on the numeric local number (cast to text in SQL).
+    if (/^\d+$/.test(query)) {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT "id" FROM "Sale" WHERE "localNumber"::text LIKE $1`,
+        `%${query}%`,
+      );
+      saleIds.push(...rows.map((r) => r.id));
+    }
+
+    // Substring match on invoice number / fiscal status. `status` is an enum
+    // column, so it must be cast to text before ILIKE (PG has no operator for
+    // ILIKE on enum types).
+    const invoiceRows = await this.prisma.$queryRawUnsafe<Array<{ saleId: string }>>(
+      `SELECT "saleId" FROM "Invoice" WHERE "invoiceNumber" ILIKE $1 OR "status"::text ILIKE $1`,
+      `%${query}%`,
+    );
+    saleIds.push(...invoiceRows.map((r) => r.saleId));
+
+    if (saleIds.length > 0) {
+      or.push({ id: { in: [...new Set(saleIds)] } });
+    }
+
+    return or;
   }
 
   async getSaleHistoryDetail(saleId: string): Promise<SaleHistoryDetail | null> {

@@ -2,7 +2,7 @@
  * Component tests for SalesHistoryList.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SalesHistoryList } from './sales-history-list';
 import type { SaleHistoryListItem } from '../../../domain/sales-pos/sales-history.service';
@@ -56,23 +56,45 @@ describe('SalesHistoryList', () => {
     expect(screen.getByText('Autorizado DIAN')).toBeInTheDocument();
   });
 
-  it('filters rows by sale number when typing in the search input', async () => {
-    render(
-      <SalesHistoryList
-        {...defaultProps}
-        sales={[createSale(), createSale({ saleId: 'sale-2', localNumber: '101', clientName: 'Ana Gómez' })]}
-        totalCount={2}
-      />,
-    );
+  it('debounces the search input and notifies the parent with the query', () => {
+    vi.useFakeTimers();
+    try {
+      const onFiltersChange = vi.fn();
+      render(<SalesHistoryList {...defaultProps} onFiltersChange={onFiltersChange} />);
 
-    expect(screen.getByText('#100')).toBeInTheDocument();
-    expect(screen.getByText('#101')).toBeInTheDocument();
+      const searchInput = screen.getByLabelText(/Buscar venta, cliente o factura/);
+      fireEvent.change(searchInput, { target: { value: '100' } });
 
-    const searchInput = screen.getByLabelText(/Buscar venta, cliente o factura/);
-    await userEvent.type(searchInput, '100');
+      // Debounce window not elapsed yet — no query fired.
+      expect(onFiltersChange).not.toHaveBeenCalled();
 
-    expect(screen.getByText('#100')).toBeInTheDocument();
-    expect(screen.queryByText('#101')).not.toBeInTheDocument();
+      vi.advanceTimersByTime(300);
+
+      expect(onFiltersChange).toHaveBeenCalledWith({ query: '100' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('clears the query when the search input is emptied', () => {
+    vi.useFakeTimers();
+    try {
+      const onFiltersChange = vi.fn();
+      render(<SalesHistoryList {...defaultProps} onFiltersChange={onFiltersChange} />);
+
+      const searchInput = screen.getByLabelText(/Buscar venta, cliente o factura/);
+      fireEvent.change(searchInput, { target: { value: '100' } });
+      vi.advanceTimersByTime(300);
+
+      expect(onFiltersChange).toHaveBeenLastCalledWith({ query: '100' });
+
+      fireEvent.change(searchInput, { target: { value: '' } });
+      vi.advanceTimersByTime(300);
+
+      expect(onFiltersChange).toHaveBeenLastCalledWith({ query: undefined });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows empty state when there are no sales', () => {

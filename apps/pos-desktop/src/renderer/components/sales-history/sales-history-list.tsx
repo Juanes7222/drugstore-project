@@ -5,7 +5,8 @@
 import {
   type FC,
   useCallback,
-  useMemo,
+  useEffect,
+  useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -66,28 +67,32 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
   onLoadMore,
 }) => {
   const { t, i18n } = useTranslation();
-  const [searchQuery, setSearchQuery] = useState('');
-
   const locale = i18n.language === 'en' ? 'en-US' : 'es-CO';
 
-  const filteredSales = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return sales;
-    return sales.filter((sale) => {
-      const haystack = [
-        sale.localNumber,
-        sale.clientName,
-        sale.invoiceNumber ?? '',
-        sale.invoiceStatus ?? '',
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [sales, searchQuery]);
+  // The search box is owned here for typing latency, but the actual filtering
+  // happens in the database query (listConfirmedSales). Changes are debounced
+  // so every keystroke does not fire a query.
+  const [searchInput, setSearchInput] = useState(filters.query ?? '');
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      const trimmed = searchInput.trim();
+      onFiltersChange({ query: trimmed ? trimmed : undefined });
+    }, 300);
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, [searchInput, onFiltersChange]);
+
+  // Keep the input in sync when the query is cleared externally (e.g. reset).
+  useEffect(() => {
+    setSearchInput(filters.query ?? '');
+  }, [filters.query]);
 
   const hasFilters = Boolean(
-    filters.since || filters.until || filters.clientId || searchQuery,
+    filters.since || filters.until || filters.clientId || searchInput.trim(),
   );
 
   const handleDateChange = useCallback(
@@ -100,8 +105,8 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
   );
 
   const handleReset = useCallback(() => {
-    setSearchQuery('');
-    onFiltersChange({ since: undefined, until: undefined, clientId: undefined });
+    setSearchInput('');
+    onFiltersChange({ since: undefined, until: undefined, clientId: undefined, query: undefined });
   }, [onFiltersChange]);
 
   const formatCurrency = (amount: string): string => {
@@ -177,16 +182,19 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
             />
             <input
               type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder={t('salesHistory.filters.search_placeholder')}
               className="pos-input w-full py-1.5 pl-8 pr-8 text-body-sm"
               aria-label={t('salesHistory.filters.search_placeholder')}
             />
-            {searchQuery && (
+            {searchInput && (
               <button
                 type="button"
-                onClick={() => setSearchQuery('')}
+                onClick={() => {
+                  setSearchInput('');
+                  onFiltersChange({ query: undefined });
+                }}
                 className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm opacity-50 transition-opacity hover:opacity-100"
                 aria-label={t('common.clear')}
               >
@@ -275,7 +283,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
       >
         <span>
           {t('salesHistory.filters.showing', {
-            count: filteredSales.length,
+            count: sales.length,
             total: totalCount,
           })}
         </span>
@@ -283,7 +291,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
 
       {/* Table */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {loading && filteredSales.length === 0 ? (
+        {loading && sales.length === 0 ? (
           <div className="space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (
               <div
@@ -297,7 +305,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
               />
             ))}
           </div>
-        ) : filteredSales.length === 0 ? (
+        ) : sales.length === 0 ? (
           <SalesHistoryEmpty hasFilters={hasFilters} onReset={handleReset} />
         ) : (
           <div
@@ -400,7 +408,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSales.map((sale) => (
+                  {sales.map((sale) => (
                     <tr
                       key={sale.saleId}
                       className="cursor-pointer transition-colors"
@@ -550,7 +558,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
               </table>
             </StickyScrollX>
 
-            {filteredSales.length < totalCount && (
+            {sales.length < totalCount && (
               <div
                 className="flex justify-center rounded-b-pos border-t px-4 py-3"
                 style={{

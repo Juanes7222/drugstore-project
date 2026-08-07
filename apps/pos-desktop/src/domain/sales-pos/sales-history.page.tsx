@@ -36,7 +36,7 @@ export const SalesHistoryPage: FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [sales, setSales] = useState<SaleHistoryListItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
-  const [filters, setFilters] = useState<SaleHistoryFilters>({ limit: PAGE_SIZE, offset: 0 });
+  const [filters, setFilters] = useState<SaleHistoryFilters>({ limit: PAGE_SIZE });
 
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<SaleHistoryDetail | null>(null);
@@ -127,12 +127,15 @@ export const SalesHistoryPage: FC = () => {
   }, []);
 
   const handleFiltersChange = useCallback((next: Partial<SaleHistoryFilters>) => {
-    setFilters((prev) => ({ ...prev, ...next, offset: 0 }));
+    // Any filter change invalidates the keyset cursor — restart from page 1.
+    setFilters((prev) => ({ ...prev, ...next, offset: 0, cursor: undefined }));
   }, []);
 
   const handleLoadMore = useCallback(() => {
-    setFilters((prev) => ({ ...prev, offset: (prev.offset ?? 0) + PAGE_SIZE }));
-  }, []);
+    const last = sales[sales.length - 1];
+    if (!last) return;
+    setFilters((prev) => ({ ...prev, cursor: { id: last.saleId } }));
+  }, [sales]);
 
   const handleReprint = useCallback(async () => {
     const mainInvoice = selectedDetail?.invoices[0];
