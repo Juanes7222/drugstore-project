@@ -1319,9 +1319,12 @@ function createDevPrismaWrapper(client: PGlite): unknown {
       findMany: (
         args: {
           where?: Record<string, unknown>;
-          orderBy?: Record<string, 'asc' | 'desc'>;
+          orderBy?:
+            | Record<string, 'asc' | 'desc'>
+            | Array<Record<string, 'asc' | 'desc'>>;
           take?: number;
           skip?: number;
+          cursor?: { id: string };
         } = {},
       ) => {
         let results = [...data];
@@ -1344,22 +1347,41 @@ function createDevPrismaWrapper(client: PGlite): unknown {
           );
         }
 
-        // Apply orderBy
-        if (args.orderBy) {
-          const [[key, dir]] = Object.entries(args.orderBy);
+        // Apply orderBy (single object or Prisma array of { field: dir })
+        const orderBy = Array.isArray(args.orderBy)
+          ? args.orderBy
+          : args.orderBy
+            ? [args.orderBy]
+            : [];
+        if (orderBy.length > 0) {
           results.sort((a, b) => {
-            const aVal = String(a[key] ?? '');
-            const bVal = String(b[key] ?? '');
-            return dir === 'desc'
-              ? bVal.localeCompare(aVal)
-              : aVal.localeCompare(bVal);
+            for (const clause of orderBy) {
+              const [[key, dir]] = Object.entries(clause);
+              const aVal = String(a[key] ?? '');
+              const bVal = String(b[key] ?? '');
+              if (aVal === bVal) continue;
+              return dir === 'desc'
+                ? bVal.localeCompare(aVal)
+                : aVal.localeCompare(bVal);
+            }
+            return 0;
           });
         }
 
-        // Apply skip / take
-        const skip = args.skip ?? 0;
+        // Keyset cursor: position after the row whose id matches, then skip/take.
+        let start = args.skip ?? 0;
+        if (args.cursor) {
+          const cursorIndex = results.findIndex(
+            (item) => item.id === args.cursor!.id,
+          );
+          if (cursorIndex >= 0) {
+            start = cursorIndex + 1;
+          }
+        }
+
+        // Apply take
         const take = args.take ?? results.length;
-        return Promise.resolve(results.slice(skip, skip + take));
+        return Promise.resolve(results.slice(start, start + take));
       },
 
       count: (args: { where?: Record<string, unknown> } = {}) => {
@@ -1380,6 +1402,43 @@ function createDevPrismaWrapper(client: PGlite): unknown {
           return Promise.resolve(filtered.length);
         }
         return Promise.resolve(data.length);
+      },
+
+      aggregate: (args: {
+        where?: Record<string, unknown>;
+        _count?: boolean | Record<string, boolean>;
+        _sum?: Record<string, boolean>;
+      }) => {
+        let results = [...data];
+        const where = args.where as Record<string, unknown> | undefined;
+        if (where && Object.keys(where).length > 0) {
+          results = results.filter((item) =>
+            (Object.entries(where) as Array<[string, unknown]>).every(
+              ([key, value]) => item[key] === value,
+            ),
+          );
+        }
+        const out: Record<string, unknown> = {};
+        if (args._count) {
+          if (typeof args._count === 'boolean') {
+            out._count = results.length;
+          } else {
+            out._count = Object.fromEntries(
+              Object.keys(args._count).map((k) => [k, results.length]),
+            );
+          }
+        }
+        if (args._sum) {
+          const sums: Record<string, number> = {};
+          for (const field of Object.keys(args._sum)) {
+            sums[field] = results.reduce(
+              (acc, item) => acc + (Number(item[field]) || 0),
+              0,
+            );
+          }
+          out._sum = sums;
+        }
+        return Promise.resolve(out);
       },
 
       findUnique: (args: {
@@ -1502,6 +1561,21 @@ function createDevPrismaWrapper(client: PGlite): unknown {
         if (prop === '$disconnect') return () => Promise.resolve();
         if (prop === '$on') return () => undefined;
         if (prop === '$extends') return () => target;
+        // Run raw parameterized queries against the real in-memory PGlite
+        // client so domain services that use $queryRawUnsafe (reports, sales
+        // history, shift close) keep working in the dev server.
+        if (prop === '$queryRawUnsafe') {
+          return async (query: string, ...values: unknown[]) => {
+            const result = await client.query(query, values);
+            return result.rows;
+          };
+        }
+        if (prop === '$executeRawUnsafe') {
+          return async (query: string, ...values: unknown[]) => {
+            const result = await client.query(query, values);
+            return result.affectedRows ?? 0;
+          };
+        }
         if (prop === 'constructor') return Object;
         if (prop === Symbol.toPrimitive || prop === 'then') return undefined;
         if (typeof prop === 'string' && prop !== '_client') {
