@@ -31,9 +31,13 @@ import { useCashShiftStore } from "../../../domain/cash-shift/cash-shift.store";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import {
   ShiftAlreadyOpenException,
+  ShiftNotOpenException,
   MissingClosingCashCountsException,
 } from "../../../domain/cash-shift/exceptions";
-import type { CashShiftRecord } from "../../../domain/cash-shift/cash-shift.service";
+import type {
+  CashShiftRecord,
+  ShiftFiscalComparison,
+} from "../../../domain/cash-shift/cash-shift.service";
 import { ActiveShiftView } from "./active-shift-view";
 import { SummaryStep } from "./summary-step";
 import { CountStep } from "./count-step";
@@ -78,11 +82,18 @@ export const CashShiftPage: FC = () => {
   const [closeWizard, setCloseWizard] = useState<CloseWizardStep>({ step: "idle" });
   const requiresStepUpRef = useRef(false);
 
+  // ---- Fiscal vs operational drift comparison ----
+  const [driftComparison, setDriftComparison] =
+    useState<ShiftFiscalComparison | null>(null);
+
   // ---- History state ----
   const [history, setHistory] = useState<CashShiftRecord[]>([]);
   const [historyTotal, setHistoryTotal] = useState(0);
-  const [historyOffset, setHistoryOffset] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  // Bumped on every first-page reset; a load-more append from a previous
+  // generation must be discarded (see handleLoadMore).
+  const historyGenerationRef = useRef(0);
 
   // ---- Derived page state ----
   const pageState: PageState = useMemo(() => {
@@ -95,6 +106,27 @@ export const CashShiftPage: FC = () => {
   useEffect(() => {
     setActionError(null);
   }, [currentShift?.id]);
+
+  // ---- Load fiscal/operational drift for the active shift ----
+  useEffect(() => {
+    let cancelled = false;
+    // Reset up-front so a stale comparison from a previously active shift
+    // can never be reused by handleStartClose while the new one loads.
+    setDriftComparison(null);
+    if (!currentShift) return;
+    cashShiftService
+      .getShiftFiscalComparison(currentShift.id)
+      .then((comparison) => {
+        if (!cancelled) setDriftComparison(comparison);
+      })
+      .catch(() => {
+        // Silent fail — the banner stays hidden on error.
+        if (!cancelled) setDriftComparison(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cashShiftService, currentShift?.id]);
 
   // ---- Re-hydrate on mount ----
   useEffect(() => {
@@ -110,13 +142,13 @@ export const CashShiftPage: FC = () => {
     requiresStepUpRef.current = false;
   }, [currentShift?.id]);
 
-  // ---- Fetch history ----
-  const fetchHistory = useCallback(async () => {
+  // ---- Fetch history (first page, replaces the list) ----
+  const fetchFirstPage = useCallback(async () => {
+    historyGenerationRef.current += 1;
     setHistoryLoading(true);
     try {
       const result = await cashShiftService.getShiftHistory({
         limit: HISTORY_PAGE_SIZE,
-        offset: historyOffset,
       });
       setHistory(result.shifts);
       setHistoryTotal(result.total);
@@ -125,11 +157,39 @@ export const CashShiftPage: FC = () => {
     } finally {
       setHistoryLoading(false);
     }
-  }, [cashShiftService, historyOffset]);
+  }, [cashShiftService]);
 
   useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory, currentShift?.id]);
+    void fetchFirstPage();
+  }, [fetchFirstPage, currentShift?.id]);
+
+  // ---- Load more (keyset cursor append) ----
+  const handleLoadMore = useCallback(async () => {
+    const last = history[history.length - 1];
+    if (!last || historyLoadingMore) return;
+    const generation = historyGenerationRef.current;
+    setHistoryLoadingMore(true);
+    try {
+      const result = await cashShiftService.getShiftHistory({
+        limit: HISTORY_PAGE_SIZE,
+        cursor: { id: last.id },
+      });
+      // Discard the append if the list was reset (e.g. a shift was opened)
+      // while this request was in flight.
+      if (historyGenerationRef.current !== generation) return;
+      setHistory((prev) => {
+        // A shift may have been opened/closed between pages — dedupe by id
+        // so the accumulated list never shows the same shift twice.
+        const known = new Set(prev.map((s) => s.id));
+        return [...prev, ...result.shifts.filter((s) => !known.has(s.id))];
+      });
+      setHistoryTotal(result.total);
+    } catch {
+      // Silent fail
+    } finally {
+      setHistoryLoadingMore(false);
+    }
+  }, [cashShiftService, history, historyLoadingMore]);
 
   // ---- Handlers ----
 
@@ -169,7 +229,20 @@ export const CashShiftPage: FC = () => {
       data: { transactionCount: 0, totalSalesAmount: "0", totalsByPaymentMethod: [] },
     });
     try {
-      const summary = await cashShiftService.getShiftSalesSummary(currentShift.id);
+      // The drift comparison already computed the operational totals for
+      // this shift — reuse them so the wizard does not re-run the
+      // expensive operational-view resolution.
+      const summary = await cashShiftService.getShiftSalesSummary(
+        currentShift.id,
+        driftComparison
+          ? new Map(
+              driftComparison.totals.map((t) => [
+                t.paymentMethodId,
+                new Prisma.Decimal(t.operationalAmount),
+              ]),
+            )
+          : undefined,
+      );
       setCloseWizard({ step: "summary", data: summary });
     } catch (err) {
       setActionError(
@@ -177,7 +250,7 @@ export const CashShiftPage: FC = () => {
       );
       setCloseWizard({ step: "idle" });
     }
-  }, [currentShift, cashShiftService, t]);
+  }, [currentShift, cashShiftService, driftComparison, t]);
 
   const handleSummaryNext = useCallback(() => {
     const w = closeWizard;
@@ -221,14 +294,22 @@ export const CashShiftPage: FC = () => {
       useCashShiftStore.getState().setCurrentShift(null);
       setCloseWizard({ step: "done" });
     } catch (err) {
-      if (err instanceof MissingClosingCashCountsException) {
+      if (err instanceof ShiftNotOpenException) {
+        // Double-submit guard: another close already closed this shift
+        // (the second request waited on the PGlite write lock and then saw
+        // the shift as CLOSED). The shift is closed either way — surface
+        // success instead of an error.
+        useCashShiftStore.getState().setCurrentShift(null);
+        setCloseWizard({ step: "done" });
+      } else if (err instanceof MissingClosingCashCountsException) {
         setActionError(t("cash_shift.errors.missing_closing_counts"));
+        setCloseWizard({ step: "idle" });
       } else {
         setActionError(
           err instanceof Error ? err.message : t("common.unexpected_error"),
         );
+        setCloseWizard({ step: "idle" });
       }
-      setCloseWizard({ step: "idle" });
     }
   }, [closeWizard, cashShiftService, currentShift, t]);
 
@@ -236,16 +317,6 @@ export const CashShiftPage: FC = () => {
     setCloseWizard({ step: "idle" });
     requiresStepUpRef.current = false;
   }, []);
-
-  const handlePrevPage = useCallback(() => {
-    setHistoryOffset((prev) => Math.max(0, prev - HISTORY_PAGE_SIZE));
-  }, []);
-
-  const handleNextPage = useCallback(() => {
-    setHistoryOffset((prev) =>
-      Math.min(historyTotal - HISTORY_PAGE_SIZE, prev + HISTORY_PAGE_SIZE),
-    );
-  }, [historyTotal]);
 
   // ---- Loading state ----
   if (pageState.status === "loading") {
@@ -290,6 +361,7 @@ export const CashShiftPage: FC = () => {
                 onStartClose={handleStartClose}
                 actionError={actionError}
                 isSubmitting={isSubmitting}
+                drift={driftComparison}
               />
             )}
             {closeWizard.step === "summary" && (
@@ -346,11 +418,10 @@ export const CashShiftPage: FC = () => {
       <ShiftHistorySection
         history={history}
         historyTotal={historyTotal}
-        historyOffset={historyOffset}
         historyLoading={historyLoading}
-        pageSize={HISTORY_PAGE_SIZE}
-        onPrevPage={handlePrevPage}
-        onNextPage={handleNextPage}
+        loadingMore={historyLoadingMore}
+        hasMore={history.length < historyTotal}
+        onLoadMore={() => void handleLoadMore()}
       />
     </div>
   );

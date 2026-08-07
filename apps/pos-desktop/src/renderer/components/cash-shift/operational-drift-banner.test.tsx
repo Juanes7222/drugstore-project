@@ -81,6 +81,22 @@ describe("OperationalDriftBanner", () => {
     expect(onToggleView).toHaveBeenCalledTimes(1);
   });
 
+  it("labels the toggle button as hide when comparison is visible", () => {
+    render(
+      <OperationalDriftBanner
+        hasDrift
+        adjustmentCount={1}
+        onToggleView={vi.fn()}
+        comparisonVisible
+        variant="banner"
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Ocultar comparación" }),
+    ).toBeInTheDocument();
+  });
+
   it("renders the inline variant with status role", () => {
     render(
       <OperationalDriftBanner

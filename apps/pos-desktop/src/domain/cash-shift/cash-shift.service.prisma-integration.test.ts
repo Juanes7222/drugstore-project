@@ -396,6 +396,60 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
   });
 
   // -----------------------------------------------------------------------
+  // closeWithCounts — wizard double-submit guard
+  // -----------------------------------------------------------------------
+  describe("closeWithCounts", () => {
+    it("writes a single set of CLOSING counts when the wizard double-submits", async () => {
+      const service = makeService();
+      const shift = await service.openShift({
+        openingBalance: new Prisma.Decimal("500000.00"),
+      });
+
+      const dto = {
+        counts: [
+          {
+            paymentMethodId: cashPmId,
+            declaredAmount: new Prisma.Decimal("500000.00"),
+          },
+        ],
+      };
+
+      // Wizard double-click: both submissions race on the same shift. The
+      // PGlite write lock serializes them — the first closes the shift, the
+      // second sees it CLOSED and fails on the open-shift guard before
+      // writing anything.
+      const outcomes = await Promise.allSettled([
+        service.closeWithCounts(shift.id, dto),
+        service.closeWithCounts(shift.id, dto),
+      ]);
+
+      expect(
+        outcomes.filter((o) => o.status === "fulfilled"),
+      ).toHaveLength(1);
+      const rejected = outcomes.filter(
+        (o): o is PromiseRejectedResult => o.status === "rejected",
+      );
+      expect(rejected).toHaveLength(1);
+      expect(rejected[0].reason).toBeInstanceOf(ShiftNotOpenException);
+
+      // Exactly one set of CLOSING counts was persisted — the losing
+      // submission never wrote a count row.
+      const counts = await prisma.shiftCashCount.findMany({
+        where: { cashShiftId: shift.id, countType: "CLOSING" },
+      });
+      expect(counts).toHaveLength(1);
+      expect(Number(counts[0].declaredAmount)).toBe(500000);
+
+      // The shift transitioned to CLOSED exactly once.
+      const stored = await prisma.cashShift.findUnique({
+        where: { id: shift.id },
+      });
+      expect(stored).not.toBeNull();
+      expect(stored!.state).toBe("CLOSED");
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // PrismaClient direct access — Decimal and Enum fidelity
   // -----------------------------------------------------------------------
   describe("PrismaClient — type fidelity", () => {

@@ -142,8 +142,13 @@
       "banner_title": "Operational adjustments applied",
       "banner_body": "This shift has {{count}} operational adjustment(s) on its invoices. The totals shown reflect the operational view and may differ from the fiscal/DIAN totals.",
       "banner_toggle_button": "View fiscal totals",
+      "banner_toggle_hide_button": "Hide comparison",
       "banner_drift_amount": "Difference: {{amount}}",
-      "inline_label": "Operational adjustments"
+      "inline_label": "Operational adjustments",
+      "comparison_title": "Fiscal vs operational summary",
+      "comparison_fiscal": "Fiscal",
+      "comparison_operational": "Operational",
+      "comparison_difference": "Difference"
     },
     "open_shift": "Open Shift",
     "opening_balance_label": "Opening balance",
@@ -187,7 +192,7 @@
     "history_table_id": "ID",
     "history_table_opened": "Opened",
     "history_table_closed": "Closed",
-    "history_page": "Page {{current}} of {{total}}",
+    "history_load_more": "Load more",
     "errors": {
       "invalid_balance": "Opening balance is invalid",
       "shift_already_open": "A shift is already open",

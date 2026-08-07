@@ -183,8 +183,13 @@
       "banner_title": "Ajustes operativos aplicados",
       "banner_body": "Este turno tiene {{count}} ajuste(s) operativo(s) en sus facturas. Los totales mostrados reflejan la vista operativa y pueden diferir de los totales fiscales/DIAN.",
       "banner_toggle_button": "Ver totales fiscales",
+      "banner_toggle_hide_button": "Ocultar comparación",
       "banner_drift_amount": "Diferencia: {{amount}}",
-      "inline_label": "Ajustes operativos"
+      "inline_label": "Ajustes operativos",
+      "comparison_title": "Resumen fiscal vs operativo",
+      "comparison_fiscal": "Fiscal",
+      "comparison_operational": "Operativo",
+      "comparison_difference": "Diferencia"
     },
     "open_shift": "Abrir turno",
     "opening_balance_label": "Saldo de apertura",
@@ -228,7 +233,7 @@
     "history_table_id": "ID",
     "history_table_opened": "Apertura",
     "history_table_closed": "Cierre",
-    "history_page": "Pág. {{current}} de {{total}}",
+    "history_load_more": "Cargar más",
     "errors": {
       "invalid_balance": "El saldo de apertura no es válido",
       "shift_already_open": "Ya hay un turno abierto",

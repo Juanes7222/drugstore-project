@@ -6,6 +6,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ReconciliationView } from "./reconciliation-view";
 import "@/i18n";
 
@@ -69,6 +70,80 @@ describe("ReconciliationView", () => {
 
     expect(
       screen.getByText("Ajustes operativos aplicados"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the fiscal vs operational comparison table when drift totals are provided", () => {
+    render(
+      <ReconciliationView
+        drift={{
+          hasDrift: true,
+          adjustmentCount: 1,
+          driftAmount: "50000",
+          totals: [
+            {
+              paymentMethodId: "pm-card",
+              methodName: "Tarjeta",
+              isCash: false,
+              fiscalAmount: "50000",
+              operationalAmount: "0",
+            },
+            {
+              paymentMethodId: "pm-cash",
+              methodName: "Efectivo",
+              isCash: true,
+              fiscalAmount: "0",
+              operationalAmount: "50000",
+            },
+          ],
+        }}
+        viewMode="operational"
+        onToggleView={onToggleView}
+        shiftLabel="Turno #001"
+      />,
+    );
+
+    // Side-by-side columns
+    expect(screen.getByText("Fiscal")).toBeInTheDocument();
+    expect(screen.getByText("Operativo")).toBeInTheDocument();
+    expect(screen.getByText("Diferencia")).toBeInTheDocument();
+
+    // Method rows with amounts
+    expect(screen.getByText("Tarjeta")).toBeInTheDocument();
+    expect(screen.getByText("Efectivo")).toBeInTheDocument();
+  });
+
+  it("toggles the comparison table via the banner button", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReconciliationView
+        drift={{
+          hasDrift: true,
+          adjustmentCount: 1,
+          totals: [
+            {
+              paymentMethodId: "pm-cash",
+              methodName: "Efectivo",
+              isCash: true,
+              fiscalAmount: "0",
+              operationalAmount: "50000",
+            },
+          ],
+        }}
+        viewMode="operational"
+        onToggleView={onToggleView}
+        shiftLabel="Turno #001"
+      />,
+    );
+
+    expect(screen.getByText("Efectivo")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Ocultar comparación" }));
+
+    // Table hidden, banner button reverts to "show" label
+    expect(screen.queryByText("Efectivo")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Ver totales fiscales" }),
     ).toBeInTheDocument();
   });
 

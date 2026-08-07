@@ -8,7 +8,10 @@ import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReconciliationView } from './reconciliation-view';
 import { formatCurrency } from '../../utils/format-currency';
-import type { CashShiftRecord } from '../../../domain/cash-shift/cash-shift.service';
+import type {
+  CashShiftRecord,
+  ShiftFiscalComparison,
+} from '../../../domain/cash-shift/cash-shift.service';
 
 interface ActiveShiftViewProps {
   currentShift: CashShiftRecord;
@@ -16,6 +19,8 @@ interface ActiveShiftViewProps {
   onStartClose: () => void;
   actionError: string | null;
   isSubmitting: boolean;
+  /** Fiscal vs operational drift data for the open shift (null when none). */
+  drift?: ShiftFiscalComparison | null;
 }
 
 export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
@@ -24,11 +29,12 @@ export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
   onStartClose,
   actionError,
   isSubmitting,
+  drift = null,
 }) => {
   const { t } = useTranslation();
   return (
     <ReconciliationView
-      drift={null}
+      drift={drift}
       viewMode="operational"
       onToggleView={() => {}}
       shiftLabel={t('cash_shift.shift_label', {

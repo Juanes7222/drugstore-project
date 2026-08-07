@@ -31,6 +31,11 @@ export interface OperationalDriftBannerProps {
    */
   onToggleView?: () => void;
   /**
+   * Whether the fiscal/operational comparison table is currently visible.
+   * Switches the toggle button label between "show" and "hide".
+   */
+  comparisonVisible?: boolean;
+  /**
    * Display variant:
    * - `'banner'` — Full-width amber panel with left border accent, icon, and toggle button.
    * - `'inline'` — Compact amber pill badge for embedding next to a total or row.
@@ -45,6 +50,7 @@ const BannerVariant: FC<OperationalDriftBannerProps> = ({
   adjustmentCount,
   driftAmount,
   onToggleView,
+  comparisonVisible = false,
 }) => {
   const { t } = useTranslation();
 
@@ -118,7 +124,9 @@ const BannerVariant: FC<OperationalDriftBannerProps> = ({
               e.currentTarget.style.borderColor = "color-mix(in srgb, var(--color-ink) 15%, transparent)";
             }}
           >
-            {t("cash_shift.operational_drift.banner_toggle_button")}
+            {comparisonVisible
+              ? t("cash_shift.operational_drift.banner_toggle_hide_button")
+              : t("cash_shift.operational_drift.banner_toggle_button")}
           </button>
         </div>
       )}
@@ -158,6 +166,7 @@ export const OperationalDriftBanner: FC<OperationalDriftBannerProps> = ({
   adjustmentCount,
   driftAmount,
   onToggleView,
+  comparisonVisible = false,
   variant = "banner",
 }) => {
   if (!hasDrift) return null;
@@ -176,6 +185,7 @@ export const OperationalDriftBanner: FC<OperationalDriftBannerProps> = ({
           adjustmentCount={adjustmentCount}
           driftAmount={driftAmount}
           onToggleView={onToggleView}
+          comparisonVisible={comparisonVisible}
           variant="banner"
         />
       ) : (

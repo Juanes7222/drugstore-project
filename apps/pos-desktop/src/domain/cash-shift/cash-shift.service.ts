@@ -25,7 +25,7 @@ import { PrismaClient } from '@pharmacy/database/local';
 import { RoleType } from '@pharmacy/shared-types';
 // Uses globalThis.crypto.randomUUID() from the Web Crypto API (available
 // in modern browsers and Tauri webviews). No Node.js import needed.
-import { Prisma } from '@pharmacy/database/local';
+import { Prisma, InvoiceAdjustmentType, SaleOperationalState } from '@pharmacy/database/local';
 import {
   ShiftAlreadyOpenException,
   ShiftNotOpenException,
@@ -45,6 +45,30 @@ import { writePrintPayload } from '../printing/print-payload-writer';
 import { generateShiftCloseHtml } from './shift-close-html';
 import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
 import { LocalAuditEvent } from '../audit/local-audit-writer.service';
+import { dbWriteLock } from '../../infrastructure/write-lock';
+
+/**
+ * How many `resolveOperationalView` calls run per batch while layering
+ * payment adjustments onto the shift totals.
+ *
+ * PGlite has a single connection, so `Promise.all` over a chunk only queues
+ * queries — there is no parallelism to gain from large batches. Small slices
+ * keep each batch's in-flight state and memory bounded without any
+ * throughput cost.
+ */
+const RESOLVE_OPERATIONAL_VIEW_CHUNK_SIZE = 4;
+
+/** Input for `registerCashCount` (and its internal variant). */
+type RegisterCashCountInput = {
+  countType: 'PARTIAL' | 'CLOSING';
+  paymentMethodId: string;
+  expectedAmount: Prisma.Decimal;
+  declaredAmount: Prisma.Decimal;
+  denominationsBreakdown?: Record<string, number>;
+};
+
+/** Session claims needed by the internal count/close variants. */
+type CashShiftSession = { userId: string; workstationId: string; role: string };
 
 export const createCashShiftService = (
   prisma: PrismaClient,
@@ -76,37 +100,47 @@ export class CashShiftService {
     openingBalance: Prisma.Decimal;
     openingNotes?: string;
   }): Promise<CashShiftRecord> {
-    const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+    // Same write-lock as the other CashShift write operations: openShift
+    // writes a CashShift row and must not interleave with a background sync
+    // step on the single PGlite connection. Nothing inside re-acquires the
+    // lock (no nesting). Foreground priority: a user action never waits
+    // behind queued background sync steps.
+    await dbWriteLock.acquire('foreground');
+    try {
+      const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
-    await this.assertNoOpenShiftExists(session.workstationId);
+      await this.assertNoOpenShiftExists(session.workstationId);
 
-    const shift = await this.prisma.cashShift.create({
-      data: {
-        id: this.generateId(),
-        workstationId: session.workstationId,
+      const shift = await this.prisma.cashShift.create({
+        data: {
+          id: this.generateId(),
+          workstationId: session.workstationId,
+          userId: session.userId,
+          openingBalance: dto.openingBalance,
+          openingNotes: dto.openingNotes ?? null,
+          openedAt: new Date(),
+          state: 'OPEN',
+        },
+      });
+
+      // Audit trail
+      this.auditWriter?.write(LocalAuditEvent.CASH_SHIFT_OPENED, {
+        category: 'cash_shift',
+        entityType: 'CashShift',
+        entityId: shift.id,
         userId: session.userId,
-        openingBalance: dto.openingBalance,
-        openingNotes: dto.openingNotes ?? null,
-        openedAt: new Date(),
-        state: 'OPEN',
-      },
-    });
+        userRole: session.role,
+        workstationId: session.workstationId,
+        details: {
+          openingBalance: dto.openingBalance.toString(),
+          openingNotes: dto.openingNotes ?? null,
+        },
+      });
 
-    // Audit trail
-    this.auditWriter?.write(LocalAuditEvent.CASH_SHIFT_OPENED, {
-      category: 'cash_shift',
-      entityType: 'CashShift',
-      entityId: shift.id,
-      userId: session.userId,
-      userRole: session.role,
-      workstationId: session.workstationId,
-      details: {
-        openingBalance: dto.openingBalance.toString(),
-        openingNotes: dto.openingNotes ?? null,
-      },
-    });
-
-    return shift;
+      return shift;
+    } finally {
+      dbWriteLock.release();
+    }
   }
 
   /**
@@ -123,27 +157,52 @@ export class CashShiftService {
    */
   async registerCashCount(
     shiftId: string,
-    dto: {
-      countType: 'PARTIAL' | 'CLOSING';
-      paymentMethodId: string;
-      expectedAmount: Prisma.Decimal;
-      declaredAmount: Prisma.Decimal;
-      denominationsBreakdown?: Record<string, number>;
-    },
+    dto: RegisterCashCountInput,
   ): Promise<unknown> {
-    const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+    // Same write-lock as the close flow: a count is a write to ShiftCashCount
+    // that must not interleave with a background sync step on the single
+    // PGlite connection. The internal variant does not re-acquire (no
+    // nesting). Foreground priority: a user action never waits behind queued
+    // background sync steps.
+    await dbWriteLock.acquire('foreground');
+    try {
+      const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
-    await this.getOpenShift(shiftId);
+      await this.getOpenShift(shiftId);
 
-    const paymentMethod = await this.prisma.paymentMethod.findUnique({
-      where: { id: dto.paymentMethodId },
-    });
+      return this.registerCashCountInternal(shiftId, dto, session);
+    } finally {
+      dbWriteLock.release();
+    }
+  }
 
-    if (!paymentMethod) {
+  /**
+   * Register a cash count assuming the shift is open and the role was
+   * already checked by the caller. Used by `registerCashCount` (which
+   * validates first) and by `closeWithCounts` to avoid re-reading the
+   * shift for every CLOSING count.
+   *
+   * @param paymentMethod  Already-loaded payment method. When provided (the
+   *   caller — `closeWithCounts` — validated existence and loaded it for its
+   *   `methodMap`), the per-count `findUnique` is skipped entirely.
+   */
+  private async registerCashCountInternal(
+    shiftId: string,
+    dto: RegisterCashCountInput,
+    session: CashShiftSession,
+    paymentMethod?: { isCash: boolean },
+  ): Promise<unknown> {
+    const loadedPaymentMethod =
+      paymentMethod ??
+      (await this.prisma.paymentMethod.findUnique({
+        where: { id: dto.paymentMethodId },
+      }));
+
+    if (!loadedPaymentMethod) {
       throw new PaymentMethodNotFoundException(dto.paymentMethodId);
     }
 
-    if (dto.denominationsBreakdown && !paymentMethod.isCash) {
+    if (dto.denominationsBreakdown && !loadedPaymentMethod.isCash) {
       throw new InvalidCashCountForNonCashMethodException();
     }
 
@@ -155,11 +214,11 @@ export class CashShiftService {
         cashShiftId: shiftId,
         countType: dto.countType,
         paymentMethodId: dto.paymentMethodId,
-        paymentMethodIsCash: paymentMethod.isCash,
+        paymentMethodIsCash: loadedPaymentMethod.isCash,
         expectedAmount: dto.expectedAmount,
         declaredAmount: dto.declaredAmount,
         difference,
-        denominationsBreakdown: paymentMethod.isCash
+        denominationsBreakdown: loadedPaymentMethod.isCash
           ? (dto.denominationsBreakdown ?? Prisma.DbNull)
           : Prisma.DbNull,
         createdById: session.userId,
@@ -181,7 +240,7 @@ export class CashShiftService {
           declaredAmount: dto.declaredAmount.toString(),
           difference: difference.toString(),
           paymentMethodId: dto.paymentMethodId,
-          isCash: paymentMethod.isCash,
+          isCash: loadedPaymentMethod.isCash,
         },
       });
     }
@@ -200,11 +259,49 @@ export class CashShiftService {
   async closeShift(
     shiftId: string,
     dto: { closingNotes?: string },
+    /** Precomputed expected totals — reuse avoids a second operational-view
+     *  resolution when the caller (closeWithCounts) already computed them. */
+    expectedTotals?: Map<string, Prisma.Decimal>,
   ): Promise<unknown> {
-    const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+    // Serialize the whole close (counts + final update + backup) under the
+    // PGlite write lock, exactly like sale confirm. This both shields the
+    // flow from a background sync step holding the single connection and
+    // turns a double submission (wizard double-click) into a clean second
+    // `ShiftNotOpenException` instead of duplicated CLOSING counts.
+    //
+    // The mandatory backup (a full DB dump) is the long pole of the critical
+    // section, so the background is paused before acquiring: sync steps that
+    // arrive mid-close skip their work instead of queueing behind the dump,
+    // and the foreground acquire jumps the queue so the close only ever
+    // waits for a single in-flight step.
+    dbWriteLock.pauseBackground();
+    try {
+      await dbWriteLock.acquire('foreground');
+      try {
+        const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
-    await this.getOpenShift(shiftId);
+        await this.getOpenShift(shiftId);
 
+        return this.closeShiftInternal(shiftId, dto, expectedTotals, session);
+      } finally {
+        dbWriteLock.release();
+      }
+    } finally {
+      dbWriteLock.resumeBackground();
+    }
+  }
+
+  /**
+   * Close a cash shift assuming the shift is open and the role was already
+   * checked by the caller. `closeShift` validates first; `closeWithCounts`
+   * calls this directly after its own single open-shift check.
+   */
+  private async closeShiftInternal(
+    shiftId: string,
+    dto: { closingNotes?: string },
+    expectedTotals: Map<string, Prisma.Decimal> | undefined,
+    session: CashShiftSession,
+  ): Promise<unknown> {
     const closingCounts = await this.prisma.shiftCashCount.findMany({
       where: {
         cashShiftId: shiftId,
@@ -217,7 +314,10 @@ export class CashShiftService {
       },
     });
 
-    const activePaymentMethods = await this.getActivePaymentMethods(shiftId);
+    const activePaymentMethods = await this.getActivePaymentMethods(
+      shiftId,
+      expectedTotals,
+    );
     const missingMethods = this.findMissingClosingCounts(
       activePaymentMethods,
       closingCounts,
@@ -317,18 +417,26 @@ export class CashShiftService {
    * operational-view adjustments (PAYMENT_METHOD_CHANGE, etc.) on top.
    *
    * @param shiftId  The cash shift to compute totals for
+   * @param baseTotals  Precomputed fiscal totals (direct SalePayment sums).
+   *   When provided, the GROUP BY aggregation is skipped — used by
+   *   `getShiftFiscalComparison` so the fiscal map is computed once and
+   *   reused for both the fiscal column and the operational overlay.
    * @returns A map of paymentMethodId → total expected amount
    */
   async computeExpectedTotalsByPaymentMethod(
     shiftId: string,
+    baseTotals?: Map<string, Prisma.Decimal>,
   ): Promise<Map<string, Prisma.Decimal>> {
     this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
-    // Base: direct SalePayment sum — always works, no invoice dependency
-    const baseTotals = await this.getDirectPaymentTotals(shiftId);
+    // Base: direct SalePayment sum — always works, no invoice dependency.
+    // Reuse the caller-provided fiscal map when available (drift comparison)
+    // so the aggregation runs once instead of twice.
+    const baseTotalsLocal =
+      baseTotals ?? (await this.getDirectPaymentTotals(shiftId));
 
     if (!this.adjustmentService) {
-      return baseTotals;
+      return baseTotalsLocal;
     }
 
     // Load active payment methods once so we can resolve the `category` enum
@@ -354,53 +462,113 @@ export class CashShiftService {
     });
 
     const saleIds = sales.map((s) => s.id);
-    if (saleIds.length === 0) return baseTotals;
+    if (saleIds.length === 0) return baseTotalsLocal;
 
     const invoices = await this.prisma.invoice.findMany({
       where: { saleId: { in: saleIds } },
       select: { id: true },
     });
 
-    if (invoices.length === 0) return baseTotals;
+    if (invoices.length === 0) return baseTotalsLocal;
 
-    const adjusted = new Map(baseTotals);
+    const adjusted = new Map(baseTotalsLocal);
 
-    for (const invoice of invoices) {
-      let opView: OperationalInvoiceView | null = null;
-      try {
-        opView = await this.adjustmentService.resolveOperationalView(invoice.id);
-      } catch (err) {
-        console.error(
-          `[CashShiftService] resolveOperationalView failed for invoice ${invoice.id}: `,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
+    // Only invoices that carry a non-reversed payment-affecting adjustment
+    // need the full operational-view resolution. For every other invoice
+    // fiscal payments equal operational payments, so the delta is zero —
+    // resolving them would be pure N+1 waste.
+    const invoicesWithPaymentAdjustments =
+      await this.findPaymentAdjustmentInvoiceIds(
+        invoices.map((i) => i.id),
+      );
+    const pending = invoices.filter((invoice) =>
+      invoicesWithPaymentAdjustments.has(invoice.id),
+    );
 
-      if (opView?.operational.hasDifferences) {
-        const opPayments = opView.operational.payments;
-        const fiscalPayments = opView.fiscal.fullData?.payments;
+    // Resolve in small bounded batches (see RESOLVE_OPERATIONAL_VIEW_CHUNK_SIZE
+    // for the single-connection rationale).
+    for (let i = 0; i < pending.length; i += RESOLVE_OPERATIONAL_VIEW_CHUNK_SIZE) {
+      const chunk = pending.slice(i, i + RESOLVE_OPERATIONAL_VIEW_CHUNK_SIZE);
+      const views = await Promise.all(
+        chunk.map((invoice) => this.resolveOperationalViewSafe(invoice.id)),
+      );
+      for (let j = 0; j < chunk.length; j++) {
+        const opView = views[j];
 
-        // Remove fiscal (original) payment amounts for this invoice
-        if (fiscalPayments) {
-          for (const fp of fiscalPayments) {
-            const current = adjusted.get(fp.paymentMethodId) ?? new Prisma.Decimal(0);
-            adjusted.set(fp.paymentMethodId, current.minus(new Prisma.Decimal(fp.amount)));
+        if (opView?.operational.hasDifferences) {
+          const opPayments = opView.operational.payments;
+          const fiscalPayments = opView.fiscal.fullData?.payments;
+
+          // Remove fiscal (original) payment amounts for this invoice
+          if (fiscalPayments) {
+            for (const fp of fiscalPayments) {
+              const current = adjusted.get(fp.paymentMethodId) ?? new Prisma.Decimal(0);
+              adjusted.set(fp.paymentMethodId, current.minus(new Prisma.Decimal(fp.amount)));
+            }
           }
-        }
 
-        // Add operational (adjusted) payment amounts
-        for (const op of opPayments) {
-          const resolvedId = paymentMethodResolver(op.paymentMethodId);
-          const current = adjusted.get(resolvedId) ?? new Prisma.Decimal(0);
-          adjusted.set(resolvedId, current.plus(new Prisma.Decimal(op.amount)));
+          // Add operational (adjusted) payment amounts
+          for (const op of opPayments) {
+            const resolvedId = paymentMethodResolver(op.paymentMethodId);
+            const current = adjusted.get(resolvedId) ?? new Prisma.Decimal(0);
+            adjusted.set(resolvedId, current.plus(new Prisma.Decimal(op.amount)));
+          }
+        } else if (!opView) {
+          // Fallback: query PAYMENT_METHOD_CHANGE adjustments directly
+          await this.applyAdjustmentsDirect(chunk[j].id, adjusted, paymentMethodResolver);
         }
-      } else if (!opView) {
-        // Fallback: query PAYMENT_METHOD_CHANGE adjustments directly
-        await this.applyAdjustmentsDirect(invoice.id, adjusted, paymentMethodResolver);
       }
     }
 
     return adjusted;
+  }
+
+  /**
+   * Invoice ids that carry a non-reversed payment-affecting adjustment
+   * (PAYMENT_METHOD_CHANGE, PAYMENT_SPLIT_CHANGE or their REVERSAL). Only
+   * these invoices can have an operational payment view that differs from
+   * the fiscal one, so callers pre-filter with this to avoid resolving
+   * every invoice.
+   */
+  private async findPaymentAdjustmentInvoiceIds(
+    invoiceIds: string[],
+  ): Promise<Set<string>> {
+    if (invoiceIds.length === 0) return new Set();
+
+    const rows = await this.prisma.invoiceLocalAdjustment.findMany({
+      where: {
+        invoiceId: { in: invoiceIds },
+        adjustmentType: {
+          in: [
+            InvoiceAdjustmentType.PAYMENT_METHOD_CHANGE,
+            InvoiceAdjustmentType.PAYMENT_SPLIT_CHANGE,
+            InvoiceAdjustmentType.REVERSAL,
+          ],
+        },
+        replacedByAdjustmentId: null,
+      },
+      select: { invoiceId: true },
+    });
+    return new Set(rows.map((a) => a.invoiceId));
+  }
+
+  /**
+   * Resolve the operational view for a single invoice, never throwing.
+   * On failure returns null so the caller can fall back to the direct
+   * adjustment query.
+   */
+  private async resolveOperationalViewSafe(
+    invoiceId: string,
+  ): Promise<OperationalInvoiceView | null> {
+    try {
+      return await this.adjustmentService!.resolveOperationalView(invoiceId);
+    } catch (err) {
+      console.error(
+        `[CashShiftService] resolveOperationalView failed for invoice ${invoiceId}: `,
+        err instanceof Error ? err.message : String(err),
+      );
+      return null;
+    }
   }
 
   /**
@@ -584,8 +752,22 @@ export class CashShiftService {
     const saleIds = sales.map((s) => s.id);
     const invoices = await this.prisma.invoice.findMany({
       where: { saleId: { in: saleIds } },
-      select: { id: true, invoiceNumber: true, fullData: true },
+      select: { id: true, invoiceNumber: true },
     });
+
+    if (invoices.length === 0) return [];
+
+    // Drift compares the payment view, which only changes through non-reversed
+    // payment-affecting adjustments — for every other invoice the operational
+    // payments equal the fiscal ones, so resolving its view would be pure
+    // N+1 waste. Pre-filter to the invoices that can actually drift (same
+    // filter used by computeExpectedTotalsByPaymentMethod).
+    const pendingInvoiceIds = await this.findPaymentAdjustmentInvoiceIds(
+      invoices.map((i) => i.id),
+    );
+    const pending = invoices.filter((invoice) =>
+      pendingInvoiceIds.has(invoice.id),
+    );
 
     const drift: Array<{
       invoiceId: string;
@@ -594,39 +776,143 @@ export class CashShiftService {
       operationalPaymentSummary: string;
     }> = [];
 
-    for (const invoice of invoices) {
-      try {
-        const opView = await this.adjustmentService.resolveOperationalView(
-          invoice.id,
-        );
+    // Resolve in small bounded batches (see
+    // RESOLVE_OPERATIONAL_VIEW_CHUNK_SIZE for the single-connection
+    // rationale). resolveOperationalViewSafe never throws, so one malformed
+    // invoice cannot reject the whole batch.
+    for (let i = 0; i < pending.length; i += RESOLVE_OPERATIONAL_VIEW_CHUNK_SIZE) {
+      const chunk = pending.slice(i, i + RESOLVE_OPERATIONAL_VIEW_CHUNK_SIZE);
+      const views = await Promise.all(
+        chunk.map((invoice) => this.resolveOperationalViewSafe(invoice.id)),
+      );
 
-        if (!opView.operational.hasDifferences) continue;
+      for (let j = 0; j < chunk.length; j++) {
+        try {
+          const opView = views[j];
+          if (!opView?.operational.hasDifferences) continue;
 
-        const fiscalPayments = opView.fiscal.fullData.payments;
-        const operationalPayments = opView.operational.payments;
+          const fiscalPayments = opView.fiscal.fullData.payments;
+          const operationalPayments = opView.operational.payments;
 
-        // Compare payment methods
-        const fiscalSummary = fiscalPayments
-          .map((p: { paymentMethodName: string; amount: string }) => `${p.paymentMethodName}:${p.amount}`)
-          .join(';');
-        const operationalSummary = operationalPayments
-          .map((p) => `${p.paymentMethodName}:${p.amount}`)
-          .join(';');
+          // Compare payment methods
+          const fiscalSummary = fiscalPayments
+            .map((p: { paymentMethodName: string; amount: string }) => `${p.paymentMethodName}:${p.amount}`)
+            .join(';');
+          const operationalSummary = operationalPayments
+            .map((p) => `${p.paymentMethodName}:${p.amount}`)
+            .join(';');
 
-        if (fiscalSummary !== operationalSummary) {
-          drift.push({
-            invoiceId: invoice.id,
-            invoiceNumber: invoice.invoiceNumber,
-            fiscalPaymentSummary: fiscalSummary,
-            operationalPaymentSummary: operationalSummary,
-          });
+          if (fiscalSummary !== operationalSummary) {
+            drift.push({
+              invoiceId: chunk[j].id,
+              invoiceNumber: chunk[j].invoiceNumber,
+              fiscalPaymentSummary: fiscalSummary,
+              operationalPaymentSummary: operationalSummary,
+            });
+          }
+        } catch {
+          // Malformed invoice data — skip, same as the old per-invoice guard.
+          continue;
         }
-      } catch {
-        continue;
       }
     }
 
     return drift;
+  }
+
+  /**
+   * Fiscal vs operational payment-method comparison for the reconciliation
+   * screen of a shift.
+   *
+   * Fiscal totals are the direct `SalePayment` sums recorded at sale time;
+   * operational totals layer non-reversed payment adjustments on top. The
+   * fiscal map is computed once and reused as the base of the operational
+   * computation, so the whole comparison costs a single GROUP BY aggregation
+   * plus the same adjustment resolution the close wizard already performs.
+   *
+   * `adjustmentCount` is the number of non-reversed payment-affecting
+   * adjustments on invoices of the shift (drift banner badge).
+   */
+  async getShiftFiscalComparison(shiftId: string): Promise<ShiftFiscalComparison> {
+    this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+
+    const fiscalTotals = await this.getDirectPaymentTotals(shiftId);
+    const operationalTotals = await this.computeExpectedTotalsByPaymentMethod(
+      shiftId,
+      fiscalTotals,
+    );
+
+    // Union of both maps so a method that was fully replaced (fiscal $X,
+    // operational $0) still appears in the comparison.
+    const methodIds = new Set([
+      ...fiscalTotals.keys(),
+      ...operationalTotals.keys(),
+    ]);
+
+    let totals: ShiftFiscalComparison['totals'] = [];
+    if (methodIds.size > 0) {
+      const methods = await this.prisma.paymentMethod.findMany({
+        where: { id: { in: [...methodIds] } },
+        select: { id: true, name: true, isCash: true },
+      });
+      const methodMap = new Map(methods.map((m) => [m.id, m]));
+      totals = [...methodIds].map((paymentMethodId) => {
+        const fiscalAmount =
+          fiscalTotals.get(paymentMethodId) ?? new Prisma.Decimal(0);
+        const operationalAmount =
+          operationalTotals.get(paymentMethodId) ?? new Prisma.Decimal(0);
+        const method = methodMap.get(paymentMethodId);
+        return {
+          paymentMethodId,
+          methodName: method?.name ?? paymentMethodId,
+          isCash: method?.isCash ?? false,
+          fiscalAmount: fiscalAmount.toString(),
+          operationalAmount: operationalAmount.toString(),
+        };
+      });
+    }
+
+    // Non-reversed payment-affecting adjustments on the shift's invoices,
+    // counted in a single joined query (no per-invoice resolution).
+    let adjustmentCount = 0;
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ count: number }>>(
+        `SELECT COUNT(*)::int AS "count"
+           FROM "InvoiceLocalAdjustment" ila
+           JOIN "Invoice" i ON i."id" = ila."invoiceId"
+           JOIN "Sale" s ON s."id" = i."saleId"
+          WHERE ila."adjustmentType" IN ($2, $3, $4)
+            AND ila."replacedByAdjustmentId" IS NULL
+            AND s."cashShiftId" = $1
+            AND s."operationalState" = $5`,
+        shiftId,
+        InvoiceAdjustmentType.PAYMENT_METHOD_CHANGE,
+        InvoiceAdjustmentType.PAYMENT_SPLIT_CHANGE,
+        InvoiceAdjustmentType.REVERSAL,
+        SaleOperationalState.CONFIRMED,
+      );
+      adjustmentCount = rows[0]?.count ?? 0;
+    } catch {
+      // Non-critical — the comparison table still renders without the count.
+    }
+
+    const hasDrift = totals.some(
+      (row) => row.fiscalAmount !== row.operationalAmount,
+    );
+    // Sum of positive (operational − fiscal) deltas: the total amount that
+    // actually moved between methods. A plain sum of absolute differences
+    // would double-count a pure transfer (CARD −$100 + CASH +$100 → $200)
+    // while the comparison table's net total shows $0.
+    const driftAmount = totals
+      .reduce((acc, row) => {
+        const diff = new Prisma.Decimal(row.operationalAmount).minus(
+          new Prisma.Decimal(row.fiscalAmount),
+        );
+        return acc.plus(diff.isNegative() ? new Prisma.Decimal(0) : diff);
+      }, new Prisma.Decimal(0))
+      .toString();
+
+    return { hasDrift, adjustmentCount, driftAmount, totals };
   }
 
   // ---------------------------------------------------------------------------
@@ -636,10 +922,18 @@ export class CashShiftService {
   /**
    * Fetch shift history for the current workstation.
    * Returns both open and closed shifts, newest first.
+   *
+   * Pagination: keyset (`cursor`) is preferred for large histories because
+   * OFFSET re-scans and discards rows on every page. A tie-breaker on `id`
+   * keeps the cursor unambiguous when several shifts share the same
+   * `openedAt`. `offset` is kept for backward compatibility (prev/next UI
+   * and report shift-picker still use it).
    */
   async getShiftHistory(options?: {
     limit?: number;
     offset?: number;
+    /** Keyset pagination cursor — the id of the last row of the previous page. */
+    cursor?: { id: string };
   }): Promise<{ shifts: CashShiftRecord[]; total: number }> {
     const session = this.auth.requireRole(
       RoleType.CASHIER,
@@ -648,14 +942,16 @@ export class CashShiftService {
       RoleType.SAAS_ADMIN,
       RoleType.ADMIN,
     );
-    const { limit = 20, offset = 0 } = options ?? {};
+    const { limit = 20, offset = 0, cursor } = options ?? {};
 
     const [shifts, total] = await Promise.all([
       this.prisma.cashShift.findMany({
         where: { workstationId: session.workstationId },
-        orderBy: { openedAt: 'desc' },
+        orderBy: [{ openedAt: 'desc' as const }, { id: 'desc' as const }],
         take: limit,
-        skip: offset,
+        ...(cursor
+          ? { skip: 1, cursor: { id: cursor.id } }
+          : { skip: offset }),
       }) as Promise<CashShiftRecord[]>,
       this.prisma.cashShift.count({
         where: { workstationId: session.workstationId },
@@ -699,8 +995,16 @@ export class CashShiftService {
    * Sales summary for a shift: transaction count, total amount, and expected
    * totals per payment method (operational view when adjustment service
    * is available, otherwise direct from invoice payments).
+   *
+   * @param totalsByMethod  Precomputed expected totals per payment method.
+   *   When provided, the expensive operational-view resolution is skipped
+   *   and the map is used directly (e.g. the drift comparison already
+   *   computed it for the open shift).
    */
-  async getShiftSalesSummary(shiftId: string): Promise<{
+  async getShiftSalesSummary(
+    shiftId: string,
+    totalsByMethod?: Map<string, Prisma.Decimal>,
+  ): Promise<{
     transactionCount: number;
     totalSalesAmount: string;
     totalsByPaymentMethod: Array<{
@@ -712,31 +1016,37 @@ export class CashShiftService {
   }> {
     this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
-    const sales = await this.prisma.sale.findMany({
+    // Count and total aggregated in SQL — no row materialization in JS.
+    const aggregate = await this.prisma.sale.aggregate({
       where: { cashShiftId: shiftId, operationalState: 'CONFIRMED' },
-      select: { id: true, totalAmount: true },
+      _count: true,
+      _sum: { totalAmount: true },
     });
 
-    const totalAmount = sales.reduce(
-      (sum, s) => sum.plus(s.totalAmount),
-      new Prisma.Decimal(0),
+    const totalAmount = aggregate._sum.totalAmount ?? new Prisma.Decimal(0);
+
+    // Compute expected amounts via operational view (or fallback) ONCE —
+    // this is the expensive path (small resolveOperationalView batches) —
+    // and derive the active-methods list from the same computation instead
+    // of re-running the resolution loop inside getActivePaymentMethods.
+    // Reuse the caller-provided map (e.g. from the drift comparison) when
+    // available so the resolution does not run a second time.
+    const totalsByMethodComputed =
+      totalsByMethod ?? (await this.computeExpectedTotalsWithFallback(shiftId));
+    const activeMethods = await this.getActivePaymentMethodsWithNames(
+      shiftId,
+      totalsByMethodComputed,
     );
-
-    // Get payment methods used in this shift
-    const activeMethods = await this.getActivePaymentMethodsWithNames(shiftId);
-
-    // Compute expected amounts via operational view (or fallback)
-    const totalsByMethod = await this.computeExpectedTotalsWithFallback(shiftId);
 
     const totalsByMethodArray = activeMethods.map((m) => ({
       paymentMethodId: m.id,
       methodName: m.name,
       isCash: m.isCash,
-      expectedAmount: (totalsByMethod.get(m.id) ?? new Prisma.Decimal(0)).toString(),
+      expectedAmount: (totalsByMethodComputed.get(m.id) ?? new Prisma.Decimal(0)).toString(),
     }));
 
     return {
-      transactionCount: sales.length,
+      transactionCount: aggregate._count,
       totalSalesAmount: totalAmount.toString(),
       totalsByPaymentMethod: totalsByMethodArray,
     };
@@ -764,46 +1074,87 @@ export class CashShiftService {
       closingNotes?: string;
     },
   ): Promise<unknown> {
-    this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
-    await this.getOpenShift(shiftId);
+    // Serialize the whole flow under the PGlite write lock. On the single
+    // connection nothing can interleave between awaits, so the internal
+    // count/close variants skip re-reading the shift — and a second close
+    // (wizard double-click) waits here, then fails cleanly with
+    // `ShiftNotOpenException` instead of writing duplicated CLOSING counts.
+    //
+    // The mandatory backup inside closeShiftInternal dumps the whole DB, so
+    // the background is paused before acquiring: sync steps arriving mid-close
+    // skip instead of queueing, and the foreground acquire jumps the queue.
+    dbWriteLock.pauseBackground();
+    try {
+      await dbWriteLock.acquire('foreground');
+      try {
+        const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+        // Single open-shift validation for the whole flow.
+        await this.getOpenShift(shiftId);
 
-    // 1. Compute expected totals per payment method
-    const expectedTotals = await this.computeExpectedTotalsWithFallback(shiftId);
+        // 1. Compute expected totals per payment method
+        const expectedTotals = await this.computeExpectedTotalsWithFallback(shiftId);
 
-    // 2. Fetch payment methods for isCash check
-    const paymentMethods = await this.prisma.paymentMethod.findMany({
-      where: { id: { in: dto.counts.map((c) => c.paymentMethodId) } },
-    });
-    const methodMap = new Map(paymentMethods.map((m) => [m.id, m]));
-
-    // 3. Register each CLOSING count with the computed expected amount
-    for (const count of dto.counts) {
-      const method = methodMap.get(count.paymentMethodId);
-      if (!method) throw new PaymentMethodNotFoundException(count.paymentMethodId);
-
-      const expectedAmount = expectedTotals.get(count.paymentMethodId) ?? new Prisma.Decimal(0);
-
-      await this.registerCashCount(shiftId, {
-        countType: 'CLOSING',
-        paymentMethodId: count.paymentMethodId,
-        expectedAmount,
-        declaredAmount: count.declaredAmount,
-        denominationsBreakdown: count.denominationsBreakdown,
+      // 2. Fetch payment methods for isCash check — only the fields the
+      //    methodMap and the internal count registration consume.
+      const paymentMethods = await this.prisma.paymentMethod.findMany({
+        where: { id: { in: dto.counts.map((c) => c.paymentMethodId) } },
+        select: { id: true, isCash: true },
       });
-    }
+      const methodMap = new Map(paymentMethods.map((m) => [m.id, m]));
 
-    // 4. Close the shift — validates all methods have CLOSING counts
-    return this.closeShift(shiftId, { closingNotes: dto.closingNotes ?? undefined });
+      // 3. Register each CLOSING count with the computed expected amount
+      for (const count of dto.counts) {
+        const method = methodMap.get(count.paymentMethodId);
+        if (!method) throw new PaymentMethodNotFoundException(count.paymentMethodId);
+
+        const expectedAmount = expectedTotals.get(count.paymentMethodId) ?? new Prisma.Decimal(0);
+
+        await this.registerCashCountInternal(
+          shiftId,
+          {
+            countType: 'CLOSING',
+            paymentMethodId: count.paymentMethodId,
+            expectedAmount,
+            declaredAmount: count.declaredAmount,
+            denominationsBreakdown: count.denominationsBreakdown,
+          },
+          session,
+          // Already loaded above — skip the per-count findUnique.
+          method,
+        );
+      }
+
+      // 4. Close the shift — validates all methods have CLOSING counts. The
+      //    already-computed totals are reused so the operational-view
+      //    resolution inside closeShift's active-methods check does not run
+      //    a second time.
+      return this.closeShiftInternal(
+        shiftId,
+        { closingNotes: dto.closingNotes ?? undefined },
+        expectedTotals,
+        session,
+      );
+      } finally {
+        dbWriteLock.release();
+      }
+    } finally {
+      dbWriteLock.resumeBackground();
+    }
   }
 
   /**
    * Get active payment methods (used in confirmed sales within the shift)
    * including their names and isCash flag.
+   *
+   * When `totals` is provided (already computed by the caller) it is reused
+   * so the expensive operational-view resolution runs exactly once per
+   * summary instead of once here and once in the caller.
    */
   private async getActivePaymentMethodsWithNames(
     shiftId: string,
+    totals?: Map<string, Prisma.Decimal>,
   ): Promise<Array<{ id: string; name: string; isCash: boolean }>> {
-    const activeIds = await this.getActivePaymentMethods(shiftId);
+    const activeIds = await this.getActivePaymentMethods(shiftId, totals);
     if (activeIds.length === 0) return [];
 
     const methods = await this.prisma.paymentMethod.findMany({
@@ -827,22 +1178,26 @@ export class CashShiftService {
   /**
    * Direct SalePayment sum per payment method for a shift.
    * Used as the base for operational-view calculations.
+   *
+   * Aggregated in PostgreSQL with a single GROUP BY — the database walks the
+   * index and sums instead of loading every payment row into the webview.
    */
   private async getDirectPaymentTotals(
     shiftId: string,
   ): Promise<Map<string, Prisma.Decimal>> {
-    const sales = await this.prisma.sale.findMany({
-      where: { cashShiftId: shiftId, operationalState: 'CONFIRMED' },
-      select: { id: true },
-    });
-    const payments = await this.prisma.salePayment.findMany({
-      where: { saleId: { in: sales.map((s) => s.id) } },
-      select: { paymentMethodId: true, amount: true },
+    const groups = await this.prisma.salePayment.groupBy({
+      by: ['paymentMethodId'],
+      where: {
+        sale: { cashShiftId: shiftId, operationalState: 'CONFIRMED' },
+      },
+      _sum: { amount: true },
     });
     const totals = new Map<string, Prisma.Decimal>();
-    for (const pmt of payments) {
-      const current = totals.get(pmt.paymentMethodId) ?? new Prisma.Decimal(0);
-      totals.set(pmt.paymentMethodId, current.plus(pmt.amount));
+    for (const group of groups) {
+      totals.set(
+        group.paymentMethodId,
+        group._sum.amount ?? new Prisma.Decimal(0),
+      );
     }
     return totals;
   }
@@ -892,11 +1247,13 @@ export class CashShiftService {
    */
   private async getActivePaymentMethods(
     shiftId: string,
+    totals?: Map<string, Prisma.Decimal>,
   ): Promise<{ paymentMethodId: string }[]> {
-    const totals = await this.computeExpectedTotalsByPaymentMethod(shiftId);
+    const totalsMap =
+      totals ?? (await this.computeExpectedTotalsByPaymentMethod(shiftId));
     const activeSet = new Set<string>();
 
-    for (const [paymentMethodId, amount] of totals) {
+    for (const [paymentMethodId, amount] of totalsMap) {
       if (amount.greaterThan(0)) {
         activeSet.add(paymentMethodId);
       }
@@ -926,27 +1283,27 @@ export class CashShiftService {
     activeSet: Set<string>,
     paymentMethodResolver: (rawId: string) => string,
   ): Promise<void> {
-    const sales = await this.prisma.sale.findMany({
-      where: { cashShiftId: shiftId, operationalState: 'CONFIRMED' },
-      select: { id: true },
-    });
-    if (sales.length === 0) return;
-
-    const saleIds = sales.map((s) => s.id);
-    const invoices = await this.prisma.invoice.findMany({
-      where: { saleId: { in: saleIds } },
-      select: { id: true },
-    });
-    if (invoices.length === 0) return;
-
-    const adjustments = await this.prisma.invoiceLocalAdjustment.findMany({
-      where: {
-        invoiceId: { in: invoices.map((i) => i.id) },
-        adjustmentType: 'PAYMENT_METHOD_CHANGE',
-        replacedByAdjustmentId: null,
-      },
-      select: { newValue: true },
-    });
+    // Single joined query: the schema declares no Prisma relations between
+    // InvoiceLocalAdjustment, Invoice and Sale, so a raw JOIN replaces the
+    // previous sale → invoice → adjustment chain. All filtering happens in
+    // the database over indexed columns (Sale.cashShiftId_operationalState,
+    // Invoice.saleId) instead of loading every sale/invoice id of the shift
+    // into the webview first.
+    const adjustments = await this.prisma.$queryRawUnsafe<
+      Array<{ newValue: Prisma.JsonValue | null }>
+    >(
+      `SELECT ila."newValue"
+         FROM "InvoiceLocalAdjustment" ila
+         JOIN "Invoice" i ON i."id" = ila."invoiceId"
+         JOIN "Sale" s ON s."id" = i."saleId"
+        WHERE ila."adjustmentType" = $2
+          AND ila."replacedByAdjustmentId" IS NULL
+          AND s."cashShiftId" = $1
+          AND s."operationalState" = $3`,
+      shiftId,
+      InvoiceAdjustmentType.PAYMENT_METHOD_CHANGE,
+      SaleOperationalState.CONFIRMED,
+    );
 
     for (const adj of adjustments) {
       const nv = adj.newValue as { paymentMethodId?: string } | null;
@@ -1059,6 +1416,27 @@ export class CashShiftService {
     return globalThis.crypto.randomUUID();
   }
 }
+
+/**
+ * Fiscal vs operational payment-method comparison for a shift's
+ * reconciliation screen. Amounts are in COP (pesos) as strings.
+ */
+export type ShiftFiscalComparison = {
+  /** True when any payment method's operational amount differs from fiscal. */
+  hasDrift: boolean;
+  /** Non-reversed payment-affecting adjustments on the shift's invoices. */
+  adjustmentCount: number;
+  /** Sum of absolute fiscal−operational differences, in COP pesos. */
+  driftAmount: string;
+  /** Per-method comparison; union of fiscal and operational maps. */
+  totals: Array<{
+    paymentMethodId: string;
+    methodName: string;
+    isCash: boolean;
+    fiscalAmount: string;
+    operationalAmount: string;
+  }>;
+};
 
 /** Minimal type for a CashShift record as read from the local database. */
 export type CashShiftRecord = {

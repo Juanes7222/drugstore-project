@@ -1,8 +1,9 @@
 /**
  * Unit tests for CashShiftService — open, close, and cash counts.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { CashShiftService, createCashShiftService } from "./cash-shift.service";
+import { dbWriteLock } from "../../infrastructure/write-lock";
 import { ShiftAlreadyOpenException, ShiftNotOpenException, MissingClosingCashCountsException, InvalidCashCountForNonCashMethodException, PaymentMethodNotFoundException } from "./exceptions";
 import { BackupFailedException } from "../backup/exceptions";
 import { Prisma } from "@pharmacy/database/local";
@@ -67,12 +68,13 @@ const makeMockPrisma = () => {
     },
     salePayment: {
       findMany: vi.fn(),
+      groupBy: vi.fn(),
     },
     paymentMethod: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
     },
-    sale: { findMany: vi.fn() },
+    sale: { findMany: vi.fn(), aggregate: vi.fn() },
     invoice: { findMany: vi.fn(), findUnique: vi.fn() },
     syncQueue: {
       count: vi.fn(),
@@ -80,6 +82,7 @@ const makeMockPrisma = () => {
     },
     inventoryAdjustmentDocument: { findFirst: vi.fn() },
     invoiceLocalAdjustment: { findMany: vi.fn() },
+    $queryRawUnsafe: vi.fn(),
   };
 
   const transaction = vi.fn(async (cb: (t: any) => unknown) => cb(tx));
@@ -94,6 +97,7 @@ const makeMockPrisma = () => {
     invoice: tx.invoice,
     invoiceLocalAdjustment: tx.invoiceLocalAdjustment,
     syncQueue: tx.syncQueue,
+    $queryRawUnsafe: tx.$queryRawUnsafe,
   } as any;
 
   return { prisma, tx };
@@ -156,7 +160,38 @@ describe("CashShiftService", () => {
     service = createCashShiftService(prisma, auth as any);
   });
 
+  afterEach(() => {
+    // Restore any spies placed on the shared dbWriteLock singleton so a
+    // failing test can never leak an acquired lock into the next one.
+    vi.restoreAllMocks();
+  });
+
   describe("openShift", () => {
+    it("holds the PGlite write lock across the open", async () => {
+      const acquireSpy = vi.spyOn(dbWriteLock, "acquire");
+      const releaseSpy = vi.spyOn(dbWriteLock, "release");
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(null); // no open shift
+      tx.cashShift.create.mockResolvedValue({
+        id: "shift-1",
+        workstationId: "ws-1",
+        userId: "user-1",
+        openingBalance: new Prisma.Decimal(500000),
+        state: "OPEN",
+        openedAt: new Date(),
+      });
+
+      await service.openShift({ openingBalance: new Prisma.Decimal(500000) });
+
+      expect(acquireSpy).toHaveBeenCalledTimes(1);
+      // User-facing write: foreground priority so it never waits behind
+      // queued background sync steps.
+      expect(acquireSpy).toHaveBeenCalledWith("foreground");
+      expect(releaseSpy).toHaveBeenCalledTimes(1);
+      expect(releaseSpy).toHaveBeenCalledAfter(acquireSpy);
+    });
+
     it("creates a shift with OPEN state when no shift is already open", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.cashShift.findFirst.mockResolvedValue(null); // no open shift
@@ -311,6 +346,9 @@ describe("CashShiftService", () => {
       tx.salePayment.findMany.mockResolvedValue([
         { paymentMethodId: "pm-cash", amount: new Prisma.Decimal(500000) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(500000) } },
+      ]);
       tx.syncQueue.count.mockResolvedValue(0);
       tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
       tx.cashShift.update.mockResolvedValue({
@@ -341,6 +379,10 @@ describe("CashShiftService", () => {
       tx.salePayment.findMany.mockResolvedValue([
         { paymentMethodId: "pm-cash", amount: new Prisma.Decimal(500000) },
         { paymentMethodId: "pm-card", amount: new Prisma.Decimal(300000) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(500000) } },
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(300000) } },
       ]);
 
       await expect(
@@ -378,6 +420,9 @@ describe("CashShiftService", () => {
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([
         { paymentMethodId: "pm-cash", amount: new Prisma.Decimal(500000) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(500000) } },
       ]);
       tx.syncQueue.count.mockResolvedValue(0);
       tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
@@ -421,6 +466,9 @@ describe("CashShiftService", () => {
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([
         { paymentMethodId: "pm-cash", amount: new Prisma.Decimal(500000) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(500000) } },
       ]);
       tx.syncQueue.count.mockResolvedValue(0);
       tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
@@ -515,6 +563,10 @@ describe("CashShiftService", () => {
         { paymentMethodId: "pm-cash", amount: new Prisma.Decimal(50000) },
         { paymentMethodId: "pm-card", amount: new Prisma.Decimal(75000) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(50000) } },
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(75000) } },
+      ]);
 
       const result = await service.computeExpectedTotalsByPaymentMethod("shift-1");
 
@@ -526,6 +578,7 @@ describe("CashShiftService", () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.sale.findMany.mockResolvedValue([]);
       tx.salePayment.findMany.mockResolvedValue([]);
+      tx.salePayment.groupBy.mockResolvedValue([]);
 
       const result = await service.computeExpectedTotalsByPaymentMethod("shift-1");
 
@@ -540,6 +593,9 @@ describe("CashShiftService", () => {
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([
         { paymentMethodId: "pm-cash", amount: new Prisma.Decimal(50000) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(50000) } },
       ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       tx.invoiceLocalAdjustment.findMany.mockResolvedValue([]);
@@ -557,6 +613,9 @@ describe("CashShiftService", () => {
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
       ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       tx.invoice.findUnique.mockResolvedValue({ saleId: "sale-1", fullData: null });
@@ -598,6 +657,9 @@ describe("CashShiftService", () => {
         }
         return Promise.resolve(allPayments);
       });
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
 
       tx.invoice.findMany.mockResolvedValue([
         { id: "inv-1", saleId: "sale-1" },
@@ -610,6 +672,11 @@ describe("CashShiftService", () => {
         { invoiceId: "inv-2", newValue: { paymentMethodId: "pm-cash", amount: "50" } as Record<string, unknown> },
       ];
       tx.invoiceLocalAdjustment.findMany.mockImplementation(({ where }: any) => {
+        if (where.invoiceId?.in) {
+          return Promise.resolve(
+            paymentAdjustments.filter((a) => where.invoiceId.in.includes(a.invoiceId)),
+          );
+        }
         return Promise.resolve(
           paymentAdjustments.filter((a) => a.invoiceId === where.invoiceId),
         );
@@ -635,6 +702,9 @@ describe("CashShiftService", () => {
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       // Query only returns non-reversed adjustments => empty => base totals
       tx.invoiceLocalAdjustment.findMany.mockResolvedValue([]);
@@ -653,6 +723,9 @@ describe("CashShiftService", () => {
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
       ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       tx.invoice.findUnique.mockResolvedValue({ saleId: "sale-1", fullData: null });
@@ -681,7 +754,12 @@ describe("CashShiftService", () => {
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
+      // Batch pre-filter: invoice has a non-reversed payment adjustment.
+      tx.invoiceLocalAdjustment.findMany.mockResolvedValue([{ invoiceId: "inv-1" }]);
 
       adjustmentService.resolveOperationalView.mockResolvedValue({
         fiscal: {
@@ -712,7 +790,12 @@ describe("CashShiftService", () => {
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
+      // Batch pre-filter: no payment adjustments => nothing to resolve.
+      tx.invoiceLocalAdjustment.findMany.mockResolvedValue([]);
 
       adjustmentService.resolveOperationalView.mockResolvedValue({
         fiscal: { fullData: { payments: [] } },
@@ -737,6 +820,9 @@ describe("CashShiftService", () => {
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
       ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       tx.invoice.findUnique.mockResolvedValue({ saleId: "sale-1", fullData: null });
@@ -787,8 +873,12 @@ describe("CashShiftService", () => {
         id: "inv-1",
         saleId: "sale-1",
         invoiceNumber: "INV-001",
-        fullData: { payments: [{ paymentMethodName: "Efectivo", amount: "50000" }] },
       }]);
+      // The invoice carries a payment adjustment, so it is resolved — but
+      // the view reports no differences → no drift.
+      tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
+        { invoiceId: "inv-1" },
+      ]);
 
       adjustmentService.resolveOperationalView.mockResolvedValue({
         fiscal: { fullData: { payments: {} } },
@@ -817,10 +907,11 @@ describe("CashShiftService", () => {
         id: "inv-1",
         saleId: "sale-1",
         invoiceNumber: "INV-001",
-        fullData: {
-          payments: [{ paymentMethodName: "Efectivo", amount: "50000" }],
-        },
       }]);
+      // Payment-affecting adjustment on inv-1 → it must be resolved.
+      tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
+        { invoiceId: "inv-1" },
+      ]);
 
       adjustmentService.resolveOperationalView.mockResolvedValue({
         fiscal: {
@@ -841,6 +932,132 @@ describe("CashShiftService", () => {
       expect(result).toHaveLength(1);
       expect(result[0].invoiceId).toBe("inv-1");
       expect(result[0].invoiceNumber).toBe("INV-001");
+    });
+
+    it("skips invoices without payment adjustments (pre-filter)", async () => {
+      // Regression: getReconciliationDrift used to resolve the operational
+      // view for EVERY invoice of the shift. Invoices without a
+      // payment-affecting adjustment cannot drift — their view must not be
+      // resolved at all.
+      const adjustmentService = {
+        resolveOperationalView: vi.fn(),
+      };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "CLOSED",
+      });
+      tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }, { id: "sale-2" }]);
+      tx.invoice.findMany.mockResolvedValue([
+        { id: "inv-1", saleId: "sale-1", invoiceNumber: "INV-001" },
+        { id: "inv-2", saleId: "sale-2", invoiceNumber: "INV-002" },
+      ]);
+      // Only inv-1 has a payment-affecting adjustment.
+      tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
+        { invoiceId: "inv-1" },
+      ]);
+
+      adjustmentService.resolveOperationalView.mockResolvedValue({
+        fiscal: { fullData: { payments: [] } },
+        operational: { hasDifferences: false, payments: [] },
+      });
+
+      const result = await service.getReconciliationDrift("shift-1");
+
+      expect(result).toEqual([]);
+      // inv-2 has no payment adjustment → its view is never resolved.
+      expect(adjustmentService.resolveOperationalView).toHaveBeenCalledTimes(1);
+      expect(adjustmentService.resolveOperationalView).toHaveBeenCalledWith("inv-1");
+    });
+  });
+
+  describe("getShiftFiscalComparison", () => {
+    it("returns fiscal totals mirrored as operational when no adjustment service is configured", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(50000) } },
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(75000) } },
+      ]);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-cash", name: "Efectivo", isCash: true },
+        { id: "pm-card", name: "Tarjeta", isCash: false },
+      ]);
+      tx.$queryRawUnsafe.mockResolvedValue([{ count: 0 }]);
+
+      const result = await service.getShiftFiscalComparison("shift-1");
+
+      expect(result.hasDrift).toBe(false);
+      expect(result.adjustmentCount).toBe(0);
+      expect(result.driftAmount).toBe("0");
+      expect(result.totals).toHaveLength(2);
+      // Without adjustments, operational mirrors fiscal exactly.
+      expect(result.totals.find((t) => t.paymentMethodId === "pm-cash"))
+        .toMatchObject({ fiscalAmount: "50000", operationalAmount: "50000" });
+    });
+
+    it("reuses the fiscal map as the operational base (single groupBy)", async () => {
+      const adjustmentService = {
+        resolveOperationalView: vi.fn(),
+      };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+      auth.requireRole.mockReturnValue(makeMockSession());
+
+      // Sale with CARD $100 → adjusted to CASH $100
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
+      tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
+      tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
+      tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
+        { invoiceId: "inv-1" },
+      ]);
+
+      adjustmentService.resolveOperationalView.mockResolvedValue({
+        fiscal: {
+          fullData: {
+            payments: [{ paymentMethodId: "pm-card", amount: "100" }],
+          },
+        },
+        operational: {
+          hasDifferences: true,
+          payments: [{ paymentMethodId: "pm-cash", amount: "100" }],
+        },
+      });
+
+      // paymentMethod.findMany serves both the category resolver (isActive
+      // query) and the name lookup (id-in query).
+      tx.paymentMethod.findMany.mockImplementation(() =>
+        Promise.resolve([
+          { id: "pm-card", name: "Tarjeta", isCash: false, category: "CARD" },
+          { id: "pm-cash", name: "Efectivo", isCash: true, category: "CASH" },
+        ]),
+      );
+      tx.$queryRawUnsafe.mockResolvedValue([{ count: 1 }]);
+
+      const result = await service.getShiftFiscalComparison("shift-1");
+
+      expect(result.hasDrift).toBe(true);
+      expect(result.adjustmentCount).toBe(1);
+      // Sum of positive (operational − fiscal) deltas: the $100 that moved
+      // from CARD to CASH. (Sum of absolutes would double-count to $200.)
+      expect(result.driftAmount).toBe("100");
+      expect(result.totals).toHaveLength(2);
+
+      const card = result.totals.find((t) => t.paymentMethodId === "pm-card");
+      expect(card).toMatchObject({
+        methodName: "Tarjeta",
+        fiscalAmount: "100",
+        operationalAmount: "0",
+      });
+
+      const cash = result.totals.find((t) => t.paymentMethodId === "pm-cash");
+      expect(cash).toMatchObject({
+        methodName: "Efectivo",
+        isCash: true,
+        fiscalAmount: "0",
+        operationalAmount: "100",
+      });
     });
   });
 
@@ -1000,6 +1217,9 @@ describe("CashShiftService", () => {
       ]);
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([{ paymentMethodId: "pm-cash", amount: new Prisma.Decimal(500000) }]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(500000) } },
+      ]);
       tx.syncQueue.count.mockResolvedValue(0);
       tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
       tx.cashShift.update.mockResolvedValue({
@@ -1072,6 +1292,9 @@ describe("CashShiftService", () => {
       tx.salePayment.findMany.mockResolvedValue([
         { paymentMethodId: "pm-cash", amount: new Prisma.Decimal(500000) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(500000) } },
+      ]);
       tx.syncQueue.count.mockResolvedValue(0);
       tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
       tx.cashShift.update.mockResolvedValue({
@@ -1109,6 +1332,9 @@ describe("CashShiftService", () => {
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
       ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       tx.invoice.findUnique.mockResolvedValue({ saleId: "sale-1", fullData: null });
@@ -1179,6 +1405,9 @@ describe("CashShiftService", () => {
         }
         return Promise.resolve(allPayments);
       });
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(160) } },
+      ]);
 
       tx.invoice.findMany.mockResolvedValue([
         { id: "inv-1", saleId: "sale-1" },
@@ -1253,6 +1482,9 @@ describe("CashShiftService", () => {
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
 
       // Primary path: resolveOperationalView returns the adjustment
@@ -1268,9 +1500,13 @@ describe("CashShiftService", () => {
         },
       });
 
-      // Safety net: the addAdjustmentMethodIds query finds the same
-      // PAYMENT_METHOD_CHANGE and confirms pm-cash in the active set.
+      // Pending-invoice pre-filter (findPaymentAdjustmentInvoiceIds).
       tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
+        { invoiceId: "inv-1" },
+      ]);
+      // Safety net: the addAdjustmentMethodIds JOIN finds the same
+      // PAYMENT_METHOD_CHANGE and confirms pm-cash in the active set.
+      tx.$queryRawUnsafe.mockResolvedValue([
         { newValue: { paymentMethodId: "pm-cash" } },
       ]);
 
@@ -1299,8 +1535,8 @@ describe("CashShiftService", () => {
 
       const result = await service.closeShift("shift-1", {});
       expect((result as any).state).toBe("CLOSED");
-      // Safety net code path executed: invoiceLocalAdjustment was queried
-      expect(tx.invoiceLocalAdjustment.findMany).toHaveBeenCalled();
+      // Safety net code path executed: the joined adjustment query ran
+      expect(tx.$queryRawUnsafe).toHaveBeenCalled();
     });
 
     it("includes methods from adjustment safety net alongside totals-derived methods", async () => {
@@ -1320,6 +1556,9 @@ describe("CashShiftService", () => {
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
         { saleId: "sale-2", paymentMethodId: "pm-card", amount: new Prisma.Decimal(200) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(300) } },
+      ]);
       tx.invoice.findMany.mockResolvedValue([
         { id: "inv-1", saleId: "sale-1" },
         { id: "inv-2", saleId: "sale-2" },
@@ -1336,8 +1575,12 @@ describe("CashShiftService", () => {
           operational: { hasDifferences: false, payments: [] },
         });
 
-      // Safety net finds the PAYMENT_METHOD_CHANGE reference
+      // Pending-invoice pre-filter: only inv-1 carries a payment adjustment.
       tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
+        { invoiceId: "inv-1" },
+      ]);
+      // Safety net finds the PAYMENT_METHOD_CHANGE reference
+      tx.$queryRawUnsafe.mockResolvedValue([
         { newValue: { paymentMethodId: "pm-cash" } },
       ]);
 
@@ -1411,6 +1654,9 @@ describe("CashShiftService", () => {
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
       ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       tx.invoice.findUnique.mockResolvedValue({ saleId: "sale-1", fullData: null });
@@ -1494,6 +1740,9 @@ describe("CashShiftService", () => {
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
 
       // Primary path: resolveOperationalView handles the adjustment
@@ -1511,7 +1760,7 @@ describe("CashShiftService", () => {
 
       // Safety net data
       tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
-        { newValue: { paymentMethodId: "pm-cash" } },
+        { invoiceId: "inv-1", newValue: { paymentMethodId: "pm-cash" } },
       ]);
 
       tx.paymentMethod.findMany.mockResolvedValue([
@@ -1557,6 +1806,193 @@ describe("CashShiftService", () => {
 
       expect((result as any).state).toBe("CLOSED");
     });
+
+    it("resolves each adjusted invoice once across the whole close flow", async () => {
+      // Regression: closeWithCounts computed expected totals and then its
+      // internal closeShift re-computed active payment methods, running the
+      // operational-view resolution twice per adjusted invoice. The totals
+      // are now reused, so resolveOperationalView runs exactly once.
+      const adjustmentService = {
+        resolveOperationalView: vi.fn(),
+      };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN", userId: "user-1",
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(0),
+        actualClosingAmount: new Prisma.Decimal(0),
+        closingDifference: new Prisma.Decimal(0),
+      });
+
+      tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
+      tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
+
+      adjustmentService.resolveOperationalView.mockResolvedValue({
+        fiscal: {
+          fullData: {
+            payments: [{ paymentMethodId: "pm-card", amount: "100" }],
+          },
+        },
+        operational: {
+          hasDifferences: true,
+          payments: [{ paymentMethodId: "pm-cash", amount: "100" }],
+        },
+      });
+
+      // Payment-adjustment filter + safety-net query.
+      tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
+        { invoiceId: "inv-1", newValue: { paymentMethodId: "pm-cash" } },
+      ]);
+
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-cash", name: "Efectivo", isCash: true },
+      ]);
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash", isCash: true, name: "Efectivo",
+      });
+
+      tx.shiftCashCount.create.mockResolvedValue({
+        id: "count-1", countType: "CLOSING",
+      });
+      tx.shiftCashCount.findMany.mockResolvedValue([{
+        paymentMethodId: "pm-cash",
+        countType: "CLOSING",
+        expectedAmount: new Prisma.Decimal(100),
+        declaredAmount: new Prisma.Decimal(100),
+        difference: new Prisma.Decimal(0),
+        paymentMethodIsCash: true,
+        paymentMethod: { name: "Efectivo" },
+      }]);
+
+      tx.syncQueue.count.mockResolvedValue(0);
+      tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
+
+      tx.cashShift.update.mockResolvedValue({
+        id: "shift-1", state: "CLOSED",
+        closedAt: new Date(), openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(100),
+        actualClosingAmount: new Prisma.Decimal(100),
+        closingDifference: new Prisma.Decimal(0),
+        closingNotes: null,
+      });
+
+      const result = await service.closeWithCounts("shift-1", {
+        counts: [{
+          paymentMethodId: "pm-cash",
+          declaredAmount: new Prisma.Decimal(100),
+        }],
+      });
+
+      expect((result as any).state).toBe("CLOSED");
+      // One resolution for the single adjusted invoice — never two.
+      expect(adjustmentService.resolveOperationalView).toHaveBeenCalledTimes(1);
+      // The whole flow validates the open shift exactly once — the internal
+      // count/close variants skip re-reading it per count.
+      expect(tx.cashShift.findUnique).toHaveBeenCalledTimes(1);
+      // Payment methods are loaded once by closeWithCounts (methodMap) and
+      // passed down — registerCashCountInternal must not re-fetch them.
+      expect(tx.paymentMethod.findUnique).not.toHaveBeenCalled();
+    });
+
+    it("holds the PGlite write lock across the whole close flow", async () => {
+      // Regression: a wizard double-click (or a background sync step) must
+      // not interleave with the close. The flow acquires dbWriteLock around
+      // the entire close, pauses the background first (so sync steps skip
+      // instead of queueing behind the backup) and always releases/resumes
+      // — even on failure.
+      const acquireSpy = vi.spyOn(dbWriteLock, "acquire");
+      const releaseSpy = vi.spyOn(dbWriteLock, "release");
+      const pauseSpy = vi.spyOn(dbWriteLock, "pauseBackground");
+      const resumeSpy = vi.spyOn(dbWriteLock, "resumeBackground");
+
+      const adjustmentService = {
+        resolveOperationalView: vi.fn(),
+      };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+      auth.requireRole.mockReturnValue(makeMockSession());
+
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN", userId: "user-1",
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(0),
+        actualClosingAmount: new Prisma.Decimal(0),
+        closingDifference: new Prisma.Decimal(0),
+      });
+      tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
+      tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
+      adjustmentService.resolveOperationalView.mockResolvedValue({
+        fiscal: {
+          fullData: {
+            payments: [{ paymentMethodId: "pm-card", amount: "100" }],
+          },
+        },
+        operational: {
+          hasDifferences: true,
+          payments: [{ paymentMethodId: "pm-cash", amount: "100" }],
+        },
+      });
+      tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
+        { invoiceId: "inv-1", newValue: { paymentMethodId: "pm-cash" } },
+      ]);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-cash", name: "Efectivo", isCash: true },
+      ]);
+      tx.shiftCashCount.create.mockResolvedValue({ id: "count-1", countType: "CLOSING" });
+      tx.shiftCashCount.findMany.mockResolvedValue([{
+        paymentMethodId: "pm-cash",
+        countType: "CLOSING",
+        expectedAmount: new Prisma.Decimal(100),
+        declaredAmount: new Prisma.Decimal(100),
+        difference: new Prisma.Decimal(0),
+        paymentMethodIsCash: true,
+        paymentMethod: { name: "Efectivo" },
+      }]);
+      tx.syncQueue.count.mockResolvedValue(0);
+      tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
+      tx.cashShift.update.mockResolvedValue({
+        id: "shift-1", state: "CLOSED",
+        closedAt: new Date(), openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(500000),
+        expectedClosingAmount: new Prisma.Decimal(100),
+        actualClosingAmount: new Prisma.Decimal(100),
+        closingDifference: new Prisma.Decimal(0),
+        closingNotes: null,
+      });
+
+      await service.closeWithCounts("shift-1", {
+        counts: [{
+          paymentMethodId: "pm-cash",
+          declaredAmount: new Prisma.Decimal(100),
+        }],
+      });
+
+      expect(acquireSpy).toHaveBeenCalledTimes(1);
+      // User-facing write: foreground priority so the close never waits
+      // behind queued background sync steps.
+      expect(acquireSpy).toHaveBeenCalledWith("foreground");
+      expect(releaseSpy).toHaveBeenCalledTimes(1);
+      expect(releaseSpy).toHaveBeenCalledAfter(acquireSpy);
+
+      // The background is paused for the whole close (its backup dumps the
+      // entire DB) and resumed afterwards — sync steps skip instead of
+      // queueing behind the critical section.
+      expect(pauseSpy).toHaveBeenCalledTimes(1);
+      expect(resumeSpy).toHaveBeenCalledTimes(1);
+      expect(acquireSpy).toHaveBeenCalledAfter(pauseSpy);
+      expect(resumeSpy).toHaveBeenCalledAfter(releaseSpy);
+    });
   });
 
   describe("closeShift validation with PAYMENT_METHOD_CHANGE", () => {
@@ -1578,6 +2014,9 @@ describe("CashShiftService", () => {
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }]);
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
       ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       tx.invoice.findUnique.mockResolvedValue({ saleId: "sale-1", fullData: null });
@@ -1639,6 +2078,9 @@ describe("CashShiftService", () => {
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
       ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
+      ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
 
       adjustmentService.resolveOperationalView.mockResolvedValue({
@@ -1655,7 +2097,7 @@ describe("CashShiftService", () => {
 
       // Safety net query
       tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
-        { newValue: { paymentMethodId: "pm-cash" } },
+        { invoiceId: "inv-1", newValue: { paymentMethodId: "pm-cash" } },
       ]);
 
       tx.shiftCashCount.findMany.mockResolvedValue([{
@@ -1695,8 +2137,15 @@ describe("CashShiftService", () => {
 
       // Sale with total $100
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1", totalAmount: new Prisma.Decimal(100) }]);
+      tx.sale.aggregate.mockResolvedValue({
+        _count: 1,
+        _sum: { totalAmount: new Prisma.Decimal(100) },
+      });
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-card", amount: new Prisma.Decimal(100) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100) } },
       ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       tx.invoice.findUnique.mockResolvedValue({ saleId: "sale-1", fullData: null });
@@ -1734,8 +2183,15 @@ describe("CashShiftService", () => {
 
       // Sale: CASH $100 in the original SalePayment
       tx.sale.findMany.mockResolvedValue([{ id: "sale-1", totalAmount: new Prisma.Decimal(100) }]);
+      tx.sale.aggregate.mockResolvedValue({
+        _count: 1,
+        _sum: { totalAmount: new Prisma.Decimal(100) },
+      });
       tx.salePayment.findMany.mockResolvedValue([
         { saleId: "sale-1", paymentMethodId: "pm-cash", amount: new Prisma.Decimal(100) },
+      ]);
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(100) } },
       ]);
       tx.invoice.findMany.mockResolvedValue([{ id: "inv-1", saleId: "sale-1" }]);
       tx.invoice.findUnique.mockResolvedValue({ saleId: "sale-1", fullData: null });
@@ -1775,6 +2231,62 @@ describe("CashShiftService", () => {
       expect(result.totalsByPaymentMethod[0].expectedAmount).toBe("100");
       expect(result.totalsByPaymentMethod[0].isCash).toBe(false);
     });
+
+    it("resolves each adjusted invoice exactly once (no double computation)", async () => {
+      // Regression: getShiftSalesSummary used to compute expected totals
+      // twice — once inside getActivePaymentMethods and once directly — so
+      // every adjusted invoice's operational view was resolved twice. The
+      // summary must now resolve each pending invoice a single time.
+      const adjustmentService = {
+        resolveOperationalView: vi.fn(),
+      };
+      service = createCashShiftService(prisma, auth as any, adjustmentService as any);
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+
+      tx.sale.findMany.mockResolvedValue([{ id: "sale-1" }, { id: "sale-2" }]);
+      tx.sale.aggregate.mockResolvedValue({
+        _count: 2,
+        _sum: { totalAmount: new Prisma.Decimal(200) },
+      });
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(200) } },
+      ]);
+      tx.invoice.findMany.mockResolvedValue([
+        { id: "inv-1", saleId: "sale-1" },
+        { id: "inv-2", saleId: "sale-2" },
+      ]);
+      // Both invoices carry a non-reversed payment adjustment → both pending.
+      tx.invoiceLocalAdjustment.findMany.mockResolvedValue([
+        { invoiceId: "inv-1", newValue: { paymentMethodId: "pm-card" } },
+        { invoiceId: "inv-2", newValue: { paymentMethodId: "pm-card" } },
+      ]);
+
+      adjustmentService.resolveOperationalView.mockResolvedValue({
+        fiscal: {
+          fullData: {
+            payments: [{ paymentMethodId: "pm-card", amount: "100" }],
+          },
+        },
+        operational: {
+          hasDifferences: false,
+          payments: [{ paymentMethodId: "pm-card", amount: "100" }],
+        },
+      });
+
+      // Used by both the payment-method resolver (isActive) and the
+      // active-methods names lookup (id IN ...).
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-card", name: "Tarjeta", isCash: false, category: "DEBIT_CARD" },
+      ]);
+
+      const result = await service.getShiftSalesSummary("shift-1");
+
+      expect(result.transactionCount).toBe(2);
+      expect(result.totalsByPaymentMethod[0].expectedAmount).toBe("200");
+      // One resolution per pending invoice — never two.
+      expect(adjustmentService.resolveOperationalView).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe("getShiftHistory", () => {
@@ -1795,11 +2307,35 @@ describe("CashShiftService", () => {
 
       expect(result.shifts).toEqual([shift]);
       expect(result.total).toBe(1);
+      // Legacy offset path keeps the prev/next UI working.
       expect(tx.cashShift.findMany).toHaveBeenCalledWith({
         where: { workstationId: "ws-1" },
-        orderBy: { openedAt: "desc" },
+        orderBy: [{ openedAt: "desc" }, { id: "desc" }],
         take: 50,
         skip: 0,
+      });
+    });
+
+    it("uses keyset cursor pagination when a cursor is provided", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const shift = { id: "shift-2", workstationId: "ws-1", state: "CLOSED" };
+      tx.cashShift.findMany.mockResolvedValue([shift]);
+      tx.cashShift.count.mockResolvedValue(100);
+
+      const result = await service.getShiftHistory({
+        limit: 20,
+        cursor: { id: "shift-1" },
+      });
+
+      expect(result.shifts).toEqual([shift]);
+      // Keyset: skip the cursor row itself and anchor on its id instead of
+      // scanning-and-discarding an OFFSET.
+      expect(tx.cashShift.findMany).toHaveBeenCalledWith({
+        where: { workstationId: "ws-1" },
+        orderBy: [{ openedAt: "desc" }, { id: "desc" }],
+        take: 20,
+        skip: 1,
+        cursor: { id: "shift-1" },
       });
     });
   });

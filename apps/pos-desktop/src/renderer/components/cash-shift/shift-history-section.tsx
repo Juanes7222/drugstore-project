@@ -17,11 +17,13 @@ import { StickyScrollX } from "../ui/sticky-scroll-x";
 export interface ShiftHistorySectionProps {
   history: CashShiftRecord[];
   historyTotal: number;
-  historyOffset: number;
+  /** True while the first page is loading (replaces the whole table). */
   historyLoading: boolean;
-  pageSize: number;
-  onPrevPage: () => void;
-  onNextPage: () => void;
+  /** True while a subsequent page is being appended. */
+  loadingMore: boolean;
+  /** Whether more rows exist past the currently loaded ones. */
+  hasMore: boolean;
+  onLoadMore: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -31,16 +33,12 @@ export interface ShiftHistorySectionProps {
 export const ShiftHistorySection: FC<ShiftHistorySectionProps> = ({
   history,
   historyTotal,
-  historyOffset,
   historyLoading,
-  pageSize,
-  onPrevPage,
-  onNextPage,
+  loadingMore,
+  hasMore,
+  onLoadMore,
 }) => {
   const { t } = useTranslation();
-
-  const totalPages = Math.max(1, Math.ceil(historyTotal / pageSize));
-  const currentPage = Math.floor(historyOffset / pageSize) + 1;
 
   return (
     <section
@@ -179,42 +177,27 @@ export const ShiftHistorySection: FC<ShiftHistorySectionProps> = ({
           </table>
         </StickyScrollX>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
+        {/* Load more */}
+        {hasMore && (
           <div
-            className="flex items-center justify-between rounded-b-pos px-pos-xl py-pos-md"
+            className="flex justify-center rounded-b-pos border-t px-4 py-3"
             style={{
-              borderTop:
-                "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
+              borderColor:
+                "color-mix(in srgb, var(--color-ink) 8%, transparent)",
             }}
           >
-              <button
-                type="button"
-                onClick={onPrevPage}
-                disabled={currentPage <= 1}
-                className="pos-button pos-button-ghost text-body-sm"
-              >
-                {t("common.previous")}
-              </button>
-              <span
-                className="text-caption"
-                style={{ color: "var(--color-ink-muted)" }}
-              >
-                {t("cash_shift.history_page", {
-                  current: currentPage,
-                  total: totalPages,
-                })}
-              </span>
-              <button
-                type="button"
-                onClick={onNextPage}
-                disabled={currentPage >= totalPages}
-                className="pos-button pos-button-ghost text-body-sm"
-              >
-                {t("common.next")}
-              </button>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+              className="pos-button pos-button-secondary text-body-sm"
+            >
+              {loadingMore
+                ? t("common.loading")
+                : t("cash_shift.history_load_more")}
+            </button>
+          </div>
+        )}
         </>
       )}
     </section>

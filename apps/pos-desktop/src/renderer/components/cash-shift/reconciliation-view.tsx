@@ -2,16 +2,19 @@
  * Cash-shift reconciliation view.
  *
  * Displays the reconciliation screen for a cash shift, including the
- * operational-drift banner at the top when adjustments are present.
+ * operational-drift banner at the top when adjustments are present and a
+ * side-by-side fiscal vs operational comparison table underneath.
  * This is a presentational container — the parent page (wired by pos-local)
  * supplies the drift data and mode-toggle callback.
  *
  * @category Component
  */
 
-import { type FC } from "react";
+import { type FC, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { OperationalDriftBanner } from "./operational-drift-banner";
+import { FiscalOperationalComparison } from "./fiscal-operational-comparison";
+import type { ShiftFiscalComparison } from "../../../domain/cash-shift/cash-shift.service";
 
 export interface ReconciliationViewProps {
   /**
@@ -21,7 +24,9 @@ export interface ReconciliationViewProps {
   drift: {
     hasDrift: boolean;
     adjustmentCount: number;
-    driftAmount?: number;
+    driftAmount?: number | string;
+    /** Per-method fiscal/operational totals; renders the comparison table. */
+    totals?: ShiftFiscalComparison["totals"];
   } | null;
   /**
    * Currently active viewing mode.
@@ -51,6 +56,15 @@ export const ReconciliationView: FC<ReconciliationViewProps> = ({
   children,
 }) => {
   const { t } = useTranslation();
+  // The banner toggle reveals/hides the side-by-side comparison table.
+  const [showComparison, setShowComparison] = useState(true);
+
+  const handleToggleView = () => {
+    setShowComparison((visible) => !visible);
+    onToggleView();
+  };
+
+  const comparisonTotals = drift?.hasDrift ? drift.totals : undefined;
 
   return (
     <section
@@ -62,11 +76,23 @@ export const ReconciliationView: FC<ReconciliationViewProps> = ({
         <OperationalDriftBanner
           hasDrift={drift.hasDrift}
           adjustmentCount={drift.adjustmentCount}
-          driftAmount={drift.driftAmount}
-          onToggleView={onToggleView}
+          driftAmount={
+            drift.driftAmount === undefined
+              ? undefined
+              : Number(drift.driftAmount)
+          }
+          onToggleView={handleToggleView}
+          comparisonVisible={showComparison}
           variant="banner"
         />
       )}
+
+      {/* Fiscal vs operational comparison table */}
+      {comparisonTotals &&
+        comparisonTotals.length > 0 &&
+        showComparison && (
+          <FiscalOperationalComparison totals={comparisonTotals} />
+        )}
 
       {/* View-mode indicator */}
       <div className="flex items-center justify-between">
