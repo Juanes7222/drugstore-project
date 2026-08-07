@@ -180,6 +180,37 @@ export function classifyFailure(
 export interface SyncPushService {
   /** Push one batch of pending operations to the server. */
   pushPending(): Promise<{ pushed: number; accepted: number }>;
+  /** Phase 1 — read the batch (DB reads only, no network). */
+  preparePush(): Promise<PushPreparedBatch>;
+  /** Phase 2 — POST the batch to the server (network only, no DB). */
+  sendBatch(prepared: PushPreparedBatch): Promise<PushTransportResult>;
+  /** Phase 3 — apply the transport outcome to the DB (must hold the lock). */
+  applyPushResult(
+    prepared: PushPreparedBatch,
+    transport: PushTransportResult,
+    now: Date,
+  ): Promise<{ pushed: number; accepted: number }>;
+}
+
+/**
+ * Everything `preparePush` gathers, handed to `sendBatch` and
+ * `applyPushResult`. The three-phase split lets the sync scheduler run the
+ * network POST without the PGlite write lock and lock only the DB writes.
+ */
+export interface PushPreparedBatch {
+  entries: SyncEntryForPush[];
+  operations: unknown[];
+  headers: Record<string, string>;
+}
+
+/** Outcome of the network POST, applied to the DB under the lock. */
+export interface PushTransportResult {
+  ok: boolean;
+  status: number | null;
+  statusText: string;
+  bodyText: string;
+  /** Set when `fetch` itself threw — treated as a NETWORK failure. */
+  networkErrorMessage?: string;
 }
 
 export interface SyncPushServiceConfig {
@@ -278,12 +309,25 @@ class SyncPushServiceImpl implements SyncPushService {
   }
 
   async pushPending(): Promise<{ pushed: number; accepted: number }> {
-    const now = new Date();
-    const entries = await this.fetchPendingEntries();
-
-    if (entries.length === 0) {
+    // Convenience for callers that do not orchestrate the PGlite write lock
+    // themselves: prepare (read) → send (network) → apply (write), all
+    // without holding the lock. The sync scheduler calls the three phases
+    // around the lock so a slow server round-trip never blocks foreground
+    // operations.
+    const prepared = await this.preparePush();
+    if (prepared.entries.length === 0) {
       return { pushed: 0, accepted: 0 };
     }
+    const transport = await this.sendBatch(prepared);
+    return this.applyPushResult(prepared, transport, new Date());
+  }
+
+  /**
+   * Phase 1 — read: load the batch of PENDING/retryable entries, serialise
+   * them, and build the request headers. Database reads only; no network.
+   */
+  async preparePush(): Promise<PushPreparedBatch> {
+    const entries = await this.fetchPendingEntries();
 
     const operations = entries.map((entry) => ({
       operationType: entry.operationType,
@@ -304,23 +348,59 @@ class SyncPushServiceImpl implements SyncPushService {
       headers['X-Offline-Token'] = this.offlineToken;
     }
 
-    // --- Perform the HTTP request ---
-    let response: Response;
+    return { entries, operations, headers };
+  }
+
+  /**
+   * Phase 2 — network: POST the batch to `/sync/batch`. No database access;
+   * the transport result is applied later under the lock.
+   */
+  async sendBatch(prepared: PushPreparedBatch): Promise<PushTransportResult> {
     try {
-      response = await fetch(`${this.baseUrl}/sync/batch`, {
+      const response = await fetch(`${this.baseUrl}/sync/batch`, {
         method: 'POST',
-        headers,
-        body: JSON.stringify(operations),
+        headers: prepared.headers,
+        body: JSON.stringify(prepared.operations),
       });
+      const bodyText = await response.text().catch(() => '');
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        bodyText,
+      };
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : 'Network error during sync push';
-      await this.recordBatchFailure(
-        entries,
-        null,
-        'NETWORK',
-        errorMessage,
-      );
+      return {
+        ok: false,
+        status: null,
+        statusText: '',
+        bodyText: '',
+        networkErrorMessage:
+          err instanceof Error ? err.message : 'Network error during sync push',
+      };
+    }
+  }
+
+  /**
+   * Phase 3 — write: apply the transport outcome to the local database
+   * (queue updates, attempt log, entity stamps, audit). Must run under the
+   * PGlite write lock.
+   */
+  async applyPushResult(
+    prepared: PushPreparedBatch,
+    transport: PushTransportResult,
+    now: Date,
+  ): Promise<{ pushed: number; accepted: number }> {
+    const entries = prepared.entries;
+
+    if (entries.length === 0) {
+      return { pushed: 0, accepted: 0 };
+    }
+
+    // The fetch itself threw — network failure.
+    if (transport.networkErrorMessage !== undefined) {
+      const errorMessage = transport.networkErrorMessage;
+      await this.recordBatchFailure(entries, null, 'NETWORK', errorMessage);
       this.auditWriter?.write(LocalAuditEvent.SYNC_PUSH_FAILED, {
         category: 'sync',
         entityType: 'SyncQueue',
@@ -335,30 +415,35 @@ class SyncPushServiceImpl implements SyncPushService {
       return { pushed: entries.length, accepted: 0 };
     }
 
-    const bodyText = await response.text().catch(() => '');
+    const { status, statusText, bodyText } = transport;
 
-    if (response.ok) {
-      return await this.handleOkResponse(entries, response.status, bodyText, now);
+    if (transport.ok) {
+      return await this.handleOkResponse(
+        entries,
+        status ?? 200,
+        bodyText,
+        now,
+      );
     }
 
     // Non-OK response
     let failureCategory: SyncFailureCategory;
-    if (response.status >= 400 && response.status < 500) {
-      failureCategory = classifyFailure(response.status, bodyText);
+    if (status !== null && status >= 400 && status < 500) {
+      failureCategory = classifyFailure(status, bodyText);
       await this.recordBatchFailure(
         entries,
-        response.status,
+        status,
         failureCategory,
-        `Server rejected batch (${response.status}): ${(bodyText || response.statusText).slice(0, 2000)}`,
+        `Server rejected batch (${status}): ${(bodyText || statusText).slice(0, 2000)}`,
       );
     } else {
       // Server error (5xx) or unexpected
       failureCategory = 'NETWORK';
       await this.recordBatchFailure(
         entries,
-        response.status,
+        status,
         failureCategory,
-        `Server error (${response.status}): ${(bodyText || response.statusText).slice(0, 2000)}`,
+        `Server error (${status}): ${(bodyText || statusText).slice(0, 2000)}`,
       );
     }
 
@@ -369,7 +454,7 @@ class SyncPushServiceImpl implements SyncPushService {
         pushedCount: entries.length,
         acceptedCount: 0,
         failureCategory,
-        statusCode: response.status,
+        statusCode: status ?? undefined,
         operationTypes: [...new Set(entries.map((e) => e.operationType))],
       },
     });

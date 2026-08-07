@@ -351,11 +351,13 @@ export class SyncScheduler {
     // skip the immediate push — the next regular tick will catch up.
     if (dbWriteLock.isBackgroundPaused()) return;
 
-    void this.withLock(async () => {
+    void (async () => {
+      // Refresh and the push's network POST run unlocked (network + store
+      // only); only the push's DB writes take the lock.
       await this.refreshAccessToken();
-      await this.pushService.pushPending();
-    }).catch(() => {
-      /* pushPending handles its own errors */
+      await this.runPush();
+    })().catch(() => {
+      /* runPush handles its own errors */
     });
   }
 
@@ -398,12 +400,14 @@ export class SyncScheduler {
     if (!dbWriteLock.isBackgroundPaused()) {
       // 1. Refresh token then immediate push (fire-and-forget).
       //    Refreshing first ensures the push doesn't fail with 401 when the
-      //    access token expired during the offline window.
-      void this.withLock(async () => {
+      //    access token expired during the offline window. The refresh and
+      //    the push's network POST run unlocked (network + store only);
+      //    only the push's DB writes take the lock.
+      void (async () => {
         await this.refreshAccessToken();
-        await this.pushService.pushPending();
-      }).catch(() => {
-        /* pushPending handles its own errors */
+        await this.runPush();
+      })().catch(() => {
+        /* runPush handles its own errors */
       });
 
       // 2. Reset FAILED entries' `nextRetryAt` so they re-enter the
@@ -534,9 +538,9 @@ export class SyncScheduler {
     }
 
     try {
-      await this.withLock(() => this.pushService.pushPending());
+      await this.runPush();
     } catch {
-      // Per-step error handling inside pushPending covers logging.
+      // Per-step error handling inside runPush covers logging.
     }
 
     this.advanceBurstTick();
@@ -580,6 +584,20 @@ export class SyncScheduler {
     } finally {
       dbWriteLock.release();
     }
+  }
+
+  /**
+   * Run one push cycle: prepare (DB read) → send (network) → apply (DB
+   * write under the lock). The HTTP POST never holds the lock, so a slow
+   * server round-trip can't block a foreground sale confirm or shift close.
+   */
+  private async runPush(): Promise<void> {
+    const prepared = await this.pushService.preparePush();
+    if (prepared.entries.length === 0) return;
+    const transport = await this.pushService.sendBatch(prepared);
+    await this.withLock(() =>
+      this.pushService.applyPushResult(prepared, transport, new Date()),
+    );
   }
 
   // -----------------------------------------------------------------------
@@ -785,40 +803,47 @@ export class SyncScheduler {
     }
 
     // 0. Configuration first — business rules (discounts, payment methods,
-    //    sync defaults) must be current before anything else runs.
+    //    sync defaults) must be current before anything else runs. The HTTP
+    //    fetch runs unlocked; only the local write holds the lock.
     try {
-      await this.withLock(() => this.configSync.pullConfiguration());
+      const payload = await this.configSync.fetchConfiguration();
+      await this.withLock(() => this.configSync.applyConfiguration(payload));
     } catch {
       // Logged downstream; continue to push regardless.
     }
 
     // 0.5. Tenant config — the effective config drives field requirements
-    //       and workflow decisions for downstream operations.
+    //       and workflow decisions for downstream operations. Hydrates a
+    //       Zustand store only (no PGlite writes) — no lock needed.
     if (this.tenantConfigSync) {
       try {
-        await this.withLock(() => this.tenantConfigSync!.pullTenantConfig());
+        await this.tenantConfigSync!.pullTenantConfig();
       } catch {
         // Swallow — the store keeps the last known config.
       }
     }
 
-    // 1. Push pending local operations (delegated to SyncPushService)
+    // 1. Push pending local operations (delegated to SyncPushService).
+    //    The network POST runs unlocked; only the queue/attempt writes
+    //    hold the lock.
     try {
-      await this.withLock(() => this.pushService.pushPending());
+      await this.runPush();
     } catch {
       // Logged downstream; continue to pulls regardless.
     }
 
     // 2. Catalog first — lots depend on product references being current.
     try {
-      await this.withLock(() => this.catalogSync.pullCatalog());
+      const payload = await this.catalogSync.fetchCatalog();
+      await this.withLock(() => this.catalogSync.applyCatalog(payload));
     } catch {
       // Logged downstream; continue.
     }
 
     // 3. Lot sync
     try {
-      await this.withLock(() => this.lotSync.pullLots());
+      const lots = await this.lotSync.fetchLots();
+      await this.withLock(() => this.lotSync.applyLots(lots));
     } catch {
       // Logged downstream; continue.
     }
@@ -826,14 +851,16 @@ export class SyncScheduler {
     // 4. Client classifications — must be pulled BEFORE clients so the
     //    FK from Client.classificationId to ClientClassification resolves.
     try {
-      await this.withLock(() => this.clientPull.pullClassifications());
+      const rows = await this.clientPull.fetchClassifications();
+      await this.withLock(() => this.clientPull.applyClassifications(rows));
     } catch {
       // Logged downstream; continue.
     }
 
     // 5. Client pull
     try {
-      await this.withLock(() => this.clientPull.pullClients());
+      const clients = await this.clientPull.fetchClients();
+      await this.withLock(() => this.clientPull.applyClients(clients));
     } catch {
       // Logged downstream; continue.
     }
@@ -841,12 +868,15 @@ export class SyncScheduler {
     // 5. Pull invoice transmission results (only if the invoice service is available)
     if (this.invoiceService) {
       try {
-        const applied = await this.withLock(() =>
-          this.invoiceService!.pullAndApplyResults(
-            this.baseUrl,
-            this.accessToken,
-          ),
+        const results = await this.invoiceService!.fetchInvoiceResults(
+          this.baseUrl,
+          this.accessToken,
         );
+        const applied = results
+          ? await this.withLock(() =>
+              this.invoiceService!.applyInvoiceResults(results),
+            )
+          : 0;
         if (applied > 0) {
           console.info(`[SyncScheduler] Applied ${applied} invoice transmission result(s).`);
         }

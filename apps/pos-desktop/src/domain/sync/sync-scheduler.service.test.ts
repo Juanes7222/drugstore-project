@@ -9,13 +9,12 @@ import { useSyncAuthStatusStore } from "./sync-auth-status.store";
 import { dbWriteLock } from "../../infrastructure/write-lock";
 import type { LocalSession } from "../auth/local-session.store";
 
-// Mock createSyncPushService so it always returns { pushPending: vi.fn() }.
+// Mock createSyncPushService so it always returns a fake push service with
+// the three-phase contract (preparePush / sendBatch / applyPushResult).
 // This prevents updateAccessToken() from overwriting the mock with a real
 // push service, which would fail due to the incomplete Prisma mock.
 vi.mock("./sync-push.service", () => ({
-  createSyncPushService: vi.fn(() => ({
-    pushPending: vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 }),
-  })),
+  createSyncPushService: vi.fn(() => makePushServiceMock()),
 }));
 
 // ---------------------------------------------------------------------------
@@ -30,6 +29,27 @@ const makeMockPrisma = () =>
       aggregate: vi.fn().mockResolvedValue({ _max: { clientSequence: 0n } }),
     },
   } as any);
+
+/**
+ * Fake push service with the three-phase contract. Tests override the
+ * per-phase spies to assert what the scheduler runs (or skips).
+ */
+function makePushServiceMock() {
+  const preparePush = vi.fn().mockResolvedValue({
+    entries: [{ id: "entry-1" }],
+    operations: [],
+    headers: {},
+  });
+  const sendBatch = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    bodyText: "[]",
+  });
+  const applyPushResult = vi.fn().mockResolvedValue({ pushed: 1, accepted: 1 });
+  const pushPending = vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 });
+  return { preparePush, sendBatch, applyPushResult, pushPending };
+}
 
 /** Convenience: create a scheduler with the standard set of mocks. */
 function makeScheduler(overrides?: Partial<Parameters<typeof createSyncScheduler>[0]>) {
@@ -449,17 +469,17 @@ describe("SyncScheduler", () => {
   // -----------------------------------------------------------------------
 
   describe("triggerPush", () => {
-    it("calls refreshAccessToken() before pushPending() when online", async () => {
+    it("refreshes the token before sending the batch when online", async () => {
       seedSession({
         expiresAt: new Date(Date.now() - 60_000), // expired — triggers refresh
       });
 
       // Because createSyncPushService is mocked at module level,
-      // this.pushService.pushPending() always calls this spy — even after
+      // this.pushService.sendBatch() always calls this spy — even after
       // refreshAccessToken() internally calls updateAccessToken().
       const { createSyncPushService } = await import("./sync-push.service");
-      const pushPending = vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 });
-      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+      const push = makePushServiceMock();
+      vi.mocked(createSyncPushService).mockReturnValue(push);
 
       scheduler = makeScheduler();
 
@@ -481,16 +501,16 @@ describe("SyncScheduler", () => {
       );
       expect(refreshCalls.length).toBeGreaterThanOrEqual(1);
 
-      // pushPending was called after refreshAccessToken completed
-      // (guaranteed by sequential await inside withLock callback)
-      expect(pushPending).toHaveBeenCalled();
+      // The batch was sent after refreshAccessToken completed — the network
+      // POST runs after the refresh; only the apply phase takes the lock.
+      expect(push.sendBatch).toHaveBeenCalled();
     });
 
     it("returns early when offline — no refresh, no push", async () => {
       seedSession();
       const { createSyncPushService } = await import("./sync-push.service");
-      const pushPending = vi.fn();
-      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+      const push = makePushServiceMock();
+      vi.mocked(createSyncPushService).mockReturnValue(push);
 
       scheduler = makeScheduler();
 
@@ -503,7 +523,7 @@ describe("SyncScheduler", () => {
 
       scheduler.triggerPush();
 
-      expect(pushPending).not.toHaveBeenCalled();
+      expect(push.sendBatch).not.toHaveBeenCalled();
       const refreshCalls = fetchSpy.mock.calls.filter(
         ([url]) =>
           typeof url === "string" && url.includes("/auth/refresh"),
@@ -521,8 +541,8 @@ describe("SyncScheduler", () => {
     it("syncNow() skips the whole cycle while the background is paused", async () => {
       seedSession();
       const { createSyncPushService } = await import("./sync-push.service");
-      const pushPending = vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 });
-      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+      const push = makePushServiceMock();
+      vi.mocked(createSyncPushService).mockReturnValue(push);
 
       scheduler = makeScheduler();
 
@@ -540,7 +560,7 @@ describe("SyncScheduler", () => {
 
       // The guard sits before refreshAccessToken, so no /auth/refresh fetch
       // and no sync work runs at all — nothing queues behind the close.
-      expect(pushPending).not.toHaveBeenCalled();
+      expect(push.sendBatch).not.toHaveBeenCalled();
       const refreshCalls = fetchSpy.mock.calls.filter(
         ([url]) =>
           typeof url === "string" && url.includes("/auth/refresh"),
@@ -551,8 +571,8 @@ describe("SyncScheduler", () => {
     it("triggerPush() returns early while the background is paused", async () => {
       seedSession();
       const { createSyncPushService } = await import("./sync-push.service");
-      const pushPending = vi.fn();
-      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+      const push = makePushServiceMock();
+      vi.mocked(createSyncPushService).mockReturnValue(push);
 
       scheduler = makeScheduler();
 
@@ -565,7 +585,7 @@ describe("SyncScheduler", () => {
       const fetchSpy = vi.spyOn(globalThis, "fetch");
       scheduler.triggerPush();
 
-      expect(pushPending).not.toHaveBeenCalled();
+      expect(push.sendBatch).not.toHaveBeenCalled();
       const refreshCalls = fetchSpy.mock.calls.filter(
         ([url]) =>
           typeof url === "string" && url.includes("/auth/refresh"),
@@ -579,14 +599,14 @@ describe("SyncScheduler", () => {
   // -----------------------------------------------------------------------
 
   describe("onOnlineEvent", () => {
-    it("calls refreshAccessToken() before pushPending() on offline→online transition", async () => {
+    it("refreshes the token before sending the batch on offline→online transition", async () => {
       seedSession({
         expiresAt: new Date(Date.now() - 60_000), // expired — triggers refresh
       });
 
       const { createSyncPushService } = await import("./sync-push.service");
-      const pushPending = vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 });
-      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+      const push = makePushServiceMock();
+      vi.mocked(createSyncPushService).mockReturnValue(push);
 
       scheduler = makeScheduler();
 
@@ -609,14 +629,14 @@ describe("SyncScheduler", () => {
       );
       expect(refreshCalls.length).toBeGreaterThanOrEqual(1);
 
-      expect(pushPending).toHaveBeenCalled();
+      expect(push.sendBatch).toHaveBeenCalled();
     });
 
     it("no-ops when wasOnline is already true (spurious online event)", async () => {
       seedSession();
       const { createSyncPushService } = await import("./sync-push.service");
-      const pushPending = vi.fn();
-      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+      const push = makePushServiceMock();
+      vi.mocked(createSyncPushService).mockReturnValue(push);
 
       scheduler = makeScheduler();
 
@@ -630,7 +650,7 @@ describe("SyncScheduler", () => {
 
       (scheduler as any).onOnlineEvent();
 
-      expect(pushPending).not.toHaveBeenCalled();
+      expect(push.sendBatch).not.toHaveBeenCalled();
       const refreshCalls = fetchSpy.mock.calls.filter(
         ([url]) =>
           typeof url === "string" && url.includes("/auth/refresh"),

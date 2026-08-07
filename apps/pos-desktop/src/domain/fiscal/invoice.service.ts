@@ -169,6 +169,9 @@ export interface InvoiceService {
    * Pull pending invoice transmission results from the server and apply them
    * locally. Called by the sync scheduler during each sync cycle.
    *
+   * Convenience wrapper over `fetchInvoiceResults` + `applyInvoiceResults`
+   * for callers that do not orchestrate the PGlite write lock themselves.
+   *
    * @param baseUrl  Server base URL
    * @param accessToken  Optional auth token
    * @returns Number of results applied
@@ -177,7 +180,33 @@ export interface InvoiceService {
     baseUrl: string,
     accessToken?: string,
   ): Promise<number>;
+  /**
+   * Network phase of the invoice-results poll. Returns `null` when the
+   * request failed — nothing to apply. No database writes — safe to run
+   * without the PGlite write lock.
+   */
+  fetchInvoiceResults(
+    baseUrl: string,
+    accessToken?: string,
+  ): Promise<InvoiceTransmissionResult[] | null>;
+  /**
+   * Apply phase: write the fetched transmission results locally. Must run
+   * under the PGlite write lock.
+   */
+  applyInvoiceResults(
+    results: InvoiceTransmissionResult[],
+  ): Promise<number>;
 }
+
+/** One row from the server's `/sync/invoice-results` poll. */
+export type InvoiceTransmissionResult = {
+  invoiceId: string;
+  status: 'AUTHORIZED' | 'REJECTED';
+  cufeOfficial?: string;
+  dianXml?: string;
+  rejectionReason?: string;
+  authorizedAt?: string;
+};
 
 export const createInvoiceService = (
   config: InvoiceServiceConfig,
@@ -664,70 +693,88 @@ class InvoiceServiceImpl implements InvoiceService {
     baseUrl: string,
     accessToken?: string,
   ): Promise<number> {
+    // Convenience: fetch + apply without orchestrating the PGlite write
+    // lock. The sync scheduler calls the phases separately so the HTTP
+    // request never holds the lock.
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
-      }
-
-      // Get the most recent transmitted result timestamp for this workstation
-      const latestResult = await this.prisma.invoice.findFirst({
-        where: {
-          workstationId: this.workstationId,
-          transmittedAt: { not: null },
-        },
-        orderBy: { transmittedAt: 'desc' as const },
-        select: { transmittedAt: true },
-      });
-
-      const since = latestResult?.transmittedAt?.toISOString() ?? new Date(0).toISOString();
-      const normalizedBase = baseUrl.replace(/\/+$/, '');
-      const url = `${normalizedBase}/sync/invoice-results?workstationId=${encodeURIComponent(this.workstationId)}&since=${encodeURIComponent(since)}`;
-
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        console.warn(`[InvoiceService] Poll invoice results failed: ${response.status}`);
-        return 0;
-      }
-
-      const results = (await response.json()) as Array<{
-        invoiceId: string;
-        status: 'AUTHORIZED' | 'REJECTED';
-        cufeOfficial?: string;
-        dianXml?: string;
-        rejectionReason?: string;
-        authorizedAt?: string;
-      }>;
-
-      let appliedCount = 0;
-      for (const result of results) {
-        try {
-          await this.applyTransmissionResult({
-            invoiceId: result.invoiceId,
-            status: result.status === 'AUTHORIZED'
-              ? 'TRANSMITTED_AUTHORIZED'
-              : 'TRANSMITTED_REJECTED',
-            cufeOfficial: result.cufeOfficial,
-            dianXml: result.dianXml,
-            rejectionReason: result.rejectionReason,
-            authorizedAt: result.authorizedAt,
-          });
-          appliedCount++;
-        } catch (err) {
-          console.error(
-            `[InvoiceService] Failed to apply result for invoice ${result.invoiceId}:`,
-            err instanceof Error ? err.message : err,
-          );
-        }
-      }
-
-      return appliedCount;
+      const results = await this.fetchInvoiceResults(baseUrl, accessToken);
+      if (!results) return 0;
+      return await this.applyInvoiceResults(results);
     } catch (err) {
       console.error('[InvoiceService] pullAndApplyResults error:', err);
       return 0;
     }
+  }
+
+  /**
+   * Network phase: read the last transmitted timestamp and poll the server
+   * for pending invoice transmission results. Returns `null` when the
+   * request failed or the server responded non-OK (nothing to apply).
+   */
+  async fetchInvoiceResults(
+    baseUrl: string,
+    accessToken?: string,
+  ): Promise<InvoiceTransmissionResult[] | null> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+
+    // Get the most recent transmitted result timestamp for this workstation
+    const latestResult = await this.prisma.invoice.findFirst({
+      where: {
+        workstationId: this.workstationId,
+        transmittedAt: { not: null },
+      },
+      orderBy: { transmittedAt: 'desc' as const },
+      select: { transmittedAt: true },
+    });
+
+    const since = latestResult?.transmittedAt?.toISOString() ?? new Date(0).toISOString();
+    const normalizedBase = baseUrl.replace(/\/+$/, '');
+    const url = `${normalizedBase}/sync/invoice-results?workstationId=${encodeURIComponent(this.workstationId)}&since=${encodeURIComponent(since)}`;
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      console.warn(`[InvoiceService] Poll invoice results failed: ${response.status}`);
+      return null;
+    }
+
+    return (await response.json()) as InvoiceTransmissionResult[];
+  }
+
+  /**
+   * Apply phase: write every fetched transmission result to the local
+   * database. Must run under the PGlite write lock.
+   */
+  async applyInvoiceResults(
+    results: InvoiceTransmissionResult[],
+  ): Promise<number> {
+    let appliedCount = 0;
+    for (const result of results) {
+      try {
+        await this.applyTransmissionResult({
+          invoiceId: result.invoiceId,
+          status: result.status === 'AUTHORIZED'
+            ? 'TRANSMITTED_AUTHORIZED'
+            : 'TRANSMITTED_REJECTED',
+          cufeOfficial: result.cufeOfficial,
+          dianXml: result.dianXml,
+          rejectionReason: result.rejectionReason,
+          authorizedAt: result.authorizedAt,
+        });
+        appliedCount++;
+      } catch (err) {
+        console.error(
+          `[InvoiceService] Failed to apply result for invoice ${result.invoiceId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
+    return appliedCount;
   }
 
   private async buildSaleSnapshot(

@@ -13,23 +13,41 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 // ---------------------------------------------------------------------------
 
 vi.mock("../configuration/config-sync.service", () => ({
-  createConfigSyncService: vi.fn(() => ({ pullConfiguration: vi.fn() })),
+  createConfigSyncService: vi.fn(() => ({
+    fetchConfiguration: vi.fn(),
+    applyConfiguration: vi.fn(),
+  })),
 }));
 
 vi.mock("../catalog/catalog-sync.service", () => ({
-  createCatalogSyncService: vi.fn(() => ({ pullCatalog: vi.fn() })),
+  createCatalogSyncService: vi.fn(() => ({
+    fetchCatalog: vi.fn(),
+    applyCatalog: vi.fn(),
+  })),
 }));
 
 vi.mock("../inventory-lots/lot-sync.service", () => ({
-  createLotSyncService: vi.fn(() => ({ pullLots: vi.fn() })),
+  createLotSyncService: vi.fn(() => ({
+    fetchLots: vi.fn(),
+    applyLots: vi.fn(),
+  })),
 }));
 
 vi.mock("../clients/client-pull.service", () => ({
-  createClientPullService: vi.fn(() => ({ pullClients: vi.fn() })),
+  createClientPullService: vi.fn(() => ({
+    fetchClassifications: vi.fn(),
+    applyClassifications: vi.fn(),
+    fetchClients: vi.fn(),
+    applyClients: vi.fn(),
+  })),
 }));
 
 vi.mock("./sync-push.service", () => ({
-  createSyncPushService: vi.fn(() => ({ pushPending: vi.fn() })),
+  createSyncPushService: vi.fn(() => ({
+    preparePush: vi.fn(),
+    sendBatch: vi.fn(),
+    applyPushResult: vi.fn(),
+  })),
 }));
 
 vi.mock("./sync-metrics.service", () => ({
@@ -199,27 +217,52 @@ describe("SyncScheduler.updateAccessToken", () => {
     });
 
     it("fires a sync tick with the updated sub-services", async () => {
-      // Fresh spies for the sub-service methods that tick() calls
-      const pullConfiguration = vi.fn().mockResolvedValue(undefined);
-      const pushPending = vi.fn().mockResolvedValue(undefined);
-      const pullCatalog = vi.fn().mockResolvedValue(undefined);
-      const pullLots = vi.fn().mockResolvedValue(undefined);
-      const pullClients = vi.fn().mockResolvedValue(undefined);
+      // Fresh spies for the fetch/apply phase methods that tick() calls
+      const fetchConfiguration = vi.fn().mockResolvedValue({});
+      const applyConfiguration = vi.fn().mockResolvedValue(undefined);
+      const preparePush = vi
+        .fn()
+        .mockResolvedValue({ entries: [{ id: "entry-1" }], operations: [], headers: {} });
+      const sendBatch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        bodyText: "[]",
+      });
+      const applyPushResult = vi.fn().mockResolvedValue({ pushed: 1, accepted: 1 });
+      const fetchCatalog = vi.fn().mockResolvedValue({});
+      const applyCatalog = vi.fn().mockResolvedValue(undefined);
+      const fetchLots = vi.fn().mockResolvedValue([]);
+      const applyLots = vi.fn().mockResolvedValue(undefined);
+      const fetchClassifications = vi.fn().mockResolvedValue([]);
+      const applyClassifications = vi.fn().mockResolvedValue(undefined);
+      const fetchClients = vi.fn().mockResolvedValue([]);
+      const applyClients = vi.fn().mockResolvedValue(undefined);
 
       // Wire the spies as return values so both constructor AND
       // updateAccessToken() produce services wired to these spies.
       vi.mocked(createConfigSyncService).mockReturnValue({
-        pullConfiguration,
+        fetchConfiguration,
+        applyConfiguration,
       } as any);
       vi.mocked(createCatalogSyncService).mockReturnValue({
-        pullCatalog,
+        fetchCatalog,
+        applyCatalog,
       } as any);
-      vi.mocked(createLotSyncService).mockReturnValue({ pullLots } as any);
+      vi.mocked(createLotSyncService).mockReturnValue({
+        fetchLots,
+        applyLots,
+      } as any);
       vi.mocked(createClientPullService).mockReturnValue({
-        pullClients,
+        fetchClassifications,
+        applyClassifications,
+        fetchClients,
+        applyClients,
       } as any);
       vi.mocked(createSyncPushService).mockReturnValue({
-        pushPending,
+        preparePush,
+        sendBatch,
+        applyPushResult,
       } as any);
 
       // Ensure isOnline() returns true so tick() does not bail early
@@ -234,11 +277,20 @@ describe("SyncScheduler.updateAccessToken", () => {
       // syncNow() calls tick() — the full sync cycle
       await scheduler.syncNow();
 
-      expect(pullConfiguration).toHaveBeenCalledOnce();
-      expect(pushPending).toHaveBeenCalledOnce();
-      expect(pullCatalog).toHaveBeenCalledOnce();
-      expect(pullLots).toHaveBeenCalledOnce();
-      expect(pullClients).toHaveBeenCalledOnce();
+      // Network phases run first; their apply phases then run under the lock.
+      expect(fetchConfiguration).toHaveBeenCalledOnce();
+      expect(applyConfiguration).toHaveBeenCalledOnce();
+      expect(preparePush).toHaveBeenCalledOnce();
+      expect(sendBatch).toHaveBeenCalledOnce();
+      expect(applyPushResult).toHaveBeenCalledOnce();
+      expect(fetchCatalog).toHaveBeenCalledOnce();
+      expect(applyCatalog).toHaveBeenCalledOnce();
+      expect(fetchLots).toHaveBeenCalledOnce();
+      expect(applyLots).toHaveBeenCalledOnce();
+      expect(fetchClassifications).toHaveBeenCalledOnce();
+      expect(applyClassifications).toHaveBeenCalledOnce();
+      expect(fetchClients).toHaveBeenCalledOnce();
+      expect(applyClients).toHaveBeenCalledOnce();
     });
   });
 });

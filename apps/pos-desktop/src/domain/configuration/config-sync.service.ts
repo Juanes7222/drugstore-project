@@ -147,23 +147,43 @@ export class ConfigSyncService {
   /**
    * Pull the full configuration payload from the server.
    *
-   * 1. Fetches `GET /configuration/pos-settings`.
-   * 2. Upserts payment methods into the local database (transactional).
-   * 3. Hydrates the Zustand store with the rest of the payload.
+   * Convenience wrapper over `fetchConfiguration` + `applyConfiguration`
+   * for callers that do not orchestrate the PGlite write lock themselves.
+   * The sync scheduler calls the two phases separately so the HTTP request
+   * never holds the lock.
    *
    * Safe to call when offline — returns early without throwing.
-   * If the HTTP call succeeds but the Prisma transaction fails, the
-   * Zustand store is NOT updated (no partial state).
    */
   async pullConfiguration(): Promise<void> {
     if (!isOnline()) return;
+    const payload = await this.fetchConfiguration();
+    await this.applyConfiguration(payload);
+  }
 
+  /**
+   * Network phase: fetch `GET /configuration/pos-settings`.
+   *
+   * No database access — safe to run without the PGlite write lock so a
+   * slow server response never blocks foreground operations.
+   */
+  async fetchConfiguration(): Promise<PosSettingsPayload> {
     const authHeaders = this.buildAuthHeaders();
-    const payload = await this.http.get<PosSettingsPayload>(
+    return this.http.get<PosSettingsPayload>(
       `${this.baseUrl}/configuration/pos-settings`,
       authHeaders,
     );
+  }
 
+  /**
+   * Apply phase: write the fetched payload locally.
+   *
+   * 1. Upserts payment methods into the local database (transactional).
+   * 2. Hydrates the Zustand store with the rest of the payload.
+   *
+   * If the Prisma transaction fails, the Zustand store is NOT updated
+   * (no partial state). Must run under the PGlite write lock.
+   */
+  async applyConfiguration(payload: PosSettingsPayload): Promise<void> {
     // Step 1: upsert payment methods inside a transaction
     // If this throws, the Zustand store is never touched.
     await this.paymentMethodSync.syncPaymentMethods(payload.paymentMethods);

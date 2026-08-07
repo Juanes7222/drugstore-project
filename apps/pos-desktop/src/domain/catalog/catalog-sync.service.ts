@@ -102,23 +102,31 @@ export class CatalogSyncService {
   /**
    * Pull the full product catalog from the server into the local database.
    *
-   * - Fetches categories, pharmaceutical forms, tax schemes, and paginated
-   *   products.
-   * - Upserts every row inside a single local transaction (all-or-nothing).
-   * - Records `catalogLastSyncedAt` on success.
+   * Convenience wrapper over `fetchCatalog` + `applyCatalog` for callers
+   * that do not orchestrate the PGlite write lock themselves. The sync
+   * scheduler calls the two phases separately so the paginated product
+   * fetches never hold the lock.
    *
    * Safe to call when offline — returns early without throwing.
-   * Safe to call concurrently — conflicts are handled by the single
-   * transaction wrapping all upserts.
-   *
-   * Tax schemes are seeded in the local database at init time
-   * (`local-database.ts`) so the app works fully offline.  This sync step
-   * overwrites seed rows with the server's authoritative data (matched by
-   * id).  If the server endpoint is unreachable the seed data survives.
    */
   async pullCatalog(): Promise<void> {
     if (!isOnline()) return;
+    const payload = await this.fetchCatalog();
+    await this.applyCatalog(payload);
+  }
 
+  /**
+   * Network phase: fetch categories, pharmaceutical forms, tax schemes and
+   * every paginated product from the server.
+   *
+   * No database access — safe to run without the PGlite write lock so a
+   * slow server response never blocks foreground operations.
+   *
+   * Tax schemes are seeded in the local database at init time
+   * (`local-database.ts`) so the app works fully offline.  If the server
+   * endpoint is unreachable the seed data survives.
+   */
+  async fetchCatalog(): Promise<CatalogSyncPayload> {
     const authHeaders = this.buildAuthHeaders();
 
     // Fetch reference data (categories + forms + tax schemes) in parallel
@@ -130,6 +138,17 @@ export class CatalogSyncService {
 
     // Fetch all products — paginate through the server
     const products = await this.fetchAllProducts(authHeaders);
+
+    return { categories, pharmaceuticalForms, taxSchemes, products };
+  }
+
+  /**
+   * Apply phase: upsert the fetched catalog rows inside a single local
+   * transaction (all-or-nothing) and record `catalogLastSyncedAt`.
+   * Must run under the PGlite write lock.
+   */
+  async applyCatalog(payload: CatalogSyncPayload): Promise<void> {
+    const { categories, pharmaceuticalForms, taxSchemes, products } = payload;
 
     // Upsert everything inside one local transaction
     await this.prisma.$transaction(async (tx) => {
@@ -371,6 +390,21 @@ export class CatalogSyncService {
 
     return all;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Payload carried between the fetch (network) and apply (write) phases
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything `fetchCatalog` downloads from the server, handed to
+ * `applyCatalog` for the locked local write.
+ */
+interface CatalogSyncPayload {
+  categories: unknown[];
+  pharmaceuticalForms: unknown[];
+  taxSchemes: unknown[];
+  products: unknown[];
 }
 
 // ---------------------------------------------------------------------------

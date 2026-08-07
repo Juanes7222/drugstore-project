@@ -70,20 +70,35 @@ export class LotSyncService {
   /**
    * Pull active lots from the server into the local database.
    *
-   * - Fetches paginated lots from `GET /inventory-lots/lots` (all states,
-   *   sorted by expiration date ascending).
-   * - Upserts every row inside a single local transaction.
-   * - Records `lotsLastSyncedAt` on success.
+   * Convenience wrapper over `fetchLots` + `applyLots` for callers that do
+   * not orchestrate the PGlite write lock themselves. The sync scheduler
+   * calls the two phases separately so the paginated fetches never hold
+   * the lock.
    *
    * Safe to call when offline — returns early without throwing.
-   * Safe to call concurrently — the transaction serialises all upserts.
    */
   async pullLots(): Promise<void> {
     if (!isOnline()) return;
+    const lots = await this.fetchLots();
+    await this.applyLots(lots);
+  }
 
+  /**
+   * Network phase: fetch every lot from `GET /inventory-lots/lots` (all
+   * states, sorted by expiration date ascending).
+   *
+   * No database access — safe to run without the PGlite write lock.
+   */
+  async fetchLots(): Promise<unknown[]> {
     const authHeaders = this.buildAuthHeaders();
-    const lots = await this.fetchAllLots(authHeaders);
+    return this.fetchAllLots(authHeaders);
+  }
 
+  /**
+   * Apply phase: upsert the fetched lots inside a single local transaction
+   * and record `lotsLastSyncedAt`. Must run under the PGlite write lock.
+   */
+  async applyLots(lots: unknown[]): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       for (const lot of lots as LotRow[]) {
         await tx.lot.upsert({

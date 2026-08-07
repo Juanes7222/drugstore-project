@@ -74,21 +74,35 @@ export class ClientPullService {
    */
   async pullClassifications(): Promise<void> {
     if (!isOnline()) return;
+    const rows = await this.fetchClassifications();
+    await this.applyClassifications(rows);
+  }
 
+  /**
+   * Network phase: fetch all classifications from
+   * `GET /clients/classifications/all`. No database access — safe to run
+   * without the PGlite write lock.
+   */
+  async fetchClassifications(): Promise<ClassificationRow[]> {
     const authHeaders = this.buildAuthHeaders();
-
-    const response = await this.http.get<ClassificationRow[]>(
+    return this.http.get<ClassificationRow[]>(
       `${this.baseUrl}/clients/classifications/all`,
       authHeaders,
     );
+  }
 
-    if (response.length === 0) {
+  /**
+   * Apply phase: upsert the fetched classifications and record
+   * `classificationsLastSyncedAt`. Must run under the PGlite write lock.
+   */
+  async applyClassifications(rows: ClassificationRow[]): Promise<void> {
+    if (rows.length === 0) {
       setClassificationsLastSyncedAt(new Date().toISOString());
       return;
     }
 
     await this.prisma.$transaction(async (tx) => {
-      for (const cls of response) {
+      for (const cls of rows) {
         await tx.clientClassification.upsert({
           where: { id: cls.id },
           create: mapClassificationForCreate(cls),
@@ -112,11 +126,26 @@ export class ClientPullService {
    */
   async pullClients(): Promise<void> {
     if (!isOnline()) return;
+    const clients = await this.fetchClients();
+    await this.applyClients(clients);
+  }
 
+  /**
+   * Network phase: fetch all clients from the paginated `/clients/sync`
+   * endpoint, filtered by the last successful pull timestamp. No database
+   * access — safe to run without the PGlite write lock.
+   */
+  async fetchClients(): Promise<ClientRow[]> {
     const authHeaders = this.buildAuthHeaders();
     const since = getClientsLastSyncedAt();
-    const clients = await this.fetchAllClients(authHeaders, since);
+    return (await this.fetchAllClients(authHeaders, since)) as ClientRow[];
+  }
 
+  /**
+   * Apply phase: batch-upsert the fetched clients and record
+   * `clientsLastSyncedAt`. Must run under the PGlite write lock.
+   */
+  async applyClients(clients: ClientRow[]): Promise<void> {
     if (clients.length === 0) {
       // No new or updated clients — still update the timestamp so the
       // next pull does not re-request the same empty window.
@@ -124,7 +153,7 @@ export class ClientPullService {
       return;
     }
 
-    const rows = clients as ClientRow[];
+    const rows = clients;
 
     // Build a set of known local classification IDs so we can null out
     // any FK reference that doesn't exist locally (defensive — the
