@@ -6,6 +6,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { createSyncScheduler, SyncScheduler } from "./sync-scheduler.service";
 import { useLocalSessionStore } from "../auth/local-session.store";
 import { useSyncAuthStatusStore } from "./sync-auth-status.store";
+import { dbWriteLock } from "../../infrastructure/write-lock";
 import type { LocalSession } from "../auth/local-session.store";
 
 // Mock createSyncPushService so it always returns { pushPending: vi.fn() }.
@@ -500,6 +501,68 @@ describe("SyncScheduler", () => {
 
       const fetchSpy = vi.spyOn(globalThis, "fetch");
 
+      scheduler.triggerPush();
+
+      expect(pushPending).not.toHaveBeenCalled();
+      const refreshCalls = fetchSpy.mock.calls.filter(
+        ([url]) =>
+          typeof url === "string" && url.includes("/auth/refresh"),
+      );
+      expect(refreshCalls).toHaveLength(0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Shift-close background pause — sync steps skip while a close holds the
+  // lock through its full-DB backup (write-lock cooperative pause).
+  // -----------------------------------------------------------------------
+
+  describe("shift-close background pause", () => {
+    it("syncNow() skips the whole cycle while the background is paused", async () => {
+      seedSession();
+      const { createSyncPushService } = await import("./sync-push.service");
+      const pushPending = vi.fn().mockResolvedValue({ pushed: 0, accepted: 0 });
+      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+
+      scheduler = makeScheduler();
+
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        configurable: true,
+      });
+      (scheduler as any).wasOnline = true;
+
+      // Simulate a shift close running: the background is paused.
+      vi.spyOn(dbWriteLock, "isBackgroundPaused").mockReturnValue(true);
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      await scheduler.syncNow();
+
+      // The guard sits before refreshAccessToken, so no /auth/refresh fetch
+      // and no sync work runs at all — nothing queues behind the close.
+      expect(pushPending).not.toHaveBeenCalled();
+      const refreshCalls = fetchSpy.mock.calls.filter(
+        ([url]) =>
+          typeof url === "string" && url.includes("/auth/refresh"),
+      );
+      expect(refreshCalls).toHaveLength(0);
+    });
+
+    it("triggerPush() returns early while the background is paused", async () => {
+      seedSession();
+      const { createSyncPushService } = await import("./sync-push.service");
+      const pushPending = vi.fn();
+      vi.mocked(createSyncPushService).mockReturnValue({ pushPending });
+
+      scheduler = makeScheduler();
+
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        configurable: true,
+      });
+      vi.spyOn(dbWriteLock, "isBackgroundPaused").mockReturnValue(true);
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
       scheduler.triggerPush();
 
       expect(pushPending).not.toHaveBeenCalled();

@@ -347,6 +347,9 @@ export class SyncScheduler {
    */
   triggerPush(): void {
     if (!isOnline()) return;
+    // A shift close is running (it pauses the background around its backup);
+    // skip the immediate push — the next regular tick will catch up.
+    if (dbWriteLock.isBackgroundPaused()) return;
 
     void this.withLock(async () => {
       await this.refreshAccessToken();
@@ -387,24 +390,31 @@ export class SyncScheduler {
     }
     this.wasOnline = online;
 
-    // 1. Refresh token then immediate push (fire-and-forget).
-    //    Refreshing first ensures the push doesn't fail with 401 when the
-    //    access token expired during the offline window.
-    void this.withLock(async () => {
-      await this.refreshAccessToken();
-      await this.pushService.pushPending();
-    }).catch(() => {
-      /* pushPending handles its own errors */
-    });
+    // A shift close pauses the background around its backup-heavy critical
+    // section. During that window the immediate push and the retry-timer
+    // reset would only queue behind it, so skip both — the burst ticks and
+    // the regular cycle will catch up. The burst is still armed below (timers
+    // only, no DB work).
+    if (!dbWriteLock.isBackgroundPaused()) {
+      // 1. Refresh token then immediate push (fire-and-forget).
+      //    Refreshing first ensures the push doesn't fail with 401 when the
+      //    access token expired during the offline window.
+      void this.withLock(async () => {
+        await this.refreshAccessToken();
+        await this.pushService.pushPending();
+      }).catch(() => {
+        /* pushPending handles its own errors */
+      });
 
-    // 2. Reset FAILED entries' `nextRetryAt` so they re-enter the
-    //    push pipeline on the very next push. This is the single
-    //    change that turns "wait up to 30 minutes for the next
-    //    exponential-backoff window" into "drained within ~10
-    //    seconds". A push failure during the burst will rewrite
-    //    `nextRetryAt` again via `recordBatchFailure`; the reset
-    //    only affects entries that were waiting on a stale backoff.
-    void this.resetFailedRetryTimers();
+      // 2. Reset FAILED entries' `nextRetryAt` so they re-enter the
+      //    push pipeline on the very next push. This is the single
+      //    change that turns "wait up to 30 minutes for the next
+      //    exponential-backoff window" into "drained within ~10
+      //    seconds". A push failure during the burst will rewrite
+      //    `nextRetryAt` again via `recordBatchFailure`; the reset
+      //    only affects entries that were waiting on a stale backoff.
+      void this.resetFailedRetryTimers();
+    }
 
     // 3. Arm the burst.
     this.armBurst();
@@ -499,6 +509,14 @@ export class SyncScheduler {
       return;
     }
 
+    // Shift-close pause: the close holds the lock through a full DB backup.
+    // Skip this tick's push rather than queue behind it; the tick is still
+    // consumed so the burst cadence stays on schedule.
+    if (dbWriteLock.isBackgroundPaused()) {
+      this.advanceBurstTick();
+      return;
+    }
+
     // Reconcile orphan products before pushing sales-of-them, so the
     // server's SALE_CONFIRMATION validator finds the referenced
     // products. Failures here are non-fatal; the push step still
@@ -521,6 +539,15 @@ export class SyncScheduler {
       // Per-step error handling inside pushPending covers logging.
     }
 
+    this.advanceBurstTick();
+  }
+
+  /**
+   * Consume one burst tick and re-arm the next one (or finish the burst
+   * when the phase budget is exhausted). Shared by the normal path and the
+   * shift-close pause so a skipped tick still advances the cadence.
+   */
+  private advanceBurstTick(): void {
     this.burstTicksRemaining -= 1;
     if (this.burstTicksRemaining === 0) {
       // Phase boundary: fast → slow, then slow → end.
@@ -741,6 +768,11 @@ export class SyncScheduler {
     }
 
     if (!online) return;
+
+    // Shift-close pause: the close's critical section (a full DB backup) can
+    // hold the lock for seconds. Skip the whole cycle instead of queueing
+    // step after step behind it — the next scheduled tick resumes normally.
+    if (dbWriteLock.isBackgroundPaused()) return;
 
     // Refresh the access token if needed before running any sync operations.
     // If the token could not be refreshed (offline, server error) the

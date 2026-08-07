@@ -417,8 +417,9 @@ export class SalesPosService {
 
     // Acquire the PGlite write lock so no sync step runs concurrently.
     // This guarantees the $transaction never contends for the single
-    // connection — sale confirm completes in real time.
-    await dbWriteLock.acquire();
+    // connection — sale confirm completes in real time. Foreground priority:
+    // a user action never waits behind queued background sync steps.
+    await dbWriteLock.acquire('foreground');
     try {
       let lastError: unknown;
       for (let attempt = 1; attempt <= SalesPosService.MAX_CONFIRM_RETRIES; attempt++) {
