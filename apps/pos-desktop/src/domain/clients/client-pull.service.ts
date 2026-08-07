@@ -126,24 +126,6 @@ export class ClientPullService {
 
     const rows = clients as ClientRow[];
 
-    // Look up existing local clients by business key once, then batch.
-    const existingMap = new Map<string, string>();
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    if (rows.length > 0) {
-      const all = await this.prisma.client.findMany({
-        where: {
-          OR: rows.map((c) => ({
-            identificationType: c.identificationType,
-            identificationNumber: c.identificationNumber,
-          })),
-        } as any,
-        select: { identificationType: true, identificationNumber: true, id: true },
-      });
-      for (const e of all) {
-        existingMap.set(`${e.identificationType}::${e.identificationNumber}`, e.id);
-      }
-    }
-
     // Build a set of known local classification IDs so we can null out
     // any FK reference that doesn't exist locally (defensive — the
     // classification sync may not have run yet or may be outdated).
@@ -155,28 +137,14 @@ export class ClientPullService {
       for (const c of all) knownClassificationIds.add(c.id);
     }
 
+    // Batch upsert in chunks. The unique index on
+    // (identificationType, identificationNumber) makes ON CONFLICT resolve
+    // insert-vs-update in a single statement per chunk, so the old
+    // thousands-entry OR lookup and the per-row create/update loop are gone.
     await this.prisma.$transaction(async (tx) => {
-      for (const client of rows) {
-        // Null out classificationId if the target classification does not
-        // exist locally — avoids FK constraint violations when the server
-        // references a classification we haven't synced yet.
-        if (client.classificationId && !knownClassificationIds.has(client.classificationId)) {
-          client.classificationId = null;
-        }
-
-        const key = `${client.identificationType}::${client.identificationNumber}`;
-        const existingId = existingMap.get(key);
-
-        if (existingId) {
-          await tx.client.update({
-            where: { id: existingId },
-            data: mapClientForUpdate(client),
-          });
-        } else {
-          await tx.client.create({
-            data: mapClientForCreate(client),
-          });
-        }
+      for (let i = 0; i < rows.length; i += CLIENT_UPSERT_BATCH_SIZE) {
+        const chunk = rows.slice(i, i + CLIENT_UPSERT_BATCH_SIZE);
+        await upsertClientsChunk(tx, chunk, knownClassificationIds);
       }
     });
 
@@ -286,47 +254,127 @@ interface ClientRow {
   dataSubjectRequestAt: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Batch upsert helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Rows per INSERT ... ON CONFLICT statement.
+ *
+ * Keeps the statement (and its parameter count) bounded so PostgreSQL never
+ * approaches the 65 535 parameter limit and PGlite's single connection is
+ * held for short bursts instead of one giant statement.
+ */
+const CLIENT_UPSERT_BATCH_SIZE = 500;
+
+/**
+ * (column-name, cast) pairs for the batch INSERT. Enum and JSONB columns
+ * need explicit casts because the parameters arrive as text.
+ */
+const CLIENT_UPSERT_COLUMNS: ReadonlyArray<readonly [string, string?]> = [
+  ['"id"'],
+  ['"fullName"'],
+  ['"identificationType"', '"IdentificationType"'],
+  ['"identificationNumber"'],
+  ['"email"'],
+  ['"phone"'],
+  ['"address"'],
+  ['"municipality"'],
+  ['"department"'],
+  ['"isActive"'],
+  ['"classificationId"'],
+  ['"createdById"'],
+  ['"updatedById"'],
+  ['"consentGivenAt"', 'timestamp(3)'],
+  ['"consentVersion"'],
+  ['"consentScope"', 'jsonb'],
+  ['"dataSubjectRequestStatus"', '"DataSubjectRequestStatus"'],
+  ['"dataSubjectRequestAt"', 'timestamp(3)'],
+  ['"createdAt"', 'timestamp(3)'],
+  ['"updatedAt"', 'timestamp(3)'],
+] as const;
+
+/**
+ * Upsert a chunk of client rows in a single INSERT ... ON CONFLICT statement.
+ *
+ * The conflict target is the local unique index
+ * (identificationType, identificationNumber), which is the same business key
+ * the old OR lookup used. `id`, `createdAt` and `createdById` are
+ * intentionally NOT updated on conflict so an existing local row keeps its
+ * identity, mirroring the previous update-by-existing-id behaviour.
+ */
+async function upsertClientsChunk(
+  tx: Prisma.TransactionClient,
+  rows: ClientRow[],
+  knownClassificationIds: Set<string>,
+): Promise<void> {
+  const tuples: string[] = [];
+  const values: unknown[] = [];
+
+  for (const client of rows) {
+    // Null out classificationId if the target classification does not exist
+    // locally — avoids FK constraint violations when the server references a
+    // classification we haven't synced yet.
+    const classificationId =
+      client.classificationId && knownClassificationIds.has(client.classificationId)
+        ? client.classificationId
+        : null;
+
+    const rowValues = [
+      client.id,
+      client.fullName,
+      client.identificationType,
+      client.identificationNumber,
+      client.email ?? null,
+      client.phone ?? null,
+      client.address ?? null,
+      client.municipality ?? null,
+      client.department ?? null,
+      client.isActive,
+      classificationId,
+      client.createdById,
+      client.updatedById ?? null,
+      client.consentGivenAt ? new Date(client.consentGivenAt).toISOString() : null,
+      client.consentVersion ?? null,
+      client.consentScope ? JSON.stringify(client.consentScope) : null,
+      client.dataSubjectRequestStatus,
+      client.dataSubjectRequestAt ? new Date(client.dataSubjectRequestAt).toISOString() : null,
+      new Date(client.createdAt).toISOString(),
+      new Date(client.updatedAt).toISOString(),
+    ];
+
+    const base = values.length;
+    const placeholders = CLIENT_UPSERT_COLUMNS.map(([, cast], index) => {
+      const placeholder = `$${base + index + 1}`;
+      return cast ? `${placeholder}::${cast}` : placeholder;
+    });
+    tuples.push(`(${placeholders.join(', ')})`);
+    values.push(...rowValues);
+  }
+
+  if (tuples.length === 0) return;
+
+  const columns = CLIENT_UPSERT_COLUMNS.map(([name]) => name).join(', ');
+  const updateSet = CLIENT_UPSERT_COLUMNS
+    .filter(
+      ([name]) =>
+        name !== '"id"' &&
+        name !== '"createdAt"' &&
+        name !== '"createdById"',
+    )
+    .map(([name]) => `${name} = EXCLUDED.${name}`)
+    .join(', ');
+
+  await tx.$executeRawUnsafe(
+    `INSERT INTO "Client" (${columns})
+     VALUES ${tuples.join(', ')}
+     ON CONFLICT ("identificationType", "identificationNumber") DO UPDATE SET
+       ${updateSet}`,
+    ...values,
+  );
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
-const mapClientForCreate = (client: ClientRow): any => ({
-  id: client.id,
-  fullName: client.fullName,
-  identificationType: client.identificationType,
-  identificationNumber: client.identificationNumber,
-  email: client.email ?? null,
-  phone: client.phone ?? null,
-  address: client.address ?? null,
-  municipality: client.municipality ?? null,
-  department: client.department ?? null,
-  isActive: client.isActive,
-  classificationId: client.classificationId ?? null,
-  createdById: client.createdById,
-  updatedById: client.updatedById ?? null,
-  consentGivenAt: client.consentGivenAt ? new Date(client.consentGivenAt) : null,
-  consentVersion: client.consentVersion ?? null,
-  consentScope: client.consentScope ?? Prisma.DbNull,
-  dataSubjectRequestStatus: client.dataSubjectRequestStatus,
-  dataSubjectRequestAt: client.dataSubjectRequestAt ? new Date(client.dataSubjectRequestAt) : null,
-});
-
-const mapClientForUpdate = (client: ClientRow): any => ({
-  fullName: client.fullName,
-  identificationType: client.identificationType,
-  identificationNumber: client.identificationNumber,
-  email: client.email ?? null,
-  phone: client.phone ?? null,
-  address: client.address ?? null,
-  municipality: client.municipality ?? null,
-  department: client.department ?? null,
-  isActive: client.isActive,
-  classificationId: client.classificationId ?? null,
-  updatedById: client.updatedById ?? null,
-  consentGivenAt: client.consentGivenAt ? new Date(client.consentGivenAt) : null,
-  consentVersion: client.consentVersion ?? null,
-  consentScope: client.consentScope ?? Prisma.DbNull,
-  dataSubjectRequestStatus: client.dataSubjectRequestStatus,
-  dataSubjectRequestAt: client.dataSubjectRequestAt ? new Date(client.dataSubjectRequestAt) : null,
-});
 
 // ---------------------------------------------------------------------------
 // Classification types & mapping helpers
