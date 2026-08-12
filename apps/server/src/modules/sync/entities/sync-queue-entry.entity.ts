@@ -29,9 +29,12 @@ export interface SyncQueueEntry {
     | 'PRODUCT_UPDATE'
     | 'PURCHASE_ORDER_CONFIRMATION'
     | 'PURCHASE_RECEPTION_CONFIRMATION'
-    | 'SUPPLIER_RETURN_CONFIRMATION';
+    | 'SUPPLIER_RETURN_CONFIRMATION'
+    | 'CLIENT_CREDIT_PAYMENT'
+    | 'CLIENT_CREDIT_PAYMENT_ANNULMENT';
   payload: string;
   sourceWorkstationId: string;
+  sourceCreatedAt?: Date | null;
   retryCount: number;
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
   lastErrorMessage?: string | null;

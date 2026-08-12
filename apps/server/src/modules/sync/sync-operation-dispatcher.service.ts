@@ -106,6 +106,12 @@ export class SyncOperationDispatcherService {
         case 'CLIENT_RETURN':
           await this.handleClientReturn(entry);
           break;
+        case 'CLIENT_CREDIT_PAYMENT':
+          await this.handleClientCreditPayment(entry);
+          break;
+        case 'CLIENT_CREDIT_PAYMENT_ANNULMENT':
+          await this.handleClientCreditPaymentAnnulment(entry);
+          break;
         case 'INVENTORY_ADJUSTMENT':
           await this.handleInventoryAdjustment(entry);
           break;
@@ -507,6 +513,137 @@ export class SyncOperationDispatcherService {
       createDto,
       userId,
       workstationId,
+    );
+  }
+
+  /**
+   * Replays a CLIENT_CREDIT_PAYMENT by persisting the abono server-side.
+   *
+   * The POS has already validated the abono against the local debt and
+   * capped it at the outstanding balance; the server stores the row so the
+   * client's credit debt is consistent across workstations (the debt shown
+   * to every station subtracts abonos).
+   *
+   * Idempotent: the local payment UUID is used as the server row id, so a
+   * retried sync entry (transient failure before COMPLETED was written) is
+   * an upsert no-op instead of a duplicate abono.
+   *
+   * The amount cap (≤ local debt) is enforced at the POS; the server does
+   * not revalidate it because the POS debt can legitimately be higher than
+   * the server's in the sync window (returns not yet replayed). The debt
+   * computation clamps at 0, so a replayed abono can never produce a
+   * negative balance.
+   */
+  private async handleClientCreditPayment(entry: SyncQueueEntry): Promise<void> {
+    const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+    const metadata = (payload.metadata ?? {}) as Record<string, unknown>;
+    const localPaymentId =
+      (metadata.localPaymentId as string | undefined) ??
+      (payload.paymentId as string);
+    const createdAt = metadata.createdAt as string | undefined;
+
+    const client = await this.prisma.client.findUnique({
+      where: { id: payload.clientId as string },
+      select: { id: true },
+    });
+    if (!client) {
+      throw new Error(
+        `Client ${String(payload.clientId)} not found for credit payment replay.`,
+      );
+    }
+
+    await this.prisma.clientCreditPayment.upsert({
+      where: { id: localPaymentId },
+      update: {},
+      create: {
+        id: localPaymentId,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
+        sequentialNumber: payload.sequentialNumber as number,
+        clientId: payload.clientId as string,
+        amount: new Prisma.Decimal(payload.amount as string),
+        paymentMethodId: payload.paymentMethodId as string,
+        notes: (payload.notes as string | null) ?? null,
+        createdById: payload.createdById as string,
+        cashShiftId: payload.cashShiftId as string,
+        workstationId: payload.workstationId as string,
+        createdAt: new Date(createdAt ?? new Date().toISOString()),
+        sourceOperationUuid: entry.operationUuid,
+        sourceWorkstationId: entry.sourceWorkstationId,
+        sourceCreatedAt: entry.sourceCreatedAt,
+      },
+    });
+
+    this.logger.log(
+      `CLIENT_CREDIT_PAYMENT processed: paymentId=${localPaymentId}, ` +
+        `clientId=${String(payload.clientId)}, ` +
+        `amount=${String(payload.amount)}, ` +
+        `workstationId=${entry.sourceWorkstationId}`,
+    );
+  }
+
+  /**
+   * Replays a CLIENT_CREDIT_PAYMENT_ANNULMENT by marking the abono annulled
+   * server-side.
+   *
+   * The POS admin annulled the payment locally (mandatory reason) and the
+   * reversal must be mirrored so the client's credit debt is consistent
+   * across workstations. The payment is looked up by its local UUID — the
+   * same id the CLIENT_CREDIT_PAYMENT creation replay used, so ordering
+   * (creation before annulment) is guaranteed by the POS's clientSequence.
+   *
+   * Idempotent: if the payment is already annulled, the replay is a no-op.
+   * The server does not re-validate the reason (the POS enforces it); the
+   * reversal of the debt contribution happens implicitly because debt
+   * computations filter `annulledAt: null`.
+   */
+  private async handleClientCreditPaymentAnnulment(
+    entry: SyncQueueEntry,
+  ): Promise<void> {
+    const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+    const metadata = (payload.metadata ?? {}) as Record<string, unknown>;
+    const localPaymentId =
+      (metadata.localPaymentId as string | undefined) ??
+      (payload.paymentId as string);
+    const annulledAt = payload.annulledAt as string | undefined;
+    const annulmentReason = payload.annulmentReason as string | undefined;
+
+    // The mandatory reason is a POS-side rule, but the replay is also
+    // protected so a malformed payload can never persist an empty reason
+    // (same pattern as SalesService.annul()'s service-layer re-validation).
+    if (!annulmentReason || annulmentReason.trim().length === 0) {
+      throw new Error('Annulment reason is required');
+    }
+
+    const payment = await this.prisma.clientCreditPayment.findUnique({
+      where: { id: localPaymentId },
+      select: { id: true, annulledAt: true },
+    });
+    if (!payment) {
+      throw new Error(
+        `Credit payment ${localPaymentId} not found for annulment replay.`,
+      );
+    }
+    if (payment.annulledAt) {
+      this.logger.log(
+        `CLIENT_CREDIT_PAYMENT_ANNULMENT idempotent: paymentId=${localPaymentId} already annulled`,
+      );
+      return;
+    }
+
+    await this.prisma.clientCreditPayment.update({
+      where: { id: localPaymentId },
+      data: {
+        annulledAt: new Date(annulledAt ?? new Date().toISOString()),
+        annulledById: payload.annulledById as string,
+        annulmentReason: annulmentReason.trim(),
+      },
+    });
+
+    this.logger.log(
+      `CLIENT_CREDIT_PAYMENT_ANNULMENT processed: paymentId=${localPaymentId}, ` +
+        `clientId=${String(payload.clientId)}, ` +
+        `annulledById=${String(payload.annulledById)}, ` +
+        `workstationId=${entry.sourceWorkstationId}`,
     );
   }
 

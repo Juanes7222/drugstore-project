@@ -70,6 +70,9 @@ const makeMockPrisma = () => {
       findMany: vi.fn(),
       groupBy: vi.fn(),
     },
+    clientCreditPayment: {
+      groupBy: vi.fn().mockResolvedValue([]),
+    },
     paymentMethod: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
@@ -92,6 +95,7 @@ const makeMockPrisma = () => {
     cashShift: tx.cashShift,
     shiftCashCount: tx.shiftCashCount,
     salePayment: tx.salePayment,
+    clientCreditPayment: tx.clientCreditPayment,
     paymentMethod: tx.paymentMethod,
     sale: tx.sale,
     invoice: tx.invoice,
@@ -1058,6 +1062,186 @@ describe("CashShiftService", () => {
         fiscalAmount: "0",
         operationalAmount: "100",
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Credit payments (abonos) in expected totals and the close wizard
+  // ---------------------------------------------------------------------------
+
+  describe("credit payments in expected totals", () => {
+    it("adds abonos per payment method on top of the direct SalePayment sum", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(500000) } },
+      ]);
+      // Abono de $100.000 recaudado en efectivo durante el turno
+      tx.clientCreditPayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(100000) } },
+      ]);
+
+      const result = await service.computeExpectedTotalsByPaymentMethod("shift-1");
+
+      expect(result.get("pm-cash")!.toString()).toBe("600000");
+    });
+
+    it("creates an expected-total entry for a method that only received abonos (no sales)", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.salePayment.groupBy.mockResolvedValue([]);
+      // Solo abonos: efectivo $250.000, sin ventas en el turno
+      tx.clientCreditPayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(250000) } },
+      ]);
+
+      const result = await service.computeExpectedTotalsByPaymentMethod("shift-1");
+
+      expect(result.get("pm-cash")!.toString()).toBe("250000");
+    });
+
+    it("excludes annulled abonos from the expected totals", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.salePayment.groupBy.mockResolvedValue([]);
+      tx.clientCreditPayment.groupBy.mockResolvedValue([]);
+
+      await service.computeExpectedTotalsByPaymentMethod("shift-1");
+
+      // The groupBy must only aggregate non-annulled payments so an admin
+      // reversal does not inflate the drawer's expected amount.
+      expect(tx.clientCreditPayment.groupBy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { cashShiftId: "shift-1", annulledAt: null },
+        }),
+      );
+    });
+
+    it("keeps abonos out of the fiscal/operational comparison (includeCreditPayments=false)", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(500000) } },
+      ]);
+      tx.clientCreditPayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(100000) } },
+      ]);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-cash", name: "Efectivo", isCash: true },
+      ]);
+      tx.$queryRawUnsafe.mockResolvedValue([{ count: 0 }]);
+
+      const result = await service.getShiftFiscalComparison("shift-1");
+
+      // Sin ajustes: fiscal == operacional == $500.000 (los abonos no son
+      // pagos de factura, no deben verse como drift).
+      expect(result.hasDrift).toBe(false);
+      expect(result.totals[0]).toMatchObject({
+        paymentMethodId: "pm-cash",
+        fiscalAmount: "500000",
+        operationalAmount: "500000",
+      });
+    });
+
+    it("closes with an expected amount that includes abonos (closeWithCounts)", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN", userId: "user-1",
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(0),
+        expectedClosingAmount: new Prisma.Decimal(0),
+        actualClosingAmount: new Prisma.Decimal(0),
+        closingDifference: new Prisma.Decimal(0),
+      });
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(500000) } },
+      ]);
+      tx.clientCreditPayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(100000) } },
+      ]);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-cash", isCash: true },
+      ]);
+      tx.shiftCashCount.findMany.mockResolvedValue([
+        {
+          paymentMethodId: "pm-cash",
+          countType: "CLOSING",
+          expectedAmount: new Prisma.Decimal(600000),
+          declaredAmount: new Prisma.Decimal(600000),
+          difference: new Prisma.Decimal(0),
+          paymentMethodIsCash: true,
+          paymentMethod: { name: "Efectivo" },
+        },
+      ]);
+      tx.syncQueue.count.mockResolvedValue(0);
+      tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 1n } });
+      tx.cashShift.update.mockResolvedValue({
+        id: "shift-1", state: "CLOSED", closedAt: new Date(), openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(0),
+        expectedClosingAmount: new Prisma.Decimal(600000),
+        actualClosingAmount: new Prisma.Decimal(600000),
+        closingDifference: new Prisma.Decimal(0),
+        closingNotes: null,
+      });
+
+      // El count CLOSING registrado debe usar el esperado que incluye abonos
+      tx.shiftCashCount.create = vi.fn().mockResolvedValue({ id: "count-1" });
+
+      await service.closeWithCounts("shift-1", {
+        counts: [
+          { paymentMethodId: "pm-cash", declaredAmount: new Prisma.Decimal(600000) },
+        ],
+      });
+
+      const createCall = tx.shiftCashCount.create.mock.calls[0][0] as { data: { expectedAmount: Prisma.Decimal } };
+      expect(createCall.data.expectedAmount.toString()).toBe("600000");
+    });
+
+    it("reports the abono share per method in getShiftSalesSummary", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.aggregate.mockResolvedValue({
+        _count: 2,
+        _sum: { totalAmount: new Prisma.Decimal(500000) },
+      });
+      tx.salePayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(400000) } },
+        { paymentMethodId: "pm-card", _sum: { amount: new Prisma.Decimal(100000) } },
+      ]);
+      tx.clientCreditPayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(100000) } },
+      ]);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-cash", name: "Efectivo", isCash: true },
+        { id: "pm-card", name: "Tarjeta", isCash: false },
+      ]);
+
+      const summary = await service.getShiftSalesSummary("shift-1");
+
+      const cash = summary.totalsByPaymentMethod.find((m) => m.paymentMethodId === "pm-cash")!;
+      expect(cash.expectedAmount).toBe("500000");
+      expect(cash.creditPaymentAmount).toBe("100000");
+      const card = summary.totalsByPaymentMethod.find((m) => m.paymentMethodId === "pm-card")!;
+      expect(card.expectedAmount).toBe("100000");
+      expect(card.creditPaymentAmount).toBe("0");
+    });
+
+    it("merges abonos even when a caller-provided (drift) totals map is reused", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.aggregate.mockResolvedValue({
+        _count: 1,
+        _sum: { totalAmount: new Prisma.Decimal(500000) },
+      });
+      // El mapa de la comparación fiscal es solo ventas ($400.000) — el wizard
+      // debe sumarle los abonos en efectivo ($100.000).
+      tx.clientCreditPayment.groupBy.mockResolvedValue([
+        { paymentMethodId: "pm-cash", _sum: { amount: new Prisma.Decimal(100000) } },
+      ]);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-cash", name: "Efectivo", isCash: true },
+      ]);
+
+      const driftTotals = new Map([["pm-cash", new Prisma.Decimal(400000)]]);
+      const summary = await service.getShiftSalesSummary("shift-1", driftTotals);
+
+      const cash = summary.totalsByPaymentMethod.find((m) => m.paymentMethodId === "pm-cash")!;
+      expect(cash.expectedAmount).toBe("500000");
+      expect(cash.creditPaymentAmount).toBe("100000");
     });
   });
 

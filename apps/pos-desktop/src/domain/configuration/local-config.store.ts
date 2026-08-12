@@ -102,6 +102,11 @@ export interface PriceFloorConfig {
 export interface SalesConfig {
   priceOverridePermissions: PriceOverridePermissions;
   priceFloor: PriceFloorConfig;
+  /**
+   * Default store-credit limit in COP cents applied to new clients whose
+   * credit limit is not set explicitly. 0 = credit disabled by default.
+   */
+  defaultCreditLimitCents: number;
 }
 
 export interface AlertThresholds {
@@ -223,6 +228,9 @@ const DEFAULT_PRICE_FLOOR: PriceFloorConfig = {
   minMarginPercent: 0,
 };
 
+/** Store credit is opt-in: 0 means disabled until the owner sets a limit. */
+const DEFAULT_CREDIT_LIMIT_CENTS = 0;
+
 const DEFAULT_ALERT_THRESHOLDS: AlertThresholds = {
   expirationWarningDays: 30,
   lowStockAlertEnabled: true,
@@ -279,6 +287,7 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
           accountant: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.accountant },
         },
         priceFloor: { ...DEFAULT_PRICE_FLOOR },
+        defaultCreditLimitCents: DEFAULT_CREDIT_LIMIT_CENTS,
       },
       sellerInfo: { ...DEFAULT_SELLER_INFO },
       purchasesConfig: { ...DEFAULT_PURCHASES_CONFIG },
@@ -299,6 +308,7 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
               accountant: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.accountant },
             },
             priceFloor: { ...DEFAULT_PRICE_FLOOR },
+            defaultCreditLimitCents: DEFAULT_CREDIT_LIMIT_CENTS,
           },
           sellerInfo: payload.sellerInfo ?? { ...DEFAULT_SELLER_INFO },
           purchasesConfig: payload.purchasesConfig ?? { ...DEFAULT_PURCHASES_CONFIG },
@@ -329,6 +339,9 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
               ...prev.salesConfig.priceFloor,
               ...partial.priceFloor,
             },
+            defaultCreditLimitCents:
+              partial.defaultCreditLimitCents ??
+              prev.salesConfig.defaultCreditLimitCents,
           },
         }));
       },
@@ -344,6 +357,8 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
               ...DEFAULT_PRICE_FLOOR,
               ...presetSales.priceFloor,
             },
+            defaultCreditLimitCents:
+              presetSales.defaultCreditLimitCents ?? DEFAULT_CREDIT_LIMIT_CENTS,
           },
         });
       },

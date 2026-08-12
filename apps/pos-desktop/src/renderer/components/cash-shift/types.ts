@@ -13,6 +13,8 @@ export interface ShiftSummary {
     methodName: string;
     isCash: boolean;
     expectedAmount: string;
+    /** Portion of the expected amount collected as credit payments (abonos). */
+    creditPaymentAmount: string;
   }>;
 }
 

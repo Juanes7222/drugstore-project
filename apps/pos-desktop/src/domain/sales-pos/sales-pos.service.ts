@@ -22,7 +22,15 @@
  * rationale. The provisional local figure is discarded and replaced
  * when sync replays the sale against the server.
  */
-import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState, CommissionType } from '@pharmacy/database/local';
+import {
+  PrismaClient,
+  Prisma,
+  SaleOperationalState,
+  SaleType,
+  ShiftState,
+  CommissionType,
+  ClientReturnState,
+} from '@pharmacy/database/local';
 import { dbWriteLock } from '../../infrastructure/write-lock';
 import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import type { AuthService } from '../auth/auth.service';
@@ -50,6 +58,9 @@ import {
   DeliveryRequiresClientException,
   DeliveryAddressRequiredException,
   DeliveryFeePolicyException,
+  CreditRequiresRegisteredClientException,
+  CreditNotEnabledForClientException,
+  CreditLimitExceededException,
 } from './exceptions';
 import {
   validateItemPricing,
@@ -444,6 +455,38 @@ export class SalesPosService {
         const hasCash = await this.hasAnyCashPaymentMethod(tx, input.payments);
         if (!hasCash) {
           throw new ChangeRequiresCashPaymentException();
+        }
+      }
+
+      // 2b. ---- Store credit validation ----
+      // A CREDIT payment is only allowed for a registered client (never the
+      // generic consumer) whose credit debt stays within their limit after
+      // this payment. Runs inside the same transaction as the payment insert
+      // so the balance check is atomic with the confirmation.
+      const creditTotal = await this.sumCreditPayments(tx, input.payments);
+      if (creditTotal.greaterThan(0)) {
+        const isRegisteredClient =
+          !!sale.clientId && sale.clientId !== GENERIC_CLIENT_UUID;
+        if (!isRegisteredClient) {
+          throw new CreditRequiresRegisteredClientException();
+        }
+
+        const client = await tx.client.findUnique({
+          where: { id: sale.clientId! },
+          select: { creditLimit: true },
+        });
+        const creditLimit = client?.creditLimit ?? null;
+        if (!creditLimit || creditLimit.lessThanOrEqualTo(0)) {
+          throw new CreditNotEnabledForClientException(sale.clientId!);
+        }
+
+        const currentDebt = await this.computeClientCreditDebt(tx, sale.clientId!);
+        const available = creditLimit.minus(currentDebt);
+        if (creditTotal.greaterThan(available)) {
+          throw new CreditLimitExceededException(
+            Math.round(Number(available) * 100),
+            Math.round(Number(creditTotal) * 100),
+          );
         }
       }
 
@@ -1054,6 +1097,74 @@ export class SalesPosService {
       if (pm?.isCash) return true;
     }
     return false;
+  }
+
+  /**
+   * Sum the amount of payments that use a CREDIT-category method, in pesos.
+   *
+   * Returns 0 when no CREDIT payment method exists locally yet.
+   */
+  private async sumCreditPayments(
+    tx: Prisma.TransactionClient,
+    payments: PaymentInput[],
+  ): Promise<Prisma.Decimal> {
+    const creditMethodIds = (
+      await tx.paymentMethod.findMany({
+        where: { category: 'CREDIT' },
+        select: { id: true },
+      })
+    ).map((m) => m.id);
+    if (creditMethodIds.length === 0) return new Prisma.Decimal(0);
+
+    return payments.reduce(
+      (sum, payment) =>
+        creditMethodIds.includes(payment.paymentMethodId)
+          ? sum.plus(payment.amount)
+          : sum,
+      new Prisma.Decimal(0),
+    );
+  }
+
+  /**
+   * Current credit debt in pesos for a client, computed the same way as
+   * CreditService.getCreditDebtCents (but in pesos): confirmed sales paid
+   * with a CREDIT method accumulate debt, confirmed client returns refunded
+   * via a CREDIT method pay it down. Clamped at 0.
+   */
+  private async computeClientCreditDebt(
+    tx: Prisma.TransactionClient,
+    clientId: string,
+  ): Promise<Prisma.Decimal> {
+    const creditMethodIds = (
+      await tx.paymentMethod.findMany({
+        where: { category: 'CREDIT' },
+        select: { id: true },
+      })
+    ).map((m) => m.id);
+    if (creditMethodIds.length === 0) return new Prisma.Decimal(0);
+
+    const [salesDebt, creditRefunds] = await Promise.all([
+      tx.salePayment.aggregate({
+        where: {
+          sale: { clientId, operationalState: SaleOperationalState.CONFIRMED },
+          paymentMethod: { category: 'CREDIT' },
+        },
+        _sum: { amount: true },
+      }),
+      tx.clientReturn.aggregate({
+        where: {
+          clientId,
+          state: ClientReturnState.CONFIRMED,
+          refundMethodId: { in: creditMethodIds },
+        },
+        _sum: { refundAmount: true },
+      }),
+    ]);
+
+    const debt = salesDebt._sum.amount ?? new Prisma.Decimal(0);
+    const refunds = creditRefunds._sum.refundAmount ?? new Prisma.Decimal(0);
+    const net = debt.minus(refunds);
+    return net.greaterThan(0) ? net : new Prisma.Decimal(0);
   }
 
   /**

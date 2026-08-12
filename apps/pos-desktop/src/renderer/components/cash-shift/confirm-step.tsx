@@ -60,6 +60,7 @@ export const ConfirmStep: FC<ConfirmStepProps> = ({
       return {
         methodName: m.methodName,
         isCash: m.isCash,
+        creditPaymentAmount: Number(m.creditPaymentAmount),
         expected,
         declared,
         diff: declared - expected,
@@ -130,6 +131,17 @@ export const ConfirmStep: FC<ConfirmStepProps> = ({
                 {d.isCash && (
                   <span className="ml-pos-xs text-caption" style={{ color: 'var(--color-ink-muted)' }}>
                     ({t('cash_shift.cash')})
+                  </span>
+                )}
+                {Number(d.creditPaymentAmount) > 0 && (
+                  <span
+                    className="ml-pos-xs rounded-full px-1.5 py-0.5 text-caption font-medium"
+                    style={{
+                      backgroundColor: 'color-mix(in srgb, var(--color-pharma) 12%, transparent)',
+                      color: 'var(--color-pharma)',
+                    }}
+                  >
+                    {t('cash_shift.wizard_credit_payments')}: {formatCurrency(Number(d.creditPaymentAmount) * 100)}
                   </span>
                 )}
               </td>

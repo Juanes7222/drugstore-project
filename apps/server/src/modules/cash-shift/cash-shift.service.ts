@@ -228,17 +228,39 @@ export class CashShiftService {
     }
   }
 
+  /**
+   * Payment-method ids with activity inside the shift.
+   *
+   * Active methods come from two sources: confirmed `SalePayment` rows and
+   * credit payments (abonos) recorded against the shift. A cashier who
+   * collected abonos in cash has that money in the drawer, so a CLOSING
+   * count must be registered for those methods too — otherwise the close
+   * could be submitted without reconciling the abono cash.
+   */
   private async getActivePaymentMethods(shiftId: string): Promise<any[]> {
-    return this.prisma.salePayment.findMany({
-      where: {
-        sale: {
-          cashShiftId: shiftId,
-          operationalState: 'CONFIRMED',
+    const [saleMethods, creditMethods] = await Promise.all([
+      this.prisma.salePayment.findMany({
+        where: {
+          sale: {
+            cashShiftId: shiftId,
+            operationalState: 'CONFIRMED',
+          },
         },
-      },
-      distinct: ['paymentMethodId'],
-      select: { paymentMethodId: true },
-    });
+        distinct: ['paymentMethodId'],
+        select: { paymentMethodId: true },
+      }),
+      this.prisma.clientCreditPayment.findMany({
+        where: { cashShiftId: shiftId, annulledAt: null },
+        distinct: ['paymentMethodId'],
+        select: { paymentMethodId: true },
+      }),
+    ]);
+
+    const seen = new Set(saleMethods.map((m) => m.paymentMethodId));
+    return [
+      ...saleMethods,
+      ...creditMethods.filter((m) => !seen.has(m.paymentMethodId)),
+    ];
   }
 
   private findMissingClosingCounts(

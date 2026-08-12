@@ -10,6 +10,8 @@ import { SaleNotInProgressException } from '../exceptions/sale-not-in-progress.e
 import { SaleNotConfirmedException } from '../exceptions/sale-not-confirmed.exception';
 import { PaymentAmountMismatchException } from '../exceptions/payment-amount-mismatch.exception';
 import { ChangeRequiresCashPaymentException } from '../exceptions/change-requires-cash-payment.exception';
+import { CreditRequiresRegisteredClientException } from '../exceptions/credit-requires-registered-client.exception';
+import { CreditLimitExceededException } from '../exceptions/credit-limit-exceeded.exception';
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 import { DiscountReasonRequiredException } from '@/modules/catalog/exceptions/discount-reason-required.exception';
 
@@ -17,9 +19,15 @@ jest.mock('@pharmacy/database', () => ({
   PrismaClient: jest.fn(),
   ShiftState: { OPEN: 'OPEN', CLOSED: 'CLOSED' },
   SaleOperationalState: { DRAFT: 'DRAFT', IN_PROGRESS: 'IN_PROGRESS', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED', ANNULLED: 'ANNULLED' },
-  SaleType: { FREE_SALE: 'FREE_SALE', PRESCRIPTION: 'PRESCRIPTION' },
-  Prisma: {
+  ClientReturnState: { DRAFT: 'DRAFT', PENDING_PICKUP: 'PENDING_PICKUP', CONFIRMED: 'CONFIRMED', REJECTED: 'REJECTED', ANNULLED: 'ANNULLED' },
+  SaleType: { FREE_SALE: 'FREE_SALE', PRESCRIPTION: 'PRESCRIPTION' },    Prisma: {
     Decimal: class Decimal {
+      static max(...args: any[]): Decimal {
+        const values: any[] = Array.isArray(args[0]) ? args[0] : args;
+        return new Decimal(
+          Math.max(...values.map((v) => (v instanceof Decimal ? v.value : Number(v)))),
+        );
+      }
       constructor(private val: number | string | { value: number }) {
         if (typeof val === 'object' && 'value' in val) this.val = val.value;
       }
@@ -33,6 +41,8 @@ jest.mock('@pharmacy/database', () => ({
       toString(): string { return String(this.value); }
       equals(o: any): boolean { return this.value === (o instanceof Decimal ? o.value : Number(o)); }
       greaterThan(o: any): boolean { return this.value > (o instanceof Decimal ? o.value : Number(o)); }
+      lessThan(o: any): boolean { return this.value < (o instanceof Decimal ? o.value : Number(o)); }
+      lessThanOrEqualTo(o: any): boolean { return this.value <= (o instanceof Decimal ? o.value : Number(o)); }
     },
     PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {
       constructor(m: string, public code: string, public meta?: any) { super(m); }
@@ -116,6 +126,9 @@ describe('SalesService', () => {
       commissionValueSnapshot: null,
       commissionAmount: new Prisma.Decimal(0),
     });
+    // No CREDIT payment methods exist by default → the store-credit balance
+    // check short-circuits and existing confirm tests keep their behavior.
+    (prisma.paymentMethod.findMany as jest.Mock).mockResolvedValue([]);
     service = new SalesService(prisma as any, lotsService as any, fiscalDocumentsService as any, commissionCalculatorService, mockTenantContext as any);
   });
 
@@ -529,6 +542,57 @@ describe('SalesService', () => {
       await expect(
         service.confirm('sale-1', {         payments: [{ paymentMethodId: 'pm-card', amount: new Prisma.Decimal(15000) }] }, 'user-1'),
       ).rejects.toThrow(ChangeRequiresCashPaymentException);
+    });
+
+    it('throws CreditRequiresRegisteredClientException for a CREDIT payment on a generic sale', async () => {
+      setupTransactionMock();
+      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({
+        ...mockSale,
+        items: [mockSaleItem],
+        clientId: null,
+      });
+      (prisma.paymentMethod.findMany as jest.Mock).mockResolvedValue([
+        { id: 'pm-credit', category: 'CREDIT' },
+      ]);
+
+      await expect(
+        service.confirm('sale-1', {
+          payments: [{ paymentMethodId: 'pm-credit', amount: new Prisma.Decimal(17850) }],
+        }, 'user-1'),
+      ).rejects.toThrow(CreditRequiresRegisteredClientException);
+    });
+
+    it('throws CreditLimitExceededException when the credit payment exceeds the available balance', async () => {
+      setupTransactionMock();
+      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({
+        ...mockSale,
+        items: [mockSaleItem],
+        clientId: 'client-1',
+      });
+      (prisma.paymentMethod.findMany as jest.Mock).mockResolvedValue([
+        { id: 'pm-credit', category: 'CREDIT' },
+      ]);
+      // Limit 10000, existing debt 9000 → available 1000, but the credit
+      // payment is 17850 → rejected.
+      (prisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client-1',
+        creditLimit: new Prisma.Decimal(10000),
+      });
+      (prisma.salePayment.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal(9000) },
+      });
+      (prisma.clientReturn.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { refundAmount: new Prisma.Decimal(0) },
+      });
+      (prisma.clientCreditPayment.aggregate as jest.Mock).mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal(0) },
+      });
+
+      await expect(
+        service.confirm('sale-1', {
+          payments: [{ paymentMethodId: 'pm-credit', amount: new Prisma.Decimal(17850) }],
+        }, 'user-1'),
+      ).rejects.toThrow(CreditLimitExceededException);
     });
 
     it('computes change amount correctly when overpaid with cash', async () => {

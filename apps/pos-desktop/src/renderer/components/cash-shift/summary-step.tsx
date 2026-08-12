@@ -121,6 +121,18 @@ export const SummaryStep: FC<SummaryStepProps> = ({
                       ({t('cash_shift.cash')})
                     </span>
                   )}
+                  {Number(m.creditPaymentAmount) > 0 && (
+                    <span
+                      className="ml-pos-xs rounded-full px-1.5 py-0.5 text-caption font-medium"
+                      style={{
+                        backgroundColor: 'color-mix(in srgb, var(--color-pharma) 12%, transparent)',
+                        color: 'var(--color-pharma)',
+                      }}
+                      title={t('cash_shift.wizard_credit_payments')}
+                    >
+                      {t('cash_shift.wizard_credit_payments')}: {formatCurrency(Number(m.creditPaymentAmount) * 100)}
+                    </span>
+                  )}
                 </td>
                 <td className="py-pos-xs font-data tabular-nums text-right">
                   {formatCurrency(Number(m.expectedAmount) * 100)}

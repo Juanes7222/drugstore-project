@@ -313,6 +313,15 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
           return 'Devolución';
         }
 
+        // ── Credit payments ───────────────────────────────────
+        case 'CLIENT_CREDIT_PAYMENT': {
+          const num = parsed.sequentialNumber;
+          if (num != null) {
+            return `Abono #${String(num)}`;
+          }
+          return 'Abono crédito';
+        }
+
         // ── Inventory ─────────────────────────────────────────
         case 'INVENTORY_ADJUSTMENT': {
           const adjMeta = parsed.metadata as Record<string, unknown> | undefined;

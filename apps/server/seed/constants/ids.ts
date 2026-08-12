@@ -35,6 +35,7 @@ const PAY_TRANSFERENCIA = 'pay_transferencia' as const;
 const PAY_BOTON_PSE = 'pay_boton_pse' as const;
 const PAY_NEQUI = 'pay_nequi' as const;
 const PAY_DAVIPLATA = 'pay_daviplata' as const;
+const PAY_CREDITO = 'pay_credito' as const;
 
 // Clasificaciones de clientes
 const CLASS_PARTICULAR = 'class_particular' as const;
@@ -305,6 +306,7 @@ export const IDS = {
   PAY_BOTON_PSE,
   PAY_NEQUI,
   PAY_DAVIPLATA,
+  PAY_CREDITO,
   CLASS_PARTICULAR,
   CLASS_FRECUENTE,
   CLASS_INSTITUCIONAL,

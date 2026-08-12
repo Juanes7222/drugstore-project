@@ -226,6 +226,8 @@ describe('CashShiftService', () => {
         { id: 'sp-1', createdAt: new Date(), saleId: 'sale-1', batchNumber: null, amount: new Prisma.Decimal(50000), transactionReference: null, authorizationCode: null, cardBrand: null, cardLastFour: null, processorResponseCode: null, paymentMethodId: 'pm-cash' },
         { id: 'sp-2', createdAt: new Date(), saleId: 'sale-1', batchNumber: null, amount: new Prisma.Decimal(10000), transactionReference: null, authorizationCode: null, cardBrand: null, cardLastFour: null, processorResponseCode: null, paymentMethodId: 'pm-card' },
       ]);
+      // No abonos in this shift.
+      (prisma.clientCreditPayment.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.cashShift.update as jest.Mock).mockResolvedValue({ ...mockShift, state: 'CLOSED' });
 
       const result = await service.closeShift('shift-1', 'user-1', { closingNotes: 'Notes' });
@@ -252,6 +254,8 @@ describe('CashShiftService', () => {
         { id: 'sp-1', createdAt: new Date(), saleId: 'sale-1', batchNumber: null, amount: new Prisma.Decimal(50000), transactionReference: null, authorizationCode: null, cardBrand: null, cardLastFour: null, processorResponseCode: null, paymentMethodId: 'pm-cash' },
         { id: 'sp-2', createdAt: new Date(), saleId: 'sale-1', batchNumber: null, amount: new Prisma.Decimal(10000), transactionReference: null, authorizationCode: null, cardBrand: null, cardLastFour: null, processorResponseCode: null, paymentMethodId: 'pm-card' },
       ]);
+      // No abonos.
+      (prisma.clientCreditPayment.findMany as jest.Mock).mockResolvedValue([]);
 
       await expect(
         service.closeShift('shift-1', 'user-1', {}),
@@ -264,6 +268,30 @@ describe('CashShiftService', () => {
       await expect(
         service.closeShift('unknown', 'user-1', {}),
       ).rejects.toThrow(ShiftNotOpenException);
+    });
+
+    it('requires a closing count for a method that only received abonos (no sales)', async () => {
+      (prisma.cashShift.findUnique as jest.Mock).mockResolvedValue(mockShift);
+      (prisma.shiftCashCount.findMany as jest.Mock).mockResolvedValue([
+        buildCashCount({}),
+      ]);
+      // No sales in the shift at all.
+      (prisma.salePayment.findMany as jest.Mock).mockResolvedValue([]);
+      // But a cash abono of $50.000 was collected — the cashier must count it.
+      (prisma.clientCreditPayment.findMany as jest.Mock).mockResolvedValue([
+        { id: 'abono-1', cashShiftId: 'shift-1', paymentMethodId: 'pm-cash' },
+      ]);
+
+      // Closing count exists for pm-cash (the only active method) → closes fine.
+      (prisma.cashShift.update as jest.Mock).mockResolvedValue({ ...mockShift, state: 'CLOSED' });
+      const ok = await service.closeShift('shift-1', 'user-1', {});
+      expect(ok.state).toBe('CLOSED');
+
+      // Now simulate a missing count for the abono-only method.
+      (prisma.shiftCashCount.findMany as jest.Mock).mockResolvedValue([]);
+      await expect(
+        service.closeShift('shift-1', 'user-1', {}),
+      ).rejects.toThrow(MissingClosingCashCountsException);
     });
   });
 

@@ -20,7 +20,7 @@
 
 import { type FC, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircleIcon, PercentIcon, ShieldIcon, TagIcon } from "@/components/ui/icons";
+import { CheckCircleIcon, CreditCardIcon, PercentIcon, ShieldIcon, TagIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
 import {
   useLocalConfigStore,
@@ -59,6 +59,12 @@ const SECTIONS: SectionDef[] = [
     Icon: ShieldIcon,
     titleKey: 'config.sales.sectionFloor',
     descKey: 'config.sales.sectionFloorDesc',
+  },
+  {
+    id: 'credit',
+    Icon: CreditCardIcon,
+    titleKey: 'config.sales.sectionCredit',
+    descKey: 'config.sales.sectionCreditDesc',
   },
 ];
 
@@ -271,6 +277,16 @@ export const SalesConfigTab: FC = () => {
               <FloorBody
                 floor={salesConfig.priceFloor}
                 onChange={updateFloor}
+              />
+            )}
+            {section.id === 'credit' && (
+              <CreditBody
+                defaultCreditLimitCents={salesConfig.defaultCreditLimitCents}
+                onChange={(defaultCreditLimitCents) =>
+                  useLocalConfigStore.getState().updateSalesConfig({
+                    defaultCreditLimitCents,
+                  })
+                }
               />
             )}
           </section>
@@ -574,6 +590,84 @@ const FloorBody: FC<FloorBodyProps> = ({ floor, onChange }) => {
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
+// Section 4 — Customer credit
+// ---------------------------------------------------------------------------
+
+interface CreditBodyProps {
+  /** Default credit limit in COP cents (0 = credit disabled by default). */
+  defaultCreditLimitCents: number;
+  onChange: (defaultCreditLimitCents: number) => void;
+}
+
+const CreditBody: FC<CreditBodyProps> = ({
+  defaultCreditLimitCents,
+  onChange,
+}) => {
+  const { t } = useTranslation();
+  const limitId = 'credit-default-limit';
+  const [pesos, setPesos] = useState(() =>
+    String(Math.round(defaultCreditLimitCents / 100)),
+  );
+
+  // Sync the local draft whenever the store value changes externally
+  // (e.g. a server config pull while the tab is open), but never clobber
+  // what the user is currently typing.
+  useEffect(() => {
+    setPesos((prev) => {
+      const committed = Math.round(defaultCreditLimitCents / 100);
+      const prevNumber = prev === '' ? 0 : Number(prev);
+      return prevNumber === committed ? prev : String(committed);
+    });
+  }, [defaultCreditLimitCents]);
+
+  return (
+    <div className="divide-y divide-border">
+      <div className="flex flex-col gap-1 px-pos-xl py-pos-md">
+        <label
+          htmlFor={limitId}
+          className="text-body-sm font-medium text-ink"
+        >
+          {t('config.sales.defaultCreditLimit')}
+        </label>
+        <p id={`${limitId}-hint`} className="text-caption text-ink-muted">
+          {t('config.sales.defaultCreditLimitHint')}
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <span
+            className="text-body-sm font-medium text-ink-muted"
+            aria-hidden="true"
+          >
+            $
+          </span>
+          <input
+            type="number"
+            id={limitId}
+            aria-describedby={`${limitId}-hint`}
+            min={0}
+            step={1000}
+            value={pesos}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setPesos(raw);
+              const parsed = raw === '' ? 0 : Number(raw);
+              const clamped = Number.isFinite(parsed)
+                ? Math.max(0, Math.round(parsed))
+                : 0;
+              onChange(clamped * 100);
+            }}
+            className="w-40 rounded border border-border bg-surface px-3 py-1.5 text-body-sm text-ink font-data tabular-nums
+              transition-colors hover:border-pharma/50 focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma"
+          />
+        </div>
+      </div>
+      <p className="px-pos-xl py-pos-sm text-body-xs text-ink-muted">
+        {t('config.sales.creditDisabledNote')}
+      </p>
     </div>
   );
 };

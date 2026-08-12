@@ -226,3 +226,45 @@ export class DeliveryFeePolicyException extends DomainError {
     super('DELIVERY_FEE_POLICY', message);
   }
 }
+
+/**
+ * Thrown when a sale with a CREDIT payment has no registered client
+ * (generic consumer or none). Store credit is only for registered clients.
+ */
+export class CreditRequiresRegisteredClientException extends DomainError {
+  constructor() {
+    super(
+      'CREDIT_REQUIRES_REGISTERED_CLIENT',
+      'Store credit payments are only allowed for registered clients.',
+    );
+  }
+}
+
+/**
+ * Thrown when a CREDIT payment references a client without a positive
+ * credit limit configured.
+ */
+export class CreditNotEnabledForClientException extends DomainError {
+  constructor(clientId: string) {
+    super(
+      'CREDIT_NOT_ENABLED_FOR_CLIENT',
+      `Client ${clientId} has no credit limit configured.`,
+    );
+  }
+}
+
+/**
+ * Thrown when the CREDIT payment amount exceeds the client's available
+ * balance (limit − current debt).
+ */
+export class CreditLimitExceededException extends DomainError {
+  constructor(
+    public readonly availableCents: number,
+    public readonly requestedCents: number,
+  ) {
+    super(
+      'CREDIT_LIMIT_EXCEEDED',
+      `Credit amount (${requestedCents}) exceeds the client's available balance (${availableCents}).`,
+    );
+  }
+}

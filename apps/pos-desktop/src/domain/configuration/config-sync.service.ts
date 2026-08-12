@@ -78,6 +78,8 @@ export interface PriceFloorConfigPayload {
 export interface SalesConfigPayload {
   priceOverridePermissions: PriceOverridePermissionsPayload;
   priceFloor: PriceFloorConfigPayload;
+  /** Default store-credit limit in COP cents; optional from older servers. */
+  defaultCreditLimitCents?: number;
 }
 
 export interface AlertThresholdsPayload {
@@ -189,9 +191,23 @@ export class ConfigSyncService {
     await this.paymentMethodSync.syncPaymentMethods(payload.paymentMethods);
 
     // Step 2: update the persistent local config store
+    // Older servers may omit `salesConfig.defaultCreditLimitCents` from the
+    // payload. Keep the currently configured local value in that case — the
+    // default credit limit is a local-only preference and must not be wiped
+    // back to 0 by a config pull from a server that does not know about it.
+    const currentSalesConfig = useLocalConfigStore.getState().salesConfig;
+    const salesConfig = payload.salesConfig
+      ? {
+          ...payload.salesConfig,
+          defaultCreditLimitCents:
+            payload.salesConfig.defaultCreditLimitCents ??
+            currentSalesConfig.defaultCreditLimitCents,
+        }
+      : undefined;
+
     useLocalConfigStore.getState().hydrateFromServer({
       discountLimits: payload.discountLimits,
-      salesConfig: payload.salesConfig,
+      salesConfig,
       alertThresholds: payload.alertThresholds,
       syncDefaults: payload.syncDefaults,
     });

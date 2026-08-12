@@ -42,7 +42,9 @@ export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
   const { t } = useTranslation();
   const selectId = useId();
 
-  const isElectronic = !method.isCash;
+  // Store credit is not gateway-backed — it never shows the authorization
+  // badge. Only actual electronic methods (card, transfer, wallet) do.
+  const isElectronic = !method.isCash && method.category !== "CREDIT";
 
   const handleAmountChange = useCallback(
     (amountCents: number) => {

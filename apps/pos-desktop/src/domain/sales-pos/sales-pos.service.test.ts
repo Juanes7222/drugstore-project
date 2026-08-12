@@ -12,6 +12,9 @@ import {
   PriceOverrideNotAllowedForRoleException,
   DiscountExceedsRoleLimitException,
   PriceBelowCostException,
+  CreditRequiresRegisteredClientException,
+  CreditNotEnabledForClientException,
+  CreditLimitExceededException,
 } from "./exceptions";
 import { Prisma } from "@pharmacy/database/local";
 import { useLocalConfigStore, type DiscountLimits, type SalesConfig } from "../configuration/local-config.store";
@@ -39,6 +42,14 @@ const makeMockPrisma = () => {
     },
     salePayment: {
       createMany: vi.fn(),
+      aggregate: vi.fn().mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal(0) },
+      }),
+    },
+    clientReturn: {
+      aggregate: vi.fn().mockResolvedValue({
+        _sum: { refundAmount: new Prisma.Decimal(0) },
+      }),
     },
     client: {
       findUnique: vi.fn(),
@@ -52,6 +63,7 @@ const makeMockPrisma = () => {
     },
     paymentMethod: {
       findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
     },
     syncQueue: {
       create: vi.fn(),
@@ -372,7 +384,7 @@ describe("SalesPosService", () => {
       totalTax: new Prisma.Decimal(1900),
       cashShiftId: "shift-1",
       workstationId: "ws-1",
-      clientId: null,
+      clientId: null as string | null,
       startedAt: new Date(),
       items: [{
         id: "item-1",
@@ -521,6 +533,125 @@ describe("SalesPosService", () => {
       );
     });
 
+    it("throws CreditRequiresRegisteredClientException when a CREDIT payment has no registered client", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const sale = makeSale();
+      sale.clientId = null;
+      tx.sale.findUnique.mockResolvedValue(sale);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-credit", category: "CREDIT" },
+      ]);
+
+      await expect(
+        service.confirm("sale-1", {
+          payments: [{ paymentMethodId: "pm-credit", amount: 11900 }],
+        }),
+      ).rejects.toThrow(CreditRequiresRegisteredClientException);
+    });
+
+    it("throws CreditRequiresRegisteredClientException when a CREDIT payment has the generic client", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const sale = makeSale();
+      sale.clientId = GENERIC_CLIENT_UUID;
+      tx.sale.findUnique.mockResolvedValue(sale);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-credit", category: "CREDIT" },
+      ]);
+
+      await expect(
+        service.confirm("sale-1", {
+          payments: [{ paymentMethodId: "pm-credit", amount: 11900 }],
+        }),
+      ).rejects.toThrow(CreditRequiresRegisteredClientException);
+    });
+
+    it("throws CreditNotEnabledForClientException when the client has no credit limit", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const sale = makeSale();
+      sale.clientId = "client-1";
+      tx.sale.findUnique.mockResolvedValue(sale);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-credit", category: "CREDIT" },
+      ]);
+      tx.client.findUnique.mockResolvedValue({
+        id: "client-1",
+        creditLimit: null,
+      });
+
+      await expect(
+        service.confirm("sale-1", {
+          payments: [{ paymentMethodId: "pm-credit", amount: 11900 }],
+        }),
+      ).rejects.toThrow(CreditNotEnabledForClientException);
+    });
+
+    it("throws CreditLimitExceededException when the credit payment exceeds the available balance", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const sale = makeSale();
+      sale.clientId = "client-1";
+      tx.sale.findUnique.mockResolvedValue(sale);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-credit", category: "CREDIT" },
+      ]);
+      // Limit 10000, existing debt 9000 → available 1000
+      tx.client.findUnique.mockResolvedValue({
+        id: "client-1",
+        creditLimit: new Prisma.Decimal(10000),
+      });
+      tx.salePayment.aggregate.mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal(9000) },
+      });
+      tx.clientReturn.aggregate.mockResolvedValue({
+        _sum: { refundAmount: new Prisma.Decimal(0) },
+      });
+
+      await expect(
+        service.confirm("sale-1", {
+          payments: [{ paymentMethodId: "pm-credit", amount: 11900 }],
+        }),
+      ).rejects.toThrow(CreditLimitExceededException);
+    });
+
+    it("confirms a CREDIT payment when it stays within the available balance", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const sale = makeSale();
+      sale.clientId = "client-1";
+      tx.sale.findUnique.mockResolvedValue(sale);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-credit", category: "CREDIT" },
+      ]);
+      tx.client.findUnique.mockResolvedValue({
+        id: "client-1",
+        creditLimit: new Prisma.Decimal(20000),
+      });
+      tx.salePayment.aggregate.mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal(0) },
+      });
+      tx.clientReturn.aggregate.mockResolvedValue({
+        _sum: { refundAmount: new Prisma.Decimal(0) },
+      });
+      inventoryLots.consumeStockForSale.mockResolvedValue([
+        { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
+      ]);
+      tx.saleItem.update.mockResolvedValue({});
+      tx.saleItemLot.create.mockResolvedValue({});
+      tx.salePayment.createMany.mockResolvedValue({ count: 1 });
+      tx.sale.update.mockResolvedValue({
+        ...makeSale(),
+        operationalState: "CONFIRMED",
+        confirmedAt: new Date(),
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      const result = await service.confirm("sale-1", {
+        payments: [{ paymentMethodId: "pm-credit", amount: 11900 }],
+      }) as { operationalState: string };
+
+      expect(result.operationalState).toBe("CONFIRMED");
+      expect(tx.salePayment.createMany).toHaveBeenCalled();
+    });
+
     it("creates a SyncQueue entry inside the transaction", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       const sale = makeSale();
@@ -564,7 +695,7 @@ describe("SalesPosService", () => {
       totalTax: new Prisma.Decimal(1900),
       cashShiftId: "shift-1",
       workstationId: "ws-1",
-      clientId: null,
+      clientId: null as string | null,
       startedAt: new Date(),
       items: [{
         id: "item-1",
@@ -764,6 +895,7 @@ describe("SalesPosService", () => {
         type: "COST",
         minMarginPercent: 0,
       },
+      defaultCreditLimitCents: 0,
     });
 
     const makeProductWithCost = (cost: Prisma.Decimal | null) => ({

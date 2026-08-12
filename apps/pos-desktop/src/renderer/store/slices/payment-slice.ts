@@ -179,7 +179,8 @@ export const {
 
 const isElectronicMethod = (
   method: PaymentMethodEntry,
-): boolean => !method.isCash;
+): boolean =>
+  !method.isCash && method.category !== "CREDIT";
 
 const selectPaymentState = (state: { payment: PaymentState }): PaymentState =>
   state.payment;

@@ -11,8 +11,8 @@ import { Provider } from "react-redux";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { configureStore } from "@reduxjs/toolkit";
 import { PaymentProcessing } from "./payment-processing";
-import { addItem, salesSlice, setDelivery } from "@/store/slices/sales-slice";
-import { paymentSlice, initializePayment, setCashReceived } from "@/store/slices/payment-slice";
+import { addItem, salesSlice, setClient, setDelivery } from "@/store/slices/sales-slice";
+import { paymentSlice, initializePayment, addPaymentMethod, setCashReceived } from "@/store/slices/payment-slice";
 import { uiSlice, setCurrentSaleId } from "@/store/slices/ui-slice";
 import { PaymentGatewayService } from "@/services/payment-gateway-service";
 import { SaleType } from "@pharmacy/shared-types";
@@ -39,13 +39,25 @@ const { activePaymentMethods } = vi.hoisted(() => ({
       name: "Tarjeta Débito",
       isCash: false,
     },
+    { id: "pm-credit", category: "CREDIT", name: "Crédito", isCash: false },
   ],
 }));
+
+const mockCreditService = {
+  getCreditState: vi.fn().mockResolvedValue({
+    clientId: "client-1",
+    creditLimitCents: 0,
+    usedCents: 0,
+    availableCents: 0,
+    enabled: false,
+  }),
+};
 
 vi.mock("@/components/common/service-context", () => ({
   // useProductSyncWait reads the raw context; null context makes it a no-op.
   ServiceContext: createContext(null),
   useSalesPosService: () => mockSalesPosService,
+  useCreditService: () => mockCreditService,
 }));
 
 vi.mock("@/hooks/use-active-payment-methods", () => ({
@@ -220,6 +232,76 @@ describe("PaymentProcessing", () => {
     // A second method row (CARD by default) should now be present.
     const amountInputs = screen.getAllByLabelText(/Valor|Amount/);
     expect(amountInputs).toHaveLength(2);
+  });
+
+  // --- Store credit panel ---
+
+  it("blocks CREDIT payment confirmation until a registered client is selected", () => {
+    const store = createTestStore(6_616_400);
+    store.dispatch(
+      addPaymentMethod({
+        id: "pm-credit",
+        category: "CREDIT",
+        name: "Crédito",
+        isCash: false,
+      }),
+    );
+    renderPayment(store);
+
+    // Select the CREDIT method in the second row. Non-cash amounts are
+    // capped at the remaining balance, so first zero out the cash row.
+    const selects = screen.getAllByRole("combobox");
+    fireEvent.change(selects[1], { target: { value: "pm-credit" } });
+    const amountInputs = screen.getAllByLabelText(/Valor|Amount/);
+    fireEvent.change(amountInputs[0], { target: { value: "0" } });
+    fireEvent.change(amountInputs[1], { target: { value: "66164" } });
+
+    // Without a registered client the panel warns and confirm is blocked.
+    expect(
+      screen.getByText(/El crédito solo está disponible para clientes registrados/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Confirmar pago|Confirm payment/ }),
+    ).toBeDisabled();
+  });
+
+  it("shows the client's credit balance and confirms within the limit", async () => {
+    const store = createTestStore(6_616_400);
+    store.dispatch(
+      setClient({
+        id: "client-1",
+        name: "María Gómez",
+        identification: "CC 1023456789",
+      }),
+    );
+    store.dispatch(
+      addPaymentMethod({
+        id: "pm-credit",
+        category: "CREDIT",
+        name: "Crédito",
+        isCash: false,
+      }),
+    );
+    // Credit state: limit $100.000, no debt.
+    mockCreditService.getCreditState.mockResolvedValue({
+      clientId: "client-1",
+      creditLimitCents: 10_000_000,
+      usedCents: 0,
+      availableCents: 10_000_000,
+      enabled: true,
+    });
+    renderPayment(store);
+
+    const selects = screen.getAllByRole("combobox");
+    fireEvent.change(selects[1], { target: { value: "pm-credit" } });
+    const amountInputs = screen.getAllByLabelText(/Valor|Amount/);
+    fireEvent.change(amountInputs[0], { target: { value: "0" } });
+    fireEvent.change(amountInputs[1], { target: { value: "66164" } });
+
+    // The panel shows the amount the sale will use from the client's credit.
+    await waitFor(() => {
+      expect(screen.getByText(/Esta venta usará/)).toBeInTheDocument();
+    });
   });
 
   // --- PP-08 / PP-09: authorizations (already covered in existing test) ---

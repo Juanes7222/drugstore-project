@@ -11,6 +11,7 @@ jest.mock('@pharmacy/database', () => {
 });
 
 import { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
+import { Prisma } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { CashShiftService } from '@/modules/cash-shift/cash-shift.service';
 import { ClientsService } from '@/modules/clients/clients.service';
@@ -86,6 +87,14 @@ const mockPrisma = {
   sale: {
     findUnique: jest.fn().mockResolvedValue(null),
     findFirst: jest.fn().mockResolvedValue(null),
+    update: jest.fn(),
+  },
+  client: {
+    findUnique: jest.fn(),
+  },
+  clientCreditPayment: {
+    upsert: jest.fn(),
+    findUnique: jest.fn(),
     update: jest.fn(),
   },
 } as unknown as PrismaService;
@@ -368,6 +377,202 @@ describe('SyncOperationDispatcherService', () => {
         'u-1',
         'ws-1',
       );
+    });
+  });
+
+  // ── CLIENT_CREDIT_PAYMENT ─────────────────────────────────────────────
+
+  describe('CLIENT_CREDIT_PAYMENT', () => {
+    const paymentPayload = JSON.stringify({
+      paymentId: 'local-payment-uuid',
+      sequentialNumber: 1,
+      clientId: 'client-1',
+      amount: '500.00',
+      paymentMethodId: 'pm-cash',
+      notes: 'First abono',
+      createdById: 'u-1',
+      cashShiftId: 'shift-1',
+      workstationId: 'ws-1',
+      metadata: {
+        localPaymentId: 'local-payment-uuid',
+        workstationId: 'ws-1',
+        createdAt: '2026-07-24T09:00:00.000Z',
+      },
+    });
+
+    it('persists the abono server-side with the local id preserved', async () => {
+      (mockPrisma.client.findUnique as jest.Mock).mockResolvedValue({
+        id: 'client-1',
+      });
+      (mockPrisma.clientCreditPayment.upsert as jest.Mock).mockResolvedValue({});
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await service.dispatch(
+        buildEntry({
+          operationType: 'CLIENT_CREDIT_PAYMENT',
+          payload: paymentPayload,
+          operationUuid: 'op-uuid-1',
+          sourceWorkstationId: 'ws-1',
+        }),
+      );
+
+      expect(mockPrisma.clientCreditPayment.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'local-payment-uuid' },
+          create: expect.objectContaining({
+            id: 'local-payment-uuid',
+            subscriptionId: 'sub-test',
+            clientId: 'client-1',
+            amount: expect.any(Prisma.Decimal),
+            paymentMethodId: 'pm-cash',
+            notes: 'First abono',
+            sourceOperationUuid: 'op-uuid-1',
+            sourceWorkstationId: 'ws-1',
+          }),
+        }),
+      );
+      expect(mockSyncOperationOutcome.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ outcome: 'ACCEPTED' }),
+        }),
+      );
+    });
+
+    it('rejects when the client does not exist on the server', async () => {
+      (mockPrisma.client.findUnique as jest.Mock).mockResolvedValue(null);
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(
+          buildEntry({
+            operationType: 'CLIENT_CREDIT_PAYMENT',
+            payload: paymentPayload,
+          }),
+        ),
+      ).rejects.toThrow('not found for credit payment replay');
+      expect(mockSyncOperationOutcome.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ outcome: 'REJECTED' }),
+        }),
+      );
+    });
+  });
+
+  // ── CLIENT_CREDIT_PAYMENT_ANNULMENT ───────────────────────────────────
+
+  describe('CLIENT_CREDIT_PAYMENT_ANNULMENT', () => {
+    const annulmentPayload = JSON.stringify({
+      paymentId: 'local-payment-uuid',
+      clientId: 'client-1',
+      annulmentReason: 'Registro duplicado',
+      annulledById: 'admin-1',
+      annulledAt: '2026-07-25T11:00:00.000Z',
+      metadata: {
+        localPaymentId: 'local-payment-uuid',
+        workstationId: 'ws-1',
+        annulledAt: '2026-07-25T11:00:00.000Z',
+      },
+    });
+
+    it('marks the abono annulled server-side with the local id preserved', async () => {
+      (mockPrisma.clientCreditPayment.findUnique as jest.Mock).mockResolvedValue({
+        id: 'local-payment-uuid',
+        annulledAt: null,
+      });
+      (mockPrisma.clientCreditPayment.update as jest.Mock).mockResolvedValue({});
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await service.dispatch(
+        buildEntry({
+          operationType: 'CLIENT_CREDIT_PAYMENT_ANNULMENT',
+          payload: annulmentPayload,
+        }),
+      );
+
+      expect(mockPrisma.clientCreditPayment.findUnique).toHaveBeenCalledWith({
+        where: { id: 'local-payment-uuid' },
+        select: { id: true, annulledAt: true },
+      });
+      expect(mockPrisma.clientCreditPayment.update).toHaveBeenCalledWith({
+        where: { id: 'local-payment-uuid' },
+        data: expect.objectContaining({
+          annulledAt: new Date('2026-07-25T11:00:00.000Z'),
+          annulledById: 'admin-1',
+          annulmentReason: 'Registro duplicado',
+        }),
+      });
+      expect(mockSyncOperationOutcome.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ outcome: 'ACCEPTED' }),
+        }),
+      );
+    });
+
+    it('is a no-op when the payment is already annulled (idempotent retry)', async () => {
+      (mockPrisma.clientCreditPayment.findUnique as jest.Mock).mockResolvedValue({
+        id: 'local-payment-uuid',
+        annulledAt: new Date('2026-07-25T11:00:00.000Z'),
+      });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await service.dispatch(
+        buildEntry({
+          operationType: 'CLIENT_CREDIT_PAYMENT_ANNULMENT',
+          payload: annulmentPayload,
+        }),
+      );
+
+      expect(mockPrisma.clientCreditPayment.update).not.toHaveBeenCalled();
+      expect(mockSyncOperationOutcome.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ outcome: 'ACCEPTED' }),
+        }),
+      );
+    });
+
+    it('rejects when the payment has not been replayed yet', async () => {
+      (mockPrisma.clientCreditPayment.findUnique as jest.Mock).mockResolvedValue(null);
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(
+          buildEntry({
+            operationType: 'CLIENT_CREDIT_PAYMENT_ANNULMENT',
+            payload: annulmentPayload,
+          }),
+        ),
+      ).rejects.toThrow('not found for annulment replay');
+      expect(mockPrisma.clientCreditPayment.update).not.toHaveBeenCalled();
+      expect(mockSyncOperationOutcome.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ outcome: 'REJECTED' }),
+        }),
+      );
+    });
+
+    it('rejects an empty annulment reason so the replay never stores it', async () => {
+      (mockPrisma.clientCreditPayment.findUnique as jest.Mock).mockResolvedValue({
+        id: 'local-payment-uuid',
+        annulledAt: null,
+      });
+      mockSyncOperationOutcome.create.mockResolvedValue({});
+
+      await expect(
+        service.dispatch(
+          buildEntry({
+            operationType: 'CLIENT_CREDIT_PAYMENT_ANNULMENT',
+            payload: JSON.stringify({
+              paymentId: 'local-payment-uuid',
+              clientId: 'client-1',
+              annulmentReason: '   ',
+              annulledById: 'admin-1',
+              annulledAt: '2026-07-25T11:00:00.000Z',
+              metadata: { localPaymentId: 'local-payment-uuid' },
+            }),
+          }),
+        ),
+      ).rejects.toThrow('Annulment reason is required');
+      expect(mockPrisma.clientCreditPayment.update).not.toHaveBeenCalled();
     });
   });
 

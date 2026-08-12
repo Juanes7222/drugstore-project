@@ -207,6 +207,14 @@ export const CountStep: FC<CountStepProps> = ({
                 <p className="mt-pos-xs text-caption tabular-nums" style={{ color: 'var(--color-ink-muted)' }}>
                   {t('cash_shift.wizard_expected_short')}: {formatCurrency(Number(currentMethod.expectedAmount) * 100)}
                 </p>
+                {Number(currentMethod.creditPaymentAmount) > 0 && (
+                  <p
+                    className="mt-pos-xs text-caption tabular-nums font-medium"
+                    style={{ color: 'var(--color-pharma)' }}
+                  >
+                    {t('cash_shift.wizard_credit_payments')}: {formatCurrency(Number(currentMethod.creditPaymentAmount) * 100)}
+                  </p>
+                )}
 
                 {/* Navigation */}
                 <div className="flex items-center justify-between mt-pos-lg">
@@ -262,7 +270,14 @@ export const CountStep: FC<CountStepProps> = ({
                     const diff = declared - expected;
                     return (
                       <div key={m.paymentMethodId} className="flex items-center justify-between text-body-sm">
-                        <span className="font-medium">{m.methodName}</span>
+                        <span className="font-medium">
+                          {m.methodName}
+                          {Number(m.creditPaymentAmount) > 0 && (
+                            <span className="ml-1 text-caption" style={{ color: 'var(--color-pharma)' }}>
+                              (+{formatCurrency(Number(m.creditPaymentAmount) * 100)} {t('cash_shift.wizard_credit_payments_inline')})
+                            </span>
+                          )}
+                        </span>
                         <span className="tabular-nums">
                           {formatCurrency(declared * 100)}
                           <span

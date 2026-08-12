@@ -45,7 +45,10 @@ import {
 import {
   selectCartItems,
   selectGrandTotalCents,
+  selectSelectedClient,
 } from "@/store/slices/sales-slice";
+import { GENERIC_CLIENT } from "@/store/slices/sales-types";
+import { GENERIC_CLIENT_UUID } from "../../../domain/clients/constants/clients.constants";
 import { SaleType } from "@pharmacy/shared-types";
 import {
   initiateSaleCompletion,
@@ -56,7 +59,11 @@ import {
   setPrescriptionFlow,
 } from "@/store/slices/ui-slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
-import { useSalesPosService } from "@/components/common/service-context";
+import {
+  useCreditService,
+  useSalesPosService,
+} from "@/components/common/service-context";
+import type { ClientCreditState } from "../../../domain/clients/credit.service";
 import { useActivePaymentMethods } from "@/hooks/use-active-payment-methods";
 import { useProductSyncWait } from "@/hooks/use-product-sync-wait";
 import { ProductNotSyncedYetException } from "../../../domain/sales-pos/exceptions";
@@ -95,7 +102,91 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     selectAreElectronicMethodsApproved,
   );
   const currentSaleId = useAppSelector(selectCurrentSaleId);
+  const selectedClient = useAppSelector(selectSelectedClient);
   const salesPosService = useSalesPosService();
+  const creditService = useCreditService();
+
+  // ---- Store credit panel state ----
+  const [creditState, setCreditState] = useState<ClientCreditState | null>(null);
+  const [creditLoading, setCreditLoading] = useState(false);
+
+  const creditMethods = useMemo(
+    () => methods.filter((m) => m.category === "CREDIT"),
+    [methods],
+  );
+  const creditTotalCents = useMemo(
+    () => creditMethods.reduce((sum, m) => sum + m.amountCents, 0),
+    [creditMethods],
+  );
+  // A client counts as registered only when it is neither the UI fallback
+  // (no selection) nor the DB generic consumer row — the same rule the sale
+  // service enforces with GENERIC_CLIENT_UUID at confirm time.
+  const isRegisteredClient =
+    !!selectedClient &&
+    selectedClient.id !== GENERIC_CLIENT.id &&
+    selectedClient.id !== GENERIC_CLIENT_UUID;
+
+  // Load the selected client's credit state whenever the client changes or
+  // the amount charged to credit changes (so the available-balance check
+  // stays live while the cashier types).
+  useEffect(() => {
+    let cancelled = false;
+    const clientId = isRegisteredClient ? selectedClient?.id : undefined;
+    if (!clientId || creditTotalCents <= 0) {
+      setCreditState(null);
+      setCreditLoading(false);
+      return;
+    }
+
+    setCreditLoading(true);
+    void creditService
+      .getCreditState(clientId)
+      .then((state) => {
+        if (!cancelled) setCreditState(state);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        console.error("[PaymentProcessing] credit state failed:", err);
+        setCreditState(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCreditLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isRegisteredClient, selectedClient?.id, creditTotalCents, creditService]);
+
+  /** True when the current credit configuration cannot be confirmed. */
+  const creditBlocked = useMemo(() => {
+    if (creditTotalCents <= 0) return false;
+    if (!isRegisteredClient) return true;
+    if (!creditState) return false; // loading or missing — backend re-validates
+    if (!creditState.enabled) return true;
+    return creditTotalCents > creditState.availableCents;
+  }, [creditTotalCents, isRegisteredClient, creditState]);
+
+  const creditMessage = useMemo(() => {
+    if (creditTotalCents <= 0) return null;
+    if (!isRegisteredClient) {
+      return t("payment.credit.requires_client");
+    }
+    if (creditLoading) return null;
+    if (!creditState) return null;
+    if (!creditState.enabled) {
+      return t("payment.credit.not_enabled");
+    }
+    if (creditTotalCents > creditState.availableCents) {
+      return t("payment.credit.exceeds", {
+        amount: formatCurrency(creditTotalCents),
+        available: formatCurrency(creditState.availableCents),
+      });
+    }
+    return t("payment.credit.will_use", {
+      amount: formatCurrency(creditTotalCents),
+    });
+  }, [creditTotalCents, isRegisteredClient, creditLoading, creditState, t]);
 
   const gatewayService = useMemo<PaymentGatewayService>(
     () => injectedGateway ?? createMockPaymentGatewayService(),
@@ -261,7 +352,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
   }, [methods, currentSaleId, salesPosService, dispatch]);
 
   const handleConfirm = useCallback(async () => {
-    if (!canConfirm || isCompleting) {
+    if (!canConfirm || isCompleting || creditBlocked) {
       return;
     }
 
@@ -332,6 +423,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
   }, [
     canConfirm,
     isCompleting,
+    creditBlocked,
     currentSaleId,
     cartItems,
     performConfirm,
@@ -433,6 +525,81 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
             {t("payment.add_method")}
           </button>
         </div>
+
+        {creditTotalCents > 0 && (
+          <div
+            className="mt-pos-md rounded-pos p-pos-md"
+            style={{
+              backgroundColor: creditBlocked
+                ? "color-mix(in srgb, var(--color-urgency) 8%, white)"
+                : "color-mix(in srgb, var(--color-pharma) 8%, white)",
+              border: `1px solid ${
+                creditBlocked
+                  ? "color-mix(in srgb, var(--color-urgency) 25%, transparent)"
+                  : "color-mix(in srgb, var(--color-pharma) 25%, transparent)"
+              }`,
+            }}
+            role={creditBlocked ? "alert" : "status"}
+          >
+            <div className="mb-pos-xs flex items-center justify-between">
+              <span
+                className="text-caption font-semibold uppercase tracking-wide"
+                style={{ color: "var(--color-ink-muted)" }}
+              >
+                {t("payment.credit.panel_title")}
+              </span>
+              <span
+                className="font-data tabular-nums text-caption font-semibold"
+                style={{ color: "var(--color-pharma)" }}
+              >
+                {formatCurrency(creditTotalCents)}
+              </span>
+            </div>
+
+            {creditLoading && (
+              <p
+                className="m-0 flex items-center gap-2 text-body-sm"
+                style={{ color: "var(--color-ink-muted)" }}
+              >
+                <span
+                  className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent"
+                  aria-hidden="true"
+                />
+                {t("common.loading")}
+              </p>
+            )}
+
+            {!creditLoading && isRegisteredClient && creditState && (
+              <div className="mb-pos-xs flex flex-wrap gap-x-6 gap-y-1">
+                <CreditStat
+                  label={t("payment.credit.limit")}
+                  value={formatCurrency(creditState.creditLimitCents)}
+                />
+                <CreditStat
+                  label={t("payment.credit.debt")}
+                  value={formatCurrency(creditState.usedCents)}
+                />
+                <CreditStat
+                  label={t("payment.credit.available")}
+                  value={formatCurrency(creditState.availableCents)}
+                />
+              </div>
+            )}
+
+            {creditMessage && (
+              <p
+                className="m-0 text-body-sm"
+                style={{
+                  color: creditBlocked
+                    ? "var(--color-urgency)"
+                    : "var(--color-pharma)",
+                }}
+              >
+                {creditMessage}
+              </p>
+            )}
+          </div>
+        )}
 
         <div
           className="mt-pos-md flex items-center justify-between rounded px-pos-md py-pos-sm"
@@ -541,7 +708,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={!canConfirm || isCompleting}
+            disabled={!canConfirm || isCompleting || creditBlocked}
             className="pos-button pos-button-primary px-pos-xl"
           >
             {isCompleting ? t("payment.confirming") : t("payment.confirm")}
@@ -551,3 +718,24 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     </section>
   );
 };
+
+/** Small stat cell used inside the credit panel. */
+const CreditStat: FC<{ label: string; value: string }> = ({
+  label,
+  value,
+}) => (
+  <span className="inline-flex flex-col gap-0.5">
+    <span
+      className="text-caption"
+      style={{ color: "var(--color-ink-muted)" }}
+    >
+      {label}
+    </span>
+    <span
+      className="font-data tabular-nums text-body font-semibold"
+      style={{ color: "var(--color-ink)" }}
+    >
+      {value}
+    </span>
+  </span>
+);

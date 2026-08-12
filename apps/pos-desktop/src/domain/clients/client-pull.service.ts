@@ -281,6 +281,8 @@ interface ClientRow {
   consentScope: Record<string, unknown> | null;
   dataSubjectRequestStatus: string;
   dataSubjectRequestAt: string | null;
+  /** Store credit limit in COP (Decimal serialized to string). */
+  creditLimit: string | number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +321,7 @@ const CLIENT_UPSERT_COLUMNS: ReadonlyArray<readonly [string, string?]> = [
   ['"consentScope"', 'jsonb'],
   ['"dataSubjectRequestStatus"', '"DataSubjectRequestStatus"'],
   ['"dataSubjectRequestAt"', 'timestamp(3)'],
+  ['"creditLimit"', 'decimal(15,2)'],
   ['"createdAt"', 'timestamp(3)'],
   ['"updatedAt"', 'timestamp(3)'],
 ] as const;
@@ -368,6 +371,9 @@ async function upsertClientsChunk(
       client.consentScope ? JSON.stringify(client.consentScope) : null,
       client.dataSubjectRequestStatus,
       client.dataSubjectRequestAt ? new Date(client.dataSubjectRequestAt).toISOString() : null,
+      client.creditLimit !== null && client.creditLimit !== undefined
+        ? String(client.creditLimit)
+        : null,
       new Date(client.createdAt).toISOString(),
       new Date(client.updatedAt).toISOString(),
     ];

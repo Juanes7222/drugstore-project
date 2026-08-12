@@ -27,6 +27,7 @@ import { createClientPullService } from './client-pull.service';
 import { API_BASE_URL } from '../../infrastructure/config';
 import { useLocalSessionStore } from '../auth/local-session.store';
 import { DomainError } from '../../common/domain-error';
+import { getSalesConfig } from '../configuration/local-config.store';
 
 // ---------------------------------------------------------------------------
 // Public input types
@@ -41,6 +42,12 @@ export interface CreateClientInput {
   address?: string | null;
   municipality?: string | null;
   department?: string | null;
+  /**
+   * Store credit limit in COP pesos. `undefined` = apply the tenant default
+   * configured in the sales settings (quick-create path); `null` or `0` =
+   * the client has no credit.
+   */
+  creditLimit?: number | null;
 }
 
 export interface ClientSearchResult {
@@ -56,6 +63,8 @@ export interface ClientSearchResult {
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  /** Store credit limit in COP pesos; null = credit not enabled. */
+  creditLimit: number | null;
 }
 
 /**
@@ -108,7 +117,7 @@ export class ClientsService {
         orderBy: { updatedAt: 'desc' },
         take: 50,
       });
-      return clients as unknown as ClientSearchResult[];
+      return clients.map(normalizeClientResult);
     }
 
     const trimmed = query.trim();
@@ -124,7 +133,7 @@ export class ClientsService {
       take: 50,
     });
 
-    return clients as unknown as ClientSearchResult[];
+    return clients.map(normalizeClientResult);
   }
 
   /**
@@ -141,6 +150,7 @@ export class ClientsService {
   async create(input: CreateClientInput): Promise<ClientSearchResult> {
     const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
     const clientId = globalThis.crypto.randomUUID();
+    const creditLimit = resolveCreditLimit(input);
 
     return this.prisma.$transaction(async (tx) => {
       const client = await tx.client.create({
@@ -154,6 +164,7 @@ export class ClientsService {
           address: input.address ?? null,
           municipality: input.municipality ?? null,
           department: input.department ?? null,
+          creditLimit: creditLimit > 0 ? creditLimit : null,
           isActive: true,
           createdById: session.userId,
           dataSubjectRequestStatus: 'NONE',
@@ -162,7 +173,7 @@ export class ClientsService {
 
       await this.createSyncQueueEntry(tx, client, input, session);
 
-      return client as unknown as ClientSearchResult;
+      return normalizeClientResult(client);
     }).then((result) => {
       notifyPendingEntry();
       return result;
@@ -201,7 +212,7 @@ export class ClientsService {
     this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
     const client = await this.prisma.client.findUnique({ where: { id } });
-    return (client as ClientSearchResult | null) ?? null;
+    return client ? normalizeClientResult(client) : null;
   }
 
   /**
@@ -224,6 +235,7 @@ export class ClientsService {
         throw new DomainError('CLIENT_NOT_FOUND', `Client not found: ${id}`);
       }
 
+      const creditLimit = resolveCreditLimit(input);
       const client = await tx.client.update({
         where: { id },
         data: {
@@ -235,13 +247,14 @@ export class ClientsService {
           address: input.address ?? null,
           municipality: input.municipality ?? null,
           department: input.department ?? null,
+          creditLimit: creditLimit > 0 ? creditLimit : null,
           updatedById: session.userId,
         },
       });
 
       await this.enqueueUpdateSync(tx, client, input, session);
 
-      return client as unknown as ClientSearchResult;
+      return normalizeClientResult(client);
     }).then((result) => {
       notifyPendingEntry();
       return result;
@@ -281,7 +294,7 @@ export class ClientsService {
 
       await this.enqueueDeactivateSync(tx, client, session);
 
-      return client as unknown as ClientSearchResult;
+      return normalizeClientResult(client);
     }).then((result) => {
       notifyPendingEntry();
       return result;
@@ -307,6 +320,7 @@ export class ClientsService {
     session: { userId: string; workstationId: string },
   ): Promise<void> {
     const createdAt = new Date();
+    const creditLimit = resolveCreditLimit(input);
 
     const payloadObj = {
       createClientDto: {
@@ -318,6 +332,7 @@ export class ClientsService {
         address: input.address ?? null,
         municipality: input.municipality ?? null,
         department: input.department ?? null,
+        creditLimit: creditLimit > 0 ? creditLimit : null,
       },
       userId: session.userId,
       metadata: {
@@ -343,6 +358,7 @@ export class ClientsService {
     session: { userId: string; workstationId: string },
   ): Promise<void> {
     const createdAt = new Date();
+    const creditLimit = resolveCreditLimit(input);
 
     const payloadObj = {
       updateClientDto: {
@@ -354,6 +370,7 @@ export class ClientsService {
         address: input.address ?? null,
         municipality: input.municipality ?? null,
         department: input.department ?? null,
+        creditLimit: creditLimit > 0 ? creditLimit : null,
       },
       userId: session.userId,
       metadata: {
@@ -449,4 +466,39 @@ export class ClientsService {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
   }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the effective credit limit for a client input.
+ *
+ * `undefined` (quick-create path) falls back to the tenant default credit
+ * limit configured in the sales settings, converted from cents to pesos.
+ * `null` / `0` keep credit disabled.
+ */
+function resolveCreditLimit(input: CreateClientInput): number {
+  if (input.creditLimit !== undefined) {
+    return Math.max(0, Number(input.creditLimit) || 0);
+  }
+  return Math.max(0, getSalesConfig().defaultCreditLimitCents / 100);
+}
+
+/**
+ * Normalize a raw Prisma client row into the public `ClientSearchResult`
+ * shape, converting the Decimal credit limit to a plain number.
+ */
+function normalizeClientResult(
+  client: Record<string, unknown>,
+): ClientSearchResult {
+  const creditLimit = client.creditLimit as { toNumber?: () => number } | null | undefined;
+  return {
+    ...(client as unknown as ClientSearchResult),
+    creditLimit:
+      creditLimit && typeof creditLimit === 'object' && 'toNumber' in creditLimit
+        ? creditLimit.toNumber!()
+        : (creditLimit as number | null) ?? null,
+  };
 }

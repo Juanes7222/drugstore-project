@@ -1,0 +1,31 @@
+// LOCAL-ONLY schema fragment — included in local build only.
+// Strips server-only fields (subscriptionId). The full-schema version lives
+// in server-only/client-credit-payment.prisma.
+
+model ClientCreditPayment {
+  id                  String    @id
+  sequentialNumber    Int       @unique
+  clientId            String
+  amount              Decimal   @db.Decimal(15, 2)
+  paymentMethodId     String
+  notes               String?
+  createdById         String
+  cashShiftId         String
+  workstationId       String
+  createdAt           DateTime  @default(now())
+  /// Sync operationUuid that created this payment via CLIENT_CREDIT_PAYMENT
+  /// replay. Used by the server to detect retries and prevent duplicates.
+  sourceOperationUuid String?   @unique
+  sourceWorkstationId String
+  sourceCreatedAt     DateTime?
+  /// Annulment audit trail — set when an ADMIN annuls the payment
+  /// (CLIENT_CREDIT_PAYMENT_ANNULMENT). Annulled payments stop counting
+  /// toward the client's debt and the shift's cash reconciliation.
+  annulledAt          DateTime?
+  annulledById        String?
+  annulmentReason     String?
+
+  @@index([clientId, createdAt])
+  @@index([cashShiftId])
+  @@index([clientId, annulledAt])
+}

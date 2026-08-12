@@ -121,7 +121,8 @@ export const ClientTable: FC<ClientTableProps> = ({
             <Th>{t("clients.document")}</Th>
             <Th className="hidden sm:table-cell">{t("clients.email")}</Th>
             <Th className="hidden md:table-cell">{t("clients.phone")}</Th>
-            <Th className="hidden lg:table-cell">{t("clients.city")}</Th>
+            <Th className="hidden lg:table-cell">{t("clients.credit")}</Th>
+            <Th className="hidden xl:table-cell">{t("clients.city")}</Th>
             <Th className="text-right">{t("common.actions")}</Th>
           </tr>
         </thead>
@@ -181,7 +182,28 @@ export const ClientTable: FC<ClientTableProps> = ({
               <Td className="hidden md:table-cell" muted>
                 {client.phone ?? "—"}
               </Td>
-              <Td className="hidden lg:table-cell" muted>
+              <Td className="hidden lg:table-cell">
+                {client.creditLimit && client.creditLimit > 0 ? (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-caption font-semibold"
+                    style={{
+                      backgroundColor:
+                        "color-mix(in srgb, var(--color-pharma) 10%, transparent)",
+                      color: "var(--color-pharma)",
+                    }}
+                  >
+                    ${client.creditLimit.toLocaleString()}
+                  </span>
+                ) : (
+                  <span
+                    className="text-caption"
+                    style={{ color: "var(--color-ink-muted)" }}
+                  >
+                    {t("clients.credit_disabled")}
+                  </span>
+                )}
+              </Td>
+              <Td className="hidden xl:table-cell" muted>
                 {[client.municipality, client.department].filter(Boolean).join(", ") || "—"}
               </Td>
               <Td className="text-right">

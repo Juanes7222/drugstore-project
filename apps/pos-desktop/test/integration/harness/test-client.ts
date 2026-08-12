@@ -201,7 +201,9 @@ export interface SyncOperation {
     | "FISCAL_DOCUMENT_SYNC"
     | "PRESCRIPTION_REGISTRATION"
     | "RESOLUTION_ALLOCATION"
-    | "INVOICE_TRANSMISSION";
+    | "INVOICE_TRANSMISSION"
+    | "CLIENT_CREDIT_PAYMENT"
+    | "CLIENT_CREDIT_PAYMENT_ANNULMENT";
   operationUuid: string;
   payload: Record<string, unknown>;
   payloadHash: string;

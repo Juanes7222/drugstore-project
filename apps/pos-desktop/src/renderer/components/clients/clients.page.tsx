@@ -229,6 +229,7 @@ export const ClientsPage: FC = () => {
       address: client.address ?? "",
       municipality: client.municipality ?? "",
       department: client.department ?? "",
+      creditLimit: client.creditLimit ?? null,
     });
     setEditError(null);
     setShowCreateForm(false);

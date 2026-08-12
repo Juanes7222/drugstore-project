@@ -53,6 +53,9 @@ async function seedPaymentMethods(): Promise<void> {
     { id: IDS.PAY_BOTON_PSE, internalCode: 'PM005', name: 'Botón PSE', dianCode: '49', category: 'BANK_TRANSFER' as const, sortOrder: 5 },
     { id: IDS.PAY_NEQUI, internalCode: 'PM006', name: 'Nequi', dianCode: '102', category: 'DIGITAL_WALLET' as const, sortOrder: 6 },
     { id: IDS.PAY_DAVIPLATA, internalCode: 'PM007', name: 'Daviplata', dianCode: '103', category: 'DIGITAL_WALLET' as const, sortOrder: 7 },
+    // Store credit (cuenta por cobrar) — only allowed for registered clients
+    // whose credit balance stays within their configured limit.
+    { id: IDS.PAY_CREDITO, internalCode: 'PM008', name: 'Crédito', dianCode: '90', category: 'CREDIT' as const, sortOrder: 8 },
   ];
   await seedMany(prisma.paymentMethod, methods, { subscriptionId: IDS.SUBSCRIPTION_DEFAULT });
 }

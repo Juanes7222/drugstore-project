@@ -92,6 +92,48 @@ export interface ClientReturnPayload {
 }
 
 /**
+ * Payload for CLIENT_CREDIT_PAYMENT operations.
+ *
+ * Created by CreditService.recordCreditPayment() and dispatched server-side
+ * to keep the client's credit debt consistent across workstations.
+ */
+export interface ClientCreditPaymentPayload {
+  paymentId: string;
+  sequentialNumber: number;
+  clientId: string;
+  amount: string;
+  paymentMethodId: string;
+  notes: string | null;
+  createdById: string;
+  cashShiftId: string;
+  workstationId: string;
+  metadata: {
+    localPaymentId: string;
+    workstationId: string;
+    createdAt: string;
+  };
+}
+
+/**
+ * Payload for CLIENT_CREDIT_PAYMENT_ANNULMENT operations.
+ *
+ * Created by CreditService.annulCreditPayment() and dispatched server-side
+ * so the server applies the same admin reversal to the client's credit debt.
+ */
+export interface ClientCreditPaymentAnnulmentPayload {
+  paymentId: string;
+  clientId: string;
+  annulmentReason: string;
+  annulledById: string;
+  annulledAt: string;
+  metadata: {
+    localPaymentId: string;
+    workstationId: string;
+    annulledAt: string;
+  };
+}
+
+/**
  * Payload for INVENTORY_ADJUSTMENT operations.
  *
  * Created by InventoryAdjustmentsService.apply() and dispatched server-side

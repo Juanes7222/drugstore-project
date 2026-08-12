@@ -35,6 +35,9 @@ model Client {
   consentScope              Json?
   dataSubjectRequestStatus  DataSubjectRequestStatus @default(NONE)
   dataSubjectRequestAt      DateTime?
+  /// Store credit limit in COP (pesos). Null = the client has no credit.
+  /// Falls back to the tenant default credit limit when not set explicitly.
+  creditLimit               Decimal?   @db.Decimal(15, 2)
   sales                     Sale[]
 
   @@unique([identificationType, identificationNumber])

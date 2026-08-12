@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
-import { Prisma, SaleOperationalState, SaleType, ShiftState, IdentificationType, ClientType, AuditAction, SystemModule, CommissionType } from '@pharmacy/database';
+import { Prisma, SaleOperationalState, SaleType, ShiftState, IdentificationType, ClientType, AuditAction, SystemModule, CommissionType, ClientReturnState } from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreateSaleDto, CreateSaleItemDto } from '../dto/create-sale.dto';
 import { QuerySaleDto } from '../dto/query-sale.dto';
@@ -12,6 +12,9 @@ import { CashShiftNotOpenForWorkstationException } from '../exceptions/cash-shif
 import { PrescriptionRequiredNotSupportedException } from '../exceptions/prescription-required-not-supported.exception';
 import { PaymentAmountMismatchException } from '../exceptions/payment-amount-mismatch.exception';
 import { ChangeRequiresCashPaymentException } from '../exceptions/change-requires-cash-payment.exception';
+import { CreditRequiresRegisteredClientException } from '../exceptions/credit-requires-registered-client.exception';
+import { CreditNotEnabledForClientException } from '../exceptions/credit-not-enabled-for-client.exception';
+import { CreditLimitExceededException } from '../exceptions/credit-limit-exceeded.exception';
 import { SaleNotInProgressException } from '../exceptions/sale-not-in-progress.exception';
 import { SaleNotConfirmedException } from '../exceptions/sale-not-confirmed.exception';
 import { AnnulSaleDto } from '../dto/annul-sale.dto';
@@ -215,6 +218,38 @@ export class SalesService {
         const hasCashPayment = await this.hasCashPaymentMethod(tx, confirmDto.payments);
         if (!hasCashPayment) {
           throw new ChangeRequiresCashPaymentException();
+        }
+      }
+
+      // ---- Store credit validation ----
+      // A CREDIT payment is only allowed for a registered client (never the
+      // generic consumer) whose current credit debt stays within their limit
+      // after this payment. Runs inside the same transaction so the balance
+      // check and the payment insert are atomic.
+      const creditTotal = await this.sumCreditPayments(tx, confirmDto.payments);
+      if (creditTotal.greaterThan(0)) {
+        const isRegisteredClient =
+          !!sale.clientId && sale.clientId !== GENERIC_CLIENT_UUID;
+        if (!isRegisteredClient) {
+          throw new CreditRequiresRegisteredClientException();
+        }
+
+        const client = await tx.client.findUnique({
+          where: { id: sale.clientId! },
+          select: { creditLimit: true },
+        });
+        const creditLimit = client?.creditLimit ?? null;
+        if (!creditLimit || creditLimit.lessThanOrEqualTo(0)) {
+          throw new CreditNotEnabledForClientException(sale.clientId!);
+        }
+
+        const currentDebt = await this.computeClientCreditDebt(tx, sale.clientId!);
+        const available = creditLimit.minus(currentDebt);
+        if (creditTotal.greaterThan(available)) {
+          throw new CreditLimitExceededException(
+            available.toNumber(),
+            creditTotal.toNumber(),
+          );
         }
       }
 
@@ -628,6 +663,77 @@ export class SalesService {
       select: { localNumber: true },
     });
     return latestSale ? latestSale.localNumber + 1n : 1n;
+  }
+
+  /**
+   * Sum of payment amounts whose payment method category is CREDIT.
+   *
+   * Non-existent payment method IDs are ignored (they fail later at the FK
+   * constraint); only confirmed CREDIT-category methods count toward the
+   * credit balance check.
+   */
+  private async sumCreditPayments(
+    tx: Prisma.TransactionClient,
+    payments: z.infer<typeof PaymentInputSchema>[],
+  ): Promise<Prisma.Decimal> {
+    const ids = [...new Set(payments.map((p) => p.paymentMethodId))];
+    const methods = await tx.paymentMethod.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, category: true },
+    });
+    const creditMethodIds = new Set(
+      methods
+        .filter((m) => m.category === 'CREDIT')
+        .map((m) => m.id),
+    );
+    return payments.reduce(
+      (sum, p) =>
+        creditMethodIds.has(p.paymentMethodId)
+          ? sum.plus(p.amount)
+          : sum,
+      new Prisma.Decimal(0),
+    );
+  }
+
+  /**
+   * Current credit debt for a client in COP.
+   *
+   * Debt = sum of confirmed (non-annulled) sales paid with the CREDIT
+   * payment method minus confirmed client returns refunded via the CREDIT
+   * method minus recorded abonos (ClientCreditPayment). Returns are capped
+   * at 0 — a client can never have a negative balance from over-refunds or
+   * overpayments.
+   */
+  private async computeClientCreditDebt(
+    tx: Prisma.TransactionClient,
+    clientId: string,
+  ): Promise<Prisma.Decimal> {
+    const creditDebt = await tx.salePayment.aggregate({
+      where: {
+        sale: {
+          clientId,
+          operationalState: SaleOperationalState.CONFIRMED,
+        },
+        paymentMethod: { category: 'CREDIT' },
+      },
+      _sum: { amount: true },
+    });
+    const creditRefunds = await tx.clientReturn.aggregate({
+      where: {
+        clientId,
+        state: ClientReturnState.CONFIRMED,
+        refundMethod: { category: 'CREDIT' },
+      },
+      _sum: { refundAmount: true },
+    });
+    const creditPayments = await tx.clientCreditPayment.aggregate({
+      where: { clientId, annulledAt: null },
+      _sum: { amount: true },
+    });
+    const debt = (creditDebt._sum.amount ?? new Prisma.Decimal(0))
+      .minus(creditRefunds._sum.refundAmount ?? new Prisma.Decimal(0))
+      .minus(creditPayments._sum.amount ?? new Prisma.Decimal(0));
+    return Prisma.Decimal.max(debt, new Prisma.Decimal(0));
   }
 
   private async hasCashPaymentMethod(tx: Prisma.TransactionClient, payments: z.infer<typeof PaymentInputSchema>[]): Promise<boolean> {

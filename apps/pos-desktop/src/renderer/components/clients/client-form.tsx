@@ -7,7 +7,7 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertTriangleIcon, BuildingIcon, CheckIcon, FileTextIcon, MailIcon, MapPinIcon, PhoneIcon, SaveIcon, UserIcon, XIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, BuildingIcon, CheckIcon, CreditCardIcon, FileTextIcon, MailIcon, MapPinIcon, PhoneIcon, SaveIcon, UserIcon, XIcon } from "@/components/ui/icons";
 import { LoaderIcon } from "@/components/ui/icons/animated";
 import type { CreateClientInput } from "../../../domain/clients/clients.service";
 
@@ -207,6 +207,62 @@ export const ClientForm: FC<ClientFormProps> = ({
               </div>
             );
           })}
+        </div>
+
+        {/* Credit limit — dedicated block (numeric, drives the store-credit feature) */}
+        <div
+          className="mb-4 rounded-sm p-3"
+          style={{
+            backgroundColor: "color-mix(in srgb, var(--color-pharma) 5%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--color-pharma) 15%, transparent)",
+          }}
+        >
+          <label className={LABEL_CLASS} style={{ color: "var(--color-ink-muted)" }}>
+            <span className="inline-flex items-center gap-1">
+              <CreditCardIcon className="size-4 opacity-60" />
+              {t("clients.credit_limit")}
+            </span>
+          </label>
+          <input
+            type="number"
+            min={0}
+            step={1000}
+            value={data.creditLimit == null ? "" : String(data.creditLimit)}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === "") {
+                // Empty = apply the tenant default when creating, or keep
+                // credit disabled when editing.
+                onChange({
+                  ...data,
+                  creditLimit: mode === "create" ? undefined : null,
+                });
+                return;
+              }
+              const parsed = Number(raw);
+              onChange({
+                ...data,
+                creditLimit:
+                  Number.isFinite(parsed) && parsed > 0
+                    ? Math.round(parsed)
+                    : null,
+              });
+            }}
+            placeholder={t("clients.credit_limit_placeholder")}
+            className={INPUT_CLASS}
+            style={{
+              backgroundColor: "var(--color-panel)",
+              borderColor: "color-mix(in srgb, var(--color-ink) 10%, transparent)",
+            }}
+            aria-label={t("clients.credit_limit")}
+          />
+          <p className="mt-1 text-caption" style={{ color: "var(--color-ink-muted)" }}>
+            {t(
+              mode === "create"
+                ? "clients.credit_limit_hint"
+                : "clients.credit_limit_hint_edit",
+            )}
+          </p>
         </div>
 
         {/* Error message */}

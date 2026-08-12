@@ -426,6 +426,7 @@ export class CashShiftService {
   async computeExpectedTotalsByPaymentMethod(
     shiftId: string,
     baseTotals?: Map<string, Prisma.Decimal>,
+    options?: { includeCreditPayments?: boolean },
   ): Promise<Map<string, Prisma.Decimal>> {
     this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
@@ -435,9 +436,91 @@ export class CashShiftService {
     const baseTotalsLocal =
       baseTotals ?? (await this.getDirectPaymentTotals(shiftId));
 
-    if (!this.adjustmentService) {
-      return baseTotalsLocal;
+    // Credit payments (abonos) received during the shift move real money
+    // through the drawer, so every expected-total computation for the close
+    // wizard and the active-methods check adds them per payment method.
+    // The drift comparison passes a base that already includes them and
+    // opts out here to avoid double counting.
+    if (options?.includeCreditPayments === false) {
+      return this.adjustmentService
+        ? await this.layerAdjustments(baseTotalsLocal, shiftId)
+        : baseTotalsLocal;
     }
+
+    const withCreditPayments = await this.mergeCreditPaymentTotals(
+      shiftId,
+      baseTotalsLocal,
+    );
+
+    if (!this.adjustmentService) {
+      return withCreditPayments;
+    }
+
+    return this.layerAdjustments(withCreditPayments, shiftId);
+  }
+
+  /**
+   * Sum of credit payments (abonos) per payment method for a shift.
+   *
+   * Abonos are recorded against the open cash shift at the moment they are
+   * collected (`ClientCreditPayment.cashShiftId`), so the expected cash drawer
+   * amount for the close must include them or the cashier's count would never
+   * reconcile.
+   */
+  private async getCreditPaymentTotals(
+    shiftId: string,
+  ): Promise<Map<string, Prisma.Decimal>> {
+    // Annulled abonos (admin reversals) never entered the drawer in net
+    // terms, so they are excluded from the expected totals.
+    const groups = await this.prisma.clientCreditPayment.groupBy({
+      by: ['paymentMethodId'],
+      where: { cashShiftId: shiftId, annulledAt: null },
+      _sum: { amount: true },
+    });
+    const totals = new Map<string, Prisma.Decimal>();
+    for (const group of groups) {
+      totals.set(
+        group.paymentMethodId,
+        group._sum.amount ?? new Prisma.Decimal(0),
+      );
+    }
+    return totals;
+  }
+
+  /**
+   * Return a new totals map with per-method credit-payment totals added on
+   * top, so every expected-total consumer sees abonos without re-implementing
+   * the merge and without mutating the caller's map.
+   *
+   * @param creditTotals  Precomputed abono totals — when provided, the GROUP BY
+   *   is skipped (callers that also need the breakdown for the wizard UI pass
+   *   the same map to avoid a duplicate aggregation).
+   */
+  private async mergeCreditPaymentTotals(
+    shiftId: string,
+    totals: Map<string, Prisma.Decimal>,
+    creditTotals?: Map<string, Prisma.Decimal>,
+  ): Promise<Map<string, Prisma.Decimal>> {
+    const credit =
+      creditTotals ?? (await this.getCreditPaymentTotals(shiftId));
+    const merged = new Map(totals);
+    for (const [paymentMethodId, amount] of credit) {
+      const current = merged.get(paymentMethodId) ?? new Prisma.Decimal(0);
+      merged.set(paymentMethodId, current.plus(amount));
+    }
+    return merged;
+  }
+
+  /**
+   * Layer non-reversed payment adjustments (PAYMENT_METHOD_CHANGE, etc.) on
+   * top of a base totals map, resolving each affected invoice's operational
+   * view in small bounded batches.
+   */
+  private async layerAdjustments(
+    baseTotals: Map<string, Prisma.Decimal>,
+    shiftId: string,
+  ): Promise<Map<string, Prisma.Decimal>> {
+    const adjusted = new Map(baseTotals);
 
     // Load active payment methods once so we can resolve the `category` enum
     // values that the adjustment-creation modal mistakenly stores in the
@@ -462,16 +545,14 @@ export class CashShiftService {
     });
 
     const saleIds = sales.map((s) => s.id);
-    if (saleIds.length === 0) return baseTotalsLocal;
+    if (saleIds.length === 0) return adjusted;
 
     const invoices = await this.prisma.invoice.findMany({
       where: { saleId: { in: saleIds } },
       select: { id: true },
     });
 
-    if (invoices.length === 0) return baseTotalsLocal;
-
-    const adjusted = new Map(baseTotalsLocal);
+    if (invoices.length === 0) return adjusted;
 
     // Only invoices that carry a non-reversed payment-affecting adjustment
     // need the full operational-view resolution. For every other invoice
@@ -837,9 +918,13 @@ export class CashShiftService {
     this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
     const fiscalTotals = await this.getDirectPaymentTotals(shiftId);
+    // The comparison stays sales-only on both sides: credit payments (abonos)
+    // are not invoice payments, so including them here would look like drift.
+    // The close wizard adds them separately (see getShiftSalesSummary).
     const operationalTotals = await this.computeExpectedTotalsByPaymentMethod(
       shiftId,
       fiscalTotals,
+      { includeCreditPayments: false },
     );
 
     // Union of both maps so a method that was fully replaced (fiscal $X,
@@ -1012,6 +1097,8 @@ export class CashShiftService {
       methodName: string;
       isCash: boolean;
       expectedAmount: string;
+      /** Amount of the expected total that came from credit payments (abonos). */
+      creditPaymentAmount: string;
     }>;
   }> {
     this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
@@ -1033,16 +1120,35 @@ export class CashShiftService {
     // available so the resolution does not run a second time.
     const totalsByMethodComputed =
       totalsByMethod ?? (await this.computeExpectedTotalsWithFallback(shiftId));
+
+    // When the caller reused the drift comparison's operational map (which is
+    // sales-only by design — see getShiftFiscalComparison), merge the credit
+    // payments here so the wizard's expected drawer amounts always include
+    // abonos regardless of where the totals came from. computeExpectedTotals
+    // already includes them, so merging twice would double count. The abono
+    // map is fetched once and reused for both the merge and the per-method
+    // breakdown field.
+    const creditPaymentTotals = await this.getCreditPaymentTotals(shiftId);
+    const totalsByMethodWithCreditPayments = totalsByMethod
+      ? await this.mergeCreditPaymentTotals(
+          shiftId,
+          totalsByMethod,
+          creditPaymentTotals,
+        )
+      : totalsByMethodComputed;
     const activeMethods = await this.getActivePaymentMethodsWithNames(
       shiftId,
-      totalsByMethodComputed,
+      totalsByMethodWithCreditPayments,
     );
 
     const totalsByMethodArray = activeMethods.map((m) => ({
       paymentMethodId: m.id,
       methodName: m.name,
       isCash: m.isCash,
-      expectedAmount: (totalsByMethodComputed.get(m.id) ?? new Prisma.Decimal(0)).toString(),
+      expectedAmount: (totalsByMethodWithCreditPayments.get(m.id) ?? new Prisma.Decimal(0)).toString(),
+      creditPaymentAmount: (
+        creditPaymentTotals.get(m.id) ?? new Prisma.Decimal(0)
+      ).toString(),
     }));
 
     return {
