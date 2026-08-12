@@ -2,10 +2,11 @@
  * Component tests for AdjustmentCreationModal — CLIENT_CHANGE branch.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AdjustmentCreationModal } from './adjustment-creation-modal';
 import type { ClientOption } from './adjustment-creation-modal';
+import type { PaymentMethodOption } from '@/store/slices/payment-types';
 import type { OperationalInvoiceView } from '../../../domain/fiscal/local-adjustment.types';
 import '@/i18n';
 
@@ -54,6 +55,30 @@ const clients: ClientOption[] = [
     name: 'Ana Gómez',
     identificationType: 'CC',
     identificationNumber: '654321',
+  },
+];
+
+// DB-backed payment methods (DIAN categories) — mirror the local
+// PaymentMethod rows that the shared picker renders in production.
+const paymentMethods: PaymentMethodOption[] = [
+  { id: 'pm-cash', category: 'CASH', name: 'Efectivo', isCash: true },
+  {
+    id: 'pm-debit',
+    category: 'DEBIT_CARD',
+    name: 'Tarjeta Débito',
+    isCash: false,
+  },
+  {
+    id: 'pm-credit',
+    category: 'CREDIT_CARD',
+    name: 'Tarjeta Crédito',
+    isCash: false,
+  },
+  {
+    id: 'pm-transfer',
+    category: 'BANK_TRANSFER',
+    name: 'Transferencia Bancaria',
+    isCash: false,
   },
 ];
 
@@ -183,37 +208,29 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
     ...defaultProps,
     allowedTypes: ['PAYMENT_METHOD_CHANGE' as const],
     operationalView: paymentView,
+    paymentMethods,
   };
 
-  it('renders the method picker as a category select with an optional specific-name input', async () => {
+  it('renders the method picker as a DB-driven select with an optional specific-name input', async () => {
     render(<AdjustmentCreationModal {...paymentProps} />);
 
     await userEvent.click(
       screen.getByRole('radio', { name: /Cambio m.*todo de pago/ }),
     );
 
-    // The method picker is a <select> driven by the PaymentMethodCategory
-    // enum, not a free-text input. Querying by the picker label returns the
-    // <select> element.
+    // The method picker is a <select> driven by the active PaymentMethod
+    // rows from the local DB (DIAN categories), not a free-text input.
+    // Querying by the picker label returns the <select> element.
     const methodSelect = screen.getByLabelText(
       /M.todo de pago|Payment method/,
     ) as HTMLSelectElement;
     expect(methodSelect.tagName).toBe('SELECT');
 
-    // Every value from the new PAYMENT_METHOD_CATEGORY_VALUES enum is offered
-    // as a <select> option — there is no free-text category input.
+    // Every active DB method is offered as an option — there is no
+    // free-text category input and no hardcoded list.
     const optionValues = Array.from(methodSelect.options).map((o) => o.value);
     expect(optionValues).toEqual(
-      expect.arrayContaining([
-        'CASH',
-        'DEBIT_CARD',
-        'CREDIT_CARD',
-        'BANK_TRANSFER',
-        'DIGITAL_WALLET',
-        'CHECK',
-        'CREDIT',
-        'OTHER',
-      ]),
+      expect.arrayContaining(['pm-cash', 'pm-debit', 'pm-credit', 'pm-transfer']),
     );
 
     // Optional cashier-entered specific name is a separate text input below
@@ -245,7 +262,7 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
     expect(screen.getByText(/\$ ?75[.,]000[.,]00/)).toBeInTheDocument();
   });
 
-  it('submits the flat single-method shape with category matching the selected enum', async () => {
+  it('submits the flat single-method shape with the real DB method and its category', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<AdjustmentCreationModal {...paymentProps} onSubmit={onSubmit} />);
 
@@ -253,18 +270,20 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
       screen.getByRole('radio', { name: /Cambio m.*todo de pago/ }),
     );
 
-    // Single method picker — the <select> drives the internal `category`
-    // field directly. Picking CREDIT_CARD sets `category` to the enum.
+    // Single method picker — selecting a DB method stores its real
+    // `paymentMethodId` and derives `category` from the DB row.
     const methodSelect = screen.getByLabelText(
       /M.todo de pago|Payment method/,
     ) as HTMLSelectElement;
-    await userEvent.selectOptions(methodSelect, 'CREDIT_CARD');
+    await userEvent.selectOptions(methodSelect, 'pm-credit');
 
     // Optional cashier-entered specific name — separate from the category.
+    // The DB method name is pre-filled by the picker; an empty override
+    // reverts to that default, so set the full value at once.
     const specificNameInput = screen.getByLabelText(
       /Nombre espec.fico|Specific name/,
     );
-    await userEvent.type(specificNameInput, 'Tarjeta Visa');
+    fireEvent.change(specificNameInput, { target: { value: 'Tarjeta Visa' } });
 
     await userEvent.type(
       screen.getByPlaceholderText(/Describa el motivo/),
@@ -293,9 +312,8 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
     expect(value).toMatchObject({
       paymentMethodName: 'Tarjeta Visa',
       category: 'CREDIT_CARD',
+      paymentMethodId: 'pm-credit',
     });
-    expect(typeof (value as { paymentMethodId?: string }).paymentMethodId)
-      .toBe('string');
     expect(reason).toBe('Cambio a tarjeta de crédito por solicitud del cliente');
   }, 15000);
 
@@ -311,7 +329,7 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
     ) as HTMLSelectElement;
 
     // CASH carries no reference data — no reference inputs are rendered.
-    await userEvent.selectOptions(methodSelect, 'CASH');
+    await userEvent.selectOptions(methodSelect, 'pm-cash');
     expect(
       screen.queryByLabelText(/Referencia \/ CUS|Reference \/ CUS/),
     ).not.toBeInTheDocument();
@@ -323,7 +341,7 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
     ).not.toBeInTheDocument();
 
     // BANK_TRANSFER exposes a single transaction reference field.
-    await userEvent.selectOptions(methodSelect, 'BANK_TRANSFER');
+    await userEvent.selectOptions(methodSelect, 'pm-transfer');
     expect(
       screen.getByLabelText(/Referencia \/ CUS|Reference \/ CUS/),
     ).toBeInTheDocument();
@@ -336,7 +354,7 @@ describe('AdjustmentCreationModal — PAYMENT_METHOD_CHANGE', () => {
 
     // CREDIT_CARD exposes auth code, brand, and last-4 — no transaction
     // reference. Switching categories removes the now-irrelevant field.
-    await userEvent.selectOptions(methodSelect, 'CREDIT_CARD');
+    await userEvent.selectOptions(methodSelect, 'pm-credit');
     expect(
       screen.queryByLabelText(/Referencia \/ CUS|Reference \/ CUS/),
     ).not.toBeInTheDocument();

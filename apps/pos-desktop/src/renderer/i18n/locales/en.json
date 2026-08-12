@@ -719,6 +719,7 @@
     "table_price": "Unit price",
     "table_refund": "Refund amount",
     "select_item": "Select item:",
+    "refund_method_label": "Refund method",
     "process_return": "Process Return",
     "processing": "Processing...",
     "no_items_selected": "Select at least one item to return.",

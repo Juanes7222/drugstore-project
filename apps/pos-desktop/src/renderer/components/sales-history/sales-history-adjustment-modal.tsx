@@ -8,6 +8,7 @@
 import { type FC, useEffect, useState } from 'react';
 import { useCashShiftService, useClientsService } from '../common/service-context';
 import { AdjustmentCreationModal } from '../fiscal/adjustment-creation-modal';
+import type { PaymentMethodOption } from '@/store/slices/payment-types';
 import type {
   AdjustmentType,
   OperationalInvoiceView,
@@ -52,9 +53,9 @@ export const SalesHistoryAdjustmentModal: FC<SalesHistoryAdjustmentModalProps> =
   const cashShiftService = useCashShiftService();
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [clientsLoading, setClientsLoading] = useState(false);
-  const [paymentMethods, setPaymentMethods] = useState<
-    Array<{ id: string; category: string; name: string }>
-  >([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodOption[]>(
+    [],
+  );
   const [paymentMethodsLoading, setPaymentMethodsLoading] = useState(false);
 
   useEffect(() => {

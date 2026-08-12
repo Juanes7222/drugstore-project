@@ -432,7 +432,7 @@ export default defineConfig(() => ({
   // PGlite uses Web Workers internally — 'es' format ensures correct module
   // loading and WASM instantiation in both dev and production builds.
   worker: {
-    format: 'es',
+    format: 'es' as const,
   },
 
   clearScreen: false,

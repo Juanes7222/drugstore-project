@@ -22,7 +22,7 @@
  * rationale. The provisional local figure is discarded and replaced
  * when sync replays the sale against the server.
  */
-import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState, PaymentMethodCategory, CommissionType } from '@pharmacy/database/local';
+import { PrismaClient, Prisma, SaleOperationalState, SaleType, ShiftState, CommissionType } from '@pharmacy/database/local';
 import { dbWriteLock } from '../../infrastructure/write-lock';
 import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import type { AuthService } from '../auth/auth.service';
@@ -197,44 +197,6 @@ export class SalesPosService {
   // -----------------------------------------------------------------------
   // Public API
   // -----------------------------------------------------------------------
-
-  /**
-   * Resolve a frontend payment-method type string to the DB PaymentMethod UUID.
-   *
-   * Frontend uses lowercase types ("cash", "card", "transfer", "nequi").
-   * The DB stores PaymentMethod rows with a `category` enum. This method
-   * maps the frontend type to a DB category and returns the first matching
-   * method's ID.
-   *
-   * @throws Error if no matching payment method is found in the local DB.
-   */
-  async resolvePaymentMethodId(type: string): Promise<string> {
-    const categoryMap: Record<string, PaymentMethodCategory> = {
-      cash: PaymentMethodCategory.CASH,
-      card: PaymentMethodCategory.CREDIT_CARD,
-      transfer: PaymentMethodCategory.BANK_TRANSFER,
-      nequi: PaymentMethodCategory.DIGITAL_WALLET,
-    };
-
-    const category = categoryMap[type.toLowerCase()];
-    if (!category) {
-      throw new Error(`Unknown payment method type "${type}".`);
-    }
-
-    const method = await this.prisma.paymentMethod.findFirst({
-      where: { category },
-      select: { id: true },
-    });
-
-    if (!method) {
-      throw new Error(
-        `No PaymentMethod found in DB for category "${category}". ` +
-        'Run payment-method sync to seed the local catalog.',
-      );
-    }
-
-    return method.id;
-  }
 
   /**
    * Create a sale in IN_PROGRESS state.

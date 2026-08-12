@@ -15,6 +15,13 @@ import { store } from "./store/store";
 import { App } from "./App";
 import "./styles/global.css";
 
+// Test-only WebDriver bridge (@wdio/tauri-plugin). Must exist before the app
+// renders so the e2e driver finds window.wdioTauri when it connects. Skipped
+// in production builds (VITE_DEV_MODE=false).
+if (import.meta.env.VITE_DEV_MODE === "true") {
+  await import("@wdio/tauri-plugin");
+}
+
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {

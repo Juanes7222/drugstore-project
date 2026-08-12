@@ -54,9 +54,15 @@ impl LocalSyncModules {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+
+    // Test-only WebDriver bridge (cargo build --features wdio).
+    #[cfg(feature = "wdio")]
+    let builder = builder.plugin(tauri_plugin_wdio::init());
+
+    let app = builder
         .setup(|app| {
             #[cfg(debug_assertions)]
             {

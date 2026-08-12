@@ -14,6 +14,8 @@ import { type FC, useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { UnverifiedItemEntry } from "./returns.types";
 import { Trash2Icon } from "@/components/ui/icons";
+import { PaymentMethodPicker } from "@/components/common/payment-method-picker";
+import type { PaymentMethodOption } from "@/store/slices/payment-types";
 
 interface UnverifiedReturnFlowProps {
   /** Current list of manually entered items. */
@@ -26,6 +28,12 @@ interface UnverifiedReturnFlowProps {
   onManagerPinChange: (pin: string) => void;
   /** Error message for the PIN field, or null. */
   pinError: string | null;
+  /** Active payment methods from the DB (refund method options). */
+  refundMethods: PaymentMethodOption[];
+  /** Selected refund method id. */
+  refundMethodId: string;
+  /** Called when the refund method changes. */
+  onRefundMethodChange: (method: PaymentMethodOption) => void;
   /** Whether the submission is in progress. */
   isProcessing: boolean;
   /** Called to submit the unverified return. */
@@ -40,6 +48,9 @@ export const UnverifiedReturnFlow: FC<UnverifiedReturnFlowProps> = ({
   managerPin,
   onManagerPinChange,
   pinError,
+  refundMethods,
+  refundMethodId,
+  onRefundMethodChange,
   isProcessing,
   onSubmit,
   canSubmit,
@@ -353,6 +364,26 @@ export const UnverifiedReturnFlow: FC<UnverifiedReturnFlowProps> = ({
                 {pinError}
               </p>
             )}
+          </div>
+
+          <div className="flex flex-col gap-pos-sm">
+            <label
+              htmlFor="unverified-refund-method"
+              className="text-caption font-medium"
+              style={{
+                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+              }}
+            >
+              {t("returns.refund_method_label")}
+            </label>
+            <PaymentMethodPicker
+              id="unverified-refund-method"
+              value={refundMethodId}
+              methods={refundMethods}
+              onChange={onRefundMethodChange}
+              disabled={isProcessing}
+              ariaLabel={t("returns.refund_method_label")}
+            />
           </div>
 
           <button

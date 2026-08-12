@@ -18,6 +18,17 @@ const MAX_DELAY_MS = 1400;
 const randomDelay = (): number =>
   Math.floor(Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS + 1)) + MIN_DELAY_MS;
 
+/**
+ * E2E escape hatch: when set on the global scope (via the WebDriver
+ * `execute` bridge) every authorization is approved, so the WDIO specs get
+ * deterministic outcomes instead of the random 75/15/10 split below.
+ */
+const E2E_APPROVE_ALL_KEY = "__POS_E2E_APPROVE_ALL_PAYMENTS__";
+
+const isE2EApproveAll = (): boolean =>
+  typeof globalThis !== "undefined" &&
+  (globalThis as Record<string, unknown>)[E2E_APPROVE_ALL_KEY] === true;
+
 let referenceSequence = 0;
 
 const createReference = (): string => {
@@ -44,7 +55,7 @@ export const createMockPaymentGatewayService = (
       setTimeout(resolve, randomDelay());
     });
 
-    if (options.approveAll) {
+    if (options.approveAll || isE2EApproveAll()) {
       return {
         status: "approved",
         reference: createReference(),

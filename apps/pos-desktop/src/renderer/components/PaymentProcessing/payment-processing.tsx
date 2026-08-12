@@ -4,6 +4,10 @@
  * This is where the sale-completing motion handoff begins. When the payment
  * is ready and the cashier confirms, the slice is moved to the "initiating"
  * phase, the controls dim, and the screen transition is handed off to Receipt.
+ *
+ * Payment methods come from the local DB (DIAN categories) via the shared
+ * `useActivePaymentMethods` hook — never hardcoded. The initial row defaults
+ * to the cash method so exact-cash sales work out of the box.
  */
 import {
   type FC,
@@ -16,9 +20,8 @@ import {
 import { useTranslation } from "react-i18next";
 import { CurrencyInput } from "@/components/common/currency-input";
 import {
-  ElectronicPaymentMethodType,
   PaymentMethodEntry,
-  PaymentMethodType,
+  PaymentMethodOption,
 } from "@/store/slices/payment-types";
 import {
   addPaymentMethod,
@@ -26,8 +29,8 @@ import {
   resetPayment,
   setAuthorizationStatus,
   setCashReceived,
+  updatePaymentMethod,
   updatePaymentMethodAmount,
-  updatePaymentMethodType,
 } from "@/store/slices/payment-slice";
 import {
   selectAreElectronicMethodsApproved,
@@ -54,6 +57,7 @@ import {
 } from "@/store/slices/ui-slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useSalesPosService } from "@/components/common/service-context";
+import { useActivePaymentMethods } from "@/hooks/use-active-payment-methods";
 import { useProductSyncWait } from "@/hooks/use-product-sync-wait";
 import { ProductNotSyncedYetException } from "../../../domain/sales-pos/exceptions";
 import { formatCurrency } from "@/utils/format-currency";
@@ -77,6 +81,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
   const [isSyncingProduct, setIsSyncingProduct] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const waitForProductSync = useProductSyncWait();
+  const { methods: availableMethods } = useActivePaymentMethods();
 
   const methods = useAppSelector(selectPaymentMethods);
   const totalDue = useAppSelector(selectGrandTotalCents);
@@ -105,9 +110,38 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     };
   }, []);
 
+  /**
+   * Default method for a fresh row: the cash method when one exists,
+   * otherwise the first active method.
+   */
+  const defaultMethod = useMemo<PaymentMethodOption | null>(() => {
+    if (availableMethods.length === 0) return null;
+    return (
+      availableMethods.find((m) => m.isCash) ?? availableMethods[0]
+    );
+  }, [availableMethods]);
+
+  // Fill the initial row with the default (cash) method once the DB list
+  // arrives, so the cashier never sees an unresolved method.
+  useEffect(() => {
+    if (!defaultMethod) return;
+    const unresolved = methods.find((m) => m.paymentMethodId === "");
+    if (unresolved) {
+      dispatch(
+        updatePaymentMethod({ id: unresolved.id, method: defaultMethod }),
+      );
+    }
+  }, [defaultMethod, methods, dispatch]);
+
   const handleAddMethod = useCallback(() => {
-    dispatch(addPaymentMethod());
-  }, [dispatch]);
+    // Offer the first non-cash method when available (split payments
+    // usually pair cash with an electronic method); fall back to the
+    // default method.
+    const next =
+      availableMethods.find((m) => !m.isCash) ?? defaultMethod;
+    if (!next) return;
+    dispatch(addPaymentMethod(next));
+  }, [availableMethods, defaultMethod, dispatch]);
 
   const handleRemoveMethod = useCallback(
     (id: string) => {
@@ -116,9 +150,9 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     [dispatch],
   );
 
-  const handleTypeChange = useCallback(
-    (id: string, type: PaymentMethodType) => {
-      dispatch(updatePaymentMethodType({ id, type }));
+  const handleMethodChange = useCallback(
+    (id: string, method: PaymentMethodOption) => {
+      dispatch(updatePaymentMethod({ id, method }));
     },
     [dispatch],
   );
@@ -131,7 +165,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
       // CASH can be overpaid (change is returned). All other methods
       // (transfer, card, nequi) cannot — cap at the remaining balance so
       // the backend never rejects with ChangeRequiresCashPaymentException.
-      if (method.type !== PaymentMethodType.CASH) {
+      if (!method.isCash) {
         const otherMethodsTotal = methods
           .filter((m) => m.id !== id)
           .reduce((sum, m) => sum + m.amountCents, 0);
@@ -165,7 +199,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
       );
 
       const result = await gatewayService.authorize({
-        methodType: method.type as ElectronicPaymentMethodType,
+        methodType: method.category,
         amountCents: method.amountCents,
         reference: gatewayService.generateReference(),
       });
@@ -195,18 +229,19 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
       throw new Error("No se encontró la venta activa. Vuelva a intentarlo.");
     }
 
-    // 1. Resolve frontend payment types → DB payment method UUIDs
-    const resolvedPayments = await Promise.all(
-      methods.map(async (m) => ({
-        paymentMethodId: await salesPosService.resolvePaymentMethodId(m.type),
-        amount: m.amountCents / 100, // cents → pesos (DB stores Decimal 15,2)
-        transactionReference: m.reference,
-        cardBrand: m.type === "card" ? "GENERIC" : undefined,
-        cardLastFour: undefined,
-        batchNumber: undefined,
-        processorResponseCode: m.authorizationStatus,
-      })),
-    );
+    // Payments reference the real DB payment methods chosen by the picker.
+    const resolvedPayments = methods.map((m) => ({
+      paymentMethodId: m.paymentMethodId,
+      amount: m.amountCents / 100, // cents → pesos (DB stores Decimal 15,2)
+      transactionReference: m.reference,
+      cardBrand:
+        m.category === "DEBIT_CARD" || m.category === "CREDIT_CARD"
+          ? "GENERIC"
+          : undefined,
+      cardLastFour: undefined,
+      batchNumber: undefined,
+      processorResponseCode: m.authorizationStatus,
+    }));
 
     // 2. Persist to DB — consumes stock, creates SalePayment, sets CONFIRMED
     await salesPosService.confirm(currentSaleId, {
@@ -378,9 +413,10 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
                 key={method.id}
                 index={index}
                 method={method}
+                methods={availableMethods}
                 isOnlyMethod={methods.length === 1}
                 disabled={isCompleting}
-                onTypeChange={handleTypeChange}
+                onMethodChange={handleMethodChange}
                 onAmountChange={handleAmountChange}
                 onRemove={handleRemoveMethod}
                 onAuthorize={handleAuthorize}

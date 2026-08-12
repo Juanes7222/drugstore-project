@@ -1397,16 +1397,17 @@ export class CashShiftService {
   }
 
   /**
-   * Return all active payment methods as a simple id/category/name list,
-   * sorted by sortOrder. Useful for UI components that need to resolve
-   * category enum values to real PaymentMethod.id values.
+   * Return all active payment methods as a simple id/category/name/isCash
+   * list, sorted by sortOrder. This is the single source of truth for every
+   * payment-method picker in the app (sales, adjustments, returns) so all
+   * sections always show the same DIAN categories stored in the database.
    */
   async getActivePaymentMethodsList(): Promise<
-    Array<{ id: string; category: string; name: string }>
+    Array<{ id: string; category: string; name: string; isCash: boolean }>
   > {
     const methods = await this.prisma.paymentMethod.findMany({
       where: { isActive: true },
-      select: { id: true, category: true, name: true },
+      select: { id: true, category: true, name: true, isCash: true },
       orderBy: { sortOrder: 'asc' },
     });
     return Array.isArray(methods) ? methods : [];

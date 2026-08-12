@@ -110,10 +110,10 @@ export const Receipt: FC = () => {
     });
 
     const payments: InvoicePayment[] = paymentMethods.map((pm) => ({
-      paymentMethodId: pm.id,
-      paymentMethodName: pm.type.charAt(0).toUpperCase() + pm.type.slice(1),
+      paymentMethodId: pm.paymentMethodId,
+      paymentMethodName: pm.name,
       amount: centsToDecimalStr(pm.amountCents),
-      category: pm.type,
+      category: pm.category,
       transactionReference: null,
       authorizationCode: null,
       cardBrand: null,

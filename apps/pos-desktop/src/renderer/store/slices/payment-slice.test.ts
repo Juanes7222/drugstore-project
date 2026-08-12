@@ -1,5 +1,9 @@
 /**
  * Unit tests for the payment slice and its selectors.
+ *
+ * Payment methods are real DB rows (`PaymentMethodOption`), never a
+ * hardcoded list: entries carry the DB `paymentMethodId` plus the DIAN
+ * `category` and `isCash` flag chosen through the shared picker.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -16,10 +20,10 @@ import {
   selectPaymentTotalPaidCents,
   setAuthorizationStatus,
   setCashReceived,
+  updatePaymentMethod,
   updatePaymentMethodAmount,
-  updatePaymentMethodType,
 } from "./payment-slice";
-import { PaymentMethodType } from "./payment-types";
+import type { PaymentMethodOption } from "./payment-types";
 import { salesSlice } from "./sales-slice";
 import { SaleType } from "@pharmacy/shared-types";
 
@@ -44,6 +48,28 @@ const baseCartItem = {
   commissionEndsAt: null,
 };
 
+// DB-backed payment methods — mirror the local PaymentMethod rows.
+const CASH_METHOD: PaymentMethodOption = {
+  id: "pm-cash",
+  category: "CASH",
+  name: "Efectivo",
+  isCash: true,
+};
+
+const CARD_METHOD: PaymentMethodOption = {
+  id: "pm-card",
+  category: "CREDIT_CARD",
+  name: "Tarjeta Crédito",
+  isCash: false,
+};
+
+const TRANSFER_METHOD: PaymentMethodOption = {
+  id: "pm-transfer",
+  category: "BANK_TRANSFER",
+  name: "Transferencia Bancaria",
+  isCash: false,
+};
+
 interface TestRootState {
   sales: ReturnType<typeof salesSlice.reducer>;
   payment: ReturnType<typeof paymentSlice.reducer>;
@@ -54,19 +80,27 @@ const createRootState = (totalCents: number): TestRootState => {
   // price that produces the requested grand total.
   const unitPriceCents = Math.round(totalCents / 1.19);
 
-  return {
-    sales: salesSlice.reducer(
-      salesSlice.getInitialState(),
-      salesSlice.actions.addItem({
-        ...baseCartItem,
-        unitPriceCents,
-      }),
-    ),
-    payment: paymentSlice.reducer(
-      paymentSlice.getInitialState(),
-      initializePayment({ totalCents }),
-    ),
-  };
+  const sales = salesSlice.reducer(
+    salesSlice.getInitialState(),
+    salesSlice.actions.addItem({
+      ...baseCartItem,
+      unitPriceCents,
+    }),
+  );
+
+  // initializePayment creates an unresolved row; resolve it to the cash
+  // method the same way PaymentProcessing does once the DB list arrives.
+  let payment = paymentSlice.reducer(
+    paymentSlice.getInitialState(),
+    initializePayment({ totalCents }),
+  );
+  const firstId = payment.methods[0]?.id as string;
+  payment = paymentSlice.reducer(
+    payment,
+    updatePaymentMethod({ id: firstId, method: CASH_METHOD }),
+  );
+
+  return { sales, payment };
 };
 
 const applyPaymentAction = (
@@ -100,27 +134,30 @@ const createRootStateWithDeliveryFee = (
 };
 
 describe("payment slice", () => {
-  it("initializes with a single cash method covering the total", () => {
+  it("initializes with a single unresolved method covering the total", () => {
     const state = paymentSlice.reducer(
       paymentSlice.getInitialState(),
       initializePayment({ totalCents: 66_164 }),
     );
 
     expect(state.methods).toHaveLength(1);
-    expect(state.methods[0]?.type).toBe(PaymentMethodType.CASH);
+    // The row is unresolved until PaymentProcessing fills it from the DB list.
+    expect(state.methods[0]?.paymentMethodId).toBe("");
     expect(state.methods[0]?.amountCents).toBe(66_164);
     expect(state.cashReceivedCents).toBe(0);
   });
 
-  it("adds a non-cash method when a cash method already exists", () => {
+  it("adds the given DB payment method to the list", () => {
     let state = paymentSlice.reducer(
       paymentSlice.getInitialState(),
       initializePayment({ totalCents: 66_164 }),
     );
-    state = paymentSlice.reducer(state, addPaymentMethod());
+    state = paymentSlice.reducer(state, addPaymentMethod(CARD_METHOD));
 
     expect(state.methods).toHaveLength(2);
-    expect(state.methods[1]?.type).toBe(PaymentMethodType.CARD);
+    expect(state.methods[1]?.paymentMethodId).toBe("pm-card");
+    expect(state.methods[1]?.category).toBe("CREDIT_CARD");
+    expect(state.methods[1]?.isCash).toBe(false);
   });
 
   it("recomputes authorization to idle when an electronic amount changes", () => {
@@ -128,7 +165,7 @@ describe("payment slice", () => {
       paymentSlice.getInitialState(),
       initializePayment({ totalCents: 66_164 }),
     );
-    state = paymentSlice.reducer(state, addPaymentMethod());
+    state = paymentSlice.reducer(state, addPaymentMethod(CARD_METHOD));
     const cardId = state.methods[1]?.id as string;
 
     state = paymentSlice.reducer(
@@ -217,7 +254,7 @@ describe("payment selectors", () => {
 
   it("blocks confirmation until electronic methods are approved", () => {
     let root = createRootState(66_164);
-    root = applyPaymentAction(root, addPaymentMethod());
+    root = applyPaymentAction(root, addPaymentMethod(CARD_METHOD));
     const cashId = root.payment.methods[0]?.id as string;
     const cardId = root.payment.methods[1]?.id as string;
 
@@ -258,9 +295,9 @@ describe("payment selectors", () => {
     expect(selectPaymentChangeCents(root)).toBe(-16_164);
   });
 
-  it("resets electronic approval when the method type changes", () => {
+  it("resets electronic approval when the payment method changes", () => {
     let root = createRootState(66_164);
-    root = applyPaymentAction(root, addPaymentMethod());
+    root = applyPaymentAction(root, addPaymentMethod(CARD_METHOD));
     const cardId = root.payment.methods[1]?.id as string;
 
     root = applyPaymentAction(
@@ -273,10 +310,11 @@ describe("payment selectors", () => {
     );
     root = applyPaymentAction(
       root,
-      updatePaymentMethodType({ id: cardId, type: PaymentMethodType.TRANSFER }),
+      updatePaymentMethod({ id: cardId, method: TRANSFER_METHOD }),
     );
 
     const method = root.payment.methods.find((m) => m.id === cardId);
+    expect(method?.paymentMethodId).toBe("pm-transfer");
     expect(method?.authorizationStatus).toBe("idle");
     expect(method?.reference).toBeUndefined();
   });
@@ -307,7 +345,7 @@ describe("payment selectors", () => {
 
   it("detects rejected electronic methods", () => {
     let root = createRootState(66_164);
-    root = applyPaymentAction(root, addPaymentMethod());
+    root = applyPaymentAction(root, addPaymentMethod(CARD_METHOD));
     const cardId = root.payment.methods[1]?.id as string;
 
     root = applyPaymentAction(
@@ -328,45 +366,46 @@ describe("payment selectors", () => {
 
   it("removes a method when there are multiple methods", () => {
     let root = createRootState(66_164);
-    root = applyPaymentAction(root, addPaymentMethod());
+    root = applyPaymentAction(root, addPaymentMethod(CARD_METHOD));
     const cashId = root.payment.methods[0]?.id as string;
 
     root = applyPaymentAction(root, removePaymentMethod(cashId));
 
     expect(root.payment.methods).toHaveLength(1);
-    expect(root.payment.methods[0]?.type).toBe(PaymentMethodType.CARD);
+    expect(root.payment.methods[0]?.paymentMethodId).toBe("pm-card");
   });
 
-  it("does nothing when updating payment method type for a non-existent id", () => {
+  it("does nothing when updating payment method for a non-existent id", () => {
     const root = createRootState(66_164);
     const next = applyPaymentAction(
       root,
-      updatePaymentMethodType({
-        id: "nonexistent",
-        type: PaymentMethodType.CARD,
-      }),
+      updatePaymentMethod({ id: "nonexistent", method: CARD_METHOD }),
     );
 
     expect(next.payment.methods).toEqual(root.payment.methods);
   });
 
-  it("adds a cash method when no cash method exists", () => {
+  it("adds the given method even when no cash method exists", () => {
     const state = paymentSlice.reducer(
       {
         methods: [
           {
             id: "pm-1",
-            type: PaymentMethodType.CARD,
+            paymentMethodId: "pm-card",
+            category: "CREDIT_CARD",
+            name: "Tarjeta Crédito",
+            isCash: false,
             amountCents: 0,
             authorizationStatus: "idle" as const,
           },
         ],
         cashReceivedCents: 0,
       },
-      addPaymentMethod(),
+      addPaymentMethod(CASH_METHOD),
     );
 
     expect(state.methods).toHaveLength(2);
-    expect(state.methods[1]?.type).toBe(PaymentMethodType.CASH);
+    expect(state.methods[1]?.paymentMethodId).toBe("pm-cash");
+    expect(state.methods[1]?.isCash).toBe(true);
   });
 });

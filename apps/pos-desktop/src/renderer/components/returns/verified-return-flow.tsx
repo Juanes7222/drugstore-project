@@ -18,6 +18,8 @@ import type { SaleSearchResult } from "./returns.types";
 import { formatCents } from "./returns.types";
 import { SearchIcon } from "@/components/ui/icons";
 import { StickyScrollX } from "../ui/sticky-scroll-x";
+import { PaymentMethodPicker } from "@/components/common/payment-method-picker";
+import type { PaymentMethodOption } from "@/store/slices/payment-types";
 
 interface VerifiedReturnFlowProps {
   /** The current sale search query string. */
@@ -36,6 +38,12 @@ interface VerifiedReturnFlowProps {
   selectedItemIds: Set<string>;
   /** Called with the item ID when its checkbox is toggled. */
   onToggleItem: (itemId: string) => void;
+  /** Active payment methods from the DB (refund method options). */
+  refundMethods: PaymentMethodOption[];
+  /** Selected refund method id. */
+  refundMethodId: string;
+  /** Called when the refund method changes. */
+  onRefundMethodChange: (method: PaymentMethodOption) => void;
   /** Whether a return submission is in progress. */
   isProcessing: boolean;
   /** Called to submit the verified return. */
@@ -56,6 +64,9 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
   selectedItemIds,
   onToggleItem,
   isProcessing,
+  refundMethods,
+  refundMethodId,
+  onRefundMethodChange,
   onSubmit,
   canSubmit,
 }) => {
@@ -248,13 +259,32 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
             </table>
           </StickyScrollX>
 
-          {/* Process return button */}
+          {/* Refund method + process button */}
           <div
-            className="flex justify-end px-pos-lg py-pos-md"
+            className="flex items-end justify-between gap-pos-md px-pos-lg py-pos-md"
             style={{
               borderTop: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
             }}
           >
+            <div className="flex flex-col gap-pos-xs" style={{ maxWidth: 260 }}>
+              <label
+                htmlFor="return-refund-method"
+                className="text-caption font-medium"
+                style={{
+                  color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+                }}
+              >
+                {t("returns.refund_method_label")}
+              </label>
+              <PaymentMethodPicker
+                id="return-refund-method"
+                value={refundMethodId}
+                methods={refundMethods}
+                onChange={onRefundMethodChange}
+                disabled={isProcessing}
+                ariaLabel={t("returns.refund_method_label")}
+              />
+            </div>
             <button
               type="button"
               className="pos-button pos-button-primary"

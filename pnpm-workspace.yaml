@@ -8,7 +8,9 @@ allowBuilds:
   '@scarf/scarf': true
   argon2: true
   core-js: true
+  edgedriver: false
   esbuild: true
+  geckodriver: false
   msgpackr-extract: true
   prisma: true
   unrs-resolver: true

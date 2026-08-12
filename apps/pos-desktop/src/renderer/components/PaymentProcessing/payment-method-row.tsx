@@ -1,40 +1,40 @@
 /**
- * A single payment method entry: type selector, amount input, and (for
+ * A single payment method entry: method selector, amount input, and (for
  * electronic methods) authorization controls.
+ *
+ * The method selector is the shared `PaymentMethodPicker`, so the options
+ * come from the local DB (DIAN categories) — never a hardcoded list.
  */
-import { type ChangeEvent, type FC, useCallback, useId, useMemo } from "react";
+import { type FC, useCallback, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { CurrencyInput } from "@/components/common/currency-input";
+import { PaymentMethodPicker } from "@/components/common/payment-method-picker";
 import {
   PaymentMethodEntry,
-  PaymentMethodType,
+  PaymentMethodOption,
 } from "@/store/slices/payment-types";
 import { PaymentStatusBadge } from "./payment-status-badge";
 
 interface PaymentMethodRowProps {
   index: number;
   method: PaymentMethodEntry;
+  /** Active payment methods from the DB (shared picker options). */
+  methods: PaymentMethodOption[];
   isOnlyMethod: boolean;
   disabled: boolean;
-  onTypeChange: (id: string, type: PaymentMethodType) => void;
+  onMethodChange: (id: string, method: PaymentMethodOption) => void;
   onAmountChange: (id: string, amountCents: number) => void;
   onRemove: (id: string) => void;
   onAuthorize: (method: PaymentMethodEntry) => void;
 }
 
-const METHOD_OPTIONS: PaymentMethodType[] = [
-  PaymentMethodType.CASH,
-  PaymentMethodType.CARD,
-  PaymentMethodType.TRANSFER,
-  PaymentMethodType.NEQUI,
-];
-
 export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
   index,
   method,
+  methods,
   isOnlyMethod,
   disabled,
-  onTypeChange,
+  onMethodChange,
   onAmountChange,
   onRemove,
   onAuthorize,
@@ -42,17 +42,7 @@ export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
   const { t } = useTranslation();
   const selectId = useId();
 
-  const isElectronic = useMemo(
-    () => method.type !== PaymentMethodType.CASH,
-    [method.type],
-  );
-
-  const handleTypeChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      onTypeChange(method.id, event.target.value as PaymentMethodType);
-    },
-    [method.id, onTypeChange],
-  );
+  const isElectronic = !method.isCash;
 
   const handleAmountChange = useCallback(
     (amountCents: number) => {
@@ -88,19 +78,14 @@ export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
         >
           {t("payment.method_label", { number: index + 1 })}
         </label>
-        <select
+        <PaymentMethodPicker
           id={selectId}
-          value={method.type}
-          onChange={handleTypeChange}
+          value={method.paymentMethodId}
+          methods={methods}
+          onChange={(selected) => onMethodChange(method.id, selected)}
           disabled={disabled}
-          className="pos-input"
-        >
-          {METHOD_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {t(`payment.method.${option}`)}
-            </option>
-          ))}
-        </select>
+          ariaLabel={t("payment.method_label", { number: index + 1 })}
+        />
       </div>
 
       <CurrencyInput

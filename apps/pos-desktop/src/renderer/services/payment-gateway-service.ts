@@ -7,11 +7,11 @@
  * on this interface; swapping the mock for a real implementation is a single
  * factory change.
  */
-import { ElectronicPaymentMethodType } from "@/store/slices/payment-types";
 
 export interface PaymentAuthorizationRequest {
-  /** Electronic method being authorized. */
-  methodType: ElectronicPaymentMethodType;
+  /** DIAN category of the electronic method being authorized
+   *  (DEBIT_CARD, CREDIT_CARD, BANK_TRANSFER, DIGITAL_WALLET, …). */
+  methodType: string;
   /** Amount to authorize, in Colombian-peso cents. */
   amountCents: number;
   /** Optional merchant invoice or transaction reference. */

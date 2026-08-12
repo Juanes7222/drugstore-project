@@ -21,6 +21,7 @@
 import {
   type FC,
   useCallback,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -29,6 +30,8 @@ import { useAppDispatch } from "@/store/hooks";
 import { navigateBackToSales } from "@/store/slices/ui-slice";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
+import { useActivePaymentMethods } from "@/hooks/use-active-payment-methods";
+import type { PaymentMethodOption } from "@/store/slices/payment-types";
 import { RoleType } from "@pharmacy/shared-types";
 import { useReturnsService } from "../common/service-context";
 import type { SaleSearchResult, UnverifiedItemEntry, ReturnTab } from "./returns.types";
@@ -47,9 +50,30 @@ export const ReturnsPage: FC = () => {
   const dispatch = useAppDispatch();
   const isOnline = useOnlineStatus();
   const returnsService = useReturnsService();
+  const { methods: refundMethods } = useActivePaymentMethods();
 
   // Tabs
   const [activeTab, setActiveTab] = useState<ReturnTab>("verified");
+
+  // Refund method — defaults to the cash method (or the first active
+  // method) once the DB list arrives.
+  const [refundMethodId, setRefundMethodId] = useState("");
+
+  useEffect(() => {
+    if (refundMethodId) return;
+    const fallback =
+      refundMethods.find((m) => m.isCash) ?? refundMethods[0];
+    if (fallback) {
+      setRefundMethodId(fallback.id);
+    }
+  }, [refundMethods, refundMethodId]);
+
+  const handleRefundMethodChange = useCallback(
+    (method: PaymentMethodOption) => {
+      setRefundMethodId(method.id);
+    },
+    [],
+  );
 
   // Verified flow
   const [searchQuery, setSearchQuery] = useState("");
@@ -167,7 +191,7 @@ export const ReturnsPage: FC = () => {
       const draftReturn = await returnsService.create({
         saleId: foundSale.id,
         clientId: "",
-        refundMethodId: "CASH",
+        refundMethodId,
         items: Array.from(selectedItemIds).map((saleItemId) => {
           const item = foundSale.items.find((i) => i.id === saleItemId)!;
           return {
@@ -243,7 +267,7 @@ export const ReturnsPage: FC = () => {
       const draftReturn = await returnsService.create({
         saleId: placeholderSaleId,
         clientId: "",
-        refundMethodId: "CASH",
+        refundMethodId,
         reason: "UNVERIFIED_RETURN",
         notes: `Physical receipt: ${managerPin}`,
         items: unverifiedItems.map((item) => ({
@@ -288,16 +312,21 @@ export const ReturnsPage: FC = () => {
   // ── Derived ─────────────────────────────────────────────────────────
 
   const canSubmitVerified = useMemo(
-    () => foundSale !== null && selectedItemIds.size > 0 && !isProcessing,
-    [foundSale, selectedItemIds, isProcessing],
+    () =>
+      foundSale !== null &&
+      selectedItemIds.size > 0 &&
+      refundMethodId !== "" &&
+      !isProcessing,
+    [foundSale, selectedItemIds, refundMethodId, isProcessing],
   );
 
   const canSubmitUnverified = useMemo(
     () =>
       unverifiedItems.length > 0 &&
       managerPin.trim().length >= 4 &&
+      refundMethodId !== "" &&
       !isProcessing,
-    [unverifiedItems, managerPin, isProcessing],
+    [unverifiedItems, managerPin, refundMethodId, isProcessing],
   );
 
   // ── Render ─────────────────────────────────────────────────────────
@@ -330,6 +359,9 @@ export const ReturnsPage: FC = () => {
             selectedItemIds={selectedItemIds}
             onToggleItem={toggleItemSelection}
             isProcessing={isProcessing}
+            refundMethods={refundMethods}
+            refundMethodId={refundMethodId}
+            onRefundMethodChange={handleRefundMethodChange}
             onSubmit={handleSubmitVerified}
             canSubmit={canSubmitVerified}
           />
@@ -343,6 +375,9 @@ export const ReturnsPage: FC = () => {
             onManagerPinChange={setManagerPin}
             pinError={pinError}
             isProcessing={isProcessing}
+            refundMethods={refundMethods}
+            refundMethodId={refundMethodId}
+            onRefundMethodChange={handleRefundMethodChange}
             onSubmit={handleSubmitUnverified}
             canSubmit={canSubmitUnverified}
           />

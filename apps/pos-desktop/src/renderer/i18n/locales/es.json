@@ -804,6 +804,7 @@
     "table_price": "Precio unit.",
     "table_refund": "Reembolso",
     "select_item": "Seleccionar item:",
+    "refund_method_label": "Método de reembolso",
     "process_return": "Procesar devolución",
     "processing": "Procesando...",
     "no_items_selected": "Seleccione al menos un item para devolver.",

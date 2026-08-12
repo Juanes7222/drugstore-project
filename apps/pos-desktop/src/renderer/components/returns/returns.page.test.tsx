@@ -22,11 +22,33 @@ const mockSearchSale = vi.fn();
 const mockCreate = vi.fn();
 const mockConfirm = vi.fn();
 
+// DB-backed active payment methods (DIAN categories) — the shared picker
+// renders these instead of a hardcoded list.
+const { refundMethods } = vi.hoisted(() => ({
+  refundMethods: [
+    { id: "pm-cash", category: "CASH", name: "Efectivo", isCash: true },
+    {
+      id: "pm-debit",
+      category: "DEBIT_CARD",
+      name: "Tarjeta Débito",
+      isCash: false,
+    },
+  ],
+}));
+
 vi.mock("../common/service-context", () => ({
   useReturnsService: () => ({
     searchSale: mockSearchSale,
     create: mockCreate,
     confirm: mockConfirm,
+  }),
+}));
+
+vi.mock("@/hooks/use-active-payment-methods", () => ({
+  useActivePaymentMethods: () => ({
+    methods: refundMethods,
+    loading: false,
+    error: null,
   }),
 }));
 
@@ -347,6 +369,87 @@ describe("ReturnsPage", () => {
         expect(
           screen.getByRole("alert"),
         ).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("RETP-08: submit unverified return", () => {
+    beforeEach(() => {
+      setSession({ ...baseSession, role: "ADMIN" });
+    });
+
+    it("calls returnsService.create with a placeholder sale id and confirm with managerOverride", async () => {
+      renderPage();
+
+      fireEvent.click(
+        screen.getByRole("tab", { name: /^Devolución no verificada$/ }),
+      );
+
+      await userEvent.type(
+        screen.getByPlaceholderText(/Buscar producto/i),
+        "Acetaminofén 500mg",
+      );
+      await userEvent.type(
+        screen.getByPlaceholderText(/Lote de caché/i),
+        "LOT-001",
+      );
+      fireEvent.click(screen.getByRole("button", { name: /Agregar/i }));
+
+      await userEvent.type(
+        screen.getByLabelText(/Confirmación PIN de gerente/i),
+        "1234",
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: /Enviar devolución no verificada/i,
+        }),
+      );
+
+      await waitFor(() => {
+        expect(mockCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            saleId: expect.stringMatching(/^UNVERIFIED-/),
+            reason: "UNVERIFIED_RETURN",
+          }),
+        );
+        expect(mockConfirm).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({ managerOverride: true }),
+        );
+      });
+    });
+
+    it("shows a success toast after a successful unverified return", async () => {
+      renderPage();
+
+      fireEvent.click(
+        screen.getByRole("tab", { name: /^Devolución no verificada$/ }),
+      );
+
+      await userEvent.type(
+        screen.getByPlaceholderText(/Buscar producto/i),
+        "Acetaminofén 500mg",
+      );
+      await userEvent.type(
+        screen.getByPlaceholderText(/Lote de caché/i),
+        "LOT-001",
+      );
+      fireEvent.click(screen.getByRole("button", { name: /Agregar/i }));
+
+      await userEvent.type(
+        screen.getByLabelText(/Confirmación PIN de gerente/i),
+        "1234",
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: /Enviar devolución no verificada/i,
+        }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole("status")).toBeInTheDocument();
       });
     });
   });

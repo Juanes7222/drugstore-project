@@ -25,14 +25,35 @@ import "@/i18n";
 // ---------------------------------------------------------------------------
 
 const mockSalesPosService = {
-  resolvePaymentMethodId: vi.fn().mockResolvedValue("pm-cash"),
   confirm: vi.fn().mockResolvedValue(undefined),
 };
+
+// DB-backed active payment methods — mirror the local PaymentMethod rows
+// (DIAN categories) that the shared picker renders in production.
+const { activePaymentMethods } = vi.hoisted(() => ({
+  activePaymentMethods: [
+    { id: "pm-cash", category: "CASH", name: "Efectivo", isCash: true },
+    {
+      id: "pm-debit",
+      category: "DEBIT_CARD",
+      name: "Tarjeta Débito",
+      isCash: false,
+    },
+  ],
+}));
 
 vi.mock("@/components/common/service-context", () => ({
   // useProductSyncWait reads the raw context; null context makes it a no-op.
   ServiceContext: createContext(null),
   useSalesPosService: () => mockSalesPosService,
+}));
+
+vi.mock("@/hooks/use-active-payment-methods", () => ({
+  useActivePaymentMethods: () => ({
+    methods: activePaymentMethods,
+    loading: false,
+    error: null,
+  }),
 }));
 
 // ---------------------------------------------------------------------------

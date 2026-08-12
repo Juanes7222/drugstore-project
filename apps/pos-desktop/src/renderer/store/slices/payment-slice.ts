@@ -2,28 +2,24 @@
  * Redux Toolkit slice owning the payment entry state for the active sale.
  *
  * Responsibilities:
- *   - Track payment methods, their amounts, and electronic authorization status.
+ *   - Track payment methods (real DB `PaymentMethod` rows), their amounts,
+ *     and electronic authorization status.
  *   - Track cash received and expose computed change.
  *   - Provide selectors that determine whether the payment can be confirmed.
  *
- * This slice intentionally knows nothing about the payment gateway. It only
- * stores the authorization status that a gateway service reports back.
+ * This slice intentionally knows nothing about the payment gateway or the
+ * database: entries reference the real `paymentMethodId` + DIAN `category`
+ * chosen by the shared `PaymentMethodPicker` (populated from the local DB).
+ * It only stores the authorization status that a gateway service reports.
  */
 import { createSelector, createSlice, PayloadAction } from "@reduxjs/toolkit";
 import {
   AuthorizationStatus,
-  ElectronicPaymentMethodType,
   PaymentMethodEntry,
-  PaymentMethodType,
+  PaymentMethodOption,
   PaymentState,
 } from "./payment-types";
 import { selectGrandTotalCents } from "./sales-slice";
-
-const ELECTRONIC_METHODS: readonly PaymentMethodType[] = [
-  PaymentMethodType.CARD,
-  PaymentMethodType.TRANSFER,
-  PaymentMethodType.NEQUI,
-];
 
 let methodIdSequence = 0;
 
@@ -32,11 +28,17 @@ const createMethodId = (): string => {
   return `pm-${methodIdSequence}`;
 };
 
-const createEmptyMethod = (
-  type: PaymentMethodType = PaymentMethodType.CASH,
-): PaymentMethodEntry => ({
+/**
+ * Create an unresolved payment entry. The `PaymentProcessing` component fills
+ * the real `paymentMethodId`/`category`/`name`/`isCash` from the DB-supplied
+ * method list right after the screen mounts (and when the user adds a row).
+ */
+const createEmptyMethod = (): PaymentMethodEntry => ({
   id: createMethodId(),
-  type,
+  paymentMethodId: "",
+  category: "",
+  name: "",
+  isCash: false,
   amountCents: 0,
   authorizationStatus: AuthorizationStatus.IDLE,
 });
@@ -56,24 +58,26 @@ export const paymentSlice = createSlice({
     ) => {
       state.methods = [
         {
-          id: createMethodId(),
-          type: PaymentMethodType.CASH,
+          ...createEmptyMethod(),
           amountCents: action.payload.totalCents,
-          authorizationStatus: AuthorizationStatus.IDLE,
         },
       ];
       state.cashReceivedCents = 0;
     },
 
-    addPaymentMethod: (state) => {
-      const hasCash = state.methods.some(
-        (method) => method.type === PaymentMethodType.CASH,
-      );
-      state.methods.push(
-        createEmptyMethod(
-          hasCash ? PaymentMethodType.CARD : PaymentMethodType.CASH,
-        ),
-      );
+    /**
+     * Add a new payment row for the given DB payment method. The caller
+     * (PaymentProcessing) decides which method to offer next from the
+     * active methods list — the slice never hardcodes a method list.
+     */
+    addPaymentMethod: (state, action: PayloadAction<PaymentMethodOption>) => {
+      state.methods.push({
+        ...createEmptyMethod(),
+        paymentMethodId: action.payload.id,
+        category: action.payload.category,
+        name: action.payload.name,
+        isCash: action.payload.isCash,
+      });
     },
 
     removePaymentMethod: (state, action: PayloadAction<string>) => {
@@ -85,16 +89,26 @@ export const paymentSlice = createSlice({
       );
     },
 
-    updatePaymentMethodType: (
+    /**
+     * Change the DB payment method backing a row. Resets authorization state
+     * because a different gateway/terminal is now in play.
+     */
+    updatePaymentMethod: (
       state,
-      action: PayloadAction<{ id: string; type: PaymentMethodType }>,
+      action: PayloadAction<{
+        id: string;
+        method: PaymentMethodOption;
+      }>,
     ) => {
       const method = state.methods.find((m) => m.id === action.payload.id);
       if (!method) {
         return;
       }
 
-      method.type = action.payload.type;
+      method.paymentMethodId = action.payload.method.id;
+      method.category = action.payload.method.category;
+      method.name = action.payload.method.name;
+      method.isCash = action.payload.method.isCash;
       method.authorizationStatus = AuthorizationStatus.IDLE;
       method.reference = undefined;
       method.rejectionReason = undefined;
@@ -111,7 +125,7 @@ export const paymentSlice = createSlice({
 
       method.amountCents = Math.max(0, action.payload.amountCents);
 
-      if (method.type !== PaymentMethodType.CASH) {
+      if (!method.isCash) {
         method.authorizationStatus = AuthorizationStatus.IDLE;
         method.reference = undefined;
         method.rejectionReason = undefined;
@@ -152,7 +166,7 @@ export const {
   initializePayment,
   addPaymentMethod,
   removePaymentMethod,
-  updatePaymentMethodType,
+  updatePaymentMethod,
   updatePaymentMethodAmount,
   setCashReceived,
   setAuthorizationStatus,
@@ -165,9 +179,7 @@ export const {
 
 const isElectronicMethod = (
   method: PaymentMethodEntry,
-): method is PaymentMethodEntry & {
-  type: ElectronicPaymentMethodType;
-} => ELECTRONIC_METHODS.includes(method.type);
+): boolean => !method.isCash;
 
 const selectPaymentState = (state: { payment: PaymentState }): PaymentState =>
   state.payment;
@@ -206,7 +218,7 @@ export const selectCashOwedCents = createSelector(
   (methods) =>
     methods.reduce(
       (sum, method) =>
-        method.type === PaymentMethodType.CASH ? sum + method.amountCents : sum,
+        method.isCash ? sum + method.amountCents : sum,
       0,
     ),
 );
@@ -248,12 +260,21 @@ export const selectAreElectronicMethodsApproved = createSelector(
       ),
 );
 
+/**
+ * Payment can be confirmed when the split is exact, every electronic method
+ * is approved (or zero), nothing is pending, and every row is backed by a
+ * real DB payment method.
+ */
 export const selectCanConfirmPayment = createSelector(
   [
     selectPaymentDifferenceCents,
     selectAreElectronicMethodsApproved,
     selectHasPendingElectronicMethods,
+    selectPaymentMethods,
   ],
-  (difference, allApproved, hasPending) =>
-    difference === 0 && allApproved && !hasPending,
+  (difference, allApproved, hasPending, methods) =>
+    difference === 0 &&
+    allApproved &&
+    !hasPending &&
+    methods.every((method) => method.paymentMethodId !== ""),
 );

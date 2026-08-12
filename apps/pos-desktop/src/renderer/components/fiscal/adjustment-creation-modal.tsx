@@ -11,6 +11,8 @@ import { type FC, useState, useCallback, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import * as Dialog from "@radix-ui/react-dialog";
 import { AlertCircleIcon, ChevronLeftIcon, XIcon } from "@/components/ui/icons";
+import { PaymentMethodPicker } from "@/components/common/payment-method-picker";
+import type { PaymentMethodOption } from "@/store/slices/payment-types";
 import type {
   AdjustmentType,
   OperationalInvoiceView,
@@ -39,13 +41,11 @@ interface AdjustmentCreationModalProps {
   /** Optional client catalog for the CLIENT_CHANGE editor. */
   clients?: ClientOption[];
   /**
-   * Optional list of active payment methods (id, category, name).
-   * When provided, the PAYMENT_METHOD_CHANGE editor resolves the selected
-   * category enum to the real PaymentMethod.id UUID instead of storing
-   * the raw enum string — keeping the stored adjustment self-describing
-   * and compatible with downstream shift-summary reconciliation.
+   * Optional list of active payment methods (id, category, name, isCash)
+   * from the local DB. When omitted, the shared PaymentMethodPicker loads
+   * them itself — the picker is never driven by a hardcoded list.
    */
-  paymentMethods?: Array<{ id: string; category: string; name: string }>;
+  paymentMethods?: PaymentMethodOption[];
   onSubmit: (
     type: AdjustmentType,
     newValue: unknown,
@@ -303,25 +303,12 @@ interface PaymentOverrideValue {
   cardLastFour: string | null;
 }
 
-/** Single-source list of payment-method categories shown in the picker.
- *  Values match the `PaymentMethodCategory` Prisma enum. */
-const PAYMENT_METHOD_CATEGORY_VALUES = [
-  "CASH",
-  "DEBIT_CARD",
-  "CREDIT_CARD",
-  "BANK_TRANSFER",
-  "DIGITAL_WALLET",
-  "CHECK",
-  "CREDIT",
-  "OTHER",
-] as const;
-type PaymentMethodCategoryValue = (typeof PAYMENT_METHOD_CATEGORY_VALUES)[number];
-
 /** Which optional reference fields are meaningful for each category.
  *  CASH/CREDIT/OTHER carry no references; card methods expose card details;
- *  BANK_TRANSFER/DIGITAL_WALLET/CHECK expose a transaction reference. */
+ *  BANK_TRANSFER/DIGITAL_WALLET/CHECK expose a transaction reference.
+ *  Keyed by the DIAN `PaymentMethodCategory` values stored in the DB. */
 const REFERENCE_FIELDS_BY_CATEGORY: Record<
-  PaymentMethodCategoryValue,
+  string,
   { reference: boolean; authCode: boolean; cardBrand: boolean; cardLastFour: boolean }
 > = {
   CASH: { reference: false, authCode: false, cardBrand: false, cardLastFour: false },
@@ -335,19 +322,18 @@ const REFERENCE_FIELDS_BY_CATEGORY: Record<
 };
 
 /** Editor for PAYMENT_METHOD_CHANGE — method is editable, amount is locked to
- *  the fiscal total. Reference fields are optional context for the new method. */
+ *  the fiscal total. Reference fields are optional context for the new method.
+ *  The method picker is the shared `PaymentMethodPicker` fed by the DB. */
 const PaymentEditor: FC<{
   value: PaymentOverrideValue;
   onChange: (next: PaymentOverrideValue) => void;
   /** Total amount sourced from the fiscal invoice (immutable). */
   lockedAmount: string;
   /**
-   * Optional active payment methods list. When present, the category selector
-   * stores the real PaymentMethod.id UUID (not the category enum string) in
-   * `paymentMethodId`, keeping the stored adjustment compatible with the
-   * cash-shift summary's payment-method reconciliation.
+   * Active payment methods from the local DB (DIAN categories). When
+   * omitted, the shared picker loads them itself.
    */
-  paymentMethods?: Array<{ id: string; category: string; name: string }>;
+  paymentMethods?: PaymentMethodOption[];
 }> = ({ value, onChange, lockedAmount, paymentMethods }) => {
   const { t } = useTranslation();
 
@@ -361,49 +347,39 @@ const PaymentEditor: FC<{
     [onChange, value],
   );
 
-  // Default display name for the currently selected category, or empty
-  // string when no category is picked. Used both for the override field's
-  // placeholder and to fall back when the override is cleared.
-  const defaultName = value.category
-    ? t(`fiscal.adjustment_payment_method_${value.category.toLowerCase()}`)
-    : "";
-
-  /** Build a category → first-active-PaymentMethod.id lookup. */
-  const categoryToId = useMemo(() => {
-    const map = new Map<string, string>();
-    if (paymentMethods) {
-      for (const pm of paymentMethods) {
-        if (pm.category && !map.has(pm.category)) {
-          map.set(pm.category, pm.id);
-        }
-      }
+  // Display name for the selected method, or empty when none is picked.
+  // Used both for the override field's placeholder and to fall back when
+  // the override is cleared.
+  const defaultName = useMemo(() => {
+    if (value.paymentMethodId) {
+      const method = paymentMethods?.find(
+        (m) => m.id === value.paymentMethodId,
+      );
+      if (method?.name) return method.name;
     }
-    return map;
-  }, [paymentMethods]);
+    return value.category
+      ? t(`fiscal.adjustment_payment_method_${value.category.toLowerCase()}`)
+      : "";
+  }, [paymentMethods, value.paymentMethodId, value.category, t]);
 
-  const handleCategoryChange = useCallback(
-    (nextCategory: string) => {
-      // Picking a category auto-fills the display name with the default
-      // for that category, resets the optional override, and resolves the
-      // paymentMethodId to the real PaymentMethod.id UUID when the
-      // active payment-method list is available.  If the list is absent
-      // (caller did not provide it), fall back to the category enum value
-      // — the cash-shift service's buildPaymentMethodResolver handles
-      // that case defensively.
-      const resolvedId = categoryToId.get(nextCategory) ?? nextCategory;
+  const handleMethodChange = useCallback(
+    (method: PaymentMethodOption) => {
+      // Storing the real PaymentMethod.id UUID (not the category enum
+      // string) keeps the adjustment compatible with the cash-shift
+      // summary's payment-method reconciliation.
       onChange({
         ...value,
-        category: nextCategory,
-        paymentMethodId: resolvedId,
-        paymentMethodName: "",
+        category: method.category,
+        paymentMethodId: method.id,
+        paymentMethodName: method.name,
       });
     },
-    [categoryToId, onChange, value],
+    [onChange, value],
   );
 
   const handleOverrideChange = useCallback(
     (nextOverride: string) => {
-      // Empty override reverts to the category default; non-empty override
+      // Empty override reverts to the method default; non-empty override
       // is the cashier's explicit display name (e.g. "Tarjeta Visa").
       const trimmed = nextOverride.trim();
       onChange({
@@ -419,12 +395,10 @@ const PaymentEditor: FC<{
     authCode: boolean;
     cardBrand: boolean;
     cardLastFour: boolean;
-  } =
-    value.category && value.category in REFERENCE_FIELDS_BY_CATEGORY
-      ? REFERENCE_FIELDS_BY_CATEGORY[
-          value.category as PaymentMethodCategoryValue
-        ]
-      : REFERENCE_FIELDS_BY_CATEGORY.OTHER;
+  } = value.category
+    ? REFERENCE_FIELDS_BY_CATEGORY[value.category] ??
+      REFERENCE_FIELDS_BY_CATEGORY.OTHER
+    : REFERENCE_FIELDS_BY_CATEGORY.OTHER;
   const hasAnyRefField =
     refFields.reference ||
     refFields.authCode ||
@@ -433,8 +407,7 @@ const PaymentEditor: FC<{
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Single method picker — category enum drives both the internal
-          accounting grouping and the auto-filled display name. */}
+      {/* Single method picker — shared component driven by the DB. */}
       <div className="flex flex-col gap-1">
         <label
           className="text-caption font-medium"
@@ -445,20 +418,14 @@ const PaymentEditor: FC<{
         >
           {t("fiscal.adjustment_payment_method_label")}
         </label>
-        <select
+        <PaymentMethodPicker
           id="adjustment-payment-method"
-          className="pos-input text-body-sm"
-          value={value.category}
-          onChange={(e) => handleCategoryChange(e.target.value)}
-          aria-label={t("fiscal.adjustment_payment_method_label")}
-        >
-          <option value="">—</option>
-          {PAYMENT_METHOD_CATEGORY_VALUES.map((cat) => (
-            <option key={cat} value={cat}>
-              {t(`fiscal.adjustment_payment_method_${cat.toLowerCase()}`)}
-            </option>
-          ))}
-        </select>
+          value={value.paymentMethodId}
+          methods={paymentMethods}
+          onChange={handleMethodChange}
+          includePlaceholder
+          ariaLabel={t("fiscal.adjustment_payment_method_label")}
+        />
       </div>
 
       {/* Optional specific name override — does not change the category,
@@ -1257,7 +1224,7 @@ const CustomFieldClearEditor: FC<{
 // ValueEditorDispatch — renders the correct editor for the selected type
 // ---------------------------------------------------------------------------
 
-const ValueEditorDispatch: FC<ValueEditorProps & { clients?: ClientOption[]; paymentMethods?: Array<{ id: string; category: string; name: string }> }> = ({
+const ValueEditorDispatch: FC<ValueEditorProps & { clients?: ClientOption[]; paymentMethods?: PaymentMethodOption[] }> = ({
   type,
   value,
   onChange,
