@@ -6,7 +6,6 @@
   "permissions": [
     "core:default",
     "core:path:default",
-    "dialog:allow-save",
-    "wdio:default"
+    "dialog:allow-save"
   ]
 }

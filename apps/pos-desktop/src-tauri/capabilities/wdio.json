@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicepage/nicepage/refs/heads/main/schema.json",
+  "identifier": "wdio",
+  "description": "WebDriverIO test automation capability for the main window. Only parsed when the wdio cargo feature is enabled (see build.rs).",
+  "windows": ["main"],
+  "permissions": [
+    "wdio:default"
+  ]
+}

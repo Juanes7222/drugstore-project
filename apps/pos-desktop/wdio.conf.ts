@@ -13,6 +13,11 @@
  * the plugin the service falls back to a 100-probe plugin-availability check
  * per command (~10s overhead each), which made the suite take 6+ minutes
  * with the first test timing out. Requires: tauri-driver on PATH.
+ *
+ * The `test:e2e` script touches `src-tauri/build.rs` before building so the
+ * tauri-build script always re-runs and embeds the `wdio:default` capability
+ * (cargo may otherwise reuse a cached build-script output from a previous
+ * non-wdio `tauri dev` build, leaving the ACL without the wdio permission).
  */
 
 import type { Options } from "@wdio/types";
