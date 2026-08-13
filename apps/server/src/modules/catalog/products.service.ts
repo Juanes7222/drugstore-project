@@ -41,7 +41,7 @@ export class ProductsService {
       ];
     }
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
         include: {

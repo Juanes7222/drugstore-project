@@ -919,10 +919,24 @@ export class SalesPosService {
       salesConfig: getSalesConfig(),
     });
 
-    const discountAmount = itemSubtotal.times(discountPercentage).dividedBy(100);
+    // Round each component to whole centavos (2 dp) exactly like the
+    // cents-based UI: the frontend rounds the per-item discount and tax,
+    // and the payment screen charges that rounded total. Without per-item
+    // rounding the exact Decimal sum can drift from the displayed total by
+    // a cent or more, which made credit-only payments look overpaid and
+    // threw ChangeRequiresCashPaymentException at confirm time.
+    const discountAmount = itemSubtotal
+      .times(discountPercentage)
+      .dividedBy(100)
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
     const priceAfterDiscount = itemSubtotal.minus(discountAmount);
-    const taxAmount = priceAfterDiscount.times(taxRate).dividedBy(100);
-    const total = priceAfterDiscount.plus(taxAmount);
+    const taxAmount = priceAfterDiscount
+      .times(taxRate)
+      .dividedBy(100)
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+    const total = priceAfterDiscount
+      .plus(taxAmount)
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
     // Commission accrues on the subtotal after discount, evaluated
     // against the moment the sale is being built — not against sync

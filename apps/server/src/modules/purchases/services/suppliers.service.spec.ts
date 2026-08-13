@@ -63,7 +63,8 @@ describe('SuppliersService', () => {
   // -------------------------------------------------------------------------
   describe('findAll', () => {
     function mockFindAll(result: any[] = [mockSupplier], total: number = 1): void {
-      (prisma.$transaction as jest.Mock).mockResolvedValue([result, total]);
+      (prisma.supplier.findMany as jest.Mock).mockResolvedValue(result);
+      (prisma.supplier.count as jest.Mock).mockResolvedValue(total);
     }
 
     it('returns paginated suppliers', async () => {
@@ -126,12 +127,13 @@ describe('SuppliersService', () => {
       );
     });
 
-    it('uses $transaction for atomic findMany + count', async () => {
+    it('runs findMany and count for pagination', async () => {
       mockFindAll();
 
       await service.findAll({ page: 1, pageSize: 20 });
 
-      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.supplier.findMany).toHaveBeenCalled();
+      expect(prisma.supplier.count).toHaveBeenCalled();
     });
   });
 

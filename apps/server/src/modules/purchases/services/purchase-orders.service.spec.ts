@@ -102,7 +102,8 @@ describe('PurchaseOrdersService', () => {
   // -------------------------------------------------------------------------
   describe('findAll', () => {
     function mockFindAll(result: any[] = [], total: number = 0): void {
-      (prisma.$transaction as jest.Mock).mockResolvedValue([result, total]);
+      (prisma.purchaseOrder.findMany as jest.Mock).mockResolvedValue(result);
+      (prisma.purchaseOrder.count as jest.Mock).mockResolvedValue(total);
     }
 
     it('returns paginated purchase orders with supplier and items', async () => {

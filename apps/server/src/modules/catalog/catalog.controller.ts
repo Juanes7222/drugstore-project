@@ -14,6 +14,7 @@ import { CreateProductDto, CreateProductSchema } from './dto/create-product.dto'
 import { UpdateProductDto } from './dto/update-product.dto';
 import { QueryProductDto } from './dto/query-product.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '@/common/guards/optional-jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Public } from '@/common/decorators/public.decorator';
@@ -33,12 +34,14 @@ export class CatalogController {
   // kill the request after JwtAuthGuard short-circuits.
   @Get('products')
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   async findAllProducts(@Query() query: QueryProductDto): Promise<any> {
     return this.catalogService.findAllProducts(query);
   }
 
   @Get('products/sync')
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   async syncProducts(
     @Query('updatedSince') updatedSince?: string,
     @Query('cursor') cursor?: string,
@@ -53,6 +56,7 @@ export class CatalogController {
 
   @Get('products/:id')
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   async findProductById(@Param('id') id: string): Promise<any> {
     return this.catalogService.findProductById(id);
   }
@@ -89,18 +93,21 @@ export class CatalogController {
 
   @Get('categories')
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   async findAllCategories(): Promise<any> {
     return this.catalogService.findAllCategories();
   }
 
   @Get('pharmaceutical-forms')
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   async findAllPharmaceuticalForms(): Promise<any> {
     return this.catalogService.findAllPharmaceuticalForms();
   }
 
   @Get('tax-schemes')
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   async findAllTaxSchemes(): Promise<any> {
     return this.catalogService.findAllTaxSchemes();
   }

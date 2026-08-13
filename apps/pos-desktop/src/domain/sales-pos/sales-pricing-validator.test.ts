@@ -64,6 +64,7 @@ const makeSalesConfig = (overrides?: {
     type: overrides?.floorType ?? "COST",
     minMarginPercent: overrides?.minMarginPercent ?? 0,
   },
+  creditEnabled: false,
   defaultCreditLimitCents: 0,
 });
 

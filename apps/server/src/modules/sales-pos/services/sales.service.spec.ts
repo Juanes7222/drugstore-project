@@ -22,6 +22,7 @@ jest.mock('@pharmacy/database', () => ({
   ClientReturnState: { DRAFT: 'DRAFT', PENDING_PICKUP: 'PENDING_PICKUP', CONFIRMED: 'CONFIRMED', REJECTED: 'REJECTED', ANNULLED: 'ANNULLED' },
   SaleType: { FREE_SALE: 'FREE_SALE', PRESCRIPTION: 'PRESCRIPTION' },    Prisma: {
     Decimal: class Decimal {
+      static ROUND_HALF_UP = 1;
       static max(...args: any[]): Decimal {
         const values: any[] = Array.isArray(args[0]) ? args[0] : args;
         return new Decimal(
@@ -36,6 +37,7 @@ jest.mock('@pharmacy/database', () => ({
       dividedBy(o: any): Decimal { return new Decimal(this.value / (o instanceof Decimal ? o.value : Number(o))); }
       plus(o: any): Decimal { return new Decimal(this.value + (o instanceof Decimal ? o.value : Number(o))); }
       minus(o: any): Decimal { return new Decimal(this.value - (o instanceof Decimal ? o.value : Number(o))); }
+      toDecimalPlaces(dp: number): Decimal { return new Decimal(Number(this.value.toFixed(dp))); }
       toNumber(): number { return this.value; }
       valueOf(): number { return this.value; }
       toString(): string { return String(this.value); }
@@ -134,7 +136,8 @@ describe('SalesService', () => {
 
   describe('findAll', () => {
     it('returns paginated sales with filters', async () => {
-      (prisma.$transaction as jest.Mock).mockResolvedValue([[mockSale], 1]);
+      (prisma.sale.findMany as jest.Mock).mockResolvedValue([mockSale]);
+      (prisma.sale.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, pageSize: 20 });
 
@@ -143,7 +146,8 @@ describe('SalesService', () => {
     });
 
     it('filters by cashShiftId when provided', async () => {
-      (prisma.$transaction as jest.Mock).mockResolvedValue([[], 0]);
+      (prisma.sale.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.sale.count as jest.Mock).mockResolvedValue(0);
 
       const result = await service.findAll({ page: 1, pageSize: 20, cashShiftId: 'shift-1' });
 

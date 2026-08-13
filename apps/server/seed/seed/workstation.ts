@@ -9,6 +9,8 @@ export async function seedWorkstations(): Promise<void> {
     { id: IDS.WS_PRINCIPAL, name: 'Caja Principal', code: 'WS-001', registeredAt: SIX_MONTHS_AGO, lastSeenAt: NOW },
     { id: IDS.WS_SECUNDARIA, name: 'Caja Secundaria', code: 'WS-002', registeredAt: SIX_MONTHS_AGO, lastSeenAt: YESTERDAY },
   ];
-  await seedMany(prisma.workstation, workstations, { subscriptionId: IDS.SUBSCRIPTION_DEFAULT });
+  // Workstation is a shared catalog (no tenant column — the tenant lives on
+  // WorkstationActivation in licensing), so no subscriptionId is stamped here.
+  await seedMany(prisma.workstation, workstations);
   console.log('   2 workstations');
 }

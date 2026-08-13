@@ -111,7 +111,8 @@ describe('ClientReturnsService', () => {
   describe('findAll', () => {
     it('returns paginated client returns', async () => {
       const returns = [mockReturn];
-      (prisma.$transaction as jest.Mock).mockResolvedValue([returns, 1]);
+      (prisma.clientReturn.findMany as jest.Mock).mockResolvedValue(returns);
+      (prisma.clientReturn.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, pageSize: 20 });
 
@@ -120,7 +121,8 @@ describe('ClientReturnsService', () => {
     });
 
     it('filters by state when provided', async () => {
-      (prisma.$transaction as jest.Mock).mockResolvedValue([[], 0]);
+      (prisma.clientReturn.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.clientReturn.count as jest.Mock).mockResolvedValue(0);
 
       const result = await service.findAll({ page: 1, pageSize: 20, state: 'DRAFT' });
 

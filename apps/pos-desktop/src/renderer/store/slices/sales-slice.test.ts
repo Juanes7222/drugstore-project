@@ -348,6 +348,34 @@ describe("sales selectors", () => {
     expect(selectTotalCents(root)).toBe(0);
   });
 
+  it("applies per-item discounts to subtotal and tax, matching the DB service", () => {
+    // 100_000 at 15% → line 85_000, tax 19% on the discounted base = 16_150
+    const root = buildRoot([
+      baseItem({
+        id: "a",
+        unitPriceCents: 100_000,
+        quantity: 1,
+        discountPercentage: 15,
+      }),
+    ]);
+
+    expect(selectSubtotalCents(root)).toBe(85_000);
+    expect(selectTaxCents(root)).toBe(16_150);
+    expect(selectTotalCents(root)).toBe(101_150);
+    expect(selectGrandTotalCents(root)).toBe(101_150);
+  });
+
+  it("rounds per-item tax to the cent like the DB service (ROUND_HALF_UP)", () => {
+    // 2 450 × 19% = 465.5 exact → the UI rounds to 466, so the charged
+    // total (2 916) must match what the service stores for credit payments.
+    const root = buildRoot([
+      baseItem({ id: "a", unitPriceCents: 2_450, quantity: 1 }),
+    ]);
+
+    expect(selectTaxCents(root)).toBe(466);
+    expect(selectTotalCents(root)).toBe(2_916);
+  });
+
   it("selectDeliveryFeeCents returns 0 when there is no delivery", () => {
     const root = buildRoot([baseItem()]);
 

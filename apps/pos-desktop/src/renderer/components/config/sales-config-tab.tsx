@@ -18,17 +18,25 @@
  * @category Config Tab
  */
 
-import { type FC, useCallback, useEffect, useState } from 'react';
+import { type FC, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CheckCircleIcon, CreditCardIcon, PercentIcon, ShieldIcon, TagIcon } from "@/components/ui/icons";
 import type { IconComponent } from "@/components/ui/icons";
+import { useClientsService } from "@/components/common/service-context";
 import {
   useLocalConfigStore,
+  DEFAULT_CREDIT_LIMIT_CENTS,
   type DiscountLimitRole,
   type DiscountLimits,
   type PriceFloorType,
   type SalesConfig,
 } from '../../../domain/configuration';
+
+/**
+ * Debounce before backfilling the default credit limit onto existing
+ * clients, so typing the limit never triggers a flood of writes.
+ */
+const CREDIT_BACKFILL_DEBOUNCE_MS = 600;
 
 // ---------------------------------------------------------------------------
 // Section definitions
@@ -152,6 +160,52 @@ export const SalesConfigTab: FC = () => {
     });
     return unsub;
   }, []);
+
+  // ---- Store-credit backfill ----
+  // Whenever credit is enabled with a positive default limit, apply that
+  // limit to existing clients that don't have one yet (idempotent — only
+  // null-limit clients are touched). Debounced so typing the limit does
+  // not fire a write per keystroke.
+  const clientsService = useClientsService();
+  const lastBackfill = useRef<{
+    creditEnabled: boolean;
+    defaultCreditLimitCents: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const { creditEnabled, defaultCreditLimitCents } = salesConfig;
+    if (!creditEnabled || defaultCreditLimitCents <= 0) {
+      lastBackfill.current = null;
+      return;
+    }
+
+    const last = lastBackfill.current;
+    if (
+      last &&
+      last.creditEnabled === creditEnabled &&
+      last.defaultCreditLimitCents === defaultCreditLimitCents
+    ) {
+      return;
+    }
+    lastBackfill.current = { creditEnabled, defaultCreditLimitCents };
+
+    const handle = window.setTimeout(() => {
+      void clientsService
+        .applyDefaultCreditToClients()
+        .then(() => {
+          // Only remember the applied values once the backfill succeeded,
+          // so a transient failure is retried on the next config change.
+          lastBackfill.current = {
+            creditEnabled,
+            defaultCreditLimitCents,
+          };
+        })
+        .catch((err: unknown) => {
+          console.error('[SalesConfigTab] credit backfill failed:', err);
+        });
+    }, CREDIT_BACKFILL_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [salesConfig.creditEnabled, salesConfig.defaultCreditLimitCents, clientsService]);
 
   // ---- Mutations ----
 
@@ -281,8 +335,22 @@ export const SalesConfigTab: FC = () => {
             )}
             {section.id === 'credit' && (
               <CreditBody
+                creditEnabled={salesConfig.creditEnabled}
                 defaultCreditLimitCents={salesConfig.defaultCreditLimitCents}
-                onChange={(defaultCreditLimitCents) =>
+                onEnabledChange={(enabled) => {
+                  const current = useLocalConfigStore.getState().salesConfig;
+                  useLocalConfigStore.getState().updateSalesConfig({
+                    creditEnabled: enabled,
+                    // Activating credit always leaves a usable default
+                    // limit behind, so existing clients are not activated
+                    // with a $0 (disabled) limit.
+                    defaultCreditLimitCents:
+                      enabled && current.defaultCreditLimitCents <= 0
+                        ? DEFAULT_CREDIT_LIMIT_CENTS
+                        : current.defaultCreditLimitCents,
+                  });
+                }}
+                onDefaultLimitChange={(defaultCreditLimitCents) =>
                   useLocalConfigStore.getState().updateSalesConfig({
                     defaultCreditLimitCents,
                   })
@@ -599,16 +667,26 @@ const FloorBody: FC<FloorBodyProps> = ({ floor, onChange }) => {
 // ---------------------------------------------------------------------------
 
 interface CreditBodyProps {
-  /** Default credit limit in COP cents (0 = credit disabled by default). */
+  /** Master switch for store credit. */
+  creditEnabled: boolean;
+  /**
+   * Default credit limit in COP cents. Applied to new clients and
+   * backfilled onto existing clients without a limit while credit is
+   * enabled.
+   */
   defaultCreditLimitCents: number;
-  onChange: (defaultCreditLimitCents: number) => void;
+  onEnabledChange: (enabled: boolean) => void;
+  onDefaultLimitChange: (defaultCreditLimitCents: number) => void;
 }
 
 const CreditBody: FC<CreditBodyProps> = ({
+  creditEnabled,
   defaultCreditLimitCents,
-  onChange,
+  onEnabledChange,
+  onDefaultLimitChange,
 }) => {
   const { t } = useTranslation();
+  const enabledId = 'credit-enabled';
   const limitId = 'credit-default-limit';
   const [pesos, setPesos] = useState(() =>
     String(Math.round(defaultCreditLimitCents / 100)),
@@ -627,10 +705,37 @@ const CreditBody: FC<CreditBodyProps> = ({
 
   return (
     <div className="divide-y divide-border">
-      <div className="flex flex-col gap-1 px-pos-xl py-pos-md">
+      {/* Enabled toggle */}
+      <div className="flex items-start gap-4 px-pos-xl py-pos-md hover:bg-surface/40 transition-colors">
+        <div className="flex-1 min-w-0">
+          <label
+            htmlFor={enabledId}
+            className="text-body-sm font-medium text-ink cursor-pointer"
+          >
+            {t('config.sales.creditEnabled')}
+          </label>
+          <p className="mt-0.5 text-body-xs text-ink-muted">
+            {t('config.sales.creditEnabledHint')}
+          </p>
+        </div>
+        <ToggleSwitch
+          id={enabledId}
+          checked={creditEnabled}
+          onChange={onEnabledChange}
+        />
+      </div>
+
+      {/* Default limit — only meaningful while credit is enabled */}
+      <div
+        className={`flex flex-col gap-1 px-pos-xl py-pos-md transition-opacity duration-200 ${
+          creditEnabled ? '' : 'opacity-50'
+        }`}
+      >
         <label
           htmlFor={limitId}
-          className="text-body-sm font-medium text-ink"
+          className={`text-body-sm font-medium ${
+            creditEnabled ? 'text-ink' : 'text-ink-muted'
+          }`}
         >
           {t('config.sales.defaultCreditLimit')}
         </label>
@@ -651,6 +756,7 @@ const CreditBody: FC<CreditBodyProps> = ({
             min={0}
             step={1000}
             value={pesos}
+            disabled={!creditEnabled}
             onChange={(e) => {
               const raw = e.target.value;
               setPesos(raw);
@@ -658,10 +764,11 @@ const CreditBody: FC<CreditBodyProps> = ({
               const clamped = Number.isFinite(parsed)
                 ? Math.max(0, Math.round(parsed))
                 : 0;
-              onChange(clamped * 100);
+              onDefaultLimitChange(clamped * 100);
             }}
             className="w-40 rounded border border-border bg-surface px-3 py-1.5 text-body-sm text-ink font-data tabular-nums
-              transition-colors hover:border-pharma/50 focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma"
+              transition-colors hover:border-pharma/50 focus:border-pharma focus:outline-none focus:ring-1 focus:ring-pharma
+              disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
       </div>

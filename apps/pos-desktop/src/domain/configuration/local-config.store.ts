@@ -97,14 +97,22 @@ export interface PriceFloorConfig {
 
 /**
  * Sales workflow configuration — controls who can override catalog
- * prices and what the minimum allowed sale price is.
+ * prices, what the minimum allowed sale price is, and the store-credit
+ * policy.
  */
 export interface SalesConfig {
   priceOverridePermissions: PriceOverridePermissions;
   priceFloor: PriceFloorConfig;
   /**
-   * Default store-credit limit in COP cents applied to new clients whose
-   * credit limit is not set explicitly. 0 = credit disabled by default.
+   * Master switch for store credit. When off, the default limit is not
+   * applied to any client (new or existing). Turning it on backfills the
+   * default limit onto existing clients that don't have one yet.
+   */
+  creditEnabled: boolean;
+  /**
+   * Default store-credit limit in COP cents applied to clients whose
+   * credit limit is not set explicitly (new clients and existing clients
+   * without a limit, once credit is enabled). 0 = no default limit.
    */
   defaultCreditLimitCents: number;
 }
@@ -228,8 +236,16 @@ const DEFAULT_PRICE_FLOOR: PriceFloorConfig = {
   minMarginPercent: 0,
 };
 
-/** Store credit is opt-in: 0 means disabled until the owner sets a limit. */
-const DEFAULT_CREDIT_LIMIT_CENTS = 0;
+/**
+ * Store credit is opt-in via the sales-settings toggle (`creditEnabled`).
+ * The default limit below is what the settings input is pre-filled with:
+ * it is applied to new clients and backfilled to existing clients without
+ * a limit once credit is activated.
+ */
+export const DEFAULT_CREDIT_LIMIT_CENTS = 100_000_000; // $1.000.000 COP
+
+/** Credit is off until the owner explicitly activates it in the settings. */
+const DEFAULT_CREDIT_ENABLED = false;
 
 const DEFAULT_ALERT_THRESHOLDS: AlertThresholds = {
   expirationWarningDays: 30,
@@ -287,6 +303,7 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
           accountant: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.accountant },
         },
         priceFloor: { ...DEFAULT_PRICE_FLOOR },
+        creditEnabled: DEFAULT_CREDIT_ENABLED,
         defaultCreditLimitCents: DEFAULT_CREDIT_LIMIT_CENTS,
       },
       sellerInfo: { ...DEFAULT_SELLER_INFO },
@@ -308,6 +325,7 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
               accountant: { ...DEFAULT_PRICE_OVERRIDE_PERMISSIONS.accountant },
             },
             priceFloor: { ...DEFAULT_PRICE_FLOOR },
+            creditEnabled: DEFAULT_CREDIT_ENABLED,
             defaultCreditLimitCents: DEFAULT_CREDIT_LIMIT_CENTS,
           },
           sellerInfo: payload.sellerInfo ?? { ...DEFAULT_SELLER_INFO },
@@ -342,6 +360,8 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
             defaultCreditLimitCents:
               partial.defaultCreditLimitCents ??
               prev.salesConfig.defaultCreditLimitCents,
+            creditEnabled:
+              partial.creditEnabled ?? prev.salesConfig.creditEnabled,
           },
         }));
       },
@@ -359,6 +379,8 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
             },
             defaultCreditLimitCents:
               presetSales.defaultCreditLimitCents ?? DEFAULT_CREDIT_LIMIT_CENTS,
+            creditEnabled:
+              presetSales.creditEnabled ?? DEFAULT_CREDIT_ENABLED,
           },
         });
       },
@@ -366,9 +388,58 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
     {
       name: STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
+      merge: mergePersistedConfig,
     },
   ),
 );
+
+/**
+ * Merge strategy for persisted store state (zustand persist `merge`).
+ *
+ * Mirrors the default shallow merge and adds a one-time migration for
+ * older installs that persisted `salesConfig` without the `creditEnabled`
+ * flag (only the default limit input existed back then). If such an
+ * install already configured a positive default limit, credit is treated
+ * as enabled so already-saved clients keep working instead of being
+ * silently locked out of store credit.
+ */
+export function mergePersistedConfig(
+  persistedState: unknown,
+  currentState: LocalConfigState,
+): LocalConfigState {
+  const persisted = persistedState as Partial<LocalConfigState> | undefined;
+  if (!persisted) return currentState;
+
+  const persistedSales = persisted.salesConfig;
+  // `'creditEnabled' in persistedSales` would narrow the else branch to
+  // `never`, because `creditEnabled` is a required field on the typed
+  // SalesConfig — but older persisted JSON lacks it. hasOwnProperty keeps
+  // the legacy check working on real data.
+  const hasCreditFlag =
+    !!persistedSales &&
+    Object.prototype.hasOwnProperty.call(persistedSales, 'creditEnabled');
+
+  let creditEnabled: boolean;
+  if (!persistedSales) {
+    creditEnabled = currentState.salesConfig.creditEnabled;
+  } else if (hasCreditFlag) {
+    creditEnabled = Boolean(persistedSales.creditEnabled);
+  } else {
+    // Legacy persisted salesConfig: no creditEnabled flag existed, so a
+    // positive default limit means the owner had already opted in.
+    creditEnabled = (persistedSales.defaultCreditLimitCents ?? 0) > 0;
+  }
+
+  return {
+    ...currentState,
+    ...persisted,
+    salesConfig: {
+      ...currentState.salesConfig,
+      ...persistedSales,
+      creditEnabled,
+    },
+  };
+}
 
 /**
  * Reexport the store's state type with a shorthand export for callers that

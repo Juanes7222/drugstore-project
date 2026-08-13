@@ -11,6 +11,7 @@ import { ConfigurationService } from '../services/configuration.service';
 import { PosSettingsService } from '../services/pos-settings.service';
 import { UpsertSystemConfigDto } from '../dto/upsert-system-config.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '@/common/guards/optional-jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
@@ -29,11 +30,14 @@ export class ConfigurationController {
   /**
    * Returns the structured POS settings payload.
    *
-   * This endpoint is deliberately kept lightweight and unauthenticated
-   * (JWT-free) so the POS desktop can fetch it without possessing a user
-   * session.  It only returns non-sensitive, read-only data.
+   * JWT is optional: the POS desktop fetches this without a session on
+   * first boot, but sends its token during normal sync so the global
+   * TenantContextInterceptor binds the subscription and RLS returns the
+   * tenant's payment methods. It only returns non-sensitive, read-only
+   * data.
    */
   @Get('pos-settings')
+  @UseGuards(OptionalJwtAuthGuard)
   async getPosSettings(): Promise<unknown> {
     return this.posSettingsService.getPosSettings();
   }

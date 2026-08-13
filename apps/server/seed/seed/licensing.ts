@@ -117,9 +117,19 @@ export async function seedLicensing(): Promise<void> {
       updatedAt: SIX_MONTHS_AGO,
     },
   ];
-  // Use createMany instead of upsert since Plan has a unique constraint on code
-  // that conflicts with the generic upsert-by-id helper.
-  await prisma.plan.createMany({ data: plans, skipDuplicates: true });
+  // Plan.code is globally unique, so an upsert by code is required: rows left
+  // behind by older seeds (random ids with the same codes) would otherwise be
+  // skipped by createMany(skipDuplicates) and the canonical ids referenced by
+  // the subscription would never exist. The update renames those rows to the
+  // canonical ids (relies on Subscription_planId_fkey ON UPDATE CASCADE for
+  // any subscription that already references a legacy id).
+  for (const plan of plans) {
+    await prisma.plan.upsert({
+      where: { code: plan.code },
+      update: { ...plan },
+      create: { ...plan },
+    });
+  }
   console.log('   3 plans');
 
   // ---- Subscription ----
@@ -182,7 +192,8 @@ export async function seedLicensing(): Promise<void> {
       type: 'WORKSTATION',
       status: 'USED',
       usedAt: SIX_MONTHS_AGO,
-      usedByActivationId: IDS.WS_ACTIVATION_PRINCIPAL,
+      // usedByActivationId is linked after the activations exist (circular FK).
+      usedByActivationId: null,
       expiresAt: ONE_YEAR_FROM_NOW,
       createdAt: SIX_MONTHS_AGO,
     },
@@ -194,7 +205,8 @@ export async function seedLicensing(): Promise<void> {
       type: 'WORKSTATION',
       status: 'USED',
       usedAt: SIX_MONTHS_AGO,
-      usedByActivationId: IDS.WS_ACTIVATION_SECUNDARIA,
+      // usedByActivationId is linked after the activations exist (circular FK).
+      usedByActivationId: null,
       expiresAt: ONE_YEAR_FROM_NOW,
       createdAt: SIX_MONTHS_AGO,
     },
@@ -211,7 +223,17 @@ export async function seedLicensing(): Promise<void> {
       createdAt: SIX_MONTHS_AGO,
     },
   ];
-  await prisma.activationCode.createMany({ data: activationCodes, skipDuplicates: true });
+  // Like plans, ActivationCode.code is globally unique, so an upsert by code
+  // is used: legacy rows with the same codes but random ids are renamed to the
+  // canonical ids instead of being skipped, and the usedByActivationId linking
+  // below can always find the rows.
+  for (const code of activationCodes) {
+    await prisma.activationCode.upsert({
+      where: { code: code.code },
+      update: { ...code },
+      create: { ...code },
+    });
+  }
   console.log('   3 activation codes');
 
   // ---- Workstation activations ----
@@ -255,6 +277,18 @@ export async function seedLicensing(): Promise<void> {
   ];
   await prisma.workstationActivation.createMany({ data: workstationActivations, skipDuplicates: true });
   console.log('   2 workstation activations');
+
+  // The used activation codes reference the activations just created
+  // (circular FK between ActivationCode.usedByActivationId and
+  // WorkstationActivation.activationCodeId).
+  await prisma.activationCode.update({
+    where: { id: IDS.ACT_CODE_WS1 },
+    data: { usedByActivationId: IDS.WS_ACTIVATION_PRINCIPAL },
+  });
+  await prisma.activationCode.update({
+    where: { id: IDS.ACT_CODE_WS2 },
+    data: { usedByActivationId: IDS.WS_ACTIVATION_SECUNDARIA },
+  });
 
   // ---- License check-ins ----
   const checkIns = [

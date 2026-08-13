@@ -318,6 +318,43 @@ describe("SalesPosService", () => {
       expect(result).toBeDefined();
     });
 
+    it("rounds per-item tax and totals to centavos like the payment UI", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      // Price 5250.50 → exact per-item tax 997.595 pesos. The UI rounds
+      // each line to 997.60 (total 6248.10) and charges the sum of the
+      // rounded lines. Without per-item rounding the stored total is the
+      // exact sum (12496.19) — one cent less — so a credit-only payment
+      // capped at the UI total looks overpaid and throws
+      // ChangeRequiresCashPaymentException.
+      const product = makeProduct();
+      product.priceHistories = [{ price: new Prisma.Decimal(5250.5) }];
+      tx.product.findUnique.mockResolvedValue(product);
+      tx.sale.findFirst.mockResolvedValue(null);
+      tx.sale.create.mockImplementation(async ({ data }: any) => ({
+        id: "sale-1",
+        localNumber: 1n,
+        totalAmount: data.totalAmount,
+        totalTax: data.totalTax,
+        items: data.items.create.map((i: any) => ({ ...i })),
+      }));
+
+      const result = await service.create({
+        items: [
+          { productId: "prod-1", quantity: 1 },
+          { productId: "prod-1", quantity: 1 },
+        ],
+      }) as {
+        totalAmount: Prisma.Decimal;
+        items: Array<{ taxAmount: Prisma.Decimal; total: Prisma.Decimal }>;
+      };
+
+      expect(result.items[0].taxAmount.toString()).toBe("997.6");
+      expect(result.items[0].total.toString()).toBe("6248.1");
+      // 2 × 6248.10 — the UI's total; the old exact sum was 12496.19.
+      expect(result.totalAmount.toString()).toBe("12496.2");
+    });
+
     it("requires CASHIER or ADMIN role", async () => {
       auth.requireRole.mockImplementation(() => {
         throw new Error("Unauthorized");
@@ -895,6 +932,7 @@ describe("SalesPosService", () => {
         type: "COST",
         minMarginPercent: 0,
       },
+      creditEnabled: false,
       defaultCreditLimitCents: 0,
     });
 

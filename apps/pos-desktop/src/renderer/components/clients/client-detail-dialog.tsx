@@ -35,6 +35,7 @@ import { RoleType } from "@pharmacy/shared-types";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { formatShortDate } from "@/utils/format-date";
 import { PaymentMethodPicker } from "../common/payment-method-picker";
+import { useActivePaymentMethods } from "@/hooks/use-active-payment-methods";
 import { useCreditService, useSalesHistoryService } from "../common/service-context";
 import { DomainError } from "../../../common/domain-error";
 import type { ClientSearchResult } from "../../../domain/clients/clients.service";
@@ -548,9 +549,14 @@ useEffect(() => {
                         {creditHistory.items.map((entry, idx) => {
                           const isSale = entry.kind === "SALE";
                           const isPayment = entry.kind === "PAYMENT";
-                          const accent = isSale || isPayment
+                          // Sales (debt grows) keep the brand green; abonos
+                          // (payments received, debt shrinks) use a distinct
+                          // blue-grey accent so the history reads at a glance.
+                          const accent = isSale
                             ? "var(--color-pharma)"
-                            : "var(--color-ink-muted)";
+                            : isPayment
+                              ? "var(--color-sync)"
+                              : "var(--color-ink-muted)";
                           return (
                             <li
                               key={`${entry.kind}-${entry.id}-${entry.date}`}
@@ -567,9 +573,11 @@ useEffect(() => {
                               <span
                                 className="flex size-6 shrink-0 items-center justify-center rounded-full"
                                 style={{
-                                  backgroundColor: isSale || isPayment
+                                  backgroundColor: isSale
                                     ? "color-mix(in srgb, var(--color-pharma) 12%, transparent)"
-                                    : "color-mix(in srgb, var(--color-ink) 8%, transparent)",
+                                    : isPayment
+                                      ? "color-mix(in srgb, var(--color-sync) 12%, transparent)"
+                                      : "color-mix(in srgb, var(--color-ink) 8%, transparent)",
                                 }}
                               >
                                 {isSale ? (
@@ -617,9 +625,11 @@ useEffect(() => {
                               <span
                                 className="shrink-0 font-data tabular-nums text-caption font-semibold"
                                 style={{
-                                  color: isSale || isPayment
+                                  color: isSale
                                     ? "var(--color-pharma)"
-                                    : "var(--color-ink)",
+                                    : isPayment
+                                      ? "var(--color-sync)"
+                                      : "var(--color-ink)",
                                   textDecoration: entry.annulled
                                     ? "line-through"
                                     : undefined,
@@ -1172,6 +1182,19 @@ const CreditPaymentDialog: FC<{
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { methods: availableMethods } = useActivePaymentMethods();
+
+  // The payment-method select is controlled and starts empty: the browser
+  // would visually show the first option (Efectivo) without the state being
+  // set, so submitting would fail with "Selecciona un método de pago".
+  // Pre-select the cash method (or the first available) as soon as the
+  // DB-backed list is ready — mirroring the sales payment screen.
+  useEffect(() => {
+    if (methodId) return;
+    const fallback =
+      availableMethods.find((m) => m.isCash) ?? availableMethods[0];
+    if (fallback) setMethodId(fallback.id);
+  }, [methodId, availableMethods]);
 
   const handleSubmit = async () => {
     setError(null);

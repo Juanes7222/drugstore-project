@@ -1,4 +1,5 @@
-import { prisma } from './helpers/db';
+import { prisma, withSeedTenant } from './helpers/db';
+import { IDS } from './constants/ids';
 import { seedReferenceData } from './seed/reference-data';
 import { seedWorkstations } from './seed/workstation';
 import { seedUsers } from './seed/users';
@@ -21,51 +22,57 @@ import { seedLicensing } from './seed/licensing';
 async function main(): Promise<void> {
   console.log('Starting pharmacy-system seed...\n');
 
-  // 1. Auth & workstations — needed by everything else
-  await seedUsers();
-  await seedWorkstations();
+  // Every write runs inside a single RLS-scoped transaction for the default
+  // subscription (app.current_tenant is set like PrismaService does per
+  // request), so the seed works against databases with FORCE row-level
+  // security (the pharmacy_app user) and rolls back atomically on failure.
+  await withSeedTenant(IDS.SUBSCRIPTION_DEFAULT, async () => {
+    // 1. Auth & workstations — needed by everything else
+    await seedUsers();
+    await seedWorkstations();
 
-  // 2. Reference data — categories, forms, taxes, payment methods, classifications
-  await seedReferenceData();
+    // 2. Reference data — categories, forms, taxes, payment methods, classifications
+    await seedReferenceData();
 
-  // 3. Catalog & clients
-  await seedProducts();
-  await seedSuppliers();
-  await seedClients();
+    // 3. Catalog & clients
+    await seedProducts();
+    await seedSuppliers();
+    await seedClients();
 
-  // 4. Inventory
-  await seedInventoryLots();
+    // 4. Inventory
+    await seedInventoryLots();
 
-  // 5. Inventory operations — physical counts reference lots + users (runs before sales for chronological consistency)
-  await seedPhysicalCounts();
+    // 5. Inventory operations — physical counts reference lots + users (runs before sales for chronological consistency)
+    await seedPhysicalCounts();
 
-  // 6. Cash operations — shifts must exist before sales
-  await seedCashShifts();
+    // 6. Cash operations — shifts must exist before sales
+    await seedCashShifts();
 
-  // 7. Transactions — sales reference shifts, products, lots, clients, payment methods
-  await seedSales();
+    // 7. Transactions — sales reference shifts, products, lots, clients, payment methods
+    await seedSales();
 
-  // 8. Medical — prescriptions reference sale items, returns reference sales + cash shifts
-  await seedPrescriptions();
-  await seedClientReturns();
+    // 8. Medical — prescriptions reference sale items, returns reference sales + cash shifts
+    await seedPrescriptions();
+    await seedClientReturns();
 
-  // 9. Purchasing — orders reference suppliers, products, users
-  await seedPurchases();
+    // 9. Purchasing — orders reference suppliers, products, users
+    await seedPurchases();
 
-  // 10. Fiscal DIAN — issuer, tech provider, resolutions, allocations
-  await seedFiscalConfig();
+    // 10. Fiscal DIAN — issuer, tech provider, resolutions, allocations
+    await seedFiscalConfig();
 
-  // 11. Sync — queue items reference workstations
-  await seedSyncQueue();
+    // 11. Sync — queue items reference workstations
+    await seedSyncQueue();
 
-  // 12. System configuration — module-scoped settings (no dependencies)
-  await seedSystemConfig();
+    // 12. System configuration — module-scoped settings (no dependencies)
+    await seedSystemConfig();
 
-  // 13. Audit log — append-only historical entries (no FK constraints that block)
-  await seedAuditLog();
+    // 13. Audit log — append-only historical entries (no FK constraints that block)
+    await seedAuditLog();
 
-  // 14. Licensing — plans, subscription, locations, activations
-  await seedLicensing();
+    // 14. Licensing — plans, subscription, locations, activations
+    await seedLicensing();
+  });
 
   console.log('\nSeed completed successfully!');
   console.log('');

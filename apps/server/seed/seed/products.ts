@@ -62,11 +62,13 @@ function buildProductList(): SeedProductData[] {
 }
 
 async function seedProductBase(product: SeedProductData): Promise<void> {
+  // genericName / activePrinciple are POS-local catalog fields that the server
+  // Product model does not carry (see server-only/product.prisma); the seed
+  // data keeps them for documentation only and they are not written server-side.
   await prisma.product.upsert({
     where: { id: product.id },
     update: {
       commercialName: product.commercialName,
-      genericName: product.genericName,
       saleType: product.saleType,
       categoryId: product.categoryId,
       pharmaceuticalFormId: product.pharmaceuticalFormId,
@@ -76,8 +78,6 @@ async function seedProductBase(product: SeedProductData): Promise<void> {
       subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       internalCode: product.internalCode,
       commercialName: product.commercialName,
-      genericName: product.genericName,
-      activePrinciple: product.activePrinciple,
       concentration: product.concentration,
       concentrationUnit: product.concentrationUnit,
       laboratory: product.laboratory,

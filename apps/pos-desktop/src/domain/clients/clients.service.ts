@@ -301,6 +301,71 @@ export class ClientsService {
     });
   }
 
+  /**
+   * Apply the configured default credit limit to every existing client
+   * that does not have one yet.
+   *
+   * Runs when the admin activates store credit in the sales settings: each
+   * active client with `creditLimit: null` receives the tenant default, so
+   * already-saved clients (created before the credit feature) can use
+   * credit immediately. Each affected client gets a CLIENT_UPDATE sync
+   * entry so the server applies the same limit.
+   *
+   * Idempotent — only clients with a null limit are touched, so re-running
+   * it after a config change never overrides explicit per-client limits.
+   *
+   * @returns The number of clients updated.
+   */
+  async applyDefaultCreditToClients(): Promise<number> {
+    const session = this.auth.requireRole(RoleType.ADMIN);
+    const sales = getSalesConfig();
+    if (!sales.creditEnabled || sales.defaultCreditLimitCents <= 0) return 0;
+
+    const limitPesos = Math.max(0, Math.round(sales.defaultCreditLimitCents / 100));
+    if (limitPesos <= 0) return 0;
+
+    const candidates = await this.prisma.client.findMany({
+      where: { creditLimit: null, isActive: true },
+      select: { id: true },
+    });
+    if (candidates.length === 0) return 0;
+
+    const createdAt = new Date();
+    let applied = 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const client of candidates) {
+        await tx.client.update({
+          where: { id: client.id },
+          data: {
+            creditLimit: new Prisma.Decimal(limitPesos),
+            updatedById: session.userId,
+          },
+        });
+
+        await this.insertSyncQueueRow(
+          tx,
+          'CLIENT_UPDATE',
+          {
+            updateClientDto: { creditLimit: limitPesos },
+            userId: session.userId,
+            metadata: {
+              localClientId: client.id,
+              workstationId: session.workstationId,
+              createdAt: createdAt.toISOString(),
+            },
+          },
+          session,
+          createdAt,
+        );
+        applied += 1;
+      }
+    });
+
+    notifyPendingEntry();
+    return applied;
+  }
+
   // -----------------------------------------------------------------------
   // Private helpers
   // -----------------------------------------------------------------------
@@ -476,14 +541,18 @@ export class ClientsService {
  * Resolve the effective credit limit for a client input.
  *
  * `undefined` (quick-create path) falls back to the tenant default credit
- * limit configured in the sales settings, converted from cents to pesos.
- * `null` / `0` keep credit disabled.
+ * limit configured in the sales settings (converted from cents to pesos),
+ * but only while store credit is enabled — the settings toggle is the
+ * master switch for the default credit policy. `null` / `0` keep credit
+ * disabled for that client regardless.
  */
 function resolveCreditLimit(input: CreateClientInput): number {
   if (input.creditLimit !== undefined) {
     return Math.max(0, Number(input.creditLimit) || 0);
   }
-  return Math.max(0, getSalesConfig().defaultCreditLimitCents / 100);
+  const sales = getSalesConfig();
+  if (!sales.creditEnabled) return 0;
+  return Math.max(0, sales.defaultCreditLimitCents / 100);
 }
 
 /**

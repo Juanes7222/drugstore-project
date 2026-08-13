@@ -281,7 +281,7 @@ export class ClientsService {
       ];
     }
 
-    const [data, total] = await this.prisma.$transaction([
+    const [data, total] = await Promise.all([
       this.prisma.client.findMany({
         where,
         skip: (page - 1) * pageSize,
@@ -315,7 +315,7 @@ export class ClientsService {
       where.updatedAt = { gte: new Date(since) };
     }
 
-    const [data, total] = await this.prisma.$transaction([
+    const [data, total] = await Promise.all([
       this.prisma.client.findMany({
         where,
         skip: (page - 1) * pageSize,

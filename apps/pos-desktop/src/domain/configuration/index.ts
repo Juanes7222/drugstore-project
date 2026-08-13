@@ -16,6 +16,8 @@ export {
   getPurchasesConfig,
   getSalesConfig,
   getDiscountLimits,
+  mergePersistedConfig,
+  DEFAULT_CREDIT_LIMIT_CENTS,
   type HydratePayload,
   type LocalConfigState,
   type DiscountLimits,

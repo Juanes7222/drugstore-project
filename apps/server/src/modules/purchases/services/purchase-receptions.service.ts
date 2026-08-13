@@ -44,7 +44,7 @@ export class PurchaseReceptionsService {
       where.receivedAt = dateFilter;
     }
 
-    const [receptions, total] = await this.prisma.$transaction([
+    const [receptions, total] = await Promise.all([
       this.prisma.purchaseReception.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,

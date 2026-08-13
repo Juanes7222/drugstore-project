@@ -52,6 +52,17 @@ function setSessionRole(role: string | null) {
   );
 }
 
+// The dialog pre-selects the cash method from the DB-backed list as the
+// default. Mock the hook so the default is deterministic in tests.
+vi.mock("@/hooks/use-active-payment-methods", () => ({
+  useActivePaymentMethods: () => ({
+    methods: [
+      { id: "pm-cash", category: "CASH", name: "Efectivo", isCash: true },
+    ],
+    loading: false,
+  }),
+}));
+
 // The real picker loads methods via ServiceContext (unavailable here) — mock
 // it to a fixed single-option select so the abono dialog can pick a method.
 vi.mock("../common/payment-method-picker", () => ({
@@ -278,6 +289,51 @@ describe("ClientDetailDialog", () => {
       expect(screen.getByText("2 movimientos")).toBeInTheDocument();
     });
 
+    it("distinguishes abonos from credit sales by color", async () => {
+      mockCreditService.getCreditState.mockResolvedValue({
+        clientId: "client-1",
+        creditLimitCents: 1000000,
+        usedCents: 50000,
+        availableCents: 950000,
+        enabled: true,
+      });
+      mockCreditService.getCreditHistory.mockResolvedValue({
+        items: [
+          {
+            kind: "SALE",
+            id: "sale-1",
+            date: "2026-07-20T10:05:00.000Z",
+            amountCents: 100000,
+            reference: "#1042",
+            methodName: "Crédito",
+          },
+          {
+            kind: "PAYMENT",
+            id: "abono-1",
+            date: "2026-07-24T09:00:00.000Z",
+            amountCents: 50000,
+            reference: "AB-000001",
+            methodName: "Efectivo",
+          },
+        ],
+        debtCents: 50000,
+        creditEnabled: true,
+      });
+
+      setup(makeClient());
+
+      await screen.findByText("Historial de crédito");
+
+      // Credit sales stay in the brand green; abonos get the distinct
+      // blue-grey accent so the two are distinguishable at a glance.
+      expect(screen.getByText(/\+\$1\.000/)).toHaveStyle({
+        color: "var(--color-pharma)",
+      });
+      expect(screen.getByText(/−\$500/)).toHaveStyle({
+        color: "var(--color-sync)",
+      });
+    });
+
     it("renders the empty state when credit is enabled but there are no movements", async () => {
       mockCreditService.getCreditState.mockResolvedValue({
         clientId: "client-1",
@@ -349,6 +405,26 @@ describe("ClientDetailDialog", () => {
       await screen.findByText("Crédito");
 
       expect(screen.queryByText("Registrar abono")).not.toBeInTheDocument();
+    });
+
+    it("pre-selects the cash method so the abono can be registered without picking one", async () => {
+      const user = userEvent.setup();
+      setupWithDebt(95000);
+
+      await user.click(
+        await screen.findByRole("button", { name: "Abono" }),
+      );
+      await user.type(screen.getByLabelText("Monto del abono"), "500");
+      await user.click(
+        screen.getByRole("button", { name: "Registrar abono" }),
+      );
+
+      expect(mockCreditService.recordCreditPayment).toHaveBeenCalledWith({
+        clientId: "client-1",
+        amountCents: 50000,
+        paymentMethodId: "pm-cash",
+        notes: undefined,
+      });
     });
 
     it("records the abono with amount and payment method, then refreshes state and history", async () => {

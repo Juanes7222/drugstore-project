@@ -36,6 +36,7 @@ import {
 import type { AuthService } from '../auth/auth.service';
 import { useLocalSessionStore } from '../auth/local-session.store';
 import { useCashShiftStore } from './cash-shift.store';
+import { getSalesConfig } from '../configuration/local-config.store';
 import { createBackupService, BackupFailedException } from '../backup';
 import type { LocalAdjustmentService } from '../fiscal/local-adjustment.service';
 import type { OperationalInvoiceView } from '../fiscal/local-adjustment.types';
@@ -1516,7 +1517,15 @@ export class CashShiftService {
       select: { id: true, category: true, name: true, isCash: true },
       orderBy: { sortOrder: 'asc' },
     });
-    return Array.isArray(methods) ? methods : [];
+    const list = Array.isArray(methods) ? methods : [];
+    // Store credit is a per-station opt-in (Settings → Sales). While the
+    // creditEnabled switch is off, hide the CREDIT method from every picker;
+    // the reconciliation paths read the DB directly, so historical credit
+    // sales still reconcile regardless of the toggle.
+    if (!getSalesConfig().creditEnabled) {
+      return list.filter((m) => m.category !== 'CREDIT');
+    }
+    return list;
   }
 
   private generateId(): string {

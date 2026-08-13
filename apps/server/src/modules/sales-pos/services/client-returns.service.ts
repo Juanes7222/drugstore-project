@@ -32,7 +32,7 @@ export class ClientReturnsService {
     const pageSize = query.pageSize || 20;
     const where: Prisma.ClientReturnWhereInput = {};
     if (query.state) where.state = query.state as ClientReturnState;
-    const [data, total] = await this.prisma.$transaction([
+    const [data, total] = await Promise.all([
       this.prisma.clientReturn.findMany({ where, skip: (page - 1) * pageSize, take: pageSize, orderBy: { createdAt: 'desc' }, include: { sale: true, client: true, items: true } }),
       this.prisma.clientReturn.count({ where }),
     ]);

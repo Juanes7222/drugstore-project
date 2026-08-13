@@ -64,6 +64,7 @@ import {
   useSalesPosService,
 } from "@/components/common/service-context";
 import type { ClientCreditState } from "../../../domain/clients/credit.service";
+import { useLocalConfigStore } from "../../../domain/configuration/local-config.store";
 import { useActivePaymentMethods } from "@/hooks/use-active-payment-methods";
 import { useProductSyncWait } from "@/hooks/use-product-sync-wait";
 import { ProductNotSyncedYetException } from "../../../domain/sales-pos/exceptions";
@@ -106,9 +107,20 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
   const salesPosService = useSalesPosService();
   const creditService = useCreditService();
 
-  // ---- Store credit panel state ----
+  // ---- Store credit policy state ----
   const [creditState, setCreditState] = useState<ClientCreditState | null>(null);
   const [creditLoading, setCreditLoading] = useState(false);
+  const [creditEnabled, setCreditEnabled] = useState<boolean>(
+    () => useLocalConfigStore.getState().salesConfig.creditEnabled,
+  );
+
+  // Keep the local credit policy reactive: the owner can flip the
+  // creditEnabled toggle in Settings while this screen is mounted.
+  useEffect(() => {
+    return useLocalConfigStore.subscribe((state) => {
+      setCreditEnabled(state.salesConfig.creditEnabled);
+    });
+  }, []);
 
   const creditMethods = useMemo(
     () => methods.filter((m) => m.category === "CREDIT"),
@@ -525,6 +537,23 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
             {t("payment.add_method")}
           </button>
         </div>
+
+        {!creditEnabled && isRegisteredClient && (
+          <div
+            className="mt-pos-md flex items-center gap-2 rounded-pos p-pos-md text-body-sm"
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--color-sync) 10%, transparent)",
+              color: "var(--color-ink-muted)",
+              border:
+                "1px solid color-mix(in srgb, var(--color-sync) 25%, transparent)",
+            }}
+            role="status"
+            aria-live="polite"
+          >
+            {t("payment.credit.disabled_notice")}
+          </div>
+        )}
 
         {creditTotalCents > 0 && (
           <div

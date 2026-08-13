@@ -160,17 +160,53 @@ export const selectCartItemCount = createSelector(
   (items) => items.reduce((sum, item) => sum + item.quantity, 0),
 );
 
+/**
+ * Per-item money math, mirroring the domain sale service so the totals the
+ * cashier sees are exactly what the DB records and the payment screen
+ * charges:
+ *   - discount = round(subtotal × pct / 100) to the cent
+ *   - line total = subtotal − discount
+ *   - tax = round(line total × rate / 100) to the cent
+ *
+ * The service applies the same per-item centavos rounding (ROUND_HALF_UP),
+ * so the frontend total can never drift from sale.totalAmount — a drift of
+ * a cent or more made credit-only payments look overpaid and threw
+ * ChangeRequiresCashPaymentException at confirm time.
+ */
+function computeCartItemMoney(item: CartItem): {
+  lineTotalCents: number;
+  taxCents: number;
+} {
+  const subtotalCents = item.unitPriceCents * item.quantity;
+  const discountCents = Math.round(
+    (subtotalCents * (item.discountPercentage ?? 0)) / 100,
+  );
+  const lineTotalCents = subtotalCents - discountCents;
+  const taxRate = (item.taxPercentage ?? 0) / 100;
+  return {
+    lineTotalCents,
+    taxCents: Math.round(lineTotalCents * taxRate),
+  };
+}
+
+/**
+ * Subtotal in cents after per-item discounts.
+ *
+ * Mirrors the DB line totals (subtotal minus the per-item discount, rounded
+ * to the cent), so the displayed subtotal stays consistent with the lines
+ * and with the charged total.
+ */
 export const selectSubtotalCents = createSelector(
   [selectCartItems],
   (items) =>
     items.reduce(
-      (sum, item) => sum + item.unitPriceCents * item.quantity,
+      (sum, item) => sum + computeCartItemMoney(item).lineTotalCents,
       0,
     ),
 );
 
 /**
- * Tax in cents, computed per cart item using each item's own taxPercentage.
+ * Tax in cents, computed per cart item on the discounted line total.
  *
  * taxPercentage is an integer percentage (e.g. 19 for 19%, 5 for 5%, 0 for exempt).
  * Items without a taxPercentage are treated as exempt (0%).
@@ -178,16 +214,22 @@ export const selectSubtotalCents = createSelector(
 export const selectTaxCents = createSelector(
   [selectCartItems],
   (items) =>
-    items.reduce((sum, item) => {
-      const taxRate = (item.taxPercentage ?? 0) / 100;
-      const itemTotal = item.unitPriceCents * item.quantity;
-      return sum + Math.round(itemTotal * taxRate);
-    }, 0),
+    items.reduce(
+      (sum, item) => sum + computeCartItemMoney(item).taxCents,
+      0,
+    ),
 );
 
 export const selectTotalCents = createSelector(
-  [selectSubtotalCents, selectTaxCents],
-  (subtotal, tax) => subtotal + tax,
+  [selectCartItems],
+  (items) =>
+    items.reduce(
+      (sum, item) => {
+        const money = computeCartItemMoney(item);
+        return sum + money.lineTotalCents + money.taxCents;
+      },
+      0,
+    ),
 );
 
 export const selectSelectedClient = createSelector(

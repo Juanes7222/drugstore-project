@@ -34,7 +34,7 @@ export class FiscalDocumentsService {
       where.issueDate = dateFilter;
     }
 
-    const [docs, total] = await this.prisma.$transaction([
+    const [docs, total] = await Promise.all([
       this.prisma.fiscalDocument.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,

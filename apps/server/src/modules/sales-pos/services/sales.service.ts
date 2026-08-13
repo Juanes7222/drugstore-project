@@ -64,7 +64,7 @@ export class SalesService {
       where.confirmedAt = dateFilter;
     }
 
-    const [sales, total] = await this.prisma.$transaction([
+    const [sales, total] = await Promise.all([
       this.prisma.sale.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,
@@ -492,10 +492,21 @@ export class SalesService {
       throw new DiscountReasonRequiredException();
     }
 
-    const discountAmount = itemSubtotal.times(discountPercentage.dividedBy(100));
+    // Round each component to whole centavos (2 dp) exactly like the POS
+    // (which mirrors its cents-based UI). Without per-item rounding the
+    // exact Decimal sum can drift from the payment amount by a cent or
+    // more, making credit-only payments look overpaid and throwing
+    // ChangeRequiresCashPaymentException at confirm time.
+    const discountAmount = itemSubtotal
+      .times(discountPercentage.dividedBy(100))
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
     const priceAfterDiscount = itemSubtotal.minus(discountAmount);
-    const taxAmount = priceAfterDiscount.times(taxRate.dividedBy(100));
-    const total = priceAfterDiscount.plus(taxAmount);
+    const taxAmount = priceAfterDiscount
+      .times(taxRate.dividedBy(100))
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+    const total = priceAfterDiscount
+      .plus(taxAmount)
+      .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
     const commission = this.resolveCommission(itemDto, product, unitPrice, quantity, discountAmount);
 

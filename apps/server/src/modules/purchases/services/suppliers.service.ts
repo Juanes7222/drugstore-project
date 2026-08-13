@@ -28,7 +28,7 @@ export class SuppliersService {
       where.isActive = query.isActive === 'true';
     }
 
-    const [suppliers, total] = await this.prisma.$transaction([
+    const [suppliers, total] = await Promise.all([
       this.prisma.supplier.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,

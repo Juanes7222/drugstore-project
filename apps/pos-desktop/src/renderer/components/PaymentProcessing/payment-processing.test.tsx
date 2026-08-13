@@ -8,7 +8,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { createContext } from "react";
 import { Provider } from "react-redux";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { configureStore } from "@reduxjs/toolkit";
 import { PaymentProcessing } from "./payment-processing";
 import { addItem, salesSlice, setClient, setDelivery } from "@/store/slices/sales-slice";
@@ -17,6 +17,7 @@ import { uiSlice, setCurrentSaleId } from "@/store/slices/ui-slice";
 import { PaymentGatewayService } from "@/services/payment-gateway-service";
 import { SaleType } from "@pharmacy/shared-types";
 import type { CartItem } from "@/store/slices/sales-types";
+import { useLocalConfigStore } from "../../../domain/configuration/local-config.store";
 // Initialize i18n singleton so formatCurrency can resolve the active locale.
 import "@/i18n";
 
@@ -144,6 +145,14 @@ const renderPayment = (
 describe("PaymentProcessing", () => {
   afterEach(() => {
     vi.useRealTimers();
+    // The singleton config store is shared across tests — restore the
+    // default (credit disabled) so tests never leak the toggle state.
+    // RTL auto-cleanup runs after this hook, so the component is still
+    // mounted and its store subscription fires — wrap in act to avoid
+    // "not wrapped in act(...)" warnings.
+    act(() => {
+      useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: false });
+    });
   });
 
   // --- PP-01 ---
@@ -237,6 +246,7 @@ describe("PaymentProcessing", () => {
   // --- Store credit panel ---
 
   it("blocks CREDIT payment confirmation until a registered client is selected", () => {
+    useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: true });
     const store = createTestStore(6_616_400);
     store.dispatch(
       addPaymentMethod({
@@ -266,6 +276,7 @@ describe("PaymentProcessing", () => {
   });
 
   it("shows the client's credit balance and confirms within the limit", async () => {
+    useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: true });
     const store = createTestStore(6_616_400);
     store.dispatch(
       setClient({
@@ -572,5 +583,51 @@ describe("PaymentProcessing", () => {
         payload: "sales",
       }),
     );
+  });
+
+  // --- Credit policy notice (credit disabled in Settings → Sales) ---
+
+  it("warns that customer credit is disabled when a registered client is selected", () => {
+    const store = createTestStore(6_616_400);
+    store.dispatch(
+      setClient({
+        id: "client-1",
+        name: "María Gómez",
+        identification: "CC 1023456789",
+      }),
+    );
+    useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: false });
+    renderPayment(store);
+
+    expect(
+      screen.getByText(/crédito a clientes está deshabilitado/i),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the disabled-credit notice when credit is enabled", () => {
+    const store = createTestStore(6_616_400);
+    store.dispatch(
+      setClient({
+        id: "client-1",
+        name: "María Gómez",
+        identification: "CC 1023456789",
+      }),
+    );
+    useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: true });
+    renderPayment(store);
+
+    expect(
+      screen.queryByText(/crédito a clientes está deshabilitado/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not show the disabled-credit notice without a registered client", () => {
+    const store = createTestStore(6_616_400);
+    useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: false });
+    renderPayment(store);
+
+    expect(
+      screen.queryByText(/crédito a clientes está deshabilitado/i),
+    ).not.toBeInTheDocument();
   });
 });

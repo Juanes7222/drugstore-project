@@ -80,7 +80,8 @@ describe('LotsService', () => {
   describe('findAll', () => {
     it('returns paginated lots with filters', async () => {
       const lots = [mockLot];
-      (prisma.$transaction as jest.Mock).mockResolvedValue([lots, 1]);
+      (prisma.lot.findMany as jest.Mock).mockResolvedValue(lots);
+      (prisma.lot.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, pageSize: 20, productId: 'prod-1', state: 'ACTIVE' });
 
@@ -172,7 +173,8 @@ describe('LotsService', () => {
 
   describe('listMovements', () => {
     it('returns paginated movements with filters', async () => {
-      (prisma.$transaction as jest.Mock).mockResolvedValue([[{ id: 'mov-1' }], 1]);
+      (prisma.inventoryMovement.findMany as jest.Mock).mockResolvedValue([{ id: 'mov-1' }]);
+      (prisma.inventoryMovement.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.listMovements({ page: 1, pageSize: 20, lotId: 'lot-1' });
 

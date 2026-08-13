@@ -41,7 +41,7 @@ export class LotsService {
       where.expirationDate = dateFilter;
     }
 
-    const [lots, total] = await this.prisma.$transaction([
+    const [lots, total] = await Promise.all([
       this.prisma.lot.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,
@@ -151,7 +151,7 @@ export class LotsService {
       where.createdAt = dateFilter;
     }
 
-    const [movements, total] = await this.prisma.$transaction([
+    const [movements, total] = await Promise.all([
       this.prisma.inventoryMovement.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,

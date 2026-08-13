@@ -28,7 +28,7 @@ export class PhysicalCountsService {
     const where: Prisma.PhysicalCountWhereInput = {};
     if (query.state) where.state = query.state as PhysicalCountState;
 
-    const [counts, total] = await this.prisma.$transaction([
+    const [counts, total] = await Promise.all([
       this.prisma.physicalCount.findMany({
         where,
         skip: (page - 1) * pageSize,

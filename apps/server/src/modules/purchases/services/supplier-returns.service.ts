@@ -32,7 +32,7 @@ export class SupplierReturnsService {
     if (query.purchaseReceptionId) where.purchaseReceptionId = query.purchaseReceptionId;
     if (query.state) where.state = query.state as PurchaseReturnState;
 
-    const [returns, total] = await this.prisma.$transaction([
+    const [returns, total] = await Promise.all([
       this.prisma.supplierReturn.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,

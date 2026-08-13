@@ -104,6 +104,54 @@ describe("ConfigSyncService", () => {
       vi.unstubAllGlobals();
     });
 
+    it("keeps the local credit policy when the server payload omits it", async () => {
+      vi.stubGlobal("navigator", { onLine: true });
+
+      useLocalConfigStore.getState().updateSalesConfig({
+        creditEnabled: true,
+        defaultCreditLimitCents: 7_000_000,
+      });
+
+      vi.mocked(http.get).mockResolvedValue({
+        paymentMethods: [],
+        discountLimits: {
+          owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
+          cashier: { itemMaxPercent: 15, globalMaxPercent: 10 },
+          admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          inventoryAssistant: { itemMaxPercent: 20, globalMaxPercent: 15 },
+          accountant: { itemMaxPercent: 5, globalMaxPercent: 5 },
+        },
+        // salesConfig from an older server: no credit fields.
+        salesConfig: {
+          priceOverridePermissions: {
+            manager: { allowed: true, requireReason: true },
+            cashier: { allowed: false, requireReason: true },
+            inventoryAssistant: { allowed: false, requireReason: true },
+            accountant: { allowed: false, requireReason: true },
+          },
+          priceFloor: { enabled: true, type: "COST", minMarginPercent: 0 },
+        },
+        alertThresholds: {
+          expirationWarningDays: 60,
+          lowStockAlertEnabled: true,
+        },
+        syncDefaults: {
+          batchSize: 25,
+          maxRetryAttempts: 15,
+          retryDelaysSeconds: [60],
+        },
+      });
+
+      await service.pullConfiguration();
+
+      const config = useLocalConfigStore.getState();
+      expect(config.salesConfig.creditEnabled).toBe(true);
+      expect(config.salesConfig.defaultCreditLimitCents).toBe(7_000_000);
+
+      vi.unstubAllGlobals();
+    });
+
     it("does nothing when offline", async () => {
       vi.stubGlobal("navigator", { onLine: false });
 

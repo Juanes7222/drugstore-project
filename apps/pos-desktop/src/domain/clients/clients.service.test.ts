@@ -3,6 +3,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { ClientsService, createClientsService, type CreateClientInput } from "./clients.service";
+import { useLocalConfigStore } from "../configuration/local-config.store";
 
 
 // ---------------------------------------------------------------------------
@@ -14,6 +15,7 @@ const makeMockPrisma = () => {
     client: {
       findMany: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
     syncQueue: {
       create: vi.fn(),
@@ -104,6 +106,15 @@ describe("ClientsService", () => {
     tx = mocks.tx;
     auth = makeMockAuth();
     service = createClientsService(prisma, auth as any);
+
+    // Neutral credit policy: disabled with no default limit.
+    useLocalConfigStore.setState((s) => ({
+      salesConfig: {
+        ...s.salesConfig,
+        creditEnabled: false,
+        defaultCreditLimitCents: 0,
+      },
+    }));
   });
 
   describe("search", () => {
@@ -240,6 +251,102 @@ describe("ClientsService", () => {
           }),
         }),
       );
+    });
+
+    it("applies the default credit limit when credit is enabled and none is provided", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      useLocalConfigStore.getState().updateSalesConfig({
+        creditEnabled: true,
+        defaultCreditLimitCents: 50_000_000, // $500.000 COP
+      });
+      tx.client.create.mockResolvedValue(makeClient());
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      await service.create(validInput);
+
+      const createCall = tx.client.create.mock.calls[0][0];
+      expect(createCall.data.creditLimit.toString()).toBe("500000");
+    });
+
+    it("does not apply a default credit limit when credit is disabled", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.client.create.mockResolvedValue(makeClient());
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      await service.create(validInput);
+
+      const createCall = tx.client.create.mock.calls[0][0];
+      expect(createCall.data.creditLimit).toBeNull();
+    });
+  });
+
+  describe("applyDefaultCreditToClients", () => {
+    it("requires ADMIN role", async () => {
+      auth.requireRole.mockImplementation(() => {
+        throw new Error("Unauthorized");
+      });
+
+      await expect(service.applyDefaultCreditToClients()).rejects.toThrow(
+        "Unauthorized",
+      );
+    });
+
+    it("no-ops when credit is disabled", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+
+      const applied = await service.applyDefaultCreditToClients();
+
+      expect(applied).toBe(0);
+      expect(tx.client.findMany).not.toHaveBeenCalled();
+    });
+
+    it("no-ops when every client already has a limit", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      useLocalConfigStore.getState().updateSalesConfig({
+        creditEnabled: true,
+        defaultCreditLimitCents: 50_000_000,
+      });
+      tx.client.findMany.mockResolvedValue([]);
+
+      const applied = await service.applyDefaultCreditToClients();
+
+      expect(applied).toBe(0);
+      expect(tx.client.update).not.toHaveBeenCalled();
+    });
+
+    it("applies the default limit to clients without one and enqueues a CLIENT_UPDATE per client", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      useLocalConfigStore.getState().updateSalesConfig({
+        creditEnabled: true,
+        defaultCreditLimitCents: 50_000_000,
+      });
+      tx.client.findMany.mockResolvedValue([{ id: "client-1" }, { id: "client-2" }]);
+      tx.client.update.mockResolvedValue({});
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      const applied = await service.applyDefaultCreditToClients();
+
+      expect(applied).toBe(2);
+      expect(tx.client.findMany).toHaveBeenCalledWith({
+        where: { creditLimit: null, isActive: true },
+        select: { id: true },
+      });
+
+      const firstUpdate = tx.client.update.mock.calls[0][0];
+      expect(firstUpdate.where.id).toBe("client-1");
+      expect(firstUpdate.data.creditLimit.toString()).toBe("500000");
+      expect(firstUpdate.data.updatedById).toBe("user-1");
+
+      // Each updated client gets a CLIENT_UPDATE entry for the server.
+      const firstSync = tx.syncQueue.create.mock.calls[0][0];
+      expect(firstSync.data.operationType).toBe("CLIENT_UPDATE");
+      expect(firstSync.data.status).toBe("PENDING");
+      expect(firstSync.data.payload).toContain('"creditLimit":500000');
+      expect(firstSync.data.payload).toContain('"localClientId":"client-1"');
+      expect(tx.syncQueue.create).toHaveBeenCalledTimes(2);
     });
   });
 });

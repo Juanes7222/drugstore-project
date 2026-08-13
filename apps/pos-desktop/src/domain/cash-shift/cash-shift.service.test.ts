@@ -8,6 +8,7 @@ import { ShiftAlreadyOpenException, ShiftNotOpenException, MissingClosingCashCou
 import { BackupFailedException } from "../backup/exceptions";
 import { Prisma } from "@pharmacy/database/local";
 import { RoleType } from "@pharmacy/shared-types";
+import { useLocalConfigStore } from "../configuration/local-config.store";
 
 // Mock shift-close-html and print-payload-writer for printRouter tests
 vi.mock("./shift-close-html", () => ({
@@ -168,6 +169,50 @@ describe("CashShiftService", () => {
     // Restore any spies placed on the shared dbWriteLock singleton so a
     // failing test can never leak an acquired lock into the next one.
     vi.restoreAllMocks();
+    // Restore the default credit policy — the singleton config store is shared.
+    useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: false });
+  });
+
+  describe("getActivePaymentMethodsList", () => {
+    const CASH_METHOD = {
+      id: "pay_efectivo",
+      category: "CASH",
+      name: "Efectivo",
+      isCash: true,
+    };
+    const CREDIT_METHOD = {
+      id: "pay_credito",
+      category: "CREDIT",
+      name: "Crédito",
+      isCash: false,
+    };
+
+    it("hides the CREDIT method while store credit is disabled", async () => {
+      useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: false });
+      tx.paymentMethod.findMany.mockResolvedValue([CASH_METHOD, CREDIT_METHOD]);
+
+      const result = await service.getActivePaymentMethodsList();
+
+      expect(result).toEqual([CASH_METHOD]);
+    });
+
+    it("includes the CREDIT method once store credit is enabled", async () => {
+      useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: true });
+      tx.paymentMethod.findMany.mockResolvedValue([CASH_METHOD, CREDIT_METHOD]);
+
+      const result = await service.getActivePaymentMethodsList();
+
+      expect(result).toEqual([CASH_METHOD, CREDIT_METHOD]);
+    });
+
+    it("keeps non-credit methods untouched when the list has no CREDIT method", async () => {
+      useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: false });
+      tx.paymentMethod.findMany.mockResolvedValue([CASH_METHOD]);
+
+      const result = await service.getActivePaymentMethodsList();
+
+      expect(result).toEqual([CASH_METHOD]);
+    });
   });
 
   describe("openShift", () => {

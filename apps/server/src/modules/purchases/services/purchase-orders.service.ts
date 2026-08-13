@@ -32,7 +32,7 @@ export class PurchaseOrdersService {
       where.createdAt = dateFilter;
     }
 
-    const [purchaseOrders, total] = await this.prisma.$transaction([
+    const [purchaseOrders, total] = await Promise.all([
       this.prisma.purchaseOrder.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,

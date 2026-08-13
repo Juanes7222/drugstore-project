@@ -22,7 +22,7 @@ export class InventoryMovementsService {
       where.createdAt = dateFilter;
     }
 
-    const [movements, total] = await this.prisma.$transaction([
+    const [movements, total] = await Promise.all([
       this.prisma.inventoryMovement.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,

@@ -55,7 +55,7 @@ export class InventoryAdjustmentsService {
       where.createdAt = dateFilter;
     }
 
-    const [docs, total] = await this.prisma.$transaction([
+    const [docs, total] = await Promise.all([
       this.prisma.inventoryAdjustmentDocument.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,
