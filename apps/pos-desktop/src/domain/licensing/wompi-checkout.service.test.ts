@@ -1,7 +1,10 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { BillingPeriod } from "@pharmacy/shared-types";
 import {
   createWompiCheckoutService,
   CheckoutError,
+  CheckoutTimeoutError,
+  estimatePeriodAmountCents,
   type WompiCheckoutService,
   type CheckoutPlan,
   type CheckoutSession,
@@ -59,6 +62,8 @@ function makeSessionStatus(
     statusMessage: null,
     wompiTransactionId: "txn-001",
     reference: "wompi-ref-001",
+    subscriptionId: null,
+    activationCode: null,
     ...overrides,
   };
 }
@@ -310,6 +315,164 @@ describe("createWompiCheckoutService", () => {
       await expect(service.pollSession(reference)).rejects.toThrow(
         "Network timeout",
       );
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // estimatePeriodAmountCents
+  // -----------------------------------------------------------------------
+
+  describe("estimatePeriodAmountCents", () => {
+    it("returns the base price for MONTHLY", () => {
+      expect(estimatePeriodAmountCents(50_000, BillingPeriod.MONTHLY)).toBe(
+        50_000,
+      );
+    });
+
+    it("applies 10% off for QUARTERLY", () => {
+      expect(estimatePeriodAmountCents(50_000, BillingPeriod.QUARTERLY)).toBe(
+        135_000,
+      );
+    });
+
+    it("applies 20% off for ANNUAL", () => {
+      expect(estimatePeriodAmountCents(50_000, BillingPeriod.ANNUAL)).toBe(
+        480_000,
+      );
+    });
+
+    it("rounds fractional results to whole cents", () => {
+      expect(estimatePeriodAmountCents(33_333, BillingPeriod.QUARTERLY)).toBe(
+        89_999,
+      );
+      expect(estimatePeriodAmountCents(4_167, BillingPeriod.ANNUAL)).toBe(
+        40_003,
+      );
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // pollUntilTerminal
+  // -----------------------------------------------------------------------
+
+  describe("pollUntilTerminal", () => {
+    const reference = "wompi-ref-001";
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("returns the status when the first poll is terminal", async () => {
+      const status = makeSessionStatus({ status: "APPROVED" });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(status),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+      const onStatus = vi.fn();
+
+      const result = await service.pollUntilTerminal(reference, {
+        intervalMs: 5_000,
+        timeoutMs: 60_000,
+        onStatus,
+      });
+
+      expect(result).toEqual(status);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(onStatus).not.toHaveBeenCalled();
+    });
+
+    it("keeps polling until a terminal status arrives", async () => {
+      vi.useFakeTimers();
+      const pending = makeSessionStatus({ status: "PENDING" });
+      const approved = makeSessionStatus({
+        status: "APPROVED",
+        activationCode: "ABCDEFGHIJKL",
+      });
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(pending) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(pending) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(approved) });
+      vi.stubGlobal("fetch", mockFetch);
+      const onStatus = vi.fn();
+
+      const promise = service.pollUntilTerminal(reference, {
+        intervalMs: 10,
+        timeoutMs: 1_000,
+        onStatus,
+      });
+      await vi.advanceTimersByTimeAsync(30);
+
+      await expect(promise).resolves.toEqual(approved);
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      expect(onStatus).toHaveBeenCalledTimes(2);
+      expect(onStatus).toHaveBeenNthCalledWith(1, pending);
+      expect(onStatus).toHaveBeenNthCalledWith(2, pending);
+    });
+
+    it("keeps polling through a transient CheckoutError and succeeds", async () => {
+      vi.useFakeTimers();
+      const approved = makeSessionStatus({ status: "APPROVED" });
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValueOnce(new CheckoutError(500, "Server hiccup"))
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(approved) });
+      vi.stubGlobal("fetch", mockFetch);
+      const onStatus = vi.fn();
+
+      const promise = service.pollUntilTerminal(reference, {
+        intervalMs: 10,
+        timeoutMs: 1_000,
+        onStatus,
+      });
+      await vi.advanceTimersByTimeAsync(20);
+
+      await expect(promise).resolves.toEqual(approved);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(onStatus).toHaveBeenCalledTimes(1);
+      expect(onStatus).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: "PENDING",
+          reference,
+          subscriptionId: null,
+          activationCode: null,
+        }),
+      );
+    });
+
+    it("throws CheckoutTimeoutError when the deadline passes", async () => {
+      vi.useFakeTimers();
+      const pending = makeSessionStatus({ status: "PENDING" });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(pending),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const promise = service.pollUntilTerminal(reference, {
+        intervalMs: 100,
+        timeoutMs: 250,
+      });
+      const assertion = expect(promise).rejects.toThrow(CheckoutTimeoutError);
+      await vi.advanceTimersByTimeAsync(400);
+
+      await assertion;
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+    });
+
+    it("rethrows non-CheckoutError failures immediately", async () => {
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValue(new Error("Connection refused"));
+      vi.stubGlobal("fetch", mockFetch);
+
+      await expect(
+        service.pollUntilTerminal(reference, {
+          intervalMs: 10,
+          timeoutMs: 1_000,
+        }),
+      ).rejects.toThrow("Connection refused");
     });
   });
 });

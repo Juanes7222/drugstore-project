@@ -1155,3 +1155,22 @@ sections. Design decisions:
 | **Numbers are tabular** | Counts, row numbers, and importId use `font-data tabular-nums`. Sample table headers are the shared column labels, so preview matches the downloaded template exactly. |
 | **Display caps** | Preview error list renders 100 rows then collapses into "… y N errores más" (a 5,000-row file with systematic errors must not render 5,000 cards). Execute errors are already capped at 50 by the service. |
 | **Template download** | `buildTemplate` (CSV string with BOM / XLSX ArrayBuffer) → `saveFileWithDialog` (native save dialog in Tauri, browser fallback in dev). |
+
+## Licensing Plans & Self-Service Checkout (added 2026-08-21)
+
+### Pass 1 — Brief
+
+Four-step flow: plan catalog -> customer form -> external Wompi payment -> result.
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Palette | Reuse existing tokens only. Pharma Teal = primary CTA and selected period; discount badges use g-pharma/10 text-pharma (savings reads as trust, not urgency); polling = Sync Slate (calm waiting, offline-first language); declined/error = reserved error red; timeout = Sync Slate with clock (pending, not failed) | A subscription purchase is a trust moment; teal carries that. Amber is reserved for near-expiry stock signals and must not compete here. |
+| Type | Plan names in Inter semibold; every price, capacity count, and the activation code in JetBrains Mono 	abular-nums | The customer watches the screen while the cashier pays; period amounts and the final activation code are the two numbers that must be read without ambiguity. |
+| Layout | Catalog = header + segmented period control + responsive card grid (1/2/3 columns). Form, payment and result = single centered panel (max-w-lg) — these steps are short and focused, a wide layout would scatter attention. | |
+| Signature | The activation code handoff: the approved result shows the code in grouped JetBrains Mono blocks with a copy button. It is the one element of this flow a customer physically carries away, so it gets the data-display treatment (mono, grouped, copyable) instead of being a plain text line. | Reuses the app-wide mono-data language; no new signature element competes with the ambient sync pulse. |
+
+### Pass 2 — Critique
+
+- Pricing-page risk: generic SaaS pricing grids use soft-shadow cards + pastel badges. Countered: cards are pos-panel working surfaces with order-border, prices are mono tabular, the CTA is the app's standard pos-button-primary. Discount badges are text-labeled ("10% OFF") — never color alone.
+- Motion budget: the only orchestrated moment is the approved-result check (existing SuccessCheckIcon draw-in, which already collapses under prefers-reduced-motion). Period switching, card selection and form steps are instant state changes; the only spinner is the functional polling indicator.
+- Ambiguity guard: quarterly/annual prices show the period amount with its unit (/trimestre, /año) plus the discount badge, so the cashier cannot mistake a quarterly total for the monthly rate.

@@ -330,6 +330,28 @@ describe("createLicenseService", () => {
       expect(state.activationToken).toBe("server-token-abc");
     });
 
+    it("clears the pending activation code from the store after success", async () => {
+      useLicenseStore.getState().setPendingActivationCode("CODE-1234");
+
+      const clearSpy = vi.spyOn(
+        useLicenseStore.getState(),
+        "clearPendingActivationCode",
+      );
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(serverResponse),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await service.activate("CODE-1234", "Caja-01");
+
+      expect(clearSpy).toHaveBeenCalledOnce();
+      expect(useLicenseStore.getState().pendingActivationCode).toBeNull();
+
+      clearSpy.mockRestore();
+    });
+
     it("throws AlreadyActivatedException when already ACTIVE", async () => {
       useLicenseStore.getState().setActivated({
         activationToken: futureToken(),
@@ -467,6 +489,68 @@ describe("createLicenseService", () => {
   });
 
   // -----------------------------------------------------------------------
+  // recoverActivationCodes
+  // -----------------------------------------------------------------------
+
+  describe("recoverActivationCodes", () => {
+    const recoverableCodes = [
+      { code: "ABCD-EFGH-IJKL", expiresAt: "2026-12-31T00:00:00.000Z" },
+    ];
+
+    it("GETs the activation-codes endpoint with trimmed and lowercased params", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ codes: recoverableCodes }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await service.recoverActivationCodes(
+        "  900123456 ",
+        "  Test@Pharmacy.COM ",
+      );
+
+      expect(result).toEqual(recoverableCodes);
+      expect(mockFetch).toHaveBeenCalledOnce();
+      const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(
+        "http://localhost:3000/public/licensing/activation-codes?taxId=900123456&email=test%40pharmacy.com",
+      );
+      expect(options.method).toBe("GET");
+    });
+
+    it("returns an empty array when the server has no matching codes", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ codes: [] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await service.recoverActivationCodes(
+        "900123456",
+        "test@pharmacy.com",
+      );
+
+      expect(result).toEqual([]);
+    });
+
+    it("throws ActivationFailedException when the server responds with an error", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const promise = service.recoverActivationCodes(
+        "900123456",
+        "test@pharmacy.com",
+      );
+
+      await expect(promise).rejects.toThrow(ActivationFailedException);
+      await expect(promise).rejects.toThrow(/HTTP 500/);
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Renewal flow
   // -----------------------------------------------------------------------
 
@@ -489,6 +573,8 @@ describe("createLicenseService", () => {
       statusMessage: "Transaction approved",
       wompiTransactionId: "txn-approved-001",
       reference: "wompi-ref-renewal",
+      subscriptionId: null,
+      activationCode: null,
     });
 
     const makeDeclinedStatus = (): SessionStatus => ({
@@ -497,6 +583,8 @@ describe("createLicenseService", () => {
       statusMessage: "Transaction declined by bank",
       wompiTransactionId: "txn-declined-001",
       reference: "wompi-ref-renewal",
+      subscriptionId: null,
+      activationCode: null,
     });
 
     const makeErrorStatus = (): SessionStatus => ({
@@ -505,6 +593,8 @@ describe("createLicenseService", () => {
       statusMessage: "Internal processing error",
       wompiTransactionId: "",
       reference: "wompi-ref-renewal",
+      subscriptionId: null,
+      activationCode: null,
     });
 
     const makeVoidedStatus = (): SessionStatus => ({
@@ -513,6 +603,8 @@ describe("createLicenseService", () => {
       statusMessage: "Transaction voided",
       wompiTransactionId: "",
       reference: "wompi-ref-renewal",
+      subscriptionId: null,
+      activationCode: null,
     });
 
     beforeEach(() => {
@@ -520,6 +612,7 @@ describe("createLicenseService", () => {
         fetchPlans: vi.fn(),
         createSession: vi.fn(),
         pollSession: vi.fn(),
+        pollUntilTerminal: vi.fn(),
       };
 
       renewalService = createLicenseService({
@@ -559,6 +652,8 @@ describe("createLicenseService", () => {
           customerTaxId: "N/A",
           customerEmail: "test@pharmacy.com",
           customerName: "Farmacia Test",
+          // The store carries the subscription id from the activation data.
+          subscriptionId: "sub-1",
         });
 
         const state = useLicenseStore.getState();
@@ -566,6 +661,24 @@ describe("createLicenseService", () => {
         expect(state.renewalCheckoutUrl).toBe("https://checkout.wompi.co/pay/renew");
         expect(state.renewalReference).toBe("wompi-ref-renewal");
         expect(state.lastRenewalAttempt).not.toBeNull();
+      });
+
+      it("omits subscriptionId from the session request when the store has none", async () => {
+        useLicenseStore.setState({ planCode: "PREMIUM", subscriptionId: null });
+
+        (checkoutService.createSession as ReturnType<typeof vi.fn>).mockResolvedValue(
+          mockSession,
+        );
+
+        await renewalService.startRenewal("test@pharmacy.com", "Farmacia Test");
+
+        expect(checkoutService.createSession).toHaveBeenCalledWith({
+          planCode: "PREMIUM",
+          customerTaxId: "N/A",
+          customerEmail: "test@pharmacy.com",
+          customerName: "Farmacia Test",
+          subscriptionId: undefined,
+        });
       });
 
       it("without checkoutService throws ActivationFailedException", async () => {
@@ -751,6 +864,8 @@ describe("createLicenseService", () => {
           statusMessage: null,
           wompiTransactionId: "txn-001",
           reference: "wompi-ref-renewal",
+          subscriptionId: null,
+          activationCode: null,
         });
 
         const result = await renewalService.pollRenewalStatus();

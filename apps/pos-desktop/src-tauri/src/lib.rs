@@ -56,7 +56,10 @@ impl LocalSyncModules {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        // Shell plugin: only the `open` command is exposed via capabilities,
+        // used to open the Wompi checkout URL in the system browser.
+        .plugin(tauri_plugin_shell::init());
 
     // Test-only WebDriver bridge (cargo build --features wdio).
     #[cfg(feature = "wdio")]

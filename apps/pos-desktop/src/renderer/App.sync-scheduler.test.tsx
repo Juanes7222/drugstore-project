@@ -8,7 +8,7 @@
  * the wiring without real database or network access.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { FC, ReactNode } from "react";
 
 // ---------------------------------------------------------------------------
@@ -173,6 +173,10 @@ vi.mock("@/components/common/app-shell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+vi.mock("@/components/licensing/licensing-plans.page", () => ({
+  LicensingPlansPage: () => <div data-testid="licensing-plans-page" />,
+}));
+
 vi.mock("@/components/update/update-check-interceptor", () => ({
   UpdateCheckInterceptor: () => null,
 }));
@@ -189,6 +193,8 @@ vi.mock("sileo", () => ({
 import { App } from "./App";
 import { createSyncScheduler } from "../domain/sync/sync-scheduler.service";
 import { useSyncAuthStatusStore } from "../domain/sync/sync-auth-status.store";
+import { useLicenseStore } from "../domain/licensing/license.store";
+import { setActiveScreen } from "@/store/slices/ui-slice";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -586,6 +592,62 @@ describe("App — SyncScheduler lifecycle wiring", () => {
         },
         { timeout: 2000, interval: 50 },
       );
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // License activation gate — UNACTIVATED terminals render ActivationPage
+  // full-screen, except on the licensing-plans screen.
+  // -----------------------------------------------------------------------
+
+  describe("license activation gate", () => {
+    beforeEach(() => {
+      useLicenseStore.getState().reset();
+      mockActiveScreen.current = "home";
+      // The restoreLicense effect GETs the API when UNACTIVATED; keep the
+      // request inert so the test never touches the network.
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("renders ActivationPage full-screen when the license is UNACTIVATED", () => {
+      mockSessionRef.current = makeSession();
+
+      render(<App />);
+
+      expect(
+        screen.getByRole("heading", { name: /Active su punto de venta/i }),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the licensing-plans screen reachable when UNACTIVATED", () => {
+      mockSessionRef.current = makeSession();
+      mockActiveScreen.current = "licensing-plans";
+
+      render(<App />);
+
+      expect(screen.getByTestId("licensing-plans-page")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /Active su punto de venta/i }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // license:activated event — ActivationPage notifies the shell, which
+  // navigates to home.
+  // -----------------------------------------------------------------------
+
+  describe("license:activated event", () => {
+    it("dispatches setActiveScreen('home') when the event fires", () => {
+      render(<App />);
+
+      window.dispatchEvent(new CustomEvent("license:activated"));
+
+      expect(mockAppDispatch).toHaveBeenCalledWith(setActiveScreen("home"));
     });
   });
 });

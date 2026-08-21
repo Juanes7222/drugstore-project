@@ -1629,7 +1629,24 @@
       "offline_error": "You need an internet connection to activate for the first time.",
       "offline_banner": "Offline — you need internet to activate.",
       "generic_error": "Activation failed. Check the code and try again.",
-      "help": "If you don't have an activation code, contact your provider."
+      "help": "If you don't have an activation code, contact your provider.",
+      "buy_plans_cta": "View plans and subscription",
+      "buy_plans_offline_hint": "You need an internet connection to purchase a plan.",
+      "pending_code_banner": "Payment approved! Your activation code is ready.",
+      "pending_code_label": "Your code",
+      "recover_link": "Lost your activation code?",
+      "recover_title": "Recover activation code",
+      "recover_tax_id": "Tax ID (NIT) or ID number",
+      "recover_email": "Email address",
+      "recover_submit": "Recover code",
+      "recover_success_empty": "We could not find codes with those details",
+      "recover_error": "We could not recover the code. Check the details and try again.",
+      "recover_use_code": "Use this code",
+      "recover_expires": "Expires",
+      "recover_close": "Close",
+      "recover_tax_id_required": "This field is required.",
+      "recover_email_required": "This field is required.",
+      "recover_email_invalid": "Enter a valid email address."
     },
     "status_page": {
       "title": "License Status",
@@ -1683,6 +1700,98 @@
       "grace_expired": "Payment overdue. Contact your provider to regularize.",
       "locked": "Subscription expired. Contact your provider to renew. You can still view and export your data.",
       "revoked": "Your license has been revoked. Contact your provider."
+    },
+    "plans": {
+      "sidebar": "Plans & Subscription",
+      "title": "Plans & Subscription",
+      "subtitle": "Choose the plan that best fits your pharmacy. Payment is processed securely.",
+      "period": {
+        "monthly": "Monthly",
+        "quarterly": "Quarterly",
+        "annual": "Annual",
+        "selector_aria": "Billing period"
+      },
+      "discount": {
+        "quarterly": "10% OFF",
+        "annual": "20% OFF"
+      },
+      "card": {
+        "choose": "Choose plan",
+        "capacity_one": "{{count}} location",
+        "capacity_other": "{{count}} locations",
+        "workstations_one": "{{count}} workstation included",
+        "workstations_other": "{{count}} workstations included",
+        "extra_workstation": "+ {{price}} per extra workstation / month",
+        "per_month": "/month",
+        "per_quarter": "/quarter",
+        "per_year": "/year"
+      },
+      "catalog": {
+        "loading": "Loading plans...",
+        "empty": "No plans are available right now.",
+        "error_hint": "Check your internet connection and come back to this section."
+      },
+      "form": {
+        "title": "Billing details",
+        "subtitle": "Enter the details of the person or company subscribing to the plan.",
+        "name_label": "Full name",
+        "name_placeholder": "First and last name",
+        "nit_label": "Tax ID (NIT) or ID number",
+        "nit_placeholder": "900.123.456-7",
+        "email_label": "Email address",
+        "email_placeholder": "you@example.com",
+        "phone_label": "Phone (optional)",
+        "phone_placeholder": "300 123 4567",
+        "summary_plan": "Plan",
+        "summary_period": "Period",
+        "summary_amount": "Total to pay",
+        "submit": "Pay",
+        "submitting": "Creating payment...",
+        "back": "Back",
+        "errors": {
+          "required": "This field is required.",
+          "name_short": "The name must be at least 2 characters long.",
+          "nit_short": "The tax ID must be at least 5 characters long.",
+          "email_invalid": "Enter a valid email address."
+        }
+      },
+      "payment": {
+        "title": "Payment in progress",
+        "description": "The payment page opened in your browser. Complete the payment there; this window updates automatically.",
+        "open_payment": "Open payment gateway",
+        "pending_status": "Payment pending — waiting for bank confirmation.",
+        "cancel": "Cancel"
+      },
+      "result": {
+        "approved": {
+          "title": "Payment approved!",
+          "body": "Your subscription is now active. Save your activation code: you will need it in the next step.",
+          "no_code_title": "Subscription activated",
+          "no_code_body": "We could not fetch the activation code automatically. Check your email or contact your provider."
+        },
+        "declined": {
+          "title": "Payment declined",
+          "body": "The bank declined the payment. You can try again or choose another plan."
+        },
+        "timeout": {
+          "title": "Verification in progress",
+          "body": "The payment may still be processing. Check the status before trying to pay again."
+        },
+        "code_label": "Activation code",
+        "copy": "Copy code",
+        "copied": "Copied!",
+        "activate": "Activate my terminal",
+        "dismiss": "I will do it later",
+        "retry_payment": "Retry payment",
+        "verify_payment": "Verify payment",
+        "restart": "View plans again"
+      },
+      "errors": {
+        "PLANS_LOAD_FAILED": "The plans could not be loaded.",
+        "CHECKOUT_CREATE_FAILED": "The payment could not be created. Try again.",
+        "CHECKOUT_NETWORK": "Connection problem while processing the payment. Check your internet and try again.",
+        "CHECKOUT_OPEN_FAILED": "The payment gateway could not be opened. Allow browser pop-ups and try again."
+      }
     }
   },
   "update": {

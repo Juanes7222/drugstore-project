@@ -39,6 +39,15 @@ export interface LicenseGuard {
   getStatus(): LicenseStatus;
 }
 
+/**
+ * Activation code recoverable after a successful self-service payment.
+ * `expiresAt` is the ISO timestamp after which the server rejects the code.
+ */
+export interface RecoverableCode {
+  code: string;
+  expiresAt: string;
+}
+
 export interface LicenseService extends LicenseGuard {
   /**
    * Activate this workstation with an activation code.
@@ -50,6 +59,17 @@ export interface LicenseService extends LicenseGuard {
     city?: string;
     region?: string;
   }): Promise<ActivationResult>;
+
+  /**
+   * Recover the unused activation codes of the ACTIVE subscription matching
+   * the customer tax id and email. Used when a workstation was lost before
+   * activation (the code is only shown once at checkout). Requires
+   * connectivity; returns an empty array when nothing matches.
+   */
+  recoverActivationCodes(
+    customerTaxId: string,
+    customerEmail: string,
+  ): Promise<RecoverableCode[]>;
 
   /**
    * Perform a periodic check-in with the server.
@@ -262,6 +282,9 @@ export const createLicenseService = (config: LicenseServiceConfig): LicenseServi
         hardwareFingerprint,
       });
 
+      // The activation code is consumed; drop any pending checkout code.
+      useLicenseStore.getState().clearPendingActivationCode();
+
       return result;
     },
 
@@ -270,6 +293,31 @@ export const createLicenseService = (config: LicenseServiceConfig): LicenseServi
     // -----------------------------------------------------------------------
 
     checkIn: doCheckIn,
+
+    // -----------------------------------------------------------------------
+    // Activation code recovery
+    // -----------------------------------------------------------------------
+
+    recoverActivationCodes: async (
+      customerTaxId,
+      customerEmail,
+    ): Promise<RecoverableCode[]> => {
+      const params = new URLSearchParams({
+        taxId: customerTaxId.trim(),
+        email: customerEmail.trim().toLowerCase(),
+      });
+      const response = await fetch(
+        `${baseUrl}/public/licensing/activation-codes?${params.toString()}`,
+        { method: 'GET', headers: { 'Content-Type': 'application/json' } },
+      );
+      if (!response.ok) {
+        throw new ActivationFailedException(
+          `Could not recover activation codes (HTTP ${response.status})`,
+        );
+      }
+      const result = (await response.json()) as { codes: RecoverableCode[] };
+      return result.codes;
+    },
 
     // -----------------------------------------------------------------------
     // Token validation
@@ -358,6 +406,9 @@ export const createLicenseService = (config: LicenseServiceConfig): LicenseServi
         customerTaxId: 'N/A', // The server has the actual tax ID from subscription
         customerEmail,
         customerName,
+        // Renewal stamping: the server marks the session RENEWAL so the
+        // payment extends this subscription instead of creating a new one.
+        subscriptionId: state.subscriptionId ?? undefined,
       });
 
       useLicenseStore.getState().startRenewal(session.reference, session.checkoutUrl);

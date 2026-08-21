@@ -49,9 +49,24 @@ export interface LicenseState {
   renewalReference: string | null;
   /** ISO timestamp of the last renewal attempt. */
   lastRenewalAttempt: string | null;
+
+  /**
+   * Activation code obtained from an approved self-service checkout.
+   * Persisted so the code survives a restart before the workstation is
+   * activated. Cleared once the code is consumed or explicitly dismissed.
+   */
+  pendingActivationCode: string | null;
 }
 
 interface LicenseActions {
+  /**
+   * Store an activation code received after a successful checkout payment.
+   */
+  setPendingActivationCode: (code: string) => void;
+
+  /** Clear the pending activation code (consumed, or dismissed by the user). */
+  clearPendingActivationCode: () => void;
+
   setActivated: (data: {
     activationToken: string;
     expiresAt: string;
@@ -125,12 +140,21 @@ const initialState: LicenseState = {
   renewalCheckoutUrl: null,
   renewalReference: null,
   lastRenewalAttempt: null,
+  pendingActivationCode: null,
 };
 
 export const useLicenseStore = create<LicenseStore>()(
   persist(
     (set) => ({
       ...initialState,
+
+      setPendingActivationCode: (code) => set({
+        pendingActivationCode: code,
+      }),
+
+      clearPendingActivationCode: () => set({
+        pendingActivationCode: null,
+      }),
 
       setActivated: (data) => set({
         status: LicenseStatus.ACTIVE,
@@ -247,6 +271,7 @@ export const useLicenseStore = create<LicenseStore>()(
         daysUntilGracePeriodEnd: state.daysUntilGracePeriodEnd,
         daysUntilExpiry: state.daysUntilExpiry,
         checkInsLast30Days: state.checkInsLast30Days,
+        pendingActivationCode: state.pendingActivationCode,
       }),
     },
   ),

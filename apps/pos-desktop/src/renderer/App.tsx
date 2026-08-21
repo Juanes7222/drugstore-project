@@ -39,6 +39,8 @@ import { LocalNetworkPage } from "@/components/local-sync/local-network.page";
 import { RecoveryPage } from "@/components/recovery/recovery.page";
 import { AboutPage } from "@/components/update/about.page";
 import { LicenseStatusPage } from "@/components/licensing/license-status.page";
+import { LicensingPlansPage } from "@/components/licensing/licensing-plans.page";
+import { ActivationPage } from "@/components/licensing/activation.page";
 import { PrintingContainer } from "@/components/printing/printing-container";
 import { PrintersPage } from "@/components/printing/printers.page";
 import { PrintQueuePage } from "@/components/printing/print-queue.page";
@@ -56,8 +58,8 @@ import { PendingBlessingModal } from "@/components/auth/offline/pending-blessing
 import { ErrorBoundary } from "./components/common/error-boundary";
 import { ServiceProvider, useServiceContext } from "./components/common/service-context";
 import { AssistantLayer } from "./components/assistant/assistant-layer";
-import { useAppSelector } from "@/store/hooks";
-import { selectActiveScreen } from "@/store/slices/ui-slice";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { selectActiveScreen, setActiveScreen } from "@/store/slices/ui-slice";
 import type { PosScreen } from "@/store/slices/ui-types";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useRequireActiveShift } from "@/hooks/use-require-active-shift";
@@ -109,6 +111,7 @@ const SCREEN_ORDER: PosScreen[] = [
   "user-management",
   "audit-log",
   "license-status",
+  "licensing-plans",
   "printing",
   "printers",
   "print-queue",
@@ -121,6 +124,7 @@ const SCREEN_ORDER: PosScreen[] = [
 // ---------------------------------------------------------------------------
 
 const InnerApp: FC = () => {
+  const dispatch = useAppDispatch();
   const activeScreen = useAppSelector(selectActiveScreen);
   const isOnline = useOnlineStatus();
   const shouldReduceMotion = useReducedMotion();
@@ -215,6 +219,18 @@ const InnerApp: FC = () => {
     svc.restoreLicense();
   }, [session?.accessToken]);
 
+  // After a successful activation (ActivationPage dispatches
+  // "license:activated"), transition into the main POS interface.
+  useEffect(() => {
+    const handleActivated = () => {
+      dispatch(setActiveScreen("home"));
+    };
+    window.addEventListener("license:activated", handleActivated);
+    return () => window.removeEventListener("license:activated", handleActivated);
+  }, [dispatch]);
+
+  const licenseStatus = useLicenseStore((s) => s.status);
+
   const variants: Variants = {
     initial: (direction: number) =>
       shouldReduceMotion
@@ -261,6 +277,21 @@ const InnerApp: FC = () => {
     return (
       <>
         <ResetPasswordPage />
+        {assistantLayer}
+      </>
+    );
+  }
+
+  // Workstation gate: an unactivated terminal shows the activation page
+  // full-screen. The plans screen stays reachable so a fresh install can
+  // buy a subscription and receive its activation code.
+  if (
+    licenseStatus === LicenseStatus.UNACTIVATED &&
+    activeScreen !== "licensing-plans"
+  ) {
+    return (
+      <>
+        <ActivationPage />
         {assistantLayer}
       </>
     );
@@ -315,6 +346,25 @@ const InnerApp: FC = () => {
           <NavigationSidebar />
           <div className="flex-1 overflow-hidden">
             <LicenseStatusPage />
+          </div>
+        </div>
+        <PendingBlessingModal />
+        {assistantLayer}
+      </AppShell>
+    );
+  }
+
+  if (activeScreen === "licensing-plans") {
+    return (
+      <AppShell
+        cashierName={session?.fullName || ""}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <OfflineModeBanner />
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex-1 overflow-hidden">
+            <LicensingPlansPage />
           </div>
         </div>
         <PendingBlessingModal />

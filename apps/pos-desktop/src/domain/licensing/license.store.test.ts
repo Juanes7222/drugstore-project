@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { LicenseStatus } from "@pharmacy/shared-types";
 import { useLicenseStore } from "./license.store";
 
@@ -32,6 +32,7 @@ const defaultState = {
   renewalCheckoutUrl: null,
   renewalReference: null,
   lastRenewalAttempt: null,
+  pendingActivationCode: null,
 };
 
 const testSubscription = {
@@ -84,6 +85,11 @@ describe("useLicenseStore", () => {
     it("has zero checkInsLast30Days", () => {
       const state = useLicenseStore.getState();
       expect(state.checkInsLast30Days).toBe(0);
+    });
+
+    it("has null pendingActivationCode", () => {
+      const state = useLicenseStore.getState();
+      expect(state.pendingActivationCode).toBeNull();
     });
   });
 
@@ -385,6 +391,33 @@ describe("useLicenseStore", () => {
     });
   });
 
+  describe("setPendingActivationCode", () => {
+    it("stores the code in state", () => {
+      useLicenseStore.getState().setPendingActivationCode("ABCDEFGHIJKL");
+
+      expect(useLicenseStore.getState().pendingActivationCode).toBe(
+        "ABCDEFGHIJKL",
+      );
+    });
+
+    it("overwrites a previously stored code", () => {
+      useLicenseStore.getState().setPendingActivationCode("OLD-CODE");
+      useLicenseStore.getState().setPendingActivationCode("NEW-CODE");
+
+      expect(useLicenseStore.getState().pendingActivationCode).toBe("NEW-CODE");
+    });
+  });
+
+  describe("clearPendingActivationCode", () => {
+    it("resets the code to null", () => {
+      useLicenseStore.getState().setPendingActivationCode("ABCDEFGHIJKL");
+
+      useLicenseStore.getState().clearPendingActivationCode();
+
+      expect(useLicenseStore.getState().pendingActivationCode).toBeNull();
+    });
+  });
+
   describe("reset", () => {
     it("returns to UNACTIVATED initial state", () => {
       useLicenseStore.getState().setActivated({
@@ -428,6 +461,7 @@ describe("useLicenseStore", () => {
       expect(state.daysUntilGracePeriodEnd).toBe(defaultState.daysUntilGracePeriodEnd);
       expect(state.daysUntilExpiry).toBe(defaultState.daysUntilExpiry);
       expect(state.checkInsLast30Days).toBe(defaultState.checkInsLast30Days);
+      expect(state.pendingActivationCode).toBe(defaultState.pendingActivationCode);
     });
 
     it("resets renewal fields to their initial values", () => {
@@ -474,6 +508,33 @@ describe("useLicenseStore", () => {
       expect(parsed.state.renewalCheckoutUrl).toBeUndefined();
       expect(parsed.state.renewalReference).toBeUndefined();
       expect(parsed.state.lastRenewalAttempt).toBeUndefined();
+    });
+
+    it("persists pendingActivationCode to localStorage", () => {
+      useLicenseStore.getState().setPendingActivationCode("ABCDEFGHIJKL");
+
+      const stored = localStorage.getItem("pharmacy-license-store");
+      expect(stored).not.toBeNull();
+
+      const parsed = JSON.parse(stored!);
+      expect(parsed.state.pendingActivationCode).toBe("ABCDEFGHIJKL");
+    });
+
+    it("rehydrates pendingActivationCode from a fresh store on the same key", async () => {
+      localStorage.setItem(
+        "pharmacy-license-store",
+        JSON.stringify({
+          state: { ...defaultState, pendingActivationCode: "WXYZ98765432" },
+          version: 0,
+        }),
+      );
+
+      vi.resetModules();
+      const fresh = await import("./license.store");
+
+      expect(fresh.useLicenseStore.getState().pendingActivationCode).toBe(
+        "WXYZ98765432",
+      );
     });
 
     it("renewal fields are false/null after store re-initialization", () => {

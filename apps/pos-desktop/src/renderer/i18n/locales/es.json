@@ -1760,7 +1760,24 @@
       "offline_error": "Necesita conexión a internet para activar por primera vez.",
       "offline_banner": "Sin conexión - necesita internet para activar.",
       "generic_error": "Error al activar. Verifique el código e intente de nuevo.",
-      "help": "Si no tiene un código de activación, contacte a su proveedor."
+      "help": "Si no tiene un código de activación, contacte a su proveedor.",
+      "buy_plans_cta": "Ver planes y suscripción",
+      "buy_plans_offline_hint": "Necesita conexión a internet para comprar un plan.",
+      "pending_code_banner": "¡Pago aprobado! Tu código de activación está listo.",
+      "pending_code_label": "Tu código",
+      "recover_link": "¿Perdiste tu código de activación?",
+      "recover_title": "Recuperar código de activación",
+      "recover_tax_id": "NIT o cédula",
+      "recover_email": "Correo electrónico",
+      "recover_submit": "Recuperar código",
+      "recover_success_empty": "No encontramos códigos con esos datos",
+      "recover_error": "No se pudo recuperar el código. Verifique los datos e intente de nuevo.",
+      "recover_use_code": "Usar este código",
+      "recover_expires": "Vence",
+      "recover_close": "Cerrar",
+      "recover_tax_id_required": "Este campo es obligatorio.",
+      "recover_email_required": "Este campo es obligatorio.",
+      "recover_email_invalid": "Ingrese un correo electrónico válido."
     },
     "status_page": {
       "title": "Estado de Licencia",
@@ -1814,6 +1831,98 @@
       "grace_expired": "Suscripción pendiente de pago. Contacte a su proveedor para regularizar.",
       "locked": "Suscripción vencida. Contacte a su proveedor para renovar. Puede seguir viendo sus datos y exportarlos.",
       "revoked": "Su licencia fue revocada. Contacte a su proveedor."
+    },
+    "plans": {
+      "sidebar": "Planes y suscripción",
+      "title": "Planes y suscripción",
+      "subtitle": "Elija el plan que mejor se ajuste a su farmacia. El pago se procesa de forma segura.",
+      "period": {
+        "monthly": "Mensual",
+        "quarterly": "Trimestral",
+        "annual": "Anual",
+        "selector_aria": "Período de facturación"
+      },
+      "discount": {
+        "quarterly": "10% OFF",
+        "annual": "20% OFF"
+      },
+      "card": {
+        "choose": "Elegir plan",
+        "capacity_one": "{{count}} local",
+        "capacity_other": "{{count}} locales",
+        "workstations_one": "{{count}} puesto incluido",
+        "workstations_other": "{{count}} puestos incluidos",
+        "extra_workstation": "+ {{price}} por puesto adicional / mes",
+        "per_month": "/mes",
+        "per_quarter": "/trimestre",
+        "per_year": "/año"
+      },
+      "catalog": {
+        "loading": "Cargando planes...",
+        "empty": "No hay planes disponibles en este momento.",
+        "error_hint": "Verifique su conexión a internet y vuelva a entrar a esta sección."
+      },
+      "form": {
+        "title": "Datos de facturación",
+        "subtitle": "Complete los datos de la persona o empresa que contrata el plan.",
+        "name_label": "Nombre completo",
+        "name_placeholder": "Nombre y apellido",
+        "nit_label": "NIT o cédula",
+        "nit_placeholder": "900.123.456-7",
+        "email_label": "Correo electrónico",
+        "email_placeholder": "correo@ejemplo.com",
+        "phone_label": "Teléfono (opcional)",
+        "phone_placeholder": "300 123 4567",
+        "summary_plan": "Plan",
+        "summary_period": "Período",
+        "summary_amount": "Total a pagar",
+        "submit": "Pagar",
+        "submitting": "Creando pago...",
+        "back": "Volver",
+        "errors": {
+          "required": "Este campo es obligatorio.",
+          "name_short": "El nombre debe tener al menos 2 caracteres.",
+          "nit_short": "El NIT o cédula debe tener al menos 5 caracteres.",
+          "email_invalid": "Ingrese un correo electrónico válido."
+        }
+      },
+      "payment": {
+        "title": "Pago en curso",
+        "description": "La pasarela de pago se abrió en su navegador. Complete el pago allí; esta ventana se actualiza automáticamente.",
+        "open_payment": "Abrir pasarela de pago",
+        "pending_status": "Pago pendiente — espere la confirmación del banco.",
+        "cancel": "Cancelar"
+      },
+      "result": {
+        "approved": {
+          "title": "¡Pago aprobado!",
+          "body": "Su suscripción quedó activada. Guarde su código de activación: lo necesitará en el siguiente paso.",
+          "no_code_title": "Suscripción activada",
+          "no_code_body": "No pudimos obtener el código de activación automáticamente. Revise su correo o contacte a su proveedor."
+        },
+        "declined": {
+          "title": "Pago rechazado",
+          "body": "El banco rechazó el pago. Puede intentarlo de nuevo o elegir otro plan."
+        },
+        "timeout": {
+          "title": "Verificación en curso",
+          "body": "El pago puede estar procesándose. Verifique el estado antes de intentar pagar de nuevo."
+        },
+        "code_label": "Código de activación",
+        "copy": "Copiar código",
+        "copied": "¡Copiado!",
+        "activate": "Activar mi terminal",
+        "dismiss": "Lo haré después",
+        "retry_payment": "Reintentar pago",
+        "verify_payment": "Verificar pago",
+        "restart": "Ver planes de nuevo"
+      },
+      "errors": {
+        "PLANS_LOAD_FAILED": "No se pudieron cargar los planes.",
+        "CHECKOUT_CREATE_FAILED": "No se pudo crear el pago. Intente de nuevo.",
+        "CHECKOUT_NETWORK": "Problema de conexión al procesar el pago. Verifique su internet e intente de nuevo.",
+        "CHECKOUT_OPEN_FAILED": "No se pudo abrir la pasarela de pago. Permita abrir ventanas del navegador e intente de nuevo."
+      }
     }
   },
   "update": {

@@ -16,7 +16,7 @@
 import { API_BASE_URL } from '../../infrastructure/config';
 import {
   BillingPeriod,
-  type WompiTransactionStatus,
+  WompiTransactionStatus,
 } from '@pharmacy/shared-types';
 
 // ---------------------------------------------------------------------------
@@ -45,6 +45,12 @@ export interface CreateCheckoutSessionRequest {
   customerName: string;
   customerPhone?: string;
   billingPeriod?: BillingPeriod;
+  /**
+   * Existing subscription id for renewal payments. When present the server
+   * stamps the session as RENEWAL instead of NEW_SUBSCRIPTION so the payment
+   * extends the subscription instead of creating a duplicate.
+   */
+  subscriptionId?: string;
 }
 
 export interface CheckoutSession {
@@ -63,6 +69,13 @@ export interface SessionStatus {
   statusMessage: string | null;
   wompiTransactionId: string;
   reference: string;
+  /** Subscription created by an approved NEW_SUBSCRIPTION payment, if any. */
+  subscriptionId: string | null;
+  /**
+   * First unused activation code of the new subscription. Present only when
+   * the payment was APPROVED and the session purpose was NEW_SUBSCRIPTION.
+   */
+  activationCode: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,6 +92,53 @@ export class CheckoutError extends Error {
   }
 }
 
+/**
+ * Thrown when a checkout session does not reach a terminal state within
+ * the configured polling window. The session may still resolve later.
+ */
+export class CheckoutTimeoutError extends Error {
+  constructor(reference: string, waitedMs: number) {
+    super(`Checkout session ${reference} did not resolve within ${waitedMs}ms`);
+    this.name = 'CheckoutTimeoutError';
+  }
+}
+
+export interface PollOptions {
+  /** Milliseconds between status polls. Defaults to 5_000. */
+  intervalMs?: number;
+  /** Total time to wait for a terminal state before throwing. Defaults to 5 minutes. */
+  timeoutMs?: number;
+  /** Invoked after each non-terminal poll so callers can refresh UI state. */
+  onStatus?: (status: SessionStatus) => void;
+}
+
+/** Terminal Wompi transaction states that end the polling loop. */
+export const TERMINAL_STATUSES: ReadonlySet<string> = new Set([
+  WompiTransactionStatus.APPROVED,
+  WompiTransactionStatus.DECLINED,
+  WompiTransactionStatus.ERROR,
+  WompiTransactionStatus.VOIDED,
+]);
+
+/**
+ * Mirrors the server's checkout amount calculation (quarterly 10% off,
+ * annual 20% off) so the UI can show period pricing before submitting.
+ */
+export const estimatePeriodAmountCents = (
+  basePriceCents: number,
+  period: BillingPeriod,
+): number => {
+  switch (period) {
+    case BillingPeriod.QUARTERLY:
+      return Math.round(basePriceCents * 3 * 0.9);
+    case BillingPeriod.ANNUAL:
+      return Math.round(basePriceCents * 12 * 0.8);
+    case BillingPeriod.MONTHLY:
+    default:
+      return basePriceCents;
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Service interface
 // ---------------------------------------------------------------------------
@@ -92,6 +152,12 @@ export interface WompiCheckoutService {
 
   /** Poll the status of a checkout session by its wompiReference. */
   pollSession(wompiReference: string): Promise<SessionStatus>;
+
+  /**
+   * Poll a session until it reaches a terminal state (APPROVED, DECLINED,
+   * ERROR or VOIDED). Throws CheckoutTimeoutError if the deadline passes.
+   */
+  pollUntilTerminal(wompiReference: string, options?: PollOptions): Promise<SessionStatus>;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,5 +225,47 @@ export const createWompiCheckoutService = (): WompiCheckoutService => ({
     return checkoutGet<SessionStatus>(
       `/public/licensing/checkout/session/${wompiReference}`,
     );
+  },
+
+  pollUntilTerminal: async (
+    wompiReference: string,
+    options: PollOptions = {},
+  ): Promise<SessionStatus> => {
+    const intervalMs = options.intervalMs ?? 5_000;
+    const timeoutMs = options.timeoutMs ?? 5 * 60_000;
+    const deadline = Date.now() + timeoutMs;
+
+    for (;;) {
+      // Transient network errors keep the loop alive; the deadline is the
+      // ultimate guard so a dead connection surfaces as CheckoutTimeoutError.
+      try {
+        const status = await checkoutGet<SessionStatus>(
+          `/public/licensing/checkout/session/${wompiReference}`,
+        );
+
+        if (TERMINAL_STATUSES.has(status.status)) return status;
+
+        options.onStatus?.(status);
+      } catch (error) {
+        if (error instanceof CheckoutError) {
+          options.onStatus?.({
+            sessionId: '',
+            status: WompiTransactionStatus.PENDING,
+            statusMessage: null,
+            wompiTransactionId: '',
+            reference: wompiReference,
+            subscriptionId: null,
+            activationCode: null,
+          });
+        } else {
+          throw error;
+        }
+      }
+
+      if (Date.now() + intervalMs > deadline) {
+        throw new CheckoutTimeoutError(wompiReference, timeoutMs);
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
   },
 });

@@ -24,6 +24,7 @@ export type PosScreen =
   | "user-management"
   | "audit-log"
   | "license-status"
+  | "licensing-plans"
   | "printing"
   | "printers"
   | "print-queue"

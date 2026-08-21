@@ -1,9 +1,21 @@
-import { Injectable, Logger, HttpStatus } from '@nestjs/common';
-import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { DomainException } from '@/common/exceptions/domain.exception';
-import { LicenseTokenService } from '../tokens/license-token.service';
-import { FraudDetectionService } from '../fraud/fraud-detection.service';
-import type { ActivateDto, GenerateActivationCodeDto } from './dto/activation.dto';
+import { Injectable, Logger, HttpStatus } from "@nestjs/common";
+import { PrismaService } from "@/infrastructure/prisma/prisma.service";
+import { DomainException } from "@/common/exceptions/domain.exception";
+import { LicenseTokenService } from "../tokens/license-token.service";
+import { FraudDetectionService } from "../fraud/fraud-detection.service";
+import {
+  ActivationCodeStatus,
+  ActivationCodeType,
+} from "@pharmacy/shared-types";
+import type { ActivationCode } from "@pharmacy/database";
+import {
+  DEFAULT_SUBSCRIPTION_CODE_TTL_DAYS,
+  generateActivationCode,
+} from "./activation-code.utils";
+import type {
+  ActivateDto,
+  GenerateActivationCodeDto,
+} from "./dto/activation.dto";
 
 @Injectable()
 export class ActivationsService {
@@ -20,20 +32,31 @@ export class ActivationsService {
    * The initial code for a new subscription is generated automatically by SubscriptionsService.
    * This endpoint is for generating additional codes (e.g., for more workstations).
    */
-  async generateActivationCode(subscriptionId: string, dto: GenerateActivationCodeDto) {
+  async generateActivationCode(
+    subscriptionId: string,
+    dto: GenerateActivationCodeDto,
+  ) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
       include: { plan: true },
     });
     if (!subscription) {
-      throw new DomainException('SUBSCRIPTION_NOT_FOUND', 'Subscription not found', HttpStatus.NOT_FOUND);
+      throw new DomainException(
+        "SUBSCRIPTION_NOT_FOUND",
+        "Subscription not found",
+        HttpStatus.NOT_FOUND,
+      );
     }
-    if (!['ACTIVE', 'TRIAL'].includes(subscription.status)) {
-      throw new DomainException('SUBSCRIPTION_NOT_ACTIVE', 'Subscription is not active', HttpStatus.FORBIDDEN);
+    if (!["ACTIVE", "TRIAL"].includes(subscription.status)) {
+      throw new DomainException(
+        "SUBSCRIPTION_NOT_ACTIVE",
+        "Subscription is not active",
+        HttpStatus.FORBIDDEN,
+      );
     }
 
     // If WORKSTATION type, validate workstation limit for the location
-    if (dto.type === 'WORKSTATION' && dto.locationId) {
+    if (dto.type === "WORKSTATION" && dto.locationId) {
       const location = await this.prisma.location.findUnique({
         where: { id: dto.locationId },
         include: {
@@ -41,24 +64,32 @@ export class ActivationsService {
         },
       });
       if (!location) {
-        throw new DomainException('LOCATION_NOT_FOUND', 'Location not found', HttpStatus.NOT_FOUND);
+        throw new DomainException(
+          "LOCATION_NOT_FOUND",
+          "Location not found",
+          HttpStatus.NOT_FOUND,
+        );
       }
       if (location.subscriptionId !== subscriptionId) {
-        throw new DomainException('LOCATION_MISMATCH', 'Location does not belong to this subscription', HttpStatus.FORBIDDEN);
+        throw new DomainException(
+          "LOCATION_MISMATCH",
+          "Location does not belong to this subscription",
+          HttpStatus.FORBIDDEN,
+        );
       }
 
       const activeWorkstations = location.workstationActivations?.length ?? 0;
       if (activeWorkstations >= subscription.plan.maxWorkstationsPerLocation) {
         throw new DomainException(
-          'WORKSTATION_LIMIT_EXCEEDED',
+          "WORKSTATION_LIMIT_EXCEEDED",
           `Plan ${subscription.plan.code} allows max ${subscription.plan.maxWorkstationsPerLocation} workstation(s) per location. ` +
-          `Location ${location.name} already has ${activeWorkstations}.`,
+            `Location ${location.name} already has ${activeWorkstations}.`,
           HttpStatus.FORBIDDEN,
         );
       }
     }
 
-    const code = this.generateCode();
+    const code = generateActivationCode();
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 1);
 
@@ -68,11 +99,92 @@ export class ActivationsService {
         subscriptionId,
         locationId: dto.locationId ?? null,
         code,
-        type: dto.type ?? 'WORKSTATION',
-        status: 'UNUSED',
+        type: dto.type ?? "WORKSTATION",
+        status: "UNUSED",
         expiresAt,
       },
     });
+  }
+
+  /**
+   * Batch-generate SUBSCRIPTION activation codes for a new subscription
+   * (self-service checkout flow). One code per plan-included workstation.
+   */
+  async generateSubscriptionCodes(
+    subscriptionId: string,
+    count: number,
+    ttlDays: number = DEFAULT_SUBSCRIPTION_CODE_TTL_DAYS,
+  ): Promise<ActivationCode[]> {
+    const safeCount = Math.max(1, Math.floor(count));
+    const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
+
+    const codes = await this.prisma.activationCode.createManyAndReturn({
+      data: Array.from({ length: safeCount }, () => ({
+        id: crypto.randomUUID(),
+        subscriptionId,
+        code: generateActivationCode(),
+        type: ActivationCodeType.SUBSCRIPTION,
+        status: ActivationCodeStatus.UNUSED,
+        expiresAt,
+      })),
+    });
+
+    this.logger.log(
+      `Generated ${safeCount} activation code(s) for subscription ${subscriptionId}`,
+    );
+    return codes;
+  }
+
+  /**
+   * Find the oldest UNUSED SUBSCRIPTION code of a subscription — the one the
+   * self-service checkout returns to the POS for onboarding.
+   */
+  async findFirstUnusedSubscriptionCode(
+    subscriptionId: string,
+  ): Promise<ActivationCode | null> {
+    return this.prisma.activationCode.findFirst({
+      where: {
+        subscriptionId,
+        type: ActivationCodeType.SUBSCRIPTION,
+        status: ActivationCodeStatus.UNUSED,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  /**
+   * Public recovery flow: collect the first unused SUBSCRIPTION code of every
+   * ACTIVE subscription matching taxId + email. Never throws for "no match" —
+   * returns an empty list instead.
+   *
+   * The email comparison is an exact, case-sensitive match on the lowercased
+   * input; Prisma does not lowercase automatically and stored emails are not
+   * normalized, so this is acceptable per schema.
+   */
+  async recoverActivationCodes(
+    taxId: string,
+    email: string,
+  ): Promise<{ codes: Array<{ code: string; expiresAt: string }> }> {
+    const subscriptions = await this.prisma.subscription.findMany({
+      where: {
+        customerTaxId: taxId.trim(),
+        customerEmail: email.trim().toLowerCase(),
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+
+    const codes: Array<{ code: string; expiresAt: string }> = [];
+    for (const subscription of subscriptions) {
+      const code = await this.findFirstUnusedSubscriptionCode(subscription.id);
+      if (code) {
+        codes.push({
+          code: code.code,
+          expiresAt: code.expiresAt.toISOString(),
+        });
+      }
+    }
+    return { codes };
   }
 
   /**
@@ -87,26 +199,34 @@ export class ActivationsService {
     });
 
     if (!activationCode) {
-      throw new DomainException('INVALID_ACTIVATION_CODE', 'The activation code is invalid', HttpStatus.NOT_FOUND);
+      throw new DomainException(
+        "INVALID_ACTIVATION_CODE",
+        "The activation code is invalid",
+        HttpStatus.NOT_FOUND,
+      );
     }
 
-    if (activationCode.status !== 'UNUSED') {
+    if (activationCode.status !== "UNUSED") {
       throw new DomainException(
-        'ACTIVATION_CODE_USED',
+        "ACTIVATION_CODE_USED",
         `The activation code was already ${activationCode.status.toLowerCase()}`,
         HttpStatus.CONFLICT,
       );
     }
 
     if (new Date() > activationCode.expiresAt) {
-      throw new DomainException('ACTIVATION_CODE_EXPIRED', 'The activation code has expired', HttpStatus.GONE);
+      throw new DomainException(
+        "ACTIVATION_CODE_EXPIRED",
+        "The activation code has expired",
+        HttpStatus.GONE,
+      );
     }
 
     // 2. Validate subscription status
     const subscription = activationCode.subscription;
-    if (!['ACTIVE', 'TRIAL'].includes(subscription.status)) {
+    if (!["ACTIVE", "TRIAL"].includes(subscription.status)) {
       throw new DomainException(
-        'SUBSCRIPTION_NOT_ACTIVE',
+        "SUBSCRIPTION_NOT_ACTIVE",
         `Subscription is ${subscription.status.toLowerCase()}. Cannot activate.`,
         HttpStatus.FORBIDDEN,
       );
@@ -116,14 +236,14 @@ export class ActivationsService {
     const fraudResult = await this.fraudDetectionService.runActivationChecks({
       code: dto.code,
       hardwareFingerprint: dto.hardwareFingerprint,
-      requestIp: requestIp ?? 'unknown',
+      requestIp: requestIp ?? "unknown",
       subscriptionId: subscription.id,
       subscription,
     });
 
     if (fraudResult.shouldReject) {
       throw new DomainException(
-        'ACTIVATION_REJECTED_FRAUD',
+        "ACTIVATION_REJECTED_FRAUD",
         `Activation rejected: ${fraudResult.reason}`,
         HttpStatus.FORBIDDEN,
       );
@@ -132,12 +252,12 @@ export class ActivationsService {
     // 4. Handle SUBSCRIPTION type — create the first location
     let locationId = activationCode.locationId;
 
-    if (activationCode.type === 'SUBSCRIPTION') {
+    if (activationCode.type === "SUBSCRIPTION") {
       // Create the first location from the activation data
       if (!dto.locationName) {
         throw new DomainException(
-          'LOCATION_NAME_REQUIRED',
-          'Location name is required for initial activation',
+          "LOCATION_NAME_REQUIRED",
+          "Location name is required for initial activation",
           HttpStatus.BAD_REQUEST,
         );
       }
@@ -150,7 +270,7 @@ export class ActivationsService {
           address: dto.locationAddress ?? null,
           city: dto.locationCity ?? null,
           region: dto.locationRegion ?? null,
-          country: 'CO',
+          country: "CO",
           isActive: true,
         },
       });
@@ -163,9 +283,13 @@ export class ActivationsService {
         where: { id: locationId },
         include: { workstationActivations: { where: { isActive: true } } },
       });
-      if (location && location.workstationActivations.length >= subscription.plan.maxWorkstationsPerLocation) {
+      if (
+        location &&
+        location.workstationActivations.length >=
+          subscription.plan.maxWorkstationsPerLocation
+      ) {
         throw new DomainException(
-          'WORKSTATION_LIMIT_EXCEEDED',
+          "WORKSTATION_LIMIT_EXCEEDED",
           `Location ${location.name} has reached its workstation limit of ${subscription.plan.maxWorkstationsPerLocation}`,
           HttpStatus.FORBIDDEN,
         );
@@ -191,7 +315,7 @@ export class ActivationsService {
     await this.prisma.activationCode.update({
       where: { id: activationCode.id },
       data: {
-        status: 'USED',
+        status: "USED",
         usedAt: new Date(),
         locationId: locationId!,
         usedByActivationId: activation.id,
@@ -199,19 +323,23 @@ export class ActivationsService {
     });
 
     // 8. Generate activation token
-    const location = await this.prisma.location.findUnique({ where: { id: locationId! } });
+    const location = await this.prisma.location.findUnique({
+      where: { id: locationId! },
+    });
     const token = this.licenseTokenService.generateToken({
       subscriptionId: subscription.id,
       subscriptionStatus: subscription.status,
       planId: subscription.plan.id,
       planFeatures: subscription.plan.features,
       locationId: locationId!,
-      locationName: location?.name ?? '',
+      locationName: location?.name ?? "",
       workstationId: activation.id,
       hardwareFingerprint: dto.hardwareFingerprint,
     });
 
-    this.logger.log(`Workstation activated: ${dto.workstationName} (${dto.hardwareFingerprint.substring(0, 8)}...) for subscription ${subscription.id}`);
+    this.logger.log(
+      `Workstation activated: ${dto.workstationName} (${dto.hardwareFingerprint.substring(0, 8)}...) for subscription ${subscription.id}`,
+    );
 
     return {
       activationToken: token.token,
@@ -222,20 +350,23 @@ export class ActivationsService {
         currentPeriodEnd: subscription.currentPeriodEnd,
         gracePeriodDays: subscription.gracePeriodDays,
       },
-      location: location ? {
-        id: location.id,
-        name: location.name,
-        address: location.address,
-        city: location.city,
-        region: location.region,
-      } : null,
+      location: location
+        ? {
+            id: location.id,
+            name: location.name,
+            address: location.address,
+            city: location.city,
+            region: location.region,
+          }
+        : null,
       plan: {
         id: subscription.plan.id,
         code: subscription.plan.code,
         name: subscription.plan.name,
         features: subscription.plan.features,
         maxLocations: subscription.plan.maxLocations,
-        maxWorkstationsPerLocation: subscription.plan.maxWorkstationsPerLocation,
+        maxWorkstationsPerLocation:
+          subscription.plan.maxWorkstationsPerLocation,
       },
       workstationActivation: {
         id: activation.id,
@@ -249,14 +380,14 @@ export class ActivationsService {
     return this.prisma.workstationActivation.findMany({
       where: { subscriptionId },
       include: { location: { select: { id: true, name: true } } },
-      orderBy: { activatedAt: 'desc' },
+      orderBy: { activatedAt: "desc" },
     });
   }
 
   async findByLocation(locationId: string) {
     return this.prisma.workstationActivation.findMany({
       where: { locationId },
-      orderBy: { activatedAt: 'desc' },
+      orderBy: { activatedAt: "desc" },
     });
   }
 
@@ -265,7 +396,11 @@ export class ActivationsService {
       where: { id: activationId },
     });
     if (!activation) {
-      throw new DomainException('ACTIVATION_NOT_FOUND', 'Workstation activation not found', HttpStatus.NOT_FOUND);
+      throw new DomainException(
+        "ACTIVATION_NOT_FOUND",
+        "Workstation activation not found",
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     return this.prisma.workstationActivation.update({
@@ -273,7 +408,7 @@ export class ActivationsService {
       data: {
         isActive: false,
         revokedAt: new Date(),
-        revokedReason: reason ?? 'Revoked by admin',
+        revokedReason: reason ?? "Revoked by admin",
       },
     });
   }
@@ -284,11 +419,15 @@ export class ActivationsService {
       include: {
         subscription: { include: { plan: true } },
         location: true,
-        licenseCheckIns: { orderBy: { checkedInAt: 'desc' }, take: 10 },
+        licenseCheckIns: { orderBy: { checkedInAt: "desc" }, take: 10 },
       },
     });
     if (!activation) {
-      throw new DomainException('ACTIVATION_NOT_FOUND', 'Workstation activation not found', HttpStatus.NOT_FOUND);
+      throw new DomainException(
+        "ACTIVATION_NOT_FOUND",
+        "Workstation activation not found",
+        HttpStatus.NOT_FOUND,
+      );
     }
     return activation;
   }
@@ -304,7 +443,11 @@ export class ActivationsService {
       where: { id: workstationId },
     });
     if (!workstation) {
-      throw new DomainException('WORKSTATION_NOT_FOUND', 'Workstation not found', HttpStatus.NOT_FOUND);
+      throw new DomainException(
+        "WORKSTATION_NOT_FOUND",
+        "Workstation not found",
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     // 2. Find active activation by workstation name
@@ -320,7 +463,7 @@ export class ActivationsService {
     });
     if (!activation) {
       throw new DomainException(
-        'NO_ACTIVE_ACTIVATION',
+        "NO_ACTIVE_ACTIVATION",
         `No active activation found for workstation ${workstation.name}`,
         HttpStatus.NOT_FOUND,
       );
@@ -333,7 +476,7 @@ export class ActivationsService {
       planId: activation.subscription.plan.id,
       planFeatures: activation.subscription.plan.features,
       locationId: activation.locationId,
-      locationName: activation.location?.name ?? '',
+      locationName: activation.location?.name ?? "",
       workstationId: activation.id,
       hardwareFingerprint: activation.hardwareFingerprint,
     });
@@ -347,20 +490,23 @@ export class ActivationsService {
         currentPeriodEnd: activation.subscription.currentPeriodEnd,
         gracePeriodDays: activation.subscription.gracePeriodDays,
       },
-      location: activation.location ? {
-        id: activation.location.id,
-        name: activation.location.name,
-        address: activation.location.address,
-        city: activation.location.city,
-        region: activation.location.region,
-      } : null,
+      location: activation.location
+        ? {
+            id: activation.location.id,
+            name: activation.location.name,
+            address: activation.location.address,
+            city: activation.location.city,
+            region: activation.location.region,
+          }
+        : null,
       plan: {
         id: activation.subscription.plan.id,
         code: activation.subscription.plan.code,
         name: activation.subscription.plan.name,
         features: activation.subscription.plan.features,
         maxLocations: activation.subscription.plan.maxLocations,
-        maxWorkstationsPerLocation: activation.subscription.plan.maxWorkstationsPerLocation,
+        maxWorkstationsPerLocation:
+          activation.subscription.plan.maxWorkstationsPerLocation,
       },
       workstationActivation: {
         id: activation.id,
@@ -368,33 +514,5 @@ export class ActivationsService {
         activatedAt: activation.activatedAt,
       },
     };
-  }
-
-  private generateCode(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const groups: string[] = [];
-    for (let g = 0; g < 4; g++) {
-      let group = '';
-      for (let i = 0; i < 4; i++) {
-        group += chars[Math.floor(Math.random() * chars.length)];
-      }
-      groups.push(group);
-    }
-    const code = groups.join('-');
-    const checksum = this.computeChecksum(code.replace(/-/g, ''));
-    return `${code}${checksum}`;
-  }
-
-  private computeChecksum(value: string): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let sum = 0;
-    for (let i = 0; i < value.length; i++) {
-      const pos = chars.indexOf(value[i]);
-      if (pos >= 0) {
-        sum += pos * (i % 2 === 0 ? 1 : 3);
-      }
-    }
-    const check = (10 - (sum % 10)) % 10;
-    return check.toString();
   }
 }

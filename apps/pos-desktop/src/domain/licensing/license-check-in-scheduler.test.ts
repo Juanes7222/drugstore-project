@@ -16,6 +16,7 @@ describe("LicenseCheckInScheduler", () => {
     mockLicenseService = {
       checkIn: vi.fn(),
       activate: vi.fn(),
+      recoverActivationCodes: vi.fn(),
       getStatus: vi.fn(),
       getSummary: vi.fn(),
       refreshStatus: vi.fn(),

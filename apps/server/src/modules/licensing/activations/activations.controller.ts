@@ -1,69 +1,94 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
-import { ActivationsService } from './activations.service';
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
-import { RolesGuard } from '@/common/guards/roles.guard';
-import { Roles } from '@/common/decorators/roles.decorator';
-import { Public } from '@/common/decorators/public.decorator';
-import { RoleType } from '@pharmacy/shared-types';
-import type { ActivateDto, GenerateActivationCodeDto } from './dto/activation.dto';
-import type { Request } from 'express';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Req,
+} from "@nestjs/common";
+import { ActivationsService } from "./activations.service";
+import { JwtAuthGuard } from "@/common/guards/jwt-auth.guard";
+import { RolesGuard } from "@/common/guards/roles.guard";
+import { Roles } from "@/common/decorators/roles.decorator";
+import { Public } from "@/common/decorators/public.decorator";
+import { RoleType } from "@pharmacy/shared-types";
+import type {
+  ActivateDto,
+  GenerateActivationCodeDto,
+} from "./dto/activation.dto";
+import { RecoverActivationCodesQuerySchema } from "./dto/recovery-query.dto";
+import type { Request } from "express";
 
 @Controller()
 export class ActivationsController {
   constructor(private readonly activationsService: ActivationsService) {}
 
   // Public: workstation activation
-  @Post('public/licensing/activate')
+  @Post("public/licensing/activate")
   @Public()
   async activate(@Body() dto: ActivateDto, @Req() req: Request) {
-    const ip = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    const ip = req.ip ?? req.socket?.remoteAddress ?? "unknown";
     return this.activationsService.activate(dto, ip);
   }
 
   // Public: get license status by workstation ID
-  @Get('public/licensing/status/:workstationId')
+  @Get("public/licensing/status/:workstationId")
   @Public()
-  async getStatusByWorkstation(@Param('workstationId') workstationId: string) {
+  async getStatusByWorkstation(@Param("workstationId") workstationId: string) {
     return this.activationsService.getStatusByWorkstation(workstationId);
   }
 
+  // Public: recover unused activation codes for an ACTIVE subscription
+  // (self-service payer lost the onboarding code)
+  @Get("public/licensing/activation-codes")
+  @Public()
+  async recoverActivationCodes(@Query() query: unknown) {
+    const { taxId, email } = RecoverActivationCodesQuerySchema.parse(query);
+    return this.activationsService.recoverActivationCodes(taxId, email);
+  }
+
   // Admin: generate activation codes
-  @Post('admin/subscriptions/:id/generate-activation-code')
+  @Post("admin/subscriptions/:id/generate-activation-code")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
-  async generateCode(@Param('id') id: string, @Body() dto: GenerateActivationCodeDto) {
+  async generateCode(
+    @Param("id") id: string,
+    @Body() dto: GenerateActivationCodeDto,
+  ) {
     return this.activationsService.generateActivationCode(id, dto);
   }
 
   // Admin: list activations for a subscription
-  @Get('admin/subscriptions/:id/activations')
+  @Get("admin/subscriptions/:id/activations")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
-  async findBySubscription(@Param('id') id: string) {
+  async findBySubscription(@Param("id") id: string) {
     return this.activationsService.findBySubscription(id);
   }
 
   // Admin: list activations for a location
-  @Get('admin/locations/:id/activations')
+  @Get("admin/locations/:id/activations")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
-  async findByLocation(@Param('id') id: string) {
+  async findByLocation(@Param("id") id: string) {
     return this.activationsService.findByLocation(id);
   }
 
   // Admin: revoke an activation
-  @Post('admin/activations/:id/revoke')
+  @Post("admin/activations/:id/revoke")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
-  async revoke(@Param('id') id: string, @Body() body?: { reason?: string }) {
+  async revoke(@Param("id") id: string, @Body() body?: { reason?: string }) {
     return this.activationsService.revoke(id, body?.reason);
   }
 
   // Admin: get activation status details
-  @Get('admin/activations/:id')
+  @Get("admin/activations/:id")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
-  async getStatus(@Param('id') id: string) {
+  async getStatus(@Param("id") id: string) {
     return this.activationsService.getActivationStatus(id);
   }
 }

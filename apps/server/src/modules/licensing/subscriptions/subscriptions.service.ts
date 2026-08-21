@@ -4,6 +4,7 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { DomainException } from '@/common/exceptions/domain.exception';
 import { HttpStatus } from '@nestjs/common';
 import { PlansService } from '../plans/plans.service';
+import { generateActivationCode } from '../activations/activation-code.utils';
 import type { CreateSubscriptionDto, UpdateSubscriptionDto, RecordPaymentDto } from './dto/subscription.dto';
 
 @Injectable()
@@ -312,7 +313,7 @@ export class SubscriptionsService {
   }
 
   private async generateInitialActivationCode(subscriptionId: string) {
-    const code = this.generateCode();
+    const code = generateActivationCode();
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 1); // Codes valid for 1 year
 
@@ -328,35 +329,5 @@ export class SubscriptionsService {
     });
 
     this.logger.log(`Generated activation code ${code} for subscription ${subscriptionId}`);
-  }
-
-  private generateCode(): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No I, O, 0, 1 to avoid confusion
-    const groups: string[] = [];
-    for (let g = 0; g < 4; g++) {
-      let group = '';
-      for (let i = 0; i < 4; i++) {
-        group += chars[Math.floor(Math.random() * chars.length)];
-      }
-      groups.push(group);
-    }
-    const code = groups.join('-');
-
-    // Add a checksum character (Luhn-like mod-29)
-    const checksum = this.computeChecksum(code.replace(/-/g, ''));
-    return `${code}${checksum}`;
-  }
-
-  private computeChecksum(value: string): string {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let sum = 0;
-    for (let i = 0; i < value.length; i++) {
-      const pos = chars.indexOf(value[i]);
-      if (pos >= 0) {
-        sum += pos * (i % 2 === 0 ? 1 : 3);
-      }
-    }
-    const check = (10 - (sum % 10)) % 10;
-    return check.toString();
   }
 }

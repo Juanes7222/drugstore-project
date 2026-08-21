@@ -2,12 +2,14 @@
  * Component tests for ActivationPage.
  *
  * Covers: form rendering, auto-formatting, offline warning, submit flow,
- * error handling, and the already-activated redirect.
+ * error handling, the already-activated redirect, the pending-code banner,
+ * the plans CTA, and the lost-code recovery panel.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { LicenseStatus } from "@pharmacy/shared-types";
 import { useLicenseStore } from "../../../domain/licensing/license.store";
+import { setActiveScreen } from "@/store/slices/ui-slice";
 import { ActivationPage } from "./activation.page";
 import {
   ActivationFailedException,
@@ -19,7 +21,9 @@ import {
 // ---------------------------------------------------------------------------
 
 const mockActivate = vi.hoisted(() => vi.fn());
+const mockRecover = vi.hoisted(() => vi.fn());
 const mockUseOnlineStatus = vi.hoisted(() => vi.fn(() => true));
+const mockDispatch = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../domain/licensing/license.service", () => ({
   createLicenseService: vi.fn(() => ({
@@ -30,11 +34,19 @@ vi.mock("../../../domain/licensing/license.service", () => ({
     refreshStatus: vi.fn(),
     requireValidLicense: vi.fn(),
     validateTokenLocally: vi.fn(),
+    recoverActivationCodes: mockRecover,
   })),
 }));
 
 vi.mock("@/hooks/use-online-status", () => ({
   useOnlineStatus: mockUseOnlineStatus,
+}));
+
+// The page dispatches Redux actions (plans CTA); there is no Provider in
+// these tests, so stub the hooks like App-level tests do.
+vi.mock("@/store/hooks", () => ({
+  useAppDispatch: () => mockDispatch,
+  useAppSelector: () => undefined,
 }));
 
 // ---------------------------------------------------------------------------
@@ -81,7 +93,9 @@ describe("ActivationPage", () => {
     localStorage.clear();
     useLicenseStore.getState().reset();
     mockActivate.mockReset();
+    mockRecover.mockReset();
     mockUseOnlineStatus.mockReturnValue(true);
+    mockDispatch.mockReset();
   });
 
   // -----------------------------------------------------------------------
@@ -191,6 +205,71 @@ describe("ActivationPage", () => {
   });
 
   // -----------------------------------------------------------------------
+  // Pending activation code — code obtained from an approved checkout
+  // -----------------------------------------------------------------------
+
+  describe("pending activation code", () => {
+    it("prefills the activation code input with the formatted pending code", () => {
+      useLicenseStore.getState().setPendingActivationCode("ABCDEFGH1234");
+      render(<ActivationPage />);
+
+      const codeInput = screen.getByLabelText(/Código de activación/i);
+      expect(codeInput).toHaveValue("ABCD-EFGH-1234");
+    });
+
+    it("shows the pending-code banner with the formatted code when a pending code exists", () => {
+      useLicenseStore.getState().setPendingActivationCode("abcdEFGHijkl");
+      render(<ActivationPage />);
+
+      expect(screen.getByRole("status")).toHaveTextContent(/Pago aprobado/i);
+      expect(screen.getByText("ABCD-EFGH-IJKL")).toBeInTheDocument();
+    });
+
+    it("does not show the pending-code banner when there is no pending code", () => {
+      render(<ActivationPage />);
+
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Pago aprobado/i),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Plans CTA — self-service purchase entry point
+  // -----------------------------------------------------------------------
+
+  describe("plans CTA", () => {
+    it("dispatches setActiveScreen('licensing-plans') when clicked", () => {
+      render(<ActivationPage />);
+
+      const cta = screen.getByRole("button", {
+        name: /Ver planes y suscripción/i,
+      });
+      expect(cta).not.toBeDisabled();
+
+      fireEvent.click(cta);
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        setActiveScreen("licensing-plans"),
+      );
+    });
+
+    it("is disabled with an offline hint when offline", () => {
+      mockUseOnlineStatus.mockReturnValue(false);
+      render(<ActivationPage />);
+
+      const cta = screen.getByRole("button", {
+        name: /Ver planes y suscripción/i,
+      });
+      expect(cta).toBeDisabled();
+      expect(
+        screen.getByText(/Necesita conexión a internet para comprar un plan/i),
+      ).toBeInTheDocument();
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Offline warning
   // -----------------------------------------------------------------------
 
@@ -216,7 +295,7 @@ describe("ActivationPage", () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(/Necesita conexión a internet/i),
+          screen.getByText(/Necesita conexión a internet para activar por primera vez/i),
         ).toBeInTheDocument();
       });
 
@@ -420,6 +499,144 @@ describe("ActivationPage", () => {
       expect(
         screen.queryByText("Código inválido"),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Code recovery — lost activation code after a self-service checkout
+  // -----------------------------------------------------------------------
+
+  describe("code recovery", () => {
+    const toggleLink = () =>
+      screen.getByRole("button", { name: /Perdiste tu código/ });
+    const taxIdInput = () => screen.getByLabelText("NIT o cédula");
+    const emailInput = () => screen.getByLabelText("Correo electrónico");
+
+    const fillRecoveryForm = (taxId: string, email: string): void => {
+      fireEvent.click(toggleLink());
+      fireEvent.change(taxIdInput(), { target: { value: taxId } });
+      fireEvent.change(emailInput(), { target: { value: email } });
+      fireEvent.click(screen.getByRole("button", { name: "Recuperar código" }));
+    };
+
+    it("keeps the recovery panel hidden by default", () => {
+      render(<ActivationPage />);
+
+      expect(toggleLink()).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("region")).not.toBeInTheDocument();
+    });
+
+    it("opens the recovery panel when the link is clicked", () => {
+      render(<ActivationPage />);
+
+      fireEvent.click(toggleLink());
+
+      expect(toggleLink()).toHaveAttribute("aria-expanded", "true");
+      expect(
+        screen.getByRole("region", { name: "Recuperar código de activación" }),
+      ).toBeVisible();
+    });
+
+    it("closes the recovery panel when Cerrar is clicked", () => {
+      render(<ActivationPage />);
+
+      fireEvent.click(toggleLink());
+      fireEvent.click(screen.getByRole("button", { name: "Cerrar" }));
+
+      expect(toggleLink()).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("region")).not.toBeInTheDocument();
+    });
+
+    it("shows inline errors and skips the service call when both fields are empty", () => {
+      render(<ActivationPage />);
+
+      fireEvent.click(toggleLink());
+      fireEvent.click(screen.getByRole("button", { name: "Recuperar código" }));
+
+      expect(screen.getAllByText("Este campo es obligatorio.")).toHaveLength(2);
+      expect(taxIdInput()).toHaveAttribute("aria-invalid", "true");
+      expect(emailInput()).toHaveAttribute("aria-invalid", "true");
+      expect(mockRecover).not.toHaveBeenCalled();
+    });
+
+    it("shows an invalid-email error and skips the service call for a malformed email", () => {
+      render(<ActivationPage />);
+
+      fireEvent.click(toggleLink());
+      fireEvent.change(taxIdInput(), { target: { value: "900123456" } });
+      fireEvent.change(emailInput(), { target: { value: "not-an-email" } });
+      fireEvent.click(screen.getByRole("button", { name: "Recuperar código" }));
+
+      expect(
+        screen.getByText("Ingrese un correo electrónico válido."),
+      ).toBeInTheDocument();
+      expect(mockRecover).not.toHaveBeenCalled();
+    });
+
+    it("renders recovered codes and applies the selected code to the store", async () => {
+      mockRecover.mockResolvedValue([
+        { code: "ABCDEFGH1234", expiresAt: "2026-12-31T15:00:00.000Z" },
+      ]);
+
+      render(<ActivationPage />);
+
+      fillRecoveryForm("900123456", "test@pharmacy.com");
+
+      await waitFor(() => {
+        expect(screen.getByText("ABCD-EFGH-1234")).toBeInTheDocument();
+      });
+      expect(screen.getByText(/Vence: \d{2}\/\d{2}\/\d{4}/)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "Usar este código" }));
+
+      expect(useLicenseStore.getState().pendingActivationCode).toBe(
+        "ABCDEFGH1234",
+      );
+      expect(screen.queryByRole("region")).not.toBeInTheDocument();
+    });
+
+    it("shows the no-codes notice when the server returns an empty list", async () => {
+      mockRecover.mockResolvedValue([]);
+
+      render(<ActivationPage />);
+
+      fillRecoveryForm("900123456", "test@pharmacy.com");
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("No encontramos códigos con esos datos"),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("shows a generic error notice without the raw exception message", async () => {
+      mockRecover.mockRejectedValue(new Error("secret server detail"));
+
+      render(<ActivationPage />);
+
+      fillRecoveryForm("900123456", "test@pharmacy.com");
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/No se pudo recuperar el código/),
+        ).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByText("secret server detail"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("prefills the code input when a pending code arrives after mount", async () => {
+      render(<ActivationPage />);
+
+      const codeInput = screen.getByLabelText(/Código de activación/i);
+      expect(codeInput).toHaveValue("");
+
+      useLicenseStore.getState().setPendingActivationCode("ABCDEFGH1234");
+
+      await waitFor(() => {
+        expect(codeInput).toHaveValue("ABCD-EFGH-1234");
+      });
     });
   });
 });

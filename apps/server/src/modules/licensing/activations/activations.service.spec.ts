@@ -604,4 +604,110 @@ describe('ActivationsService', () => {
       });
     });
   });
+
+  // -----------------------------------------------------------------------
+  // recoverActivationCodes
+  // -----------------------------------------------------------------------
+  describe('recoverActivationCodes', () => {
+    it('returns the unused SUBSCRIPTION code of every matching ACTIVE subscription', async () => {
+      const code = buildActivationCode({
+        type: 'SUBSCRIPTION',
+        code: 'ABCD-EFGH-IJKL-MNOP5',
+      });
+      mockPrisma.subscription.findMany.mockResolvedValue([
+        { id: 'sub-uuid-1' },
+      ] as any);
+      mockPrisma.activationCode.findFirst.mockResolvedValue(code as any);
+
+      const result = await service.recoverActivationCodes(
+        '900123456',
+        'owner@pharmacy.co',
+      );
+
+      expect(mockPrisma.subscription.findMany).toHaveBeenCalledWith({
+        where: {
+          customerTaxId: '900123456',
+          customerEmail: 'owner@pharmacy.co',
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+      expect(mockPrisma.activationCode.findFirst).toHaveBeenCalledWith({
+        where: {
+          subscriptionId: 'sub-uuid-1',
+          type: 'SUBSCRIPTION',
+          status: 'UNUSED',
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(result).toEqual({
+        codes: [
+          {
+            code: 'ABCD-EFGH-IJKL-MNOP5',
+            expiresAt: code.expiresAt.toISOString(),
+          },
+        ],
+      });
+    });
+
+    it('trims the taxId and lowercases the email before querying', async () => {
+      mockPrisma.subscription.findMany.mockResolvedValue([] as any);
+
+      await service.recoverActivationCodes(
+        '  900123456  ',
+        'OWNER@PHARMACY.CO',
+      );
+
+      expect(mockPrisma.subscription.findMany).toHaveBeenCalledWith({
+        where: {
+          customerTaxId: '900123456',
+          customerEmail: 'owner@pharmacy.co',
+          status: 'ACTIVE',
+        },
+        select: { id: true },
+      });
+    });
+
+    it('collects codes across multiple subscriptions, skipping those without an unused code', async () => {
+      mockPrisma.subscription.findMany.mockResolvedValue([
+        { id: 'sub-uuid-1' },
+        { id: 'sub-uuid-2' },
+      ] as any);
+      mockPrisma.activationCode.findFirst
+        .mockResolvedValueOnce(
+          buildActivationCode({ type: 'SUBSCRIPTION', code: 'CODE-ONE' }) as any,
+        )
+        .mockResolvedValueOnce(null);
+
+      const result = await service.recoverActivationCodes(
+        '900123456',
+        'owner@pharmacy.co',
+      );
+
+      expect(result).toEqual({
+        codes: [{ code: 'CODE-ONE', expiresAt: expect.any(String) }],
+      });
+      expect(mockPrisma.activationCode.findFirst).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns an empty codes array when no subscription matches', async () => {
+      mockPrisma.subscription.findMany.mockResolvedValue([] as any);
+
+      await expect(
+        service.recoverActivationCodes('900123456', 'owner@pharmacy.co'),
+      ).resolves.toEqual({ codes: [] });
+      expect(mockPrisma.activationCode.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty codes array when the matching subscription has no unused codes', async () => {
+      mockPrisma.subscription.findMany.mockResolvedValue([
+        { id: 'sub-uuid-1' },
+      ] as any);
+      mockPrisma.activationCode.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.recoverActivationCodes('900123456', 'owner@pharmacy.co'),
+      ).resolves.toEqual({ codes: [] });
+    });
+  });
 });

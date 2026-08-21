@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { loadInfisicalSecretsIfNeeded } from '@pharmacy/infisical-config';
 import { TenantContextInterceptor } from './modules/tenant/tenant-context.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { ZodExceptionFilter } from './common/filters/zod-exception.filter';
 import { EnvConfig } from './config/env.schema';
 
 // Fix BigInt serialization in JSON responses
@@ -58,7 +59,7 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(new HttpExceptionFilter(), new ZodExceptionFilter());
   app.useGlobalInterceptors(app.get(TenantContextInterceptor));
 
   // Global ValidationPipe with transform enables the `@Type(() => Number)`
