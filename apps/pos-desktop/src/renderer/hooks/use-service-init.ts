@@ -99,6 +99,7 @@ import { ReportExecutionService } from '../../domain/reports/report-execution.se
 import { ReportExportService } from '../../domain/reports/report-export.service';
 import { ReportScheduler } from '../../domain/reports/report-scheduler.service';
 import { ShiftCloseDocumentService } from '../../domain/reports/shift-close-document.service';
+import { DataExportService } from '../../domain/export';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -145,6 +146,7 @@ export interface Services {
   reportExportService: ReportExportService;
   reportScheduler: ReportScheduler;
   shiftCloseDocumentService: ShiftCloseDocumentService;
+  dataExportService: DataExportService;
 }
 
 export type InitState =
@@ -516,6 +518,7 @@ export async function initializeServices(
       },
     ),
     shiftCloseDocumentService: new ShiftCloseDocumentService(prismaClient),
+    dataExportService: new DataExportService(),
   };
 }
 

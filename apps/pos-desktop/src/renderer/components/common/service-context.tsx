@@ -133,6 +133,10 @@ export const useReportExecutionService = (): Services['reportExecutionService'] 
 export const useReportExportService = (): Services['reportExportService'] =>
   useServiceContext().reportExportService;
 
+/** Convenience hook — returns the DataExportService instance. */
+export const useDataExportService = (): Services['dataExportService'] =>
+  useServiceContext().dataExportService;
+
 /** Convenience hook — returns the ReportScheduler instance. */
 export const useReportScheduler = (): Services['reportScheduler'] =>
   useServiceContext().reportScheduler;

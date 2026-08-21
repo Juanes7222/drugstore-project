@@ -48,6 +48,14 @@ vi.mock("@/hooks/use-online-status", () => ({
   useOnlineStatus: () => true,
 }));
 
+vi.mock("../../hooks/use-data-export", () => ({
+  useDataExport: () => ({
+    exportTo: vi.fn(),
+    isExporting: false,
+    error: null,
+  }),
+}));
+
 vi.mock("../common/service-context", () => ({
   useProductService: () => mockProductService,
 }));

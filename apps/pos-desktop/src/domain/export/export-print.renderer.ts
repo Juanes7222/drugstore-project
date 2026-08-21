@@ -1,27 +1,33 @@
+/**
+ * Print renderer for generic export documents.
+ *
+ * Self-contained HTML document (same visual language as the report print
+ * output) opened in a new window and sent to the printer.
+ */
+
 import {
   formatCell,
-  formatStatValue,
   isNumericColumn,
   tr,
 } from '../../common/export';
 import { getTenantInfo } from '../configuration/local-config.store';
-import type { ExportInput } from './report-export.types';
+import type { ExportDocument } from './export.types';
 
-export function renderPrintHtml(input: ExportInput): string {
+export function renderPrintHtml(document: ExportDocument): string {
   const tenant = getTenantInfo();
-  const locale = input.locale ?? 'es-CO';
+  const locale = document.locale ?? 'es-CO';
 
-  const headers = input.definition.columns
+  const headers = document.columns
     .map(
       (column) =>
-        `<th>${escapeHtml(tr(input.t, column.titleKey, column.titleKey))}</th>`,
+        `<th>${escapeHtml(tr(document.t, column.titleKey, column.titleKey))}</th>`,
     )
     .join('');
 
-  const rows = input.response.rows.length
-    ? input.response.rows
+  const rows = document.rows.length
+    ? document.rows
         .map((row) => {
-          const cells = input.definition.columns
+          const cells = document.columns
             .map((column) => {
               const className = isNumericColumn(column) ? 'numeric' : '';
 
@@ -34,34 +40,17 @@ export function renderPrintHtml(input: ExportInput): string {
           return `<tr>${cells}</tr>`;
         })
         .join('')
-    : `<tr><td class="empty" colspan="${input.definition.columns.length}">${escapeHtml(
-        tr(
-          input.t,
-          'reports.export.noData',
-          'No data for the selected filters.',
-        ),
+    : `<tr><td class="empty" colspan="${document.columns.length}">${escapeHtml(
+        tr(document.t, 'export.noData', 'No hay datos para exportar.'),
       )}</td></tr>`;
 
-  const kpis = input.response.kpis
-    .map(
-      (kpi) => `
-        <article class="kpi-card">
-          <span>${escapeHtml(
-            tr(input.t, kpi.titleKey, kpi.titleKey),
-          )}</span>
-          <strong>${escapeHtml(
-            formatStatValue(kpi.value, locale),
-          )}</strong>
-        </article>
-      `,
-    )
-    .join('');
+  const metadata = buildMetadataHtml(document);
 
   return `<!doctype html>
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<title>${escapeHtml(input.definition.code)}</title>
+<title>${escapeHtml(tr(document.t, document.titleKey, document.titleFallback))}</title>
 <style>
   :root {
     --pharma: #0B6E6B;
@@ -134,8 +123,7 @@ export function renderPrintHtml(input: ExportInput): string {
     background: var(--panel);
   }
 
-  .metadata span,
-  .kpi-card span {
+  .metadata span {
     display: block;
     margin-bottom: 4px;
     color: var(--muted);
@@ -145,33 +133,9 @@ export function renderPrintHtml(input: ExportInput): string {
     text-transform: uppercase;
   }
 
-  h2 {
-    margin: 20px 0 8px;
-    font-size: 11px;
-  }
-
-  .kpis {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-
-  .kpi-card {
-    min-height: 56px;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--panel);
-  }
-
-  .kpi-card strong {
-    color: var(--pharma);
-    font-family: "JetBrains Mono", monospace;
-    font-size: 16px;
-  }
-
   table {
     width: 100%;
+    margin-top: 14px;
     border: 1px solid var(--border);
     border-collapse: separate;
     border-spacing: 0;
@@ -229,7 +193,6 @@ export function renderPrintHtml(input: ExportInput): string {
 
     .header,
     th,
-    .kpi-card,
     .metadata,
     tbody tr:nth-child(even) {
       -webkit-print-color-adjust: exact;
@@ -249,44 +212,19 @@ export function renderPrintHtml(input: ExportInput): string {
   </header>
 
   <main>
-    <h2 class="report-title">${escapeHtml(input.definition.code)}</h2>
-    <p class="source">${escapeHtml(
-      tr(
-        input.t,
-        'reports.export.localSource',
-        'Local workstation database',
-      ),
-    )}</p>
+    <h2 class="report-title">${escapeHtml(
+      tr(document.t, document.titleKey, document.titleFallback),
+    )}</h2>
+    ${
+      document.subtitleKey && document.subtitleFallback
+        ? `<p class="source">${escapeHtml(
+            tr(document.t, document.subtitleKey, document.subtitleFallback),
+          )}</p>`
+        : ''
+    }
 
-    <section class="metadata">
-      <div>
-        <span>${escapeHtml(tr(input.t, 'reports.export.period', 'Period'))}</span>
-        <strong>${escapeHtml(
-          `${input.response.filters.dateFrom} — ${input.response.filters.dateTo}`,
-        )}</strong>
-      </div>
-      <div>
-        <span>${escapeHtml(
-          tr(input.t, 'reports.export.generatedAt', 'Generated'),
-        )}</span>
-        <strong>${escapeHtml(
-          new Date(input.response.generatedAt).toLocaleString(locale),
-        )}</strong>
-      </div>
-      <div>
-        <span>${escapeHtml(tr(input.t, 'reports.export.user', 'User'))}</span>
-        <strong>${escapeHtml(input.userDisplayName)}</strong>
-      </div>
-      <div>
-        <span>${escapeHtml(tr(input.t, 'reports.export.source', 'Source'))}</span>
-        <strong>${escapeHtml(input.response.freshness.dataSource)}</strong>
-      </div>
-    </section>
+    <section class="metadata">${metadata}</section>
 
-    <h2>${escapeHtml(tr(input.t, 'reports.export.indicators', 'Indicators'))}</h2>
-    <section class="kpis">${kpis}</section>
-
-    <h2>${escapeHtml(tr(input.t, 'reports.export.detail', 'Detail'))}</h2>
     <table>
       <thead><tr>${headers}</tr></thead>
       <tbody>${rows}</tbody>
@@ -294,6 +232,32 @@ export function renderPrintHtml(input: ExportInput): string {
   </main>
 </body>
 </html>`;
+}
+
+function buildMetadataHtml(document: ExportDocument): string {
+  const blocks: Array<[label: string, value: string]> = [
+    [
+      tr(document.t, 'export.meta.generatedAt', 'Generado'),
+      new Date(document.generatedAt ?? Date.now()).toLocaleString(
+        document.locale ?? 'es-CO',
+      ),
+    ],
+    [
+      tr(document.t, 'export.meta.user', 'Usuario'),
+      document.userDisplayName ?? '—',
+    ],
+  ];
+
+  for (const [labelKey, labelFallback, value] of document.metadata ?? []) {
+    blocks.push([tr(document.t, labelKey, labelFallback), value]);
+  }
+
+  return blocks
+    .map(
+      ([label, value]) =>
+        `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`,
+    )
+    .join('');
 }
 
 function escapeHtml(value: string): string {

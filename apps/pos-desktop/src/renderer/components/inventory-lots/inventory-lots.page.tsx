@@ -24,6 +24,10 @@ import { useTranslation } from 'react-i18next';
 import { LotState } from '@pharmacy/database/local';
 import { useInventoryLotsService } from '../common/service-context';
 import { useRequireLotOnReception } from '../../../domain/configuration';
+import { INVENTORY_LOTS_EXPORT } from '../../../domain/export';
+import { useDataExport } from '../../hooks/use-data-export';
+import { ExportMenu } from '../ui/export-menu';
+import { notify } from '@/utils/notify';
 import type { ProductLotGroup } from '../../../domain/inventory-lots/inventory-lots.service';
 import { LotMovementHistory } from './lot-movement-history';
 
@@ -163,6 +167,24 @@ export const InventoryLotsPage: FC = () => {
     totalStock: number;
   } | null>(null);
 
+  // ---- Export (flattened lot dataset matching the current filters) ----
+  const {
+    exportTo: exportLots,
+    isExporting: isExportingLots,
+    error: exportError,
+  } = useDataExport(INVENTORY_LOTS_EXPORT, {
+    search: searchQuery,
+    state: stateFilter === 'ALL' ? undefined : stateFilter,
+  });
+
+  useEffect(() => {
+    if (!exportError) return;
+    notify.error({
+      title: t('export.error', { defaultValue: 'No se pudo generar la exportación' }),
+      description: exportError,
+    });
+  }, [exportError, t]);
+
   // ---- Data fetching ----
   const loadGroups = useCallback(async () => {
     setIsLoading(true);
@@ -240,6 +262,13 @@ export const InventoryLotsPage: FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="pos-page-title m-0">{t('inventory_lots.title')}</h1>
+        {!isLoading && productGroups.length > 0 && (
+          <ExportMenu
+            onExport={exportLots}
+            exporting={isExportingLots}
+            className="shrink-0"
+          />
+        )}
       </div>
 
       {/* Expiry summary banner */}

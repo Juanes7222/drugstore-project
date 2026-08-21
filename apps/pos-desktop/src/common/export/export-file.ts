@@ -1,7 +1,22 @@
-import type {
-  ExportFileContent,
-  ExportFileFilters,
-} from './report-export.types';
+/**
+ * File-level export helpers shared by every export pipeline: filter
+ * descriptors for the native save dialog, MIME types, filename stamping,
+ * and the browser-download fallback used outside Tauri.
+ */
+
+import type { ExportFormat } from './export-types';
+
+export type ExportFileContent = string | ArrayBuffer;
+
+export interface ExportFileFilter {
+  name: string;
+  extensions: string[];
+}
+
+export type ExportFileFilters = Record<
+  Exclude<ExportFormat, 'print'>,
+  ExportFileFilter
+>;
 
 export const FILE_FILTERS: ExportFileFilters = {
   csv: {
@@ -24,7 +39,7 @@ export const MIME_TYPES = {
   pdf: 'application/pdf',
 } as const;
 
-export function extensionFor(format: 'csv' | 'excel' | 'pdf'): string {
+export function extensionFor(format: Exclude<ExportFormat, 'print'>): string {
   switch (format) {
     case 'excel':
       return 'xlsx';

@@ -11,12 +11,14 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CalendarIcon, ChevronDownIcon, FileTextIcon, RefreshCwIcon, SearchIcon, XIcon } from "@/components/ui/icons";
+import type { ExportFormat } from '../../../common/export';
 import type {
   SaleHistoryListItem,
   SaleHistoryFilters,
 } from '../../../domain/sales-pos/sales-history.service';
 import { SalesHistoryEmpty } from './sales-history-empty';
 import { StickyScrollX } from "../ui/sticky-scroll-x";
+import { ExportMenu } from "../ui/export-menu";
 
 export interface SalesHistoryListProps {
   sales: SaleHistoryListItem[];
@@ -27,6 +29,9 @@ export interface SalesHistoryListProps {
   onRefresh: () => void;
   onFiltersChange: (filters: Partial<SaleHistoryFilters>) => void;
   onLoadMore: () => void;
+  /** Export wiring — the header renders an export menu when provided. */
+  onExport?: (format: ExportFormat) => void;
+  isExporting?: boolean;
 }
 
 const formatDateInput = (date: Date | undefined): string => {
@@ -65,6 +70,8 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
   onRefresh,
   onFiltersChange,
   onLoadMore,
+  onExport,
+  isExporting,
 }) => {
   const { t, i18n } = useTranslation();
   const locale = i18n.language === 'en' ? 'en-US' : 'es-CO';
@@ -155,19 +162,24 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={loading}
-            className="pos-button pos-button-secondary inline-flex items-center gap-1.5 text-body-sm"
-            aria-label={t('salesHistory.retry')}
-          >
-            <RefreshCwIcon
-              className={`size-4 ${loading ? 'animate-spin' : ''}`}
-              aria-hidden="true"
-            />
-            <span className="hidden sm:inline">{t('salesHistory.retry')}</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {onExport && (
+              <ExportMenu onExport={onExport} exporting={isExporting} />
+            )}
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={loading}
+              className="pos-button pos-button-secondary inline-flex items-center gap-1.5 text-body-sm"
+              aria-label={t('salesHistory.retry')}
+            >
+              <RefreshCwIcon
+                className={`size-4 ${loading ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              <span className="hidden sm:inline">{t('salesHistory.retry')}</span>
+            </button>
+          </div>
         </div>
 
         {/* Filters */}

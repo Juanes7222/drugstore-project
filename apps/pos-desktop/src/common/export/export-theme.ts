@@ -1,3 +1,10 @@
+/**
+ * Shared visual theme for generated export documents (Excel, PDF, print).
+ *
+ * Moved out of the reports module so the generic data-export pipeline and
+ * the report pipeline produce visually consistent files from one source.
+ */
+
 export const REPORT_THEME = {
   colors: {
     pharma: '#0B6E6B',

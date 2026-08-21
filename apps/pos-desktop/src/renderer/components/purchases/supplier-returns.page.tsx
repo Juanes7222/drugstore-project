@@ -26,6 +26,10 @@ import {
 } from '../common/service-context';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { usePagination } from '../../hooks/use-pagination';
+import { SUPPLIER_RETURNS_EXPORT } from '../../../domain/export';
+import { useDataExport } from '../../hooks/use-data-export';
+import { ExportMenu } from '../ui/export-menu';
+import { notify } from '@/utils/notify';
 import type { SupplierReturnResult, CreateSupplierReturnInput } from '../../../domain/purchases';
 import type { SearchableSelectOption } from './searchable-select';
 
@@ -61,6 +65,21 @@ export const SupplierReturnsPage: FC = () => {
     run: runListLoad,
   } = useAsyncAction();
   const PAGE_SIZE = 50;
+
+  // Export (full return dataset — the screen has no filters today)
+  const {
+    exportTo: exportReturns,
+    isExporting: isExportingReturns,
+    error: exportError,
+  } = useDataExport(SUPPLIER_RETURNS_EXPORT, {});
+
+  useEffect(() => {
+    if (!exportError) return;
+    notify.error({
+      title: t('export.error', { defaultValue: 'No se pudo generar la exportación' }),
+      description: exportError,
+    });
+  }, [exportError, t]);
 
   // ── Create form ───────────────────────────────────────────────────────
   const [formData, setFormData] = useState<CreateSupplierReturnInput>({
@@ -301,6 +320,13 @@ export const SupplierReturnsPage: FC = () => {
           </h1>
         </div>
         <div className="flex items-center gap-2">
+        {viewMode === 'list' && !isLoadingList && returns.length > 0 && (
+          <ExportMenu
+            onExport={exportReturns}
+            exporting={isExportingReturns}
+            className="shrink-0"
+          />
+        )}
         {viewMode === 'list' && canEdit && (
           <button
             onClick={handleCreateClick}

@@ -21,8 +21,11 @@ import { useClientsService } from "../common/service-context";
 import type { ClientSearchResult, CreateClientInput } from "../../../domain/clients/clients.service";
 import type { UpdateClientInput } from "../../../domain/clients/clients.service";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
+import { CLIENTS_EXPORT } from "../../../domain/export";
+import { useDataExport } from "../../hooks/use-data-export";
 import { useResizableWidth } from "../../hooks/use-resizable-width";
 import { ResizeHandle } from "../ui/resize-handle";
+import { ExportMenu } from "../ui/export-menu";
 import { notify } from "@/utils/notify";
 import { ClientForm } from "./client-form";
 import { ClientTable } from "./client-table";
@@ -118,6 +121,21 @@ export const ClientsPage: FC = () => {
 
   // ---- Sync state ----
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // ---- Export (full dataset matching the current search) ----
+  const {
+    exportTo: exportClients,
+    isExporting: isExportingClients,
+    error: exportError,
+  } = useDataExport(CLIENTS_EXPORT, { query: searchQuery });
+
+  useEffect(() => {
+    if (!exportError) return;
+    notify.error({
+      title: t("export.error", { defaultValue: "No se pudo generar la exportación" }),
+      description: exportError,
+    });
+  }, [exportError, t]);
 
   // ---- Create form state ----
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -362,6 +380,14 @@ export const ClientsPage: FC = () => {
             <RefreshCwIcon className={`size-4 ${isSyncing ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">{isSyncing ? t("common.loading") : t("clients.sync")}</span>
           </button>
+
+          {hasLoaded && results.length > 0 && (
+            <ExportMenu
+              onExport={exportClients}
+              exporting={isExportingClients}
+              className="shrink-0"
+            />
+          )}
 
           {canCreate && !showCreateForm && !editingClient && (
             <button

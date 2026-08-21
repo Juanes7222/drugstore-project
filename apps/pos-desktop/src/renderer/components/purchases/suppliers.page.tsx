@@ -21,6 +21,10 @@ import { navigateToPurchasesMain } from '@/store/slices/ui-slice';
 import { useLocalSessionStore } from '../../../domain/auth/local-session.store';
 import { getPurchasesConfig } from '../../../domain/configuration';
 import { useSuppliersService } from '../common/service-context';
+import { SUPPLIERS_EXPORT } from '../../../domain/export';
+import { useDataExport } from '../../hooks/use-data-export';
+import { ExportMenu } from '../ui/export-menu';
+import { notify } from '@/utils/notify';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import type {
   SupplierSearchResult,
@@ -82,6 +86,21 @@ export const SuppliersPage: FC = () => {
     error: listError,
     run: runListLoad,
   } = useAsyncAction();
+
+  // Export (full supplier dataset matching the current search)
+  const {
+    exportTo: exportSuppliers,
+    isExporting: isExportingSuppliers,
+    error: exportError,
+  } = useDataExport(SUPPLIERS_EXPORT, { search: searchQuery });
+
+  useEffect(() => {
+    if (!exportError) return;
+    notify.error({
+      title: t('export.error', { defaultValue: 'No se pudo generar la exportación' }),
+      description: exportError,
+    });
+  }, [exportError, t]);
 
   // Form state
   const [showForm, setShowForm] = useState(false);
@@ -277,6 +296,13 @@ export const SuppliersPage: FC = () => {
           </button>
           <h1 className="pos-page-title">{t('purchases.suppliers.title')}</h1>
         </div>
+        {!isLoading && suppliers.length > 0 && !showForm && (
+          <ExportMenu
+            onExport={exportSuppliers}
+            exporting={isExportingSuppliers}
+            className="shrink-0"
+          />
+        )}
         {canEdit && !showForm && (
           <button
             onClick={handleCreateClick}

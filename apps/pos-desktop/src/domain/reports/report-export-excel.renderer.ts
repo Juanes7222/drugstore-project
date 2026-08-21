@@ -1,15 +1,16 @@
 import ExcelJS from 'exceljs';
-import { getTenantInfo } from '../configuration/local-config.store';
-import type { ExportInput } from './report-export.types';
 import {
   calculateColumnWidth,
   excelNumberFormat,
-  formatKpiValue,
+  formatStatValue,
+  hexToArgb,
   isNumericColumn,
+  REPORT_THEME,
   toExcelValue,
-} from './report-export-formatters';
-import { tr } from './report-export-i18n';
-import { REPORT_THEME, hexToArgb } from './report-export-theme';
+  tr,
+} from '../../common/export';
+import { getTenantInfo } from '../configuration/local-config.store';
+import type { ExportInput } from './report-export.types';
 
 export async function renderExcel(
   input: ExportInput,
@@ -182,7 +183,7 @@ function buildSummarySheet(
     label.fill = fill(REPORT_THEME.colors.panel);
 
     const value = sheet.getCell(`${startColumn}${baseRow + 1}`);
-    value.value = formatKpiValue(kpi.value, locale);
+    value.value = formatStatValue(kpi.value, locale);
     value.font = {
       name: REPORT_THEME.fonts.data,
       size: 15,

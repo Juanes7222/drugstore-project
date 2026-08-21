@@ -1,19 +1,28 @@
-import {
-  ReportColumnType,
-  type AnyReportRow,
-  type ReportColumn,
-} from './report-types';
+/**
+ * Shared cell formatters for export documents (CSV, Excel, PDF, print).
+ *
+ * These are the single place where raw row values become locale-aware
+ * display strings or typed Excel/PDF cell values.  Works structurally with
+ * both `ExportColumn` and the reports module's `ReportColumn` (same shape).
+ */
 
-const NUMERIC_COLUMN_TYPES = new Set<ReportColumnType>([
-  ReportColumnType.INTEGER,
-  ReportColumnType.NUMBER,
-  ReportColumnType.CURRENCY,
-  ReportColumnType.PERCENT,
+import {
+  ExportColumnType,
+  type ExportColumn,
+  type ExportRow,
+} from './export-types';
+
+const NUMERIC_COLUMN_TYPES = new Set<ExportColumnType>([
+  ExportColumnType.INTEGER,
+  ExportColumnType.NUMBER,
+  ExportColumnType.CURRENCY,
+  ExportColumnType.PERCENT,
 ]);
 
+/** Locale-aware display string for CSV / print rendering. */
 export function formatCell(
-  row: AnyReportRow,
-  column: ReportColumn,
+  row: ExportRow,
+  column: ExportColumn,
   locale = 'es-CO',
 ): string {
   const raw = row[column.id];
@@ -23,35 +32,35 @@ export function formatCell(
   }
 
   switch (column.type) {
-    case ReportColumnType.CURRENCY:
+    case ExportColumnType.CURRENCY:
       return Number(raw).toLocaleString(locale, {
         style: 'currency',
         currency: 'COP',
         maximumFractionDigits: 0,
       });
 
-    case ReportColumnType.PERCENT:
+    case ExportColumnType.PERCENT:
       return `${Number(raw).toFixed(2)}%`;
 
-    case ReportColumnType.INTEGER:
+    case ExportColumnType.INTEGER:
       return Number(raw).toLocaleString(locale, {
         maximumFractionDigits: 0,
       });
 
-    case ReportColumnType.NUMBER:
+    case ExportColumnType.NUMBER:
       return Number(raw).toLocaleString(locale, {
         maximumFractionDigits: 4,
       });
 
-    case ReportColumnType.DATE:
-    case ReportColumnType.DATETIME: {
+    case ExportColumnType.DATE:
+    case ExportColumnType.DATETIME: {
       const date = new Date(raw as string);
 
       if (Number.isNaN(date.getTime())) {
         return String(raw);
       }
 
-      return column.type === ReportColumnType.DATE
+      return column.type === ExportColumnType.DATE
         ? date.toLocaleDateString(locale)
         : date.toLocaleString(locale);
     }
@@ -61,9 +70,10 @@ export function formatCell(
   }
 }
 
+/** PDF-specific display string (no currency symbol, keeps digits readable). */
 export function formatPdfCell(
-  row: AnyReportRow,
-  column: ReportColumn,
+  row: ExportRow,
+  column: ExportColumn,
   locale = 'es-CO',
 ): string {
   const raw = row[column.id];
@@ -73,33 +83,33 @@ export function formatPdfCell(
   }
 
   switch (column.type) {
-    case ReportColumnType.CURRENCY:
+    case ExportColumnType.CURRENCY:
       return Number(raw).toLocaleString(locale, {
         maximumFractionDigits: 0,
       });
 
-    case ReportColumnType.PERCENT:
+    case ExportColumnType.PERCENT:
       return `${Number(raw).toFixed(2)}%`;
 
-    case ReportColumnType.INTEGER:
+    case ExportColumnType.INTEGER:
       return Number(raw).toLocaleString(locale, {
         maximumFractionDigits: 0,
       });
 
-    case ReportColumnType.NUMBER:
+    case ExportColumnType.NUMBER:
       return Number(raw).toLocaleString(locale, {
         maximumFractionDigits: 4,
       });
 
-    case ReportColumnType.DATE:
-    case ReportColumnType.DATETIME: {
+    case ExportColumnType.DATE:
+    case ExportColumnType.DATETIME: {
       const date = new Date(raw as string);
 
       if (Number.isNaN(date.getTime())) {
         return String(raw);
       }
 
-      return column.type === ReportColumnType.DATE
+      return column.type === ExportColumnType.DATE
         ? date.toLocaleDateString(locale)
         : date.toLocaleString(locale);
     }
@@ -109,7 +119,8 @@ export function formatPdfCell(
   }
 }
 
-export function formatKpiValue(
+/** Raw KPI/stat value as a display string. */
+export function formatStatValue(
   value: string | number | null | undefined,
   locale = 'es-CO',
 ): string {
@@ -126,23 +137,24 @@ export function formatKpiValue(
   return String(value);
 }
 
+/** Typed cell value for Excel: numbers stay numbers, dates become Dates. */
 export function toExcelValue(
   value: unknown,
-  column: ReportColumn,
+  column: ExportColumn,
 ): string | number | Date {
   if (value === null || value === undefined) {
     return '';
   }
 
   switch (column.type) {
-    case ReportColumnType.INTEGER:
-    case ReportColumnType.NUMBER:
-    case ReportColumnType.CURRENCY:
-    case ReportColumnType.PERCENT:
+    case ExportColumnType.INTEGER:
+    case ExportColumnType.NUMBER:
+    case ExportColumnType.CURRENCY:
+    case ExportColumnType.PERCENT:
       return Number(value);
 
-    case ReportColumnType.DATE:
-    case ReportColumnType.DATETIME: {
+    case ExportColumnType.DATE:
+    case ExportColumnType.DATETIME: {
       const date = new Date(value as string);
       return Number.isNaN(date.getTime()) ? String(value) : date;
     }
@@ -152,28 +164,28 @@ export function toExcelValue(
   }
 }
 
-export function isNumericColumn(column: ReportColumn): boolean {
+export function isNumericColumn(column: ExportColumn): boolean {
   return NUMERIC_COLUMN_TYPES.has(column.type);
 }
 
-export function excelNumberFormat(column: ReportColumn): string {
+export function excelNumberFormat(column: ExportColumn): string {
   switch (column.type) {
-    case ReportColumnType.CURRENCY:
+    case ExportColumnType.CURRENCY:
       return '"$"#,##0;[Red]-"$"#,##0';
 
-    case ReportColumnType.PERCENT:
+    case ExportColumnType.PERCENT:
       return '0.00"%"';
 
-    case ReportColumnType.INTEGER:
+    case ExportColumnType.INTEGER:
       return '#,##0';
 
-    case ReportColumnType.NUMBER:
+    case ExportColumnType.NUMBER:
       return '#,##0.####';
 
-    case ReportColumnType.DATE:
+    case ExportColumnType.DATE:
       return 'dd/mm/yyyy';
 
-    case ReportColumnType.DATETIME:
+    case ExportColumnType.DATETIME:
       return 'dd/mm/yyyy hh:mm';
 
     default:
@@ -183,17 +195,17 @@ export function excelNumberFormat(column: ReportColumn): string {
 
 export function calculateColumnWidth(
   header: string,
-  rows: AnyReportRow[],
-  column: ReportColumn,
+  rows: readonly ExportRow[],
+  column: ExportColumn,
 ): number {
-  const widths: Partial<Record<ReportColumnType, number>> = {
-    [ReportColumnType.INTEGER]: 14,
-    [ReportColumnType.NUMBER]: 16,
-    [ReportColumnType.CURRENCY]: 18,
-    [ReportColumnType.PERCENT]: 12,
-    [ReportColumnType.DATE]: 14,
-    [ReportColumnType.DATETIME]: 20,
-    [ReportColumnType.BADGE]: 16,
+  const widths: Partial<Record<ExportColumnType, number>> = {
+    [ExportColumnType.INTEGER]: 14,
+    [ExportColumnType.NUMBER]: 16,
+    [ExportColumnType.CURRENCY]: 18,
+    [ExportColumnType.PERCENT]: 12,
+    [ExportColumnType.DATE]: 14,
+    [ExportColumnType.DATETIME]: 20,
+    [ExportColumnType.BADGE]: 16,
   };
 
   const maxLength = rows.reduce((max, row) => {
@@ -207,27 +219,25 @@ export function calculateColumnWidth(
   return Math.min(Math.max(widths[column.type] ?? 20, maxLength + 2), 42);
 }
 
-export function pdfColumnWidth(
-  type: ReportColumnType,
-): number | 'auto' {
+export function pdfColumnWidth(type: ExportColumnType): number | 'auto' {
   switch (type) {
-    case ReportColumnType.INTEGER:
-    case ReportColumnType.PERCENT:
+    case ExportColumnType.INTEGER:
+    case ExportColumnType.PERCENT:
       return 48;
 
-    case ReportColumnType.NUMBER:
+    case ExportColumnType.NUMBER:
       return 58;
 
-    case ReportColumnType.CURRENCY:
+    case ExportColumnType.CURRENCY:
       return 66;
 
-    case ReportColumnType.DATE:
+    case ExportColumnType.DATE:
       return 58;
 
-    case ReportColumnType.DATETIME:
+    case ExportColumnType.DATETIME:
       return 78;
 
-    case ReportColumnType.BADGE:
+    case ExportColumnType.BADGE:
       return 60;
 
     default:

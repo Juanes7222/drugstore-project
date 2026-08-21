@@ -1,6 +1,5 @@
+import { formatCell, tr } from '../../common/export';
 import type { ExportInput } from './report-export.types';
-import { formatCell } from './report-export-formatters';
-import { tr } from './report-export-i18n';
 
 const CSV_DELIMITER = ';';
 const UTF8_BOM = '\uFEFF';

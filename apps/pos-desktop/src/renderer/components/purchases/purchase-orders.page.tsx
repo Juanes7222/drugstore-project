@@ -32,6 +32,10 @@ import {
 } from '../common/service-context';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { usePagination } from '../../hooks/use-pagination';
+import { PURCHASE_ORDERS_EXPORT } from '../../../domain/export';
+import { useDataExport } from '../../hooks/use-data-export';
+import { ExportMenu } from '../ui/export-menu';
+import { notify } from '@/utils/notify';
 import type {
   PurchaseOrderResult,
   CreatePurchaseOrderInput,
@@ -144,6 +148,22 @@ export const PurchaseOrdersPage: FC = () => {
   } = useAsyncAction();
   const [filterState, setFilterState] = useState<string | undefined>(undefined);
   const PAGE_SIZE = 50;
+
+  // Export (full dataset matching the screen's state filter; the page has
+  // no supplier filter, so supplierId is left unset)
+  const {
+    exportTo: exportOrders,
+    isExporting: isExportingOrders,
+    error: exportError,
+  } = useDataExport(PURCHASE_ORDERS_EXPORT, { state: filterState });
+
+  useEffect(() => {
+    if (!exportError) return;
+    notify.error({
+      title: t('export.error', { defaultValue: 'No se pudo generar la exportación' }),
+      description: exportError,
+    });
+  }, [exportError, t]);
 
   // ── Create form state ─────────────────────────────────────────────────
   const [formData, setFormData] = useState<OrderFormData>({
@@ -697,6 +717,13 @@ export const PurchaseOrdersPage: FC = () => {
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          {viewMode === 'list' && !isLoadingList && orders.length > 0 && (
+            <ExportMenu
+              onExport={exportOrders}
+              exporting={isExportingOrders}
+              className="shrink-0"
+            />
+          )}
           {viewMode === 'list' && canEdit && (
             <button
               onClick={handleCreateClick}

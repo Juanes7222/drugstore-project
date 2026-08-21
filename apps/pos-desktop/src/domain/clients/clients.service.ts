@@ -137,6 +137,46 @@ export class ClientsService {
   }
 
   /**
+   * List clients with optional search and pagination (full dataset access
+   * for exports).  Search semantics match `search()`: document number
+   * prefix when the query is numeric, case-insensitive name contains
+   * otherwise.  Includes inactive clients — the caller decides.
+   *
+   * Requires CASHIER or ADMIN role.
+   */
+  async listClients(params?: {
+    query?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: ClientSearchResult[]; total: number }> {
+    this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+
+    const limit = params?.limit ?? 50;
+    const offset = params?.offset ?? 0;
+    const query = params?.query?.trim();
+
+    const where: Prisma.ClientWhereInput = {};
+    if (query) {
+      const isDocNumber = /^\d+$/.test(query);
+      where.OR = isDocNumber
+        ? [{ identificationNumber: { startsWith: query } }]
+        : [{ fullName: { contains: query, mode: 'insensitive' } }];
+    }
+
+    const [clients, total] = await Promise.all([
+      this.prisma.client.findMany({
+        where,
+        orderBy: { fullName: 'asc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.client.count({ where }),
+    ]);
+
+    return { items: clients.map(normalizeClientResult), total };
+  }
+
+  /**
    * Create a client locally and enqueue a CLIENT_CREATION sync operation.
    *
    * Requires CASHIER or ADMIN role.

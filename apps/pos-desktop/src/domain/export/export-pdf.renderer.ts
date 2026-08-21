@@ -1,16 +1,23 @@
+/**
+ * PDF renderer for generic export documents.
+ *
+ * Header band with tenant identity, document title, a metadata box
+ * (generated-at, user, screen-specific filters), then the data table via
+ * jspdf-autotable.  Same visual language as the report PDF exports.
+ */
+
 import {
   formatPdfCell,
-  formatStatValue,
   hexToRgb,
   pdfColumnWidth,
   REPORT_THEME,
   tr,
 } from '../../common/export';
 import { getTenantInfo } from '../configuration/local-config.store';
-import type { ExportInput } from './report-export.types';
+import type { ExportDocument } from './export.types';
 
 export async function renderPdf(
-  input: ExportInput,
+  document: ExportDocument,
 ): Promise<ArrayBuffer> {
   ensureSharedArrayBuffer();
 
@@ -19,7 +26,7 @@ export async function renderPdf(
     import('jspdf-autotable'),
   ]);
 
-  const locale = input.locale ?? 'es-CO';
+  const locale = document.locale ?? 'es-CO';
   const doc = new jsPDF({
     unit: 'pt',
     format: 'a4',
@@ -33,20 +40,20 @@ export async function renderPdf(
   const usableWidth = pageWidth - margin * 2;
   const colors = palette();
 
-  drawHeader(doc, input, pageWidth, margin, colors);
+  drawHeader(doc, pageWidth, margin, colors);
 
   let cursorY = 88;
 
   doc.setTextColor(...colors.ink);
   doc.setFont(REPORT_THEME.fonts.pdfFallback, 'bold');
   doc.setFontSize(15);
-  doc.text(input.definition.code, margin, cursorY);
+  doc.text(tr(document.t, document.titleKey, document.titleFallback), margin, cursorY);
 
   cursorY += 17;
 
   cursorY = drawMetadata(
     doc,
-    input,
+    document,
     cursorY,
     margin,
     usableWidth,
@@ -54,49 +61,12 @@ export async function renderPdf(
     colors,
   );
 
-  cursorY += 14;
-
-  doc.setTextColor(...colors.ink);
-  doc.setFont(REPORT_THEME.fonts.pdfFallback, 'bold');
-  doc.setFontSize(10);
-  doc.text(
-    tr(input.t, 'reports.export.indicators', 'Indicators'),
-    margin,
-    cursorY,
+  const headers = document.columns.map((column) =>
+    tr(document.t, column.titleKey, column.titleKey),
   );
 
-  cursorY += 10;
-
-  cursorY = drawKpis(
-    doc,
-    input,
-    cursorY,
-    margin,
-    usableWidth,
-    locale,
-    colors,
-  );
-
-  if (input.chartDataUrl) {
-    cursorY = drawChart(
-      doc,
-      input.chartDataUrl,
-      cursorY,
-      margin,
-      usableWidth,
-      pageHeight,
-      colors,
-    );
-  }
-
-  const headers = input.definition.columns.map((column) =>
-    tr(input.t, column.titleKey, column.titleKey),
-  );
-
-  const rows = input.response.rows.map((row) =>
-    input.definition.columns.map((column) =>
-      formatPdfCell(row, column, locale),
-    ),
+  const rows = document.rows.map((row) =>
+    document.columns.map((column) => formatPdfCell(row, column, locale)),
   );
 
   if (rows.length === 0) {
@@ -104,11 +74,7 @@ export async function renderPdf(
     doc.setFont(REPORT_THEME.fonts.pdfFallback, 'normal');
     doc.setFontSize(9);
     doc.text(
-      tr(
-        input.t,
-        'reports.export.noData',
-        'No data for the selected filters.',
-      ),
+      tr(document.t, 'export.noData', 'No hay datos para exportar.'),
       margin,
       cursorY + 20,
     );
@@ -147,7 +113,7 @@ export async function renderPdf(
         fillColor: colors.surface,
       },
       columnStyles: Object.fromEntries(
-        input.definition.columns.map((column, index) => [
+        document.columns.map((column, index) => [
           index,
           {
             halign: column.align === 'right' ? 'right' : 'left',
@@ -156,7 +122,7 @@ export async function renderPdf(
         ]),
       ),
       didDrawPage: () => {
-        drawHeader(doc, input, pageWidth, margin, colors);
+        drawHeader(doc, pageWidth, margin, colors);
       },
     });
   }
@@ -165,7 +131,7 @@ export async function renderPdf(
 
   for (let page = 1; page <= totalPages; page++) {
     doc.setPage(page);
-    drawFooter(doc, input, pageWidth, pageHeight, margin, colors);
+    drawFooter(doc, document, pageWidth, pageHeight, margin, colors);
   }
 
   return doc.output('arraybuffer');
@@ -173,13 +139,13 @@ export async function renderPdf(
 
 function ensureSharedArrayBuffer(): void {
   if (typeof globalThis.SharedArrayBuffer === 'undefined') {
-    globalThis.SharedArrayBuffer = ArrayBuffer as unknown as typeof SharedArrayBuffer;
+    globalThis.SharedArrayBuffer =
+      ArrayBuffer as unknown as typeof SharedArrayBuffer;
   }
 }
 
 function drawHeader(
   doc: import('jspdf').jsPDF,
-  input: ExportInput,
   pageWidth: number,
   margin: number,
   colors: PdfPalette,
@@ -189,11 +155,7 @@ function drawHeader(
   doc.setFillColor(...colors.pharma);
   doc.rect(0, 0, pageWidth, 56, 'F');
 
-  doc.setFillColor(
-    ...(input.response.freshness.pendingOperations > 0
-      ? colors.sync
-      : colors.pharma),
-  );
+  doc.setFillColor(...colors.sync);
   doc.rect(0, 56, pageWidth, 2, 'F');
 
   doc.setTextColor(255, 255, 255);
@@ -201,10 +163,7 @@ function drawHeader(
   doc.setFontSize(13);
   doc.text(tenant.name, margin, 24);
 
-  const identity = [
-    tenant.nit ? `NIT ${tenant.nit}` : '',
-    tenant.address ?? '',
-  ]
+  const identity = [tenant.nit ? `NIT ${tenant.nit}` : '', tenant.address ?? '']
     .filter(Boolean)
     .join(' · ');
 
@@ -215,7 +174,7 @@ function drawHeader(
 
 function drawFooter(
   doc: import('jspdf').jsPDF,
-  input: ExportInput,
+  document: ExportDocument,
   pageWidth: number,
   pageHeight: number,
   margin: number,
@@ -232,17 +191,13 @@ function drawFooter(
   doc.setFontSize(7.5);
 
   doc.text(
-    tr(
-      input.t,
-      'reports.export.localSource',
-      'Local workstation database',
-    ),
+    tr(document.t, 'export.meta.source', 'Base de datos local'),
     margin,
     pageHeight - 14,
   );
 
   doc.text(
-    `${tr(input.t, 'reports.export.page', 'Page')} ${page} ${tr(input.t, 'reports.export.of', 'of')} ${total}`,
+    `${tr(document.t, 'export.meta.page', 'Página')} ${page} ${tr(document.t, 'export.meta.of', 'de')} ${total}`,
     pageWidth - margin,
     pageHeight - 14,
     { align: 'right' },
@@ -251,7 +206,7 @@ function drawFooter(
 
 function drawMetadata(
   doc: import('jspdf').jsPDF,
-  input: ExportInput,
+  document: ExportDocument,
   y: number,
   margin: number,
   usableWidth: number,
@@ -269,9 +224,9 @@ function drawMetadata(
   doc.setFont(REPORT_THEME.fonts.pdfFallback, 'normal');
   doc.setFontSize(7);
 
-  doc.text(tr(input.t, 'reports.export.period', 'PERIOD'), left, y + 15);
+  doc.text(tr(document.t, 'export.meta.generatedAt', 'GENERADO'), left, y + 15);
   doc.text(
-    tr(input.t, 'reports.export.generatedAt', 'GENERATED'),
+    tr(document.t, 'export.meta.user', 'USUARIO'),
     right,
     y + 15,
   );
@@ -281,113 +236,38 @@ function drawMetadata(
   doc.setFontSize(9);
 
   doc.text(
-    `${input.response.filters.dateFrom} — ${input.response.filters.dateTo}`,
+    new Date(document.generatedAt ?? Date.now()).toLocaleString(locale),
     left,
     y + 30,
   );
 
-  doc.text(
-    new Date(input.response.generatedAt).toLocaleString(locale),
-    right,
-    y + 30,
-  );
+  doc.text(document.userDisplayName ?? '—', right, y + 30);
 
   doc.setTextColor(...colors.muted);
   doc.setFont(REPORT_THEME.fonts.pdfFallback, 'normal');
   doc.setFontSize(7);
 
-  doc.text(
-    `${tr(input.t, 'reports.export.user', 'USER').toUpperCase()}: ${input.userDisplayName}`,
-    left,
-    y + 43,
-  );
+  const extra = document.metadata ?? [];
+  const leftExtra = extra[0];
+  const rightExtra = extra[1];
 
-  doc.text(
-    `${tr(input.t, 'reports.export.source', 'SOURCE').toUpperCase()}: ${input.response.freshness.dataSource}`,
-    right,
-    y + 43,
-  );
+  if (leftExtra) {
+    doc.text(
+      `${tr(document.t, leftExtra[0], leftExtra[1]).toUpperCase()}: ${leftExtra[2]}`,
+      left,
+      y + 43,
+    );
+  }
+
+  if (rightExtra) {
+    doc.text(
+      `${tr(document.t, rightExtra[0], rightExtra[1]).toUpperCase()}: ${rightExtra[2]}`,
+      right,
+      y + 43,
+    );
+  }
 
   return y + 52;
-}
-
-function drawKpis(
-  doc: import('jspdf').jsPDF,
-  input: ExportInput,
-  y: number,
-  margin: number,
-  usableWidth: number,
-  locale: string,
-  colors: PdfPalette,
-): number {
-  const cardGap = 10;
-  const cardHeight = 48;
-  const cardWidth = (usableWidth - cardGap) / 2;
-
-  input.response.kpis.forEach((kpi, index) => {
-    const x = margin + (index % 2) * (cardWidth + cardGap);
-    const cardY = y + Math.floor(index / 2) * (cardHeight + 8);
-
-    doc.setFillColor(...colors.panel);
-    doc.setDrawColor(...colors.border);
-    doc.roundedRect(x, cardY, cardWidth, cardHeight, 4, 4, 'FD');
-
-    doc.setTextColor(...colors.muted);
-    doc.setFont(REPORT_THEME.fonts.pdfFallback, 'bold');
-    doc.setFontSize(7);
-    doc.text(
-      tr(input.t, kpi.titleKey, kpi.titleKey).toUpperCase(),
-      x + 10,
-      cardY + 15,
-    );
-
-    doc.setTextColor(...colors.pharma);
-    doc.setFontSize(13);
-    doc.text(
-      formatStatValue(kpi.value, locale),
-      x + 10,
-      cardY + 34,
-    );
-  });
-
-  return y + Math.ceil(input.response.kpis.length / 2) * (cardHeight + 8);
-}
-
-function drawChart(
-  doc: import('jspdf').jsPDF,
-  chartDataUrl: string,
-  y: number,
-  margin: number,
-  usableWidth: number,
-  pageHeight: number,
-  colors: PdfPalette,
-): number {
-  const chartHeight = Math.min(165, pageHeight - y - 90);
-
-  if (chartHeight <= 80) {
-    return y;
-  }
-
-  const chartY = y + 12;
-
-  doc.setFillColor(...colors.panel);
-  doc.setDrawColor(...colors.border);
-  doc.roundedRect(margin, chartY, usableWidth, chartHeight, 4, 4, 'FD');
-
-  try {
-    doc.addImage(
-      chartDataUrl,
-      'PNG',
-      margin + 8,
-      chartY + 8,
-      usableWidth - 16,
-      chartHeight - 16,
-    );
-  } catch {
-    return chartY + chartHeight + 16;
-  }
-
-  return chartY + chartHeight + 16;
 }
 
 type PdfPalette = {

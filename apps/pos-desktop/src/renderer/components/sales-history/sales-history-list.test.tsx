@@ -6,7 +6,16 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SalesHistoryList } from './sales-history-list';
 import type { SaleHistoryListItem } from '../../../domain/sales-pos/sales-history.service';
+import { ExportFormat } from '../../../common/export';
+import es from '../../i18n/locales/es.json';
 import '@/i18n';
+
+// ExportMenu (rendered when onExport is provided) mounts with motion
+// animations; force reduced motion so the menu unmounts synchronously.
+vi.mock('motion/react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('motion/react')>();
+  return { ...actual, useReducedMotion: () => true };
+});
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,5 +123,49 @@ describe('SalesHistoryList', () => {
 
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith('sale-1');
+  });
+
+  it('renders the export menu in the header when onExport is provided', () => {
+    render(<SalesHistoryList {...defaultProps} onExport={vi.fn()} />);
+
+    expect(
+      screen.getByRole('button', { name: es.export.menu.label }),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    { format: ExportFormat.EXCEL, label: es.export.menu.excel },
+    { format: ExportFormat.CSV, label: es.export.menu.csv },
+    { format: ExportFormat.PDF, label: es.export.menu.pdf },
+    { format: ExportFormat.PRINT, label: es.export.menu.print },
+  ] as const)('forwards the $format selection to onExport', async ({ format, label }) => {
+    const onExport = vi.fn();
+    render(<SalesHistoryList {...defaultProps} onExport={onExport} />);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: es.export.menu.label }),
+    );
+    await userEvent.click(screen.getByRole('menuitem', { name: label }));
+
+    expect(onExport).toHaveBeenCalledTimes(1);
+    expect(onExport).toHaveBeenCalledWith(format);
+  });
+
+  it('disables the export trigger while an export is running', () => {
+    render(
+      <SalesHistoryList {...defaultProps} onExport={vi.fn()} isExporting />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: es.export.menu.label }),
+    ).toBeDisabled();
+  });
+
+  it('does not render an export menu when onExport is omitted', () => {
+    render(<SalesHistoryList {...defaultProps} />);
+
+    expect(
+      screen.queryByRole('button', { name: es.export.menu.label }),
+    ).not.toBeInTheDocument();
   });
 });

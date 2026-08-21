@@ -55,6 +55,14 @@ vi.mock("../../hooks/use-resizable-width", () => ({
   }),
 }));
 
+vi.mock("../../hooks/use-data-export", () => ({
+  useDataExport: () => ({
+    exportTo: vi.fn(),
+    isExporting: false,
+    error: null,
+  }),
+}));
+
 vi.mock("@/utils/notify", () => ({
   notify: { success: vi.fn(), error: vi.fn() },
 }));

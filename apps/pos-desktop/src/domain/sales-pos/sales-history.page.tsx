@@ -13,6 +13,8 @@ import { useTranslation } from 'react-i18next';
 import { useLocalSessionStore } from '../auth/local-session.store';
 import { useLocalAdjustmentService, useSalesHistoryService, useInvoiceService } from '../../renderer/components/common/service-context';
 import { RoleType } from '@pharmacy/shared-types';
+import { useDataExport } from '../../renderer/hooks/use-data-export';
+import { SALES_HISTORY_EXPORT } from '../export';
 import type { AdjustmentType, OperationalInvoiceView, AdjustmentHistoryEntry } from '../fiscal/local-adjustment.types';
 import type { SaleHistoryListItem, SaleHistoryDetail, SaleHistoryFilters } from './sales-history.service';
 
@@ -37,6 +39,18 @@ export const SalesHistoryPage: FC = () => {
   const [sales, setSales] = useState<SaleHistoryListItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [filters, setFilters] = useState<SaleHistoryFilters>({ limit: PAGE_SIZE });
+
+  // Export wiring — passes the current filters (period, client, search)
+  // through to the full-dataset export loader.
+  const { exportTo: exportSales, isExporting: isExportingSales } = useDataExport(
+    SALES_HISTORY_EXPORT,
+    {
+      since: filters.since,
+      until: filters.until,
+      clientId: filters.clientId,
+      query: filters.query,
+    },
+  );
 
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [selectedDetail, setSelectedDetail] = useState<SaleHistoryDetail | null>(null);
@@ -275,6 +289,8 @@ export const SalesHistoryPage: FC = () => {
             onRefresh={loadSales}
             onFiltersChange={handleFiltersChange}
             onLoadMore={handleLoadMore}
+            onExport={exportSales}
+            isExporting={isExportingSales}
           />
         </div>
 

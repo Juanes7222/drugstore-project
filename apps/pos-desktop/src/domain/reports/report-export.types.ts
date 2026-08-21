@@ -1,4 +1,9 @@
 import type {
+  ExportFileContent,
+  ExportFileFilter,
+  ExportFileFilters,
+} from '../../common/export';
+import type {
   ReportDefinition,
   ReportExportFormat,
   ReportResponse,
@@ -16,14 +21,4 @@ export interface ExportInput {
   showDialog?: boolean;
 }
 
-export type ExportFileContent = string | ArrayBuffer;
-
-export interface ExportFileFilter {
-  name: string;
-  extensions: string[];
-}
-
-export type ExportFileFilters = Record<
-  Exclude<ReportExportFormat, 'print'>,
-  ExportFileFilter
->;
+export type { ExportFileContent, ExportFileFilter, ExportFileFilters };

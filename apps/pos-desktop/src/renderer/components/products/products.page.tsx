@@ -23,6 +23,9 @@ import { navigateBackToSales } from "@/store/slices/ui-slice";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { useProductService } from "../common/service-context";
+import { PRODUCTS_EXPORT } from "../../../domain/export";
+import { useDataExport } from "../../hooks/use-data-export";
+import { notify } from "@/utils/notify";
 import type { SaleType } from "@pharmacy/database/local";
 import type {
   DisplayProduct,
@@ -78,6 +81,25 @@ export const ProductsPage: FC = () => {
   const [isImportOpen, setIsImportOpen] = useState(false);
   const sessionRole = useLocalSessionStore((s) => s.session?.role);
   const canImportProducts = canImportEntity("products", sessionRole);
+
+  // Export (reproduces the grid's client-side filters server-side)
+  const {
+    exportTo: exportProducts,
+    isExporting: isExportingProducts,
+    error: exportError,
+  } = useDataExport(PRODUCTS_EXPORT, {
+    query: searchQuery,
+    categoryId: categoryFilter || undefined,
+    showInactive,
+  });
+
+  useEffect(() => {
+    if (!exportError) return;
+    notify.error({
+      title: t("export.error", { defaultValue: "No se pudo generar la exportación" }),
+      description: exportError,
+    });
+  }, [exportError, t]);
 
   // ── Load products on mount / after import ───────────────────────────
 
@@ -325,6 +347,8 @@ export const ProductsPage: FC = () => {
         onBack={handleBack}
         onCreateNew={handleCreateNew}
         onImport={canImportProducts ? () => setIsImportOpen(true) : undefined}
+        onExport={products.length > 0 ? exportProducts : undefined}
+        isExporting={isExportingProducts}
       />
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">

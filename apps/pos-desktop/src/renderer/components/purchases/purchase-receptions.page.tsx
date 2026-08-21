@@ -27,6 +27,10 @@ import {
 } from '../common/service-context';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { usePagination } from '../../hooks/use-pagination';
+import { PURCHASE_RECEPTIONS_EXPORT } from '../../../domain/export';
+import { useDataExport } from '../../hooks/use-data-export';
+import { ExportMenu } from '../ui/export-menu';
+import { notify } from '@/utils/notify';
 import type { ReceptionResult, CreateReceptionInput } from '../../../domain/purchases';
 import type { SearchableSelectOption } from './searchable-select';
 
@@ -62,6 +66,21 @@ export const PurchaseReceptionsPage: FC = () => {
     run: runListLoad,
   } = useAsyncAction();
   const PAGE_SIZE = 50;
+
+  // Export (full reception dataset — the screen has no filters today)
+  const {
+    exportTo: exportReceptions,
+    isExporting: isExportingReceptions,
+    error: exportError,
+  } = useDataExport(PURCHASE_RECEPTIONS_EXPORT, {});
+
+  useEffect(() => {
+    if (!exportError) return;
+    notify.error({
+      title: t('export.error', { defaultValue: 'No se pudo generar la exportación' }),
+      description: exportError,
+    });
+  }, [exportError, t]);
 
   // ── Create form ───────────────────────────────────────────────────────
   const [formData, setFormData] = useState<CreateReceptionInput>({
@@ -313,6 +332,13 @@ export const PurchaseReceptionsPage: FC = () => {
           </h1>
         </div>
         <div className="flex items-center gap-2">
+          {viewMode === 'list' && !isLoadingList && receptions.length > 0 && (
+            <ExportMenu
+              onExport={exportReceptions}
+              exporting={isExportingReceptions}
+              className="shrink-0"
+            />
+          )}
           {viewMode === 'list' && canEdit && (
           <button
             onClick={handleCreateClick}
