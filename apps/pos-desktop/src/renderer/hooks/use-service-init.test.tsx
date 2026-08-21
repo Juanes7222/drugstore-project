@@ -114,12 +114,20 @@ const mockReturnsService = { createReturn: vi.fn(), confirmReturn: vi.fn(), canc
 const mockInventoryAdjustmentsService = { createAdjustment: vi.fn(), confirmAdjustment: vi.fn(), cancelAdjustment: vi.fn(), getAdjustment: vi.fn() };
 const mockPrescriptionsService = { createPrescription: vi.fn(), getPrescription: vi.fn(), listPending: vi.fn() };
 const mockRecoveryLogService = { log: vi.fn(), list: vi.fn() };
+const mockImportService = {
+  preview: vi.fn(),
+  execute: vi.fn(),
+  listHistory: vi.fn(),
+  getHistory: vi.fn(),
+  buildTemplate: vi.fn(),
+};
 
 const mockDomainServices = {
   returnsService: mockReturnsService,
   inventoryAdjustmentsService: mockInventoryAdjustmentsService,
   prescriptionsService: mockPrescriptionsService,
   recoveryLogService: mockRecoveryLogService,
+  importService: mockImportService,
 };
 
 vi.mock("../../domain/domain-services/domain-service.factory", () => ({
@@ -264,6 +272,7 @@ describe("initializeServices", () => {
       expect(services.cashDrawerService).toBe(mockCashDrawer);
       expect(services.customerDisplayService).toBe(mockCustomerDisplay);
       expect(services.updateService).toBe(mockUpdateService);
+      expect(services.importService).toBe(mockImportService);
     });
   });
 

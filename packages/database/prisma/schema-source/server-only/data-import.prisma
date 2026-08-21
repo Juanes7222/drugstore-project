@@ -1,0 +1,44 @@
+// Server-only schema fragment — only included in the full build.
+// Import history for the generic data-import module (CSV/Excel/JSON bulk
+// intake). Every executed import records one DataImport row and one
+// DataImportRow per source row, so a failed or partially-valid import can be
+// audited and re-run without losing the original payload.
+
+model DataImport {
+  id             String             @id
+  subscriptionId String
+  entityKey      String
+  sourceFormat   ImportSourceFormat
+  fileName       String
+  totalRows      Int
+  validRows      Int
+  errorRows      Int
+  /// COMPLETED = the import run finished (rows may still carry per-row
+  /// errors, e.g. a duplicate that raced the preview). FAILED = the run
+  /// aborted before any row was committed.
+  status         DataImportStatus   @default(COMPLETED)
+  failureReason  String?
+  createdById    String
+  createdAt      DateTime           @default(now())
+  rows           DataImportRow[]
+
+  @@index([subscriptionId, createdAt])
+  @@index([entityKey, createdAt])
+}
+
+model DataImportRow {
+  id        String             @id
+  importId  String
+  rowNumber Int
+  /// Raw source row keyed by header, preserved verbatim for auditing.
+  rawData   Json
+  status    DataImportRowStatus
+  /// [{ path, message }] — present when status = ERROR.
+  issues    Json?
+  /// Server id of the created entity (Product/Client) when the row succeeded.
+  entityId  String?
+  import    DataImport         @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([importId])
+  @@unique([importId, rowNumber])
+}

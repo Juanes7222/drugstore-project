@@ -201,6 +201,10 @@ export const useInventoryLotsService = (): Services['inventoryLotsService'] =>
 export const useProductService = (): Services['productService'] =>
   useServiceContext().productService;
 
+/** Convenience hook — returns the ImportService instance. */
+export const useImportService = (): Services['importService'] =>
+  useServiceContext().importService;
+
 /** Convenience hook — returns the SyncScheduler instance. */
 export const useSyncSchedulerService = (): Services['syncScheduler'] =>
   useServiceContext().syncScheduler;

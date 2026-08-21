@@ -22,11 +22,11 @@ import { TenantConfigModule } from './modules/tenant-config/tenant-config.module
 import { TenantModule } from './modules/tenant/tenant.module';
 import { PrintModule } from './modules/print/print.module';
 import { DevModule } from './modules/dev/dev.module';
+import { DataImportModule } from './modules/data-import/data-import.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
 /** Dev-only modules — only registered when NODE_ENV=development */
-const DEV_MODULES =
-  process.env.NODE_ENV === 'development' ? [DevModule] : [];
+const DEV_MODULES = process.env.NODE_ENV === 'development' ? [DevModule] : [];
 
 @Module({
   imports: [
@@ -61,6 +61,7 @@ const DEV_MODULES =
     UpdatesModule,
     TenantConfigModule,
     PrintModule,
+    DataImportModule,
     ...DEV_MODULES,
   ],
   // Registered as APP_INTERCEPTOR so it runs inside the request-scoped

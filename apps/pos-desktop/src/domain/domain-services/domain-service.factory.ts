@@ -22,6 +22,8 @@ import { createProductService } from '../catalog/product.service';
 import type { ProductService } from '../catalog/product.service';
 import { createClientsService } from '../clients/clients.service';
 import type { ClientsService } from '../clients/clients.service';
+import { createImportService } from '../data-import/import.service';
+import type { ImportService } from '../data-import/import.service';
 import { createCreditService } from '../clients/credit.service';
 import type { CreditService } from '../clients/credit.service';
 import { createSalesPosService } from '../sales-pos/sales-pos.service';
@@ -46,6 +48,7 @@ export interface DomainServices {
   recoveryLogService: RecoveryLogService;
   productService: ProductService;
   clientsService: ClientsService;
+  importService: ImportService;
   creditService: CreditService;
   salesPosService: SalesPosService;
   suppliersService: SuppliersService;
@@ -93,13 +96,22 @@ export function createDomainServices(
 ): DomainServices {
   const { prisma, auth, invoiceService, printRouter, inventoryLotsService, auditWriter } = input;
 
+  const productService = createProductService(prisma, auth);
+  const clientsService = createClientsService(prisma, auth);
+
   return {
     returnsService: createReturnsService(prisma, auth, invoiceService, printRouter),
     inventoryAdjustmentsService: createInventoryAdjustmentsService(prisma, auth),
     prescriptionsService: createPrescriptionsService(prisma, auth),
     recoveryLogService: createRecoveryLogService(prisma),
-    productService: createProductService(prisma, auth),
-    clientsService: createClientsService(prisma, auth),
+    productService,
+    clientsService,
+    importService: createImportService({
+      prisma,
+      auth,
+      productService,
+      clientsService,
+    }),
     creditService: createCreditService(prisma, auth),
     salesPosService: createSalesPosService(
       prisma,

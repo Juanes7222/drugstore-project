@@ -1133,3 +1133,25 @@ CartPanel (right 40%)
 - `renderer/components/SalesTransaction/delivery-form-dialog.tsx` - Radix Dialog form; seeds from the existing draft when editing; fee input via the shared `CurrencyInput` (MANUAL mode), read-only line for FIXED mode.
 - `renderer/components/SalesTransaction/delivery-toggle.tsx` - toggle/card + remove, owns dialog open state and dispatches `sales-slice` `setDelivery`.
 - Cart/payment/receipt/history wiring: `cart-panel` + `totals-summary` fee line + grand total, `payment-processing` total due = grand total, `receipt` passes the draft + fee to `generateReceiptHtml` (which already prints the `*** DOMICILIO ***` block and fee), sales-history operational card shows the fee.
+
+---
+
+## Data import wizard (added 2026-08-21)
+
+CSV/Excel mass import for Products and Clients, one shared multi-step dialog
+(`renderer/components/data-import/import-dialog.tsx`) rendered by both
+sections. Design decisions:
+
+| Decision | Rationale |
+|----------|-----------|
+| **One generic dialog, two hosts** | The flow is identical for both entities; the only differences are the column set (shared-validation metadata) and the role gate. Duplicating it per section would double the surface for no gain. |
+| **Three steps: select → preview → result** | Preview is the safety step per the import contract: nothing is written until the operator confirms. The confirm button states the exact row count ("Importar N filas válidas") and is disabled at 0. |
+| **Preview colors follow the palette roles** | Valid count = Pharma Teal, row errors = Urgency Amber (fix-and-retry, not alarm), file-level failure banner = reserved error red, ignored columns = Sync Slate (informational). Never color alone: every count/alert carries a text label. |
+| **Per-row messages rendered verbatim** | Zod messages from shared schemas are Spanish on purpose; the dialog renders `issue.path` in JetBrains Mono + `issue.message` as-is, never translated. |
+| **Domain error codes → i18n** | `IMPORT_FILE_INVALID` / `IMPORT_VALIDATION_FAILED` / `IMPORT_ROW_REJECTED` / `IMPORT_EXECUTION_FAILED` map to i18n titles; the raw English domain message appears as muted detail. `NO_ACTIVE_SESSION`/`INSUFFICIENT_ROLE` reuse the existing `errors.*` copy. |
+| **Roles change visibility** | `canImportEntity()` mirrors the service's `assertRoleFor` + OWNER/SAAS_ADMIN supersession so the button is hidden for roles that would always fail. The service stays the authority. |
+| **Motion budget respected** | Dialog entrance fade/scale only (same as other Radix dialogs). Step changes are instant — the wizard is a tool, not a moment. The only loading motion is the functional spinner during preview/execute. |
+| **Execute honesty** | While executing (row-by-row under the write lock, up to 5,000 rows) the dialog blocks close, shows a Sync-Slate status notice, and the primary button becomes "Importando...". |
+| **Numbers are tabular** | Counts, row numbers, and importId use `font-data tabular-nums`. Sample table headers are the shared column labels, so preview matches the downloaded template exactly. |
+| **Display caps** | Preview error list renders 100 rows then collapses into "… y N errores más" (a 5,000-row file with systematic errors must not render 5,000 cards). Execute errors are already capped at 50 by the service. |
+| **Template download** | `buildTemplate` (CSV string with BOM / XLSX ArrayBuffer) → `saveFileWithDialog` (native save dialog in Tauri, browser fallback in dev). |

@@ -49,6 +49,7 @@ import {
   useCashDrawerService,
   useCustomerDisplayService,
   useUpdateService,
+  useImportService,
 } from "./service-context";
 
 // ---------------------------------------------------------------------------
@@ -74,6 +75,13 @@ const mockServices: Record<string, unknown> = {
   cashDrawerService: { openDrawer: vi.fn() },
   customerDisplayService: { showWelcome: vi.fn() },
   updateService: { checkForUpdates: vi.fn() },
+  importService: {
+    preview: vi.fn(),
+    execute: vi.fn(),
+    listHistory: vi.fn(),
+    getHistory: vi.fn(),
+    buildTemplate: vi.fn(),
+  },
 };
 
 const ChildComponent: FC = () => <div data-testid="child">Hello</div>;
@@ -175,6 +183,7 @@ describe("convenience hooks", () => {
       { name: "useCashDrawerService", hook: useCashDrawerService },
       { name: "useCustomerDisplayService", hook: useCustomerDisplayService },
       { name: "useUpdateService", hook: useUpdateService },
+      { name: "useImportService", hook: useImportService },
     ];
 
     HOOKS.forEach(({ name, hook }) => {
@@ -221,6 +230,7 @@ describe("convenience hooks", () => {
       { name: "useCashDrawerService", hook: useCashDrawerService, expectedService: "cashDrawerService" },
       { name: "useCustomerDisplayService", hook: useCustomerDisplayService, expectedService: "customerDisplayService" },
       { name: "useUpdateService", hook: useUpdateService, expectedService: "updateService" },
+      { name: "useImportService", hook: useImportService, expectedService: "importService" },
     ];
 
     HOOK_TESTS.forEach(({ name, hook }) => {

@@ -35,6 +35,10 @@ import { ProductHeader } from "./product-header";
 import { ProductList } from "./product-list";
 import { ProductForm } from "./product-form";
 import { useProductFormData } from "./use-product-form-data";
+import {
+  canImportEntity,
+  ImportDialog,
+} from "../data-import/import-dialog";
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -70,38 +74,34 @@ export const ProductsPage: FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Load products on mount ──────────────────────────────────────────
+  // Import state (role-gated — the service enforces the same rule)
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const sessionRole = useLocalSessionStore((s) => s.session?.role);
+  const canImportProducts = canImportEntity("products", sessionRole);
+
+  // ── Load products on mount / after import ───────────────────────────
+
+  const loadProducts = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const result = await productService.listProducts({
+        includeInactive: true,
+        limit: 500,
+      });
+      setProducts(
+        (result.items as unknown as RawProduct[]).map(mapToDisplayProduct),
+      );
+    } catch (err) {
+      console.error("[ProductsPage] listProducts failed:", err);
+      setError(t("products.load_error"));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [productService, t]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        setIsLoading(true);
-        const result = await productService.listProducts({
-          includeInactive: true,
-          limit: 500,
-        });
-        if (!cancelled) {
-          setProducts(
-            (result.items as unknown as RawProduct[]).map(mapToDisplayProduct),
-          );
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error("[ProductsPage] listProducts failed:", err);
-          setError(t("products.load_error"));
-        }
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [productService, t]);
+    void loadProducts();
+  }, [loadProducts]);
 
   // ── Client-side search + category + status filter ──────────────────
 
@@ -125,6 +125,10 @@ export const ProductsPage: FC = () => {
   const handleBack = useCallback(() => {
     dispatch(navigateBackToSales());
   }, [dispatch]);
+
+  const handleImported = useCallback(() => {
+    void loadProducts();
+  }, [loadProducts]);
 
   const handleCreateNew = useCallback(() => {
     setSelectedProduct(null);
@@ -320,6 +324,7 @@ export const ProductsPage: FC = () => {
         isOnline={isOnline}
         onBack={handleBack}
         onCreateNew={handleCreateNew}
+        onImport={canImportProducts ? () => setIsImportOpen(true) : undefined}
       />
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -383,6 +388,14 @@ export const ProductsPage: FC = () => {
           </div>
         )}
       </div>
+
+      {/* CSV/Excel import wizard */}
+      <ImportDialog
+        entityKey="products"
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        onImported={handleImported}
+      />
     </section>
   );
 };

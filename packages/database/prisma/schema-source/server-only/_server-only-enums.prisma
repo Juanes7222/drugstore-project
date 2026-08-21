@@ -122,10 +122,32 @@ enum AuditAction {
   DELETE
   ACCESS
   EXPORT
+  IMPORT
   LOGIN
   LOGOUT
   SECURITY_ALERT
   STATE_CHANGE
+}
+
+// ---------------------------------------------------------------------------
+// Data import enums
+// ---------------------------------------------------------------------------
+
+enum ImportSourceFormat {
+  CSV
+  XLSX
+  JSON
+}
+
+enum DataImportStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum DataImportRowStatus {
+  VALID
+  ERROR
 }
 
 // ---------------------------------------------------------------------------

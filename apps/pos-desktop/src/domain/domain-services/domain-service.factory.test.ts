@@ -41,6 +41,26 @@ const mockRecoveryLogService = {
   list: vi.fn(),
 };
 
+const mockProductService = {
+  createProduct: vi.fn(),
+  listProducts: vi.fn(),
+  updateProduct: vi.fn(),
+};
+
+const mockClientsService = {
+  create: vi.fn(),
+  search: vi.fn(),
+  update: vi.fn(),
+};
+
+const mockImportService = {
+  preview: vi.fn(),
+  execute: vi.fn(),
+  listHistory: vi.fn(),
+  getHistory: vi.fn(),
+  buildTemplate: vi.fn(),
+};
+
 // ---------------------------------------------------------------------------
 // Mock creation functions
 // ---------------------------------------------------------------------------
@@ -61,6 +81,18 @@ vi.mock("../backup/recovery-log.service", () => ({
   createRecoveryLogService: vi.fn(() => mockRecoveryLogService),
 }));
 
+vi.mock("../catalog/product.service", () => ({
+  createProductService: vi.fn(() => mockProductService),
+}));
+
+vi.mock("../clients/clients.service", () => ({
+  createClientsService: vi.fn(() => mockClientsService),
+}));
+
+vi.mock("../data-import/import.service", () => ({
+  createImportService: vi.fn(() => mockImportService),
+}));
+
 // ---------------------------------------------------------------------------
 // Subject under test
 // ---------------------------------------------------------------------------
@@ -70,6 +102,7 @@ import { createReturnsService } from "../returns/returns.service";
 import { createInventoryAdjustmentsService } from "../inventory-adjustments/inventory-adjustments.service";
 import { createPrescriptionsService } from "../prescriptions/prescriptions.service";
 import { createRecoveryLogService } from "../backup/recovery-log.service";
+import { createImportService } from "../data-import/import.service";
 
 describe("createDomainServices", () => {
   const mockPrisma = {
@@ -176,5 +209,21 @@ describe("createDomainServices", () => {
     });
 
     expect(createRecoveryLogService).toHaveBeenCalledWith(mockPrisma);
+  });
+
+  it("exposes importService wired with prisma, auth, productService, and clientsService", () => {
+    const services = createDomainServices({
+      prisma: mockPrisma as any,
+      auth: mockAuth as any,
+      inventoryLotsService: {} as any,
+    });
+
+    expect(services.importService).toBe(mockImportService);
+    expect(createImportService).toHaveBeenCalledWith({
+      prisma: mockPrisma,
+      auth: mockAuth,
+      productService: mockProductService,
+      clientsService: mockClientsService,
+    });
   });
 });

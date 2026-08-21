@@ -16,7 +16,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
-import { PlusIcon, RefreshCwIcon, SearchIcon, XIcon } from "@/components/ui/icons";
+import { FileSpreadsheetIcon, PlusIcon, RefreshCwIcon, SearchIcon, XIcon } from "@/components/ui/icons";
 import { useClientsService } from "../common/service-context";
 import type { ClientSearchResult, CreateClientInput } from "../../../domain/clients/clients.service";
 import type { UpdateClientInput } from "../../../domain/clients/clients.service";
@@ -28,6 +28,10 @@ import { ClientForm } from "./client-form";
 import { ClientTable } from "./client-table";
 import { ClientDetailDialog } from "./client-detail-dialog";
 import { DeleteConfirmDialog } from "./delete-confirm-dialog";
+import {
+  canImportEntity,
+  ImportDialog,
+} from "../data-import/import-dialog";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -88,7 +92,11 @@ export const ClientsPage: FC = () => {
   const clientsService = useClientsService();
   const session = useLocalSessionStore((s) => s.session);
   const canCreate = !!session;
+  const canImportClients = canImportEntity("clients", session?.role);
   const shouldReduceMotion = useReducedMotion();
+
+  // ---- Import wizard state ----
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   // ---- Edit slide-in panel width (resizable, persisted) ----
   const { width: editPanelWidth, isResizing, handleProps } = useResizableWidth({
@@ -322,6 +330,23 @@ export const ClientsPage: FC = () => {
       >
         <h1 className="pos-page-title m-0">{t("clients.title")}</h1>
         <div className="flex items-center gap-2">
+          {canImportClients && (
+            <button
+              type="button"
+              onClick={() => setIsImportOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-sm border px-3 py-1.5 text-body-sm font-semibold transition-colors"
+              style={{
+                backgroundColor: "var(--color-panel)",
+                color: "var(--color-ink)",
+                borderColor: "color-mix(in srgb, var(--color-ink) 15%, transparent)",
+              }}
+              title={t("import.open")}
+            >
+              <FileSpreadsheetIcon className="size-4" />
+              <span className="hidden sm:inline">{t("import.open")}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleSync}
@@ -513,6 +538,14 @@ export const ClientsPage: FC = () => {
         clientName={deleteConfirmClient?.fullName}
         onConfirm={handleDelete}
         onCancel={handleCancelDelete}
+      />
+
+      {/* ===== CSV/Excel import wizard ===== */}
+      <ImportDialog
+        entityKey="clients"
+        open={isImportOpen}
+        onOpenChange={setIsImportOpen}
+        onImported={() => void doSearch(searchQuery)}
       />
     </motion.div>
   );

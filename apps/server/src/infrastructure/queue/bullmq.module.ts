@@ -3,9 +3,11 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 
 /**
- * Registers the BullMQ root connection and the fiscal-documents queue
- * used by the producer side (FiscalDocumentsService) in apps/server.
- * The consumer side lives in apps/fiscal-engine.
+ * Registers the BullMQ root connection and the queues used by apps/server:
+ * - fiscal-documents: producer side (FiscalDocumentsService); the consumer
+ *   lives in apps/fiscal-engine.
+ * - imports: data-import module — enqueue + in-process worker both live in
+ *   this app (DataImportProcessingJob).
  */
 @Module({
   imports: [
@@ -16,6 +18,7 @@ import { ConfigService } from '@nestjs/config';
       inject: [ConfigService],
     }),
     BullModule.registerQueue({ name: 'fiscal-documents' }),
+    BullModule.registerQueue({ name: 'imports' }),
   ],
   exports: [BullModule],
 })

@@ -1,21 +1,24 @@
 /**
  * ProductHeader — header bar with back button, title, online/offline status,
- * and a "New Product" action button.
+ * a "New Product" action button, and the optional CSV/Excel import button.
  */
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeftIcon, PlusIcon } from "@/components/ui/icons";
+import { ArrowLeftIcon, FileSpreadsheetIcon, PlusIcon } from "@/components/ui/icons";
 
 interface ProductHeaderProps {
   isOnline: boolean;
   onBack: () => void;
   onCreateNew: () => void;
+  /** When provided, renders the import button (role-gated by the page). */
+  onImport?: () => void;
 }
 
 export const ProductHeader: FC<ProductHeaderProps> = ({
   isOnline,
   onBack,
   onCreateNew,
+  onImport,
 }) => {
   const { t } = useTranslation();
 
@@ -42,6 +45,18 @@ export const ProductHeader: FC<ProductHeaderProps> = ({
       <h1 className="pos-page-title min-w-0 flex-1 truncate">
         {t("products.title")}
       </h1>
+
+      {/* Import button */}
+      {onImport && (
+        <button
+          type="button"
+          onClick={onImport}
+          className="pos-button pos-button-secondary flex shrink-0 items-center gap-pos-xs"
+        >
+          <FileSpreadsheetIcon size={14} strokeWidth={2} />
+          {t("import.open")}
+        </button>
+      )}
 
       {/* New product button */}
       <button

@@ -25,6 +25,9 @@ jest.mock('@pharmacy/database', () => {
     Prisma: lazyEnum,
     BillingPeriod: enumFrom(['MONTHLY', 'QUARTERLY', 'ANNUAL']),
     SupplierIdentificationType: enumFrom(['NIT', 'CC', 'CE', 'PASSPORT']),
+    // Read at module load by data-import's import-source.adapter
+    // (EXTENSION_TO_FORMAT) since AppModule now imports DataImportModule.
+    ImportSourceFormat: enumFrom(['CSV', 'XLSX', 'JSON']),
     __esModule: true,
   };
 });

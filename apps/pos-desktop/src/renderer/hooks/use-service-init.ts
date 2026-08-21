@@ -74,6 +74,7 @@ import { useCashShiftStore } from '../../domain/cash-shift/cash-shift.store';
 import { createInventoryLotsService, type InventoryLotsService } from '../../domain/inventory-lots/inventory-lots.service';
 import type { ProductService } from '../../domain/catalog/product.service';
 import type { ClientsService } from '../../domain/clients/clients.service';
+import type { ImportService } from '../../domain/data-import/import.service';
 import type { CreditService } from '../../domain/clients/credit.service';
 import type { SuppliersService } from '../../domain/purchases/suppliers.service';
 import type { PurchaseOrdersService } from '../../domain/purchases/purchase-orders.service';
@@ -117,6 +118,7 @@ export interface Services {
   inventoryLotsService: InventoryLotsService;
   productService: ProductService;
   clientsService: ClientsService;
+  importService: ImportService;
   creditService: CreditService;
   backupService: BackupService;
   recoveryLogService: RecoveryLogService;
@@ -479,6 +481,7 @@ export async function initializeServices(
     inventoryLotsService,
     productService: domainServices.productService,
     clientsService: domainServices.clientsService,
+    importService: domainServices.importService,
     creditService: domainServices.creditService,
     backupService,
     recoveryLogService: domainServices.recoveryLogService,
