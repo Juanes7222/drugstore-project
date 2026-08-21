@@ -1,27 +1,24 @@
-import type { Config } from 'jest';
+import type { JestConfigWithTsJest } from 'ts-jest';
 
-const config: Config = {
-  moduleFileExtensions: ['js', 'json', 'ts'],
-  rootDir: '.',
-  testRegex: '.*\\.spec\\.ts$',
+const config: JestConfigWithTsJest = {
   testEnvironment: 'node',
-  transform: {
-    '^.+\\.ts$': ['ts-jest', {
-      tsconfig: 'tsconfig.spec.json',
-      useESM: true,
-      diagnostics: false,
-    }],
-  },
+  rootDir: '.',
+  roots: ['<rootDir>/src'],
+  testMatch: ['**/*.spec.ts'],
+  extensionsToTreatAsEsm: ['.ts'],
+  modulePaths: ['<rootDir>/../../node_modules/.pnpm/node_modules'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^@pharmacy/shared-types$':
       '<rootDir>/../../packages/shared-types/src/index.ts',
     '^@pharmacy/shared-validation$':
       '<rootDir>/../../packages/shared-validation/src/index.ts',
-    '^@pharmacy/database$':
-      '<rootDir>/../../packages/database/src/index.ts',
+    '^@pharmacy/database$': '<rootDir>/../../packages/database/src/index.ts',
     '^@pharmacy/infisical-config$':
       '<rootDir>/../../packages/infisical-config/src/index.ts',
+  },
+  transform: {
+    '^.+\\.ts$': ['ts-jest', { useESM: true, diagnostics: false }],
   },
   collectCoverageFrom: [
     'src/**/*.ts',
@@ -35,7 +32,6 @@ const config: Config = {
     '!src/main.ts',
     '!src/app.module.ts',
   ],
-  coverageDirectory: './coverage',
   coverageThreshold: {
     global: {
       branches: 80,
@@ -44,6 +40,7 @@ const config: Config = {
       statements: 80,
     },
   },
+  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
 };
 
 export default config;

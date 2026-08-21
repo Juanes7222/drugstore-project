@@ -65,15 +65,26 @@ describe('RevocationListService', () => {
   describe('getDeltaSince', () => {
     it('returns only entries after the timestamp', async () => {
       const entries = [
-        buildDbEntry({ jti: 'jti-1', revokedAt: new Date('2026-06-20T00:00:00Z') }),
-        buildDbEntry({ jti: 'jti-2', revokedAt: new Date('2026-06-21T00:00:00Z') }),
+        buildDbEntry({
+          jti: 'jti-1',
+          revokedAt: new Date('2026-06-20T00:00:00Z'),
+        }),
+        buildDbEntry({
+          jti: 'jti-2',
+          revokedAt: new Date('2026-06-21T00:00:00Z'),
+        }),
       ];
       mockOfflineTokenRevocation.findMany.mockResolvedValue(entries);
 
-      const result = await service.getDeltaSince(new Date('2026-06-10T00:00:00Z'));
+      const result = await service.getDeltaSince(
+        new Date('2026-06-10T00:00:00Z'),
+      );
 
       expect(result).toHaveLength(2);
-      expect(result[0]).toMatchObject({ jti: 'jti-1', reason: 'ADMIN_REVOCATION' });
+      expect(result[0]).toMatchObject({
+        jti: 'jti-1',
+        reason: 'ADMIN_REVOCATION',
+      });
     });
 
     it('queries with correct where clause and ordering', async () => {
@@ -108,7 +119,9 @@ describe('RevocationListService', () => {
       });
       mockOfflineTokenRevocation.findMany.mockResolvedValue([entry]);
 
-      const result = await service.getDeltaSince(new Date('2026-01-01T00:00:00Z'));
+      const result = await service.getDeltaSince(
+        new Date('2026-01-01T00:00:00Z'),
+      );
 
       expect(result[0]).toEqual({
         jti: 'jti-uuid',
@@ -126,8 +139,14 @@ describe('RevocationListService', () => {
   describe('getList', () => {
     it('returns paginated results without since filter', async () => {
       const entries = [
-        buildDbEntry({ jti: 'jti-1', revokedAt: new Date('2026-06-20T00:00:00Z') }),
-        buildDbEntry({ jti: 'jti-2', revokedAt: new Date('2026-06-19T00:00:00Z') }),
+        buildDbEntry({
+          jti: 'jti-1',
+          revokedAt: new Date('2026-06-20T00:00:00Z'),
+        }),
+        buildDbEntry({
+          jti: 'jti-2',
+          revokedAt: new Date('2026-06-19T00:00:00Z'),
+        }),
       ];
       mockOfflineTokenRevocation.findMany.mockResolvedValue(entries);
       mockOfflineTokenRevocation.count.mockResolvedValue(10);

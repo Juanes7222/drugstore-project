@@ -38,7 +38,7 @@ export class StepUpGuard implements CanActivate {
     if (!stepUpToken) {
       throw new ForbiddenException(
         'Esta operación requiere autorización adicional. ' +
-        'Use el flujo de step-up para obtener un token de aprobación.',
+          'Use el flujo de step-up para obtener un token de aprobación.',
       );
     }
 

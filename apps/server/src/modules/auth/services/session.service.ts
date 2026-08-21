@@ -25,9 +25,7 @@ export interface CreateSessionParams {
 export class SessionService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createSession(
-    params: CreateSessionParams,
-  ): Promise<UserSessionModel> {
+  async createSession(params: CreateSessionParams): Promise<UserSessionModel> {
     return this.prisma.userSession.create({
       data: {
         id: crypto.randomUUID(),
@@ -123,9 +121,19 @@ export class SessionService {
     return result.count;
   }
 
-  async findSessionById(
-    sessionId: string,
-  ): Promise<(UserSessionModel & { user: { id: string; displayName: string | null; fullName: string; role: string; avatarUrl: string | null; avatarColor: string | null } }) | null> {
+  async findSessionById(sessionId: string): Promise<
+    | (UserSessionModel & {
+        user: {
+          id: string;
+          displayName: string | null;
+          fullName: string;
+          role: string;
+          avatarUrl: string | null;
+          avatarColor: string | null;
+        };
+      })
+    | null
+  > {
     return this.prisma.userSession.findUnique({
       where: { id: sessionId },
       include: {
@@ -157,9 +165,18 @@ export class SessionService {
     });
   }
 
-  async findActiveSessionsByWorkstation(
-    workstationId: string,
-  ): Promise<(UserSessionModel & { user: { id: string; displayName: string | null; fullName: string; role: string; avatarUrl: string | null; avatarColor: string | null } })[]> {
+  async findActiveSessionsByWorkstation(workstationId: string): Promise<
+    (UserSessionModel & {
+      user: {
+        id: string;
+        displayName: string | null;
+        fullName: string;
+        role: string;
+        avatarUrl: string | null;
+        avatarColor: string | null;
+      };
+    })[]
+  > {
     const now = new Date();
 
     return this.prisma.userSession.findMany({
@@ -247,7 +264,10 @@ export class SessionService {
     );
 
     const toEvict = sorted[0];
-    await this.revokeSession(toEvict.id, SessionRevocationReason.NEW_LOGIN_EVICT);
+    await this.revokeSession(
+      toEvict.id,
+      SessionRevocationReason.NEW_LOGIN_EVICT,
+    );
 
     return { evicted: true, evictedSessionId: toEvict.id };
   }

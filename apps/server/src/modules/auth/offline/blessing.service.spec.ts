@@ -72,7 +72,9 @@ const mockOfflineTokenService = {
 // Factory helpers
 // ---------------------------------------------------------------------------
 
-function buildBlessingRequest(overrides: Partial<BlessingRequest> = {}): BlessingRequest {
+function buildBlessingRequest(
+  overrides: Partial<BlessingRequest> = {},
+): BlessingRequest {
   return {
     localSessionId: 'local-session-uuid-1',
     userId: 'user-uuid-1',
@@ -186,7 +188,9 @@ describe('BlessingService', () => {
       mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims());
       // FIX-011: the revocation list is fetched batched via findMany — a
       // revoked jti in the batch rejects the session.
-      mockOfflineTokenRevocation.findMany.mockResolvedValue([{ jti: 'jti-uuid-1' }]);
+      mockOfflineTokenRevocation.findMany.mockResolvedValue([
+        { jti: 'jti-uuid-1' },
+      ]);
 
       const response = await service.blessSessions(
         [buildBlessingRequest()],
@@ -313,13 +317,17 @@ describe('BlessingService', () => {
     });
 
     it('rejects location access revoked users', async () => {
-      mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims({ locationIds: ['loc-1', 'loc-2'] }));
+      mockOfflineTokenService.verifyToken.mockReturnValue(
+        buildDecodedClaims({ locationIds: ['loc-1', 'loc-2'] }),
+      );
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
       mockUserModel.findMany.mockResolvedValue([
         buildUserRecord({ role: 'MANAGER' }),
       ]);
       mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(false);
-      mockUserLocationAccess.findMany.mockResolvedValue([{ locationId: 'loc-1' }]); // Only 1 of 2 locations
+      mockUserLocationAccess.findMany.mockResolvedValue([
+        { locationId: 'loc-1' },
+      ]); // Only 1 of 2 locations
 
       const response = await service.blessSessions(
         [buildBlessingRequest()],
@@ -373,14 +381,19 @@ describe('BlessingService', () => {
         buildBlessingRequest({ localSessionId: `session-${i}` }),
       );
 
-      const response = await service.blessSessions(manyRequests, REQUEST_FINGERPRINT);
+      const response = await service.blessSessions(
+        manyRequests,
+        REQUEST_FINGERPRINT,
+      );
 
       // Only 50 should be processed (the rest are truncated before the loop)
       expect(response.results.length).toBeLessThanOrEqual(50);
     });
 
     it('returns BLESSED for OWNER role without location access check', async () => {
-      mockOfflineTokenService.verifyToken.mockReturnValue(buildDecodedClaims({ locationIds: ['loc-1'] }));
+      mockOfflineTokenService.verifyToken.mockReturnValue(
+        buildDecodedClaims({ locationIds: ['loc-1'] }),
+      );
       mockOfflineTokenService.isRevoked.mockResolvedValue(false);
       mockUserModel.findMany.mockResolvedValue([
         buildUserRecord({ role: 'OWNER' }),
@@ -446,7 +459,10 @@ describe('BlessingService', () => {
         buildBlessingRequest({ localSessionId: 'session-invalid' }),
       ];
 
-      const response = await service.blessSessions(requests, REQUEST_FINGERPRINT);
+      const response = await service.blessSessions(
+        requests,
+        REQUEST_FINGERPRINT,
+      );
 
       expect(response.results).toHaveLength(2);
       expect(response.results[0].status).toBe('BLESSED');

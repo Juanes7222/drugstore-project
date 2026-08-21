@@ -31,8 +31,8 @@ export interface BlessingRequest {
   userId: string;
   offlineTokenJwt: string;
   workstationFingerprint: string;
-  createdAt: string;        // ISO date
-  lastActivityAt: string;     // ISO date
+  createdAt: string; // ISO date
+  lastActivityAt: string; // ISO date
 }
 
 export interface BlessingResult {
@@ -175,16 +175,14 @@ export class BlessingService {
     precomputed: {
       claims: OfflineTokenClaims | null;
       revokedJtis: Set<string>;
-      user:
-        | {
-            id: string;
-            isActive: boolean;
-            status: string;
-            role: string;
-            subscriptionId: string | null;
-            lockedUntil: Date | null;
-          }
-        | null;
+      user: {
+        id: string;
+        isActive: boolean;
+        status: string;
+        role: string;
+        subscriptionId: string | null;
+        lockedUntil: Date | null;
+      } | null;
     },
   ): Promise<BlessingResult> {
     // Step 1: Verify the offline token signature
@@ -262,7 +260,10 @@ export class BlessingService {
       };
     }
 
-    if (user.status === 'LOCKED' || (user.lockedUntil && user.lockedUntil > now)) {
+    if (
+      user.status === 'LOCKED' ||
+      (user.lockedUntil && user.lockedUntil > now)
+    ) {
       return {
         localSessionId: req.localSessionId,
         status: 'REJECTED',
@@ -299,12 +300,14 @@ export class BlessingService {
     });
 
     // If we can't find by session, try direct lookup
-    const directWorkstation = await this.prisma.workstationActivation.findFirst({
-      where: {
-        hardwareFingerprint: requestWorkstationFingerprint,
-        isActive: true,
+    const directWorkstation = await this.prisma.workstationActivation.findFirst(
+      {
+        where: {
+          hardwareFingerprint: requestWorkstationFingerprint,
+          isActive: true,
+        },
       },
-    });
+    );
 
     if (directWorkstation && !directWorkstation.isActive) {
       return {
@@ -486,10 +489,8 @@ export class BlessingService {
           offlineTokenJwt: req.offlineTokenJwt,
           workstationFingerprint: req.workstationFingerprint,
           status: isBlessed ? 'BLESSED' : 'REJECTED',
-          rejectedReason: isBlessed
-            ? null
-            : (result.reason as any) ?? null,
-          rejectedReasonDetail: isBlessed ? null : result.reason ?? null,
+          rejectedReason: isBlessed ? null : ((result.reason as any) ?? null),
+          rejectedReasonDetail: isBlessed ? null : (result.reason ?? null),
           accessToken: result.replacementToken?.accessToken ?? null,
           refreshToken: result.replacementToken?.refreshToken ?? null,
           offlineToken: result.replacementToken?.offlineToken ?? null,
@@ -500,16 +501,16 @@ export class BlessingService {
 
       // Audit log
       await this.auditService.log(
-        isBlessed ? AuditEvent.OFFLINE_SESSION_BLESSED : AuditEvent.OFFLINE_SESSION_REJECTED,
+        isBlessed
+          ? AuditEvent.OFFLINE_SESSION_BLESSED
+          : AuditEvent.OFFLINE_SESSION_REJECTED,
         {
           actorId: req.userId,
           actorRole: null,
           targetType: 'offline_session',
           targetId: req.localSessionId,
           workstationId: undefined,
-          details: isBlessed
-            ? undefined
-            : { reason: result.reason },
+          details: isBlessed ? undefined : { reason: result.reason },
         },
       );
     } catch (error) {

@@ -59,9 +59,7 @@ export class RevocationListService {
     limit?: number;
     offset?: number;
   }): Promise<RevocationListResult> {
-    const where = params.since
-      ? { revokedAt: { gt: params.since } }
-      : {};
+    const where = params.since ? { revokedAt: { gt: params.since } } : {};
 
     const [rows, total] = await Promise.all([
       this.prisma.offlineTokenRevocation.findMany({
@@ -111,7 +109,10 @@ export class RevocationListService {
    */
   async getUrgentRevocationsSince(since: Date): Promise<RevocationListEntry[]> {
     // Urgent = revoked within the last 24 hours or since the last check
-    const cutoff = since > new Date(Date.now() - 86400000) ? since : new Date(Date.now() - 86400000);
+    const cutoff =
+      since > new Date(Date.now() - 86400000)
+        ? since
+        : new Date(Date.now() - 86400000);
 
     const entries = await this.prisma.offlineTokenRevocation.findMany({
       where: {

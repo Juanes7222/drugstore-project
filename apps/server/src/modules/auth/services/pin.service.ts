@@ -66,7 +66,9 @@ export class PinService {
    * Validate that a PIN meets the format requirements.
    */
   validate(pin: string, minLength = 4, maxLength = 6): boolean {
-    return /^\d+$/.test(pin) && pin.length >= minLength && pin.length <= maxLength;
+    return (
+      /^\d+$/.test(pin) && pin.length >= minLength && pin.length <= maxLength
+    );
   }
 
   private scryptAsync(input: string, salt: string): Promise<string> {

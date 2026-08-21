@@ -15,6 +15,7 @@ import { PinService } from './services/pin.service';
 import { TotpService } from './services/totp.service';
 import { BackupCodesService } from './services/backup-codes.service';
 import { SessionService } from './services/session.service';
+import { FirebaseAuthService } from './services/firebase-auth.service';
 import { StepUpService } from './services/step-up.service';
 import { AuditService } from './services/audit.service';
 import { OfflineTokenService } from './offline/offline-token.service';
@@ -54,6 +55,7 @@ import { EnvConfig } from '@/config/env.schema';
     TotpService,
     BackupCodesService,
     SessionService,
+    FirebaseAuthService,
     StepUpService,
     AuditService,
     OfflineTokenService,

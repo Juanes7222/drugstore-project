@@ -19,7 +19,17 @@ import { useAppDispatch } from '@/store/hooks';
 import { setActiveScreen } from '@/store/slices/ui-slice';
 import { useLocalSessionStore, type LocalSession } from '../../domain/auth/local-session.store';
 import { createAuthService, type AuthService } from '../../domain/auth/auth.service';
-import { InvalidCredentialsException, NetworkErrorException } from '../../domain/auth/exceptions';
+import {
+  InvalidCredentialsException,
+  NetworkErrorException,
+  FirebaseNotConfiguredException,
+  GoogleAccountCollisionException,
+  InvalidFirebaseTokenException,
+} from '../../domain/auth/exceptions';
+import {
+  createFirebaseAuthService,
+  isFirebaseConfigured,
+} from '../../domain/auth/firebase-auth.service';
 import {
   NoOfflineCredentialsException,
   OfflineCredentialsExpiredException,
@@ -103,6 +113,17 @@ export interface UseLoginPageReturn {
   offlineLoginSkipped2fa: boolean;
   /** Clear the offline error message. */
   handleOfflineDismiss: () => void;
+
+  // ---- Google sign-in (Firebase) ----
+
+  /** Whether Google sign-in is enabled (server returned a Firebase config). */
+  googleAvailable: boolean;
+  /** Whether a Google sign-in exchange is in flight. */
+  googleLoading: boolean;
+  /** User-visible Google sign-in error (i18n-resolved), or null. */
+  googleError: string | null;
+  /** Trigger the Google sign-in popup + token exchange. */
+  handleGoogleSignIn: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +150,11 @@ export function useLoginPage(): UseLoginPageReturn {
     createAuthService({ baseUrl: API_BASE_URL }),
   );
 
+  // Firebase (Google) auth service — created once.
+  const [firebaseAuth] = useState(() =>
+    createFirebaseAuthService({ baseUrl: API_BASE_URL }),
+  );
+
   // User cache service — created once.
   const [userCache] = useState(() => createUserCacheService());
 
@@ -146,6 +172,11 @@ export function useLoginPage(): UseLoginPageReturn {
   const [offlineLoginSkipped2fa, setOfflineLoginSkipped2fa] = useState(false);
   const [offlineErrorMessage, setOfflineErrorMessage] = useState<string | null>(null);
 
+  // Google (Firebase) sign-in state.
+  const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+
   // Local PGlite users for the avatar grid.
   const [localUsers, setLocalUsers] = useState<LocalUserInfo[]>([]);
 
@@ -162,6 +193,24 @@ export function useLoginPage(): UseLoginPageReturn {
       console.warn('[use-login-page] Failed to load local users:', err);
     });
   }, [userCache]);
+
+  // On mount: fetch the public Firebase config once to decide whether to
+  // show the "Continue with Google" button. The config is never hardcoded
+  // — it comes from GET /auth/firebase/config on the server.
+  useEffect(() => {
+    let cancelled = false;
+    firebaseAuth
+      .fetchPublicConfig()
+      .then((cfg) => {
+        if (!cancelled) setGoogleAvailable(isFirebaseConfigured(cfg));
+      })
+      .catch(() => {
+        if (!cancelled) setGoogleAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [firebaseAuth]);
 
   // Redirect to home dashboard after login
   useEffect(() => {
@@ -516,6 +565,56 @@ export function useLoginPage(): UseLoginPageReturn {
     dispatch(setActiveScreen('forgot-password'));
   }, [dispatch]);
 
+  /**
+   * Google sign-in flow:
+   * 1. Open the Firebase popup and obtain the ID token.
+   * 2. Exchange it for a POS session via AuthService.loginWithGoogle,
+   *    which reuses the exact same session plumbing as password login.
+   */
+  const handleGoogleSignIn = useCallback(async () => {
+    if (!googleAvailable) return;
+    setGoogleLoading(true);
+    setGoogleError(null);
+
+    try {
+      const idToken = await firebaseAuth.signInWithGoogle();
+      const result = await authService.loginWithGoogle(
+        idToken,
+        WORKSTATION_ID,
+        undefined,
+        'pos-desktop',
+      );
+
+      if (result.session) persistSessionIdentity(result.session);
+      dispatch(setActiveScreen('home'));
+    } catch (err) {
+      if (err instanceof FirebaseNotConfiguredException) {
+        // Server disabled Firebase — hide the button and inform the user.
+        setGoogleAvailable(false);
+        setGoogleError(t('auth.google_unavailable'));
+      } else if (err instanceof GoogleAccountCollisionException) {
+        // Email already linked to a password account.
+        setGoogleError(t('auth.google_collision'));
+      } else if (
+        err instanceof InvalidFirebaseTokenException ||
+        err instanceof NetworkErrorException
+      ) {
+        setGoogleError(t('auth.google_generic_error'));
+      } else {
+        // User cancelled the popup (auth/popup-closed-by-user,
+        // auth/cancelled-popup-request) — silently ignore.
+        const code = (err as { code?: string })?.code ?? '';
+        const cancelled =
+          code.includes('popup-closed') || code.includes('cancelled');
+        if (!cancelled) {
+          setGoogleError(t('auth.google_generic_error'));
+        }
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  }, [googleAvailable, firebaseAuth, authService, dispatch, t]);
+
   const handleOfflineDismiss = useCallback(() => {
     setOfflineErrorMessage(null);
   }, []);
@@ -549,5 +648,11 @@ export function useLoginPage(): UseLoginPageReturn {
     offlineErrorMessage,
     offlineLoginSkipped2fa,
     handleOfflineDismiss,
+
+    // Google sign-in (Firebase)
+    googleAvailable,
+    googleLoading,
+    googleError,
+    handleGoogleSignIn,
   };
 }

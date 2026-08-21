@@ -90,7 +90,8 @@ export class TotpController {
 
     return {
       backupCodes: codes,
-      message: '2FA activado. Guarda estos códigos de respaldo en un lugar seguro.',
+      message:
+        '2FA activado. Guarda estos códigos de respaldo en un lugar seguro.',
     };
   }
 
@@ -102,7 +103,9 @@ export class TotpController {
     @Body(new ZodValidationPipe(DisableTotpSchema)) body: DisableTotpInput,
   ): Promise<{ message: string }> {
     // Fetch full user from DB (JWT payload doesn't contain sensitive fields)
-    const dbUser = await this.prisma.user.findUnique({ where: { id: user.id } });
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+    });
     if (!dbUser) {
       throw new BadRequestException('User not found');
     }
@@ -112,7 +115,10 @@ export class TotpController {
       if (!dbUser.totpSecretEncrypted) {
         throw new BadRequestException('2FA is not enabled');
       }
-      const verified = this.totpService.verify(dbUser.totpSecretEncrypted, body.code);
+      const verified = this.totpService.verify(
+        dbUser.totpSecretEncrypted,
+        body.code,
+      );
       if (!verified) {
         throw new BadRequestException('Invalid TOTP code');
       }

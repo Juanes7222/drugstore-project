@@ -20,9 +20,9 @@ export const RevocationListQuerySchema = z.object({
     .transform((val) => (val ? parseInt(val, 10) : 0)),
 });
 
-export class RevocationListQueryDto
-  implements z.infer<typeof RevocationListQuerySchema>
-{
+export class RevocationListQueryDto implements z.infer<
+  typeof RevocationListQuerySchema
+> {
   since: Date | undefined;
   limit!: number;
   offset!: number;
@@ -43,9 +43,9 @@ export const RevocationListResponseSchema = z.object({
   total: z.number(),
 });
 
-export class RevocationListResponseDto
-  implements z.infer<typeof RevocationListResponseSchema>
-{
+export class RevocationListResponseDto implements z.infer<
+  typeof RevocationListResponseSchema
+> {
   entries!: Array<{
     jti: string;
     revokedAt: string;

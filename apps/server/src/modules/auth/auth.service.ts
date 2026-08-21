@@ -20,6 +20,7 @@ import { AuditService, AuditEvent } from './services/audit.service';
 import { OfflineTokenService } from './offline/offline-token.service';
 import { CredentialCacheService } from './offline/credential-cache.service';
 import { InvalidCredentialsException } from './exceptions/invalid-credentials.exception';
+import { FirebaseEmailConflictException } from './exceptions/firebase-email-conflict.exception';
 import { AccountLockedException } from './exceptions/account-locked.exception';
 import { AccountInactiveException } from './exceptions/account-inactive.exception';
 import { SessionExpiredException } from './exceptions/session-expired.exception';
@@ -119,10 +120,7 @@ export class AuthService {
   ): Promise<PrismaUser> {
     const user = await this.prisma.user.findFirst({
       where: {
-        OR: [
-          { username: identifier },
-          { email: identifier },
-        ],
+        OR: [{ username: identifier }, { email: identifier }],
       },
     });
 
@@ -192,7 +190,10 @@ export class AuthService {
       });
 
       // Auto-clean after 5 minutes
-      setTimeout(() => this.twoFactorChallenges.delete(challengeToken), 5 * 60 * 1000);
+      setTimeout(
+        () => this.twoFactorChallenges.delete(challengeToken),
+        5 * 60 * 1000,
+      );
 
       await this.auditService.log(AuditEvent.LOGIN_SUCCESS, {
         actorId: user.id,
@@ -214,6 +215,89 @@ export class AuthService {
     }
 
     return this.issueSessionInternal(user, params);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Firebase (Google) login
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Authenticate a user already verified by Firebase (Google sign-in).
+   * Resolves the local account by Firebase uid, falling back to the verified
+   * email, and creates a local account on first sign-in. If the verified email
+   * matches an existing password-protected account, the request is rejected to
+   * prevent a Google identity from taking over that account.
+   */
+  async loginWithFirebase(params: {
+    firebaseUid: string;
+    email: string | null;
+    displayName: string | null;
+    photoURL: string | null;
+    workstationId: string;
+    hardwareFingerprint?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    deviceInfo?: string;
+  }): Promise<AuthResponseData> {
+    let user = await this.prisma.user.findFirst({
+      where: { firebaseUid: params.firebaseUid },
+    });
+
+    if (!user && params.email) {
+      const byEmail = await this.prisma.user.findFirst({
+        where: { email: params.email },
+      });
+      if (byEmail?.passwordHash) {
+        throw new FirebaseEmailConflictException();
+      }
+      // An email may already be bound to a different Google identity. Do not
+      // let one Google account take over another's local profile.
+      if (byEmail?.firebaseUid && byEmail.firebaseUid !== params.firebaseUid) {
+        throw new FirebaseEmailConflictException();
+      }
+      user = byEmail;
+    }
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          id: crypto.randomUUID(),
+          role: 'OWNER',
+          email: params.email,
+          fullName: params.displayName ?? params.email ?? 'Google User',
+          displayName: params.displayName,
+          avatarUrl: params.photoURL,
+          authMethod: 'OAUTH_GOOGLE',
+          emailVerifiedAt: params.email ? new Date() : null,
+          status: UserStatus.ACTIVE,
+          isActive: true,
+          firebaseUid: params.firebaseUid,
+        },
+      });
+    } else if (!user.firebaseUid) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          firebaseUid: params.firebaseUid,
+          authMethod: 'OAUTH_GOOGLE',
+          emailVerifiedAt: params.email ? new Date() : user.emailVerifiedAt,
+        },
+      });
+      user.firebaseUid = params.firebaseUid;
+      user.authMethod = 'OAUTH_GOOGLE';
+      user.emailVerifiedAt = params.email ? new Date() : user.emailVerifiedAt;
+    }
+
+    this.assertAccountIsUsable(user);
+
+    return this.issueSessionInternal(user, {
+      identifier: params.email ?? params.firebaseUid,
+      workstationId: params.workstationId,
+      ipAddress: params.ipAddress,
+      userAgent: params.userAgent,
+      hardwareFingerprint: params.hardwareFingerprint,
+      deviceInfo: params.deviceInfo,
+    });
   }
 
   /**
@@ -244,7 +328,10 @@ export class AuthService {
       if (!user.totpSecretEncrypted) {
         throw new InvalidCredentialsException('TOTP not configured');
       }
-      verified = this.totpService.verify(user.totpSecretEncrypted, params.totpCode);
+      verified = this.totpService.verify(
+        user.totpSecretEncrypted,
+        params.totpCode,
+      );
     } else if (params.backupCode) {
       if (!user.backupCodesHash) {
         throw new InvalidCredentialsException('Backup codes not available');
@@ -294,10 +381,12 @@ export class AuthService {
    * Validate an active session by token hash.
    * Throws if the session or user is not usable.
    */
-  async validateActiveSession(userId: string, tokenHash: string): Promise<User> {
-    const session = await this.sessionService.findActiveSessionByTokenHash(
-      tokenHash,
-    );
+  async validateActiveSession(
+    userId: string,
+    tokenHash: string,
+  ): Promise<User> {
+    const session =
+      await this.sessionService.findActiveSessionByTokenHash(tokenHash);
 
     if (!session) {
       throw new SessionExpiredException();
@@ -315,7 +404,10 @@ export class AuthService {
       throw new AccountInactiveException();
     }
 
-    if (user.status !== UserStatus.ACTIVE && user.status !== UserStatus.PENDING_SETUP) {
+    if (
+      user.status !== UserStatus.ACTIVE &&
+      user.status !== UserStatus.PENDING_SETUP
+    ) {
       throw new AccountInactiveException();
     }
 
@@ -387,9 +479,8 @@ export class AuthService {
     // The controller extracts tokenHash from the access JWT payload,
     // which is the session's access token hash (tokenHash), NOT the
     // refresh token hash.  Use findActiveSessionByTokenHash to match.
-    const session = await this.sessionService.findActiveSessionByTokenHash(
-      refreshTokenHash,
-    );
+    const session =
+      await this.sessionService.findActiveSessionByTokenHash(refreshTokenHash);
 
     if (!session) {
       // Check if the refresh token was already used (reuse detection).
@@ -490,9 +581,7 @@ export class AuthService {
    * (the old one is revoked for rotation), and the fresh credentials are
    * returned to the caller.
    */
-  async exchangeOfflineToken(
-    offlineTokenJwt: string,
-  ): Promise<{
+  async exchangeOfflineToken(offlineTokenJwt: string): Promise<{
     accessToken: string;
     refreshToken: string;
     expiresAt: Date;
@@ -513,7 +602,14 @@ export class AuthService {
     // 3. Verify user is still active
     const user = await this.prisma.user.findUnique({
       where: { id: claims.sub },
-      select: { id: true, isActive: true, status: true, role: true, subscriptionId: true, lockedUntil: true },
+      select: {
+        id: true,
+        isActive: true,
+        status: true,
+        role: true,
+        subscriptionId: true,
+        lockedUntil: true,
+      },
     });
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -636,15 +732,17 @@ export class AuthService {
   // ---------------------------------------------------------------------------
 
   async logoutSession(tokenHash: string): Promise<void> {
-    const session = await this.sessionService.findActiveSessionByTokenHash(
-      tokenHash,
-    );
+    const session =
+      await this.sessionService.findActiveSessionByTokenHash(tokenHash);
 
     if (!session) {
       return; // Idempotent
     }
 
-    await this.sessionService.revokeSession(session.id, SessionRevocationReason.LOGOUT);
+    await this.sessionService.revokeSession(
+      session.id,
+      SessionRevocationReason.LOGOUT,
+    );
 
     await this.auditService.log(AuditEvent.LOGOUT, {
       actorId: session.userId,
@@ -676,9 +774,8 @@ export class AuthService {
       throw new InvalidCredentialsException('Current password is incorrect');
     }
 
-    const { hash: newHash, algorithm } = await this.passwordHasher.hash(
-      newPassword,
-    );
+    const { hash: newHash, algorithm } =
+      await this.passwordHasher.hash(newPassword);
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -734,10 +831,7 @@ export class AuthService {
     });
 
     // Invalidate offline tokens so other POS sessions force re-login
-    await this.offlineTokenService.revokeAllUserTokens(
-      userId,
-      'PIN_CHANGED',
-    );
+    await this.offlineTokenService.revokeAllUserTokens(userId, 'PIN_CHANGED');
 
     await this.auditService.log(AuditEvent.PIN_CHANGED, {
       actorId: userId,
@@ -763,7 +857,10 @@ export class AuthService {
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     this.passwordResetTokens.set(resetToken, { userId: user.id, expiresAt });
-    setTimeout(() => this.passwordResetTokens.delete(resetToken), 60 * 60 * 1000);
+    setTimeout(
+      () => this.passwordResetTokens.delete(resetToken),
+      60 * 60 * 1000,
+    );
 
     await this.auditService.log(AuditEvent.FORGOT_PASSWORD, {
       actorId: user.id,
@@ -780,10 +877,7 @@ export class AuthService {
     };
   }
 
-  async resetPassword(
-    resetToken: string,
-    newPassword: string,
-  ): Promise<void> {
+  async resetPassword(resetToken: string, newPassword: string): Promise<void> {
     const stored = this.passwordResetTokens.get(resetToken);
     if (!stored || new Date() > stored.expiresAt) {
       throw new InvalidCredentialsException('Invalid or expired reset token');
@@ -796,9 +890,8 @@ export class AuthService {
       throw new InvalidCredentialsException('User not found');
     }
 
-    const { hash: newHash, algorithm } = await this.passwordHasher.hash(
-      newPassword,
-    );
+    const { hash: newHash, algorithm } =
+      await this.passwordHasher.hash(newPassword);
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -1120,9 +1213,9 @@ export class AuthService {
       passwordHash: dbUser.passwordHash ?? undefined,
       passwordAlgorithm: dbUser.passwordAlgorithm ?? undefined,
       emailVerifiedAt: dbUser.emailVerifiedAt,
-    lastLoginAt: dbUser.lastLoginAt,
-    lastLoginWorkstationId: dbUser.lastLoginWorkstationId ?? null,
-    lastPasswordChangeAt: dbUser.lastPasswordChangeAt,
+      lastLoginAt: dbUser.lastLoginAt,
+      lastLoginWorkstationId: dbUser.lastLoginWorkstationId ?? null,
+      lastPasswordChangeAt: dbUser.lastPasswordChangeAt,
       status: dbUser.status as User['status'],
       mustChangePassword: dbUser.mustChangePassword,
       createdByUserId: dbUser.createdById,

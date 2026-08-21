@@ -22,14 +22,14 @@ import * as crypto from 'node:crypto';
 // ---------------------------------------------------------------------------
 
 export interface OfflineTokenClaims {
-  sub: string;                          // userId
-  sid: string;                          // sessionId
+  sub: string; // userId
+  sid: string; // sessionId
   role: string;
   subscriptionId: string | null;
   locationIds: string[];
-  wfp: string;                          // workstation fingerprint
-  typ: 'offline';                       // token type discriminator
-  jti: string;                          // unique token ID (for revocation)
+  wfp: string; // workstation fingerprint
+  typ: 'offline'; // token type discriminator
+  jti: string; // unique token ID (for revocation)
   iat: number;
   exp: number;
 }
@@ -82,7 +82,10 @@ export class OfflineTokenService {
     workstationFingerprint: string;
     sessionId: string;
   }): Promise<OfflineTokenResult> {
-    const ttlDays = await this.resolveTtlDays(params.role, params.subscriptionId);
+    const ttlDays = await this.resolveTtlDays(
+      params.role,
+      params.subscriptionId,
+    );
     const jti = crypto.randomUUID();
     const now = Math.floor(Date.now() / 1000);
     const exp = now + ttlDays * 86400;
@@ -146,7 +149,9 @@ export class OfflineTokenService {
    */
   decodeToken(token: string): OfflineTokenClaims | null {
     try {
-      const decoded = this.jwtService.decode(token) as OfflineTokenClaims | null;
+      const decoded = this.jwtService.decode(
+        token,
+      ) as OfflineTokenClaims | null;
       if (!decoded || decoded.typ !== 'offline') {
         return null;
       }
@@ -163,7 +168,15 @@ export class OfflineTokenService {
     jti: string;
     userId?: string;
     workstationId?: string;
-    reason: 'USER_DISABLED' | 'USER_LOCKED' | 'PASSWORD_CHANGED' | 'PIN_CHANGED' | 'WORKSTATION_REVOKED' | 'ADMIN_REVOCATION' | 'FRAUD_DETECTED' | 'SECURITY_ANOMALY';
+    reason:
+      | 'USER_DISABLED'
+      | 'USER_LOCKED'
+      | 'PASSWORD_CHANGED'
+      | 'PIN_CHANGED'
+      | 'WORKSTATION_REVOKED'
+      | 'ADMIN_REVOCATION'
+      | 'FRAUD_DETECTED'
+      | 'SECURITY_ANOMALY';
     reasonDetail?: string;
   }): Promise<void> {
     // Check if already revoked
@@ -207,7 +220,12 @@ export class OfflineTokenService {
    */
   async revokeAllUserTokens(
     userId: string,
-    reason: 'USER_DISABLED' | 'USER_LOCKED' | 'PASSWORD_CHANGED' | 'PIN_CHANGED' | 'SECURITY_ANOMALY',
+    reason:
+      | 'USER_DISABLED'
+      | 'USER_LOCKED'
+      | 'PASSWORD_CHANGED'
+      | 'PIN_CHANGED'
+      | 'SECURITY_ANOMALY',
   ): Promise<number> {
     // We don't store issued tokens by user in a table, so we add a marker
     // that tells the client to invalidate all cached tokens for this user.

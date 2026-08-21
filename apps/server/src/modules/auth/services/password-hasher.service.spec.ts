@@ -45,7 +45,9 @@ describe('PasswordHasherService', () => {
     it('should propagate errors from argon2.hash', async () => {
       (argon2.hash as jest.Mock).mockRejectedValue(new Error('argon2 error'));
 
-      await expect(service.hash('myPassword123')).rejects.toThrow('argon2 error');
+      await expect(service.hash('myPassword123')).rejects.toThrow(
+        'argon2 error',
+      );
     });
   });
 
@@ -84,12 +86,11 @@ describe('PasswordHasherService', () => {
     });
 
     it('should return false when argon2.verify throws', async () => {
-      (argon2.verify as jest.Mock).mockRejectedValue(new Error('invalid hash format'));
-
-      const result = await service.verify(
-        'invalid-hash',
-        'myPassword123',
+      (argon2.verify as jest.Mock).mockRejectedValue(
+        new Error('invalid hash format'),
       );
+
+      const result = await service.verify('invalid-hash', 'myPassword123');
 
       expect(result).toBe(false);
     });

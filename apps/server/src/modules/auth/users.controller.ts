@@ -173,7 +173,7 @@ export class UsersController {
     const generatedPinForResponse =
       dto.role === 'CASHIER' && !dto.initialPin
         ? null
-        : dto.initialPin ?? null;
+        : (dto.initialPin ?? null);
 
     const newUser = await this.prisma.user.create({
       data: {
@@ -184,7 +184,9 @@ export class UsersController {
         email: dto.email ?? null,
         role: dto.role,
         authMethod:
-          dto.role === 'CASHIER' ? AuthMethod.PIN_ONLY : AuthMethod.PASSWORD_ONLY,
+          dto.role === 'CASHIER'
+            ? AuthMethod.PIN_ONLY
+            : AuthMethod.PASSWORD_ONLY,
         pinHash,
         passwordHash,
         passwordAlgorithm,
@@ -230,28 +232,28 @@ export class UsersController {
   async getUser(@CurrentUser() user: User, @Param('id') id: string) {
     const targetUser = await this.prisma.user.findUnique({
       where: { id },
-        select: {
-          id: true,
-          displayName: true,
-          fullName: true,
-          email: true,
-          username: true,
-          role: true,
-          status: true,
-          isActive: true,
-          authMethod: true,
-          totpEnabled: true,
-          avatarUrl: true,
-          avatarColor: true,
-          failedLoginAttempts: true,
-          lockedUntil: true,
-          emailVerifiedAt: true,
-          lastLoginAt: true,
-          lastPasswordChangeAt: true,
-          mustChangePassword: true,
-          createdAt: true,
-          createdById: true,
-          deletedAt: true,
+      select: {
+        id: true,
+        displayName: true,
+        fullName: true,
+        email: true,
+        username: true,
+        role: true,
+        status: true,
+        isActive: true,
+        authMethod: true,
+        totpEnabled: true,
+        avatarUrl: true,
+        avatarColor: true,
+        failedLoginAttempts: true,
+        lockedUntil: true,
+        emailVerifiedAt: true,
+        lastLoginAt: true,
+        lastPasswordChangeAt: true,
+        mustChangePassword: true,
+        createdAt: true,
+        createdById: true,
+        deletedAt: true,
         locationAccess: {
           select: { locationId: true },
         },
@@ -317,7 +319,9 @@ export class UsersController {
 
     if (dto.isActive !== undefined) {
       updateData.isActive = dto.isActive;
-      updateData.status = dto.isActive ? UserStatus.ACTIVE : UserStatus.DISABLED;
+      updateData.status = dto.isActive
+        ? UserStatus.ACTIVE
+        : UserStatus.DISABLED;
       changes.push(`isActive: ${dto.isActive}`);
 
       if (!dto.isActive) {
@@ -517,7 +521,7 @@ export class UsersController {
   @Post(':id/reset-pin')
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Reset a user\'s PIN (manager/owner only)' })
+  @ApiOperation({ summary: "Reset a user's PIN (manager/owner only)" })
   async resetPin(
     @CurrentUser() user: User,
     @Param('id') id: string,
@@ -553,16 +557,17 @@ export class UsersController {
       targetId: id,
     });
 
-    return { newPin, message: 'PIN has been reset. Share the new PIN with the user.' };
+    return {
+      newPin,
+      message: 'PIN has been reset. Share the new PIN with the user.',
+    };
   }
 
   @Post(':id/reset-password')
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Send a password reset link to the user\'s email' })
-  async resetPassword(
-    @Param('id') id: string,
-  ): Promise<{ message: string }> {
+  @ApiOperation({ summary: "Send a password reset link to the user's email" })
+  async resetPassword(@Param('id') id: string): Promise<{ message: string }> {
     const targetUser = await this.prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
       throw new NotFoundException('User not found');
@@ -574,12 +579,12 @@ export class UsersController {
 
     await this.authService.forgotPassword(targetUser.email);
 
-    return { message: 'Password reset link sent to the user\'s email' };
+    return { message: "Password reset link sent to the user's email" };
   }
 
   @Get(':id/sessions')
   @Roles(RoleType.OWNER, RoleType.MANAGER)
-  @ApiOperation({ summary: 'List a user\'s active sessions' })
+  @ApiOperation({ summary: "List a user's active sessions" })
   async listUserSessions(@Param('id') id: string) {
     return this.sessionService.findActiveSessionsByUser(id);
   }

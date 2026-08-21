@@ -40,7 +40,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     // Attach additional JWT info to the user object for downstream use
     (user as any).sessionId = payload.sessionId;
-    (user as any).subscriptionId = payload.subscriptionId || user.subscriptionId;
+    (user as any).subscriptionId =
+      payload.subscriptionId || user.subscriptionId;
 
     return user;
   }

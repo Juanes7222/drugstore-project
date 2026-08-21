@@ -15,20 +15,37 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ExtractJwt } from 'passport-jwt';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Request } from 'express';
+import { ConfigService } from '@nestjs/config';
 import { AuthService, AuthResponseData } from './auth.service';
 import { SessionService } from './services/session.service';
-import { SessionRevocationReason, UserSession as UserSessionModel } from '@pharmacy/database';
-import { LoginDto, LoginSchema, TwoFactorLoginDto, TwoFactorLoginSchema } from './dto/login.dto';
+import { FirebaseAuthService } from './services/firebase-auth.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ChangePinDto } from './dto/change-pin.dto';
 import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
+import {
+  LoginDto,
+  LoginSchema,
+  TwoFactorLoginDto,
+  TwoFactorLoginSchema,
+} from './dto/login.dto';
+import {
+  FirebaseLoginDto,
+  FirebaseLoginSchema,
+} from './dto/firebase-login.dto';
+import { FirebaseNotConfiguredException } from './exceptions/firebase-not-configured.exception';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
+import { EnvConfig } from '@/config/env.schema';
 import { User, RoleType } from '@pharmacy/shared-types';
+import {
+  SessionRevocationReason,
+  UserSession as UserSessionModel,
+} from '@pharmacy/database';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -37,11 +54,15 @@ export class AuthController {
     private authService: AuthService,
     private sessionService: SessionService,
     private jwtService: JwtService,
+    private firebaseAuth: FirebaseAuthService,
+    private configService: ConfigService<EnvConfig>,
   ) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login with identifier (email/username) and secret (password/PIN)' })
+  @ApiOperation({
+    summary: 'Login with identifier (email/username) and secret (password/PIN)',
+  })
   async login(
     @Body(new ZodValidationPipe(LoginSchema)) dto: LoginDto,
     @Headers('x-client-ip') clientIp?: string,
@@ -56,6 +77,68 @@ export class AuthController {
       deviceInfo: dto.deviceInfo,
       ipAddress: clientIp,
       userAgent,
+    });
+
+    return new AuthResponseDto(result);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Firebase (Google) authentication
+  // ---------------------------------------------------------------------------
+
+  @Get('firebase/config')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Public Firebase web config for client SDK initialization',
+  })
+  async firebaseConfig(): Promise<{
+    apiKey: string | null;
+    authDomain: string | null;
+    projectId: string | null;
+    storageBucket: string | null;
+    messagingSenderId: string | null;
+    appId: string | null;
+    measurementId: string | null;
+  }> {
+    return {
+      apiKey: this.configService.get('FIREBASE_API_KEY') ?? null,
+      authDomain: this.configService.get('FIREBASE_AUTH_DOMAIN') ?? null,
+      projectId: this.configService.get('FIREBASE_PROJECT_ID') ?? null,
+      storageBucket: this.configService.get('FIREBASE_STORAGE_BUCKET') ?? null,
+      messagingSenderId:
+        this.configService.get('FIREBASE_MESSAGING_SENDER_ID') ?? null,
+      appId: this.configService.get('FIREBASE_APP_ID') ?? null,
+      measurementId: this.configService.get('FIREBASE_MEASUREMENT_ID') ?? null,
+    };
+  }
+
+  @Post('login/firebase')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Login or register with a Firebase (Google) ID token',
+  })
+  async loginWithFirebase(
+    @Body(new ZodValidationPipe(FirebaseLoginSchema)) dto: FirebaseLoginDto,
+    @Req() req: Request,
+  ): Promise<AuthResponseDto> {
+    if (!this.firebaseAuth.isConfigured) {
+      throw new FirebaseNotConfiguredException();
+    }
+
+    const claims = await this.firebaseAuth.verifyIdToken(dto.idToken);
+
+    const result = await this.authService.loginWithFirebase({
+      firebaseUid: claims.uid,
+      email: claims.email,
+      displayName: claims.displayName,
+      photoURL: claims.photoURL,
+      workstationId: dto.workstationId,
+      hardwareFingerprint: dto.hardwareFingerprint,
+      deviceInfo: dto.deviceInfo,
+      ipAddress:
+        (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0] ??
+        req.ip,
+      userAgent: req.headers['user-agent'],
     });
 
     return new AuthResponseDto(result);
@@ -90,7 +173,9 @@ export class AuthController {
   ): Promise<{ accessToken: string; refreshToken: string; expiresAt: Date }> {
     const rawToken = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
     if (!rawToken) {
-      throw new UnauthorizedException('Missing or malformed authorization header');
+      throw new UnauthorizedException(
+        'Missing or malformed authorization header',
+      );
     }
     const payload = this.jwtService.decode(rawToken) as {
       sub: string;
@@ -102,16 +187,19 @@ export class AuthController {
 
   @Post('token/exchange')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Exchange an offline token for fresh credentials (no valid access token required)' })
-  async exchangeOfflineToken(
-    @Body() dto: { offlineToken: string },
-  ): Promise<{
+  @ApiOperation({
+    summary:
+      'Exchange an offline token for fresh credentials (no valid access token required)',
+  })
+  async exchangeOfflineToken(@Body() dto: { offlineToken: string }): Promise<{
     accessToken: string;
     refreshToken: string;
     expiresAt: string;
     offlineToken: { token: string; expiresAt: string };
   }> {
-    const result = await this.authService.exchangeOfflineToken(dto.offlineToken);
+    const result = await this.authService.exchangeOfflineToken(
+      dto.offlineToken,
+    );
 
     return {
       accessToken: result.accessToken,
@@ -132,7 +220,9 @@ export class AuthController {
   async logout(@Req() req: any): Promise<void> {
     const rawToken = ExtractJwt.fromAuthHeaderAsBearerToken()(req);
     if (!rawToken) {
-      throw new UnauthorizedException('Missing or malformed authorization header');
+      throw new UnauthorizedException(
+        'Missing or malformed authorization header',
+      );
     }
     const payload = this.jwtService.decode(rawToken) as {
       sub: string;
@@ -206,10 +296,8 @@ export class AuthController {
   @Get('sessions')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'List current user\'s active sessions' })
-  async listMySessions(
-    @CurrentUser() user: User,
-  ): Promise<UserSessionModel[]> {
+  @ApiOperation({ summary: "List current user's active sessions" })
+  async listMySessions(@CurrentUser() user: User): Promise<UserSessionModel[]> {
     return this.sessionService.findActiveSessionsByUser(user.id);
   }
 
@@ -227,7 +315,10 @@ export class AuthController {
       throw new BadRequestException('Session not found or not owned by you');
     }
 
-    await this.sessionService.revokeSession(sessionId, SessionRevocationReason.LOGOUT);
+    await this.sessionService.revokeSession(
+      sessionId,
+      SessionRevocationReason.LOGOUT,
+    );
     return { message: 'Session revoked' };
   }
 }

@@ -1,4 +1,7 @@
-import { CredentialCacheService, DecryptedCredentialBlob } from './credential-cache.service';
+import {
+  CredentialCacheService,
+  DecryptedCredentialBlob,
+} from './credential-cache.service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -150,7 +153,10 @@ describe('CredentialCacheService', () => {
       parts[4] = parts[4].replace(/^.{4}/, 'AAAA'); // Corrupt payload ciphertext
       const tamperedBlob = parts.join(':');
 
-      const decrypted = service.decryptCvk(tamperedBlob, params.workstationFingerprint);
+      const decrypted = service.decryptCvk(
+        tamperedBlob,
+        params.workstationFingerprint,
+      );
 
       expect(decrypted).toBeNull();
     });
@@ -161,7 +167,10 @@ describe('CredentialCacheService', () => {
     });
 
     it('returns null for totally invalid string', () => {
-      const result = service.decryptCvk('not-a-valid-blob-at-all', 'fp-anything');
+      const result = service.decryptCvk(
+        'not-a-valid-blob-at-all',
+        'fp-anything',
+      );
       expect(result).toBeNull();
     });
 
@@ -181,7 +190,10 @@ describe('CredentialCacheService', () => {
       // The auth tag will also be invalid after this change
       const tamperedBlob = parts.join(':');
 
-      const decrypted = service.decryptCvk(tamperedBlob, params.workstationFingerprint);
+      const decrypted = service.decryptCvk(
+        tamperedBlob,
+        params.workstationFingerprint,
+      );
 
       expect(decrypted).toBeNull();
     });
@@ -195,7 +207,10 @@ describe('CredentialCacheService', () => {
       parts[5] = parts[5].replace(/^.{4}/, 'CCCC'); // Corrupt payload tag
       const tamperedBlob = parts.join(':');
 
-      const decrypted = service.decryptCvk(tamperedBlob, params.workstationFingerprint);
+      const decrypted = service.decryptCvk(
+        tamperedBlob,
+        params.workstationFingerprint,
+      );
 
       expect(decrypted).toBeNull();
     });

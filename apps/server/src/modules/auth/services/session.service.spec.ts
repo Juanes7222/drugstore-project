@@ -96,7 +96,8 @@ describe('SessionService', () => {
       await service.createSession(params);
 
       const createCall = mockUserSession.create.mock.calls[0][0];
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       expect(createCall.data.id).toMatch(uuidRegex);
     });
 

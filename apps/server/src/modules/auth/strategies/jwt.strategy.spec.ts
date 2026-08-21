@@ -59,9 +59,10 @@ describe('JwtStrategy', () => {
 
       const result = await strategy.validate(payload);
 
-      expect(
-        mockAuthService.validateActiveSession,
-      ).toHaveBeenCalledWith('user-uuid-1', 'abc123hash');
+      expect(mockAuthService.validateActiveSession).toHaveBeenCalledWith(
+        'user-uuid-1',
+        'abc123hash',
+      );
       expect(result).toEqual(expectedUser);
     });
 

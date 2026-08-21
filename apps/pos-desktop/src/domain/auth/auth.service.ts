@@ -13,7 +13,16 @@
 import { RoleType } from '@pharmacy/shared-types';
 import { useLocalSessionStore, LocalSession } from './local-session.store';
 import { NoActiveSessionException, InsufficientRoleException } from './exceptions';
-import { createAuthHttpClient, AuthHttpClient } from './auth-http-client';
+import {
+  createAuthHttpClient,
+  AuthHttpClient,
+  HttpStatusException,
+} from './auth-http-client';
+import {
+  FirebaseNotConfiguredException,
+  GoogleAccountCollisionException,
+  InvalidFirebaseTokenException,
+} from './exceptions';
 import { createSecureStorage } from '../../infrastructure/secure-storage';
 import { createOfflineAuthService } from '../../renderer/services/auth/offline/offline-auth-service';
 
@@ -95,6 +104,78 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
         response,
         workstationId,
         identifier,
+      );
+      useLocalSessionStore.getState().setSession(session);
+
+      // Cache the authenticated user's profile for the login avatar grid
+      // and QuickSwitch offline fallback. Non-fatal.
+      import('./local-user-cache')
+        .then(({ cacheUser }) => cacheUser({
+          id: response.user.id,
+          displayName: response.user.displayName,
+          role: response.user.role as RoleType,
+          avatarUrl: response.user.avatarUrl ?? null,
+          avatarColor: response.user.avatarColor ?? null,
+          username: response.user.username,
+        }))
+        .catch(() => { /* non-fatal */ });
+
+      // Cache offline credentials for future offline-first logins.
+      // Non-fatal: failure does not block login.
+      if (response.offlineToken || response.credentialVerificationKey) {
+        cacheOfflineCredentials(config.baseUrl, response, workstationId).catch((err) => {
+          console.warn('Failed to cache offline credentials:', err);
+        });
+      }
+
+      return { session };
+    },
+
+    /**
+     * Authenticate with a Firebase Google ID token.
+     *
+     * Posts the token (plus the same workstation/device metadata the
+     * password login sends) to POST /auth/login/firebase. On success the
+     * returned session is handled EXACTLY like a password login: mapped to
+     * a LocalSession, stored in the Zustand session store, and the user
+     * profile + offline credentials are cached for future offline use.
+     */
+    loginWithGoogle: async (
+      idToken: string,
+      workstationId: string,
+      hardwareFingerprint?: string,
+      deviceInfo?: string,
+    ): Promise<{ session: LocalSession }> => {
+      const postWithStatus = http.postWithStatus;
+      if (!postWithStatus) {
+        throw new Error('AuthHttpClient.postWithStatus is not available');
+      }
+
+      let response: ServerAuthResponse;
+      try {
+        response = await postWithStatus<ServerAuthResponse>(
+          '/auth/login/firebase',
+          { idToken, workstationId, hardwareFingerprint, deviceInfo },
+        );
+      } catch (err) {
+        if (err instanceof HttpStatusException) {
+          switch (err.status) {
+            case 503:
+              throw new FirebaseNotConfiguredException();
+            case 409:
+              throw new GoogleAccountCollisionException();
+            case 400:
+            default:
+              throw new InvalidFirebaseTokenException();
+          }
+        }
+        throw err;
+      }
+
+      const session = mapServerResponseToSession(
+        response,
+        workstationId,
+        response.user.email ?? '',
       );
       useLocalSessionStore.getState().setSession(session);
 
@@ -520,6 +601,13 @@ export interface AuthService {
     hardwareFingerprint?: string,
     deviceInfo?: string,
   ): Promise<{ session?: LocalSession; requiresTwoFactor?: boolean; challengeToken?: string }>;
+
+  loginWithGoogle(
+    idToken: string,
+    workstationId: string,
+    hardwareFingerprint?: string,
+    deviceInfo?: string,
+  ): Promise<{ session: LocalSession }>;
 
   completeTwoFactor(
     challengeToken: string,

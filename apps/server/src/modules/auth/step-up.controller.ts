@@ -57,7 +57,9 @@ export class StepUpController {
 
   @Post('request')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Request step-up authorization for a sensitive operation' })
+  @ApiOperation({
+    summary: 'Request step-up authorization for a sensitive operation',
+  })
   async requestStepUp(
     @CurrentUser() user: User,
     @Body(new ZodValidationPipe(RequestStepUpSchema)) body: RequestStepUpInput,
@@ -103,7 +105,10 @@ export class StepUpController {
       details: { requestId: body.requestId, method: body.method },
     });
 
-    return { approvalToken: result.approvalToken, message: 'Step-up request approved' };
+    return {
+      approvalToken: result.approvalToken,
+      message: 'Step-up request approved',
+    };
   }
 
   @Post('deny')
@@ -128,7 +133,8 @@ export class StepUpController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify an approval token' })
   async verifyApproval(
-    @Body(new ZodValidationPipe(VerifyApprovalSchema)) body: VerifyApprovalInput,
+    @Body(new ZodValidationPipe(VerifyApprovalSchema))
+    body: VerifyApprovalInput,
   ): Promise<{ valid: boolean }> {
     const valid = await this.stepUpService.verifyApproval(
       body.approvalToken,
@@ -144,8 +150,12 @@ export class StepUpController {
   }
 
   @Get('pending/:workstationId')
-  @ApiOperation({ summary: 'List pending step-up requests for a specific workstation' })
-  async findPendingByWorkstation(@Param('workstationId') workstationId: string) {
+  @ApiOperation({
+    summary: 'List pending step-up requests for a specific workstation',
+  })
+  async findPendingByWorkstation(
+    @Param('workstationId') workstationId: string,
+  ) {
     return this.stepUpService.findPendingForWorkstation(workstationId);
   }
 

@@ -20,6 +20,9 @@ export {
   InvalidCredentialsException,
   NoActiveSessionException,
   InsufficientRoleException,
+  FirebaseNotConfiguredException,
+  GoogleAccountCollisionException,
+  InvalidFirebaseTokenException,
 } from './exceptions';
 
 // Auth guards

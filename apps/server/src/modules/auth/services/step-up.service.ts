@@ -32,7 +32,8 @@ export class StepUpService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Inject(ConfigService) private readonly configService: ConfigService<EnvConfig>,
+    @Inject(ConfigService)
+    private readonly configService: ConfigService<EnvConfig>,
   ) {}
 
   /**

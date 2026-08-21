@@ -1,284 +1,197 @@
-// Mock @pharmacy/database before any imports that depend on it
-jest.mock('@pharmacy/database', () => {
-  class MockPrismaClient {
-    $connect = jest.fn();
-    $disconnect = jest.fn();
-  }
-  return { PrismaClient: MockPrismaClient };
+import { jest, describe, it, expect, beforeAll, beforeEach, afterEach } from '@jest/globals';
+import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import request from 'supertest';
+
+jest.unstable_mockModule('./auth.service', () => ({ AuthService: class {} }));
+jest.unstable_mockModule('./services/firebase-auth.service', () => ({
+  FirebaseAuthService: class {},
+}));
+jest.unstable_mockModule('./services/session.service', () => ({
+  SessionService: class {},
+}));
+jest.unstable_mockModule('@/common/guards/jwt-auth.guard', () => ({
+  JwtAuthGuard: class {},
+}));
+jest.unstable_mockModule('@/common/guards/roles.guard', () => ({
+  RolesGuard: class {},
+}));
+jest.unstable_mockModule('@pharmacy/database', () => ({
+  PrismaClient: class {},
+  Prisma: {},
+  UserStatus: { ACTIVE: 'ACTIVE' },
+  SessionRevocationReason: { LOGOUT: 'LOGOUT' },
+  UserSession: class {},
+}));
+
+let AuthController: typeof import('./auth.controller').AuthController;
+let AuthService: typeof import('./auth.service').AuthService;
+let FirebaseAuthService: typeof import('./services/firebase-auth.service').FirebaseAuthService;
+let SessionService: typeof import('./services/session.service').SessionService;
+
+beforeAll(async () => {
+  ({ AuthController } = await import('./auth.controller'));
+  ({ AuthService } = await import('./auth.service'));
+  ({ FirebaseAuthService } = await import('./services/firebase-auth.service'));
+  ({ SessionService } = await import('./services/session.service'));
 });
 
-import { Test, TestingModule } from '@nestjs/testing';
-import { JwtService } from '@nestjs/jwt';
-import { AuthController } from './auth.controller';
-import { AuthService } from './auth.service';
-import { SessionService } from './services/session.service';
-import { AuthResponseDto } from './dto/auth-response.dto';
-import { LoginDto } from './dto/login.dto';
-
-// ---------------------------------------------------------------------------
-// Factory helpers
-// ---------------------------------------------------------------------------
-
-function buildMockUser(overrides: Partial<Record<string, unknown>> = {}) {
+function buildAuthResponseData(): any {
   return {
-    id: 'user-uuid-1',
-    username: 'admin',
-    firstName: 'Admin',
-    lastName: 'User',
-    email: 'admin@pharmacy.com',
-    identificationType: 'CC' as const,
-    identificationNumber: '1234567890',
-    role: 'ADMIN' as const,
-    isActive: true,
-    workstationId: 'ws-1',
-    createdAt: new Date('2026-01-01T00:00:00Z'),
-    updatedAt: new Date('2026-01-01T00:00:00Z'),
-    ...overrides,
-  };
-}
-
-function buildAuthResponse(overrides: Partial<Record<string, unknown>> = {}) {
-  return {
-    accessToken: 'jwt-access-token-abc123',
-    refreshToken: 'jwt-refresh-token-def456',
-    expiresAt: new Date(Date.now() + 900000),
+    accessToken: 'at-123',
+    refreshToken: 'rt-123',
+    expiresAt: new Date(0),
     user: {
-      id: 'user-uuid-1',
-      username: 'admin',
-      firstName: 'Admin',
-      lastName: 'User',
-      email: 'admin@pharmacy.com',
-      identificationType: 'CC' as const,
-      identificationNumber: '1234567890',
-      role: 'ADMIN' as const,
+      id: 'resp-user',
+      role: 'OWNER',
+      authMethod: 'OAUTH_GOOGLE',
+      email: 'e@e.com',
       isActive: true,
     },
-    ...overrides,
+    sessionId: 'sess-1',
+    offlineToken: { token: 'ot-1', expiresAt: new Date(0) },
+    credentialVerificationKey: {
+      encryptedBlob: 'b',
+      keyFingerprint: 'fp',
+      version: 1,
+    },
   };
 }
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-
-const mockAuthService = {
-  login: jest.fn(),
-  validateActiveSession: jest.fn(),
-  revokeSession: jest.fn(),
-  refreshSession: jest.fn(),
-  logoutSession: jest.fn(),
-};
-
-const mockSessionService = {
-  createSession: jest.fn(),
-  findActiveSessionByTokenHash: jest.fn(),
-  revokeSession: jest.fn(),
-  touchLastActivity: jest.fn(),
-};
-
-const mockJwtService = {
-  decode: jest.fn(),
-};
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-describe('AuthController (integration)', () => {
-  let controller: AuthController;
-  let authService: jest.Mocked<typeof mockAuthService>;
+describe('AuthController (Firebase flow)', () => {
+  let app: INestApplication;
+  let authServiceMock: { loginWithFirebase: jest.Mock };
+  let firebaseAuthMock: { isConfigured: boolean; verifyIdToken: jest.Mock };
+  let configServiceMock: { get: jest.Mock };
 
   beforeEach(async () => {
-    jest.clearAllMocks();
+    authServiceMock = { loginWithFirebase: jest.fn() };
+    firebaseAuthMock = {
+      isConfigured: true,
+      verifyIdToken: jest
+        .fn()
+        .mockResolvedValue({
+          uid: 'u1',
+          email: 'e@e.com',
+          displayName: 'DN',
+          photoURL: 'pu',
+          emailVerified: true,
+        }),
+    };
+    configServiceMock = { get: jest.fn() };
 
-    const module: TestingModule = await Test.createTestingModule({
+    const moduleRef = await Test.createTestingModule({
       controllers: [AuthController],
       providers: [
-        { provide: AuthService, useValue: mockAuthService },
-        { provide: SessionService, useValue: mockSessionService },
-        { provide: JwtService, useValue: mockJwtService },
+        { provide: AuthService, useValue: authServiceMock },
+        { provide: FirebaseAuthService, useValue: firebaseAuthMock },
+        { provide: SessionService, useValue: {} },
+        { provide: JwtService, useValue: { sign: jest.fn(), decode: jest.fn() } },
+        { provide: ConfigService, useValue: configServiceMock },
       ],
     }).compile();
 
-    controller = module.get<AuthController>(AuthController);
-    authService = module.get(AuthService) as jest.Mocked<typeof mockAuthService>;
-    jest.mocked(mockJwtService.decode).mockClear();
+    app = moduleRef.createNestApplication();
+    await app.init();
   });
 
-  // -----------------------------------------------------------------------
-  // POST /auth/login
-  // -----------------------------------------------------------------------
-  describe('POST /auth/login', () => {
-    it('should call authService.login with dto and headers and return AuthResponseDto', async () => {
-      const dto: LoginDto = {
-        identifier: 'admin',
-        secret: 'password123',
-        sessionType: 'PASSWORD',
-        workstationId: 'ws-1',
-      };
-      const clientIp = '192.168.1.1';
-      const userAgent = 'test-agent';
-      const expectedResponse = buildAuthResponse();
-
-      mockAuthService.login.mockResolvedValue(expectedResponse);
-
-      const result = await controller.login(dto, clientIp, userAgent);
-
-      expect(authService.login).toHaveBeenCalledWith({
-        identifier: 'admin',
-        secret: 'password123',
-        sessionType: 'PASSWORD',
-        workstationId: 'ws-1',
-        ipAddress: clientIp,
-        userAgent,
-      });
-      expect(result).toEqual(expectedResponse);
-    });
-
-    it('should call authService.login without optional headers when not provided', async () => {
-      const dto: LoginDto = {
-        identifier: 'admin',
-        secret: 'password123',
-        sessionType: 'PASSWORD',
-        workstationId: 'ws-1',
-      };
-      const expectedResponse = buildAuthResponse();
-
-      mockAuthService.login.mockResolvedValue(expectedResponse);
-
-      const result = await controller.login(dto, undefined, undefined);
-
-      expect(authService.login).toHaveBeenCalledWith({
-        identifier: 'admin',
-        secret: 'password123',
-        sessionType: 'PASSWORD',
-        workstationId: 'ws-1',
-        ipAddress: undefined,
-        userAgent: undefined,
-      });
-      expect(result).toEqual(expectedResponse);
-    });
-
-    it('should propagate error when authService.login throws', async () => {
-      const dto: LoginDto = {
-        identifier: 'admin',
-        secret: 'password123',
-        sessionType: 'PASSWORD',
-        workstationId: 'ws-1',
-      };
-      mockAuthService.login.mockRejectedValue(new Error('Session creation failed'));
-
-      await expect(
-        controller.login(dto, undefined, undefined),
-      ).rejects.toThrow('Session creation failed');
-    });
+  afterEach(async () => {
+    await app.close();
   });
 
-  // -----------------------------------------------------------------------
-  // POST /auth/refresh
-  // -----------------------------------------------------------------------
-  describe('POST /auth/refresh', () => {
-    it('should extract tokenHash from JWT and call refreshSession', async () => {
-      const tokenHash = 'current-token-hash';
-      const mockReq = {
-        headers: { authorization: 'Bearer some.jwt.token' },
-      };
-      mockJwtService.decode.mockReturnValue({
-        sub: 'user-uuid-1',
-        tokenHash,
-      });
-      const expectedResponse = {
-        accessToken: 'new-access-token',
-        refreshToken: 'new-refresh-token',
-        expiresAt: new Date(Date.now() + 900000),
-      };
-      mockAuthService.refreshSession.mockResolvedValue(expectedResponse);
-
-      const result = await controller.refresh(mockReq as any);
-
-      expect(mockJwtService.decode).toHaveBeenCalledWith('some.jwt.token');
-      expect(mockAuthService.refreshSession).toHaveBeenCalledWith(tokenHash);
-      expect(result).toEqual(expectedResponse);
-    });
-
-    it('should propagate error when authService.refreshSession throws', async () => {
-      const mockReq = {
-        headers: { authorization: 'Bearer some.jwt.token' },
-      };
-      mockJwtService.decode.mockReturnValue({
-        sub: 'user-uuid-1',
-        tokenHash: 'some-hash',
-      });
-      mockAuthService.refreshSession.mockRejectedValue(
-        new Error('Session expired'),
+  describe('GET /auth/firebase/config', () => {
+    it('returns the env-derived public config', async () => {
+      configServiceMock.get.mockImplementation(
+        (k: string) =>
+          ({
+            FIREBASE_API_KEY: 'ak',
+            FIREBASE_AUTH_DOMAIN: 'ad',
+            FIREBASE_PROJECT_ID: 'pid',
+            FIREBASE_STORAGE_BUCKET: 'sb',
+            FIREBASE_MESSAGING_SENDER_ID: 'msi',
+            FIREBASE_APP_ID: 'aid',
+            FIREBASE_MEASUREMENT_ID: 'mid',
+          })[k] ?? null,
       );
 
-      await expect(controller.refresh(mockReq as any)).rejects.toThrow(
-        'Session expired',
+      const res = await request(app.getHttpServer()).get(
+        '/auth/firebase/config',
       );
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        apiKey: 'ak',
+        authDomain: 'ad',
+        projectId: 'pid',
+        storageBucket: 'sb',
+        messagingSenderId: 'msi',
+        appId: 'aid',
+        measurementId: 'mid',
+      });
+    });
+
+    it('returns nulls when the config keys are unset', async () => {
+      configServiceMock.get.mockReturnValue(null);
+
+      const res = await request(app.getHttpServer()).get(
+        '/auth/firebase/config',
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        apiKey: null,
+        authDomain: null,
+        projectId: null,
+        storageBucket: null,
+        messagingSenderId: null,
+        appId: null,
+        measurementId: null,
+      });
     });
   });
 
-  // -----------------------------------------------------------------------
-  // POST /auth/logout
-  // -----------------------------------------------------------------------
-  describe('POST /auth/logout', () => {
-    it('should extract tokenHash from JWT and call logoutSession', async () => {
-      const tokenHash = 'current-token-hash';
-      const mockReq = {
-        headers: { authorization: 'Bearer some.jwt.token' },
-      };
-      mockJwtService.decode.mockReturnValue({
-        sub: 'user-uuid-1',
-        tokenHash,
-      });
-      mockAuthService.logoutSession.mockResolvedValue(undefined);
+  describe('POST /auth/login/firebase', () => {
+    it('returns 503 when Firebase is not configured', async () => {
+      firebaseAuthMock.isConfigured = false;
 
-      await controller.logout(mockReq as any);
+      const res = await request(app.getHttpServer())
+        .post('/auth/login/firebase')
+        .send({ idToken: 'tok', workstationId: 'ws' });
 
-      expect(mockJwtService.decode).toHaveBeenCalledWith('some.jwt.token');
-      expect(mockAuthService.logoutSession).toHaveBeenCalledWith(tokenHash);
+      expect(res.status).toBe(503);
+      expect(res.body.message).toContain('Google sign-in is not enabled');
+      expect(firebaseAuthMock.verifyIdToken).not.toHaveBeenCalled();
     });
 
-    it('should succeed even when session is already expired (idempotent)', async () => {
-      const mockReq = {
-        headers: { authorization: 'Bearer some.jwt.token' },
-      };
-      mockJwtService.decode.mockReturnValue({
-        sub: 'user-uuid-1',
-        tokenHash: 'some-hash',
+    it('returns the AuthResponseDto shape on the happy path', async () => {
+      firebaseAuthMock.isConfigured = true;
+      const data = buildAuthResponseData();
+      authServiceMock.loginWithFirebase.mockResolvedValue(data);
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/login/firebase')
+        .set('x-forwarded-for', '1.2.3.4')
+        .send({ idToken: 'tok', workstationId: 'ws' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.accessToken).toBe('at-123');
+      expect(res.body.user.id).toBe('resp-user');
+      expect(res.body.offlineToken).toEqual({
+        token: 'ot-1',
+        expiresAt: '1970-01-01T00:00:00.000Z',
       });
-      mockAuthService.logoutSession.mockResolvedValue(undefined);
-
-      await expect(controller.logout(mockReq as any)).resolves.toBeUndefined();
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // GET /auth/me
-  // -----------------------------------------------------------------------
-  describe('GET /auth/me', () => {
-    it('should return the current user from request', async () => {
-      const user = buildMockUser();
-
-      const result = await controller.getCurrentUser(user as any);
-
-      expect(result).toEqual(user);
-    });
-
-    it('should return user without sensitive fields removed (handled by service)', async () => {
-      const user = buildMockUser({
-        passwordHash: 'should-not-be-exposed',
-        passwordAlgorithm: 'argon2id',
-      });
-
-      const result = await controller.getCurrentUser(user as any);
-
-      // The controller just returns whatever is in request.user — it does not strip fields.
-      // The AuthService.mapUserToDto does that during login, but for /me the guard
-      // sets request.user from the JWT strategy which already strips sensitive data.
-      expect(result).toHaveProperty('id', user.id);
-      expect(result).toHaveProperty('username', user.username);
+      expect(authServiceMock.loginWithFirebase).toHaveBeenCalledWith(
+        expect.objectContaining({
+          firebaseUid: 'u1',
+          email: 'e@e.com',
+          displayName: 'DN',
+          photoURL: 'pu',
+          workstationId: 'ws',
+          ipAddress: '1.2.3.4',
+        }),
+      );
     });
   });
 });

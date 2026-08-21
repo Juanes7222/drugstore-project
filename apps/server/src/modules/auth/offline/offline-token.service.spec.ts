@@ -10,13 +10,18 @@ import { ConfigService } from '@nestjs/config';
 import { mockDeep, MockProxy } from 'jest-mock-extended';
 import { PrismaClient } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { OfflineTokenService, OfflineTokenClaims } from './offline-token.service';
+import {
+  OfflineTokenService,
+  OfflineTokenClaims,
+} from './offline-token.service';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockPrisma = mockDeep<PrismaClient>() as MockProxy<PrismaClient> & { offlineTokenRevocation: Record<string, jest.Mock> };
+const mockPrisma = mockDeep<PrismaClient>() as MockProxy<PrismaClient> & {
+  offlineTokenRevocation: Record<string, jest.Mock>;
+};
 
 // Add mock delegates for offlineTokenRevocation
 const mockOfflineTokenRevocation = {
@@ -63,7 +68,9 @@ function buildIssueTokenParams(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function buildDecodedTokenClaims(overrides: Partial<OfflineTokenClaims> = {}): OfflineTokenClaims {
+function buildDecodedTokenClaims(
+  overrides: Partial<OfflineTokenClaims> = {},
+): OfflineTokenClaims {
   const now = Math.floor(Date.now() / 1000);
   return {
     sub: 'user-uuid-1',
@@ -151,76 +158,91 @@ describe('OfflineTokenService', () => {
       mockSubscription.findUnique.mockResolvedValue(null);
       mockJwtService.sign.mockReturnValue('offline-jwt');
 
-      const result = await service.issueToken(buildIssueTokenParams({ role: 'CASHIER', subscriptionId: 'sub-not-found' }));
-
-      expect(mockJwtService.sign).toHaveBeenCalledWith(
-        expect.anything(),
-        { expiresIn: '30d' },
+      const result = await service.issueToken(
+        buildIssueTokenParams({
+          role: 'CASHIER',
+          subscriptionId: 'sub-not-found',
+        }),
       );
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(expect.anything(), {
+        expiresIn: '30d',
+      });
     });
 
     it('respects role-based TTLs — manager uses 14 days', async () => {
-      mockSubscription.findUnique.mockResolvedValue({ offlineGracePeriodDays: null });
+      mockSubscription.findUnique.mockResolvedValue({
+        offlineGracePeriodDays: null,
+      });
       mockJwtService.sign.mockReturnValue('offline-jwt');
 
-      const result = await service.issueToken(buildIssueTokenParams({ role: 'MANAGER' }));
-
-      expect(mockJwtService.sign).toHaveBeenCalledWith(
-        expect.anything(),
-        { expiresIn: '14d' },
+      const result = await service.issueToken(
+        buildIssueTokenParams({ role: 'MANAGER' }),
       );
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(expect.anything(), {
+        expiresIn: '14d',
+      });
     });
 
     it('respects role-based TTLs — owner uses 14 days', async () => {
-      mockSubscription.findUnique.mockResolvedValue({ offlineGracePeriodDays: null });
+      mockSubscription.findUnique.mockResolvedValue({
+        offlineGracePeriodDays: null,
+      });
       mockJwtService.sign.mockReturnValue('offline-jwt');
 
-      const result = await service.issueToken(buildIssueTokenParams({ role: 'OWNER' }));
-
-      expect(mockJwtService.sign).toHaveBeenCalledWith(
-        expect.anything(),
-        { expiresIn: '14d' },
+      const result = await service.issueToken(
+        buildIssueTokenParams({ role: 'OWNER' }),
       );
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(expect.anything(), {
+        expiresIn: '14d',
+      });
     });
 
     it('uses subscription offlineGracePeriodDays when available', async () => {
-      mockSubscription.findUnique.mockResolvedValue({ offlineGracePeriodDays: 60 });
+      mockSubscription.findUnique.mockResolvedValue({
+        offlineGracePeriodDays: 60,
+      });
       mockJwtService.sign.mockReturnValue('offline-jwt');
 
-      const result = await service.issueToken(buildIssueTokenParams({ role: 'CASHIER' }));
+      const result = await service.issueToken(
+        buildIssueTokenParams({ role: 'CASHIER' }),
+      );
 
       expect(mockSubscription.findUnique).toHaveBeenCalledWith({
         where: { id: 'sub-uuid-1' },
         select: { offlineGracePeriodDays: true },
       });
-      expect(mockJwtService.sign).toHaveBeenCalledWith(
-        expect.anything(),
-        { expiresIn: '60d' },
-      );
+      expect(mockJwtService.sign).toHaveBeenCalledWith(expect.anything(), {
+        expiresIn: '60d',
+      });
     });
 
     it('falls back to role-based TTL when subscription query throws', async () => {
       mockSubscription.findUnique.mockRejectedValue(new Error('DB error'));
       mockJwtService.sign.mockReturnValue('offline-jwt');
 
-      const result = await service.issueToken(buildIssueTokenParams({ role: 'CASHIER' }));
-
-      expect(mockJwtService.sign).toHaveBeenCalledWith(
-        expect.anything(),
-        { expiresIn: '30d' },
+      const result = await service.issueToken(
+        buildIssueTokenParams({ role: 'CASHIER' }),
       );
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(expect.anything(), {
+        expiresIn: '30d',
+      });
     });
 
     it('handles null subscriptionId gracefully', async () => {
       mockJwtService.sign.mockReturnValue('offline-jwt');
 
-      const result = await service.issueToken(buildIssueTokenParams({ subscriptionId: null }));
+      const result = await service.issueToken(
+        buildIssueTokenParams({ subscriptionId: null }),
+      );
 
       expect(mockSubscription.findUnique).not.toHaveBeenCalled();
-      expect(mockJwtService.sign).toHaveBeenCalledWith(
-        expect.anything(),
-        { expiresIn: '30d' },
-      );
+      expect(mockJwtService.sign).toHaveBeenCalledWith(expect.anything(), {
+        expiresIn: '30d',
+      });
     });
   });
 
@@ -239,9 +261,11 @@ describe('OfflineTokenService', () => {
     });
 
     it('returns null for expired token', () => {
-      mockJwtService.verify.mockReturnValue(buildDecodedTokenClaims({
-        exp: Math.floor(Date.now() / 1000) - 3600, // 1 hour ago
-      }));
+      mockJwtService.verify.mockReturnValue(
+        buildDecodedTokenClaims({
+          exp: Math.floor(Date.now() / 1000) - 3600, // 1 hour ago
+        }),
+      );
 
       const result = service.verifyToken('expired-offline-jwt');
 
@@ -270,7 +294,9 @@ describe('OfflineTokenService', () => {
     });
 
     it('returns null for non-offline token type', () => {
-      mockJwtService.verify.mockReturnValue(buildDecodedTokenClaims({ typ: 'access' as any }));
+      mockJwtService.verify.mockReturnValue(
+        buildDecodedTokenClaims({ typ: 'access' as any }),
+      );
 
       const result = service.verifyToken('non-offline-jwt');
 
@@ -286,7 +312,9 @@ describe('OfflineTokenService', () => {
     });
 
     it('returns null when required claims are missing — no sub', () => {
-      mockJwtService.verify.mockReturnValue(buildDecodedTokenClaims({ sub: '' }));
+      mockJwtService.verify.mockReturnValue(
+        buildDecodedTokenClaims({ sub: '' }),
+      );
 
       const result = service.verifyToken('no-sub-jwt');
 
@@ -294,7 +322,9 @@ describe('OfflineTokenService', () => {
     });
 
     it('returns null when required claims are missing — no wfp', () => {
-      mockJwtService.verify.mockReturnValue(buildDecodedTokenClaims({ wfp: '' }));
+      mockJwtService.verify.mockReturnValue(
+        buildDecodedTokenClaims({ wfp: '' }),
+      );
 
       const result = service.verifyToken('no-wfp-jwt');
 
@@ -302,7 +332,9 @@ describe('OfflineTokenService', () => {
     });
 
     it('returns null when required claims are missing — no jti', () => {
-      mockJwtService.verify.mockReturnValue(buildDecodedTokenClaims({ jti: '' }));
+      mockJwtService.verify.mockReturnValue(
+        buildDecodedTokenClaims({ jti: '' }),
+      );
 
       const result = service.verifyToken('no-jti-jwt');
 
@@ -332,7 +364,9 @@ describe('OfflineTokenService', () => {
     });
 
     it('returns null when decoded type is not offline', () => {
-      mockJwtService.decode.mockReturnValue(buildDecodedTokenClaims({ typ: 'access' as any }));
+      mockJwtService.decode.mockReturnValue(
+        buildDecodedTokenClaims({ typ: 'access' as any }),
+      );
 
       const result = service.decodeToken('access-jwt');
 
@@ -356,7 +390,9 @@ describe('OfflineTokenService', () => {
   describe('revokeToken', () => {
     it('adds an entry to the revocation table', async () => {
       mockOfflineTokenRevocation.findUnique.mockResolvedValue(null);
-      mockOfflineTokenRevocation.create.mockResolvedValue(buildRevocationEntry());
+      mockOfflineTokenRevocation.create.mockResolvedValue(
+        buildRevocationEntry(),
+      );
 
       await service.revokeToken({
         jti: 'jti-uuid-1',
@@ -381,7 +417,9 @@ describe('OfflineTokenService', () => {
       mockOfflineTokenRevocation.findUnique
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(buildRevocationEntry());
-      mockOfflineTokenRevocation.create.mockResolvedValue(buildRevocationEntry());
+      mockOfflineTokenRevocation.create.mockResolvedValue(
+        buildRevocationEntry(),
+      );
 
       await service.revokeToken({
         jti: 'jti-uuid-1',
@@ -402,7 +440,9 @@ describe('OfflineTokenService', () => {
 
     it('checks for existing entry before creating', async () => {
       mockOfflineTokenRevocation.findUnique.mockResolvedValue(null);
-      mockOfflineTokenRevocation.create.mockResolvedValue(buildRevocationEntry());
+      mockOfflineTokenRevocation.create.mockResolvedValue(
+        buildRevocationEntry(),
+      );
 
       await service.revokeToken({
         jti: 'jti-uuid-1',
@@ -416,7 +456,9 @@ describe('OfflineTokenService', () => {
 
     it('accepts optional reasonDetail and workstationId', async () => {
       mockOfflineTokenRevocation.findUnique.mockResolvedValue(null);
-      mockOfflineTokenRevocation.create.mockResolvedValue(buildRevocationEntry());
+      mockOfflineTokenRevocation.create.mockResolvedValue(
+        buildRevocationEntry(),
+      );
 
       await service.revokeToken({
         jti: 'jti-uuid-1',
@@ -443,7 +485,9 @@ describe('OfflineTokenService', () => {
   // -----------------------------------------------------------------------
   describe('isRevoked', () => {
     it('returns true for a revoked JTI', async () => {
-      mockOfflineTokenRevocation.findUnique.mockResolvedValue(buildRevocationEntry());
+      mockOfflineTokenRevocation.findUnique.mockResolvedValue(
+        buildRevocationEntry(),
+      );
 
       const result = await service.isRevoked('jti-uuid-1');
 
@@ -464,7 +508,9 @@ describe('OfflineTokenService', () => {
   // -----------------------------------------------------------------------
   describe('revokeAllUserTokens', () => {
     it('creates a user-level revocation marker', async () => {
-      mockOfflineTokenRevocation.create.mockResolvedValue(buildRevocationEntry());
+      mockOfflineTokenRevocation.create.mockResolvedValue(
+        buildRevocationEntry(),
+      );
 
       const count = await service.revokeAllUserTokens(USER_ID, 'USER_DISABLED');
 
@@ -481,7 +527,9 @@ describe('OfflineTokenService', () => {
     });
 
     it('supports PIN_CHANGED reason', async () => {
-      mockOfflineTokenRevocation.create.mockResolvedValue(buildRevocationEntry());
+      mockOfflineTokenRevocation.create.mockResolvedValue(
+        buildRevocationEntry(),
+      );
 
       const count = await service.revokeAllUserTokens(USER_ID, 'PIN_CHANGED');
 
@@ -501,9 +549,14 @@ describe('OfflineTokenService', () => {
   // -----------------------------------------------------------------------
   describe('revokeAllWorkstationTokens', () => {
     it('creates a workstation-level revocation marker', async () => {
-      mockOfflineTokenRevocation.create.mockResolvedValue(buildRevocationEntry());
+      mockOfflineTokenRevocation.create.mockResolvedValue(
+        buildRevocationEntry(),
+      );
 
-      const count = await service.revokeAllWorkstationTokens('ws-1', 'WORKSTATION_REVOKED');
+      const count = await service.revokeAllWorkstationTokens(
+        'ws-1',
+        'WORKSTATION_REVOKED',
+      );
 
       expect(count).toBe(1);
       expect(mockOfflineTokenRevocation.create).toHaveBeenCalledWith(
@@ -526,16 +579,30 @@ describe('OfflineTokenService', () => {
 
     it('returns entries after the given timestamp', async () => {
       const entries = [
-        buildRevocationEntry({ jti: 'jti-1', revokedAt: new Date('2026-06-15T00:00:00Z'), reason: 'ADMIN_REVOCATION' }),
-        buildRevocationEntry({ jti: 'jti-2', revokedAt: new Date('2026-06-20T00:00:00Z'), reason: 'PASSWORD_CHANGED' }),
+        buildRevocationEntry({
+          jti: 'jti-1',
+          revokedAt: new Date('2026-06-15T00:00:00Z'),
+          reason: 'ADMIN_REVOCATION',
+        }),
+        buildRevocationEntry({
+          jti: 'jti-2',
+          revokedAt: new Date('2026-06-20T00:00:00Z'),
+          reason: 'PASSWORD_CHANGED',
+        }),
       ];
       mockOfflineTokenRevocation.findMany.mockResolvedValue(entries);
 
       const result = await service.getRevocationListSince(since);
 
       expect(result).toHaveLength(2);
-      expect(result[0]).toMatchObject({ jti: 'jti-1', reason: 'ADMIN_REVOCATION' });
-      expect(result[1]).toMatchObject({ jti: 'jti-2', reason: 'PASSWORD_CHANGED' });
+      expect(result[0]).toMatchObject({
+        jti: 'jti-1',
+        reason: 'ADMIN_REVOCATION',
+      });
+      expect(result[1]).toMatchObject({
+        jti: 'jti-2',
+        reason: 'PASSWORD_CHANGED',
+      });
     });
 
     it('queries with the correct where clause and ordering', async () => {
@@ -564,8 +631,14 @@ describe('OfflineTokenService', () => {
   describe('getRevocationList', () => {
     it('returns paginated results', async () => {
       const entries = [
-        buildRevocationEntry({ jti: 'jti-1', revokedAt: new Date('2026-06-20T00:00:00Z') }),
-        buildRevocationEntry({ jti: 'jti-2', revokedAt: new Date('2026-06-19T00:00:00Z') }),
+        buildRevocationEntry({
+          jti: 'jti-1',
+          revokedAt: new Date('2026-06-20T00:00:00Z'),
+        }),
+        buildRevocationEntry({
+          jti: 'jti-2',
+          revokedAt: new Date('2026-06-19T00:00:00Z'),
+        }),
       ];
       mockOfflineTokenRevocation.findMany.mockResolvedValue(entries);
       mockOfflineTokenRevocation.count.mockResolvedValue(2);
@@ -600,9 +673,14 @@ describe('OfflineTokenService', () => {
   // -----------------------------------------------------------------------
   describe('isUserRevokedSince', () => {
     it('detects user-level revocation since a timestamp', async () => {
-      mockOfflineTokenRevocation.findFirst.mockResolvedValue(buildRevocationEntry());
+      mockOfflineTokenRevocation.findFirst.mockResolvedValue(
+        buildRevocationEntry(),
+      );
 
-      const result = await service.isUserRevokedSince(USER_ID, new Date('2026-01-01T00:00:00Z'));
+      const result = await service.isUserRevokedSince(
+        USER_ID,
+        new Date('2026-01-01T00:00:00Z'),
+      );
 
       expect(result).toBe(true);
     });
@@ -610,7 +688,10 @@ describe('OfflineTokenService', () => {
     it('returns false when no user revocation since timestamp', async () => {
       mockOfflineTokenRevocation.findFirst.mockResolvedValue(null);
 
-      const result = await service.isUserRevokedSince(USER_ID, new Date('2026-06-01T00:00:00Z'));
+      const result = await service.isUserRevokedSince(
+        USER_ID,
+        new Date('2026-06-01T00:00:00Z'),
+      );
 
       expect(result).toBe(false);
     });

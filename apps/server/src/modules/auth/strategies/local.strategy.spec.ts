@@ -54,9 +54,9 @@ describe('LocalStrategy', () => {
       const error = new Error('Invalid credentials');
       mockAuthService.validateCredentials.mockRejectedValue(error);
 
-      await expect(
-        strategy.validate('admin', 'WrongPassword'),
-      ).rejects.toThrow(error);
+      await expect(strategy.validate('admin', 'WrongPassword')).rejects.toThrow(
+        error,
+      );
     });
   });
 });

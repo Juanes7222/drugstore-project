@@ -8,6 +8,7 @@ model User {
   role                      RoleType
   email                     String?   @unique
   username                  String?
+  firebaseUid               String?   @unique
   fullName                  String
   displayName               String?
   avatarUrl                 String?

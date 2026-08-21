@@ -20,9 +20,9 @@ import * as crypto from 'node:crypto';
 // ---------------------------------------------------------------------------
 
 export interface CredentialVerificationKeyResult {
-  encryptedBlob: string;       // base64-encoded encrypted blob
-  keyFingerprint: string;      // SHA-256 of the encryption key (for cache invalidation)
-  version: number;             // bump when credentials change
+  encryptedBlob: string; // base64-encoded encrypted blob
+  keyFingerprint: string; // SHA-256 of the encryption key (for cache invalidation)
+  version: number; // bump when credentials change
 }
 
 export interface DecryptedCredentialBlob {
@@ -30,7 +30,7 @@ export interface DecryptedCredentialBlob {
   pinHash: string | null;
   userId: string;
   version: number;
-  expiresAt: string;           // ISO date string
+  expiresAt: string; // ISO date string
 }
 
 // ---------------------------------------------------------------------------
@@ -38,9 +38,9 @@ export interface DecryptedCredentialBlob {
 // ---------------------------------------------------------------------------
 
 const AES_ALGORITHM = 'aes-256-gcm';
-const IV_LENGTH = 16;          // 128 bits for GCM
-const AUTH_TAG_LENGTH = 16;    // 128 bits
-const KEY_LENGTH = 32;         // 256 bits
+const IV_LENGTH = 16; // 128 bits for GCM
+const AUTH_TAG_LENGTH = 16; // 128 bits
+const KEY_LENGTH = 32; // 256 bits
 const CURRENT_VERSION = 1;
 
 // ---------------------------------------------------------------------------
@@ -179,10 +179,7 @@ export class CredentialCacheService {
     const iv = crypto.randomBytes(IV_LENGTH);
     const cipher = crypto.createCipheriv(AES_ALGORITHM, key, iv);
 
-    const encrypted = Buffer.concat([
-      cipher.update(plaintext),
-      cipher.final(),
-    ]);
+    const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
     const authTag = cipher.getAuthTag();
 
     return [
@@ -211,10 +208,7 @@ export class CredentialCacheService {
       const decipher = crypto.createDecipheriv(AES_ALGORITHM, key, iv);
       decipher.setAuthTag(authTag);
 
-      return Buffer.concat([
-        decipher.update(ciphertext),
-        decipher.final(),
-      ]);
+      return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     } catch {
       return null;
     }
@@ -230,7 +224,7 @@ export class CredentialCacheService {
     return crypto.pbkdf2Sync(
       workstationFingerprint,
       salt,
-      100000,   // 100k iterations
+      100000, // 100k iterations
       KEY_LENGTH,
       'sha512',
     );

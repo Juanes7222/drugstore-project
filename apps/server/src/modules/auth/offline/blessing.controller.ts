@@ -4,13 +4,30 @@
  * POST /auth/offline-sessions/bless
  * GET  /auth/offline-tokens/revocation-list
  */
-import { Controller, Post, Get, Body, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { BlessingService } from './blessing.service';
 import { RevocationListService } from './revocation-list.service';
-import { BlessingRequestDto, BlessingRequestSchema, BlessingResponseDto } from './dto/blessing.dto';
-import { RevocationListQueryDto, RevocationListQuerySchema, RevocationListResponseDto } from './dto/revocation-list.dto';
+import {
+  BlessingRequestDto,
+  BlessingRequestSchema,
+  BlessingResponseDto,
+} from './dto/blessing.dto';
+import {
+  RevocationListQueryDto,
+  RevocationListQuerySchema,
+  RevocationListResponseDto,
+} from './dto/revocation-list.dto';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -33,11 +50,20 @@ export class BlessingController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests per minute
-  @ApiOperation({ summary: 'Bless pending offline sessions when workstation reconnects' })
+  @ApiOperation({
+    summary: 'Bless pending offline sessions when workstation reconnects',
+  })
   async blessSessions(
     @Body(new ZodValidationPipe(BlessingRequestSchema)) dto: BlessingRequestDto,
     @CurrentUser() user: User,
-  ): Promise<{ results: Array<{ localSessionId: string; status: string; reason?: string; replacementToken?: any }> }> {
+  ): Promise<{
+    results: Array<{
+      localSessionId: string;
+      status: string;
+      reason?: string;
+      replacementToken?: any;
+    }>;
+  }> {
     // The workstation fingerprint is extracted from the blessing request entries
     // The first entry's fingerprint is used for validation consistency
     const primaryFingerprint =
@@ -65,9 +91,12 @@ export class BlessingController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get revoked offline tokens list (supports delta fetch)' })
+  @ApiOperation({
+    summary: 'Get revoked offline tokens list (supports delta fetch)',
+  })
   async getRevocationList(
-    @Query(new ZodValidationPipe(RevocationListQuerySchema)) query: RevocationListQueryDto,
+    @Query(new ZodValidationPipe(RevocationListQuerySchema))
+    query: RevocationListQueryDto,
   ): Promise<RevocationListResponseDto> {
     const result = await this.revocationListService.getList({
       since: query.since,
