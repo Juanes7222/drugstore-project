@@ -14,7 +14,12 @@ import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
+import {
+  AuditAction,
+  SystemModule,
+  RoleType,
+  User,
+} from '@pharmacy/shared-types';
 
 @Controller('fiscal-dian/documents')
 @UseGuards(JwtAuthGuard, RolesGuard)

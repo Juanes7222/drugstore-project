@@ -28,8 +28,12 @@ describe('FiscalResolutionsController (integration)', () => {
       providers: [{ provide: FiscalResolutionsService, useValue: mockService }],
     }).compile();
 
-    controller = module.get<FiscalResolutionsController>(FiscalResolutionsController);
-    service = module.get(FiscalResolutionsService) as jest.Mocked<typeof mockService>;
+    controller = module.get<FiscalResolutionsController>(
+      FiscalResolutionsController,
+    );
+    service = module.get(FiscalResolutionsService) as jest.Mocked<
+      typeof mockService
+    >;
   });
 
   describe('GET /fiscal-dian/resolutions', () => {
@@ -96,7 +100,9 @@ describe('FiscalResolutionsController (integration)', () => {
     it('should propagate validation errors', async () => {
       service.create.mockRejectedValue(new Error('Invalid resolution range'));
 
-      await expect(controller.create({} as any)).rejects.toThrow('Invalid resolution');
+      await expect(controller.create({} as any)).rejects.toThrow(
+        'Invalid resolution',
+      );
     });
   });
 });

@@ -1,0 +1,35 @@
+// Server-only schema fragment — only included in the full build.
+// DIAN digital certificates uploaded by pharmacies for the DIAN_DIRECT
+// transmission path. The private-key bundle (PKCS#12 + password + DIAN
+// software security code) is stored encrypted at rest in `encryptedBundle`
+// (AES-256-GCM envelope, KEK from the environment); only non-secret metadata
+// lives in plain columns.
+
+model FiscalCertificate {
+  id                      String                  @id
+  subscriptionId          String
+  alias                   String
+  subjectCn               String
+  issuerCn                String
+  serialNumber            String
+  validFrom               DateTime
+  validTo                 DateTime
+  status                  FiscalCertificateStatus @default(ACTIVE)
+  // Encrypted JSON envelope: { p12Base64, password, softwareSecurityCode }.
+  // Never returned by any endpoint; only the fiscal engine decrypts it.
+  encryptedBundle         Bytes
+  keyEncryptionKeyVersion String                  @default("v1")
+  issuerConfigId          String?
+  issuerConfig            FiscalIssuerConfig?     @relation(fields: [issuerConfigId], references: [id])
+  uploadedById            String?
+  activatedAt             DateTime?
+  rotatedAt               DateTime?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  // One ACTIVE certificate per issuer is enforced in the service layer;
+  // the partial unique index is deferred to a future migration.
+  @@index([subscriptionId])
+  @@index([status, validTo])
+  @@index([issuerConfigId])
+}

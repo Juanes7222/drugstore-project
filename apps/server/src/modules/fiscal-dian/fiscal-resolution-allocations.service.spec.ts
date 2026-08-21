@@ -19,7 +19,10 @@ describe('FiscalResolutionAllocationsService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new FiscalResolutionAllocationsService(prisma as any, mockTenantContext as any);
+    service = new FiscalResolutionAllocationsService(
+      prisma as any,
+      mockTenantContext as any,
+    );
   });
 
   // ── findAll ───────────────────────────────────────────────────────────
@@ -30,8 +33,12 @@ describe('FiscalResolutionAllocationsService', () => {
     ];
 
     it('returns paginated list with total count', async () => {
-      (prisma.fiscalResolutionAllocation.findMany as jest.Mock).mockResolvedValue(mockAllocations);
-      (prisma.fiscalResolutionAllocation.count as jest.Mock).mockResolvedValue(1);
+      (
+        prisma.fiscalResolutionAllocation.findMany as jest.Mock
+      ).mockResolvedValue(mockAllocations);
+      (prisma.fiscalResolutionAllocation.count as jest.Mock).mockResolvedValue(
+        1,
+      );
 
       const result = await service.findAll(1, 20);
 
@@ -51,8 +58,12 @@ describe('FiscalResolutionAllocationsService', () => {
     });
 
     it('applies pagination offsets correctly', async () => {
-      (prisma.fiscalResolutionAllocation.findMany as jest.Mock).mockResolvedValue([]);
-      (prisma.fiscalResolutionAllocation.count as jest.Mock).mockResolvedValue(0);
+      (
+        prisma.fiscalResolutionAllocation.findMany as jest.Mock
+      ).mockResolvedValue([]);
+      (prisma.fiscalResolutionAllocation.count as jest.Mock).mockResolvedValue(
+        0,
+      );
 
       await service.findAll(3, 15);
 
@@ -67,18 +78,24 @@ describe('FiscalResolutionAllocationsService', () => {
   describe('findById', () => {
     it('returns the allocation when found', async () => {
       const mockAllocation = { id: 'alloc-1', resolutionId: 'res-1' };
-      (prisma.fiscalResolutionAllocation.findUnique as jest.Mock).mockResolvedValue(mockAllocation);
+      (
+        prisma.fiscalResolutionAllocation.findUnique as jest.Mock
+      ).mockResolvedValue(mockAllocation);
 
       const result = await service.findById('alloc-1');
 
       expect(result).toEqual(mockAllocation);
-      expect(prisma.fiscalResolutionAllocation.findUnique).toHaveBeenCalledWith({
-        where: { id: 'alloc-1' },
-      });
+      expect(prisma.fiscalResolutionAllocation.findUnique).toHaveBeenCalledWith(
+        {
+          where: { id: 'alloc-1' },
+        },
+      );
     });
 
     it('returns null when not found (no exception)', async () => {
-      (prisma.fiscalResolutionAllocation.findUnique as jest.Mock).mockResolvedValue(null);
+      (
+        prisma.fiscalResolutionAllocation.findUnique as jest.Mock
+      ).mockResolvedValue(null);
 
       const result = await service.findById('nonexistent');
 
@@ -103,13 +120,19 @@ describe('FiscalResolutionAllocationsService', () => {
     };
 
     it('creates an allocation with valid range inside resolution bounds', async () => {
-      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(mockResolution);
-      (prisma.fiscalResolutionAllocation.findFirst as jest.Mock).mockResolvedValue(null); // no overlap
-      (prisma.fiscalResolutionAllocation.create as jest.Mock).mockResolvedValue({
-        id: 'alloc-new',
-        resolutionId: 'res-1',
-        workstationId: 'ws-1',
-      });
+      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(
+        mockResolution,
+      );
+      (
+        prisma.fiscalResolutionAllocation.findFirst as jest.Mock
+      ).mockResolvedValue(null); // no overlap
+      (prisma.fiscalResolutionAllocation.create as jest.Mock).mockResolvedValue(
+        {
+          id: 'alloc-new',
+          resolutionId: 'res-1',
+          workstationId: 'ws-1',
+        },
+      );
 
       const result = await service.create(validDto, 'user-1');
 
@@ -134,13 +157,17 @@ describe('FiscalResolutionAllocationsService', () => {
         rangeTo: 1,
       });
 
-      await expect(service.create(invalidDto, 'user-1')).rejects.toThrow(AllocationRangeInvalidException);
+      await expect(service.create(invalidDto, 'user-1')).rejects.toThrow(
+        AllocationRangeInvalidException,
+      );
     });
 
     it('throws AllocationRangeInvalidException when resolution does not exist', async () => {
       (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.create(validDto, 'user-1')).rejects.toThrow(AllocationRangeInvalidException);
+      await expect(service.create(validDto, 'user-1')).rejects.toThrow(
+        AllocationRangeInvalidException,
+      );
     });
 
     it('throws AllocationRangeInvalidException when allocation range exceeds resolution bounds', async () => {
@@ -150,27 +177,43 @@ describe('FiscalResolutionAllocationsService', () => {
         rangeFrom: 1,
         rangeTo: 2000, // resolution only goes to 1000
       });
-      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(mockResolution);
+      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(
+        mockResolution,
+      );
 
-      await expect(service.create(outOfBoundsDto, 'user-1')).rejects.toThrow(AllocationRangeInvalidException);
+      await expect(service.create(outOfBoundsDto, 'user-1')).rejects.toThrow(
+        AllocationRangeInvalidException,
+      );
     });
 
     it('throws AllocationRangeInvalidException when range overlaps an existing allocation', async () => {
-      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(mockResolution);
-      (prisma.fiscalResolutionAllocation.findFirst as jest.Mock).mockResolvedValue({
+      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(
+        mockResolution,
+      );
+      (
+        prisma.fiscalResolutionAllocation.findFirst as jest.Mock
+      ).mockResolvedValue({
         id: 'overlapping-alloc',
         rangeFrom: 50,
         rangeTo: 150,
       });
 
-      await expect(service.create(validDto, 'user-1')).rejects.toThrow(AllocationRangeInvalidException);
+      await expect(service.create(validDto, 'user-1')).rejects.toThrow(
+        AllocationRangeInvalidException,
+      );
     });
 
     it('sets currentConsecutive to rangeFrom minus one', async () => {
       const bigResolution = { id: 'res-big', rangeFrom: 1, rangeTo: 5000 };
-      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(bigResolution);
-      (prisma.fiscalResolutionAllocation.findFirst as jest.Mock).mockResolvedValue(null);
-      (prisma.fiscalResolutionAllocation.create as jest.Mock).mockResolvedValue({ id: 'alloc-new' });
+      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(
+        bigResolution,
+      );
+      (
+        prisma.fiscalResolutionAllocation.findFirst as jest.Mock
+      ).mockResolvedValue(null);
+      (prisma.fiscalResolutionAllocation.create as jest.Mock).mockResolvedValue(
+        { id: 'alloc-new' },
+      );
 
       const dto = new CreateFiscalResolutionAllocationDto({
         resolutionId: 'res-big',

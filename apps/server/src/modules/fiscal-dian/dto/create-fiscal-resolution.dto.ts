@@ -1,11 +1,16 @@
 import { CreateFiscalResolutionSchema } from './create-fiscal-resolution.schema';
 import { z } from 'zod';
 
-export class CreateFiscalResolutionDto
-  implements z.infer<typeof CreateFiscalResolutionSchema>
-{
+export class CreateFiscalResolutionDto implements z.infer<
+  typeof CreateFiscalResolutionSchema
+> {
   resolutionNumber!: string;
-  documentType!: 'INVOICE' | 'POS_TICKET' | 'CREDIT_NOTE' | 'DEBIT_NOTE' | 'SUPPORT_DOCUMENT';
+  documentType!:
+    | 'INVOICE'
+    | 'POS_TICKET'
+    | 'CREDIT_NOTE'
+    | 'DEBIT_NOTE'
+    | 'SUPPORT_DOCUMENT';
   prefix!: string;
   rangeFrom!: number;
   rangeTo!: number;

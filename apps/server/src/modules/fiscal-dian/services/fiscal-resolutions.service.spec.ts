@@ -20,7 +20,10 @@ describe('FiscalResolutionsService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new FiscalResolutionsService(prisma as any, mockTenantContext as any);
+    service = new FiscalResolutionsService(
+      prisma as any,
+      mockTenantContext as any,
+    );
   });
 
   // ── findAll ───────────────────────────────────────────────────────────
@@ -31,7 +34,9 @@ describe('FiscalResolutionsService', () => {
     ];
 
     it('returns paginated results', async () => {
-      (prisma.fiscalResolution.findMany as jest.Mock).mockResolvedValue(mockResolutions);
+      (prisma.fiscalResolution.findMany as jest.Mock).mockResolvedValue(
+        mockResolutions,
+      );
       (prisma.fiscalResolution.count as jest.Mock).mockResolvedValue(1);
 
       const result = await service.findAll({ page: 1, pageSize: 20 });
@@ -81,12 +86,16 @@ describe('FiscalResolutionsService', () => {
   describe('findById', () => {
     it('returns the resolution when found', async () => {
       const mockResolution = { id: 'res-1', resolutionNumber: 'RES-001' };
-      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(mockResolution);
+      (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(
+        mockResolution,
+      );
 
       const result = await service.findById('res-1');
 
       expect(result).toEqual(mockResolution);
-      expect(prisma.fiscalResolution.findUnique).toHaveBeenCalledWith({ where: { id: 'res-1' } });
+      expect(prisma.fiscalResolution.findUnique).toHaveBeenCalledWith({
+        where: { id: 'res-1' },
+      });
     });
 
     it('returns null when not found (no exception)', async () => {
@@ -149,7 +158,9 @@ describe('FiscalResolutionsService', () => {
         workstationId: 'ws-1',
       });
 
-      await expect(service.create(invalidDto)).rejects.toThrow(InvalidResolutionRangeException);
+      await expect(service.create(invalidDto)).rejects.toThrow(
+        InvalidResolutionRangeException,
+      );
     });
 
     it('throws OverlappingActiveResolutionException when an active resolution exists on same tuple', async () => {
@@ -158,7 +169,9 @@ describe('FiscalResolutionsService', () => {
         state: 'ACTIVE',
       });
 
-      await expect(service.create(validDto)).rejects.toThrow(OverlappingActiveResolutionException);
+      await expect(service.create(validDto)).rejects.toThrow(
+        OverlappingActiveResolutionException,
+      );
     });
 
     it('allows creation when workstationId is null and existing has null workstationId', async () => {
@@ -173,7 +186,9 @@ describe('FiscalResolutionsService', () => {
         workstationId: null,
       });
       (prisma.fiscalResolution.findFirst as jest.Mock).mockResolvedValue(null);
-      (prisma.fiscalResolution.create as jest.Mock).mockResolvedValue({ id: 'res-nullws' });
+      (prisma.fiscalResolution.create as jest.Mock).mockResolvedValue({
+        id: 'res-nullws',
+      });
 
       const result = await service.create(dtoWithNullWs);
 

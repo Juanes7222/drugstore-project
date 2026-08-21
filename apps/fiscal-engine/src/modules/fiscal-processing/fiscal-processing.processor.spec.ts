@@ -10,12 +10,14 @@ jest.mock('@pharmacy/database', () => ({
 import { FiscalProcessingProcessor } from './fiscal-processing.processor';
 import { FiscalDocumentsService } from './fiscal-documents.service';
 import { FiscalTransmissionService } from './fiscal-transmission.service';
+import { ContingencyResultWriter } from './contingency-result.writer';
 
 describe('FiscalProcessingProcessor', () => {
   let processor: FiscalProcessingProcessor;
   let prisma: DeepMockProxy<PrismaClient>;
   let documentsService: { generate: jest.Mock };
   let transmissionService: { transmit: jest.Mock };
+  let contingencyResultWriter: { writeForDocument: jest.Mock };
 
   const job = (overrides: Record<string, unknown> = {}) =>
     ({ id: 'job-1', data: { fiscalDocumentId: 'fd-1' }, ...overrides }) as any;
@@ -31,10 +33,12 @@ describe('FiscalProcessingProcessor', () => {
     prisma = mockDeep<PrismaClient>();
     documentsService = { generate: jest.fn().mockResolvedValue(undefined) };
     transmissionService = { transmit: jest.fn().mockResolvedValue(undefined) };
+    contingencyResultWriter = { writeForDocument: jest.fn().mockResolvedValue(undefined) };
     (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(pendingDoc);
     processor = new FiscalProcessingProcessor(
       documentsService as unknown as FiscalDocumentsService,
       transmissionService as unknown as FiscalTransmissionService,
+      contingencyResultWriter as unknown as ContingencyResultWriter,
       prisma as any,
     );
   });
@@ -55,10 +59,10 @@ describe('FiscalProcessingProcessor', () => {
       expect(transmissionService.transmit).toHaveBeenCalledWith('fd-1');
     });
 
-    it('does not write a SyncInvoiceResult for a non-contingency document', async () => {
+    it('does not write a contingency result for a non-contingency document', async () => {
       await processor.process(job());
 
-      expect(prisma.syncInvoiceResult.upsert).not.toHaveBeenCalled();
+      expect(contingencyResultWriter.writeForDocument).not.toHaveBeenCalled();
     });
 
     it('moves the document to GENERATION_ERROR and rethrows when generation fails', async () => {
@@ -70,6 +74,7 @@ describe('FiscalProcessingProcessor', () => {
         data: { fiscalState: 'GENERATION_ERROR' },
       });
       expect(transmissionService.transmit).not.toHaveBeenCalled();
+      expect(contingencyResultWriter.writeForDocument).not.toHaveBeenCalled();
     });
 
     it('still rethrows the original error when the error-state update itself fails', async () => {
@@ -83,115 +88,29 @@ describe('FiscalProcessingProcessor', () => {
       transmissionService.transmit.mockRejectedValue(new Error('DIAN timeout'));
 
       await expect(processor.process(job())).rejects.toThrow('DIAN timeout');
+      expect(contingencyResultWriter.writeForDocument).not.toHaveBeenCalled();
     });
 
-    it('writes an AUTHORIZED SyncInvoiceResult for a validated contingency document', async () => {
+    it('delegates the contingency result write for a contingency document', async () => {
       (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue({
         ...pendingDoc,
         contingencyReason: 'DISASTER',
       });
-      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({
-        sourceWorkstationId: 'ws-1',
-      });
-      (prisma.fiscalDocument.update as jest.Mock).mockResolvedValue({});
-      const transmittedDoc = {
-        id: 'fd-1',
-        subscriptionId: 'sub-1',
-        cufeCude: 'cufe-123',
-        signedXml: '<Signed/>',
-        fiscalState: 'VALIDATED',
-        ptResponseCode: '00',
-        ptResponseMessage: 'Ok',
-        saleId: 'sale-1',
-      };
-      (prisma.fiscalDocument.findUnique as jest.Mock)
-        .mockResolvedValueOnce({ ...pendingDoc, contingencyReason: 'DISASTER' })
-        .mockResolvedValueOnce(transmittedDoc);
 
       await processor.process(job());
 
-      expect(prisma.syncInvoiceResult.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: expect.any(String) },
-          create: expect.objectContaining({
-            subscriptionId: 'sub-1',
-            workstationId: 'ws-1',
-            status: 'AUTHORIZED',
-            cufeOfficial: 'cufe-123',
-            dianXml: '<Signed/>',
-            authorizedAt: expect.any(Date),
-          }),
-        }),
-      );
+      expect(contingencyResultWriter.writeForDocument).toHaveBeenCalledWith('fd-1');
     });
 
-    it('writes a REJECTED SyncInvoiceResult with the DIAN reason for a rejected contingency document', async () => {
-      (prisma.fiscalDocument.findUnique as jest.Mock)
-        .mockResolvedValueOnce({ ...pendingDoc, contingencyReason: 'DISASTER' })
-        .mockResolvedValueOnce({
-          id: 'fd-1',
-          subscriptionId: 'sub-1',
-          cufeCude: null,
-          signedXml: null,
-          fiscalState: 'REJECTED',
-          ptResponseCode: '05',
-          ptResponseMessage: 'Firma inválida',
-          saleId: 'sale-1',
-        });
-      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({
-        sourceWorkstationId: 'ws-1',
-      });
+    it('still delegates to the writer when the initial lookup finds nothing (writer no-ops)', async () => {
+      // initialDoc?.contingencyReason is undefined, which is !== null, so the
+      // processor treats the document as contingency-origin; the writer is
+      // responsible for no-opping on a missing document.
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(null);
 
       await processor.process(job());
 
-      expect(prisma.syncInvoiceResult.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          create: expect.objectContaining({
-            status: 'REJECTED',
-            rejectionReason: 'Firma inválida',
-          }),
-        }),
-      );
-    });
-
-    it('skips the SyncInvoiceResult write when the sale has no workstation', async () => {
-      (prisma.fiscalDocument.findUnique as jest.Mock)
-        .mockResolvedValueOnce({ ...pendingDoc, contingencyReason: 'DISASTER' })
-        .mockResolvedValueOnce({
-          id: 'fd-1',
-          subscriptionId: 'sub-1',
-          cufeCude: 'cufe-123',
-          signedXml: null,
-          fiscalState: 'VALIDATED',
-          ptResponseCode: '00',
-          ptResponseMessage: 'Ok',
-          saleId: null,
-        });
-
-      await processor.process(job());
-
-      expect(prisma.syncInvoiceResult.upsert).not.toHaveBeenCalled();
-    });
-
-    it('swallows SyncInvoiceResult write failures so the job still completes', async () => {
-      (prisma.fiscalDocument.findUnique as jest.Mock)
-        .mockResolvedValueOnce({ ...pendingDoc, contingencyReason: 'DISASTER' })
-        .mockResolvedValueOnce({
-          id: 'fd-1',
-          subscriptionId: 'sub-1',
-          cufeCude: 'cufe-123',
-          signedXml: null,
-          fiscalState: 'VALIDATED',
-          ptResponseCode: '00',
-          ptResponseMessage: 'Ok',
-          saleId: 'sale-1',
-        });
-      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({
-        sourceWorkstationId: 'ws-1',
-      });
-      (prisma.syncInvoiceResult.upsert as jest.Mock).mockRejectedValue(new Error('db down'));
-
-      await expect(processor.process(job())).resolves.toBeUndefined();
+      expect(contingencyResultWriter.writeForDocument).toHaveBeenCalledWith('fd-1');
     });
   });
 });

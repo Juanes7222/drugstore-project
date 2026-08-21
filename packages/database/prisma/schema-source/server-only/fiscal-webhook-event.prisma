@@ -1,0 +1,38 @@
+// Server-only schema fragment — only included in the full build.
+// Immutable intake log for webhook events pushed by external fiscal
+// providers (Alanube, Dataico). Every inbound webhook is persisted raw
+// before any processing so a provider retry or an audit trail can always
+// be reconstructed.
+
+model FiscalWebhookEvent {
+  id               String                    @id
+  subscriptionId   String
+  provider         FiscalProvider
+  // Provider-side event identifier used for deduplication; null when the
+  // provider payload carries none (dedupe then falls back to idempotent
+  // document-state transitions).
+  providerEventId  String?
+  eventType        String?
+  // FiscalDocument matched through (providerType, providerTrackId); null
+  // when the payload references a document this system does not know.
+  fiscalDocumentId String?
+  rawPayload       Json
+  signatureValid   Boolean
+  // Normalized outcome written by apps/server at intake time — the database
+  // is the contract between the two apps, so apps/fiscal-engine never
+  // re-parses provider-specific payloads.
+  outcome          FiscalWebhookOutcome?
+  cufe             String?
+  signedXml        String?  @db.Text
+  responseCode     String?
+  responseMessage  String?  @db.Text
+  receivedAt       DateTime                  @default(now())
+  processedAt      DateTime?
+  processingError  String?                   @db.Text
+  status           FiscalWebhookEventStatus  @default(RECEIVED)
+
+  @@unique([provider, providerEventId])
+  @@index([subscriptionId, receivedAt])
+  @@index([status])
+  @@index([fiscalDocumentId])
+}

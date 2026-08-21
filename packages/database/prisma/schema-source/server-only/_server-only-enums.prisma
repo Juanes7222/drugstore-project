@@ -94,6 +94,53 @@ enum ResolutionState {
   EXPIRED
 }
 
+// ---------------------------------------------------------------------------
+// Fiscal provider / certificate enums
+// ---------------------------------------------------------------------------
+
+/// Which party transmits fiscal documents for a subscription. DIAN_DIRECT is
+/// the software's own transmission (certificate held by the pharmacy, UBL
+/// signed locally); ALANUBE and DATAICO are external providers that receive
+/// invoice data over REST, sign and transmit themselves, and push results
+/// back via webhooks.
+enum FiscalProvider {
+  DIAN_DIRECT
+  ALANUBE
+  DATAICO
+}
+
+/// Who holds the DIAN digital certificate: SELF means the pharmacy uploads it
+/// to this system (DIAN_DIRECT path); PROVIDER means the external provider
+/// keeps it on their side.
+enum CertificateCustody {
+  SELF
+  PROVIDER
+}
+
+enum FiscalCertificateStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+  ROTATED
+}
+
+enum FiscalWebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+  REJECTED
+}
+
+/// Normalized transmission outcome extracted from a provider webhook
+/// payload. VALIDATED and REJECTED mirror DIAN's accepted/refused verdicts;
+/// OTHER covers provider-internal states (e.g. "queued", "validating")
+/// that must not flip the document to a terminal state.
+enum FiscalWebhookOutcome {
+  VALIDATED
+  REJECTED
+  OTHER
+}
+
 enum ConfigValueType {
   NUMBER
   BOOLEAN

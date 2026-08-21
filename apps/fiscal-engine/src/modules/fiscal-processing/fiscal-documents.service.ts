@@ -71,6 +71,7 @@ export class FiscalDocumentsService {
     // ── Resolve secrets and fetch ClTec from DIAN ──
     const techConfig = await this.loadTechProviderConfig(fiscalDocumentId);
     const secretData = await this.secrets.readSecret(
+      doc.subscriptionId,
       techConfig.credentialReference ?? '',
     );
 
@@ -203,14 +204,20 @@ export class FiscalDocumentsService {
     });
   }
 
-  private async loadTechProviderConfig(
+private async loadTechProviderConfig(
     fiscalDocumentId: string,
   ): Promise<any> {
-    const config = await this.prisma.techProviderConfig.findFirst();
+    const doc = await this.prisma.fiscalDocument.findUnique({
+      where: { id: fiscalDocumentId },
+      select: { subscriptionId: true },
+    });
+    const config = await this.prisma.techProviderConfig.findFirst({
+      where: { subscriptionId: doc?.subscriptionId },
+    });
     if (!config) {
       throw new FiscalDocumentGenerationFailedException(
         fiscalDocumentId,
-        'No TechProviderConfig found — cannot authenticate with DIAN for ClTec lookup',
+        'No TechProviderConfig found - cannot authenticate with DIAN for ClTec lookup',
       );
     }
     return config;

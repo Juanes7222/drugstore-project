@@ -24,6 +24,8 @@ model FiscalIssuerConfig {
   updatedById           String?
   updatedByUser         User?     @relation(fields: [updatedById], references: [id], onDelete: NoAction)
 
+  certificates          FiscalCertificate[]
+
   @@index([subscriptionId])
   @@unique([subscriptionId, nit])
 }
@@ -31,10 +33,21 @@ model FiscalIssuerConfig {
 model TechProviderConfig {
   id                String    @id
   subscriptionId    String
+  // Which party transmits this subscription's documents. Defaults to
+  // DIAN_DIRECT (the historical behaviour); provider-based plans switch
+  // this to ALANUBE or DATAICO at subscription time.
+  providerType      FiscalProvider @default(DIAN_DIRECT)
   endpointUrl       String
   environment       String
   timeoutSeconds    Int       @default(30)
+  // Pointer into the secret store for provider credentials (API keys,
+  // account tokens) or the certificate bundle for DIAN_DIRECT. Follows the
+  // `store:path` convention — never the credential material itself.
   credentialReference String?
+  // Pointer into the secret store for the webhook HMAC secret of the
+  // configured provider. Only meaningful when providerType is a webhook
+  // provider; kept null for DIAN_DIRECT.
+  webhookSecretReference String?
   updatedAt         DateTime  @updatedAt
   updatedById       String?
   updatedByUser     User?     @relation(fields: [updatedById], references: [id], onDelete: NoAction)

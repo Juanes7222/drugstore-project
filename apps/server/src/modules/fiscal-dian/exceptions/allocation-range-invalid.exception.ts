@@ -7,10 +7,6 @@ import { DomainException } from '@/common/exceptions/domain.exception';
  */
 export class AllocationRangeInvalidException extends DomainException {
   constructor(message: string) {
-    super(
-      'ALLOCATION_RANGE_INVALID',
-      message,
-      HttpStatus.BAD_REQUEST,
-    );
+    super('ALLOCATION_RANGE_INVALID', message, HttpStatus.BAD_REQUEST);
   }
 }

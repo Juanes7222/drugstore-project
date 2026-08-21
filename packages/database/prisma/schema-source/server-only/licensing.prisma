@@ -17,6 +17,14 @@ model Plan {
   includedWorkstations          Int           @default(1)
   extraWorkstationPriceCents    Int?
   features                      String[]      @default([])
+  // Fiscal transmission party offered by this plan. Commercial mapping —
+  // the runtime switch for an existing subscription lives on
+  // TechProviderConfig.providerType.
+  fiscalProvider                FiscalProvider @default(DIAN_DIRECT)
+  // Whether the plan's fiscal model keeps the DIAN certificate on the
+  // customer side (SELF, requires certificate upload) or with the external
+  // provider (PROVIDER).
+  certificateCustody            CertificateCustody @default(SELF)
   displayOrder                  Int           @default(0)
   isActive                      Boolean       @default(true)
   isPublic                      Boolean       @default(false)

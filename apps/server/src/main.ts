@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import express from 'express';
 import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
@@ -44,6 +45,18 @@ async function bootstrap(): Promise<void> {
 
   app.use(helmet() as any);
   app.use(compression() as any);
+
+  // Raw-body capture for webhook HMAC verification (fiscal-dian providers)
+  // plus a larger limit for base64 certificate uploads. The buffer is only
+  // kept on the request object; response bodies are unaffected.
+  app.use(
+    express.json({
+      limit: '2mb',
+      verify: (req, _res, buf) => {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+  );
 
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(app.get(TenantContextInterceptor));

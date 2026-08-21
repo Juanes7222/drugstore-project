@@ -39,7 +39,7 @@ export class FileSystemSecretReaderAdapter implements SecretReaderPort {
 
   constructor(private readonly configService: ConfigService) {}
 
-  async readSecret(reference: string): Promise<SecretData> {
+  async readSecret(_subscriptionId: string, reference: string): Promise<SecretData> {
     if (!reference.startsWith('file:')) {
       throw new Error(
         `FileSystemSecretReaderAdapter only supports "file:"-prefixed references, got "${reference}"`,

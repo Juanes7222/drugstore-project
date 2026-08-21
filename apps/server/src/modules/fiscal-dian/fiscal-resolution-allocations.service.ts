@@ -52,7 +52,10 @@ export class FiscalResolutionAllocationsService {
     if (!resolution) {
       throw new AllocationRangeInvalidException('Resolution not found');
     }
-    if (dto.rangeFrom < resolution.rangeFrom || dto.rangeTo > resolution.rangeTo) {
+    if (
+      dto.rangeFrom < resolution.rangeFrom ||
+      dto.rangeTo > resolution.rangeTo
+    ) {
       throw new AllocationRangeInvalidException(
         'Allocation range must fall within the resolution range',
       );

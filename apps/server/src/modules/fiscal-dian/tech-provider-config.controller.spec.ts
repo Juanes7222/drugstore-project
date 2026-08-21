@@ -24,11 +24,17 @@ describe('TechProviderConfigController (integration)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TechProviderConfigController],
-      providers: [{ provide: TechProviderConfigService, useValue: mockService }],
+      providers: [
+        { provide: TechProviderConfigService, useValue: mockService },
+      ],
     }).compile();
 
-    controller = module.get<TechProviderConfigController>(TechProviderConfigController);
-    service = module.get(TechProviderConfigService) as jest.Mocked<typeof mockService>;
+    controller = module.get<TechProviderConfigController>(
+      TechProviderConfigController,
+    );
+    service = module.get(TechProviderConfigService) as jest.Mocked<
+      typeof mockService
+    >;
   });
 
   describe('GET /fiscal-dian/tech-provider-config', () => {

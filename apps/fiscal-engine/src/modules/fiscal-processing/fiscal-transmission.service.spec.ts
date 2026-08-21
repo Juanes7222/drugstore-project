@@ -38,6 +38,7 @@ function createSecretReaderFake() {
 
 const PENDING_DOC = {
   id: 'fd-1',
+  subscriptionId: 'sub-test',
   fullNumber: 'FV-DEMO-000001',
   fiscalState: 'PENDING_SIGNATURE',
   xmlPayload: '<Invoice/>',
@@ -76,10 +77,24 @@ describe('FiscalTransmissionService', () => {
 
       // FIX-008: the atomic claim must be the only way out of
       // PENDING_SIGNATURE — a second worker finds zero rows and aborts.
+      // The claim also records the transmitting party for webhook correlation.
       expect(prisma.fiscalDocument.updateMany).toHaveBeenCalledWith({
         where: { id: 'fd-1', fiscalState: 'PENDING_SIGNATURE' },
-        data: { fiscalState: 'IN_TRANSMISSION', lastRetryAt: expect.any(Date) },
+        data: {
+          fiscalState: 'IN_TRANSMISSION',
+          providerType: 'DIAN_DIRECT',
+          lastRetryAt: expect.any(Date),
+        },
       });
+      // The provider config lookup is scoped to the document's subscription
+      // so one tenant can never resolve another tenant's credentials.
+      expect(prisma.techProviderConfig.findFirst).toHaveBeenCalledWith({
+        where: { subscriptionId: 'sub-test' },
+      });
+      expect(secrets.readSecret).toHaveBeenCalledWith(
+        'sub-test',
+        'file:test-cert.json',
+      );
       expect(transmission.signAndSend).toHaveBeenCalledWith(
         '<Invoice/>',
         'FV-DEMO-000001.xml',
@@ -93,6 +108,9 @@ describe('FiscalTransmissionService', () => {
           cufeCude: 'cufe-123',
           signedXml: '<SignedInvoice/>',
           fiscalState: 'VALIDATED',
+          // The direct path correlates future webhook/status flows on the
+          // DIAN-issued key, so it is stored as providerTrackId too.
+          providerTrackId: 'cufe-123',
           ptResponseCode: '00',
           ptResponseMessage: 'Documento procesado',
         },
@@ -196,8 +214,49 @@ describe('FiscalTransmissionService', () => {
       (prisma.techProviderConfig.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.transmit('fd-1')).rejects.toThrow(
-        'No TechProviderConfig found in the database',
+        'No TechProviderConfig found for subscription sub-test',
       );
+    });
+
+    describe('applyTransmissionResult', () => {
+      it('stores the provider track id on VALIDATED without a cufe', async () => {
+        await service.applyTransmissionResult('fd-1', {
+          isValid: true,
+          xmlDocumentKey: null,
+          signedXml: null,
+          statusCode: '00',
+          statusMessage: 'Ok',
+        });
+
+        expect(prisma.fiscalDocument.update).toHaveBeenCalledWith({
+          where: { id: 'fd-1' },
+          data: {
+            fiscalState: 'VALIDATED',
+            providerTrackId: undefined,
+            ptResponseCode: '00',
+            ptResponseMessage: 'Ok',
+          },
+        });
+      });
+
+      it('records only the refusal on REJECTED', async () => {
+        await service.applyTransmissionResult('fd-1', {
+          isValid: false,
+          xmlDocumentKey: null,
+          signedXml: null,
+          statusCode: '05',
+          statusMessage: 'Firma inválida',
+        });
+
+        expect(prisma.fiscalDocument.update).toHaveBeenCalledWith({
+          where: { id: 'fd-1' },
+          data: {
+            fiscalState: 'REJECTED',
+            ptResponseCode: '05',
+            ptResponseMessage: 'Firma inválida',
+          },
+        });
+      });
     });
   });
 });

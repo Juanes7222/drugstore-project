@@ -32,7 +32,7 @@ describe('FileSystemSecretReaderAdapter', () => {
         'utf-8',
       );
 
-      const result = await adapter.readSecret('file:test-cert.json');
+      const result = await adapter.readSecret('sub-test', 'file:test-cert.json');
 
       expect(result.certificate).toEqual(Buffer.from('fake-p12-bytes'));
       expect(result.password).toBe('test-password');
@@ -40,17 +40,17 @@ describe('FileSystemSecretReaderAdapter', () => {
     });
 
     it('throws for references that are not file:-prefixed', async () => {
-      await expect(adapter.readSecret('vault:secret/dian/cert')).rejects.toThrow(
-        'only supports "file:"-prefixed references',
-      );
+      await expect(
+        adapter.readSecret('sub-test', 'vault:secret/dian/cert'),
+      ).rejects.toThrow('only supports "file:"-prefixed references');
     });
 
     it('throws when the referenced file is not valid JSON', async () => {
       await writeFile(join(baseDir, 'broken.json'), 'not json', 'utf-8');
 
-      await expect(adapter.readSecret('file:broken.json')).rejects.toThrow(
-        'is not valid JSON',
-      );
+      await expect(
+        adapter.readSecret('sub-test', 'file:broken.json'),
+      ).rejects.toThrow('is not valid JSON');
     });
 
     it('throws when the certificate field is missing', async () => {
@@ -60,9 +60,9 @@ describe('FileSystemSecretReaderAdapter', () => {
         'utf-8',
       );
 
-      await expect(adapter.readSecret('file:no-cert.json')).rejects.toThrow(
-        'invalid "certificate" field',
-      );
+      await expect(
+        adapter.readSecret('sub-test', 'file:no-cert.json'),
+      ).rejects.toThrow('invalid "certificate" field');
     });
 
     it('throws when the password field is missing', async () => {
@@ -72,9 +72,9 @@ describe('FileSystemSecretReaderAdapter', () => {
         'utf-8',
       );
 
-      await expect(adapter.readSecret('file:no-pass.json')).rejects.toThrow(
-        'invalid "password" field',
-      );
+      await expect(
+        adapter.readSecret('sub-test', 'file:no-pass.json'),
+      ).rejects.toThrow('invalid "password" field');
     });
 
     it('throws when the softwareSecurityCode field is missing', async () => {
@@ -84,9 +84,9 @@ describe('FileSystemSecretReaderAdapter', () => {
         'utf-8',
       );
 
-      await expect(adapter.readSecret('file:no-code.json')).rejects.toThrow(
-        'invalid "softwareSecurityCode" field',
-      );
+      await expect(
+        adapter.readSecret('sub-test', 'file:no-code.json'),
+      ).rejects.toThrow('invalid "softwareSecurityCode" field');
     });
   });
 });

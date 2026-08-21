@@ -83,6 +83,37 @@ export enum FiscalDocumentState {
   CONTINGENCY = "CONTINGENCY",
 }
 
+export enum FiscalProvider {
+  DIAN_DIRECT = "DIAN_DIRECT",
+  ALANUBE = "ALANUBE",
+  DATAICO = "DATAICO",
+}
+
+export enum CertificateCustody {
+  SELF = "SELF",
+  PROVIDER = "PROVIDER",
+}
+
+export enum FiscalCertificateStatus {
+  ACTIVE = "ACTIVE",
+  EXPIRED = "EXPIRED",
+  REVOKED = "REVOKED",
+  ROTATED = "ROTATED",
+}
+
+export enum FiscalWebhookEventStatus {
+  RECEIVED = "RECEIVED",
+  PROCESSED = "PROCESSED",
+  FAILED = "FAILED",
+  REJECTED = "REJECTED",
+}
+
+export enum FiscalWebhookOutcome {
+  VALIDATED = "VALIDATED",
+  REJECTED = "REJECTED",
+  OTHER = "OTHER",
+}
+
 export enum SyncStatus {
   PENDING = "PENDING",
   PROCESSING = "PROCESSING",

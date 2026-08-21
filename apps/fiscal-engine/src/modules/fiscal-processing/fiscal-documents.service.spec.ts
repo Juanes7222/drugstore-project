@@ -36,6 +36,7 @@ const ISSUE_DATE = new Date(2026, 7, 5, 10, 53, 10);
 
 const DOC_WITH_RESOLUTION = {
   id: 'fd-1',
+  subscriptionId: 'sub-test',
   fullNumber: 'FV-DEMO-000001',
   fiscalState: 'PENDING_GENERATION',
   documentType: 'INVOICE',
@@ -145,6 +146,19 @@ describe('FiscalDocumentsService', () => {
     it('fetches the ClTec live from DIAN before computing the CUFE', async () => {
       await service.generate('fd-1');
 
+      // The provider config lookup first resolves the document's own
+      // subscription, then scopes the config search to it.
+      expect(prisma.fiscalDocument.findUnique).toHaveBeenCalledWith({
+        where: { id: 'fd-1' },
+        select: { subscriptionId: true },
+      });
+      expect(prisma.techProviderConfig.findFirst).toHaveBeenCalledWith({
+        where: { subscriptionId: 'sub-test' },
+      });
+      expect(secrets.readSecret).toHaveBeenCalledWith(
+        'sub-test',
+        'file:test-cert.json',
+      );
       expect(transmission.getNumberingRange).toHaveBeenCalledWith(
         Buffer.from('fake-p12-bytes'),
         'test-password',

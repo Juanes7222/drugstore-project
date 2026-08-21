@@ -8,7 +8,10 @@ import { z } from 'zod';
 export const CreateFiscalResolutionAllocationSchema = z.object({
   resolutionId: z.string().uuid('Invalid resolution UUID'),
   workstationId: z.string().uuid('Invalid workstation UUID'),
-  rangeFrom: z.number().int().positive('Range start must be a positive integer'),
+  rangeFrom: z
+    .number()
+    .int()
+    .positive('Range start must be a positive integer'),
   rangeTo: z.number().int().positive('Range end must be a positive integer'),
 });
 
@@ -16,9 +19,9 @@ export type CreateFiscalResolutionAllocationInput = z.infer<
   typeof CreateFiscalResolutionAllocationSchema
 >;
 
-export class CreateFiscalResolutionAllocationDto
-  implements z.infer<typeof CreateFiscalResolutionAllocationSchema>
-{
+export class CreateFiscalResolutionAllocationDto implements z.infer<
+  typeof CreateFiscalResolutionAllocationSchema
+> {
   resolutionId!: string;
   workstationId!: string;
   rangeFrom!: number;

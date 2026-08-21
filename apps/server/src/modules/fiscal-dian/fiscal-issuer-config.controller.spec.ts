@@ -24,11 +24,17 @@ describe('FiscalIssuerConfigController (integration)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [FiscalIssuerConfigController],
-      providers: [{ provide: FiscalIssuerConfigService, useValue: mockService }],
+      providers: [
+        { provide: FiscalIssuerConfigService, useValue: mockService },
+      ],
     }).compile();
 
-    controller = module.get<FiscalIssuerConfigController>(FiscalIssuerConfigController);
-    service = module.get(FiscalIssuerConfigService) as jest.Mocked<typeof mockService>;
+    controller = module.get<FiscalIssuerConfigController>(
+      FiscalIssuerConfigController,
+    );
+    service = module.get(FiscalIssuerConfigService) as jest.Mocked<
+      typeof mockService
+    >;
   });
 
   describe('GET /fiscal-dian/issuer-config', () => {

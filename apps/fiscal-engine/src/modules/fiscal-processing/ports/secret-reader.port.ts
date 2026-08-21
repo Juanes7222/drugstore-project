@@ -1,19 +1,18 @@
 /**
- * Port for resolving a TechProviderConfig.credentialReference into the
- * actual PKCS#12 certificate bytes, its private-key password, and the
+ * Port for resolving the credential material the DIAN_DIRECT path needs:
+ * the PKCS#12 certificate bytes, its private-key password, and the
  * 48-character software security code issued by DIAN during software
  * registration.
  *
- * The reference format is adapter-specific:
- *   - FileSystemSecretReaderAdapter uses "file:relative/path.json"
- *   - A future Vault adapter would use "vault:secret/data/dian/cert"
+ * The subscription id is part of the contract so a multi-tenant deployment
+ * can never resolve one tenant's certificate for another tenant's document
+ * (the historical findFirst-based lookup did exactly that).
  *
- * The software security code lives in the secret store rather than in a
- * database column because it is a DIAN-issued credential that belongs
- * alongside the certificate in whatever secure storage the deployment uses —
- * adding a column to FiscalIssuerConfig would couple the schema to this
- * specific credential, while the secret-reader abstraction keeps it
- * replaceable.
+ * Reference format is adapter-specific:
+ *   - FileSystemSecretReaderAdapter uses "file:relative/path.json" and
+ *     ignores the subscription id (development-only).
+ *   - DbCertificateSecretReaderAdapter ignores the reference and reads the
+ *     tenant's ACTIVE FiscalCertificate row, decrypting its bundle.
  */
 export const SECRET_READER_PORT = Symbol('SecretReaderPort');
 
@@ -34,9 +33,8 @@ export interface SecretData {
 
 export interface SecretReaderPort {
   /**
-   * Resolves a credential reference to the certificate, password, and
-   * software security code.
+   * Resolves the subscription's certificate credential material.
    * Throws if the reference cannot be resolved or the data is unreadable.
    */
-  readSecret(reference: string): Promise<SecretData>;
+  readSecret(subscriptionId: string, reference: string): Promise<SecretData>;
 }

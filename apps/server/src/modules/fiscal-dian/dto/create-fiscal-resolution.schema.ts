@@ -18,11 +18,20 @@ export const CreateFiscalResolutionSchema = z.object({
     .string()
     .min(1, 'Prefix is required')
     .max(10, 'Prefix must not exceed 10 characters'),
-  rangeFrom: z.number().int().positive('Range start must be a positive integer'),
+  rangeFrom: z
+    .number()
+    .int()
+    .positive('Range start must be a positive integer'),
   rangeTo: z.number().int().positive('Range end must be a positive integer'),
   validFrom: z.string().datetime('Invalid ISO 8601 datetime'),
   validTo: z.string().datetime('Invalid ISO 8601 datetime'),
-  workstationId: z.string().uuid('Invalid workstation UUID').nullable().optional(),
+  workstationId: z
+    .string()
+    .uuid('Invalid workstation UUID')
+    .nullable()
+    .optional(),
 });
 
-export type CreateFiscalResolutionInput = z.infer<typeof CreateFiscalResolutionSchema>;
+export type CreateFiscalResolutionInput = z.infer<
+  typeof CreateFiscalResolutionSchema
+>;

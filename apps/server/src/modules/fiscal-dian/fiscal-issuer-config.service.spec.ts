@@ -19,7 +19,10 @@ describe('FiscalIssuerConfigService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new FiscalIssuerConfigService(prisma as any, mockTenantContext as any);
+    service = new FiscalIssuerConfigService(
+      prisma as any,
+      mockTenantContext as any,
+    );
   });
 
   // ── find ──────────────────────────────────────────────────────────────
@@ -32,7 +35,9 @@ describe('FiscalIssuerConfigService', () => {
     };
 
     it('returns the config when it exists', async () => {
-      (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue(mockConfig);
+      (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue(
+        mockConfig,
+      );
 
       const result = await service.find();
 
@@ -43,9 +48,13 @@ describe('FiscalIssuerConfigService', () => {
     });
 
     it('throws FiscalIssuerConfigNotSetException when config has never been set', async () => {
-      (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue(
+        null,
+      );
 
-      await expect(service.find()).rejects.toThrow(FiscalIssuerConfigNotSetException);
+      await expect(service.find()).rejects.toThrow(
+        FiscalIssuerConfigNotSetException,
+      );
     });
   });
 
@@ -81,7 +90,12 @@ describe('FiscalIssuerConfigService', () => {
       expect(result).toBeDefined();
       expect(prisma.fiscalIssuerConfig.upsert).toHaveBeenCalledWith({
         where: { id: FISCAL_ISSUER_CONFIG_ID },
-        create: { id: FISCAL_ISSUER_CONFIG_ID, subscriptionId: 'test-subscription-id', ...dto, updatedById: 'user-1' },
+        create: {
+          id: FISCAL_ISSUER_CONFIG_ID,
+          subscriptionId: 'test-subscription-id',
+          ...dto,
+          updatedById: 'user-1',
+        },
         update: { ...dto, updatedById: 'user-1' },
       });
     });
@@ -99,7 +113,12 @@ describe('FiscalIssuerConfigService', () => {
       expect(result).toBeDefined();
       expect(prisma.fiscalIssuerConfig.upsert).toHaveBeenCalledWith({
         where: { id: FISCAL_ISSUER_CONFIG_ID },
-        create: { id: FISCAL_ISSUER_CONFIG_ID, subscriptionId: 'test-subscription-id', ...updatedDto, updatedById: 'user-2' },
+        create: {
+          id: FISCAL_ISSUER_CONFIG_ID,
+          subscriptionId: 'test-subscription-id',
+          ...updatedDto,
+          updatedById: 'user-2',
+        },
         update: { ...updatedDto, updatedById: 'user-2' },
       });
     });

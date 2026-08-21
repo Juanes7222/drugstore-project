@@ -1,17 +1,16 @@
-import {
-  Controller,
-  Get,
-  Patch,
-  Body,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Patch, Body, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
-import { RoleType, AuditAction, SystemModule, User } from '@pharmacy/shared-types';
+import {
+  RoleType,
+  AuditAction,
+  SystemModule,
+  User,
+} from '@pharmacy/shared-types';
 import { TechProviderConfigService } from './tech-provider-config.service';
 import { UpsertTechProviderConfigSchema } from './dto/upsert-tech-provider-config.dto';
 import { UpsertTechProviderConfigDto } from './dto/upsert-tech-provider-config.dto';
@@ -29,7 +28,11 @@ export class TechProviderConfigController {
 
   @Patch()
   @Roles(RoleType.ADMIN, RoleType.OWNER)
-  @Auditable({ action: AuditAction.UPDATE, module: SystemModule.FISCAL, entityType: 'TechProviderConfig' })
+  @Auditable({
+    action: AuditAction.UPDATE,
+    module: SystemModule.FISCAL,
+    entityType: 'TechProviderConfig',
+  })
   async upsert(
     @Body(new ZodValidationPipe(UpsertTechProviderConfigSchema))
     dto: UpsertTechProviderConfigDto,

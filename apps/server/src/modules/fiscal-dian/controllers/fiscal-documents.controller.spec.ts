@@ -32,13 +32,21 @@ describe('FiscalDocumentsController (integration)', () => {
       providers: [{ provide: FiscalDocumentsService, useValue: mockService }],
     }).compile();
 
-    controller = module.get<FiscalDocumentsController>(FiscalDocumentsController);
-    service = module.get(FiscalDocumentsService) as jest.Mocked<typeof mockService>;
+    controller = module.get<FiscalDocumentsController>(
+      FiscalDocumentsController,
+    );
+    service = module.get(FiscalDocumentsService) as jest.Mocked<
+      typeof mockService
+    >;
   });
 
   describe('GET /fiscal-dian/documents', () => {
     it('should call findAll with query', async () => {
-      const query = { fiscalState: 'PENDING_GENERATION', page: 1, pageSize: 20 };
+      const query = {
+        fiscalState: 'PENDING_GENERATION',
+        page: 1,
+        pageSize: 20,
+      };
       const expected = [{ id: 'fd-1' }];
       service.findAll.mockResolvedValue(expected);
 
@@ -95,7 +103,10 @@ describe('FiscalDocumentsController (integration)', () => {
 
       const result = await controller.retryDocument('fd-1', mockUser as any);
 
-      expect(service.retry).toHaveBeenCalledWith('fd-1', mockUser.workstationId);
+      expect(service.retry).toHaveBeenCalledWith(
+        'fd-1',
+        mockUser.workstationId,
+      );
       expect(service.enqueueGenerationJob).toHaveBeenCalledWith('fd-1');
       expect(result).toEqual({ id: 'fd-1' });
     });
@@ -103,16 +114,22 @@ describe('FiscalDocumentsController (integration)', () => {
     it('should not enqueue if retry fails', async () => {
       service.retry.mockRejectedValue(new Error('Document not retryable'));
 
-      await expect(controller.retryDocument('fd-1', mockUser as any)).rejects.toThrow('not retryable');
+      await expect(
+        controller.retryDocument('fd-1', mockUser as any),
+      ).rejects.toThrow('not retryable');
 
       expect(service.enqueueGenerationJob).not.toHaveBeenCalled();
     });
 
     it('should propagate when enqueue fails', async () => {
       service.retry.mockResolvedValue({ id: 'fd-1' });
-      service.enqueueGenerationJob.mockRejectedValue(new Error('Queue unavailable'));
+      service.enqueueGenerationJob.mockRejectedValue(
+        new Error('Queue unavailable'),
+      );
 
-      await expect(controller.retryDocument('fd-1', mockUser as any)).rejects.toThrow('Queue unavailable');
+      await expect(
+        controller.retryDocument('fd-1', mockUser as any),
+      ).rejects.toThrow('Queue unavailable');
     });
   });
 });

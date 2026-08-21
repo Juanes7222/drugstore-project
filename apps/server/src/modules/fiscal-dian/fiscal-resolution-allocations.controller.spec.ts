@@ -25,11 +25,17 @@ describe('FiscalResolutionAllocationsController (integration)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [FiscalResolutionAllocationsController],
-      providers: [{ provide: FiscalResolutionAllocationsService, useValue: mockService }],
+      providers: [
+        { provide: FiscalResolutionAllocationsService, useValue: mockService },
+      ],
     }).compile();
 
-    controller = module.get<FiscalResolutionAllocationsController>(FiscalResolutionAllocationsController);
-    service = module.get(FiscalResolutionAllocationsService) as jest.Mocked<typeof mockService>;
+    controller = module.get<FiscalResolutionAllocationsController>(
+      FiscalResolutionAllocationsController,
+    );
+    service = module.get(FiscalResolutionAllocationsService) as jest.Mocked<
+      typeof mockService
+    >;
   });
 
   describe('GET /fiscal-dian/resolution-allocations', () => {

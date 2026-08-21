@@ -1,11 +1,16 @@
 export { FiscalDianModule } from './fiscal-dian.module';
 export { FiscalDocumentsService } from './services/fiscal-documents.service';
 export { FiscalResolutionsService } from './services/fiscal-resolutions.service';
+export { FiscalCertificateService } from './services/fiscal-certificate.service';
+export { FiscalCertificateCryptoService } from './services/fiscal-certificate-crypto.service';
+export { FiscalWebhookService } from './services/fiscal-webhook.service';
 export { FiscalIssuerConfigService } from './fiscal-issuer-config.service';
 export { TechProviderConfigService } from './tech-provider-config.service';
 export { FiscalResolutionAllocationsService } from './fiscal-resolution-allocations.service';
 export { FiscalIssuerConfigNotSetException } from './exceptions/fiscal-issuer-config-not-set.exception';
 export { TechProviderConfigNotSetException } from './exceptions/tech-provider-config-not-set.exception';
+export { FiscalCertificateNotFoundException } from './exceptions/fiscal-certificate-not-found.exception';
+export { FiscalCertificateInvalidException } from './exceptions/fiscal-certificate-invalid.exception';
 export { OverlappingActiveResolutionException } from './exceptions/overlapping-active-resolution.exception';
 export { InvalidResolutionRangeException } from './exceptions/invalid-resolution-range.exception';
 export { DocumentNotRetryableException } from './exceptions/document-not-retryable.exception';

@@ -19,7 +19,10 @@ describe('TechProviderConfigService', () => {
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    service = new TechProviderConfigService(prisma as any, mockTenantContext as any);
+    service = new TechProviderConfigService(
+      prisma as any,
+      mockTenantContext as any,
+    );
   });
 
   // ── find ──────────────────────────────────────────────────────────────
@@ -33,7 +36,9 @@ describe('TechProviderConfigService', () => {
     };
 
     it('returns the config when it exists', async () => {
-      (prisma.techProviderConfig.findUnique as jest.Mock).mockResolvedValue(mockConfig);
+      (prisma.techProviderConfig.findUnique as jest.Mock).mockResolvedValue(
+        mockConfig,
+      );
 
       const result = await service.find();
 
@@ -44,9 +49,13 @@ describe('TechProviderConfigService', () => {
     });
 
     it('throws TechProviderConfigNotSetException when config has never been set', async () => {
-      (prisma.techProviderConfig.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.techProviderConfig.findUnique as jest.Mock).mockResolvedValue(
+        null,
+      );
 
-      await expect(service.find()).rejects.toThrow(TechProviderConfigNotSetException);
+      await expect(service.find()).rejects.toThrow(
+        TechProviderConfigNotSetException,
+      );
     });
   });
 
@@ -72,7 +81,12 @@ describe('TechProviderConfigService', () => {
       expect(result).toBeDefined();
       expect(prisma.techProviderConfig.upsert).toHaveBeenCalledWith({
         where: { id: TECH_PROVIDER_CONFIG_ID },
-        create: { id: TECH_PROVIDER_CONFIG_ID, subscriptionId: 'test-subscription-id', ...dto, updatedById: 'user-1' },
+        create: {
+          id: TECH_PROVIDER_CONFIG_ID,
+          subscriptionId: 'test-subscription-id',
+          ...dto,
+          updatedById: 'user-1',
+        },
         update: { ...dto, updatedById: 'user-1' },
       });
     });
@@ -94,7 +108,12 @@ describe('TechProviderConfigService', () => {
       expect(result).toBeDefined();
       expect(prisma.techProviderConfig.upsert).toHaveBeenCalledWith({
         where: { id: TECH_PROVIDER_CONFIG_ID },
-        create: { id: TECH_PROVIDER_CONFIG_ID, subscriptionId: 'test-subscription-id', ...updatedDto, updatedById: 'user-2' },
+        create: {
+          id: TECH_PROVIDER_CONFIG_ID,
+          subscriptionId: 'test-subscription-id',
+          ...updatedDto,
+          updatedById: 'user-2',
+        },
         update: { ...updatedDto, updatedById: 'user-2' },
       });
     });

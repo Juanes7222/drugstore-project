@@ -22,9 +22,13 @@ export const UpsertFiscalIssuerConfigSchema = z.object({
   logoUrl: z.string().url('Invalid logo URL').nullable().optional(),
 });
 
-export type UpsertFiscalIssuerConfigInput = z.infer<typeof UpsertFiscalIssuerConfigSchema>;
+export type UpsertFiscalIssuerConfigInput = z.infer<
+  typeof UpsertFiscalIssuerConfigSchema
+>;
 
-export class UpsertFiscalIssuerConfigDto implements z.infer<typeof UpsertFiscalIssuerConfigSchema> {
+export class UpsertFiscalIssuerConfigDto implements z.infer<
+  typeof UpsertFiscalIssuerConfigSchema
+> {
   nit!: string;
   verificationDigit!: string;
   businessName!: string;

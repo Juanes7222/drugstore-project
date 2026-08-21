@@ -14,7 +14,12 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
-import { RoleType, AuditAction, SystemModule, User } from '@pharmacy/shared-types';
+import {
+  RoleType,
+  AuditAction,
+  SystemModule,
+  User,
+} from '@pharmacy/shared-types';
 import { FiscalResolutionAllocationsService } from './fiscal-resolution-allocations.service';
 import { CreateFiscalResolutionAllocationSchema } from './dto/create-fiscal-resolution-allocation.dto';
 import { CreateFiscalResolutionAllocationDto } from './dto/create-fiscal-resolution-allocation.dto';
@@ -22,9 +27,7 @@ import { CreateFiscalResolutionAllocationDto } from './dto/create-fiscal-resolut
 @Controller('fiscal-dian/resolution-allocations')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class FiscalResolutionAllocationsController {
-  constructor(
-    private readonly service: FiscalResolutionAllocationsService,
-  ) {}
+  constructor(private readonly service: FiscalResolutionAllocationsService) {}
 
   @Get()
   @Roles(RoleType.ADMIN, RoleType.OWNER)

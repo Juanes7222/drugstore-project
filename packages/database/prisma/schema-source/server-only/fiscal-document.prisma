@@ -42,6 +42,13 @@ model FiscalDocument {
   referenceDocumentId   String?
   referenceDocument     FiscalDocument? @relation("FiscalDocumentReference", fields: [referenceDocumentId], references: [id])
   referencedDocuments   FiscalDocument[] @relation("FiscalDocumentReference")
+  // Snapshot of the party that transmitted this document. Null while the
+  // document is still in generation; set by the fiscal engine at
+  // transmission time.
+  providerType          FiscalProvider?
+  // External identifier assigned by the provider (Alanube ULID, Dataico
+  // UUID). Correlation key for webhook events.
+  providerTrackId       String?
   validUntil            DateTime?
   archivedAt            DateTime?
   xmlStorageKey         String?
@@ -59,6 +66,7 @@ model FiscalDocument {
   @@index([purchaseReceptionId])
   @@index([clientReturnId])
   @@index([issueDate])
+  @@index([providerType, providerTrackId])
   @@index([archivedAt])
   @@index([retentionExpiresAt])
 }

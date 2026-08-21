@@ -49,9 +49,10 @@ export class FiscalTransmissionService {
   async transmit(fiscalDocumentId: string): Promise<void> {
     const doc = await this.loadPendingDocument(fiscalDocumentId);
 
-    const config = await this.loadTechProviderConfig();
+    const config = await this.loadTechProviderConfig(doc.subscriptionId);
 
     const { certificate, password } = await this.secrets.readSecret(
+      doc.subscriptionId,
       config.credentialReference ?? '',
     );
 
@@ -62,10 +63,11 @@ export class FiscalTransmissionService {
     // Atomic claim: only one worker can move the document out of
     // PENDING_SIGNATURE. Without this, a retry and a manual re-trigger could
     // both pass loadPendingDocument and transmit the same document twice —
-    // DIAN offers no idempotency for a re-sent document.
+    // DIAN offers no idempotency for a re-sent document. The claim also
+    // stamps DIAN_DIRECT as the transmitting party.
     await this.claimDocument(fiscalDocumentId);
 
-    // The SDK performs XAdES-EPES signing as part of the send call below.
+    // The adapter performs XAdES-EPES signing as part of the send call below.
     let result;
     try {
       result = await this.transmission.signAndSend(
@@ -81,15 +83,70 @@ export class FiscalTransmissionService {
     }
 
     if (result.isValid) {
-      await this.transitionToValidated(fiscalDocumentId, result);
+      await this.applyTransmissionResult(fiscalDocumentId, {
+        isValid: true,
+        xmlDocumentKey: result.xmlDocumentKey,
+        signedXml: result.signedXml,
+        statusCode: result.statusCode,
+        statusMessage: result.statusMessage,
+      });
       this.logger.log(`Document ${doc.fullNumber} validated with key ${result.xmlDocumentKey}`);
     } else {
-      await this.transitionToRejected(fiscalDocumentId, result);
+      await this.applyTransmissionResult(fiscalDocumentId, {
+        isValid: false,
+        xmlDocumentKey: null,
+        signedXml: null,
+        statusCode: result.statusCode,
+        statusMessage: result.statusMessage,
+      });
       throw new FiscalDocumentRejectedException(
         fiscalDocumentId,
         result.statusMessage ?? 'No status message from DIAN',
       );
     }
+  }
+
+  /**
+   * Applies a transmission outcome to a document: VALIDATED stores the
+   * official CUFE, the signed XML and the provider's track id; REJECTED
+   * records the refusal. Shared by the direct SOAP path and the webhook
+   * processor so both entry points transition documents identically.
+   */
+  async applyTransmissionResult(
+    fiscalDocumentId: string,
+    result: {
+      isValid: boolean;
+      xmlDocumentKey: string | null;
+      signedXml: string | null;
+      statusCode: string | null;
+      statusMessage: string | null;
+    },
+  ): Promise<void> {
+    if (result.isValid) {
+      await this.prisma.fiscalDocument.update({
+        where: { id: fiscalDocumentId },
+        data: {
+          cufeCude: result.xmlDocumentKey ?? undefined,
+          signedXml: result.signedXml ?? undefined,
+          fiscalState: 'VALIDATED',
+          // For the direct path the DIAN track id is the external reference
+          // that future webhook/status flows correlate on.
+          providerTrackId: result.xmlDocumentKey ?? undefined,
+          ptResponseCode: result.statusCode,
+          ptResponseMessage: result.statusMessage,
+        },
+      });
+      return;
+    }
+
+    await this.prisma.fiscalDocument.update({
+      where: { id: fiscalDocumentId },
+      data: {
+        fiscalState: 'REJECTED',
+        ptResponseCode: result.statusCode,
+        ptResponseMessage: result.statusMessage,
+      },
+    });
   }
 
   private async loadPendingDocument(fiscalDocumentId: string): Promise<any> {
@@ -121,10 +178,14 @@ export class FiscalTransmissionService {
     return doc;
   }
 
-  private async loadTechProviderConfig(): Promise<any> {
-    const config = await this.prisma.techProviderConfig.findFirst();
+  private async loadTechProviderConfig(subscriptionId: string): Promise<any> {
+    const config = await this.prisma.techProviderConfig.findFirst({
+      where: { subscriptionId },
+    });
     if (!config) {
-      throw new Error('No TechProviderConfig found in the database');
+      throw new Error(
+        `No TechProviderConfig found for subscription ${subscriptionId}`,
+      );
     }
     return config;
   }
@@ -140,12 +201,14 @@ export class FiscalTransmissionService {
    * The conditional updateMany is the concurrency guard: if another worker
    * (or a manual re-trigger) already claimed the document, the update
    * affects zero rows and this worker aborts instead of double-transmitting.
+   * The claim also records the transmitting party for webhook correlation.
    */
   private async claimDocument(fiscalDocumentId: string): Promise<void> {
     const claimed = await this.prisma.fiscalDocument.updateMany({
       where: { id: fiscalDocumentId, fiscalState: 'PENDING_SIGNATURE' },
       data: {
         fiscalState: 'IN_TRANSMISSION',
+        providerType: 'DIAN_DIRECT',
         lastRetryAt: new Date(),
       },
     });
@@ -155,36 +218,6 @@ export class FiscalTransmissionService {
         'Document is not in PENDING_SIGNATURE state - another worker may have claimed it',
       );
     }
-  }
-
-  private async transitionToValidated(
-    fiscalDocumentId: string,
-    result: { xmlDocumentKey: string | null; signedXml: string | null; statusCode: string | null; statusMessage: string | null },
-  ): Promise<void> {
-    await this.prisma.fiscalDocument.update({
-      where: { id: fiscalDocumentId },
-      data: {
-        cufeCude: result.xmlDocumentKey ?? undefined,
-        signedXml: result.signedXml ?? undefined,
-        fiscalState: 'VALIDATED',
-        ptResponseCode: result.statusCode,
-        ptResponseMessage: result.statusMessage,
-      },
-    });
-  }
-
-  private async transitionToRejected(
-    fiscalDocumentId: string,
-    result: { statusCode: string | null; statusMessage: string | null },
-  ): Promise<void> {
-    await this.prisma.fiscalDocument.update({
-      where: { id: fiscalDocumentId },
-      data: {
-        fiscalState: 'REJECTED',
-        ptResponseCode: result.statusCode,
-        ptResponseMessage: result.statusMessage,
-      },
-    });
   }
 
   /**
