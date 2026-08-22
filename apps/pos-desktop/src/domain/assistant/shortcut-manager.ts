@@ -77,6 +77,8 @@ const DEFAULT_BINDINGS: ShortcutBinding[] = [
   { id: "shortcut.quick-qty", key: "dígitos", commandId: "cmd.quick-quantity", context: "SALE_FLOW", description: "Editar cantidad de la línea seleccionada" },
   { id: "shortcut.quick-discount", key: "%", commandId: "cmd.quick-discount", context: "SALE_FLOW", description: "Editar descuento de la línea seleccionada" },
   { id: "shortcut.quick-price", key: "=", commandId: "cmd.quick-price", context: "SALE_FLOW", description: "Editar precio de la línea seleccionada" },
+  { id: "shortcut.repeat-sale", key: "F7", commandId: "cmd.repeat-last-sale", context: "SALE_FLOW", description: "Repetir última venta" },
+  { id: "shortcut.hold-cart", key: "F8", commandId: "cmd.hold-recall-cart", context: "SALE_FLOW", description: "Apartar / retomar carrito" },
 ];
 
 // ---------------------------------------------------------------------------

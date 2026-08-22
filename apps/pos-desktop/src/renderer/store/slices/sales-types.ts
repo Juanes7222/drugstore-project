@@ -70,6 +70,19 @@ export interface SaleDeliveryDraft {
   feeCents: number;
 }
 
+/**
+ * A cart set aside with F8 ("apartar") while the cashier serves another
+ * customer. Session-only — held carts do not survive an app restart.
+ */
+export interface HeldCart {
+  id: string;
+  /** Epoch ms of when the cart was set aside. */
+  savedAt: number;
+  items: CartItem[];
+  selectedClient: SelectedClient | null;
+  delivery: SaleDeliveryDraft | null;
+}
+
 export interface SalesState {
   items: CartItem[];
   selectedClient: SelectedClient | null;
@@ -84,4 +97,6 @@ export interface SalesState {
    * Backs the Ctrl+Z "undo last change" shortcut. Capped at UNDO_LIMIT.
    */
   undoStack: CartItem[][];
+  /** Carts set aside with F8, newest last. */
+  heldCarts: HeldCart[];
 }

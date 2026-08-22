@@ -97,6 +97,17 @@
     0%, 100% { opacity: 0.7; }
     50% { opacity: 1.0; }
   }
+
+  /* ---- Scan/action flash — one-shot confirmation ring on the search input.
+     Not a loop: a single 500ms scale+fade per scan outcome. The global
+     reduced-motion rule collapses it to an instant flash. ---- */
+  --animate-scan-feedback: scan-feedback 500ms ease-out forwards;
+
+  @keyframes scan-feedback {
+    0% { opacity: 0; transform: scale(0.98); }
+    25% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(1.04); }
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -227,6 +238,27 @@
       outline: 2px solid var(--color-pharma);
       outline-offset: 2px;
     }
+  }
+
+  /* One-shot scan-outcome ring around the search input. Re-mounted with a
+     changing key per outcome, so the animation re-runs on every event. */
+  .scan-feedback-ring {
+    position: absolute;
+    inset: -1px;
+    border-radius: var(--radius-pos);
+    border: 2px solid;
+    pointer-events: none;
+    animation: var(--animate-scan-feedback);
+  }
+
+  .scan-feedback-ring[data-kind="success"] {
+    border-color: var(--color-pharma);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-pharma) 15%, transparent);
+  }
+
+  .scan-feedback-ring[data-kind="error"] {
+    border-color: var(--color-urgency);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-urgency) 15%, transparent);
   }
 
   .pos-button {

@@ -207,4 +207,12 @@ export const createHttpCatalogService = (
       ),
     );
   },
+
+  /**
+   * Not supported on the HTTP path — the sales counter always uses the
+   * local PGlite catalog (see catalog-service-factory), and the server has
+   * no single-product lookup contract this client is allowed to guess.
+   * Tooling that needs a by-id lookup must use the local service.
+   */
+  getById: async (): Promise<CatalogItem | null> => null,
 });

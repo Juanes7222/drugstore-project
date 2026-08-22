@@ -50,6 +50,14 @@ export interface CatalogService {
    * Returns a promise so the UI can treat local mocks and remote calls identically.
    */
   search(query: string): Promise<CatalogItem[]>;
+
+  /**
+   * Resolve a single product by its local database id.
+   * Returns null when the product does not exist or cannot be resolved.
+   * Used by flows that replay a previous sale (repeat sale) where only the
+   * product id is known.
+   */
+  getById(id: string): Promise<CatalogItem | null>;
 }
 
 /**

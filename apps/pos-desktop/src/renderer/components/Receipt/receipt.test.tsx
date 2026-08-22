@@ -159,6 +159,7 @@ const createTestStore = (
         delivery: options.delivery ?? null,
         selectedLineId: null,
         undoStack: [],
+        heldCarts: [],
       },
       payment: {
         methods: [],

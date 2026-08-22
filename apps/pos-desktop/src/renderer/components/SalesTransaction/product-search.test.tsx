@@ -25,6 +25,7 @@ const createMockService = (
         setTimeout(() => resolve(results), delay),
       ),
   ),
+  getById: vi.fn(),
 });
 
 const baseProduct = (overrides: Partial<CatalogItem> = {}): CatalogItem => ({
@@ -162,6 +163,7 @@ describe("ProductSearch", () => {
               setTimeout(() => resolve([baseProduct()]), 100),
             ),
         ),
+        getById: vi.fn(),
       };
       renderProductSearch(service);
 
@@ -181,6 +183,7 @@ describe("ProductSearch", () => {
     it("shows an error message when the search fails", async () => {
       const service = {
         search: vi.fn(() => Promise.reject(new Error("Network error"))),
+        getById: vi.fn(),
       };
       renderProductSearch(service);
 
@@ -196,6 +199,7 @@ describe("ProductSearch", () => {
     it("shows the error detail in the alert", async () => {
       const service = {
         search: vi.fn(() => Promise.reject(new Error("Network error"))),
+        getById: vi.fn(),
       };
       renderProductSearch(service);
 

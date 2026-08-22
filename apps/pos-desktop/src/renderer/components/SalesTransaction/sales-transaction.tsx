@@ -40,6 +40,7 @@ export const SalesTransaction: FC = () => {
     commitQuickEdit,
     cancelQuickEdit,
     submitSearch,
+    feedback,
   } = useSalesKeyboard({
     catalogService,
     isDialogOpen,
@@ -61,6 +62,7 @@ export const SalesTransaction: FC = () => {
         onSelect={handleSelect}
         searchInputRef={searchInputRef}
         onSubmitSearch={submitSearch}
+        feedback={feedback}
       />
       <CartPanel
         onCheckout={handleCheckout}

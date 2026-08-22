@@ -13,7 +13,10 @@ import i18n from "@/i18n";
 import { formatCurrency } from "@/utils/format-currency";
 import { SaleType } from "@pharmacy/shared-types";
 import {
+  holdCart,
+  recallHeldCart,
   removeItem,
+  setClient,
   setSelectedLine,
   undoLastChange,
   updateItemDiscount,
@@ -25,13 +28,19 @@ import {
   useLocalSessionStore,
   type LocalSession,
 } from "../../domain/auth/local-session.store";
+import { GENERIC_CLIENT_UUID } from "../../domain/clients/constants/clients.constants";
+import { playScanFeedbackSound } from "@/services/scan-feedback";
 import {
   useSalesKeyboard,
   type UseSalesKeyboardDeps,
   type UseSalesKeyboardReturn,
 } from "./use-sales-keyboard";
 import type { CatalogItem, CatalogService } from "@/services/catalog-service";
-import type { CartItem, SalesState } from "@/store/slices/sales-types";
+import type {
+  CartItem,
+  HeldCart,
+  SalesState,
+} from "@/store/slices/sales-types";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks for Redux hooks
@@ -44,8 +53,14 @@ let mockSalesState: SalesState = {
   delivery: null,
   selectedLineId: null,
   undoStack: [],
+  heldCarts: [],
 };
 let mockUiState: { activeScreen: PosScreen } = { activeScreen: "sales" };
+let mockSoundEnabled = true;
+
+const mockSalesPosService = {
+  getLastConfirmedSaleForRepeat: vi.fn(),
+};
 
 interface MockRoot {
   sales: SalesState;
@@ -61,6 +76,21 @@ vi.mock("@/store/hooks", () => ({
       sales: mockSalesState,
       ui: mockUiState,
     }),
+}));
+
+vi.mock("../components/common/service-context", () => ({
+  useSalesPosService: () => mockSalesPosService,
+}));
+
+vi.mock("../../stores/user-preferences.store", () => ({
+  useUserPreferencesStore: (selector: unknown) =>
+    (selector as (state: { soundEnabled: boolean }) => unknown)({
+      soundEnabled: mockSoundEnabled,
+    }),
+}));
+
+vi.mock("@/services/scan-feedback", () => ({
+  playScanFeedbackSound: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -139,7 +169,10 @@ const makeDeps = (
   ...overrides,
 });
 
-const mockCatalogService: CatalogService = { search: vi.fn() };
+const mockCatalogService: CatalogService = {
+  search: vi.fn(),
+  getById: vi.fn(),
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -196,6 +229,29 @@ const setCart = (
   };
 };
 
+const setHeldCarts = (heldCarts: HeldCart[]): void => {
+  mockSalesState = {
+    ...mockSalesState,
+    heldCarts,
+  };
+};
+
+const heldCartFixture = (overrides: Partial<HeldCart> = {}): HeldCart => ({
+  id: "held-1",
+  savedAt: 1_700_000_000_000,
+  items: [baseItem({ id: "line-1" })],
+  selectedClient: null,
+  delivery: null,
+  ...overrides,
+});
+
+/** Flush pending microtasks so promise chains started by keydown settle. */
+const flushMicrotasks = async (): Promise<void> => {
+  for (let i = 0; i < 8; i += 1) {
+    await Promise.resolve();
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
@@ -209,8 +265,10 @@ describe("useSalesKeyboard", () => {
       delivery: null,
       selectedLineId: null,
       undoStack: [],
+      heldCarts: [],
     };
     mockUiState = { activeScreen: "sales" };
+    mockSoundEnabled = true;
     useLocalSessionStore.setState({ session: null });
   });
 
@@ -936,6 +994,488 @@ describe("useSalesKeyboard", () => {
 
       expect(deps.onCheckout).not.toHaveBeenCalled();
       expect(mockDispatch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("submitSearch feedback", () => {
+    it("shows success feedback when the item is added", async () => {
+      vi.mocked(mockCatalogService.search).mockResolvedValue([catalogItem()]);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      await act(async () => {
+        await result.current.submitSearch("7701234567890");
+      });
+
+      expect(result.current.feedback?.kind).toBe("success");
+    });
+
+    it("shows success feedback when the item is restricted and forwarded", async () => {
+      const restricted = catalogItem({
+        saleType: SaleType.CONTROLLED_SUBSTANCE,
+        requiresPrescription: true,
+        isRestricted: true,
+      });
+      vi.mocked(mockCatalogService.search).mockResolvedValue([restricted]);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      await act(async () => {
+        await result.current.submitSearch("7701234567890");
+      });
+
+      expect(result.current.feedback?.kind).toBe("success");
+    });
+
+    it("shows error feedback when nothing matches", async () => {
+      vi.mocked(mockCatalogService.search).mockResolvedValue([]);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      await act(async () => {
+        await result.current.submitSearch("7709999999999");
+      });
+
+      expect(result.current.feedback?.kind).toBe("error");
+    });
+
+    it("shows error feedback when the match has incomplete data", async () => {
+      const incomplete = catalogItem({
+        unitPriceCents: null,
+        hasCompleteData: false,
+      });
+      vi.mocked(mockCatalogService.search).mockResolvedValue([incomplete]);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      await act(async () => {
+        await result.current.submitSearch("7701234567890");
+      });
+
+      expect(result.current.feedback?.kind).toBe("error");
+    });
+
+    it("shows no feedback for an empty query", async () => {
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      await act(async () => {
+        await result.current.submitSearch("   ");
+      });
+
+      expect(result.current.feedback).toBeNull();
+    });
+  });
+
+  describe("repeatLastSale", () => {
+    interface LastSaleForRepeat {
+      clientId: string | null;
+      clientNameSnapshot: string | null;
+      clientIdentificationSnapshot: string | null;
+      items: Array<{
+        productId: string;
+        quantity: number;
+        unitPriceCents: number;
+      }>;
+    }
+
+    const lastSale = (
+      overrides: Partial<LastSaleForRepeat> = {},
+    ): LastSaleForRepeat => ({
+      clientId: "c-1",
+      clientNameSnapshot: "Juan Pérez",
+      clientIdentificationSnapshot: "CC: 12345678",
+      items: [
+        { productId: "p-001", quantity: 2, unitPriceCents: 620_000 },
+        { productId: "p-002", quantity: 1, unitPriceCents: 500_000 },
+      ],
+      ...overrides,
+    });
+
+    it("re-adds every resolvable line with its quantity and re-attaches the client", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue(
+        lastSale(),
+      );
+      const first = catalogItem({ id: "p-001" });
+      const second = catalogItem({ id: "p-002", name: "Loratadina 10mg" });
+      vi.mocked(mockCatalogService.getById)
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      const ok = await act(async () => result.current.repeatLastSale());
+
+      expect(ok).toBe(true);
+      expect(mockCatalogService.getById).toHaveBeenCalledTimes(2);
+      expect(mockCatalogService.getById).toHaveBeenCalledWith("p-001");
+      expect(mockCatalogService.getById).toHaveBeenCalledWith("p-002");
+      expect(deps.onAddCatalogItem).toHaveBeenCalledWith(first, 2);
+      expect(deps.onAddCatalogItem).toHaveBeenCalledWith(second, 1);
+      expect(mockDispatch).toHaveBeenCalledWith(
+        setClient({
+          id: "c-1",
+          name: "Juan Pérez",
+          identification: "CC: 12345678",
+        }),
+      );
+    });
+
+    it("skips lines whose product is gone or has incomplete data", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue(
+        lastSale({ items: [
+          { productId: "p-gone", quantity: 2, unitPriceCents: 100_000 },
+          { productId: "p-incomplete", quantity: 1, unitPriceCents: 200_000 },
+          { productId: "p-ok", quantity: 3, unitPriceCents: 300_000 },
+        ] }),
+      );
+      const resolvable = catalogItem({ id: "p-ok" });
+      vi.mocked(mockCatalogService.getById)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(
+          catalogItem({ id: "p-incomplete", hasCompleteData: false, unitPriceCents: null }),
+        )
+        .mockResolvedValueOnce(resolvable);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      const ok = await act(async () => result.current.repeatLastSale());
+
+      expect(ok).toBe(true);
+      expect(deps.onAddCatalogItem).toHaveBeenCalledTimes(1);
+      expect(deps.onAddCatalogItem).toHaveBeenCalledWith(resolvable, 3);
+    });
+
+    it("returns false when there is no confirmed sale to repeat", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue(
+        null,
+      );
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      const ok = await act(async () => result.current.repeatLastSale());
+
+      expect(ok).toBe(false);
+      expect(mockCatalogService.getById).not.toHaveBeenCalled();
+      expect(deps.onAddCatalogItem).not.toHaveBeenCalled();
+      expect(mockDispatch).not.toHaveBeenCalled();
+    });
+
+    it("returns false when no line resolves to a complete catalog item", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue(
+        lastSale(),
+      );
+      vi.mocked(mockCatalogService.getById).mockResolvedValue(null);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      const ok = await act(async () => result.current.repeatLastSale());
+
+      expect(ok).toBe(false);
+      expect(deps.onAddCatalogItem).not.toHaveBeenCalled();
+      expect(mockDispatch).not.toHaveBeenCalled();
+    });
+
+    it("does not re-attach the generic consumer client", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue(
+        lastSale({ clientId: GENERIC_CLIENT_UUID }),
+      );
+      vi.mocked(mockCatalogService.getById).mockResolvedValue(catalogItem());
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      const ok = await act(async () => result.current.repeatLastSale());
+
+      expect(ok).toBe(true);
+      expect(mockDispatch).not.toHaveBeenCalled();
+    });
+
+    it("does not re-attach a client when the sale had none", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue(
+        lastSale({ clientId: null, clientNameSnapshot: null, clientIdentificationSnapshot: null }),
+      );
+      vi.mocked(mockCatalogService.getById).mockResolvedValue(catalogItem());
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      const ok = await act(async () => result.current.repeatLastSale());
+
+      expect(ok).toBe(true);
+      expect(mockDispatch).not.toHaveBeenCalled();
+    });
+
+    it("does not re-attach a client whose name snapshot is missing", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue(
+        lastSale({ clientNameSnapshot: null }),
+      );
+      vi.mocked(mockCatalogService.getById).mockResolvedValue(catalogItem());
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      const ok = await act(async () => result.current.repeatLastSale());
+
+      expect(ok).toBe(true);
+      expect(mockDispatch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("toggleHoldCart", () => {
+    it("holds a non-empty cart and shows success feedback", () => {
+      const deps = makeDeps();
+      setCart([baseItem({ id: "line-1" })]);
+      const { result, rerender } = renderHook(
+        (props) => useSalesKeyboard(props),
+        { initialProps: deps },
+      );
+      rerender(deps);
+
+      act(() => result.current.toggleHoldCart());
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        holdCart({
+          id: expect.any(String) as unknown as string,
+          savedAt: expect.any(Number),
+        }),
+      );
+      expect(result.current.feedback?.kind).toBe("success");
+    });
+
+    it("recalls the most recent held cart when the cart is empty", () => {
+      const deps = makeDeps();
+      setHeldCarts([heldCartFixture()]);
+      const { result, rerender } = renderHook(
+        (props) => useSalesKeyboard(props),
+        { initialProps: deps },
+      );
+      rerender(deps);
+
+      act(() => result.current.toggleHoldCart());
+
+      expect(mockDispatch).toHaveBeenCalledWith(recallHeldCart());
+      expect(result.current.feedback?.kind).toBe("success");
+    });
+
+    it("shows error feedback when there is nothing to hold or recall", () => {
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      act(() => result.current.toggleHoldCart());
+
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(result.current.feedback?.kind).toBe("error");
+    });
+  });
+
+  describe("repeat and hold keys (F7/F8)", () => {
+    it("F7 repeats the last confirmed sale and stops the event", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue({
+        clientId: null,
+        clientNameSnapshot: null,
+        clientIdentificationSnapshot: null,
+        items: [{ productId: "p-001", quantity: 1, unitPriceCents: 620_000 }],
+      });
+      const item = catalogItem();
+      vi.mocked(mockCatalogService.getById).mockResolvedValue(item);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+      const bubble = listenForBubble();
+
+      const event = pressKey({ key: "F7" });
+      await act(flushMicrotasks);
+
+      expect(deps.onAddCatalogItem).toHaveBeenCalledWith(item, 1);
+      expect(result.current.feedback?.kind).toBe("success");
+      expect(event.defaultPrevented).toBe(true);
+      expect(bubble.fired()).toBe(false);
+    });
+
+    it("F7 shows error feedback when there is nothing to repeat", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue(
+        null,
+      );
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      pressKey({ key: "F7" });
+      await act(flushMicrotasks);
+
+      expect(deps.onAddCatalogItem).not.toHaveBeenCalled();
+      expect(result.current.feedback?.kind).toBe("error");
+    });
+
+    it("F7 fires while the focus is inside an input", async () => {
+      vi.mocked(mockSalesPosService.getLastConfirmedSaleForRepeat).mockResolvedValue({
+        clientId: null,
+        clientNameSnapshot: null,
+        clientIdentificationSnapshot: null,
+        items: [{ productId: "p-001", quantity: 1, unitPriceCents: 620_000 }],
+      });
+      vi.mocked(mockCatalogService.getById).mockResolvedValue(catalogItem());
+      const deps = makeDeps();
+      renderHook((props) => useSalesKeyboard(props), { initialProps: deps });
+
+      pressKeyInInput({ key: "F7" });
+      await act(flushMicrotasks);
+
+      expect(deps.onAddCatalogItem).toHaveBeenCalled();
+    });
+
+    it("F7 is skipped while the sale is being created", async () => {
+      const deps = makeDeps({ isCreating: true });
+      renderHook((props) => useSalesKeyboard(props), { initialProps: deps });
+
+      pressKey({ key: "F7" });
+      await act(flushMicrotasks);
+
+      expect(mockSalesPosService.getLastConfirmedSaleForRepeat).not.toHaveBeenCalled();
+      expect(deps.onAddCatalogItem).not.toHaveBeenCalled();
+    });
+
+    it("F8 holds the current cart and stops the event", () => {
+      const deps = makeDeps();
+      setCart([baseItem({ id: "line-1" })]);
+      const { rerender } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+      rerender(deps);
+      const bubble = listenForBubble();
+
+      const event = pressKey({ key: "F8" });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        holdCart({
+          id: expect.any(String) as unknown as string,
+          savedAt: expect.any(Number),
+        }),
+      );
+      expect(event.defaultPrevented).toBe(true);
+      expect(bubble.fired()).toBe(false);
+    });
+
+    it("F8 recalls a held cart when the current cart is empty", () => {
+      const deps = makeDeps();
+      setHeldCarts([heldCartFixture()]);
+      const { rerender } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+      rerender(deps);
+
+      pressKey({ key: "F8" });
+
+      expect(mockDispatch).toHaveBeenCalledWith(recallHeldCart());
+    });
+
+    it("F8 fires while the focus is inside an input", () => {
+      const deps = makeDeps();
+      setCart([baseItem({ id: "line-1" })]);
+      const { rerender } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+      rerender(deps);
+
+      const event = pressKeyInInput({ key: "F8" });
+
+      expect(mockDispatch).toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it("F8 is skipped while the sale is being created", () => {
+      const deps = makeDeps({ isCreating: true });
+      renderHook((props) => useSalesKeyboard(props), { initialProps: deps });
+
+      pressKey({ key: "F8" });
+
+      expect(mockDispatch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("feedback auto-clear", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("clears the feedback flash after 700ms", async () => {
+      vi.useFakeTimers();
+      vi.mocked(mockCatalogService.search).mockResolvedValue([]);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      await act(async () => {
+        await result.current.submitSearch("7709999999999");
+      });
+      expect(result.current.feedback?.kind).toBe("error");
+
+      act(() => {
+        vi.advanceTimersByTime(700);
+      });
+
+      expect(result.current.feedback).toBeNull();
+    });
+  });
+
+  describe("feedback sound gating", () => {
+    it("plays the feedback sound when sound is enabled", async () => {
+      mockSoundEnabled = true;
+      vi.mocked(mockCatalogService.search).mockResolvedValue([]);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      await act(async () => {
+        await result.current.submitSearch("7709999999999");
+      });
+
+      expect(playScanFeedbackSound).toHaveBeenCalledWith("error");
+      expect(result.current.feedback?.kind).toBe("error");
+    });
+
+    it("does not play the feedback sound when sound is disabled", async () => {
+      mockSoundEnabled = false;
+      vi.mocked(mockCatalogService.search).mockResolvedValue([]);
+      const deps = makeDeps();
+      const { result } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+
+      await act(async () => {
+        await result.current.submitSearch("7709999999999");
+      });
+
+      expect(playScanFeedbackSound).not.toHaveBeenCalled();
+      expect(result.current.feedback?.kind).toBe("error");
     });
   });
 });

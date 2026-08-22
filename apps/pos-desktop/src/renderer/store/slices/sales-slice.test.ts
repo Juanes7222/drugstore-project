@@ -5,17 +5,23 @@ import { describe, expect, it } from "vitest";
 import {
   addItem,
   clearCart,
+  discardHeldCart,
+  holdCart,
+  recallHeldCart,
   removeItem,
   salesSlice,
   selectCartItemCount,
   selectCartItems,
   selectDeliveryFeeCents,
   selectGrandTotalCents,
+  selectHasHeldCarts,
+  selectHeldCarts,
   selectSelectedLineId,
   selectSubtotalCents,
   selectTaxCents,
   selectTotalCents,
   selectUndoAvailable,
+  setClient,
   setDelivery,
   setSelectedLine,
   undoLastChange,
@@ -23,7 +29,12 @@ import {
   updateItemPrice,
   updateQuantity,
 } from "./sales-slice";
-import { CartItem, SaleDeliveryDraft, SelectedClient } from "./sales-types";
+import {
+  CartItem,
+  HeldCart,
+  SaleDeliveryDraft,
+  SelectedClient,
+} from "./sales-types";
 import { SaleType } from "@pharmacy/shared-types";
 
 const baseItem = (overrides: Partial<CartItem> = {}): CartItem => ({
@@ -56,6 +67,7 @@ interface RootState {
     delivery: SaleDeliveryDraft | null;
     selectedLineId: string | null;
     undoStack: CartItem[][];
+    heldCarts: HeldCart[];
   };
 }
 
@@ -66,6 +78,7 @@ const buildRoot = (items: CartItem[]): RootState => ({
     delivery: null,
     selectedLineId: null,
     undoStack: [],
+    heldCarts: [],
   },
 });
 
@@ -79,6 +92,15 @@ const deliveryDraft = (
   notes: null,
   scheduledAt: null,
   feeCents: 5_000,
+  ...overrides,
+});
+
+const clientFixture = (overrides: Partial<SelectedClient> = {}): SelectedClient => ({
+  id: "c-001",
+  name: "Juan Pérez",
+  identification: "CC-123456789",
+  address: null,
+  phone: null,
   ...overrides,
 });
 
@@ -383,6 +405,7 @@ describe("sales selectors", () => {
         delivery: deliveryDraft({ feeCents: 7_500 }),
         selectedLineId: null,
         undoStack: [],
+        heldCarts: [],
       },
     };
 
@@ -406,6 +429,7 @@ describe("sales selectors", () => {
         delivery: deliveryDraft({ feeCents: 5_000 }),
         selectedLineId: null,
         undoStack: [],
+        heldCarts: [],
       },
     };
 
@@ -754,5 +778,235 @@ describe("sales slice — undo stack", () => {
 
     expect(state.items[0]?.unitPriceCents).toBe(0);
     expect(state.items[0]?.overrideUnitPriceCents).toBe(0);
+  });
+});
+
+describe("sales slice — held carts", () => {
+  it("holdCart pushes a snapshot and resets the active cart", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+    state = salesSlice.reducer(state, setClient(clientFixture()));
+    state = salesSlice.reducer(state, setDelivery(deliveryDraft()));
+
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-1", savedAt: 1_700_000_000_000 }),
+    );
+
+    expect(state.heldCarts).toEqual([
+      {
+        id: "held-1",
+        savedAt: 1_700_000_000_000,
+        items: [baseItem({ id: "line-1" })],
+        selectedClient: clientFixture(),
+        delivery: deliveryDraft(),
+      },
+    ]);
+    expect(state.items).toEqual([]);
+    expect(state.selectedClient).toBeNull();
+    expect(state.delivery).toBeNull();
+    expect(state.selectedLineId).toBeNull();
+  });
+
+  it("holdCart is a no-op when the cart is empty", () => {
+    const state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      holdCart({ id: "held-1", savedAt: 1 }),
+    );
+
+    expect(state.heldCarts).toEqual([]);
+  });
+
+  it("holdCart copies items so later cart mutations leave the snapshot untouched", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1", quantity: 1 })),
+    );
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-1", savedAt: 1 }),
+    );
+
+    // Add the same line id again in the fresh cart with a different quantity.
+    state = salesSlice.reducer(
+      state,
+      addItem(baseItem({ id: "line-1", quantity: 4 })),
+    );
+
+    expect(state.items[0]?.quantity).toBe(4);
+    expect(state.heldCarts[0]?.items).toEqual([
+      baseItem({ id: "line-1", quantity: 1 }),
+    ]);
+  });
+
+  it("holdCart does not touch the undo stack", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+    const undoBefore = state.undoStack;
+
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-1", savedAt: 1 }),
+    );
+
+    expect(state.undoStack).toBe(undoBefore);
+    expect(state.undoStack).toEqual([[]]);
+  });
+
+  it("recallHeldCart without an id restores the newest held cart", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "a", productId: "p-a" })),
+    );
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-1", savedAt: 1 }),
+    );
+    state = salesSlice.reducer(
+      state,
+      addItem(baseItem({ id: "b", productId: "p-b" })),
+    );
+    state = salesSlice.reducer(state, setClient(clientFixture()));
+    state = salesSlice.reducer(state, setDelivery(deliveryDraft()));
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-2", savedAt: 2 }),
+    );
+
+    state = salesSlice.reducer(state, recallHeldCart());
+
+    expect(state.items).toEqual([baseItem({ id: "b", productId: "p-b" })]);
+    expect(state.selectedClient).toEqual(clientFixture());
+    expect(state.delivery).toEqual(deliveryDraft());
+    expect(state.selectedLineId).toBeNull();
+    expect(state.heldCarts).toEqual([expect.objectContaining({ id: "held-1" })]);
+  });
+
+  it("recallHeldCart restores the cart matching the given id", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "a", productId: "p-a" })),
+    );
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-1", savedAt: 1 }),
+    );
+    state = salesSlice.reducer(
+      state,
+      addItem(baseItem({ id: "b", productId: "p-b" })),
+    );
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-2", savedAt: 2 }),
+    );
+
+    state = salesSlice.reducer(state, recallHeldCart("held-1"));
+
+    expect(state.items).toEqual([baseItem({ id: "a", productId: "p-a" })]);
+    expect(state.heldCarts).toEqual([expect.objectContaining({ id: "held-2" })]);
+  });
+
+  it("recallHeldCart is a no-op when there is nothing held", () => {
+    const state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      recallHeldCart(),
+    );
+
+    expect(state.items).toEqual([]);
+    expect(state.heldCarts).toEqual([]);
+  });
+
+  it("recallHeldCart is a no-op when the given id does not match", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "a", productId: "p-a" })),
+    );
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-1", savedAt: 1 }),
+    );
+
+    state = salesSlice.reducer(state, recallHeldCart("unknown-id"));
+
+    expect(state.items).toEqual([]);
+    expect(state.heldCarts).toHaveLength(1);
+  });
+
+  it("discardHeldCart removes the cart by id", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "a", productId: "p-a" })),
+    );
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-1", savedAt: 1 }),
+    );
+    state = salesSlice.reducer(
+      state,
+      addItem(baseItem({ id: "b", productId: "p-b" })),
+    );
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-2", savedAt: 2 }),
+    );
+
+    state = salesSlice.reducer(state, discardHeldCart("held-1"));
+
+    expect(state.heldCarts).toEqual([expect.objectContaining({ id: "held-2" })]);
+  });
+
+  it("discardHeldCart is a no-op for an unknown id", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "a", productId: "p-a" })),
+    );
+    state = salesSlice.reducer(
+      state,
+      holdCart({ id: "held-1", savedAt: 1 }),
+    );
+
+    state = salesSlice.reducer(state, discardHeldCart("unknown-id"));
+
+    expect(state.heldCarts).toHaveLength(1);
+  });
+});
+
+describe("sales slice — held cart selectors", () => {
+  it("selectHeldCarts returns the held carts list", () => {
+    const root = buildRoot([]);
+    root.sales.heldCarts = [
+      {
+        id: "held-1",
+        savedAt: 1,
+        items: [],
+        selectedClient: null,
+        delivery: null,
+      },
+    ];
+
+    expect(selectHeldCarts(root)).toEqual(root.sales.heldCarts);
+  });
+
+  it("selectHasHeldCarts is false with no held carts", () => {
+    expect(selectHasHeldCarts(buildRoot([]))).toBe(false);
+  });
+
+  it("selectHasHeldCarts is true when at least one cart is held", () => {
+    const root = buildRoot([]);
+    root.sales.heldCarts = [
+      {
+        id: "held-1",
+        savedAt: 1,
+        items: [],
+        selectedClient: null,
+        delivery: null,
+      },
+    ];
+
+    expect(selectHasHeldCarts(root)).toBe(true);
   });
 });

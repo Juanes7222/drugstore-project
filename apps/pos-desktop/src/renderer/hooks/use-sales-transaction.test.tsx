@@ -31,6 +31,7 @@ let mockSalesState: SalesState = {
   delivery: null,
   selectedLineId: null,
   undoStack: [],
+  heldCarts: [],
 };
 
 vi.mock("@/store/hooks", () => ({
@@ -43,7 +44,7 @@ vi.mock("@/store/hooks", () => ({
     }),
 }));
 
-const mockCatalogService = { search: vi.fn() };
+const mockCatalogService = { search: vi.fn(), getById: vi.fn() };
 
 vi.mock("@infra/catalog-service-factory", () => ({
   createCatalogService: () => mockCatalogService,
@@ -153,6 +154,7 @@ describe("useSalesTransaction", () => {
       delivery: null,
       selectedLineId: null,
       undoStack: [],
+      heldCarts: [],
     };
   });
 
@@ -312,6 +314,7 @@ describe("useSalesTransaction", () => {
         delivery: null,
         selectedLineId: null,
         undoStack: [],
+        heldCarts: [],
       };
       mockSalesPosService.create.mockResolvedValue({ id: "sale-1" });
       const { result } = renderHook(() => useSalesTransaction());
@@ -355,6 +358,7 @@ describe("useSalesTransaction", () => {
         delivery: deliveryDraft,
         selectedLineId: null,
         undoStack: [],
+        heldCarts: [],
       };
       mockSalesPosService.create.mockResolvedValue({ id: "sale-2" });
       const { result } = renderHook(() => useSalesTransaction());

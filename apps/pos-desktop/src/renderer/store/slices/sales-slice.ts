@@ -27,6 +27,7 @@ const initialState: SalesState = {
   delivery: null,
   selectedLineId: null,
   undoStack: [],
+  heldCarts: [],
 };
 
 /** Max number of cart snapshots kept for Ctrl+Z undo. */
@@ -181,6 +182,55 @@ export const salesSlice = createSlice({
       state.items = previous;
       state.selectedLineId = null;
     },
+
+    /**
+     * Set the active cart aside (F8) and start a fresh one. No-op when the
+     * cart is already empty. The held cart keeps items, client, and delivery
+     * drafts; it is session-only state and does not touch the undo stack —
+     * the way back is `recallHeldCart`, not Ctrl+Z.
+     */
+    holdCart: (
+      state,
+      action: PayloadAction<{ id: string; savedAt: number }>,
+    ) => {
+      if (state.items.length === 0) return;
+      const { id, savedAt } = action.payload;
+      state.heldCarts.push({
+        id,
+        savedAt,
+        items: state.items.map((item) => ({ ...item })),
+        selectedClient: state.selectedClient,
+        delivery: state.delivery,
+      });
+      state.items = [];
+      state.selectedClient = null;
+      state.delivery = null;
+      state.selectedLineId = null;
+    },
+
+    /**
+     * Restore a held cart (F8 on an empty cart recalls the most recent one).
+     * Pass an id to recall a specific cart; without one, the newest held
+     * cart is recalled. The recalled cart is removed from the held list.
+     */
+    recallHeldCart: (state, action: PayloadAction<string | undefined>) => {
+      const index = action.payload
+        ? state.heldCarts.findIndex((held) => held.id === action.payload)
+        : state.heldCarts.length - 1;
+      if (index < 0) return;
+      const [held] = state.heldCarts.splice(index, 1);
+      state.items = held.items;
+      state.selectedClient = held.selectedClient;
+      state.delivery = held.delivery;
+      state.selectedLineId = null;
+    },
+
+    /** Drop a held cart without recalling it. */
+    discardHeldCart: (state, action: PayloadAction<string>) => {
+      state.heldCarts = state.heldCarts.filter(
+        (held) => held.id !== action.payload,
+      );
+    },
   },
 });
 
@@ -195,6 +245,9 @@ export const {
   setDelivery,
   setSelectedLine,
   undoLastChange,
+  holdCart,
+  recallHeldCart,
+  discardHeldCart,
 } = salesSlice.actions;
 
 /* ------------------------------------------------------------------ */
@@ -299,6 +352,16 @@ export const selectSelectedLineId = createSelector(
 export const selectUndoAvailable = createSelector(
   [selectSalesState],
   (sales) => sales.undoStack.length > 0,
+);
+
+export const selectHeldCarts = createSelector(
+  [selectSalesState],
+  (sales) => sales.heldCarts,
+);
+
+export const selectHasHeldCarts = createSelector(
+  [selectHeldCarts],
+  (heldCarts) => heldCarts.length > 0,
 );
 
 export const selectEffectiveClient = createSelector(

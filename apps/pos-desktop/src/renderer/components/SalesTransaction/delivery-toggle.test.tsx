@@ -111,6 +111,7 @@ const createStore = (
         delivery,
         selectedLineId: null,
         undoStack: [],
+        heldCarts: [],
       },
     },
   });

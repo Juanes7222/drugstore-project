@@ -24,13 +24,17 @@
  * the catalog service and the add-to-cart/checkout callbacks owned by
  * `useSalesTransaction`.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import i18n from "@/i18n";
 import { formatCurrency } from "@/utils/format-currency";
 import {
+  holdCart,
+  recallHeldCart,
   removeItem,
   selectCartItems,
+  selectHasHeldCarts,
   selectSelectedLineId,
+  setClient,
   setSelectedLine,
   undoLastChange,
   updateItemDiscount,
@@ -40,11 +44,18 @@ import {
 import { selectActiveScreen } from "@/store/slices/ui-slice";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { useLocalSessionStore } from "../../domain/auth/local-session.store";
+import { useSalesPosService } from "../components/common/service-context";
+import { GENERIC_CLIENT_UUID } from "../../domain/clients/constants/clients.constants";
 import {
   type CatalogItem,
   type CatalogService,
   isCatalogItemRestricted,
 } from "@/services/catalog-service";
+import {
+  playScanFeedbackSound,
+  type ScanFeedbackKind,
+} from "@/services/scan-feedback";
+import { useUserPreferencesStore } from "../../stores/user-preferences.store";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,6 +113,25 @@ export interface UseSalesKeyboardReturn {
    * not-found feedback.
    */
   submitSearch: (query: string) => Promise<SearchSubmitResult>;
+  /**
+   * Last scan/action outcome, for a brief visual flash on the search input.
+   * `nonce` changes on every new outcome so CSS animations can re-trigger.
+   * Null when no feedback is currently showing.
+   */
+  feedback: { kind: ScanFeedbackKind; nonce: number } | null;
+  /**
+   * Replay the last confirmed sale of this workstation (F7): re-adds each
+   * product at current catalog prices, re-attaches the previous client.
+   * Returns false when there is nothing to repeat or no product could be
+   * resolved — the caller shows error feedback.
+   */
+  repeatLastSale: () => Promise<boolean>;
+  /**
+   * F8 toggle: a non-empty cart is set aside (hold) and a fresh one starts;
+   * an empty cart recalls the most recent held cart. Shows feedback for all
+   * three outcomes (held / recalled / nothing to recall).
+   */
+  toggleHoldCart: () => void;
 }
 
 /** Roles allowed to override a line price (mirrors cart-line-item). */
@@ -114,6 +144,9 @@ const PRICE_OVERRIDE_ROLES = new Set([
 
 /** `code xN` quantity syntax: "77012345 x3", "acetaminofen x2". */
 const QUANTITY_SUFFIX_RE = /^\s*(.+?)\s+x\s*(\d+)\s*$/i;
+
+/** How long the scan/action flash stays visible on the search input. */
+const FEEDBACK_MS = 700;
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -130,10 +163,46 @@ export function useSalesKeyboard({
   const activeScreen = useAppSelector(selectActiveScreen);
   const cartItems = useAppSelector(selectCartItems);
   const selectedLineId = useAppSelector(selectSelectedLineId);
+  const hasHeldCarts = useAppSelector(selectHasHeldCarts);
+  const soundEnabled = useUserPreferencesStore((s) => s.soundEnabled);
   const session = useLocalSessionStore((s) => s.session);
   const canOverridePrice = PRICE_OVERRIDE_ROLES.has(session?.role ?? "");
+  const salesPosService = useSalesPosService();
 
   const [quickEdit, setQuickEdit] = useState<LineQuickEdit | null>(null);
+  const [feedback, setFeedback] = useState<{
+    kind: ScanFeedbackKind;
+    nonce: number;
+  } | null>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
+
+  /** Show a flash + (when enabled) a beep; auto-clears after FEEDBACK_MS. */
+  const showFeedback = useCallback(
+    (kind: ScanFeedbackKind) => {
+      if (feedbackTimerRef.current !== null) {
+        window.clearTimeout(feedbackTimerRef.current);
+      }
+      setFeedback({ kind, nonce: Date.now() });
+      feedbackTimerRef.current = window.setTimeout(
+        () => setFeedback(null),
+        FEEDBACK_MS,
+      );
+      if (soundEnabled) {
+        playScanFeedbackSound(kind);
+      }
+    },
+    [soundEnabled],
+  );
+
+  // Clear the feedback timer on unmount.
+  useEffect(
+    () => () => {
+      if (feedbackTimerRef.current !== null) {
+        window.clearTimeout(feedbackTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // -- Selection ----------------------------------------------------------
 
@@ -247,7 +316,10 @@ export function useSalesKeyboard({
         : 1;
 
       const items = await catalogService.search(code);
-      if (items.length === 0) return { status: "not-found" };
+      if (items.length === 0) {
+        showFeedback("error");
+        return { status: "not-found" };
+      }
 
       const exactBarcode = items.find(
         (item) => item.barcode.trim() === code,
@@ -255,19 +327,79 @@ export function useSalesKeyboard({
       const target = exactBarcode ?? items[0];
 
       if (!target.hasCompleteData || target.unitPriceCents === null) {
+        showFeedback("error");
         return { status: "incomplete", item: target };
       }
 
       if (isCatalogItemRestricted(target)) {
         onAddCatalogItem(target, quantity);
+        showFeedback("success");
         return { status: "restricted", item: target };
       }
 
       onAddCatalogItem(target, quantity);
+      showFeedback("success");
       return { status: "added", item: target };
     },
-    [catalogService, onAddCatalogItem],
+    [catalogService, onAddCatalogItem, showFeedback],
   );
+
+  // -- Repeat last sale (F7) -------------------------------------------------
+
+  /**
+   * Replay the last confirmed sale of this workstation: each line's product
+   * is resolved from the current local catalog and re-added at the current
+   * price with the original quantity. Lines whose product is gone, inactive,
+   * or lacking data are skipped. The previous client is re-attached when the
+   * sale had one (the generic consumer is left unset — it is the default).
+   */
+  const repeatLastSale = useCallback(async (): Promise<boolean> => {
+    const last = await salesPosService.getLastConfirmedSaleForRepeat();
+    if (!last || last.items.length === 0) return false;
+
+    let added = 0;
+    for (const line of last.items) {
+      const catalogItem = await catalogService.getById(line.productId);
+      if (
+        catalogItem &&
+        catalogItem.hasCompleteData &&
+        catalogItem.unitPriceCents !== null
+      ) {
+        onAddCatalogItem(catalogItem, line.quantity);
+        added += 1;
+      }
+    }
+    if (added === 0) return false;
+
+    if (
+      last.clientId &&
+      last.clientId !== GENERIC_CLIENT_UUID &&
+      last.clientNameSnapshot
+    ) {
+      dispatch(
+        setClient({
+          id: last.clientId,
+          name: last.clientNameSnapshot,
+          identification: last.clientIdentificationSnapshot ?? "",
+        }),
+      );
+    }
+    return true;
+  }, [salesPosService, catalogService, onAddCatalogItem, dispatch]);
+
+  // -- Hold / recall cart (F8) ------------------------------------------------
+
+  const toggleHoldCart = useCallback(() => {
+    if (cartItems.length > 0) {
+      dispatch(holdCart({ id: globalThis.crypto.randomUUID(), savedAt: Date.now() }));
+      showFeedback("success");
+    } else if (hasHeldCarts) {
+      dispatch(recallHeldCart());
+      showFeedback("success");
+    } else {
+      showFeedback("error");
+    }
+  }, [cartItems.length, hasHeldCarts, dispatch, showFeedback]);
 
   // -- Global keydown (capture phase) -------------------------------------
 
@@ -293,6 +425,24 @@ export function useSalesKeyboard({
         event.preventDefault();
         event.stopPropagation();
         onCheckout();
+        return;
+      }
+
+      // Repeat last sale (F7) — works while typing too.
+      if (event.key === "F7") {
+        if (isCreating) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void repeatLastSale().then((ok) => showFeedback(ok ? "success" : "error"));
+        return;
+      }
+
+      // Hold / recall cart (F8) — works while typing too.
+      if (event.key === "F8") {
+        if (isCreating) return;
+        event.preventDefault();
+        event.stopPropagation();
+        toggleHoldCart();
         return;
       }
 
@@ -378,6 +528,9 @@ export function useSalesKeyboard({
     moveSelection,
     removeSelectedLine,
     startQuickEdit,
+    repeatLastSale,
+    toggleHoldCart,
+    showFeedback,
     dispatch,
     onCheckout,
   ]);
@@ -388,5 +541,8 @@ export function useSalesKeyboard({
     commitQuickEdit,
     cancelQuickEdit,
     submitSearch,
+    feedback,
+    repeatLastSale,
+    toggleHoldCart,
   };
 }

@@ -78,6 +78,7 @@ const createTestStore = (
         delivery,
         selectedLineId: null,
         undoStack: [],
+        heldCarts: [],
       },
       payment: paymentSlice.reducer(paymentSlice.getInitialState(), {
         type: "unknown",

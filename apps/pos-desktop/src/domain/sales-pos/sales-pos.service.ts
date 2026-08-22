@@ -1367,4 +1367,68 @@ export class SalesPosService {
       },
     });
   }
+
+  /**
+   * Load the last CONFIRMED sale of the current workstation for the
+   * "repeat sale" (F7) flow.
+   *
+   * Returns the client snapshot plus each line's product id, quantity, and
+   * paid unit price (in whole COP cents). Discounts are NOT replayed — a
+   * repeat is a fresh sale at current catalog prices; discounts require an
+   * explicit reason and role approval every time.
+   *
+   * Returns null when no confirmed sale exists for this workstation yet.
+   * Requires CASHIER or ADMIN role.
+   */
+  async getLastConfirmedSaleForRepeat(): Promise<{
+    clientId: string | null;
+    clientNameSnapshot: string | null;
+    clientIdentificationSnapshot: string | null;
+    items: Array<{
+      productId: string;
+      quantity: number;
+      unitPriceCents: number;
+    }>;
+  } | null> {
+    const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+
+    const sale = await this.prisma.sale.findFirst({
+      where: {
+        workstationId: session.workstationId,
+        operationalState: SaleOperationalState.CONFIRMED,
+      },
+      orderBy: { confirmedAt: 'desc' },
+      select: {
+        clientId: true,
+        clientNameSnapshot: true,
+        clientIdentificationTypeSnapshot: true,
+        clientIdentificationNumberSnapshot: true,
+        items: {
+          select: {
+            productId: true,
+            quantity: true,
+            unitPrice: true,
+          },
+        },
+      },
+    });
+
+    if (!sale) return null;
+
+    const identificationSnapshot =
+      sale.clientIdentificationTypeSnapshot && sale.clientIdentificationNumberSnapshot
+        ? `${sale.clientIdentificationTypeSnapshot}: ${sale.clientIdentificationNumberSnapshot}`
+        : null;
+
+    return {
+      clientId: sale.clientId,
+      clientNameSnapshot: sale.clientNameSnapshot,
+      clientIdentificationSnapshot: identificationSnapshot,
+      items: sale.items.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPriceCents: Math.round(Number(item.unitPrice) * 100),
+      })),
+    };
+  }
 }

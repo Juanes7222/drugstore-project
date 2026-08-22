@@ -16,7 +16,7 @@ import {
   CreditNotEnabledForClientException,
   CreditLimitExceededException,
 } from "./exceptions";
-import { Prisma } from "@pharmacy/database/local";
+import { Prisma, SaleOperationalState } from "@pharmacy/database/local";
 import { useLocalConfigStore, type DiscountLimits, type SalesConfig } from "../configuration/local-config.store";
 import { RoleType } from "@pharmacy/shared-types";
 import { GENERIC_CLIENT_UUID } from "../clients/constants/clients.constants";
@@ -1153,6 +1153,99 @@ describe("SalesPosService", () => {
       ).resolves.toBeDefined();
 
       expect(tx.sale.create).toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // getLastConfirmedSaleForRepeat()
+  // ---------------------------------------------------------------
+
+  describe("getLastConfirmedSaleForRepeat", () => {
+    const makeConfirmedSale = () => ({
+      clientId: "client-1",
+      clientNameSnapshot: "Juan Pérez",
+      clientIdentificationTypeSnapshot: "CC",
+      clientIdentificationNumberSnapshot: "12345678",
+      items: [
+        {
+          productId: "prod-1",
+          quantity: 2,
+          unitPrice: new Prisma.Decimal(5000),
+        },
+      ],
+    });
+
+    it("returns the newest CONFIRMED sale of the workstation with cents and identification snapshot", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findFirst.mockResolvedValue(makeConfirmedSale());
+
+      const result = await service.getLastConfirmedSaleForRepeat();
+
+      expect(auth.requireRole).toHaveBeenCalledWith("CASHIER", "ADMIN");
+      expect(tx.sale.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            workstationId: "ws-1",
+            operationalState: SaleOperationalState.CONFIRMED,
+          },
+          orderBy: { confirmedAt: "desc" },
+        }),
+      );
+      expect(result).toEqual({
+        clientId: "client-1",
+        clientNameSnapshot: "Juan Pérez",
+        clientIdentificationSnapshot: "CC: 12345678",
+        items: [{ productId: "prod-1", quantity: 2, unitPriceCents: 500_000 }],
+      });
+    });
+
+    it("rounds each paid unit price to whole cents", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findFirst.mockResolvedValue({
+        ...makeConfirmedSale(),
+        items: [
+          {
+            productId: "prod-1",
+            quantity: 1,
+            unitPrice: new Prisma.Decimal(5000.559),
+          },
+        ],
+      });
+
+      const result = await service.getLastConfirmedSaleForRepeat();
+
+      expect(result?.items[0]?.unitPriceCents).toBe(500_056);
+    });
+
+    it("returns a null identification snapshot when either snapshot part is missing", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findFirst.mockResolvedValue({
+        ...makeConfirmedSale(),
+        clientIdentificationTypeSnapshot: null,
+      });
+
+      const result = await service.getLastConfirmedSaleForRepeat();
+
+      expect(result?.clientIdentificationSnapshot).toBeNull();
+    });
+
+    it("returns null when the workstation has no confirmed sale yet", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findFirst.mockResolvedValue(null);
+
+      const result = await service.getLastConfirmedSaleForRepeat();
+
+      expect(result).toBeNull();
+    });
+
+    it("requires CASHIER or ADMIN role", async () => {
+      auth.requireRole.mockImplementation(() => {
+        throw new Error("Unauthorized");
+      });
+
+      await expect(service.getLastConfirmedSaleForRepeat()).rejects.toThrow(
+        "Unauthorized",
+      );
     });
   });
 });

@@ -71,6 +71,7 @@ const createTestStore = (
         delivery: null,
         selectedLineId: null,
         undoStack: [],
+        heldCarts: [],
       },
       ui: {
         activeScreen: "prescriptions" as const,

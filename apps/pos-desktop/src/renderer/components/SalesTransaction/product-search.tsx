@@ -39,6 +39,11 @@ interface ProductSearchProps {
   searchInputRef?: RefObject<HTMLInputElement | null>;
   /** Resolve a query via the keyboard hook; called on Enter in the input. */
   onSubmitSearch?: (query: string) => Promise<SearchSubmitResult>;
+  /**
+   * Last scan/action outcome, for a one-shot ring flash around the input.
+   * `nonce` changes per outcome so the animation re-triggers; null hides it.
+   */
+  feedback?: { kind: "success" | "error"; nonce: number } | null;
 }
 
 export const ProductSearch: FC<ProductSearchProps> = ({
@@ -46,13 +51,14 @@ export const ProductSearch: FC<ProductSearchProps> = ({
   onSelect,
   searchInputRef,
   onSubmitSearch,
+  feedback = null,
 }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CatalogItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -137,7 +143,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
   // ---- Handle keys on the search input
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     setQuery(event.target.value);
-    setFeedback(null);
+    setSubmitMessage(null);
   }, []);
 
   const handleInputKeyDown = useCallback(
@@ -145,7 +151,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
       if (event.key === "Escape") {
         setQuery("");
         setResults([]);
-        setFeedback(null);
+        setSubmitMessage(null);
         return;
       }
 
@@ -160,15 +166,15 @@ export const ProductSearch: FC<ProductSearchProps> = ({
         void onSubmitSearch(trimmed)
           .then((result) => {
             if (result.status === "added" || result.status === "restricted") {
-              setFeedback(null);
+              setSubmitMessage(null);
               setQuery("");
               setResults([]);
               return;
             }
             if (result.status === "not-found") {
-              setFeedback(t("sales.search.not_found"));
+              setSubmitMessage(t("sales.search.not_found"));
             } else if (result.status === "incomplete") {
-              setFeedback(t("sales.search.incomplete"));
+              setSubmitMessage(t("sales.search.incomplete"));
             } else {
               return;
             }
@@ -176,7 +182,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
             setResults([]);
           })
           .catch(() => {
-            setFeedback(t("sales.search.error"));
+            setSubmitMessage(t("sales.search.error"));
             setQuery("");
             setResults([]);
           });
@@ -220,6 +226,16 @@ export const ProductSearch: FC<ProductSearchProps> = ({
             className="pos-input w-full pl-8"
             autoFocus
           />
+          {/* One-shot scan-outcome ring; keyed by nonce so each outcome
+              re-runs the animation. Decorative — the beep carries the cue. */}
+          {feedback && (
+            <span
+              key={feedback.nonce}
+              data-kind={feedback.kind}
+              className="scan-feedback-ring"
+              aria-hidden="true"
+            />
+          )}
         </div>
         {/* Result count badge */}
         {resultCount > 0 && (
@@ -237,7 +253,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
       </div>
 
       {/* Scanner feedback — brief inline message after a failed submit */}
-      {feedback && (
+      {submitMessage && (
         <div
           className="mt-pos-xs rounded px-pos-md py-pos-xs text-caption"
           style={{
@@ -247,7 +263,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
           }}
           role="alert"
         >
-          {feedback}
+          {submitMessage}
         </div>
       )}
 

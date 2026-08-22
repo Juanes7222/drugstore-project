@@ -282,6 +282,7 @@ The Ambient Sync Pulse is the single committed signature element. It is not one 
 1.  Originally considered a serif display face for the drugstore name on receipts — rejected as too marketing-like. The drugstore name uses Inter Bold instead; the identity comes from the content, not the typeface.
 2.  Originally considered a separate "error red" in the core palette — deferred to a later phase. The core palette must cover the states a cashier sees every few minutes: trust, urgency, offline, restricted. True errors (shift discrepancies, print failures) are rarer and deserve their own design treatment later.
 3.  Confirmed the sync pulse is the **only** recurring animated element. Removed a secondary idea about a cart badge animation — that would dilute the signature and add motion clutter to a high-throughput workflow.
+4.  Added one approved one-shot motion (Phase 2): the scan/action ring on the search input — a single 500ms scale+fade flash (pharma teal = added, urgency amber = not found), keyed by outcome nonce so it re-runs per scan without ever looping. The scan path stays a single crisp confirmation; the held-carts indicator (F8) is deliberately static and muted.
 
 ---
 

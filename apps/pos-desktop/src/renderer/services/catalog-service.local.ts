@@ -29,6 +29,43 @@ import { type CatalogItem, type CatalogService } from './catalog-service';
 const SEARCH_LIMIT = 20;
 
 /**
+ * Shared Prisma include for catalog reads — the full product shape the
+ * sales cart needs (barcodes, current price/cost/tax, active lots,
+ * commission config). Used by both `search` and `getById` so a repeat-sale
+ * lookup resolves exactly the same fields as a search hit.
+ */
+const CATALOG_PRODUCT_INCLUDE = {
+  barcodes: { select: { barcode: true, isPrimary: true } },
+  priceHistories: {
+    where: { effectiveTo: null },
+    select: { price: true },
+    orderBy: { effectiveFrom: 'desc' },
+    take: 1,
+  },
+  costHistories: {
+    where: { effectiveTo: null },
+    select: { cost: true },
+    orderBy: { effectiveFrom: 'desc' },
+    take: 1,
+  },
+  taxHistories: {
+    where: { effectiveTo: null },
+    select: { taxScheme: { select: { rate: true } } },
+    orderBy: { effectiveFrom: 'desc' },
+    take: 1,
+  },
+  lots: {
+    where: { state: LotState.ACTIVE },
+    select: {
+      batchNumber: true,
+      expirationDate: true,
+      currentStock: true,
+      state: true,
+    },
+  },
+} as const;
+
+/**
  * Convert a Prisma Decimal to an integer percentage (e.g. 19 for 19%).
  *
  * The local DB may store the rate as either a decimal fraction (0.19) or an
@@ -195,41 +232,25 @@ export const createLocalCatalogService = (
           { barcodes: { some: { barcode: { contains: q, mode: 'insensitive' } } } },
         ],
       },
-      include: {
-        barcodes: { select: { barcode: true, isPrimary: true } },
-        priceHistories: {
-          where: { effectiveTo: null },
-          select: { price: true },
-          orderBy: { effectiveFrom: 'desc' },
-          take: 1,
-        },
-        costHistories: {
-          where: { effectiveTo: null },
-          select: { cost: true },
-          orderBy: { effectiveFrom: 'desc' },
-          take: 1,
-        },
-        taxHistories: {
-          where: { effectiveTo: null },
-          select: { taxScheme: { select: { rate: true } } },
-          orderBy: { effectiveFrom: 'desc' },
-          take: 1,
-        },
-        lots: {
-          where: { state: LotState.ACTIVE },
-          select: {
-            batchNumber: true,
-            expirationDate: true,
-            currentStock: true,
-            state: true,
-          },
-        },
-      },
+      include: CATALOG_PRODUCT_INCLUDE,
       take: SEARCH_LIMIT,
     });
 
     return products.map((product) =>
       mapLocalProductToCatalogItem(product as unknown as LocalProductRow),
     );
+  },
+
+  getById: async (id: string): Promise<CatalogItem | null> => {
+    const prisma = await options.prismaResolver();
+    if (!prisma) return null;
+
+    const product = await prisma.product.findUnique({
+      where: { id },
+      include: CATALOG_PRODUCT_INCLUDE,
+    });
+    if (!product) return null;
+
+    return mapLocalProductToCatalogItem(product as unknown as LocalProductRow);
   },
 });

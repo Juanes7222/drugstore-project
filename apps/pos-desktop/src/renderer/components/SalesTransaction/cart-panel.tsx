@@ -8,9 +8,12 @@
 import { Fragment, type FC } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  discardHeldCart,
+  recallHeldCart,
   removeItem,
   selectCartItems,
   selectCartItemCount,
+  selectHeldCarts,
   selectSelectedLineId,
   selectSubtotalCents,
   selectTaxCents,
@@ -31,6 +34,17 @@ import type { LineQuickEdit as LineQuickEditState } from "../../hooks/use-sales-
 import type { ClientSelection } from "../../hooks/use-sales-transaction";
 import type { CreateClientInput } from "../../../domain/clients";
 import { InfoIcon, ShoppingBagIcon } from "@/components/ui/icons";
+
+/**
+ * Epoch ms → local "HH:mm" label for a held-cart recall button.
+ * Padded digits keep every time label the same width (tabular rhythm).
+ */
+const formatHeldTime = (savedAt: number): string => {
+  const date = new Date(savedAt);
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
 
 interface CartPanelProps {
   onCheckout: () => void;
@@ -73,6 +87,8 @@ export const CartPanel: FC<CartPanelProps> = ({
   const grandTotal = useAppSelector(selectGrandTotalCents);
   const deliveryFee = useAppSelector(selectDeliveryFeeCents);
   const selectedClient = useAppSelector(selectSelectedClient);
+  // Defensive: tests may seed the sales slice without the heldCarts key.
+  const heldCarts = useAppSelector(selectHeldCarts) ?? [];
 
   const handleUpdateQuantity = (id: string, quantity: number) => {
     dispatch(updateQuantity({ id, quantity }));
@@ -140,10 +156,75 @@ export const CartPanel: FC<CartPanelProps> = ({
         {t("sales.cart.keyboard_hint")}
       </p>
 
+      {/* Subtle reminder that carts are set aside while this one is active */}
+      {!isEmpty && heldCarts.length > 0 && (
+        <span
+          className="mt-pos-xs inline-flex w-fit items-center rounded-pos border px-pos-sm py-0.5 text-caption"
+          style={{
+            borderColor: "color-mix(in srgb, var(--color-ink) 12%, transparent)",
+            color: "color-mix(in srgb, var(--color-ink) 45%, transparent)",
+          }}
+        >
+          {t("sales.cart.hold_hint")}
+        </span>
+      )}
+
       {/* Cart items area — scrollable (both axes so the 6-column table
           never crushes its columns on narrow panels) */}
       <div className="mt-pos-sm min-h-0 flex-1 overflow-auto">
         {isEmpty ? (
+          heldCarts.length > 0 ? (
+            /* Held carts take visual priority over the generic empty hint */
+            <div
+              className="mt-pos-md rounded-pos border px-pos-md py-pos-sm"
+              style={{
+                borderColor:
+                  "color-mix(in srgb, var(--color-ink) 10%, transparent)",
+                backgroundColor:
+                  "color-mix(in srgb, var(--color-ink) 3%, transparent)",
+              }}
+            >
+              <p
+                className="text-caption"
+                style={{
+                  color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                }}
+              >
+                {t("sales.cart.held_carts", { count: heldCarts.length })}
+              </p>
+              <ul className="mt-pos-xs flex flex-wrap items-center gap-pos-sm">
+                {heldCarts.map((held) => {
+                  const time = formatHeldTime(held.savedAt);
+                  return (
+                    <li
+                      key={held.id}
+                      className="flex items-center gap-pos-xs"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => dispatch(recallHeldCart(held.id))}
+                        aria-label={t("sales.cart.held_cart_recall", { time })}
+                        className="pos-button pos-button-secondary px-pos-sm py-0.5 font-data text-caption tabular-nums"
+                      >
+                        {time}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => dispatch(discardHeldCart(held.id))}
+                        aria-label={t("sales.cart.held_cart_discard", { time })}
+                        className="cursor-pointer border-none bg-transparent p-1 text-caption leading-none"
+                        style={{
+                          color: "color-mix(in srgb, var(--color-ink) 40%, transparent)",
+                        }}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : (
           <div className="mt-pos-md">
             <p
               className="text-body"
@@ -162,6 +243,7 @@ export const CartPanel: FC<CartPanelProps> = ({
               {t("sales.cart.empty_hint")}
             </p>
           </div>
+          )
         ) : (
           <table className="w-full min-w-[34rem] border-collapse">
             <thead className="sr-only">
