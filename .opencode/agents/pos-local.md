@@ -348,50 +348,6 @@ yet.
   user-facing string you must surface (an error from a service call)
   flows through the existing i18n mechanism rather than being hardcoded.
 
-### Pinned dependency versions (apps/pos-desktop/package.json)
-
-```json
-"dependencies": {
-  "@electric-sql/pglite": "^0.5.4",
-  "@pharmacy/database": "workspace:*",
-  "@pharmacy/shared-types": "workspace:*",
-  "@radix-ui/react-dialog": "^1.1.0",
-  "@reduxjs/toolkit": "^2.7.0",
-  "@tauri-apps/api": "^2.5.0",
-  "@tauri-apps/plugin-shell": "^2.3.5",
-  "i18next": "^26.3.4",
-  "motion": "^12.42.2",
-  "pglite-prisma-adapter": "^0.7.2",
-  "react": "19.2.7",
-  "react-dom": "19.2.7",
-  "react-i18next": "^17.0.8",
-  "react-redux": "^9.3.0",
-  "zustand": "^5.0.14"
-},
-"devDependencies": {
-  "@tailwindcss/vite": "^4.3.2",
-  "@tauri-apps/cli": "^2.11.4",
-  "@testing-library/dom": "^10.4.1",
-  "@testing-library/jest-dom": "^6.9.1",
-  "@testing-library/react": "^16.3.2",
-  "@types/react": "^19.2.17",
-  "@types/react-dom": "^19.2.3",
-  "@vitejs/plugin-react": "^6.0.3",
-  "esbuild": "^0.28.1",
-  "jsdom": "^29.1.1",
-  "tailwindcss": "^4.3.2",
-  "typescript": "^6.0.3",
-  "vite": "^8.1.3",
-  "vitest": "^4.1.10"
-}
-```
-
-No `Cargo.toml` has been provided to you, and `src-tauri` currently has no
-custom Rust modules at all. Never guess crate names or versions for future
-native work (hashing, encryption, key derivation, timestamps, error types,
-async runtime, all still to be decided) — read `Cargo.toml` directly when
-that work starts, and propose additions explicitly rather than assuming
-something is already pinned.
 
 ## State ownership convention
 

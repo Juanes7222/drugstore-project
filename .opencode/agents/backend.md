@@ -141,65 +141,6 @@ so the next session has accurate information.
   directly before writing a Jest config or anything else that branches on
   the module system
 
-### Pinned dependency versions
-
-```json
-"dependencies": {
-  "@nestjs/common": "^11.1.27",
-  "@nestjs/config": "^4.0.4",
-  "@nestjs/core": "^11.1.27",
-  "@nestjs/jwt": "^11.0.2",
-  "@nestjs/passport": "^11.0.5",
-  "@nestjs/platform-express": "^11.1.27",
-  "@nestjs/bullmq": "^11.0.4",
-  "@nestjs/schedule": "^6.1.3",
-  "@nestjs/swagger": "^11.4.5",
-  "@prisma/client": "^7.8.0",
-  "@prisma/adapter-pg": "^7.8.0",
-  "bullmq": "^5.79.3",
-  "argon2": "^0.44.0",
-  "compression": "^1.8.1",
-  "helmet": "^8.2.0",
-  "passport": "^0.7.0",
-  "passport-jwt": "^4.0.1",
-  "passport-local": "^1.0.0",
-  "reflect-metadata": "^0.2.2",
-  "rxjs": "^7.8.2",
-  "zod": "^4.4.3"
-},
-"devDependencies": {
-  "@nestjs/cli": "^11.0.23",
-  "@nestjs/testing": "^11.1.27",
-  "@types/compression": "^1.8.1",
-  "@types/express": "^5.0.6",
-  "@types/jest": "^30.0.0",
-  "@types/node": "^26.1.0",
-  "@types/passport-jwt": "^4.0.1",
-  "@types/passport-local": "^1.0.38",
-  "@types/supertest": "^7.2.0",
-  "jest": "^30.4.2",
-  "jest-mock-extended": "^4.0.1",
-  "prisma": "^7.8.0",
-  "supertest": "^7.2.2",
-  "ts-jest": "^29.4.11",
-  "typescript": "^6.0.3"
-}
-```
-
-These are the versions to install and to assume when reading or writing any
-`package.json` in `apps/server`. `@prisma/adapter-pg` was previously missing
-from this list despite being required by the Prisma 7 driver-adapter change
-described above — it is now pinned alongside `@prisma/client`. A dedicated
-migration pass for the Prisma 7 and TypeScript 6 breaking changes described
-above is still pending — do not assume it has already happened just because
-these version numbers are pinned here.
-
-When a version in this list needs bumping, verify the real published version
-first — with `pnpm view <package> version`, or by checking the registry —
-rather than writing down whatever version feels current. A wrong version
-number here is silent: it looks identical to a correct one until someone
-runs `pnpm install` and it fails or, worse, resolves to something
-unintended.
 
 ## Prisma access
 
