@@ -10,6 +10,7 @@ import { TotpController } from './totp.controller';
 import { AuditController } from './audit.controller';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
 import { PasswordHasherService } from './services/password-hasher.service';
 import { PinService } from './services/pin.service';
 import { TotpService } from './services/totp.service';
@@ -50,6 +51,7 @@ import { EnvConfig } from '@/config/env.schema';
     AuthService,
     LocalStrategy,
     JwtStrategy,
+    JwtRefreshStrategy,
     PasswordHasherService,
     PinService,
     TotpService,

@@ -1,8 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { AuditAction, SystemModule } from '@pharmacy/database';
-import type { AuditLog as AuditLogModel } from '@pharmacy/database';
-import * as crypto from 'node:crypto';
+import { Injectable, Logger } from "@nestjs/common";
+import { PrismaService } from "@/infrastructure/prisma/prisma.service";
+import { AuditAction, SystemModule } from "@pharmacy/database";
+import type { AuditLog as AuditLogModel } from "@pharmacy/database";
+import * as crypto from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Audit event constants
@@ -10,64 +10,65 @@ import * as crypto from 'node:crypto';
 
 export const AuditEvent = {
   // Auth events
-  LOGIN_SUCCESS: 'AUTH_LOGIN_SUCCESS',
-  LOGIN_FAILURE: 'AUTH_LOGIN_FAILURE',
-  LOGOUT: 'AUTH_LOGOUT',
-  REFRESH_TOKEN: 'AUTH_REFRESH_TOKEN',
-  REVOKED_REFRESH_REUSE: 'AUTH_REVOKED_REFRESH_REUSE',
+  LOGIN_SUCCESS: "AUTH_LOGIN_SUCCESS",
+  LOGIN_FAILURE: "AUTH_LOGIN_FAILURE",
+  LOGOUT: "AUTH_LOGOUT",
+  REFRESH_TOKEN: "AUTH_REFRESH_TOKEN",
+  REVOKED_REFRESH_REUSE: "AUTH_REVOKED_REFRESH_REUSE",
 
   // 2FA events
-  TOTP_SETUP: 'AUTH_TOTP_SETUP',
-  TOTP_VERIFIED: 'AUTH_TOTP_VERIFIED',
-  TOTP_DISABLED: 'AUTH_TOTP_DISABLED',
-  BACKUP_CODE_USED: 'AUTH_BACKUP_CODE_USED',
+  TOTP_SETUP: "AUTH_TOTP_SETUP",
+  TOTP_VERIFIED: "AUTH_TOTP_VERIFIED",
+  TOTP_DISABLED: "AUTH_TOTP_DISABLED",
+  BACKUP_CODE_USED: "AUTH_BACKUP_CODE_USED",
 
   // Password/PIN events
-  PASSWORD_CHANGED: 'AUTH_PASSWORD_CHANGED',
-  PIN_CHANGED: 'AUTH_PIN_CHANGED',
-  PIN_RESET: 'AUTH_PIN_RESET',
-  PASSWORD_RESET_REQUESTED: 'AUTH_PASSWORD_RESET_REQUESTED',
-  PASSWORD_RESET_COMPLETED: 'AUTH_PASSWORD_RESET_COMPLETED',
+  PASSWORD_CHANGED: "AUTH_PASSWORD_CHANGED",
+  PIN_CHANGED: "AUTH_PIN_CHANGED",
+  PIN_RESET: "AUTH_PIN_RESET",
+  PASSWORD_RESET_REQUESTED: "AUTH_PASSWORD_RESET_REQUESTED",
+  PASSWORD_RESET_COMPLETED: "AUTH_PASSWORD_RESET_COMPLETED",
 
   // User management events
-  USER_CREATED: 'USER_CREATED',
-  USER_UPDATED: 'USER_UPDATED',
-  USER_DELETED: 'USER_DELETED',
-  USER_DISABLED: 'USER_DISABLED',
-  USER_ENABLED: 'USER_ENABLED',
-  USER_LOCKED: 'USER_LOCKED',
-  USER_UNLOCKED: 'USER_UNLOCKED',
-  ROLE_CHANGED: 'USER_ROLE_CHANGED',
-  USER_SWITCHED: 'USER_SWITCHED',
+  USER_CREATED: "USER_CREATED",
+  USER_UPDATED: "USER_UPDATED",
+  USER_DELETED: "USER_DELETED",
+  USER_DISABLED: "USER_DISABLED",
+  USER_ENABLED: "USER_ENABLED",
+  USER_APPROVED: "USER_APPROVED",
+  USER_LOCKED: "USER_LOCKED",
+  USER_UNLOCKED: "USER_UNLOCKED",
+  ROLE_CHANGED: "USER_ROLE_CHANGED",
+  USER_SWITCHED: "USER_SWITCHED",
 
   // Session events
-  SESSION_REVOKED: 'SESSION_REVOKED',
-  SESSION_EVICTED: 'SESSION_EVICTED',
-  SESSION_EXPIRED: 'SESSION_EXPIRED',
+  SESSION_REVOKED: "SESSION_REVOKED",
+  SESSION_EVICTED: "SESSION_EVICTED",
+  SESSION_EXPIRED: "SESSION_EXPIRED",
 
   // Step-up events
-  STEP_UP_REQUESTED: 'STEP_UP_REQUESTED',
-  STEP_UP_AUTHORIZED: 'STEP_UP_AUTHORIZED',
-  STEP_UP_DENIED: 'STEP_UP_DENIED',
-  STEP_UP_EXPIRED: 'STEP_UP_EXPIRED',
+  STEP_UP_REQUESTED: "STEP_UP_REQUESTED",
+  STEP_UP_AUTHORIZED: "STEP_UP_AUTHORIZED",
+  STEP_UP_DENIED: "STEP_UP_DENIED",
+  STEP_UP_EXPIRED: "STEP_UP_EXPIRED",
 
   // Account lockout
-  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
-  ACCOUNT_UNLOCKED: 'ACCOUNT_UNLOCKED',
-  LOGIN_ATTEMPT: 'AUTH_LOGIN_ATTEMPT',
+  ACCOUNT_LOCKED: "ACCOUNT_LOCKED",
+  ACCOUNT_UNLOCKED: "ACCOUNT_UNLOCKED",
+  LOGIN_ATTEMPT: "AUTH_LOGIN_ATTEMPT",
 
   // Account recovery
-  FORGOT_PASSWORD: 'AUTH_FORGOT_PASSWORD',
+  FORGOT_PASSWORD: "AUTH_FORGOT_PASSWORD",
 
   // Offline auth events
-  OFFLINE_LOGIN_SUCCESS: 'AUTH_OFFLINE_LOGIN_SUCCESS',
-  OFFLINE_LOGIN_FAILED: 'AUTH_OFFLINE_LOGIN_FAILED',
-  OFFLINE_SESSION_CREATED: 'AUTH_OFFLINE_SESSION_CREATED',
-  OFFLINE_SESSION_BLESSED: 'AUTH_OFFLINE_SESSION_BLESSED',
-  OFFLINE_SESSION_REJECTED: 'AUTH_OFFLINE_SESSION_REJECTED',
-  OFFLINE_CREDENTIALS_CACHED: 'AUTH_OFFLINE_CREDENTIALS_CACHED',
-  OFFLINE_CREDENTIALS_CLEARED: 'AUTH_OFFLINE_CREDENTIALS_CLEARED',
-  REVOCATION_LIST_UPDATED: 'AUTH_REVOCATION_LIST_UPDATED',
+  OFFLINE_LOGIN_SUCCESS: "AUTH_OFFLINE_LOGIN_SUCCESS",
+  OFFLINE_LOGIN_FAILED: "AUTH_OFFLINE_LOGIN_FAILED",
+  OFFLINE_SESSION_CREATED: "AUTH_OFFLINE_SESSION_CREATED",
+  OFFLINE_SESSION_BLESSED: "AUTH_OFFLINE_SESSION_BLESSED",
+  OFFLINE_SESSION_REJECTED: "AUTH_OFFLINE_SESSION_REJECTED",
+  OFFLINE_CREDENTIALS_CACHED: "AUTH_OFFLINE_CREDENTIALS_CACHED",
+  OFFLINE_CREDENTIALS_CLEARED: "AUTH_OFFLINE_CREDENTIALS_CLEARED",
+  REVOCATION_LIST_UPDATED: "AUTH_REVOCATION_LIST_UPDATED",
 } as const;
 
 export type AuditEventType = (typeof AuditEvent)[keyof typeof AuditEvent];
@@ -110,8 +111,8 @@ export class AuditService {
           id: crypto.randomUUID(),
           action: this.mapEventToAction(event),
           module: SystemModule.AUTH_USERS,
-          entityType: context.targetType ?? 'unknown',
-          entityId: context.targetId ?? 'unknown',
+          entityType: context.targetType ?? "unknown",
+          entityId: context.targetId ?? "unknown",
           userId: context.actorId ?? undefined,
           userRole: context.actorRole ?? undefined,
           workstationId: context.workstationId ?? undefined,
@@ -172,7 +173,7 @@ export class AuditService {
     const [rows, total] = await Promise.all([
       this.prisma.auditLog.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: params.limit ?? 50,
         skip: params.offset ?? 0,
       }),
@@ -187,35 +188,35 @@ export class AuditService {
    * This determines the `action` column used for filtering in the audit log UI.
    */
   private mapEventToAction(event: string): AuditAction {
-    if (event.includes('CREATE') || event.includes('SETUP')) {
+    if (event.includes("CREATE") || event.includes("SETUP")) {
       return AuditAction.CREATE;
     }
     if (
-      event.includes('CHANGE') ||
-      event.includes('UPDATE') ||
-      event.includes('CHANGED') ||
-      event.includes('RESET') ||
-      event.includes('ENABLE') ||
-      event.includes('DISABLE')
+      event.includes("CHANGE") ||
+      event.includes("UPDATE") ||
+      event.includes("CHANGED") ||
+      event.includes("RESET") ||
+      event.includes("ENABLE") ||
+      event.includes("DISABLE")
     ) {
       return AuditAction.UPDATE;
     }
-    if (event.includes('DELETE') || event.includes('REVOKE')) {
+    if (event.includes("DELETE") || event.includes("REVOKE")) {
       return AuditAction.DELETE;
     }
-    if (event.includes('LOGIN')) {
-      return event.includes('SUCCESS') ? AuditAction.LOGIN : AuditAction.ACCESS;
+    if (event.includes("LOGIN")) {
+      return event.includes("SUCCESS") ? AuditAction.LOGIN : AuditAction.ACCESS;
     }
-    if (event.includes('LOGOUT')) {
+    if (event.includes("LOGOUT")) {
       return AuditAction.LOGOUT;
     }
-    if (event.includes('LOCKED') || event.includes('UNLOCKED')) {
+    if (event.includes("LOCKED") || event.includes("UNLOCKED")) {
       return AuditAction.STATE_CHANGE;
     }
-    if (event.includes('AUTHORIZED') || event.includes('APPROVE')) {
+    if (event.includes("AUTHORIZED") || event.includes("APPROVE")) {
       return AuditAction.ACCESS;
     }
-    if (event.includes('DENIED') || event.includes('FAILURE')) {
+    if (event.includes("DENIED") || event.includes("FAILURE")) {
       return AuditAction.ACCESS;
     }
 

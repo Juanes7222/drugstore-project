@@ -39,13 +39,18 @@ describe('SyncHealthController (integration)', () => {
     }).compile();
 
     controller = module.get<SyncHealthController>(SyncHealthController);
-    syncHealthService = module.get(SyncHealthService) as jest.Mocked<typeof mockSyncHealthService>;
+    syncHealthService = module.get(SyncHealthService) as jest.Mocked<
+      typeof mockSyncHealthService
+    >;
     prisma = module.get(PrismaService) as jest.Mocked<typeof mockPrisma>;
   });
 
   describe('GET /backoffice/sync-health', () => {
     it('should call getHealth with default 24h window', async () => {
-      const expected = { workstations: [], totals: { pending: 0, processed: 0, failed: 0 } };
+      const expected = {
+        workstations: [],
+        totals: { pending: 0, processed: 0, failed: 0 },
+      };
       syncHealthService.getHealth.mockResolvedValue(expected);
 
       const result = await controller.getHealth({} as any);
@@ -81,7 +86,11 @@ describe('SyncHealthController (integration)', () => {
 
   describe('GET /backoffice/permanent-failures', () => {
     const sampleRows = [
-      { id: 'f-1', operationType: 'SALE' as const, status: 'PERMANENT_FAILURE' as const },
+      {
+        id: 'f-1',
+        operationType: 'SALE' as const,
+        status: 'PERMANENT_FAILURE' as const,
+      },
     ];
 
     it('should query syncQueue with default pagination', async () => {
@@ -113,7 +122,10 @@ describe('SyncHealthController (integration)', () => {
       prisma.syncQueue.findMany.mockResolvedValue([]);
       prisma.syncQueue.count.mockResolvedValue(0);
 
-      await controller.getPermanentFailures({ page: '2', pageSize: '10' } as any);
+      await controller.getPermanentFailures({
+        page: '2',
+        pageSize: '10',
+      } as any);
 
       expect(prisma.syncQueue.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 10, take: 10 }),
@@ -137,9 +149,13 @@ describe('SyncHealthController (integration)', () => {
       prisma.syncQueue.findMany.mockResolvedValue([]);
       prisma.syncQueue.count.mockResolvedValue(0);
 
-      await controller.getPermanentFailures({ since: '2026-01-01', until: '2026-01-31' } as any);
+      await controller.getPermanentFailures({
+        since: '2026-01-01',
+        until: '2026-01-31',
+      } as any);
 
-      const callArgs = (prisma.syncQueue.findMany as jest.Mock).mock.calls[0][0];
+      const callArgs = (prisma.syncQueue.findMany as jest.Mock).mock
+        .calls[0][0];
       expect(callArgs.where.receivedAt).toBeDefined();
       expect(callArgs.where.receivedAt.gte).toEqual(new Date('2026-01-01'));
       expect(callArgs.where.receivedAt.lte).toEqual(new Date('2026-01-31'));

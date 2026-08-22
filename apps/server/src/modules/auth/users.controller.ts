@@ -14,40 +14,40 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
-} from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
-import { RolesGuard } from '@/common/guards/roles.guard';
-import { Roles } from '@/common/decorators/roles.decorator';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
-import { RoleType } from '@pharmacy/shared-types';
+} from "@nestjs/common";
+import { ApiTags, ApiBearerAuth, ApiOperation } from "@nestjs/swagger";
+import { PrismaService } from "@/infrastructure/prisma/prisma.service";
+import { JwtAuthGuard } from "@/common/guards/jwt-auth.guard";
+import { RolesGuard } from "@/common/guards/roles.guard";
+import { Roles } from "@/common/decorators/roles.decorator";
+import { CurrentUser } from "@/common/decorators/current-user.decorator";
+import { ZodValidationPipe } from "@/common/pipes/zod-validation.pipe";
+import { RoleType } from "@pharmacy/shared-types";
 import {
   SessionRevocationReason,
   UserStatus,
   AuthMethod,
-} from '@pharmacy/database';
-import { User } from '@pharmacy/shared-types';
-import * as crypto from 'node:crypto';
-import { PinService } from './services/pin.service';
-import { PasswordHasherService } from './services/password-hasher.service';
-import { SessionService } from './services/session.service';
-import { AuditService, AuditEvent } from './services/audit.service';
-import { OfflineTokenService } from './offline/offline-token.service';
-import { AuthService } from './auth.service';
+} from "@pharmacy/database";
+import { User } from "@pharmacy/shared-types";
+import * as crypto from "node:crypto";
+import { PinService } from "./services/pin.service";
+import { PasswordHasherService } from "./services/password-hasher.service";
+import { SessionService } from "./services/session.service";
+import { AuditService, AuditEvent } from "./services/audit.service";
+import { OfflineTokenService } from "./offline/offline-token.service";
+import { AuthService } from "./auth.service";
 import {
   CreateUserSchema,
   CreateUserDto,
   UpdateUserSchema,
   UpdateUserDto,
-} from './dto/create-user.dto';
-import { ResetPinSchema, ResetPinDto } from './dto/reset-pin.dto';
+} from "./dto/create-user.dto";
+import { ResetPinSchema, ResetPinDto } from "./dto/reset-pin.dto";
 
-@ApiTags('users')
+@ApiTags("users")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('users')
+@Controller("users")
 export class UsersController {
   constructor(
     private readonly prisma: PrismaService,
@@ -61,15 +61,15 @@ export class UsersController {
 
   @Get()
   @Roles(RoleType.OWNER, RoleType.MANAGER)
-  @ApiOperation({ summary: 'List users in the accessible scope' })
+  @ApiOperation({ summary: "List users in the accessible scope" })
   async listUsers(
     @CurrentUser() user: User,
-    @Query('role') roleFilter?: string,
-    @Query('status') statusFilter?: string,
-    @Query('locationId') locationId?: string,
-    @Query('deleted') deletedFilter?: string,
-    @Query('limit') limit?: number,
-    @Query('offset') offset?: number,
+    @Query("role") roleFilter?: string,
+    @Query("status") statusFilter?: string,
+    @Query("locationId") locationId?: string,
+    @Query("deleted") deletedFilter?: string,
+    @Query("limit") limit?: number,
+    @Query("offset") offset?: number,
   ): Promise<{ users: unknown[]; total: number }> {
     const where: Record<string, unknown> = {};
 
@@ -78,9 +78,9 @@ export class UsersController {
 
     // Filter soft-deleted users by deletedAt
     // default: hide deleted; ?deleted=true → only deleted; ?deleted=all → everything
-    if (deletedFilter === 'true') {
+    if (deletedFilter === "true") {
       where.deletedAt = { not: null };
-    } else if (deletedFilter !== 'all') {
+    } else if (deletedFilter !== "all") {
       where.deletedAt = null;
     }
 
@@ -120,7 +120,7 @@ export class UsersController {
           createdById: true,
           deletedAt: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         take: limit ?? 50,
         skip: offset ?? 0,
       }),
@@ -132,7 +132,7 @@ export class UsersController {
 
   @Post()
   @Roles(RoleType.OWNER, RoleType.MANAGER)
-  @ApiOperation({ summary: 'Create a new user (cashier or manager)' })
+  @ApiOperation({ summary: "Create a new user (cashier or manager)" })
   async createUser(
     @CurrentUser() user: User,
     @Body(new ZodValidationPipe(CreateUserSchema)) dto: CreateUserDto,
@@ -145,14 +145,14 @@ export class UsersController {
     mustChangePassword: boolean;
   }> {
     // Managers can only create cashiers
-    if (user.role === RoleType.MANAGER && dto.role === 'MANAGER') {
-      throw new ForbiddenException('Managers cannot create other managers');
+    if (user.role === RoleType.MANAGER && dto.role === "MANAGER") {
+      throw new ForbiddenException("Managers cannot create other managers");
     }
 
     let pinHash: string | null = null;
     if (dto.initialPin) {
       pinHash = await this.pinService.hash(dto.initialPin);
-    } else if (dto.role === 'CASHIER') {
+    } else if (dto.role === "CASHIER") {
       const generatedPin = this.pinService.generate();
       pinHash = await this.pinService.hash(generatedPin);
     }
@@ -167,11 +167,11 @@ export class UsersController {
 
     const username =
       dto.username ??
-      dto.email?.split('@')[0] ??
-      `user-${crypto.randomBytes(4).toString('hex')}`;
+      dto.email?.split("@")[0] ??
+      `user-${crypto.randomBytes(4).toString("hex")}`;
 
     const generatedPinForResponse =
-      dto.role === 'CASHIER' && !dto.initialPin
+      dto.role === "CASHIER" && !dto.initialPin
         ? null
         : (dto.initialPin ?? null);
 
@@ -184,7 +184,7 @@ export class UsersController {
         email: dto.email ?? null,
         role: dto.role,
         authMethod:
-          dto.role === 'CASHIER'
+          dto.role === "CASHIER"
             ? AuthMethod.PIN_ONLY
             : AuthMethod.PASSWORD_ONLY,
         pinHash,
@@ -211,7 +211,7 @@ export class UsersController {
     await this.auditService.log(AuditEvent.USER_CREATED, {
       actorId: user.id,
       actorRole: user.role,
-      targetType: 'User',
+      targetType: "User",
       targetId: newUser.id,
       details: { role: dto.role, username },
     });
@@ -219,17 +219,17 @@ export class UsersController {
     return {
       id: newUser.id,
       displayName: newUser.displayName ?? newUser.fullName,
-      username: newUser.username ?? '',
+      username: newUser.username ?? "",
       role: newUser.role,
       initialPin: generatedPinForResponse,
       mustChangePassword: true,
     };
   }
 
-  @Get(':id')
+  @Get(":id")
   @Roles(RoleType.OWNER, RoleType.MANAGER)
-  @ApiOperation({ summary: 'Get user details' })
-  async getUser(@CurrentUser() user: User, @Param('id') id: string) {
+  @ApiOperation({ summary: "Get user details" })
+  async getUser(@CurrentUser() user: User, @Param("id") id: string) {
     const targetUser = await this.prisma.user.findUnique({
       where: { id },
       select: {
@@ -261,28 +261,28 @@ export class UsersController {
     });
 
     if (!targetUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
 
     return targetUser;
   }
 
-  @Patch(':id')
+  @Patch(":id")
   @Roles(RoleType.OWNER, RoleType.MANAGER)
-  @ApiOperation({ summary: 'Update user details' })
+  @ApiOperation({ summary: "Update user details" })
   async updateUser(
     @CurrentUser() user: User,
-    @Param('id') id: string,
+    @Param("id") id: string,
     @Body(new ZodValidationPipe(UpdateUserSchema)) dto: UpdateUserDto,
   ): Promise<{ id: string } & Record<string, unknown>> {
     const targetUser = await this.prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
 
     // Managers can only update cashiers
-    if (user.role === RoleType.MANAGER && targetUser.role !== 'CASHIER') {
-      throw new ForbiddenException('Managers can only update cashiers');
+    if (user.role === RoleType.MANAGER && targetUser.role !== "CASHIER") {
+      throw new ForbiddenException("Managers can only update cashiers");
     }
 
     const updateData: Record<string, unknown> = {};
@@ -291,7 +291,7 @@ export class UsersController {
     if (dto.displayName !== undefined) {
       updateData.displayName = dto.displayName;
       updateData.fullName = dto.displayName;
-      changes.push('displayName');
+      changes.push("displayName");
     }
 
     if (dto.email !== undefined) {
@@ -301,17 +301,17 @@ export class UsersController {
           where: { email: dto.email },
         });
         if (existingUserWithEmail && existingUserWithEmail.id !== id) {
-          throw new ConflictException('Email is already in use');
+          throw new ConflictException("Email is already in use");
         }
       }
       updateData.email = dto.email;
-      changes.push(`email: ${targetUser.email} → ${dto.email ?? '(none)'}`);
+      changes.push(`email: ${targetUser.email} → ${dto.email ?? "(none)"}`);
     }
 
     if (dto.role !== undefined) {
       // Only OWNER can change roles
       if (user.role !== RoleType.OWNER) {
-        throw new ForbiddenException('Only the owner can change user roles');
+        throw new ForbiddenException("Only the owner can change user roles");
       }
       updateData.role = dto.role;
       changes.push(`role: ${targetUser.role} → ${dto.role}`);
@@ -357,7 +357,7 @@ export class UsersController {
     await this.auditService.log(AuditEvent.USER_UPDATED, {
       actorId: user.id,
       actorRole: user.role,
-      targetType: 'User',
+      targetType: "User",
       targetId: id,
       details: { changes },
     });
@@ -365,16 +365,16 @@ export class UsersController {
     return { id: updatedUser.id, ...updateData };
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @Roles(RoleType.OWNER)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Soft-delete a user (owner only)' })
+  @ApiOperation({ summary: "Soft-delete a user (owner only)" })
   async deleteUser(
     @CurrentUser() user: User,
-    @Param('id') id: string,
+    @Param("id") id: string,
   ): Promise<{ message: string }> {
     if (user.id === id) {
-      throw new ForbiddenException('Cannot delete your own account');
+      throw new ForbiddenException("Cannot delete your own account");
     }
 
     const targetUser = await this.prisma.user.findUnique({
@@ -382,7 +382,7 @@ export class UsersController {
       select: { id: true, email: true, username: true, role: true },
     });
     if (!targetUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
 
     // Scramble email to free unique constraint for future users
@@ -411,25 +411,71 @@ export class UsersController {
     await this.auditService.log(AuditEvent.USER_DELETED, {
       actorId: user.id,
       actorRole: user.role,
-      targetType: 'User',
+      targetType: "User",
       targetId: id,
       details: { role: targetUser.role },
     });
 
-    return { message: 'User deleted' };
+    return { message: "User deleted" };
   }
 
-  @Post(':id/disable')
+  @Post(":id/approve")
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Disable a user' })
-  async disableUser(
+  @ApiOperation({ summary: "Approve a pending account" })
+  async approveUser(
     @CurrentUser() user: User,
-    @Param('id') id: string,
+    @Param("id") id: string,
   ): Promise<{ message: string }> {
     const targetUser = await this.prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
+    }
+
+    if (targetUser.status !== UserStatus.PENDING_SETUP) {
+      throw new BadRequestException("Only pending accounts can be approved");
+    }
+
+    // Managers can only approve cashiers, same rule as user creation
+    if (
+      user.role === RoleType.MANAGER &&
+      targetUser.role !== RoleType.CASHIER
+    ) {
+      throw new ForbiddenException("Managers can only approve cashiers");
+    }
+
+    await this.prisma.user.update({
+      where: { id },
+      data: {
+        status: UserStatus.ACTIVE,
+        isActive: true,
+        lockedUntil: null,
+        failedLoginAttempts: 0,
+      },
+    });
+
+    await this.auditService.log(AuditEvent.USER_APPROVED, {
+      actorId: user.id,
+      actorRole: user.role,
+      targetType: "User",
+      targetId: id,
+      details: { role: targetUser.role },
+    });
+
+    return { message: "Account approved" };
+  }
+
+  @Post(":id/disable")
+  @Roles(RoleType.OWNER, RoleType.MANAGER)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Disable a user" })
+  async disableUser(
+    @CurrentUser() user: User,
+    @Param("id") id: string,
+  ): Promise<{ message: string }> {
+    const targetUser = await this.prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      throw new NotFoundException("User not found");
     }
 
     await this.prisma.user.update({
@@ -446,24 +492,24 @@ export class UsersController {
     await this.auditService.log(AuditEvent.USER_DISABLED, {
       actorId: user.id,
       actorRole: user.role,
-      targetType: 'User',
+      targetType: "User",
       targetId: id,
     });
 
-    return { message: 'User disabled' };
+    return { message: "User disabled" };
   }
 
-  @Post(':id/enable')
+  @Post(":id/enable")
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Enable a disabled user' })
+  @ApiOperation({ summary: "Enable a disabled user" })
   async enableUser(
     @CurrentUser() user: User,
-    @Param('id') id: string,
+    @Param("id") id: string,
   ): Promise<{ message: string }> {
     const targetUser = await this.prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
 
     await this.prisma.user.update({
@@ -479,24 +525,24 @@ export class UsersController {
     await this.auditService.log(AuditEvent.USER_ENABLED, {
       actorId: user.id,
       actorRole: user.role,
-      targetType: 'User',
+      targetType: "User",
       targetId: id,
     });
 
-    return { message: 'User enabled' };
+    return { message: "User enabled" };
   }
 
-  @Post(':id/unlock')
+  @Post(":id/unlock")
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Unlock a locked account' })
+  @ApiOperation({ summary: "Unlock a locked account" })
   async unlockUser(
     @CurrentUser() user: User,
-    @Param('id') id: string,
+    @Param("id") id: string,
   ): Promise<{ message: string }> {
     const targetUser = await this.prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
 
     await this.prisma.user.update({
@@ -511,25 +557,25 @@ export class UsersController {
     await this.auditService.log(AuditEvent.USER_UNLOCKED, {
       actorId: user.id,
       actorRole: user.role,
-      targetType: 'User',
+      targetType: "User",
       targetId: id,
     });
 
-    return { message: 'Account unlocked' };
+    return { message: "Account unlocked" };
   }
 
-  @Post(':id/reset-pin')
+  @Post(":id/reset-pin")
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Reset a user's PIN (manager/owner only)" })
   async resetPin(
     @CurrentUser() user: User,
-    @Param('id') id: string,
+    @Param("id") id: string,
     @Body(new ZodValidationPipe(ResetPinSchema)) dto: ResetPinDto,
   ): Promise<{ newPin: string; message: string }> {
     const targetUser = await this.prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
 
     const newPin = dto.newPin ?? this.pinService.generate();
@@ -548,33 +594,33 @@ export class UsersController {
 
     // Revoke all offline tokens so cached credentials on POS workstations
     // are invalidated — forcing next login to validate against the server.
-    await this.offlineTokenService.revokeAllUserTokens(id, 'PIN_CHANGED');
+    await this.offlineTokenService.revokeAllUserTokens(id, "PIN_CHANGED");
 
     await this.auditService.log(AuditEvent.PIN_RESET, {
       actorId: user.id,
       actorRole: user.role,
-      targetType: 'User',
+      targetType: "User",
       targetId: id,
     });
 
     return {
       newPin,
-      message: 'PIN has been reset. Share the new PIN with the user.',
+      message: "PIN has been reset. Share the new PIN with the user.",
     };
   }
 
-  @Post(':id/reset-password')
+  @Post(":id/reset-password")
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Send a password reset link to the user's email" })
-  async resetPassword(@Param('id') id: string): Promise<{ message: string }> {
+  async resetPassword(@Param("id") id: string): Promise<{ message: string }> {
     const targetUser = await this.prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
 
     if (!targetUser.email) {
-      throw new BadRequestException('User does not have an email address');
+      throw new BadRequestException("User does not have an email address");
     }
 
     await this.authService.forgotPassword(targetUser.email);
@@ -582,25 +628,25 @@ export class UsersController {
     return { message: "Password reset link sent to the user's email" };
   }
 
-  @Get(':id/sessions')
+  @Get(":id/sessions")
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @ApiOperation({ summary: "List a user's active sessions" })
-  async listUserSessions(@Param('id') id: string) {
+  async listUserSessions(@Param("id") id: string) {
     return this.sessionService.findActiveSessionsByUser(id);
   }
 
-  @Post(':userId/sessions/:sessionId/revoke')
+  @Post(":userId/sessions/:sessionId/revoke")
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Revoke a specific session for a user' })
+  @ApiOperation({ summary: "Revoke a specific session for a user" })
   async revokeUserSession(
     @CurrentUser() user: User,
-    @Param('userId') userId: string,
-    @Param('sessionId') sessionId: string,
+    @Param("userId") userId: string,
+    @Param("sessionId") sessionId: string,
   ): Promise<{ message: string }> {
     const session = await this.sessionService.findSessionById(sessionId);
     if (!session || session.userId !== userId) {
-      throw new NotFoundException('Session not found');
+      throw new NotFoundException("Session not found");
     }
 
     await this.sessionService.revokeSession(
@@ -612,11 +658,11 @@ export class UsersController {
     await this.auditService.log(AuditEvent.SESSION_REVOKED, {
       actorId: user.id,
       actorRole: user.role,
-      targetType: 'UserSession',
+      targetType: "UserSession",
       targetId: sessionId,
       details: { revokedUserId: userId },
     });
 
-    return { message: 'Session revoked' };
+    return { message: "Session revoked" };
   }
 }

@@ -166,26 +166,35 @@ export class AuthService {
     identifier: string;
     secret: string;
     sessionType: 'PASSWORD' | 'PIN';
-    workstationId: string;
+    workstationId?: string;
     hardwareFingerprint?: string;
     ipAddress?: string;
     userAgent?: string;
     deviceInfo?: string;
   }): Promise<AuthResponseData> {
+    // Web backoffice sessions have no POS terminal; fall back to the shared
+    // WEB_ADMIN virtual workstation when none is supplied.
+    const { workstationId: suppliedWorkstationId, ...restParams } = params;
+    const resolvedParams = {
+      ...restParams,
+      workstationId:
+        suppliedWorkstationId ?? (await this.resolveWebWorkstationId()),
+    };
+
     const user = await this.validateCredentials(
-      params.identifier,
-      params.secret,
-      params.sessionType,
+      resolvedParams.identifier,
+      resolvedParams.secret,
+      resolvedParams.sessionType,
     );
 
-    if (user.totpEnabled && params.sessionType === 'PASSWORD') {
+    if (user.totpEnabled && resolvedParams.sessionType === 'PASSWORD') {
       const challengeToken = crypto.randomUUID();
       this.twoFactorChallenges.set(challengeToken, {
         userId: user.id,
-        identifier: params.identifier,
-        workstationId: params.workstationId,
-        ipAddress: params.ipAddress,
-        userAgent: params.userAgent,
+        identifier: resolvedParams.identifier,
+        workstationId: resolvedParams.workstationId,
+        ipAddress: resolvedParams.ipAddress,
+        userAgent: resolvedParams.userAgent,
         createdAt: new Date(),
       });
 
@@ -198,9 +207,9 @@ export class AuthService {
       await this.auditService.log(AuditEvent.LOGIN_SUCCESS, {
         actorId: user.id,
         actorRole: user.role,
-        workstationId: params.workstationId,
-        ipAddress: params.ipAddress,
-        userAgent: params.userAgent,
+        workstationId: resolvedParams.workstationId,
+        ipAddress: resolvedParams.ipAddress,
+        userAgent: resolvedParams.userAgent,
         details: { requiresTwoFactor: true },
       });
 
@@ -214,7 +223,7 @@ export class AuthService {
       };
     }
 
-    return this.issueSessionInternal(user, params);
+    return this.issueSessionInternal(user, resolvedParams);
   }
 
   // ---------------------------------------------------------------------------
@@ -233,12 +242,21 @@ export class AuthService {
     email: string | null;
     displayName: string | null;
     photoURL: string | null;
-    workstationId: string;
+    workstationId?: string;
     hardwareFingerprint?: string;
     ipAddress?: string;
     userAgent?: string;
     deviceInfo?: string;
   }): Promise<AuthResponseData> {
+    // Same WEB_ADMIN fallback as password login: Firebase login is also
+    // used by the web backoffice without a POS terminal.
+    const { workstationId: suppliedWorkstationId, ...restParams } = params;
+    const resolvedParams = {
+      ...restParams,
+      workstationId:
+        suppliedWorkstationId ?? (await this.resolveWebWorkstationId()),
+    };
+
     let user = await this.prisma.user.findFirst({
       where: { firebaseUid: params.firebaseUid },
     });
@@ -291,12 +309,12 @@ export class AuthService {
     this.assertAccountIsUsable(user);
 
     return this.issueSessionInternal(user, {
-      identifier: params.email ?? params.firebaseUid,
-      workstationId: params.workstationId,
-      ipAddress: params.ipAddress,
-      userAgent: params.userAgent,
-      hardwareFingerprint: params.hardwareFingerprint,
-      deviceInfo: params.deviceInfo,
+      identifier: resolvedParams.email ?? resolvedParams.firebaseUid,
+      workstationId: resolvedParams.workstationId,
+      ipAddress: resolvedParams.ipAddress,
+      userAgent: resolvedParams.userAgent,
+      hardwareFingerprint: resolvedParams.hardwareFingerprint,
+      deviceInfo: resolvedParams.deviceInfo,
     });
   }
 
@@ -472,9 +490,14 @@ export class AuthService {
   /**
    * Refresh tokens — rotates both access and refresh token hashes.
    * Detects refresh-token reuse (potential theft) and revokes all sessions.
+   *
+   * The session's lifetime is the refresh TTL (session.expiresAt is set to
+   * the refresh TTL at issue time), so this works with an expired access
+   * token as long as the session is still inside its refresh window.
    */
   async refreshSession(
     refreshTokenHash: string,
+    userId?: string,
   ): Promise<{ accessToken: string; expiresAt: Date; refreshToken: string }> {
     // The controller extracts tokenHash from the access JWT payload,
     // which is the session's access token hash (tokenHash), NOT the
@@ -516,6 +539,12 @@ export class AuthService {
       throw new SessionExpiredException();
     }
 
+    if (userId && session.userId !== userId) {
+      // The token belongs to a different session/user than the one the
+      // caller claims. Treat as invalid — never rotate another user's session.
+      throw new SessionExpiredException();
+    }
+
     const accessTokenTtl = this.configService.get('JWT_ACCESS_TTL_SECONDS')!;
     const refreshTokenTtl = this.configService.get('JWT_REFRESH_TTL_SECONDS')!;
 
@@ -526,6 +555,10 @@ export class AuthService {
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + accessTokenTtl * 1000);
+    // The session's own lifetime stays at the refresh TTL — writing the
+    // short access TTL here would expire the session a few minutes after
+    // the first refresh and force an early re-login.
+    const refreshExpiresAt = new Date(now.getTime() + refreshTokenTtl * 1000);
 
     const accessToken = this.jwtService.sign(
       {
@@ -551,7 +584,7 @@ export class AuthService {
       session.id,
       newTokenHash,
       newRefreshTokenHash,
-      expiresAt,
+      refreshExpiresAt,
     );
 
     await this.auditService.log(AuditEvent.REFRESH_TOKEN, {
@@ -938,6 +971,26 @@ export class AuthService {
   // ---------------------------------------------------------------------------
   // Private: session issuance
   // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve the shared WEB_ADMIN virtual workstation used for web
+   * backoffice sessions. Creates it on first use.
+   */
+  private async resolveWebWorkstationId(): Promise<string> {
+    const workstation = await this.prisma.workstation.upsert({
+      where: { code: 'WEB_ADMIN' },
+      create: {
+        id: crypto.randomUUID(),
+        name: 'Web Admin',
+        code: 'WEB_ADMIN',
+        isActive: true,
+        registeredAt: new Date(),
+      },
+      update: {},
+      select: { id: true },
+    });
+    return workstation.id;
+  }
 
   private async issueSessionInternal(
     user: PrismaUser,

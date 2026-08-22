@@ -37,6 +37,7 @@ import {
 import { FirebaseNotConfiguredException } from './exceptions/firebase-not-configured.exception';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
@@ -164,7 +165,7 @@ export class AuthController {
   }
 
   @Post('refresh')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtRefreshGuard)
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Refresh access and refresh tokens' })
@@ -182,7 +183,7 @@ export class AuthController {
       tokenHash: string;
     };
 
-    return this.authService.refreshSession(payload.tokenHash);
+    return this.authService.refreshSession(payload.tokenHash, payload.sub);
   }
 
   @Post('token/exchange')

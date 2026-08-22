@@ -1,24 +1,16 @@
-import { jest, describe, it, expect, beforeAll, beforeEach, afterEach } from '@jest/globals';
-import { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
-import request from 'supertest';
-
-jest.unstable_mockModule('./auth.service', () => ({ AuthService: class {} }));
-jest.unstable_mockModule('./services/firebase-auth.service', () => ({
+// jest.mock factories are used instead of jest.unstable_mockModule: the
+// latter does not register in this Jest/ts-jest ESM setup.
+jest.mock('./auth.service', () => ({ AuthService: class {} }));
+jest.mock('./services/firebase-auth.service', () => ({
   FirebaseAuthService: class {},
 }));
-jest.unstable_mockModule('./services/session.service', () => ({
-  SessionService: class {},
-}));
-jest.unstable_mockModule('@/common/guards/jwt-auth.guard', () => ({
+jest.mock('./services/session.service', () => ({ SessionService: class {} }));
+jest.mock('@/common/guards/jwt-auth.guard', () => ({
   JwtAuthGuard: class {},
 }));
-jest.unstable_mockModule('@/common/guards/roles.guard', () => ({
-  RolesGuard: class {},
-}));
-jest.unstable_mockModule('@pharmacy/database', () => ({
+jest.mock('@/common/guards/roles.guard', () => ({ RolesGuard: class {} }));
+jest.mock('./guards/jwt-refresh.guard', () => ({ JwtRefreshGuard: class {} }));
+jest.mock('@pharmacy/database', () => ({
   PrismaClient: class {},
   Prisma: {},
   UserStatus: { ACTIVE: 'ACTIVE' },
@@ -26,17 +18,17 @@ jest.unstable_mockModule('@pharmacy/database', () => ({
   UserSession: class {},
 }));
 
-let AuthController: typeof import('./auth.controller').AuthController;
-let AuthService: typeof import('./auth.service').AuthService;
-let FirebaseAuthService: typeof import('./services/firebase-auth.service').FirebaseAuthService;
-let SessionService: typeof import('./services/session.service').SessionService;
-
-beforeAll(async () => {
-  ({ AuthController } = await import('./auth.controller'));
-  ({ AuthService } = await import('./auth.service'));
-  ({ FirebaseAuthService } = await import('./services/firebase-auth.service'));
-  ({ SessionService } = await import('./services/session.service'));
-});
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import request from 'supertest';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { FirebaseAuthService } from './services/firebase-auth.service';
+import { SessionService } from './services/session.service';
+import { JwtRefreshGuard } from './guards/jwt-refresh.guard';
 
 function buildAuthResponseData(): any {
   return {
@@ -60,14 +52,15 @@ function buildAuthResponseData(): any {
   };
 }
 
-describe('AuthController (Firebase flow)', () => {
+describe('AuthController', () => {
   let app: INestApplication;
-  let authServiceMock: { loginWithFirebase: jest.Mock };
+  let authServiceMock: { loginWithFirebase: jest.Mock; refreshSession: jest.Mock };
   let firebaseAuthMock: { isConfigured: boolean; verifyIdToken: jest.Mock };
   let configServiceMock: { get: jest.Mock };
+  let jwtServiceMock: { sign: jest.Mock; decode: jest.Mock };
 
   beforeEach(async () => {
-    authServiceMock = { loginWithFirebase: jest.fn() };
+    authServiceMock = { loginWithFirebase: jest.fn(), refreshSession: jest.fn() };
     firebaseAuthMock = {
       isConfigured: true,
       verifyIdToken: jest
@@ -81,6 +74,7 @@ describe('AuthController (Firebase flow)', () => {
         }),
     };
     configServiceMock = { get: jest.fn() };
+    jwtServiceMock = { sign: jest.fn(), decode: jest.fn() };
 
     const moduleRef = await Test.createTestingModule({
       controllers: [AuthController],
@@ -88,7 +82,7 @@ describe('AuthController (Firebase flow)', () => {
         { provide: AuthService, useValue: authServiceMock },
         { provide: FirebaseAuthService, useValue: firebaseAuthMock },
         { provide: SessionService, useValue: {} },
-        { provide: JwtService, useValue: { sign: jest.fn(), decode: jest.fn() } },
+        { provide: JwtService, useValue: jwtServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
       ],
     }).compile();
@@ -192,6 +186,46 @@ describe('AuthController (Firebase flow)', () => {
           ipAddress: '1.2.3.4',
         }),
       );
+    });
+  });
+
+  describe('POST /auth/refresh', () => {
+    it('is protected by the JwtRefreshGuard', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        AuthController.prototype.refresh,
+      ) as unknown[];
+
+      expect(guards).toContain(JwtRefreshGuard);
+    });
+
+    it('decodes the bearer token and calls refreshSession with tokenHash and sub', async () => {
+      jwtServiceMock.decode.mockReturnValue({ sub: 'user-1', tokenHash: 'th-1' });
+      authServiceMock.refreshSession.mockResolvedValue({
+        accessToken: 'at-2',
+        refreshToken: 'rt-2',
+        expiresAt: new Date(0),
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/refresh')
+        .set('Authorization', 'Bearer some.jwt.token');
+
+      expect(res.status).toBe(200);
+      expect(authServiceMock.refreshSession).toHaveBeenCalledWith('th-1', 'user-1');
+      expect(res.body).toEqual({
+        accessToken: 'at-2',
+        refreshToken: 'rt-2',
+        expiresAt: '1970-01-01T00:00:00.000Z',
+      });
+    });
+
+    it('returns 401 when the Authorization header is missing', async () => {
+      const res = await request(app.getHttpServer()).post('/auth/refresh');
+
+      expect(res.status).toBe(401);
+      expect(jwtServiceMock.decode).not.toHaveBeenCalled();
+      expect(authServiceMock.refreshSession).not.toHaveBeenCalled();
     });
   });
 });

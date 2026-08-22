@@ -1,12 +1,9 @@
-import { jest, describe, it, expect, beforeAll, beforeEach } from '@jest/globals';
-import { mockDeep, type MockProxy } from 'jest-mock-extended';
-import type { PrismaClient } from '@pharmacy/database';
-import { FirebaseEmailConflictException } from './exceptions/firebase-email-conflict.exception';
-
-jest.unstable_mockModule('@/infrastructure/prisma/prisma.service', () => ({
+// jest.mock factories are used instead of jest.unstable_mockModule: the
+// latter does not register in this Jest/ts-jest ESM setup.
+jest.mock('@/infrastructure/prisma/prisma.service', () => ({
   PrismaService: class {},
 }));
-jest.unstable_mockModule('@pharmacy/database', () => ({
+jest.mock('@pharmacy/database', () => ({
   PrismaClient: class {},
   Prisma: {},
   UserStatus: {
@@ -22,16 +19,16 @@ jest.unstable_mockModule('@pharmacy/database', () => ({
     PASSWORD_CHANGED: 'PASSWORD_CHANGED',
   },
 }));
-jest.unstable_mockModule('./services/password-hasher.service', () => ({
+jest.mock('./services/password-hasher.service', () => ({
   PasswordHasherService: class {},
 }));
-jest.unstable_mockModule('./services/pin.service', () => ({ PinService: class {} }));
-jest.unstable_mockModule('./services/totp.service', () => ({ TotpService: class {} }));
-jest.unstable_mockModule('./services/backup-codes.service', () => ({
+jest.mock('./services/pin.service', () => ({ PinService: class {} }));
+jest.mock('./services/totp.service', () => ({ TotpService: class {} }));
+jest.mock('./services/backup-codes.service', () => ({
   BackupCodesService: class {},
 }));
-jest.unstable_mockModule('./services/session.service', () => ({ SessionService: class {} }));
-jest.unstable_mockModule('./services/audit.service', () => ({
+jest.mock('./services/session.service', () => ({ SessionService: class {} }));
+jest.mock('./services/audit.service', () => ({
   AuditService: class {},
   AuditEvent: {
     LOGIN_SUCCESS: 'LOGIN_SUCCESS',
@@ -48,18 +45,21 @@ jest.unstable_mockModule('./services/audit.service', () => ({
     OFFLINE_CREDENTIALS_CACHED: 'OFFLINE_CREDENTIALS_CACHED',
   },
 }));
-jest.unstable_mockModule('./offline/offline-token.service', () => ({
+jest.mock('./offline/offline-token.service', () => ({
   OfflineTokenService: class {},
 }));
-jest.unstable_mockModule('./offline/credential-cache.service', () => ({
+jest.mock('./offline/credential-cache.service', () => ({
   CredentialCacheService: class {},
 }));
 
-let AuthService: typeof import('./auth.service').AuthService;
-
-beforeAll(async () => {
-  ({ AuthService } = await import('./auth.service'));
-});
+import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { mockDeep, type MockProxy } from 'jest-mock-extended';
+import type { PrismaClient } from '@pharmacy/database';
+import { SessionRevocationReason } from '@pharmacy/database';
+import { AuthService } from './auth.service';
+import { AuditEvent } from './services/audit.service';
+import { FirebaseEmailConflictException } from './exceptions/firebase-email-conflict.exception';
+import { SessionExpiredException } from './exceptions/session-expired.exception';
 
 function buildPrismaUser(overrides: Record<string, unknown> = {}): any {
   return {
@@ -95,14 +95,18 @@ function buildPrismaUser(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-describe('AuthService.loginWithFirebase', () => {
+describe('AuthService', () => {
   let prisma: MockProxy<PrismaClient>;
   let service: InstanceType<typeof AuthService>;
   let jwtService: { sign: jest.Mock };
   let configService: { get: jest.Mock };
+  let passwordHasher: { verify: jest.Mock; hash: jest.Mock };
   let sessionService: {
     createSession: jest.Mock;
     enforceSessionLimit: jest.Mock;
+    findActiveSessionByTokenHash: jest.Mock;
+    updateSessionTokens: jest.Mock;
+    revokeUserSessions: jest.Mock;
   };
   let auditService: { log: jest.Mock };
   let offlineTokenService: { issueToken: jest.Mock };
@@ -117,9 +121,16 @@ describe('AuthService.loginWithFirebase', () => {
       if (key === 'JWT_REFRESH_TTL_SECONDS') return 604800;
       return undefined;
     });
+    passwordHasher = {
+      verify: jest.fn().mockResolvedValue(true),
+      hash: jest.fn().mockResolvedValue({ hash: 'hash', algorithm: 'argon2id' }),
+    };
     sessionService = {
       createSession: jest.fn().mockResolvedValue({ id: 'session-1' }),
       enforceSessionLimit: jest.fn().mockResolvedValue({ evictedSessionId: null }),
+      findActiveSessionByTokenHash: jest.fn(),
+      updateSessionTokens: jest.fn().mockResolvedValue({}),
+      revokeUserSessions: jest.fn().mockResolvedValue(1),
     };
     auditService = { log: jest.fn().mockResolvedValue(undefined) };
     offlineTokenService = {
@@ -139,7 +150,7 @@ describe('AuthService.loginWithFirebase', () => {
       prisma as unknown as PrismaClient,
       jwtService as never,
       configService as never,
-      {} as never,
+      passwordHasher as never,
       {} as never,
       {} as never,
       {} as never,
@@ -150,135 +161,370 @@ describe('AuthService.loginWithFirebase', () => {
     );
   });
 
-  it('issues a session for an existing user matched by firebaseUid', async () => {
-    const existing = buildPrismaUser({
-      id: 'existing-1',
-      firebaseUid: 'fb-uid-1',
-      email: 'existing@example.com',
-    });
-    prisma.user.findFirst.mockResolvedValueOnce(existing as never);
+  describe('loginWithFirebase', () => {
+    it('issues a session for an existing user matched by firebaseUid', async () => {
+      const existing = buildPrismaUser({
+        id: 'existing-1',
+        firebaseUid: 'fb-uid-1',
+        email: 'existing@example.com',
+      });
+      prisma.user.findFirst.mockResolvedValueOnce(existing as never);
 
-    const result = await service.loginWithFirebase({
-      firebaseUid: 'fb-uid-1',
-      email: 'existing@example.com',
-      displayName: null,
-      photoURL: null,
-      workstationId: 'ws-1',
-    });
+      const result = await service.loginWithFirebase({
+        firebaseUid: 'fb-uid-1',
+        email: 'existing@example.com',
+        displayName: null,
+        photoURL: null,
+        workstationId: 'ws-1',
+      });
 
-    expect(prisma.user.create).not.toHaveBeenCalled();
-    expect(result.accessToken).toBe('signed-jwt');
-    expect(result.user.id).toBe('existing-1');
-  });
-
-  it('creates a new OWNER/OAUTH_GOOGLE user when no local account matches', async () => {
-    prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(null as never);
-    const created = buildPrismaUser({
-      id: 'new-1',
-      firebaseUid: 'fb-new',
-      email: 'new@example.com',
-      authMethod: 'OAUTH_GOOGLE',
-      role: 'OWNER',
-    });
-    prisma.user.create.mockResolvedValueOnce(created as never);
-
-    const result = await service.loginWithFirebase({
-      firebaseUid: 'fb-new',
-      email: 'new@example.com',
-      displayName: 'New Person',
-      photoURL: 'https://photo.example.com/p.png',
-      workstationId: 'ws-2',
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(result.accessToken).toBe('signed-jwt');
+      expect(result.user.id).toBe('existing-1');
     });
 
-    expect(prisma.user.create).toHaveBeenCalledTimes(1);
-    const callData = (prisma.user.create as jest.Mock).mock.calls[0][0].data;
-    expect(callData.role).toBe('OWNER');
-    expect(callData.authMethod).toBe('OAUTH_GOOGLE');
-    expect(callData.firebaseUid).toBe('fb-new');
-    expect(callData.isActive).toBe(true);
-    expect(callData.email).toBe('new@example.com');
-    expect(callData.fullName).toBe('New Person');
-    expect(callData.displayName).toBe('New Person');
-    expect(callData.avatarUrl).toBe('https://photo.example.com/p.png');
-    expect(result.user.id).toBe('new-1');
-  });
+    it('creates a new OWNER/OAUTH_GOOGLE user when no local account matches', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(null as never);
+      const created = buildPrismaUser({
+        id: 'new-1',
+        firebaseUid: 'fb-new',
+        email: 'new@example.com',
+        authMethod: 'OAUTH_GOOGLE',
+        role: 'OWNER',
+      });
+      prisma.user.create.mockResolvedValueOnce(created as never);
 
-  it('links an existing local account (matched by email) to the Firebase uid', async () => {
-    const local = buildPrismaUser({
-      id: 'local-1',
-      email: 'local@example.com',
-      firebaseUid: null,
-      authMethod: 'PASSWORD',
-      passwordHash: null,
+      const result = await service.loginWithFirebase({
+        firebaseUid: 'fb-new',
+        email: 'new@example.com',
+        displayName: 'New Person',
+        photoURL: 'https://photo.example.com/p.png',
+        workstationId: 'ws-2',
+      });
+
+      expect(prisma.user.create).toHaveBeenCalledTimes(1);
+      const callData = (prisma.user.create as jest.Mock).mock.calls[0][0].data;
+      expect(callData.role).toBe('OWNER');
+      expect(callData.authMethod).toBe('OAUTH_GOOGLE');
+      expect(callData.firebaseUid).toBe('fb-new');
+      expect(callData.isActive).toBe(true);
+      expect(callData.email).toBe('new@example.com');
+      expect(callData.fullName).toBe('New Person');
+      expect(callData.displayName).toBe('New Person');
+      expect(callData.avatarUrl).toBe('https://photo.example.com/p.png');
+      expect(result.user.id).toBe('new-1');
     });
-    prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(local as never);
-    prisma.user.update.mockResolvedValueOnce({ ...local, firebaseUid: 'fb-link' } as never);
 
-    const result = await service.loginWithFirebase({
-      firebaseUid: 'fb-link',
-      email: 'local@example.com',
-      displayName: 'Local',
-      photoURL: null,
-      workstationId: 'ws-3',
+    it('links an existing local account (matched by email) to the Firebase uid', async () => {
+      const local = buildPrismaUser({
+        id: 'local-1',
+        email: 'local@example.com',
+        firebaseUid: null,
+        authMethod: 'PASSWORD',
+        passwordHash: null,
+      });
+      prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(local as never);
+      prisma.user.update.mockResolvedValueOnce({ ...local, firebaseUid: 'fb-link' } as never);
+
+      const result = await service.loginWithFirebase({
+        firebaseUid: 'fb-link',
+        email: 'local@example.com',
+        displayName: 'Local',
+        photoURL: null,
+        workstationId: 'ws-3',
+      });
+
+      const linkingCall = (prisma.user.update as jest.Mock).mock.calls.find(
+        (c) => c[0].data.firebaseUid === 'fb-link',
+      );
+      expect(linkingCall).toBeDefined();
+      expect(linkingCall![0].data.authMethod).toBe('OAUTH_GOOGLE');
+      expect(result.user.id).toBe('local-1');
     });
 
-    const linkingCall = (prisma.user.update as jest.Mock).mock.calls.find(
-      (c) => c[0].data.firebaseUid === 'fb-link',
-    );
-    expect(linkingCall).toBeDefined();
-    expect(linkingCall![0].data.authMethod).toBe('OAUTH_GOOGLE');
-    expect(result.user.id).toBe('local-1');
-  });
+    it('throws FirebaseEmailConflictException when the verified email collides with a password account', async () => {
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null as never)
+        .mockResolvedValueOnce(
+          buildPrismaUser({
+            id: 'pw-1',
+            email: 'collide@example.com',
+            passwordHash: 'hash',
+            firebaseUid: null,
+          }) as never,
+        );
 
-  it('throws FirebaseEmailConflictException when the verified email collides with a password account', async () => {
-    prisma.user.findFirst
-      .mockResolvedValueOnce(null as never)
-      .mockResolvedValueOnce(
-        buildPrismaUser({
-          id: 'pw-1',
+      await expect(
+        service.loginWithFirebase({
+          firebaseUid: 'fb-x',
           email: 'collide@example.com',
-          passwordHash: 'hash',
-          firebaseUid: null,
-        }) as never,
+          displayName: null,
+          photoURL: null,
+          workstationId: 'ws-4',
+        }),
+      ).rejects.toThrow(FirebaseEmailConflictException);
+
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('throws FirebaseEmailConflictException (HTTP 409) when the verified email matches an account linked to a different firebaseUid', async () => {
+      const otherGoogle = buildPrismaUser({
+        id: 'other-g-1',
+        email: 'shared@example.com',
+        passwordHash: null,
+        firebaseUid: 'fb-other',
+        authMethod: 'OAUTH_GOOGLE',
+      });
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null as never)
+        .mockResolvedValueOnce(otherGoogle as never);
+
+      await expect(
+        service.loginWithFirebase({
+          firebaseUid: 'fb-ours',
+          email: 'shared@example.com',
+          displayName: null,
+          photoURL: null,
+          workstationId: 'ws-5',
+        }),
+      ).rejects.toMatchObject({ status: 409 });
+
+      expect(sessionService.createSession).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('login (WEB_ADMIN workstation fallback)', () => {
+    it('resolves the WEB_ADMIN virtual workstation and passes its id into session creation', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }) as never,
+      );
+      prisma.workstation.upsert.mockResolvedValue({ id: 'ws-web-admin' } as never);
+
+      await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+      });
+
+      expect(prisma.workstation.upsert).toHaveBeenCalledWith({
+        where: { code: 'WEB_ADMIN' },
+        create: expect.objectContaining({
+          name: 'Web Admin',
+          code: 'WEB_ADMIN',
+          isActive: true,
+          registeredAt: expect.any(Date),
+        }),
+        update: {},
+        select: { id: true },
+      });
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ workstationId: 'ws-web-admin', userId: 'user-1' }),
+      );
+    });
+
+    it('uses the supplied workstationId without upserting WEB_ADMIN', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }) as never,
       );
 
-    await expect(
-      service.loginWithFirebase({
-        firebaseUid: 'fb-x',
-        email: 'collide@example.com',
-        displayName: null,
-        photoURL: null,
-        workstationId: 'ws-4',
-      }),
-    ).rejects.toThrow(FirebaseEmailConflictException);
+      await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-pos-1',
+      });
 
-    expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.workstation.upsert).not.toHaveBeenCalled();
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ workstationId: 'ws-pos-1', userId: 'user-1' }),
+      );
+    });
   });
 
-  it('throws FirebaseEmailConflictException (HTTP 409) when the verified email matches an account linked to a different firebaseUid', async () => {
-    const otherGoogle = buildPrismaUser({
-      id: 'other-g-1',
-      email: 'shared@example.com',
-      passwordHash: null,
-      firebaseUid: 'fb-other',
-      authMethod: 'OAUTH_GOOGLE',
-    });
-    prisma.user.findFirst
-      .mockResolvedValueOnce(null as never)
-      .mockResolvedValueOnce(otherGoogle as never);
+  describe('loginWithFirebase (WEB_ADMIN workstation fallback)', () => {
+    it('resolves the WEB_ADMIN virtual workstation when no workstationId is supplied', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1' }) as never,
+      );
+      prisma.workstation.upsert.mockResolvedValue({ id: 'ws-web-admin' } as never);
 
-    await expect(
-      service.loginWithFirebase({
-        firebaseUid: 'fb-ours',
-        email: 'shared@example.com',
+      await service.loginWithFirebase({
+        firebaseUid: 'fb-uid-1',
+        email: 'existing@example.com',
         displayName: null,
         photoURL: null,
-        workstationId: 'ws-5',
-      }),
-    ).rejects.toMatchObject({ status: 409 });
+      });
 
-    expect(sessionService.createSession).not.toHaveBeenCalled();
-    expect(prisma.user.create).not.toHaveBeenCalled();
-    expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.workstation.upsert).toHaveBeenCalledWith({
+        where: { code: 'WEB_ADMIN' },
+        create: expect.objectContaining({
+          name: 'Web Admin',
+          code: 'WEB_ADMIN',
+          isActive: true,
+          registeredAt: expect.any(Date),
+        }),
+        update: {},
+        select: { id: true },
+      });
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ workstationId: 'ws-web-admin', userId: 'user-1' }),
+      );
+    });
+
+    it('uses the supplied workstationId without upserting WEB_ADMIN', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1' }) as never,
+      );
+
+      await service.loginWithFirebase({
+        firebaseUid: 'fb-uid-1',
+        email: 'existing@example.com',
+        displayName: null,
+        photoURL: null,
+        workstationId: 'ws-firebase-1',
+      });
+
+      expect(prisma.workstation.upsert).not.toHaveBeenCalled();
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ workstationId: 'ws-firebase-1', userId: 'user-1' }),
+      );
+    });
+  });
+
+  describe('refreshSession', () => {
+    const session = { id: 'session-1', userId: 'user-1', workstationId: 'ws-1' };
+
+    it('rotates both tokens and extends the session using the refresh TTL', async () => {
+      sessionService.findActiveSessionByTokenHash.mockResolvedValue(session);
+
+      const result = await service.refreshSession('old-hash', 'user-1');
+
+      expect(sessionService.findActiveSessionByTokenHash).toHaveBeenCalledWith('old-hash');
+      expect(jwtService.sign).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          sub: 'user-1',
+          tokenHash: expect.any(String),
+          sessionId: 'session-1',
+        }),
+        { expiresIn: 900 },
+      );
+      expect(jwtService.sign).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          sub: 'user-1',
+          refreshTokenHash: expect.any(String),
+          sessionId: 'session-1',
+        }),
+        { expiresIn: 604800 },
+      );
+
+      expect(sessionService.updateSessionTokens).toHaveBeenCalledTimes(1);
+      const updateCall = (sessionService.updateSessionTokens as jest.Mock).mock.calls[0];
+      expect(updateCall[0]).toBe('session-1');
+      expect(updateCall[1]).toEqual(expect.any(String));
+      expect(updateCall[2]).toEqual(expect.any(String));
+      const refreshExpiresAt = updateCall[3] as Date;
+      expect(refreshExpiresAt.getTime()).toBeGreaterThanOrEqual(
+        Date.now() + 604800 * 1000 - 5000,
+      );
+      expect(refreshExpiresAt.getTime()).toBeLessThanOrEqual(
+        Date.now() + 604800 * 1000 + 5000,
+      );
+
+      expect(result.accessToken).toBe('signed-jwt');
+      expect(result.refreshToken).toBe('signed-jwt');
+      expect(result.expiresAt.getTime()).toBeGreaterThanOrEqual(
+        Date.now() + 900 * 1000 - 5000,
+      );
+      expect(result.expiresAt.getTime()).toBeLessThanOrEqual(
+        Date.now() + 900 * 1000 + 5000,
+      );
+      expect(auditService.log).toHaveBeenCalledWith(
+        AuditEvent.REFRESH_TOKEN,
+        expect.objectContaining({ actorId: 'user-1', sessionId: 'session-1' }),
+      );
+    });
+
+    it('rotates tokens without a userId when none is supplied', async () => {
+      sessionService.findActiveSessionByTokenHash.mockResolvedValue(session);
+
+      const result = await service.refreshSession('old-hash');
+
+      expect(result.accessToken).toBe('signed-jwt');
+      expect(sessionService.updateSessionTokens).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws SessionExpiredException when the session belongs to a different user', async () => {
+      sessionService.findActiveSessionByTokenHash.mockResolvedValue(session);
+
+      await expect(
+        service.refreshSession('old-hash', 'user-other'),
+      ).rejects.toThrow(SessionExpiredException);
+
+      expect(sessionService.updateSessionTokens).not.toHaveBeenCalled();
+      expect(jwtService.sign).not.toHaveBeenCalled();
+      expect(prisma.userSession.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('throws SessionExpiredException without revoking when no active session and no reuse match exists', async () => {
+      sessionService.findActiveSessionByTokenHash.mockResolvedValue(null);
+      prisma.userSession.findFirst.mockResolvedValue(null);
+
+      await expect(service.refreshSession('old-hash')).rejects.toThrow(
+        SessionExpiredException,
+      );
+
+      expect(prisma.userSession.findFirst).toHaveBeenCalledWith({
+        where: {
+          OR: [{ refreshTokenHash: 'old-hash' }, { tokenHash: 'old-hash' }],
+        },
+      });
+      expect(sessionService.revokeUserSessions).not.toHaveBeenCalled();
+    });
+
+    it('throws SessionExpiredException without revoking when the reuse lookup finds an active session', async () => {
+      sessionService.findActiveSessionByTokenHash.mockResolvedValue(null);
+      prisma.userSession.findFirst.mockResolvedValue({
+        id: 's-1',
+        userId: 'u-1',
+        status: 'ACTIVE',
+      });
+
+      await expect(service.refreshSession('old-hash')).rejects.toThrow(
+        SessionExpiredException,
+      );
+
+      expect(sessionService.revokeUserSessions).not.toHaveBeenCalled();
+    });
+
+    it('revokes all user sessions when the old token matches a REVOKED session (reuse detection)', async () => {
+      sessionService.findActiveSessionByTokenHash.mockResolvedValue(null);
+      prisma.userSession.findFirst.mockResolvedValue({
+        id: 's-old',
+        userId: 'u-1',
+        status: 'REVOKED',
+      });
+
+      await expect(service.refreshSession('old-hash')).rejects.toThrow(
+        SessionExpiredException,
+      );
+
+      expect(sessionService.revokeUserSessions).toHaveBeenCalledWith(
+        'u-1',
+        SessionRevocationReason.SECURITY_ANOMALY,
+      );
+      expect(auditService.log).toHaveBeenCalledWith(
+        AuditEvent.REVOKED_REFRESH_REUSE,
+        expect.objectContaining({
+          actorId: 'u-1',
+          sessionId: 's-old',
+          details: { tokenReuse: true },
+        }),
+      );
+      expect(jwtService.sign).not.toHaveBeenCalled();
+    });
   });
 });

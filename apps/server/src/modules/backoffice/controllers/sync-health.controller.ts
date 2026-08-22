@@ -54,7 +54,10 @@ export class SyncHealthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   async getHealth(@Query() query: SyncHealthQuery): Promise<any> {
-    const windowHours = Math.max(1, Math.min(168, Number(query.windowHours ?? 24)));
+    const windowHours = Math.max(
+      1,
+      Math.min(168, Number(query.windowHours ?? 24)),
+    );
     return this.syncHealthService.getHealth(windowHours);
   }
 
@@ -83,10 +86,16 @@ export class SyncHealthController {
     };
 
     if (query.since) {
-      where.receivedAt = { ...(where.receivedAt as object ?? {}), gte: new Date(query.since) };
+      where.receivedAt = {
+        ...((where.receivedAt as object) ?? {}),
+        gte: new Date(query.since),
+      };
     }
     if (query.until) {
-      where.receivedAt = { ...(where.receivedAt as object ?? {}), lte: new Date(query.until) };
+      where.receivedAt = {
+        ...((where.receivedAt as object) ?? {}),
+        lte: new Date(query.until),
+      };
     }
     if (query.workstationId) {
       where.sourceWorkstationId = query.workstationId;
