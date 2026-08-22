@@ -95,6 +95,11 @@ export interface UseSalesKeyboardDeps {
   onAddCatalogItem: (item: CatalogItem, quantity?: number) => void;
   /** Persist the cart and navigate to the payment screen. */
   onCheckout: () => void;
+  /**
+   * Optional: F2–F6 fire this with the quick-button index (0–4), letting
+   * the cashier add a pinned fast-mover without touching the mouse.
+   */
+  onQuickSelect?: (index: number) => void;
 }
 
 export interface UseSalesKeyboardReturn {
@@ -158,6 +163,7 @@ export function useSalesKeyboard({
   isCreating,
   onAddCatalogItem,
   onCheckout,
+  onQuickSelect,
 }: UseSalesKeyboardDeps): UseSalesKeyboardReturn {
   const dispatch = useAppDispatch();
   const activeScreen = useAppSelector(selectActiveScreen);
@@ -446,6 +452,16 @@ export function useSalesKeyboard({
         return;
       }
 
+      // Quick product buttons — F2–F6 map to pinned fast-movers 0–4.
+      // F1 is context help, F7/F8/F9 are repeat/hold/checkout.
+      if (onQuickSelect && /^F[2-6]$/.test(event.key)) {
+        if (isCreating) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onQuickSelect(Number(event.key.slice(1)) - 2);
+        return;
+      }
+
       // Undo — skipped in inputs so native text undo keeps working.
       if (meta && event.key === "z") {
         if (isInInput) return;
@@ -531,6 +547,7 @@ export function useSalesKeyboard({
     repeatLastSale,
     toggleHoldCart,
     showFeedback,
+    onQuickSelect,
     dispatch,
     onCheckout,
   ]);

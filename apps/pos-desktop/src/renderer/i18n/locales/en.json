@@ -583,6 +583,11 @@
       "not_found": "Product not found",
       "incomplete": "Product with incomplete data"
     },
+    "quick_buttons": {
+      "label": "Quick products",
+      "pin": "Pin product",
+      "unpin": "Unpin product"
+    },
     "cart": {
       "title": "Cart",
       "title_with_count": "Cart ({{count}} items)",
@@ -679,6 +684,8 @@
     "methods_title": "Payment methods",
     "method_label": "Method {{number}}",
     "amount_label": "Amount",
+    "keyboard_hint": "↑↓ method · 0-9 amount · Enter authorize · + method · F9 charge",
+    "typing_amount": "Typing amount: {{digits}}",
     "remove_method": "Remove payment method",
     "add_method": "+ Add method",
     "total_paid": "Total received",

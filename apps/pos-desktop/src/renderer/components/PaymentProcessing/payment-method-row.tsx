@@ -9,6 +9,7 @@ import { type FC, useCallback, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { CurrencyInput } from "@/components/common/currency-input";
 import { PaymentMethodPicker } from "@/components/common/payment-method-picker";
+import type { PaymentBuffer } from "@/hooks/use-payment-keyboard";
 import {
   PaymentMethodEntry,
   PaymentMethodOption,
@@ -22,6 +23,10 @@ interface PaymentMethodRowProps {
   methods: PaymentMethodOption[];
   isOnlyMethod: boolean;
   disabled: boolean;
+  /** Keyboard-selected row: renders the cart selection signature. */
+  isActive?: boolean;
+  /** In-progress money entry targeting THIS row (target.rowId matches). */
+  buffer?: PaymentBuffer | null;
   onMethodChange: (id: string, method: PaymentMethodOption) => void;
   onAmountChange: (id: string, amountCents: number) => void;
   onRemove: (id: string) => void;
@@ -34,6 +39,8 @@ export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
   methods,
   isOnlyMethod,
   disabled,
+  isActive = false,
+  buffer = null,
   onMethodChange,
   onAmountChange,
   onRemove,
@@ -68,18 +75,40 @@ export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
         gridTemplateColumns: "1fr 1fr auto",
         borderBottom:
           "1px solid color-mix(in srgb, var(--color-ink) 6%, transparent)",
+        ...(isActive
+          ? {
+              backgroundColor:
+                "color-mix(in srgb, var(--color-pharma) 6%, transparent)",
+              boxShadow: "inset 3px 0 0 var(--color-pharma)",
+            }
+          : {}),
       }}
     >
       <div className="flex flex-col gap-pos-xs">
-        <label
-          htmlFor={selectId}
-          className="text-caption font-medium"
-          style={{
-            color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-          }}
-        >
-          {t("payment.method_label", { number: index + 1 })}
-        </label>
+        <div className="flex items-center gap-pos-xs">
+          {isActive && (
+            <span
+              aria-hidden="true"
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pos-sm border font-data text-caption tabular-nums"
+              style={{
+                borderColor:
+                  "color-mix(in srgb, var(--color-pharma) 30%, transparent)",
+                color: "color-mix(in srgb, var(--color-pharma) 80%, transparent)",
+              }}
+            >
+              {index + 1}
+            </span>
+          )}
+          <label
+            htmlFor={selectId}
+            className="text-caption font-medium"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+            }}
+          >
+            {t("payment.method_label", { number: index + 1 })}
+          </label>
+        </div>
         <PaymentMethodPicker
           id={selectId}
           value={method.paymentMethodId}
@@ -90,13 +119,43 @@ export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
         />
       </div>
 
-      <CurrencyInput
-        value={method.amountCents}
-        onChange={handleAmountChange}
-        label={t("payment.amount_label")}
-        disabled={disabled}
-        aria-label={t("payment.amount_label")}
-      />
+      {buffer ? (
+        <div className="flex flex-col gap-pos-xs">
+          <span
+            className="text-caption font-medium"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+            }}
+          >
+            {t("payment.amount_label")}
+          </span>
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label={t("payment.typing_amount", { digits: buffer.digits })}
+            className="flex items-center gap-1 rounded-pos-sm border px-pos-sm py-pos-xs font-data text-body tabular-nums"
+            style={{
+              borderColor:
+                "color-mix(in srgb, var(--color-pharma) 35%, transparent)",
+              backgroundColor:
+                "color-mix(in srgb, var(--color-pharma) 6%, transparent)",
+              color: "var(--color-pharma)",
+            }}
+          >
+            <span aria-hidden="true">$</span>
+            <span>{buffer.digits === "" ? "0" : buffer.digits}</span>
+            <span aria-hidden="true">▍</span>
+          </div>
+        </div>
+      ) : (
+        <CurrencyInput
+          value={method.amountCents}
+          onChange={handleAmountChange}
+          label={t("payment.amount_label")}
+          disabled={disabled}
+          aria-label={t("payment.amount_label")}
+        />
+      )}
 
       <div className="flex items-end gap-pos-sm pt-[1.375rem]">
         {isElectronic && (

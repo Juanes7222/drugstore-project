@@ -6,6 +6,7 @@ import { salesSlice } from "./slices/sales-slice";
 import { paymentSlice } from "./slices/payment-slice";
 import { uiSlice } from "./slices/ui-slice";
 import { offlineAuthSlice } from "./slices/offline-auth-slice";
+import { loadHeldCarts, saveHeldCarts } from "./held-carts-persistence";
 
 export const store = configureStore({
   reducer: {
@@ -22,6 +23,18 @@ export const store = configureStore({
         ignoredPaths: [],
       },
     }),
+  // Set-aside carts (F8) survive app restarts.
+  preloadedState: {
+    sales: {
+      ...salesSlice.getInitialState(),
+      heldCarts: loadHeldCarts(),
+    },
+  },
+});
+
+// Persist held carts on every change; the snapshot is small and capped.
+store.subscribe(() => {
+  saveHeldCarts(store.getState().sales.heldCarts);
 });
 
 export type RootState = ReturnType<typeof store.getState>;

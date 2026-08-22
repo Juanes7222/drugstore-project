@@ -1419,6 +1419,93 @@ describe("useSalesKeyboard", () => {
     });
   });
 
+  describe("quick-select keys (F2–F6)", () => {
+    const renderWithQuickSelect = (overrides: Partial<UseSalesKeyboardDeps> = {}) => {
+      const onQuickSelect = vi.fn();
+      const deps = makeDeps({ onQuickSelect, ...overrides });
+      renderHook((props) => useSalesKeyboard(props), { initialProps: deps });
+      return { deps, onQuickSelect };
+    };
+
+    it("F2 fires onQuickSelect with index 0", () => {
+      const { onQuickSelect } = renderWithQuickSelect();
+
+      pressKey({ key: "F2" });
+
+      expect(onQuickSelect).toHaveBeenCalledWith(0);
+    });
+
+    it("F3 fires onQuickSelect with index 1", () => {
+      const { onQuickSelect } = renderWithQuickSelect();
+
+      pressKey({ key: "F3" });
+
+      expect(onQuickSelect).toHaveBeenCalledWith(1);
+    });
+
+    it("F4 fires onQuickSelect with index 2", () => {
+      const { onQuickSelect } = renderWithQuickSelect();
+
+      pressKey({ key: "F4" });
+
+      expect(onQuickSelect).toHaveBeenCalledWith(2);
+    });
+
+    it("F5 fires onQuickSelect with index 3", () => {
+      const { onQuickSelect } = renderWithQuickSelect();
+
+      pressKey({ key: "F5" });
+
+      expect(onQuickSelect).toHaveBeenCalledWith(3);
+    });
+
+    it("F6 fires onQuickSelect with index 4", () => {
+      const { onQuickSelect } = renderWithQuickSelect();
+
+      pressKey({ key: "F6" });
+
+      expect(onQuickSelect).toHaveBeenCalledWith(4);
+    });
+
+    it("prevents default and stops the event from bubbling", () => {
+      renderWithQuickSelect();
+      const bubble = listenForBubble();
+
+      const event = pressKey({ key: "F3" });
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(bubble.fired()).toBe(false);
+    });
+
+    it("is skipped while the sale is being created", () => {
+      const { onQuickSelect } = renderWithQuickSelect({ isCreating: true });
+
+      const event = pressKey({ key: "F2" });
+
+      expect(onQuickSelect).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("does nothing when onQuickSelect is not provided", () => {
+      const deps = makeDeps();
+      renderHook((props) => useSalesKeyboard(props), { initialProps: deps });
+
+      const event = pressKey({ key: "F2" });
+
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("F1 keeps its default behavior (not handled by the hook)", () => {
+      const { onQuickSelect } = renderWithQuickSelect();
+
+      const event = pressKey({ key: "F1" });
+
+      expect(onQuickSelect).not.toHaveBeenCalled();
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    });
+  });
+
   describe("feedback auto-clear", () => {
     afterEach(() => {
       vi.useRealTimers();

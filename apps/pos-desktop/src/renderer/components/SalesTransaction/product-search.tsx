@@ -26,6 +26,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { type CatalogItem, type CatalogService } from "@/services/catalog-service";
 import { ProductSearchResults } from "./product-search-results";
+import { QuickButtons } from "./quick-buttons";
 import { HelpBar } from "./help-bar";
 import { SearchIcon } from "@/components/ui/icons";
 import type { SearchSubmitResult } from "../../hooks/use-sales-keyboard";
@@ -44,6 +45,14 @@ interface ProductSearchProps {
    * `nonce` changes per outcome so the animation re-triggers; null hides it.
    */
   feedback?: { kind: "success" | "error"; nonce: number } | null;
+  /** Pinned fast-mover ids for the quick buttons row (persisted per terminal). */
+  quickProductIds?: string[];
+  /** Add a pinned product to the cart; resolves the id internally. */
+  onAddQuickProduct?: (productId: string) => void;
+  /** Pin/unpin a product from its result card. */
+  onTogglePin?: (productId: string) => void;
+  /** Whether a product is currently pinned to the quick buttons row. */
+  isPinned?: (productId: string) => boolean;
 }
 
 export const ProductSearch: FC<ProductSearchProps> = ({
@@ -52,6 +61,10 @@ export const ProductSearch: FC<ProductSearchProps> = ({
   searchInputRef,
   onSubmitSearch,
   feedback = null,
+  quickProductIds = [],
+  onAddQuickProduct = () => {},
+  onTogglePin = () => {},
+  isPinned = () => false,
 }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
@@ -208,6 +221,13 @@ export const ProductSearch: FC<ProductSearchProps> = ({
       role="search"
       className="pos-panel flex min-h-0 flex-col p-pos-md"
     >
+      {/* Quick buttons row — pinned fast-movers, appears only when pins exist */}
+      <QuickButtons
+        catalogService={catalogService}
+        productIds={quickProductIds}
+        onAdd={onAddQuickProduct}
+      />
+
       {/* Search input row */}
       <div className="flex items-center gap-pos-sm">
         <div className="relative flex-1">
@@ -301,6 +321,8 @@ export const ProductSearch: FC<ProductSearchProps> = ({
             results={results}
             onSelect={onSelect}
             onEscape={handleEscapeFromResults}
+            onTogglePin={onTogglePin}
+            isPinned={isPinned}
           />
         )}
       </div>

@@ -125,6 +125,9 @@ export function useFiscalServices(): FiscalServicesResult {
       login: async () => {
         throw new Error("login() not available from fiscal page");
       },
+      loginWithGoogle: async () => {
+        throw new Error("loginWithGoogle() not available from fiscal page");
+      },
       completeTwoFactor: async () => {
         throw new Error("Not available from fiscal page");
       },

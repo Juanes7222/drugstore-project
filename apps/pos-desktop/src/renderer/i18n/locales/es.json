@@ -653,6 +653,11 @@
       "not_found": "Producto no encontrado",
       "incomplete": "Producto sin datos completos"
     },
+    "quick_buttons": {
+      "label": "Productos rápidos",
+      "pin": "Fijar producto",
+      "unpin": "Quitar de fijos"
+    },
     "cart": {
       "title": "Carrito",
       "title_with_count": "Carrito ({{count}} items)",
@@ -751,6 +756,8 @@
     "methods_title": "Métodos de pago",
     "method_label": "Método {{number}}",
     "amount_label": "Valor",
+    "keyboard_hint": "↑↓ método · 0-9 monto · Enter autorizar · + método · F9 cobrar",
+    "typing_amount": "Escribiendo monto: {{digits}}",
     "remove_method": "Eliminar método de pago",
     "add_method": "+ Agregar método",
     "total_paid": "Total recibido",

@@ -11,6 +11,7 @@
 import { type FC, useCallback, useRef } from "react";
 import { useSalesTransaction } from "../../hooks/use-sales-transaction";
 import { useSalesKeyboard } from "../../hooks/use-sales-keyboard";
+import { useQuickButtons } from "../../hooks/use-quick-buttons";
 import { ProductSearch } from "./product-search";
 import { CartPanel } from "./cart-panel";
 import { RestrictedConfirmationDialog } from "./restricted-confirmation-dialog";
@@ -34,6 +35,24 @@ export const SalesTransaction: FC = () => {
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  const { quickProductIds, isPinned, togglePin, addQuickProduct } =
+    useQuickButtons({
+      catalogService,
+      onAddCatalogItem: handleSelect,
+    });
+
+  // F2–F6 from the keyboard hook map to the pinned fast-movers 0–4; an
+  // index with no pin simply does nothing.
+  const handleQuickSelect = useCallback(
+    (index: number) => {
+      const productId = quickProductIds[index];
+      if (productId) {
+        void addQuickProduct(productId);
+      }
+    },
+    [quickProductIds, addQuickProduct],
+  );
+
   const {
     quickEdit,
     setQuickEditDraft,
@@ -47,6 +66,7 @@ export const SalesTransaction: FC = () => {
     isCreating,
     onAddCatalogItem: handleSelect,
     onCheckout: handleCheckout,
+    onQuickSelect: handleQuickSelect,
   });
 
   // After a quick edit closes, hand focus back to the search input so the
@@ -63,6 +83,12 @@ export const SalesTransaction: FC = () => {
         searchInputRef={searchInputRef}
         onSubmitSearch={submitSearch}
         feedback={feedback}
+        quickProductIds={quickProductIds}
+        onAddQuickProduct={(productId) => {
+          void addQuickProduct(productId);
+        }}
+        onTogglePin={togglePin}
+        isPinned={isPinned}
       />
       <CartPanel
         onCheckout={handleCheckout}

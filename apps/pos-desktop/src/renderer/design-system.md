@@ -1191,3 +1191,25 @@ Four-step flow: plan catalog -> customer form -> external Wompi payment -> resul
 - Generic-dashboard check: row selection via accent bar + tint is a POS/terminal idiom (lightning checkout), not a SaaS list pattern; it is paired with the persistent cart header keyboard hint (↑↓ seleccionar · F9 cobrar · Ctrl+Z deshacer) in the same muted-caption style as HelpBar — discoverability without decoration.
 - Motion budget: zero animation added. Selection is an instant state change (inset bar + tint swap), matching the <100ms search/scan budget.
 - Color independence: selection is also implied by the editor input's aria-label and the header hint text; feedback boxes carry text, not color alone.
+
+---
+
+## Quick product buttons (added 2026-08-22)
+
+### Pass 1 — Brief
+
+The cashier sells the same fast-movers all day (acetaminofén, ibuprofeno). Pinned products become one muted chip row above the search input; F2–F6 add them by keyboard.
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Row | Single muted strip: pharma-tinted border (≈18% color-mix) + faint pharma wash (≈4%) on the panel surface, chips inside, horizontal scroll on overflow. Renders **nothing** when no pins exist. | Appears only as a product of the cashier's own pinning — no empty placeholder, no dead chrome. The pharma tint marks it as the fast-mover lane, distinct from the search input below it. |
+| Chip | Compact pill: name (truncated) + price in `font-data tabular-nums`; first five chips carry a visible `F2`–`F6` kbd mark matching the keyboard mapping. `title` shows the full name (and F-key for the first five). | Discoverability without hover — a title tooltip alone is invisible to a cashier who never hovers. The kbd mark reuses HelpBar's kbd language (⌘K). Price in mono tabular because it is a number read mid-scan. |
+| Pin action | Small `PinIcon` button in the result card's top-right, only on selectable cards; pharma fill when pinned, muted ink otherwise, `aria-pressed` + translated label ("Fijar producto" / "Quitar de fijos"). | Pin/unpin is a deliberate per-product choice, so it lives on the card (context) not in a settings screen. Icon-only button + aria-label keeps the card dense. |
+| Failure handling | A chip whose product no longer resolves (gone/inactive/incomplete) does nothing visible — silent skip, chip just stops working. | Dead fast-mover is a rare, quiet event; a flash would interrupt the scan cadence for something the cashier cannot fix mid-sale. |
+| Keyboard guards | Pin button keydown must not leak into the card/listbox select handlers (Enter/Space would otherwise add the product twice — once via the card, once via the listbox container). Both handlers now act only when the event target is the element itself. | The listbox container is never focusable, so its Enter/Space branch was a latent double-add for any future nested control; the guard fixes it and makes the nested button safe. |
+
+### Pass 2 — Critique
+
+- Generic-dashboard check: a "quick actions" chip row could exist in any admin tool, but here it is anchored to real keyboard mapping (F2–F6 from the sales keydown hook), to the pin affordance on search cards, and to a persisted per-terminal preference — the shape is a product of the scan-and-keyboard workflow, not a widget shelf.
+- Motion budget: zero animation. Pin toggle is an instant color swap; chip add goes through the existing single-crisp-confirmation path (cart line appears). No hover micro-animations.
+- Accessibility: row is `role="toolbar"` with translated label; each chip is a real button with name+price label; pin button has `aria-pressed` and a translated label; color never carries the state alone.

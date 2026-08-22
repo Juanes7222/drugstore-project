@@ -66,6 +66,7 @@ import {
 import type { ClientCreditState } from "../../../domain/clients/credit.service";
 import { useLocalConfigStore } from "../../../domain/configuration/local-config.store";
 import { useActivePaymentMethods } from "@/hooks/use-active-payment-methods";
+import { usePaymentKeyboard } from "@/hooks/use-payment-keyboard";
 import { useProductSyncWait } from "@/hooks/use-product-sync-wait";
 import { ProductNotSyncedYetException } from "../../../domain/sales-pos/exceptions";
 import { formatCurrency } from "@/utils/format-currency";
@@ -466,6 +467,20 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
 
   const showCashReceived = cashOwed > 0;
 
+  // Keyboard-first payment flow: selection/buffer state drives the active-row
+  // highlight and the live money-entry display below. The hook owns the
+  // keydown listener and gating; this screen only renders its state.
+  const { selection, buffer } = usePaymentKeyboard({
+    isCompleting,
+    canConfirm,
+    onConfirm: handleConfirm,
+    onAddMethod: handleAddMethod,
+    onRemoveMethod: handleRemoveMethod,
+    onAmountChange: handleAmountChange,
+    onCashReceivedChange: handleCashReceivedChange,
+    onAuthorize: handleAuthorize,
+  });
+
   return (
     <section
       aria-label={t("payment.title")}
@@ -511,6 +526,15 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
             </span>
           </div>
 
+          <p
+            className="mt-pos-xs text-caption"
+            style={{
+              color: "color-mix(in srgb, var(--color-ink) 45%, transparent)",
+            }}
+          >
+            {t("payment.keyboard_hint")}
+          </p>
+
           <div>
             {methods.map((method, index) => (
               <PaymentMethodRow
@@ -520,6 +544,15 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
                 methods={availableMethods}
                 isOnlyMethod={methods.length === 1}
                 disabled={isCompleting}
+                isActive={
+                  selection?.kind === "row" && selection.rowId === method.id
+                }
+                buffer={
+                  buffer?.target.kind === "row" &&
+                  buffer.target.rowId === method.id
+                    ? buffer
+                    : null
+                }
                 onMethodChange={handleMethodChange}
                 onAmountChange={handleAmountChange}
                 onRemove={handleRemoveMethod}
@@ -661,14 +694,38 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
         </div>
 
         {showCashReceived && (
-          <div className="mt-pos-md grid grid-cols-2 gap-pos-md">
-            <CurrencyInput
-              value={cashReceived}
-              onChange={handleCashReceivedChange}
-              label={t("payment.received")}
-              aria-label={t("payment.received")}
-              disabled={isCompleting}
-            />
+          <div
+            className="mt-pos-md grid grid-cols-2 items-start gap-pos-md rounded-pos p-pos-sm"
+            style={{
+              ...(selection?.kind === "received"
+                ? {
+                    backgroundColor:
+                      "color-mix(in srgb, var(--color-pharma) 6%, transparent)",
+                    boxShadow: "inset 3px 0 0 var(--color-pharma)",
+                  }
+                : {}),
+            }}
+          >
+            <div className="flex flex-col gap-pos-xs">
+              {buffer?.target.kind === "received" && (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="m-0 font-data text-body tabular-nums"
+                  style={{ color: "var(--color-pharma)" }}
+                >
+                  $ {buffer.digits === "" ? "0" : buffer.digits}
+                  <span aria-hidden="true">▍</span>
+                </p>
+              )}
+              <CurrencyInput
+                value={cashReceived}
+                onChange={handleCashReceivedChange}
+                label={t("payment.received")}
+                aria-label={t("payment.received")}
+                disabled={isCompleting}
+              />
+            </div>
             <div className="flex flex-col gap-pos-xs">
               <span
                 className="text-caption font-medium"

@@ -27,18 +27,25 @@ import {
 import { formatCurrency } from "@/utils/format-currency";
 import { formatShortDate } from "@/utils/format-date";
 import { CommissionBadge } from "@/components/common/commission-badge";
+import { PinIcon } from "@/components/ui/icons";
 
 interface ProductSearchResultsProps {
   results: CatalogItem[];
   onSelect: (item: CatalogItem) => void;
   /** Called when Escape is pressed inside the results list */
   onEscape?: () => void;
+  /** Pin/unpin a product to the quick buttons row. */
+  onTogglePin?: (productId: string) => void;
+  /** Whether a product is currently pinned to the quick buttons row. */
+  isPinned?: (productId: string) => boolean;
 }
 
 export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
   results,
   onSelect,
   onEscape,
+  onTogglePin,
+  isPinned,
 }) => {
   const { t } = useTranslation();
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
@@ -111,6 +118,11 @@ export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
         }
         case "Enter":
         case " ": {
+          // Only act when the listbox itself is the target: focused cards
+          // handle Enter/Space in their own keydown handler, and acting on
+          // bubbled events would double-add (and would hijack any nested
+          // control such as the pin button).
+          if (event.target !== event.currentTarget) break;
           event.preventDefault();
           if (focusedIndex >= 0 && focusedIndex < results.length) {
             const item = results[focusedIndex];
@@ -150,6 +162,7 @@ export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
         const nearExpiry = isNearExpiry(item.lotExpirationDate);
         const justAdded = addedIds.has(item.id);
         const isFocused = index === focusedIndex;
+        const pinned = isPinned?.(item.id) ?? false;
 
         return (
           <ProductResultCard
@@ -160,7 +173,9 @@ export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
             nearExpiry={nearExpiry}
             justAdded={justAdded}
             isFocused={isFocused}
+            pinned={pinned}
             onSelect={handleSelect}
+            onTogglePin={onTogglePin}
             ref={(el) => {
               cardRefs.current[index] = el;
             }}
@@ -182,7 +197,9 @@ interface ProductResultCardProps {
   nearExpiry: boolean;
   justAdded: boolean;
   isFocused: boolean;
+  pinned: boolean;
   onSelect: (item: CatalogItem) => void;
+  onTogglePin?: (productId: string) => void;
 }
 
 const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
@@ -192,7 +209,9 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
   nearExpiry,
   justAdded,
   isFocused,
+  pinned,
   onSelect,
+  onTogglePin,
 }, cardRef) => {
   const { t } = useTranslation();
 
@@ -204,8 +223,15 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
     }
   };
 
+  const handleTogglePin = () => {
+    onTogglePin?.(item.id);
+  };
+
   // Individual Enter/Space for direct keyboard activation (roving tabindex approach)
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // Only the card itself activates selection — bubbled events from nested
+    // controls (pin button) must keep their native behavior.
+    if (event.target !== event.currentTarget) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       if (isSelectable) {
@@ -258,6 +284,34 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
+          {isSelectable && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleTogglePin();
+              }}
+              aria-label={t(
+                pinned
+                  ? "sales.quick_buttons.unpin"
+                  : "sales.quick_buttons.pin",
+              )}
+              aria-pressed={pinned}
+              title={t(
+                pinned
+                  ? "sales.quick_buttons.unpin"
+                  : "sales.quick_buttons.pin",
+              )}
+              className="rounded p-1 transition-colors hover:bg-pharma/10"
+              style={{
+                color: pinned
+                  ? "var(--color-pharma)"
+                  : "color-mix(in srgb, var(--color-ink) 35%, transparent)",
+              }}
+            >
+              <PinIcon size={14} aria-hidden="true" />
+            </button>
+          )}
           {justAdded && (
             <span
               className="rounded px-1.5 py-0.5 text-caption-xs font-semibold uppercase tracking-wide"
