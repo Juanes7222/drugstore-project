@@ -166,6 +166,7 @@ vi.mock("../../domain/auth/auth-http-client", () => ({
 
 vi.mock("../../infrastructure/config", () => ({
   API_BASE_URL: "http://test",
+  WORKSTATION_ID: "ws_principal",
 }));
 
 // ---------------------------------------------------------------------------
@@ -293,7 +294,7 @@ describe("useOfflineAuth", () => {
   // -----------------------------------------------------------------------
 
   describe("attemptOfflineLogin", () => {
-    it("calls authService.attemptOfflineLogin with the workstation fingerprint", async () => {
+    it("calls authService.attemptOfflineLogin with the configured WORKSTATION_ID as fingerprint", async () => {
       const session = makeOfflineSession();
       authServiceMock.attemptOfflineLogin.mockResolvedValueOnce({ session });
 
@@ -307,12 +308,12 @@ describe("useOfflineAuth", () => {
         "user-1",
         "1234",
         "PIN",
-        "local-workstation",
+        "ws_principal",
       );
       expect(loginResult.session.localSessionId).toBe(session.localSessionId);
     });
 
-    it("uses online session workstationId when available", async () => {
+    it("uses WORKSTATION_ID as the fingerprint even when an online session has a different workstationId", async () => {
       onlineSessionRef.current = makeOnlineSession({ workstationId: "ws-online" });
       const session = makeOfflineSession();
       authServiceMock.attemptOfflineLogin.mockResolvedValueOnce({ session });
@@ -327,7 +328,7 @@ describe("useOfflineAuth", () => {
         "user-1",
         "1234",
         "PIN",
-        "ws-online",
+        "ws_principal",
       );
     });
 

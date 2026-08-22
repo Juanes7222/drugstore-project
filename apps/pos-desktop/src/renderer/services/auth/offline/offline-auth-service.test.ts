@@ -64,6 +64,15 @@ const { mockOnlineSessionRef } = vi.hoisted(() => ({
   mockOnlineSessionRef: { current: null as LocalSession | null },
 }));
 
+// Hoisted actions of the local session store so tests can assert on
+// setSession/updateSession calls made by the offline login bridge.
+const { mockLocalSessionActions } = vi.hoisted(() => ({
+  mockLocalSessionActions: {
+    setSession: vi.fn(),
+    updateSession: vi.fn(),
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // vi.mock calls (hoisted automatically)
 // ---------------------------------------------------------------------------
@@ -118,6 +127,8 @@ vi.mock("../../../../domain/auth/local-session.store", () => ({
   useLocalSessionStore: {
     getState: vi.fn(() => ({
       session: mockOnlineSessionRef.current,
+      setSession: mockLocalSessionActions.setSession,
+      updateSession: mockLocalSessionActions.updateSession,
     })),
   },
 }));
@@ -209,6 +220,34 @@ describe("OfflineAuthService", () => {
       expect(result.session.userId).toBe("user-1");
       expect(result.session.offlineToken).toBe(token);
       expect(result.session.workstationFingerprint).toBe(wfp);
+    });
+
+    it("bridges the offline session into the local session store", async () => {
+      const cacheEntry = makeCacheEntry();
+      mockStoreMap.set(
+        "credential_cache_user-1",
+        JSON.stringify({ ...cacheEntry, expiresAt: cacheEntry.expiresAt.toISOString() }),
+      );
+      const token = makeOfflineToken();
+      mockStoreMap.set("offline_token_user-1", token);
+
+      const result = await service.attemptOfflineLogin(userId, "1234", "PIN", wfp);
+
+      expect(mockLocalSessionActions.setSession).toHaveBeenCalledWith({
+        userId: "user-1",
+        username: "user-1", // claims.sub
+        fullName: "",
+        displayName: "",
+        role: "CASHIER",
+        subscriptionId: "sub-1",
+        workstationId: wfp,
+        accessToken: "",
+        refreshToken: "",
+        offlineToken: token,
+        sessionId: result.session.localSessionId,
+        sessionTrust: "LOCAL_UNVERIFIED",
+        locationIds: ["loc-1"],
+      });
     });
 
     it("throws SecureStorageUnavailableException when storage is not available", async () => {
@@ -309,6 +348,16 @@ describe("OfflineAuthService", () => {
       await expect(
         service.attemptOfflineLogin(userId, "1234", "PIN", wfp),
       ).rejects.toThrow(OfflineTokenRevokedException);
+    });
+
+    it("does not bridge into the local session store when login fails", async () => {
+      // No credential cache entry seeded — fails before the bridge
+
+      await expect(
+        service.attemptOfflineLogin(userId, "1234", "PIN", wfp),
+      ).rejects.toThrow(NoOfflineCredentialsException);
+
+      expect(mockLocalSessionActions.setSession).not.toHaveBeenCalled();
     });
   });
 

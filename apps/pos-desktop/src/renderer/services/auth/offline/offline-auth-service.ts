@@ -289,6 +289,31 @@ export function createOfflineAuthService(config: {
         secureStorage,
       );
 
+      // 10. Bridge into the main local session store.
+      //
+      // The app shell, role guards, and screen routing all read
+      // `useLocalSessionStore` — an offline login that only populated the
+      // offline session store would leave the app on the login screen
+      // (App.tsx renders <LoginPage/> whenever the local session is null).
+      // The bridged session carries no access/refresh token, so sync and
+      // authenticated server calls stay disabled until a later online
+      // login or blessing replaces it.
+      useLocalSessionStore.getState().setSession({
+        userId: populatedSession.userId,
+        username: populatedSession.username,
+        fullName: populatedSession.displayName,
+        displayName: populatedSession.displayName,
+        role: populatedSession.role,
+        subscriptionId: populatedSession.subscriptionId,
+        workstationId: workstationFingerprint,
+        accessToken: '',
+        refreshToken: '',
+        offlineToken: populatedSession.offlineToken,
+        sessionId: populatedSession.localSessionId,
+        sessionTrust: 'LOCAL_UNVERIFIED',
+        locationIds: claims.locationIds,
+      });
+
       return { session: populatedSession };
     },
 

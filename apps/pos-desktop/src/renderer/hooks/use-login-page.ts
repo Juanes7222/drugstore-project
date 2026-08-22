@@ -336,6 +336,11 @@ export function useLoginPage(): UseLoginPageReturn {
             pin,
             'PIN',
           );
+          useLocalSessionStore.getState().updateSession({
+            username: selectedUser.username,
+            fullName: selectedUser.displayName,
+            displayName: selectedUser.displayName,
+          });
           setOfflineLoginSkipped2fa(false);
           dispatch(setActiveScreen('home'));
           return;
@@ -347,7 +352,7 @@ export function useLoginPage(): UseLoginPageReturn {
           pin,
           'PIN',
           WORKSTATION_ID,
-          undefined,
+          WORKSTATION_ID,
           'pos-desktop',
         );
 
@@ -376,6 +381,14 @@ export function useLoginPage(): UseLoginPageReturn {
         } else if (err instanceof NetworkErrorException) {
           try {
             await attemptOfflineLogin(selectedUser.id, pin, 'PIN');
+            // Enrich the bridged session with the identity cached in the
+            // local user cache — the offline token claims only carry the
+            // user ID, not a display name.
+            useLocalSessionStore.getState().updateSession({
+              username: selectedUser.username,
+              fullName: selectedUser.displayName,
+              displayName: selectedUser.displayName,
+            });
             setOfflineLoginSkipped2fa(false);
             dispatch(setActiveScreen('home'));
           } catch (_offlineErr) {
@@ -429,10 +442,19 @@ export function useLoginPage(): UseLoginPageReturn {
     setIsLoading(true);
     setError(null);
 
+    // Resolve the local PGlite user once so the offline fallback can use
+    // the real user ID (offline credentials are keyed by ID, not by
+    // username) and the cached display name for the bridged session.
+    let cachedUser: UserData | null = null;
+    try {
+      cachedUser = await userCache.getUserByUsername(identifier);
+    } catch {
+      cachedUser = null;
+    }
+
     try {
       // ---- Local-first: try local PGlite User cache ----
       // Look up by username first, then try local auth.
-      const cachedUser = await userCache.getUserByUsername(identifier);
       if (cachedUser) {
         const handled = await attemptLocalPasswordAuth(cachedUser.id, password);
         if (handled) return;
@@ -441,10 +463,17 @@ export function useLoginPage(): UseLoginPageReturn {
       // ---- Fallback: offline or server auth ----
       if (isStrictlyOffline) {
         await attemptOfflineLogin(
-          selectedUser?.id ?? identifier,
+          cachedUser?.id ?? selectedUser?.id ?? identifier,
           password,
           'PASSWORD',
         );
+        if (cachedUser) {
+          useLocalSessionStore.getState().updateSession({
+            username: cachedUser.username,
+            fullName: cachedUser.displayName,
+            displayName: cachedUser.displayName,
+          });
+        }
         setOfflineLoginSkipped2fa(false);
         dispatch(setActiveScreen('home'));
         return;
@@ -456,7 +485,7 @@ export function useLoginPage(): UseLoginPageReturn {
         password,
         'PASSWORD',
         WORKSTATION_ID,
-        undefined,
+        WORKSTATION_ID,
         'pos-desktop',
       );
 
@@ -485,10 +514,17 @@ export function useLoginPage(): UseLoginPageReturn {
       } else if (err instanceof NetworkErrorException) {
         try {
           await attemptOfflineLogin(
-            selectedUser?.id ?? identifier,
+            cachedUser?.id ?? selectedUser?.id ?? identifier,
             password,
             'PASSWORD',
           );
+          if (cachedUser) {
+            useLocalSessionStore.getState().updateSession({
+              username: cachedUser.username,
+              fullName: cachedUser.displayName,
+              displayName: cachedUser.displayName,
+            });
+          }
           setOfflineLoginSkipped2fa(false);
           dispatch(setActiveScreen('home'));
         } catch (_offlineErr) {
@@ -581,7 +617,7 @@ export function useLoginPage(): UseLoginPageReturn {
       const result = await authService.loginWithGoogle(
         idToken,
         WORKSTATION_ID,
-        undefined,
+        WORKSTATION_ID,
         'pos-desktop',
       );
 

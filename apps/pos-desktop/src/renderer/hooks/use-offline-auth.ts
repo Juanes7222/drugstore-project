@@ -37,7 +37,7 @@ import {
   createOfflineAuthService,
   type OfflineAuthService,
 } from '../services/auth/offline/offline-auth-service';
-import { API_BASE_URL } from '../../infrastructure/config';
+import { API_BASE_URL, WORKSTATION_ID } from '../../infrastructure/config';
 import { createAuthHttpClient } from '../../domain/auth/auth-http-client';
 
 // ---------------------------------------------------------------------------
@@ -279,10 +279,11 @@ export function useOfflineAuth(): UseOfflineAuthReturn {
       credential: string,
       credentialType: 'PIN' | 'PASSWORD',
     ): Promise<OfflineLoginResult> => {
-      // Derive workstation fingerprint from the online session or a fallback
-      const onlineSession = useLocalSessionStore.getState().session;
-      const workstationFingerprint =
-        onlineSession?.workstationId ?? 'local-workstation';
+      // The offline token's `wfp` claim is bound to the workstation ID
+      // (the server stamps it from the login's hardwareFingerprint, which
+      // the login flow sends as WORKSTATION_ID). It must match exactly —
+      // a fallback string would reject every cached token.
+      const workstationFingerprint = WORKSTATION_ID;
 
       const result = await authService.attemptOfflineLogin(
         userId,

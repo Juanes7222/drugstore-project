@@ -7,12 +7,13 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useLoginPage } from "./use-login-page";
-import { InvalidCredentialsException } from "../../domain/auth/exceptions";
+import { InvalidCredentialsException, NetworkErrorException } from "../../domain/auth/exceptions";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import { RoleType } from "@pharmacy/shared-types";
 
 import type { LocalUserInfo } from "../../domain/auth/local-users";
 import type { LocalSession } from "../../domain/auth/local-session.store";
+import type { UserData } from "../../domain/auth/local-types";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks
@@ -61,16 +62,44 @@ vi.mock("@/store/hooks", () => ({
   },
 }));
 
-vi.mock("../../domain/auth/local-session.store", () => ({
-  useLocalSessionStore: (selector: (s: { session: LocalSession | null }) => unknown) =>
-    selector({ session: mockSessionRef.current }),
-  hasMinRole: () => true,
+vi.mock("../../domain/auth/local-session.store", () => {
+  const store = (selector: (s: { session: LocalSession | null }) => unknown) =>
+    selector({ session: mockSessionRef.current });
+  store.getState = () => ({
+    session: mockSessionRef.current,
+    setSession: mockLocalSessionActions.setSession,
+    updateSession: mockLocalSessionActions.updateSession,
+    clearSession: vi.fn(),
+  });
+  return {
+    useLocalSessionStore: store,
+    hasMinRole: () => true,
+  };
+});
+
+// Hoisted actions of the local session store so tests can assert on the
+// offline fallback's updateSession identity enrichment.
+const { mockLocalSessionActions } = vi.hoisted(() => ({
+  mockLocalSessionActions: {
+    setSession: vi.fn(),
+    updateSession: vi.fn(),
+  },
+}));
+
+// Shared offline-auth mock: connectionState is a mutable ref so tests can
+// exercise the strict-offline branch; attemptOfflineLogin is shared so tests
+// can assert on the userId it receives.
+const { offlineAuthMock } = vi.hoisted(() => ({
+  offlineAuthMock: {
+    connectionState: "ONLINE" as "ONLINE" | "OFFLINE",
+    attemptOfflineLogin: vi.fn().mockResolvedValue(undefined),
+  },
 }));
 
 vi.mock("./use-offline-auth", () => ({
   useOfflineAuth: () => ({
-    connectionState: "ONLINE" as const,
-    attemptOfflineLogin: vi.fn().mockResolvedValue(undefined),
+    connectionState: offlineAuthMock.connectionState,
+    attemptOfflineLogin: offlineAuthMock.attemptOfflineLogin,
   }),
 }));
 
@@ -140,6 +169,26 @@ const fakeLocalSession: LocalSession = {
   sessionTrust: 'SERVER_VERIFIED',
 };
 
+const cachedAdminUser: UserData = {
+  id: "user-admin-1",
+  username: "admin",
+  displayName: "Admin Local",
+  role: RoleType.MANAGER,
+  status: "ACTIVE",
+  passwordVersion: 1,
+  credentialMode: "PASSWORD",
+  createdLocally: false,
+  syncStatus: "SYNCED",
+  syncError: null,
+  failedLoginAttempts: 0,
+  lockedUntil: null,
+  mustChangePassword: false,
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+  lastLoginAt: null,
+  deletedAt: null,
+};
+
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
@@ -148,6 +197,8 @@ describe("useLoginPage", () => {
   afterEach(() => {
     vi.clearAllMocks();
     mockSessionRef.current = null;
+    offlineAuthMock.connectionState = "ONLINE";
+    offlineAuthMock.attemptOfflineLogin.mockResolvedValue(undefined);
   });
 
   describe("initial state", () => {
@@ -201,7 +252,7 @@ describe("useLoginPage", () => {
         "123456",
         "PIN",
         "ws_principal",
-        undefined,
+        "ws_principal",
         "pos-desktop",
       );
       expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
@@ -263,6 +314,52 @@ describe("useLoginPage", () => {
 
       expect(result.current.error).toBe("auth.too_many_attempts");
     });
+
+    it("falls back to offline login with the selected user's id on NetworkErrorException", async () => {
+      mockAuthService.login.mockRejectedValueOnce(new NetworkErrorException());
+      offlineAuthMock.attemptOfflineLogin.mockResolvedValueOnce(undefined);
+
+      const { result } = renderHook(() => useLoginPage());
+
+      act(() => {
+        result.current.handleUserSelect(cashierUser);
+      });
+
+      await act(async () => {
+        await result.current.handlePinComplete("123456");
+      });
+
+      expect(offlineAuthMock.attemptOfflineLogin).toHaveBeenCalledWith(
+        cashierUser.id,
+        "123456",
+        "PIN",
+      );
+      expect(mockLocalSessionActions.updateSession).toHaveBeenCalledWith({
+        username: cashierUser.username,
+        fullName: cashierUser.displayName,
+        displayName: cashierUser.displayName,
+      });
+      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
+    });
+
+    it("shows a connection error when the offline fallback also fails on PIN login", async () => {
+      mockAuthService.login.mockRejectedValueOnce(new NetworkErrorException());
+      offlineAuthMock.attemptOfflineLogin.mockRejectedValueOnce(new Error("offline failed"));
+
+      const { result } = renderHook(() => useLoginPage());
+
+      act(() => {
+        result.current.handleUserSelect(cashierUser);
+      });
+
+      await act(async () => {
+        await result.current.handlePinComplete("123456");
+      });
+
+      expect(result.current.error).toBe("auth.connection_error");
+      expect(result.current.offlineErrorMessage).toBe("auth.connection_error");
+      expect(dispatch).not.toHaveBeenCalled();
+    });
   });
 
   describe("handlePasswordLogin", () => {
@@ -285,7 +382,7 @@ describe("useLoginPage", () => {
         "secret123",
         "PASSWORD",
         "ws_principal",
-        undefined,
+        "ws_principal",
         "pos-desktop",
       );
       expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
@@ -369,6 +466,104 @@ describe("useLoginPage", () => {
       expect(result.current.countdown).toBe(300);
 
       vi.useRealTimers();
+    });
+
+    it("falls back to offline login with the cached user's id on NetworkErrorException", async () => {
+      mockUserCache.getUserByUsername.mockResolvedValueOnce(cachedAdminUser);
+      mockAuthService.login.mockRejectedValueOnce(new NetworkErrorException());
+      offlineAuthMock.attemptOfflineLogin.mockResolvedValueOnce(undefined);
+
+      const { result } = renderHook(() => useLoginPage());
+
+      act(() => {
+        result.current.setIdentifier("admin");
+        result.current.setPassword("secret123");
+      });
+
+      await act(async () => {
+        await result.current.handlePasswordLogin();
+      });
+
+      expect(offlineAuthMock.attemptOfflineLogin).toHaveBeenCalledWith(
+        cachedAdminUser.id,
+        "secret123",
+        "PASSWORD",
+      );
+    });
+
+    it("enriches the bridged session with the cached user's identity after offline fallback", async () => {
+      mockUserCache.getUserByUsername.mockResolvedValueOnce(cachedAdminUser);
+      mockAuthService.login.mockRejectedValueOnce(new NetworkErrorException());
+      offlineAuthMock.attemptOfflineLogin.mockResolvedValueOnce(undefined);
+
+      const { result } = renderHook(() => useLoginPage());
+
+      act(() => {
+        result.current.setIdentifier("admin");
+        result.current.setPassword("secret123");
+      });
+
+      await act(async () => {
+        await result.current.handlePasswordLogin();
+      });
+
+      expect(mockLocalSessionActions.updateSession).toHaveBeenCalledWith({
+        username: cachedAdminUser.username,
+        fullName: cachedAdminUser.displayName,
+        displayName: cachedAdminUser.displayName,
+      });
+      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
+    });
+
+    it("shows a connection error when the offline fallback also fails on password login", async () => {
+      mockUserCache.getUserByUsername.mockResolvedValueOnce(cachedAdminUser);
+      mockAuthService.login.mockRejectedValueOnce(new NetworkErrorException());
+      offlineAuthMock.attemptOfflineLogin.mockRejectedValueOnce(new Error("offline failed"));
+
+      const { result } = renderHook(() => useLoginPage());
+
+      act(() => {
+        result.current.setIdentifier("admin");
+        result.current.setPassword("secret123");
+      });
+
+      await act(async () => {
+        await result.current.handlePasswordLogin();
+      });
+
+      expect(result.current.error).toBe("auth.connection_error");
+      expect(result.current.offlineErrorMessage).toBe("auth.connection_error");
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    it("uses the cached user's id in strict offline mode and enriches the bridged session", async () => {
+      offlineAuthMock.connectionState = "OFFLINE";
+      mockUserCache.getUserByUsername.mockResolvedValueOnce(cachedAdminUser);
+      offlineAuthMock.attemptOfflineLogin.mockResolvedValueOnce(undefined);
+
+      const { result } = renderHook(() => useLoginPage());
+
+      act(() => {
+        result.current.setIdentifier("admin");
+        result.current.setPassword("secret123");
+      });
+
+      await act(async () => {
+        await result.current.handlePasswordLogin();
+      });
+
+      expect(mockAuthService.login).not.toHaveBeenCalled();
+      expect(offlineAuthMock.attemptOfflineLogin).toHaveBeenCalledWith(
+        cachedAdminUser.id,
+        "secret123",
+        "PASSWORD",
+      );
+      expect(mockLocalSessionActions.updateSession).toHaveBeenCalledWith({
+        username: cachedAdminUser.username,
+        fullName: cachedAdminUser.displayName,
+        displayName: cachedAdminUser.displayName,
+      });
+      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
     });
   });
 
