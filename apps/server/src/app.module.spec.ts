@@ -5,6 +5,17 @@
 // only at runtime, so a lazy proxy returning the accessed key is enough.
 // The two enums fed to z.nativeEnum at import time get real member sets
 // (mirrored from packages/database/prisma/schema).
+// Mock firebase-admin before importing AppModule: the module graph pulls in
+// firebase-auth.service, whose real firebase-admin dependency chain
+// (jwks-rsa -> jose) ships ESM builds that the CJS module runner cannot parse.
+jest.mock('firebase-admin/app', () => ({
+  initializeApp: jest.fn(),
+  cert: jest.fn(),
+}));
+jest.mock('firebase-admin/auth', () => ({
+  getAuth: jest.fn(),
+}));
+
 jest.mock('@pharmacy/database', () => {
   const lazyEnum = new Proxy(
     {},

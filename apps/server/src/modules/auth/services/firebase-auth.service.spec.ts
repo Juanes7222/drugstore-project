@@ -1,20 +1,18 @@
-import { jest, describe, it, expect, beforeAll, beforeEach } from '@jest/globals';
-
-jest.unstable_mockModule('firebase-admin/app', () => ({
+// jest.mock factories are used instead of jest.unstable_mockModule: the
+// latter does not register in this Jest/ts-jest ESM setup, so the real
+// firebase-admin graph (jwks-rsa -> jose ESM) would load and crash the
+// CJS module runner.
+jest.mock('firebase-admin/app', () => ({
   initializeApp: jest.fn(() => ({})),
   cert: jest.fn(() => ({})),
 }));
-jest.unstable_mockModule('firebase-admin/auth', () => ({
+jest.mock('firebase-admin/auth', () => ({
   getAuth: jest.fn(),
 }));
 
-let FirebaseAuthService: typeof import('./firebase-auth.service').FirebaseAuthService;
-let getAuth: typeof import('firebase-admin/auth').getAuth;
-
-beforeAll(async () => {
-  ({ FirebaseAuthService } = await import('./firebase-auth.service'));
-  ({ getAuth } = await import('firebase-admin/auth'));
-});
+import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { FirebaseAuthService } from './firebase-auth.service';
+import { getAuth } from 'firebase-admin/auth';
 
 describe('FirebaseAuthService', () => {
   let service: InstanceType<typeof FirebaseAuthService>;
