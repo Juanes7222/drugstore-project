@@ -199,7 +199,7 @@ const mapLocalProductToCatalogItem = (
     lotExpirationDate:
       nearestLot?.expirationDate instanceof Date
         ? nearestLot.expirationDate.toISOString()
-        : new Date().toISOString(),
+        : (nearestLot?.expirationDate ?? ''),
     hasCompleteData,
     commissionType: product.commissionType ?? null,
     commissionValue:
