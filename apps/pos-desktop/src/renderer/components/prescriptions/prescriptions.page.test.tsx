@@ -65,7 +65,13 @@ const createTestStore = (
       ui: uiSlice.reducer,
     },
     preloadedState: {
-      sales: { items, selectedClient: null, delivery: null },
+      sales: {
+        items,
+        selectedClient: null,
+        delivery: null,
+        selectedLineId: null,
+        undoStack: [],
+      },
       ui: {
         activeScreen: "prescriptions" as const,
         saleCompletionPhase: "idle" as const,
@@ -129,9 +135,7 @@ describe("PrescriptionsPage", () => {
     it("renders the item info showing the product name", () => {
       renderPage();
 
-      expect(
-        screen.getByText("Acetaminofén 500mg"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Acetaminofén 500mg")).toBeInTheDocument();
     });
 
     it("renders a submit and a cancel button", () => {
@@ -162,20 +166,20 @@ describe("PrescriptionsPage", () => {
       fireEvent.click(checkbox);
 
       await waitFor(() => {
-        expect(
-          screen.getByLabelText(/Folio del libro/i),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByLabelText(/Página del libro/i),
-        ).toBeInTheDocument();
+        expect(screen.getByLabelText(/Folio del libro/i)).toBeInTheDocument();
+        expect(screen.getByLabelText(/Página del libro/i)).toBeInTheDocument();
       });
     });
 
     it("hides book fields when unchecked", () => {
       renderPage();
 
-      expect(screen.queryByLabelText(/Folio del libro/i)).not.toBeInTheDocument();
-      expect(screen.queryByLabelText(/Página del libro/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText(/Folio del libro/i),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText(/Página del libro/i),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -183,13 +187,13 @@ describe("PrescriptionsPage", () => {
     it("shows an error when physician name is empty and submit is clicked", async () => {
       renderPage();
 
-      const submitButton = screen.getByRole("button", { name: /Guardar y continuar al pago/i });
+      const submitButton = screen.getByRole("button", {
+        name: /Guardar y continuar al pago/i,
+      });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/médico es obligatorio/i),
-        ).toBeInTheDocument();
+        expect(screen.getByText(/médico es obligatorio/i)).toBeInTheDocument();
       });
     });
 
@@ -197,10 +201,14 @@ describe("PrescriptionsPage", () => {
       renderPage();
 
       // Fill physician name
-      const physicianInput = screen.getByLabelText(/Nombre completo del médico/i);
+      const physicianInput = screen.getByLabelText(
+        /Nombre completo del médico/i,
+      );
       await userEvent.type(physicianInput, "Dr. Pérez");
 
-      const submitButton = screen.getByRole("button", { name: /Guardar y continuar al pago/i });
+      const submitButton = screen.getByRole("button", {
+        name: /Guardar y continuar al pago/i,
+      });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -214,18 +222,24 @@ describe("PrescriptionsPage", () => {
       renderPage();
 
       // Fill required fields
-      const physicianInput = screen.getByLabelText(/Nombre completo del médico/i);
+      const physicianInput = screen.getByLabelText(
+        /Nombre completo del médico/i,
+      );
       await userEvent.type(physicianInput, "Dr. Pérez");
       const licenseInput = screen.getByLabelText(/Número de licencia médica/i);
       await userEvent.type(licenseInput, "LIC-12345");
-      const patientInput = screen.getByLabelText(/Número de identificación del paciente/i);
+      const patientInput = screen.getByLabelText(
+        /Número de identificación del paciente/i,
+      );
       await userEvent.type(patientInput, "CC-123456");
 
       // Check controlled substance
       fireEvent.click(screen.getByLabelText(/Sustancia controlada/i));
 
       // Submit without book entry and page
-      const submitButton = screen.getByRole("button", { name: /Guardar y continuar al pago/i });
+      const submitButton = screen.getByRole("button", {
+        name: /Guardar y continuar al pago/i,
+      });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -240,14 +254,20 @@ describe("PrescriptionsPage", () => {
     it("calls prescriptionsService.create with the form data", async () => {
       renderPage();
 
-      const physicianInput = screen.getByLabelText(/Nombre completo del médico/i);
+      const physicianInput = screen.getByLabelText(
+        /Nombre completo del médico/i,
+      );
       await userEvent.type(physicianInput, "Dr. Pérez");
       const licenseInput = screen.getByLabelText(/Número de licencia médica/i);
       await userEvent.type(licenseInput, "LIC-12345");
-      const patientInput = screen.getByLabelText(/Número de identificación del paciente/i);
+      const patientInput = screen.getByLabelText(
+        /Número de identificación del paciente/i,
+      );
       await userEvent.type(patientInput, "CC-123456");
 
-      const submitButton = screen.getByRole("button", { name: /Guardar y continuar al pago/i });
+      const submitButton = screen.getByRole("button", {
+        name: /Guardar y continuar al pago/i,
+      });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -266,14 +286,20 @@ describe("PrescriptionsPage", () => {
     it("shows a success toast after registration", async () => {
       renderPage();
 
-      const physicianInput = screen.getByLabelText(/Nombre completo del médico/i);
+      const physicianInput = screen.getByLabelText(
+        /Nombre completo del médico/i,
+      );
       await userEvent.type(physicianInput, "Dr. Pérez");
       const licenseInput = screen.getByLabelText(/Número de licencia médica/i);
       await userEvent.type(licenseInput, "LIC-12345");
-      const patientInput = screen.getByLabelText(/Número de identificación del paciente/i);
+      const patientInput = screen.getByLabelText(
+        /Número de identificación del paciente/i,
+      );
       await userEvent.type(patientInput, "CC-123456");
 
-      const submitButton = screen.getByRole("button", { name: /Guardar y continuar al pago/i });
+      const submitButton = screen.getByRole("button", {
+        name: /Guardar y continuar al pago/i,
+      });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -284,10 +310,14 @@ describe("PrescriptionsPage", () => {
 
   describe("PRXP-05: multi-item flow", () => {
     it("shows 'next' button label when there are remaining items", () => {
-      const store = createTestStore("item-1", ["item-1", "item-2"], [
-        baseCartItem,
-        { ...baseCartItem, id: "item-2", name: "Ibuprofeno 400mg" },
-      ]);
+      const store = createTestStore(
+        "item-1",
+        ["item-1", "item-2"],
+        [
+          baseCartItem,
+          { ...baseCartItem, id: "item-2", name: "Ibuprofeno 400mg" },
+        ],
+      );
       renderPage(store);
 
       expect(
@@ -296,22 +326,32 @@ describe("PrescriptionsPage", () => {
     });
 
     it("dispatches resolveNextPrescriptionItem after dismissing toast for non-last item", async () => {
-      const store = createTestStore("item-1", ["item-1", "item-2"], [
-        baseCartItem,
-        { ...baseCartItem, id: "item-2", name: "Ibuprofeno 400mg" },
-      ]);
+      const store = createTestStore(
+        "item-1",
+        ["item-1", "item-2"],
+        [
+          baseCartItem,
+          { ...baseCartItem, id: "item-2", name: "Ibuprofeno 400mg" },
+        ],
+      );
       const dispatch = vi.spyOn(store, "dispatch");
       renderPage(store);
 
       // Fill required fields and submit
-      const physicianInput = screen.getByLabelText(/Nombre completo del médico/i);
+      const physicianInput = screen.getByLabelText(
+        /Nombre completo del médico/i,
+      );
       await userEvent.type(physicianInput, "Dr. Pérez");
       const licenseInput = screen.getByLabelText(/Número de licencia médica/i);
       await userEvent.type(licenseInput, "LIC-12345");
-      const patientInput = screen.getByLabelText(/Número de identificación del paciente/i);
+      const patientInput = screen.getByLabelText(
+        /Número de identificación del paciente/i,
+      );
       await userEvent.type(patientInput, "CC-123456");
 
-      const submitButton = screen.getByRole("button", { name: /Guardar y siguiente/i });
+      const submitButton = screen.getByRole("button", {
+        name: /Guardar y siguiente/i,
+      });
       fireEvent.click(submitButton);
 
       // Wait for toast and dismiss it
@@ -354,10 +394,14 @@ describe("PrescriptionsPage", () => {
   });
 
   it("renders a header with items left when multiple items remain", () => {
-    const store = createTestStore("item-1", ["item-1", "item-2"], [
-      baseCartItem,
-      { ...baseCartItem, id: "item-2", name: "Ibuprofeno 400mg" },
-    ]);
+    const store = createTestStore(
+      "item-1",
+      ["item-1", "item-2"],
+      [
+        baseCartItem,
+        { ...baseCartItem, id: "item-2", name: "Ibuprofeno 400mg" },
+      ],
+    );
     renderPage(store);
 
     expect(screen.getByText(/items restantes/i)).toBeInTheDocument();

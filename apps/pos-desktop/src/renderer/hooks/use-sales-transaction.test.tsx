@@ -29,6 +29,8 @@ let mockSalesState: SalesState = {
   items: [],
   selectedClient: null,
   delivery: null,
+  selectedLineId: null,
+  undoStack: [],
 };
 
 vi.mock("@/store/hooks", () => ({
@@ -149,6 +151,8 @@ describe("useSalesTransaction", () => {
       items: [],
       selectedClient: null,
       delivery: null,
+      selectedLineId: null,
+      undoStack: [],
     };
   });
 
@@ -306,6 +310,8 @@ describe("useSalesTransaction", () => {
         items: [checkoutCartItem],
         selectedClient: null,
         delivery: null,
+        selectedLineId: null,
+        undoStack: [],
       };
       mockSalesPosService.create.mockResolvedValue({ id: "sale-1" });
       const { result } = renderHook(() => useSalesTransaction());
@@ -347,6 +353,8 @@ describe("useSalesTransaction", () => {
         items: [checkoutCartItem],
         selectedClient: null,
         delivery: deliveryDraft,
+        selectedLineId: null,
+        undoStack: [],
       };
       mockSalesPosService.create.mockResolvedValue({ id: "sale-2" });
       const { result } = renderHook(() => useSalesTransaction());

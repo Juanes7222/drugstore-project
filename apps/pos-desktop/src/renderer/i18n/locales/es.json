@@ -649,12 +649,16 @@
       "placeholder": "Buscar producto por nombre o código de barras...",
       "results": "Resultados",
       "no_results": "No se encontraron productos",
-      "error": "No se pudo consultar el catálogo"
+      "error": "No se pudo consultar el catálogo",
+      "not_found": "Producto no encontrado",
+      "incomplete": "Producto sin datos completos"
     },
     "cart": {
       "title": "Carrito",
       "title_with_count": "Carrito ({{count}} items)",
       "empty": "El carrito está vacío",
+      "empty_hint": "Escanea un producto o escribe el código — ↵ para agregar",
+      "keyboard_hint": "↑↓ seleccionar · F9 cobrar · Ctrl+Z deshacer",
       "checkout": "COBRAR",
       "subtotal": "Subtotal",
       "tax": "IVA ({{rate}}%)",
@@ -663,6 +667,7 @@
       "discount": "Descuento",
       "editPrice": "Editar precio",
       "editDiscount": "Editar descuento",
+      "editQuantity": "Editar cantidad",
       "error_price_below_cost": "El precio de {{name}} ({{price}}) está por debajo del costo mínimo ({{floor}}).",
       "error_discount_exceeds_limit": "El descuento excede el límite permitido para tu rol.",
       "error_override_not_allowed": "No tienes permiso para modificar el precio de este producto.",

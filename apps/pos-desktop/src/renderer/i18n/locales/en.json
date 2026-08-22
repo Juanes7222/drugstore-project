@@ -579,12 +579,16 @@
       "placeholder": "Search product by name or barcode...",
       "results": "Results",
       "no_results": "No products found",
-      "error": "Could not query catalog"
+      "error": "Could not query catalog",
+      "not_found": "Product not found",
+      "incomplete": "Product with incomplete data"
     },
     "cart": {
       "title": "Cart",
       "title_with_count": "Cart ({{count}} items)",
       "empty": "The cart is empty",
+      "empty_hint": "Scan a product or type the code — ↵ to add",
+      "keyboard_hint": "↑↓ select · F9 pay · Ctrl+Z undo",
       "checkout": "PAY",
       "subtotal": "Subtotal",
       "tax": "VAT ({{rate}}%)",
@@ -593,6 +597,7 @@
       "discount": "Discount",
       "editPrice": "Edit price",
       "editDiscount": "Edit discount",
+      "editQuantity": "Edit quantity",
       "error_price_below_cost": "Price of {{name}} ({{price}}) is below the cost floor ({{floor}}).",
       "error_discount_exceeds_limit": "Discount exceeds the limit for your role.",
       "error_override_not_allowed": "You are not allowed to override the price of this product.",

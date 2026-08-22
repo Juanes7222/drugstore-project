@@ -13,10 +13,7 @@ import { paymentSlice } from "@/store/slices/payment-slice";
 import { uiSlice } from "@/store/slices/ui-slice";
 import { SaleType } from "@pharmacy/shared-types";
 import { CartPanel } from "./cart-panel";
-import type {
-  CartItem,
-  SaleDeliveryDraft,
-} from "@/store/slices/sales-types";
+import type { CartItem, SaleDeliveryDraft } from "@/store/slices/sales-types";
 
 // Mock ClientSelector since it requires ServiceContext not needed here
 vi.mock("./client-selector", () => ({
@@ -75,15 +72,17 @@ const createTestStore = (
       ui: uiSlice.reducer,
     },
     preloadedState: {
-      sales: { items, selectedClient: null, delivery },
-      payment: paymentSlice.reducer(
-        paymentSlice.getInitialState(),
-        { type: "unknown" },
-      ),
-      ui: uiSlice.reducer(
-        uiSlice.getInitialState(),
-        { type: "unknown" },
-      ),
+      sales: {
+        items,
+        selectedClient: null,
+        delivery,
+        selectedLineId: null,
+        undoStack: [],
+      },
+      payment: paymentSlice.reducer(paymentSlice.getInitialState(), {
+        type: "unknown",
+      }),
+      ui: uiSlice.reducer(uiSlice.getInitialState(), { type: "unknown" }),
     },
   });
 
@@ -172,9 +171,7 @@ describe("CartPanel", () => {
       const store = createTestStore([baseItem()]);
       renderCartPanel(store);
 
-      expect(
-        screen.getByRole("button", { name: /COBRAR/ }),
-      ).not.toBeDisabled();
+      expect(screen.getByRole("button", { name: /COBRAR/ })).not.toBeDisabled();
     });
   });
 

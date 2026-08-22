@@ -16,6 +16,7 @@ import {
   type ChangeEvent,
   type FC,
   type KeyboardEvent,
+  type RefObject,
   useCallback,
   useEffect,
   useMemo,
@@ -27,23 +28,31 @@ import { type CatalogItem, type CatalogService } from "@/services/catalog-servic
 import { ProductSearchResults } from "./product-search-results";
 import { HelpBar } from "./help-bar";
 import { SearchIcon } from "@/components/ui/icons";
+import type { SearchSubmitResult } from "../../hooks/use-sales-keyboard";
 
 const PRINTABLE_KEY_RE = /^[a-zA-Z0-9ñáéíóúü.,;:ñÑ\-_@#$%&*()+=<>?¡¿!]/;
 
 interface ProductSearchProps {
   catalogService: CatalogService;
   onSelect: (item: CatalogItem) => void;
+  /** External ref to the search input (used by the keyboard-flow parent to refocus after quick edits). */
+  searchInputRef?: RefObject<HTMLInputElement | null>;
+  /** Resolve a query via the keyboard hook; called on Enter in the input. */
+  onSubmitSearch?: (query: string) => Promise<SearchSubmitResult>;
 }
 
 export const ProductSearch: FC<ProductSearchProps> = ({
   catalogService,
   onSelect,
+  searchInputRef,
+  onSubmitSearch,
 }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CatalogItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -128,6 +137,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
   // ---- Handle keys on the search input
   const handleChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     setQuery(event.target.value);
+    setFeedback(null);
   }, []);
 
   const handleInputKeyDown = useCallback(
@@ -135,16 +145,50 @@ export const ProductSearch: FC<ProductSearchProps> = ({
       if (event.key === "Escape") {
         setQuery("");
         setResults([]);
+        setFeedback(null);
         return;
       }
 
-      // ArrowDown from search input → move focus to results list
+      // Enter resolves the query through the keyboard hook: added/restricted
+      // clears the input and keeps focus for the next scan; not-found and
+      // incomplete show brief feedback and clear so the scanner can retry
+      // immediately. ArrowDown from the search input moves focus to results.
+      if (event.key === "Enter" && onSubmitSearch) {
+        const trimmed = query.trim();
+        if (trimmed.length === 0) return;
+        event.preventDefault();
+        void onSubmitSearch(trimmed)
+          .then((result) => {
+            if (result.status === "added" || result.status === "restricted") {
+              setFeedback(null);
+              setQuery("");
+              setResults([]);
+              return;
+            }
+            if (result.status === "not-found") {
+              setFeedback(t("sales.search.not_found"));
+            } else if (result.status === "incomplete") {
+              setFeedback(t("sales.search.incomplete"));
+            } else {
+              return;
+            }
+            setQuery("");
+            setResults([]);
+          })
+          .catch(() => {
+            setFeedback(t("sales.search.error"));
+            setQuery("");
+            setResults([]);
+          });
+        return;
+      }
+
       if (event.key === "ArrowDown" && results.length > 0) {
         event.preventDefault();
         resultsContainerRef.current?.focus();
       }
     },
-    [results.length],
+    [query, results.length, onSubmitSearch, t],
   );
 
   const handleEscapeFromResults = useCallback(() => {
@@ -163,7 +207,10 @@ export const ProductSearch: FC<ProductSearchProps> = ({
         <div className="relative flex-1">
           <SearchIcon size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "color-mix(in srgb, var(--color-ink) 35%, transparent)" }} />
           <input
-            ref={inputRef}
+            ref={(node) => {
+              inputRef.current = node;
+              if (searchInputRef) searchInputRef.current = node;
+            }}
             type="search"
             value={query}
             onChange={handleChange}
@@ -188,6 +235,21 @@ export const ProductSearch: FC<ProductSearchProps> = ({
           </span>
         )}
       </div>
+
+      {/* Scanner feedback — brief inline message after a failed submit */}
+      {feedback && (
+        <div
+          className="mt-pos-xs rounded px-pos-md py-pos-xs text-caption"
+          style={{
+            backgroundColor:
+              "color-mix(in srgb, var(--color-urgency) 10%, white)",
+            color: "var(--color-urgency)",
+          }}
+          role="alert"
+        >
+          {feedback}
+        </div>
+      )}
 
       {/* Help bar — shows below search input */}
       <HelpBar className="mt-pos-xs" />

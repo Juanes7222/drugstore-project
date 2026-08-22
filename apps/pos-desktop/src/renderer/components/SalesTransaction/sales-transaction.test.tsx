@@ -38,6 +38,19 @@ vi.mock("../../hooks/use-sales-transaction", () => ({
   }),
 }));
 
+// The keyboard hook attaches a real window keydown listener and reads Redux
+// through the real hooks; its own behavior is covered in
+// use-sales-keyboard.test.ts, so this wiring spec stubs it.
+vi.mock("../../hooks/use-sales-keyboard", () => ({
+  useSalesKeyboard: () => ({
+    quickEdit: null,
+    setQuickEditDraft: vi.fn(),
+    commitQuickEdit: vi.fn(),
+    cancelQuickEdit: vi.fn(),
+    submitSearch: vi.fn(),
+  }),
+}));
+
 // ---------------------------------------------------------------------------
 // Mock child components so we can verify they render
 // ---------------------------------------------------------------------------

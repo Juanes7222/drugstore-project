@@ -11,18 +11,22 @@ import {
   selectCartItems,
   selectDeliveryFeeCents,
   selectGrandTotalCents,
+  selectSelectedLineId,
   selectSubtotalCents,
   selectTaxCents,
   selectTotalCents,
+  selectUndoAvailable,
   setDelivery,
+  setSelectedLine,
+  undoLastChange,
+  updateItemDiscount,
+  updateItemPrice,
   updateQuantity,
 } from "./sales-slice";
 import { CartItem, SaleDeliveryDraft, SelectedClient } from "./sales-types";
 import { SaleType } from "@pharmacy/shared-types";
 
-const baseItem = (
-  overrides: Partial<CartItem> = {},
-): CartItem => ({
+const baseItem = (overrides: Partial<CartItem> = {}): CartItem => ({
   id: "line-1",
   productId: "p-001",
   name: "Paracetamol 500mg",
@@ -50,11 +54,19 @@ interface RootState {
     items: CartItem[];
     selectedClient: SelectedClient | null;
     delivery: SaleDeliveryDraft | null;
+    selectedLineId: string | null;
+    undoStack: CartItem[][];
   };
 }
 
 const buildRoot = (items: CartItem[]): RootState => ({
-  sales: { items, selectedClient: null, delivery: null },
+  sales: {
+    items,
+    selectedClient: null,
+    delivery: null,
+    selectedLineId: null,
+    undoStack: [],
+  },
 });
 
 const deliveryDraft = (
@@ -72,10 +84,9 @@ const deliveryDraft = (
 
 describe("sales slice — reducers", () => {
   it("starts with an empty cart", () => {
-    const state = salesSlice.reducer(
-      salesSlice.getInitialState(),
-      { type: "unknown" },
-    );
+    const state = salesSlice.reducer(salesSlice.getInitialState(), {
+      type: "unknown",
+    });
 
     expect(state.items).toEqual([]);
   });
@@ -94,10 +105,7 @@ describe("sales slice — reducers", () => {
 
   it("addItem merges quantity when an item with the same id already exists", () => {
     const item = baseItem();
-    let state = salesSlice.reducer(
-      salesSlice.getInitialState(),
-      addItem(item),
-    );
+    let state = salesSlice.reducer(salesSlice.getInitialState(), addItem(item));
 
     state = salesSlice.reducer(state, addItem(item));
 
@@ -120,10 +128,7 @@ describe("sales slice — reducers", () => {
 
   it("removeItem deletes the matching line by id", () => {
     const item = baseItem({ id: "line-1" });
-    let state = salesSlice.reducer(
-      salesSlice.getInitialState(),
-      addItem(item),
-    );
+    let state = salesSlice.reducer(salesSlice.getInitialState(), addItem(item));
 
     state = salesSlice.reducer(state, removeItem("line-1"));
 
@@ -132,10 +137,7 @@ describe("sales slice — reducers", () => {
 
   it("removeItem is a no-op when the id does not exist", () => {
     const item = baseItem({ id: "line-1" });
-    let state = salesSlice.reducer(
-      salesSlice.getInitialState(),
-      addItem(item),
-    );
+    let state = salesSlice.reducer(salesSlice.getInitialState(), addItem(item));
 
     state = salesSlice.reducer(state, removeItem("nonexistent"));
 
@@ -144,10 +146,7 @@ describe("sales slice — reducers", () => {
 
   it("updateQuantity changes the quantity of an existing item", () => {
     const item = baseItem({ id: "line-1", quantity: 1 });
-    let state = salesSlice.reducer(
-      salesSlice.getInitialState(),
-      addItem(item),
-    );
+    let state = salesSlice.reducer(salesSlice.getInitialState(), addItem(item));
 
     state = salesSlice.reducer(
       state,
@@ -159,10 +158,7 @@ describe("sales slice — reducers", () => {
 
   it("updateQuantity with zero removes the item", () => {
     const item = baseItem({ id: "line-1", quantity: 3 });
-    let state = salesSlice.reducer(
-      salesSlice.getInitialState(),
-      addItem(item),
-    );
+    let state = salesSlice.reducer(salesSlice.getInitialState(), addItem(item));
 
     state = salesSlice.reducer(
       state,
@@ -174,10 +170,7 @@ describe("sales slice — reducers", () => {
 
   it("updateQuantity with negative value removes the item", () => {
     const item = baseItem({ id: "line-1", quantity: 3 });
-    let state = salesSlice.reducer(
-      salesSlice.getInitialState(),
-      addItem(item),
-    );
+    let state = salesSlice.reducer(salesSlice.getInitialState(), addItem(item));
 
     state = salesSlice.reducer(
       state,
@@ -388,6 +381,8 @@ describe("sales selectors", () => {
         items: [],
         selectedClient: null,
         delivery: deliveryDraft({ feeCents: 7_500 }),
+        selectedLineId: null,
+        undoStack: [],
       },
     };
 
@@ -406,15 +401,358 @@ describe("sales selectors", () => {
   it("selectGrandTotalCents adds the delivery fee to the item total", () => {
     const root: RootState = {
       sales: {
-        items: [
-          baseItem({ id: "a", unitPriceCents: 100_000, quantity: 1 }),
-        ],
+        items: [baseItem({ id: "a", unitPriceCents: 100_000, quantity: 1 })],
         selectedClient: null,
         delivery: deliveryDraft({ feeCents: 5_000 }),
+        selectedLineId: null,
+        undoStack: [],
       },
     };
 
     // total = 119_000, fee = 5_000 → 124_000
     expect(selectGrandTotalCents(root)).toBe(124_000);
+  });
+});
+
+describe("sales slice — line selection", () => {
+  it("addItem selects the incoming line", () => {
+    const state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    expect(state.selectedLineId).toBe("line-1");
+  });
+
+  it("addItem keeps the merged line selected when quantities merge", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    state = salesSlice.reducer(state, addItem(baseItem({ id: "line-1" })));
+
+    expect(state.items).toHaveLength(1);
+    expect(state.selectedLineId).toBe("line-1");
+  });
+
+  it("removeItem clears the selection when the selected line is removed", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+    state = salesSlice.reducer(state, addItem(baseItem({ id: "line-2" })));
+    state = salesSlice.reducer(state, setSelectedLine("line-1"));
+
+    state = salesSlice.reducer(state, removeItem("line-1"));
+
+    expect(state.selectedLineId).toBeNull();
+  });
+
+  it("removeItem keeps the selection when a different line is removed", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+    state = salesSlice.reducer(state, addItem(baseItem({ id: "line-2" })));
+    state = salesSlice.reducer(state, setSelectedLine("line-1"));
+
+    state = salesSlice.reducer(state, removeItem("line-2"));
+
+    expect(state.selectedLineId).toBe("line-1");
+  });
+
+  it("updateQuantity with zero clears the selection when it matches", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1", quantity: 3 })),
+    );
+    state = salesSlice.reducer(state, setSelectedLine("line-1"));
+
+    state = salesSlice.reducer(
+      state,
+      updateQuantity({ id: "line-1", quantity: 0 }),
+    );
+
+    expect(state.items).toEqual([]);
+    expect(state.selectedLineId).toBeNull();
+  });
+
+  it("updateQuantity with a positive value keeps the selection", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1", quantity: 3 })),
+    );
+    state = salesSlice.reducer(state, setSelectedLine("line-1"));
+
+    state = salesSlice.reducer(
+      state,
+      updateQuantity({ id: "line-1", quantity: 5 }),
+    );
+
+    expect(state.items[0]?.quantity).toBe(5);
+    expect(state.selectedLineId).toBe("line-1");
+  });
+
+  it("clearCart clears the selection", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+    state = salesSlice.reducer(state, setSelectedLine("line-1"));
+
+    state = salesSlice.reducer(state, clearCart());
+
+    expect(state.items).toEqual([]);
+    expect(state.selectedLineId).toBeNull();
+  });
+
+  it("setSelectedLine stores the given line id", () => {
+    const state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      setSelectedLine("line-1"),
+    );
+
+    expect(state.selectedLineId).toBe("line-1");
+  });
+
+  it("setSelectedLine with null clears the selection", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      setSelectedLine("line-1"),
+    );
+
+    state = salesSlice.reducer(state, setSelectedLine(null));
+
+    expect(state.selectedLineId).toBeNull();
+  });
+
+  it("selectSelectedLineId returns the selected line id", () => {
+    const root = buildRoot([baseItem()]);
+    root.sales.selectedLineId = "line-1";
+
+    expect(selectSelectedLineId(root)).toBe("line-1");
+  });
+
+  it("selectSelectedLineId returns null when nothing is selected", () => {
+    expect(selectSelectedLineId(buildRoot([baseItem()]))).toBeNull();
+  });
+});
+
+describe("sales slice — undo stack", () => {
+  it("addItem pushes a snapshot of the pre-mutation cart", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    expect(state.undoStack).toEqual([[]]);
+
+    state = salesSlice.reducer(state, addItem(baseItem({ id: "line-2" })));
+
+    expect(state.undoStack).toHaveLength(2);
+    expect(state.undoStack.at(-1)).toEqual([baseItem({ id: "line-1" })]);
+  });
+
+  it("removeItem pushes an undo snapshot", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    state = salesSlice.reducer(state, removeItem("line-1"));
+
+    expect(state.undoStack).toHaveLength(2);
+  });
+
+  it("updateQuantity pushes an undo snapshot", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    state = salesSlice.reducer(
+      state,
+      updateQuantity({ id: "line-1", quantity: 5 }),
+    );
+
+    expect(state.undoStack).toHaveLength(2);
+  });
+
+  it("updateItemPrice pushes an undo snapshot", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    state = salesSlice.reducer(
+      state,
+      updateItemPrice({ id: "line-1", unitPriceCents: 10_000 }),
+    );
+
+    expect(state.undoStack).toHaveLength(2);
+  });
+
+  it("updateItemDiscount pushes an undo snapshot", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    state = salesSlice.reducer(
+      state,
+      updateItemDiscount({ id: "line-1", discountPercentage: 10 }),
+    );
+
+    expect(state.undoStack).toHaveLength(2);
+  });
+
+  it("clearCart pushes an undo snapshot", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    state = salesSlice.reducer(state, clearCart());
+
+    expect(state.undoStack).toHaveLength(2);
+  });
+
+  it("undoLastChange restores the previous items and clears the selection", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+    state = salesSlice.reducer(state, addItem(baseItem({ id: "line-2" })));
+    expect(state.selectedLineId).toBe("line-2");
+
+    state = salesSlice.reducer(state, undoLastChange());
+
+    expect(state.items).toEqual([baseItem({ id: "line-1" })]);
+    expect(state.selectedLineId).toBeNull();
+  });
+
+  it("undoLastChange restores the pre-merge quantities of a merged line", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1", quantity: 1 })),
+    );
+    state = salesSlice.reducer(
+      state,
+      addItem(baseItem({ id: "line-1", quantity: 2 })),
+    );
+    expect(state.items[0]?.quantity).toBe(3);
+
+    state = salesSlice.reducer(state, undoLastChange());
+
+    expect(state.items).toEqual([baseItem({ id: "line-1", quantity: 1 })]);
+  });
+
+  it("undoLastChange restores a removed line", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+    state = salesSlice.reducer(state, addItem(baseItem({ id: "line-2" })));
+    state = salesSlice.reducer(state, removeItem("line-1"));
+
+    state = salesSlice.reducer(state, undoLastChange());
+
+    expect(state.items).toEqual([
+      baseItem({ id: "line-1" }),
+      baseItem({ id: "line-2" }),
+    ]);
+  });
+
+  it("undoLastChange is a no-op when the stack is empty", () => {
+    const state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      undoLastChange(),
+    );
+
+    expect(state.items).toEqual([]);
+    expect(state.undoStack).toEqual([]);
+  });
+
+  it("undoLastChange keeps the stack empty after the last snapshot is popped", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    state = salesSlice.reducer(state, undoLastChange());
+
+    expect(state.items).toEqual([]);
+    expect(state.undoStack).toEqual([]);
+  });
+
+  it("caps the undo stack at 20 snapshots and drops the oldest", () => {
+    const item = baseItem({ id: "line-1" });
+    let state = salesSlice.getInitialState();
+    // 21 mutations; the first snapshot (the empty cart) must be the one dropped.
+    Array.from({ length: 21 }, () => item).forEach((line) => {
+      state = salesSlice.reducer(state, addItem(line));
+    });
+
+    expect(state.undoStack).toHaveLength(20);
+    expect(state.items[0]?.quantity).toBe(21);
+
+    // Popping 20 snapshots lands back on the state after the first mutation.
+    for (let i = 0; i < 20; i += 1) {
+      state = salesSlice.reducer(state, undoLastChange());
+    }
+    expect(state.items[0]?.quantity).toBe(1);
+
+    // A 21st pop is a no-op — the stack is already exhausted.
+    state = salesSlice.reducer(state, undoLastChange());
+    expect(state.items[0]?.quantity).toBe(1);
+  });
+
+  it("selectUndoAvailable reflects a non-empty undo stack", () => {
+    expect(selectUndoAvailable(buildRoot([]))).toBe(false);
+
+    const root = buildRoot([]);
+    root.sales.undoStack = [[]];
+    expect(selectUndoAvailable(root)).toBe(true);
+  });
+
+  it("updateItemDiscount clamps the percentage to the 0–100 range", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    state = salesSlice.reducer(
+      state,
+      updateItemDiscount({ id: "line-1", discountPercentage: 150 }),
+    );
+    expect(state.items[0]?.discountPercentage).toBe(100);
+
+    state = salesSlice.reducer(
+      state,
+      updateItemDiscount({ id: "line-1", discountPercentage: -5 }),
+    );
+    expect(state.items[0]?.discountPercentage).toBe(0);
+
+    state = salesSlice.reducer(
+      state,
+      updateItemDiscount({ id: "line-1", discountPercentage: null }),
+    );
+    expect(state.items[0]?.discountPercentage).toBeNull();
+  });
+
+  it("updateItemPrice clamps a negative price to zero", () => {
+    let state = salesSlice.reducer(
+      salesSlice.getInitialState(),
+      addItem(baseItem({ id: "line-1" })),
+    );
+
+    state = salesSlice.reducer(
+      state,
+      updateItemPrice({ id: "line-1", unitPriceCents: -100 }),
+    );
+
+    expect(state.items[0]?.unitPriceCents).toBe(0);
+    expect(state.items[0]?.overrideUnitPriceCents).toBe(0);
   });
 });

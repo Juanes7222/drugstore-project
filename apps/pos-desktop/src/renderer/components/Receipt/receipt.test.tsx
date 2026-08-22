@@ -8,7 +8,11 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { configureStore } from "@reduxjs/toolkit";
-import { uiSlice, resetSaleFlow, completeSaleCompletion } from "@/store/slices/ui-slice";
+import {
+  uiSlice,
+  resetSaleFlow,
+  completeSaleCompletion,
+} from "@/store/slices/ui-slice";
 import { salesSlice } from "@/store/slices/sales-slice";
 import { paymentSlice } from "@/store/slices/payment-slice";
 import { SaleType } from "@pharmacy/shared-types";
@@ -22,9 +26,10 @@ import type { SaleDeliveryDraft } from "@/store/slices/sales-types";
 // ---------------------------------------------------------------------------
 
 vi.mock("../../../domain/fiscal/receipt-generator", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("../../../domain/fiscal/receipt-generator")
-  >();
+  const actual =
+    await importOriginal<
+      typeof import("../../../domain/fiscal/receipt-generator")
+    >();
   return {
     ...actual,
     generateReceiptHtml: vi.fn(() => "<div>mock receipt</div>"),
@@ -152,6 +157,8 @@ const createTestStore = (
         items: options.items ?? [],
         selectedClient: null,
         delivery: options.delivery ?? null,
+        selectedLineId: null,
+        undoStack: [],
       },
       payment: {
         methods: [],

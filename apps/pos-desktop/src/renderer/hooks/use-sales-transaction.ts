@@ -76,7 +76,7 @@ export interface UseSalesTransactionReturn {
   /** Clear the current action error. */
   clearActionError: () => void;
   /** Called when a product is selected from the search results. */
-  handleSelect: (item: CatalogItem) => void;
+  handleSelect: (item: CatalogItem, quantity?: number) => void;
   /** Confirm the restricted-item dialog and add to cart. */
   handleConfirmRestricted: () => void;
   /** Cancel the restricted-item dialog. */
@@ -118,7 +118,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
   const waitForProductSync = useProductSyncWait();
 
   const addToCart = useCallback(
-    (item: CatalogItem) => {
+    (item: CatalogItem, quantity = 1) => {
       if (item.unitPriceCents === null) return;
 
       dispatch(
@@ -137,7 +137,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
           discountPercentage: null,
           costCents: item.costCents,
           taxPercentage: item.taxPercentage,
-          quantity: 1,
+          quantity,
           commissionType: item.commissionType,
           commissionValue: item.commissionValue,
           commissionStartsAt: item.commissionStartsAt,
@@ -149,7 +149,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
   );
 
   const handleSelect = useCallback(
-    (item: CatalogItem) => {
+    (item: CatalogItem, quantity = 1) => {
       if (!item.hasCompleteData || item.unitPriceCents === null) return;
 
       if (isCatalogItemRestricted(item)) {
@@ -158,7 +158,7 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
         return;
       }
 
-      addToCart(item);
+      addToCart(item, quantity);
     },
     [addToCart],
   );

@@ -1174,3 +1174,19 @@ Four-step flow: plan catalog -> customer form -> external Wompi payment -> resul
 - Pricing-page risk: generic SaaS pricing grids use soft-shadow cards + pastel badges. Countered: cards are pos-panel working surfaces with order-border, prices are mono tabular, the CTA is the app's standard pos-button-primary. Discount badges are text-labeled ("10% OFF") — never color alone.
 - Motion budget: the only orchestrated moment is the approved-result check (existing SuccessCheckIcon draw-in, which already collapses under prefers-reduced-motion). Period switching, card selection and form steps are instant state changes; the only spinner is the functional polling indicator.
 - Ambiguity guard: quarterly/annual prices show the period amount with its unit (/trimestre, /año) plus the discount badge, so the cashier cannot mistake a quarterly total for the monthly rate.
+
+## Keyboard-first sales flow (added 2026-08-22)
+
+### Pass 1 - Brief
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Selection signature | The selected cart line is marked by a 3px Pharma Teal left accent bar (inset box-shadow) plus a 6% Pharma Teal row tint. The quick-edit editor row directly below it shares the tint, so the selected line + its editor read as one continuous block. | ArrowUp/ArrowDown line selection is the spine of the keyboard flow; the accent must be visible at a glance mid-scan without changing row metrics (inset shadow, no layout shift). Teal = trust/primary state; the tint is the same 6% color-mix language already used across the cart. |
+| Scanner feedback | Failed Enter submits (not-found / incomplete) show a brief Urgency Amber boxed line under the search input with role=alert; the query clears instantly so the scanner can retry. | Amber = "needs attention, retry now" — not error red (nothing is broken) and not slate (this is not an offline condition). Feedback must never block the scan cadence. |
+| Quick edit | Inline editor on the selected row with a mode prefix (× qty / % discount / = price), mono tabular input, Enter commits, Escape cancels, focus returns to the search input on close. | Mirrors cart-line-item's inline price/discount editing language but is keyboard-native; returning focus to search keeps the scanner flow unbroken. |
+
+### Pass 2 - Critique
+
+- Generic-dashboard check: row selection via accent bar + tint is a POS/terminal idiom (lightning checkout), not a SaaS list pattern; it is paired with the persistent cart header keyboard hint (↑↓ seleccionar · F9 cobrar · Ctrl+Z deshacer) in the same muted-caption style as HelpBar — discoverability without decoration.
+- Motion budget: zero animation added. Selection is an instant state change (inset bar + tint swap), matching the <100ms search/scan budget.
+- Color independence: selection is also implied by the editor input's aria-label and the header hint text; feedback boxes carry text, not color alone.

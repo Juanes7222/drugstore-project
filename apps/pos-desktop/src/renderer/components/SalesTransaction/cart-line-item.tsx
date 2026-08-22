@@ -16,6 +16,8 @@ import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 
 interface CartLineItemProps {
   item: CartItem;
+  /** Highlights the row as the keyboard-selected cart line. */
+  isSelected?: boolean;
   onUpdateQuantity: (id: string, quantity: number) => void;
   onRemove: (id: string) => void;
   onUpdatePrice: (id: string, unitPriceCents: number) => void;
@@ -24,6 +26,7 @@ interface CartLineItemProps {
 
 export const CartLineItem: FC<CartLineItemProps> = ({
   item,
+  isSelected = false,
   onUpdateQuantity,
   onRemove,
   onUpdatePrice,
@@ -167,6 +170,13 @@ export const CartLineItem: FC<CartLineItemProps> = ({
       className="border-b border-ink/10"
       style={{
         borderBottomColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
+        ...(isSelected
+          ? {
+              backgroundColor:
+                "color-mix(in srgb, var(--color-pharma) 6%, transparent)",
+              boxShadow: "inset 3px 0 0 var(--color-pharma)",
+            }
+          : {}),
       }}
     >
       <td className="py-pos-sm pr-pos-md align-top">

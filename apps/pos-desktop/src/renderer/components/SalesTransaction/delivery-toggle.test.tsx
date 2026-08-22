@@ -18,8 +18,14 @@ import {
   DEFAULT_STRICTNESS,
   DEFAULT_WORKFLOW,
 } from "../../../domain/config/defaults";
-import type { EffectiveConfig, DeliveryConfig } from "../../../domain/config/types";
-import type { SaleDeliveryDraft, SelectedClient } from "@/store/slices/sales-types";
+import type {
+  EffectiveConfig,
+  DeliveryConfig,
+} from "../../../domain/config/types";
+import type {
+  SaleDeliveryDraft,
+  SelectedClient,
+} from "@/store/slices/sales-types";
 import { DeliveryToggle } from "./delivery-toggle";
 
 // The real form dialog is covered by delivery-form-dialog.test.tsx; here it
@@ -99,7 +105,13 @@ const createStore = (
   configureStore({
     reducer: { sales: salesSlice.reducer },
     preloadedState: {
-      sales: { items: [], selectedClient, delivery },
+      sales: {
+        items: [],
+        selectedClient,
+        delivery,
+        selectedLineId: null,
+        undoStack: [],
+      },
     },
   });
 
@@ -220,11 +232,11 @@ describe("DeliveryToggle", () => {
     const store = createStore(deliveryDraft());
     renderToggle(store);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Editar domicilio" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Editar domicilio" }));
 
-    expect(screen.getByRole("button", { name: "mock-save" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "mock-save" }),
+    ).toBeInTheDocument();
   });
 
   it("dispatches setDelivery(null) when remove is clicked and resets the draft", () => {
@@ -233,9 +245,7 @@ describe("DeliveryToggle", () => {
     const dispatch = vi.spyOn(store, "dispatch");
     renderToggle(store);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Quitar domicilio" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Quitar domicilio" }));
 
     expect(dispatch).toHaveBeenCalledWith(setDelivery(null));
     expect(store.getState().sales.delivery).toBeNull();

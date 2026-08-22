@@ -5,12 +5,13 @@
  * Integrates the ClientSelector for customer selection during a sale.
  * Respects tenant config for whether client is required/optional/hidden.
  */
-import { type FC } from "react";
+import { Fragment, type FC } from "react";
 import { useTranslation } from "react-i18next";
 import {
   removeItem,
   selectCartItems,
   selectCartItemCount,
+  selectSelectedLineId,
   selectSubtotalCents,
   selectTaxCents,
   selectGrandTotalCents,
@@ -23,8 +24,10 @@ import {
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { ClientSelector } from "./client-selector";
 import { CartLineItem } from "./cart-line-item";
+import { LineQuickEdit } from "./line-quick-edit";
 import { TotalsSummary } from "./totals-summary";
 import { DeliveryToggle } from "./delivery-toggle";
+import type { LineQuickEdit as LineQuickEditState } from "../../hooks/use-sales-keyboard";
 import type { ClientSelection } from "../../hooks/use-sales-transaction";
 import type { CreateClientInput } from "../../../domain/clients";
 import { InfoIcon, ShoppingBagIcon } from "@/components/ui/icons";
@@ -37,6 +40,12 @@ interface CartPanelProps {
   actionError: string | null;
   onClearError: () => void;
   isCreating: boolean;
+  /** Active keyboard quick-edit buffer; renders the inline editor on its line. */
+  quickEdit?: LineQuickEditState | null;
+  onQuickEditDraftChange?: (draft: string) => void;
+  onQuickEditCommit?: () => void;
+  onQuickEditCancel?: () => void;
+  onQuickEditDone?: () => void;
 }
 
 export const CartPanel: FC<CartPanelProps> = ({
@@ -47,12 +56,18 @@ export const CartPanel: FC<CartPanelProps> = ({
   actionError,
   onClearError,
   isCreating,
+  quickEdit = null,
+  onQuickEditDraftChange = () => {},
+  onQuickEditCommit = () => {},
+  onQuickEditCancel = () => {},
+  onQuickEditDone = () => {},
 }: CartPanelProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
 
   const items = useAppSelector(selectCartItems);
   const count = useAppSelector(selectCartItemCount);
+  const selectedLineId = useAppSelector(selectSelectedLineId);
   const subtotal = useAppSelector(selectSubtotalCents);
   const tax = useAppSelector(selectTaxCents);
   const grandTotal = useAppSelector(selectGrandTotalCents);
@@ -118,19 +133,35 @@ export const CartPanel: FC<CartPanelProps> = ({
       >
         {t("sales.cart.title_with_count", { count })}
       </h2>
+      <p
+        className="mt-pos-xs text-caption"
+        style={{ color: "color-mix(in srgb, var(--color-ink) 45%, transparent)" }}
+      >
+        {t("sales.cart.keyboard_hint")}
+      </p>
 
       {/* Cart items area — scrollable (both axes so the 6-column table
           never crushes its columns on narrow panels) */}
       <div className="mt-pos-sm min-h-0 flex-1 overflow-auto">
         {isEmpty ? (
-          <p
-            className="mt-pos-md text-body"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-            }}
-          >
-            {t("sales.cart.empty")}
-          </p>
+          <div className="mt-pos-md">
+            <p
+              className="text-body"
+              style={{
+                color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+              }}
+            >
+              {t("sales.cart.empty")}
+            </p>
+            <p
+              className="mt-pos-xs text-caption"
+              style={{
+                color: "color-mix(in srgb, var(--color-ink) 35%, transparent)",
+              }}
+            >
+              {t("sales.cart.empty_hint")}
+            </p>
+          </div>
         ) : (
           <table className="w-full min-w-[34rem] border-collapse">
             <thead className="sr-only">
@@ -144,16 +175,44 @@ export const CartPanel: FC<CartPanelProps> = ({
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
-                <CartLineItem
-                  key={item.id}
-                  item={item}
-                  onUpdateQuantity={handleUpdateQuantity}
-                  onRemove={handleRemove}
-                  onUpdatePrice={handleUpdatePrice}
-                  onUpdateDiscount={handleUpdateDiscount}
-                />
-              ))}
+              {items.map((item) => {
+                const activeEdit =
+                  quickEdit?.lineId === item.id ? quickEdit : null;
+                return (
+                  <Fragment key={item.id}>
+                    <CartLineItem
+                      item={item}
+                      isSelected={selectedLineId === item.id}
+                      onUpdateQuantity={handleUpdateQuantity}
+                      onRemove={handleRemove}
+                      onUpdatePrice={handleUpdatePrice}
+                      onUpdateDiscount={handleUpdateDiscount}
+                    />
+                    {activeEdit && (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="p-0"
+                          style={{
+                            backgroundColor:
+                              "color-mix(in srgb, var(--color-pharma) 6%, transparent)",
+                          }}
+                        >
+                          <div className="py-pos-sm pr-pos-md">
+                            <LineQuickEdit
+                              quickEdit={activeEdit}
+                              onDraftChange={onQuickEditDraftChange}
+                              onCommit={onQuickEditCommit}
+                              onCancel={onQuickEditCancel}
+                              onDone={onQuickEditDone}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}

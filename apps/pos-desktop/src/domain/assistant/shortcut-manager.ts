@@ -17,6 +17,10 @@
  * | Cmd+Shift+S  | Sync now         | GLOBAL       |
  * | Cmd+Shift+P  | Reprint receipt  | SALE_FLOW    |
  * | F1           | Context help     | GLOBAL       |
+ * | F9           | Checkout         | SALE_FLOW    |
+ * | Ctrl+Z       | Undo cart change | SALE_FLOW    |
+ * | ↑/↓          | Select cart line | SALE_FLOW    |
+ * | digits / % / = | Quick line edit | SALE_FLOW    |
  *
  * ## Browser default collisions
  * The manager refuses to register shortcuts that collide with common
@@ -67,6 +71,12 @@ const DEFAULT_BINDINGS: ShortcutBinding[] = [
   { id: "shortcut.sync", key: "Cmd+Shift+S", commandId: "cmd.sync-now", context: "GLOBAL", description: "Sincronizar ahora" },
   { id: "shortcut.reprint", key: "Cmd+Shift+P", commandId: "cmd.reprint-last-receipt", context: "SALE_FLOW", description: "Reimprimir última factura" },
   { id: "shortcut.context-help", key: "F1", commandId: "cmd.context-help", context: "GLOBAL", description: "Ayuda contextual" },
+  { id: "shortcut.checkout", key: "F9", commandId: "cmd.checkout", context: "SALE_FLOW", description: "Cobrar venta" },
+  { id: "shortcut.undo", key: "Ctrl+Z", commandId: "cmd.undo-last-change", context: "SALE_FLOW", description: "Deshacer último cambio del carrito" },
+  { id: "shortcut.select-line", key: "↑/↓", commandId: "cmd.select-cart-line", context: "SALE_FLOW", description: "Seleccionar línea del carrito" },
+  { id: "shortcut.quick-qty", key: "dígitos", commandId: "cmd.quick-quantity", context: "SALE_FLOW", description: "Editar cantidad de la línea seleccionada" },
+  { id: "shortcut.quick-discount", key: "%", commandId: "cmd.quick-discount", context: "SALE_FLOW", description: "Editar descuento de la línea seleccionada" },
+  { id: "shortcut.quick-price", key: "=", commandId: "cmd.quick-price", context: "SALE_FLOW", description: "Editar precio de la línea seleccionada" },
 ];
 
 // ---------------------------------------------------------------------------

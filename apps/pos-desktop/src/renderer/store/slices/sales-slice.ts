@@ -25,13 +25,34 @@ const initialState: SalesState = {
   items: [],
   selectedClient: null,
   delivery: null,
+  selectedLineId: null,
+  undoStack: [],
 };
+
+/** Max number of cart snapshots kept for Ctrl+Z undo. */
+const UNDO_LIMIT = 20;
+
+/**
+ * Clone the current cart items into the undo stack.
+ *
+ * Must be called BEFORE the mutation. Immer copy-on-write means the shallow
+ * clones captured here keep the pre-mutation values, so restoring them later
+ * yields exactly the previous cart. Items are flat objects (no nesting), so
+ * a shallow spread is a full clone.
+ */
+function pushUndo(state: SalesState): void {
+  state.undoStack.push(state.items.map((item) => ({ ...item })));
+  if (state.undoStack.length > UNDO_LIMIT) {
+    state.undoStack.shift();
+  }
+}
 
 export const salesSlice = createSlice({
   name: "sales",
   initialState,
   reducers: {
     addItem: (state, action: PayloadAction<CartItem>) => {
+      pushUndo(state);
       const incoming = action.payload;
       const existing = state.items.find((item) => item.id === incoming.id);
 
@@ -40,17 +61,25 @@ export const salesSlice = createSlice({
       } else {
         state.items.push(incoming);
       }
+      // Keep the newly added line selected so the cashier can adjust it
+      // (quantity, discount, price) without reaching for the mouse.
+      state.selectedLineId = incoming.id;
     },
 
     removeItem: (state, action: PayloadAction<string>) => {
+      pushUndo(state);
       const id = action.payload;
       state.items = state.items.filter((item) => item.id !== id);
+      if (state.selectedLineId === id) {
+        state.selectedLineId = null;
+      }
     },
 
     updateQuantity: (
       state,
       action: PayloadAction<{ id: string; quantity: number }>,
     ) => {
+      pushUndo(state);
       const { id, quantity } = action.payload;
       const item = state.items.find((cartItem) => cartItem.id === id);
 
@@ -60,6 +89,9 @@ export const salesSlice = createSlice({
 
       if (quantity <= 0) {
         state.items = state.items.filter((cartItem) => cartItem.id !== id);
+        if (state.selectedLineId === id) {
+          state.selectedLineId = null;
+        }
       } else {
         item.quantity = quantity;
       }
@@ -75,6 +107,7 @@ export const salesSlice = createSlice({
       state,
       action: PayloadAction<{ id: string; unitPriceCents: number }>,
     ) => {
+      pushUndo(state);
       const { id, unitPriceCents } = action.payload;
       const item = state.items.find((cartItem) => cartItem.id === id);
       if (!item) return;
@@ -96,6 +129,7 @@ export const salesSlice = createSlice({
         discountPercentage: number | null;
       }>,
     ) => {
+      pushUndo(state);
       const { id, discountPercentage } = action.payload;
       const item = state.items.find((cartItem) => cartItem.id === id);
       if (!item) return;
@@ -125,9 +159,27 @@ export const salesSlice = createSlice({
     },
 
     clearCart: (state) => {
+      pushUndo(state);
       state.items = [];
       state.selectedClient = null;
       state.delivery = null;
+      state.selectedLineId = null;
+    },
+
+    /** Select the cart line the keyboard acts on. Null clears the selection. */
+    setSelectedLine: (state, action: PayloadAction<string | null>) => {
+      state.selectedLineId = action.payload;
+    },
+
+    /**
+     * Restore the cart to the state before the last mutation (Ctrl+Z).
+     * Line-level undo only — client and delivery drafts are left untouched.
+     */
+    undoLastChange: (state) => {
+      const previous = state.undoStack.pop();
+      if (!previous) return;
+      state.items = previous;
+      state.selectedLineId = null;
     },
   },
 });
@@ -141,6 +193,8 @@ export const {
   clearCart,
   setClient,
   setDelivery,
+  setSelectedLine,
+  undoLastChange,
 } = salesSlice.actions;
 
 /* ------------------------------------------------------------------ */
@@ -235,6 +289,16 @@ export const selectTotalCents = createSelector(
 export const selectSelectedClient = createSelector(
   [selectSalesState],
   (sales) => sales.selectedClient,
+);
+
+export const selectSelectedLineId = createSelector(
+  [selectSalesState],
+  (sales) => sales.selectedLineId,
+);
+
+export const selectUndoAvailable = createSelector(
+  [selectSalesState],
+  (sales) => sales.undoStack.length > 0,
 );
 
 export const selectEffectiveClient = createSelector(

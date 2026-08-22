@@ -74,4 +74,14 @@ export interface SalesState {
   items: CartItem[];
   selectedClient: SelectedClient | null;
   delivery: SaleDeliveryDraft | null;
+  /**
+   * Id of the cart line currently selected for keyboard editing
+   * (`${productId}::${lotCode}`). Null when no line is selected.
+   */
+  selectedLineId: string | null;
+  /**
+   * Snapshots of `items` taken before each cart mutation, newest last.
+   * Backs the Ctrl+Z "undo last change" shortcut. Capped at UNDO_LIMIT.
+   */
+  undoStack: CartItem[][];
 }
