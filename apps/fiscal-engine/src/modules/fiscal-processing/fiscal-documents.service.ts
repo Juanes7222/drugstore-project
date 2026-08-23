@@ -123,7 +123,7 @@ export class FiscalDocumentsService {
         taxAmounts: taxAmounts.map((t) => ({ code: t.code, amount: t.amount })),
       },
       saleItems,
-      softwareId: issuerConfig.softwareId,
+      softwareId: issuerConfig.softwareId ?? '',
       softwareSecurityCode: secretData.softwareSecurityCode,
       resolutionAuthNumber: doc.resolution.resolutionNumber,
       resolutionPeriodStart: this.formatIssueDate(doc.resolution.validFrom),

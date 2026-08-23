@@ -57,9 +57,14 @@ export interface IssuerConfig {
   verificationDigit: string;
   businessName: string;
   municipality: string;
+  // Código DANE del municipio; emitido como cbc:ID del Address (DIAN exige
+  // el código, no el nombre, en ese elemento). Falls back to the name.
+  municipioCode?: string;
   department: string;
   phone?: string;
   email?: string;
+  // TaxLevelCode del emisor (anexo técnico 1.9): R-99-PN, R-99-PJ, etc.
+  taxRegime?: string;
 }
 
 export interface CustomerPartyData {
@@ -305,7 +310,12 @@ export class UblInvoiceBuilder {
 
     this.appendAddress(
       party.ele('cac:PhysicalLocation').ele('cac:Address'),
-      { city: config.municipality, department: config.department, country: 'CO' },
+      {
+        city: config.municipality,
+        cityCode: config.municipioCode,
+        department: config.department,
+        country: 'CO',
+      },
     );
 
     const tax = party.ele('cac:PartyTaxScheme');
@@ -318,6 +328,11 @@ export class UblInvoiceBuilder {
       })
       .txt(config.nit)
       .up();
+    // TaxLevelCode is mandatory for the issuer per annex 1.9 numeral 6.1.2.
+    // Emitted only when configured so legacy callers keep working.
+    if (config.taxRegime) {
+      tax.ele('cbc:TaxLevelCode').txt(config.taxRegime).up();
+    }
     tax.ele('cac:TaxScheme').ele('cbc:ID').txt(TAX_SCHEME_IVA).up().up();
     tax.up();
 
@@ -501,10 +516,12 @@ export class UblInvoiceBuilder {
 
   private appendAddress(
     addressNode: any,
-    location: { city?: string; department?: string; country: string },
+    location: { city?: string; cityCode?: string; department?: string; country: string },
   ): void {
     if (location.city) {
-      addressNode.ele('cbc:ID').txt(location.city).up();
+      // DIAN wants the DANE municipality code in cbc:ID and the name in
+      // CityName; fall back to the name when no code is configured.
+      addressNode.ele('cbc:ID').txt(location.cityCode ?? location.city).up();
       addressNode.ele('cbc:CityName').txt(location.city).up();
     }
     if (location.department) {
