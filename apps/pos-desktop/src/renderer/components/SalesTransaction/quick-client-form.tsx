@@ -8,6 +8,7 @@
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import type { CreateClientInput } from "../../../domain/clients";
+import { DepartmentMunicipalityFields } from "@/components/common/department-municipality-fields";
 import { CheckIcon, InfoIcon } from "@/components/ui/icons";
 import { LoaderIcon } from "@/components/ui/icons/animated";
 
@@ -63,8 +64,6 @@ const FIELDS: FieldDef[] = [
   { key: "email", labelKey: "clients.email", type: "email", colSpan: "half", autoComplete: "email" },
   { key: "phone", labelKey: "clients.phone", type: "tel", colSpan: "half", autoComplete: "tel" },
   { key: "address", labelKey: "clients.address", type: "text", colSpan: "full", autoComplete: "street-address" },
-  { key: "municipality", labelKey: "clients.municipality", type: "text", colSpan: "half" },
-  { key: "department", labelKey: "clients.department", type: "text", colSpan: "half" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -131,6 +130,17 @@ export const QuickClientForm: FC<QuickClientFormProps> = ({
             </div>
           );
         })}
+      </div>
+
+      {/* Location — linked DIVIPOLA selects (department drives municipality) */}
+      <div className="mb-2 grid grid-cols-1 gap-2 @sm:grid-cols-2">
+        <DepartmentMunicipalityFields
+          department={data.department ?? ""}
+          municipality={data.municipality ?? ""}
+          onDepartmentChange={(department) => onChange({ ...data, department: department || null })}
+          onMunicipalityChange={(municipality) => onChange({ ...data, municipality: municipality || null })}
+          compact
+        />
       </div>
 
       {/* Error */}

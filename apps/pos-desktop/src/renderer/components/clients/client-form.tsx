@@ -7,8 +7,9 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
-import { AlertTriangleIcon, BuildingIcon, CheckIcon, CreditCardIcon, FileTextIcon, MailIcon, MapPinIcon, PhoneIcon, SaveIcon, UserIcon, XIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, CheckIcon, CreditCardIcon, FileTextIcon, MailIcon, MapPinIcon, PhoneIcon, SaveIcon, UserIcon, XIcon } from "@/components/ui/icons";
 import { LoaderIcon } from "@/components/ui/icons/animated";
+import { DepartmentMunicipalityFields } from "@/components/common/department-municipality-fields";
 import type { CreateClientInput } from "../../../domain/clients/clients.service";
 
 // ---------------------------------------------------------------------------
@@ -69,8 +70,6 @@ const FIELDS: FieldDef[] = [
   { key: "email", labelKey: "clients.email", type: "email", colSpan: "half", icon: <MailIcon className="size-4" /> },
   { key: "phone", labelKey: "clients.phone", type: "tel", colSpan: "half", icon: <PhoneIcon className="size-4" /> },
   { key: "address", labelKey: "clients.address", type: "text", colSpan: "full", icon: <MapPinIcon className="size-4" /> },
-  { key: "municipality", labelKey: "clients.municipality", type: "text", colSpan: "half", icon: <BuildingIcon className="size-4" /> },
-  { key: "department", labelKey: "clients.department", type: "text", colSpan: "half", icon: <BuildingIcon className="size-4" /> },
 ];
 
 // ---------------------------------------------------------------------------
@@ -207,6 +206,16 @@ export const ClientForm: FC<ClientFormProps> = ({
               </div>
             );
           })}
+        </div>
+
+        {/* Location — linked DIVIPOLA selects (department drives municipality) */}
+        <div className="mb-4 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+          <DepartmentMunicipalityFields
+            department={data.department ?? ""}
+            municipality={data.municipality ?? ""}
+            onDepartmentChange={(department) => onChange({ ...data, department: department || null })}
+            onMunicipalityChange={(municipality) => onChange({ ...data, municipality: municipality || null })}
+          />
         </div>
 
         {/* Credit limit — dedicated block (numeric, drives the store-credit feature) */}

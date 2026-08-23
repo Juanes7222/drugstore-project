@@ -44,6 +44,10 @@ export interface SearchableSelectProps {
   selectedId: string | null;
   /** Input placeholder text. */
   placeholder: string;
+  /** Accessible name for the input (placeholder alone is not a label). */
+  ariaLabel?: string;
+  /** Extra classes appended to the input, e.g. compact sizing overrides. */
+  inputClassName?: string;
   disabled?: boolean;
   /** Optional button at the bottom of the dropdown to create a new item. */
   onCreateNew?: () => void;
@@ -64,6 +68,8 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
   onSelect,
   selectedId,
   placeholder,
+  ariaLabel,
+  inputClassName,
   disabled = false,
   onCreateNew,
   createNewLabel,
@@ -253,7 +259,8 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           disabled={disabled}
-          className={`pos-input w-full pr-8 ${error ? 'border-error' : ''}`}
+          aria-label={ariaLabel}
+          className={`pos-input w-full pr-8 ${inputClassName ?? ''} ${error ? 'border-error' : ''}`}
           {...{
             autoComplete: 'off' as const,
             role: 'combobox' as const,
