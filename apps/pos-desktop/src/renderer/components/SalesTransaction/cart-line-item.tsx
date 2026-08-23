@@ -179,7 +179,7 @@ export const CartLineItem: FC<CartLineItemProps> = ({
           : {}),
       }}
     >
-      <td className="py-pos-sm pr-pos-md align-top">
+      <td className="py-pos-sm pl-pos-md pr-pos-md align-top">
         <p className="text-body font-semibold" style={{ color: "var(--color-ink)" }}>
           {item.name}
         </p>

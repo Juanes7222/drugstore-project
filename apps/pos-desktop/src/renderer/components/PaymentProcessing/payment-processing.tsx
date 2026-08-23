@@ -35,7 +35,6 @@ import {
 import {
   selectAreElectronicMethodsApproved,
   selectCanConfirmPayment,
-  selectCashOwedCents,
   selectPaymentChangeCents,
   selectPaymentDifferenceCents,
   selectPaymentMethods,
@@ -96,7 +95,6 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
   const totalDue = useAppSelector(selectGrandTotalCents);
   const totalPaid = useAppSelector(selectPaymentTotalPaidCents);
   const difference = useAppSelector(selectPaymentDifferenceCents);
-  const cashOwed = useAppSelector(selectCashOwedCents);
   const cashReceived = useAppSelector(selectCashReceivedCents);
   const change = useAppSelector(selectPaymentChangeCents);
   const canConfirm = useAppSelector(selectCanConfirmPayment);
@@ -465,21 +463,43 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     return t("payment.difference_balanced");
   }, [difference, allElectronicApproved, t]);
 
-  const showCashReceived = cashOwed > 0;
-
-  // Keyboard-first payment flow: selection/buffer state drives the active-row
-  // highlight and the live money-entry display below. The hook owns the
-  // keydown listener and gating; this screen only renders its state.
-  const { selection, buffer } = usePaymentKeyboard({
+  // ---- Keyboard-first payment flow -------------------------------------
+  // The hook owns the global keydown listener (capture phase) and only
+  // tracks WHICH target is active; this screen focuses the real input of
+  // that target so typed digits land natively in the amount field.
+  const { selection, showCashReceived, moveSelection } = usePaymentKeyboard({
     isCompleting,
     canConfirm,
     onConfirm: handleConfirm,
     onAddMethod: handleAddMethod,
-    onRemoveMethod: handleRemoveMethod,
-    onAmountChange: handleAmountChange,
-    onCashReceivedChange: handleCashReceivedChange,
-    onAuthorize: handleAuthorize,
   });
+
+  // Row amount inputs keyed by method.id + the cash "received" input.
+  const amountInputRefs = useRef(new Map<string, HTMLInputElement>());
+  const receivedInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus follows the keyboard selection: the row's real amount input or
+  // the received field. A null selection leaves focus where it is.
+  useEffect(() => {
+    if (!selection) return;
+    if (selection.kind === "row") {
+      amountInputRefs.current.get(selection.rowId)?.focus();
+    } else {
+      receivedInputRef.current?.focus();
+    }
+  }, [selection]);
+
+  const registerAmountInputRef = useCallback(
+    (methodId: string) =>
+      (node: HTMLInputElement | null) => {
+        if (node) {
+          amountInputRefs.current.set(methodId, node);
+        } else {
+          amountInputRefs.current.delete(methodId);
+        }
+      },
+    [],
+  );
 
   return (
     <section
@@ -547,12 +567,9 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
                 isActive={
                   selection?.kind === "row" && selection.rowId === method.id
                 }
-                buffer={
-                  buffer?.target.kind === "row" &&
-                  buffer.target.rowId === method.id
-                    ? buffer
-                    : null
-                }
+                inputRef={registerAmountInputRef(method.id)}
+                showCashReceived={showCashReceived}
+                onMoveToReceived={() => moveSelection(1)}
                 onMethodChange={handleMethodChange}
                 onAmountChange={handleAmountChange}
                 onRemove={handleRemoveMethod}
@@ -695,7 +712,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
 
         {showCashReceived && (
           <div
-            className="mt-pos-md grid grid-cols-2 items-start gap-pos-md rounded-pos p-pos-sm"
+            className="mt-pos-md grid grid-cols-2 items-start gap-pos-md rounded-pos p-pos-sm pl-pos-md"
             style={{
               ...(selection?.kind === "received"
                 ? {
@@ -707,23 +724,13 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
             }}
           >
             <div className="flex flex-col gap-pos-xs">
-              {buffer?.target.kind === "received" && (
-                <p
-                  role="status"
-                  aria-live="polite"
-                  className="m-0 font-data text-body tabular-nums"
-                  style={{ color: "var(--color-pharma)" }}
-                >
-                  $ {buffer.digits === "" ? "0" : buffer.digits}
-                  <span aria-hidden="true">▍</span>
-                </p>
-              )}
               <CurrencyInput
                 value={cashReceived}
                 onChange={handleCashReceivedChange}
                 label={t("payment.received")}
                 aria-label={t("payment.received")}
                 disabled={isCompleting}
+                inputRef={receivedInputRef}
               />
             </div>
             <div className="flex flex-col gap-pos-xs">

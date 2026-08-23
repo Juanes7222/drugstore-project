@@ -11,6 +11,7 @@ import {
   type ChangeEvent,
   type FC,
   type InputHTMLAttributes,
+  type Ref,
   useCallback,
   useId,
   useMemo,
@@ -26,6 +27,8 @@ interface CurrencyInputProps
   /** Reports the new amount in **cents**. */
   onChange: (amountCents: number) => void;
   label?: string;
+  /** Forwarded to the inner input (payment screen focuses it from the keyboard selection). */
+  inputRef?: Ref<HTMLInputElement>;
 }
 
 export const CurrencyInput: FC<CurrencyInputProps> = ({
@@ -34,6 +37,7 @@ export const CurrencyInput: FC<CurrencyInputProps> = ({
   label,
   id: idProp,
   disabled,
+  inputRef,
   ...rest
 }) => {
   const generatedId = useId();
@@ -84,6 +88,7 @@ export const CurrencyInput: FC<CurrencyInputProps> = ({
           $
         </span>
         <input
+          ref={inputRef}
           id={id}
           type="number"
           min={0}

@@ -12,6 +12,7 @@ import {
   type FC,
   type KeyboardEvent as ReactKeyboardEvent,
   type MutableRefObject,
+  type Ref,
   useCallback,
   useEffect,
   useRef,
@@ -38,6 +39,11 @@ interface ProductSearchResultsProps {
   onTogglePin?: (productId: string) => void;
   /** Whether a product is currently pinned to the quick buttons row. */
   isPinned?: (productId: string) => boolean;
+  /**
+   * External ref to the listbox element: the search screen focuses it on
+   * ArrowDown from the input so the listbox's own keydown handles arrows.
+   */
+  listboxRef?: Ref<HTMLDivElement>;
 }
 
 export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
@@ -46,11 +52,11 @@ export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
   onEscape,
   onTogglePin,
   isPinned,
+  listboxRef,
 }) => {
   const { t } = useTranslation();
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [focusedIndex, setFocusedIndex] = useState(-1);
-  const containerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Reset focused index when results change
@@ -150,8 +156,9 @@ export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
 
   return (
     <div
-      ref={containerRef}
-      className="flex flex-col gap-pos-sm"
+      ref={listboxRef}
+      tabIndex={-1}
+      className="flex flex-col gap-pos-sm focus-visible:outline-none"
       role="listbox"
       aria-label={t("sales.search.results")}
       onKeyDown={handleKeyDown}
@@ -257,7 +264,7 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
       aria-selected={justAdded}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className={`rounded-pos border bg-panel p-pos-md transition-all duration-200 ${
+      className={`rounded-pos border bg-panel p-pos-md transition-all duration-200 scroll-mt-pos-sm scroll-mb-pos-sm ${
         isFocused
           ? "border-pharma/60 ring-2 ring-pharma/20"
           : justAdded

@@ -171,7 +171,7 @@ export const CartPanel: FC<CartPanelProps> = ({
 
       {/* Cart items area — scrollable (both axes so the 6-column table
           never crushes its columns on narrow panels) */}
-      <div className="mt-pos-sm min-h-0 flex-1 overflow-auto">
+      <div className="mt-pos-sm min-h-0 flex-1 overflow-auto px-pos-sm py-pos-sm">
         {isEmpty ? (
           heldCarts.length > 0 ? (
             /* Held carts take visual priority over the generic empty hint */

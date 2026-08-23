@@ -486,9 +486,20 @@ export function useSalesKeyboard({
       if (cartItems.length === 0) return;
 
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        event.stopPropagation();
-        moveSelection(event.key === "ArrowDown" ? 1 : -1);
+        // Focus inside the search results area → the results list owns its
+        // own arrow navigation (it preventDefaults itself). This lets the
+        // cashier browse results with the arrows without the cart selection
+        // stealing the keys.
+        if (!isInInput) {
+          const inResults = Boolean(
+            (target as HTMLElement | null)?.closest?.("[data-search-results]"),
+          );
+          if (!inResults) {
+            event.preventDefault();
+            event.stopPropagation();
+            moveSelection(event.key === "ArrowDown" ? 1 : -1);
+          }
+        }
         return;
       }
 

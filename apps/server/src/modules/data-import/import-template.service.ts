@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Workbook } from 'exceljs';
+// exceljs is CommonJS-only; a named ESM import fails at Node link time, so
+// Workbook is pulled off the default export instead.
+import exceljs from 'exceljs';
 import { ImportSourceFormat } from '@pharmacy/database';
 import { ImportDefinitionRegistry } from './import-definition-registry';
+
+const { Workbook } = exceljs;
 
 export interface GeneratedTemplate {
   content: Buffer | string;

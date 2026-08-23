@@ -114,7 +114,9 @@ const createTestStore = (totalCents: number, extraItems: CartItem[] = []) => {
       paymentSlice.getInitialState(),
       initializePayment({ totalCents }),
     ),
-    ui: uiSlice.getInitialState(),
+    // The payment screen is active when PaymentProcessing renders, so the
+    // keyboard hook's screen gate lets keydowns through.
+    ui: { ...uiSlice.getInitialState(), activeScreen: "payment" as const },
   };
 
   return configureStore({
@@ -166,6 +168,60 @@ describe("PaymentProcessing", () => {
       /\$\s*66\.164/,
     );
     expect(screen.getByText(/Efectivo|Cash/)).toBeInTheDocument();
+  });
+
+  // --- Keyboard focus follows the selection ---
+
+  it("focuses the first row's amount input when the screen mounts", () => {
+    const store = createTestStore(6_616_400);
+    renderPayment(store);
+
+    // The hook auto-selects row 0, and the screen focuses its amount input
+    // so the cashier can start typing immediately.
+    expect(screen.getAllByLabelText(/Valor|Amount/)[0]).toHaveFocus();
+  });
+
+  it("moves focus to the next row's amount input when ArrowDown moves the selection", () => {
+    const store = createTestStore(6_616_400);
+    renderPayment(store);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Agregar método|Add method/ }),
+    );
+    const amountInputs = screen.getAllByLabelText(/Valor|Amount/);
+    expect(amountInputs).toHaveLength(2);
+    expect(amountInputs[0]).toHaveFocus();
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    expect(amountInputs[1]).toHaveFocus();
+  });
+
+  it("focuses the received input when the selection reaches the received field", () => {
+    const store = createTestStore(6_616_400);
+    renderPayment(store);
+
+    // Single cash row with the full amount → change is due, so ArrowDown
+    // past the last row lands on the received field.
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+
+    expect(screen.getByLabelText(/Recibido|Received/)).toHaveFocus();
   });
 
   // --- PP-02 / PP-03 ---

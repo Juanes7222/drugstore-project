@@ -203,6 +203,35 @@ const pressKeyInInput = (init: KeyboardEventInit): KeyboardEvent => {
   return event;
 };
 
+/** Dispatch a keydown that bubbles up from an element inside the search results list. */
+const pressKeyInSearchResults = (init: KeyboardEventInit): KeyboardEvent => {
+  const results = document.createElement("div");
+  results.setAttribute("data-search-results", "");
+  document.body.appendChild(results);
+  const event = new KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  act(() => results.dispatchEvent(event));
+  results.remove();
+  return event;
+};
+
+/** Dispatch a keydown that bubbles up from a plain (non-input, non-results) element. */
+const pressKeyInElement = (init: KeyboardEventInit): KeyboardEvent => {
+  const element = document.createElement("div");
+  document.body.appendChild(element);
+  const event = new KeyboardEvent("keydown", {
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  act(() => element.dispatchEvent(event));
+  element.remove();
+  return event;
+};
+
 /** Track whether the event kept bubbling past the capture-phase handler. */
 const listenForBubble = (): { fired: () => boolean } => {
   let bubbled = false;
@@ -537,6 +566,57 @@ describe("useSalesKeyboard", () => {
       pressKeyInInput({ key: "ArrowDown" });
 
       expect(mockDispatch).not.toHaveBeenCalled();
+    });
+
+    it("ArrowDown with the focus inside the search results does not move the selection", () => {
+      const deps = makeDeps();
+      setCart(
+        [baseItem({ id: "line-1" }), baseItem({ id: "line-2" })],
+        "line-1",
+      );
+      const { rerender } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+      rerender(deps);
+
+      const event = pressKeyInSearchResults({ key: "ArrowDown" });
+
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("ArrowUp with the focus inside the search results does not move the selection", () => {
+      const deps = makeDeps();
+      setCart(
+        [baseItem({ id: "line-1" }), baseItem({ id: "line-2" })],
+        "line-2",
+      );
+      const { rerender } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+      rerender(deps);
+
+      const event = pressKeyInSearchResults({ key: "ArrowUp" });
+
+      expect(mockDispatch).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    it("arrows with the target on a plain element still move the selection", () => {
+      const deps = makeDeps();
+      setCart(
+        [baseItem({ id: "line-1" }), baseItem({ id: "line-2" })],
+        "line-1",
+      );
+      const { rerender } = renderHook((props) => useSalesKeyboard(props), {
+        initialProps: deps,
+      });
+      rerender(deps);
+
+      const event = pressKeyInElement({ key: "ArrowDown" });
+
+      expect(mockDispatch).toHaveBeenCalledWith(setSelectedLine("line-2"));
+      expect(event.defaultPrevented).toBe(true);
     });
   });
 

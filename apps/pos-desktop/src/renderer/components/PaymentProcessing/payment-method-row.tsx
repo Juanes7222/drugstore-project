@@ -5,11 +5,10 @@
  * The method selector is the shared `PaymentMethodPicker`, so the options
  * come from the local DB (DIAN categories) — never a hardcoded list.
  */
-import { type FC, useCallback, useId } from "react";
+import { type FC, type KeyboardEvent, type Ref, useCallback, useId } from "react";
 import { useTranslation } from "react-i18next";
 import { CurrencyInput } from "@/components/common/currency-input";
 import { PaymentMethodPicker } from "@/components/common/payment-method-picker";
-import type { PaymentBuffer } from "@/hooks/use-payment-keyboard";
 import {
   PaymentMethodEntry,
   PaymentMethodOption,
@@ -25,8 +24,12 @@ interface PaymentMethodRowProps {
   disabled: boolean;
   /** Keyboard-selected row: renders the cart selection signature. */
   isActive?: boolean;
-  /** In-progress money entry targeting THIS row (target.rowId matches). */
-  buffer?: PaymentBuffer | null;
+  /** Forwarded to the amount input (payment screen focuses it from the keyboard selection). */
+  inputRef?: Ref<HTMLInputElement>;
+  /** Whether the cash "received" field is part of keyboard navigation. */
+  showCashReceived?: boolean;
+  /** Enter on a cash row's amount input moves the selection to "received". */
+  onMoveToReceived?: () => void;
   onMethodChange: (id: string, method: PaymentMethodOption) => void;
   onAmountChange: (id: string, amountCents: number) => void;
   onRemove: (id: string) => void;
@@ -40,7 +43,9 @@ export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
   isOnlyMethod,
   disabled,
   isActive = false,
-  buffer = null,
+  inputRef,
+  showCashReceived = false,
+  onMoveToReceived = () => {},
   onMethodChange,
   onAmountChange,
   onRemove,
@@ -68,9 +73,33 @@ export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
     onAuthorize(method);
   }, [method, onAuthorize]);
 
+  // Enter-per-input semantics: only this row knows what its amount input
+  // belongs to. Electronic rows authorize (when an amount is typed); a cash
+  // row moves the keyboard selection to "received" when change is due.
+  const handleAmountKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter") return;
+      if (isElectronic && method.amountCents > 0) {
+        event.preventDefault();
+        handleAuthorize();
+      } else if (method.isCash && showCashReceived) {
+        event.preventDefault();
+        onMoveToReceived();
+      }
+    },
+    [
+      isElectronic,
+      method.amountCents,
+      method.isCash,
+      showCashReceived,
+      handleAuthorize,
+      onMoveToReceived,
+    ],
+  );
+
   return (
     <div
-      className="grid items-start gap-pos-md py-pos-md"
+      className="grid items-start gap-pos-md py-pos-md pl-pos-md pr-pos-sm"
       style={{
         gridTemplateColumns: "1fr 1fr auto",
         borderBottom:
@@ -119,43 +148,15 @@ export const PaymentMethodRow: FC<PaymentMethodRowProps> = ({
         />
       </div>
 
-      {buffer ? (
-        <div className="flex flex-col gap-pos-xs">
-          <span
-            className="text-caption font-medium"
-            style={{
-              color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-            }}
-          >
-            {t("payment.amount_label")}
-          </span>
-          <div
-            role="status"
-            aria-live="polite"
-            aria-label={t("payment.typing_amount", { digits: buffer.digits })}
-            className="flex items-center gap-1 rounded-pos-sm border px-pos-sm py-pos-xs font-data text-body tabular-nums"
-            style={{
-              borderColor:
-                "color-mix(in srgb, var(--color-pharma) 35%, transparent)",
-              backgroundColor:
-                "color-mix(in srgb, var(--color-pharma) 6%, transparent)",
-              color: "var(--color-pharma)",
-            }}
-          >
-            <span aria-hidden="true">$</span>
-            <span>{buffer.digits === "" ? "0" : buffer.digits}</span>
-            <span aria-hidden="true">▍</span>
-          </div>
-        </div>
-      ) : (
-        <CurrencyInput
-          value={method.amountCents}
-          onChange={handleAmountChange}
-          label={t("payment.amount_label")}
-          disabled={disabled}
-          aria-label={t("payment.amount_label")}
-        />
-      )}
+      <CurrencyInput
+        value={method.amountCents}
+        onChange={handleAmountChange}
+        label={t("payment.amount_label")}
+        disabled={disabled}
+        aria-label={t("payment.amount_label")}
+        inputRef={inputRef}
+        onKeyDown={handleAmountKeyDown}
+      />
 
       <div className="flex items-end gap-pos-sm pt-[1.375rem]">
         {isElectronic && (

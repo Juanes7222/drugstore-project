@@ -1,4 +1,7 @@
-import { Workbook, Cell, CellValue, CellRichTextValue } from 'exceljs';
+// exceljs is CommonJS-only; named ESM imports fail at Node link time, so
+// Workbook is pulled off the default export instead.
+import exceljs from 'exceljs';
+import type { Cell, CellValue, CellRichTextValue, Workbook } from 'exceljs';
 import { ImportSourceFormat } from '@pharmacy/database';
 import { ImportFileInvalidException } from './exceptions/import-file-invalid.exception';
 import {
@@ -7,13 +10,15 @@ import {
   assertUniqueHeaders,
 } from './import-source.adapter';
 
+const { Workbook: WorkbookCtor } = exceljs;
+
 export class ExcelSourceAdapter implements ImportSourceAdapter {
   readonly format = ImportSourceFormat.XLSX;
 
   async parse(buffer: Buffer): Promise<ParsedImportTable> {
     let workbook: Workbook;
     try {
-      workbook = new Workbook();
+      workbook = new WorkbookCtor();
       // exceljs declares an older Node Buffer type; the runtime value is the
       // same buffer either way.
       await workbook.xlsx.load(

@@ -73,7 +73,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const resultsContainerRef = useRef<HTMLDivElement>(null);
+  const resultsListRef = useRef<HTMLDivElement>(null);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
 
@@ -204,7 +204,10 @@ export const ProductSearch: FC<ProductSearchProps> = ({
 
       if (event.key === "ArrowDown" && results.length > 0) {
         event.preventDefault();
-        resultsContainerRef.current?.focus();
+        // Focus the listbox itself, not the scrollable wrapper: the listbox
+        // owns the arrow navigation (roving tabindex) and will focus the
+        // first card on the next ArrowDown.
+        resultsListRef.current?.focus();
       }
     },
     [query, results.length, onSubmitSearch, t],
@@ -303,11 +306,13 @@ export const ProductSearch: FC<ProductSearchProps> = ({
         </div>
       )}
 
-      {/* Results area — scrollable, focusable for keyboard nav */}
+      {/* Results area — scrollable; the sales keyboard hook skips arrows
+          while focus is inside ([data-search-results]) so the listbox owns
+          them. Vertical padding keeps the focused card's ring inside the
+          scroll container. */}
       <div
-        ref={resultsContainerRef}
-        tabIndex={-1}
-        className="mt-pos-md min-h-0 flex-1 overflow-y-auto focus-visible:outline-none"
+        data-search-results
+        className="mt-pos-md min-h-0 flex-1 overflow-y-auto py-pos-sm"
       >
         {isLoading ? (
           <p
@@ -323,6 +328,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
             onEscape={handleEscapeFromResults}
             onTogglePin={onTogglePin}
             isPinned={isPinned}
+            listboxRef={resultsListRef}
           />
         )}
       </div>

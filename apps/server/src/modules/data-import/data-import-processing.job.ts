@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { Processor } from '@nestjs/bullmq';
+import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { DataImportService } from './data-import.service';
 import {
   IMPORT_JOB_NAME,
@@ -17,10 +17,12 @@ import {
  */
 @Processor(IMPORTS_QUEUE, { concurrency: 1 })
 @Injectable()
-export class DataImportProcessingJob {
+export class DataImportProcessingJob extends WorkerHost {
   private readonly logger = new Logger(DataImportProcessingJob.name);
 
-  constructor(private readonly dataImportService: DataImportService) {}
+  constructor(private readonly dataImportService: DataImportService) {
+    super();
+  }
 
   async process(job: Job<DataImportJobData>): Promise<void> {
     try {
