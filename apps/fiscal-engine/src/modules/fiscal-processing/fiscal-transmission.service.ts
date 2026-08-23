@@ -10,6 +10,7 @@ import type {
 } from './ports';
 import { FiscalTransmissionFailedException } from './exceptions/fiscal-transmission-failed.exception';
 import { FiscalDocumentRejectedException } from './exceptions/fiscal-document-rejected.exception';
+import { TechProviderConfigNotFoundException } from './exceptions/tech-provider-config-not-found.exception';
 import {
   TransmissionRouteResolver,
   type TransmissionRoute,
@@ -204,9 +205,7 @@ export class FiscalTransmissionService {
       where: { subscriptionId },
     });
     if (!config) {
-      throw new Error(
-        `No TechProviderConfig found for subscription ${subscriptionId}`,
-      );
+      throw new TechProviderConfigNotFoundException(subscriptionId);
     }
     return config;
   }

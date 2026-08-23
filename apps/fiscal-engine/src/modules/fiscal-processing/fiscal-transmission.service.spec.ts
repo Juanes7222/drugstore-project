@@ -10,6 +10,7 @@ jest.mock('@pharmacy/database', () => ({
 import { FiscalTransmissionService } from './fiscal-transmission.service';
 import { FiscalTransmissionFailedException } from './exceptions/fiscal-transmission-failed.exception';
 import { FiscalDocumentRejectedException } from './exceptions/fiscal-document-rejected.exception';
+import { TechProviderConfigNotFoundException } from './exceptions/tech-provider-config-not-found.exception';
 import type { FiscalTransmissionPort } from './ports/fiscal-transmission.port';
 import type { SecretReaderPort, SecretData } from './ports/secret-reader.port';
 import type { SendResult } from './ports/transmission-results.type';
@@ -265,12 +266,18 @@ describe('FiscalTransmissionService', () => {
       });
     });
 
-    it('throws a generic error when no TechProviderConfig exists', async () => {
+    it('throws TechProviderConfigNotFoundException when no TechProviderConfig exists', async () => {
       (prisma.techProviderConfig.findFirst as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.transmit('fd-1')).rejects.toThrow(
+      const rejection = service.transmit('fd-1');
+
+      await expect(rejection).rejects.toThrow(TechProviderConfigNotFoundException);
+      await expect(rejection).rejects.toThrow(
         'No TechProviderConfig found for subscription sub-test',
       );
+      await expect(rejection).rejects.toMatchObject({
+        errorCode: 'TECH_PROVIDER_CONFIG_NOT_FOUND',
+      });
     });
 
     describe('applyTransmissionResult', () => {
