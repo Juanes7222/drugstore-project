@@ -203,7 +203,7 @@ describe('FiscalResolutionAllocationsService', () => {
       );
     });
 
-    it('sets currentConsecutive to rangeFrom minus one', async () => {
+    it('seeds currentConsecutive at zero so the first issued number is rangeFrom', async () => {
       const bigResolution = { id: 'res-big', rangeFrom: 1, rangeTo: 5000 };
       (prisma.fiscalResolution.findUnique as jest.Mock).mockResolvedValue(
         bigResolution,
@@ -227,8 +227,29 @@ describe('FiscalResolutionAllocationsService', () => {
       expect(prisma.fiscalResolutionAllocation.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            currentConsecutive: 499, // 500 - 1
+            currentConsecutive: 0,
           }),
+        }),
+      );
+    });
+
+    it('finds the most recently allocated range for a resolution', async () => {
+      const latest = {
+        id: 'alloc-latest',
+        resolutionId: 'res-1',
+        allocatedAt: new Date('2026-01-02T00:00:00Z'),
+      };
+      (prisma.fiscalResolutionAllocation.findFirst as jest.Mock).mockResolvedValue(
+        latest,
+      );
+
+      const result = await service.findLatestForResolution('res-1');
+
+      expect(result).toEqual(latest);
+      expect(prisma.fiscalResolutionAllocation.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { resolutionId: 'res-1' },
+          orderBy: { allocatedAt: 'desc' },
         }),
       );
     });

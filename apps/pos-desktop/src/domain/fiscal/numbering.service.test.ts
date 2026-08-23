@@ -261,4 +261,120 @@ describe("FiscalNumberingService", () => {
       expect(create.paddingLength).toBe(8);
     });
   });
+
+  describe("syncFromResolution", () => {
+    it("creates counters with the resolution range and next regular number when none exist", async () => {
+      const service = createFiscalNumberingService({
+        prisma: mockPrisma as any,
+        workstationId: "ws-001",
+      });
+
+      const result = await service.syncFromResolution({
+        prefix: "FE",
+        authorizedStart: 1000,
+        authorizedEnd: 1999,
+        nextRegularNumber: 1001,
+      });
+
+      expect(result).toEqual({ changed: true });
+      const { create } = vi.mocked(mockPrisma.fiscalCounter.upsert).mock
+        .calls[0][0];
+      expect(create.workstationId).toBe("ws-001");
+      expect(create.resolutionPrefix).toBe("FE");
+      expect(create.currentRegularNumber).toBe(1001n);
+      expect(create.currentContingencyNumber).toBe(1n);
+      expect(create.authorizedStart).toBe(1000n);
+      expect(create.authorizedEnd).toBe(1999n);
+    });
+
+    it("advances only the regular counter when the server consecutive is ahead on the same resolution", async () => {
+      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
+        createMockCounter({
+          currentRegularNumber: 1005n,
+          currentContingencyNumber: 7n,
+          authorizedStart: 1000n,
+          authorizedEnd: 1999n,
+        }),
+      );
+
+      const service = createFiscalNumberingService({
+        prisma: mockPrisma as any,
+        workstationId: "ws-001",
+      });
+
+      const result = await service.syncFromResolution({
+        prefix: "FE",
+        authorizedStart: 1000,
+        authorizedEnd: 1999,
+        nextRegularNumber: 1010,
+      });
+
+      expect(result).toEqual({ changed: true });
+      const { data } = vi.mocked(mockPrisma.fiscalCounter.update).mock
+        .calls[0][0];
+      expect(data.currentRegularNumber).toBe(1010n);
+      expect(data).not.toHaveProperty("currentContingencyNumber");
+      expect(mockPrisma.fiscalCounter.upsert).not.toHaveBeenCalled();
+    });
+
+    it("never rewinds the regular counter when the POS is ahead after an offline contingency", async () => {
+      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
+        createMockCounter({
+          currentRegularNumber: 1010n,
+          currentContingencyNumber: 5n,
+          authorizedStart: 1000n,
+          authorizedEnd: 1999n,
+        }),
+      );
+
+      const service = createFiscalNumberingService({
+        prisma: mockPrisma as any,
+        workstationId: "ws-001",
+      });
+
+      const result = await service.syncFromResolution({
+        prefix: "FE",
+        authorizedStart: 1000,
+        authorizedEnd: 1999,
+        nextRegularNumber: 1008,
+      });
+
+      expect(result).toEqual({ changed: false });
+      expect(mockPrisma.fiscalCounter.update).not.toHaveBeenCalled();
+      expect(mockPrisma.fiscalCounter.upsert).not.toHaveBeenCalled();
+    });
+
+    it("resets the regular counter to the server consecutive and preserves the contingency counter on a new resolution", async () => {
+      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
+        createMockCounter({
+          resolutionPrefix: "FE",
+          currentRegularNumber: 1500n,
+          currentContingencyNumber: 9n,
+          authorizedStart: 1000n,
+          authorizedEnd: 1999n,
+        }),
+      );
+
+      const service = createFiscalNumberingService({
+        prisma: mockPrisma as any,
+        workstationId: "ws-001",
+      });
+
+      const result = await service.syncFromResolution({
+        prefix: "FE2",
+        authorizedStart: 5000,
+        authorizedEnd: 5999,
+        nextRegularNumber: 5001,
+      });
+
+      expect(result).toEqual({ changed: true });
+      const { update } = vi.mocked(mockPrisma.fiscalCounter.upsert).mock
+        .calls[0][0];
+      expect(update.currentRegularNumber).toBe(5001n);
+      expect(update.currentContingencyNumber).toBe(9n);
+      expect(update.resolutionPrefix).toBe("FE2");
+      expect(update.authorizedStart).toBe(5000n);
+      expect(update.authorizedEnd).toBe(5999n);
+    });
+  });
 });

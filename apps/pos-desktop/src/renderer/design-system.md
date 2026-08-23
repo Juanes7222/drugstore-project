@@ -1299,3 +1299,103 @@ The cashier sells the same fast-movers all day (acetaminofén, ibuprofeno). Pinn
 - Generic-dashboard check: a "quick actions" chip row could exist in any admin tool, but here it is anchored to real keyboard mapping (F2–F6 from the sales keydown hook), to the pin affordance on search cards, and to a persisted per-terminal preference — the shape is a product of the scan-and-keyboard workflow, not a widget shelf.
 - Motion budget: zero animation. Pin toggle is an instant color swap; chip add goes through the existing single-crisp-confirmation path (cart line appears). No hover micro-animations.
 - Accessibility: row is `role="toolbar"` with translated label; each chip is a real button with name+price label; pin button has `aria-pressed` and a translated label; color never carries the state alone.
+
+---
+
+## DIAN certificate flow (added 2026-08-23)
+
+Covers the self-managed billing path (`CERTIFICATE` plan): the checkout
+result preview, the certificate-setup gate, the persistent status banner,
+and the plan-card billing-method badges. The upload itself is wired by
+pos-local (`useFiscalCertificate`); this section is the visual contract.
+
+### Pass 1 — Brief
+
+**Subject:** the pharmacy's DIAN digital certificate — the only secret file
+in the app. The screen's job: accept a PKCS#12 bundle (.pfx/.p12) + password
++ software security code with deliberate, un-rushed care (a wrong password
+rejects at DIAN; the file is the pharmacy's legal signature), then confirm
+the configured identity. Audience: the owner/manager, once a year, right
+after paying.
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Palette | Restrict Violet `#5B3E96` + Restrict Surface `#F0EBFA` frame the whole step (file target, identity card, banner NONE state); Pharma Teal for the resting CTA and success; Urgency Amber for EXPIRING banner; reserved error red only for inline errors and the EXPIRED banner; Sync Slate never (the certificate has nothing to do with connectivity being normal). | Violet is already the app's regulatory-authority color (restricted-sale confirmation, DIAN resolution card). A digital certificate is the same class of material: regulated, identity-bearing, deliberate. No new color enters the palette. |
+| Type | Subject CN, expiry date, file name, and the security code input in JetBrains Mono `tabular-nums`; all prose in Inter. | The CN is an identity string, the date is a compliance deadline, the code is DIAN-issued — every one is machine-precise data the app's mono face exists for. |
+| Layout | Full-screen gate (own surface, no shell) with a centered `max-w-md` column: page title block, then the step panel — violet-framed file target on top, two credential fields beneath in a compact ledger, upload CTA, then a quiet skip line + the security promise footer. Configured state swaps the panel for an identity card (CN + validity in mono) with the finish CTA. | Same frame as company-setup and activation; the step is short and focused, a wide layout would scatter attention. |
+| Signature | **The sealed-document frame + the security promise line.** The violet-framed file target reads as sealed material (like the restricted-sale dialog), and every state of the step ends with the same quiet footer — "El certificado se guarda cifrado en nuestros servidores. La contraseña jamás se almacena." — because for a pharmacy owner the fear is exactly that: the file or its password leaking. | One recurring motif, zero decorative additions. |
+
+```
+┌──────────────────────────────────────────┐
+│  🛡 TU CERTIFICADO DIAN                  │
+│  Sube el certificado digital de tu       │
+│  farmacia para firmar y transmitir.      │
+│  ┌────────────────────────────────────┐  │
+│  │  ┌──────────────────────────────┐  │  │
+│  │  │  🔒 [Seleccionar .pfx/.p12]  │  │  │  ← violet frame, Restrict Surface
+│  │  │  certificado_2026.pfx · 2 MB │  │  │  ← mono filename once picked
+│  │  └──────────────────────────────┘  │  │
+│  │  Contraseña del certificado         │  │
+│  │  [ ••••••••••••• ]                 │  │
+│  │  Código de seguridad del software   │  │
+│  │  [ 123456789012 ]   ← mono          │  │
+│  │  ┌──────────────────────────────┐  │  │
+│  │  │ ⚠ El archivo debe ser .pfx…  │  │  │  ← inline error (role=alert)
+│  │  └──────────────────────────────┘  │  │
+│  │  [ SUBIR CERTIFICADO ]             │  │
+│  │  Lo haré después — las ventas      │  │
+│  │  siguen en contingencia            │  │
+│  └────────────────────────────────────┘  │
+│  🔒 Certificado cifrado en el servidor · │
+│     la contraseña jamás se almacena      │
+└──────────────────────────────────────────┘
+```
+
+### Persistent banner — the ambient regulatory-debt strip
+
+The certificate reminder reuses the app's ambient-presence language (the
+sync pulse) as a **full-width strip on Home**, mounted between the welcome
+header and the quick-actions grid — the one screen every role lands on, so
+the reminder is seen without ever blocking work. Severity grows through the
+existing palette:
+
+| State | Surface | Icon | Copy tone |
+|-------|---------|------|-----------|
+| NONE (needs certificate) | Restrict Surface + violet border | ShieldAlert | Action: "Sube tu certificado DIAN para habilitar la facturación electrónica" + CTA → `certificate-setup` |
+| EXPIRING | Urgency Surface + amber border | Clock | "Vence el {{date}} — renueva antes de la fecha" + CTA |
+| EXPIRED | Error container + red border | ShieldOff | "Facturación electrónica suspendida — las ventas siguen en contingencia" + CTA |
+
+Invisible for `PROVIDER` plans and for a healthy certificate. Deliberately
+placed **only** on Home: the certificate-setup page is itself the reminder
+(its gate is skippable on purpose), and a second mount would need an edit
+to pos-local's `certificate.page.tsx`.
+
+### Plan cards & checkout result
+
+- Each `PlanCard` shows a billing-method badge under the description when
+  `billingMethod` is present: PROVIDER → Pharma Teal tint + Cloud icon
+  ("Facturación incluida"); CERTIFICATE → Restrict Violet tint + Shield icon
+  ("Tu certificado DIAN") with the short notice "subirás tu certificado
+  después del pago" and a help link that opens the `fiscal-dian-certificate`
+  help topic. `null` (legacy) renders nothing.
+- The approved checkout result previews the certificate step for
+  CERTIFICATE plans as a violet panel (icon + eyebrow "Siguiente" + body),
+  the same regulatory language the step itself uses — the customer sees the
+  commitment before the payment is even activated.
+
+### Pass 2 — Critique
+
+- Generic-dashboard check: a violet file-drop target could be pasted on a
+  generic "upload your key" screen — but here the violet is the app's
+  existing regulatory signal (restricted sales, DIAN resolution), the data
+  fields are mono-ledger language, and the security promise line is a
+  pharmacy-owner concern, not SaaS decoration. The banner strip grows
+  through three already-defined functional colors instead of introducing a
+  new alert system.
+- Motion budget: zero animation on the upload path (crisp state swaps,
+  spinner only while uploading); no banner animation; configured state is a
+  static panel swap. Nothing competes with the sale flow.
+- Accessibility: file target and fields are real labeled controls; errors
+  are `role="alert"` with text (never color alone); banner is a
+  `role="region"` with a translated label; skip is a real button with a
+  reason line, not a guilt-trip link.

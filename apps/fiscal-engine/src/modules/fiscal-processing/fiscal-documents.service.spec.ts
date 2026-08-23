@@ -14,6 +14,7 @@ import { CufeCalculator } from './builders/cufe.calculator';
 import { UblInvoiceBuilder } from './builders/ubl-invoice.builder';
 import type { FiscalTransmissionPort } from './ports/fiscal-transmission.port';
 import type { SecretReaderPort } from './ports/secret-reader.port';
+import type { TransmissionRouteResolver } from './transmission-route.resolver';
 
 function createTransmissionFake() {
   return {
@@ -100,11 +101,13 @@ describe('FiscalDocumentsService', () => {
   let prisma: DeepMockProxy<PrismaClient>;
   let transmission: ReturnType<typeof createTransmissionFake>;
   let secrets: ReturnType<typeof createSecretReaderFake>;
+  let routeResolver: { resolve: jest.Mock };
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
     transmission = createTransmissionFake();
     secrets = createSecretReaderFake();
+    routeResolver = { resolve: jest.fn().mockResolvedValue('DIAN_DIRECT') };
     (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(DOC_WITH_RESOLUTION);
     (prisma.sale.findUnique as jest.Mock).mockResolvedValue(SALE);
     (prisma.saleItem.findMany as jest.Mock).mockResolvedValue([SALE_ITEM]);
@@ -117,6 +120,7 @@ describe('FiscalDocumentsService', () => {
       new UblInvoiceBuilder(new CufeCalculator()),
       transmission,
       secrets,
+      routeResolver as unknown as TransmissionRouteResolver,
     );
   });
 
@@ -156,10 +160,9 @@ describe('FiscalDocumentsService', () => {
       expect(prisma.techProviderConfig.findFirst).toHaveBeenCalledWith({
         where: { subscriptionId: 'sub-test' },
       });
-      expect(secrets.readSecret).toHaveBeenCalledWith(
-        'sub-test',
-        'file:test-cert.json',
-      );
+      // CERTIFICATE/legacy route: the tenant's own certificate, so the
+      // reference handed to the secret reader is empty.
+      expect(secrets.readSecret).toHaveBeenCalledWith('sub-test', '');
       expect(transmission.getNumberingRange).toHaveBeenCalledWith(
         Buffer.from('fake-p12-bytes'),
         'test-password',
@@ -242,6 +245,35 @@ describe('FiscalDocumentsService', () => {
         FiscalDocumentGenerationFailedException,
       );
       expect(secrets.readSecret).not.toHaveBeenCalled();
+    });
+
+    it('resolves server-side credentials for the ClTec lookup on a PROVIDER route', async () => {
+      routeResolver.resolve.mockResolvedValue('PROVIDER');
+
+      await service.generate('fd-1');
+
+      expect(secrets.readSecret).toHaveBeenCalledWith(
+        'sub-test',
+        'file:test-cert.json',
+      );
+      expect(transmission.getNumberingRange).toHaveBeenCalled();
+    });
+
+    it('throws FiscalDocumentGenerationFailedException when a PROVIDER plan has no credentialReference', async () => {
+      routeResolver.resolve.mockResolvedValue('PROVIDER');
+      (prisma.techProviderConfig.findFirst as jest.Mock).mockResolvedValue({
+        credentialReference: null,
+        environment: '2',
+      });
+
+      await expect(service.generate('fd-1')).rejects.toThrow(
+        FiscalDocumentGenerationFailedException,
+      );
+      await expect(service.generate('fd-1')).rejects.toThrow(
+        'plan uses provider transmission but TechProviderConfig has no credentialReference',
+      );
+      expect(secrets.readSecret).not.toHaveBeenCalled();
+      expect(transmission.getNumberingRange).not.toHaveBeenCalled();
     });
 
     it('forwards the issuer softwareId into the UBL sts:softwareID', async () => {

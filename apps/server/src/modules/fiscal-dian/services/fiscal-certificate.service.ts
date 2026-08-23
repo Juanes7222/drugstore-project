@@ -4,6 +4,8 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { FiscalCertificateCryptoService } from './fiscal-certificate-crypto.service';
 import { FiscalCertificateParser } from './fiscal-certificate.parser';
+import { CertificateNitExtractor } from './certificate-nit-extractor';
+import { FISCAL_ISSUER_CONFIG_ID } from '../constants/fiscal-singleton-ids';
 import { UploadFiscalCertificateInput } from '../dto/upload-fiscal-certificate.dto';
 import { FiscalCertificateNotFoundException } from '../exceptions/fiscal-certificate-not-found.exception';
 import { FiscalCertificateInvalidException } from '../exceptions/fiscal-certificate-invalid.exception';
@@ -26,6 +28,7 @@ export class FiscalCertificateService {
     private readonly tenantContext: TenantContextService,
     private readonly crypto: FiscalCertificateCryptoService,
     private readonly parser: FiscalCertificateParser,
+    private readonly nitExtractor: CertificateNitExtractor,
   ) {}
 
   /**
@@ -58,6 +61,35 @@ export class FiscalCertificateService {
     } catch (error) {
       throw new FiscalCertificateInvalidException(
         error instanceof Error ? error.message : 'parse failed',
+      );
+    }
+
+    // The certificate must belong to the tenant's configured NIT — a
+    // certificate for another taxpayer would sign documents under the wrong
+    // identity. Unrecognizable subjects are rejected too, so the system
+    // never stores a certificate it cannot verify against the issuer.
+    const certificateNit = this.nitExtractor.extract(
+      metadata.subjectCn,
+      metadata.serialNumber,
+    );
+    if (!certificateNit) {
+      throw new FiscalCertificateInvalidException(
+        'subject does not contain a recognizable NIT (expected "NIT 900.123.456-7" or a bare NIT digit string)',
+      );
+    }
+
+    const issuerConfig = await this.prisma.fiscalIssuerConfig.findUnique({
+      where: { id: FISCAL_ISSUER_CONFIG_ID },
+      select: { nit: true },
+    });
+    if (!issuerConfig) {
+      throw new FiscalCertificateInvalidException(
+        'issuer configuration is not set — configure the tenant NIT before uploading a certificate',
+      );
+    }
+    if (!this.nitExtractor.matches(certificateNit, issuerConfig.nit)) {
+      throw new FiscalCertificateInvalidException(
+        `certificate belongs to a different NIT (${certificateNit}) than the configured issuer (${issuerConfig.nit.replace(/\D/g, '')})`,
       );
     }
 

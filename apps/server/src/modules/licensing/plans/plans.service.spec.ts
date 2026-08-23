@@ -14,6 +14,7 @@ import { DomainException } from '@/common/exceptions/domain.exception';
 import { mockDeep, mockReset } from 'jest-mock-extended';
 import type { PrismaClient } from '@pharmacy/database';
 import { HttpStatus } from '@nestjs/common';
+import { DEFAULT_PLANS } from '@pharmacy/shared-types';
 import type { CreatePlanDto, UpdatePlanDto } from './dto/plan.dto';
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,7 @@ function buildPlan(overrides: Partial<Record<string, unknown>> = {}) {
     code: 'PREMIUM',
     name: 'Premium Plan',
     description: null as string | null,
+    billingMethod: 'PROVIDER',
     pricingModel: 'FLAT',
     basePriceCents: 99000,
     currency: 'COP',
@@ -88,6 +90,54 @@ describe('PlansService', () => {
   });
 
   // -----------------------------------------------------------------------
+  // onModuleInit
+  // -----------------------------------------------------------------------
+  describe('onModuleInit', () => {
+    it('creates every DEFAULT_PLANS row with its billingMethod when missing', async () => {
+      mockPrisma.plan.findUnique.mockResolvedValue(null);
+      mockPrisma.plan.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.onModuleInit();
+
+      for (const seed of DEFAULT_PLANS) {
+        expect(mockPrisma.plan.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            code: seed.code,
+            name: seed.name,
+            billingMethod: seed.billingMethod,
+            basePriceCents: seed.basePriceCents,
+            displayOrder: seed.displayOrder,
+            isActive: seed.isActive,
+            isPublic: seed.isPublic,
+          }),
+        });
+      }
+      expect(mockPrisma.plan.create).toHaveBeenCalledTimes(DEFAULT_PLANS.length);
+    });
+
+    it('skips plans that already exist (idempotent seed)', async () => {
+      mockPrisma.plan.findUnique.mockResolvedValue(buildPlan());
+      mockPrisma.plan.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.onModuleInit();
+
+      expect(mockPrisma.plan.create).not.toHaveBeenCalled();
+    });
+
+    it('deactivates the legacy STARTER/PROFESSIONAL/ENTERPRISE plans without deleting them', async () => {
+      mockPrisma.plan.findUnique.mockResolvedValue(null);
+      mockPrisma.plan.updateMany.mockResolvedValue({ count: 3 });
+
+      await service.onModuleInit();
+
+      expect(mockPrisma.plan.updateMany).toHaveBeenCalledWith({
+        where: { code: { in: ['STARTER', 'PROFESSIONAL', 'ENTERPRISE'] } },
+        data: { isActive: false, isPublic: false },
+      });
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // create
   // -----------------------------------------------------------------------
   describe('create', () => {
@@ -108,6 +158,7 @@ describe('PlansService', () => {
           code: dto.code,
           name: dto.name,
           description: null,
+          billingMethod: 'PROVIDER',
           pricingModel: dto.pricingModel,
           basePriceCents: dto.basePriceCents,
           currency: 'COP',
@@ -123,6 +174,18 @@ describe('PlansService', () => {
         },
       });
       expect(result).toEqual(expectedPlan);
+    });
+
+    it('uses the provided billingMethod when one is supplied', async () => {
+      const dto = buildCreatePlanDto({ billingMethod: 'CERTIFICATE' });
+      mockPrisma.plan.findUnique.mockResolvedValue(null);
+      mockPrisma.plan.create.mockResolvedValue(buildPlan());
+
+      await service.create(dto);
+
+      expect(mockPrisma.plan.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ billingMethod: 'CERTIFICATE' }),
+      });
     });
 
     it('throws PLAN_CODE_EXISTS when code already exists', async () => {
@@ -229,6 +292,24 @@ describe('PlansService', () => {
         },
       });
       expect(result).toEqual(updatedPlan);
+    });
+
+    it('updates billingMethod when provided', async () => {
+      const existingPlan = buildPlan({ id: 'plan-uuid-1' });
+      mockPrisma.plan.findUnique.mockResolvedValue(existingPlan);
+      mockPrisma.plan.update.mockResolvedValue(
+        buildPlan({ id: 'plan-uuid-1', billingMethod: 'CERTIFICATE' }),
+      );
+      // name: undefined keeps the factory's default name out of the update,
+      // so the assertion stays exact about billingMethod being the only field.
+      const dto = buildUpdatePlanDto({ name: undefined, billingMethod: 'CERTIFICATE' });
+
+      await service.update('plan-uuid-1', dto);
+
+      expect(mockPrisma.plan.update).toHaveBeenCalledWith({
+        where: { id: 'plan-uuid-1' },
+        data: { billingMethod: 'CERTIFICATE' },
+      });
     });
 
     it('throws PLAN_NOT_FOUND when updating non-existent plan', async () => {

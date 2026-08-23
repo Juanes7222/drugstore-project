@@ -13,6 +13,7 @@ import { FiscalResolutionsService } from './services/fiscal-resolutions.service'
 import { FiscalCertificateService } from './services/fiscal-certificate.service';
 import { FiscalCertificateCryptoService } from './services/fiscal-certificate-crypto.service';
 import { FiscalCertificateParser } from './services/fiscal-certificate.parser';
+import { CertificateNitExtractor } from './services/certificate-nit-extractor';
 import { FiscalWebhookService } from './services/fiscal-webhook.service';
 import { WebhookSignatureVerifier } from './services/webhook-signature.verifier';
 import { WebhookEventNormalizer } from './services/webhook-event.normalizer';
@@ -50,6 +51,7 @@ import { FiscalCertificateExpirationJob } from './jobs/fiscal-certificate-expira
     FiscalCertificateService,
     FiscalCertificateCryptoService,
     FiscalCertificateParser,
+    CertificateNitExtractor,
     FiscalWebhookService,
     WebhookSignatureVerifier,
     WebhookEventNormalizer,

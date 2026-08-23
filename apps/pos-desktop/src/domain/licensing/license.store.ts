@@ -23,6 +23,12 @@ export interface LicenseState {
   planId: string | null;
   planCode: string | null;
   planName: string | null;
+  /**
+   * Fiscal billing method of the subscription plan: 'PROVIDER' (we handle
+   * DIAN transmission) or 'CERTIFICATE' (the customer uploads their own
+   * digital certificate). Legacy plans default to 'PROVIDER'.
+   */
+  billingMethod: string | null;
   planFeatures: string[];
   maxLocations: number | null;
   maxWorkstationsPerLocation: number | null;
@@ -72,7 +78,7 @@ interface LicenseActions {
     expiresAt: string;
     subscription: { id: string; status: string; currentPeriodEnd: string; gracePeriodDays: number };
     location: { id: string; name: string; address?: string | null; city?: string | null; region?: string | null } | null;
-    plan: { id: string; code: string; name: string; features: string[]; maxLocations: number; maxWorkstationsPerLocation: number };
+    plan: { id: string; code: string; name: string; billingMethod?: string | null; features: string[]; maxLocations: number; maxWorkstationsPerLocation: number };
     workstationActivation: { id: string; workstationName: string; activatedAt: string };
     hardwareFingerprint: string;
   }) => void;
@@ -118,6 +124,7 @@ const initialState: LicenseState = {
   planId: null,
   planCode: null,
   planName: null,
+  billingMethod: null,
   planFeatures: [],
   maxLocations: null,
   maxWorkstationsPerLocation: null,
@@ -165,6 +172,7 @@ export const useLicenseStore = create<LicenseStore>()(
         planId: data.plan.id,
         planCode: data.plan.code,
         planName: data.plan.name,
+        billingMethod: data.plan.billingMethod ?? 'PROVIDER',
         planFeatures: data.plan.features,
         maxLocations: data.plan.maxLocations,
         maxWorkstationsPerLocation: data.plan.maxWorkstationsPerLocation,
@@ -255,6 +263,7 @@ export const useLicenseStore = create<LicenseStore>()(
         planId: state.planId,
         planCode: state.planCode,
         planName: state.planName,
+        billingMethod: state.billingMethod,
         planFeatures: state.planFeatures,
         maxLocations: state.maxLocations,
         maxWorkstationsPerLocation: state.maxWorkstationsPerLocation,

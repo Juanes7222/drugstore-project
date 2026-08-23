@@ -62,6 +62,9 @@ export function useCompanySetup(
   const accessToken = useLocalSessionStore(
     (s) => s.session?.accessToken,
   );
+  const workstationId = useLocalSessionStore(
+    (s) => s.session?.workstationId,
+  );
 
   const status = useSyncExternalStore(
     useCompanySetupStore.subscribe,
@@ -83,8 +86,9 @@ export function useCompanySetup(
       new CompanyProfileService({
         baseUrl: options?.baseUrl ?? API_BASE_URL,
         accessToken,
+        workstationId,
       }),
-    [accessToken, options?.baseUrl],
+    [accessToken, workstationId, options?.baseUrl],
   );
 
   // Resolve the setup status once at mount: fetch the server profile when
@@ -165,6 +169,7 @@ export function useCompanySetup(
           resolutionPrefix: 'FE',
           resolutionRangeStart: null,
           resolutionRangeEnd: null,
+          softwareId: null,
         };
 
         useCompanySetupStore.getState().setParsedFromRut(draft);

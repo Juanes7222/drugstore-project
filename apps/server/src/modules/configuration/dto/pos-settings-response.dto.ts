@@ -5,6 +5,8 @@
  * to keep its local configuration and payment-method cache current.
  */
 
+import type { FiscalDocumentType, ResolutionState } from '@pharmacy/database';
+
 // ---------------------------------------------------------------------------
 // Public types (exported for use by POS clients)
 // ---------------------------------------------------------------------------
@@ -86,6 +88,32 @@ export interface SellerInfoPayload {
   resolutionPrefix: string;
 }
 
+/**
+ * Active fiscal resolution for the POS to auto-initialize its local
+ * numbering counters.
+ *
+ * The JWT access token carries no workstationId claim, so the payload is
+ * built from the subscription's most recent ACTIVE resolution (same source
+ * as SellerInfoPayload), not from a per-workstation allocation.
+ *
+ * `currentConsecutive` is the live counter from the resolution's most recent
+ * allocation: it counts documents already issued (0 = none), and the next
+ * number to print is `rangeFrom + currentConsecutive`. The
+ * FiscalResolution.currentConsecutive column itself is never incremented by
+ * the transmission pipeline and must not be used as a starting point.
+ */
+export interface PosResolutionPayload {
+  resolutionNumber: string;
+  documentType: FiscalDocumentType;
+  prefix: string;
+  rangeFrom: number;
+  rangeTo: number;
+  validFrom: string;
+  validTo: string;
+  currentConsecutive: number;
+  state: ResolutionState;
+}
+
 export interface PosSettingsResponse {
   paymentMethods: PosPaymentMethod[];
   discountLimits: DiscountLimits;
@@ -98,4 +126,11 @@ export interface PosSettingsResponse {
    * so older POS builds that do not know the field keep working.
    */
   sellerInfo?: SellerInfoPayload;
+  /**
+   * Most recent ACTIVE fiscal resolution, with its live consecutive counter.
+   * Absent when the request carries no tenant context (JWT-free first boot);
+   * null when the tenant has no ACTIVE resolution yet. Additive field: POS
+   * builds that predate it can ignore it.
+   */
+  resolution?: PosResolutionPayload | null;
 }

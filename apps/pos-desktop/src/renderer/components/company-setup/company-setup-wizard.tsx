@@ -10,11 +10,12 @@
  *
  * @category Page
  */
-import { type FC, type ReactElement, useCallback, useState } from "react";
+import { type FC, type ReactElement, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type CompanyDraft, useCompanySetup } from "@/hooks/use-company-setup";
 import { useAppDispatch } from "@/store/hooks";
-import { navigateToHome } from "@/store/slices/ui-slice";
+import { navigateToHome, setActiveScreen } from "@/store/slices/ui-slice";
+import { useLicenseStore } from "../../../domain/licensing/license.store";
 import {
   CheckIcon,
   CheckCircleIcon,
@@ -39,7 +40,8 @@ import { ResolutionStep, type ResolutionField } from "./resolution-step";
 
 type WizardView = "upload" | "review" | "resolution" | "summary" | "done";
 type StepView = "upload" | "review" | "resolution";
-type ParseSource = "rut" | "manual";
+/** Where the draft came from — RUT parse, manual typing, or saved profile. */
+type ParseSource = "rut" | "manual" | "saved";
 
 interface StepMeta {
   labelKey: string;
@@ -64,6 +66,7 @@ const EMPTY_DRAFT: CompanyDraft = {
   resolutionPrefix: "",
   resolutionRangeStart: "",
   resolutionRangeEnd: "",
+  softwareId: "",
 };
 
 const STEP_ORDER: StepView[] = ["upload", "review", "resolution"];
@@ -107,15 +110,24 @@ function formatResolutionDate(iso: string): string {
 export const CompanySetupWizard: FC = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const billingMethod = useLicenseStore((s) => s.billingMethod);
   const {
+    status,
     draft: storedDraft,
     parsedFromRut,
     uploadRutFile,
     submitCompany,
   } = useCompanySetup();
 
+  // Edit mode: the profile already exists (server or persisted store), so
+  // the wizard opens directly on the review view with the saved draft —
+  // including the resolution that was stored with it.
+  const isEditing = status === "complete" && storedDraft !== null;
+
   // ---- Flow state ----
-  const [view, setView] = useState<WizardView>("upload");
+  const [view, setView] = useState<WizardView>(() =>
+    isEditing ? "review" : "upload",
+  );
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<RutUploadErrorCode | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -123,25 +135,49 @@ export const CompanySetupWizard: FC = () => {
 
   // Editable draft, seeded from whatever pos-local already holds (a previous
   // successful parse or a stored draft) so re-entering the wizard never
-  // asks for the same data twice.
+  // asks for the same data twice. In edit mode the stored (server) draft
+  // wins over any leftover parse.
   const [draft, setDraft] = useState<CompanyDraft>(
-    () => parsedFromRut ?? storedDraft ?? EMPTY_DRAFT,
+    () =>
+      (isEditing ? storedDraft : null) ??
+      parsedFromRut ??
+      storedDraft ??
+      EMPTY_DRAFT,
   );
 
   // Where the current draft came from — set locally on parse/manual choice
   // so the review badges never depend on hook store timing.
   const [parseSource, setParseSource] = useState<ParseSource>(() =>
-    parsedFromRut ? "rut" : "manual",
+    isEditing ? "saved" : parsedFromRut ? "rut" : "manual",
   );
 
   // A successful parse means the parser already ran its NIT-DV check, so the
-  // badge reads "valid"; manual entry leaves the check digit unverified.
-  const dvStatus: DvStatus = parseSource === "rut" ? "valid" : "unknown";
+  // badge reads "valid"; a saved profile was validated on its last submit.
+  // Manual entry leaves the check digit unverified.
+  const dvStatus: DvStatus =
+    parseSource === "rut" || parseSource === "saved" ? "valid" : "unknown";
+
+  // Guards the auto-jump below: once the user has interacted with the flow
+  // (chose manual entry or uploaded a file), a late "complete" status must
+  // not yank them out of their current step.
+  const userStartedRef = useRef(false);
+
+  // Status can flip to "complete" asynchronously (profile fetch resolving
+  // after mount, e.g. entering the wizard right after login). Jump into the
+  // review view with the loaded draft instead of asking for the RUT again.
+  useEffect(() => {
+    if (view !== "upload" || userStartedRef.current) return;
+    if (status !== "complete" || !storedDraft) return;
+    setDraft(storedDraft);
+    setParseSource("saved");
+    setView("review");
+  }, [status, storedDraft, view]);
 
   // ---- Handlers ----
 
   const handleFileSelected = useCallback(
     async (file: File) => {
+      userStartedRef.current = true;
       setParseError(null);
       setIsParsing(true);
       try {
@@ -165,6 +201,7 @@ export const CompanySetupWizard: FC = () => {
   );
 
   const handleManualEntry = useCallback(() => {
+    userStartedRef.current = true;
     setParseError(null);
     setDraft(EMPTY_DRAFT);
     setParseSource("manual");
@@ -199,8 +236,17 @@ export const CompanySetupWizard: FC = () => {
   }, [draft, submitCompany]);
 
   const handleComplete = useCallback(() => {
-    dispatch(navigateToHome());
-  }, [dispatch]);
+    // Edit mode returns to the admin menu it was opened from; onboarding
+    // continues into the certificate step for self-managed plans, or into
+    // the system for plans with billing included.
+    if (isEditing) {
+      dispatch(setActiveScreen("admin-menu"));
+    } else if (useLicenseStore.getState().billingMethod === "CERTIFICATE") {
+      dispatch(setActiveScreen("certificate-setup"));
+    } else {
+      dispatch(navigateToHome());
+    }
+  }, [dispatch, isEditing]);
 
   const activeStepIndex = STEP_ORDER.indexOf(view as StepView);
 
@@ -293,7 +339,11 @@ export const CompanySetupWizard: FC = () => {
           className="pos-button pos-button-secondary inline-flex items-center gap-pos-xs"
           onClick={() => {
             setSubmitFailed(false);
-            if (view === "summary") setView("resolution");
+            // Edit mode has no upload step — back from the review view
+            // exits the wizard to the admin menu.
+            if (isEditing && view === "review") {
+              dispatch(setActiveScreen("admin-menu"));
+            } else if (view === "summary") setView("resolution");
             else if (view === "resolution") setView("review");
             else setView("upload");
           }}
@@ -354,17 +404,25 @@ export const CompanySetupWizard: FC = () => {
             aria-hidden="true"
           />
           <h1 className="mb-pos-sm text-heading font-semibold text-ink">
-            {t("company_setup.wizard.done_title")}
+            {isEditing
+              ? t("company_setup.wizard.edit_done_title")
+              : t("company_setup.wizard.done_title")}
           </h1>
           <p className="mb-pos-lg text-body text-ink-muted">
-            {t("company_setup.wizard.done_body")}
+            {isEditing
+              ? t("company_setup.wizard.edit_done_body")
+              : t("company_setup.wizard.done_body")}
           </p>
           <button
             type="button"
             className="pos-button pos-button-primary w-full py-pos-md text-ui font-bold"
             onClick={handleComplete}
           >
-            {t("company_setup.wizard.done_continue")}
+            {isEditing
+              ? t("company_setup.wizard.edit_done_continue")
+              : billingMethod === "CERTIFICATE"
+                ? t("company_setup.wizard.next_certificate_step")
+                : t("company_setup.wizard.done_continue")}
           </button>
         </div>
       </div>
@@ -384,12 +442,16 @@ export const CompanySetupWizard: FC = () => {
           <h1 className="text-heading font-bold text-ink">
             {isSummary
               ? t("company_setup.wizard.summary_title")
-              : t("company_setup.wizard.title")}
+              : isEditing
+                ? t("company_setup.wizard.edit_title")
+                : t("company_setup.wizard.title")}
           </h1>
           <p className="mt-pos-xs text-body-sm text-ink-muted">
             {isSummary
               ? t("company_setup.wizard.summary_subtitle")
-              : t("company_setup.wizard.subtitle")}
+              : isEditing
+                ? t("company_setup.wizard.edit_subtitle")
+                : t("company_setup.wizard.subtitle")}
           </p>
         </div>
 
@@ -431,16 +493,21 @@ export const CompanySetupWizard: FC = () => {
               <h2 className="mb-pos-xs text-ui font-semibold text-ink">
                 {parseSource === "rut"
                   ? t("company_setup.review.title")
-                  : t("company_setup.review.manual_title")}
+                  : parseSource === "saved"
+                    ? t("company_setup.review.saved_title")
+                    : t("company_setup.review.manual_title")}
               </h2>
               <p className="mb-pos-md text-body-sm text-ink-muted">
                 {parseSource === "rut"
                   ? t("company_setup.review.subtitle")
-                  : t("company_setup.review.manual_subtitle")}
+                  : parseSource === "saved"
+                    ? t("company_setup.review.saved_subtitle")
+                    : t("company_setup.review.manual_subtitle")}
               </p>
               <RutReviewStep
                 draft={draft}
                 isManual={parseSource === "manual"}
+                savedMode={parseSource === "saved"}
                 dvStatus={dvStatus}
                 onFieldChange={handleReviewFieldChange}
               />
@@ -545,6 +612,11 @@ const SummaryTable: FC<SummaryTableProps> = ({ draft }) => {
         "company_setup.resolution.range_end",
       )}`,
       value: `${draft.resolutionRangeStart} — ${draft.resolutionRangeEnd}`,
+      mono: true,
+    },
+    {
+      label: t("company_setup.resolution.software_id"),
+      value: draft.softwareId ?? "",
       mono: true,
     },
   ];

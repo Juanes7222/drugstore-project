@@ -2,32 +2,32 @@
  * Component tests for RutReviewStep — the editable identity/location/contact
  * ledger with the NIT-DV validation badge.
  */
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { RutReviewStep, type DvStatus } from './rut-review-step';
-import type { CompanyDraft } from '@/hooks/use-company-setup';
+import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { RutReviewStep, type DvStatus } from "./rut-review-step";
+import type { CompanyDraft } from "@/hooks/use-company-setup";
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
 const makeDraft = (overrides: Partial<CompanyDraft> = {}): CompanyDraft => ({
-  nit: '900123456',
-  dv: '8',
-  name: 'FARMACIA LOS ANDES S.A.S.',
-  regimen: 'RÉGIMEN COMÚN',
-  organizationType: 'PERSONA JURÍDICA',
-  ciiu: '4773',
-  municipio: 'MEDELLÍN',
-  municipioCode: '05001',
-  departamento: 'ANTIOQUIA',
-  address: 'CRA 45 # 12-34',
-  phone: '604 444 5678',
-  email: 'contacto@farmaciaandesa.com',
+  nit: "900123456",
+  dv: "8",
+  name: "FARMACIA LOS ANDES S.A.S.",
+  regimen: "RÉGIMEN COMÚN",
+  organizationType: "PERSONA JURÍDICA",
+  ciiu: "4773",
+  municipio: "MEDELLÍN",
+  municipioCode: "05001",
+  departamento: "ANTIOQUIA",
+  address: "CRA 45 # 12-34",
+  phone: "604 444 5678",
+  email: "contacto@farmaciaandesa.com",
   resolutionNumber: null,
   resolutionDate: null,
-  resolutionPrefix: 'FE',
+  resolutionPrefix: "FE",
   resolutionRangeStart: null,
   resolutionRangeEnd: null,
   ...overrides,
@@ -37,8 +37,8 @@ const makeDraft = (overrides: Partial<CompanyDraft> = {}): CompanyDraft => ({
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('RutReviewStep', () => {
-  it('renders every editable identity field from the draft', () => {
+describe("RutReviewStep", () => {
+  it("renders every editable identity field from the draft", () => {
     render(
       <RutReviewStep
         draft={makeDraft()}
@@ -48,25 +48,25 @@ describe('RutReviewStep', () => {
       />,
     );
 
-    expect(screen.getByLabelText('NIT (DV)')).toHaveValue('900123456');
-    expect(screen.getByLabelText('DV')).toHaveValue('8');
-    expect(screen.getByLabelText('Razón social')).toHaveValue(
-      'FARMACIA LOS ANDES S.A.S.',
+    expect(screen.getByLabelText("NIT (DV)")).toHaveValue("900123456");
+    expect(screen.getByLabelText("DV")).toHaveValue("8");
+    expect(screen.getByLabelText("Razón social")).toHaveValue(
+      "FARMACIA LOS ANDES S.A.S.",
     );
-    expect(screen.getByLabelText('Régimen tributario')).toHaveValue(
-      'RÉGIMEN COMÚN',
+    expect(screen.getByLabelText("Régimen tributario")).toHaveValue(
+      "RÉGIMEN COMÚN",
     );
-    expect(screen.getByLabelText('CIIU')).toHaveValue('4773');
-    expect(screen.getByLabelText('Municipio')).toHaveValue('MEDELLÍN');
-    expect(screen.getByLabelText('Departamento')).toHaveValue('ANTIOQUIA');
-    expect(screen.getByLabelText('Dirección')).toHaveValue('CRA 45 # 12-34');
-    expect(screen.getByLabelText('Teléfono')).toHaveValue('604 444 5678');
-    expect(screen.getByLabelText('Correo electrónico')).toHaveValue(
-      'contacto@farmaciaandesa.com',
+    expect(screen.getByLabelText("CIIU")).toHaveValue("4773");
+    expect(screen.getByLabelText("Municipio")).toHaveValue("MEDELLÍN");
+    expect(screen.getByLabelText("Departamento")).toHaveValue("ANTIOQUIA");
+    expect(screen.getByLabelText("Dirección")).toHaveValue("CRA 45 # 12-34");
+    expect(screen.getByLabelText("Teléfono")).toHaveValue("604 444 5678");
+    expect(screen.getByLabelText("Correo electrónico")).toHaveValue(
+      "contacto@farmaciaandesa.com",
     );
   });
 
-  it('renders nullable fields as empty inputs', () => {
+  it("renders nullable fields as empty inputs", () => {
     render(
       <RutReviewStep
         draft={makeDraft({ ciiu: null, municipio: null, municipioCode: null })}
@@ -76,13 +76,13 @@ describe('RutReviewStep', () => {
       />,
     );
 
-    expect(screen.getByLabelText('CIIU')).toHaveValue('');
-    expect(screen.getByLabelText('Municipio')).toHaveValue('');
-    expect(screen.getByLabelText('Código de municipio')).toHaveValue('');
+    expect(screen.getByLabelText("CIIU")).toHaveValue("");
+    expect(screen.getByLabelText("Municipio")).toHaveValue("");
+    expect(screen.getByLabelText("Código de municipio")).toHaveValue("");
   });
 
-  it.each(['valid', 'invalid', 'unknown'] as DvStatus[])(
-    'shows the %s DV badge',
+  it.each(["valid", "invalid", "unknown"] as DvStatus[])(
+    "shows the %s DV badge",
     (dvStatus) => {
       render(
         <RutReviewStep
@@ -94,17 +94,17 @@ describe('RutReviewStep', () => {
       );
 
       const label =
-        dvStatus === 'valid'
-          ? 'DV válido'
-          : dvStatus === 'invalid'
-            ? 'DV inválido'
-            : 'DV sin validar';
+        dvStatus === "valid"
+          ? "DV válido"
+          : dvStatus === "invalid"
+            ? "DV inválido"
+            : "DV sin validar";
       expect(screen.getByText(label)).toBeInTheDocument();
       expect(screen.getByText(label).closest('[role="status"]')).not.toBeNull();
     },
   );
 
-  it('labels the source banner as extracted when the RUT was parsed', () => {
+  it("labels the source banner as extracted when the RUT was parsed", () => {
     render(
       <RutReviewStep
         draft={makeDraft()}
@@ -114,10 +114,10 @@ describe('RutReviewStep', () => {
       />,
     );
 
-    expect(screen.getByText('Extraído del RUT')).toBeInTheDocument();
+    expect(screen.getByText("Extraído del RUT")).toBeInTheDocument();
   });
 
-  it('labels the source banner as manual entry when typed by hand', () => {
+  it("labels the source banner as manual entry when typed by hand", () => {
     render(
       <RutReviewStep
         draft={makeDraft()}
@@ -129,12 +129,12 @@ describe('RutReviewStep', () => {
 
     expect(
       screen.getByText(
-        'Escriba los datos tal como aparecen en el RUT de la empresa.',
+        "Escriba los datos tal como aparecen en el RUT de la empresa.",
       ),
     ).toBeInTheDocument();
   });
 
-  it('reports every field edit with its field key', async () => {
+  it("reports every field edit with its field key", async () => {
     const user = userEvent.setup();
     const onFieldChange = vi.fn();
     render(
@@ -146,17 +146,104 @@ describe('RutReviewStep', () => {
       />,
     );
 
-    await user.type(screen.getByLabelText('Razón social'), 'X');
-    await user.type(screen.getByLabelText('DV'), '8');
-    await user.type(screen.getByLabelText('CIIU'), '1');
-    await user.type(screen.getByLabelText('Código de municipio'), '2');
+    await user.type(screen.getByLabelText("Razón social"), "X");
+    await user.type(screen.getByLabelText("DV"), "8");
+    await user.type(screen.getByLabelText("CIIU"), "1");
+    await user.type(screen.getByLabelText("Código de municipio"), "2");
 
     expect(onFieldChange).toHaveBeenCalledWith(
-      'name',
-      'FARMACIA LOS ANDES S.A.S.X',
+      "name",
+      "FARMACIA LOS ANDES S.A.S.X",
     );
-    expect(onFieldChange).toHaveBeenCalledWith('dv', '88');
-    expect(onFieldChange).toHaveBeenCalledWith('ciiu', '47731');
-    expect(onFieldChange).toHaveBeenCalledWith('municipioCode', '050012');
+    expect(onFieldChange).toHaveBeenCalledWith("dv", "88");
+    expect(onFieldChange).toHaveBeenCalledWith("ciiu", "47731");
+    expect(onFieldChange).toHaveBeenCalledWith("municipioCode", "050012");
+  });
+
+  it("fills municipio, code and departamento when a catalog municipio is selected", async () => {
+    const user = userEvent.setup();
+    const onFieldChange = vi.fn();
+    render(
+      <RutReviewStep
+        draft={makeDraft({
+          municipio: "",
+          municipioCode: "",
+          departamento: "",
+        })}
+        isManual={false}
+        dvStatus="unknown"
+        onFieldChange={onFieldChange}
+      />,
+    );
+
+    await user.type(
+      screen.getByRole("combobox", { name: "Municipio" }),
+      "MEDELLIN",
+    );
+    await user.click(await screen.findByRole("option", { name: /MEDELLÍN/ }));
+
+    expect(onFieldChange).toHaveBeenCalledWith("municipio", "MEDELLÍN");
+    expect(onFieldChange).toHaveBeenCalledWith("municipioCode", "05001");
+    expect(onFieldChange).toHaveBeenCalledWith("departamento", "ANTIOQUIA");
+  });
+
+  it("shows a hint when the draft has a municipio without a catalog code", () => {
+    render(
+      <RutReviewStep
+        draft={makeDraft({
+          municipio: "PUEBLO INEXISTENTE",
+          municipioCode: null,
+          departamento: null,
+        })}
+        isManual={false}
+        dvStatus="unknown"
+        onFieldChange={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Selecciona el municipio para completar el código DANE"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Municipio" })).toHaveValue(
+      "PUEBLO INEXISTENTE",
+    );
+  });
+
+  it("resolves code and departamento from a RUT-parsed municipio name", () => {
+    const onFieldChange = vi.fn();
+    render(
+      <RutReviewStep
+        draft={makeDraft({
+          municipio: "MEDELLÍN",
+          municipioCode: null,
+          departamento: "ANTIOQUIA",
+        })}
+        isManual={false}
+        dvStatus="valid"
+        onFieldChange={onFieldChange}
+      />,
+    );
+
+    expect(onFieldChange).toHaveBeenCalledWith("municipioCode", "05001");
+    expect(onFieldChange).toHaveBeenCalledWith("departamento", "ANTIOQUIA");
+  });
+
+  it("preselects the matching catalog municipio when the draft has a resolvable name", () => {
+    render(
+      <RutReviewStep
+        draft={makeDraft({
+          municipio: "MEDELLÍN",
+          municipioCode: null,
+          departamento: null,
+        })}
+        isManual={false}
+        dvStatus="valid"
+        onFieldChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("combobox", { name: "Municipio" })).toHaveValue(
+      "MEDELLÍN",
+    );
   });
 });

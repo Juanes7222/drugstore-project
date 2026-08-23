@@ -14,9 +14,13 @@ import {
   estimatePeriodAmountCents,
   type CheckoutPlan,
 } from "../../../domain/licensing/wompi-checkout.service";
-import { AlertTriangleIcon, Building2Icon, CheckCircleIcon, CreditCardIcon, MonitorIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, Building2Icon, CheckCircleIcon, CloudIcon, CreditCardIcon, HelpCircleIcon, MonitorIcon, ShieldIcon } from "@/components/ui/icons";
 import { LoaderIcon } from "@/components/ui/icons/animated";
+import { useAssistantStore } from "../../../stores/assistant.store";
 import { FEATURE_LABELS } from "./license-status.helpers";
+
+/** Help topic id for the DIAN digital certificate explainer. */
+const DIAN_CERTIFICATE_HELP_TOPIC = "fiscal-dian-certificate";
 
 export interface PlanCatalogProps {
   plans: CheckoutPlan[];
@@ -112,13 +116,53 @@ interface PlanCardProps {
 
 const PlanCard: FC<PlanCardProps> = ({ plan, period, onSelect }) => {
   const { t } = useTranslation();
+  const openHelp = useAssistantStore((s) => s.openHelp);
   const amountCents = estimatePeriodAmountCents(plan.basePriceCents, period);
   const discountKey = PERIOD_DISCOUNT_KEY[period];
+  const isCertificatePlan = plan.billingMethod === "CERTIFICATE";
 
   return (
     <article className="flex flex-col rounded-pos border border-border bg-panel p-pos-lg shadow-pos-panel">
       <h3 className="text-ui font-semibold text-ink">{plan.name}</h3>
       <p className="mt-pos-xs mb-pos-md text-body-sm text-ink-muted">{plan.description}</p>
+
+      {/* Billing method — how DIAN transmission happens. Hidden for legacy
+          plans whose billingMethod is null. */}
+      {plan.billingMethod && (
+        <div className="mb-pos-md">
+          <div className="flex flex-wrap items-center gap-pos-sm">
+            <span
+              className={`inline-flex items-center gap-pos-xs rounded-pos px-pos-sm py-0.5 text-caption font-semibold ${
+                isCertificatePlan
+                  ? "bg-restrict/10 text-restrict"
+                  : "bg-pharma/10 text-pharma"
+              }`}
+            >
+              {isCertificatePlan ? (
+                <ShieldIcon className="h-3.5 w-3.5" aria-hidden="true" />
+              ) : (
+                <CloudIcon className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              {t(`licensing.plans.card.billing_method.${plan.billingMethod}`)}
+            </span>
+            {isCertificatePlan && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-pos-xs text-caption font-medium underline underline-offset-2 transition-colors hover:text-pharma"
+                style={{ color: "var(--color-restrict)" }}
+                aria-label={t("licensing.plans.card.billing_help_aria")}
+                onClick={() => openHelp(DIAN_CERTIFICATE_HELP_TOPIC)}
+              >
+                <HelpCircleIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                {t("licensing.plans.card.billing_help")}
+              </button>
+            )}
+          </div>
+          <p className="mt-pos-xs text-caption text-ink-muted">
+            {t(`licensing.plans.card.billing_note.${plan.billingMethod}`)}
+          </p>
+        </div>
+      )}
 
       {/* Price line — mono, tabular, with period unit so a quarterly total
           can never be read as a monthly rate. */}

@@ -29,6 +29,7 @@ export {
 export {
   LicenseStatus,
   PlanFeature,
+  PlanBillingMethod,
   SubscriptionStatus,
   PricingModel,
   BillingPeriod,

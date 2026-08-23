@@ -2,8 +2,9 @@
  * Unit tests for ConfigSyncService — pulling POS settings from server.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { createConfigSyncService, type ConfigSyncService, ConfigSyncHttpError } from "./config-sync.service";
+import { createConfigSyncService, type ConfigSyncService, ConfigSyncHttpError, type PosResolutionPayload } from "./config-sync.service";
 import type { SyncHttpClient } from "../catalog/catalog-sync.service";
+import type { FiscalNumberingService } from "../fiscal/numbering.service";
 import { useLocalConfigStore } from "./local-config.store";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,21 @@ const makeMockPrisma = () => {
 
 const makeMockHttpClient = (): SyncHttpClient => ({
   get: vi.fn(),
+});
+
+const makeResolutionPayload = (
+  overrides: Partial<PosResolutionPayload> = {},
+): PosResolutionPayload => ({
+  resolutionNumber: "18760000001234",
+  documentType: "INVOICE",
+  prefix: "FE",
+  rangeFrom: 1000,
+  rangeTo: 1999,
+  validFrom: "2026-01-15",
+  validTo: "2031-01-15",
+  currentConsecutive: 1005,
+  state: "ACTIVE",
+  ...overrides,
 });
 
 // ---------------------------------------------------------------------------
@@ -286,6 +302,151 @@ describe("ConfigSyncService", () => {
       expect(seller.name).toBe("DROGUERÍA LA ESPERANZA");
       expect(seller.address).toBe("CL 10 # 5-20");
       expect(seller.resolutionPrefix).toBe("SE");
+    });
+
+    it("calls syncFromResolution with the ACTIVE resolution range and server consecutive", async () => {
+      const syncFromResolution = vi.fn().mockResolvedValue({ changed: true });
+      const numberingService = {
+        syncFromResolution,
+      } as unknown as FiscalNumberingService;
+      const svc = createConfigSyncService(prisma, {
+        baseUrl: "http://localhost:3000",
+        httpClient: http,
+        numberingService,
+      });
+
+      await svc.applyConfiguration({
+        paymentMethods: [],
+        discountLimits,
+        alertThresholds,
+        syncDefaults,
+        resolution: makeResolutionPayload(),
+      });
+
+      expect(syncFromResolution).toHaveBeenCalledWith({
+        prefix: "FE",
+        authorizedStart: 1000,
+        authorizedEnd: 1999,
+        nextRegularNumber: 1005,
+      });
+    });
+
+    it("calls syncFromResolution when the resolution is EXPIRING", async () => {
+      const syncFromResolution = vi.fn().mockResolvedValue({ changed: true });
+      const numberingService = {
+        syncFromResolution,
+      } as unknown as FiscalNumberingService;
+      const svc = createConfigSyncService(prisma, {
+        baseUrl: "http://localhost:3000",
+        httpClient: http,
+        numberingService,
+      });
+
+      await svc.applyConfiguration({
+        paymentMethods: [],
+        discountLimits,
+        alertThresholds,
+        syncDefaults,
+        resolution: makeResolutionPayload({ state: "EXPIRING" }),
+      });
+
+      expect(syncFromResolution).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      { state: "EXHAUSTED" },
+      { state: "EXPIRED" },
+      { state: null },
+    ])("skips the counter sync when the resolution state is $state", async ({ state }) => {
+      const syncFromResolution = vi.fn().mockResolvedValue({ changed: true });
+      const numberingService = {
+        syncFromResolution,
+      } as unknown as FiscalNumberingService;
+      const svc = createConfigSyncService(prisma, {
+        baseUrl: "http://localhost:3000",
+        httpClient: http,
+        numberingService,
+      });
+
+      await svc.applyConfiguration({
+        paymentMethods: [],
+        discountLimits,
+        alertThresholds,
+        syncDefaults,
+        resolution: makeResolutionPayload({ state: state as PosResolutionPayload["state"] }),
+      });
+
+      expect(syncFromResolution).not.toHaveBeenCalled();
+    });
+
+    it("skips the counter sync when the payload has no resolution", async () => {
+      const syncFromResolution = vi.fn().mockResolvedValue({ changed: true });
+      const numberingService = {
+        syncFromResolution,
+      } as unknown as FiscalNumberingService;
+      const svc = createConfigSyncService(prisma, {
+        baseUrl: "http://localhost:3000",
+        httpClient: http,
+        numberingService,
+      });
+
+      await svc.applyConfiguration({
+        paymentMethods: [],
+        discountLimits,
+        alertThresholds,
+        syncDefaults,
+      });
+
+      expect(syncFromResolution).not.toHaveBeenCalled();
+    });
+
+    it("keeps applying the configuration when the counter sync throws", async () => {
+      const syncFromResolution = vi
+        .fn()
+        .mockRejectedValue(new Error("counter lock"));
+      const numberingService = {
+        syncFromResolution,
+      } as unknown as FiscalNumberingService;
+      const svc = createConfigSyncService(prisma, {
+        baseUrl: "http://localhost:3000",
+        httpClient: http,
+        numberingService,
+      });
+
+      await expect(
+        svc.applyConfiguration({
+          paymentMethods: [],
+          discountLimits,
+          alertThresholds,
+          syncDefaults,
+          sellerInfo: {
+            nit: "901.234.567-8",
+            name: "DROGUERÍA LA ESPERANZA",
+            address: null,
+            phone: null,
+            resolutionNumber: null,
+            resolutionDate: null,
+            resolutionPrefix: "SE",
+          },
+          resolution: makeResolutionPayload(),
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(useLocalConfigStore.getState().sellerInfo.nit).toBe(
+        "901.234.567-8",
+      );
+    });
+
+    it("ignores the resolution when no numbering service is injected", async () => {
+      await expect(
+        service.applyConfiguration({
+          paymentMethods: [],
+          discountLimits,
+          alertThresholds,
+          syncDefaults,
+          resolution: makeResolutionPayload(),
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 

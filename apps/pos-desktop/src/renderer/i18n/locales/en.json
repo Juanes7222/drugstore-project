@@ -1823,6 +1823,8 @@
     "wizard": {
       "title": "Set up your company to invoice",
       "subtitle": "With this data the DIAN recognizes your pharmacy as an electronic issuer. Asked only once.",
+      "edit_title": "Edit company details",
+      "edit_subtitle": "Update the electronic invoicing (DIAN) issuer details. Changes are saved when you finish.",
       "steps_aria": "Setup steps",
       "step_rut": "RUT",
       "step_review": "Review",
@@ -1836,7 +1838,10 @@
       "submit_error": "The details could not be saved. Check the connection and try again.",
       "done_title": "All set! Company configured",
       "done_body": "Your pharmacy can now issue electronic invoicing (DIAN).",
-      "done_continue": "Continue to the system"
+      "done_continue": "Continue to the system",
+      "edit_done_title": "Changes saved",
+      "edit_done_body": "The electronic invoicing (DIAN) issuer details have been updated.",
+      "edit_done_continue": "Back to settings"
     },
     "upload": {
       "dropzone_hint": "Drag the RUT (PDF) here or click to browse",
@@ -1858,7 +1863,10 @@
       "subtitle": "Fix any difference with the RUT before continuing.",
       "manual_title": "Company details",
       "manual_subtitle": "Type the details exactly as they appear in the company's RUT.",
+      "saved_title": "Edit company details",
+      "saved_subtitle": "Loaded from the saved profile. Fix anything needed before continuing.",
       "extracted_badge": "Extracted from RUT",
+      "saved_badge": "Loaded from saved profile",
       "dv_valid": "Check digit OK",
       "dv_invalid": "Check digit invalid",
       "dv_unknown": "Check digit unverified",
@@ -1872,6 +1880,8 @@
       "ciiu": "CIIU",
       "municipio": "Municipality",
       "municipio_code": "Municipality code",
+      "select_municipio": "Select the municipality",
+      "municipio_code_hint": "Select the municipality to complete the DANE code",
       "departamento": "Department",
       "address": "Address",
       "phone": "Phone",
@@ -1886,7 +1896,9 @@
       "prefix_placeholder": "e.g. SETP",
       "range_start": "From",
       "range_end": "To",
-      "range_note": "Numbering range authorized for your invoices."
+      "range_note": "Numbering range authorized for your invoices.",
+      "software_id": "DIAN software ID",
+      "software_id_helper": "Complete this when the software habilitación is ready — leave it empty if you don't have it yet."
     }
   },
   "update": {
@@ -1900,15 +1912,24 @@
   },
   "config": {
     "title": "System Configuration",
-    "tabs": {
+"tabs": {
       "company": "Company",
       "fiscal": "Fiscal",
       "operation": "Operation",
-      "preferences": "System Preferences",
-      "user_preferences": "User Preferences",
+      "preferences": "System preferences",
+      "user_preferences": "User preferences",
       "purchases": "Purchases",
       "sales": "Sales",
       "delivery": "Delivery"
+    },
+    "company_setup": {
+      "title": "Company details (electronic invoicing)",
+      "description": "The NIT, business name and DIAN resolution that identify the pharmacy as an electronic issuer.",
+      "nit": "NIT",
+      "name": "Business name",
+      "edit": "Edit",
+      "configure": "Set up",
+      "empty": "Issuer details are not configured yet. Set them up to issue electronic invoices."
     },
     "delivery": {
       "title": "Delivery",

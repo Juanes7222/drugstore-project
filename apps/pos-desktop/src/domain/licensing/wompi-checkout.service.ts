@@ -36,6 +36,12 @@ export interface CheckoutPlan {
   extraWorkstationPriceCents: number | null;
   features: string[];
   displayOrder: number;
+  /**
+   * Fiscal billing method: 'PROVIDER' (we handle DIAN transmission) or
+   * 'CERTIFICATE' (customer uploads their own digital certificate).
+   * Legacy plans without the field are treated as 'PROVIDER'.
+   */
+  billingMethod?: string | null;
 }
 
 export interface CreateCheckoutSessionRequest {

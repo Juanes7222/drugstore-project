@@ -42,6 +42,7 @@ import { LicenseStatusPage } from "@/components/licensing/license-status.page";
 import { LicensingPlansPage } from "@/components/licensing/licensing-plans.page";
 import { ActivationPage } from "@/components/licensing/activation.page";
 import { CompanySetupWizard } from "@/components/company-setup/company-setup-wizard";
+import { CertificateSetupPage } from "../domain/fiscal/certificate.page";
 import { PrintingContainer } from "@/components/printing/printing-container";
 import { PrintersPage } from "@/components/printing/printers.page";
 import { PrintQueuePage } from "@/components/printing/print-queue.page";
@@ -300,14 +301,25 @@ const InnerApp: FC = () => {
 
   // Company setup — fiscal emitter onboarding. Rendered full-screen like the
   // activation page: it is an onboarding gate, not a workspace screen.
-  if (activeScreen === "company-setup") {
-    return (
-      <>
-        <CompanySetupWizard />
-        {assistantLayer}
-      </>
-    );
-  }
+if (activeScreen === "company-setup") {
+      return (
+        <>
+          <CompanySetupWizard />
+          {assistantLayer}
+        </>
+      );
+    }
+
+    // Certificate setup - DIAN digital certificate for the self-managed
+    // billing plan. Full-screen onboarding gate like company-setup.
+    if (activeScreen === "certificate-setup") {
+      return (
+        <>
+          <CertificateSetupPage />
+          {assistantLayer}
+        </>
+      );
+    }
 
   if (activeScreen === "user-management") {
     return (

@@ -7,6 +7,7 @@ import { PrismaClient } from '@pharmacy/database';
 import { FiscalIssuerConfigService } from './fiscal-issuer-config.service';
 import { FiscalIssuerConfigNotSetException } from './exceptions/fiscal-issuer-config-not-set.exception';
 import { FISCAL_ISSUER_CONFIG_ID } from './constants/fiscal-singleton-ids';
+import { QueryFiscalResolutionsDto } from './dto/query-fiscal-resolutions.dto';
 
 describe('FiscalIssuerConfigService', () => {
   let service: FiscalIssuerConfigService;
@@ -17,11 +18,17 @@ describe('FiscalIssuerConfigService', () => {
     hasTenant: jest.fn(() => true),
   };
 
+  const mockResolutionsService = {
+    findAll: jest.fn(),
+  };
+
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
+    jest.clearAllMocks();
     service = new FiscalIssuerConfigService(
       prisma as any,
       mockTenantContext as any,
+      mockResolutionsService as any,
     );
   });
 
@@ -34,17 +41,52 @@ describe('FiscalIssuerConfigService', () => {
       businessName: 'Mi Droguería SAS',
     };
 
-    it('returns the config when it exists', async () => {
+    it('returns the config with the most recent active resolution', async () => {
       (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue(
         mockConfig,
       );
+      const resolution = {
+        id: 'resolution-1',
+        prefix: 'SETP',
+        rangeFrom: 1,
+        rangeTo: 500,
+        validFrom: new Date('2026-01-01'),
+        validTo: new Date('2027-01-01'),
+        state: 'ACTIVE',
+      };
+      mockResolutionsService.findAll.mockResolvedValue({
+        data: [resolution],
+        total: 1,
+        page: 1,
+        pageSize: 1,
+      });
 
       const result = await service.find();
 
-      expect(result).toEqual(mockConfig);
+      expect(result).toEqual({ ...mockConfig, resolution });
       expect(prisma.fiscalIssuerConfig.findUnique).toHaveBeenCalledWith({
         where: { id: FISCAL_ISSUER_CONFIG_ID },
       });
+      const query: QueryFiscalResolutionsDto =
+        mockResolutionsService.findAll.mock.calls[0][0];
+      expect(query.state).toBe('ACTIVE');
+      expect(query.pageSize).toBe(1);
+    });
+
+    it('returns resolution null when no active resolution exists', async () => {
+      (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue(
+        mockConfig,
+      );
+      mockResolutionsService.findAll.mockResolvedValue({
+        data: [],
+        total: 0,
+        page: 1,
+        pageSize: 1,
+      });
+
+      const result = await service.find();
+
+      expect(result).toEqual({ ...mockConfig, resolution: null });
     });
 
     it('throws FiscalIssuerConfigNotSetException when config has never been set', async () => {
@@ -55,6 +97,7 @@ describe('FiscalIssuerConfigService', () => {
       await expect(service.find()).rejects.toThrow(
         FiscalIssuerConfigNotSetException,
       );
+      expect(mockResolutionsService.findAll).not.toHaveBeenCalled();
     });
   });
 

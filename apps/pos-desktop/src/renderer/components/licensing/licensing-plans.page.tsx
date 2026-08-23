@@ -239,6 +239,7 @@ export const LicensingPlansPage: FC = () => {
       <CheckoutResult
         kind={resultKind}
         activationCode={pendingActivationCode}
+        requiresCertificate={selectedPlan?.billingMethod === "CERTIFICATE"}
         onActivate={handleActivate}
         onRetryPayment={handleRetryOpenPayment}
         onRestart={handleRestart}

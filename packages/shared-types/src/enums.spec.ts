@@ -12,7 +12,7 @@
  */
 
 const PRISMA_ENUMS = {
-  RoleType: ['CASHIER', 'INVENTORY_ASSISTANT', 'ADMIN', 'ACCOUNTANT'] as const,
+  RoleType: ['SAAS_ADMIN', 'OWNER', 'MANAGER', 'CASHIER', 'INVENTORY_ASSISTANT', 'ADMIN', 'ACCOUNTANT'] as const,
   SaleType: ['FREE_SALE', 'PRESCRIPTION', 'CONTROLLED_SUBSTANCE'] as const,
   SaleOperationalState: ['IN_PROGRESS', 'CONFIRMED', 'ANNULLED', 'ABANDONED'] as const,
   FiscalDocumentType: ['INVOICE', 'POS_TICKET', 'CREDIT_NOTE', 'DEBIT_NOTE', 'SUPPORT_DOCUMENT'] as const,

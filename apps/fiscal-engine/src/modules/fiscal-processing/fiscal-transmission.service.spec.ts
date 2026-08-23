@@ -13,6 +13,7 @@ import { FiscalDocumentRejectedException } from './exceptions/fiscal-document-re
 import type { FiscalTransmissionPort } from './ports/fiscal-transmission.port';
 import type { SecretReaderPort, SecretData } from './ports/secret-reader.port';
 import type { SendResult } from './ports/transmission-results.type';
+import type { TransmissionRouteResolver } from './transmission-route.resolver';
 
 // Hand-written fakes for the ports, per the hexagonal convention: the
 // contract lives in the test so port/adapter drift surfaces as a failure
@@ -49,18 +50,25 @@ describe('FiscalTransmissionService', () => {
   let prisma: DeepMockProxy<PrismaClient>;
   let transmission: ReturnType<typeof createTransmissionFake>;
   let secrets: ReturnType<typeof createSecretReaderFake>;
+  let routeResolver: { resolve: jest.Mock };
 
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
     transmission = createTransmissionFake();
     secrets = createSecretReaderFake();
+    routeResolver = { resolve: jest.fn().mockResolvedValue('DIAN_DIRECT') };
     (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(PENDING_DOC);
     (prisma.fiscalDocument.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
     (prisma.techProviderConfig.findFirst as jest.Mock).mockResolvedValue({
       credentialReference: 'file:test-cert.json',
       environment: '2',
     });
-    service = new FiscalTransmissionService(prisma as any, transmission, secrets);
+    service = new FiscalTransmissionService(
+      prisma as any,
+      transmission,
+      secrets,
+      routeResolver as unknown as TransmissionRouteResolver,
+    );
   });
 
   describe('transmit', () => {
@@ -91,10 +99,9 @@ describe('FiscalTransmissionService', () => {
       expect(prisma.techProviderConfig.findFirst).toHaveBeenCalledWith({
         where: { subscriptionId: 'sub-test' },
       });
-      expect(secrets.readSecret).toHaveBeenCalledWith(
-        'sub-test',
-        'file:test-cert.json',
-      );
+      // CERTIFICATE/legacy route: the tenant's own certificate, so the
+      // reference handed to the secret reader is empty.
+      expect(secrets.readSecret).toHaveBeenCalledWith('sub-test', '');
       expect(transmission.signAndSend).toHaveBeenCalledWith(
         '<Invoice/>',
         'FV-DEMO-000001.xml',
@@ -115,6 +122,54 @@ describe('FiscalTransmissionService', () => {
           ptResponseMessage: 'Documento procesado',
         },
       });
+    });
+
+    it('resolves server-side credentials and stamps the provider type on a PROVIDER route', async () => {
+      routeResolver.resolve.mockResolvedValue('PROVIDER');
+      (prisma.techProviderConfig.findFirst as jest.Mock).mockResolvedValue({
+        credentialReference: 'file:test-cert.json',
+        environment: '2',
+        providerType: 'TECH_PROVIDER',
+      });
+      transmission.signAndSend.mockResolvedValue({
+        isValid: true,
+        xmlDocumentKey: 'cufe-123',
+        signedXml: '<SignedInvoice/>',
+        statusMessage: 'Documento procesado',
+        statusCode: '00',
+      });
+
+      await service.transmit('fd-1');
+
+      expect(secrets.readSecret).toHaveBeenCalledWith(
+        'sub-test',
+        'file:test-cert.json',
+      );
+      expect(prisma.fiscalDocument.updateMany).toHaveBeenCalledWith({
+        where: { id: 'fd-1', fiscalState: 'PENDING_SIGNATURE' },
+        data: {
+          fiscalState: 'IN_TRANSMISSION',
+          providerType: 'TECH_PROVIDER',
+          lastRetryAt: expect.any(Date),
+        },
+      });
+    });
+
+    it('throws FiscalTransmissionFailedException when a PROVIDER plan has no credentialReference', async () => {
+      routeResolver.resolve.mockResolvedValue('PROVIDER');
+      (prisma.techProviderConfig.findFirst as jest.Mock).mockResolvedValue({
+        credentialReference: null,
+        environment: '2',
+      });
+
+      await expect(service.transmit('fd-1')).rejects.toThrow(
+        FiscalTransmissionFailedException,
+      );
+      await expect(service.transmit('fd-1')).rejects.toThrow(
+        'plan uses provider transmission but TechProviderConfig has no credentialReference',
+      );
+      expect(secrets.readSecret).not.toHaveBeenCalled();
+      expect(prisma.fiscalDocument.updateMany).not.toHaveBeenCalled();
     });
 
     it('throws FiscalTransmissionFailedException when the document does not exist', async () => {

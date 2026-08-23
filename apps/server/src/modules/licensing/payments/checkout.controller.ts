@@ -50,6 +50,7 @@ export class CheckoutController {
       code: p.code,
       name: p.name,
       description: p.description,
+      billingMethod: p.billingMethod,
       pricingModel: p.pricingModel,
       basePriceCents: p.basePriceCents,
       currency: p.currency,

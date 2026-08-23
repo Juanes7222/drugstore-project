@@ -7,6 +7,7 @@ import type { FiscalTransmissionPort } from './ports/fiscal-transmission.port';
 import { FISCAL_TRANSMISSION_PORT } from './ports/fiscal-transmission.port';
 import type { SecretReaderPort } from './ports/secret-reader.port';
 import { SECRET_READER_PORT } from './ports/secret-reader.port';
+import { TransmissionRouteResolver } from './transmission-route.resolver';
 
 /**
  * Orchestrates the generation of a fiscal document's UBL XML and CUFE.
@@ -28,6 +29,7 @@ export class FiscalDocumentsService {
     private readonly transmission: FiscalTransmissionPort,
     @Inject(SECRET_READER_PORT)
     private readonly secrets: SecretReaderPort,
+    private readonly routeResolver: TransmissionRouteResolver,
   ) {}
 
   /**
@@ -70,9 +72,20 @@ export class FiscalDocumentsService {
 
     // ── Resolve secrets and fetch ClTec from DIAN ──
     const techConfig = await this.loadTechProviderConfig(fiscalDocumentId);
+
+    // Same party as transmission: the plan's billingMethod picks between our
+    // server-side credential (PROVIDER) and the tenant's certificate.
+    const route = await this.routeResolver.resolve(doc.subscriptionId);
+    if (route === 'PROVIDER' && !techConfig.credentialReference) {
+      throw new FiscalDocumentGenerationFailedException(
+        fiscalDocumentId,
+        'plan uses provider transmission but TechProviderConfig has no credentialReference configured server-side',
+      );
+    }
+
     const secretData = await this.secrets.readSecret(
       doc.subscriptionId,
-      techConfig.credentialReference ?? '',
+      route === 'PROVIDER' ? techConfig.credentialReference ?? '' : '',
     );
 
     const { clTec } = await this.transmission.getNumberingRange(

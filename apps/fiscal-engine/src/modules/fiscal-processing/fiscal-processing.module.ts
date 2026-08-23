@@ -13,6 +13,9 @@ import {
 } from './ports';
 import { SoapFiscalTransmissionAdapter } from './adapters/soap-fiscal-transmission.adapter';
 import { DbCertificateSecretReaderAdapter } from './adapters/db-certificate-secret-reader.adapter';
+import { FileSystemSecretReaderAdapter } from './adapters/file-system-secret-reader.adapter';
+import { RoutedSecretReaderAdapter } from './adapters/routed-secret-reader.adapter';
+import { TransmissionRouteResolver } from './transmission-route.resolver';
 
 @Module({
   imports: [
@@ -27,13 +30,16 @@ import { DbCertificateSecretReaderAdapter } from './adapters/db-certificate-secr
     ContingencyResultWriter,
     CufeCalculator,
     UblInvoiceBuilder,
+    TransmissionRouteResolver,
+    DbCertificateSecretReaderAdapter,
+    FileSystemSecretReaderAdapter,
     {
       provide: FISCAL_TRANSMISSION_PORT,
       useClass: SoapFiscalTransmissionAdapter,
     },
     {
       provide: SECRET_READER_PORT,
-      useClass: DbCertificateSecretReaderAdapter,
+      useClass: RoutedSecretReaderAdapter,
     },
   ],
 })

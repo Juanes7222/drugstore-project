@@ -27,6 +27,7 @@ import { isOnline } from '../../common/is-online';
 import { PaymentMethodSyncService } from '../catalog/payment-method-sync.service';
 import { useLocalConfigStore } from './local-config.store';
 import type { SyncHttpClient } from '../catalog/catalog-sync.service';
+import type { FiscalNumberingService } from '../fiscal/numbering.service';
 
 // ---------------------------------------------------------------------------
 // Types matching the server's PosSettingsResponse
@@ -107,6 +108,27 @@ export interface SellerInfoPayload {
   resolutionPrefix: string;
 }
 
+export type PosResolutionState =
+  | 'ACTIVE'
+  | 'EXPIRING'
+  | 'EXHAUSTED'
+  | 'EXPIRED';
+
+/** Tenant's numbering resolution, delivered so the workstation counters
+ *  can be initialized automatically (no manual entry by the manager). */
+export interface PosResolutionPayload {
+  resolutionNumber: string;
+  documentType: string;
+  prefix: string;
+  rangeFrom: number;
+  rangeTo: number;
+  validFrom: string;
+  validTo: string;
+  /** Next number to issue (range start + emitted count). */
+  currentConsecutive: number;
+  state: PosResolutionState;
+}
+
 export interface PosSettingsPayload {
   paymentMethods: PosPaymentMethodPayload[];
   discountLimits: DiscountLimitsPayload;
@@ -120,6 +142,11 @@ export interface PosSettingsPayload {
    * instead of being reset to the placeholder.
    */
   sellerInfo?: SellerInfoPayload;
+  /**
+   * Active numbering resolution, or null when the tenant has none.
+   * Absent on JWT-free boots. Drives automatic counter initialization.
+   */
+  resolution?: PosResolutionPayload | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +160,11 @@ export interface ConfigSyncConfig {
   httpClient?: SyncHttpClient;
   /** Optional auth token for protected endpoints. */
   accessToken?: string;
+  /**
+   * Fiscal numbering service for automatic counter initialization from
+   * the tenant's active resolution.
+   */
+  numberingService?: FiscalNumberingService;
 }
 
 export const createConfigSyncService = (
@@ -150,6 +182,7 @@ export class ConfigSyncService {
   private readonly http: SyncHttpClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly numberingService?: FiscalNumberingService;
   private readonly paymentMethodSync: PaymentMethodSyncService;
 
   constructor(
@@ -159,6 +192,7 @@ export class ConfigSyncService {
     this.http = config.httpClient ?? defaultHttpClient;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
+    this.numberingService = config.numberingService;
     this.paymentMethodSync = new PaymentMethodSyncService(_prisma);
   }
 
@@ -236,6 +270,27 @@ export class ConfigSyncService {
       syncDefaults: payload.syncDefaults,
       sellerInfo: payload.sellerInfo,
     });
+
+    // Step 3: initialize the fiscal counters from the tenant's active
+    // resolution. A sync failure must not break the rest of the config
+    // pull — the manager can still initialize counters manually.
+    const resolution = payload.resolution;
+    if (
+      resolution &&
+      (resolution.state === 'ACTIVE' || resolution.state === 'EXPIRING') &&
+      this.numberingService
+    ) {
+      try {
+        await this.numberingService.syncFromResolution({
+          prefix: resolution.prefix,
+          authorizedStart: resolution.rangeFrom,
+          authorizedEnd: resolution.rangeTo,
+          nextRegularNumber: resolution.currentConsecutive,
+        });
+      } catch (error) {
+        console.error('[ConfigSyncService] Resolution sync failed:', error);
+      }
+    }
   }
 
   // -----------------------------------------------------------------------

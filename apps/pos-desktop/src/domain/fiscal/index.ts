@@ -96,3 +96,21 @@ export {
   AdjustmentAlreadyReversedException,
   AdjustmentConflictException,
 } from './local-adjustment.exceptions';
+
+// DIAN digital certificate (self-managed billing plan)
+export { FiscalCertificateService } from './certificate.service';
+export type {
+  FiscalCertificateSummary,
+  CertificateUploadInput,
+  CertificateValidationResult,
+  FiscalCertificateHttpClient,
+  FiscalCertificateServiceConfig,
+} from './certificate.service';
+export { useCertificateStore, CERTIFICATE_EXPIRY_WARNING_DAYS } from './certificate.store';
+export type { CertificateStatus, CertificateSummary } from './certificate.store';
+export {
+  CertificateInvalidFileException,
+  CertificateUploadRejectedException,
+  CertificateUploadOfflineException,
+} from './exceptions';
+export type { CertificateValidationCode } from './exceptions';

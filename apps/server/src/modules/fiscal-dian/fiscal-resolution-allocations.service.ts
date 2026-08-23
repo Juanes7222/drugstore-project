@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
+import type { FiscalResolutionAllocation } from '@pharmacy/database';
 import { CreateFiscalResolutionAllocationDto } from './dto/create-fiscal-resolution-allocation.dto';
 import { AllocationRangeInvalidException } from './exceptions/allocation-range-invalid.exception';
 
@@ -28,6 +29,16 @@ export class FiscalResolutionAllocationsService {
   async findById(id: string): Promise<any> {
     return this.prisma.fiscalResolutionAllocation.findUnique({
       where: { id },
+    });
+  }
+
+  /** Returns the most recently allocated range of a resolution, or null. */
+  async findLatestForResolution(
+    resolutionId: string,
+  ): Promise<FiscalResolutionAllocation | null> {
+    return this.prisma.fiscalResolutionAllocation.findFirst({
+      where: { resolutionId },
+      orderBy: { allocatedAt: 'desc' },
     });
   }
 
@@ -71,7 +82,12 @@ export class FiscalResolutionAllocationsService {
         workstationId: dto.workstationId,
         rangeFrom: dto.rangeFrom,
         rangeTo: dto.rangeTo,
-        currentConsecutive: dto.rangeFrom - 1,
+        // Counter is a count of documents issued so far (0 = none). The
+        // issued number is rangeFrom + currentConsecutive - 1, so seeding
+        // rangeFrom - 1 here made the first document 2*rangeFrom - 1 for any
+        // range starting above 1 — immediately exhausting real DIAN ranges
+        // such as [100001..200000]. Zero keeps the first document at rangeFrom.
+        currentConsecutive: 0,
         allocatedAt: new Date(),
         allocatedByUserId,
       },

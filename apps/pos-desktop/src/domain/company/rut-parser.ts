@@ -125,6 +125,9 @@ export function parseRutPdfText(rawText: string): RutParseResult {
       /TIPO\s+DE\s+PERSONA\s*[:\s]+(PERSONA\s+(?:JUR[IÍ]DICA|NATURAL))/,
     ]),
     regimen: matchField(lines, [
+      // Newer RUT layouts group the regimen under a "RESPONSABILIDAD"
+      // label on the same line: "RESPONSABILIDAD : RÉGIMEN COMÚN".
+      /RESPONSABILIDAD\s*[:\s]+(R[EÉ]GIMEN\s+(?:COM[UÚ]N|SIMPLIFICADO))/,
       /(?:^|\b)R[EÉ]GIMEN\s+(?:TRIBUTARIO\s+)?(?:DE\s+)?(?:RESPONSABILIDAD\s+)?[:\s]+(R[EÉ]GIMEN\s+(?:COM[UÚ]N|SIMPLIFICADO)|RESPONSABLE\s+DE\s+IVA)/,
       /(?:^|\b)R[EÉ]GIMEN\s*[:\s]+(.+)$/,
     ]),

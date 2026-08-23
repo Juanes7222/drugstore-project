@@ -22,11 +22,15 @@ import {
   type CustomCompanyField,
   type CustomStrictnessToggle,
 } from "../../../domain/config";
+import { useCompanySetup } from "@/hooks/use-company-setup";
+import { useAppDispatch } from "@/store/hooks";
+import { setActiveScreen } from "@/store/slices/ui-slice";
 import { ActiveModeIndicator } from "./active-mode-indicator";
 import { StrictnessSection } from "./strictness.section";
 import { CustomFieldEditor } from "./custom-field-editor";
 import { UserPreferencesSection } from "./user-preferences.section";
 import { CompanyConfigTab } from "./company-config-tab";
+import { CompanySetupEntrySection } from "./company-setup-entry.section";
 import { FiscalConfigTab } from "./fiscal-config-tab";
 import { SystemPreferencesTab } from "./system-preferences-tab";
 import { PurchasesConfigTab } from "./purchases-config-tab";
@@ -70,6 +74,7 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
   readOnly = false,
 }) => {
   const { t } = useTranslation();
+  const dispatch = useAppDispatch();
   const {
     config,
     effectiveConfig,
@@ -81,6 +86,13 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
     removeCustomField,
   } = useTenantConfig();
 
+  // Saved DIAN fiscal-emitter profile — shown on the Empresa tab as the
+  // entry point into the company-setup wizard (edit mode when configured).
+  const {
+    draft: companyDraft,
+    status: companySetupStatus,
+  } = useCompanySetup();
+
   const [activeTab, setActiveTab] = useState<TabId>("company");
   const [customFieldEditorOpen, setCustomFieldEditorOpen] = useState(false);
   const [editingField, setEditingField] = useState<CustomCompanyField | undefined>();
@@ -90,6 +102,10 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
   const handleTabChange = useCallback((tabId: TabId) => {
     setActiveTab(tabId);
   }, []);
+
+  const handleOpenCompanySetup = useCallback(() => {
+    dispatch(setActiveScreen("company-setup"));
+  }, [dispatch]);
 
   // ---- Custom field handlers ----
 
@@ -142,15 +158,25 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
     switch (activeTab) {
       case "company":
         return (
-          <CompanyConfigTab
-            config={config}
-            effectiveConfig={effectiveConfig}
-            readOnly={readOnly}
-            onFieldChange={handleFieldChange}
-            onAddCustomField={handleAddCustomField}
-            onEditCustomField={handleEditCustomField}
-            onRemoveCustomField={handleRemoveCustomField}
-          />
+          <div className="space-y-6">
+            <CompanySetupEntrySection
+              nit={companyDraft?.nit ?? null}
+              name={companyDraft?.name ?? null}
+              isConfigured={
+                companySetupStatus === "complete" && companyDraft !== null
+              }
+              onOpen={handleOpenCompanySetup}
+            />
+            <CompanyConfigTab
+              config={config}
+              effectiveConfig={effectiveConfig}
+              readOnly={readOnly}
+              onFieldChange={handleFieldChange}
+              onAddCustomField={handleAddCustomField}
+              onEditCustomField={handleEditCustomField}
+              onRemoveCustomField={handleRemoveCustomField}
+            />
+          </div>
         );
       case "fiscal":
         return (

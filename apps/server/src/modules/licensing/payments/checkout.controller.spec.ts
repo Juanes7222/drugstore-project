@@ -28,13 +28,15 @@ import {
 } from '@pharmacy/shared-types';
 
 const RENEWAL_SUBSCRIPTION_ID = '123e4567-e89b-12d3-a456-426614174000';
-const STARTER_AMOUNT_CENTS =
-  DEFAULT_PLANS.find((p) => p.code === 'STARTER')!.basePriceCents;
+// The self-service checkout resolves plans through DEFAULT_PLANS when no DB
+// row exists; the seed now contains only the two billing-method plans.
+const PROVIDER_PLAN = DEFAULT_PLANS.find((p) => p.code === 'PROVIDER')!;
+const PROVIDER_AMOUNT_CENTS = PROVIDER_PLAN.basePriceCents;
 const CHECKOUT_URL = 'https://checkout.wompi.co/l/plink-1';
 
 function buildSessionBody(overrides: Record<string, unknown> = {}) {
   return {
-    planCode: 'STARTER',
+    planCode: 'PROVIDER',
     customerTaxId: '900123456',
     customerEmail: 'owner@pharmacy.co',
     customerName: 'Juan Perez',
@@ -51,10 +53,10 @@ function buildPendingPayment(overrides: Record<string, unknown> = {}) {
     id: 'pending-uuid-1',
     subscriptionId: null,
     wompiTransactionId: 'plink-1',
-    wompiReference: 'SUB-STARTER-1750000000000-abc12345',
+    wompiReference: 'SUB-PROVIDER-1750000000000-abc12345',
     purpose: SubscriptionPaymentPurpose.NEW_SUBSCRIPTION,
-    planId: 'STARTER',
-    amountCents: STARTER_AMOUNT_CENTS,
+    planId: 'PROVIDER',
+    amountCents: PROVIDER_AMOUNT_CENTS,
     currency: 'COP',
     customerTaxId: '900123456',
     customerEmail: 'owner@pharmacy.co',
@@ -70,12 +72,12 @@ function buildPendingPayment(overrides: Record<string, unknown> = {}) {
 function buildPaymentLink(overrides: Record<string, unknown> = {}) {
   return {
     id: 'plink-2',
-    name: 'Suscripción Farmacia Básica - Juan Perez',
-    description: 'Plan STARTER - MONTHLY',
+    name: `Suscripción ${PROVIDER_PLAN.name} - Juan Perez`,
+    description: 'Plan PROVIDER - MONTHLY',
     single_use: true,
     collect_shipping: false,
     currency: 'COP',
-    amount_in_cents: STARTER_AMOUNT_CENTS,
+    amount_in_cents: PROVIDER_AMOUNT_CENTS,
     sku: null,
     expires_at: null,
     redirect_url: null,
@@ -148,7 +150,7 @@ describe('CheckoutController (integration)', () => {
           where: {
             purpose: SubscriptionPaymentPurpose.NEW_SUBSCRIPTION,
             customerEmail: 'owner@pharmacy.co',
-            planId: 'STARTER',
+            planId: 'PROVIDER',
             status: 'PENDING',
             expiresAt: { gt: expect.any(Date) },
           },
@@ -188,7 +190,7 @@ describe('CheckoutController (integration)', () => {
           where: {
             purpose: SubscriptionPaymentPurpose.RENEWAL,
             customerEmail: 'owner@pharmacy.co',
-            planId: 'STARTER',
+            planId: 'PROVIDER',
             subscriptionId: RENEWAL_SUBSCRIPTION_ID,
             status: 'PENDING',
             expiresAt: { gt: expect.any(Date) },
@@ -222,12 +224,12 @@ describe('CheckoutController (integration)', () => {
 
       expect(mockWompiService.createPaymentLink).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: 'Suscripción Farmacia Básica - Juan Perez',
-description: 'Plan STARTER — MONTHLY',
+          name: `Suscripción ${PROVIDER_PLAN.name} - Juan Perez`,
+          description: 'Plan PROVIDER — MONTHLY',
           single_use: true,
           collect_shipping: false,
           currency: 'COP',
-          amount_in_cents: STARTER_AMOUNT_CENTS,
+          amount_in_cents: PROVIDER_AMOUNT_CENTS,
           redirect_url: null,
         }),
       );
@@ -236,10 +238,10 @@ description: 'Plan STARTER — MONTHLY',
           data: expect.objectContaining({
             subscriptionId: null,
             wompiTransactionId: 'plink-2',
-            wompiReference: expect.stringMatching(/^SUB-STARTER-/),
+            wompiReference: expect.stringMatching(/^SUB-PROVIDER-/),
             purpose: SubscriptionPaymentPurpose.NEW_SUBSCRIPTION,
-            planId: 'STARTER',
-            amountCents: STARTER_AMOUNT_CENTS,
+            planId: 'PROVIDER',
+            amountCents: PROVIDER_AMOUNT_CENTS,
             currency: 'COP',
             status: 'PENDING',
             newSubscriptionData: expect.objectContaining({
@@ -260,8 +262,8 @@ description: 'Plan STARTER — MONTHLY',
         sessionId: expect.any(String),
         paymentLinkId: 'plink-2',
         checkoutUrl: CHECKOUT_URL,
-        reference: expect.stringMatching(/^SUB-STARTER-/),
-        amountCents: STARTER_AMOUNT_CENTS,
+        reference: expect.stringMatching(/^SUB-PROVIDER-/),
+        amountCents: PROVIDER_AMOUNT_CENTS,
         currency: 'COP',
       });
     });

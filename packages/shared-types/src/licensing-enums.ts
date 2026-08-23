@@ -6,6 +6,13 @@ export enum LicenseStatus {
   REVOKED = 'REVOKED',
 }
 
+export enum PlanBillingMethod {
+  // Transmission handled by our system (tech provider / our own certificate).
+  PROVIDER = 'PROVIDER',
+  // Customer uploads their own DIAN digital certificate in the POS.
+  CERTIFICATE = 'CERTIFICATE',
+}
+
 export enum PlanFeature {
   // Location & workstation scaling
   MULTI_LOCATION = 'MULTI_LOCATION',

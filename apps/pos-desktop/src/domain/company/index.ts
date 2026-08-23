@@ -15,9 +15,22 @@ export {
 export type {
   CompanyProfileConfig,
   CompanyProfileHttpClient,
+  FiscalResolutionPayload,
   IssuerConfigPayload,
+  IssuerConfigResponse,
   TaxLevelCode,
 } from './company-profile.service';
+export {
+  DANE_DEPARTAMENTOS,
+  findDaneDepartamento,
+  findDaneMunicipio,
+  findDaneMunicipioByName,
+  isValidDaneDepartamentoCode,
+  isValidDaneMunicipioCode,
+  normalizeDaneName,
+  resolveDaneMunicipioCode,
+} from './dane-catalog';
+export type { DaneDepartamento, DaneMunicipio } from './dane-catalog';
 export { useCompanySetupStore } from './company.store';
 export type { CompanySetupState } from './company.store';
 export type {
@@ -28,6 +41,7 @@ export type {
 export {
   RutUnparseableException,
   InvalidNitDvException,
+  InvalidMunicipioCodeException,
   CompanyNotConfiguredException,
   CompanySubmitOfflineException,
   CompanySubmitRejectedException,

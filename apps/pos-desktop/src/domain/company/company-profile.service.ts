@@ -15,6 +15,7 @@
 
 import { isOnline } from '../../common/is-online';
 import { isValidNitDv } from '../../common/nit';
+import { isValidDaneMunicipioCode } from './dane-catalog';
 import {
   DEFAULT_SELLER_INFO,
   getTenantInfo,
@@ -29,6 +30,7 @@ import {
   CompanyNotConfiguredException,
   CompanySubmitOfflineException,
   CompanySubmitRejectedException,
+  InvalidMunicipioCodeException,
   InvalidNitDvException,
 } from './exceptions';
 
@@ -64,9 +66,28 @@ export interface IssuerConfigPayload {
   softwareId?: string | null;
 }
 
+/** Active numbering resolution returned alongside the issuer config. */
+export interface FiscalResolutionPayload {
+  id: string;
+  resolutionNumber: string;
+  documentType: string;
+  prefix: string | null;
+  rangeFrom: number;
+  rangeTo: number;
+  validFrom: string;
+  validTo: string;
+  state: string;
+}
+
+export type IssuerConfigResponse = IssuerConfigPayload & {
+  /** Null when the contributor has no ACTIVE resolution yet. */
+  resolution?: FiscalResolutionPayload | null;
+};
+
 export interface CompanyProfileHttpClient {
   get<T>(url: string, headers?: Record<string, string>): Promise<T>;
   patch<T>(url: string, body: unknown, headers?: Record<string, string>): Promise<T>;
+  post<T>(url: string, body: unknown, headers?: Record<string, string>): Promise<T>;
 }
 
 export interface CompanyProfileConfig {
@@ -75,6 +96,8 @@ export interface CompanyProfileConfig {
   httpClient?: CompanyProfileHttpClient;
   /** JWT for the protected issuer-config endpoint. */
   accessToken?: string;
+  /** Workstation that will consume the resolution (for the allocation). */
+  workstationId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,11 +125,13 @@ export class CompanyProfileService {
   private readonly http: CompanyProfileHttpClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly workstationId?: string;
 
   constructor(config: CompanyProfileConfig) {
     this.http = config.httpClient ?? defaultHttpClient;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
+    this.workstationId = config.workstationId;
   }
 
   /**
@@ -132,7 +157,7 @@ export class CompanyProfileService {
   async fetchCompanyProfile(): Promise<CompanyDraft | null> {
     if (!isOnline() || !this.accessToken) return null;
     try {
-      const payload = await this.http.get<IssuerConfigPayload>(
+      const payload = await this.http.get<IssuerConfigResponse>(
         `${this.baseUrl}/fiscal-dian/issuer-config`,
         this.buildAuthHeaders(),
       );
@@ -185,6 +210,56 @@ export class CompanyProfileService {
     });
 
     useCompanySetupStore.getState().markComplete(draft);
+
+    // Persist the numbering resolution on the server so the fiscal engine
+    // can emit UBLs with it and the POS can auto-initialize its counters
+    // via the config sync. Best effort: a failure here must not undo the
+    // company profile submit — the owner can register the resolution from
+    // the backoffice instead (an overlapping active resolution is the
+    // normal case on re-edits, so it is explicitly swallowed).
+    if (draft.resolutionNumber) {
+      await this.pushResolution(draft);
+    }
+  }
+
+  /**
+   * Create the DIAN resolution + workstation allocation on the server.
+   * Never throws: failures are logged and left to the backoffice flow.
+   */
+  private async pushResolution(draft: CompanyDraft): Promise<void> {
+    try {
+      const resolution = await this.http.post<{ id: string }>(
+        `${this.baseUrl}/fiscal-dian/resolutions`,
+        {
+          resolutionNumber: draft.resolutionNumber,
+          documentType: 'INVOICE',
+          prefix: draft.resolutionPrefix || 'FE',
+          rangeFrom: Number(draft.resolutionRangeStart),
+          rangeTo: Number(draft.resolutionRangeEnd),
+          validFrom: toIsoDate(draft.resolutionDate),
+          validTo: toIsoDate(draft.resolutionValidTo ?? draft.resolutionDate),
+        },
+        this.buildAuthHeaders(),
+      );
+
+      if (this.workstationId) {
+        await this.http.post(
+          `${this.baseUrl}/fiscal-dian/resolution-allocations`,
+          {
+            resolutionId: resolution.id,
+            workstationId: this.workstationId,
+            rangeFrom: Number(draft.resolutionRangeStart),
+            rangeTo: Number(draft.resolutionRangeEnd),
+          },
+          this.buildAuthHeaders(),
+        );
+      }
+    } catch (error) {
+      console.error(
+        '[CompanyProfileService] Resolution registration failed (non-blocking):',
+        error,
+      );
+    }
   }
 
   /**
@@ -217,6 +292,18 @@ export class CompanyProfileService {
     if (!draft.resolutionPrefix?.trim()) {
       throw new CompanyNotConfiguredException();
     }
+
+    // A resolution needs an explicit validity end — the server DTO
+    // requires it and DIAN resolutions always carry one.
+    if (draft.resolutionNumber && !draft.resolutionValidTo?.trim()) {
+      throw new CompanyNotConfiguredException();
+    }
+
+    // A municipio code that does not exist in the DANE catalog would reach
+    // DIAN as an invalid address code — reject it at the source.
+    if (draft.municipioCode && !isValidDaneMunicipioCode(draft.municipioCode)) {
+      throw new InvalidMunicipioCodeException();
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -242,6 +329,12 @@ export function formatNit(nit: string): string {
     return digits.replace(/(\d{3})(\d{3})(\d+)/, '$1.$2.$3');
   }
   return digits.replace(/(\d{3})(\d{3})(\d{3})(\d+)/, '$1.$2.$3.$4');
+}
+
+/** Convert a 'YYYY-MM-DD' date into an ISO datetime string for the server. */
+function toIsoDate(value: string | null | undefined): string {
+  const date = value ? new Date(value) : new Date();
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
 /**
@@ -293,12 +386,16 @@ function mapDraftToIssuerConfig(draft: CompanyDraft): IssuerConfigPayload {
     phone: draft.phone ?? null,
     email: draft.email ?? null,
     ciiu: draft.ciiu ?? null,
+    softwareId: draft.softwareId ?? null,
   };
 }
 
-function mapIssuerConfigToDraft(payload: IssuerConfigPayload): CompanyDraft {
+function mapIssuerConfigToDraft(
+  payload: IssuerConfigResponse,
+): CompanyDraft {
   const dv = payload.verificationDigit;
   const nit = payload.nit.replace(/\D/g, '');
+  const resolution = payload.resolution ?? null;
   return {
     nit,
     dv,
@@ -312,11 +409,12 @@ function mapIssuerConfigToDraft(payload: IssuerConfigPayload): CompanyDraft {
     address: payload.address ?? null,
     phone: payload.phone ?? null,
     email: payload.email ?? null,
-    resolutionNumber: null,
-    resolutionDate: null,
-    resolutionPrefix: 'FE',
-    resolutionRangeStart: null,
-    resolutionRangeEnd: null,
+    resolutionNumber: resolution?.resolutionNumber ?? null,
+    resolutionDate: resolution?.validFrom ?? null,
+    resolutionPrefix: resolution?.prefix ?? 'FE',
+    resolutionRangeStart: resolution ? String(resolution.rangeFrom) : null,
+    resolutionRangeEnd: resolution ? String(resolution.rangeTo) : null,
+    softwareId: payload.softwareId ?? null,
   };
 }
 
@@ -344,6 +442,26 @@ const defaultHttpClient: CompanyProfileHttpClient = {
   ): Promise<T> => {
     const response = await fetch(url, {
       method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      throw new CompanyProfileHttpError(
+        url,
+        response.status,
+        await response.text(),
+      );
+    }
+    return response.json() as Promise<T>;
+  },
+
+  post: async <T>(
+    url: string,
+    body: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T> => {
+    const response = await fetch(url, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
     });

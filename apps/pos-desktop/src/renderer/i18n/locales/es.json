@@ -1814,6 +1814,15 @@
       "feature_label_printing": "Impresión de etiquetas",
       "feature_customer_display": "Pantalla para el cliente",
       "feature_priority_support": "Soporte prioritario",
+      "feature_unlimited_locations": "Locales ilimitados",
+      "feature_offline_mode": "Modo offline",
+      "feature_inventory_management": "Gestión de inventario",
+      "feature_prescription_management": "Gestión de prescripciones",
+      "feature_fiscal_printing": "Impresión fiscal",
+      "feature_api_access": "Acceso a API",
+      "feature_custom_integrations": "Integraciones personalizadas",
+      "feature_white_label": "Marca blanca",
+      "feature_backup_recovery": "Respaldo y recuperación",
       "assignment_section": "Asignación",
       "location_label": "Local:",
       "workstation_label": "Puesto:",
@@ -1874,7 +1883,17 @@
         "extra_workstation": "+ {{price}} por puesto adicional / mes",
         "per_month": "/mes",
         "per_quarter": "/trimestre",
-        "per_year": "/año"
+        "per_year": "/año",
+        "billing_method": {
+          "PROVIDER": "Facturación incluida",
+          "CERTIFICATE": "Tu certificado DIAN"
+        },
+        "billing_note": {
+          "PROVIDER": "Transmitimos tus facturas a la DIAN. No tienes que subir nada.",
+          "CERTIFICATE": "Después del pago subirás tu certificado digital (.pfx/.p12) para firmar y transmitir."
+        },
+        "billing_help": "¿Cómo obtengo el certificado DIAN?",
+        "billing_help_aria": "Abrir ayuda sobre el certificado DIAN"
       },
       "catalog": {
         "loading": "Cargando planes...",
@@ -1916,6 +1935,8 @@
         "approved": {
           "title": "¡Pago aprobado!",
           "body": "Su suscripción quedó activada. Guarde su código de activación: lo necesitará en el siguiente paso.",
+          "certificate_note_title": "Siguiente: tu certificado DIAN",
+          "certificate_note": "Con este plan, después de activar tu terminal subirás tu certificado digital (.pfx/.p12) para habilitar la facturación electrónica.",
           "no_code_title": "Suscripción activada",
           "no_code_body": "No pudimos obtener el código de activación automáticamente. Revise su correo o contacte a su proveedor."
         },
@@ -1954,6 +1975,8 @@
     "wizard": {
       "title": "Configura tu empresa para facturar",
       "subtitle": "Con estos datos la DIAN reconoce a tu droguería como emisor electrónico. Solo se piden una vez.",
+      "edit_title": "Editar datos de la empresa",
+      "edit_subtitle": "Actualiza los datos del emisor de facturación electrónica (DIAN). Se guardan los cambios al finalizar.",
       "steps_aria": "Pasos de la configuración",
       "step_rut": "RUT",
       "step_review": "Revisión",
@@ -1967,7 +1990,11 @@
       "submit_error": "No se pudieron guardar los datos. Verifique la conexión e intente de nuevo.",
       "done_title": "¡Listo! Empresa configurada",
       "done_body": "Tu droguería ya puede emitir facturación electrónica (DIAN).",
-      "done_continue": "Continuar al sistema"
+      "done_continue": "Continuar al sistema",
+      "next_certificate_step": "Continuar al certificado DIAN",
+      "edit_done_title": "Cambios guardados",
+      "edit_done_body": "Los datos del emisor de facturación electrónica (DIAN) quedaron actualizados.",
+      "edit_done_continue": "Volver a configuración"
     },
     "upload": {
       "dropzone_hint": "Arrastre el RUT (PDF) aquí o haga clic para buscarlo",
@@ -1989,7 +2016,10 @@
       "subtitle": "Corrija cualquier diferencia con el RUT antes de continuar.",
       "manual_title": "Datos de la empresa",
       "manual_subtitle": "Escriba los datos tal como aparecen en el RUT de la empresa.",
+      "saved_title": "Editar datos de la empresa",
+      "saved_subtitle": "Datos cargados del perfil guardado. Corrija lo necesario antes de continuar.",
       "extracted_badge": "Extraído del RUT",
+      "saved_badge": "Cargado del perfil guardado",
       "dv_valid": "DV válido",
       "dv_invalid": "DV inválido",
       "dv_unknown": "DV sin validar",
@@ -2003,6 +2033,8 @@
       "ciiu": "CIIU",
       "municipio": "Municipio",
       "municipio_code": "Código de municipio",
+      "select_municipio": "Selecciona el municipio",
+      "municipio_code_hint": "Selecciona el municipio para completar el código DANE",
       "departamento": "Departamento",
       "address": "Dirección",
       "phone": "Teléfono",
@@ -2017,8 +2049,51 @@
       "prefix_placeholder": "Ej.: SETP",
       "range_start": "Desde",
       "range_end": "Hasta",
-      "range_note": "Rango de numeración autorizado para tus facturas."
+      "range_note": "Rango de numeración autorizado para tus facturas.",
+      "software_id": "ID de software DIAN",
+      "software_id_helper": "Se completa cuando la habilitación del software esté lista — déjalo vacío si no lo tienes."
     }
+  },
+  "certificate_setup": {
+    "title": "Tu certificado DIAN",
+    "subtitle": "Sube el certificado digital de tu farmacia para firmar y transmitir facturación electrónica.",
+    "done_title": "Certificado configurado",
+    "done_subtitle": "Tu farmacia ya puede firmar y transmitir facturas electrónicas a la DIAN.",
+    "pick_file": "Seleccionar archivo .pfx o .p12",
+    "file_aria": "Subir el archivo del certificado DIAN",
+    "file_hint": "Archivo .pfx o .p12 · máximo 3 MB",
+    "file_change": "Cambiar archivo",
+    "password": "Contraseña del certificado",
+    "password_hint": "La que asignaste al generar el certificado (PKCS#12).",
+    "security_code": "Código de seguridad del software",
+    "security_code_hint": "Se genera al habilitar el software en la DIAN.",
+    "upload": "Subir certificado",
+    "uploading": "Subiendo certificado...",
+    "skip": "Lo haré después",
+    "skip_hint": "Las ventas siguen funcionando en contingencia, sin transmisión electrónica.",
+    "finish": "Continuar al sistema",
+    "configured_subject": "Titular: {{subject}}",
+    "configured_validity": "Válido hasta {{date}}",
+    "security_promise": "El certificado se guarda cifrado en nuestros servidores. La contraseña jamás se almacena.",
+    "help": "¿Qué es el certificado DIAN?",
+    "help_aria": "Abrir ayuda sobre el certificado DIAN",
+    "error": {
+      "INVALID_FILE_TYPE": "El archivo debe ser un certificado .pfx o .p12.",
+      "FILE_TOO_LARGE": "El archivo supera el tamaño máximo (3 MB).",
+      "PASSWORD_REQUIRED": "Ingresa la contraseña del certificado.",
+      "SECURITY_CODE_TOO_SHORT": "El código de seguridad debe tener al menos 10 caracteres.",
+      "OFFLINE": "No hay conexión a internet. Sube el certificado cuando tengas conexión.",
+      "SERVER_REJECTED": "El servidor rechazó el certificado. Verifica que sea el archivo correcto y que la contraseña sea la del certificado.",
+      "NETWORK": "No se pudo contactar el servidor. Verifica tu conexión e inténtalo de nuevo."
+    }
+  },
+  "certificate_banner": {
+    "aria": "Estado del certificado DIAN",
+    "none_message": "Sube tu certificado DIAN para habilitar la facturación electrónica",
+    "none_cta": "Subir certificado",
+    "expiring_message": "Tu certificado DIAN vence el {{date}}. Renueva antes de esa fecha para no interrumpir la facturación electrónica.",
+    "expired_message": "Tu certificado DIAN venció. La facturación electrónica está suspendida — las ventas siguen en contingencia.",
+    "cta": "Actualizar certificado"
   },
   "update": {
     "toast": {
@@ -2048,6 +2123,15 @@
       "purchases": "Compras",
       "sales": "Ventas",
       "delivery": "Domicilios"
+    },
+    "company_setup": {
+      "title": "Datos de la empresa (facturación electrónica)",
+      "description": "NIT, razón social y resolución DIAN que identifican a la droguería como emisor electrónico.",
+      "nit": "NIT",
+      "name": "Razón social",
+      "edit": "Editar",
+      "configure": "Configurar",
+      "empty": "Aún no se han configurado los datos del emisor. Configúralos para poder facturar electrónicamente."
     },
     "delivery": {
       "title": "Domicilios",

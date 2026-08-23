@@ -3,6 +3,7 @@ export interface Plan {
   code: string;
   name: string;
   description: string | null;
+  billingMethod: string;
   pricingModel: string;
   basePriceCents: number;
   currency: string;

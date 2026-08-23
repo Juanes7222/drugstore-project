@@ -104,9 +104,18 @@ export function getStatusDescriptor(
 
 export const FEATURE_LABELS: Record<string, string> = {
   MULTI_LOCATION: "licensing.status_page.feature_multi_location",
+  UNLIMITED_LOCATIONS: "licensing.status_page.feature_unlimited_locations",
+  OFFLINE_MODE: "licensing.status_page.feature_offline_mode",
+  INVENTORY_MANAGEMENT: "licensing.status_page.feature_inventory_management",
+  PRESCRIPTION_MANAGEMENT: "licensing.status_page.feature_prescription_management",
   ADVANCED_REPORTS: "licensing.status_page.feature_advanced_reports",
   MULTI_TERMINAL_SYNC: "licensing.status_page.feature_multi_terminal_sync",
+  FISCAL_PRINTING: "licensing.status_page.feature_fiscal_printing",
   LABEL_PRINTING: "licensing.status_page.feature_label_printing",
   CUSTOMER_DISPLAY: "licensing.status_page.feature_customer_display",
+  API_ACCESS: "licensing.status_page.feature_api_access",
+  CUSTOM_INTEGRATIONS: "licensing.status_page.feature_custom_integrations",
+  WHITE_LABEL: "licensing.status_page.feature_white_label",
+  BACKUP_RECOVERY: "licensing.status_page.feature_backup_recovery",
   PRIORITY_SUPPORT: "licensing.status_page.feature_priority_support",
 };

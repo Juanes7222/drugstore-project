@@ -10,6 +10,11 @@ import type {
 } from './ports';
 import { FiscalTransmissionFailedException } from './exceptions/fiscal-transmission-failed.exception';
 import { FiscalDocumentRejectedException } from './exceptions/fiscal-document-rejected.exception';
+import {
+  TransmissionRouteResolver,
+  type TransmissionRoute,
+} from './transmission-route.resolver';
+import type { FiscalProvider } from '@pharmacy/database';
 
 /**
  * Orchestrates the signing and transmission of a fiscal document to DIAN.
@@ -36,6 +41,7 @@ export class FiscalTransmissionService {
     private readonly transmission: FiscalTransmissionPort,
     @Inject(SECRET_READER_PORT)
     private readonly secrets: SecretReaderPort,
+    private readonly routeResolver: TransmissionRouteResolver,
   ) {}
 
   /**
@@ -51,9 +57,24 @@ export class FiscalTransmissionService {
 
     const config = await this.loadTechProviderConfig(doc.subscriptionId);
 
+    // The plan's billingMethod decides the transmission party: PROVIDER uses
+    // our server-side credential reference, CERTIFICATE/legacy uses the
+    // tenant's own uploaded certificate.
+    const route = await this.routeResolver.resolve(doc.subscriptionId);
+    this.logger.log(
+      `Transmission route for ${fiscalDocumentId}: ${route} (subscription ${doc.subscriptionId})`,
+    );
+
+    if (route === 'PROVIDER' && !config.credentialReference) {
+      throw new FiscalTransmissionFailedException(
+        fiscalDocumentId,
+        'plan uses provider transmission but TechProviderConfig has no credentialReference configured server-side',
+      );
+    }
+
     const { certificate, password } = await this.secrets.readSecret(
       doc.subscriptionId,
-      config.credentialReference ?? '',
+      route === 'PROVIDER' ? config.credentialReference ?? '' : '',
     );
 
     const fileName = this.buildFileName(doc.fullNumber);
@@ -64,8 +85,8 @@ export class FiscalTransmissionService {
     // PENDING_SIGNATURE. Without this, a retry and a manual re-trigger could
     // both pass loadPendingDocument and transmit the same document twice —
     // DIAN offers no idempotency for a re-sent document. The claim also
-    // stamps DIAN_DIRECT as the transmitting party.
-    await this.claimDocument(fiscalDocumentId);
+    // stamps the transmitting party for webhook correlation.
+    await this.claimDocument(fiscalDocumentId, route, config.providerType);
 
     // The adapter performs XAdES-EPES signing as part of the send call below.
     let result;
@@ -201,14 +222,22 @@ export class FiscalTransmissionService {
    * The conditional updateMany is the concurrency guard: if another worker
    * (or a manual re-trigger) already claimed the document, the update
    * affects zero rows and this worker aborts instead of double-transmitting.
-   * The claim also records the transmitting party for webhook correlation.
+   * The claim also records the transmitting party for webhook correlation:
+   * the configured provider type for PROVIDER routes, DIAN_DIRECT otherwise.
    */
-  private async claimDocument(fiscalDocumentId: string): Promise<void> {
+  private async claimDocument(
+    fiscalDocumentId: string,
+    route: TransmissionRoute,
+    configuredProviderType: string | null,
+  ): Promise<void> {
     const claimed = await this.prisma.fiscalDocument.updateMany({
       where: { id: fiscalDocumentId, fiscalState: 'PENDING_SIGNATURE' },
       data: {
         fiscalState: 'IN_TRANSMISSION',
-        providerType: 'DIAN_DIRECT',
+        providerType:
+          route === 'PROVIDER'
+            ? ((configuredProviderType ?? 'DIAN_DIRECT') as FiscalProvider)
+            : 'DIAN_DIRECT',
         lastRetryAt: new Date(),
       },
     });

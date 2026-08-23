@@ -12,6 +12,12 @@ model Plan {
   basePriceCents                Int
   currency                      String        @default("COP")
   billingPeriod                 BillingPeriod @default(MONTHLY)
+  // How this plan bills DIAN transmission: PROVIDER = our tech provider
+  // transmits on the customer's behalf; CERTIFICATE = the customer uploads
+  // their own DIAN certificate. Simple string (not a Prisma enum) so the
+  // value can evolve without a migration; the fiscal engine reads it to
+  // pick the transmission route.
+  billingMethod                 String        @default("PROVIDER")
   maxLocations                  Int           @default(1)
   maxWorkstationsPerLocation    Int           @default(1)
   includedWorkstations          Int           @default(1)

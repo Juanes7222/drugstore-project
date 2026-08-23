@@ -363,6 +363,7 @@ export class ActivationsService {
         id: subscription.plan.id,
         code: subscription.plan.code,
         name: subscription.plan.name,
+        billingMethod: subscription.plan.billingMethod,
         features: subscription.plan.features,
         maxLocations: subscription.plan.maxLocations,
         maxWorkstationsPerLocation:
@@ -503,6 +504,7 @@ export class ActivationsService {
         id: activation.subscription.plan.id,
         code: activation.subscription.plan.code,
         name: activation.subscription.plan.name,
+        billingMethod: activation.subscription.plan.billingMethod,
         features: activation.subscription.plan.features,
         maxLocations: activation.subscription.plan.maxLocations,
         maxWorkstationsPerLocation:

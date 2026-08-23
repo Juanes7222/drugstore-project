@@ -24,6 +24,7 @@ import { RoleType } from "@pharmacy/shared-types";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { QuickActionsCard } from "./quick-actions-card";
 import { StatsCard } from "./stats-card";
+import { CertificateStatusBanner } from "@/components/fiscal/certificate-status-banner";
 
 /* ──────────────────────────────────────────────────────────────── */
 /* Helpers                                                          */
@@ -280,6 +281,9 @@ export const Home: FC = () => {
           {subtitle}
         </p>
       </motion.div>
+
+      {/* ── Persistent DIAN certificate reminder (CERTIFICATE plan) ── */}
+      <CertificateStatusBanner />
 
       {/* ── Quick actions grid ── */}
       <motion.div

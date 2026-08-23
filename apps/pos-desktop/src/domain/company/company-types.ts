@@ -41,6 +41,14 @@ export interface CompanyDraft {
   resolutionRangeStart: string | null;
   /** Last authorized invoice number (resolution range end). */
   resolutionRangeEnd: string | null;
+  /** ISO date when the resolution's validity ends (required with the rest). */
+  resolutionValidTo?: string | null;
+  /**
+   * DIAN software habilitación ID for this NIT (assigned by DIAN when the
+   * software is registered against the contributor). Optional — the
+   * software provider configures it when the habilitación is complete.
+   */
+  softwareId?: string | null;
 }
 
 /** Result of uploading a RUT file, as consumed by the wizard components. */

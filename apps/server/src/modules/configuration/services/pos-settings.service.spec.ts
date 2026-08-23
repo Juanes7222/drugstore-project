@@ -24,6 +24,10 @@ const ACTIVE_RESOLUTION = {
   validFrom: new Date(2026, 0, 1),
   validTo: new Date(2026, 11, 31),
   state: 'ACTIVE',
+  documentType: 'INVOICE',
+  rangeFrom: 100001,
+  rangeTo: 200000,
+  currentConsecutive: 0,
 };
 
 describe('PosSettingsService', () => {
@@ -35,6 +39,7 @@ describe('PosSettingsService', () => {
   };
   const mockIssuerConfigService = { find: jest.fn() };
   const mockResolutionsService = { findAll: jest.fn() };
+  const mockAllocationsService = { findLatestForResolution: jest.fn() };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -46,12 +51,14 @@ describe('PosSettingsService', () => {
       page: 1,
       pageSize: 1,
     });
+    mockAllocationsService.findLatestForResolution.mockResolvedValue(null);
     prisma = mockDeep<PrismaClient>();
     service = new PosSettingsService(
       prisma as any,
       mockTenantContext as any,
       mockIssuerConfigService as any,
       mockResolutionsService as any,
+      mockAllocationsService as any,
     );
   });
 
@@ -153,17 +160,20 @@ describe('PosSettingsService', () => {
   });
 
   describe('buildSellerInfo', () => {
-    it('omits sellerInfo when no tenant context is bound', async () => {
+    it('omits sellerInfo and resolution when no tenant context is bound', async () => {
       (mockTenantContext.hasTenant as jest.Mock).mockImplementation(() => false);
       (prisma.paymentMethod.findMany as jest.Mock).mockResolvedValue([]);
 
       const result = await service.getPosSettings();
 
       expect(result.sellerInfo).toBeUndefined();
+      expect(result.resolution).toBeUndefined();
       expect(mockIssuerConfigService.find).not.toHaveBeenCalled();
+      expect(mockResolutionsService.findAll).not.toHaveBeenCalled();
+      expect(mockAllocationsService.findLatestForResolution).not.toHaveBeenCalled();
     });
 
-    it('omits sellerInfo when the issuer config has never been set', async () => {
+    it('omits sellerInfo but still maps resolution when the issuer config has never been set', async () => {
       mockIssuerConfigService.find.mockRejectedValue(
         new FiscalIssuerConfigNotSetException(),
       );
@@ -177,7 +187,21 @@ describe('PosSettingsService', () => {
       const result = await service.getPosSettings();
 
       expect(result.sellerInfo).toBeUndefined();
-      expect(mockResolutionsService.findAll).not.toHaveBeenCalled();
+      // The resolution is resolved independently of the issuer config.
+      expect(mockResolutionsService.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ state: 'ACTIVE', pageSize: 1 }),
+      );
+      expect(result.resolution).toEqual({
+        resolutionNumber: '18764000000001',
+        documentType: 'INVOICE',
+        prefix: 'FV',
+        rangeFrom: 100001,
+        rangeTo: 200000,
+        validFrom: ACTIVE_RESOLUTION.validFrom.toISOString(),
+        validTo: ACTIVE_RESOLUTION.validTo.toISOString(),
+        currentConsecutive: 0,
+        state: 'ACTIVE',
+      });
     });
 
     it('maps the issuer config and most recent ACTIVE resolution into sellerInfo', async () => {
@@ -248,6 +272,7 @@ describe('PosSettingsService', () => {
         resolutionDate: null,
         resolutionPrefix: 'FE',
       });
+      expect(result.resolution).toBeNull();
     });
 
     it('maps null address and phone as null', async () => {
@@ -267,6 +292,51 @@ describe('PosSettingsService', () => {
 
       expect(result.sellerInfo?.address).toBeNull();
       expect(result.sellerInfo?.phone).toBeNull();
+    });
+  });
+
+  describe('buildResolutionPayload', () => {
+    const stubConfigs = () => {
+      (prisma.paymentMethod.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.systemConfig.findUnique as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+    };
+
+    it('uses the live allocation counter for currentConsecutive', async () => {
+      mockAllocationsService.findLatestForResolution.mockResolvedValue({
+        id: 'alloc-1',
+        currentConsecutive: 42,
+      });
+      stubConfigs();
+
+      const result = await service.getPosSettings();
+
+      expect(mockAllocationsService.findLatestForResolution).toHaveBeenCalledWith(
+        'res-1',
+      );
+      expect(result.resolution).toEqual({
+        resolutionNumber: '18764000000001',
+        documentType: 'INVOICE',
+        prefix: 'FV',
+        rangeFrom: 100001,
+        rangeTo: 200000,
+        validFrom: ACTIVE_RESOLUTION.validFrom.toISOString(),
+        validTo: ACTIVE_RESOLUTION.validTo.toISOString(),
+        currentConsecutive: 42,
+        state: 'ACTIVE',
+      });
+    });
+
+    it('falls back to the resolution counter when the resolution has no allocation', async () => {
+      mockAllocationsService.findLatestForResolution.mockResolvedValue(null);
+      stubConfigs();
+
+      const result = await service.getPosSettings();
+
+      expect(result.resolution?.currentConsecutive).toBe(0);
     });
   });
 });

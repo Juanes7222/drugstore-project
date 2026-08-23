@@ -44,6 +44,31 @@ export interface FiscalNumberingService {
    * with the values authorized by DIAN's resolution document.
    */
   initializeCounters(input: InitializeCountersInput): Promise<void>;
+
+  /**
+   * Sync the counters from the tenant's active DIAN resolution.
+   *
+   * Called by the configuration sync so the manager never has to type the
+   * resolution values by hand. When the resolution is the same one already
+   * applied, the regular counter is only ever advanced (never rewound —
+   * the workstation may be ahead of the server after offline contingencies).
+   * When the resolution changed (new range/prefix), the counter is reset to
+   * the server-provided consecutive. The contingency counter is preserved.
+   *
+   * Returns `changed: true` when the counter row was modified.
+   */
+  syncFromResolution(input: SyncResolutionInput): Promise<{ changed: boolean }>;
+}
+
+export interface SyncResolutionInput {
+  /** DIAN resolution prefix (e.g. "FE"). */
+  prefix: string;
+  /** First authorized number of the range. */
+  authorizedStart: number;
+  /** Last authorized number of the range. */
+  authorizedEnd: number;
+  /** Next number to issue per the server (range start + emitted count). */
+  nextRegularNumber: number;
 }
 
 export interface InitializeCountersInput {
@@ -149,5 +174,63 @@ class FiscalNumberingServiceImpl implements FiscalNumberingService {
           : undefined,
       },
     });
+  }
+
+  async syncFromResolution(
+    input: SyncResolutionInput,
+  ): Promise<{ changed: boolean }> {
+    const counter = await this.prisma.fiscalCounter.findUnique({
+      where: { workstationId: this.workstationId },
+    });
+
+    const authorizedStart = BigInt(input.authorizedStart);
+    const authorizedEnd = BigInt(input.authorizedEnd);
+    const nextRegularNumber = BigInt(input.nextRegularNumber);
+
+    // Same resolution already applied — advance but never rewind the local
+    // counter (the workstation may be ahead after offline contingencies).
+    if (
+      counter &&
+      counter.resolutionPrefix === input.prefix &&
+      counter.authorizedStart === authorizedStart &&
+      counter.authorizedEnd === authorizedEnd
+    ) {
+      if (nextRegularNumber <= counter.currentRegularNumber) {
+        return { changed: false };
+      }
+      await this.prisma.fiscalCounter.update({
+        where: { workstationId: this.workstationId },
+        data: { currentRegularNumber: nextRegularNumber },
+      });
+      return { changed: true };
+    }
+
+    // New resolution (or first sync): reset the regular counter to the
+    // server consecutive, preserve the contingency counter.
+    const currentContingencyNumber =
+      counter?.currentContingencyNumber ?? 1n;
+
+    await this.prisma.fiscalCounter.upsert({
+      where: { workstationId: this.workstationId },
+      create: {
+        id: globalThis.crypto.randomUUID(),
+        workstationId: this.workstationId,
+        currentRegularNumber: nextRegularNumber,
+        currentContingencyNumber,
+        resolutionPrefix: input.prefix,
+        contingencyPrefix: counter?.contingencyPrefix ?? 'CONT',
+        paddingLength: counter?.paddingLength ?? 8,
+        authorizedStart,
+        authorizedEnd,
+      },
+      update: {
+        currentRegularNumber: nextRegularNumber,
+        currentContingencyNumber,
+        resolutionPrefix: input.prefix,
+        authorizedStart,
+        authorizedEnd,
+      },
+    });
+    return { changed: true };
   }
 }

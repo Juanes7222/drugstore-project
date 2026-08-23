@@ -76,3 +76,40 @@ export class ReturnMissingForCreditNoteException extends DomainError {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// DIAN digital certificate (self-managed billing plan)
+// ---------------------------------------------------------------------------
+
+export type CertificateValidationCode =
+  | 'INVALID_FILE_TYPE'
+  | 'FILE_TOO_LARGE'
+  | 'PASSWORD_REQUIRED'
+  | 'SECURITY_CODE_TOO_SHORT';
+
+/** Client-side validation failed before the upload request was sent. */
+export class CertificateInvalidFileException extends DomainError {
+  constructor(readonly validationCode: CertificateValidationCode) {
+    super(
+      'CERTIFICATE_INVALID_FILE',
+      `Certificate file failed validation: ${validationCode}`,
+    );
+  }
+}
+
+/** The server rejected the certificate (bad password, wrong NIT, etc.). */
+export class CertificateUploadRejectedException extends DomainError {
+  constructor(readonly statusCode: number, message: string) {
+    super('CERTIFICATE_UPLOAD_REJECTED', message);
+  }
+}
+
+/** Certificate upload requires connectivity. */
+export class CertificateUploadOfflineException extends DomainError {
+  constructor() {
+    super(
+      'CERTIFICATE_UPLOAD_OFFLINE',
+      'Certificate upload requires a connection to the server.',
+    );
+  }
+}

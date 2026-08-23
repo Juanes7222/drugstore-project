@@ -9,9 +9,17 @@
  *
  * @category Component
  */
-import { type FC } from "react";
+import { type FC, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CompanyDraft } from "@/hooks/use-company-setup";
+import {
+  SearchableSelect,
+  type SearchableSelectOption,
+} from "@/components/purchases/searchable-select";
+import {
+  DANE_DEPARTAMENTOS,
+  findDaneMunicipioByName,
+} from "../../../domain/company";
 
 /** Verdict on the NIT check digit, supplied by the parent flow. */
 export type DvStatus = "valid" | "invalid" | "unknown";
@@ -30,6 +38,8 @@ export interface RutReviewStepProps {
   draft: CompanyDraft;
   /** True when the user chose manual entry instead of a RUT upload. */
   isManual: boolean;
+  /** True when the draft was loaded from a saved server profile (edit mode). */
+  savedMode?: boolean;
   dvStatus: DvStatus;
   onFieldChange: (field: CompanyIdentityField, value: string) => void;
 }
@@ -55,6 +65,37 @@ const DV_BADGE_LABEL: Record<DvStatus, string> = {
   invalid: "company_setup.review.dv_invalid",
   unknown: "company_setup.review.dv_unknown",
 };
+
+// ---------------------------------------------------------------------------
+// DANE catalog helpers — accent/case-insensitive lookup over all municipios
+// ---------------------------------------------------------------------------
+
+/** Legacy option id for a municipio name that has no catalog match yet. */
+const LEGACY_MUNICIPIO_PREFIX = "legacy:";
+
+function normalizeForSearch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleUpperCase("es-CO");
+}
+
+/** Starts-with first, then contains — fastest path for a typing cashier. */
+function filterMunicipios(
+  options: SearchableSelectOption[],
+  query: string,
+): SearchableSelectOption[] {
+  const needle = normalizeForSearch(query.trim());
+  if (!needle) return options;
+  const startsWith: SearchableSelectOption[] = [];
+  const contains: SearchableSelectOption[] = [];
+  for (const option of options) {
+    const haystack = normalizeForSearch(option.label);
+    if (haystack.startsWith(needle)) startsWith.push(option);
+    else if (haystack.includes(needle)) contains.push(option);
+  }
+  return [...startsWith, ...contains];
+}
 
 interface FieldRowProps {
   label: string;
@@ -85,6 +126,7 @@ const FieldRow: FC<FieldRowProps> = ({ label, labelFor, mono, children }) => (
 export const RutReviewStep: FC<RutReviewStepProps> = ({
   draft,
   isManual,
+  savedMode = false,
   dvStatus,
   onFieldChange,
 }) => {
@@ -92,26 +134,107 @@ export const RutReviewStep: FC<RutReviewStepProps> = ({
 
   const dvBadgeStyle = DV_BADGE_STYLE[dvStatus];
 
+  // ---- DANE municipio catalog ---------------------------------------------
+  // Flat list of every municipio (1123) with its departamento as sublabel,
+  // keyed by the 5-digit DANE code so a selection fills all three fields.
+  const { municipioOptions, departamentoByCode } = useMemo(() => {
+    const options: SearchableSelectOption[] = [];
+    const departamentos = new Map<string, string>();
+    for (const departamento of DANE_DEPARTAMENTOS) {
+      for (const municipio of departamento.municipios) {
+        options.push({
+          id: municipio.cod,
+          label: municipio.nombre,
+          sublabel: departamento.nombre,
+        });
+        departamentos.set(municipio.cod, departamento.nombre);
+      }
+    }
+    return { municipioOptions: options, departamentoByCode: departamentos };
+  }, []);
+
+  const [municipioQuery, setMunicipioQuery] = useState("");
+
+  // A code only counts when it actually exists in the catalog; anything
+  // else (RUT parse without code, stale code) falls back to the free-text
+  // name shown as a legacy option, mirroring department-municipality-fields.
+  const hasCatalogCode =
+    draft.municipioCode != null && departamentoByCode.has(draft.municipioCode);
+  const legacyMunicipioId = draft.municipio
+    ? `${LEGACY_MUNICIPIO_PREFIX}${draft.municipio}`
+    : null;
+  const selectedMunicipioId = hasCatalogCode
+    ? draft.municipioCode
+    : legacyMunicipioId;
+
+  const visibleMunicipios = useMemo(() => {
+    const filtered = filterMunicipios(municipioOptions, municipioQuery);
+    if (draft.municipio && !hasCatalogCode) {
+      return [{ id: legacyMunicipioId as string, label: draft.municipio }, ...filtered];
+    }
+    return filtered;
+  }, [municipioOptions, municipioQuery, draft.municipio, hasCatalogCode, legacyMunicipioId]);
+
+  const handleMunicipioSelect = useCallback(
+    (option: SearchableSelectOption) => {
+      if (option.id.startsWith(LEGACY_MUNICIPIO_PREFIX)) {
+        onFieldChange("municipio", option.label);
+        return;
+      }
+      onFieldChange("municipio", option.label);
+      onFieldChange("municipioCode", option.id);
+      const departamentoName = departamentoByCode.get(option.id);
+      if (departamentoName) onFieldChange("departamento", departamentoName);
+    },
+    [onFieldChange, departamentoByCode],
+  );
+
+  // Preselect from a RUT-parsed name: when the draft carries the municipio
+  // but the code could not be extracted, resolve it against the catalog and
+  // fill code + departamento so the cashier only confirms the match.
+  useEffect(() => {
+    if (!draft.municipio || draft.municipioCode) return;
+    const match = findDaneMunicipioByName(
+      draft.municipio,
+      draft.departamento ?? undefined,
+    );
+    if (!match) return;
+    onFieldChange("municipioCode", match.cod);
+    const departamentoName = departamentoByCode.get(match.cod);
+    if (departamentoName) onFieldChange("departamento", departamentoName);
+  }, [draft.municipio, draft.municipioCode, departamentoByCode, onFieldChange]);
+
+  const needsMunicipioCode =
+    Boolean(draft.municipio) && !hasCatalogCode;
+
   return (
     <div className="flex flex-col gap-pos-md">
-      {/* Source banner — parsed from RUT or typed by hand */}
+      {/* Source banner — parsed from RUT, typed by hand, or loaded from a
+          saved profile (edit mode) */}
       <div
         className="flex items-center gap-pos-sm rounded-pos border px-pos-md py-pos-sm"
         role="status"
         style={{
-          backgroundColor: isManual
-            ? "color-mix(in srgb, var(--color-ink) 4%, transparent)"
-            : "var(--color-success-container)",
-          borderColor: isManual
-            ? "color-mix(in srgb, var(--color-ink) 12%, transparent)"
-            : "var(--color-success)",
-          color: isManual ? "var(--color-ink-muted)" : "var(--color-success)",
+          backgroundColor:
+            isManual || savedMode
+              ? "color-mix(in srgb, var(--color-ink) 4%, transparent)"
+              : "var(--color-success-container)",
+          borderColor:
+            isManual || savedMode
+              ? "color-mix(in srgb, var(--color-ink) 12%, transparent)"
+              : "var(--color-success)",
+          color:
+            isManual || savedMode
+              ? "var(--color-ink-muted)"
+              : "var(--color-success)",
         }}
       >
         <p className="text-body-sm font-semibold">
-          {isManual
-            ? t("company_setup.review.manual_subtitle")
-            : t("company_setup.review.extracted_badge")}
+          {savedMode
+            ? t("company_setup.review.saved_badge")
+            : isManual
+              ? t("company_setup.review.manual_subtitle")
+              : t("company_setup.review.extracted_badge")}
         </p>
       </div>
 
@@ -242,35 +365,45 @@ export const RutReviewStep: FC<RutReviewStepProps> = ({
                 "color-mix(in srgb, var(--color-ink) 8%, transparent)",
             }}
           >
-            <label
-              htmlFor="company-setup-municipio"
+            <span
               className="text-body-sm font-medium"
               style={{ color: "var(--color-ink-muted)" }}
             >
               {t("company_setup.review.municipio")}
-            </label>
-            <div className="flex items-center gap-pos-sm">
-              <input
-                id="company-setup-municipio"
-                type="text"
-                autoComplete="address-level2"
-                className="pos-input"
-                value={draft.municipio ?? ""}
-                onChange={(e) =>
-                  onFieldChange("municipio", e.currentTarget.value)
-                }
-              />
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                className="pos-input w-24 font-data"
-                value={draft.municipioCode ?? ""}
-                onChange={(e) =>
-                  onFieldChange("municipioCode", e.currentTarget.value)
-                }
-                aria-label={t("company_setup.review.municipio_code")}
-              />
+            </span>
+            <div className="flex flex-col gap-pos-xs">
+              <div className="flex items-center gap-pos-sm">
+                <div className="min-w-0 flex-1">
+                  <SearchableSelect
+                    options={visibleMunicipios}
+                    onSearch={setMunicipioQuery}
+                    onSelect={handleMunicipioSelect}
+                    selectedId={selectedMunicipioId}
+                    placeholder={t("company_setup.review.select_municipio")}
+                    ariaLabel={t("company_setup.review.municipio")}
+                  />
+                </div>
+                <input
+                  id="company-setup-municipio-code"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className="pos-input w-24 font-data"
+                  value={draft.municipioCode ?? ""}
+                  onChange={(e) =>
+                    onFieldChange("municipioCode", e.currentTarget.value)
+                  }
+                  aria-label={t("company_setup.review.municipio_code")}
+                />
+              </div>
+              {needsMunicipioCode && (
+                <p
+                  className="text-caption"
+                  style={{ color: "var(--color-amber)" }}
+                >
+                  {t("company_setup.review.municipio_code_hint")}
+                </p>
+              )}
             </div>
           </div>
 

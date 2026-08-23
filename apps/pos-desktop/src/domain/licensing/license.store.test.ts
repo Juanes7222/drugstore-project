@@ -215,6 +215,64 @@ describe("useLicenseStore", () => {
     });
   });
 
+  describe("setActivated billing method", () => {
+    it("stores CERTIFICATE when the plan declares it", () => {
+      useLicenseStore.getState().setActivated({
+        activationToken: "token-abc",
+        expiresAt: "2027-01-01T00:00:00.000Z",
+        subscription: testSubscription,
+        location: testLocation,
+        plan: { ...testPlan, billingMethod: "CERTIFICATE" },
+        workstationActivation: testWorkstationActivation,
+        hardwareFingerprint: "fp-001",
+      });
+
+      expect(useLicenseStore.getState().billingMethod).toBe("CERTIFICATE");
+    });
+
+    it("stores PROVIDER when the plan declares it", () => {
+      useLicenseStore.getState().setActivated({
+        activationToken: "token-abc",
+        expiresAt: "2027-01-01T00:00:00.000Z",
+        subscription: testSubscription,
+        location: testLocation,
+        plan: { ...testPlan, billingMethod: "PROVIDER" },
+        workstationActivation: testWorkstationActivation,
+        hardwareFingerprint: "fp-001",
+      });
+
+      expect(useLicenseStore.getState().billingMethod).toBe("PROVIDER");
+    });
+
+    it("defaults to PROVIDER when the plan has no billingMethod", () => {
+      useLicenseStore.getState().setActivated({
+        activationToken: "token-abc",
+        expiresAt: "2027-01-01T00:00:00.000Z",
+        subscription: testSubscription,
+        location: testLocation,
+        plan: testPlan,
+        workstationActivation: testWorkstationActivation,
+        hardwareFingerprint: "fp-001",
+      });
+
+      expect(useLicenseStore.getState().billingMethod).toBe("PROVIDER");
+    });
+
+    it("defaults to PROVIDER when the plan billingMethod is null", () => {
+      useLicenseStore.getState().setActivated({
+        activationToken: "token-abc",
+        expiresAt: "2027-01-01T00:00:00.000Z",
+        subscription: testSubscription,
+        location: testLocation,
+        plan: { ...testPlan, billingMethod: null },
+        workstationActivation: testWorkstationActivation,
+        hardwareFingerprint: "fp-001",
+      });
+
+      expect(useLicenseStore.getState().billingMethod).toBe("PROVIDER");
+    });
+  });
+
   describe("setCheckInResult", () => {
     it("updates the token and expiry", () => {
       useLicenseStore.getState().setActivated({
@@ -508,6 +566,24 @@ describe("useLicenseStore", () => {
       expect(parsed.state.renewalCheckoutUrl).toBeUndefined();
       expect(parsed.state.renewalReference).toBeUndefined();
       expect(parsed.state.lastRenewalAttempt).toBeUndefined();
+    });
+
+    it("persists billingMethod to localStorage", () => {
+      useLicenseStore.getState().setActivated({
+        activationToken: "token-abc",
+        expiresAt: "2027-01-01T00:00:00.000Z",
+        subscription: testSubscription,
+        location: testLocation,
+        plan: { ...testPlan, billingMethod: "CERTIFICATE" },
+        workstationActivation: testWorkstationActivation,
+        hardwareFingerprint: "fp-001",
+      });
+
+      const stored = localStorage.getItem("pharmacy-license-store");
+      expect(stored).not.toBeNull();
+
+      const parsed = JSON.parse(stored!);
+      expect(parsed.state.billingMethod).toBe("CERTIFICATE");
     });
 
     it("persists pendingActivationCode to localStorage", () => {

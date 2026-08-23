@@ -44,3 +44,13 @@ export class CompanySubmitRejectedException extends DomainError {
     super('COMPANY_SUBMIT_REJECTED', 'Server rejected the company profile.');
   }
 }
+
+/** A DANE municipio code was provided but does not exist in the catalog. */
+export class InvalidMunicipioCodeException extends DomainError {
+  constructor() {
+    super(
+      'MUNICIPIO_CODE_INVALID',
+      'The DANE municipio code is not a valid code.',
+    );
+  }
+}

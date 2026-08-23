@@ -14,13 +14,14 @@ import { useTranslation } from "react-i18next";
 import type { CompanyDraft } from "@/hooks/use-company-setup";
 import { ShieldIcon } from "@/components/ui/icons";
 
-/** The draft fields this step edits — only the DIAN resolution. */
+/** The draft fields this step edits — the DIAN resolution plus the optional software habilitación ID. */
 export type ResolutionField =
   | "resolutionNumber"
   | "resolutionDate"
   | "resolutionPrefix"
   | "resolutionRangeStart"
-  | "resolutionRangeEnd";
+  | "resolutionRangeEnd"
+  | "softwareId";
 
 export interface ResolutionStepProps {
   draft: CompanyDraft;
@@ -171,6 +172,35 @@ export const ResolutionStep: FC<ResolutionStepProps> = ({
               }
             />
           </div>
+        </div>
+
+        {/* Software habilitación ID — optional, assigned by DIAN when the
+            software is registered against this NIT. Empty until then. */}
+        <div className="col-span-2">
+          <label
+            htmlFor="company-setup-software-id"
+            className="mb-pos-xs block text-body-sm font-semibold"
+            style={{ color: "var(--color-ink)" }}
+          >
+            {t("company_setup.resolution.software_id")}
+          </label>
+          <input
+            id="company-setup-software-id"
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            className="pos-input font-data"
+            value={draft.softwareId ?? ""}
+            onChange={(e) =>
+              onFieldChange("softwareId", e.currentTarget.value)
+            }
+          />
+          <p
+            className="mt-pos-xs text-caption"
+            style={{ color: "var(--color-ink-muted)" }}
+          >
+            {t("company_setup.resolution.software_id_helper")}
+          </p>
         </div>
       </div>
 

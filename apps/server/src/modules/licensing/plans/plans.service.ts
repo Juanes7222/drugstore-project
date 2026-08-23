@@ -5,6 +5,10 @@ import { HttpStatus } from '@nestjs/common';
 import { DEFAULT_PLANS } from '@pharmacy/shared-types';
 import type { CreatePlanDto, UpdatePlanDto, PlanFilterDto } from './dto/plan.dto';
 
+/** Legacy tier plans replaced by the two billing-method plans. Kept (not
+ * deleted) because existing subscriptions reference their ids. */
+const LEGACY_PLAN_CODES = ['STARTER', 'PROFESSIONAL', 'ENTERPRISE'];
+
 @Injectable()
 export class PlansService implements OnModuleInit {
   private readonly logger = new Logger(PlansService.name);
@@ -13,7 +17,10 @@ export class PlansService implements OnModuleInit {
 
   /**
    * Seed the Plan table with DEFAULT_PLANS on first run.
-   * Uses upsert by code to be idempotent — safe to run on every startup.
+   * Creates missing plans (idempotent — safe on every startup) and
+   * deactivates the legacy tier plans so only the two billing-method plans
+   * remain public. Legacy rows are never deleted: subscriptions keep their
+   * FK and keep working with billingMethod 'PROVIDER' (column default).
    */
   async onModuleInit(): Promise<void> {
     this.logger.log('Seeding default plans...');
@@ -28,6 +35,7 @@ export class PlansService implements OnModuleInit {
             code: seed.code,
             name: seed.name,
             description: seed.description,
+            billingMethod: seed.billingMethod,
             pricingModel: seed.pricingModel,
             basePriceCents: seed.basePriceCents,
             currency: seed.currency,
@@ -44,6 +52,14 @@ export class PlansService implements OnModuleInit {
         });
         created++;
       }
+    }
+
+    const deactivated = await this.prisma.plan.updateMany({
+      where: { code: { in: LEGACY_PLAN_CODES } },
+      data: { isActive: false, isPublic: false },
+    });
+    if (deactivated.count > 0) {
+      this.logger.log(`Deactivated ${deactivated.count} legacy plan(s)`);
     }
 
     if (created > 0) {
@@ -65,6 +81,7 @@ export class PlansService implements OnModuleInit {
         code: dto.code,
         name: dto.name,
         description: dto.description ?? null,
+        billingMethod: dto.billingMethod ?? 'PROVIDER',
         pricingModel: dto.pricingModel,
         basePriceCents: dto.basePriceCents,
         currency: dto.currency ?? 'COP',
@@ -117,6 +134,7 @@ export class PlansService implements OnModuleInit {
         ...(dto.code !== undefined && { code: dto.code }),
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.billingMethod !== undefined && { billingMethod: dto.billingMethod }),
         ...(dto.pricingModel !== undefined && { pricingModel: dto.pricingModel }),
         ...(dto.basePriceCents !== undefined && { basePriceCents: dto.basePriceCents }),
         ...(dto.currency !== undefined && { currency: dto.currency }),

@@ -80,6 +80,10 @@ describe('PlansController (integration)', () => {
       .compile();
 
     app = module.createNestApplication();
+    // PlansService seeds DEFAULT_PLANS in onModuleInit; make the seed
+    // idempotent-path mocks resolve so the legacy deactivation does not crash.
+    mockPrisma.plan.findUnique.mockResolvedValue(null);
+    mockPrisma.plan.updateMany.mockResolvedValue({ count: 0 });
     await app.init();
   });
 

@@ -28,6 +28,7 @@ function buildSubscription(overrides: Record<string, unknown> = {}) {
       id: 'plan-uuid-1',
       code: 'PHARMACY_PRO',
       name: 'Pharmacy Pro',
+      billingMethod: 'PROVIDER',
       features: ['unlimited_sales', 'inventory_management'],
       maxLocations: 3,
       maxWorkstationsPerLocation: 5,

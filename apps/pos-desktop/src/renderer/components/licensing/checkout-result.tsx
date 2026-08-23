@@ -10,7 +10,7 @@
  */
 import { type FC, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ClockIcon, ClipboardListIcon, XCircleIcon } from "@/components/ui/icons";
+import { ClockIcon, ClipboardListIcon, ShieldIcon, XCircleIcon } from "@/components/ui/icons";
 import { SuccessCheckIcon } from "@/components/ui/icons/animated";
 import { formatActivationCode } from "./activation.helpers";
 
@@ -19,6 +19,12 @@ export type CheckoutResultKind = "approved" | "declined" | "timeout";
 export interface CheckoutResultProps {
   kind: CheckoutResultKind;
   activationCode: string | null;
+  /**
+   * True when the approved plan bills with the customer's own DIAN
+   * certificate — the result panel then previews the certificate step
+   * that follows activation.
+   */
+  requiresCertificate?: boolean;
   onActivate: () => void;
   onRetryPayment: () => void;
   onRestart: () => void;
@@ -54,6 +60,7 @@ const groupActivationCode = (formatted: string): string[] => formatted.split("-"
 export const CheckoutResult: FC<CheckoutResultProps> = ({
   kind,
   activationCode,
+  requiresCertificate,
   onActivate,
   onRetryPayment,
   onRestart,
@@ -101,6 +108,30 @@ export const CheckoutResult: FC<CheckoutResultProps> = ({
           <p className="mb-pos-lg text-body text-ink-muted">
             {t("licensing.plans.result.approved.body")}
           </p>
+
+          {requiresCertificate && (
+            <div
+              className="mb-pos-md rounded-pos border px-pos-md py-pos-sm text-left"
+              role="note"
+              style={{
+                backgroundColor: "var(--color-restrict-surface)",
+                borderColor:
+                  "color-mix(in srgb, var(--color-restrict) 35%, transparent)",
+                borderLeft: `4px solid var(--color-restrict)`,
+              }}
+            >
+              <p
+                className="mb-pos-xs flex items-center gap-pos-xs text-caption font-bold uppercase tracking-wide"
+                style={{ color: "var(--color-restrict)" }}
+              >
+                <ShieldIcon className="h-4 w-4" aria-hidden="true" />
+                {t("licensing.plans.result.approved.certificate_note_title")}
+              </p>
+              <p className="text-body-sm text-ink">
+                {t("licensing.plans.result.approved.certificate_note")}
+              </p>
+            </div>
+          )}
 
           {activationCode ? (
             <>

@@ -11,23 +11,33 @@ import { PrismaClient } from '@pharmacy/database';
 import { FiscalCertificateService } from './fiscal-certificate.service';
 import { FiscalCertificateParser } from './fiscal-certificate.parser';
 import { FiscalCertificateCryptoService } from './fiscal-certificate-crypto.service';
+import { CertificateNitExtractor } from './certificate-nit-extractor';
 import { FISCAL_CERTIFICATE_KEK_ENV } from './fiscal-certificate-crypto.service';
 import { FiscalCertificateInvalidException } from '../exceptions/fiscal-certificate-invalid.exception';
 import { FiscalCertificateNotFoundException } from '../exceptions/fiscal-certificate-not-found.exception';
+import { FISCAL_ISSUER_CONFIG_ID } from '../constants/fiscal-singleton-ids';
 
 const SOFTWARE_SECURITY_CODE =
   'abcdef0123456789abcdef0123456789abcdef0123456789ab';
 
+// The issuer NIT the tenant has configured; the dummy certificate below
+// carries the same NIT in its subject CN.
+const ISSUER_NIT = '900123456';
+
 // Dummy self-signed test certificate generated with node-forge itself —
-// never a real DIAN certificate (see project testing rules).
-function createDummyP12Base64(password: string): string {
+// never a real DIAN certificate (see project testing rules). The subject CN
+// embeds a fake NIT so the upload NIT-vs-issuer check can run.
+function createDummyP12Base64(
+  password: string,
+  subjectCn = 'FARMACIA DEMO TEST - NIT 900.123.456-7',
+): string {
   const keys = forge.pki.rsa.generateKeyPair(1024);
   const cert = forge.pki.createCertificate();
   cert.publicKey = keys.publicKey;
   cert.serialNumber = '01';
   cert.validity.notBefore = new Date(2026, 0, 1);
   cert.validity.notAfter = new Date(2036, 0, 1);
-  const attrs = [{ name: 'commonName', value: 'FARMACIA DEMO TEST' }];
+  const attrs = [{ name: 'commonName', value: subjectCn }];
   cert.setSubject(attrs);
   cert.setIssuer(attrs);
   cert.sign(keys.privateKey, forge.md.sha256.create());
@@ -41,6 +51,7 @@ function createDummyP12Base64(password: string): string {
 }
 
 const P12_BASE64 = createDummyP12Base64('test-password');
+const CERTIFICATE_CN = 'FARMACIA DEMO TEST - NIT 900.123.456-7';
 
 const VALID_UPLOAD = {
   alias: 'DIAN Firma 2026',
@@ -69,6 +80,7 @@ describe('FiscalCertificateService', () => {
       tenantContext as any,
       new FiscalCertificateCryptoService(),
       new FiscalCertificateParser(),
+      new CertificateNitExtractor(),
     );
   });
 
@@ -78,19 +90,26 @@ describe('FiscalCertificateService', () => {
 
   describe('upload', () => {
     it('rotates existing ACTIVE certificates and creates the new ACTIVE row', async () => {
+      (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue({
+        nit: ISSUER_NIT,
+      });
       (prisma.fiscalCertificate.updateMany as jest.Mock).mockResolvedValue({
         count: 1,
       });
       (prisma.fiscalCertificate.create as jest.Mock).mockResolvedValue({
         id: 'cert-1',
         alias: 'DIAN Firma 2026',
-        subjectCn: 'FARMACIA DEMO TEST',
+        subjectCn: CERTIFICATE_CN,
         validTo: new Date(2036, 0, 1),
         status: 'ACTIVE',
       });
 
       const result = await service.upload(VALID_UPLOAD, 'user-1');
 
+      expect(prisma.fiscalIssuerConfig.findUnique).toHaveBeenCalledWith({
+        where: { id: FISCAL_ISSUER_CONFIG_ID },
+        select: { nit: true },
+      });
       expect(prisma.fiscalCertificate.updateMany).toHaveBeenCalledWith({
         where: { subscriptionId: 'sub-1', status: 'ACTIVE' },
         data: { status: 'ROTATED', rotatedAt: expect.any(Date) },
@@ -100,8 +119,8 @@ describe('FiscalCertificateService', () => {
           id: expect.any(String),
           subscriptionId: 'sub-1',
           alias: 'DIAN Firma 2026',
-          subjectCn: 'FARMACIA DEMO TEST',
-          issuerCn: 'FARMACIA DEMO TEST',
+          subjectCn: CERTIFICATE_CN,
+          issuerCn: CERTIFICATE_CN,
           serialNumber: '01',
           validFrom: new Date(2026, 0, 1),
           validTo: new Date(2036, 0, 1),
@@ -122,10 +141,69 @@ describe('FiscalCertificateService', () => {
       expect(result).toEqual({
         id: 'cert-1',
         alias: 'DIAN Firma 2026',
-        subjectCn: 'FARMACIA DEMO TEST',
+        subjectCn: CERTIFICATE_CN,
         validTo: new Date(2036, 0, 1),
         status: 'ACTIVE',
       });
+    });
+
+    it('rejects a certificate whose subject carries no recognizable NIT', async () => {
+      const noNitBundle = createDummyP12Base64('test-password', 'FARMACIA DEMO TEST');
+      const promise = service.upload(
+        { ...VALID_UPLOAD, certificateBase64: noNitBundle },
+        'user-1',
+      );
+
+      await expect(promise).rejects.toThrow(FiscalCertificateInvalidException);
+      await expect(promise).rejects.toThrow('subject does not contain a recognizable NIT');
+      expect(prisma.fiscalCertificate.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the issuer configuration is not set', async () => {
+      (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue(null);
+
+      const promise = service.upload(VALID_UPLOAD, 'user-1');
+
+      await expect(promise).rejects.toThrow(FiscalCertificateInvalidException);
+      await expect(promise).rejects.toThrow('issuer configuration is not set');
+      expect(prisma.fiscalCertificate.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the certificate NIT differs from the configured issuer NIT', async () => {
+      (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue({
+        nit: '800197268',
+      });
+
+      const promise = service.upload(VALID_UPLOAD, 'user-1');
+
+      await expect(promise).rejects.toThrow(FiscalCertificateInvalidException);
+      await expect(promise).rejects.toThrow('belongs to a different NIT');
+      expect(prisma.fiscalCertificate.create).not.toHaveBeenCalled();
+    });
+
+    it('accepts a certificate NIT that carries the verification digit when the issuer config does not', async () => {
+      (prisma.fiscalIssuerConfig.findUnique as jest.Mock).mockResolvedValue({
+        nit: '900123456',
+      });
+      // Bare digit-string subject with DV, no "NIT" label.
+      const dvBundle = createDummyP12Base64('test-password', '900.123.456-7');
+      (prisma.fiscalCertificate.updateMany as jest.Mock).mockResolvedValue({
+        count: 0,
+      });
+      (prisma.fiscalCertificate.create as jest.Mock).mockResolvedValue({
+        id: 'cert-1',
+        alias: 'DIAN Firma 2026',
+        subjectCn: '900.123.456-7',
+        validTo: new Date(2036, 0, 1),
+        status: 'ACTIVE',
+      });
+
+      await service.upload(
+        { ...VALID_UPLOAD, certificateBase64: dvBundle },
+        'user-1',
+      );
+
+      expect(prisma.fiscalCertificate.create).toHaveBeenCalled();
     });
 
     it('throws FiscalCertificateInvalidException for an invalid p12 bundle', async () => {
