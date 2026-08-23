@@ -1,6 +1,7 @@
 import { createDecipheriv } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../infrastructure/prisma/prisma.service';
+import { FiscalCertificateExpiredException } from '../exceptions/fiscal-certificate-expired.exception';
 
 /**
  * Decrypts the FiscalCertificate.encryptedBundle envelope written by
@@ -83,6 +84,26 @@ export class DbCertificateSecretReaderAdapter {
       throw new Error(
         `No ACTIVE fiscal certificate for subscription ${subscriptionId} — ` +
           'upload one via POST /fiscal-dian/certificates',
+      );
+    }
+
+    // Hard gate at transmission time: DIAN rejects documents signed with an
+    // expired certificate, so refuse before signing. The POS warns 30 days
+    // ahead (EXPIRING) and the server runs an expiration job; this check is
+    // the last line that turns an expired certificate into a visible,
+    // retryable failure instead of a DIAN rejection mid-flight. The
+    // document stays PENDING_SIGNATURE because the claim runs after secret
+    // resolution — renewing the certificate lets the queue retry.
+    if (certificate.validTo.getTime() <= Date.now()) {
+      this.logger.warn(
+        `Certificate "${certificate.alias}" expired on ` +
+          `${certificate.validTo.toISOString()} — refusing to sign for ` +
+          `subscription ${subscriptionId}`,
+      );
+      throw new FiscalCertificateExpiredException(
+        certificate.alias,
+        certificate.validTo,
+        subscriptionId,
       );
     }
 

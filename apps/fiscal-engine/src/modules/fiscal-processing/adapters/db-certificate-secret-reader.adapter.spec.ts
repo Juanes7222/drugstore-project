@@ -9,6 +9,7 @@ jest.mock('@pharmacy/database', () => ({
 }));
 
 import { DbCertificateSecretReaderAdapter } from './db-certificate-secret-reader.adapter';
+import { FiscalCertificateExpiredException } from '../exceptions/fiscal-certificate-expired.exception';
 
 const KEK_ENV_VAR = 'FISCAL_CERTIFICATE_KEK_BASE64';
 
@@ -86,6 +87,33 @@ describe('DbCertificateSecretReaderAdapter', () => {
 
       await expect(adapter.readSecret('sub-1', 'file:ignored.json')).rejects.toThrow(
         'No ACTIVE fiscal certificate for subscription sub-1',
+      );
+    });
+
+    it('throws FiscalCertificateExpiredException before decrypting when the ACTIVE certificate is expired', async () => {
+      // Truncated bundle: if the expiry gate were missing, decryption would
+      // throw 'Encrypted certificate bundle is truncated' instead.
+      (prisma.fiscalCertificate.findFirst as jest.Mock).mockResolvedValue({
+        encryptedBundle: Buffer.alloc(5),
+        alias: 'DIAN Firma 2025',
+        validTo: new Date('2025-01-01T00:00:00.000Z'),
+      });
+
+      await expect(adapter.readSecret('sub-1', 'file:ignored.json')).rejects.toThrow(
+        FiscalCertificateExpiredException,
+      );
+    });
+
+    it('throws when the certificate expires exactly at the moment of resolution', async () => {
+      const expiredNow = new Date();
+      (prisma.fiscalCertificate.findFirst as jest.Mock).mockResolvedValue({
+        encryptedBundle: Buffer.alloc(5),
+        alias: 'DIAN Firma 2025',
+        validTo: expiredNow,
+      });
+
+      await expect(adapter.readSecret('sub-1', 'file:ignored.json')).rejects.toThrow(
+        FiscalCertificateExpiredException,
       );
     });
 
