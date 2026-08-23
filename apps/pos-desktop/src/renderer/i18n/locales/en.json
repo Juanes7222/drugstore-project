@@ -1683,6 +1683,15 @@
       "feature_label_printing": "Label printing",
       "feature_customer_display": "Customer display",
       "feature_priority_support": "Priority support",
+      "feature_unlimited_locations": "Unlimited locations",
+      "feature_offline_mode": "Offline mode",
+      "feature_inventory_management": "Inventory management",
+      "feature_prescription_management": "Prescription management",
+      "feature_fiscal_printing": "Fiscal printing",
+      "feature_api_access": "API access",
+      "feature_custom_integrations": "Custom integrations",
+      "feature_white_label": "White label",
+      "feature_backup_recovery": "Backup and recovery",
       "assignment_section": "Assignment",
       "location_label": "Location:",
       "workstation_label": "Workstation:",
@@ -1743,7 +1752,17 @@
         "extra_workstation": "+ {{price}} per extra workstation / month",
         "per_month": "/month",
         "per_quarter": "/quarter",
-        "per_year": "/year"
+        "per_year": "/year",
+        "billing_method": {
+          "PROVIDER": "Billing included",
+          "CERTIFICATE": "Your DIAN certificate"
+        },
+        "billing_note": {
+          "PROVIDER": "We transmit your invoices to the DIAN. Nothing to upload.",
+          "CERTIFICATE": "After payment you will upload your digital certificate (.pfx/.p12) to sign and transmit."
+        },
+        "billing_help": "How do I get the DIAN certificate?",
+        "billing_help_aria": "Open help about the DIAN certificate"
       },
       "catalog": {
         "loading": "Loading plans...",
@@ -1785,6 +1804,8 @@
         "approved": {
           "title": "Payment approved!",
           "body": "Your subscription is now active. Save your activation code: you will need it in the next step.",
+          "certificate_note_title": "Next: your DIAN certificate",
+          "certificate_note": "With this plan, after activating your terminal you will upload your digital certificate (.pfx/.p12) to enable electronic invoicing.",
           "no_code_title": "Subscription activated",
           "no_code_body": "We could not fetch the activation code automatically. Check your email or contact your provider."
         },
@@ -1839,6 +1860,7 @@
       "done_title": "All set! Company configured",
       "done_body": "Your pharmacy can now issue electronic invoicing (DIAN).",
       "done_continue": "Continue to the system",
+      "next_certificate_step": "Continue to the DIAN certificate",
       "edit_done_title": "Changes saved",
       "edit_done_body": "The electronic invoicing (DIAN) issuer details have been updated.",
       "edit_done_continue": "Back to settings"
@@ -1900,6 +1922,47 @@
       "software_id": "DIAN software ID",
       "software_id_helper": "Complete this when the software habilitación is ready — leave it empty if you don't have it yet."
     }
+  },
+  "certificate_setup": {
+    "title": "Your DIAN certificate",
+    "subtitle": "Upload your pharmacy's digital certificate to sign and transmit electronic invoicing.",
+    "done_title": "Certificate configured",
+    "done_subtitle": "Your pharmacy can now sign and transmit electronic invoices to the DIAN.",
+    "pick_file": "Select .pfx or .p12 file",
+    "file_aria": "Upload the DIAN certificate file",
+    "file_hint": ".pfx or .p12 file · max 3 MB",
+    "file_change": "Change file",
+    "password": "Certificate password",
+    "password_hint": "The one you set when generating the certificate (PKCS#12).",
+    "security_code": "Software security code",
+    "security_code_hint": "Generated when you enable the software with the DIAN.",
+    "upload": "Upload certificate",
+    "uploading": "Uploading certificate...",
+    "skip": "I'll do it later",
+    "skip_hint": "Sales keep working in contingency mode, without electronic transmission.",
+    "finish": "Continue to the system",
+    "configured_subject": "Holder: {{subject}}",
+    "configured_validity": "Valid until {{date}}",
+    "security_promise": "The certificate is stored encrypted on our servers. The password is never stored.",
+    "help": "What is the DIAN certificate?",
+    "help_aria": "Open help about the DIAN certificate",
+    "error": {
+      "INVALID_FILE_TYPE": "The file must be a .pfx or .p12 certificate.",
+      "FILE_TOO_LARGE": "The file exceeds the maximum size (3 MB).",
+      "PASSWORD_REQUIRED": "Enter the certificate password.",
+      "SECURITY_CODE_TOO_SHORT": "The security code must be at least 10 characters long.",
+      "OFFLINE": "No internet connection. Upload the certificate when you have a connection.",
+      "SERVER_REJECTED": "The server rejected the certificate. Verify that it is the correct file and that the password matches the certificate.",
+      "NETWORK": "Could not reach the server. Check your connection and try again."
+    }
+  },
+  "certificate_banner": {
+    "aria": "DIAN certificate status",
+    "none_message": "Upload your DIAN certificate to enable electronic invoicing",
+    "none_cta": "Upload certificate",
+    "expiring_message": "Your DIAN certificate expires on {{date}}. Renew it before that date to avoid interrupting electronic invoicing.",
+    "expired_message": "Your DIAN certificate has expired. Electronic invoicing is suspended — sales continue in contingency mode.",
+    "cta": "Update certificate"
   },
   "update": {
     "toast": {

@@ -30,6 +30,9 @@ export interface UseFiscalCertificateOptions {
   baseUrl?: string;
 }
 
+/** Backstop cadence for the status refresh while the app stays open. */
+const CERTIFICATE_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+
 export interface UseFiscalCertificateResult {
   status: CertificateStatus;
   alias: string | null;
@@ -101,6 +104,31 @@ export function useFiscalCertificate(
   // persisted metadata in sync with the server, e.g. after a rotation).
   useEffect(() => {
     void service.refreshStatus();
+  }, [service]);
+
+  // Keep the persisted status live while the app runs: the certificate can
+  // expire with the terminal open, and the banner must flip to EXPIRED
+  // without a remount. Refresh on window focus/visibility (the cheapest
+  // trigger — covers the "app sat in background past expiry" case) and on a
+  // slow hourly interval as a backstop. refreshStatus no-ops offline, so
+  // neither trigger costs anything when disconnected.
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void service.refreshStatus();
+      }
+    };
+    const intervalId = window.setInterval(() => {
+      void service.refreshStatus();
+    }, CERTIFICATE_REFRESH_INTERVAL_MS);
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+      window.clearInterval(intervalId);
+    };
   }, [service]);
 
   const needsCertificate =

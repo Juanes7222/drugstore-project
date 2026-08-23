@@ -1,7 +1,8 @@
 /**
  * Unit tests for useFiscalCertificate — needsCertificate gating, upload
- * lifecycle (client-side validation codes vs domain exceptions) and the
- * best-effort status refresh on mount.
+ * lifecycle (client-side validation codes vs domain exceptions), the
+ * best-effort status refresh on mount, and the periodic refresh triggers
+ * (visibilitychange, window focus, hourly interval).
  *
  * Stores are real (asserted on actual state); the network boundary is a
  * mocked global fetch, matching use-company-setup.test.tsx.
@@ -21,6 +22,17 @@ import {
 } from "../../domain/auth/local-session.store";
 
 const BASE_URL = "http://api.test";
+
+// Mirrors the private CERTIFICATE_REFRESH_INTERVAL_MS in the hook source
+// (not exported, so duplicated here deliberately).
+const CERTIFICATE_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+
+const setVisibilityState = (state: DocumentVisibilityState): void => {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => state,
+  });
+};
 
 const makeSession = (accessToken: string): LocalSession => ({
   userId: "u-1",
@@ -106,6 +118,9 @@ describe("useFiscalCertificate", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    vi.useRealTimers();
+    // Restore the jsdom default visibilityState ('visible').
+    delete (document as { visibilityState?: DocumentVisibilityState }).visibilityState;
   });
 
   describe("needsCertificate", () => {
@@ -285,6 +300,122 @@ describe("useFiscalCertificate", () => {
       });
       expect(result.current.status).toBe("NONE");
       expect(result.current.lastCheckedAt).toBeNull();
+    });
+  });
+
+  describe("periodic refresh", () => {
+    it("refreshes only when the document becomes visible again", async () => {
+      useLocalSessionStore.getState().setSession(makeSession("tok-1"));
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify([summary]), { status: 200 }),
+      );
+      setVisibilityState("hidden");
+
+      renderHook(() => useFiscalCertificate({ baseUrl: BASE_URL }));
+
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      setVisibilityState("visible");
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("refreshes when the window regains focus", async () => {
+      useLocalSessionStore.getState().setSession(makeSession("tok-1"));
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify([summary]), { status: 200 }),
+      );
+
+      renderHook(() => useFiscalCertificate({ baseUrl: BASE_URL }));
+
+      act(() => {
+        window.dispatchEvent(new Event("focus"));
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("refreshes every hour while mounted", async () => {
+      useLocalSessionStore.getState().setSession(makeSession("tok-1"));
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify([summary]), { status: 200 }),
+      );
+      vi.useFakeTimers();
+
+      renderHook(() => useFiscalCertificate({ baseUrl: BASE_URL }));
+
+      await act(async () => {
+        vi.advanceTimersByTime(CERTIFICATE_REFRESH_INTERVAL_MS);
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("clears the interval on unmount", async () => {
+      useLocalSessionStore.getState().setSession(makeSession("tok-1"));
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify([summary]), { status: 200 }),
+      );
+      vi.useFakeTimers();
+
+      const { unmount } = renderHook(() =>
+        useFiscalCertificate({ baseUrl: BASE_URL }),
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(CERTIFICATE_REFRESH_INTERVAL_MS);
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+      unmount();
+      await act(async () => {
+        vi.advanceTimersByTime(CERTIFICATE_REFRESH_INTERVAL_MS);
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("swallows interval refresh failures without an unhandled rejection", async () => {
+      useLocalSessionStore.getState().setSession(makeSession("tok-1"));
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockRejectedValue(new Error("boom"));
+      vi.useFakeTimers();
+
+      const { result } = renderHook(() =>
+        useFiscalCertificate({ baseUrl: BASE_URL }),
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(CERTIFICATE_REFRESH_INTERVAL_MS);
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(result.current.status).toBe("NONE");
+    });
+
+    it("swallows visibility refresh failures without an unhandled rejection", async () => {
+      useLocalSessionStore.getState().setSession(makeSession("tok-1"));
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockRejectedValue(new Error("boom"));
+
+      const { result } = renderHook(() =>
+        useFiscalCertificate({ baseUrl: BASE_URL }),
+      );
+
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(result.current.status).toBe("NONE");
     });
   });
 

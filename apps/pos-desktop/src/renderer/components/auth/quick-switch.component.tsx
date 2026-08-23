@@ -151,8 +151,6 @@ export const QuickSwitch: FC = () => {
     return () => { cancelled = true; };
   }, [isOpen, authService, t]);
 
-  if (!session) return null;
-
   const handleUserSelect = useCallback((user: QuickUser) => {
     setSelectedUser(user);
     setError(null);
@@ -167,7 +165,7 @@ export const QuickSwitch: FC = () => {
   }, []);
 
   const handleSwitchComplete = useCallback(async () => {
-    if (!selectedUser) return;
+    if (!selectedUser || !session) return;
     setIsLoading(true);
     setError(null);
 
@@ -196,11 +194,11 @@ export const QuickSwitch: FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedUser, password, authService, session.workstationId]);
+  }, [selectedUser, password, authService, session]);
 
   const handlePinComplete = useCallback(
     async (pin: string) => {
-      if (!selectedUser) return;
+      if (!selectedUser || !session) return;
       setIsLoading(true);
       setError(null);
 
@@ -230,8 +228,10 @@ export const QuickSwitch: FC = () => {
         setIsLoading(false);
       }
     },
-    [selectedUser, authService, session.workstationId],
+    [selectedUser, authService, session],
   );
+
+  if (!session) return null;
 
   return (
     <div ref={dropdownRef} className="relative">

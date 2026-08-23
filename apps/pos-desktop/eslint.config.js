@@ -70,19 +70,6 @@ export default tseslint.config(
     },
   },
   {
-    // Pre-existing early-return-before-hooks patterns. The hook order must
-    // be fixed in these components before re-enabling the rule; everything
-    // else keeps rules-of-hooks strict.
-    files: [
-      'src/renderer/components/auth/quick-switch.component.tsx',
-      'src/renderer/components/inventory-lots/inventory-lots.page.tsx',
-      'src/renderer/components/licensing/activation.page.tsx',
-    ],
-    rules: {
-      'react-hooks/rules-of-hooks': 'off',
-    },
-  },
-  {
     // Build/test tooling runs on Node, not in the webview.
     files: [
       'vite.config.ts',

@@ -123,24 +123,6 @@ export const ActivationPage: FC = () => {
 
   // ---- Redirect guard ----
 
-  if (status !== LicenseStatus.UNACTIVATED) {
-    return (
-      <div
-        className="flex h-screen items-center justify-center"
-        style={{ backgroundColor: "var(--color-surface)" }}
-      >
-        <div className="pos-panel max-w-md p-pos-xl text-center">
-          <p
-            className="text-body"
-            style={{ color: "var(--color-ink)" }}
-          >
-            {t("licensing.already_activated_redirect")}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   // ---- Handlers ----
 
   const handleCodeChange = useCallback(
@@ -319,6 +301,26 @@ export const ActivationPage: FC = () => {
       t,
     ],
   );
+
+  // ---- Redirect guard ----
+
+  if (status !== LicenseStatus.UNACTIVATED) {
+    return (
+      <div
+        className="flex h-screen items-center justify-center"
+        style={{ backgroundColor: "var(--color-surface)" }}
+      >
+        <div className="pos-panel max-w-md p-pos-xl text-center">
+          <p
+            className="text-body"
+            style={{ color: "var(--color-ink)" }}
+          >
+            {t("licensing.already_activated_redirect")}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ---- Render ----
 

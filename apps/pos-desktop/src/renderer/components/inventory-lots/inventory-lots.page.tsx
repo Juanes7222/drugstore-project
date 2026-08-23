@@ -135,20 +135,6 @@ export const InventoryLotsPage: FC = () => {
   const lotsService = useInventoryLotsService();
   const requireLotOnReception = useRequireLotOnReception();
 
-  // Feature gate: lot management disabled when purchases do not require lot on reception
-  if (!requireLotOnReception) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-pos-md p-pos-xl">
-        <p
-          className="text-body-sm font-medium"
-          style={{ color: 'var(--color-ink-muted)' }}
-        >
-          {t('inventory_lots.feature_disabled')}
-        </p>
-      </div>
-    );
-  }
-
   // ---- State ----
   const [productGroups, setProductGroups] = useState<ProductLotGroup[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -255,6 +241,20 @@ export const InventoryLotsPage: FC = () => {
   const hasAlerts = summary
     ? summary.expiringSoon > 0 || summary.expired > 0
     : false;
+
+  // Feature gate: lot management disabled when purchases do not require lot on reception
+  if (!requireLotOnReception) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-pos-md p-pos-xl">
+        <p
+          className="text-body-sm font-medium"
+          style={{ color: 'var(--color-ink-muted)' }}
+        >
+          {t('inventory_lots.feature_disabled')}
+        </p>
+      </div>
+    );
+  }
 
   // ---- Render ----
   return (

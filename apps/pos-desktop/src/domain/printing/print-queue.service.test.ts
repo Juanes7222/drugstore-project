@@ -9,6 +9,13 @@ import {
 import { PrintPayloadType, type PrintJobType, type PrintJobInput } from "./printing-types";
 import { PrintPayloadNotFoundException, PrintJobNotFoundException } from "./exceptions";
 
+// Mock fileExists indirectly by mocking @tauri-apps/api/core. Lives at
+// module top level because vi.mock is hoisted above imports — registering it
+// inside beforeEach would apply after the module graph is evaluated.
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue(true),
+}));
+
 function createMockPrisma() {
   const jobStore = new Map<string, any>();
 
@@ -86,11 +93,6 @@ describe("PrintQueueService", () => {
     mockPrisma = createMockPrisma();
     resolvePrinterMock = vi.fn();
     executePrintMock = vi.fn();
-
-    // Mock fileExists indirectly by mocking @tauri-apps/api/core
-    vi.mock("@tauri-apps/api/core", () => ({
-      invoke: vi.fn().mockResolvedValue(true),
-    }));
 
     service = createPrintQueueService(
       mockPrisma as any,
