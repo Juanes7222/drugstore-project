@@ -344,6 +344,39 @@ describe("FiscalNumberingService", () => {
       expect(mockPrisma.fiscalCounter.upsert).not.toHaveBeenCalled();
     });
 
+    it("resets the regular counter when the range changes but the prefix stays the same", async () => {
+      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
+        createMockCounter({
+          resolutionPrefix: "FE",
+          currentRegularNumber: 1500n,
+          currentContingencyNumber: 9n,
+          authorizedStart: 1000n,
+          authorizedEnd: 1999n,
+        }),
+      );
+
+      const service = createFiscalNumberingService({
+        prisma: mockPrisma as any,
+        workstationId: "ws-001",
+      });
+
+      const result = await service.syncFromResolution({
+        prefix: "FE",
+        authorizedStart: 5000,
+        authorizedEnd: 5999,
+        nextRegularNumber: 5001,
+      });
+
+      expect(result).toEqual({ changed: true });
+      const { update } = vi.mocked(mockPrisma.fiscalCounter.upsert).mock
+        .calls[0][0];
+      expect(update.currentRegularNumber).toBe(5001n);
+      expect(update.currentContingencyNumber).toBe(9n);
+      expect(update.resolutionPrefix).toBe("FE");
+      expect(update.authorizedStart).toBe(5000n);
+      expect(update.authorizedEnd).toBe(5999n);
+    });
+
     it("resets the regular counter to the server consecutive and preserves the contingency counter on a new resolution", async () => {
       mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
         createMockCounter({

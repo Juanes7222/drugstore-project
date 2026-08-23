@@ -2050,6 +2050,8 @@
       "range_start": "Desde",
       "range_end": "Hasta",
       "range_note": "Rango de numeración autorizado para tus facturas.",
+      "valid_to": "Vigencia hasta",
+      "valid_to_helper": "Fecha de vencimiento de la resolución, tal como aparece en el documento de la DIAN.",
       "software_id": "ID de software DIAN",
       "software_id_helper": "Se completa cuando la habilitación del software esté lista — déjalo vacío si no lo tienes."
     }

@@ -138,6 +138,9 @@ describe("useCompanySetup", () => {
         { ok: true }
       >;
       expect(draft.name).toBe("FARMACIA LOS ANDES S.A.S.");
+      // The RUT never carries the resolution: the parsed draft must leave
+      // resolutionValidTo unset so the wizard shows it empty for manual entry.
+      expect(draft.resolutionValidTo).toBeUndefined();
       expect(useCompanySetupStore.getState().parsedFromRut?.nit).toBe(NIT);
       expect(useCompanySetupStore.getState().draft?.nit).toBe(NIT);
       expect(extractor).toHaveBeenCalledTimes(1);

@@ -1919,6 +1919,8 @@
       "range_start": "From",
       "range_end": "To",
       "range_note": "Numbering range authorized for your invoices.",
+      "valid_to": "Valid until",
+      "valid_to_helper": "Resolution expiry date, as shown on the DIAN document.",
       "software_id": "DIAN software ID",
       "software_id_helper": "Complete this when the software habilitación is ready — leave it empty if you don't have it yet."
     }

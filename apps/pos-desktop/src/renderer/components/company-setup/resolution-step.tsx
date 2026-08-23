@@ -21,6 +21,7 @@ export type ResolutionField =
   | "resolutionPrefix"
   | "resolutionRangeStart"
   | "resolutionRangeEnd"
+  | "resolutionValidTo"
   | "softwareId";
 
 export interface ResolutionStepProps {
@@ -172,6 +173,34 @@ export const ResolutionStep: FC<ResolutionStepProps> = ({
               }
             />
           </div>
+        </div>
+
+        {/* Software habilitación ID — optional, assigned by DIAN when the
+            software is registered against this NIT. Empty until then. */}
+        <div className="col-span-2">
+          <label
+            htmlFor="company-setup-resolution-valid-to"
+            className="mb-pos-xs block text-body-sm font-semibold"
+            style={{ color: "var(--color-ink)" }}
+          >
+            {t("company_setup.resolution.valid_to")}
+          </label>
+          <input
+            id="company-setup-resolution-valid-to"
+            type="date"
+            autoComplete="off"
+            className="pos-input"
+            value={draft.resolutionValidTo ?? ""}
+            onChange={(e) =>
+              onFieldChange("resolutionValidTo", e.currentTarget.value)
+            }
+          />
+          <p
+            className="mt-pos-xs text-caption"
+            style={{ color: "var(--color-ink-muted)" }}
+          >
+            {t("company_setup.resolution.valid_to_helper")}
+          </p>
         </div>
 
         {/* Software habilitación ID — optional, assigned by DIAN when the

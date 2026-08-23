@@ -73,6 +73,44 @@ describe("ResolutionStep", () => {
     expect(screen.getByLabelText("Hasta")).toHaveValue("");
   });
 
+  it("renders the resolution valid-to date from the draft", () => {
+    render(
+      <ResolutionStep
+        draft={makeDraft({ resolutionValidTo: "2031-01-15" })}
+        onFieldChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Vigencia hasta")).toHaveValue("2031-01-15");
+  });
+
+  it("renders a null resolution valid-to date as an empty input", () => {
+    render(
+      <ResolutionStep
+        draft={makeDraft({ resolutionValidTo: null })}
+        onFieldChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByLabelText("Vigencia hasta")).toHaveValue("");
+  });
+
+  it("reports resolution valid-to edits with the resolutionValidTo field key", () => {
+    const onFieldChange = vi.fn();
+    render(
+      <ResolutionStep
+        draft={makeDraft({ resolutionValidTo: null })}
+        onFieldChange={onFieldChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Vigencia hasta"), {
+      target: { value: "2031-06-30" },
+    });
+
+    expect(onFieldChange).toHaveBeenCalledWith("resolutionValidTo", "2031-06-30");
+  });
+
   it("renders the software ID from the draft", () => {
     render(
       <ResolutionStep
