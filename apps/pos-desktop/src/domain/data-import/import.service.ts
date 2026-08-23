@@ -60,6 +60,7 @@ import {
   ImportExecutionFailedException,
   ImportFileInvalidException,
   ImportRowRejectedException,
+  ImportTemplateFailedException,
   ImportValidationFailedException,
 } from "./exceptions";
 import {
@@ -67,7 +68,7 @@ import {
   listImportHistory,
   recordImportHistory,
 } from "./import-history.store";
-import { buildImportTemplate } from "./template.service";
+import { buildImportTemplate, type ImportTemplateCatalogs } from "./template.service";
 
 export interface ImportServiceDeps {
   prisma: PrismaClient;
@@ -275,17 +276,61 @@ export class ImportService implements ImportService {
   }
 
   /** Build a downloadable CSV/XLSX template for the entity. */
-  buildTemplate(
+  async buildTemplate(
     entityKey: ImportEntityKey,
     format: ImportSourceFormat,
   ): Promise<string | ArrayBuffer> {
     this.assertRoleFor(entityKey);
-    return buildImportTemplate(entityKey, format);
+    try {
+      const catalogs =
+        format === "XLSX" && entityKey === "products"
+          ? await this.loadProductCatalogs()
+          : undefined;
+      return await buildImportTemplate(entityKey, format, catalogs);
+    } catch (error) {
+      if (error instanceof ImportFileInvalidException) {
+        throw error;
+      }
+      throw new ImportTemplateFailedException(
+        error instanceof Error ? error.message : String(error),
+        error,
+      );
+    }
   }
 
   // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * Load the active catalog names the XLSX template offers as dropdown
+   * values for category / pharmaceutical form / tax scheme.
+   */
+  private async loadProductCatalogs(): Promise<ImportTemplateCatalogs> {
+    const [categories, pharmaceuticalForms, taxSchemes] = await Promise.all([
+      this.deps.prisma.category.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: { name: true },
+      }),
+      this.deps.prisma.pharmaceuticalForm.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: { name: true },
+      }),
+      this.deps.prisma.taxScheme.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: { name: true },
+      }),
+    ]);
+
+    return {
+      categories: categories.map((row) => row.name),
+      pharmaceuticalForms: pharmaceuticalForms.map((row) => row.name),
+      taxSchemes: taxSchemes.map((row) => row.name),
+    };
+  }
 
   /** Role gate per entity — mirrors the write permission of the domain service. */
   private assertRoleFor(entityKey: ImportEntityKey) {

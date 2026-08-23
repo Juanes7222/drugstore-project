@@ -1,11 +1,12 @@
 /**
  * Unit tests for ImportService orchestration: preview validation flow,
  * execute write flow, role gates, conflict re-checks, per-row rejections,
- * history persistence, and write-lock discipline. The parsers are mocked at
- * the module boundary; the real import definitions run against a mocked
- * Prisma client and mocked domain services.
+ * history persistence, write-lock discipline, and XLSX template catalog
+ * loading. The parsers are mocked at the module boundary; the real import
+ * definitions run against a mocked Prisma client and mocked domain services.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import ExcelJS from "exceljs";
 import { RoleType } from "@pharmacy/shared-types";
 import {
   createImportService,
@@ -68,11 +69,18 @@ const makeClientRow = (identificationNumber: string): Record<string, unknown> =>
 
 const makeMockPrisma = () => ({
   product: { findMany: vi.fn().mockResolvedValue([]) },
-  category: { findFirst: vi.fn().mockResolvedValue({ id: "cat-1" }) },
+  category: {
+    findFirst: vi.fn().mockResolvedValue({ id: "cat-1" }),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   pharmaceuticalForm: {
     findFirst: vi.fn().mockResolvedValue({ id: "form-1" }),
+    findMany: vi.fn().mockResolvedValue([]),
   },
-  taxScheme: { findFirst: vi.fn().mockResolvedValue({ id: "tax-1" }) },
+  taxScheme: {
+    findFirst: vi.fn().mockResolvedValue({ id: "tax-1" }),
+    findMany: vi.fn().mockResolvedValue([]),
+  },
   client: { findMany: vi.fn().mockResolvedValue([]) },
 });
 
@@ -459,6 +467,71 @@ describe("ImportService", () => {
       );
       expect(typeof template).toBe("string");
       expect((template as string).startsWith("\uFEFF")).toBe(true);
+    });
+
+    it("queries active product catalogs for the XLSX products template and passes their names through", async () => {
+      prisma.category.findMany.mockResolvedValue([
+        { name: "Analgesicos" },
+        { name: "Antibioticos" },
+      ]);
+      prisma.pharmaceuticalForm.findMany.mockResolvedValue([
+        { name: "Tableta" },
+      ]);
+      prisma.taxScheme.findMany.mockResolvedValue([
+        { name: "IVA 19%" },
+        { name: "Exento" },
+      ]);
+
+      const template = (await service.buildTemplate(
+        "products",
+        "XLSX",
+      )) as ArrayBuffer;
+
+      const findManyArgs = {
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+        select: { name: true },
+      };
+      expect(prisma.category.findMany).toHaveBeenCalledWith(findManyArgs);
+      expect(prisma.pharmaceuticalForm.findMany).toHaveBeenCalledWith(
+        findManyArgs,
+      );
+      expect(prisma.taxScheme.findMany).toHaveBeenCalledWith(findManyArgs);
+
+      // The loaded names land in the hidden catalog sheet, in link order.
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(template);
+      const catalogSheet = workbook.getWorksheet("_Catalogos");
+
+      const headerValues = (catalogSheet!.getRow(1).values ?? []) as unknown[];
+      expect(headerValues.slice(1)).toEqual([
+        "Categoria",
+        "Forma farmaceutica",
+        "Impuesto",
+      ]);
+      expect(catalogSheet!.getCell(3, 1).value).toBe("Antibioticos");
+      expect(catalogSheet!.getCell(2, 2).value).toBe("Tableta");
+      expect(catalogSheet!.getCell(2, 3).value).toBe("IVA 19%");
+    });
+
+    it("does not query catalogs for client templates", async () => {
+      const template = await service.buildTemplate("clients", "XLSX");
+
+      expect(prisma.category.findMany).not.toHaveBeenCalled();
+      expect(prisma.pharmaceuticalForm.findMany).not.toHaveBeenCalled();
+      expect(prisma.taxScheme.findMany).not.toHaveBeenCalled();
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(template as ArrayBuffer);
+      expect(workbook.getWorksheet("_Catalogos")).toBeUndefined();
+    });
+
+    it("does not query catalogs for CSV templates", async () => {
+      await service.buildTemplate("products", "CSV");
+
+      expect(prisma.category.findMany).not.toHaveBeenCalled();
+      expect(prisma.pharmaceuticalForm.findMany).not.toHaveBeenCalled();
+      expect(prisma.taxScheme.findMany).not.toHaveBeenCalled();
     });
   });
 });

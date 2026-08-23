@@ -50,3 +50,13 @@ export class ImportExecutionFailedException extends DomainError {
     super("IMPORT_EXECUTION_FAILED", message);
   }
 }
+
+/**
+ * Thrown when a downloadable template cannot be generated (e.g. the
+ * catalog queries backing the XLSX dropdowns fail).
+ */
+export class ImportTemplateFailedException extends DomainError {
+  constructor(message: string, readonly cause?: unknown) {
+    super("IMPORT_TEMPLATE_FAILED", message);
+  }
+}
