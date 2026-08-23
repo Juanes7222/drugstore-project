@@ -1049,4 +1049,88 @@ describe("SyncPushService", () => {
       vi.unstubAllGlobals();
     });
   });
+
+  // ---------------------------------------------------------------
+  // Retry-budget protection — recordBatchFailure with AUTH failures.
+  // An AUTH failure with no offline token means the request had no valid
+  // credential at all; the entry cannot succeed until re-auth, so the
+  // attempt is logged but the retry budget is left untouched. With an
+  // offline token the failure is a normal transient error → backoff.
+  // ---------------------------------------------------------------
+
+  describe("recordBatchFailure (AUTH retry-budget protection)", () => {
+    const makeAuthFetch = () =>
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: "Unauthorized",
+        text: vi.fn().mockResolvedValue("Unauthorized"),
+      });
+
+    it("records the attempt without consuming retry budget when AUTH fails with no offline token", async () => {
+      const entry = makePendingEntry({ retryCount: 0 });
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry]) // PENDING entries
+        .mockResolvedValueOnce([]); // FAILED retryable entries
+      vi.stubGlobal("fetch", makeAuthFetch());
+
+      // No offlineToken — the request went out without a fallback credential.
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+      });
+
+      const result = await service.pushPending();
+
+      expect(result).toEqual({ pushed: 1, accepted: 0 });
+      const updateCall = tx.syncQueue.update.mock.calls[0][0];
+      expect(updateCall.data).toMatchObject({
+        failureCategory: "AUTH",
+        lastAttemptAt: expect.any(Date),
+        lastErrorMessage: expect.stringContaining("401"),
+      });
+      // Retry budget untouched — the entry is picked up by the first push
+      // after credentials recover instead of burning an attempt now.
+      expect(updateCall.data).not.toHaveProperty("retryCount");
+      expect(updateCall.data).not.toHaveProperty("nextRetryAt");
+      expect(tx.syncAttempt.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            syncQueueEntryId: "entry-1",
+            outcome: "REJECTED",
+            httpStatus: 401,
+            failureCategory: "AUTH",
+          }),
+        }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("still uses normal backoff when AUTH fails with an offline token present", async () => {
+      const entry = makePendingEntry({ retryCount: 0 });
+      tx.syncQueue.findMany
+        .mockResolvedValueOnce([entry]) // PENDING entries
+        .mockResolvedValueOnce([]); // FAILED retryable entries
+      vi.stubGlobal("fetch", makeAuthFetch());
+
+      service = createSyncPushService({
+        prisma,
+        baseUrl: "http://localhost:3000",
+        offlineToken: "offline-token-123",
+      });
+
+      await service.pushPending();
+
+      const updateCall = tx.syncQueue.update.mock.calls[0][0];
+      expect(updateCall.data).toMatchObject({
+        retryCount: 1,
+        failureCategory: "AUTH",
+        lastAttemptAt: expect.any(Date),
+      });
+      expect(updateCall.data.nextRetryAt).toBeInstanceOf(Date);
+
+      vi.unstubAllGlobals();
+    });
+  });
 });

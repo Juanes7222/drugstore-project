@@ -114,6 +114,8 @@ describe('new operation types in SyncOperationSchema', () => {
     'INVOICE_TRANSMISSION_RESULT',
     'PRODUCT_CREATION',
     'PRODUCT_UPDATE',
+    'CLIENT_CREDIT_PAYMENT',
+    'CLIENT_CREDIT_PAYMENT_ANNULMENT',
   ] as const;
 
   for (const t of newTypes) {
@@ -128,7 +130,7 @@ describe('new operation types in SyncOperationSchema', () => {
     const result = SyncBatchSchema.safeParse(ops);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data).toHaveLength(3);
+      expect(result.data).toHaveLength(5);
     }
   });
 });
@@ -154,4 +156,50 @@ describe('existing operation types in SyncOperationSchema', () => {
       expect(result.success).toBe(true);
     });
   }
+});
+
+// ── Full operationType enum regression ────────────────────────────────────
+
+describe('full operationType enum in SyncOperationSchema', () => {
+  // Mirrors the z.enum list in sync-operation.schema.ts. Keeping the full
+  // set here pins every value so a future removal (or a rename that breaks
+  // the Zod/Prisma boundary) fails this suite instead of slipping through.
+  const allTypes = [
+    'SALE_CONFIRMATION',
+    'SHIFT_CLOSURE',
+    'CLIENT_CREATION',
+    'CLIENT_UPDATE',
+    'CLIENT_DEACTIVATE',
+    'CLIENT_RETURN',
+    'CLIENT_CREDIT_PAYMENT',
+    'CLIENT_CREDIT_PAYMENT_ANNULMENT',
+    'INVENTORY_ADJUSTMENT',
+    'FISCAL_DOCUMENT_SYNC',
+    'PRESCRIPTION_REGISTRATION',
+    'RESOLUTION_ALLOCATION',
+    'INVOICE_TRANSMISSION',
+    'INVOICE_TRANSMISSION_RESULT',
+    'INVOICE_ADJUSTMENT',
+    'PRODUCT_CREATION',
+    'PRODUCT_UPDATE',
+    'PURCHASE_ORDER_CONFIRMATION',
+    'PURCHASE_RECEPTION_CONFIRMATION',
+    'SUPPLIER_RETURN_CONFIRMATION',
+  ] as const;
+
+  for (const t of allTypes) {
+    it(`accepts ${t}`, () => {
+      const result = SyncOperationSchema.safeParse(buildOp({ operationType: t }));
+      expect(result.success).toBe(true);
+    });
+  }
+
+  it('accepts every enum value in a single batch array', () => {
+    const ops = allTypes.map((t) => buildOp({ operationType: t }));
+    const result = SyncBatchSchema.safeParse(ops);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toHaveLength(allTypes.length);
+    }
+  });
 });

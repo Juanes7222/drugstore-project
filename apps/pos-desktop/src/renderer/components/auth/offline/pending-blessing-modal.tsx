@@ -8,7 +8,7 @@
  * - Rejected sessions show specific messages per reason code.
  */
 
-import { type FC, useEffect, useState, useCallback } from 'react';
+import { type FC, useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppSelector } from '@/store/hooks';
@@ -67,19 +67,47 @@ export const PendingBlessingModal: FC = () => {
   const pendingSessions = sessions.filter((s) => !s.isBlessed && !s.rejectedAt);
   const rejectedSessions = sessions.filter((s) => s.rejectedAt !== undefined);
   const totalPendingCount = pendingSessions.length;
+  const rejectedCount = rejectedSessions.length;
+  const currentDismissKey = `${totalPendingCount}:${rejectedCount}`;
+  const allRejectedDismissed = rejectedSessions.every((s) =>
+    dismissedRejectedIds.has(s.localSessionId),
+  );
+  const dismissedKeyRef = useRef<string | null>(null);
 
-  // Show modal when there are pending sessions
+  // Show modal only while online, with pending sessions, and only for a
+  // pending-set the user has not dismissed for the current composition.
+  // Deps are primitives only: freshly-derived arrays never re-trigger this.
   useEffect(() => {
-    if (totalPendingCount > 0) {
-      setIsOpen(true);
-    } else if (
-      sessions.length > 0 &&
-      totalPendingCount === 0 &&
-      rejectedSessions.every((s) => dismissedRejectedIds.has(s.localSessionId))
+    if (
+      sessions.length === 0 ||
+      (totalPendingCount === 0 && rejectedCount === 0)
     ) {
+      dismissedKeyRef.current = null;
+      setIsOpen(false);
+      return;
+    }
+
+    if (
+      connectionState === 'ONLINE' &&
+      totalPendingCount > 0 &&
+      dismissedKeyRef.current !== currentDismissKey
+    ) {
+      setIsOpen(true);
+      return;
+    }
+
+    if (totalPendingCount === 0 && allRejectedDismissed) {
       setIsOpen(false);
     }
-  }, [totalPendingCount, sessions.length, rejectedSessions, dismissedRejectedIds]);
+  }, [
+    totalPendingCount,
+    rejectedCount,
+    sessions.length,
+    connectionState,
+    allRejectedDismissed,
+    dismissedRejectedIds,
+    currentDismissKey,
+  ]);
 
   // Auto-trigger blessing when modal opens and we're online
   useEffect(() => {
@@ -93,8 +121,9 @@ export const PendingBlessingModal: FC = () => {
   }, []);
 
   const handleClose = useCallback(() => {
+    dismissedKeyRef.current = `${totalPendingCount}:${rejectedCount}`;
     setIsOpen(false);
-  }, []);
+  }, [totalPendingCount, rejectedCount]);
 
   const allDone =
     totalPendingCount === 0 &&

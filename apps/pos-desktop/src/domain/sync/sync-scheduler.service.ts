@@ -28,7 +28,12 @@
 import { PrismaClient } from '@pharmacy/database/local';
 import { isOnline } from '../../common/is-online';
 import { dbWriteLock } from '../../infrastructure/write-lock';
-import { useLocalSessionStore } from '../auth/local-session.store';
+import { createSecureStorage } from '../../infrastructure/secure-storage';
+import {
+  useLocalSessionStore,
+  type LocalSession,
+} from '../auth/local-session.store';
+import { decodeOfflineToken } from '../auth/offline';
 import type {
   CatalogSyncService,
   CatalogSyncConfig,
@@ -140,6 +145,14 @@ export class SyncScheduler {
   private readonly prisma: PrismaClient;
   private readonly baseUrl: string;
   private accessToken?: string;
+  /**
+   * Mirror of the offline token the push service was built with. The push
+   * service snapshots the token at construction; the scheduler keeps its
+   * own copy so the auth-readiness gate (skip pushes known to be
+   * unauthenticated) can tell whether `X-Offline-Token` is actually
+   * being sent without reaching into the service.
+   */
+  private offlineToken?: string;
   private configSync: ConfigSyncService;
   private tenantConfigSync?: TenantConfigSyncService;
   private catalogSync: CatalogSyncService;
@@ -182,11 +195,13 @@ export class SyncScheduler {
       ...config.clients,
       accessToken: config.accessToken ?? config.clients.accessToken,
     });
+    this.offlineToken =
+      useLocalSessionStore.getState().session?.offlineToken ?? undefined;
     this.pushService = createSyncPushService({
       prisma: config.prisma,
       baseUrl: config.baseUrl,
       accessToken: config.accessToken,
-      offlineToken: useLocalSessionStore.getState().session?.offlineToken ?? undefined,
+      offlineToken: this.offlineToken,
       auditWriter: config.auditWriter,
     });
     this.metricsService = createSyncMetricsService(config.prisma);
@@ -223,11 +238,13 @@ export class SyncScheduler {
     this.catalogSync = createCatalogSyncService(this.prisma, baseConfig);
     this.lotSync = createLotSyncService(this.prisma, baseConfig);
     this.clientPull = createClientPullService(this.prisma, baseConfig);
+    this.offlineToken =
+      useLocalSessionStore.getState().session?.offlineToken ?? undefined;
     this.pushService = createSyncPushService({
       prisma: this.prisma,
       baseUrl: this.baseUrl,
       accessToken: token,
-      offlineToken: useLocalSessionStore.getState().session?.offlineToken ?? undefined,
+      offlineToken: this.offlineToken,
       invoiceService: this.invoiceService,
       auditWriter: this.auditWriter,
     });
@@ -354,8 +371,16 @@ export class SyncScheduler {
     void (async () => {
       // Refresh and the push's network POST run unlocked (network + store
       // only); only the push's DB writes take the lock.
-      await this.refreshAccessToken();
-      await this.runPush();
+      const refreshed = await this.refreshAccessToken();
+      // Auth-readiness gate: only suppress pushes that are known to be
+      // unauthenticated — the refresh failed AND the push service holds
+      // no offline token to fall back on. An offline token alone is a
+      // valid credential (the server guard accepts X-Offline-Token
+      // without a Bearer header), and transient 401s with credentials
+      // still flow through the normal retry/backoff path.
+      if (refreshed || this.offlineToken !== undefined) {
+        await this.runPush();
+      }
     })().catch(() => {
       /* runPush handles its own errors */
     });
@@ -404,8 +429,13 @@ export class SyncScheduler {
       //    the push's network POST run unlocked (network + store only);
       //    only the push's DB writes take the lock.
       void (async () => {
-        await this.refreshAccessToken();
-        await this.runPush();
+        const refreshed = await this.refreshAccessToken();
+        // Same auth-readiness gate as triggerPush: skip only when the
+        // refresh failed and there is no offline token to authenticate
+        // with. The burst below catches up once credentials exist.
+        if (refreshed || this.offlineToken !== undefined) {
+          await this.runPush();
+        }
       })().catch(() => {
         /* runPush handles its own errors */
       });
@@ -538,7 +568,13 @@ export class SyncScheduler {
     }
 
     try {
-      await this.runPush();
+      const refreshed = await this.refreshAccessToken();
+      // Auth-readiness gate (same as triggerPush/onOnlineEvent): don't
+      // hammer the server with pushes that are known to be
+      // unauthenticated — the regular tick recovers once credentials do.
+      if (refreshed || this.offlineToken !== undefined) {
+        await this.runPush();
+      }
     } catch {
       // Per-step error handling inside runPush covers logging.
     }
@@ -641,6 +677,11 @@ export class SyncScheduler {
     const bufferMs = this.intervalMs * 2; // 2x interval as safety margin
     if (msUntilExpiry > bufferMs) {
       useSyncAuthStatusStore.getState().setFresh();
+      // The token is fresh, so updateAccessToken() will not run on this
+      // call — but the push service's offline token snapshot may have
+      // gone stale without an access-token change. Re-sync it so a new
+      // offline token landing in the session still reaches the push.
+      this.syncOfflineTokenFromSession();
       return true; // Still fresh
     }
 
@@ -675,6 +716,10 @@ export class SyncScheduler {
         // Recreate all sub-services with the fresh token.
         this.updateAccessToken(data.accessToken);
 
+        // Fresh credentials — reset FAILED entries' nextRetryAt so the
+        // queue drains immediately instead of waiting out stale backoff.
+        void this.resetFailedRetryTimers();
+
         // Publish auth status for the sync health UI.
         useSyncAuthStatusStore.getState().setRefreshed();
 
@@ -696,7 +741,15 @@ export class SyncScheduler {
     // Path 2: Fallback — offline token exchange
     // POST /auth/token/exchange with the long-lived offline token.
     // ---------------------------------------------------------
-    if (!session.offlineToken) {
+    let offlineToken = session.offlineToken;
+    if (!offlineToken) {
+      // The in-memory session may predate offline-token issuance (or have
+      // lost it on rotation). The authoritative recovery source is the
+      // cached offline token in SecureStorage, written at every online
+      // login by OfflineAuthService.updateCachedCredentials.
+      offlineToken = await this.recoverCachedOfflineToken(session);
+    }
+    if (!offlineToken) {
       // No offline token available — nothing more we can do.
       return false;
     }
@@ -707,7 +760,7 @@ export class SyncScheduler {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ offlineToken: session.offlineToken }),
+          body: JSON.stringify({ offlineToken }),
         },
       );
 
@@ -737,8 +790,24 @@ export class SyncScheduler {
         offlineToken: exchangeData.offlineToken.token,
       });
 
+      // The exchange rotates the offline token — keep the SecureStorage
+      // cache in sync so the next recovery (and offline logins) use the
+      // current token instead of a possibly-revoked one. Best-effort.
+      void this.refreshCachedOfflineToken(
+        session.userId,
+        exchangeData.offlineToken.token,
+        exchangeData.offlineToken.expiresAt,
+      ).catch(() => {
+        /* non-fatal — the session store already carries the fresh token */
+      });
+
       // Recreate all sub-services with the fresh access token.
       this.updateAccessToken(exchangeData.accessToken);
+
+      // Credentials just changed — reset FAILED entries' nextRetryAt so
+      // the queue drains immediately instead of waiting out stale backoff
+      // (same treatment the reconnect handler applies).
+      void this.resetFailedRetryTimers();
 
       // Publish auth status for the sync health UI.
       useSyncAuthStatusStore.getState().setExchanged();
@@ -751,6 +820,83 @@ export class SyncScheduler {
         'Offline token exchange failed (network error)',
       );
       return false;
+    }
+  }
+
+  /**
+   * Re-sync the push service's offline token snapshot from the session
+   * store when it changed without an access-token change.
+   *
+   * The push service captures the offline token at construction and is
+   * normally rebuilt by `updateAccessToken()` — but that only runs when
+   * the access token itself changes. If a flow writes a new offline token
+   * into the session while the access token stays the same, the push
+   * would keep sending stale headers. Only the push service consumes the
+   * offline token, so it is the only service rebuilt here.
+   */
+  private syncOfflineTokenFromSession(): void {
+    const current =
+      useLocalSessionStore.getState().session?.offlineToken ?? undefined;
+    if (current === this.offlineToken) return;
+    this.offlineToken = current;
+    this.pushService = createSyncPushService({
+      prisma: this.prisma,
+      baseUrl: this.baseUrl,
+      accessToken: this.accessToken,
+      offlineToken: current,
+      invoiceService: this.invoiceService,
+      auditWriter: this.auditWriter,
+    });
+  }
+
+  /**
+   * Recover the cached offline token from SecureStorage, if present and
+   * not expired.
+   *
+   * The token is written under `offline_token_{userId}` at every online
+   * login by `OfflineAuthService.updateCachedCredentials` and is the
+   * authoritative recovery source when the in-memory session predates
+   * offline-token issuance. Returns `null` when nothing usable is cached.
+   */
+  private async recoverCachedOfflineToken(
+    session: LocalSession,
+  ): Promise<string | null> {
+    try {
+      const secureStorage = await createSecureStorage();
+      if (!(await secureStorage.isAvailable())) return null;
+      const token = await secureStorage.getItem(
+        `offline_token_${session.userId}`,
+      );
+      if (!token) return null;
+      const claims = decodeOfflineToken(token);
+      if (!claims) return null;
+      // JWT `exp` is in seconds since epoch.
+      if (claims.exp <= Math.floor(Date.now() / 1000)) return null;
+      return token;
+    } catch {
+      // Best-effort recovery — the auth-readiness gate suppresses pushes
+      // until credentials become available.
+      return null;
+    }
+  }
+
+  /**
+   * Best-effort: keep the cached offline token in SecureStorage current
+   * after an exchange rotated it. Mirrors the storage layout used by
+   * `OfflineAuthService.updateCachedCredentials`.
+   */
+  private async refreshCachedOfflineToken(
+    userId: string,
+    token: string,
+    expiresAt: string,
+  ): Promise<void> {
+    try {
+      const secureStorage = await createSecureStorage();
+      if (!(await secureStorage.isAvailable())) return;
+      await secureStorage.setItem(`offline_token_${userId}`, token);
+      await secureStorage.setItem(`offline_token_expiry_${userId}`, expiresAt);
+    } catch {
+      // Non-fatal — the session store already carries the fresh token.
     }
   }
 
@@ -794,10 +940,13 @@ export class SyncScheduler {
 
     // Refresh the access token if needed before running any sync operations.
     // If the token could not be refreshed (offline, server error) the
-    // existing token is kept — individual requests will fail with 401 and
-    // be swallowed by their per-step try/catch.
+    // existing token is kept — individual requests would fail with 401 and
+    // be swallowed by their per-step try/catch. The boolean result feeds
+    // the auth-readiness gate below, which suppresses pushes that are
+    // known to be unauthenticated (no verified token, no offline token).
+    let authReady = false;
     try {
-      await this.refreshAccessToken();
+      authReady = await this.refreshAccessToken();
     } catch {
       // Non-fatal; continue with the current token.
     }
@@ -825,11 +974,18 @@ export class SyncScheduler {
 
     // 1. Push pending local operations (delegated to SyncPushService).
     //    The network POST runs unlocked; only the queue/attempt writes
-    //    hold the lock.
-    try {
-      await this.runPush();
-    } catch {
-      // Logged downstream; continue to pulls regardless.
+    //    hold the lock. Skipped when auth is known-bad: the refresh
+    //    failed AND the push service holds no offline token. An offline
+    //    token alone is a valid credential (the server guard accepts
+    //    X-Offline-Token without a Bearer header), so pushes still run
+    //    when it is present; transient 401s with credentials flow through
+    //    the normal retry/backoff path.
+    if (authReady || this.offlineToken !== undefined) {
+      try {
+        await this.runPush();
+      } catch {
+        // Logged downstream; continue to pulls regardless.
+      }
     }
 
     // 2. Catalog first — lots depend on product references being current.

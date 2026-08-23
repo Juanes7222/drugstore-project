@@ -689,5 +689,115 @@ describe('SyncService', () => {
       ]);
       expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
     });
+
+    // ── Sequential processing ──────────────────────────────────────────
+    // FIX: receiveBatch iterates operations one at a time instead of a
+    // 5-worker parallel pool. Every request runs inside one RLS transaction
+    // pinned to a single pg connection; concurrent queries on that
+    // connection trigger pg's "client.query() while already executing"
+    // deprecation and will break on pg@9.
+
+    describe('processes operations sequentially', () => {
+      function buildOp(operationUuid: string, clientSequence: number) {
+        return {
+          operationUuid,
+          operationType: 'SALE_CONFIRMATION' as const,
+          payload: { amount: 100 },
+          payloadHash: VALID_HASH,
+          clientSequence,
+          sourceCreatedAt: '2024-01-01T00:00:00Z',
+        };
+      }
+
+      it('calls createQueueEntry once per operation in input order', async () => {
+        const batchDto = {
+          operations: [buildOp('op-1', 1), buildOp('op-2', 2), buildOp('op-3', 3)],
+        };
+        mockSyncQueue.create.mockResolvedValue({ id: 'entry' });
+
+        await service.receiveBatch(batchDto, 'ws-1');
+
+        expect(mockSyncQueue.create).toHaveBeenCalledTimes(3);
+        const uuids = (mockSyncQueue.create as jest.Mock).mock.calls.map(
+          ([args]) => args.data.operationUuid,
+        );
+        expect(uuids).toEqual(['op-1', 'op-2', 'op-3']);
+      });
+
+      it('waits for the previous operation to settle before starting the next', async () => {
+        let resolveFirst!: (value: unknown) => void;
+        mockSyncQueue.create
+          .mockImplementationOnce(
+            () => new Promise((resolve) => { resolveFirst = resolve; }),
+          )
+          .mockResolvedValue({ id: 'entry-2' });
+
+        const batchDto = {
+          operations: [buildOp('op-1', 1), buildOp('op-2', 2)],
+        };
+
+        const pending = service.receiveBatch(batchDto, 'ws-1');
+
+        // The first create is in flight and the second must not start yet.
+        expect(mockSyncQueue.create).toHaveBeenCalledTimes(1);
+
+        resolveFirst({ id: 'entry-1' });
+        const results = await pending;
+
+        expect(mockSyncQueue.create).toHaveBeenCalledTimes(2);
+        expect(results).toEqual([
+          { operationUuid: 'op-1', status: 'ACCEPTED' },
+          { operationUuid: 'op-2', status: 'ACCEPTED' },
+        ]);
+      });
+
+      it('returns all results in input order for a mixed batch', async () => {
+        const batchDto = {
+          operations: [
+            buildOp('op-ok', 1),
+            { ...buildOp('op-bad', 2), payloadHash: 'wrong-hash' },
+            buildOp('op-ok-2', 3),
+          ],
+        };
+        mockSyncQueue.create.mockResolvedValue({ id: 'entry' });
+
+        const results = await service.receiveBatch(batchDto, 'ws-1');
+
+        expect(results.map((r) => r.operationUuid)).toEqual([
+          'op-ok',
+          'op-bad',
+          'op-ok-2',
+        ]);
+        expect(results[0]).toEqual({ operationUuid: 'op-ok', status: 'ACCEPTED' });
+        expect(results[1]).toEqual({
+          operationUuid: 'op-bad',
+          status: 'REJECTED',
+          error: 'PAYLOAD_HASH_MISMATCH',
+        });
+        expect(results[2]).toEqual({ operationUuid: 'op-ok-2', status: 'ACCEPTED' });
+      });
+
+      it('continues with the remaining operations after a rejected one', async () => {
+        const batchDto = {
+          operations: [
+            { ...buildOp('op-rejected', 1), payloadHash: 'wrong-hash' },
+            buildOp('op-after-1', 2),
+            buildOp('op-after-2', 3),
+          ],
+        };
+        mockSyncQueue.create.mockResolvedValue({ id: 'entry' });
+
+        const results = await service.receiveBatch(batchDto, 'ws-1');
+
+        expect(mockSyncQueue.create).toHaveBeenCalledTimes(2);
+        expect(results[0]).toEqual({
+          operationUuid: 'op-rejected',
+          status: 'REJECTED',
+          error: 'PAYLOAD_HASH_MISMATCH',
+        });
+        expect(results[1]).toEqual({ operationUuid: 'op-after-1', status: 'ACCEPTED' });
+        expect(results[2]).toEqual({ operationUuid: 'op-after-2', status: 'ACCEPTED' });
+      });
+    });
   });
 });

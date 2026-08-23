@@ -454,4 +454,180 @@ describe('AuditLogInterceptor', () => {
       expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
     });
   });
+
+  describe('shared-types to Prisma enum mapping', () => {
+    const buildMeta = (module: SystemModule, action: AuditAction): AuditableMetadata => ({
+      module,
+      action,
+      entityType: 'TestEntity',
+    });
+
+    it('maps SystemModule.CONFIG + AuditAction.UPDATE to the persisted Prisma vocabulary', async () => {
+      const ctx = createMockContext('PATCH', '/configuration/1', {
+        id: 'user-1',
+        role: 'ADMIN',
+      });
+      const next = createCallHandler();
+      jest.spyOn(reflector, 'get').mockReturnValue(
+        buildMeta(SystemModule.CONFIG, AuditAction.UPDATE),
+      );
+
+      await interceptor.intercept(ctx, next).toPromise();
+
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            module: 'CONFIGURATION',
+            action: 'UPDATE',
+          }),
+        }),
+      );
+    });
+
+    it.each([
+      [SystemModule.AUTH, 'AUTH_USERS'],
+      [SystemModule.SALES, 'SALES_POS'],
+      [SystemModule.SYNC, 'SYNC_OFFLINE'],
+      [SystemModule.FISCAL, 'FISCAL_DIAN'],
+    ])(
+      'maps module %s to persisted value %s',
+      async (module: SystemModule, persisted: string) => {
+        const ctx = createMockContext('POST', '/some-route', {
+          id: 'user-1',
+          role: 'ADMIN',
+        });
+        const next = createCallHandler();
+        jest.spyOn(reflector, 'get').mockReturnValue(
+          buildMeta(module, AuditAction.CREATE),
+        );
+
+        await interceptor.intercept(ctx, next).toPromise();
+
+        expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ module: persisted }),
+          }),
+        );
+      },
+    );
+
+    it('maps AuditAction.APPROVE to persisted value STATE_CHANGE', async () => {
+      const ctx = createMockContext('POST', '/clients/1/habeas-data', {
+        id: 'user-1',
+        role: 'ADMIN',
+      });
+      const next = createCallHandler();
+      jest.spyOn(reflector, 'get').mockReturnValue(
+        buildMeta(SystemModule.CLIENTS, AuditAction.APPROVE),
+      );
+
+      await interceptor.intercept(ctx, next).toPromise();
+
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action: 'STATE_CHANGE' }),
+        }),
+      );
+    });
+
+    it('skips the write with a warning when the module has no persisted counterpart (SystemModule.AUDIT)', async () => {
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => {});
+      const ctx = createMockContext('POST', '/audit-logs', {
+        id: 'user-1',
+        role: 'ADMIN',
+      });
+      const next = createCallHandler();
+      jest.spyOn(reflector, 'get').mockReturnValue(
+        buildMeta(SystemModule.AUDIT, AuditAction.UPDATE),
+      );
+
+      await interceptor.intercept(ctx, next).toPromise();
+
+      expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('AUDIT/UPDATE'),
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it('skips the write with a warning when the action has no persisted counterpart (AuditAction.READ)', async () => {
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => {});
+      const ctx = createMockContext('POST', '/products', {
+        id: 'user-1',
+        role: 'ADMIN',
+      });
+      const next = createCallHandler();
+      jest.spyOn(reflector, 'get').mockReturnValue(
+        buildMeta(SystemModule.CATALOG, AuditAction.READ),
+      );
+
+      await interceptor.intercept(ctx, next).toPromise();
+
+      expect(mockPrisma.auditLog.create).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('CATALOG/READ'),
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it.each([
+      SystemModule.CATALOG,
+      SystemModule.INVENTORY,
+      SystemModule.PURCHASES,
+      SystemModule.CASH_SHIFT,
+      SystemModule.CLIENTS,
+      SystemModule.REPORTS,
+    ])('passes identity module %s through unchanged', async (module: SystemModule) => {
+      const ctx = createMockContext('POST', '/some-route', {
+        id: 'user-1',
+        role: 'ADMIN',
+      });
+      const next = createCallHandler();
+      jest.spyOn(reflector, 'get').mockReturnValue(
+        buildMeta(module, AuditAction.CREATE),
+      );
+
+      await interceptor.intercept(ctx, next).toPromise();
+
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ module }),
+        }),
+      );
+    });
+
+    it.each([
+      AuditAction.CREATE,
+      AuditAction.DELETE,
+      AuditAction.STATE_CHANGE,
+      AuditAction.ACCESS,
+      AuditAction.EXPORT,
+      AuditAction.IMPORT,
+      AuditAction.LOGIN,
+      AuditAction.LOGOUT,
+    ])('passes identity action %s through unchanged', async (action: AuditAction) => {
+      const ctx = createMockContext('POST', '/some-route', {
+        id: 'user-1',
+        role: 'ADMIN',
+      });
+      const next = createCallHandler();
+      jest.spyOn(reflector, 'get').mockReturnValue(
+        buildMeta(SystemModule.CATALOG, action),
+      );
+
+      await interceptor.intercept(ctx, next).toPromise();
+
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ action }),
+        }),
+      );
+    });
+  });
 });

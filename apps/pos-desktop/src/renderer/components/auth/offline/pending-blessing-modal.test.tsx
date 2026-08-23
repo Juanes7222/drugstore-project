@@ -297,4 +297,101 @@ describe("PendingBlessingModal", () => {
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(dialog).toHaveAttribute("aria-label", "offline_blessing.title");
   });
+
+  it("does not open when OFFLINE with pending sessions", () => {
+    mockSelectors.connectionState = "OFFLINE";
+    mockZustandSessions.push(
+      makeSession({ localSessionId: "sess-pending", isBlessed: false }),
+    );
+
+    render(<PendingBlessingModal />);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("stays closed after Minimizar while the pending/rejected composition is unchanged (regression)", async () => {
+    const user = userEvent.setup();
+    mockZustandSessions.push(
+      makeSession({ localSessionId: "sess-pending", isBlessed: false }),
+    );
+
+    const { rerender } = render(<PendingBlessingModal />);
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "common.minimize" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // Re-render without any change to the pending/rejected composition.
+    // Regression guard: the previous implementation derived a fresh array
+    // in the effect deps, so any re-render instantly reopened the modal.
+    rerender(<PendingBlessingModal />);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(triggerBlessingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reopens when a new pending session is added after dismissal", async () => {
+    const user = userEvent.setup();
+    mockZustandSessions.push(
+      makeSession({ localSessionId: "sess-1", isBlessed: false }),
+    );
+
+    const { rerender } = render(<PendingBlessingModal />);
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "common.minimize" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // Simulate a new offline session appearing in the store.
+    mockZustandSessions.push(
+      makeSession({ localSessionId: "sess-2", isBlessed: false }),
+    );
+    rerender(<PendingBlessingModal />);
+
+    expect(screen.getByRole("dialog")).toBeVisible();
+  });
+
+  it("closes when all pending sessions become blessed after opening", () => {
+    mockZustandSessions.push(
+      makeSession({ localSessionId: "sess-1", isBlessed: false }),
+    );
+
+    const { rerender } = render(<PendingBlessingModal />);
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    // Simulate the blessing result: the store session becomes blessed.
+    mockZustandSessions.length = 0;
+    mockZustandSessions.push(
+      makeSession({ localSessionId: "sess-1", isBlessed: true }),
+    );
+    rerender(<PendingBlessingModal />);
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("reopens for a new offline session after all sessions were resolved (dismiss key reset)", () => {
+    mockZustandSessions.push(
+      makeSession({ localSessionId: "sess-1", isBlessed: false }),
+    );
+
+    const { rerender } = render(<PendingBlessingModal />);
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    // All sessions resolved: pending+rejected both drop to 0.
+    mockZustandSessions.length = 0;
+    mockZustandSessions.push(
+      makeSession({ localSessionId: "sess-1", isBlessed: true }),
+    );
+    rerender(<PendingBlessingModal />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    // A brand-new offline session must resurface the modal — the dismiss
+    // key ref was reset when the composition dropped to zero.
+    mockZustandSessions.push(
+      makeSession({ localSessionId: "sess-2", isBlessed: false }),
+    );
+    rerender(<PendingBlessingModal />);
+
+    expect(screen.getByRole("dialog")).toBeVisible();
+  });
 });

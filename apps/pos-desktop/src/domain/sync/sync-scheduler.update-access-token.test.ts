@@ -76,6 +76,7 @@ import { createClientPullService } from "../clients/client-pull.service";
 import { createSyncPushService } from "./sync-push.service";
 import { createBackupService } from "../backup/backup.service";
 import { createSyncMetricsService } from "./sync-metrics.service";
+import { useLocalSessionStore } from "../auth/local-session.store";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -273,6 +274,27 @@ describe("SyncScheduler.updateAccessToken", () => {
 
       scheduler = createSyncScheduler(makeSchedulerConfig());
       scheduler.updateAccessToken("token-v2");
+
+      // Seed a valid session. The scheduler's auth-readiness gate skips
+      // the push phase when the session is missing and no offline token
+      // is held — a sessionless tick is known-unauthenticated. A far-
+      // future expiry keeps refreshAccessToken on its fresh-token early
+      // return, so no network call is made and the push phase runs.
+      useLocalSessionStore.getState().setSession({
+        userId: "user-1",
+        username: "test-user",
+        fullName: "Test User",
+        displayName: "Test User",
+        role: "ADMIN",
+        subscriptionId: "sub-1",
+        workstationId: "ws-1",
+        accessToken: "access-token-123",
+        refreshToken: "refresh-token-123",
+        expiresAt: new Date(Date.now() + 1_800_000), // 30 min — outside the 2x-interval buffer
+        sessionId: "session-1",
+        sessionTrust: "SERVER_VERIFIED",
+        offlineToken: "offline-token-123",
+      });
 
       // syncNow() calls tick() — the full sync cycle
       await scheduler.syncNow();

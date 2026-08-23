@@ -9,6 +9,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { useLoginPage } from "./use-login-page";
 import { InvalidCredentialsException, NetworkErrorException } from "../../domain/auth/exceptions";
 import { setActiveScreen } from "@/store/slices/ui-slice";
+import { offlineAuthSlice } from "../store/slices/offline-auth-slice";
 import { RoleType } from "@pharmacy/shared-types";
 
 import type { LocalUserInfo } from "../../domain/auth/local-users";
@@ -39,6 +40,7 @@ const { dispatch, mockAuthService, mockSessionRef } = vi.hoisted(() => {
     listUsers: vi.fn(),
     getPendingStepUpRequests: vi.fn(),
     getAuditLogs: vi.fn(),
+    loginWithGoogle: vi.fn(),
   };
   const mockSessionRef: { current: LocalSession | null } = { current: null };
   return { dispatch, mockAuthService, mockSessionRef };
@@ -130,6 +132,24 @@ vi.mock("../../domain/auth/user-cache.service", async (importOriginal) => {
     createUserCacheService: () => mockUserCache,
   };
 });
+
+// Firebase (Google) sign-in service. fetchPublicConfig resolves to a
+// configured response so the mount effect enables the Google button;
+// isFirebaseConfigured is mutable so tests can flip availability.
+const { mockFirebaseAuth, mockIsFirebaseConfigured } = vi.hoisted(() => ({
+  mockFirebaseAuth: {
+    signInWithGoogle: vi.fn(),
+    fetchPublicConfig: vi
+      .fn()
+      .mockResolvedValue({ firebaseConfig: { apiKey: "test-key" } }),
+  },
+  mockIsFirebaseConfigured: vi.fn((cfg: unknown) => cfg != null),
+}));
+
+vi.mock("../../domain/auth/firebase-auth.service", () => ({
+  createFirebaseAuthService: () => mockFirebaseAuth,
+  isFirebaseConfigured: mockIsFirebaseConfigured,
+}));
 
 vi.mock("@infra/config", () => ({
   API_BASE_URL: "http://test",
@@ -256,6 +276,9 @@ describe("useLoginPage", () => {
         "pos-desktop",
       );
       expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
+      expect(dispatch).toHaveBeenCalledWith(
+        offlineAuthSlice.actions.setConnectionState("ONLINE"),
+      );
       expect(result.current.isLoading).toBe(false);
     });
 
@@ -386,6 +409,9 @@ describe("useLoginPage", () => {
         "pos-desktop",
       );
       expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
+      expect(dispatch).toHaveBeenCalledWith(
+        offlineAuthSlice.actions.setConnectionState("ONLINE"),
+      );
       expect(result.current.isLoading).toBe(false);
     });
 
@@ -585,6 +611,9 @@ describe("useLoginPage", () => {
       expect(result.current.requiresTwoFactor).toBe(false);
       expect(result.current.challengeToken).toBeNull();
       expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
+      expect(dispatch).toHaveBeenCalledWith(
+        offlineAuthSlice.actions.setConnectionState("ONLINE"),
+      );
     });
   });
 
@@ -598,6 +627,53 @@ describe("useLoginPage", () => {
 
       expect(result.current.requiresTwoFactor).toBe(false);
       expect(result.current.challengeToken).toBeNull();
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("handleGoogleSignIn", () => {
+    it("dispatches setConnectionState ONLINE and navigates home after a successful Google sign-in", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockResolvedValueOnce("google-id-token");
+      mockAuthService.loginWithGoogle.mockResolvedValueOnce({
+        session: fakeLocalSession,
+      });
+
+      const { result } = renderHook(() => useLoginPage());
+
+      // Flush the public-config fetch so the Google button is enabled.
+      await act(async () => {});
+      expect(result.current.googleAvailable).toBe(true);
+
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(mockAuthService.loginWithGoogle).toHaveBeenCalledWith(
+        "google-id-token",
+        "ws_principal",
+        "ws_principal",
+        "pos-desktop",
+      );
+      expect(dispatch).toHaveBeenCalledWith(
+        offlineAuthSlice.actions.setConnectionState("ONLINE"),
+      );
+      expect(dispatch).toHaveBeenCalledWith(setActiveScreen("home"));
+      expect(result.current.googleLoading).toBe(false);
+    });
+
+    it("does not call loginWithGoogle when Google sign-in is unavailable", async () => {
+      mockFirebaseAuth.fetchPublicConfig.mockResolvedValueOnce(null);
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      expect(result.current.googleAvailable).toBe(false);
+
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(mockAuthService.loginWithGoogle).not.toHaveBeenCalled();
       expect(dispatch).not.toHaveBeenCalled();
     });
   });

@@ -253,7 +253,7 @@ apps/pos-desktop/
 │   │   ├── local-database.ts          # PGlite + Prisma access point
 │   │   ├── service-context.tsx        # DI: wires module services into React
 │   │   └── README.md                  # read this first, it's the map
-│   ├── modules/                       # one folder per domain, yours in full
+│   ├── domain/                       # one folder per domain, yours in full
 │   │   ├── auth/                       # auth.service.ts, local-session.store.ts
 │   │   ├── cash-shift/
 │   │   ├── catalog/                    # catalog-sync + payment-method-sync
@@ -261,11 +261,9 @@ apps/pos-desktop/
 │   │   ├── configuration/              # config-sync.service.ts, local-config.store.ts
 │   │   ├── inventory-adjustments/      # includes inventory-adjustments.page.tsx
 │   │   ├── inventory-lots/
-│   │   ├── prescriptions/              # includes prescriptions.page.tsx
-│   │   ├── returns/                    # includes returns.page.tsx
-│   │   ├── sales-pos/
 │   │   └── sync/                       # push, recovery, scheduler, metrics
 │   │                                    # includes sync-health.page.tsx
+|   |    ... 
 │   └── renderer/                       # shared with frontend-pos, split below
 │       ├── components/                 # (frontend-pos)
 │       ├── dev/design-tokens.tsx       # (frontend-pos)

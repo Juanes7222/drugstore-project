@@ -19,6 +19,13 @@
  * PERMANENT_FAILURE with the classified failureCategory (previously it
  * remained as FAILED with no structured category). Entries with DISCARDED
  * or PERMANENT_FAILURE status are never selected.
+ *
+ * One deliberate exception: an AUTH failure recorded while the push
+ * service holds no offline token means the request went out with an
+ * expired/absent access token and no fallback credential — the entry
+ * cannot succeed until credentials recover, so the attempt is recorded
+ * but the retry budget (retryCount / nextRetryAt) is left untouched.
+ * See `recordBatchFailure`.
  */
 
 import { Prisma, type PrismaClient } from '@pharmacy/database/local';
@@ -787,9 +794,46 @@ class SyncPushServiceImpl implements SyncPushService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const entry of entries) {
+        const outcome = this.mapStatusCodeToOutcome(statusCode);
+
+        // Known-bad auth: the push went out with an expired or absent
+        // access token and the push service holds no offline token to
+        // fall back on (the scheduler's auth-readiness gate suppresses
+        // these once detected, but a push can still slip through — e.g.
+        // a token the client believes is fresh that the server rejects).
+        // The entry cannot succeed until credentials recover, so do not
+        // consume the retry budget: record the attempt, leave retryCount
+        // and nextRetryAt untouched. PENDING-origin entries keep
+        // nextRetryAt null and are picked up by the first push after
+        // re-auth; FAILED entries with stale backoff are reset by the
+        // scheduler on successful refresh/exchange. An AUTH failure WITH
+        // an offline token (revoked/expired offline credential) still
+        // uses the normal backoff path below.
+        if (failureCategory === 'AUTH' && !this.offlineToken) {
+          await tx.syncQueue.update({
+            where: { id: entry.id },
+            data: {
+              lastAttemptAt: now,
+              failureCategory,
+              lastErrorMessage: errorMessage,
+            },
+          });
+          await tx.syncAttempt.create({
+            data: {
+              id: globalThis.crypto.randomUUID(),
+              syncQueueEntryId: entry.id,
+              attemptedAt: now,
+              outcome,
+              httpStatus: statusCode,
+              failureCategory,
+              errorMessage,
+            },
+          });
+          continue;
+        }
+
         const newRetryCount = entry.retryCount + 1;
         const isExhausted = newRetryCount >= MAX_RETRY_ATTEMPTS;
-        const outcome = this.mapStatusCodeToOutcome(statusCode);
 
         const updateData: Record<string, unknown> = {
           retryCount: newRetryCount,

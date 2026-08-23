@@ -17,6 +17,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@/store/hooks';
 import { setActiveScreen } from '@/store/slices/ui-slice';
+import { offlineAuthSlice } from '../store/slices/offline-auth-slice';
 import { useLocalSessionStore, type LocalSession } from '../../domain/auth/local-session.store';
 import { createAuthService, type AuthService } from '../../domain/auth/auth.service';
 import {
@@ -364,6 +365,9 @@ export function useLoginPage(): UseLoginPageReturn {
 
         // authService.login() already set the session in the store.
         if (result.session) persistSessionIdentity(result.session);
+        // Mark connectivity ONLINE so the blessing modal can auto-validate
+        // pending offline sessions left by earlier offline logins.
+        dispatch(offlineAuthSlice.actions.setConnectionState('ONLINE'));
         dispatch(setActiveScreen('home'));
       } catch (err) {
         // ---- Local cache errors ----
@@ -497,6 +501,7 @@ export function useLoginPage(): UseLoginPageReturn {
 
       // authService.login() already set the session in the store.
       if (result.session) persistSessionIdentity(result.session);
+      dispatch(offlineAuthSlice.actions.setConnectionState('ONLINE'));
       dispatch(setActiveScreen('home'));
     } catch (err) {
       // ---- Local cache errors ----
@@ -589,6 +594,7 @@ export function useLoginPage(): UseLoginPageReturn {
     // After the second factor the session is already in the store —
     // persist its identity so reports can resolve names locally.
     if (session) persistSessionIdentity(session);
+    dispatch(offlineAuthSlice.actions.setConnectionState('ONLINE'));
     dispatch(setActiveScreen('home'));
   }, [dispatch, session]);
 
@@ -622,6 +628,7 @@ export function useLoginPage(): UseLoginPageReturn {
       );
 
       if (result.session) persistSessionIdentity(result.session);
+      dispatch(offlineAuthSlice.actions.setConnectionState('ONLINE'));
       dispatch(setActiveScreen('home'));
     } catch (err) {
       if (err instanceof FirebaseNotConfiguredException) {
