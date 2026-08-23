@@ -543,6 +543,92 @@ Every inventory event now has a distinct icon instead of all using `Package`:
 
 ---
 
+## Company Setup — DIAN fiscal-emitter onboarding (added 2026-08-22)
+
+Post-activation flow that collects the pharmacy's fiscal-emitter data (emisor
+DIAN) so electronic invoicing can work. Two entry points: a redirect right
+after activation, and a gate at cash-shift opening. RUT PDF parsing itself is
+implemented by pos-local; this screen renders the flow and the editable
+fields.
+
+### Palette (no new colors — roles assigned to existing entries)
+
+| Role | Color | Where |
+|------|-------|-------|
+| Active step / primary CTA / parse success | Pharma Teal | Step indicator current step, Continue buttons, "RUT leído" confirmation |
+| Regulatory weight (DIAN) | Restrict Violet + Restrict Surface | The resolution-of-numbering card — the only DIAN-controlled datum the user types by hand, so it gets the same deliberate visual break as restricted-sale confirmation |
+| Parse failure / RUT illegible | Urgency Amber + Urgency Surface | UNPARSEABLE error panel — "act soon, retry" not "broken" |
+| True error / NIT-DV mismatch | Error red `#D32F2F` + `--color-error-container` | INVALID_NIT_DV — a wrong NIT invalidates every future invoice, so it is a real error, not a warning |
+| Neutral / inactive steps | ink-muted + ink 10% borders | Step indicator completed/inactive dots |
+
+### Type
+
+All machine-precise identifiers use JetBrains Mono (`font-data`): NIT, DV,
+CIIU code, municipio code, resolution number, prefix, and the from/to range —
+the exact glyph-distinction and tabular-alignment cases the pairing exists
+for. Labels and prose stay in Inter. Range inputs are mono and tabular so a
+cashier transcribing from a paper resolución cannot misread `3` as `8`.
+
+### Layout
+
+Full-screen (own surface background, no app shell — same frame as the
+activation page), centered `max-w-2xl` column. Compact step header (icon +
+"Paso N de 3" + label), step content in a `pos-panel`, footer with
+Back/Continue. Four views: upload → review → resolution → summary+submit.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  🧾  Configura tu empresa para facturar                  │
+│      Paso 1 de 3 · RUT                                  │
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │  ┌────────────────────────────────────────────────┐  │ │
+│  │  │  ⬍ Arrastra el RUT (PDF) o haz clic para       │  │ │
+│  │  │  buscarlo                                       │  │ │
+│  │  │  PDF · el sistema extrae los datos automátic.  │  │ │
+│  │  └────────────────────────────────────────────────┘  │ │
+│  │  [Ingresar datos manualmente]                        │ │
+│  └──────────────────────────────────────────────────────┘ │
+│                                    [Continuar]            │
+└──────────────────────────────────────────────────────────┘
+
+Paso 2 — revisión editable (estilo libro de RUT):
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │  IDENTIFICACIÓN                                     │ │
+│  │  NIT  [ 900.123.456 ]  DV [ 7 ]  [✓ DV VÁLIDO]      │ │
+│  │  Razón social [ Droguería La Esperanza S.A.S. ]     │ │
+│  │  Régimen      [ Responsable de IVA ]                │ │
+│  │  CIIU         [ 4773 ]                              │ │
+│  │  UBICACIÓN / CONTACTO ...                           │ │
+│  └──────────────────────────────────────────────────────┘ │
+
+Paso 3 — resolución DIAN (borde violeta, nunca viene del RUT):
+│  ┌──────────────────────────────────────────────────────┐ │
+│  │  🛡 RESOLUCIÓN DE NUMERACIÓN (DIAN)                 │ │
+│  │  Número [ 18764000001234 ]  Fecha [ 2026-01-15 ]    │ │
+│  │  Prefijo [ SETP ]  Desde [ 9001 ]  Hasta [ 9500 ]   │ │
+│  └──────────────────────────────────────────────────────┘ │
+```
+
+### Signature
+
+The wizard's recurring motif is **the RUT as the document of truth**: step 2
+renders the extracted data as an editable fiscal ledger (label column +
+mono value inputs) that visually echoes the RUT layout, and the resolution
+card is the only violet surface in the flow — the one datum typed by hand
+under DIAN authority. No generic dashboard has a reason to render an
+editable DIAN numbering resolution with prefijo + desde/hasta range; the
+violet frame makes it read as the regulatory step it is.
+
+### Motion budget
+
+No orchestrated animation on the upload/parse path — parse feedback is a
+crisp panel swap (loading → result/error). The only moment with a full
+confirmation treatment is the final submit: a success panel with the
+animated check, matching the "document confirmed by DIAN" beat. Reduced
+motion collapses it to a static panel (global CSS rule).
+
+---
+
 ## Motion budget (added in Phase 3)
 
 Motion is reserved for the sale-completing handoff, not for the high-throughput search/scan/add-to-cart path.

@@ -223,6 +223,72 @@ describe("ConfigSyncService", () => {
     });
   });
 
+  describe("applyConfiguration", () => {
+    const discountLimits = {
+      owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+      manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
+      cashier: { itemMaxPercent: 15, globalMaxPercent: 10 },
+      admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
+      inventoryAssistant: { itemMaxPercent: 20, globalMaxPercent: 15 },
+      accountant: { itemMaxPercent: 5, globalMaxPercent: 5 },
+    };
+    const alertThresholds = { expirationWarningDays: 60, lowStockAlertEnabled: true };
+    const syncDefaults = { batchSize: 25, maxRetryAttempts: 15, retryDelaysSeconds: [60] };
+
+    // Regression: a config pull from a server without tenant context used to
+    // reset the locally configured company back to the placeholder, wiping
+    // the issuer data after every sync.
+    it("preserves the local seller info when the payload omits it", async () => {
+      useLocalConfigStore.getState().updateSellerInfo({
+        nit: "900.123.456",
+        name: "FARMACIA LOS ANDES S.A.S.",
+        resolutionPrefix: "FE",
+      });
+
+      await service.applyConfiguration({
+        paymentMethods: [],
+        discountLimits,
+        alertThresholds,
+        syncDefaults,
+        // no sellerInfo key
+      });
+
+      const seller = useLocalConfigStore.getState().sellerInfo;
+      expect(seller.nit).toBe("900.123.456");
+      expect(seller.name).toBe("FARMACIA LOS ANDES S.A.S.");
+      expect(seller.resolutionPrefix).toBe("FE");
+    });
+
+    it("updates the local seller info when the payload includes it", async () => {
+      useLocalConfigStore.getState().updateSellerInfo({
+        nit: "000.000.000-0",
+        name: "Farmacia",
+      });
+
+      await service.applyConfiguration({
+        paymentMethods: [],
+        discountLimits,
+        alertThresholds,
+        syncDefaults,
+        sellerInfo: {
+          nit: "901.234.567-8",
+          name: "DROGUERÍA LA ESPERANZA",
+          address: "CL 10 # 5-20",
+          phone: "601 234 5678",
+          resolutionNumber: "18760000009999",
+          resolutionDate: "2026-03-01",
+          resolutionPrefix: "SE",
+        },
+      });
+
+      const seller = useLocalConfigStore.getState().sellerInfo;
+      expect(seller.nit).toBe("901.234.567-8");
+      expect(seller.name).toBe("DROGUERÍA LA ESPERANZA");
+      expect(seller.address).toBe("CL 10 # 5-20");
+      expect(seller.resolutionPrefix).toBe("SE");
+    });
+  });
+
   describe("defaultHttpClient (without mock)", () => {
     beforeEach(() => {
       vi.stubGlobal("navigator", { onLine: true });

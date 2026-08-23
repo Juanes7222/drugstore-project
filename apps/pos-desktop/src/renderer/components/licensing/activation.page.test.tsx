@@ -5,10 +5,11 @@
  * error handling, the already-activated redirect, the pending-code banner,
  * the plans CTA, and the lost-code recovery panel.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { LicenseStatus } from "@pharmacy/shared-types";
 import { useLicenseStore } from "../../../domain/licensing/license.store";
+import { useCompanySetupStore } from "../../../domain/company/company.store";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import { ActivationPage } from "./activation.page";
 import {
@@ -40,6 +41,13 @@ vi.mock("../../../domain/licensing/license.service", () => ({
 
 vi.mock("@/hooks/use-online-status", () => ({
   useOnlineStatus: mockUseOnlineStatus,
+}));
+
+// The page mounts the real useCompanySetup hook, whose module chain imports
+// pdfjs-dist. pdfjs canvas glue references DOMMatrix at module scope, which
+// jsdom does not implement — stub the extractor so the suite never loads it.
+vi.mock("../../services/rut-pdf-extractor", () => ({
+  extractRutPdfText: vi.fn(),
 }));
 
 // The page dispatches Redux actions (plans CTA); there is no Provider in
@@ -92,10 +100,20 @@ describe("ActivationPage", () => {
   beforeEach(() => {
     localStorage.clear();
     useLicenseStore.getState().reset();
+    // The page mounts the real useCompanySetup hook, which flips the
+    // company-setup store to needs-setup on mount; reset so every test
+    // starts from the idle status the page's redirect logic expects.
+    useCompanySetupStore.getState().reset();
     mockActivate.mockReset();
     mockRecover.mockReset();
     mockUseOnlineStatus.mockReturnValue(true);
     mockDispatch.mockReset();
+  });
+
+  // window.dispatchEvent spies from individual tests would otherwise leak
+  // into the next test's mock via the shared window object.
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   // -----------------------------------------------------------------------
@@ -637,6 +655,67 @@ describe("ActivationPage", () => {
       await waitFor(() => {
         expect(codeInput).toHaveValue("ABCD-EFGH-1234");
       });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Company-setup redirect — post-activation onboarding for the DIAN emitter
+  // -----------------------------------------------------------------------
+
+  describe("company setup redirect after activation", () => {
+    const activationResult = {
+      activationToken: "new-token",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+      subscription: { id: "s-1", status: "ACTIVE", currentPeriodEnd: "2027-01-01T00:00:00.000Z", gracePeriodDays: 7 },
+      location: { id: "loc-1", name: "Farmacia Central" },
+      plan: { id: "p-1", code: "BASIC", name: "Basic", features: [], maxLocations: 1, maxWorkstationsPerLocation: 1 },
+      workstationActivation: { id: "w-1", workstationName: "Caja-01", activatedAt: "2026-01-01T00:00:00.000Z" },
+    };
+
+    const activate = (): void => {
+      const codeInput = screen.getByLabelText(/Código de activación/i);
+      fireEvent.change(codeInput, { target: { value: "ABCDEFGH" } });
+      fireEvent.click(screen.getByRole("button", { name: /ACTIVAR/i }));
+    };
+
+    beforeEach(() => {
+      useCompanySetupStore.getState().reset();
+    });
+
+    it("routes to the company-setup screen when the company profile is missing", async () => {
+      useCompanySetupStore.getState().setStatus("needs-setup");
+      mockActivate.mockResolvedValue(activationResult);
+      const dispatchEvent = vi.spyOn(window, "dispatchEvent");
+
+      render(<ActivationPage />);
+      activate();
+
+      await waitFor(() => {
+        expect(mockDispatch).toHaveBeenCalledWith(
+          setActiveScreen("company-setup"),
+        );
+      });
+      expect(dispatchEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: "license:activated" }),
+      );
+    });
+
+    it("dispatches license:activated when the company is already configured", async () => {
+      useCompanySetupStore.getState().setStatus("complete");
+      mockActivate.mockResolvedValue(activationResult);
+      const dispatchEvent = vi.spyOn(window, "dispatchEvent");
+
+      render(<ActivationPage />);
+      activate();
+
+      await waitFor(() => {
+        expect(dispatchEvent).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "license:activated" }),
+        );
+      });
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        setActiveScreen("company-setup"),
+      );
     });
   });
 });

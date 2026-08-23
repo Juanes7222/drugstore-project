@@ -14,7 +14,22 @@ import type { Services } from "../common/service-context";
 import { CashShiftPage } from "./cash-shift.page";
 import { useCashShiftStore } from "../../../domain/cash-shift/cash-shift.store";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
+import { useCompanySetupStore } from "../../../domain/company/company.store";
 import type { CashShiftRecord } from "../../../domain/cash-shift/cash-shift.service";
+
+// CashShiftPage mounts useCompanySetup, whose module chain imports pdfjs-dist;
+// pdf.js canvas glue references DOMMatrix at module scope, which jsdom does
+// not implement. Stub the extractor so the suite never loads pdf.js.
+vi.mock("../../services/rut-pdf-extractor", () => ({
+  extractRutPdfText: vi.fn(),
+}));
+
+// The page dispatches setActiveScreen from the company-setup gate; there is
+// no Redux Provider in these tests, so stub the hooks.
+vi.mock("@/store/hooks", () => ({
+  useAppDispatch: () => vi.fn(),
+  useAppSelector: () => undefined,
+}));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,6 +96,10 @@ describe("CashShiftPage history", () => {
   beforeEach(() => {
     useCashShiftStore.setState({ currentShift: null, isLoading: false });
     useLocalSessionStore.setState({ session: null });
+    // The company-setup gate would replace the whole page when the fiscal
+    // emitter data is missing; these history tests target the shift table,
+    // so pre-mark the company as configured.
+    useCompanySetupStore.setState({ status: "complete" });
   });
 
   it("loads the first page and appends the next page via keyset cursor", async () => {

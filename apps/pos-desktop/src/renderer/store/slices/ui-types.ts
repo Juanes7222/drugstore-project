@@ -4,6 +4,7 @@
 
 export type PosScreen =
   | "clients"
+  | "company-setup"
   | "fiscal"
   | "home"
   | "offline-sessions"

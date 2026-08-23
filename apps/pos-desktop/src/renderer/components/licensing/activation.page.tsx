@@ -26,6 +26,7 @@ import {
   AlreadyActivatedException,
 } from "../../../domain/licensing/exceptions";
 import { useOnlineStatus } from "@/hooks/use-online-status";
+import { useCompanySetup } from "@/hooks/use-company-setup";
 import { useAppDispatch } from "@/store/hooks";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import {
@@ -72,6 +73,7 @@ export const ActivationPage: FC = () => {
     (s) => s.pendingActivationCode,
   );
   const isOnline = useOnlineStatus();
+  const { status: companySetupStatus } = useCompanySetup();
 
   // ---- Form state ----
 
@@ -283,8 +285,14 @@ export const ActivationPage: FC = () => {
 
         setSuccessMessage(t("licensing.activation.success"));
 
-        // Notify the app shell to transition to the main POS interface.
-        window.dispatchEvent(new CustomEvent("license:activated"));
+        // Without the fiscal emitter data no electronic invoice can be
+        // issued, so a fresh company goes straight into the setup wizard.
+        // Otherwise notify the app shell to transition to the main POS.
+        if (companySetupStatus === "needs-setup") {
+          dispatch(setActiveScreen("company-setup"));
+        } else {
+          window.dispatchEvent(new CustomEvent("license:activated"));
+        }
       } catch (error) {
         if (
           error instanceof ActivationFailedException ||
@@ -306,6 +314,8 @@ export const ActivationPage: FC = () => {
       locationCity,
       locationRegion,
       isOnline,
+      companySetupStatus,
+      dispatch,
       t,
     ],
   );

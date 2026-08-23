@@ -11,15 +11,28 @@ model FiscalIssuerConfig {
   businessName          String
   commercialName        String?
   organizationType      String
+  // Clasificación DIAN (TaxLevelCode del anexo técnico 1.9): R-99-PN,
+  // R-99-PJ, R-99-PN-ENT, R-99-PN-SIM, O-99. Se emite como
+  // PartyTaxScheme/cbc:TaxLevelCode del emisor en el UBL.
   taxRegime             String
   taxResponsibilities   String?
   address               String
   municipality          String
+  // Código DANE del municipio (5 dígitos: 2 de departamento + 3 de municipio).
+  // DIAN exige el código en cbc:ID del Address del emisor; CityName lleva el nombre.
+  municipioCode         String?
   department            String
   postalCode            String?
   phone                 String?
   email                 String?
   logoUrl               String?
+  // Código CIIU de 4 dígitos (actividad económica principal, del RUT).
+  ciiu                  String?
+  // Identificador de la habilitación del software en DIAN (sts:softwareID).
+  // La habilitación se tramita manualmente por NIT del contribuyente en
+  // MUISCA; el softwareId resultante se persiste aquí. El security code
+  // vive en el envelope cifrado de FiscalCertificate.
+  softwareId            String?
   updatedAt             DateTime  @updatedAt
   updatedById           String?
   updatedByUser         User?     @relation(fields: [updatedById], references: [id], onDelete: NoAction)

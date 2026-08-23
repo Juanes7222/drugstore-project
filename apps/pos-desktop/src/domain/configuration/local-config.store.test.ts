@@ -114,6 +114,93 @@ describe("LocalConfigStore", () => {
     });
   });
 
+  describe("seller info", () => {
+    it("updateSellerInfo merges only the provided fields", () => {
+      useLocalConfigStore.getState().updateSellerInfo({
+        nit: "900.123.456",
+        name: "FARMACIA LOS ANDES S.A.S.",
+      });
+      useLocalConfigStore
+        .getState()
+        .updateSellerInfo({ phone: "604 444 5678" });
+
+      const seller = useLocalConfigStore.getState().sellerInfo;
+      expect(seller.nit).toBe("900.123.456");
+      expect(seller.name).toBe("FARMACIA LOS ANDES S.A.S.");
+      expect(seller.phone).toBe("604 444 5678");
+      // Untouched fields keep their previous values.
+      expect(seller.resolutionPrefix).toBe("FE");
+      expect(seller.address).toBeNull();
+    });
+
+    it("hydrateFromServer preserves the previous seller info when the payload omits it", () => {
+      useLocalConfigStore.getState().updateSellerInfo({
+        nit: "900.123.456",
+        name: "FARMACIA LOS ANDES S.A.S.",
+      });
+
+      useLocalConfigStore.getState().hydrateFromServer({
+        discountLimits: {
+          owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
+          cashier: { itemMaxPercent: 15, globalMaxPercent: 10 },
+          admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          inventoryAssistant: { itemMaxPercent: 20, globalMaxPercent: 15 },
+          accountant: { itemMaxPercent: 5, globalMaxPercent: 5 },
+        },
+        alertThresholds: {
+          expirationWarningDays: 45,
+          lowStockAlertEnabled: false,
+        },
+        syncDefaults: {
+          batchSize: 25,
+          maxRetryAttempts: 15,
+          retryDelaysSeconds: [60, 300, 600],
+        },
+      });
+
+      const seller = useLocalConfigStore.getState().sellerInfo;
+      expect(seller.nit).toBe("900.123.456");
+      expect(seller.name).toBe("FARMACIA LOS ANDES S.A.S.");
+    });
+
+    it("hydrateFromServer replaces the seller info when the payload includes it", () => {
+      useLocalConfigStore.getState().hydrateFromServer({
+        discountLimits: {
+          owner: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          manager: { itemMaxPercent: 25, globalMaxPercent: 20 },
+          cashier: { itemMaxPercent: 15, globalMaxPercent: 10 },
+          admin: { itemMaxPercent: 100, globalMaxPercent: 100 },
+          inventoryAssistant: { itemMaxPercent: 20, globalMaxPercent: 15 },
+          accountant: { itemMaxPercent: 5, globalMaxPercent: 5 },
+        },
+        alertThresholds: {
+          expirationWarningDays: 45,
+          lowStockAlertEnabled: false,
+        },
+        syncDefaults: {
+          batchSize: 25,
+          maxRetryAttempts: 15,
+          retryDelaysSeconds: [60, 300, 600],
+        },
+        sellerInfo: {
+          nit: "901.234.567-8",
+          name: "DROGUERÍA LA ESPERANZA",
+          address: null,
+          phone: null,
+          resolutionNumber: null,
+          resolutionDate: null,
+          resolutionPrefix: "SE",
+        },
+      });
+
+      const seller = useLocalConfigStore.getState().sellerInfo;
+      expect(seller.nit).toBe("901.234.567-8");
+      expect(seller.name).toBe("DROGUERÍA LA ESPERANZA");
+      expect(seller.resolutionPrefix).toBe("SE");
+    });
+  });
+
   describe("credit policy", () => {
     it("updateSalesConfig merges the creditEnabled flag", () => {
       useLocalConfigStore.getState().updateSalesConfig({ creditEnabled: true });

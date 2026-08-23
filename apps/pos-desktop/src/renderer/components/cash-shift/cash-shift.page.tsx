@@ -29,6 +29,10 @@ import { Prisma } from "@pharmacy/database/local";
 import { useCashShiftService } from "../common/service-context";
 import { useCashShiftStore } from "../../../domain/cash-shift/cash-shift.store";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
+import { useCompanySetup } from "@/hooks/use-company-setup";
+import { useAppDispatch } from "@/store/hooks";
+import { setActiveScreen } from "@/store/slices/ui-slice";
+import { CompanySetupGate } from "../company-setup/company-setup-gate";
 import {
   ShiftAlreadyOpenException,
   ShiftNotOpenException,
@@ -63,7 +67,9 @@ const STEP_UP_THRESHOLD = 50_000;
 
 export const CashShiftPage: FC = () => {
   const { t } = useTranslation();
+  const dispatch = useAppDispatch();
   const cashShiftService = useCashShiftService();
+  const { status: companySetupStatus } = useCompanySetup();
 
   // Reactive store subscription via useSyncExternalStore (vanilla zustand)
   const cashShiftState = useSyncExternalStore(
@@ -326,6 +332,17 @@ export const CashShiftPage: FC = () => {
           {t("common.loading")}
         </p>
       </div>
+    );
+  }
+
+  // ---- Company-setup gate ----
+  // No electronic invoice can be issued without the fiscal emitter
+  // profile, so opening a cash shift is blocked until it exists.
+  if (companySetupStatus === "needs-setup") {
+    return (
+      <CompanySetupGate
+        onConfigure={() => dispatch(setActiveScreen("company-setup"))}
+      />
     );
   }
 

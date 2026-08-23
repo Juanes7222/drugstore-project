@@ -1810,6 +1810,82 @@
       }
     }
   },
+  "company_setup": {
+    "gate": {
+      "title": "Set up your company to invoice",
+      "description": "To issue electronic invoicing (DIAN), the system needs your company details: tax ID (NIT), business name, tax regime, and the numbering resolution. Asked only once.",
+      "configure": "Set up now",
+      "later": "I'll do it later"
+    },
+    "wizard": {
+      "title": "Set up your company to invoice",
+      "subtitle": "With this data the DIAN recognizes your pharmacy as an electronic issuer. Asked only once.",
+      "steps_aria": "Setup steps",
+      "step_rut": "RUT",
+      "step_review": "Review",
+      "step_resolution": "Resolution",
+      "step_of": "Step {{current}} of {{total}}",
+      "continue": "Continue",
+      "summary_title": "Summary and save",
+      "summary_subtitle": "Check every field before saving. The numbering resolution must match the document issued by the DIAN.",
+      "submit": "Save company details",
+      "submitting": "Saving...",
+      "submit_error": "The details could not be saved. Check the connection and try again.",
+      "done_title": "All set! Company configured",
+      "done_body": "Your pharmacy can now issue electronic invoicing (DIAN).",
+      "done_continue": "Continue to the system"
+    },
+    "upload": {
+      "dropzone_hint": "Drag the RUT (PDF) here or click to browse",
+      "dropzone_aria": "Upload the RUT PDF",
+      "formats": "PDF · we extract tax ID, business name, regime, CIIU and location",
+      "file_input_label": "RUT file (PDF)",
+      "parsing": "Reading the RUT...",
+      "parsing_detail": "Extracting the data from the document. One moment.",
+      "manual_title": "Don't have the RUT as a PDF?",
+      "manual_hint": "You can type the details by hand. The numbering resolution is always asked separately.",
+      "manual_cta": "Enter details manually",
+      "error_title": "The RUT could not be read",
+      "error_unparseable": "The file is not a legible RUT or it is damaged. Make sure it is the RUT PDF and try again.",
+      "error_invalid_nit_dv": "The tax ID in the RUT failed the DIAN validation (incorrect check digit). Check the document or enter the details manually.",
+      "error_generic": "An error occurred while reading the file. Try again."
+    },
+    "review": {
+      "title": "Review the extracted details",
+      "subtitle": "Fix any difference with the RUT before continuing.",
+      "manual_title": "Company details",
+      "manual_subtitle": "Type the details exactly as they appear in the company's RUT.",
+      "extracted_badge": "Extracted from RUT",
+      "dv_valid": "Check digit OK",
+      "dv_invalid": "Check digit invalid",
+      "dv_unknown": "Check digit unverified",
+      "section_identity": "Identification",
+      "section_location": "Location",
+      "section_contact": "Contact",
+      "nit": "Tax ID (NIT)",
+      "dv": "DV",
+      "name": "Business name",
+      "regimen": "Tax regime",
+      "ciiu": "CIIU",
+      "municipio": "Municipality",
+      "municipio_code": "Municipality code",
+      "departamento": "Department",
+      "address": "Address",
+      "phone": "Phone",
+      "email": "Email address"
+    },
+    "resolution": {
+      "title": "Numbering resolution",
+      "subtitle": "The resolution the DIAN assigned to your pharmacy. It does not come from the RUT: look it up in the habilitación document.",
+      "number": "Resolution number",
+      "date": "Date",
+      "prefix": "Prefix",
+      "prefix_placeholder": "e.g. SETP",
+      "range_start": "From",
+      "range_end": "To",
+      "range_note": "Numbering range authorized for your invoices."
+    }
+  },
   "update": {
     "toast": {
       "optional_available": "Update v{{version}} available",

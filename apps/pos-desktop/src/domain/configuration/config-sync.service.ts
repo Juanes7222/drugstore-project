@@ -95,6 +95,18 @@ export interface SyncDefaultsPayload {
   retryDelaysSeconds: number[];
 }
 
+/** Seller identity delivered by the server's pos-settings endpoint.
+ *  Matches the local `TenantInfo` shape. */
+export interface SellerInfoPayload {
+  nit: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  resolutionNumber: string | null;
+  resolutionDate: string | null;
+  resolutionPrefix: string;
+}
+
 export interface PosSettingsPayload {
   paymentMethods: PosPaymentMethodPayload[];
   discountLimits: DiscountLimitsPayload;
@@ -102,6 +114,12 @@ export interface PosSettingsPayload {
   salesConfig?: SalesConfigPayload;
   alertThresholds: AlertThresholdsPayload;
   syncDefaults: SyncDefaultsPayload;
+  /**
+   * Optional — absent when the server has no tenant context or no issuer
+   * config yet. When absent, the local seller identity is preserved
+   * instead of being reset to the placeholder.
+   */
+  sellerInfo?: SellerInfoPayload;
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +234,7 @@ export class ConfigSyncService {
       salesConfig,
       alertThresholds: payload.alertThresholds,
       syncDefaults: payload.syncDefaults,
+      sellerInfo: payload.sellerInfo,
     });
   }
 

@@ -1941,6 +1941,82 @@
       }
     }
   },
+  "company_setup": {
+    "gate": {
+      "title": "Configura tu empresa para facturar",
+      "description": "Para emitir facturación electrónica (DIAN), el sistema necesita los datos de tu empresa: NIT, razón social, régimen tributario y la resolución de numeración. Solo se piden una vez.",
+      "configure": "Configurar ahora",
+      "later": "Lo haré después"
+    },
+    "wizard": {
+      "title": "Configura tu empresa para facturar",
+      "subtitle": "Con estos datos la DIAN reconoce a tu droguería como emisor electrónico. Solo se piden una vez.",
+      "steps_aria": "Pasos de la configuración",
+      "step_rut": "RUT",
+      "step_review": "Revisión",
+      "step_resolution": "Resolución",
+      "step_of": "Paso {{current}} de {{total}}",
+      "continue": "Continuar",
+      "summary_title": "Resumen y guardado",
+      "summary_subtitle": "Verifique cada dato antes de guardarlo. La resolución de numeración debe coincidir con el documento emitido por la DIAN.",
+      "submit": "Guardar datos de la empresa",
+      "submitting": "Guardando...",
+      "submit_error": "No se pudieron guardar los datos. Verifique la conexión e intente de nuevo.",
+      "done_title": "¡Listo! Empresa configurada",
+      "done_body": "Tu droguería ya puede emitir facturación electrónica (DIAN).",
+      "done_continue": "Continuar al sistema"
+    },
+    "upload": {
+      "dropzone_hint": "Arrastre el RUT (PDF) aquí o haga clic para buscarlo",
+      "dropzone_aria": "Subir el RUT en PDF",
+      "formats": "PDF · extraemos NIT, razón social, régimen, CIIU y ubicación",
+      "file_input_label": "Archivo RUT (PDF)",
+      "parsing": "Leyendo el RUT...",
+      "parsing_detail": "Se extraen los datos del documento. Un momento.",
+      "manual_title": "¿No tiene el RUT en PDF?",
+      "manual_hint": "Puede escribir los datos a mano. La resolución de numeración se pide siempre aparte.",
+      "manual_cta": "Ingresar datos manualmente",
+      "error_title": "No se pudo leer el RUT",
+      "error_unparseable": "El archivo no es un RUT legible o está dañado. Verifique que sea el PDF del RUT y vuelva a intentarlo.",
+      "error_invalid_nit_dv": "El NIT del RUT no pasó la validación de la DIAN (dígito de verificación incorrecto). Revise el documento o ingrese los datos manualmente.",
+      "error_generic": "Ocurrió un error al leer el archivo. Intente de nuevo."
+    },
+    "review": {
+      "title": "Revise los datos extraídos",
+      "subtitle": "Corrija cualquier diferencia con el RUT antes de continuar.",
+      "manual_title": "Datos de la empresa",
+      "manual_subtitle": "Escriba los datos tal como aparecen en el RUT de la empresa.",
+      "extracted_badge": "Extraído del RUT",
+      "dv_valid": "DV válido",
+      "dv_invalid": "DV inválido",
+      "dv_unknown": "DV sin validar",
+      "section_identity": "Identificación",
+      "section_location": "Ubicación",
+      "section_contact": "Contacto",
+      "nit": "NIT",
+      "dv": "DV",
+      "name": "Razón social",
+      "regimen": "Régimen tributario",
+      "ciiu": "CIIU",
+      "municipio": "Municipio",
+      "municipio_code": "Código de municipio",
+      "departamento": "Departamento",
+      "address": "Dirección",
+      "phone": "Teléfono",
+      "email": "Correo electrónico"
+    },
+    "resolution": {
+      "title": "Resolución de numeración",
+      "subtitle": "La resolución que la DIAN asignó a tu droguería. No viene en el RUT: búsquela en el documento de habilitación.",
+      "number": "Número de resolución",
+      "date": "Fecha",
+      "prefix": "Prefijo",
+      "prefix_placeholder": "Ej.: SETP",
+      "range_start": "Desde",
+      "range_end": "Hasta",
+      "range_note": "Rango de numeración autorizado para tus facturas."
+    }
+  },
   "update": {
     "toast": {
       "optional_available": "Actualización v{{version}} disponible",

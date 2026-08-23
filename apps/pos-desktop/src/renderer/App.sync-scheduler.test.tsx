@@ -59,6 +59,13 @@ vi.mock("@/hooks/use-online-status", () => ({
   useOnlineStatus: () => true,
 }));
 
+// App imports ActivationPage → useCompanySetup → rut-pdf-extractor, and
+// pdfjs-dist's canvas glue references DOMMatrix at module scope, which jsdom
+// does not implement. Stub the extractor so the suite never loads pdf.js.
+vi.mock("./services/rut-pdf-extractor", () => ({
+  extractRutPdfText: vi.fn(),
+}));
+
 // Local session store — returns the ref value so tests can control it.
 // We mock the module so the component reads from mockSessionRef.
 // The mock also exposes getState() so the real SyncScheduler (used in

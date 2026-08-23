@@ -70,10 +70,32 @@ export interface SalesConfig {
   priceFloor: PriceFloorConfig;
 }
 
+/**
+ * Pharmacy/tenant issuer identity consumed by the POS for receipts and
+ * invoices. Mirrors the TenantInfo shape in the POS local-config store so
+ * the desktop can hydrate it directly. Resolution data comes from the
+ * subscription's most recent ACTIVE FiscalResolution.
+ */
+export interface SellerInfoPayload {
+  nit: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  resolutionNumber: string | null;
+  resolutionDate: string | null;
+  resolutionPrefix: string;
+}
+
 export interface PosSettingsResponse {
   paymentMethods: PosPaymentMethod[];
   discountLimits: DiscountLimits;
   alertThresholds: AlertThresholds;
   syncDefaults: SyncDefaults;
   salesConfig: SalesConfig;
+  /**
+   * Issuer identity from FiscalIssuerConfig. Absent while no issuer config
+   * exists for the tenant (or when the request carries no tenant context),
+   * so older POS builds that do not know the field keep working.
+   */
+  sellerInfo?: SellerInfoPayload;
 }

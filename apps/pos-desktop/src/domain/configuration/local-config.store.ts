@@ -204,6 +204,12 @@ export interface LocalConfigState {
 
   /** Replace the entire sales config with preset values (resets all fields). */
   applyPresetSales(presetSales: Partial<SalesConfig>): void;
+
+  /**
+   * Merge a partial update into the seller/tenant identity block.
+   * Used by the company-profile service after a successful server submit.
+   */
+  updateSellerInfo(partial: Partial<TenantInfo>): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +285,10 @@ const DEFAULT_SELLER_INFO: TenantInfo = {
   resolutionPrefix: 'FE',
 };
 
+/** Exported so callers (e.g. company-profile.service) can detect a fresh
+ *  install without duplicating the placeholder. */
+export { DEFAULT_SELLER_INFO };
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -311,7 +321,7 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
       lastSyncedAt: null,
 
       hydrateFromServer(payload) {
-        set({
+        set((prev) => ({
           discountLimits: payload.discountLimits,
           alertThresholds: payload.alertThresholds,
           syncDefaults: payload.syncDefaults,
@@ -328,10 +338,15 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
             creditEnabled: DEFAULT_CREDIT_ENABLED,
             defaultCreditLimitCents: DEFAULT_CREDIT_LIMIT_CENTS,
           },
-          sellerInfo: payload.sellerInfo ?? { ...DEFAULT_SELLER_INFO },
+          // Preserve the local seller identity when the server omits it
+          // (e.g. a JWT-free boot or a server that does not know the
+          // issuer config yet). Previously this fell back to the default
+          // placeholder, silently wiping the configured company on every
+          // config pull.
+          sellerInfo: payload.sellerInfo ?? prev.sellerInfo,
           purchasesConfig: payload.purchasesConfig ?? { ...DEFAULT_PURCHASES_CONFIG },
           lastSyncedAt: new Date().toISOString(),
-        });
+        }));
       },
 
       updatePurchasesConfig(partial) {
@@ -383,6 +398,12 @@ export const useLocalConfigStore: StoreApi<LocalConfigState> = createStore<
               presetSales.creditEnabled ?? DEFAULT_CREDIT_ENABLED,
           },
         });
+      },
+
+      updateSellerInfo(partial) {
+        set((prev) => ({
+          sellerInfo: { ...prev.sellerInfo, ...partial },
+        }));
       },
     }),
     {

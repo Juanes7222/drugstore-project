@@ -9,13 +9,22 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
-import type { PosSettingsResponse } from '../dto/pos-settings-response.dto';
+import { FiscalIssuerConfigService } from '@/modules/fiscal-dian/fiscal-issuer-config.service';
+import { FiscalResolutionsService } from '@/modules/fiscal-dian/services/fiscal-resolutions.service';
+import { FiscalIssuerConfigNotSetException } from '@/modules/fiscal-dian/exceptions/fiscal-issuer-config-not-set.exception';
+import { QueryFiscalResolutionsDto } from '@/modules/fiscal-dian/dto/query-fiscal-resolutions.dto';
+import type {
+  PosSettingsResponse,
+  SellerInfoPayload,
+} from '../dto/pos-settings-response.dto';
 
 @Injectable()
 export class PosSettingsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenantContext: TenantContextService,
+    private readonly issuerConfigService: FiscalIssuerConfigService,
+    private readonly resolutionsService: FiscalResolutionsService,
   ) {}
 
   /**
@@ -34,18 +43,10 @@ export class PosSettingsService {
       salesConfigConfig,
     ] = await Promise.all([
       this.fetchPaymentMethods(),
-      this.findConfigValue<DiscountLimits>(
-        'POS_DISCOUNT_LIMITS',
-      ),
-      this.findConfigValue<AlertThresholds>(
-        'POS_ALERT_THRESHOLDS',
-      ),
-      this.findConfigValue<SyncDefaults>(
-        'POS_SYNC_DEFAULTS',
-      ),
-      this.findConfigValue<SalesConfig>(
-        'POS_SALES_CONFIG',
-      ),
+      this.findConfigValue<DiscountLimits>('POS_DISCOUNT_LIMITS'),
+      this.findConfigValue<AlertThresholds>('POS_ALERT_THRESHOLDS'),
+      this.findConfigValue<SyncDefaults>('POS_SYNC_DEFAULTS'),
+      this.findConfigValue<SalesConfig>('POS_SALES_CONFIG'),
     ]);
 
     return {
@@ -60,6 +61,51 @@ export class PosSettingsService {
         ],
       },
       salesConfig: this.applySalesConfigDefaults(salesConfigConfig),
+      sellerInfo: await this.buildSellerInfo(),
+    };
+  }
+
+  /**
+   * Builds the issuer identity for the POS from the tenant's fiscal issuer
+   * config and its most recent ACTIVE resolution. Returns undefined when no
+   * tenant context is bound (JWT-free first boot) or when the issuer config
+   * has not been set up yet, so the payload stays compatible with POS builds
+   * that predate the field.
+   */
+  private async buildSellerInfo(): Promise<SellerInfoPayload | undefined> {
+    if (!this.tenantContext.hasTenant()) {
+      return undefined;
+    }
+
+    let issuer: any;
+    try {
+      issuer = await this.issuerConfigService.find();
+    } catch (error) {
+      if (error instanceof FiscalIssuerConfigNotSetException) {
+        return undefined;
+      }
+      throw error;
+    }
+
+    const resolutionQuery = new QueryFiscalResolutionsDto();
+    resolutionQuery.state = 'ACTIVE';
+    resolutionQuery.pageSize = 1;
+    const { data: activeResolutions } =
+      await this.resolutionsService.findAll(resolutionQuery);
+    const resolution = activeResolutions[0];
+
+    return {
+      nit: issuer.nit,
+      name: issuer.businessName,
+      address: issuer.address ?? null,
+      phone: issuer.phone ?? null,
+      resolutionNumber: resolution?.resolutionNumber ?? null,
+      resolutionDate: resolution?.validFrom
+        ? new Date(resolution.validFrom).toISOString()
+        : null,
+      // TenantInfo.resolutionPrefix is required on the POS side; 'FE' is the
+      // same fallback the desktop store uses for an unconfigured seller.
+      resolutionPrefix: resolution?.prefix ?? 'FE',
     };
   }
 
@@ -118,7 +164,11 @@ export class PosSettingsService {
 
     // value is a Prisma Json value; it may be a raw value, an object, or an array.
     // For our payloads the expected shape is an object (record).
-    if (typeof row.value === 'object' && row.value !== null && !Array.isArray(row.value)) {
+    if (
+      typeof row.value === 'object' &&
+      row.value !== null &&
+      !Array.isArray(row.value)
+    ) {
       return row.value as T;
     }
     return null;
@@ -140,28 +190,40 @@ export class PosSettingsService {
 
     return {
       cashier: {
-        itemMaxPercent: raw.cashier?.itemMaxPercent ?? safe.cashier.itemMaxPercent,
-        globalMaxPercent: raw.cashier?.globalMaxPercent ?? safe.cashier.globalMaxPercent,
+        itemMaxPercent:
+          raw.cashier?.itemMaxPercent ?? safe.cashier.itemMaxPercent,
+        globalMaxPercent:
+          raw.cashier?.globalMaxPercent ?? safe.cashier.globalMaxPercent,
       },
       admin: {
         itemMaxPercent: raw.admin?.itemMaxPercent ?? safe.admin.itemMaxPercent,
-        globalMaxPercent: raw.admin?.globalMaxPercent ?? safe.admin.globalMaxPercent,
+        globalMaxPercent:
+          raw.admin?.globalMaxPercent ?? safe.admin.globalMaxPercent,
       },
       inventoryAssistant: {
-        itemMaxPercent: raw.inventoryAssistant?.itemMaxPercent ?? safe.inventoryAssistant.itemMaxPercent,
-        globalMaxPercent: raw.inventoryAssistant?.globalMaxPercent ?? safe.inventoryAssistant.globalMaxPercent,
+        itemMaxPercent:
+          raw.inventoryAssistant?.itemMaxPercent ??
+          safe.inventoryAssistant.itemMaxPercent,
+        globalMaxPercent:
+          raw.inventoryAssistant?.globalMaxPercent ??
+          safe.inventoryAssistant.globalMaxPercent,
       },
       accountant: {
-        itemMaxPercent: raw.accountant?.itemMaxPercent ?? safe.accountant.itemMaxPercent,
-        globalMaxPercent: raw.accountant?.globalMaxPercent ?? safe.accountant.globalMaxPercent,
+        itemMaxPercent:
+          raw.accountant?.itemMaxPercent ?? safe.accountant.itemMaxPercent,
+        globalMaxPercent:
+          raw.accountant?.globalMaxPercent ?? safe.accountant.globalMaxPercent,
       },
       owner: {
         itemMaxPercent: raw.owner?.itemMaxPercent ?? safe.owner.itemMaxPercent,
-        globalMaxPercent: raw.owner?.globalMaxPercent ?? safe.owner.globalMaxPercent,
+        globalMaxPercent:
+          raw.owner?.globalMaxPercent ?? safe.owner.globalMaxPercent,
       },
       manager: {
-        itemMaxPercent: raw.manager?.itemMaxPercent ?? safe.manager.itemMaxPercent,
-        globalMaxPercent: raw.manager?.globalMaxPercent ?? safe.manager.globalMaxPercent,
+        itemMaxPercent:
+          raw.manager?.itemMaxPercent ?? safe.manager.itemMaxPercent,
+        globalMaxPercent:
+          raw.manager?.globalMaxPercent ?? safe.manager.globalMaxPercent,
       },
     };
   }
@@ -176,8 +238,10 @@ export class PosSettingsService {
     if (!raw) return safe;
 
     return {
-      expirationWarningDays: raw.expirationWarningDays ?? safe.expirationWarningDays,
-      lowStockAlertEnabled: raw.lowStockAlertEnabled ?? safe.lowStockAlertEnabled,
+      expirationWarningDays:
+        raw.expirationWarningDays ?? safe.expirationWarningDays,
+      lowStockAlertEnabled:
+        raw.lowStockAlertEnabled ?? safe.lowStockAlertEnabled,
     };
   }
 
@@ -209,30 +273,36 @@ export class PosSettingsService {
     return {
       priceOverridePermissions: {
         cashier: {
-          allowed: rawOverride?.cashier?.allowed ?? safe.priceOverridePermissions.cashier.allowed,
+          allowed:
+            rawOverride?.cashier?.allowed ??
+            safe.priceOverridePermissions.cashier.allowed,
           requireReason:
-            rawOverride?.cashier?.requireReason
-            ?? safe.priceOverridePermissions.cashier.requireReason,
+            rawOverride?.cashier?.requireReason ??
+            safe.priceOverridePermissions.cashier.requireReason,
         },
         manager: {
-          allowed: rawOverride?.manager?.allowed ?? safe.priceOverridePermissions.manager.allowed,
+          allowed:
+            rawOverride?.manager?.allowed ??
+            safe.priceOverridePermissions.manager.allowed,
           requireReason:
-            rawOverride?.manager?.requireReason
-            ?? safe.priceOverridePermissions.manager.requireReason,
+            rawOverride?.manager?.requireReason ??
+            safe.priceOverridePermissions.manager.requireReason,
         },
         inventoryAssistant: {
           allowed:
-            rawOverride?.inventoryAssistant?.allowed
-            ?? safe.priceOverridePermissions.inventoryAssistant.allowed,
+            rawOverride?.inventoryAssistant?.allowed ??
+            safe.priceOverridePermissions.inventoryAssistant.allowed,
           requireReason:
-            rawOverride?.inventoryAssistant?.requireReason
-            ?? safe.priceOverridePermissions.inventoryAssistant.requireReason,
+            rawOverride?.inventoryAssistant?.requireReason ??
+            safe.priceOverridePermissions.inventoryAssistant.requireReason,
         },
         accountant: {
-          allowed: rawOverride?.accountant?.allowed ?? safe.priceOverridePermissions.accountant.allowed,
+          allowed:
+            rawOverride?.accountant?.allowed ??
+            safe.priceOverridePermissions.accountant.allowed,
           requireReason:
-            rawOverride?.accountant?.requireReason
-            ?? safe.priceOverridePermissions.accountant.requireReason,
+            rawOverride?.accountant?.requireReason ??
+            safe.priceOverridePermissions.accountant.requireReason,
         },
       },
       priceFloor: {
