@@ -63,11 +63,11 @@ describe('FiscalIssuerConfigService', () => {
   describe('upsert', () => {
     const dto = {
       nit: '900123456',
-      verificationDigit: '5',
+      verificationDigit: '8',
       businessName: 'Mi Droguería SAS',
       commercialName: null,
       organizationType: '1',
-      taxRegime: '48',
+      taxRegime: 'R-99-PJ',
       taxResponsibilities: null,
       address: 'Calle 123',
       municipality: 'Bogotá',

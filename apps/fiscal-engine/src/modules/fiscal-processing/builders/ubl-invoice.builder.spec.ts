@@ -256,6 +256,69 @@ describe('UblInvoiceBuilder', () => {
       expect(customer['cac:Contact']).toBeUndefined();
     });
 
+    it('emits the issuer taxRegime as PartyTaxScheme/cbc:TaxLevelCode', () => {
+      const parsed = parseXml(builder.build(buildParams({
+        issuerConfig: {
+          ...buildParams().issuerConfig,
+          taxRegime: 'R-99-PJ',
+        },
+      })));
+
+      const supplier = parsed.Invoice['cac:AccountingSupplierParty']['cac:Party'];
+      expect(supplier['cac:PartyTaxScheme']['cbc:TaxLevelCode']).toBe('R-99-PJ');
+    });
+
+    it('omits PartyTaxScheme/cbc:TaxLevelCode when the issuer has no taxRegime', () => {
+      const parsed = parseXml(builder.build(buildParams()));
+
+      const supplier = parsed.Invoice['cac:AccountingSupplierParty']['cac:Party'];
+      expect(supplier['cac:PartyTaxScheme']['cbc:TaxLevelCode']).toBeUndefined();
+    });
+
+    it('emits the DANE municipality code as the supplier Address cbc:ID', () => {
+      const parsed = parseXml(builder.build(buildParams({
+        issuerConfig: {
+          ...buildParams().issuerConfig,
+          municipioCode: '11001',
+        },
+      })));
+
+      const address = parsed.Invoice['cac:AccountingSupplierParty']['cac:Party']
+        ['cac:PhysicalLocation']['cac:Address'];
+      expect(address['cbc:ID']).toBe('11001');
+      expect(address['cbc:CityName']).toBe('Bogotá D.C.');
+    });
+
+    it('falls back to the municipality name in Address cbc:ID when no code is configured', () => {
+      const parsed = parseXml(builder.build(buildParams()));
+
+      const address = parsed.Invoice['cac:AccountingSupplierParty']['cac:Party']
+        ['cac:PhysicalLocation']['cac:Address'];
+      expect(address['cbc:ID']).toBe('Bogotá D.C.');
+      expect(address['cbc:CityName']).toBe('Bogotá D.C.');
+    });
+
+    it('emits the software id in sts:softwareID', () => {
+      const parsed = parseXml(builder.build(buildParams()));
+
+      const softwareId = parsed.Invoice['ext:UBLExtensions']['ext:UBLExtension'][0]
+        ['ext:ExtensionContent']['sts:DianExtensions']['sts:SoftwareProvider']
+        ['sts:softwareID'];
+      expect(softwareId['#text']).toBe('b8ac9b7c-3f2e-4a6d-9c1e-5f7a8b9c0d1e');
+      expect(softwareId['@_schemeAgencyID']).toBe('195');
+    });
+
+    it('renders an empty sts:softwareID when no software id is provided', () => {
+      const parsed = parseXml(builder.build(buildParams({ softwareId: '' })));
+
+      const softwareId = parsed.Invoice['ext:UBLExtensions']['ext:UBLExtension'][0]
+        ['ext:ExtensionContent']['sts:DianExtensions']['sts:SoftwareProvider']
+        ['sts:softwareID'];
+      expect(softwareId).toBeDefined();
+      expect(softwareId['@_schemeAgencyID']).toBe('195');
+      expect(softwareId['#text']).toBeUndefined();
+    });
+
     it('accepts Decimal-like values through toDec conversion', () => {
       const decimalLike = (value: number) => ({ toNumber: () => value });
       const parsed = parseXml(builder.build(buildParams({

@@ -1,5 +1,6 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import type { PrismaClient } from '@pharmacy/database';
+import { XMLParser } from 'fast-xml-parser';
 
 // The Prisma 7 client is generated at build time; keep the real package out
 // of the module graph so the spec can run without the generated client.
@@ -241,6 +242,37 @@ describe('FiscalDocumentsService', () => {
         FiscalDocumentGenerationFailedException,
       );
       expect(secrets.readSecret).not.toHaveBeenCalled();
+    });
+
+    it('forwards the issuer softwareId into the UBL sts:softwareID', async () => {
+      await service.generate('fd-1');
+
+      const updateData = (prisma.fiscalDocument.update as jest.Mock).mock.calls[0][0].data;
+      const parsed = new XMLParser({ ignoreAttributes: false, parseTagValue: false })
+        .parse(updateData.xmlPayload);
+      const softwareId = parsed.Invoice['ext:UBLExtensions']['ext:UBLExtension'][0]
+        ['ext:ExtensionContent']['sts:DianExtensions']['sts:SoftwareProvider']
+        ['sts:softwareID'];
+      expect(softwareId['#text']).toBe('b8ac9b7c-3f2e-4a6d-9c1e-5f7a8b9c0d1e');
+    });
+
+    it('falls back to an empty sts:softwareID when the issuer config has no softwareId', async () => {
+      (prisma.fiscalIssuerConfig.findFirst as jest.Mock).mockResolvedValue({
+        ...ISSUER_CONFIG,
+        softwareId: undefined,
+      });
+
+      await service.generate('fd-1');
+
+      const updateData = (prisma.fiscalDocument.update as jest.Mock).mock.calls[0][0].data;
+      const parsed = new XMLParser({ ignoreAttributes: false, parseTagValue: false })
+        .parse(updateData.xmlPayload);
+      const softwareId = parsed.Invoice['ext:UBLExtensions']['ext:UBLExtension'][0]
+        ['ext:ExtensionContent']['sts:DianExtensions']['sts:SoftwareProvider']
+        ['sts:softwareID'];
+      expect(softwareId).toBeDefined();
+      expect(softwareId['@_schemeAgencyID']).toBe('195');
+      expect(softwareId['#text']).toBeUndefined();
     });
   });
 });

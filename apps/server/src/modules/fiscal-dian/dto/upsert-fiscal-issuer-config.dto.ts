@@ -15,9 +15,11 @@ export const TaxLevelCode = z.enum([
 
 export type TaxLevelCodeValue = z.infer<typeof TaxLevelCode>;
 
-// DIAN module-11 check-digit weights for NITs of up to 15 digits (right to left).
+// DIAN module-11 check-digit weights for NITs of up to 15 digits, in the
+// official order from the technical annex (Res. 000012 de 2008): the
+// rightmost digit is multiplied by 3, the next by 7, and so on.
 const MOD_11_WEIGHTS = [
-  71, 67, 59, 53, 47, 43, 41, 37, 29, 23, 19, 17, 13, 7, 3,
+  3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71,
 ];
 
 /**
