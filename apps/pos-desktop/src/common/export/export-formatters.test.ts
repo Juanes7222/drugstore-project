@@ -1,7 +1,7 @@
 /**
  * Tests for the shared export cell formatters (CSV, Excel, PDF, print).
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ExportColumnType,
   type ExportColumn,
@@ -14,6 +14,7 @@ import {
   formatPdfCell,
   isNumericColumn,
   pdfColumnWidth,
+  resolveColumnHeader,
   toExcelValue,
 } from "./export-formatters";
 
@@ -24,6 +25,45 @@ function column(type: ExportColumnType, id = "value"): ExportColumn {
 function row(value: unknown): ExportRow {
   return { value };
 }
+
+describe("resolveColumnHeader", () => {
+  it("prefers the literal header over the translator", () => {
+    const translator = vi.fn(() => "Traducido");
+
+    const resolved = resolveColumnHeader(
+      {
+        id: "fullName",
+        titleKey: "export.cols.fullName",
+        type: ExportColumnType.TEXT,
+        header: "Nombre completo",
+      },
+      translator,
+    );
+
+    expect(resolved).toBe("Nombre completo");
+    expect(translator).not.toHaveBeenCalled();
+  });
+
+  it("translates the title key when no literal header is set", () => {
+    const translator = vi.fn(
+      (key: string, options?: { defaultValue?: string }) =>
+        `T[${key}]${options?.defaultValue ?? ""}`,
+    );
+
+    const resolved = resolveColumnHeader(
+      column(ExportColumnType.TEXT, "name"),
+      translator,
+    );
+
+    expect(resolved).toBe("T[export.cols.name]export.cols.name");
+  });
+
+  it("falls back to the title key when no translator is present", () => {
+    expect(resolveColumnHeader(column(ExportColumnType.TEXT, "name"))).toBe(
+      "export.cols.name",
+    );
+  });
+});
 
 describe("formatCell", () => {
   it("renders an empty string when the value is null", () => {

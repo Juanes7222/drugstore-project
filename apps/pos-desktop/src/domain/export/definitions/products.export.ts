@@ -1,12 +1,15 @@
 /**
  * Products export definition — full product dataset honoring the screen's
- * client-side filters (search, category, inactive toggle), one row per
- * product.
+ * client-side filters (search, category, inactive toggle).
  *
- * The screen filters in memory over a full `listProducts` load; the export
- * reproduces the same semantics so the exported file matches the grid.
+ * Column headers are the canonical `PRODUCT_IMPORT_COLUMNS` labels and the
+ * loader emits the import row keys, so an exported file round-trips through
+ * the data-import pipeline unchanged (including the required
+ * `taxSchemeName` and a `saleType` in the Spanish aliases the importer
+ * accepts).
  */
 
+import { PRODUCT_IMPORT_COLUMNS } from '@pharmacy/shared-validation';
 import type { ExportColumn } from '../../../common/export';
 import type {
   ExportDefinition,
@@ -20,17 +23,42 @@ export interface ProductsExportArgs {
   showInactive?: boolean;
 }
 
-const COLUMNS: readonly ExportColumn[] = [
-  { id: 'internalCode', titleKey: 'export.cols.internalCode', type: 'text', align: 'left' },
-  { id: 'commercialName', titleKey: 'export.cols.commercialName', type: 'text', align: 'left' },
-  { id: 'concentration', titleKey: 'export.cols.concentration', type: 'text', align: 'left' },
-  { id: 'laboratory', titleKey: 'export.cols.laboratory', type: 'text', align: 'left' },
-  { id: 'primaryBarcode', titleKey: 'export.cols.barcode', type: 'text', align: 'left' },
-  { id: 'currentPrice', titleKey: 'export.cols.salePrice', type: 'currency', align: 'right' },
-  { id: 'currentCost', titleKey: 'export.cols.cpp', type: 'currency', align: 'right' },
-  { id: 'minimumStock', titleKey: 'export.cols.minimumStock', type: 'integer', align: 'right' },
-  { id: 'isActive', titleKey: 'export.cols.isActive', type: 'text', align: 'left' },
-];
+/** Column type per canonical import key.  Numeric import columns stay raw
+ *  text — the importer's schemas expect plain digits, not formatted
+ *  currency or thousands separators. */
+const COLUMN_TYPE: Record<string, ExportColumn['type']> = {
+  internalCode: 'text',
+  commercialName: 'text',
+  laboratory: 'text',
+  concentration: 'text',
+  concentrationUnit: 'text',
+  saleType: 'text',
+  minimumStock: 'text',
+  invimaRegistry: 'text',
+  atcCode: 'text',
+  categoryName: 'text',
+  pharmaceuticalFormName: 'text',
+  initialPrice: 'text',
+  initialCost: 'text',
+  taxSchemeName: 'text',
+};
+
+/** Derived from the import contract so export and import never diverge. */
+const COLUMNS: readonly ExportColumn[] = PRODUCT_IMPORT_COLUMNS.map(
+  (column) => ({
+    id: column.key,
+    titleKey: `export.cols.${column.key}`,
+    header: column.label,
+    type: COLUMN_TYPE[column.key] ?? 'text',
+  }),
+);
+
+/** SaleType → the Spanish alias the product import schema accepts. */
+const SALE_TYPE_IMPORT_ALIAS: Record<string, string> = {
+  FREE_SALE: 'libre',
+  PRESCRIPTION: 'prescripcion',
+  CONTROLLED_SUBSTANCE: 'controlado',
+};
 
 const matchesQuery = (
   row: {
@@ -86,25 +114,23 @@ export const PRODUCTS_EXPORT: ExportDefinition<ProductsExportArgs> = {
         }
         return true;
       })
-      .map((row) => {
-        const barcodes = (row.barcodes as
-          | Array<{ barcode: string; isPrimary: boolean }>
-          | undefined) ?? [];
-        const primary =
-          barcodes.find((bc) => bc.isPrimary) ?? barcodes[0];
-
-        return {
-          internalCode: row.internalCode,
-          commercialName: row.commercialName,
-          concentration: row.concentration ?? '',
-          laboratory: row.laboratory,
-          primaryBarcode: primary?.barcode ?? '',
-          currentPrice: row.currentPrice ?? 0,
-          currentCost: row.currentCost ?? 0,
-          minimumStock: row.minimumStock,
-          isActive: row.isActive,
-        };
-      });
+      .map((row) => ({
+        internalCode: row.internalCode,
+        commercialName: row.commercialName,
+        laboratory: row.laboratory,
+        concentration: row.concentration ?? '',
+        concentrationUnit: row.concentrationUnit ?? '',
+        saleType:
+          SALE_TYPE_IMPORT_ALIAS[row.saleType] ?? row.saleType,
+        minimumStock: String(row.minimumStock),
+        invimaRegistry: row.invimaRegistry ?? '',
+        atcCode: row.atcCode ?? '',
+        categoryName: row.categoryName ?? '',
+        pharmaceuticalFormName: row.pharmaceuticalFormName ?? '',
+        initialPrice: row.currentPrice ?? '',
+        initialCost: row.currentCost ?? '',
+        taxSchemeName: row.currentTaxSchemeName ?? '',
+      }));
   },
 
   metadata(args) {

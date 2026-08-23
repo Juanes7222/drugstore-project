@@ -3,10 +3,26 @@
  * pass-through, and row mapping for each loader.
  */
 import { describe, expect, it, vi } from "vitest";
+import { ExportColumnType } from "../../../common/export";
+import {
+  CLIENT_IMPORT_COLUMNS,
+  PRODUCT_IMPORT_COLUMNS,
+} from "@pharmacy/shared-validation";
+import type { PrismaClient } from "@pharmacy/database/local";
 import type { ClientSearchResult } from "../../clients/clients.service";
+import type { ClientsService } from "../../clients/clients.service";
+import type { ProductService } from "../../catalog/product.service";
 import type { SupplierSearchResult } from "../../purchases/suppliers.service";
 import type { SaleHistoryListItem } from "../../sales-pos/sales-history.service";
-import type { ExportServiceContext } from "../export.types";
+import { ClientImportDefinition } from "../../data-import/definitions/client-import.definition";
+import { ProductImportDefinition } from "../../data-import/definitions/product-import.definition";
+import {
+  buildAliasMap,
+  missingRequiredHeaders,
+  normalizeHeader,
+} from "../../data-import/import-common";
+import { renderCsv } from "../export-csv.renderer";
+import type { ExportDocument, ExportServiceContext } from "../export.types";
 import { CLIENTS_EXPORT } from "./clients.export";
 import { INVENTORY_LOTS_EXPORT } from "./inventory-lots.export";
 import { PRODUCTS_EXPORT } from "./products.export";
@@ -73,10 +89,17 @@ interface ProductListItemInput {
   internalCode: string;
   commercialName: string;
   concentration: string | null;
+  concentrationUnit: string | null;
   laboratory: string;
-  categoryId: string | null;
-  isActive: boolean;
+  saleType: string;
   minimumStock: number;
+  invimaRegistry: string | null;
+  atcCode: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
+  pharmaceuticalFormName: string | null;
+  currentTaxSchemeName: string | null;
+  isActive: boolean;
   currentPrice: string | null;
   currentCost: string | null;
   barcodes: Array<{
@@ -104,10 +127,17 @@ function productItem(
     internalCode: "COD-001",
     commercialName: "Paracetamol 500mg",
     concentration: null,
+    concentrationUnit: null,
     laboratory: "Genfar",
-    categoryId: "cat-1",
-    isActive: true,
+    saleType: "FREE_SALE",
     minimumStock: 10,
+    invimaRegistry: null,
+    atcCode: null,
+    categoryId: "cat-1",
+    categoryName: "Analgésicos",
+    pharmaceuticalFormName: "Tableta",
+    currentTaxSchemeName: "IVA 19%",
+    isActive: true,
     currentPrice: "5500.00",
     currentCost: "3200.00",
     barcodes: [
@@ -314,10 +344,55 @@ describe("CLIENTS_EXPORT", () => {
     });
   });
 
-  it("maps client fields with empty-string fallbacks for null values", async () => {
+  it("collects every client page via the offset loop", async () => {
+    const listClients = vi.fn<
+      ExportServiceContext["clientsService"]["listClients"]
+    >(async (params) => {
+      const offset = params?.offset ?? 0;
+      const limit = params?.limit ?? 500;
+      if (offset >= 1200) {
+        return { items: [], total: 1200 };
+      }
+      return {
+        items: Array.from(
+          { length: Math.min(limit, 1200 - offset) },
+          (_, index) => clientItem({ id: `client-${offset + index}` }),
+        ),
+        total: 1200,
+      };
+    });
+    const services = {
+      clientsService: { listClients },
+    } as unknown as ExportServiceContext;
+
+    const rows = await CLIENTS_EXPORT.load(services, {});
+
+    expect(listClients).toHaveBeenCalledTimes(3);
+    expect(
+      listClients.mock.calls.map(([params]) => params?.offset),
+    ).toEqual([0, 500, 1000]);
+    expect(rows).toHaveLength(1200);
+  });
+
+  it("derives every column from CLIENT_IMPORT_COLUMNS with literal headers", () => {
+    expect(CLIENTS_EXPORT.columns.map((column) => column.id)).toEqual(
+      CLIENT_IMPORT_COLUMNS.map((column) => column.key),
+    );
+    expect(CLIENTS_EXPORT.columns.map((column) => column.header)).toEqual(
+      CLIENT_IMPORT_COLUMNS.map((column) => column.label),
+    );
+    expect(CLIENTS_EXPORT.columns.map((column) => column.type)).toEqual(
+      CLIENT_IMPORT_COLUMNS.map(() => ExportColumnType.TEXT),
+    );
+  });
+
+  it("maps client fields with empty-string fallbacks and a raw credit limit", async () => {
     const listClients = vi
       .fn<ExportServiceContext["clientsService"]["listClients"]>()
-      .mockResolvedValue({ items: [clientItem()], total: 1 });
+      .mockResolvedValue({
+        items: [clientItem({ creditLimit: 500000 })],
+        total: 1,
+      });
     const services = {
       clientsService: { listClients },
     } as unknown as ExportServiceContext;
@@ -333,9 +408,91 @@ describe("CLIENTS_EXPORT", () => {
       address: "",
       municipality: "",
       department: "",
-      creditLimit: 0,
-      isActive: true,
-      createdAt: new Date("2026-08-01T00:00:00"),
+      creditLimit: "500000",
+    });
+  });
+
+  it("emits an empty credit limit when the client has none", async () => {
+    const listClients = vi
+      .fn<ExportServiceContext["clientsService"]["listClients"]>()
+      .mockResolvedValue({
+        items: [clientItem({ creditLimit: null })],
+        total: 1,
+      });
+    const services = {
+      clientsService: { listClients },
+    } as unknown as ExportServiceContext;
+
+    const rows = await CLIENTS_EXPORT.load(services, {});
+
+    expect(rows[0].creditLimit).toBe("");
+  });
+
+  it("renders a CSV whose headers the client import pipeline accepts", async () => {
+    const listClients = vi
+      .fn<ExportServiceContext["clientsService"]["listClients"]>()
+      .mockResolvedValue({
+        items: [clientItem({ creditLimit: 500000 })],
+        total: 1,
+      });
+    const services = {
+      clientsService: { listClients },
+    } as unknown as ExportServiceContext;
+    const rows = await CLIENTS_EXPORT.load(services, {});
+    const document: ExportDocument = {
+      titleKey: CLIENTS_EXPORT.titleKey,
+      titleFallback: CLIENTS_EXPORT.titleFallback,
+      columns: CLIENTS_EXPORT.columns,
+      rows,
+    };
+
+    const headerLine = renderCsv(document)
+      .split("\r\n")[0]!
+      .replace(/^\uFEFF/u, "");
+    const headers = headerLine.split(";");
+
+    expect(headers).toEqual(CLIENT_IMPORT_COLUMNS.map((column) => column.label));
+    expect(missingRequiredHeaders(CLIENT_IMPORT_COLUMNS, headers)).toEqual([]);
+    const aliasMap = buildAliasMap(CLIENT_IMPORT_COLUMNS);
+    expect(headers.every((header) => aliasMap.has(normalizeHeader(header)))).toBe(
+      true,
+    );
+  });
+
+  it("round-trips a loaded client row through the client import definition", async () => {
+    const listClients = vi
+      .fn<ExportServiceContext["clientsService"]["listClients"]>()
+      .mockResolvedValue({
+        items: [clientItem({ creditLimit: 500000 })],
+        total: 1,
+      });
+    const services = {
+      clientsService: { listClients },
+    } as unknown as ExportServiceContext;
+    const rows = await CLIENTS_EXPORT.load(services, {});
+    const record = Object.fromEntries(
+      CLIENTS_EXPORT.columns.map((column) => [
+        column.header!,
+        rows[0][column.id],
+      ]),
+    );
+    const definition = new ClientImportDefinition(
+      null as unknown as PrismaClient,
+      null as unknown as ClientsService,
+    );
+
+    const mapped = definition.mapColumns(record);
+    const parsed = definition.validate(mapped.data);
+
+    expect(mapped.issues).toEqual([]);
+    expect(parsed).toMatchObject({
+      data: {
+        fullName: "Ana Pérez",
+        identificationType: "CC",
+        identificationNumber: "123456789",
+        phone: "3001234567",
+        creditLimit: 500000,
+      },
     });
   });
 
@@ -447,21 +604,26 @@ describe("PRODUCTS_EXPORT", () => {
     expect(rows).toHaveLength(0);
   });
 
-  it("prefers the primary barcode over the first barcode", async () => {
+  it("derives 14 columns from PRODUCT_IMPORT_COLUMNS with literal headers", () => {
+    expect(PRODUCTS_EXPORT.columns).toHaveLength(14);
+    expect(PRODUCTS_EXPORT.columns.map((column) => column.id)).toEqual(
+      PRODUCT_IMPORT_COLUMNS.map((column) => column.key),
+    );
+    expect(PRODUCTS_EXPORT.columns.map((column) => column.header)).toEqual(
+      PRODUCT_IMPORT_COLUMNS.map((column) => column.label),
+    );
+    expect(PRODUCTS_EXPORT.columns.map((column) => column.type)).toEqual(
+      PRODUCT_IMPORT_COLUMNS.map(() => ExportColumnType.TEXT),
+    );
+  });
+
+  it.each([
+    ["FREE_SALE", "libre"],
+    ["PRESCRIPTION", "prescripcion"],
+    ["CONTROLLED_SUBSTANCE", "controlado"],
+  ] as const)("maps saleType %s to its import alias %s", async (saleType, expected) => {
     const listProducts = vi.fn<ListProductsMock>().mockResolvedValue({
-      items: [
-        productItem({
-          barcodes: [
-            {
-              id: "b1",
-              barcode: "111",
-              barcodeType: "EAN13",
-              isPrimary: false,
-            },
-            { id: "b2", barcode: "222", barcodeType: "EAN13", isPrimary: true },
-          ],
-        }),
-      ],
+      items: [productItem({ saleType })],
       total: 1,
     });
     const services = {
@@ -470,30 +632,23 @@ describe("PRODUCTS_EXPORT", () => {
 
     const rows = await PRODUCTS_EXPORT.load(services, {});
 
-    expect(rows[0].primaryBarcode).toBe("222");
+    expect(rows[0].saleType).toBe(expected);
   });
 
-  it("falls back to an empty barcode when the product has none", async () => {
-    const listProducts = vi.fn<ListProductsMock>().mockResolvedValue({
-      items: [productItem({ barcodes: [] })],
-      total: 1,
-    });
-    const services = {
-      productService: { listProducts },
-    } as unknown as ExportServiceContext;
-
-    const rows = await PRODUCTS_EXPORT.load(services, {});
-
-    expect(rows[0].primaryBarcode).toBe("");
-  });
-
-  it("maps product fields with defaults for missing values", async () => {
+  it("maps product fields with empty fallbacks and import aliases", async () => {
     const listProducts = vi.fn<ListProductsMock>().mockResolvedValue({
       items: [
         productItem({
           concentration: null,
+          concentrationUnit: null,
+          saleType: "PRESCRIPTION",
+          invimaRegistry: null,
+          atcCode: null,
+          categoryName: null,
+          pharmaceuticalFormName: null,
           currentPrice: null,
           currentCost: null,
+          currentTaxSchemeName: null,
         }),
       ],
       total: 1,
@@ -507,13 +662,99 @@ describe("PRODUCTS_EXPORT", () => {
     expect(rows[0]).toEqual({
       internalCode: "COD-001",
       commercialName: "Paracetamol 500mg",
-      concentration: "",
       laboratory: "Genfar",
-      primaryBarcode: "7701234567890",
-      currentPrice: 0,
-      currentCost: 0,
-      minimumStock: 10,
-      isActive: true,
+      concentration: "",
+      concentrationUnit: "",
+      saleType: "prescripcion",
+      minimumStock: "10",
+      invimaRegistry: "",
+      atcCode: "",
+      categoryName: "",
+      pharmaceuticalFormName: "",
+      initialPrice: "",
+      initialCost: "",
+      taxSchemeName: "",
+    });
+  });
+
+  it("renders a CSV whose headers the product import pipeline accepts", async () => {
+    const listProducts = vi.fn<ListProductsMock>().mockResolvedValue({
+      items: [productItem()],
+      total: 1,
+    });
+    const services = {
+      productService: { listProducts },
+    } as unknown as ExportServiceContext;
+    const rows = await PRODUCTS_EXPORT.load(services, {});
+    const document: ExportDocument = {
+      titleKey: PRODUCTS_EXPORT.titleKey,
+      titleFallback: PRODUCTS_EXPORT.titleFallback,
+      columns: PRODUCTS_EXPORT.columns,
+      rows,
+    };
+
+    const headerLine = renderCsv(document)
+      .split("\r\n")[0]!
+      .replace(/^\uFEFF/u, "");
+    const headers = headerLine.split(";");
+
+    expect(headers).toEqual(
+      PRODUCT_IMPORT_COLUMNS.map((column) => column.label),
+    );
+    expect(missingRequiredHeaders(PRODUCT_IMPORT_COLUMNS, headers)).toEqual([]);
+    const aliasMap = buildAliasMap(PRODUCT_IMPORT_COLUMNS);
+    expect(headers.every((header) => aliasMap.has(normalizeHeader(header)))).toBe(
+      true,
+    );
+  });
+
+  it("round-trips a loaded product row through the product import definition", async () => {
+    const listProducts = vi.fn<ListProductsMock>().mockResolvedValue({
+      items: [
+        productItem({
+          concentration: "500",
+          concentrationUnit: "mg",
+          minimumStock: 10,
+          invimaRegistry: "INVIMA-2026-001",
+          atcCode: "N02BE01",
+          currentPrice: "12500.5",
+          currentCost: "3200.00",
+        }),
+      ],
+      total: 1,
+    });
+    const services = {
+      productService: { listProducts },
+    } as unknown as ExportServiceContext;
+    const rows = await PRODUCTS_EXPORT.load(services, {});
+    const record = Object.fromEntries(
+      PRODUCTS_EXPORT.columns.map((column) => [
+        column.header!,
+        rows[0][column.id],
+      ]),
+    );
+    const definition = new ProductImportDefinition(
+      null as unknown as PrismaClient,
+      null as unknown as ProductService,
+    );
+
+    const mapped = definition.mapColumns(record);
+    const parsed = definition.validate(mapped.data);
+
+    expect(mapped.issues).toEqual([]);
+    expect(parsed).toMatchObject({
+      data: {
+        internalCode: "COD-001",
+        commercialName: "Paracetamol 500mg",
+        laboratory: "Genfar",
+        saleType: "FREE_SALE",
+        minimumStock: 10,
+        initialPrice: "12500.5",
+        initialCost: "3200.00",
+        categoryName: "Analgésicos",
+        pharmaceuticalFormName: "Tableta",
+        taxSchemeName: "IVA 19%",
+      },
     });
   });
 });

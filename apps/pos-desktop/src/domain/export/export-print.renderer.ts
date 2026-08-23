@@ -8,6 +8,7 @@
 import {
   formatCell,
   isNumericColumn,
+  resolveColumnHeader,
   tr,
 } from '../../common/export';
 import { getTenantInfo } from '../configuration/local-config.store';
@@ -20,7 +21,7 @@ export function renderPrintHtml(document: ExportDocument): string {
   const headers = document.columns
     .map(
       (column) =>
-        `<th>${escapeHtml(tr(document.t, column.titleKey, column.titleKey))}</th>`,
+        `<th>${escapeHtml(resolveColumnHeader(column, document.t))}</th>`,
     )
     .join('');
 

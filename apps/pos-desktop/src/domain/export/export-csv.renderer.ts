@@ -8,7 +8,7 @@
 
 import {
   formatCell,
-  tr,
+  resolveColumnHeader,
   type ExportColumn,
 } from '../../common/export';
 import type { ExportDocument } from './export.types';
@@ -20,9 +20,7 @@ export function renderCsv(document: ExportDocument): string {
   const locale = document.locale ?? 'es-CO';
 
   const headers = document.columns
-    .map((column) =>
-      escapeCsv(tr(document.t, column.titleKey, column.titleKey)),
-    )
+    .map((column) => escapeCsv(resolveColumnHeader(column, document.t)))
     .join(CSV_DELIMITER);
 
   const rows = document.rows.map((row) =>

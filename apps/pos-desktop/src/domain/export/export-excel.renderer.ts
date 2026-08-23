@@ -1,9 +1,15 @@
 /**
  * Excel renderer for generic export documents.
  *
- * Single-sheet layout: tenant header band, document title, optional
- * subtitle, metadata rows, then the frozen-header data table with an
- * auto-filter.  Same visual theme as the report exports.
+ * Two sheets, so exports are BOTH human-friendly and machine-importable:
+ * - Sheet 0 "Detalle": the data table with the header row in row 1 —
+ *   exactly the shape the data-import pipeline expects (same contract as
+ *   the downloadable import templates).  Only this sheet is read by the
+ *   importer.
+ * - Sheet 1 "Información": tenant band, document title, subtitle, and
+ *   metadata rows (generated-at, user, applied filters).
+ *
+ * Same visual theme as the report exports.
  */
 
 import ExcelJS from 'exceljs';
@@ -13,6 +19,7 @@ import {
   hexToArgb,
   isNumericColumn,
   REPORT_THEME,
+  resolveColumnHeader,
   toExcelValue,
   tr,
 } from '../../common/export';
@@ -29,10 +36,10 @@ export async function renderExcel(
   workbook.created = new Date(document.generatedAt ?? Date.now());
   workbook.modified = new Date();
 
-  const sheet = workbook.addWorksheet(
+  const detail = workbook.addWorksheet(
     tr(document.t, 'export.sheet.detail', 'Detalle'),
     {
-      views: [{ showGridLines: false }],
+      views: [{ state: 'frozen', ySplit: 1, showGridLines: false }],
       pageSetup: {
         orientation: 'landscape',
         paperSize: 9,
@@ -43,34 +50,126 @@ export async function renderExcel(
     },
   );
 
-sheet.columns = document.columns.map((column) => ({
-    key: column.id,
-    width: calculateColumnWidth(
-      tr(document.t, column.titleKey, column.titleKey),
-      document.rows,
-      column,
-    ),
-  }));
+  buildDataTable(detail, document);
 
-  const headerStartRow = buildHeader(sheet, document, locale);
-  buildDataTable(sheet, document, headerStartRow);
+  const info = workbook.addWorksheet(
+    tr(document.t, 'export.sheet.info', 'Información'),
+    {
+      views: [{ showGridLines: false }],
+      pageSetup: {
+        orientation: 'portrait',
+        paperSize: 9,
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+      },
+    },
+  );
+
+  buildInfoSheet(info, document, locale);
 
   return workbook.xlsx.writeBuffer();
 }
 
-/**
- * Write the tenant band, title, subtitle, and metadata rows.
- * Returns the row number where the data-table header starts.
- */
-function buildHeader(
+function buildDataTable(
+  sheet: ExcelJS.Worksheet,
+  document: ExportDocument,
+): void {
+  const headers = document.columns.map((column) =>
+    resolveColumnHeader(column, document.t),
+  );
+
+  sheet.columns = document.columns.map((column, index) => ({
+    key: column.id,
+    width: calculateColumnWidth(headers[index] ?? '', document.rows, column),
+  }));
+
+  // Header row MUST stay in row 1 — the data-import pipeline reads the
+  // first worksheet's first row as the column headers.
+  const headerRow = sheet.getRow(1);
+  headerRow.values = headers;
+  headerRow.height = 28;
+
+  headerRow.eachCell((cell) => {
+    cell.font = {
+      name: REPORT_THEME.fonts.ui,
+      size: 9,
+      bold: true,
+      color: { argb: hexToArgb(REPORT_THEME.colors.panel) },
+    };
+    cell.fill = fill(REPORT_THEME.colors.pharma);
+    cell.alignment = {
+      horizontal: 'center',
+      vertical: 'middle',
+      wrapText: true,
+    };
+    cell.border = {
+      bottom: {
+        style: 'thin',
+        color: { argb: hexToArgb(REPORT_THEME.colors.pharma) },
+      },
+    };
+  });
+
+  document.rows.forEach((sourceRow) => {
+    const row = sheet.addRow(
+      document.columns.map((column) =>
+        toExcelValue(sourceRow[column.id], column),
+      ),
+    );
+
+    row.height = 20;
+
+    row.eachCell((cell, columnIndex) => {
+      const column = document.columns[columnIndex - 1];
+      const numeric = isNumericColumn(column);
+
+      cell.font = {
+        name: numeric ? REPORT_THEME.fonts.data : REPORT_THEME.fonts.ui,
+        size: 9,
+        color: { argb: hexToArgb(REPORT_THEME.colors.ink) },
+      };
+
+      cell.alignment = {
+        horizontal: numeric ? 'right' : 'left',
+        vertical: 'middle',
+        wrapText: true,
+      };
+
+      cell.fill = fill(
+        row.number % 2 === 0
+          ? REPORT_THEME.colors.surface
+          : REPORT_THEME.colors.panel,
+      );
+
+      cell.border = {
+        bottom: {
+          style: 'hair',
+          color: { argb: hexToArgb(REPORT_THEME.colors.border) },
+        },
+      };
+
+      cell.numFmt = excelNumberFormat(column);
+    });
+  });
+
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: Math.max(1, 1 + document.rows.length), column: document.columns.length },
+  };
+}
+
+function buildInfoSheet(
   sheet: ExcelJS.Worksheet,
   document: ExportDocument,
   locale: string,
-): number {
+): void {
   const tenant = getTenantInfo();
   const lastColumn = Math.max(2, document.columns.length);
 
-  // Title band (tenant name).
+  sheet.columns = [{ width: 30 }, { width: 48 }];
+
+  // Tenant band.
   sheet.mergeCells(1, 1, 1, lastColumn);
   const title = sheet.getCell(1, 1);
   title.value = tenant.name;
@@ -152,106 +251,6 @@ function buildHeader(
     sheet.getRow(rowIndex).height = 18;
     rowIndex += 1;
   }
-
-  // Spacer row before the table header.
-  sheet.getRow(rowIndex).height = 8;
-  return rowIndex + 1;
-}
-
-function buildDataTable(
-  sheet: ExcelJS.Worksheet,
-  document: ExportDocument,
-  headerStartRow: number,
-): void {
-  const headers = document.columns.map((column) =>
-    tr(document.t, column.titleKey, column.titleKey),
-  );
-
-  // Freeze the data header — the title/metadata block above stays visible.
-  sheet.views = [
-    {
-      state: 'frozen',
-      ySplit: headerStartRow,
-      showGridLines: false,
-    },
-  ];
-
-  const headerRow = sheet.getRow(headerStartRow);
-  headerRow.values = headers;
-  headerRow.height = 28;
-
-  headerRow.eachCell((cell) => {
-    cell.font = {
-      name: REPORT_THEME.fonts.ui,
-      size: 9,
-      bold: true,
-      color: { argb: hexToArgb(REPORT_THEME.colors.panel) },
-    };
-    cell.fill = fill(REPORT_THEME.colors.pharma);
-    cell.alignment = {
-      horizontal: 'center',
-      vertical: 'middle',
-      wrapText: true,
-    };
-    cell.border = {
-      bottom: {
-        style: 'thin',
-        color: { argb: hexToArgb(REPORT_THEME.colors.pharma) },
-      },
-    };
-  });
-
-  document.rows.forEach((sourceRow) => {
-    const row = sheet.addRow(
-      document.columns.map((column) =>
-        toExcelValue(sourceRow[column.id], column),
-      ),
-    );
-
-    row.height = 20;
-
-    row.eachCell((cell, columnIndex) => {
-      const column = document.columns[columnIndex - 1];
-      const numeric = isNumericColumn(column);
-
-      cell.font = {
-        name: numeric ? REPORT_THEME.fonts.data : REPORT_THEME.fonts.ui,
-        size: 9,
-        color: { argb: hexToArgb(REPORT_THEME.colors.ink) },
-      };
-
-      cell.alignment = {
-        horizontal: numeric ? 'right' : 'left',
-        vertical: 'middle',
-        wrapText: true,
-      };
-
-      cell.fill = fill(
-        row.number % 2 === 0
-          ? REPORT_THEME.colors.surface
-          : REPORT_THEME.colors.panel,
-      );
-
-      cell.border = {
-        bottom: {
-          style: 'hair',
-          color: { argb: hexToArgb(REPORT_THEME.colors.border) },
-        },
-      };
-
-      cell.numFmt = excelNumberFormat(column);
-    });
-  });
-
-  const lastRow = Math.max(
-    headerStartRow + 1,
-    headerStartRow + document.rows.length,
-  );
-
-  sheet.autoFilter = {
-    from: { row: headerStartRow, column: 1 },
-    to: { row: lastRow, column: document.columns.length },
-  };
 }
 
 function fill(color: string): ExcelJS.Fill {

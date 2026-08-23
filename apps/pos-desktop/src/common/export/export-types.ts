@@ -43,6 +43,13 @@ export interface ExportColumn {
   /** When the cell value is an enum (BADGE columns), the i18n key prefix
    *  under which the raw value is translated (`${prefix}.${value}`). */
   badgeKeyPrefix?: string;
+  /**
+   * Literal header that bypasses i18n entirely.  Used when the exported
+   * header must match an external contract byte-for-byte — e.g. the
+   * canonical import-column labels, so an exported file round-trips
+   * through the data-import pipeline.
+   */
+  header?: string;
 }
 
 /** Any row the generic formatters can read a column value from. */

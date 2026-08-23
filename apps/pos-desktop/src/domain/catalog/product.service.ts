@@ -181,6 +181,12 @@ export interface ProductListItem {
   currentCost: string | null;
   /** Active tax scheme id, or null if no tax set. */
   currentTaxSchemeId: string | null;
+  /** Active tax scheme name (e.g. "IVA 19%"), or null if no tax set. */
+  currentTaxSchemeName: string | null;
+  /** Active category name, or null. */
+  categoryName: string | null;
+  /** Active pharmaceutical form name, or null. */
+  pharmaceuticalFormName: string | null;
   /** Commission configuration (NONE when the product has none). */
   commissionType: CommissionType;
   commissionValue: string;
@@ -412,6 +418,8 @@ export class ProductService {
           barcodes: {
             select: { id: true, barcode: true, barcodeType: true, isPrimary: true },
           },
+          category: { select: { name: true } },
+          pharmaceuticalForm: { select: { name: true } },
           priceHistories: {
             where: { effectiveTo: null },
             select: { price: true },
@@ -426,7 +434,7 @@ export class ProductService {
           },
           taxHistories: {
             where: { effectiveTo: null },
-            select: { taxSchemeId: true },
+            select: { taxSchemeId: true, taxScheme: { select: { name: true } } },
             orderBy: { effectiveFrom: 'desc' },
             take: 1,
           },
@@ -462,6 +470,9 @@ export class ProductService {
         currentPrice: p.priceHistories[0]?.price.toString() ?? null,
         currentCost: p.costHistories[0]?.cost.toString() ?? null,
         currentTaxSchemeId: p.taxHistories[0]?.taxSchemeId ?? null,
+        currentTaxSchemeName: p.taxHistories[0]?.taxScheme?.name ?? null,
+        categoryName: p.category?.name ?? null,
+        pharmaceuticalFormName: p.pharmaceuticalForm?.name ?? null,
         commissionType: p.commissionType,
         commissionValue: p.commissionValue.toString(),
         commissionStartsAt: p.commissionStartsAt?.toISOString() ?? null,

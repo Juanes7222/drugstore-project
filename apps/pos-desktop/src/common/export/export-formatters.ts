@@ -10,7 +10,9 @@ import {
   ExportColumnType,
   type ExportColumn,
   type ExportRow,
+  type ExportTranslator,
 } from './export-types';
+import { tr } from './export-i18n';
 
 const NUMERIC_COLUMN_TYPES = new Set<ExportColumnType>([
   ExportColumnType.INTEGER,
@@ -18,6 +20,23 @@ const NUMERIC_COLUMN_TYPES = new Set<ExportColumnType>([
   ExportColumnType.CURRENCY,
   ExportColumnType.PERCENT,
 ]);
+
+/**
+ * Resolve a column's display header.
+ *
+ * A literal `header` wins over i18n (contract headers must round-trip
+ * unchanged); otherwise the `titleKey` is translated with the key itself
+ * as fallback.
+ */
+export function resolveColumnHeader(
+  column: ExportColumn,
+  translator?: ExportTranslator,
+): string {
+  if (column.header !== undefined) {
+    return column.header;
+  }
+  return tr(translator, column.titleKey, column.titleKey);
+}
 
 /** Locale-aware display string for CSV / print rendering. */
 export function formatCell(

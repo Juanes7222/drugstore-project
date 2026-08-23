@@ -1,8 +1,12 @@
 /**
  * Clients export definition — full client dataset, optionally filtered by
- * the screen's search query, one row per client.
+ * the screen's search query.
+ *
+ * Column headers are the canonical `CLIENT_IMPORT_COLUMNS` labels, so an
+ * exported file round-trips through the data-import pipeline unchanged.
  */
 
+import { CLIENT_IMPORT_COLUMNS } from '@pharmacy/shared-validation';
 import type { ExportColumn } from '../../../common/export';
 import type {
   ExportDefinition,
@@ -14,19 +18,30 @@ export interface ClientsExportArgs {
   query?: string;
 }
 
-const COLUMNS: readonly ExportColumn[] = [
-  { id: 'fullName', titleKey: 'export.cols.fullName', type: 'text', align: 'left' },
-  { id: 'identificationType', titleKey: 'export.cols.idType', type: 'text', align: 'left' },
-  { id: 'identificationNumber', titleKey: 'export.cols.idNumber', type: 'text', align: 'left' },
-  { id: 'email', titleKey: 'export.cols.email', type: 'text', align: 'left' },
-  { id: 'phone', titleKey: 'export.cols.phone', type: 'text', align: 'left' },
-  { id: 'address', titleKey: 'export.cols.address', type: 'text', align: 'left' },
-  { id: 'municipality', titleKey: 'export.cols.municipality', type: 'text', align: 'left' },
-  { id: 'department', titleKey: 'export.cols.department', type: 'text', align: 'left' },
-  { id: 'creditLimit', titleKey: 'export.cols.creditLimit', type: 'currency', align: 'right' },
-  { id: 'isActive', titleKey: 'export.cols.isActive', type: 'text', align: 'left' },
-  { id: 'createdAt', titleKey: 'export.cols.createdAt', type: 'date', align: 'left' },
-];
+/** Column type per canonical import key.  Numeric import columns stay raw
+ *  text — the importer's schemas expect plain digits, not formatted
+ *  currency. */
+const COLUMN_TYPE: Record<string, ExportColumn['type']> = {
+  fullName: 'text',
+  identificationType: 'text',
+  identificationNumber: 'text',
+  email: 'text',
+  phone: 'text',
+  address: 'text',
+  municipality: 'text',
+  department: 'text',
+  creditLimit: 'text',
+};
+
+/** Derived from the import contract so export and import never diverge. */
+const COLUMNS: readonly ExportColumn[] = CLIENT_IMPORT_COLUMNS.map(
+  (column) => ({
+    id: column.key,
+    titleKey: `export.cols.${column.key}`,
+    header: column.label,
+    type: COLUMN_TYPE[column.key] ?? 'text',
+  }),
+);
 
 export const CLIENTS_EXPORT: ExportDefinition<ClientsExportArgs> = {
   key: 'clients',
@@ -53,9 +68,7 @@ export const CLIENTS_EXPORT: ExportDefinition<ClientsExportArgs> = {
       address: row.address ?? '',
       municipality: row.municipality ?? '',
       department: row.department ?? '',
-      creditLimit: row.creditLimit ?? 0,
-      isActive: row.isActive,
-      createdAt: row.createdAt,
+      creditLimit: row.creditLimit != null ? String(row.creditLimit) : '',
     }));
   },
 

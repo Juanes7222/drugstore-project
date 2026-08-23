@@ -11,6 +11,7 @@ import {
   hexToRgb,
   pdfColumnWidth,
   REPORT_THEME,
+  resolveColumnHeader,
   tr,
 } from '../../common/export';
 import { getTenantInfo } from '../configuration/local-config.store';
@@ -62,7 +63,7 @@ export async function renderPdf(
   );
 
   const headers = document.columns.map((column) =>
-    tr(document.t, column.titleKey, column.titleKey),
+    resolveColumnHeader(column, document.t),
   );
 
   const rows = document.rows.map((row) =>
