@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/infrastructure/prisma/prisma.module';
 import { SalesController } from './controllers/sales.controller';
 import { SalesService } from './services/sales.service';
+import { SaleSequenceAuditService } from './services/sale-sequence-audit.service';
 import { ClientReturnsController } from './controllers/client-returns.controller';
 import { ClientReturnsService } from './services/client-returns.service';
 import { ClientReturnCalculatorService } from './services/client-return-calculator.service';
@@ -18,7 +19,7 @@ import { FiscalDianModule } from '@/modules/fiscal-dian/fiscal-dian.module';
 @Module({
   imports: [PrismaModule, InventoryLotsModule, FiscalDianModule],
   controllers: [SalesController, ClientReturnsController],
-  providers: [SalesService, ClientReturnsService, ClientReturnCalculatorService, CommissionCalculatorService],
-  exports: [SalesService, ClientReturnsService],
+  providers: [SalesService, SaleSequenceAuditService, ClientReturnsService, ClientReturnCalculatorService, CommissionCalculatorService],
+  exports: [SalesService, SaleSequenceAuditService, ClientReturnsService],
 })
 export class SalesPosModule {}

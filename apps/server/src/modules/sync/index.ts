@@ -6,6 +6,14 @@ export type { PendingEventResult, CreateSyncEventInput, SyncEventType, SyncEvent
 export { WorkstationHeartbeatService } from './services/workstation-heartbeat.service';
 export type { HeartbeatInput, WorkstationStatus } from './services/workstation-heartbeat.service';
 export { TerminalBackupService } from './services/terminal-backup.service';
+export { SyncIntegrityService } from './services/sync-integrity.service';
+export type {
+  LedgerVerifyResponse,
+  IntegrityReport,
+  LedgerVerdict,
+} from './services/sync-integrity.service';
+export { SyncRequeueService } from './services/sync-requeue.service';
+export type { RequeueResult } from './services/sync-requeue.service';
 export { PayloadHashMismatchException } from './exceptions/payload-hash-mismatch.exception';
 export { SyncPayloadValidationException } from './exceptions/sync-payload-validation.exception';
 export { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';

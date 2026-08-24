@@ -12,12 +12,15 @@ import { SyncController } from './controllers/sync.controller';
 import { TerminalsController } from './controllers/terminals.controller';
 import { SyncEventController } from './controllers/sync-event.controller';
 import { HeartbeatController } from './controllers/heartbeat.controller';
+import { SyncIntegrityController } from './controllers/sync-integrity.controller';
 import { SyncService } from './services/sync.service';
 import { SyncHealthService } from './services/sync-health.service';
 import { SyncEventService } from './services/sync-event.service';
 import { WorkstationHeartbeatService } from './services/workstation-heartbeat.service';
 import { TerminalBackupService } from './services/terminal-backup.service';
 import { InvoiceTransmissionResultService } from './services/invoice-transmission-result.service';
+import { SyncIntegrityService } from './services/sync-integrity.service';
+import { SyncRequeueService } from './services/sync-requeue.service';
 import { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
 import { SyncProcessingJob } from './jobs/sync-processing.job';
 import { SyncAuthGuard } from './guards/sync-auth.guard';
@@ -34,7 +37,7 @@ import { SyncAuthGuard } from './guards/sync-auth.guard';
     CatalogModule,
     PurchasesModule,
   ],
-  controllers: [SyncController, TerminalsController, SyncEventController, HeartbeatController],
+  controllers: [SyncController, TerminalsController, SyncEventController, HeartbeatController, SyncIntegrityController],
   providers: [
     SyncService,
     SyncHealthService,
@@ -44,6 +47,8 @@ import { SyncAuthGuard } from './guards/sync-auth.guard';
     SyncProcessingJob,
     TerminalBackupService,
     InvoiceTransmissionResultService,
+    SyncIntegrityService,
+    SyncRequeueService,
     SyncAuthGuard,
   ],
   exports: [
