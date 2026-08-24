@@ -1,7 +1,7 @@
-import Alert, { type AlertColor } from '@mui/material/Alert';
-import AlertTitle from '@mui/material/AlertTitle';
-import Link from '@mui/material/Link';
-import { Link as RouterLink } from 'react-router-dom';
+import Alert, { type AlertColor } from "@mui/material/Alert";
+import AlertTitle from "@mui/material/AlertTitle";
+import Link from "@mui/material/Link";
+import { Link as RouterLink } from "react-router-dom";
 
 interface AlertBannerProps {
   severity: AlertColor;

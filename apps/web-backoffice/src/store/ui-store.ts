@@ -1,23 +1,23 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 
 interface UiState {
   sidebarOpen: boolean;
-  themeMode: 'light' | 'dark';
+  themeMode: "light" | "dark";
   toggleSidebar: () => void;
-  setThemeMode: (mode: 'light' | 'dark') => void;
+  setThemeMode: (mode: "light" | "dark") => void;
 }
 
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       sidebarOpen: true,
-      themeMode: 'light',
+      themeMode: "light",
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setThemeMode: (themeMode) => set({ themeMode }),
     }),
     {
-      name: 'backoffice-ui',
+      name: "backoffice-ui",
       storage: createJSONStorage(() => localStorage),
     },
   ),

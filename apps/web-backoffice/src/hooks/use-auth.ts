@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import type { AuthUser } from '../types/backoffice';
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
+import type { AuthUser } from "../types/backoffice";
 
 interface AuthState {
   accessToken: string | null;
@@ -43,7 +43,7 @@ export const useAuthStore = create<AuthState>()(
         }),
     }),
     {
-      name: 'backoffice-auth',
+      name: "backoffice-auth",
       storage: createJSONStorage(() => localStorage),
     },
   ),

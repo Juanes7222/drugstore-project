@@ -54,13 +54,21 @@ function buildAuthResponseData(): any {
 
 describe('AuthController', () => {
   let app: INestApplication;
-  let authServiceMock: { loginWithFirebase: jest.Mock; refreshSession: jest.Mock };
+  let authServiceMock: {
+    loginWithFirebase: jest.Mock;
+    refreshSession: jest.Mock;
+    bootstrapSaasAdmin: jest.Mock;
+  };
   let firebaseAuthMock: { isConfigured: boolean; verifyIdToken: jest.Mock };
   let configServiceMock: { get: jest.Mock };
   let jwtServiceMock: { sign: jest.Mock; decode: jest.Mock };
 
   beforeEach(async () => {
-    authServiceMock = { loginWithFirebase: jest.fn(), refreshSession: jest.fn() };
+    authServiceMock = {
+      loginWithFirebase: jest.fn(),
+      refreshSession: jest.fn(),
+      bootstrapSaasAdmin: jest.fn(),
+    };
     firebaseAuthMock = {
       isConfigured: true,
       verifyIdToken: jest
@@ -186,6 +194,91 @@ describe('AuthController', () => {
           ipAddress: '1.2.3.4',
         }),
       );
+    });
+  });
+
+  describe('POST /auth/bootstrap', () => {
+    it('returns 404 when BOOTSTRAP_TOKEN is not configured', async () => {
+      configServiceMock.get.mockReturnValue(undefined);
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/bootstrap')
+        .set('x-bootstrap-token', 'whatever')
+        .send({ email: 'root@company.com' });
+
+      expect(res.status).toBe(404);
+      expect(authServiceMock.bootstrapSaasAdmin).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 when the bootstrap token is missing or wrong', async () => {
+      configServiceMock.get.mockImplementation((k: string) =>
+        k === 'BOOTSTRAP_TOKEN' ? 'secret-token' : undefined,
+      );
+
+      const missing = await request(app.getHttpServer())
+        .post('/auth/bootstrap')
+        .send({ email: 'root@company.com' });
+      expect(missing.status).toBe(401);
+
+      const wrong = await request(app.getHttpServer())
+        .post('/auth/bootstrap')
+        .set('x-bootstrap-token', 'wrong-token')
+        .send({ email: 'root@company.com' });
+      expect(wrong.status).toBe(401);
+      expect(authServiceMock.bootstrapSaasAdmin).not.toHaveBeenCalled();
+    });
+
+    it('provisions the SAAS_ADMIN when the token matches', async () => {
+      configServiceMock.get.mockImplementation((k: string) =>
+        k === 'BOOTSTRAP_TOKEN' ? 'secret-token' : undefined,
+      );
+      authServiceMock.bootstrapSaasAdmin.mockResolvedValue({
+        id: 'saas-1',
+        email: 'root@company.com',
+        displayName: 'Root',
+        role: 'SAAS_ADMIN',
+        status: 'ACTIVE',
+        isActive: true,
+        authMethod: 'PASSWORD_ONLY',
+        emailVerifiedAt: new Date(0),
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/bootstrap')
+        .set('x-bootstrap-token', 'secret-token')
+        .send({ email: 'root@company.com', displayName: 'Root' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        id: 'saas-1',
+        email: 'root@company.com',
+        displayName: 'Root',
+        role: 'SAAS_ADMIN',
+        status: 'ACTIVE',
+        isActive: true,
+        authMethod: 'PASSWORD_ONLY',
+        emailVerifiedAt: '1970-01-01T00:00:00.000Z',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      });
+      expect(authServiceMock.bootstrapSaasAdmin).toHaveBeenCalledWith({
+        email: 'root@company.com',
+        displayName: 'Root',
+      });
+    });
+
+    it('rejects an invalid body with 400', async () => {
+      configServiceMock.get.mockImplementation((k: string) =>
+        k === 'BOOTSTRAP_TOKEN' ? 'secret-token' : undefined,
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/bootstrap')
+        .set('x-bootstrap-token', 'secret-token')
+        .send({ email: 'not-an-email' });
+
+      expect(res.status).toBe(400);
+      expect(authServiceMock.bootstrapSaasAdmin).not.toHaveBeenCalled();
     });
   });
 

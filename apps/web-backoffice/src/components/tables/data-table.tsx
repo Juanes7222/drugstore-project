@@ -4,20 +4,20 @@ import {
   useReactTable,
   type ColumnDef,
   type SortingState,
-} from '@tanstack/react-table';
-import { useMemo, useState } from 'react';
-import Box from '@mui/material/Box';
-import Paper from '@mui/material/Paper';
-import Table from '@mui/material/Table';
-import TableBody from '@mui/material/TableBody';
-import TableCell from '@mui/material/TableCell';
-import TableContainer from '@mui/material/TableContainer';
-import TableHead from '@mui/material/TableHead';
-import TablePagination from '@mui/material/TablePagination';
-import TableRow from '@mui/material/TableRow';
-import TableSortLabel from '@mui/material/TableSortLabel';
-import Typography from '@mui/material/Typography';
-import { useTranslation } from 'react-i18next';
+} from "@tanstack/react-table";
+import { useMemo, useState } from "react";
+import Box from "@mui/material/Box";
+import Paper from "@mui/material/Paper";
+import Table from "@mui/material/Table";
+import TableBody from "@mui/material/TableBody";
+import TableCell from "@mui/material/TableCell";
+import TableContainer from "@mui/material/TableContainer";
+import TableHead from "@mui/material/TableHead";
+import TablePagination from "@mui/material/TablePagination";
+import TableRow from "@mui/material/TableRow";
+import TableSortLabel from "@mui/material/TableSortLabel";
+import Typography from "@mui/material/Typography";
+import { useTranslation } from "react-i18next";
 
 interface DataTableProps<T> {
   columns: ColumnDef<T, unknown>[];
@@ -89,7 +89,7 @@ export function DataTable<T>({
   };
 
   return (
-    <Paper variant="outlined" sx={{ width: '100%', overflow: 'hidden' }}>
+    <Paper variant="outlined" sx={{ width: "100%", overflow: "hidden" }}>
       <TableContainer>
         <Table aria-label="data-table" size="small">
           <TableHead>
@@ -102,12 +102,12 @@ export function DataTable<T>({
                     <TableCell
                       key={header.id}
                       sortDirection={sortDir}
-                      sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}
+                      sx={{ fontWeight: 700, whiteSpace: "nowrap" }}
                     >
                       {canSort ? (
                         <TableSortLabel
                           active={sortDir !== false}
-                          direction={sortDir === 'asc' ? 'asc' : 'desc'}
+                          direction={sortDir === "asc" ? "asc" : "desc"}
                           onClick={header.column.getToggleSortingHandler()}
                         >
                           {flexRender(
@@ -145,7 +145,9 @@ export function DataTable<T>({
                   sx={{ py: 6 }}
                 >
                   <Typography variant="body2" color="text.secondary">
-                    {isError ? errorHint ?? t('common.error') : emptyMessage ?? t('common.empty')}
+                    {isError
+                      ? (errorHint ?? t("common.error"))
+                      : (emptyMessage ?? t("common.empty"))}
                   </Typography>
                   {isError && onRetry ? (
                     <Box mt={1}>
@@ -153,9 +155,14 @@ export function DataTable<T>({
                         component="button"
                         onClick={onRetry}
                         color="primary"
-                        sx={{ cursor: 'pointer', border: 'none', bgcolor: 'transparent', textDecoration: 'underline' }}
+                        sx={{
+                          cursor: "pointer",
+                          border: "none",
+                          bgcolor: "transparent",
+                          textDecoration: "underline",
+                        }}
                       >
-                        {t('common.retry')}
+                        {t("common.retry")}
                       </Typography>
                     </Box>
                   ) : null}
@@ -183,9 +190,9 @@ export function DataTable<T>({
         onPageChange={handlePageChange}
         onRowsPerPageChange={handlePageSizeChange}
         rowsPerPageOptions={pageSizeOptions}
-        labelRowsPerPage={t('common.rowsPerPage')}
+        labelRowsPerPage={t("common.rowsPerPage")}
         labelDisplayedRows={({ from, to, count }) =>
-          `${from}–${to} ${t('common.of')} ${count}`
+          `${from}–${to} ${t("common.of")} ${count}`
         }
         disabled={isLoading}
       />

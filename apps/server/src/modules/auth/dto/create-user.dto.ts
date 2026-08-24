@@ -4,6 +4,8 @@ export const CreateUserSchema = z.object({
   displayName: z.string().min(1).max(100),
   username: z.string().min(3).max(50).optional(),
   email: z.string().email().optional(),
+  // SAAS_ADMIN is deliberately excluded: it is provisioned only through
+  // POST /auth/bootstrap, never through user creation.
   role: z.enum(['MANAGER', 'CASHIER']),
   initialPin: z.string().min(4).max(6).regex(/^\d+$/).optional(),
   initialPassword: z.string().min(8).max(128).optional(),

@@ -9,6 +9,7 @@ import {
   HttpStatus,
   Headers,
   UnauthorizedException,
+  NotFoundException,
   Param,
   BadRequestException,
 } from '@nestjs/common';
@@ -17,7 +18,12 @@ import { ExtractJwt } from 'passport-jwt';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { AuthService, AuthResponseData } from './auth.service';
+import * as crypto from 'node:crypto';
+import {
+  AuthService,
+  AuthResponseData,
+  BootstrapSaasAdminResult,
+} from './auth.service';
 import { SessionService } from './services/session.service';
 import { FirebaseAuthService } from './services/firebase-auth.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
@@ -34,6 +40,7 @@ import {
   FirebaseLoginDto,
   FirebaseLoginSchema,
 } from './dto/firebase-login.dto';
+import { BootstrapDto, BootstrapSchema } from './dto/bootstrap.dto';
 import { FirebaseNotConfiguredException } from './exceptions/firebase-not-configured.exception';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
@@ -143,6 +150,28 @@ export class AuthController {
     });
 
     return new AuthResponseDto(result);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bootstrap (one-time SAAS_ADMIN provisioning)
+  // ---------------------------------------------------------------------------
+
+  @Post('bootstrap')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Provision the first SAAS_ADMIN account (gated by BOOTSTRAP_TOKEN)',
+  })
+  async bootstrap(
+    @Body(new ZodValidationPipe(BootstrapSchema)) dto: BootstrapDto,
+    @Headers('x-bootstrap-token') bootstrapToken?: string,
+  ): Promise<BootstrapSaasAdminResult> {
+    this.assertBootstrapEnabled(bootstrapToken);
+    // Cheap, idempotent, and free of heavy work — safe under rate limiting.
+    return this.authService.bootstrapSaasAdmin({
+      email: dto.email,
+      displayName: dto.displayName,
+    });
   }
 
   @Post('login/2fa')
@@ -321,5 +350,30 @@ export class AuthController {
       SessionRevocationReason.LOGOUT,
     );
     return { message: 'Session revoked' };
+  }
+
+  /**
+   * Verify the x-bootstrap-token header against BOOTSTRAP_TOKEN. The
+   * endpoint is never enabled by default: without a configured token it
+   * returns 404 so the route is indistinguishable from a missing one.
+   * Comparison is timing-safe to avoid leaking the token via timing.
+   */
+  private assertBootstrapEnabled(token: string | undefined): void {
+    const expectedToken = this.configService.get('BOOTSTRAP_TOKEN');
+    if (!expectedToken) {
+      throw new NotFoundException('Bootstrap endpoint is not enabled');
+    }
+    if (!token) {
+      throw new UnauthorizedException('Missing bootstrap token');
+    }
+
+    const expectedHash = crypto
+      .createHash('sha256')
+      .update(expectedToken)
+      .digest();
+    const providedHash = crypto.createHash('sha256').update(token).digest();
+    if (!crypto.timingSafeEqual(expectedHash, providedHash)) {
+      throw new UnauthorizedException('Invalid bootstrap token');
+    }
   }
 }

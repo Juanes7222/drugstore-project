@@ -1,8 +1,8 @@
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
-import Typography from '@mui/material/Typography';
-import { useTranslation } from 'react-i18next';
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import CircularProgress from "@mui/material/CircularProgress";
+import Typography from "@mui/material/Typography";
+import { useTranslation } from "react-i18next";
 
 export function LoadingState() {
   const { t } = useTranslation();
@@ -19,7 +19,7 @@ export function LoadingState() {
     >
       <CircularProgress size={36} />
       <Typography variant="body2" color="text.secondary">
-        {t('common.loading')}
+        {t("common.loading")}
       </Typography>
     </Box>
   );
@@ -42,11 +42,11 @@ export function ErrorState({ onRetry }: ErrorStateProps) {
       py={8}
     >
       <Typography variant="body1" color="error">
-        {t('common.error')}
+        {t("common.error")}
       </Typography>
       {onRetry ? (
         <Button variant="outlined" onClick={onRetry}>
-          {t('common.retry')}
+          {t("common.retry")}
         </Button>
       ) : null}
     </Box>

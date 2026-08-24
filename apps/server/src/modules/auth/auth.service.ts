@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { EnvConfig } from '@/config/env.schema';
 import {
+  AuthMethod,
   RoleType,
   SessionRevocationReason,
   UserStatus,
@@ -24,7 +25,7 @@ import { FirebaseEmailConflictException } from './exceptions/firebase-email-conf
 import { AccountLockedException } from './exceptions/account-locked.exception';
 import { AccountInactiveException } from './exceptions/account-inactive.exception';
 import { SessionExpiredException } from './exceptions/session-expired.exception';
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import {
   MAX_FAILED_LOGIN_ATTEMPTS,
   ACCOUNT_LOCK_DURATION_MINUTES,
@@ -52,6 +53,19 @@ export interface AuthResponseData {
     keyFingerprint: string;
     version: number;
   };
+}
+
+/** Safe projection of a user returned by the SAAS_ADMIN bootstrap endpoint. */
+export interface BootstrapSaasAdminResult {
+  id: string;
+  email: string | null;
+  displayName: string | null;
+  role: string;
+  status: string;
+  isActive: boolean;
+  authMethod: string;
+  emailVerifiedAt: Date | null;
+  createdAt: string;
 }
 
 interface CreateSessionParams {
@@ -277,6 +291,10 @@ export class AuthService {
     }
 
     if (!user) {
+      // Self-registration: gate by email-domain allowlist when configured,
+      // and create the account in PENDING_SETUP so an admin must approve it
+      // before it can log in (assertAccountIsUsable rejects inactive users).
+      this.assertEmailDomainAllowed(params.email);
       user = await this.prisma.user.create({
         data: {
           id: crypto.randomUUID(),
@@ -287,8 +305,8 @@ export class AuthService {
           avatarUrl: params.photoURL,
           authMethod: 'OAUTH_GOOGLE',
           emailVerifiedAt: params.email ? new Date() : null,
-          status: UserStatus.ACTIVE,
-          isActive: true,
+          status: UserStatus.PENDING_SETUP,
+          isActive: false,
           firebaseUid: params.firebaseUid,
         },
       });
@@ -316,6 +334,67 @@ export class AuthService {
       hardwareFingerprint: resolvedParams.hardwareFingerprint,
       deviceInfo: resolvedParams.deviceInfo,
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bootstrap (first SAAS_ADMIN provisioning)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Provision the first SAAS_ADMIN account. Called by POST /auth/bootstrap
+   * after the controller has verified the BOOTSTRAP_TOKEN. Idempotent by
+   * email: an existing account is promoted to SAAS_ADMIN instead of
+   * creating a duplicate.
+   */
+  async bootstrapSaasAdmin(params: {
+    email: string;
+    displayName?: string;
+  }): Promise<BootstrapSaasAdminResult> {
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        email: { equals: params.email, mode: 'insensitive' },
+      },
+    });
+
+    const user = existing
+      ? await this.prisma.user.update({
+          where: { id: existing.id },
+          data: {
+            role: RoleType.SAAS_ADMIN,
+            status: UserStatus.ACTIVE,
+            isActive: true,
+            authMethod: AuthMethod.PASSWORD_ONLY,
+            emailVerifiedAt: new Date(),
+          },
+        })
+      : await this.prisma.user.create({
+          data: {
+            id: crypto.randomUUID(),
+            email: params.email,
+            username: params.email.split('@')[0] ?? null,
+            fullName: params.displayName ?? params.email,
+            displayName: params.displayName ?? null,
+            role: RoleType.SAAS_ADMIN,
+            status: UserStatus.ACTIVE,
+            isActive: true,
+            authMethod: AuthMethod.PASSWORD_ONLY,
+            emailVerifiedAt: new Date(),
+          },
+        });
+
+    await this.auditService.log(AuditEvent.USER_CREATED, {
+      actorId: null,
+      actorRole: null,
+      targetType: 'User',
+      targetId: user.id,
+      details: {
+        role: RoleType.SAAS_ADMIN,
+        source: 'bootstrap',
+        promoted: Boolean(existing),
+      },
+    });
+
+    return this.toSafeBootstrapUser(user);
   }
 
   /**
@@ -1238,6 +1317,55 @@ export class AuthService {
     if (user.lockedUntil && user.lockedUntil > now) {
       throw new AccountLockedException(user.lockedUntil);
     }
+  }
+
+  /**
+   * Enforce BACKOFFICE_ALLOWED_DOMAINS on self-registration. When the env var
+   * is set, only verified Google accounts whose email domain is listed may
+   * create a local account; existing accounts are never affected. The list
+   * contents are deliberately not echoed back to the caller.
+   */
+  private assertEmailDomainAllowed(email: string | null): void {
+    const rawAllowlist: string | undefined = this.configService.get(
+      'BACKOFFICE_ALLOWED_DOMAINS',
+    );
+    if (!rawAllowlist) {
+      return; // Allowlist disabled — registration is unrestricted
+    }
+
+    const allowedDomains = rawAllowlist
+      .split(',')
+      .map((domain) => domain.trim().toLowerCase())
+      .filter((domain) => domain.length > 0);
+
+    if (allowedDomains.length === 0) {
+      return;
+    }
+
+    const domain = email?.split('@')[1]?.toLowerCase();
+    if (!domain || !allowedDomains.includes(domain)) {
+      throw new ForbiddenException(
+        'Self-registration is restricted to allowed email domains',
+      );
+    }
+  }
+
+  /**
+   * Project a user to the bootstrap response shape, deliberately excluding
+   * passwordHash, pinHash and other sensitive credential fields.
+   */
+  private toSafeBootstrapUser(user: PrismaUser): BootstrapSaasAdminResult {
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      role: user.role,
+      status: user.status,
+      isActive: user.isActive,
+      authMethod: user.authMethod,
+      emailVerifiedAt: user.emailVerifiedAt,
+      createdAt: user.createdAt.toISOString(),
+    };
   }
 
   // ---------------------------------------------------------------------------

@@ -149,6 +149,15 @@ export class UsersController {
       throw new ForbiddenException("Managers cannot create other managers");
     }
 
+    // SAAS_ADMIN accounts are provisioned only through POST /auth/bootstrap,
+    // never through the regular user-creation endpoint — even if the schema
+    // ever drifts to allow it.
+    if ((dto.role as RoleType) === RoleType.SAAS_ADMIN) {
+      throw new ForbiddenException(
+        'SAAS_ADMIN accounts can only be provisioned through the bootstrap endpoint',
+      );
+    }
+
     let pinHash: string | null = null;
     if (dto.initialPin) {
       pinHash = await this.pinService.hash(dto.initialPin);

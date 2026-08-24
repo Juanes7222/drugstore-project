@@ -1,48 +1,50 @@
-import { lazy, Suspense } from 'react';
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { RoleType } from '@pharmacy/shared-types';
-import { useAuthStore } from './hooks/use-auth';
-import { BackofficeLayout } from './components/layouts/backoffice-layout';
-import { LoadingState } from './components/common/states';
+import { lazy, Suspense } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { RoleType } from "@pharmacy/shared-types";
+import { useAuthStore } from "./hooks/use-auth";
+import { BackofficeLayout } from "./components/layouts/backoffice-layout";
+import { LoadingState } from "./components/common/states";
 
 const LoginPage = lazy(() =>
-  import('./pages/login-page').then((m) => ({ default: m.LoginPage })),
+  import("./pages/login-page").then((m) => ({ default: m.LoginPage })),
 );
 const DashboardPage = lazy(() =>
-  import('./pages/dashboard-page').then((m) => ({ default: m.DashboardPage })),
+  import("./pages/dashboard-page").then((m) => ({ default: m.DashboardPage })),
 );
 const UsersPage = lazy(() =>
-  import('./pages/users-page').then((m) => ({ default: m.UsersPage })),
+  import("./pages/users-page").then((m) => ({ default: m.UsersPage })),
 );
 const SalesPage = lazy(() =>
-  import('./pages/sales-page').then((m) => ({ default: m.SalesPage })),
+  import("./pages/sales-page").then((m) => ({ default: m.SalesPage })),
 );
 const CashShiftsPage = lazy(() =>
-  import('./pages/cash-shifts-page').then((m) => ({ default: m.CashShiftsPage })),
+  import("./pages/cash-shifts-page").then((m) => ({
+    default: m.CashShiftsPage,
+  })),
 );
 const InventoryAlertsPage = lazy(() =>
-  import('./pages/inventory-alerts-page').then((m) => ({
+  import("./pages/inventory-alerts-page").then((m) => ({
     default: m.InventoryAlertsPage,
   })),
 );
 const FiscalPage = lazy(() =>
-  import('./pages/fiscal-page').then((m) => ({ default: m.FiscalPage })),
+  import("./pages/fiscal-page").then((m) => ({ default: m.FiscalPage })),
 );
 const SessionsPage = lazy(() =>
-  import('./pages/sessions-page').then((m) => ({ default: m.SessionsPage })),
+  import("./pages/sessions-page").then((m) => ({ default: m.SessionsPage })),
 );
 const WorkstationsPage = lazy(() =>
-  import('./pages/workstations-page').then((m) => ({
+  import("./pages/workstations-page").then((m) => ({
     default: m.WorkstationsPage,
   })),
 );
 const SubscriptionsPage = lazy(() =>
-  import('./pages/subscriptions-page').then((m) => ({
+  import("./pages/subscriptions-page").then((m) => ({
     default: m.SubscriptionsPage,
   })),
 );
 const NotFoundPage = lazy(() =>
-  import('./pages/not-found-page').then((m) => ({ default: m.NotFoundPage })),
+  import("./pages/not-found-page").then((m) => ({ default: m.NotFoundPage })),
 );
 
 function RequireAuth() {

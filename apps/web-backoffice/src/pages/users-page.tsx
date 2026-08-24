@@ -1,42 +1,50 @@
-import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
-import type { ColumnDef } from '@tanstack/react-table';
-import Avatar from '@mui/material/Avatar';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogTitle from '@mui/material/DialogTitle';
-import IconButton from '@mui/material/IconButton';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
-import ListItemText from '@mui/material/ListItemText';
-import MenuItem from '@mui/material/MenuItem';
-import Snackbar from '@mui/material/Snackbar';
-import TextField from '@mui/material/TextField';
-import Tooltip from '@mui/material/Tooltip';
-import Typography from '@mui/material/Typography';
-import Alert from '@mui/material/Alert';
-import HowToRegIcon from '@mui/icons-material/HowToReg';
-import BlockIcon from '@mui/icons-material/Block';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import LockOpenIcon from '@mui/icons-material/LockOpen';
-import DevicesIcon from '@mui/icons-material/Devices';
-import { fetchUsers, fetchUserSessions, approveUser, disableUser, enableUser, unlockUser, revokeSession } from '../services/backoffice';
-import { formatDateTime } from '../utils/format';
-import type { UserListItem, UserSessionSummary } from '../types/backoffice';
-import { PageHeader } from '../components/common/page-header';
-import { DataTable } from '../components/tables/data-table';
-import { StatusChip } from '../components/common/status-chip';
-import { ConfirmDialog } from '../components/common/confirm-dialog';
-import { LoadingState, ErrorState } from '../components/common/states';
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import type { ColumnDef } from "@tanstack/react-table";
+import Avatar from "@mui/material/Avatar";
+import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
+import IconButton from "@mui/material/IconButton";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import ListItemText from "@mui/material/ListItemText";
+import MenuItem from "@mui/material/MenuItem";
+import Snackbar from "@mui/material/Snackbar";
+import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
+import Typography from "@mui/material/Typography";
+import Alert from "@mui/material/Alert";
+import HowToRegIcon from "@mui/icons-material/HowToReg";
+import BlockIcon from "@mui/icons-material/Block";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import LockOpenIcon from "@mui/icons-material/LockOpen";
+import DevicesIcon from "@mui/icons-material/Devices";
+import {
+  fetchUsers,
+  fetchUserSessions,
+  approveUser,
+  disableUser,
+  enableUser,
+  unlockUser,
+  revokeSession,
+} from "../services/backoffice";
+import { formatDateTime } from "../utils/format";
+import type { UserListItem, UserSessionSummary } from "../types/backoffice";
+import { PageHeader } from "../components/common/page-header";
+import { DataTable } from "../components/tables/data-table";
+import { StatusChip } from "../components/common/status-chip";
+import { ConfirmDialog } from "../components/common/confirm-dialog";
+import { LoadingState, ErrorState } from "../components/common/states";
 
-const USER_STATUSES = ['ALL', 'PENDING_SETUP', 'ACTIVE', 'DISABLED', 'LOCKED'];
+const USER_STATUSES = ["ALL", "PENDING_SETUP", "ACTIVE", "DISABLED", "LOCKED"];
 const PAGE_SIZE = 20;
 
-type UserAction = 'approve' | 'disable' | 'enable' | 'unlock';
+type UserAction = "approve" | "disable" | "enable" | "unlock";
 
 interface PendingAction {
   user: UserListItem;
@@ -47,25 +55,27 @@ function initialsOf(name: string): string {
   return name
     .split(/\s+/)
     .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
 }
 
 export function UsersPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [page, setPage] = useState(1);
-  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(
+    null,
+  );
   const [sessionsUser, setSessionsUser] = useState<UserListItem | null>(null);
   const [snackbar, setSnackbar] = useState<string | null>(null);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['users', { status: statusFilter, page }],
+    queryKey: ["users", { status: statusFilter, page }],
     queryFn: () =>
       fetchUsers(
-        statusFilter === 'ALL' ? {} : { status: statusFilter },
+        statusFilter === "ALL" ? {} : { status: statusFilter },
         page,
         PAGE_SIZE,
       ),
@@ -73,26 +83,26 @@ export function UsersPage() {
   });
 
   const invalidateUsers = () => {
-    void queryClient.invalidateQueries({ queryKey: ['users'] });
-    void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    void queryClient.invalidateQueries({ queryKey: ["users"] });
+    void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   };
 
   const userMutation = useMutation({
     mutationFn: async ({ user, action }: PendingAction) => {
       switch (action) {
-        case 'approve':
+        case "approve":
           return approveUser(user.id);
-        case 'disable':
+        case "disable":
           return disableUser(user.id);
-        case 'enable':
+        case "enable":
           return enableUser(user.id);
-        case 'unlock':
+        case "unlock":
           return unlockUser(user.id);
       }
     },
     onSuccess: () => {
       invalidateUsers();
-      setSnackbar(t('users.userUpdated'));
+      setSnackbar(t("users.userUpdated"));
     },
   });
 
@@ -100,48 +110,49 @@ export function UsersPage() {
     mutationFn: (sessionId: string) =>
       revokeSession(sessionsUser!.id, sessionId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['user-sessions', sessionsUser?.id] });
-      void queryClient.invalidateQueries({ queryKey: ['sessions'] });
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      setSnackbar(t('users.revoked'));
+      void queryClient.invalidateQueries({
+        queryKey: ["user-sessions", sessionsUser?.id],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      setSnackbar(t("users.revoked"));
     },
   });
 
-  const actionLabel = (action: UserAction): string =>
-    t(`users.${action}`);
+  const actionLabel = (action: UserAction): string => t(`users.${action}`);
 
   const actionConfirmMessage = (action: UserAction, name: string): string => {
     switch (action) {
-      case 'approve':
-        return t('users.confirmApprove', { name });
-      case 'disable':
-        return t('users.confirmDisable', { name });
-      case 'enable':
-        return t('users.confirmEnable', { name });
-      case 'unlock':
-        return t('users.confirmUnlock', { name });
+      case "approve":
+        return t("users.confirmApprove", { name });
+      case "disable":
+        return t("users.confirmDisable", { name });
+      case "enable":
+        return t("users.confirmEnable", { name });
+      case "unlock":
+        return t("users.confirmUnlock", { name });
     }
   };
 
   const columns = useMemo<ColumnDef<UserListItem, unknown>[]>(
     () => [
       {
-        id: 'name',
-        header: t('users.name'),
-        accessorKey: 'displayName',
+        id: "name",
+        header: t("users.name"),
+        accessorKey: "displayName",
         cell: (info) => {
           const user = info.row.original;
           return (
             <Box display="flex" alignItems="center" gap={1.5}>
-              <Avatar sx={{ width: 28, height: 28, bgcolor: 'primary.main' }}>
-                {initialsOf(user.displayName ?? user.fullName ?? '?')}
+              <Avatar sx={{ width: 28, height: 28, bgcolor: "primary.main" }}>
+                {initialsOf(user.displayName ?? user.fullName ?? "?")}
               </Avatar>
               <Box minWidth={0}>
                 <Typography variant="body2" fontWeight={600} noWrap>
                   {user.displayName ?? user.fullName}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" noWrap>
-                  {user.username ?? ''}
+                  {user.username ?? ""}
                 </Typography>
               </Box>
             </Box>
@@ -149,99 +160,105 @@ export function UsersPage() {
         },
       },
       {
-        id: 'email',
-        header: t('users.email'),
-        accessorKey: 'email',
-        cell: (info) => info.getValue<string | null>() ?? '—',
+        id: "email",
+        header: t("users.email"),
+        accessorKey: "email",
+        cell: (info) => info.getValue<string | null>() ?? "—",
       },
       {
-        id: 'role',
-        header: t('users.role'),
-        accessorKey: 'role',
+        id: "role",
+        header: t("users.role"),
+        accessorKey: "role",
         cell: (info) => (
           <Typography variant="body2">{info.getValue<string>()}</Typography>
         ),
       },
       {
-        id: 'status',
-        header: t('statusFilter'),
-        accessorKey: 'status',
-        cell: (info) => <StatusChip value={info.getValue<string>()} kind="user" />,
+        id: "status",
+        header: t("statusFilter"),
+        accessorKey: "status",
+        cell: (info) => (
+          <StatusChip value={info.getValue<string>()} kind="user" />
+        ),
       },
       {
-        id: 'lastLoginAt',
-        header: t('users.lastLogin'),
-        accessorKey: 'lastLoginAt',
+        id: "lastLoginAt",
+        header: t("users.lastLogin"),
+        accessorKey: "lastLoginAt",
         cell: (info) => formatDateTime(info.getValue<string | null>()),
       },
       {
-        id: 'createdAt',
-        header: t('users.createdAt'),
-        accessorKey: 'createdAt',
+        id: "createdAt",
+        header: t("users.createdAt"),
+        accessorKey: "createdAt",
         cell: (info) => formatDateTime(info.getValue<string>()),
       },
       {
-        id: 'actions',
-        header: t('common.actions'),
+        id: "actions",
+        header: t("common.actions"),
         enableSorting: false,
         cell: (info) => {
           const user = info.row.original;
           return (
             <Box display="flex" gap={0.5}>
-              {user.status === 'PENDING_SETUP' ? (
-                <Tooltip title={t('users.approve')}>
+              {user.status === "PENDING_SETUP" ? (
+                <Tooltip title={t("users.approve")}>
                   <IconButton
                     size="small"
                     color="success"
-                    onClick={() => setPendingAction({ user, action: 'approve' })}
-                    aria-label={t('users.approve')}
+                    onClick={() =>
+                      setPendingAction({ user, action: "approve" })
+                    }
+                    aria-label={t("users.approve")}
                   >
                     <HowToRegIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               ) : null}
-              {user.status === 'LOCKED' ? (
-                <Tooltip title={t('users.unlock')}>
+              {user.status === "LOCKED" ? (
+                <Tooltip title={t("users.unlock")}>
                   <IconButton
                     size="small"
                     color="warning"
-                    onClick={() => setPendingAction({ user, action: 'unlock' })}
-                    aria-label={t('users.unlock')}
+                    onClick={() => setPendingAction({ user, action: "unlock" })}
+                    aria-label={t("users.unlock")}
                   >
                     <LockOpenIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               ) : null}
-              {user.status !== 'DISABLED' && user.status !== 'PENDING_SETUP' ? (
-                <Tooltip title={t('users.disable')}>
+              {user.status !== "DISABLED" && user.status !== "PENDING_SETUP" ? (
+                <Tooltip title={t("users.disable")}>
                   <IconButton
                     size="small"
                     color="error"
-                    onClick={() => setPendingAction({ user, action: 'disable' })}
-                    aria-label={t('users.disable')}
+                    onClick={() =>
+                      setPendingAction({ user, action: "disable" })
+                    }
+                    aria-label={t("users.disable")}
                   >
                     <BlockIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               ) : null}
-              {user.status === 'DISABLED' ? (
-                <Tooltip title={t('users.enable')}>
+              {user.status === "DISABLED" ? (
+                <Tooltip title={t("users.enable")}>
                   <IconButton
                     size="small"
                     color="success"
-                    onClick={() => setPendingAction({ user, action: 'enable' })}
-                    aria-label={t('users.enable')}
+                    onClick={() => setPendingAction({ user, action: "enable" })}
+                    aria-label={t("users.enable")}
                   >
                     <CheckCircleIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               ) : null}
-              <Tooltip title={t('users.sessions')}>
+              <Tooltip title={t("users.sessions")}>
                 <IconButton
                   size="small"
                   color="info"
                   onClick={() => setSessionsUser(user)}
-                  aria-label={t('users.sessions')}
+                  aria-label={t("users.sessions")}
                 >
                   <DevicesIcon fontSize="small" />
                 </IconButton>
@@ -258,12 +275,12 @@ export function UsersPage() {
 
   return (
     <Box>
-      <PageHeader title={t('users.title')} subtitle={t('users.subtitle')} />
+      <PageHeader title={t("users.title")} subtitle={t("users.subtitle")} />
 
       <Box display="flex" gap={2} mb={3}>
         <TextField
           select
-          label={t('users.statusFilter')}
+          label={t("users.statusFilter")}
           value={statusFilter}
           onChange={(e) => {
             setStatusFilter(e.target.value);
@@ -274,7 +291,9 @@ export function UsersPage() {
         >
           {USER_STATUSES.map((status) => (
             <MenuItem key={status} value={status}>
-              {status === 'ALL' ? t('common.all') : t(`status.${status}`, { defaultValue: status })}
+              {status === "ALL"
+                ? t("common.all")
+                : t(`status.${status}`, { defaultValue: status })}
             </MenuItem>
           ))}
         </TextField>
@@ -303,17 +322,19 @@ export function UsersPage() {
 
       <ConfirmDialog
         open={pendingAction !== null}
-        title={pendingAction ? actionLabel(pendingAction.action) : ''}
+        title={pendingAction ? actionLabel(pendingAction.action) : ""}
         message={
           pendingAction
             ? actionConfirmMessage(
                 pendingAction.action,
                 pendingAction.user.displayName ?? pendingAction.user.fullName,
               )
-            : ''
+            : ""
         }
-        confirmLabel={pendingAction ? actionLabel(pendingAction.action) : undefined}
-        severity={pendingAction?.action === 'disable' ? 'error' : 'warning'}
+        confirmLabel={
+          pendingAction ? actionLabel(pendingAction.action) : undefined
+        }
+        severity={pendingAction?.action === "disable" ? "error" : "warning"}
         onConfirm={() => {
           if (pendingAction) userMutation.mutate(pendingAction);
         }}
@@ -331,9 +352,13 @@ export function UsersPage() {
         open={snackbar !== null}
         autoHideDuration={4000}
         onClose={() => setSnackbar(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert severity="success" variant="filled" onClose={() => setSnackbar(null)}>
+        <Alert
+          severity="success"
+          variant="filled"
+          onClose={() => setSnackbar(null)}
+        >
           {snackbar}
         </Alert>
       </Snackbar>
@@ -356,7 +381,7 @@ function UserSessionsDialog({
 }: UserSessionsDialogProps) {
   const { t } = useTranslation();
   const { data: sessions, isLoading } = useQuery({
-    queryKey: ['user-sessions', user?.id],
+    queryKey: ["user-sessions", user?.id],
     queryFn: () => fetchUserSessions(user!.id),
     enabled: user !== null,
   });
@@ -370,7 +395,9 @@ function UserSessionsDialog({
       aria-labelledby="user-sessions-title"
     >
       <DialogTitle id="user-sessions-title">
-        {user ? t('users.sessionTitle', { name: user.displayName ?? user.fullName }) : ''}
+        {user
+          ? t("users.sessionTitle", { name: user.displayName ?? user.fullName })
+          : ""}
       </DialogTitle>
       <DialogContent dividers>
         {isLoading ? (
@@ -387,13 +414,18 @@ function UserSessionsDialog({
             ))}
           </List>
         ) : (
-          <Typography variant="body2" color="text.secondary" py={3} textAlign="center">
-            {t('users.noSessions')}
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            py={3}
+            textAlign="center"
+          >
+            {t("users.noSessions")}
           </Typography>
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>{t('common.close')}</Button>
+        <Button onClick={onClose}>{t("common.close")}</Button>
       </DialogActions>
     </Dialog>
   );
@@ -413,14 +445,14 @@ function SessionRowItem({
     <ListItem
       divider
       secondaryAction={
-        <Tooltip title={t('users.revoke')}>
+        <Tooltip title={t("users.revoke")}>
           <IconButton
             edge="end"
             size="small"
             color="error"
             onClick={onRevoke}
             disabled={revoking}
-            aria-label={t('users.revoke')}
+            aria-label={t("users.revoke")}
           >
             <BlockIcon fontSize="small" />
           </IconButton>
@@ -435,11 +467,12 @@ function SessionRowItem({
         }
         secondary={
           <>
-            {t('sessions.issuedAt')}: {formatDateTime(session.issuedAt)}
-            {' · '}
-            {t('sessions.lastActivity')}: {formatDateTime(session.lastActivityAt)}
-            {' · '}
-            {t('sessions.expiresAt')}: {formatDateTime(session.expiresAt)}
+            {t("sessions.issuedAt")}: {formatDateTime(session.issuedAt)}
+            {" · "}
+            {t("sessions.lastActivity")}:{" "}
+            {formatDateTime(session.lastActivityAt)}
+            {" · "}
+            {t("sessions.expiresAt")}: {formatDateTime(session.expiresAt)}
           </>
         }
       />

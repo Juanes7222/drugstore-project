@@ -6,6 +6,17 @@ jest.mock('@/infrastructure/prisma/prisma.service', () => ({
 jest.mock('@pharmacy/database', () => ({
   PrismaClient: class {},
   Prisma: {},
+  RoleType: {
+    SAAS_ADMIN: 'SAAS_ADMIN',
+    OWNER: 'OWNER',
+    MANAGER: 'MANAGER',
+    CASHIER: 'CASHIER',
+  },
+  AuthMethod: {
+    PASSWORD_ONLY: 'PASSWORD_ONLY',
+    PIN_ONLY: 'PIN_ONLY',
+    OAUTH_GOOGLE: 'OAUTH_GOOGLE',
+  },
   UserStatus: {
     ACTIVE: 'ACTIVE',
     INACTIVE: 'INACTIVE',
@@ -43,6 +54,7 @@ jest.mock('./services/audit.service', () => ({
     PASSWORD_RESET_COMPLETED: 'PASSWORD_RESET_COMPLETED',
     BACKUP_CODE_USED: 'BACKUP_CODE_USED',
     OFFLINE_CREDENTIALS_CACHED: 'OFFLINE_CREDENTIALS_CACHED',
+    USER_CREATED: 'USER_CREATED',
   },
 }));
 jest.mock('./offline/offline-token.service', () => ({
@@ -59,7 +71,9 @@ import { SessionRevocationReason } from '@pharmacy/database';
 import { AuthService } from './auth.service';
 import { AuditEvent } from './services/audit.service';
 import { FirebaseEmailConflictException } from './exceptions/firebase-email-conflict.exception';
+import { AccountInactiveException } from './exceptions/account-inactive.exception';
 import { SessionExpiredException } from './exceptions/session-expired.exception';
+import { ForbiddenException } from '@nestjs/common';
 
 function buildPrismaUser(overrides: Record<string, unknown> = {}): any {
   return {
@@ -183,7 +197,7 @@ describe('AuthService', () => {
       expect(result.user.id).toBe('existing-1');
     });
 
-    it('creates a new OWNER/OAUTH_GOOGLE user when no local account matches', async () => {
+    it('creates a new OWNER/OAUTH_GOOGLE user in PENDING_SETUP when no local account matches', async () => {
       prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(null as never);
       const created = buildPrismaUser({
         id: 'new-1',
@@ -191,28 +205,88 @@ describe('AuthService', () => {
         email: 'new@example.com',
         authMethod: 'OAUTH_GOOGLE',
         role: 'OWNER',
+        status: 'PENDING_SETUP',
+        isActive: false,
       });
       prisma.user.create.mockResolvedValueOnce(created as never);
 
-      const result = await service.loginWithFirebase({
-        firebaseUid: 'fb-new',
-        email: 'new@example.com',
-        displayName: 'New Person',
-        photoURL: 'https://photo.example.com/p.png',
-        workstationId: 'ws-2',
-      });
+      await expect(
+        service.loginWithFirebase({
+          firebaseUid: 'fb-new',
+          email: 'new@example.com',
+          displayName: 'New Person',
+          photoURL: 'https://photo.example.com/p.png',
+          workstationId: 'ws-2',
+        }),
+      ).rejects.toThrow(AccountInactiveException);
 
       expect(prisma.user.create).toHaveBeenCalledTimes(1);
       const callData = (prisma.user.create as jest.Mock).mock.calls[0][0].data;
       expect(callData.role).toBe('OWNER');
       expect(callData.authMethod).toBe('OAUTH_GOOGLE');
       expect(callData.firebaseUid).toBe('fb-new');
-      expect(callData.isActive).toBe(true);
+      expect(callData.status).toBe('PENDING_SETUP');
+      expect(callData.isActive).toBe(false);
       expect(callData.email).toBe('new@example.com');
       expect(callData.fullName).toBe('New Person');
       expect(callData.displayName).toBe('New Person');
       expect(callData.avatarUrl).toBe('https://photo.example.com/p.png');
-      expect(result.user.id).toBe('new-1');
+      expect(sessionService.createSession).not.toHaveBeenCalled();
+    });
+
+    it('rejects self-registration from an email domain outside BACKOFFICE_ALLOWED_DOMAINS', async () => {
+      configService.get.mockImplementation((key: string) => {
+        if (key === 'JWT_ACCESS_TTL_SECONDS') return 900;
+        if (key === 'JWT_REFRESH_TTL_SECONDS') return 604800;
+        if (key === 'BACKOFFICE_ALLOWED_DOMAINS') {
+          return 'company.com,company.co';
+        }
+        return undefined;
+      });
+      prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(null as never);
+
+      await expect(
+        service.loginWithFirebase({
+          firebaseUid: 'fb-new',
+          email: 'attacker@gmail.com',
+          displayName: null,
+          photoURL: null,
+          workstationId: 'ws-2',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('allows self-registration from an allowlisted domain (account still pending approval)', async () => {
+      configService.get.mockImplementation((key: string) => {
+        if (key === 'JWT_ACCESS_TTL_SECONDS') return 900;
+        if (key === 'JWT_REFRESH_TTL_SECONDS') return 604800;
+        if (key === 'BACKOFFICE_ALLOWED_DOMAINS') {
+          return 'company.com,company.co';
+        }
+        return undefined;
+      });
+      prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(null as never);
+      prisma.user.create.mockResolvedValueOnce(
+        buildPrismaUser({
+          id: 'new-2',
+          firebaseUid: 'fb-new',
+          email: 'worker@company.com',
+          status: 'PENDING_SETUP',
+          isActive: false,
+        }) as never,
+      );
+
+      await expect(
+        service.loginWithFirebase({
+          firebaseUid: 'fb-new',
+          email: 'worker@company.com',
+          displayName: null,
+          photoURL: null,
+          workstationId: 'ws-2',
+        }),
+      ).rejects.toThrow(AccountInactiveException);
+      expect(prisma.user.create).toHaveBeenCalledTimes(1);
     });
 
     it('links an existing local account (matched by email) to the Firebase uid', async () => {
@@ -292,6 +366,85 @@ describe('AuthService', () => {
       expect(sessionService.createSession).not.toHaveBeenCalled();
       expect(prisma.user.create).not.toHaveBeenCalled();
       expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('bootstrapSaasAdmin', () => {
+    it('creates an ACTIVE SAAS_ADMIN with PASSWORD_ONLY auth and audits it', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce(null as never);
+      const created = buildPrismaUser({
+        id: 'saas-1',
+        email: 'root@company.com',
+        role: 'SAAS_ADMIN',
+        authMethod: 'PASSWORD_ONLY',
+      });
+      prisma.user.create.mockResolvedValueOnce(created as never);
+
+      const result = await service.bootstrapSaasAdmin({
+        email: 'root@company.com',
+        displayName: 'Root',
+      });
+
+      const callData = (prisma.user.create as jest.Mock).mock.calls[0][0].data;
+      expect(callData.role).toBe('SAAS_ADMIN');
+      expect(callData.status).toBe('ACTIVE');
+      expect(callData.isActive).toBe(true);
+      expect(callData.authMethod).toBe('PASSWORD_ONLY');
+      expect(callData.emailVerifiedAt).toEqual(expect.any(Date));
+      expect(callData.fullName).toBe('Root');
+      expect(result.id).toBe('saas-1');
+      expect(result).not.toHaveProperty('passwordHash');
+      expect(result).not.toHaveProperty('pinHash');
+      expect(auditService.log).toHaveBeenCalledWith(AuditEvent.USER_CREATED, {
+        actorId: null,
+        actorRole: null,
+        targetType: 'User',
+        targetId: 'saas-1',
+        details: {
+          role: 'SAAS_ADMIN',
+          source: 'bootstrap',
+          promoted: false,
+        },
+      });
+    });
+
+    it('promotes an existing user by email instead of creating a duplicate', async () => {
+      prisma.user.findFirst.mockResolvedValueOnce(
+        buildPrismaUser({
+          id: 'owner-1',
+          email: 'root@company.com',
+          role: 'OWNER',
+        }) as never,
+      );
+      prisma.user.update.mockResolvedValueOnce(
+        buildPrismaUser({
+          id: 'owner-1',
+          email: 'root@company.com',
+          role: 'SAAS_ADMIN',
+        }) as never,
+      );
+
+      const result = await service.bootstrapSaasAdmin({
+        email: 'ROOT@COMPANY.COM',
+      });
+
+      expect(prisma.user.create).not.toHaveBeenCalled();
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'owner-1' },
+        data: expect.objectContaining({
+          role: 'SAAS_ADMIN',
+          status: 'ACTIVE',
+          isActive: true,
+          authMethod: 'PASSWORD_ONLY',
+        }),
+      });
+      expect(result.id).toBe('owner-1');
+      expect(auditService.log).toHaveBeenCalledWith(
+        AuditEvent.USER_CREATED,
+        expect.objectContaining({
+          details: expect.objectContaining({ promoted: true }),
+        }),
+      );
     });
   });
 

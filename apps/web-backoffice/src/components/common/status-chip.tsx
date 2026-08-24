@@ -1,13 +1,8 @@
-import Chip from '@mui/material/Chip';
-import { useTranslation } from 'react-i18next';
+import Chip from "@mui/material/Chip";
+import { useTranslation } from "react-i18next";
 
 type StatusKind =
-  | 'user'
-  | 'sale'
-  | 'shift'
-  | 'fiscal'
-  | 'subscription'
-  | 'session';
+  "user" | "sale" | "shift" | "fiscal" | "subscription" | "session";
 
 interface StatusChipProps {
   value: string;
@@ -16,44 +11,44 @@ interface StatusChipProps {
 }
 
 const ERROR_STATES = new Set([
-  'REJECTED',
-  'ERROR',
-  'GENERATION_ERROR',
-  'SIGNATURE_ERROR',
-  'SUSPENDED',
-  'EXPIRED',
-  'LOCKED',
-  'ABANDONED',
+  "REJECTED",
+  "ERROR",
+  "GENERATION_ERROR",
+  "SIGNATURE_ERROR",
+  "SUSPENDED",
+  "EXPIRED",
+  "LOCKED",
+  "ABANDONED",
 ]);
 
 const WARNING_STATES = new Set([
-  'PENDING_SETUP',
-  'PAST_DUE',
-  'DISABLED',
-  'FORCED_CLOSE',
-  'CONTINGENCY',
-  'IN_PROGRESS',
-  'PENDING_GENERATION',
-  'PENDING_SIGNATURE',
-  'PENDING_TRANSMISSION',
-  'IN_TRANSMISSION',
-  'PENDING_RESPONSE',
+  "PENDING_SETUP",
+  "PAST_DUE",
+  "DISABLED",
+  "FORCED_CLOSE",
+  "CONTINGENCY",
+  "IN_PROGRESS",
+  "PENDING_GENERATION",
+  "PENDING_SIGNATURE",
+  "PENDING_TRANSMISSION",
+  "IN_TRANSMISSION",
+  "PENDING_RESPONSE",
 ]);
 
 const SUCCESS_STATES = new Set([
-  'ACTIVE',
-  'CONFIRMED',
-  'CLOSED',
-  'VALIDATED',
-  'TRIAL',
-  'OPEN',
+  "ACTIVE",
+  "CONFIRMED",
+  "CLOSED",
+  "VALIDATED",
+  "TRIAL",
+  "OPEN",
 ]);
 
-function chipColor(value: string): 'error' | 'warning' | 'success' | 'info' {
-  if (ERROR_STATES.has(value)) return 'error';
-  if (WARNING_STATES.has(value)) return 'warning';
-  if (SUCCESS_STATES.has(value)) return 'success';
-  return 'info';
+function chipColor(value: string): "error" | "warning" | "success" | "info" {
+  if (ERROR_STATES.has(value)) return "error";
+  if (WARNING_STATES.has(value)) return "warning";
+  if (SUCCESS_STATES.has(value)) return "success";
+  return "info";
 }
 
 /** Renders a state enum as a colored chip with a translated label. */

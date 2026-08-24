@@ -4,7 +4,7 @@
  * as COP currency at render time.
  */
 
-import type { User } from '@pharmacy/shared-types';
+import type { User } from "@pharmacy/shared-types";
 
 // ---------------------------------------------------------------------------
 // Shared

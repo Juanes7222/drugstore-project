@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
+import type { ReactNode } from "react";
+import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
 
 interface PageHeaderProps {
   title: string;
@@ -30,7 +30,11 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
           </Typography>
         ) : null}
       </Box>
-      {actions ? <Box display="flex" gap={1} alignItems="center">{actions}</Box> : null}
+      {actions ? (
+        <Box display="flex" gap={1} alignItems="center">
+          {actions}
+        </Box>
+      ) : null}
     </Box>
   );
 }

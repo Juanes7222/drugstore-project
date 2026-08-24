@@ -1,5 +1,5 @@
-import { RoleType } from '@pharmacy/shared-types';
-import { useAuthStore } from './use-auth';
+import { RoleType } from "@pharmacy/shared-types";
+import { useAuthStore } from "./use-auth";
 
 /**
  * Role-based helpers. Subscriptions is the only SAAS_ADMIN-only surface;

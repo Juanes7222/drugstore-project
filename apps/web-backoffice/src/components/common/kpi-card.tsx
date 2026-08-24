@@ -1,10 +1,10 @@
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
-import Typography from '@mui/material/Typography';
-import Box from '@mui/material/Box';
-import type { SvgIconComponent } from '@mui/icons-material';
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
+import Typography from "@mui/material/Typography";
+import Box from "@mui/material/Box";
+import type { SvgIconComponent } from "@mui/icons-material";
 
-export type KpiTone = 'default' | 'ok' | 'info' | 'warning' | 'error';
+export type KpiTone = "default" | "ok" | "info" | "warning" | "error";
 
 interface KpiCardProps {
   title: string;
@@ -15,19 +15,19 @@ interface KpiCardProps {
 }
 
 const TONE_COLOR: Record<KpiTone, string> = {
-  default: 'text.primary',
-  ok: 'success.main',
-  info: 'info.main',
-  warning: 'warning.main',
-  error: 'error.main',
+  default: "text.primary",
+  ok: "success.main",
+  info: "info.main",
+  warning: "warning.main",
+  error: "error.main",
 };
 
 const TONE_BG: Record<KpiTone, string> = {
-  default: 'transparent',
-  ok: 'success.light',
-  info: 'info.light',
-  warning: 'warning.light',
-  error: 'error.light',
+  default: "transparent",
+  ok: "success.light",
+  info: "info.light",
+  warning: "warning.light",
+  error: "error.light",
 };
 
 /** KPI card used on the dashboard. Non-default tones signal problem states. */
@@ -36,25 +36,34 @@ export function KpiCard({
   value,
   subtitle,
   icon: Icon,
-  tone = 'default',
+  tone = "default",
 }: KpiCardProps) {
   return (
     <Card
       variant="outlined"
       sx={{
-        height: '100%',
+        height: "100%",
         borderLeft: `4px solid`,
         borderLeftColor: TONE_COLOR[tone],
         bgcolor: TONE_BG[tone],
       }}
     >
       <CardContent>
-        <Box display="flex" alignItems="flex-start" justifyContent="space-between">
+        <Box
+          display="flex"
+          alignItems="flex-start"
+          justifyContent="space-between"
+        >
           <Box minWidth={0}>
             <Typography variant="caption" color="text.secondary" noWrap>
               {title}
             </Typography>
-            <Typography variant="h6" fontWeight={700} sx={{ color: TONE_COLOR[tone] }} noWrap>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              sx={{ color: TONE_COLOR[tone] }}
+              noWrap
+            >
               {value}
             </Typography>
             {subtitle ? (
@@ -74,7 +83,7 @@ export function KpiCard({
                 height: 40,
                 borderRadius: 2,
                 flexShrink: 0,
-                bgcolor: 'background.paper',
+                bgcolor: "background.paper",
                 color: TONE_COLOR[tone],
               }}
             >

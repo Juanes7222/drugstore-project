@@ -1,8 +1,8 @@
-import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
-import { useAuthStore } from '../hooks/use-auth';
+import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
+import { useAuthStore } from "../hooks/use-auth";
 
 export const API_BASE_URL: string =
-  import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+  import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 export const api = axios.create({ baseURL: API_BASE_URL });
 
@@ -15,7 +15,7 @@ let refreshPromise: Promise<string> | null = null;
 async function refreshAccessToken(): Promise<string> {
   const { accessToken } = useAuthStore.getState();
   if (!accessToken) {
-    throw new Error('No active session');
+    throw new Error("No active session");
   }
 
   // The refresh endpoint requires a still-valid access token in the
@@ -50,8 +50,8 @@ api.interceptors.response.use(
     const { accessToken } = useAuthStore.getState();
 
     const isAuthCall =
-      original?.url?.includes('/auth/login') ||
-      original?.url?.includes('/auth/refresh');
+      original?.url?.includes("/auth/login") ||
+      original?.url?.includes("/auth/refresh");
 
     if (
       error.response?.status === 401 &&
@@ -71,8 +71,8 @@ api.interceptors.response.use(
         return api(original);
       } catch {
         useAuthStore.getState().clearSession();
-        if (window.location.pathname !== '/login') {
-          window.location.assign('/login');
+        if (window.location.pathname !== "/login") {
+          window.location.assign("/login");
         }
       }
     }

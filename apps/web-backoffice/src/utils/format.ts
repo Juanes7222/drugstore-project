@@ -1,30 +1,30 @@
-const COP_FORMATTER = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
+const COP_FORMATTER = new Intl.NumberFormat("es-CO", {
+  style: "currency",
+  currency: "COP",
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
-const DATE_FORMATTER = new Intl.DateTimeFormat('es-CO', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
+const DATE_FORMATTER = new Intl.DateTimeFormat("es-CO", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
 });
 
-const DATETIME_FORMATTER = new Intl.DateTimeFormat('es-CO', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
+const DATETIME_FORMATTER = new Intl.DateTimeFormat("es-CO", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
 });
 
 /** Formats a decimal string (e.g. "1234.56") or number as COP currency. */
 export function formatCop(value: string | number | null | undefined): string {
-  if (value === null || value === undefined || value === '') {
+  if (value === null || value === undefined || value === "") {
     return COP_FORMATTER.format(0);
   }
-  const numeric = typeof value === 'number' ? value : Number(value);
+  const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) {
     return COP_FORMATTER.format(0);
   }
@@ -32,20 +32,20 @@ export function formatCop(value: string | number | null | undefined): string {
 }
 
 export function formatDate(value: string | null | undefined): string {
-  if (!value) return '—';
+  if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : DATE_FORMATTER.format(date);
+  return Number.isNaN(date.getTime()) ? "—" : DATE_FORMATTER.format(date);
 }
 
 export function formatDateTime(value: string | null | undefined): string {
-  if (!value) return '—';
+  if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '—' : DATETIME_FORMATTER.format(date);
+  return Number.isNaN(date.getTime()) ? "—" : DATETIME_FORMATTER.format(date);
 }
 
 export function formatNumber(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '—';
-  return new Intl.NumberFormat('es-CO').format(value);
+  if (value === null || value === undefined) return "—";
+  return new Intl.NumberFormat("es-CO").format(value);
 }
 
 /** Local yyyy-MM-dd for native date inputs. */

@@ -42,6 +42,18 @@ export const envSchema = z.object({
     .email()
     .optional()
     .describe('Email for first SaaS admin auto-creation'),
+  BOOTSTRAP_TOKEN: z
+    .string()
+    .optional()
+    .describe(
+      'Secret token that enables POST /auth/bootstrap (first SAAS_ADMIN provisioning)',
+    ),
+  BACKOFFICE_ALLOWED_DOMAINS: z
+    .string()
+    .optional()
+    .describe(
+      'Comma-separated email domains allowed to self-register via Google sign-in',
+    ),
   UPDATE_STORAGE_PATH: z
     .string()
     .default('./storage/updates')
