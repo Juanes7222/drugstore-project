@@ -17,7 +17,22 @@ import {
 import { BackofficeScopeService } from './backoffice-scope.service';
 
 const EXPIRING_LOT_DAYS = 90;
-const SALES_TREND_DAYS = 14;
+/** Trend series length for the default `today` period; other periods use one bucket per window day. */
+const TODAY_SALES_TREND_DAYS = 14;
+
+export type DashboardPeriod = 'today' | '7d' | '30d';
+
+/** Calendar days covered by each period, today included (today = 1 day so far). */
+const PERIOD_DAY_COUNTS: Record<DashboardPeriod, number> = {
+  today: 1,
+  '7d': 7,
+  '30d': 30,
+};
+
+export interface DashboardSalesTotals {
+  count: number;
+  total: Prisma.Decimal;
+}
 
 export interface DashboardResponse {
   period: { from: string; to: string };
@@ -27,6 +42,10 @@ export interface DashboardResponse {
     averageTicket: string;
     annulledCount: number;
     annulledTotal: string;
+    /** Confirmed sales of the immediately preceding window of equal length. */
+    previousCount: number;
+    previousTotal: string;
+    previousAverageTicket: string | null;
   };
   cashShifts: {
     openCount: number;
@@ -65,10 +84,33 @@ export class DashboardService {
     private readonly scope: BackofficeScopeService,
   ) {}
 
-  async getDashboard(user: User): Promise<DashboardResponse> {
+  async getDashboard(
+    user: User,
+    period: DashboardPeriod = 'today',
+  ): Promise<DashboardResponse> {
     const scope = this.scope.tenantWhere(user);
     const saleScope = this.scope.saleTenantWhere(user);
     const dayStart = this.startOfLocalDay();
+    const windowDayCount = PERIOD_DAY_COUNTS[period];
+    // Current window: today so far, or (N-1) full local days plus today so far.
+    const windowFrom = this.addCalendarDays(dayStart, -(windowDayCount - 1));
+    // Immediately preceding window of equal length, anchored on local
+    // midnights (not a sliding to-now window) so buckets stay day-aligned.
+    const previousFrom = this.addCalendarDays(windowFrom, -windowDayCount);
+    // `today` keeps its fixed 14-day trend series; other periods bucket the
+    // whole selected window one day per entry.
+    const trendDayStarts = this.buildTrendDayStarts(
+      dayStart,
+      period === 'today' ? TODAY_SALES_TREND_DAYS : windowDayCount,
+    );
+    const trendEnd = this.addCalendarDays(dayStart, 1);
+    // For non-today periods the current window IS the trend range, so the
+    // confirmed-window aggregate is skipped and metrics are derived from the
+    // single range query below, widened to also cover the previous window.
+    const useConfirmedAggregate = period === 'today';
+    const rangeStart = new Date(
+      Math.min(trendDayStarts[0].getTime(), previousFrom.getTime()),
+    );
     const thirtyDaysAgo = new Date(
       dayStart.getTime() - 30 * 24 * 60 * 60 * 1000,
     );
@@ -76,14 +118,11 @@ export class DashboardService {
       Date.now() + EXPIRING_LOT_DAYS * 24 * 60 * 60 * 1000,
     );
     const userIds = await this.scope.tenantUserIds(user);
-    const trendDayStarts = this.buildTrendDayStarts(dayStart);
-    const trendEnd = new Date(dayStart);
-    trendEnd.setDate(trendEnd.getDate() + 1);
 
     const [
-      confirmedToday,
-      trendSales,
-      annulledToday,
+      confirmedAggregate,
+      rangeSales,
+      annulledWindow,
       openShifts,
       shiftDifferences,
       pendingAdjustments,
@@ -94,19 +133,21 @@ export class DashboardService {
       pendingUsers,
       activeSessions,
     ] = await Promise.all([
-      this.prisma.sale.aggregate({
-        where: {
-          ...saleScope,
-          confirmedAt: { gte: dayStart },
-          operationalState: SaleOperationalState.CONFIRMED,
-        },
-        _count: { id: true },
-        _sum: { totalAmount: true },
-      }),
+      useConfirmedAggregate
+        ? this.prisma.sale.aggregate({
+            where: {
+              ...saleScope,
+              confirmedAt: { gte: dayStart },
+              operationalState: SaleOperationalState.CONFIRMED,
+            },
+            _count: { id: true },
+            _sum: { totalAmount: true },
+          })
+        : Promise.resolve(null),
       this.prisma.sale.findMany({
         where: {
           ...saleScope,
-          confirmedAt: { gte: trendDayStarts[0], lt: trendEnd },
+          confirmedAt: { gte: rangeStart, lt: trendEnd },
           operationalState: SaleOperationalState.CONFIRMED,
         },
         select: { confirmedAt: true, totalAmount: true },
@@ -114,7 +155,7 @@ export class DashboardService {
       this.prisma.sale.aggregate({
         where: {
           ...saleScope,
-          annulledAt: { gte: dayStart },
+          annulledAt: { gte: windowFrom },
           operationalState: SaleOperationalState.ANNULLED,
         },
         _count: { id: true },
@@ -177,41 +218,51 @@ export class DashboardService {
           }),
     ]);
 
-    const confirmedAmount =
-      confirmedToday._sum.totalAmount === null ||
-      confirmedToday._sum.totalAmount === undefined
-        ? null
-        : confirmedToday._sum.totalAmount;
+    const confirmedWindow = confirmedAggregate
+      ? {
+          count: confirmedAggregate._count.id,
+          total: confirmedAggregate._sum.totalAmount ?? new Prisma.Decimal(0),
+        }
+      : this.summarizeConfirmedSales(rangeSales, windowFrom, trendEnd);
+    const previousWindow = this.summarizeConfirmedSales(
+      rangeSales,
+      previousFrom,
+      windowFrom,
+    );
+
     const annulledAmount =
-      annulledToday._sum.totalAmount === null ||
-      annulledToday._sum.totalAmount === undefined
+      annulledWindow._sum.totalAmount === null ||
+      annulledWindow._sum.totalAmount === undefined
         ? null
-        : annulledToday._sum.totalAmount;
+        : annulledWindow._sum.totalAmount;
     const differenceAmount =
       shiftDifferences._sum.closingDifference === null ||
       shiftDifferences._sum.closingDifference === undefined
         ? null
         : shiftDifferences._sum.closingDifference;
 
-    const confirmedCount = confirmedToday._count.id;
     const averageTicket =
-      confirmedCount > 0 && confirmedAmount !== null
-        ? confirmedAmount
-            .dividedBy(confirmedCount)
-            .toDecimalPlaces(2)
-            .toString()
-        : '0';
+      this.decimalAverage(confirmedWindow.total, confirmedWindow.count) ?? '0';
 
     const fiscalCounts = this.summarizeFiscal(fiscalByState);
 
     return {
-      period: { from: dayStart.toISOString(), to: new Date().toISOString() },
+      period: {
+        from: windowFrom.toISOString(),
+        to: new Date().toISOString(),
+      },
       sales: {
-        confirmedCount,
-        confirmedTotal: confirmedAmount?.toString() ?? '0',
+        confirmedCount: confirmedWindow.count,
+        confirmedTotal: confirmedWindow.total.toString(),
         averageTicket,
-        annulledCount: annulledToday._count.id,
+        annulledCount: annulledWindow._count.id,
         annulledTotal: annulledAmount?.toString() ?? '0',
+        previousCount: previousWindow.count,
+        previousTotal: previousWindow.total.toString(),
+        previousAverageTicket: this.decimalAverage(
+          previousWindow.total,
+          previousWindow.count,
+        ),
       },
       cashShifts: {
         openCount: openShifts,
@@ -226,7 +277,7 @@ export class DashboardService {
       fiscal: fiscalCounts,
       sync: { permanentFailures },
       users: { pendingApproval: pendingUsers, activeSessions },
-      salesTrend: this.buildSalesTrend(trendSales, trendDayStarts),
+      salesTrend: this.buildSalesTrend(rangeSales, trendDayStarts),
     };
   }
 
@@ -236,18 +287,57 @@ export class DashboardService {
     return now;
   }
 
+  /** Shifts by calendar days via setDate so local midnights survive DST. */
+  private addCalendarDays(day: Date, days: number): Date {
+    const shifted = new Date(day);
+    shifted.setDate(shifted.getDate() + days);
+    return shifted;
+  }
+
   /**
    * Oldest-first local midnights ending today. setDate (not fixed 24h steps)
    * keeps every bucket on local midnight across DST transitions.
    */
-  private buildTrendDayStarts(todayStart: Date): Date[] {
+  private buildTrendDayStarts(todayStart: Date, dayCount: number): Date[] {
     const days: Date[] = [];
-    for (let offset = SALES_TREND_DAYS - 1; offset >= 0; offset -= 1) {
+    for (let offset = dayCount - 1; offset >= 0; offset -= 1) {
       const day = new Date(todayStart);
       day.setDate(day.getDate() - offset);
       days.push(day);
     }
     return days;
+  }
+
+  /**
+   * Confirmed-sale count and total for [from, toExclusive), computed from the
+   * already-fetched range rows so window metrics cost no extra round trip.
+   */
+  private summarizeConfirmedSales(
+    sales: { confirmedAt: Date | null; totalAmount: Prisma.Decimal }[],
+    from: Date,
+    toExclusive: Date,
+  ): DashboardSalesTotals {
+    let count = 0;
+    let total = new Prisma.Decimal(0);
+    for (const sale of sales) {
+      if (
+        sale.confirmedAt === null ||
+        sale.confirmedAt < from ||
+        sale.confirmedAt >= toExclusive
+      ) {
+        continue;
+      }
+      count += 1;
+      total = total.plus(sale.totalAmount);
+    }
+    return { count, total };
+  }
+
+  /** Mean as a rounded decimal string; null when there is nothing to average. */
+  private decimalAverage(total: Prisma.Decimal, count: number): string | null {
+    return count > 0
+      ? total.dividedBy(count).toDecimalPlaces(2).toString()
+      : null;
   }
 
   private buildSalesTrend(

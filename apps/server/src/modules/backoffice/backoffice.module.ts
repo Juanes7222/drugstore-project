@@ -10,6 +10,7 @@ import { FiscalStatusController } from './controllers/fiscal-status.controller';
 import { SessionsController } from './controllers/sessions.controller';
 import { WorkstationsController } from './controllers/workstations.controller';
 import { SubscriptionsController } from './controllers/subscriptions.controller';
+import { AuditLogsController } from './controllers/audit-logs.controller';
 import { BackofficeScopeService } from './services/backoffice-scope.service';
 import { BackofficeActorLookupService } from './services/backoffice-actor-lookup.service';
 import { CsvBuilderService } from './services/csv-builder.service';
@@ -21,14 +22,15 @@ import { FiscalStatusService } from './services/fiscal-status.service';
 import { SessionOverviewService } from './services/session-overview.service';
 import { WorkstationOverviewService } from './services/workstation-overview.service';
 import { SubscriptionOverviewService } from './services/subscription-overview.service';
+import { AuditLogOverviewService } from './services/audit-log-overview.service';
 
 /**
  * Backoffice module — read-only administrative surfaces.
  *
  * Provides endpoints for admin dashboards: global KPIs, sales, cash-shift
  * and fiscal overviews, inventory alerts, active sessions, workstation
- * state, and the SAAS_ADMIN subscription listing. All mutating operations
- * are owned by their respective domain modules.
+ * state, the audit trail listing, and the SAAS_ADMIN subscription listing.
+ * All mutating operations are owned by their respective domain modules.
  */
 @Module({
   imports: [PrismaModule, SyncModule],
@@ -42,6 +44,7 @@ import { SubscriptionOverviewService } from './services/subscription-overview.se
     SessionsController,
     WorkstationsController,
     SubscriptionsController,
+    AuditLogsController,
   ],
   providers: [
     BackofficeScopeService,
@@ -55,6 +58,7 @@ import { SubscriptionOverviewService } from './services/subscription-overview.se
     SessionOverviewService,
     WorkstationOverviewService,
     SubscriptionOverviewService,
+    AuditLogOverviewService,
   ],
 })
 export class BackofficeModule {}

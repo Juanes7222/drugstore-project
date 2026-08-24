@@ -16,6 +16,14 @@ jest.mock('@pharmacy/database', () => {
       return new MockTrendDecimal(this.value + addendValue);
     }
 
+    dividedBy(divisor: number): MockTrendDecimal {
+      return new MockTrendDecimal(this.value / divisor);
+    }
+
+    toDecimalPlaces(): this {
+      return this;
+    }
+
     valueOf(): number {
       return this.value;
     }
@@ -36,12 +44,19 @@ jest.mock('@pharmacy/database', () => {
 });
 
 import { DashboardService } from './dashboard.service';
-import { BackofficeScopeService } from './backoffice-scope.service';
 
 function formatLocalDate(day: Date): string {
   const month = String(day.getMonth() + 1).padStart(2, '0');
   const dayOfMonth = String(day.getDate()).padStart(2, '0');
   return `${day.getFullYear()}-${month}-${dayOfMonth}`;
+}
+
+/** Local midnight N calendar days before today; negative = future days. */
+function localMidnight(daysAgo: number): Date {
+  const day = new Date();
+  day.setHours(0, 0, 0, 0);
+  day.setDate(day.getDate() - daysAgo);
+  return day;
 }
 
 class FakeDecimal {
@@ -344,9 +359,11 @@ describe('DashboardService', () => {
         select: { confirmedAt: true, totalAmount: true },
       });
 
-      const { gte, lt } = (prisma.sale.findMany.mock.calls[0][0] as {
-        where: { confirmedAt: { gte: Date; lt: Date } };
-      }).where.confirmedAt;
+      const { gte, lt } = (
+        prisma.sale.findMany.mock.calls[0][0] as {
+          where: { confirmedAt: { gte: Date; lt: Date } };
+        }
+      ).where.confirmedAt;
       const DAY_MS = 24 * 60 * 60 * 1000;
       expect(lt.getTime() - gte.getTime()).toBe(14 * DAY_MS);
     });
@@ -400,6 +417,106 @@ describe('DashboardService', () => {
         confirmedAmount: '75',
       });
       expect(days[11].confirmedCount).toBe(0);
+    });
+
+    it('keeps the today window and two sale aggregates when no period is given', async () => {
+      await service.getDashboard(buildUser());
+
+      expect(prisma.sale.aggregate).toHaveBeenCalledTimes(2);
+      const { gte, lt } = (
+        prisma.sale.findMany.mock.calls[0][0] as {
+          where: { confirmedAt: { gte: Date; lt: Date } };
+        }
+      ).where.confirmedAt;
+      expect(gte.getTime()).toBe(localMidnight(13).getTime());
+      expect(lt.getTime()).toBe(localMidnight(-1).getTime());
+    });
+
+    it('windows sales on the last 7 calendar days without a confirmed aggregate', async () => {
+      const result = await service.getDashboard(buildUser(), '7d');
+
+      // Only the annulled aggregate runs; current-window metrics come from rows.
+      expect(prisma.sale.aggregate).toHaveBeenCalledTimes(1);
+      expect(prisma.sale.aggregate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            annulledAt: { gte: localMidnight(6) },
+            operationalState: 'ANNULLED',
+          }),
+        }),
+      );
+
+      const { gte, lt } = (
+        prisma.sale.findMany.mock.calls[0][0] as {
+          where: { confirmedAt: { gte: Date; lt: Date } };
+        }
+      ).where.confirmedAt;
+      // Widened to cover the previous 7-day window: todayStart-13 .. tomorrow.
+      expect(gte.getTime()).toBe(localMidnight(13).getTime());
+      expect(lt.getTime()).toBe(localMidnight(-1).getTime());
+
+      expect(result.salesTrend.days).toHaveLength(7);
+      const days = result.salesTrend.days;
+      for (let i = 1; i < days.length; i += 1) {
+        expect(days[i].date > days[i - 1].date).toBe(true);
+      }
+      expect(days[days.length - 1].date).toBe(formatLocalDate(new Date()));
+      expect(result.period.from).toBe(localMidnight(6).toISOString());
+    });
+
+    it('windows sales on the last 30 calendar days with a 30-bucket trend', async () => {
+      const result = await service.getDashboard(buildUser(), '30d');
+
+      expect(prisma.sale.aggregate).toHaveBeenCalledTimes(1);
+
+      const { gte, lt } = (
+        prisma.sale.findMany.mock.calls[0][0] as {
+          where: { confirmedAt: { gte: Date; lt: Date } };
+        }
+      ).where.confirmedAt;
+      expect(gte.getTime()).toBe(localMidnight(59).getTime());
+      expect(lt.getTime()).toBe(localMidnight(-1).getTime());
+
+      expect(result.salesTrend.days).toHaveLength(30);
+      expect(result.salesTrend.days[29].date).toBe(formatLocalDate(new Date()));
+      expect(result.period.from).toBe(localMidnight(29).toISOString());
+    });
+
+    it('compares the 7d window against the preceding 7-day window', async () => {
+      const previousSaleTime = localMidnight(8);
+      previousSaleTime.setHours(10, 0, 0, 0);
+      const secondPreviousSaleTime = localMidnight(10);
+      secondPreviousSaleTime.setHours(15, 0, 0, 0);
+      const currentSaleTime = new Date();
+      currentSaleTime.setHours(10, 30, 0, 0);
+
+      prisma.sale.findMany.mockResolvedValue([
+        { confirmedAt: previousSaleTime, totalAmount: new FakeDecimal(100) },
+        {
+          confirmedAt: secondPreviousSaleTime,
+          totalAmount: new FakeDecimal(23.5),
+        },
+        { confirmedAt: currentSaleTime, totalAmount: new FakeDecimal(75) },
+      ] as never);
+
+      const result = await service.getDashboard(buildUser(), '7d');
+
+      expect(result.sales.previousCount).toBe(2);
+      expect(result.sales.previousTotal).toBe('123.5');
+      expect(result.sales.previousAverageTicket).toBe('61.75');
+      expect(result.sales.confirmedCount).toBe(1);
+      expect(result.sales.confirmedTotal).toBe('75');
+      expect(result.sales.averageTicket).toBe('75');
+    });
+
+    it('returns zeroed previous-window totals with a null average when none exist', async () => {
+      prisma.sale.findMany.mockResolvedValue([]);
+
+      const result = await service.getDashboard(buildUser(), '7d');
+
+      expect(result.sales.previousCount).toBe(0);
+      expect(result.sales.previousTotal).toBe('0');
+      expect(result.sales.previousAverageTicket).toBeNull();
     });
   });
 });
