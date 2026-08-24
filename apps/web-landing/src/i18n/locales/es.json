@@ -1,0 +1,309 @@
+{
+  "brand": {
+    "name": "PuntoFarma",
+    "tagline": "El punto de venta de las droguerías colombianas."
+  },
+  "nav": {
+    "product": "Producto",
+    "pricing": "Planes",
+    "faq": "Preguntas",
+    "buy": "Comprar licencia",
+    "open_menu": "Abrir menú",
+    "close_menu": "Cerrar menú"
+  },
+  "hero": {
+    "eyebrow": "POS para droguerías colombianas",
+    "title": "La caja que no se detiene cuando se va internet.",
+    "subtitle": "PuntoFarma escanea, controla lotes y vencimientos, revisa fórmulas y factura ante la DIAN desde su computador — con o sin conexión.",
+    "cta_primary": "Comprar licencia",
+    "cta_secondary": "Ver planes",
+    "chip_dian": "Facturación electrónica DIAN",
+    "chip_invima": "Control de lotes INVIMA",
+    "chip_offline": "Vende sin internet"
+  },
+  "pos_preview": {
+    "label": "Vista del punto de venta",
+    "store_name": "Droguería La Esperanza",
+    "shift": "Turno abierto · 4 h 12 m",
+    "search_placeholder": "Escanee o busque…",
+    "sync_queued": "En cola: 2 ventas",
+    "cart_title": "Carrito",
+    "item_acetaminofen": "Acetaminofén 500 mg · caja ×10",
+    "item_loratadina": "Loratadina 10 mg · caja ×10",
+    "item_losartan": "Losartán 50 mg · caja ×30",
+    "lot_near_expiry": "Lote L-2481 · vence 30 sep 26",
+    "near_expiry_flag": "Por vencer",
+    "requires_formula": "Requiere fórmula",
+    "formula_verified": "Fórmula verificada",
+    "subtotal": "Subtotal",
+    "tax_zero": "IVA (0 %)",
+    "total": "Total",
+    "pay_button": "Cobrar"
+  },
+  "pillars": {
+    "title": "Hecho para el mostrador de una droguería",
+    "items": [
+      {
+        "icon": "barcode",
+        "title": "Escaneo y lotes",
+        "body": "Cada producto entra al carrito con su lote y fecha de vencimiento a la vista. Lo que está por vencer se señala antes de facturar."
+      },
+      {
+        "icon": "shield-check",
+        "title": "Medicamentos controlados",
+        "body": "La venta de fórmula médica pasa por una confirmación propia, diseñada para que no se atraviese de memoria."
+      },
+      {
+        "icon": "clock",
+        "title": "Turno de caja",
+        "body": "Cada jornada abre con turno: cajero, base inicial y cuadre final. Las diferencias se ven, no se adivinan."
+      },
+      {
+        "icon": "refresh-cw",
+        "title": "Sincronización sola",
+        "body": "Lo vendido queda guardado en el equipo y sube al servidor cuando vuelve la conexión. Nadie tiene que hacer nada."
+      }
+    ]
+  },
+  "offline": {
+    "eyebrow": "Modo offline",
+    "title": "Se fue internet. La caja sigue abierta.",
+    "body": "PuntoFarma guarda cada venta en el computador de la tienda. Cuando la conexión vuelve, la cola sube sola, en orden y sin duplicados. Vender sin internet es el modo normal de trabajo, no una falla.",
+    "queue_label": "Cola local (ejemplo)",
+    "status_sent": "enviada",
+    "status_queued": "en cola",
+    "queue_items": [
+      "14:02 · Venta #1042 · $18.500",
+      "14:07 · Venta #1043 · $7.900",
+      "14:11 · Venta #1044 · $21.700"
+    ],
+    "note": "El estado siempre está a la vista: qué falta subir y cuándo subió lo último."
+  },
+  "pricing": {
+    "eyebrow": "Planes",
+    "title": "Un precio. Dos maneras de facturar.",
+    "subtitle": "Los dos planes incluyen todo el sistema por $199.000 COP al mes. Solo cambia quién maneja el certificado ante la DIAN — usted escoge lo que conviene a su farmacia.",
+    "period_label": "Período de pago",
+    "period_monthly": "Mensual",
+    "period_quarterly": "Trimestral −10 %",
+    "period_annual": "Anual −20 %",
+    "per_month_equivalent": "≈ {{amount}} al mes",
+    "doc_heading": "Resumen de suscripción",
+    "doc_disclaimer": "Documento informativo — no es una factura",
+    "row_license": "Licencia POS",
+    "row_workstations": "Puestos de venta incluidos",
+    "row_extra_workstation": "Puesto adicional",
+    "row_locations": "Sedes",
+    "row_support": "Soporte",
+    "value_license": "{{amount}} al mes",
+    "value_workstations": "3 por sede",
+    "value_extra_workstation": "{{amount}} al mes",
+    "value_locations": "Ilimitadas",
+    "value_support": "Prioritario",
+    "dian_section_title": "Facturación electrónica",
+    "dian_provider_title": "Gestionada por nosotros",
+    "dian_provider_body": "Transmitimos sus facturas ante la DIAN como proveedor tecnológico. Usted no administra certificados digitales.",
+    "dian_certificate_title": "Con su certificado DIAN",
+    "dian_certificate_body": "Usted emite con su propio certificado digital, cargado una sola vez en el POS.",
+    "total_row": "Total",
+    "total_suffix_monthly": "al mes",
+    "total_suffix_quarterly": "por trimestre",
+    "total_suffix_annual": "por año",
+    "doc_cta": "Comprar este plan",
+    "all_features_note": "Todos los planes incluyen: multi-sede, modo offline, inventario y lotes, prescripciones, impresión fiscal y de etiquetas, pantalla de cliente, informes, soporte prioritario, API, respaldo y recuperación.",
+    "workstation_note": "Incluye 3 puestos de venta por sede. Puesto adicional: $40.000 COP/mes, máximo 5 por sede. Sedes ilimitadas.",
+    "payment_note": "Pago seguro por Wompi: tarjetas, PSE y Botón Bancario."
+  },
+  "steps": {
+    "title": "Cómo empieza",
+    "items": [
+      {
+        "title": "Escoja su plan y pague",
+        "body": "Complete el formulario y pague por Wompi con tarjeta, PSE o Botón Bancario."
+      },
+      {
+        "title": "Reciba su código",
+        "body": "Enviamos un código de activación al correo electrónico que registró."
+      },
+      {
+        "title": "Actívelo en el POS",
+        "body": "Ingrese el código en PuntoFarma y empiece a vender el mismo día."
+      }
+    ]
+  },
+  "faq": {
+    "eyebrow": "Preguntas frecuentes",
+    "title": "Lo que preguntan antes de comprar",
+    "items": [
+      {
+        "q": "¿Funciona sin internet?",
+        "a": "Sí. Vender, buscar productos y facturar funciona sin conexión. Las ventas quedan guardadas en el equipo y suben solas al servidor cuando vuelve internet."
+      },
+      {
+        "q": "¿Qué necesito para instalarlo?",
+        "a": "Un computador con Windows, macOS o Linux, una impresora térmica para el tirilla, y conexión a internet solo para la activación y la sincronización."
+      },
+      {
+        "q": "¿Cuál es la diferencia entre los dos planes?",
+        "a": "El precio y las funciones son idénticos. En «Facturación incluida» nosotros transmitimos sus facturas ante la DIAN como proveedor tecnológico. En «Su certificado DIAN» usted emite con su propio certificado digital cargado en el POS."
+      },
+      {
+        "q": "¿Cómo activo la licencia?",
+        "a": "Después del pago recibe un código por correo electrónico. Lo ingresa una sola vez en el POS y el sistema queda activo."
+      },
+      {
+        "q": "¿Puedo agregar más puestos de venta?",
+        "a": "Cada sede incluye 3 puestos. Puede agregar hasta 5 por sede, a $40.000 COP al mes cada puesto adicional."
+      },
+      {
+        "q": "¿Cómo se paga la mensualidad?",
+        "a": "Por Wompi: tarjetas de crédito y débito, PSE y Botón Bancario. La suscripción se renueva cada mes y puede cancelar cuando quiera."
+      },
+      {
+        "q": "¿Qué pasa con los datos de mis clientes?",
+        "a": "Se tratan conforme a la Ley 1581 de 2012 (régimen de Habeas Data) y a nuestra Política de tratamiento de datos personales, disponible en el pie de página."
+      },
+      {
+        "q": "¿Hay contrato de permanencia?",
+        "a": "No. La licencia es mensual y puede cancelarla en cualquier momento escribiendo a soporte."
+      }
+    ]
+  },
+  "cta_band": {
+    "title": "Empiece a vender con calma.",
+    "body": "Active PuntoFarma hoy y deje que la caja siga funcionando, con o sin internet.",
+    "button": "Comprar licencia"
+  },
+  "footer": {
+    "rights": "© {{year}} PuntoFarma. Todos los derechos reservados.",
+    "made_in": "Hecho en Colombia",
+    "legal_terms": "Términos y condiciones",
+    "legal_privacy": "Política de privacidad",
+    "legal_data": "Tratamiento de datos personales",
+    "disclaimer": "PuntoFarma no reemplaza la asesoría de su contador en las obligaciones tributarias de su negocio."
+  },
+  "checkout": {
+    "title": "Comprar licencia",
+    "subtitle": "Complete los datos de facturación. El pago se procesa de forma segura por Wompi.",
+    "field_plan": "Plan",
+    "field_period": "Período de pago",
+    "field_name": "Nombre completo",
+    "field_email": "Correo electrónico",
+    "field_tax_id": "NIT o cédula",
+    "field_phone": "Teléfono (opcional)",
+    "total_summary": "Total a pagar: {{amount}}",
+    "submit": "Ir a pagar",
+    "submitting": "Redirigiendo…",
+    "cancel": "Cancelar",
+    "error_api_not_configured": "El servicio de compras no está configurado en este entorno. Escriba a soporte para completar su compra.",
+    "error_network": "No pudimos comunicarnos con el servidor. Revise su conexión e intente de nuevo.",
+    "error_invalid": "Revise los campos marcados.",
+    "error_generic": "No pudimos iniciar el pago. Intente de nuevo en unos minutos.",
+    "redirect_note": "Al continuar lo llevamos a Wompi para completar el pago."
+  },
+  "legal": {
+    "back_home": "Volver al inicio",
+    "terms": {
+      "title": "Términos y condiciones",
+      "updated": "Última actualización: agosto de 2026",
+      "sections": [
+        {
+          "heading": "1. Objeto",
+          "paragraphs": [
+            "Estos términos regulan el uso del software PuntoFarma, un punto de venta para droguerías en Colombia que se entrega mediante una licencia mensual de uso. Al comprar una licencia, el cliente acepta estos términos."
+          ]
+        },
+        {
+          "heading": "2. La licencia",
+          "paragraphs": [
+            "La licencia es mensual, no transferible y ampara los puestos de venta contratados (3 incluidos por sede, hasta 5 por sede con puesto adicional pagado). El cliente puede cancelar en cualquier momento; la cancelación aplica al cierre del período pagado y no genera reembolsos proporcionales.",
+            "El código de activación es personal del cliente. Su comercialización o compartición suspende la licencia."
+          ]
+        },
+        {
+          "heading": "3. Precio y pagos",
+          "paragraphs": [
+            "El precio es de $199.000 COP al mes por plan, con descuento del 10 % en pago trimestral y del 20 % en pago anual. Cada puesto adicional cuesta $40.000 COP al mes.",
+            "Los pagos se procesan por medio de Wompi (tarjetas, PSE, Botón Bancario). PuntoFarma no almacena datos de tarjetas."
+          ]
+        },
+        {
+          "heading": "4. Facturación electrónica",
+          "paragraphs": [
+            "En el plan con facturación gestionada, PuntoFarma actúa como proveedor tecnológico para la emisión y transmisión de facturas electrónicas ante la DIAN. En el plan con certificado propio, el cliente es responsable de obtener, renovar y cargar su certificado digital.",
+            "El cliente es el único responsable de la veracidad de la información tributaria que emite. PuntoFarma no presta servicios de contabilidad ni asesoría tributaria."
+          ]
+        },
+        {
+          "heading": "5. Disponibilidad y soporte",
+          "paragraphs": [
+            "El punto de venta está diseñado para operar sin conexión: las ventas realizadas offline quedan guardadas localmente y se sincronizan al restablecerse la red. El cliente es responsable de contar respaldos adicionales si su operación lo exige.",
+            "El soporte prioritario se presta por los canales publicados en horario hábil colombiano."
+          ]
+        },
+        {
+          "heading": "6. Cambios y ley aplicable",
+          "paragraphs": [
+            "PuntoFarma puede modificar estos términos avisando con al menos 15 días de anticipación dentro del software o al correo registrado. Estos términos se rigen por la ley colombiana; cualquier controversia se resolverá ante los jueces de Bogotá D.C., salvo fuero competente distinto por ley."
+          ]
+        }
+      ]
+    },
+    "privacy": {
+      "title": "Política de privacidad",
+      "updated": "Última actualización: agosto de 2026",
+      "sections": [
+        {
+          "heading": "Datos que tratamos",
+          "paragraphs": [
+            "Para prestar el servicio tratamos: datos de contacto y facturación del titular de la licencia (nombre, correo, NIT o cédula, teléfono), datos técnicos del equipo donde se instala el POS y los registros de operación necesarios para la sincronización y el soporte.",
+            "Los datos de clientes finales de la droguería son responsabilidad del titular de la licencia, quien actúa como responsable del tratamiento frente a ellos; PuntoFarma actúa como encargado del tratamiento."
+          ]
+        },
+        {
+          "heading": "Finalidades",
+          "paragraphs": [
+            "Usamos estos datos para: activar y mantener la licencia, procesar cobros por Wompi, emitir soporte técnico, cumplir obligaciones fiscales y mejorar el servicio. No vendemos ni cedemos datos personales a terceros con fines comerciales."
+          ]
+        },
+        {
+          "heading": "Derechos y contacto",
+          "paragraphs": [
+            "Conforme a la Ley 1581 de 2012 usted puede conocer, actualizar, rectificar y solicitar la supresión de sus datos personales escribiendo a nuestro canal de soporte. Ver la Política de tratamiento de datos personales para el detalle procedimental."
+          ]
+        }
+      ]
+    },
+    "data": {
+      "title": "Política de tratamiento de datos personales",
+      "updated": "Última actualización: agosto de 2026",
+      "sections": [
+        {
+          "heading": "Régimen aplicable",
+          "paragraphs": [
+            "Esta política se expide en cumplimiento de la Ley 1581 de 2012, el Decreto 1377 de 2013 y la jurisprudencia de la Corte Constitucional sobre Habeas Data, y aplica a todos los datos personales tratados por PuntoFarma."
+          ]
+        },
+        {
+          "heading": "Tratamiento como encargado",
+          "paragraphs": [
+            "Cuando la droguería registra datos de sus propios clientes en el sistema, PuntoFarma obra como encargado del tratamiento: conserva la información únicamente para prestar el servicio, implementa medidas de seguridad razonables y no la utiliza para fines propios.",
+            "El responsable de esos datos es la droguería titular de la licencia, y las solicitudes de derechos de los clientes finales deben dirigirse primero a ella."
+          ]
+        },
+        {
+          "heading": "Seguridad",
+          "paragraphs": [
+            "Aplicamos cifrado en tránsito, controles de acceso por roles y registro de auditoría. En caso de incidente de seguridad que afecte datos personales, notificaremos a los titulares y a las autoridades cuando la norma lo exija."
+          ]
+        },
+        {
+          "heading": "Procedimiento de derechos (ACRS)",
+          "paragraphs": [
+            "Para ejercer los derechos de acceso, corrección, cancelación y revocación escriba a nuestro canal de soporte indicando su identificación y el dato objeto de la solicitud. Responderemos dentro de los diez (10) días hábiles siguientes. Si la solicitud no es competencia directa de PuntoFarma, informaremos a quién corresponde."
+          ]
+        }
+      ]
+    }
+  }
+}
