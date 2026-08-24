@@ -1,9 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { SyncStatus } from '@pharmacy/database';
 import { DomainException } from '@/common/exceptions/domain.exception';
 import { SyncOperationDispatcherService } from '../sync-operation-dispatcher.service';
 import type { SyncQueueEntry } from '../entities/sync-queue-entry.entity';
+import { CashShiftNotOpenForWorkstationException } from '../../sales-pos/exceptions/cash-shift-not-open-for-workstation.exception';
 
 /**
  * Fixed delay between retries for FAILED entries, in seconds.
@@ -73,11 +75,11 @@ export class SyncProcessingJob {
     return this.prisma.syncQueue.findMany({
       where: {
         operationType: { in: SUPPORTED_TYPES },
-        status: { notIn: ['COMPLETED', 'PROCESSING', 'PERMANENT_FAILURE', 'DISCARDED'] },
+        status: { notIn: [SyncStatus.COMPLETED, SyncStatus.PROCESSING, SyncStatus.PERMANENT_FAILURE, SyncStatus.DISCARDED] },
         retryCount: { lt: MAX_RETRY_ATTEMPTS },
         OR: [
-          { status: 'PENDING' },
-          { status: 'FAILED', nextRetryAt: { lte: new Date() } },
+          { status: SyncStatus.PENDING },
+          { status: SyncStatus.FAILED, nextRetryAt: { lte: new Date() } },
         ],
       },
       orderBy: { receivedAt: 'asc' },
@@ -85,14 +87,27 @@ export class SyncProcessingJob {
     }) as Promise<SyncQueueEntry[]>;
   }
 
-  /** Dispatches a single entry and updates its status to COMPLETED. */
+  /**
+   * Dispatches a single entry and updates its status to COMPLETED.
+   *
+   * The PROCESSING claim is taken with a conditional updateMany so two
+   * concurrent processors (this cron and the batch endpoint's immediate
+   * dispatch) can never work the same entry — the loser observes a zero
+   * count and skips.
+   */
   private async processEntry(entry: SyncQueueEntry): Promise<void> {
-    try {
-      await this.prisma.syncQueue.update({
-        where: { id: entry.id },
-        data: { status: 'PROCESSING' },
-      });
+    const claimed = await this.prisma.syncQueue.updateMany({
+      where: {
+        id: entry.id,
+        status: { notIn: [SyncStatus.PROCESSING, SyncStatus.COMPLETED, SyncStatus.PERMANENT_FAILURE, SyncStatus.DISCARDED] },
+      },
+      data: { status: SyncStatus.PROCESSING },
+    });
+    if (claimed.count === 0) {
+      return; // Another processor won the claim
+    }
 
+    try {
       const result = await this.dispatcher.dispatch(entry);
 
       // Clear any previous error message from a prior failed attempt —
@@ -104,7 +119,7 @@ export class SyncProcessingJob {
       await this.prisma.syncQueue.update({
         where: { id: entry.id },
         data: {
-          status: 'COMPLETED',
+          status: SyncStatus.COMPLETED,
           processedAt: new Date(),
           lastErrorMessage: null,
           entityId: result.entityId ?? null,
@@ -112,8 +127,18 @@ export class SyncProcessingJob {
         },
       });
     } catch (error: unknown) {
-      // DomainException subclasses (ProductNotFoundException, etc.) are
-      // non-transient — the referenced entity genuinely does not exist
+      // CashShiftNotOpenForWorkstation is potentially transient during a
+      // replay burst: salesService.create opens a nested interactive
+      // transaction on its own connection, which cannot see this job's
+      // still-uncommitted cash-shift upsert. The next retry runs on a
+      // fresh connection where the committed shift is visible, so treat
+      // it as retriable instead of permanently failing the sale.
+      if (error instanceof CashShiftNotOpenForWorkstationException) {
+        await this.markFailed(entry, error);
+        return;
+      }
+      // Other DomainException subclasses (ProductNotFoundException, etc.)
+      // are non-transient — the referenced entity genuinely does not exist
       // on the server and retrying will never succeed. Mark as permanent
       // failure immediately instead of burning 10 retries with 60s delays.
       if (error instanceof DomainException) {
@@ -131,7 +156,7 @@ export class SyncProcessingJob {
     await this.prisma.syncQueue.update({
       where: { id: entry.id },
       data: {
-        status: 'PERMANENT_FAILURE',
+        status: SyncStatus.PERMANENT_FAILURE,
         retryCount: (entry.retryCount ?? 0) + 1,
         lastErrorMessage: `Permanent failure — no retry: ${errorMessage}`,
         nextRetryAt: null,
@@ -150,7 +175,7 @@ export class SyncProcessingJob {
 
     const exhausted = retryCount >= MAX_RETRY_ATTEMPTS;
     const data: Record<string, unknown> = {
-      status: exhausted ? 'PERMANENT_FAILURE' : 'FAILED',
+      status: exhausted ? SyncStatus.PERMANENT_FAILURE : SyncStatus.FAILED,
       retryCount,
       lastErrorMessage: exhausted
         ? `Exceeded max retry attempts (${MAX_RETRY_ATTEMPTS}): ${errorMessage}`
