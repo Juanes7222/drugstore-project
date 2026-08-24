@@ -121,6 +121,7 @@ describe('AuthService', () => {
     findActiveSessionByTokenHash: jest.Mock;
     updateSessionTokens: jest.Mock;
     revokeUserSessions: jest.Mock;
+    touchLastActivity: jest.Mock;
   };
   let auditService: { log: jest.Mock };
   let offlineTokenService: { issueToken: jest.Mock };
@@ -145,6 +146,7 @@ describe('AuthService', () => {
       findActiveSessionByTokenHash: jest.fn(),
       updateSessionTokens: jest.fn().mockResolvedValue({}),
       revokeUserSessions: jest.fn().mockResolvedValue(1),
+      touchLastActivity: jest.fn().mockResolvedValue(undefined),
     };
     auditService = { log: jest.fn().mockResolvedValue(undefined) };
     offlineTokenService = {
@@ -448,6 +450,29 @@ describe('AuthService', () => {
     });
   });
 
+  describe('login', () => {
+    it('returns a user DTO without passwordHash or passwordAlgorithm even when the stored account has credential material', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({
+          id: 'user-1',
+          passwordHash: 'stored-argon2-hash',
+          passwordAlgorithm: 'argon2id',
+        }) as never,
+      );
+
+      const result = await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-1',
+      });
+
+      expect(result.user.id).toBe('user-1');
+      expect(result.user).not.toHaveProperty('passwordHash');
+      expect(result.user).not.toHaveProperty('passwordAlgorithm');
+    });
+  });
+
   describe('login (WEB_ADMIN workstation fallback)', () => {
     it('resolves the WEB_ADMIN virtual workstation and passes its id into session creation', async () => {
       prisma.user.findFirst.mockResolvedValue(
@@ -678,6 +703,47 @@ describe('AuthService', () => {
         }),
       );
       expect(jwtService.sign).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('validateActiveSession', () => {
+    it('returns a user DTO without passwordHash or passwordAlgorithm even when the stored account has credential material', async () => {
+      sessionService.findActiveSessionByTokenHash.mockResolvedValue({
+        id: 'session-1',
+        userId: 'user-1',
+        workstationId: 'ws-1',
+      });
+      prisma.user.findUnique.mockResolvedValue(
+        buildPrismaUser({
+          id: 'user-1',
+          passwordHash: 'stored-argon2-hash',
+          passwordAlgorithm: 'argon2id',
+        }) as never,
+      );
+
+      const result = await service.validateActiveSession('user-1', 'token-hash');
+
+      expect(result.id).toBe('user-1');
+      expect(result).not.toHaveProperty('passwordHash');
+      expect(result).not.toHaveProperty('passwordAlgorithm');
+    });
+  });
+
+  describe('getActiveUser', () => {
+    it('returns a user DTO without passwordHash or passwordAlgorithm even when the stored account has credential material', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        buildPrismaUser({
+          id: 'user-1',
+          passwordHash: 'stored-argon2-hash',
+          passwordAlgorithm: 'argon2id',
+        }) as never,
+      );
+
+      const result = await service.getActiveUser('user-1');
+
+      expect(result.id).toBe('user-1');
+      expect(result).not.toHaveProperty('passwordHash');
+      expect(result).not.toHaveProperty('passwordAlgorithm');
     });
   });
 });

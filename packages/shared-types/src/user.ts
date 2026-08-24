@@ -18,8 +18,6 @@ export interface User {
   totpEnabled: boolean;
   failedLoginAttempts: number;
   lockedUntil: Date | null;
-  passwordHash?: string;
-  passwordAlgorithm?: string;
   emailVerifiedAt: Date | null;
   lastLoginAt: Date | null;
   lastLoginWorkstationId: string | null;

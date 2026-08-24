@@ -1391,8 +1391,8 @@ export class AuthService {
       totpEnabled: dbUser.totpEnabled,
       failedLoginAttempts: dbUser.failedLoginAttempts,
       lockedUntil: dbUser.lockedUntil,
-      passwordHash: dbUser.passwordHash ?? undefined,
-      passwordAlgorithm: dbUser.passwordAlgorithm ?? undefined,
+      // Credential material must never leave the server. Offline login uses
+      // the encrypted credentialVerificationKey issued alongside this DTO.
       emailVerifiedAt: dbUser.emailVerifiedAt,
       lastLoginAt: dbUser.lastLoginAt,
       lastLoginWorkstationId: dbUser.lastLoginWorkstationId ?? null,
