@@ -56,9 +56,6 @@ export const es = {
     subtitle: "Acceso al panel de administración",
     identifier: "Correo o usuario",
     secret: "Contraseña",
-    workstationId: "Terminal (workstationId)",
-    workstationHint:
-      "Usa el código del terminal registrado (ej. ws_principal).",
     submit: "Ingresar",
     invalid: "Credenciales inválidas o cuenta inactiva",
     twoFactorTitle: "Verificación en dos pasos",

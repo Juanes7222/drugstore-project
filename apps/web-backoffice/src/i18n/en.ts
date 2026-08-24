@@ -58,8 +58,6 @@ export const en: typeof es = {
     subtitle: "Admin panel access",
     identifier: "Email or username",
     secret: "Password",
-    workstationId: "Terminal (workstationId)",
-    workstationHint: "Use the registered terminal code (e.g. ws_principal).",
     submit: "Sign in",
     invalid: "Invalid credentials or inactive account",
     twoFactorTitle: "Two-factor verification",

@@ -28,7 +28,6 @@ import { getFirebaseAuth, isFirebaseConfigured } from "../services/firebase";
 const LOGIN_SCHEMA = z.object({
   identifier: z.string().min(1),
   secret: z.string().min(1),
-  workstationId: z.string().min(1),
 });
 
 type LoginFormValues = z.infer<typeof LOGIN_SCHEMA>;
@@ -88,7 +87,6 @@ export function LoginPage() {
     defaultValues: {
       identifier: "",
       secret: "",
-      workstationId: "ws_principal",
     },
   });
 
@@ -310,17 +308,6 @@ export function LoginPage() {
                   {...loginForm.register("secret")}
                   error={Boolean(loginForm.formState.errors.secret)}
                   helperText={loginForm.formState.errors.secret?.message}
-                />
-                <TextField
-                  label={t("login.workstationId")}
-                  fullWidth
-                  margin="normal"
-                  {...loginForm.register("workstationId")}
-                  error={Boolean(loginForm.formState.errors.workstationId)}
-                  helperText={
-                    loginForm.formState.errors.workstationId?.message ??
-                    t("login.workstationHint")
-                  }
                 />
                 <Button
                   type="submit"

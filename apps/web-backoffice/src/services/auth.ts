@@ -5,7 +5,6 @@ import type { FirebaseWebConfig } from "./firebase";
 export interface LoginCredentials {
   identifier: string;
   secret: string;
-  workstationId: string;
 }
 
 export async function login(
@@ -15,7 +14,8 @@ export async function login(
     identifier: credentials.identifier,
     secret: credentials.secret,
     sessionType: "PASSWORD",
-    workstationId: credentials.workstationId,
+    // No workstationId: backoffice sessions resolve the shared WEB_ADMIN
+    // virtual workstation server-side, same as the Firebase flow.
     deviceInfo: `web-backoffice/${navigator.userAgent ?? "unknown"}`,
   });
   return data;
