@@ -14,6 +14,11 @@ const config: JestConfigWithTsJest = {
     '^@pharmacy/shared-validation$':
       '<rootDir>/../../packages/shared-validation/src/index.ts',
     '^@pharmacy/database$': '<rootDir>/../../packages/database/src/index.ts',
+    // Scoped to the generated enums module only (standalone, no client
+    // machinery) so test helpers can read real enum values without
+    // loading the full generated Prisma client.
+    '^@pharmacy/database/enums$':
+      '<rootDir>/../../packages/database/generated/full-client/enums.ts',
     '^@pharmacy/infisical-config$':
       '<rootDir>/../../packages/infisical-config/src/index.ts',
   },
