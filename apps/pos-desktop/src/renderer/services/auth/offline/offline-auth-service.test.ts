@@ -383,29 +383,34 @@ describe("OfflineAuthService", () => {
         },
       ];
 
-      vi.mocked(mockHttpClient.postWithAuth).mockResolvedValue([
-        { localSessionId: "sess-1", status: "BLESSED" },
-      ]);
+      vi.mocked(mockHttpClient.postWithAuth).mockResolvedValue({
+        results: [{ localSessionId: "sess-1", status: "BLESSED" }],
+      });
 
       const results = await service.blessPendingSessions(sessions, "access-token-123");
 
       expect(mockHttpClient.postWithAuth).toHaveBeenCalledWith(
         "/auth/offline-sessions/bless",
         {
-          sessions: [
-            {
+          pendingSessions: [
+            expect.objectContaining({
               localSessionId: "sess-1",
               userId: "user-1",
-              username: "cajero1",
-              role: "CASHIER",
-              offlineToken: "token-1",
+              offlineTokenJwt: "token-1",
               workstationFingerprint: "ws-1",
               createdAt: "2026-07-15T10:00:00.000Z",
-            },
+            }),
           ],
         },
         "access-token-123",
       );
+
+      // username/role/offlineToken must not leak onto the wire payload
+      const wirePayload = vi.mocked(mockHttpClient.postWithAuth).mock
+        .calls[0][1] as { pendingSessions: Array<Record<string, unknown>> };
+      expect(wirePayload.pendingSessions[0]).not.toHaveProperty("username");
+      expect(wirePayload.pendingSessions[0]).not.toHaveProperty("role");
+      expect(wirePayload.pendingSessions[0]).not.toHaveProperty("offlineToken");
 
       expect(results).toHaveLength(1);
       expect(results[0].status).toBe("BLESSED");
@@ -428,9 +433,11 @@ describe("OfflineAuthService", () => {
         },
       ];
 
-      vi.mocked(mockHttpClient.postWithAuth).mockResolvedValue([
-        { localSessionId: "sess-1", status: "REJECTED", reason: "USER_DISABLED" },
-      ]);
+      vi.mocked(mockHttpClient.postWithAuth).mockResolvedValue({
+        results: [
+          { localSessionId: "sess-1", status: "REJECTED", reason: "USER_DISABLED" },
+        ],
+      });
 
       const results = await service.blessPendingSessions(sessions, "token");
 

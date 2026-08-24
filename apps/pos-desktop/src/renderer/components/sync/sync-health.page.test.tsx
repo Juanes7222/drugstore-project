@@ -61,7 +61,6 @@ const mockMetricsService = {
 
 const mockRecoveryService = {
   retryEntry: vi.fn(),
-  discardEntry: vi.fn(),
 };
 
 // ---------------------------------------------------------------------------

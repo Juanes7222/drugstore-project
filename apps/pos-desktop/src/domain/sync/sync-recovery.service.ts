@@ -4,11 +4,15 @@
  * - retryEntry: resets PERMANENT_FAILURE → PENDING. For SALE_CONFIRMATION /
  *   SHIFT_CLOSURE, regenerates payload from current DB state (re-snapshot);
  *   for other types, reuses original payload.
- * - discardEntry: marks PERMANENT_FAILURE → DISCARDED, excluded from future
- *   push cycles. Server is NOT notified — discards are local-only.
  *
- * Both operations use optimistic concurrency (transaction with status check)
- * and write an audit row to SyncRecoveryLog.
+ * There is deliberately no discard action here: discarding a queued business
+ * movement punches an unrecoverable hole in the per-workstation movement
+ * sequence (sales carry a sequential localNumber), so users can no longer
+ * discard entries from any UI. The DISCARDED status remains defined for
+ * historical rows and server-side integrity verification only.
+ *
+ * retryEntry uses optimistic concurrency (transaction with status check)
+ * and writes an audit row to SyncRecoveryLog.
  */
 
 import type { PrismaClient } from '@pharmacy/database/local';
@@ -36,7 +40,8 @@ export class EntryNotReplayableException extends DomainError {
   constructor(entryId: string, reason: string) {
     super(
       'ENTRY_NOT_REPLAYABLE',
-      `Sync entry ${entryId} cannot be replayed: ${reason}. Use Discard instead.`,
+      `Sync entry ${entryId} cannot be replayed: ${reason}. ` +
+      'Review the entry\u2019s last error; it must be resolved administratively.',
     );
   }
 }
@@ -57,17 +62,6 @@ export interface SyncRecoveryService {
     entryId: string,
     actorUserId: string,
   ): Promise<{ id: string; status: string; payloadResnapshotted: boolean }>;
-
-  discardEntry(
-    entryId: string,
-    reason: string,
-    actorUserId: string,
-  ): Promise<{ id: string; status: string }>;
-
-  discardAllPermanentFailures(
-    reason: string,
-    actorUserId: string,
-  ): Promise<{ discardedCount: number }>;
 }
 
 export interface SyncRecoveryServiceConfig {
@@ -196,105 +190,6 @@ class SyncRecoveryServiceImpl implements SyncRecoveryService {
         if (isPrismaNotFound(err)) throw new EntryStateChangedException(entryId);
         throw err;
       }
-    });
-  }
-
-  async discardEntry(
-    entryId: string,
-    reason: string,
-    actorUserId: string,
-  ): Promise<{ id: string; status: string }> {
-    return this.prisma.$transaction(async (tx) => {
-      const entry = await tx.syncQueue.findUnique({
-        where: { id: entryId },
-        select: { id: true, status: true },
-      });
-
-      if (!entry) throw new EntryStateChangedException(entryId);
-      if (entry.status !== 'PERMANENT_FAILURE') {
-        throw new EntryNotInPermanentFailureException(entryId, entry.status);
-      }
-
-      try {
-        const updated = await tx.syncQueue.update({
-          where: { id: entryId, status: 'PERMANENT_FAILURE' },
-          data: { status: 'DISCARDED', lastErrorMessage: `DISCARDED: ${reason}` },
-        });
-
-        await tx.syncRecoveryLog.create({
-          data: {
-            id: globalThis.crypto.randomUUID(),
-            syncQueueEntryId: entryId,
-            action: 'DISCARD',
-            reason,
-            actorUserId,
-            at: new Date(),
-          },
-        });
-
-        return { id: updated.id, status: updated.status };
-      } catch (err: unknown) {
-        if (isPrismaNotFound(err)) throw new EntryStateChangedException(entryId);
-        throw err;
-      }
-    });
-  }
-
-  async discardAllPermanentFailures(
-    reason: string,
-    actorUserId: string,
-  ): Promise<{ discardedCount: number }> {
-    if (reason.trim().length === 0) {
-      throw new DomainError(
-        'DISCARD_REASON_REQUIRED',
-        'A discard reason is required',
-      );
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const entries = await tx.syncQueue.findMany({
-        where: { status: 'PERMANENT_FAILURE' },
-        select: { id: true },
-      });
-
-      if (entries.length === 0) {
-        return { discardedCount: 0 };
-      }
-
-      const at = new Date();
-      const errorMessage = `DISCARDED: ${reason}`;
-      let discardedCount = 0;
-
-      // Per-row updates with status in the where clause: a concurrent
-      // discard (another operator, or a retry that just succeeded) will
-      // cause P2025 here, which we treat as "already moved" and skip.
-      // This keeps the discardedCount honest under contention.
-      for (const entry of entries) {
-        try {
-          await tx.syncQueue.update({
-            where: { id: entry.id, status: 'PERMANENT_FAILURE' },
-            data: { status: 'DISCARDED', lastErrorMessage: errorMessage },
-          });
-
-          await tx.syncRecoveryLog.create({
-            data: {
-              id: crypto.randomUUID(),
-              syncQueueEntryId: entry.id,
-              action: 'DISCARD',
-              reason,
-              actorUserId,
-              at,
-            },
-          });
-
-          discardedCount += 1;
-        } catch (err: unknown) {
-          if (isPrismaNotFound(err)) continue;
-          throw err;
-        }
-      }
-
-      return { discardedCount };
     });
   }
 }

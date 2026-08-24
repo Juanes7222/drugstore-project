@@ -3,7 +3,11 @@
  *
  * Uses design-system tokens, shared ui/icons components, motion staggered entrance,
  * and truncated error messages to avoid leaking stack traces. Admin-level
- * actions (retry, discard) render only for ADMIN roles.
+ * retry action renders only for ADMIN roles.
+ *
+ * There is deliberately no discard/delete action: queued business movements
+ * must never be discarded from the UI (discarding would punch an
+ * unrecoverable hole in the per-workstation movement sequence).
  *
  * @category Component
  */
@@ -11,7 +15,7 @@
 import { type FC, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import { ArrowUpDownIcon, ChevronDownIcon, ChevronUpIcon, RefreshCwIcon, RotateCwIcon, Trash2Icon } from "@/components/ui/icons";
+import { ArrowUpDownIcon, ChevronDownIcon, ChevronUpIcon, RefreshCwIcon, RotateCwIcon } from "@/components/ui/icons";
 import type { PermanentFailureEntry } from "../../../domain/sync/sync-metrics.service";
 import { RoleType } from "@pharmacy/shared-types";
 import { formatRelativeTimeEs } from "../../hooks/use-relative-time";
@@ -30,10 +34,9 @@ interface EntriesSectionProps {
   selectedCategory: string | null;
   showDiscarded: boolean;
   retryDisabledMessage?: string;
-  sessionRole: string | undefined;
+   sessionRole: string | undefined;
   onSort: (field: SortField) => void;
   onRetry?: (entryId: string) => void;
-  onDiscard: (entryId: string) => void;
   onSelect: (entry: PermanentFailureEntry) => void;
   onLoadMore: () => void;
   onRefresh: () => void;
@@ -74,10 +77,9 @@ export const EntriesSection: FC<EntriesSectionProps> = ({
   selectedCategory,
   showDiscarded,
   retryDisabledMessage,
-  sessionRole,
+   sessionRole,
   onSort,
   onRetry,
-  onDiscard,
   onSelect,
   onLoadMore,
   onRefresh,
@@ -88,7 +90,6 @@ export const EntriesSection: FC<EntriesSectionProps> = ({
 
   const handleSort = useCallback((field: SortField) => () => onSort(field), [onSort]);
   const handleRetry = useCallback((entryId: string) => () => onRetry?.(entryId), [onRetry]);
-  const handleDiscard = useCallback((entryId: string) => () => onDiscard(entryId), [onDiscard]);
   const handleSelect = useCallback((entry: PermanentFailureEntry) => () => onSelect(entry), [onSelect]);
   const handleLoadMore = useCallback(() => onLoadMore(), [onLoadMore]);
   const handleRefresh = useCallback(() => onRefresh(), [onRefresh]);
@@ -195,6 +196,8 @@ export const EntriesSection: FC<EntriesSectionProps> = ({
                       {isAdmin && (
                         <td className="whitespace-nowrap px-4 py-3">
                           <div className="flex items-center gap-2">
+                            {/* Retry now — requeues the entry and forces an
+                                immediate push attempt. Never deletes it. */}
                             <button
                               type="button"
                               onClick={handleRetry(entry.id)}
@@ -207,16 +210,7 @@ export const EntriesSection: FC<EntriesSectionProps> = ({
                               ) : (
                                 <RotateCwIcon className="h-3 w-3" aria-hidden="true" />
                               )}
-                              {isLoading ? t("common.loading") : t("common.retry")}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleDiscard(entry.id)}
-                              disabled={isLoading || actionLoading !== null}
-                              className="inline-flex items-center gap-1 rounded px-2 py-1 text-caption font-medium text-error transition-colors hover:bg-error-container focus:outline-none focus:ring-2 focus:ring-error disabled:cursor-not-allowed disabled:text-ink-muted/40 disabled:hover:bg-transparent"
-                            >
-                              <Trash2Icon className="h-3 w-3" aria-hidden="true" />
-                              {t("sync.discard")}
+                              {isLoading ? t("common.loading") : t("sync.retry_now")}
                             </button>
                           </div>
                         </td>

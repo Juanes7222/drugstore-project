@@ -169,6 +169,35 @@ vi.mock("../../infrastructure/config", () => ({
   WORKSTATION_ID: "ws_principal",
 }));
 
+// Mock the local database (post-reconnect integrity check reads the queue)
+const { getLocalDatabaseMock } = vi.hoisted(() => ({
+  getLocalDatabaseMock: vi.fn(),
+}));
+
+vi.mock("../../infrastructure/local-database", () => ({
+  getLocalDatabase: getLocalDatabaseMock,
+}));
+
+// Mock the integrity verification so reconnect flows never hit PGlite/network
+const { runSyncIntegrityVerificationMock } = vi.hoisted(() => ({
+  runSyncIntegrityVerificationMock: vi.fn(),
+}));
+
+vi.mock("../../domain/sync/sync-integrity.service", () => ({
+  runSyncIntegrityVerification: runSyncIntegrityVerificationMock,
+}));
+
+vi.mock("../../domain/sync/sync-integrity.store", () => ({
+  useSyncIntegrityStore: {
+    getState: vi.fn(() => ({
+      reviewRequiredCount: null,
+      checkedAt: null,
+      setReviewRequired: vi.fn(),
+      clearReviewRequired: vi.fn(),
+    })),
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -225,6 +254,15 @@ describe("useOfflineAuth", () => {
 
     // Default online status mock (browser is online)
     useOnlineStatusMock.mockReturnValue(true);
+
+    // Default integrity verification: zero flagged operations
+    runSyncIntegrityVerificationMock.mockResolvedValue({
+      operationCount: 0,
+      flaggedCount: 0,
+      byVerdict: { OK: 0, NOT_SUBMITTED: 0, NOT_ACCEPTED: 0, STATUS_MISMATCH: 0 },
+      checkedAt: null,
+    });
+    getLocalDatabaseMock.mockResolvedValue({ prisma: {} });
 
     // Default auth service mock for getOfflineSessionStore
     authServiceMock.getOfflineSessionStore.mockReturnValue({
@@ -591,6 +629,18 @@ describe("useOfflineAuth", () => {
       // Wait for the async effect to settle
       await waitFor(() => {
         expect(authServiceMock.blessPendingSessions).toHaveBeenCalled();
+      });
+
+      // Blessing success chains into the post-reconnect integrity check
+      // (fire-and-forget, must never block or fail the reconnect flow).
+      await waitFor(() => {
+        expect(runSyncIntegrityVerificationMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            baseUrl: "http://test",
+            accessToken: "test-token",
+            workstationId: "ws-1",
+          }),
+        );
       });
     });
 

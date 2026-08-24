@@ -41,7 +41,6 @@ describe("EntriesSection", () => {
     sessionRole: "ADMIN",
     onSort: vi.fn(),
     onRetry: vi.fn(),
-    onDiscard: vi.fn(),
     onSelect: vi.fn(),
     onLoadMore: vi.fn(),
     onRefresh: vi.fn(),
@@ -160,48 +159,37 @@ describe("EntriesSection", () => {
 
   // ── Admin column ──────────────────────────────────────────────────
 
-  it("renders Reintentar and Discard buttons for ADMIN role", () => {
+  it("renders the 'Reintentar ahora' button for ADMIN role and no Discard button", () => {
     render(
       <EntriesSection {...baseProps} sessionRole="ADMIN" />,
     );
 
-    const retryButtons = screen.getAllByText("Reintentar");
-    const discardButtons = screen.getAllByText("Descartar");
+    const retryButtons = screen.getAllByText("Reintentar ahora");
     expect(retryButtons).toHaveLength(2);
-    expect(discardButtons).toHaveLength(2);
+    // Discard was removed by product decision — queued movements must
+    // never be deletable from the UI.
+    expect(screen.queryByText("Descartar")).not.toBeInTheDocument();
   });
 
-  it("does NOT render Reintentar/Discard for non-ADMIN role", () => {
+  it("does NOT render 'Reintentar ahora' for non-ADMIN role", () => {
     render(
       <EntriesSection {...baseProps} sessionRole="CASHIER" />,
     );
 
-    expect(screen.queryByText("Reintentar")).not.toBeInTheDocument();
-    expect(screen.queryByText("Descartar")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reintentar ahora")).not.toBeInTheDocument();
   });
 
   // ── Action interactions ───────────────────────────────────────────
 
-  it("calls onRetry when Reintentar button is clicked", async () => {
+  it("calls onRetry when 'Reintentar ahora' button is clicked", async () => {
     const user = userEvent.setup();
     const onRetry = vi.fn();
 
     render(<EntriesSection {...baseProps} onRetry={onRetry} />);
 
-    const retryButtons = screen.getAllByText("Reintentar");
+    const retryButtons = screen.getAllByText("Reintentar ahora");
     await user.click(retryButtons[0]);
     expect(onRetry).toHaveBeenCalledWith("entry-001");
-  });
-
-  it("calls onDiscard when Discard button is clicked", async () => {
-    const user = userEvent.setup();
-    const onDiscard = vi.fn();
-
-    render(<EntriesSection {...baseProps} onDiscard={onDiscard} />);
-
-    const discardButtons = screen.getAllByText("Descartar");
-    await user.click(discardButtons[0]);
-    expect(onDiscard).toHaveBeenCalledWith("entry-001");
   });
 
   it("calls onSelect when the preview link is clicked", async () => {
@@ -230,29 +218,20 @@ describe("EntriesSection", () => {
     );
 
     expect(screen.getByText("Cargando...")).toBeInTheDocument();
-    // The other entry still shows "Reintentar"
-    expect(screen.getByText("Reintentar")).toBeInTheDocument();
+    // The other entry still shows "Reintentar ahora"
+    expect(screen.getByText("Reintentar ahora")).toBeInTheDocument();
   });
 
-  it("disables Reintentar button when another entry is being retried", () => {
+  it("disables 'Reintentar ahora' button when another entry is being retried", () => {
     render(
       <EntriesSection {...baseProps} actionLoading="entry-001" />,
     );
 
-    const retryButtons = screen.getAllByText("Reintentar");
+    const retryButtons = screen.getAllByText("Reintentar ahora");
     expect(retryButtons[0]).toBeDisabled();
   });
 
-  it("disables Discard button when actionLoading is active", () => {
-    render(
-      <EntriesSection {...baseProps} actionLoading="entry-001" />,
-    );
-
-    const discardButtons = screen.getAllByText("Descartar");
-    expect(discardButtons[0]).toBeDisabled();
-  });
-
-  it("shows retryDisabledMessage as tooltip and disables Reintentar", () => {
+  it("shows retryDisabledMessage as tooltip and disables 'Reintentar ahora'", () => {
     render(
       <EntriesSection
         {...baseProps}
@@ -260,7 +239,7 @@ describe("EntriesSection", () => {
       />,
     );
 
-    const retryButtons = screen.getAllByText("Reintentar");
+    const retryButtons = screen.getAllByText("Reintentar ahora");
     retryButtons.forEach((btn) => {
       expect(btn).toBeDisabled();
       expect(btn.closest("button")).toHaveAttribute(

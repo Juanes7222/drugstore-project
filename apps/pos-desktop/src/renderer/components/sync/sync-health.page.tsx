@@ -42,6 +42,8 @@ import { useAppDispatch } from "@/store/hooks";
 import { navigateToRecovery } from "@/store/slices/ui-slice";
 import type { PrismaClient } from "@pharmacy/database/local";
 import { downloadBlob } from "../../../common/download";
+import { useTranslation } from "react-i18next";
+import { useSyncIntegrityStore } from "../../../domain/sync/sync-integrity.store";
 
 // ── Presentational components (provided by frontend-pos) ────────────────
 import type { ConnectionStatus, SortField, SortDir } from "./sync-health.types";
@@ -56,7 +58,6 @@ import { FailureBreakdownPanel } from "./failure-breakdown-panel";
 import { AllClearBanner } from "./all-clear-banner";
 import { EntriesSection } from "./entries-section";
 import { EntryDetailDrawer } from "./entry-detail-drawer";
-import { DiscardEntryModal } from "./discard-entry-modal";
 
 // ── Constants ───────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ const TIMELINE_HOURS = 24;
 
 export const SyncHealthPage: FC = () => {
   const dispatch = useAppDispatch();
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,12 +88,13 @@ export const SyncHealthPage: FC = () => {
   const [drawerEntry, setDrawerEntry] = useState<PermanentFailureEntry | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: "success" | "error" | "info"; message: string } | null>(null);
-  const [discardModal, setDiscardModal] = useState<{ id: string } | null>(null);
-  const [discardReason, setDiscardReason] = useState("");
-  const [discardSubmitting, setDiscardSubmitting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({ type: null });
   const [retryWithoutCheck, setRetryWithoutCheck] = useState(false);
   const [showDiscarded, setShowDiscarded] = useState(false);
+
+  // Advisory count from the last post-reconnect integrity verification.
+  // Read-only: verdicts never mutate local queue data.
+  const integrityReviewCount = useSyncIntegrityStore((s) => s.reviewRequiredCount);
 
   const servicesRef = useRef<{
     metricsService: ReturnType<typeof createSyncMetricsService> | null;
@@ -251,6 +254,29 @@ export const SyncHealthPage: FC = () => {
 
   // ── Entry actions ────────────────────────────────────────────────────
 
+  /**
+   * Force one immediate push cycle so a freshly requeued entry is attempted
+   * right away instead of waiting for the next scheduled tick.
+   */
+  const runPushCycleNow = useCallback(async (): Promise<void> => {
+    const { createSyncScheduler } = await import("../../../domain/sync/sync-scheduler.service");
+    const { prisma: rawPrisma } = await getLocalDatabase();
+    const prisma = rawPrisma as PrismaClient;
+    const session = useLocalSessionStore.getState().session;
+    const accessToken = session?.accessToken;
+    const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
+    const scheduler = createSyncScheduler({
+      prisma,
+      baseUrl,
+      accessToken,
+      config: { baseUrl, accessToken },
+      catalog: { baseUrl, accessToken },
+      lots: { baseUrl, accessToken },
+      clients: { baseUrl, accessToken },
+    });
+    await scheduler.syncNow();
+  }, []);
+
   const handleRetry = useCallback(
     async (entryId: string) => {
       const session = useLocalSessionStore.getState().session;
@@ -274,6 +300,18 @@ export const SyncHealthPage: FC = () => {
             ? "Entry queued for retry (payload re-snapshotted from current state)"
             : "Entry queued for retry (original payload preserved)",
         );
+        // Retry now: force an immediate push attempt for the entry. A
+        // transport failure here is not fatal — the entry stays PENDING
+        // for the next cycle — but surface it so the operator knows.
+        try {
+          await runPushCycleNow();
+          showToast("success", "Immediate push attempted");
+        } catch (pushErr) {
+          showToast(
+            "info",
+            pushErr instanceof Error ? pushErr.message : "Immediate push failed",
+          );
+        }
         await loadData();
       } catch (err) {
         if (err instanceof EntryStateChangedException) {
@@ -283,7 +321,8 @@ export const SyncHealthPage: FC = () => {
           showToast("error", (err as DomainError).message);
           await loadData();
         } else if (err instanceof EntryNotReplayableException) {
-          showToast("error", `${(err as DomainError).message} Use Discard instead.`);
+          // Not retryable — show the last error; the entry is never deleted.
+          showToast("error", (err as DomainError).message);
         } else {
           showToast("error", err instanceof Error ? err.message : "Retry failed");
         }
@@ -291,48 +330,8 @@ export const SyncHealthPage: FC = () => {
         setActionLoading(null);
       }
     },
-    [loadData],
+    [loadData, runPushCycleNow],
   );
-
-  const openDiscard = useCallback((entryId: string) => {
-    setDiscardModal({ id: entryId });
-    setDiscardReason("");
-  }, []);
-
-  const submitDiscard = useCallback(async () => {
-    if (!discardModal) return;
-    const session = useLocalSessionStore.getState().session;
-    if (!session) return;
-    if ((session.role as RoleType) !== RoleType.ADMIN) {
-      showToast("error", "Only ADMIN can discard sync entries");
-      return;
-    }
-    if (!discardReason.trim()) {
-      showToast("error", "A discard reason is required");
-      return;
-    }
-
-    setDiscardSubmitting(true);
-    try {
-      const rs = servicesRef.current.recoveryService;
-      if (!rs) throw new Error("Services not ready");
-      await rs.discardEntry(discardModal.id, discardReason.trim(), session.userId);
-      showToast("success", "Entry discarded");
-      setDiscardModal(null);
-      await loadData();
-    } catch (err) {
-      if (err instanceof EntryStateChangedException) {
-        showToast("error", "This entry was just actioned by someone else.");
-        await loadData();
-      } else if (err instanceof Error) {
-        showToast("error", err.message);
-      } else {
-        showToast("error", "Discard failed");
-      }
-    } finally {
-      setDiscardSubmitting(false);
-    }
-  }, [discardModal, discardReason, loadData]);
 
   // ── Export actions ───────────────────────────────────────────────────
 
@@ -376,28 +375,13 @@ export const SyncHealthPage: FC = () => {
 
   const handleRunSyncNow = useCallback(async () => {
     try {
-      const { createSyncScheduler } = await import("../../../domain/sync/sync-scheduler.service");
-      const { prisma: rawPrisma } = await getLocalDatabase();
-      const prisma = rawPrisma as PrismaClient;
-      const session = useLocalSessionStore.getState().session;
-      const accessToken = session?.accessToken;
-      const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
-      const scheduler = createSyncScheduler({
-        prisma,
-        baseUrl,
-        accessToken,
-        config: { baseUrl, accessToken },
-        catalog: { baseUrl, accessToken },
-        lots: { baseUrl, accessToken },
-        clients: { baseUrl, accessToken },
-      });
-      await scheduler.syncNow();
+      await runPushCycleNow();
       showToast("success", "Sync cycle completed");
       await loadData();
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Sync cycle failed");
     }
-  }, [loadData]);
+  }, [loadData, runPushCycleNow]);
 
   // ── Toast helper ─────────────────────────────────────────────────────
 
@@ -440,6 +424,13 @@ export const SyncHealthPage: FC = () => {
     <section className="flex h-full overflow-hidden bg-slate-50">
       <div className="flex-1 overflow-y-auto p-6">
         <h1 className="mb-6 text-2xl font-bold text-gray-800">Sync Health</h1>
+
+        {integrityReviewCount !== null && integrityReviewCount > 0 && (
+          <SyncHealthToast
+            type="info"
+            message={t("sync.integrity_review_banner", { count: integrityReviewCount })}
+          />
+        )}
 
         {toast && <SyncHealthToast type={toast.type} message={toast.message} />}
 
@@ -495,7 +486,6 @@ export const SyncHealthPage: FC = () => {
             }
           }}
           onRetry={handleRetry}
-          onDiscard={openDiscard}
           onSelect={setDrawerEntry}
           onLoadMore={loadMore}
           onRefresh={loadData}
@@ -504,17 +494,6 @@ export const SyncHealthPage: FC = () => {
 
       {drawerEntry && (
         <EntryDetailDrawer entry={drawerEntry} onClose={() => setDrawerEntry(null)} />
-      )}
-
-      {discardModal && (
-        <DiscardEntryModal
-          entryId={discardModal.id}
-          discardReason={discardReason}
-          onDiscardReasonChange={setDiscardReason}
-          isSubmitting={discardSubmitting}
-          onSubmit={submitDiscard}
-          onCancel={() => setDiscardModal(null)}
-        />
       )}
     </section>
   );

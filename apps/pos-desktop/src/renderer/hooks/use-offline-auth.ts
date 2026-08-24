@@ -39,6 +39,12 @@ import {
 } from '../services/auth/offline/offline-auth-service';
 import { API_BASE_URL, WORKSTATION_ID } from '../../infrastructure/config';
 import { createAuthHttpClient } from '../../domain/auth/auth-http-client';
+import { getLocalDatabase } from '../../infrastructure/local-database';
+import type { PrismaClient } from '@pharmacy/database/local';
+import {
+  runSyncIntegrityVerification,
+} from '../../domain/sync/sync-integrity.service';
+import { useSyncIntegrityStore } from '../../domain/sync/sync-integrity.store';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -128,7 +134,11 @@ export function useOfflineAuth(): UseOfflineAuthReturn {
       // Check actual server reachability and trigger blessing if connected.
       checkConnectionStateInternal().then((isConnected) => {
         if (isConnected) {
-          triggerBlessingInternal();
+          // Blessing first, then the read-only ledger integrity check.
+          // Fire-and-forget: neither may block the reconnect flow.
+          void triggerBlessingInternal()
+            .catch(() => undefined)
+            .then(() => runPostReconnectIntegrityCheck());
         }
       });
     }
@@ -171,6 +181,48 @@ export function useOfflineAuth(): UseOfflineAuthReturn {
   const checkConnectionState = useCallback(async (): Promise<void> => {
     await checkConnectionStateInternal();
   }, [checkConnectionStateInternal]);
+
+  // ------------------------------------------------------------------
+  // Post-reconnect ledger integrity verification
+  // ------------------------------------------------------------------
+
+  /**
+   * Report the full local sync queue to the server for integrity
+   * verification after a successful reconnect/relogin. Fire-and-forget:
+   * any failure is swallowed (warn only) and must never block login.
+   * Verdicts never mutate local data — they only raise the advisory
+   * review count in the sync-integrity store.
+   */
+  const runPostReconnectIntegrityCheck = useCallback(async (): Promise<void> => {
+    try {
+      const session = useLocalSessionStore.getState().session;
+      if (!session?.accessToken || !session.workstationId) {
+        return;
+      }
+
+      const { prisma: rawPrisma } = await getLocalDatabase();
+      const outcome = await runSyncIntegrityVerification({
+        prisma: rawPrisma as PrismaClient,
+        baseUrl: API_BASE_URL,
+        accessToken: session.accessToken,
+        workstationId: session.workstationId,
+      });
+
+      if (outcome.flaggedCount > 0) {
+        useSyncIntegrityStore
+          .getState()
+          .setReviewRequired(outcome.flaggedCount, outcome.checkedAt);
+      } else {
+        useSyncIntegrityStore.getState().clearReviewRequired();
+      }
+    } catch (err) {
+      // Advisory-only check — a failed verification is logged and dropped.
+      console.warn(
+        '[SyncIntegrity] post-reconnect verification failed:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }, []);
 
   // ------------------------------------------------------------------
   // triggerBlessing
@@ -267,7 +319,10 @@ export function useOfflineAuth(): UseOfflineAuthReturn {
    */
   const triggerBlessing = useCallback(async (): Promise<void> => {
     await triggerBlessingInternal();
-  }, [triggerBlessingInternal]);
+    // Manual blessing path (e.g. pending-blessing modal) also refreshes
+    // the integrity verdict — fire-and-forget.
+    void runPostReconnectIntegrityCheck();
+  }, [triggerBlessingInternal, runPostReconnectIntegrityCheck]);
 
   // ------------------------------------------------------------------
   // attemptOfflineLogin

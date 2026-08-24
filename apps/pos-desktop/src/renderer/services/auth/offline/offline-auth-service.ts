@@ -62,6 +62,14 @@ const OFFLINE_TOKEN_KEY_PREFIX = 'offline_token_';
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * Envelope returned by `POST /auth/offline-sessions/bless`
+ * (`BlessingResponseSchema` in apps/server's blessing.dto.ts).
+ */
+interface BlessingResponse {
+  results: BlessingResult[];
+}
+
 export interface OfflineAuthService {
   /**
    * Attempt an offline-first login using cached credentials.
@@ -324,21 +332,28 @@ export function createOfflineAuthService(config: {
       pendingSessions: OfflineSession[],
       accessToken: string,
     ): Promise<BlessingResult[]> => {
-      const payload = pendingSessions.map((s: OfflineSession) => ({
-        localSessionId: s.localSessionId,
-        userId: s.userId,
-        username: s.username,
-        role: s.role,
-        offlineToken: s.offlineToken,
-        workstationFingerprint: s.workstationFingerprint,
-        createdAt: s.createdAt.toISOString(),
-      }));
+      // Wire contract (BlessingRequestSchema): the array is keyed as
+      // `pendingSessions`, the token field is `offlineTokenJwt`, and
+      // `createdAt` must be a UTC ISO instant (z.string().datetime()
+      // rejects non-"Z" offsets) — hence Date#toISOString().
+      const payload = {
+        pendingSessions: pendingSessions.map((s: OfflineSession) => ({
+          localSessionId: s.localSessionId,
+          userId: s.userId,
+          offlineTokenJwt: s.offlineToken,
+          workstationFingerprint: s.workstationFingerprint,
+          createdAt: s.createdAt.toISOString(),
+        })),
+      };
 
-      return http.postWithAuth<BlessingResult[]>(
+      // The server wraps per-session outcomes in a `results` envelope;
+      // unwrap it here so callers keep receiving a flat result list.
+      const response = await http.postWithAuth<BlessingResponse>(
         '/auth/offline-sessions/bless',
-        { sessions: payload },
+        payload,
         accessToken,
       );
+      return response.results;
     },
 
     // -----------------------------------------------------------------------

@@ -107,7 +107,8 @@ export interface BlessingResult {
     accessToken: string;
     refreshToken: string;
     offlineToken: string;
-    expiresAt: Date;
+    /** ISO datetime string as sent by the server (JSON carries no Date type). */
+    expiresAt: string;
   };
 }
 

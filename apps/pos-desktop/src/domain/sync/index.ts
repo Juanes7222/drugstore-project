@@ -35,6 +35,22 @@ export {
   type SyncRecoveryServiceConfig,
 } from './sync-recovery.service';
 export {
+  collectSyncIntegrityOperations,
+  createSyncIntegrityClient,
+  mapLocalStatusToWireStatus,
+  runSyncIntegrityVerification,
+  SYNC_INTEGRITY_CHUNK_SIZE,
+  type SyncIntegrityClient,
+  type SyncIntegrityOperation,
+  type SyncIntegrityResponse,
+  type SyncIntegrityResultRow,
+  type SyncIntegrityRunOutcome,
+  type SyncIntegrityVerifyRequest,
+  type SyncIntegrityVerdict,
+  type SyncQueueWireStatus,
+} from './sync-integrity.service';
+export { useSyncIntegrityStore } from './sync-integrity.store';
+export {
   setPushTrigger,
   notifyPendingEntry,
 } from './sync-queue-notifier';
