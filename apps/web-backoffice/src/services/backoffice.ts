@@ -4,6 +4,7 @@ import type {
   DashboardResponse,
   FiscalStatusResponse,
   InventoryAlertsResponse,
+  SaleDetail,
   SalesResponse,
   SessionsResponse,
   SubscriptionsResponse,
@@ -42,6 +43,41 @@ export async function fetchSales(
     },
   });
   return data;
+}
+
+export async function fetchSaleDetail(id: string): Promise<SaleDetail> {
+  const { data } = await api.get<SaleDetail>(`/backoffice/sales/${id}`);
+  return data;
+}
+
+/**
+ * Downloads a CSV export as a file. The server sets Content-Disposition;
+ * the browser-side name falls back to `fallbackName` when absent.
+ */
+export async function downloadCsvExport(
+  path: string,
+  // Callers pass their page's typed filter interfaces; axios serializes
+  // them as query params, so the loose shape stays internal here.
+  params: object,
+  fallbackName: string,
+): Promise<void> {
+  const response = await api.get<Blob>(path, {
+    params,
+    responseType: "blob",
+  });
+  const disposition = String(
+    response.headers["content-disposition"] ?? "",
+  );
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  const blob = new Blob([response.data], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = match?.[1] ?? `${fallbackName}.csv`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export interface CashShiftFilters {

@@ -38,6 +38,8 @@ export const en: typeof es = {
     success: "Operation successful",
     mainNav: "Main navigation",
     dataTable: "Data table",
+    exportCsv: "Export CSV",
+    exportError: "Could not export the file. Please try again.",
   },
   nav: {
     dashboard: "Dashboard",
@@ -176,6 +178,9 @@ export const en: typeof es = {
     tax: "Taxes",
     total: "Total",
     annulmentReason: "Annulment reason",
+    detailTitle: "Sale detail",
+    itemsCountSub: "{{count}} items",
+    qtyUnitLine: "{{count}} × {{price}}",
     summary: "Filter summary",
     summaryCount: "Sales",
     summaryTotal: "Total",

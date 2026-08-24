@@ -36,6 +36,8 @@ export const es = {
     success: "Operación exitosa",
     mainNav: "Navegación principal",
     dataTable: "Tabla de datos",
+    exportCsv: "Exportar CSV",
+    exportError: "No se pudo exportar el archivo. Intenta de nuevo.",
   },
   nav: {
     dashboard: "Panel",
@@ -179,6 +181,9 @@ export const es = {
     tax: "Impuestos",
     total: "Total",
     annulmentReason: "Motivo de anulación",
+    detailTitle: "Detalle de venta",
+    itemsCountSub: "{{count}} artículos",
+    qtyUnitLine: "{{count}} × {{price}}",
     summary: "Resumen del filtro",
     summaryCount: "Ventas",
     summaryTotal: "Total",

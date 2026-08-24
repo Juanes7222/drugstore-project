@@ -103,6 +103,34 @@ export interface SalesResponse extends Paginated<SaleRow> {
   };
 }
 
+export interface SaleDetailItem {
+  id: string;
+  productName: string;
+  quantity: number;
+  unitPrice: string;
+  lineDiscount: string;
+  lineTax: string;
+  lineTotal: string;
+}
+
+export interface SaleDetail {
+  id: string;
+  localNumber: number;
+  internalNumber: string | null;
+  operationalState: string;
+  confirmedAt: string | null;
+  annulledAt: string | null;
+  annulmentReason: string | null;
+  clientNameSnapshot: string | null;
+  subtotal: string;
+  totalDiscount: string;
+  totalTax: string;
+  totalAmount: string;
+  user: { fullName: string; displayName: string | null };
+  workstation: { name: string; code: string };
+  items: SaleDetailItem[];
+}
+
 // ---------------------------------------------------------------------------
 // GET /backoffice/cash-shifts
 // ---------------------------------------------------------------------------

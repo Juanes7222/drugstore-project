@@ -21,6 +21,7 @@ import type { CashShiftRow } from "../types/backoffice";
 import { PageHeader } from "../components/common/page-header";
 import { DataTable } from "../components/tables/data-table";
 import { StatusChip } from "../components/common/status-chip";
+import { ExportButton } from "../components/common/export-button";
 import { LoadingState, ErrorState } from "../components/common/states";
 
 const PAGE_SIZE = 20;
@@ -199,6 +200,13 @@ export function CashShiftsPage() {
       <PageHeader
         title={t("cashShifts.title")}
         subtitle={t("cashShifts.subtitle")}
+        actions={
+          <ExportButton
+            path="/backoffice/cash-shifts/export"
+            params={filters}
+            fallbackName="turnos-caja"
+          />
+        }
       />
 
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>

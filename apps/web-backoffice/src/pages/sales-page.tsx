@@ -5,9 +5,11 @@ import type { ColumnDef } from "@tanstack/react-table";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Grid from "@mui/material/Grid";
+import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import {
   fetchSales,
@@ -20,6 +22,9 @@ import type { SaleRow } from "../types/backoffice";
 import { PageHeader } from "../components/common/page-header";
 import { DataTable } from "../components/tables/data-table";
 import { StatusChip } from "../components/common/status-chip";
+import { ExportButton } from "../components/common/export-button";
+import { SaleDetailDrawer } from "../components/common/sale-detail-drawer";
+import { EyeIcon } from "../components/icons/app-icons";
 import { LoadingState, ErrorState } from "../components/common/states";
 
 const PAGE_SIZE = 20;
@@ -35,6 +40,7 @@ export function SalesPage() {
   const [workstationId, setWorkstationId] = useState("");
   const [applied, setApplied] = useState<SalesFilters>({});
   const [page, setPage] = useState(1);
+  const [detailSaleId, setDetailSaleId] = useState<string | null>(null);
 
   const filters: SalesFilters = useMemo(
     () => ({
@@ -161,13 +167,39 @@ export function SalesPage() {
           </Typography>
         ),
       },
+      {
+        id: "actions",
+        header: t("common.actions"),
+        enableSorting: false,
+        cell: ({ row }) => (
+          <Tooltip title={t("common.view")}>
+            <IconButton
+              size="small"
+              aria-label={`${t("common.view")} #${row.original.localNumber}`}
+              onClick={() => setDetailSaleId(row.original.id)}
+            >
+              <EyeIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ),
+      },
     ],
     [t],
   );
 
   return (
     <Box>
-      <PageHeader title={t("sales.title")} subtitle={t("sales.subtitle")} />
+      <PageHeader
+        title={t("sales.title")}
+        subtitle={t("sales.subtitle")}
+        actions={
+          <ExportButton
+            path="/backoffice/sales/export"
+            params={filters}
+            fallbackName="ventas"
+          />
+        }
+      />
 
       <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
@@ -333,6 +365,12 @@ export function SalesPage() {
           onRetry={() => void refetch()}
         />
       ) : null}
+
+      <SaleDetailDrawer
+        open={detailSaleId !== null}
+        saleId={detailSaleId}
+        onClose={() => setDetailSaleId(null)}
+      />
     </Box>
   );
 }

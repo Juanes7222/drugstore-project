@@ -108,6 +108,7 @@ export function DataTable<T>({
                     <TableCell
                       key={header.id}
                       sortDirection={sortDir}
+                      align={header.column.columnDef.meta?.align}
                       sx={{ fontWeight: 700, whiteSpace: "nowrap" }}
                     >
                       {canSort ? (
@@ -137,7 +138,10 @@ export function DataTable<T>({
             {table.getRowModel().rows.map((row) => (
               <TableRow key={row.id} hover>
                 {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
+                  <TableCell
+                    key={cell.id}
+                    align={cell.column.columnDef.meta?.align}
+                  >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </TableCell>
                 ))}
