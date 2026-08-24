@@ -8,6 +8,7 @@ import { Injectable } from '@nestjs/common';
 import { User } from '@pharmacy/shared-types';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import {
+  Prisma,
   SaleOperationalState,
   ShiftState,
   SessionStatus,
@@ -16,6 +17,7 @@ import {
 import { BackofficeScopeService } from './backoffice-scope.service';
 
 const EXPIRING_LOT_DAYS = 90;
+const SALES_TREND_DAYS = 14;
 
 export interface DashboardResponse {
   period: { from: string; to: string };
@@ -45,6 +47,15 @@ export interface DashboardResponse {
   };
   sync: { permanentFailures: number };
   users: { pendingApproval: number; activeSessions: number };
+  salesTrend: {
+    days: {
+      /** Local calendar day, YYYY-MM-DD */
+      date: string;
+      confirmedCount: number;
+      /** Decimal string, e.g. "0" or "1234.56" */
+      confirmedAmount: string;
+    }[];
+  };
 }
 
 @Injectable()
@@ -65,9 +76,13 @@ export class DashboardService {
       Date.now() + EXPIRING_LOT_DAYS * 24 * 60 * 60 * 1000,
     );
     const userIds = await this.scope.tenantUserIds(user);
+    const trendDayStarts = this.buildTrendDayStarts(dayStart);
+    const trendEnd = new Date(dayStart);
+    trendEnd.setDate(trendEnd.getDate() + 1);
 
     const [
       confirmedToday,
+      trendSales,
       annulledToday,
       openShifts,
       shiftDifferences,
@@ -87,6 +102,14 @@ export class DashboardService {
         },
         _count: { id: true },
         _sum: { totalAmount: true },
+      }),
+      this.prisma.sale.findMany({
+        where: {
+          ...saleScope,
+          confirmedAt: { gte: trendDayStarts[0], lt: trendEnd },
+          operationalState: SaleOperationalState.CONFIRMED,
+        },
+        select: { confirmedAt: true, totalAmount: true },
       }),
       this.prisma.sale.aggregate({
         where: {
@@ -203,6 +226,7 @@ export class DashboardService {
       fiscal: fiscalCounts,
       sync: { permanentFailures },
       users: { pendingApproval: pendingUsers, activeSessions },
+      salesTrend: this.buildSalesTrend(trendSales, trendDayStarts),
     };
   }
 
@@ -210,6 +234,58 @@ export class DashboardService {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     return now;
+  }
+
+  /**
+   * Oldest-first local midnights ending today. setDate (not fixed 24h steps)
+   * keeps every bucket on local midnight across DST transitions.
+   */
+  private buildTrendDayStarts(todayStart: Date): Date[] {
+    const days: Date[] = [];
+    for (let offset = SALES_TREND_DAYS - 1; offset >= 0; offset -= 1) {
+      const day = new Date(todayStart);
+      day.setDate(day.getDate() - offset);
+      days.push(day);
+    }
+    return days;
+  }
+
+  private buildSalesTrend(
+    sales: { confirmedAt: Date | null; totalAmount: Prisma.Decimal }[],
+    dayStarts: Date[],
+  ): DashboardResponse['salesTrend'] {
+    const counts = dayStarts.map(() => 0);
+    const amounts = dayStarts.map(() => new Prisma.Decimal(0));
+    const bucketIndexByMidnight = new Map(
+      dayStarts.map((start, index) => [start.getTime(), index]),
+    );
+
+    for (const sale of sales) {
+      if (sale.confirmedAt === null) continue;
+      // Bucket by the sale's own local-day midnight, not UTC, matching the
+      // startOfLocalDay convention used for the dashboard period.
+      const saleDayMidnight = new Date(sale.confirmedAt);
+      saleDayMidnight.setHours(0, 0, 0, 0);
+      const bucketIndex = bucketIndexByMidnight.get(saleDayMidnight.getTime());
+      if (bucketIndex === undefined) continue;
+      counts[bucketIndex] += 1;
+      amounts[bucketIndex] = amounts[bucketIndex].plus(sale.totalAmount);
+    }
+
+    return {
+      days: dayStarts.map((start, index) => ({
+        date: this.formatLocalDate(start),
+        confirmedCount: counts[index],
+        confirmedAmount: amounts[index].toString(),
+      })),
+    };
+  }
+
+  /** Local YYYY-MM-DD; toISOString would shift the day near UTC offsets. */
+  private formatLocalDate(day: Date): string {
+    const month = String(day.getMonth() + 1).padStart(2, '0');
+    const dayOfMonth = String(day.getDate()).padStart(2, '0');
+    return `${day.getFullYear()}-${month}-${dayOfMonth}`;
   }
 
   private summarizeFiscal(

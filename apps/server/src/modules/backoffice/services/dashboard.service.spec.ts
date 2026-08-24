@@ -6,16 +6,43 @@ import type { PrismaClient } from '@pharmacy/database';
 jest.mock('@/infrastructure/prisma/prisma.service', () => ({
   PrismaService: class {},
 }));
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: class {},
-  SaleOperationalState: { CONFIRMED: 'CONFIRMED', ANNULLED: 'ANNULLED' },
-  ShiftState: { OPEN: 'OPEN' },
-  SessionStatus: { ACTIVE: 'ACTIVE' },
-  UserStatus: { PENDING_SETUP: 'PENDING_SETUP' },
-}));
+jest.mock('@pharmacy/database', () => {
+  class MockTrendDecimal {
+    constructor(private readonly value: number) {}
+
+    plus(addend: MockTrendDecimal | number): MockTrendDecimal {
+      const addendValue =
+        addend instanceof MockTrendDecimal ? addend.valueOf() : addend;
+      return new MockTrendDecimal(this.value + addendValue);
+    }
+
+    valueOf(): number {
+      return this.value;
+    }
+
+    toString(): string {
+      return String(this.value);
+    }
+  }
+
+  return {
+    PrismaClient: class {},
+    Prisma: { Decimal: MockTrendDecimal },
+    SaleOperationalState: { CONFIRMED: 'CONFIRMED', ANNULLED: 'ANNULLED' },
+    ShiftState: { OPEN: 'OPEN' },
+    SessionStatus: { ACTIVE: 'ACTIVE' },
+    UserStatus: { PENDING_SETUP: 'PENDING_SETUP' },
+  };
+});
 
 import { DashboardService } from './dashboard.service';
 import { BackofficeScopeService } from './backoffice-scope.service';
+
+function formatLocalDate(day: Date): string {
+  const month = String(day.getMonth() + 1).padStart(2, '0');
+  const dayOfMonth = String(day.getDate()).padStart(2, '0');
+  return `${day.getFullYear()}-${month}-${dayOfMonth}`;
+}
 
 class FakeDecimal {
   constructor(private readonly value: number) {}
@@ -26,6 +53,16 @@ class FakeDecimal {
 
   toDecimalPlaces(): FakeDecimal {
     return this;
+  }
+
+  plus(addend: FakeDecimal | number): FakeDecimal {
+    const addendValue =
+      addend instanceof FakeDecimal ? addend.valueOf() : addend;
+    return new FakeDecimal(this.value + addendValue);
+  }
+
+  valueOf(): number {
+    return this.value;
   }
 
   toString(): string {
@@ -94,6 +131,7 @@ describe('DashboardService', () => {
         _count: { id: 1 },
         _sum: { totalAmount: new FakeDecimal(50) },
       });
+    prisma.sale.findMany.mockResolvedValue([]);
     prisma.cashShift.count.mockResolvedValue(3);
     prisma.cashShift.aggregate.mockResolvedValue({
       _count: { id: 4 },
@@ -291,6 +329,77 @@ describe('DashboardService', () => {
       });
       expect(result.sync).toEqual({ permanentFailures: 6 });
       expect(result.users).toEqual({ pendingApproval: 7, activeSessions: 8 });
+    });
+
+    it('merges the sale tenant scope into the 14-day trend query', async () => {
+      await service.getDashboard(buildUser());
+
+      expect(prisma.sale.findMany).toHaveBeenCalledTimes(1);
+      expect(prisma.sale.findMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          cashShift: { subscriptionId: 'sub-1' },
+          confirmedAt: { gte: expect.any(Date), lt: expect.any(Date) },
+          operationalState: 'CONFIRMED',
+        }),
+        select: { confirmedAt: true, totalAmount: true },
+      });
+
+      const { gte, lt } = (prisma.sale.findMany.mock.calls[0][0] as {
+        where: { confirmedAt: { gte: Date; lt: Date } };
+      }).where.confirmedAt;
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      expect(lt.getTime() - gte.getTime()).toBe(14 * DAY_MS);
+    });
+
+    it('returns 14 zero-filled days ascending ending today when no sales exist', async () => {
+      prisma.sale.findMany.mockResolvedValue([]);
+
+      const result = await service.getDashboard(buildUser());
+      const days = result.salesTrend.days;
+
+      expect(days).toHaveLength(14);
+      days.forEach((day) => {
+        expect(day.confirmedCount).toBe(0);
+        expect(day.confirmedAmount).toBe('0');
+      });
+
+      const today = formatLocalDate(new Date());
+      const oldest = new Date();
+      oldest.setDate(oldest.getDate() - 13);
+      expect(days[13].date).toBe(today);
+      expect(days[0].date).toBe(formatLocalDate(oldest));
+
+      for (let i = 1; i < days.length; i += 1) {
+        expect(days[i].date > days[i - 1].date).toBe(true);
+      }
+    });
+
+    it('buckets trend sales by local day with decimal-string amounts', async () => {
+      const todaySaleTime = new Date();
+      todaySaleTime.setHours(10, 30, 0, 0);
+      const yesterdaySaleTime = new Date(todaySaleTime);
+      yesterdaySaleTime.setDate(yesterdaySaleTime.getDate() - 1);
+
+      prisma.sale.findMany.mockResolvedValue([
+        { confirmedAt: todaySaleTime, totalAmount: new FakeDecimal(100) },
+        { confirmedAt: todaySaleTime, totalAmount: new FakeDecimal(23.5) },
+        { confirmedAt: yesterdaySaleTime, totalAmount: new FakeDecimal(75) },
+      ] as never);
+
+      const result = await service.getDashboard(buildUser());
+      const days = result.salesTrend.days;
+
+      expect(days[13]).toEqual({
+        date: formatLocalDate(todaySaleTime),
+        confirmedCount: 2,
+        confirmedAmount: '123.5',
+      });
+      expect(days[12]).toEqual({
+        date: formatLocalDate(yesterdaySaleTime),
+        confirmedCount: 1,
+        confirmedAmount: '75',
+      });
+      expect(days[11].confirmedCount).toBe(0);
     });
   });
 });
