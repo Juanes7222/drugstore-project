@@ -11,6 +11,8 @@ import { SessionsController } from './controllers/sessions.controller';
 import { WorkstationsController } from './controllers/workstations.controller';
 import { SubscriptionsController } from './controllers/subscriptions.controller';
 import { BackofficeScopeService } from './services/backoffice-scope.service';
+import { BackofficeActorLookupService } from './services/backoffice-actor-lookup.service';
+import { CsvBuilderService } from './services/csv-builder.service';
 import { DashboardService } from './services/dashboard.service';
 import { SalesOverviewService } from './services/sales-overview.service';
 import { CashShiftOverviewService } from './services/cash-shift-overview.service';
@@ -43,6 +45,8 @@ import { SubscriptionOverviewService } from './services/subscription-overview.se
   ],
   providers: [
     BackofficeScopeService,
+    BackofficeActorLookupService,
+    CsvBuilderService,
     DashboardService,
     SalesOverviewService,
     CashShiftOverviewService,
