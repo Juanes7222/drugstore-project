@@ -31,6 +31,26 @@ export function formatCop(value: string | number | null | undefined): string {
   return COP_FORMATTER.format(numeric);
 }
 
+const COP_COMPACT_FORMATTER = new Intl.NumberFormat("es-CO", {
+  style: "currency",
+  currency: "COP",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+/** Formats a decimal string or number as compact COP (e.g. "$1,2 M") for chart axes. */
+export function formatCopCompact(
+  value: string | number | null | undefined,
+): string {
+  const numeric =
+    value === null || value === undefined || value === ""
+      ? 0
+      : typeof value === "number"
+        ? value
+        : Number(value);
+  return COP_COMPACT_FORMATTER.format(Number.isFinite(numeric) ? numeric : 0);
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);

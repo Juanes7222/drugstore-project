@@ -8,7 +8,7 @@ import Snackbar from "@mui/material/Snackbar";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import Alert from "@mui/material/Alert";
-import BlockIcon from "@mui/icons-material/Block";
+import { BlockIcon } from "../components/icons/app-icons";
 import { fetchSessions, revokeSession } from "../services/backoffice";
 import { formatDateTime } from "../utils/format";
 import type { SessionRow } from "../types/backoffice";

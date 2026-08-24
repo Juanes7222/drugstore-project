@@ -19,11 +19,13 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import Alert from "@mui/material/Alert";
-import HowToRegIcon from "@mui/icons-material/HowToReg";
-import BlockIcon from "@mui/icons-material/Block";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import LockOpenIcon from "@mui/icons-material/LockOpen";
-import DevicesIcon from "@mui/icons-material/Devices";
+import {
+  HowToRegIcon,
+  BlockIcon,
+  CheckCircleIcon,
+  LockOpenIcon,
+  DevicesIcon,
+} from "../components/icons/app-icons";
 import {
   fetchUsers,
   fetchUserSessions,

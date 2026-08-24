@@ -17,20 +17,24 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import useTheme from "@mui/material/styles/useTheme";
-import MenuIcon from "@mui/icons-material/Menu";
-import DashboardIcon from "@mui/icons-material/Dashboard";
-import PeopleIcon from "@mui/icons-material/People";
-import PointOfSaleIcon from "@mui/icons-material/PointOfSale";
-import PaymentsIcon from "@mui/icons-material/Payments";
-import InventoryIcon from "@mui/icons-material/Inventory";
-import ReceiptIcon from "@mui/icons-material/Receipt";
-import DevicesIcon from "@mui/icons-material/Devices";
-import DesktopWindowsIcon from "@mui/icons-material/DesktopWindows";
-import WorkspacePremiumIcon from "@mui/icons-material/WorkspacePremium";
-import DarkModeIcon from "@mui/icons-material/DarkMode";
-import LightModeIcon from "@mui/icons-material/LightMode";
-import LogoutIcon from "@mui/icons-material/Logout";
-import type { SvgIconComponent } from "@mui/icons-material";
+import { alpha } from "@mui/material/styles";
+import {
+  MenuIcon,
+  DashboardIcon,
+  PeopleIcon,
+  PointOfSaleIcon,
+  PaymentsIcon,
+  InventoryIcon,
+  ReceiptIcon,
+  DevicesIcon,
+  DesktopWindowsIcon,
+  WorkspacePremiumIcon,
+  DarkModeIcon,
+  LightModeIcon,
+  LogoutIcon,
+} from "../icons/app-icons";
+import type { AppIconComponent } from "../icons/app-icon-component";
+import { BrandMark } from "../common/brand-mark";
 import { useAuthStore } from "../../hooks/use-auth";
 import { useUiStore } from "../../store/ui-store";
 import { usePermissions } from "../../hooks/use-permissions";
@@ -41,7 +45,7 @@ const DRAWER_WIDTH = 248;
 interface NavItem {
   to: string;
   labelKey: string;
-  icon: SvgIconComponent;
+  icon: AppIconComponent;
   roles?: RoleType[];
 }
 
@@ -84,6 +88,7 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isDark = theme.palette.mode === "dark";
   const { user, clearSession } = useAuthStore();
   const { themeMode, setThemeMode } = useUiStore();
   const { role } = usePermissions();
@@ -108,14 +113,15 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
   );
 
   const drawerContent = (
-    <Box role="navigation" aria-label={t("nav.dashboard")}>
-      <Toolbar>
-        <Typography variant="h6" fontWeight={700} color="primary" noWrap>
+    <Box role="navigation" aria-label={t("common.mainNav")}>
+      <Toolbar sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+        <BrandMark size={28} />
+        <Typography fontWeight={800} color="text.primary" noWrap sx={{ letterSpacing: "-0.02em" }}>
           {t("common.appName")}
         </Typography>
       </Toolbar>
       <Divider />
-      <List>
+      <List disablePadding sx={{ px: 2, py: 1 }}>
         {visibleItems.map((item) => {
           const Icon = item.icon;
           const selected =
@@ -129,11 +135,19 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
               selected={selected}
               onClick={() => setMobileOpen(false)}
               aria-current={selected ? "page" : undefined}
+              sx={{ mb: 0.5 }}
             >
-              <ListItemIcon>
-                <Icon fontSize="small" />
+              <ListItemIcon sx={{ minWidth: 36, color: selected ? "primary.main" : "inherit" }}>
+                <Icon size={18} />
               </ListItemIcon>
-              <ListItemText primary={t(item.labelKey)} />
+              <ListItemText
+                primary={t(item.labelKey)}
+                primaryTypographyProps={{
+                  fontSize: 14,
+                  fontWeight: selected ? 600 : 500,
+                  color: selected ? "primary.main" : "text.primary",
+                }}
+              />
             </ListItemButton>
           );
         })}
@@ -146,23 +160,31 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
       <AppBar
         position="fixed"
         color="inherit"
-        elevation={1}
-        sx={{ zIndex: theme.zIndex.drawer + 1 }}
+        elevation={0}
+        sx={{
+          zIndex: theme.zIndex.drawer + 1,
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          backgroundColor: alpha(
+            theme.palette.background.paper,
+            isDark ? 0.8 : 0.85,
+          ),
+          backdropFilter: "blur(8px)",
+        }}
       >
         <Toolbar>
           <IconButton
             edge="start"
-            aria-label="menu"
+            aria-label={t("common.mainNav")}
             onClick={() => setMobileOpen((v) => !v)}
-            sx={{ mr: 2 }}
+            sx={{ mr: 2, display: { md: "none" } }}
           >
-            <MenuIcon />
+            <MenuIcon size={20} />
           </IconButton>
           <Typography
             variant="h6"
             component="h1"
-            fontWeight={600}
-            sx={{ flexGrow: 1 }}
+            fontWeight={700}
+            sx={{ flexGrow: 1, letterSpacing: "-0.02em" }}
             noWrap
           >
             {t("common.appName")}
@@ -193,7 +215,7 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
             </IconButton>
           </Tooltip>
           <Box display="flex" alignItems="center" gap={1} ml={1}>
-            <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main" }}>
+            <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main", fontSize: 13, fontWeight: 700 }}>
               {initialsOf(user?.displayName ?? user?.email ?? "?")}
             </Avatar>
             <Box sx={{ display: { xs: "none", sm: "block" } }}>
@@ -231,6 +253,7 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
             "& .MuiDrawer-paper": {
               width: DRAWER_WIDTH,
               boxSizing: "border-box",
+              borderRight: `1px solid ${theme.palette.divider}`,
             },
           }}
         >
@@ -248,7 +271,11 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
           minWidth: 0,
         }}
       >
-        {children}
+        {/* Keyed remount gives each route a quiet entrance; reduced-motion
+            users get the static state via the global media query. */}
+        <Box key={location.pathname} className="animate-fade-up">
+          {children}
+        </Box>
       </Box>
     </Box>
   );

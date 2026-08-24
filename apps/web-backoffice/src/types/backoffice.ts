@@ -32,8 +32,17 @@ export interface WorkstationRef {
 // GET /backoffice/dashboard
 // ---------------------------------------------------------------------------
 
+export interface SalesTrendDay {
+  /** Local calendar day, YYYY-MM-DD */
+  date: string;
+  confirmedCount: number;
+  /** Decimal string; monetary values arrive as decimal strings */
+  confirmedAmount: string;
+}
+
 export interface DashboardResponse {
   period: { from: string; to: string };
+  salesTrend: { days: SalesTrendDay[] };
   sales: {
     confirmedCount: number;
     confirmedTotal: string;

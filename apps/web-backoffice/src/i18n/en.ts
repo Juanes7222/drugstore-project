@@ -36,6 +36,8 @@ export const en: typeof es = {
     approved: "Approved",
     rejected: "Rejected",
     success: "Operation successful",
+    mainNav: "Main navigation",
+    dataTable: "Data table",
   },
   nav: {
     dashboard: "Dashboard",
@@ -78,6 +80,17 @@ export const en: typeof es = {
   dashboard: {
     period: "Period",
     today: "Today",
+    trendTitle: "Sales · last 14 days",
+    trendCountSub: "{{count}} confirmed transactions",
+    trendAria:
+      "Chart of confirmed sales per day over the last 14 days. Total {{total}} across {{count}} transactions.",
+    groups: {
+      sales: "Sales",
+      cash: "Cash",
+      inventory: "Inventory",
+      fiscal: "Invoicing",
+      operations: "Operations",
+    },
     salesToday: "Confirmed sales today",
     salesTodaySub: "{{count}} transactions",
     averageTicket: "Average ticket",
@@ -219,6 +232,9 @@ export const en: typeof es = {
     subtitle: "DIAN documents by state and recent rejections",
     from: "From",
     countsByState: "Documents by state",
+    totalDocs: "{{total}} documents in total",
+    stateBarAria:
+      "Distribution of fiscal documents by state. {{total}} documents in total.",
     recentRejected: "Recent rejections",
     documentType: "Type",
     fullNumber: "Number",

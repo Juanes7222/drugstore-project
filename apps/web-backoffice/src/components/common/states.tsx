@@ -3,6 +3,7 @@ import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import Typography from "@mui/material/Typography";
 import { useTranslation } from "react-i18next";
+import { SyncProblemIcon, RefreshIcon } from "../icons/app-icons";
 
 export function LoadingState() {
   const { t } = useTranslation();
@@ -38,14 +39,22 @@ export function ErrorState({ onRetry }: ErrorStateProps) {
       flexDirection="column"
       alignItems="center"
       justifyContent="center"
-      gap={1}
+      gap={1.5}
       py={8}
     >
-      <Typography variant="body1" color="error">
+      <Box component="span" sx={{ color: "text.disabled", display: "flex" }}>
+        <SyncProblemIcon size={40} aria-hidden />
+      </Box>
+      <Typography variant="body1" color="error" align="center">
         {t("common.error")}
       </Typography>
       {onRetry ? (
-        <Button variant="outlined" onClick={onRetry}>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<RefreshIcon fontSize="small" />}
+          onClick={onRetry}
+        >
           {t("common.retry")}
         </Button>
       ) : null}

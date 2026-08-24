@@ -13,10 +13,9 @@ import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
-import Paper from "@mui/material/Paper";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import MedicalServicesIcon from "@mui/icons-material/MedicalServices";
+import { BrandMark } from "../components/common/brand-mark";
 import { useAuthStore } from "../hooks/use-auth";
 import {
   completeTwoFactor,
@@ -227,18 +226,7 @@ export function LoginPage() {
       <Card variant="outlined" sx={{ maxWidth: 420, width: "100%" }}>
         <CardContent sx={{ p: 4 }}>
           <Box display="flex" alignItems="center" gap={1.5} mb={1}>
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 1,
-                display: "flex",
-                bgcolor: "primary.main",
-                color: "white",
-              }}
-              aria-hidden
-            >
-              <MedicalServicesIcon />
-            </Paper>
+            <BrandMark size={36} />
             <Typography variant="h5" component="h1" fontWeight={700}>
               {t("common.appName")}
             </Typography>

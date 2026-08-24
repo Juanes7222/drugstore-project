@@ -34,6 +34,8 @@ export const es = {
     approved: "Aprobado",
     rejected: "Rechazado",
     success: "Operación exitosa",
+    mainNav: "Navegación principal",
+    dataTable: "Tabla de datos",
   },
   nav: {
     dashboard: "Panel",
@@ -79,6 +81,17 @@ export const es = {
   dashboard: {
     period: "Período",
     today: "Hoy",
+    trendTitle: "Ventas · últimos 14 días",
+    trendCountSub: "{{count}} transacciones confirmadas",
+    trendAria:
+      "Gráfico de ventas confirmadas por día en los últimos 14 días. Total {{total}} en {{count}} transacciones.",
+    groups: {
+      sales: "Ventas",
+      cash: "Caja",
+      inventory: "Inventario",
+      fiscal: "Facturación",
+      operations: "Operación",
+    },
     salesToday: "Ventas confirmadas hoy",
     salesTodaySub: "{{count}} transacciones",
     averageTicket: "Ticket promedio",
@@ -222,6 +235,9 @@ export const es = {
     subtitle: "Documentos DIAN por estado y rechazos recientes",
     from: "Desde",
     countsByState: "Documentos por estado",
+    totalDocs: "{{total}} documentos en total",
+    stateBarAria:
+      "Distribución de documentos fiscales por estado. {{total}} documentos en total.",
     recentRejected: "Rechazos recientes",
     documentType: "Tipo",
     fullNumber: "Número",

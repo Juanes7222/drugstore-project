@@ -17,7 +17,10 @@ import TablePagination from "@mui/material/TablePagination";
 import TableRow from "@mui/material/TableRow";
 import TableSortLabel from "@mui/material/TableSortLabel";
 import Typography from "@mui/material/Typography";
+import Skeleton from "@mui/material/Skeleton";
+import Button from "@mui/material/Button";
 import { useTranslation } from "react-i18next";
+import { InboxIcon, RefreshIcon } from "../icons/app-icons";
 
 interface DataTableProps<T> {
   columns: ColumnDef<T, unknown>[];
@@ -35,6 +38,8 @@ interface DataTableProps<T> {
   onRetry?: () => void;
   emptyMessage?: string;
   getRowId?: (row: T) => string;
+  /** Accessible name; should describe what the table lists. */
+  ariaLabel?: string;
 }
 
 /**
@@ -58,6 +63,7 @@ export function DataTable<T>({
   onRetry,
   emptyMessage,
   getRowId,
+  ariaLabel,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -91,7 +97,7 @@ export function DataTable<T>({
   return (
     <Paper variant="outlined" sx={{ width: "100%", overflow: "hidden" }}>
       <TableContainer>
-        <Table aria-label="data-table" size="small">
+        <Table aria-label={ariaLabel ?? t("common.dataTable")} size="small">
           <TableHead>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -139,33 +145,32 @@ export function DataTable<T>({
             ))}
             {!isLoading && table.getRowModel().rows.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  align="center"
-                  sx={{ py: 6 }}
-                >
-                  <Typography variant="body2" color="text.secondary">
-                    {isError
-                      ? (errorHint ?? t("common.error"))
-                      : (emptyMessage ?? t("common.empty"))}
-                  </Typography>
-                  {isError && onRetry ? (
-                    <Box mt={1}>
-                      <Typography
-                        component="button"
+                <TableCell colSpan={columns.length}>
+                  <Box
+                    display="flex"
+                    flexDirection="column"
+                    alignItems="center"
+                    gap={1}
+                    py={6}
+                    color={isError ? "error.main" : "text.secondary"}
+                  >
+                    <InboxIcon size={36} aria-hidden />
+                    <Typography variant="body2" align="center">
+                      {isError
+                        ? (errorHint ?? t("common.error"))
+                        : (emptyMessage ?? t("common.empty"))}
+                    </Typography>
+                    {isError && onRetry ? (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<RefreshIcon fontSize="small" />}
                         onClick={onRetry}
-                        color="primary"
-                        sx={{
-                          cursor: "pointer",
-                          border: "none",
-                          bgcolor: "transparent",
-                          textDecoration: "underline",
-                        }}
                       >
                         {t("common.retry")}
-                      </Typography>
-                    </Box>
-                  ) : null}
+                      </Button>
+                    ) : null}
+                  </Box>
                 </TableCell>
               </TableRow>
             ) : null}
@@ -174,7 +179,14 @@ export function DataTable<T>({
               ? Array.from({ length: Math.min(emptyRowCount, 5) }).map(
                   (_, i) => (
                     <TableRow key={`skeleton-${i}`}>
-                      <TableCell colSpan={columns.length} />
+                      <TableCell colSpan={columns.length}>
+                        {/* Deterministic widths read as content, not a flat bar. */}
+                        <Skeleton
+                          variant="text"
+                          sx={{ fontSize: "0.875rem" }}
+                          width={`${55 + ((i * 17) % 35)}%`}
+                        />
+                      </TableCell>
                     </TableRow>
                   ),
                 )
