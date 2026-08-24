@@ -29,8 +29,19 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService<EnvConfig>);
 
+  // CORS_ORIGIN accepts one origin or a comma-separated list; the default
+  // covers the local dev frontends (backoffice and its strictPort sibling).
+  const corsOriginEnv: string = configService.get(
+    'CORS_ORIGIN',
+    'http://localhost:5173,http://localhost:5174',
+  );
+  const corsOrigins = corsOriginEnv
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: configService.get('CORS_ORIGIN', 'http://localhost:5173'),
+    origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
