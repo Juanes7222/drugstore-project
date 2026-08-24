@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import Box from "@mui/material/Box";
 import Grid from "@mui/material/Grid";
 import Paper from "@mui/material/Paper";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 import {
   AttachMoneyIcon,
@@ -21,8 +24,9 @@ import {
   DevicesIcon,
 } from "../components/icons/app-icons";
 import { fetchDashboard } from "../services/backoffice";
+import type { DashboardPeriod } from "../types/backoffice";
 import { formatCop, formatNumber, formatDateTime } from "../utils/format";
-import { KpiCard, type KpiTone, type KpiIconComponent } from "../components/common/kpi-card";
+import { KpiCard, type KpiTone, type KpiIconComponent, type KpiDelta } from "../components/common/kpi-card";
 import { AlertBanner } from "../components/common/alert-banner";
 import { PageHeader } from "../components/common/page-header";
 import { SectionLabel } from "../components/common/section-label";
@@ -36,20 +40,56 @@ interface KpiEntry {
   icon: KpiIconComponent;
   tone?: KpiTone;
   live?: boolean;
+  delta?: KpiDelta;
+}
+
+const PERIOD_OPTIONS: DashboardPeriod[] = ["today", "7d", "30d"];
+
+/** Signed percent change; null when the previous window had no activity. */
+function percentDelta(current: number, previous: number): number | null {
+  if (previous <= 0) return null;
+  return ((current - previous) / previous) * 100;
 }
 
 export function DashboardPage() {
   const { t } = useTranslation();
+  const [selectedPeriod, setSelectedPeriod] = useState<DashboardPeriod>("today");
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: fetchDashboard,
+    queryKey: ["dashboard", selectedPeriod],
+    queryFn: () => fetchDashboard(selectedPeriod),
+    placeholderData: (previous) => previous,
   });
+
+  const handlePeriod = (
+    _: unknown,
+    value: DashboardPeriod | null,
+  ) => {
+    if (value !== null) setSelectedPeriod(value);
+  };
 
   if (isLoading) return <LoadingState />;
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
 
   const { sales, cashShifts, inventory, fiscal, sync, users, period, salesTrend } =
     data;
+
+  const salesDelta = (current: string, previous: string): KpiDelta | undefined => {
+    const pct = percentDelta(Number(current), Number(previous));
+    if (pct === null || !Number.isFinite(pct)) return undefined;
+    const rounded = Math.round(pct);
+    return {
+      label: `${rounded > 0 ? "+" : ""}${rounded}%`,
+      detail: t("dashboard.deltaDetail", { value: rounded }),
+      direction: pct >= 0 ? "up" : "down",
+      positive: pct >= 0,
+    };
+  };
+
+  const salesTodayDelta = salesDelta(sales.confirmedTotal, sales.previousTotal);
+  const ticketDelta =
+    sales.previousAverageTicket !== null
+      ? salesDelta(sales.averageTicket, sales.previousAverageTicket)
+      : undefined;
 
   const tone = (active: boolean): KpiTone => (active ? "warning" : "default");
   const dangerTone = (active: boolean): KpiTone =>
@@ -69,12 +109,14 @@ export function DashboardPage() {
           }),
           icon: AttachMoneyIcon,
           tone: "ok",
+          delta: salesTodayDelta,
         },
         {
           title: t("dashboard.averageTicket"),
           value: formatCop(sales.averageTicket),
           subtitle: t("dashboard.averageTicketSub"),
           icon: ReceiptIcon,
+          delta: ticketDelta,
         },
         {
           title: t("dashboard.annulledToday"),
@@ -278,6 +320,21 @@ export function DashboardPage() {
       <PageHeader
         title={t("nav.dashboard")}
         subtitle={`${t("dashboard.period")}: ${formatDateTime(period.from)} — ${formatDateTime(period.to)}`}
+        actions={
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={selectedPeriod}
+            onChange={handlePeriod}
+            aria-label={t("dashboard.period")}
+          >
+            {PERIOD_OPTIONS.map((option) => (
+              <ToggleButton key={option} value={option}>
+                {t(`dashboard.period_${option}`)}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        }
       />
 
       <SalesTrendChart days={salesTrend.days} />

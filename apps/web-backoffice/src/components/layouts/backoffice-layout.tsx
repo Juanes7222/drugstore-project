@@ -29,6 +29,7 @@ import {
   DevicesIcon,
   DesktopWindowsIcon,
   WorkspacePremiumIcon,
+  HistoryIcon,
   DarkModeIcon,
   LightModeIcon,
   LogoutIcon,
@@ -61,6 +62,12 @@ const NAV_ITEMS: NavItem[] = [
   },
   { to: "/fiscal", labelKey: "nav.fiscal", icon: ReceiptIcon },
   { to: "/sessions", labelKey: "nav.sessions", icon: DevicesIcon },
+  {
+    to: "/audit",
+    labelKey: "nav.audit",
+    icon: HistoryIcon,
+    roles: [RoleType.ADMIN],
+  },
   {
     to: "/workstations",
     labelKey: "nav.workstations",

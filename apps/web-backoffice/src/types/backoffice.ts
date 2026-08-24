@@ -40,6 +40,8 @@ export interface SalesTrendDay {
   confirmedAmount: string;
 }
 
+export type DashboardPeriod = "today" | "7d" | "30d";
+
 export interface DashboardResponse {
   period: { from: string; to: string };
   salesTrend: { days: SalesTrendDay[] };
@@ -49,6 +51,10 @@ export interface DashboardResponse {
     averageTicket: string;
     annulledCount: number;
     annulledTotal: string;
+    /** Confirmed totals for the immediately preceding equal-length window. */
+    previousTotal: string;
+    previousCount: number;
+    previousAverageTicket: string | null;
   };
   cashShifts: {
     openCount: number;
@@ -70,6 +76,23 @@ export interface DashboardResponse {
   sync: { permanentFailures: number };
   users: { pendingApproval: number; activeSessions: number };
 }
+
+// ---------------------------------------------------------------------------
+// GET /backoffice/audit-logs
+// ---------------------------------------------------------------------------
+
+export interface AuditLogRow {
+  id: string;
+  action: string;
+  module: string;
+  entityId: string;
+  summary: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  user: { fullName: string; displayName: string | null };
+}
+
+export type AuditLogsResponse = Paginated<AuditLogRow>;
 
 // ---------------------------------------------------------------------------
 // GET /backoffice/sales

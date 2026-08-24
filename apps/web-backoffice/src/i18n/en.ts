@@ -51,6 +51,7 @@ export const en: typeof es = {
     sessions: "Sessions",
     workstations: "Terminals",
     subscriptions: "Subscriptions",
+    audit: "Audit log",
   },
   login: {
     title: "Sign in",
@@ -82,7 +83,11 @@ export const en: typeof es = {
   dashboard: {
     period: "Period",
     today: "Today",
-    trendTitle: "Sales · last 14 days",
+    trendTitleRange: "Sales · last {{count}} days",
+    deltaDetail: "{{value}}% vs previous period",
+    period_today: "Today",
+    period_7d: "7 days",
+    period_30d: "30 days",
     trendCountSub: "{{count}} confirmed transactions",
     trendAria:
       "Chart of confirmed sales per day over the last 14 days. Total {{total}} across {{count}} transactions.",
@@ -214,6 +219,10 @@ export const en: typeof es = {
   inventory: {
     title: "Inventory alerts",
     subtitle: "Pending adjustments, low stock and expiring lots",
+    approveAll: "Approve all",
+    approveAllConfirm:
+      "{{count}} inventory adjustment(s) will be approved and recorded in the audit log. Continue?",
+    approveAllResult: "Approved: {{approved}} · Failed: {{failed}}",
     pendingAdjustments: "Pending adjustments",
     lowStock: "Low stock",
     expiringLots: "Expiring lots (90 days)",
@@ -231,6 +240,21 @@ export const en: typeof es = {
     minimumStock: "Minimum stock",
     ratio: "Level",
     none: "No alerts",
+  },
+  audit: {
+    title: "Audit log",
+    subtitle: "Record of sensitive actions from the panel and terminals",
+    createdAt: "Date",
+    user: "User",
+    module: "Module",
+    action: "Action",
+    entityId: "Resource",
+    ip: "IP",
+    module_SALES_POS: "POS sales",
+    module_AUTH_USERS: "Users",
+    module_INVENTORY_LOTS: "Inventory",
+    module_CASH_SHIFT: "Cash",
+    module_FISCAL_DOCUMENTS: "Invoicing",
   },
   fiscal: {
     title: "Fiscal status",
@@ -340,5 +364,7 @@ export const en: typeof es = {
     PENDING_RESPONSE: "Pending response",
     GENERATION_ERROR: "Generation error",
     SIGNATURE_ERROR: "Signature error",
+    STATE_CHANGE: "State change",
+    SECURITY_ALERT: "Security alert",
   },
 };

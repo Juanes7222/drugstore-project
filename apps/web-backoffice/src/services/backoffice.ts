@@ -1,6 +1,8 @@
 import { api } from "./api";
 import type {
+  AuditLogsResponse,
   CashShiftsResponse,
+  DashboardPeriod,
   DashboardResponse,
   FiscalStatusResponse,
   InventoryAlertsResponse,
@@ -17,9 +19,39 @@ import type {
 // Backoffice overview endpoints
 // ---------------------------------------------------------------------------
 
-export async function fetchDashboard(): Promise<DashboardResponse> {
-  const { data } = await api.get<DashboardResponse>("/backoffice/dashboard");
+export async function fetchDashboard(
+  period: DashboardPeriod = "today",
+): Promise<DashboardResponse> {
+  const { data } = await api.get<DashboardResponse>("/backoffice/dashboard", {
+    params: { period },
+  });
   return data;
+}
+
+export interface AuditLogFilters {
+  from?: string;
+  to?: string;
+  action?: string;
+  module?: string;
+  userId?: string;
+}
+
+export async function fetchAuditLogs(
+  filters: AuditLogFilters,
+  page: number,
+  pageSize: number,
+): Promise<AuditLogsResponse> {
+  const { data } = await api.get<AuditLogsResponse>("/backoffice/audit-logs", {
+    params: { ...filters, page, pageSize },
+  });
+  return data;
+}
+
+/** Approves a pending inventory adjustment (audited server-side). */
+export async function approveInventoryAdjustment(
+  id: string,
+): Promise<void> {
+  await api.post(`/inventory-lots/adjustments/${id}/approve`);
 }
 
 export interface SalesFilters {

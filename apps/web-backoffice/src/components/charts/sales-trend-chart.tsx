@@ -91,7 +91,7 @@ export function SalesTrendChart({ days }: SalesTrendChartProps) {
       </Typography>
       <Box display="flex" flexWrap="wrap" alignItems="baseline" justifyContent="space-between" gap={1} mb={0.5}>
         <Typography variant="overline" color="text.secondary">
-          {t("dashboard.trendTitle")}
+          {t("dashboard.trendTitleRange", { count: days.length })}
         </Typography>
         <Typography variant="caption" color="text.secondary">
           {formatDate(days[0].date)} — {formatDate(days[days.length - 1].date)}

@@ -1,15 +1,18 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   flexRender,
   getCoreRowModel,
   useReactTable,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
+import Button from "@mui/material/Button";
 import LinearProgress from "@mui/material/LinearProgress";
 import Paper from "@mui/material/Paper";
+import Snackbar from "@mui/material/Snackbar";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -17,10 +20,14 @@ import TableContainer from "@mui/material/TableContainer";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import Typography from "@mui/material/Typography";
-import { fetchInventoryAlerts } from "../services/backoffice";
+import {
+  approveInventoryAdjustment,
+  fetchInventoryAlerts,
+} from "../services/backoffice";
 import { formatDate, formatDateTime, formatNumber } from "../utils/format";
 import type { LotAlert, PendingAdjustment } from "../types/backoffice";
 import { PageHeader } from "../components/common/page-header";
+import { ConfirmDialog } from "../components/common/confirm-dialog";
 import { LoadingState, ErrorState } from "../components/common/states";
 
 function SectionCard({
@@ -57,11 +64,13 @@ function SimpleTable<T>({
   data,
   emptyMessage,
   getRowId,
+  ariaLabel,
 }: {
   columns: ColumnDef<T, unknown>[];
   data: T[];
   emptyMessage: string;
   getRowId: (row: T) => string;
+  ariaLabel: string;
 }) {
   const table = useReactTable({
     data,
@@ -72,7 +81,7 @@ function SimpleTable<T>({
 
   return (
     <TableContainer>
-      <Table size="small" aria-label="simple-table">
+      <Table size="small" aria-label={ariaLabel}>
         <TableHead>
           <TableRow>
             {table.getHeaderGroups()[0]?.headers.map((header) => (
@@ -120,9 +129,36 @@ function SimpleTable<T>({
 
 export function InventoryAlertsPage() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [result, setResult] = useState<{ approved: number; failed: number } | null>(
+    null,
+  );
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["inventory-alerts"],
     queryFn: fetchInventoryAlerts,
+  });
+
+  // Sequential on purpose: each approval is audited server-side and the
+  // volume is small; a parallel burst would only stress the audit writer.
+  const bulkApprove = useMutation({
+    mutationFn: async (ids: string[]) => {
+      let failed = 0;
+      for (const id of ids) {
+        try {
+          await approveInventoryAdjustment(id);
+        } catch {
+          failed += 1;
+        }
+      }
+      return { approved: ids.length - failed, failed };
+    },
+    onSuccess: ({ approved }) => {
+      void queryClient.invalidateQueries({ queryKey: ["inventory-alerts"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      if (approved > 0) setResult({ approved, failed: 0 });
+    },
+    onError: () => setResult({ approved: 0, failed: 1 }),
   });
 
   const pendingColumns = useMemo<ColumnDef<PendingAdjustment, unknown>[]>(
@@ -203,6 +239,8 @@ export function InventoryAlertsPage() {
   if (isLoading) return <LoadingState />;
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
 
+  const pendingCount = data.pendingAdjustments.length;
+
   return (
     <Box>
       <PageHeader
@@ -212,13 +250,26 @@ export function InventoryAlertsPage() {
 
       <SectionCard
         title={t("inventory.pendingAdjustments")}
-        tone={data.pendingAdjustments.length > 0 ? "warning" : "default"}
+        tone={pendingCount > 0 ? "warning" : "default"}
       >
+        {pendingCount > 1 ? (
+          <Box display="flex" justifyContent="flex-end" mb={1}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => setConfirmOpen(true)}
+              disabled={bulkApprove.isPending}
+            >
+              {t("inventory.approveAll")}
+            </Button>
+          </Box>
+        ) : null}
         <SimpleTable
           columns={pendingColumns}
           data={data.pendingAdjustments}
           emptyMessage={t("inventory.none")}
           getRowId={(row) => row.id}
+          ariaLabel={t("inventory.pendingAdjustments")}
         />
       </SectionCard>
 
@@ -299,6 +350,7 @@ export function InventoryAlertsPage() {
           data={data.expiringLots}
           emptyMessage={t("inventory.none")}
           getRowId={(row) => row.id}
+          ariaLabel={t("inventory.expiringLots")}
         />
       </SectionCard>
 
@@ -311,8 +363,42 @@ export function InventoryAlertsPage() {
           data={data.expiredLots}
           emptyMessage={t("inventory.none")}
           getRowId={(row) => row.id}
+          ariaLabel={t("inventory.expiredLots")}
         />
       </SectionCard>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={t("inventory.approveAll")}
+        message={t("inventory.approveAllConfirm", { count: pendingCount })}
+        severity="warning"
+        onConfirm={async () => {
+          await bulkApprove.mutateAsync(
+            data.pendingAdjustments.map((adjustment) => adjustment.id),
+          );
+        }}
+      />
+
+      <Snackbar
+        open={result !== null}
+        autoHideDuration={6000}
+        onClose={() => setResult(null)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          severity={
+            result && result.failed === 0 ? "success" : "warning"
+          }
+          variant="filled"
+          onClose={() => setResult(null)}
+        >
+          {t("inventory.approveAllResult", {
+            approved: result?.approved ?? 0,
+            failed: result?.failed ?? 0,
+          })}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

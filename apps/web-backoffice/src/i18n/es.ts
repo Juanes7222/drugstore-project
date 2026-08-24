@@ -49,6 +49,7 @@ export const es = {
     sessions: "Sesiones",
     workstations: "Terminales",
     subscriptions: "Suscripciones",
+    audit: "Auditoría",
   },
   login: {
     title: "Iniciar sesión",
@@ -83,7 +84,11 @@ export const es = {
   dashboard: {
     period: "Período",
     today: "Hoy",
-    trendTitle: "Ventas · últimos 14 días",
+    trendTitleRange: "Ventas · últimos {{count}} días",
+    deltaDetail: "{{value}}% vs período anterior",
+    period_today: "Hoy",
+    period_7d: "7 días",
+    period_30d: "30 días",
     trendCountSub: "{{count}} transacciones confirmadas",
     trendAria:
       "Gráfico de ventas confirmadas por día en los últimos 14 días. Total {{total}} en {{count}} transacciones.",
@@ -217,6 +222,11 @@ export const es = {
   inventory: {
     title: "Alertas de inventario",
     subtitle: "Ajustes pendientes, stock bajo y lotes por vencer",
+    approveAll: "Aprobar todo",
+    approveAllConfirm:
+      "Se aprobarán {{count}} ajuste(s) de inventario y se registrarán en la auditoría. ¿Continuar?",
+    approveAllResult:
+      "Aprobados: {{approved}} · Con error: {{failed}}",
     pendingAdjustments: "Ajustes pendientes de aprobación",
     lowStock: "Stock bajo",
     expiringLots: "Lotes por vencer (90 días)",
@@ -233,7 +243,22 @@ export const es = {
     currentStock: "Stock actual",
     minimumStock: "Stock mínimo",
     ratio: "Nivel",
-    none: "Sin alertas",
+    none: "No hay alertas",
+  },
+  audit: {
+    title: "Auditoría",
+    subtitle: "Registro de acciones sensibles del panel y los terminales",
+    createdAt: "Fecha",
+    user: "Usuario",
+    module: "Módulo",
+    action: "Acción",
+    entityId: "Recurso",
+    ip: "IP",
+    module_SALES_POS: "Ventas POS",
+    module_AUTH_USERS: "Usuarios",
+    module_INVENTORY_LOTS: "Inventario",
+    module_CASH_SHIFT: "Caja",
+    module_FISCAL_DOCUMENTS: "Facturación",
   },
   fiscal: {
     title: "Estado fiscal",
@@ -343,6 +368,8 @@ export const es = {
     PENDING_RESPONSE: "Pend. respuesta",
     GENERATION_ERROR: "Error generación",
     SIGNATURE_ERROR: "Error firma",
+    STATE_CHANGE: "Cambio de estado",
+    SECURITY_ALERT: "Alerta de seguridad",
   },
 };
 

@@ -5,6 +5,7 @@ import Box from "@mui/material/Box";
 import { alpha, useTheme } from "@mui/material/styles";
 import type { SvgIconProps } from "@mui/material/SvgIcon";
 import type { ComponentType } from "react";
+import { TrendingDownIcon, TrendingUpIcon } from "../icons/app-icons";
 
 export type KpiTone = "default" | "ok" | "info" | "warning" | "error";
 
@@ -12,6 +13,16 @@ export type KpiTone = "default" | "ok" | "info" | "warning" | "error";
 export type KpiIconComponent = ComponentType<
   Pick<SvgIconProps, "fontSize"> & { size?: number | string }
 >;
+
+export interface KpiDelta {
+  /** Preformatted short label, e.g. "+12%". */
+  label: string;
+  /** Full explanation for the tooltip, e.g. "+12% vs período anterior". */
+  detail?: string;
+  direction: "up" | "down";
+  /** Whether the movement is good for this metric (colors the arrow). */
+  positive: boolean;
+}
 
 interface KpiCardProps {
   title: string;
@@ -23,6 +34,8 @@ interface KpiCardProps {
   index?: number;
   /** Shows a pulsing dot: the metric describes something live right now. */
   live?: boolean;
+  /** Period-over-period movement line under the value. */
+  delta?: KpiDelta;
 }
 
 const TONE_COLOR: Record<KpiTone, string> = {
@@ -32,6 +45,26 @@ const TONE_COLOR: Record<KpiTone, string> = {
   warning: "warning.main",
   error: "error.main",
 };
+
+function DeltaLine({ delta }: { delta: KpiDelta }) {
+  const color = delta.positive ? "success.main" : "error.main";
+  return (
+    <Typography
+      component="p"
+      variant="caption"
+      m={0}
+      sx={{ display: "inline-flex", alignItems: "center", gap: 0.25, color }}
+      title={delta.detail ?? delta.label}
+    >
+      {delta.direction === "up" ? (
+        <TrendingUpIcon size={13} aria-hidden />
+      ) : (
+        <TrendingDownIcon size={13} aria-hidden />
+      )}
+      {delta.label}
+    </Typography>
+  );
+}
 
 /**
  * KPI card. Tone is carried by the icon chip (and value color only for
@@ -45,6 +78,7 @@ export function KpiCard({
   tone = "default",
   index = 0,
   live = false,
+  delta,
 }: KpiCardProps) {
   const theme = useTheme();
   const toneHex =
@@ -133,6 +167,7 @@ export function KpiCard({
                 {subtitle}
               </Typography>
             ) : null}
+            {delta ? <DeltaLine delta={delta} /> : null}
           </Box>
           {Icon ? (
             <Box

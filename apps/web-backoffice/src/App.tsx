@@ -33,6 +33,9 @@ const FiscalPage = lazy(() =>
 const SessionsPage = lazy(() =>
   import("./pages/sessions-page").then((m) => ({ default: m.SessionsPage })),
 );
+const AuditPage = lazy(() =>
+  import("./pages/audit-page").then((m) => ({ default: m.AuditPage })),
+);
 const WorkstationsPage = lazy(() =>
   import("./pages/workstations-page").then((m) => ({
     default: m.WorkstationsPage,
@@ -93,6 +96,7 @@ export function App() {
             <Route path="/inventory-alerts" element={<InventoryAlertsPage />} />
             <Route path="/fiscal" element={<FiscalPage />} />
             <Route path="/sessions" element={<SessionsPage />} />
+            <Route path="/audit" element={<AuditPage />} />
             <Route path="/workstations" element={<WorkstationsPage />} />
             <Route element={<RequireRole role={RoleType.SAAS_ADMIN} />}>
               <Route path="/subscriptions" element={<SubscriptionsPage />} />
