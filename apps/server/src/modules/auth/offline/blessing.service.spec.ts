@@ -81,7 +81,6 @@ function buildBlessingRequest(
     offlineTokenJwt: 'valid-offline-jwt-token',
     workstationFingerprint: 'fp-abc123def456',
     createdAt: '2026-06-01T10:00:00Z',
-    lastActivityAt: '2026-06-01T11:00:00Z',
     ...overrides,
   };
 }
