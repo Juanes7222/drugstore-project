@@ -113,6 +113,73 @@ describe('SupplierReturnsService', () => {
         expect.objectContaining({ where: { state: 'DRAFT' } }),
       );
     });
+
+    describe('cursor mode', () => {
+      const cursorTime = new Date('2026-05-01T00:00:00.000Z');
+      const cursor = Buffer.from(
+        JSON.stringify({
+          lastUpdatedAt: cursorTime.toISOString(),
+          lastId: 'sr-prev',
+        }),
+      ).toString('base64');
+
+      it('decodes the cursor into an OR keyset condition merged over base filters', async () => {
+        mockSupplierReturn.findMany.mockResolvedValue([]);
+
+        await service.findAll({
+          page: 1,
+          pageSize: 10,
+          supplierId: 's1',
+          cursor,
+        });
+
+        expect(mockSupplierReturn.findMany).toHaveBeenCalledWith({
+          where: {
+            supplierId: 's1',
+            OR: [
+              { createdAt: { lt: cursorTime } },
+              { createdAt: cursorTime, id: { lt: 'sr-prev' } },
+            ],
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 11,
+          include: { supplier: true, items: true },
+        });
+      });
+
+      it('returns pageSize rows with hasMore true and a nextCursor built from the last row when more pages exist', async () => {
+        const rows = Array.from({ length: 3 }, (_, i) => ({
+          id: `sr-${i}`,
+          createdAt: new Date(Date.UTC(2026, 4, 10 - i)),
+        }));
+        mockSupplierReturn.findMany.mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 2, cursor });
+
+        expect(result.data).toHaveLength(2);
+        expect(result.hasMore).toBe(true);
+        const payload = JSON.parse(
+          Buffer.from(result.nextCursor as string, 'base64').toString('utf8'),
+        );
+        expect(payload).toEqual({
+          lastUpdatedAt: '2026-05-09T00:00:00.000Z',
+          lastId: 'sr-1',
+        });
+      });
+
+      it('sets hasMore false and null nextCursor when the page exhausts the result set', async () => {
+        const rows = Array.from({ length: 2 }, (_, i) => ({
+          id: `sr-${i}`,
+          createdAt: new Date(Date.UTC(2026, 4, 10 - i)),
+        }));
+        mockSupplierReturn.findMany.mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 2, cursor });
+
+        expect(result.hasMore).toBe(false);
+        expect(result.nextCursor).toBeNull();
+      });
+    });
   });
 
   // ── findOne ──────────────────────────────────────────────────────────

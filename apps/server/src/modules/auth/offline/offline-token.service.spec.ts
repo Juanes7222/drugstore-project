@@ -648,7 +648,7 @@ describe('OfflineTokenService', () => {
       expect(result.total).toBe(2);
       expect(result.entries).toHaveLength(2);
       expect(mockOfflineTokenRevocation.findMany).toHaveBeenCalledWith({
-        orderBy: { revokedAt: 'desc' },
+        orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
         take: 10,
         skip: 0,
       });
@@ -661,9 +661,98 @@ describe('OfflineTokenService', () => {
       await service.getRevocationList({});
 
       expect(mockOfflineTokenRevocation.findMany).toHaveBeenCalledWith({
-        orderBy: { revokedAt: 'desc' },
+        orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
         take: 100,
         skip: 0,
+      });
+    });
+
+    describe('cursor mode', () => {
+      const cursorTime = new Date('2026-06-15T00:00:00.000Z');
+      const cursor = Buffer.from(
+        JSON.stringify({
+          lastUpdatedAt: cursorTime.toISOString(),
+          lastId: 'jti-prev',
+        }),
+      ).toString('base64');
+
+      it('decodes the cursor into an OR keyset condition on revokedAt with take limit+1', async () => {
+        mockOfflineTokenRevocation.findMany.mockResolvedValue([]);
+        mockOfflineTokenRevocation.count.mockResolvedValue(0);
+
+        await service.getRevocationList({ limit: 10, cursor });
+
+        expect(mockOfflineTokenRevocation.findMany).toHaveBeenCalledWith({
+          where: {
+            OR: [
+              { revokedAt: { lt: cursorTime } },
+              { revokedAt: cursorTime, id: { lt: 'jti-prev' } },
+            ],
+          },
+          orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
+          take: 11,
+        });
+      });
+
+      it('keeps total in the response contract alongside nextCursor and hasMore', async () => {
+        // Blessing-flow consumers still read `total` even when paginating
+        // by cursor, so dropping it from the cursor envelope is a breaking
+        // change this test guards against.
+        mockOfflineTokenRevocation.findMany.mockResolvedValue([
+          buildRevocationEntry({
+            jti: 'jti-1',
+            revokedAt: new Date('2026-06-20T00:00:00Z'),
+          }),
+        ]);
+        mockOfflineTokenRevocation.count.mockResolvedValue(7);
+
+        const result = await service.getRevocationList({ limit: 10, cursor });
+
+        expect(result).toEqual({
+          entries: [
+            {
+              jti: 'jti-1',
+              revokedAt: new Date('2026-06-20T00:00:00Z'),
+              reason: 'ADMIN_REVOCATION',
+            },
+          ],
+          total: 7,
+          nextCursor: null,
+          hasMore: false,
+        });
+      });
+
+      it('reports hasMore true and a decoded nextCursor when more pages exist', async () => {
+        mockOfflineTokenRevocation.findMany.mockResolvedValue([
+          buildRevocationEntry({
+            id: 'jti-1',
+            jti: 'jti-1',
+            revokedAt: new Date('2026-06-20T00:00:00Z'),
+          }),
+          buildRevocationEntry({
+            id: 'jti-2',
+            jti: 'jti-2',
+            revokedAt: new Date('2026-06-19T00:00:00Z'),
+          }),
+          buildRevocationEntry({
+            id: 'jti-3',
+            jti: 'jti-3',
+            revokedAt: new Date('2026-06-18T00:00:00Z'),
+          }),
+        ]);
+        mockOfflineTokenRevocation.count.mockResolvedValue(3);
+
+        const result = await service.getRevocationList({ limit: 2, cursor });
+
+        expect(result.entries).toHaveLength(2);
+        expect(result.hasMore).toBe(true);
+        const payload = JSON.parse(
+          Buffer.from(result.nextCursor as string, 'base64').toString('utf8'),
+        );
+        expect(payload).toEqual({
+          lastUpdatedAt: '2026-06-19T00:00:00.000Z',
+          lastId: 'jti-2',
+        });
       });
     });
   });

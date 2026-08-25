@@ -74,6 +74,67 @@ describe('InventoryAdjustmentsService', () => {
       expect(callWhere.createdAt).toBeDefined();
       expect(callWhere.createdAt.gte).toBeInstanceOf(Date);
     });
+
+    describe('cursor mode', () => {
+      const cursorTime = new Date('2026-02-01T00:00:00.000Z');
+      const cursor = Buffer.from(
+        JSON.stringify({
+          lastUpdatedAt: cursorTime.toISOString(),
+          lastId: 'adj-prev',
+        }),
+      ).toString('base64');
+
+      it('decodes the cursor into an OR keyset condition merged over base filters', async () => {
+        (prisma.inventoryAdjustmentDocument.findMany as jest.Mock).mockResolvedValue([]);
+
+        await service.findAll({ page: 1, pageSize: 20, state: 'DRAFT', cursor });
+
+        expect(prisma.inventoryAdjustmentDocument.findMany).toHaveBeenCalledWith({
+          where: {
+            state: 'DRAFT',
+            OR: [
+              { createdAt: { lt: cursorTime } },
+              { createdAt: cursorTime, id: { lt: 'adj-prev' } },
+            ],
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 21,
+        });
+      });
+
+      it('returns pageSize rows with hasMore true and a nextCursor built from the last row when more pages exist', async () => {
+        const rows = Array.from({ length: 3 }, (_, i) => ({
+          id: `adj-${i}`,
+          createdAt: new Date(Date.UTC(2026, 1, 10 - i)),
+        }));
+        (prisma.inventoryAdjustmentDocument.findMany as jest.Mock).mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 2, cursor });
+
+        expect(result.data).toHaveLength(2);
+        expect(result.hasMore).toBe(true);
+        const payload = JSON.parse(
+          Buffer.from(result.nextCursor as string, 'base64').toString('utf8'),
+        );
+        expect(payload).toEqual({
+          lastUpdatedAt: '2026-02-09T00:00:00.000Z',
+          lastId: 'adj-1',
+        });
+      });
+
+      it('sets hasMore false and null nextCursor when the page exhausts the result set', async () => {
+        const rows = Array.from({ length: 2 }, (_, i) => ({
+          id: `adj-${i}`,
+          createdAt: new Date(Date.UTC(2026, 1, 10 - i)),
+        }));
+        (prisma.inventoryAdjustmentDocument.findMany as jest.Mock).mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 2, cursor });
+
+        expect(result.hasMore).toBe(false);
+        expect(result.nextCursor).toBeNull();
+      });
+    });
   });
 
   // ── findById ─────────────────────────────────────────────────────────

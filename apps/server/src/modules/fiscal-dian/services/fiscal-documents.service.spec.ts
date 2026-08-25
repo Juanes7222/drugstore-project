@@ -111,7 +111,9 @@ describe('FiscalDocumentsService', () => {
       await service.findAll({ page: 1, pageSize: 10 });
 
       expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ orderBy: { issueDate: 'desc' } }),
+        expect.objectContaining({
+          orderBy: [{ issueDate: 'desc' }, { id: 'desc' }],
+        }),
       );
     });
 
@@ -206,6 +208,78 @@ describe('FiscalDocumentsService', () => {
           where: { fiscalState: 'VALIDATED', documentType: 'INVOICE' },
         }),
       );
+    });
+
+    describe('cursor mode', () => {
+      const cursorTime = new Date('2026-03-05T12:00:00.000Z');
+      const cursor = Buffer.from(
+        JSON.stringify({
+          lastUpdatedAt: cursorTime.toISOString(),
+          lastId: 'fd-prev',
+        }),
+      ).toString('base64');
+
+      it('decodes the cursor into an OR keyset condition on issueDate merged over base filters', async () => {
+        (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+
+        await service.findAll({
+          page: 1,
+          pageSize: 10,
+          state: 'VALIDATED',
+          documentType: 'INVOICE',
+          cursor,
+        });
+
+        expect(prisma.fiscalDocument.findMany).toHaveBeenCalledWith({
+          where: {
+            fiscalState: 'VALIDATED',
+            documentType: 'INVOICE',
+            OR: [
+              { issueDate: { lt: cursorTime } },
+              { issueDate: cursorTime, id: { lt: 'fd-prev' } },
+            ],
+          },
+          orderBy: [{ issueDate: 'desc' }, { id: 'desc' }],
+          take: 11,
+          include: {
+            resolution: { select: { prefix: true, resolutionNumber: true } },
+            allocation: { select: { workstationId: true } },
+          },
+        });
+      });
+
+      it('returns pageSize rows with hasMore true and a nextCursor built from the last row when more pages exist', async () => {
+        const rows = Array.from({ length: 3 }, (_, i) => ({
+          id: `fd-${i}`,
+          issueDate: new Date(Date.UTC(2026, 2, 10 - i)),
+        }));
+        (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 2, cursor });
+
+        expect(result.data).toHaveLength(2);
+        expect(result.hasMore).toBe(true);
+        const payload = JSON.parse(
+          Buffer.from(result.nextCursor as string, 'base64').toString('utf8'),
+        );
+        expect(payload).toEqual({
+          lastUpdatedAt: '2026-03-09T00:00:00.000Z',
+          lastId: 'fd-1',
+        });
+      });
+
+      it('sets hasMore false and null nextCursor when the page exhausts the result set', async () => {
+        const rows = Array.from({ length: 2 }, (_, i) => ({
+          id: `fd-${i}`,
+          issueDate: new Date(Date.UTC(2026, 2, 10 - i)),
+        }));
+        (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 2, cursor });
+
+        expect(result.hasMore).toBe(false);
+        expect(result.nextCursor).toBeNull();
+      });
     });
   });
 

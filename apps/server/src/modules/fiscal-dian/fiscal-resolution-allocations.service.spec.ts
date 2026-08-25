@@ -54,7 +54,7 @@ describe('FiscalResolutionAllocationsService', () => {
         expect.objectContaining({
           skip: 0,
           take: 20,
-          orderBy: { allocatedAt: 'desc' },
+          orderBy: [{ allocatedAt: 'desc' }, { id: 'desc' }],
         }),
       );
     });
@@ -72,6 +72,73 @@ describe('FiscalResolutionAllocationsService', () => {
       expect(prisma.fiscalResolutionAllocation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 30, take: 15 }),
       );
+    });
+
+    describe('cursor mode', () => {
+      const cursorTime = new Date('2026-04-01T09:00:00.000Z');
+      const cursor = Buffer.from(
+        JSON.stringify({
+          lastUpdatedAt: cursorTime.toISOString(),
+          lastId: 'alloc-prev',
+        }),
+      ).toString('base64');
+
+      it('decodes the cursor into an OR keyset condition on allocatedAt with take limit+1', async () => {
+        (
+          prisma.fiscalResolutionAllocation.findMany as jest.Mock
+        ).mockResolvedValue([]);
+
+        await service.findAll(1, 20, cursor);
+
+        expect(prisma.fiscalResolutionAllocation.findMany).toHaveBeenCalledWith({
+          where: {
+            OR: [
+              { allocatedAt: { lt: cursorTime } },
+              { allocatedAt: cursorTime, id: { lt: 'alloc-prev' } },
+            ],
+          },
+          orderBy: [{ allocatedAt: 'desc' }, { id: 'desc' }],
+          take: 21,
+        });
+      });
+
+      it('returns pageSize rows with hasMore true and a nextCursor built from the last row when more pages exist', async () => {
+        const rows = Array.from({ length: 3 }, (_, i) => ({
+          id: `alloc-${i}`,
+          allocatedAt: new Date(Date.UTC(2026, 3, 10 - i)),
+        }));
+        (
+          prisma.fiscalResolutionAllocation.findMany as jest.Mock
+        ).mockResolvedValue(rows);
+
+        const result = await service.findAll(1, 2, cursor);
+
+        expect(result.data).toHaveLength(2);
+        expect(result.pageSize).toBe(2);
+        expect(result.hasMore).toBe(true);
+        const payload = JSON.parse(
+          Buffer.from(result.nextCursor as string, 'base64').toString('utf8'),
+        );
+        expect(payload).toEqual({
+          lastUpdatedAt: '2026-04-09T00:00:00.000Z',
+          lastId: 'alloc-1',
+        });
+      });
+
+      it('sets hasMore false and null nextCursor when the page exhausts the result set', async () => {
+        const rows = Array.from({ length: 2 }, (_, i) => ({
+          id: `alloc-${i}`,
+          allocatedAt: new Date(Date.UTC(2026, 3, 10 - i)),
+        }));
+        (
+          prisma.fiscalResolutionAllocation.findMany as jest.Mock
+        ).mockResolvedValue(rows);
+
+        const result = await service.findAll(1, 2, cursor);
+
+        expect(result.hasMore).toBe(false);
+        expect(result.nextCursor).toBeNull();
+      });
     });
   });
 

@@ -157,7 +157,7 @@ describe('RevocationListService', () => {
       expect(result.entries).toHaveLength(2);
       expect(mockOfflineTokenRevocation.findMany).toHaveBeenCalledWith({
         where: {},
-        orderBy: { revokedAt: 'desc' },
+        orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
         take: 5,
         skip: 0,
       });
@@ -172,7 +172,7 @@ describe('RevocationListService', () => {
 
       expect(mockOfflineTokenRevocation.findMany).toHaveBeenCalledWith({
         where: { revokedAt: { gt: since } },
-        orderBy: { revokedAt: 'desc' },
+        orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
         take: 100,
         skip: 0,
       });
@@ -207,6 +207,99 @@ describe('RevocationListService', () => {
       expect(mockOfflineTokenRevocation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 100, skip: 0 }),
       );
+    });
+
+    describe('cursor mode', () => {
+      const cursorTime = new Date('2026-06-15T00:00:00.000Z');
+      const cursor = Buffer.from(
+        JSON.stringify({
+          lastUpdatedAt: cursorTime.toISOString(),
+          lastId: 'jti-prev',
+        }),
+      ).toString('base64');
+
+      it('decodes the cursor into an OR keyset condition merged over the since filter and counts with the same filter', async () => {
+        const since = new Date('2026-06-01T00:00:00Z');
+        mockOfflineTokenRevocation.findMany.mockResolvedValue([]);
+        mockOfflineTokenRevocation.count.mockResolvedValue(0);
+
+        await service.getList({ since, limit: 10, cursor });
+
+        expect(mockOfflineTokenRevocation.findMany).toHaveBeenCalledWith({
+          where: {
+            revokedAt: { gt: since },
+            OR: [
+              { revokedAt: { lt: cursorTime } },
+              { revokedAt: cursorTime, id: { lt: 'jti-prev' } },
+            ],
+          },
+          orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
+          take: 11,
+        });
+        expect(mockOfflineTokenRevocation.count).toHaveBeenCalledWith({
+          where: { revokedAt: { gt: since } },
+        });
+      });
+
+      it('keeps total in the response contract alongside nextCursor and hasMore', async () => {
+        // Existing consumers read `total` regardless of pagination mode, so
+        // the cursor envelope must not drop it.
+        mockOfflineTokenRevocation.findMany.mockResolvedValue([
+          buildDbEntry({
+            jti: 'jti-1',
+            revokedAt: new Date('2026-06-20T00:00:00Z'),
+          }),
+        ]);
+        mockOfflineTokenRevocation.count.mockResolvedValue(9);
+
+        const result = await service.getList({ limit: 10, cursor });
+
+        expect(result).toEqual({
+          entries: [
+            {
+              jti: 'jti-1',
+              revokedAt: new Date('2026-06-20T00:00:00Z'),
+              reason: 'ADMIN_REVOCATION',
+            },
+          ],
+          total: 9,
+          nextCursor: null,
+          hasMore: false,
+        });
+      });
+
+      it('reports hasMore true and a decoded nextCursor when more pages exist', async () => {
+        mockOfflineTokenRevocation.findMany.mockResolvedValue([
+          buildDbEntry({
+            id: 'jti-1',
+            jti: 'jti-1',
+            revokedAt: new Date('2026-06-20T00:00:00Z'),
+          }),
+          buildDbEntry({
+            id: 'jti-2',
+            jti: 'jti-2',
+            revokedAt: new Date('2026-06-19T00:00:00Z'),
+          }),
+          buildDbEntry({
+            id: 'jti-3',
+            jti: 'jti-3',
+            revokedAt: new Date('2026-06-18T00:00:00Z'),
+          }),
+        ]);
+        mockOfflineTokenRevocation.count.mockResolvedValue(3);
+
+        const result = await service.getList({ limit: 2, cursor });
+
+        expect(result.entries).toHaveLength(2);
+        expect(result.hasMore).toBe(true);
+        const payload = JSON.parse(
+          Buffer.from(result.nextCursor as string, 'base64').toString('utf8'),
+        );
+        expect(payload).toEqual({
+          lastUpdatedAt: '2026-06-19T00:00:00.000Z',
+          lastId: 'jti-2',
+        });
+      });
     });
   });
 

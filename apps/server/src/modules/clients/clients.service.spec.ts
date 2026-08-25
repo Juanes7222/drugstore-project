@@ -99,9 +99,122 @@ describe('ClientsService', () => {
         expect.objectContaining({
           skip: 20,
           take: 20,
-          orderBy: { updatedAt: 'desc' },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
         }),
       );
+    });
+
+    it('searches fullName and identificationNumber without the removed businessName column', async () => {
+      // Regression: Client has no businessName column; filtering on it made
+      // every searched request fail Prisma runtime validation. The exact-shape
+      // assertion below fails if businessName ever reappears in the clause.
+      (prisma.client.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.client.count as jest.Mock).mockResolvedValue(0);
+      (prisma.$transaction as jest.Mock).mockImplementation(
+        (operations: Promise<unknown>[]) => Promise.all(operations),
+      );
+
+      await service.findAll({ page: 1, pageSize: 20, search: 'Farma' });
+
+      expect(prisma.client.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { fullName: { contains: 'Farma', mode: 'insensitive' } },
+              { identificationNumber: { contains: 'Farma' } },
+            ],
+          },
+        }),
+      );
+    });
+
+    describe('cursor mode', () => {
+      const cursorTime = new Date('2026-02-15T00:00:00.000Z');
+      const cursor = Buffer.from(
+        JSON.stringify({
+          lastUpdatedAt: cursorTime.toISOString(),
+          lastId: 'client-prev',
+        }),
+      ).toString('base64');
+
+      it('decodes the cursor into an OR keyset condition on updatedAt merged over base filters', async () => {
+        (prisma.client.findMany as jest.Mock).mockResolvedValue([]);
+
+        await service.findAll({
+          page: 1,
+          pageSize: 20,
+          since: '2026-01-01T00:00:00.000Z',
+          cursor,
+        });
+
+        expect(prisma.client.findMany).toHaveBeenCalledWith({
+          where: {
+            updatedAt: { gte: new Date('2026-01-01T00:00:00.000Z') },
+            OR: [
+              { updatedAt: { lt: cursorTime } },
+              { updatedAt: cursorTime, id: { lt: 'client-prev' } },
+            ],
+          },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+          take: 21,
+        });
+      });
+
+      it('walks findSync with an updatedAt keyset when the optional cursor param is set', async () => {
+        (prisma.client.findMany as jest.Mock).mockResolvedValue([]);
+
+        const result = await service.findSync(
+          undefined,
+          5,
+          50,
+          cursor,
+        );
+
+        expect(prisma.client.findMany).toHaveBeenCalledWith({
+          where: {
+            OR: [
+              { updatedAt: { lt: cursorTime } },
+              { updatedAt: cursorTime, id: { lt: 'client-prev' } },
+            ],
+          },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+          take: 51,
+        });
+        expect(result.pageSize).toBe(50);
+      });
+
+      it('returns pageSize rows with hasMore true and a nextCursor built from the last row when more pages exist', async () => {
+        const rows = Array.from({ length: 3 }, (_, i) => ({
+          id: `client-${i}`,
+          updatedAt: new Date(Date.UTC(2026, 1, 20 - i)),
+        }));
+        (prisma.client.findMany as jest.Mock).mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 2, cursor });
+
+        expect(result.data).toHaveLength(2);
+        expect(result.hasMore).toBe(true);
+        const payload = JSON.parse(
+          Buffer.from(result.nextCursor as string, 'base64').toString('utf8'),
+        );
+        expect(payload).toEqual({
+          lastUpdatedAt: '2026-02-19T00:00:00.000Z',
+          lastId: 'client-1',
+        });
+      });
+
+      it('sets hasMore false and null nextCursor when the page exhausts the result set', async () => {
+        const rows = Array.from({ length: 2 }, (_, i) => ({
+          id: `client-${i}`,
+          updatedAt: new Date(Date.UTC(2026, 1, 20 - i)),
+        }));
+        (prisma.client.findMany as jest.Mock).mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 2, cursor });
+
+        expect(result.hasMore).toBe(false);
+        expect(result.nextCursor).toBeNull();
+      });
     });
   });
 

@@ -122,6 +122,78 @@ describe('SalesService', () => {
 
       expect(result).toEqual({ data: [], total: 0, page: 1, pageSize: 20 });
     });
+
+    describe('cursor mode', () => {
+      // Base64 payload {lastUpdatedAt,lastId} as produced by a previous
+      // page of paginateWithCursor.
+      const cursorTime = new Date('2026-01-15T10:00:00.000Z');
+      const cursor = Buffer.from(
+        JSON.stringify({
+          lastUpdatedAt: cursorTime.toISOString(),
+          lastId: 'sale-prev',
+        }),
+      ).toString('base64');
+
+      it('decodes the cursor into an OR keyset condition merged over base filters', async () => {
+        (prisma.sale.findMany as jest.Mock).mockResolvedValue([]);
+        (prisma.sale.count as jest.Mock).mockResolvedValue(0);
+
+        await service.findAll({ page: 1, pageSize: 20, cashShiftId: 'shift-1', cursor });
+
+        expect(prisma.sale.findMany).toHaveBeenCalledWith({
+          where: {
+            cashShiftId: 'shift-1',
+            OR: [
+              { startedAt: { lt: cursorTime } },
+              { startedAt: cursorTime, id: { lt: 'sale-prev' } },
+            ],
+          },
+          orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+          take: 21,
+          include: {
+            items: true,
+            payments: true,
+            client: true,
+            cashShift: true,
+            workstation: true,
+          },
+        });
+      });
+
+      it('returns pageSize rows with hasMore true and a nextCursor built from the last row when more pages exist', async () => {
+        const rows = Array.from({ length: 4 }, (_, i) => ({
+          id: `sale-${i}`,
+          startedAt: new Date(Date.UTC(2026, 0, 20 - i)),
+        }));
+        (prisma.sale.findMany as jest.Mock).mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 3, cursor });
+
+        expect(result.data).toHaveLength(3);
+        expect(result.hasMore).toBe(true);
+        const payload = JSON.parse(
+          Buffer.from(result.nextCursor as string, 'base64').toString('utf8'),
+        );
+        expect(payload).toEqual({
+          lastUpdatedAt: '2026-01-18T00:00:00.000Z',
+          lastId: 'sale-2',
+        });
+      });
+
+      it('sets hasMore false and null nextCursor when the page exhausts the result set', async () => {
+        const rows = Array.from({ length: 3 }, (_, i) => ({
+          id: `sale-${i}`,
+          startedAt: new Date(Date.UTC(2026, 0, 20 - i)),
+        }));
+        (prisma.sale.findMany as jest.Mock).mockResolvedValue(rows);
+
+        const result = await service.findAll({ page: 1, pageSize: 3, cursor });
+
+        expect(result.data).toHaveLength(3);
+        expect(result.hasMore).toBe(false);
+        expect(result.nextCursor).toBeNull();
+      });
+    });
   });
 
   describe('findById', () => {
