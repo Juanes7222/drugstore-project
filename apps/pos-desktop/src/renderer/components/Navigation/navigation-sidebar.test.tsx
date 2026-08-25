@@ -5,7 +5,7 @@
  * and navigation dispatch.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { configureStore, type Store } from "@reduxjs/toolkit";
 import { uiSlice } from "@/store/slices/ui-slice";
@@ -355,6 +355,46 @@ describe("NavigationSidebar", () => {
       expect(
         screen.getByRole("navigation"),
       ).toHaveAttribute("data-expanded", "false");
+    });
+  });
+
+  describe("NAV-09: reactive session updates", () => {
+    // Regression guard for the switch from the non-reactive
+    // useLocalSessionStore.getState() to the subscribed hook: item
+    // visibility must follow session changes while the sidebar stays
+    // mounted, without a remount.
+    it("shows owner-only items after the session upgrades to OWNER while mounted", () => {
+      setSessionRole("CASHIER");
+      renderSidebar();
+
+      expect(
+        screen.queryByRole("menuitem", { name: "Configuración" }),
+      ).not.toBeInTheDocument();
+
+      act(() => {
+        setSessionRole("OWNER");
+      });
+
+      expect(
+        screen.getByRole("menuitem", { name: "Configuración" }),
+      ).toBeInTheDocument();
+    });
+
+    it("hides management items after the session downgrades to CASHIER while mounted", () => {
+      setSessionRole("MANAGER");
+      renderSidebar();
+
+      expect(
+        screen.getByRole("menuitem", { name: /salud de sinc/i }),
+      ).toBeInTheDocument();
+
+      act(() => {
+        setSessionRole("CASHIER");
+      });
+
+      expect(
+        screen.queryByRole("menuitem", { name: /salud de sinc/i }),
+      ).not.toBeInTheDocument();
     });
   });
 });

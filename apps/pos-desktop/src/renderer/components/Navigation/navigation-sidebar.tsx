@@ -5,11 +5,9 @@
  * Renders role-gated navigation items grouped by category; the list scrolls
  * internally when it does not fit the window height.
  *
- * Items are grouped and shown/hidden based on the current session role:
- *   - Sales (CASHIER or above)
- *   - Returns (CASHIER or above)
- *   - Inventory Adjustments (INVENTORY_ASSISTANT or ADMIN)
- *   - Admin / Sync (ADMIN only)
+ * Items are grouped and shown/hidden based on the current session role.
+ * Screen access lives in screen-access.ts, shared with the route guard in
+ * App.tsx so visibility and reachability never drift apart.
  *
  * The pin button at the bottom keeps the rail expanded persistently
  * (stored in the user-preferences store, so it survives restarts).
@@ -20,12 +18,12 @@ import { motion, useReducedMotion } from "motion/react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { selectActiveScreen, setActiveScreen } from "@/store/slices/ui-slice";
 import type { PosScreen } from "@/store/slices/ui-types";
-import { useLocalSessionStore, hasMinRole } from "../../../domain/auth/local-session.store";
+import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
 import { useUserPreferencesStore } from "../../../stores/user-preferences.store";
-import { RoleType } from "@pharmacy/shared-types";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
 import type { PrismaClient } from "@pharmacy/database/local";
 import { createSyncMetricsService } from "../../../domain/sync/sync-metrics.service";
+import { canAccessScreen } from "./screen-access";
 import {
   ArchiveIcon,
   BarChartIcon,
@@ -51,7 +49,6 @@ import {
 interface NavItem {
   screen: PosScreen;
   labelKey: string;
-  roles: RoleType[];
   icon: FC<{ className?: string }>;
   /** Additional screens that should highlight this nav item as active. */
   relatedScreens?: PosScreen[];
@@ -156,55 +153,34 @@ const NavFiscalIcon: FC<{ className?: string }> = ({ className }) => (
   <ReceiptIcon className={className} size={20} />
 );
 
-/**
- * Check if the current session's role is among the allowed roles for a nav item.
- */
-const hasAccess = (allowedRoles: RoleType[]): boolean => {
-  const session = useLocalSessionStore.getState().session;
-  if (!session) {
-    return false;
-  }
-  return allowedRoles.some((role) => hasMinRole(session, role));
-};
-
 const NAV_ITEMS: NavItem[] = [
   {
     screen: "home",
     labelKey: "navigation.home",
-    roles: [RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ACCOUNTANT, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavHomeIcon,
     category: "operation",
   },
   {
     screen: "sales",
     labelKey: "navigation.sales",
-    roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavSalesIcon,
     category: "operation",
   },
   {
     screen: "sales-history",
     labelKey: "navigation.sales_history",
-    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavHistoryIcon,
     category: "operation",
   },
   {
     screen: "returns",
     labelKey: "navigation.returns",
-    roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavReturnsIcon,
     category: "operation",
   },
   {
     screen: "productos-main",
     labelKey: "navigation.products_main",
-    roles: [
-      RoleType.INVENTORY_ASSISTANT,
-      RoleType.MANAGER,
-      RoleType.OWNER,
-      RoleType.SAAS_ADMIN,
-    ],
     icon: NavInventoryIcon,
     relatedScreens: [
       "productos-main",
@@ -217,12 +193,6 @@ const NAV_ITEMS: NavItem[] = [
   {
     screen: "purchases-main",
     labelKey: "navigation.suppliers",
-    roles: [
-      RoleType.INVENTORY_ASSISTANT,
-      RoleType.MANAGER,
-      RoleType.OWNER,
-      RoleType.SAAS_ADMIN,
-    ],
     icon: NavPurchasesIcon,
     relatedScreens: [
       "purchases-main",
@@ -236,35 +206,30 @@ const NAV_ITEMS: NavItem[] = [
   {
     screen: "cash-shift",
     labelKey: "navigation.cash_shift",
-    roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER],
     icon: NavCashShiftIcon,
     category: "operation",
   },
   {
     screen: "clients",
     labelKey: "navigation.clients",
-    roles: [RoleType.CASHIER, RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavClientsIcon,
     category: "operation",
   },
   {
     screen: "user-management",
     labelKey: "navigation.user_management",
-    roles: [RoleType.MANAGER, RoleType.OWNER],
     icon: NavUsersIcon,
     category: "management",
   },
   {
     screen: "license-status",
     labelKey: "licensing.subscription.title",
-    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavLicenseIcon,
     category: "management",
   },
   {
     screen: "printing",
     labelKey: "navigation.printing",
-    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavPrinterIcon,
     relatedScreens: ["printers", "print-queue", "setup-wizard"],
     category: "management",
@@ -272,56 +237,42 @@ const NAV_ITEMS: NavItem[] = [
   {
     screen: "fiscal",
     labelKey: "navigation.fiscal",
-    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavFiscalIcon,
     category: "management",
   },
   {
     screen: "audit-log",
     labelKey: "navigation.audit_log",
-    roles: [RoleType.MANAGER, RoleType.OWNER],
     icon: NavAuditIcon,
     category: "management",
   },
   {
     screen: "admin-menu",
     labelKey: "navigation.admin_menu",
-    roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavAdminIcon,
     category: "system",
   },
   {
     screen: "sync-health",
     labelKey: "navigation.sync_health",
-    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavSyncHealthIcon,
     category: "system",
   },
   {
     screen: "local-network",
     labelKey: "navigation.local_network",
-    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavLocalNetworkIcon,
     category: "system",
   },
   {
     screen: "recovery",
     labelKey: "navigation.recovery",
-    roles: [RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavRecoveryIcon,
     category: "system",
   },
   {
     screen: "reports",
     labelKey: "navigation.reports",
-    roles: [
-      RoleType.CASHIER,
-      RoleType.MANAGER,
-      RoleType.OWNER,
-      RoleType.SAAS_ADMIN,
-      RoleType.ACCOUNTANT,
-      RoleType.INVENTORY_ASSISTANT,
-    ],
     icon: NavReportsIcon,
     category: "management",
   },
@@ -385,7 +336,10 @@ export const NavigationSidebar: FC<NavigationSidebarProps> = ({
     [dispatch],
   );
 
-  const visibleItems = NAV_ITEMS.filter((item) => hasAccess(item.roles));
+  const session = useLocalSessionStore((s) => s.session);
+  const visibleItems = NAV_ITEMS.filter((item) =>
+    canAccessScreen(session, item.screen),
+  );
 
   const groupedCategories = CATEGORY_ORDER.map((category) => ({
     category,

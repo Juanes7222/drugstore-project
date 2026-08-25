@@ -11,6 +11,7 @@
 import { type FC, useEffect, useMemo, useRef } from "react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { Toaster } from "sileo";
+import { useTranslation } from "react-i18next";
 import { AppShell } from "@/components/common/app-shell";
 import { DatabaseProof } from "@/components/DatabaseProof/database-proof";
 import { Home } from "@/components/Home/home";
@@ -18,6 +19,7 @@ import { SalesTransaction } from "@/components/SalesTransaction/sales-transactio
 import { PaymentProcessing } from "@/components/PaymentProcessing/payment-processing";
 import { Receipt } from "@/components/Receipt/receipt";
 import { NavigationSidebar } from "@/components/Navigation/navigation-sidebar";
+import { canAccessScreen } from "@/components/Navigation/screen-access";
 import { CashShiftPage } from "@/components/cash-shift/cash-shift.page";
 import { ClientsPage } from "@/components/clients/clients.page";
 import { FiscalPage } from "../domain/fiscal/fiscal.page";
@@ -130,6 +132,7 @@ const InnerApp: FC = () => {
   const activeScreen = useAppSelector(selectActiveScreen);
   const isOnline = useOnlineStatus();
   const shouldReduceMotion = useReducedMotion();
+  const { t } = useTranslation();
 
   // Directional transitions — slides depend on whether the new screen sits
   // before or after the previous one in the navigation order. The previous
@@ -233,6 +236,18 @@ const InnerApp: FC = () => {
 
   const licenseStatus = useLicenseStore((s) => s.status);
 
+  // Route guard — a screen the session's role cannot open is redirected to
+  // home before it can render, so its mount-time requests never fire (and
+  // never fail with authorization errors). Covers every navigation path:
+  // sidebar, in-page redirects, deep-linked ui state left by a previous
+  // session.
+  useEffect(() => {
+    if (!session) return;
+    if (!canAccessScreen(session, activeScreen)) {
+      dispatch(setActiveScreen("home"));
+    }
+  }, [session, activeScreen, dispatch]);
+
   const variants: Variants = {
     initial: (direction: number) =>
       shouldReduceMotion
@@ -320,6 +335,43 @@ if (activeScreen === "company-setup") {
         </>
       );
     }
+
+  // Render-time backstop for the route guard: while the redirect effect has
+  // not landed yet, keep the unauthorized page unmounted and show the shell
+  // with a neutral notice instead.
+  if (session && !canAccessScreen(session, activeScreen)) {
+    return (
+      <AppShell
+        cashierName={session.fullName}
+        initialSyncState={isOnline ? "online" : "offline"}
+      >
+        <OfflineModeBanner />
+        <div className="flex h-full">
+          <NavigationSidebar />
+          <div className="flex flex-1 flex-col items-center justify-center gap-pos-md px-6 text-center">
+            <p
+              className="text-body-sm"
+              style={{ color: "var(--color-ink-muted)" }}
+              role="status"
+            >
+              {t("access.screen_not_allowed")}
+            </p>
+            {/* Escape hatch for sessions whose role is unknown to the client
+                hierarchy — otherwise the notice would trap the user forever. */}
+            <button
+              type="button"
+              className="pos-button pos-button-secondary"
+              onClick={() => useLocalSessionStore.getState().clearSession()}
+            >
+              {t("access.close_session")}
+            </button>
+          </div>
+        </div>
+        <PendingBlessingModal />
+        {assistantLayer}
+      </AppShell>
+    );
+  }
 
   if (activeScreen === "user-management") {
     return (
