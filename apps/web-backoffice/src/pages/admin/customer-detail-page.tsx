@@ -1,11 +1,17 @@
 import { useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import axios from "axios";
 import type { ColumnDef } from "@tanstack/react-table";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
+import Dialog from "@mui/material/Dialog";
+import DialogActions from "@mui/material/DialogActions";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import Grid from "@mui/material/Grid";
+import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
@@ -28,6 +34,7 @@ import type {
   UserListItem,
   WorkstationRow,
 } from "../../types/backoffice";
+import type { SaasAdminCustomerPaymentRow } from "../../types/saas-admin";
 import {
   dateInputToIso,
   formatCop,
@@ -35,6 +42,15 @@ import {
   formatDateTime,
   formatNumber,
 } from "../../utils/format";
+import {
+  changeSaasCustomerPlan,
+  extendSaasCustomerTrial,
+  fetchSaasCustomerPayments,
+  fetchSaasPlanOptions,
+  reactivateSaasCustomer,
+  suspendSaasCustomer,
+} from "../../services/saas-admin";
+import { Alert } from "@mui/material";
 import { KpiCard } from "../../components/common/kpi-card";
 import { PageHeader } from "../../components/common/page-header";
 import { DataTable } from "../../components/tables/data-table";
@@ -57,19 +73,104 @@ export function CustomerDetailPage() {
   return <CustomerDetailContent id={customerId} />;
 }
 
+type ActionDialogKind = "suspend" | "reactivate" | "plan" | "trial" | null;
+
+function lifecycleErrorCode(error: unknown): string | null {
+  if (axios.isAxiosError(error)) {
+    return (
+      (error.response?.data as { errorCode?: string } | undefined)?.errorCode ??
+      null
+    );
+  }
+  return null;
+}
+
 function CustomerDetailContent({ id }: { id: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<SaasAdminTabKey>("overview");
+  const [actionsAnchor, setActionsAnchor] = useState<HTMLElement | null>(null);
+  const [dialog, setDialog] = useState<ActionDialogKind>(null);
+  const [planCode, setPlanCode] = useState("");
+  const [trialDays, setTrialDays] = useState("15");
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const { data: customer, isLoading, isError, refetch } = useQuery({
     queryKey: ["saas-customer", id],
     queryFn: () => fetchSaasCustomer(id),
   });
 
+  const plansQuery = useQuery({
+    queryKey: ["saas-plan-options"],
+    queryFn: fetchSaasPlanOptions,
+    enabled: dialog === "plan",
+  });
+
+  const closeDialog = () => {
+    setDialog(null);
+    setActionError(null);
+  };
+
+  // Lifecycle actions return the refreshed row; patch the detail cache and
+  // invalidate every list that shows status-derived numbers.
+  const lifecycleMutation = useMutation({
+    mutationFn: async (): Promise<void> => {
+      switch (dialog) {
+        case "suspend":
+          await suspendSaasCustomer(id);
+          break;
+        case "reactivate":
+          await reactivateSaasCustomer(id);
+          break;
+        case "plan":
+          await changeSaasCustomerPlan(id, planCode);
+          break;
+        case "trial": {
+          const days = Number(trialDays);
+          if (!Number.isInteger(days) || days < 1 || days > 90) {
+            throw new Error("invalid-days");
+          }
+          await extendSaasCustomerTrial(id, days);
+          break;
+        }
+        default:
+          break;
+      }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["saas-customer", id] });
+      void queryClient.invalidateQueries({ queryKey: ["saas-customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["saas-platform-overview"] });
+      void queryClient.invalidateQueries({ queryKey: ["saas-trials-ending"] });
+      closeDialog();
+    },
+    onError: (error) => {
+      if (error instanceof Error && error.message === "invalid-days") {
+        setActionError(t("saas.actions.errDays"));
+        return;
+      }
+      const code = lifecycleErrorCode(error);
+      setActionError(
+        code === "SUBSCRIPTION_CANNOT_REACTIVATE"
+          ? t("saas.actions.errReactivate")
+          : code === "SUBSCRIPTION_NOT_IN_TRIAL"
+            ? t("saas.actions.errNotTrial")
+            : code === "PLAN_NOT_FOUND"
+              ? t("saas.actions.errPlan")
+              : t("common.error"),
+      );
+    },
+  });
+
+  const isSuspended = customer?.status === "SUSPENDED";
+  const isPastDue = customer?.status === "PAST_DUE";
+  const isTrial = customer?.status === "TRIAL";
+
   const tabs: { key: SaasAdminTabKey; label: string }[] = [
     { key: "overview", label: t("saas.customer.tabsOverview") },
     { key: "sales", label: t("saas.customer.tabsSales") },
+    { key: "payments", label: t("saas.customer.tabsPayments") },
     { key: "users", label: t("saas.customer.tabsUsers") },
     { key: "sessions", label: t("saas.customer.tabsSessions") },
     { key: "workstations", label: t("saas.customer.tabsWorkstations") },
@@ -99,7 +200,66 @@ function CustomerDetailContent({ id }: { id: string }) {
               name: customer.plan.name,
               taxId: customer.customerTaxId,
             })}
-            actions={<StatusChip value={customer.status} kind="subscription" />}
+            actions={
+              <Box display="flex" alignItems="center" gap={1.5}>
+                <StatusChip value={customer.status} kind="subscription" />
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={(event) => setActionsAnchor(event.currentTarget)}
+                  aria-haspopup="menu"
+                  aria-expanded={actionsAnchor !== null}
+                >
+                  {t("saas.actions.manage")}
+                </Button>
+                <Menu
+                  anchorEl={actionsAnchor}
+                  open={actionsAnchor !== null}
+                  onClose={() => setActionsAnchor(null)}
+                >
+                  {isSuspended || isPastDue ? (
+                    <MenuItem
+                      onClick={() => {
+                        setActionsAnchor(null);
+                        setDialog("reactivate");
+                      }}
+                    >
+                      {t("saas.actions.reactivate")}
+                    </MenuItem>
+                  ) : null}
+                  {isTrial ? (
+                    <MenuItem
+                      onClick={() => {
+                        setActionsAnchor(null);
+                        setTrialDays("15");
+                        setDialog("trial");
+                      }}
+                    >
+                      {t("saas.actions.extendTrial")}
+                    </MenuItem>
+                  ) : null}
+                  <MenuItem
+                    onClick={() => {
+                      setActionsAnchor(null);
+                      setPlanCode(customer.plan.code);
+                      setDialog("plan");
+                    }}
+                  >
+                    {t("saas.actions.changePlan")}
+                  </MenuItem>
+                  {!isSuspended ? (
+                    <MenuItem
+                      onClick={() => {
+                        setActionsAnchor(null);
+                        setDialog("suspend");
+                      }}
+                    >
+                      {t("saas.actions.suspend")}
+                    </MenuItem>
+                  ) : null}
+                </Menu>
+              </Box>
+            }
           />
 
           <Tabs
@@ -116,10 +276,124 @@ function CustomerDetailContent({ id }: { id: string }) {
           {/* Only the active panel mounts, so each tab loads its own data. */}
           {tab === "overview" ? <OverviewPanel id={id} /> : null}
           {tab === "sales" ? <SalesPanel id={id} /> : null}
+          {tab === "payments" ? <PaymentsPanel id={id} /> : null}
           {tab === "users" ? <UsersPanel id={id} /> : null}
           {tab === "sessions" ? <SessionsPanel id={id} /> : null}
           {tab === "workstations" ? <WorkstationsPanel id={id} /> : null}
           {tab === "fiscal" ? <FiscalPanel id={id} /> : null}
+
+          {/* Lifecycle dialogs — one generic shell, per-kind body. */}
+          <Dialog
+            open={dialog === "suspend" || dialog === "reactivate"}
+            onClose={closeDialog}
+            aria-labelledby="lifecycle-dialog-title"
+          >
+            <DialogTitle id="lifecycle-dialog-title">
+              {dialog === "suspend"
+                ? t("saas.actions.suspendConfirmTitle")
+                : t("saas.actions.reactivateConfirmTitle")}
+            </DialogTitle>
+            <DialogContent>
+              {actionError ? (
+                <Alert severity="error" role="alert" sx={{ mb: 1 }}>
+                  {actionError}
+                </Alert>
+              ) : null}
+              <Typography variant="body2" color="text.secondary">
+                {t("saas.actions.confirmMessage", {
+                  customer: customer?.customerName ?? "",
+                })}
+              </Typography>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={closeDialog}>{t("common.cancel")}</Button>
+              <Button
+                variant="contained"
+                color={dialog === "suspend" ? "error" : "primary"}
+                disabled={lifecycleMutation.isPending}
+                onClick={() => lifecycleMutation.mutate()}
+              >
+                {t("common.confirm")}
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <Dialog
+            open={dialog === "plan"}
+            onClose={closeDialog}
+            aria-labelledby="plan-dialog-title"
+          >
+            <DialogTitle id="plan-dialog-title">
+              {t("saas.actions.changePlan")}
+            </DialogTitle>
+            <DialogContent sx={{ minWidth: 320 }}>
+              {actionError ? (
+                <Alert severity="error" role="alert" sx={{ mb: 1 }}>
+                  {actionError}
+                </Alert>
+              ) : null}
+              <TextField
+                select
+                fullWidth
+                label={t("saas.columns.plan")}
+                value={planCode}
+                onChange={(event) => setPlanCode(event.target.value)}
+                disabled={plansQuery.isLoading}
+              >
+                {(plansQuery.data ?? []).map((plan) => (
+                  <MenuItem key={plan.id} value={plan.code}>
+                    {plan.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={closeDialog}>{t("common.cancel")}</Button>
+              <Button
+                variant="contained"
+                disabled={!planCode || lifecycleMutation.isPending}
+                onClick={() => lifecycleMutation.mutate()}
+              >
+                {t("common.confirm")}
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <Dialog
+            open={dialog === "trial"}
+            onClose={closeDialog}
+            aria-labelledby="trial-dialog-title"
+          >
+            <DialogTitle id="trial-dialog-title">
+              {t("saas.actions.extendTrial")}
+            </DialogTitle>
+            <DialogContent sx={{ minWidth: 280 }}>
+              {actionError ? (
+                <Alert severity="error" role="alert" sx={{ mb: 1 }}>
+                  {actionError}
+                </Alert>
+              ) : null}
+              <TextField
+                type="number"
+                fullWidth
+                label={t("saas.actions.trialDays")}
+                value={trialDays}
+                inputProps={{ min: 1, max: 90 }}
+                onChange={(event) => setTrialDays(event.target.value)}
+                helperText={t("saas.actions.trialDaysHint")}
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={closeDialog}>{t("common.cancel")}</Button>
+              <Button
+                variant="contained"
+                disabled={lifecycleMutation.isPending}
+                onClick={() => lifecycleMutation.mutate()}
+              >
+                {t("common.confirm")}
+              </Button>
+            </DialogActions>
+          </Dialog>
         </>
       )}
     </Box>
@@ -377,6 +651,96 @@ function SalesPanel({ id }: { id: string }) {
       ) : null}
     </Box>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+function PaymentsPanel({ id }: { id: string }) {
+  const { t } = useTranslation();
+  const [page, setPage] = useState(1);
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["saas-customer-payments", id, page],
+    queryFn: () => fetchSaasCustomerPayments(id, page, PAGE_SIZE),
+    placeholderData: (previous) => previous,
+  });
+
+  const columns = useMemo<ColumnDef<SaasAdminCustomerPaymentRow, unknown>[]>(
+    () => [
+      {
+        id: "recordedAt",
+        header: t("saas.payments.recordedAt"),
+        accessorKey: "recordedAt",
+        cell: (info) => formatDateTime(info.getValue<string>()),
+      },
+      {
+        id: "amount",
+        header: t("sales.total"),
+        accessorKey: "amount",
+        meta: { align: "right" },
+        cell: (info) => (
+          <Typography variant="body2" fontWeight={600} sx={{ fontVariantNumeric: "tabular-nums" }}>
+            {formatCop(info.getValue<string>())}
+          </Typography>
+        ),
+      },
+      {
+        id: "currency",
+        header: t("saas.payments.currency"),
+        accessorKey: "currency",
+      },
+      {
+        id: "method",
+        header: t("saas.payments.method"),
+        accessorKey: "method",
+        cell: (info) => info.getValue<string | null>() ?? "—",
+      },
+      {
+        id: "externalReference",
+        header: t("saas.payments.reference"),
+        accessorKey: "externalReference",
+        cell: (info) => (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              display: "-webkit-box",
+              WebkitLineClamp: 1,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              maxWidth: 220,
+            }}
+          >
+            {info.getValue<string | null>() ?? "—"}
+          </Typography>
+        ),
+      },
+    ],
+    [t],
+  );
+
+  return isLoading && !data ? (
+    <LoadingState />
+  ) : isError ? (
+    <ErrorState onRetry={() => void refetch()} />
+  ) : data ? (
+    <DataTable
+      columns={columns}
+      data={data.data}
+      total={data.total}
+      page={data.page}
+      pageSize={data.pageSize}
+      totalPages={data.totalPages}
+      onPageChange={setPage}
+      getRowId={(row) => row.id}
+      isLoading={isLoading}
+      isError={isError}
+      onRetry={() => void refetch()}
+      emptyMessage={t("common.empty")}
+      ariaLabel={t("saas.customer.tabsPayments")}
+    />
+  ) : null;
 }
 
 // ---------------------------------------------------------------------------

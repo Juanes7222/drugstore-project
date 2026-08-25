@@ -1,11 +1,16 @@
 import { api } from "./api";
 import type {
   SaasAdminAccessAuditResponse,
+  SaasAdminAtRiskRow,
   SaasAdminCustomerDashboard,
+  SaasAdminCustomerPaymentsResponse,
   SaasAdminCustomerRow,
   SaasAdminCustomersResponse,
   SaasAdminFraudAlertsResponse,
   SaasAdminFiscalStatusResponse,
+  SaasAdminLifecycleResult,
+  SaasAdminPlanOption,
+  SaasAdminRevenueResult,
   SaasAdminSalesResponse,
   SaasAdminSessionsResponse,
   SaasAdminTrialsEndingResult,
@@ -155,5 +160,89 @@ export async function fetchSaasTrialsEnding(
     "/saas-admin/trials-ending",
     { params: { days } },
   );
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle actions, revenue, at-risk
+// ---------------------------------------------------------------------------
+
+export async function suspendSaasCustomer(
+  id: string,
+  reason?: string,
+): Promise<SaasAdminLifecycleResult> {
+  const { data } = await api.post<SaasAdminLifecycleResult>(
+    `/saas-admin/customers/${id}/suspend`,
+    { reason: reason || undefined },
+  );
+  return data;
+}
+
+export async function reactivateSaasCustomer(
+  id: string,
+): Promise<SaasAdminLifecycleResult> {
+  const { data } = await api.post<SaasAdminLifecycleResult>(
+    `/saas-admin/customers/${id}/reactivate`,
+  );
+  return data;
+}
+
+export async function changeSaasCustomerPlan(
+  id: string,
+  planCode: string,
+): Promise<SaasAdminLifecycleResult> {
+  const { data } = await api.post<SaasAdminLifecycleResult>(
+    `/saas-admin/customers/${id}/change-plan`,
+    { planCode },
+  );
+  return data;
+}
+
+export async function extendSaasCustomerTrial(
+  id: string,
+  days: number,
+): Promise<SaasAdminLifecycleResult> {
+  const { data } = await api.post<SaasAdminLifecycleResult>(
+    `/saas-admin/customers/${id}/extend-trial`,
+    { days },
+  );
+  return data;
+}
+
+export async function fetchSaasRevenue(): Promise<SaasAdminRevenueResult> {
+  const { data } = await api.get<SaasAdminRevenueResult>("/saas-admin/revenue");
+  return data;
+}
+
+export async function fetchSaasAtRisk(
+  inactiveDays = 14,
+): Promise<SaasAdminAtRiskRow[]> {
+  const { data } = await api.get<SaasAdminAtRiskRow[]>(
+    "/saas-admin/at-risk",
+    { params: { inactiveDays } },
+  );
+  return data;
+}
+
+export async function fetchSaasCustomerPayments(
+  id: string,
+  page: number,
+  pageSize: number,
+): Promise<SaasAdminCustomerPaymentsResponse> {
+  const { data } = await api.get<SaasAdminCustomerPaymentsResponse>(
+    `/saas-admin/customers/${id}/payments`,
+    { params: { page, pageSize } },
+  );
+  return data;
+}
+
+/**
+ * Active catalog from the licensing module. SAAS_ADMIN passes the roles
+ * guard for /admin/plans, so no dedicated endpoint is needed.
+ */
+export async function fetchSaasPlanOptions(): Promise<SaasAdminPlanOption[]> {
+  const { data } = await api.get<SaasAdminPlanOption[]>("/admin/plans", {
+    params: { isActive: true },
+  });
   return data;
 }

@@ -72,6 +72,16 @@ const PlatformAuditPage = lazy(() =>
     default: m.PlatformAuditPage,
   })),
 );
+const RevenuePage = lazy(() =>
+  import("./pages/admin/revenue-page").then((m) => ({
+    default: m.RevenuePage,
+  })),
+);
+const AtRiskPage = lazy(() =>
+  import("./pages/admin/at-risk-page").then((m) => ({
+    default: m.AtRiskPage,
+  })),
+);
 
 function RequireAuth() {
   const location = useLocation();
@@ -127,6 +137,8 @@ export function App() {
               <Route path="customers/:customerId" element={<CustomerDetailPage />} />
               <Route path="fraud" element={<FraudAlertsPage />} />
               <Route path="audit" element={<PlatformAuditPage />} />
+              <Route path="revenue" element={<RevenuePage />} />
+              <Route path="at-risk" element={<AtRiskPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Route>

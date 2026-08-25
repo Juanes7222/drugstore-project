@@ -22,6 +22,8 @@ import {
   MenuIcon,
   DashboardIcon,
   PeopleIcon,
+  AttachMoneyIcon,
+  TrendingDownIcon,
   WarningAmberIcon,
   HistoryIcon,
   DarkModeIcon,
@@ -46,6 +48,8 @@ interface AdminNavItem {
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { to: "/admin", labelKey: "saas.navOverview", icon: DashboardIcon },
   { to: "/admin/customers", labelKey: "saas.navCustomers", icon: PeopleIcon },
+  { to: "/admin/revenue", labelKey: "saas.navRevenue", icon: AttachMoneyIcon },
+  { to: "/admin/at-risk", labelKey: "saas.navAtRisk", icon: TrendingDownIcon },
   { to: "/admin/fraud", labelKey: "saas.navFraud", icon: WarningAmberIcon },
   { to: "/admin/audit", labelKey: "saas.navAudit", icon: HistoryIcon },
 ];

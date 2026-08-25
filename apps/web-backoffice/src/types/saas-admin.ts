@@ -106,6 +106,56 @@ export interface SaasAdminTrialsEndingResult {
   }[];
 }
 
+// ---------------------------------------------------------------------------
+// Lifecycle actions — every action returns the refreshed customer row so the
+// caller can patch one cache entry.
+// ---------------------------------------------------------------------------
+
+export type SaasAdminLifecycleResult = SaasAdminCustomerRow;
+
+export interface SaasAdminRevenueResult {
+  last30d: { totalAmount: string; count: number };
+  /** 12 months incl current, oldest first, zero-filled ('YYYY-MM'). */
+  revenueByMonth: { month: string; totalAmount: string; count: number }[];
+  planDistribution: {
+    planCode: string;
+    planName: string;
+    activeSubscriptions: number;
+  }[];
+  /** Null when no ACTIVE subscription carries a price. */
+  mrr: string | null;
+}
+
+export interface SaasAdminCustomerPaymentRow {
+  id: string;
+  amount: string;
+  currency: string;
+  method: string | null;
+  externalReference: string | null;
+  recordedAt: string;
+  createdAt: string;
+}
+
+export type SaasAdminCustomerPaymentsResponse =
+  Paginated<SaasAdminCustomerPaymentRow>;
+
+export interface SaasAdminAtRiskRow {
+  subscriptionId: string;
+  customerName: string;
+  customerEmail: string | null;
+  status: string;
+  /** Null = never confirmed a sale; sorts first (stalest). */
+  lastSaleAt: string | null;
+  workstationActivations: number;
+}
+
+/** Minimal projection of the licensing GET /admin/plans row. */
+export interface SaasAdminPlanOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
 // Customer sub-resources reuse the tenant response shapes verbatim.
 export type SaasAdminSalesResponse = SalesResponse;
 export type SaasAdminSessionsResponse = SessionsResponse;
@@ -116,6 +166,7 @@ export type SaasAdminUsersResponse = UserListResponse;
 export type SaasAdminTabKey =
   | "overview"
   | "sales"
+  | "payments"
   | "users"
   | "sessions"
   | "workstations"
