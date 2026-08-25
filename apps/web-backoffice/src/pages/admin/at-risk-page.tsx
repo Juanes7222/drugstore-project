@@ -12,6 +12,7 @@ import { fetchSaasAtRisk } from "../../services/saas-admin";
 import type { SaasAdminAtRiskRow } from "../../types/saas-admin";
 import { formatDate } from "../../utils/format";
 import { PageHeader } from "../../components/common/page-header";
+import { ExportButton } from "../../components/common/export-button";
 import { DataTable } from "../../components/tables/data-table";
 import { StatusChip } from "../../components/common/status-chip";
 import { LoadingState, ErrorState } from "../../components/common/states";
@@ -90,20 +91,27 @@ export function AtRiskPage() {
         title={t("saas.atRisk.title")}
         subtitle={t("saas.atRisk.subtitle")}
         actions={
-          <TextField
-            size="small"
-            select
-            label={t("saas.atRisk.window")}
-            value={inactiveDays}
-            onChange={(event) => setInactiveDays(event.target.value)}
-            sx={{ width: 220 }}
-          >
-            {["7", "14", "30", "60", "90"].map((value) => (
-              <MenuItem key={value} value={value}>
-                {t("saas.atRisk.windowOption", { count: Number(value) })}
-              </MenuItem>
-            ))}
-          </TextField>
+          <>
+            <ExportButton
+              path="/saas-admin/at-risk/export"
+              params={{ inactiveDays: days }}
+              fallbackName="saas-at-risk"
+            />
+            <TextField
+              size="small"
+              select
+              label={t("saas.atRisk.window")}
+              value={inactiveDays}
+              onChange={(event) => setInactiveDays(event.target.value)}
+              sx={{ width: 220 }}
+            >
+              {["7", "14", "30", "60", "90"].map((value) => (
+                <MenuItem key={value} value={value}>
+                  {t("saas.atRisk.windowOption", { count: Number(value) })}
+                </MenuItem>
+              ))}
+            </TextField>
+          </>
         }
       />
 

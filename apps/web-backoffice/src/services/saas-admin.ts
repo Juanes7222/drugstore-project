@@ -10,7 +10,10 @@ import type {
   SaasAdminFiscalStatusResponse,
   SaasAdminLifecycleResult,
   SaasAdminPlanOption,
+  SaasAdminPlanRow,
+  SaasAdminPlatformAdminRow,
   SaasAdminRevenueResult,
+  SaasAdminSyncHealthRow,
   SaasAdminSalesResponse,
   SaasAdminSessionsResponse,
   SaasAdminTrialsEndingResult,
@@ -245,4 +248,62 @@ export async function fetchSaasPlanOptions(): Promise<SaasAdminPlanOption[]> {
     params: { isActive: true },
   });
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — exports, platform admins, sync health, plan management
+// ---------------------------------------------------------------------------
+
+export async function fetchSaasPlatformAdmins(): Promise<SaasAdminPlatformAdminRow[]> {
+  const { data } = await api.get<SaasAdminPlatformAdminRow[]>(
+    "/saas-admin/platform-admins",
+  );
+  return data;
+}
+
+export async function fetchSaasSyncHealth(): Promise<SaasAdminSyncHealthRow[]> {
+  const { data } = await api.get<SaasAdminSyncHealthRow[]>(
+    "/saas-admin/sync-health",
+  );
+  return data;
+}
+
+export async function fetchSaasPlans(): Promise<SaasAdminPlanRow[]> {
+  const { data } = await api.get<SaasAdminPlanRow[]>("/admin/plans");
+  return data;
+}
+
+export interface PlanWritePayload {
+  code: string;
+  name: string;
+  description?: string;
+  billingMethod?: "PROVIDER" | "CERTIFICATE";
+  pricingModel: SaasAdminPlanRow["pricingModel"];
+  basePriceCents: number;
+  currency: string;
+  billingPeriod: SaasAdminPlanRow["billingPeriod"];
+  maxLocations?: number;
+  includedWorkstations?: number;
+  extraWorkstationPriceCents?: number | null;
+  displayOrder?: number;
+  isActive?: boolean;
+  isPublic?: boolean;
+}
+
+export async function createSaasPlan(
+  payload: PlanWritePayload,
+): Promise<void> {
+  await api.post("/admin/plans", payload);
+}
+
+export async function updateSaasPlan(
+  id: string,
+  payload: PlanWritePayload,
+): Promise<void> {
+  await api.patch(`/admin/plans/${id}`, payload);
+}
+
+/** Soft delete — the licensing service marks the row inactive. */
+export async function deleteSaasPlan(id: string): Promise<void> {
+  await api.delete(`/admin/plans/${id}`);
 }

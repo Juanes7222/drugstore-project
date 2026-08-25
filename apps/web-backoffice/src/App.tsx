@@ -82,6 +82,21 @@ const AtRiskPage = lazy(() =>
     default: m.AtRiskPage,
   })),
 );
+const PlansPage = lazy(() =>
+  import("./pages/admin/plans-page").then((m) => ({
+    default: m.PlansPage,
+  })),
+);
+const SyncHealthPage = lazy(() =>
+  import("./pages/admin/sync-health-page").then((m) => ({
+    default: m.SyncHealthPage,
+  })),
+);
+const AdminsPage = lazy(() =>
+  import("./pages/admin/admins-page").then((m) => ({
+    default: m.AdminsPage,
+  })),
+);
 
 function RequireAuth() {
   const location = useLocation();
@@ -139,6 +154,9 @@ export function App() {
               <Route path="audit" element={<PlatformAuditPage />} />
               <Route path="revenue" element={<RevenuePage />} />
               <Route path="at-risk" element={<AtRiskPage />} />
+              <Route path="plans" element={<PlansPage />} />
+              <Route path="sync" element={<SyncHealthPage />} />
+              <Route path="admins" element={<AdminsPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Route>

@@ -14,6 +14,7 @@ import {
 import type { SaasAdminCustomerRow } from "../../types/saas-admin";
 import { formatDate, formatDateTime } from "../../utils/format";
 import { PageHeader } from "../../components/common/page-header";
+import { ExportButton } from "../../components/common/export-button";
 import { DataTable } from "../../components/tables/data-table";
 import { StatusChip } from "../../components/common/status-chip";
 import { LoadingState, ErrorState } from "../../components/common/states";
@@ -140,7 +141,13 @@ export function CustomersPage() {
         title={t("saas.customersTitle")}
         subtitle={t("saas.customersSubtitle")}
         actions={
-          <TextField
+          <>
+            <ExportButton
+              path="/saas-admin/customers/export"
+              params={{ query: query || undefined }}
+              fallbackName="saas-customers"
+            />
+            <TextField
             size="small"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -166,6 +173,7 @@ export function CustomersPage() {
               ) : null,
             }}
           />
+          </>
         }
       />
 

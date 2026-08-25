@@ -156,6 +156,57 @@ export interface SaasAdminPlanOption {
   name: string;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 3 — platform admins, sync health, plan management
+// ---------------------------------------------------------------------------
+
+export interface SaasAdminPlatformAdminRow {
+  userId: string;
+  email: string | null;
+  username: string | null;
+  fullName: string;
+  role: string;
+  status: string;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface SaasAdminSyncHealthRow {
+  subscriptionId: string;
+  customerName: string;
+  pendingOperations: number;
+  permanentFailures: number;
+  oldestPendingAt: string | null;
+  lastSyncAt: string | null;
+}
+
+/**
+ * Row returned by the licensing /admin/plans endpoints. Fields the saas
+ * panel does not edit stay optional so unknown additions never break it.
+ */
+export interface SaasAdminPlanRow {
+  id: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  billingMethod?: "PROVIDER" | "CERTIFICATE" | null;
+  pricingModel:
+    | "FLAT"
+    | "PER_LOCATION"
+    | "PER_WORKSTATION"
+    | "TIERED";
+  basePriceCents: number;
+  currency: string;
+  billingPeriod: "MONTHLY" | "QUARTERLY" | "ANNUAL";
+  maxLocations?: number;
+  includedWorkstations?: number;
+  extraWorkstationPriceCents?: number | null;
+  features?: string[];
+  displayOrder?: number;
+  isActive: boolean;
+  isPublic: boolean;
+}
+
 // Customer sub-resources reuse the tenant response shapes verbatim.
 export type SaasAdminSalesResponse = SalesResponse;
 export type SaasAdminSessionsResponse = SessionsResponse;

@@ -25,6 +25,9 @@ import {
   AttachMoneyIcon,
   TrendingDownIcon,
   WarningAmberIcon,
+  DevicesIcon,
+  WorkspacePremiumIcon,
+  HowToRegIcon,
   HistoryIcon,
   DarkModeIcon,
   LightModeIcon,
@@ -51,6 +54,9 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { to: "/admin/revenue", labelKey: "saas.navRevenue", icon: AttachMoneyIcon },
   { to: "/admin/at-risk", labelKey: "saas.navAtRisk", icon: TrendingDownIcon },
   { to: "/admin/fraud", labelKey: "saas.navFraud", icon: WarningAmberIcon },
+  { to: "/admin/sync", labelKey: "saas.navSync", icon: DevicesIcon },
+  { to: "/admin/plans", labelKey: "saas.navPlans", icon: WorkspacePremiumIcon },
+  { to: "/admin/admins", labelKey: "saas.navAdmins", icon: HowToRegIcon },
   { to: "/admin/audit", labelKey: "saas.navAudit", icon: HistoryIcon },
 ];
 
