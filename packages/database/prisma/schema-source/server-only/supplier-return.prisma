@@ -27,6 +27,7 @@ model SupplierReturn {
   @@index([subscriptionId])
   @@unique([subscriptionId, sequentialNumber])
   @@index([supplierId, createdAt])
+  @@index([createdAt, id])
 }
 
 model SupplierReturnItem {

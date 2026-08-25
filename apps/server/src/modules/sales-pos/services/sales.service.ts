@@ -1,10 +1,22 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
-import { Prisma, SaleOperationalState, SaleType, ShiftState, IdentificationType, ClientType, AuditAction, SystemModule, CommissionType, ClientReturnState } from '@pharmacy/database';
+import {
+  Prisma,
+  SaleOperationalState,
+  SaleType,
+  ShiftState,
+  IdentificationType,
+  ClientType,
+  AuditAction,
+  SystemModule,
+  CommissionType,
+  ClientReturnState,
+} from '@pharmacy/database';
 import * as crypto from 'crypto';
 import { CreateSaleDto, CreateSaleItemDto } from '../dto/create-sale.dto';
 import { QuerySaleDto } from '../dto/query-sale.dto';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import { ConfirmSaleDto, PaymentInputSchema } from '../dto/confirm-sale.dto';
 import { z } from 'zod';
 import { SaleNotFoundException } from '../exceptions/sale-not-found.exception';
@@ -27,7 +39,10 @@ import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-do
 import { CommissionCalculatorService } from './commission-calculator.service';
 import { toDecimal } from '@/common/to-decimal';
 import { GENERIC_CLIENT_UUID } from '@/modules/clients/constants/clients.constants';
-import { SaleDeliveryInfoSchema, SaleDeliveryInfoInput } from '../dto/sale-delivery.schema';
+import {
+  SaleDeliveryInfoSchema,
+  SaleDeliveryInfoInput,
+} from '../dto/sale-delivery.schema';
 
 interface SaleItemCalculations {
   unitPrice: Prisma.Decimal;
@@ -39,7 +54,12 @@ interface SaleItemCalculations {
   total: Prisma.Decimal;
 }
 
-type SaleItemTotals = { subtotal: Prisma.Decimal; discountAmount: Prisma.Decimal; taxAmount: Prisma.Decimal; total: Prisma.Decimal };
+type SaleItemTotals = {
+  subtotal: Prisma.Decimal;
+  discountAmount: Prisma.Decimal;
+  taxAmount: Prisma.Decimal;
+  total: Prisma.Decimal;
+};
 
 @Injectable()
 export class SalesService {
@@ -51,17 +71,56 @@ export class SalesService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
+  /**
+   * Cursor mode walks (startedAt desc, id desc) so deep history pages stay
+   * cheap on the fastest-growing table; the legacy offset path is kept for
+   * clients that still send page/pageSize.
+   */
   async findAll(query: QuerySaleDto): Promise<any> {
     const where: Prisma.SaleWhereInput = {};
     if (query.clientId) where.clientId = query.clientId;
-    if (query.operationalState) where.operationalState = query.operationalState as SaleOperationalState;
+    if (query.operationalState)
+      where.operationalState = query.operationalState as SaleOperationalState;
     if (query.cashShiftId) where.cashShiftId = query.cashShiftId;
     if (query.workstationId) where.workstationId = query.workstationId;
     if (query.confirmedAtFrom || query.confirmedAtTo) {
       const dateFilter: Prisma.DateTimeFilter = {};
-      if (query.confirmedAtFrom) dateFilter.gte = new Date(query.confirmedAtFrom);
+      if (query.confirmedAtFrom)
+        dateFilter.gte = new Date(query.confirmedAtFrom);
       if (query.confirmedAtTo) dateFilter.lte = new Date(query.confirmedAtTo);
       where.confirmedAt = dateFilter;
+    }
+
+    const listInclude = {
+      items: true,
+      payments: true,
+      client: true,
+      cashShift: true,
+      workstation: true,
+    } satisfies Prisma.SaleInclude;
+
+    if (query.cursor) {
+      const page = await paginateWithCursor<
+        unknown,
+        Prisma.SaleWhereInput,
+        Prisma.SaleOrderByWithRelationInput,
+        Prisma.SaleInclude
+      >({
+        model: this.prisma.sale,
+        baseWhere: where,
+        limit: query.pageSize,
+        cursor: query.cursor,
+        timeField: 'startedAt',
+        direction: 'desc',
+        orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+        include: listInclude,
+      });
+      return {
+        data: page.items,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        pageSize: query.pageSize,
+      };
     }
 
     const [sales, total] = await Promise.all([
@@ -69,8 +128,8 @@ export class SalesService {
         where,
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        orderBy: { startedAt: 'desc' },
-        include: { items: true, payments: true, client: true, cashShift: true, workstation: true },
+        orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+        include: listInclude,
       }),
       this.prisma.sale.count({ where }),
     ]);
@@ -80,20 +139,36 @@ export class SalesService {
   async findById(id: string): Promise<any> {
     const sale = await this.prisma.sale.findUnique({
       where: { id },
-      include: { items: { include: { lots: { include: { lot: true } } } }, payments: true, client: true, cashShift: true, workstation: true },
+      include: {
+        items: { include: { lots: { include: { lot: true } } } },
+        payments: true,
+        client: true,
+        cashShift: true,
+        workstation: true,
+      },
     });
     if (!sale) throw new SaleNotFoundException(id);
     return sale;
   }
 
-  async create(createDto: CreateSaleDto, userId: string, workstationId: string, sourceOperationUuid?: string): Promise<any> {
+  async create(
+    createDto: CreateSaleDto,
+    userId: string,
+    workstationId: string,
+    sourceOperationUuid?: string,
+  ): Promise<any> {
     // Validate the optional domicilio payload before opening the transaction so
     // an invalid shape fails fast and surfaces as a 400 (BadRequestException)
     // on both the HTTP path and the SALE_CONFIRMATION sync replay path.
     const delivery = this.parseDeliveryOrThrow(createDto.delivery);
 
     return this.prisma.$transaction(async (tx) => {
-      const cashShift = await this.getOpenCashShift(tx, userId, workstationId, createDto.cashShiftId);
+      const cashShift = await this.getOpenCashShift(
+        tx,
+        userId,
+        workstationId,
+        createDto.cashShiftId,
+      );
 
       // Resolve client data: use the specified client, or fall back to the
       // DIAN-mandated generic consumer (CONSUMIDOR FINAL) so the invoice
@@ -104,9 +179,19 @@ export class SalesService {
       const clientData = useGeneric
         ? await this.resolveGenericClient(tx)
         : await this.getClientSnapshot(tx, createDto.clientId!);
-      const saleItems = await Promise.all(createDto.items.map(item => this.buildSaleItemFromRequest(tx, item, clientData?.classification?.discountPercentage)));
+      const saleItems = await Promise.all(
+        createDto.items.map((item) =>
+          this.buildSaleItemFromRequest(
+            tx,
+            item,
+            clientData?.classification?.discountPercentage,
+          ),
+        ),
+      );
 
-      const totalCalculations = this.calculateSaleTotals(saleItems as unknown as SaleItemTotals[]);
+      const totalCalculations = this.calculateSaleTotals(
+        saleItems as unknown as SaleItemTotals[],
+      );
 
       // Offline-first: when the caller (the POS replay path) provides
       // pre-computed totals, use them as the authoritative sale-header
@@ -115,7 +200,10 @@ export class SalesService {
       // keeps the offline-recorded payment amount and the server-stored
       // total aligned even when the server's catalog has drifted from the
       // POS snapshot between sale time and sync time.
-      const headerTotals = this.resolveHeaderTotals(createDto, totalCalculations);
+      const headerTotals = this.resolveHeaderTotals(
+        createDto,
+        totalCalculations,
+      );
 
       // Serialize local number allocation for this workstation using a
       // PostgreSQL advisory transaction lock. This prevents concurrent sync
@@ -124,7 +212,8 @@ export class SalesService {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
 
       let localNumber: bigint;
-      for (let i = 0; i < 5; i++) { // Retry logic for unique constraint (belt-and-suspenders)
+      for (let i = 0; i < 5; i++) {
+        // Retry logic for unique constraint (belt-and-suspenders)
         localNumber = await this.getNextLocalNumber(tx, workstationId);
         try {
           const sale = await tx.sale.create({
@@ -140,11 +229,14 @@ export class SalesService {
               userId,
               sourceWorkstationId: workstationId,
               sourceOperationUuid,
-              clientIdentificationTypeSnapshot: clientData?.identificationType || null,
-              clientIdentificationNumberSnapshot: clientData?.identificationNumber || null,
+              clientIdentificationTypeSnapshot:
+                clientData?.identificationType || null,
+              clientIdentificationNumberSnapshot:
+                clientData?.identificationNumber || null,
               clientNameSnapshot: clientData?.fullName || null,
               clientId: clientData?.id || null,
-              clientClassificationIdSnapshot: clientData?.classification?.id || null,
+              clientClassificationIdSnapshot:
+                clientData?.classification?.id || null,
               clientTypeSnapshot: clientData?.classification?.type || null,
               subtotal: headerTotals.subtotal,
               totalDiscount: headerTotals.totalDiscount,
@@ -153,18 +245,34 @@ export class SalesService {
               // Delivery JSON persisted verbatim from the payload; SQL NULL
               // when the sale is not a domicilio.
               delivery: delivery ?? Prisma.DbNull,
-              items: { create: saleItems.map(item => ({ ...item, saleItemPrescriptionId: null })) },
+              items: {
+                create: saleItems.map((item) => ({
+                  ...item,
+                  saleItemPrescriptionId: null,
+                })),
+              },
             },
             include: { items: true },
           });
           return sale;
         } catch (error: unknown) {
-          const err = error as { code?: string; meta?: Record<string, unknown>; message?: string };
-          if (err.code === 'P2002' && err.meta?.target === 'ux_sale_local_per_ws') {
+          const err = error as {
+            code?: string;
+            meta?: Record<string, unknown>;
+            message?: string;
+          };
+          if (
+            err.code === 'P2002' &&
+            err.meta?.target === 'ux_sale_local_per_ws'
+          ) {
             // Local number unique constraint violation — retry with next number.
             continue;
           }
-          if (err.code === 'P2002' && sourceOperationUuid && this.isSourceOperationUuidConflict(err)) {
+          if (
+            err.code === 'P2002' &&
+            sourceOperationUuid &&
+            this.isSourceOperationUuidConflict(err)
+          ) {
             // Another concurrent transaction already created a sale with this
             // sourceOperationUuid.  Fetch and return the existing one instead of
             // failing — the caller's idempotency guard also covers this case,
@@ -179,11 +287,17 @@ export class SalesService {
           throw error;
         }
       }
-      throw new Error('Failed to create sale after multiple retries due to local number conflict.');
+      throw new Error(
+        'Failed to create sale after multiple retries due to local number conflict.',
+      );
     });
   }
 
-  async confirm(saleId: string, confirmDto: ConfirmSaleDto, userId: string): Promise<any> {
+  async confirm(
+    saleId: string,
+    confirmDto: ConfirmSaleDto,
+    userId: string,
+  ): Promise<any> {
     let fiscalDocumentId: string | null = null;
 
     // Business validation: at least one payment is required.
@@ -204,18 +318,27 @@ export class SalesService {
         throw new SaleNotInProgressException(saleId);
       }
 
-      const totalPaid = confirmDto.payments.reduce((sum, p) => sum + p.amount, 0);
+      const totalPaid = confirmDto.payments.reduce(
+        (sum, p) => sum + p.amount,
+        0,
+      );
       // A domicilio sale charges the item total plus the delivery fee —
       // the POS validates the same way locally (totalAmount + feeCents).
       const deliveryFee = this.deliveryFeeAmount(sale.delivery);
       const amountDue = sale.totalAmount.plus(deliveryFee);
       if (totalPaid < amountDue.toNumber()) {
-        throw new PaymentAmountMismatchException(amountDue.toNumber(), totalPaid);
+        throw new PaymentAmountMismatchException(
+          amountDue.toNumber(),
+          totalPaid,
+        );
       }
 
       const changeAmount = new Prisma.Decimal(totalPaid).minus(amountDue);
       if (changeAmount.greaterThan(0)) {
-        const hasCashPayment = await this.hasCashPaymentMethod(tx, confirmDto.payments);
+        const hasCashPayment = await this.hasCashPaymentMethod(
+          tx,
+          confirmDto.payments,
+        );
         if (!hasCashPayment) {
           throw new ChangeRequiresCashPaymentException();
         }
@@ -243,7 +366,10 @@ export class SalesService {
           throw new CreditNotEnabledForClientException(sale.clientId!);
         }
 
-        const currentDebt = await this.computeClientCreditDebt(tx, sale.clientId!);
+        const currentDebt = await this.computeClientCreditDebt(
+          tx,
+          sale.clientId!,
+        );
         const available = creditLimit.minus(currentDebt);
         if (creditTotal.greaterThan(available)) {
           throw new CreditLimitExceededException(
@@ -280,7 +406,7 @@ export class SalesService {
       }
 
       await tx.salePayment.createMany({
-        data: confirmDto.payments.map(p => ({
+        data: confirmDto.payments.map((p) => ({
           id: crypto.randomUUID(),
           subscriptionId: this.tenantContext.getSubscriptionId(),
           saleId: sale.id,
@@ -309,10 +435,11 @@ export class SalesService {
       // Fiscal document created inside the same transaction — if it fails,
       // the whole sale confirmation rolls back. A confirmed sale without a
       // fiscal document is not an acceptable partial state.
-      const fiscalDoc = await this.fiscalDocumentsService.createPendingDocumentForSale({
-        saleId,
-        tx,
-      });
+      const fiscalDoc =
+        await this.fiscalDocumentsService.createPendingDocumentForSale({
+          saleId,
+          tx,
+        });
       fiscalDocumentId = fiscalDoc.id;
 
       return updatedSale;
@@ -395,7 +522,10 @@ export class SalesService {
     throw new CashShiftNotOpenForWorkstationException(workstationId);
   }
 
-  private async getClientSnapshot(tx: Prisma.TransactionClient, clientId: string): Promise<any> {
+  private async getClientSnapshot(
+    tx: Prisma.TransactionClient,
+    clientId: string,
+  ): Promise<any> {
     return tx.client.findUnique({
       where: { id: clientId },
       include: { classification: true },
@@ -415,7 +545,11 @@ export class SalesService {
     identificationType: string;
     identificationNumber: string;
     fullName: string;
-    classification: { id: string | null; type: string | null; discountPercentage: Prisma.Decimal } | null;
+    classification: {
+      id: string | null;
+      type: string | null;
+      discountPercentage: Prisma.Decimal;
+    } | null;
   }> {
     const record = await tx.client.findUnique({
       where: { id: GENERIC_CLIENT_UUID },
@@ -432,7 +566,9 @@ export class SalesService {
           ? {
               id: record.classification.id,
               type: record.classification.type,
-              discountPercentage: new Prisma.Decimal(record.classification.discountPercentage.toString()),
+              discountPercentage: new Prisma.Decimal(
+                record.classification.discountPercentage.toString(),
+              ),
             }
           : null,
       };
@@ -460,7 +596,11 @@ export class SalesService {
       where: { id: itemDto.productId },
       include: {
         priceHistories: { take: 1, orderBy: { effectiveFrom: 'desc' } },
-        taxHistories: { include: { taxScheme: true }, take: 1, orderBy: { effectiveFrom: 'desc' } },
+        taxHistories: {
+          include: { taxScheme: true },
+          take: 1,
+          orderBy: { effectiveFrom: 'desc' },
+        },
       },
     });
 
@@ -487,7 +627,9 @@ export class SalesService {
     const quantity = new Prisma.Decimal(itemDto.quantity);
     const itemSubtotal = unitPrice.times(quantity);
 
-    const discountPercentage = itemDto.discountPercentage ? new Prisma.Decimal(itemDto.discountPercentage) : clientDiscountPercentage;
+    const discountPercentage = itemDto.discountPercentage
+      ? new Prisma.Decimal(itemDto.discountPercentage)
+      : clientDiscountPercentage;
     if (itemDto.discountPercentage && itemDto.discountReason === undefined) {
       throw new DiscountReasonRequiredException();
     }
@@ -508,7 +650,13 @@ export class SalesService {
       .plus(taxAmount)
       .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 
-    const commission = this.resolveCommission(itemDto, product, unitPrice, quantity, discountAmount);
+    const commission = this.resolveCommission(
+      itemDto,
+      product,
+      unitPrice,
+      quantity,
+      discountAmount,
+    );
 
     return {
       id: crypto.randomUUID(),
@@ -548,11 +696,20 @@ export class SalesService {
    */
   private resolveCommission(
     itemDto: CreateSaleItemDto,
-    product: { commissionType: CommissionType; commissionValue: Prisma.Decimal; commissionStartsAt: Date | null; commissionEndsAt: Date | null },
+    product: {
+      commissionType: CommissionType;
+      commissionValue: Prisma.Decimal;
+      commissionStartsAt: Date | null;
+      commissionEndsAt: Date | null;
+    },
     unitPrice: Prisma.Decimal,
     quantity: Prisma.Decimal,
     discountAmount: Prisma.Decimal,
-  ): { commissionTypeSnapshot: CommissionType | null; commissionValueSnapshot: Prisma.Decimal | null; commissionAmount: Prisma.Decimal } {
+  ): {
+    commissionTypeSnapshot: CommissionType | null;
+    commissionValueSnapshot: Prisma.Decimal | null;
+    commissionAmount: Prisma.Decimal;
+  } {
     const carriesPayloadValues =
       itemDto.commissionType !== undefined ||
       itemDto.commissionValue !== undefined ||
@@ -573,10 +730,15 @@ export class SalesService {
     return {
       commissionTypeSnapshot: itemDto.commissionType ?? null,
       commissionValueSnapshot:
-        itemDto.commissionValue === undefined || itemDto.commissionValue === null
+        itemDto.commissionValue === undefined ||
+        itemDto.commissionValue === null
           ? null
-          : toDecimal(itemDto.commissionValue, { fieldName: 'items[].commissionValue' }),
-      commissionAmount: toDecimal(itemDto.commissionAmount ?? '0', { fieldName: 'items[].commissionAmount' }),
+          : toDecimal(itemDto.commissionValue, {
+              fieldName: 'items[].commissionValue',
+            }),
+      commissionAmount: toDecimal(itemDto.commissionAmount ?? '0', {
+        fieldName: 'items[].commissionAmount',
+      }),
     };
   }
 
@@ -589,19 +751,34 @@ export class SalesService {
    */
   private resolveHeaderTotals(
     createDto: CreateSaleDto,
-    computed: { subtotal: Prisma.Decimal; totalDiscount: Prisma.Decimal; totalTax: Prisma.Decimal; totalAmount: Prisma.Decimal },
-  ): { subtotal: Prisma.Decimal; totalDiscount: Prisma.Decimal; totalTax: Prisma.Decimal; totalAmount: Prisma.Decimal } {
-    const hasAll = createDto.subtotal !== undefined
-      && createDto.totalDiscount !== undefined
-      && createDto.totalTax !== undefined
-      && createDto.totalAmount !== undefined;
+    computed: {
+      subtotal: Prisma.Decimal;
+      totalDiscount: Prisma.Decimal;
+      totalTax: Prisma.Decimal;
+      totalAmount: Prisma.Decimal;
+    },
+  ): {
+    subtotal: Prisma.Decimal;
+    totalDiscount: Prisma.Decimal;
+    totalTax: Prisma.Decimal;
+    totalAmount: Prisma.Decimal;
+  } {
+    const hasAll =
+      createDto.subtotal !== undefined &&
+      createDto.totalDiscount !== undefined &&
+      createDto.totalTax !== undefined &&
+      createDto.totalAmount !== undefined;
     if (!hasAll) return computed;
 
     return {
       subtotal: toDecimal(createDto.subtotal!, { fieldName: 'subtotal' }),
-      totalDiscount: toDecimal(createDto.totalDiscount!, { fieldName: 'totalDiscount' }),
+      totalDiscount: toDecimal(createDto.totalDiscount!, {
+        fieldName: 'totalDiscount',
+      }),
       totalTax: toDecimal(createDto.totalTax!, { fieldName: 'totalTax' }),
-      totalAmount: toDecimal(createDto.totalAmount!, { fieldName: 'totalAmount' }),
+      totalAmount: toDecimal(createDto.totalAmount!, {
+        fieldName: 'totalAmount',
+      }),
     };
   }
 
@@ -636,24 +813,38 @@ export class SalesService {
       return new Prisma.Decimal(0);
     }
     const feeCents = (delivery as Record<string, unknown>).feeCents;
-    if (typeof feeCents !== 'number' || !Number.isFinite(feeCents) || feeCents < 0) {
+    if (
+      typeof feeCents !== 'number' ||
+      !Number.isFinite(feeCents) ||
+      feeCents < 0
+    ) {
       return new Prisma.Decimal(0);
     }
     return new Prisma.Decimal(feeCents).dividedBy(100);
   }
 
-  private calculateSaleTotals(
-    saleItems: SaleItemTotals[],
-  ): {
+  private calculateSaleTotals(saleItems: SaleItemTotals[]): {
     subtotal: Prisma.Decimal;
     totalDiscount: Prisma.Decimal;
     totalTax: Prisma.Decimal;
     totalAmount: Prisma.Decimal;
   } {
-    const subtotal = saleItems.reduce((sum, item) => sum.plus(item.subtotal), new Prisma.Decimal(0));
-    const totalDiscount = saleItems.reduce((sum, item) => sum.plus(item.discountAmount), new Prisma.Decimal(0));
-    const totalTax = saleItems.reduce((sum, item) => sum.plus(item.taxAmount), new Prisma.Decimal(0));
-    const totalAmount = saleItems.reduce((sum, item) => sum.plus(item.total), new Prisma.Decimal(0));
+    const subtotal = saleItems.reduce(
+      (sum, item) => sum.plus(item.subtotal),
+      new Prisma.Decimal(0),
+    );
+    const totalDiscount = saleItems.reduce(
+      (sum, item) => sum.plus(item.discountAmount),
+      new Prisma.Decimal(0),
+    );
+    const totalTax = saleItems.reduce(
+      (sum, item) => sum.plus(item.taxAmount),
+      new Prisma.Decimal(0),
+    );
+    const totalAmount = saleItems.reduce(
+      (sum, item) => sum.plus(item.total),
+      new Prisma.Decimal(0),
+    );
     return { subtotal, totalDiscount, totalTax, totalAmount };
   }
 
@@ -664,10 +855,13 @@ export class SalesService {
       hash = ((hash << 5) - hash + workstationId.charCodeAt(i)) | 0;
     }
     // Ensure positive integer within int4 range
-    return hash & 0x7FFFFFFF;
+    return hash & 0x7fffffff;
   }
 
-  private async getNextLocalNumber(tx: Prisma.TransactionClient, workstationId: string): Promise<bigint> {
+  private async getNextLocalNumber(
+    tx: Prisma.TransactionClient,
+    workstationId: string,
+  ): Promise<bigint> {
     const latestSale = await tx.sale.findFirst({
       where: { sourceWorkstationId: workstationId },
       orderBy: { localNumber: 'desc' },
@@ -693,15 +887,11 @@ export class SalesService {
       select: { id: true, category: true },
     });
     const creditMethodIds = new Set(
-      methods
-        .filter((m) => m.category === 'CREDIT')
-        .map((m) => m.id),
+      methods.filter((m) => m.category === 'CREDIT').map((m) => m.id),
     );
     return payments.reduce(
       (sum, p) =>
-        creditMethodIds.has(p.paymentMethodId)
-          ? sum.plus(p.amount)
-          : sum,
+        creditMethodIds.has(p.paymentMethodId) ? sum.plus(p.amount) : sum,
       new Prisma.Decimal(0),
     );
   }
@@ -747,7 +937,10 @@ export class SalesService {
     return Prisma.Decimal.max(debt, new Prisma.Decimal(0));
   }
 
-  private async hasCashPaymentMethod(tx: Prisma.TransactionClient, payments: z.infer<typeof PaymentInputSchema>[]): Promise<boolean> {
+  private async hasCashPaymentMethod(
+    tx: Prisma.TransactionClient,
+    payments: z.infer<typeof PaymentInputSchema>[],
+  ): Promise<boolean> {
     for (const payment of payments) {
       const paymentMethod = await tx.paymentMethod.findUnique({
         where: { id: payment.paymentMethodId },
@@ -759,10 +952,16 @@ export class SalesService {
   }
 
   private computeWeightedUnitCost(consumedLots: ConsumedLot[]): Prisma.Decimal {
-    const totalQuantity = consumedLots.reduce((sum, cl) => sum + cl.quantity, 0);
+    const totalQuantity = consumedLots.reduce(
+      (sum, cl) => sum + cl.quantity,
+      0,
+    );
     if (totalQuantity === 0) return new Prisma.Decimal(0);
 
-    const totalCost = consumedLots.reduce((sum, cl) => sum.plus(cl.unitCostAtSale.times(cl.quantity)), new Prisma.Decimal(0));
+    const totalCost = consumedLots.reduce(
+      (sum, cl) => sum.plus(cl.unitCostAtSale.times(cl.quantity)),
+      new Prisma.Decimal(0),
+    );
     return totalCost.dividedBy(totalQuantity);
   }
 
@@ -773,7 +972,11 @@ export class SalesService {
    * (`Sale_sourceOperationUuid_key`) or the field name (`sourceOperationUuid`)
    * depending on the engine version.
    */
-  private isSourceOperationUuidConflict(error: { code?: string; meta?: Record<string, unknown>; message?: string }): boolean {
+  private isSourceOperationUuidConflict(error: {
+    code?: string;
+    meta?: Record<string, unknown>;
+    message?: string;
+  }): boolean {
     if (error.meta?.target === 'sourceOperationUuid') return true;
     if (error.meta?.target === 'Sale_sourceOperationUuid_key') return true;
     if (error.message?.includes('sourceOperationUuid')) return true;

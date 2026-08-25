@@ -65,7 +65,7 @@ model FiscalDocument {
   @@index([saleId])
   @@index([purchaseReceptionId])
   @@index([clientReturnId])
-  @@index([issueDate])
+  @@index([issueDate, id])
   @@index([providerType, providerTrackId])
   @@index([archivedAt])
   @@index([retentionExpiresAt])

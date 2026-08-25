@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { InventoryAdjustmentsService } from './inventory-adjustments.service';
-import { Prisma, PhysicalCountState, AdjustmentState, MovementType } from '@pharmacy/database';
+import {
+  Prisma,
+  PhysicalCountState,
+  AdjustmentState,
+  MovementType,
+} from '@pharmacy/database';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import * as crypto from 'crypto';
 import { StartPhysicalCountDto } from '../dto/start-physical-count.dto';
 import { RegisterPhysicalCountLineDto } from '../dto/register-physical-count-line.dto';
@@ -22,18 +28,45 @@ export class PhysicalCountsService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
-  async findAll(query: { page?: number; pageSize?: number; state?: string }): Promise<any> {
+  async findAll(query: {
+    page?: number;
+    pageSize?: number;
+    state?: string;
+    cursor?: string;
+  }): Promise<any> {
     const page = query.page || 1;
     const pageSize = query.pageSize || 20;
     const where: Prisma.PhysicalCountWhereInput = {};
     if (query.state) where.state = query.state as PhysicalCountState;
+
+    if (query.cursor) {
+      const result = await paginateWithCursor<
+        unknown,
+        Prisma.PhysicalCountWhereInput,
+        Prisma.PhysicalCountOrderByWithRelationInput
+      >({
+        model: this.prisma.physicalCount,
+        baseWhere: where,
+        limit: pageSize,
+        cursor: query.cursor,
+        timeField: 'createdAt',
+        direction: 'desc',
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
+      return {
+        data: result.items,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore,
+        pageSize,
+      };
+    }
 
     const [counts, total] = await Promise.all([
       this.prisma.physicalCount.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.physicalCount.count({ where }),
     ]);
@@ -50,12 +83,13 @@ export class PhysicalCountsService {
     // Fetch adjustment movements separately: InventoryMovement has adjustmentDocumentId as a
     // scalar with no Prisma-level relation declared.
     const adjustmentDocIds = count.adjustmentDocuments.map((d: any) => d.id);
-    const movements = adjustmentDocIds.length > 0
-      ? await this.prisma.inventoryMovement.findMany({
-          where: { adjustmentDocumentId: { in: adjustmentDocIds } },
-          include: { lot: true },
-        })
-      : [];
+    const movements =
+      adjustmentDocIds.length > 0
+        ? await this.prisma.inventoryMovement.findMany({
+            where: { adjustmentDocumentId: { in: adjustmentDocIds } },
+            include: { lot: true },
+          })
+        : [];
     const movementsByDocId = new Map<string, any[]>();
     for (const m of movements) {
       const list = movementsByDocId.get(m.adjustmentDocumentId!) ?? [];
@@ -85,10 +119,15 @@ export class PhysicalCountsService {
     });
   }
 
-  async registerCount(id: string, dto: RegisterPhysicalCountLineDto, userId: string): Promise<any> {
+  async registerCount(
+    id: string,
+    dto: RegisterPhysicalCountLineDto,
+    userId: string,
+  ): Promise<any> {
     const count = await this.prisma.physicalCount.findUnique({ where: { id } });
     if (!count) throw new PhysicalCountNotFoundException(id);
-    if (count.state !== PhysicalCountState.OPEN) throw new PhysicalCountNotOpenException(id);
+    if (count.state !== PhysicalCountState.OPEN)
+      throw new PhysicalCountNotOpenException(id);
 
     const lot = await this.prisma.lot.findUnique({ where: { id: dto.lotId } });
     if (!lot) throw new LotNotFoundException(dto.lotId);
@@ -99,9 +138,11 @@ export class PhysicalCountsService {
     // Find and annul any existing DRAFT adjustment document for this lot
     // Fetch the movement separately: InventoryMovement has adjustmentDocumentId as a scalar
     // with no Prisma-level relation declared.
-    const existingDoc = await this.prisma.inventoryAdjustmentDocument.findFirst({
-      where: { physicalCountId: id, state: AdjustmentState.DRAFT },
-    });
+    const existingDoc = await this.prisma.inventoryAdjustmentDocument.findFirst(
+      {
+        where: { physicalCountId: id, state: AdjustmentState.DRAFT },
+      },
+    );
     const existingMovements = existingDoc
       ? await this.prisma.inventoryMovement.findMany({
           where: { adjustmentDocumentId: existingDoc.id, lotId: dto.lotId },
@@ -115,7 +156,10 @@ export class PhysicalCountsService {
     }
 
     const diff = dto.countedQuantity - expected;
-    const movementType = diff > 0 ? MovementType.POSITIVE_ADJUSTMENT : MovementType.NEGATIVE_ADJUSTMENT;
+    const movementType =
+      diff > 0
+        ? MovementType.POSITIVE_ADJUSTMENT
+        : MovementType.NEGATIVE_ADJUSTMENT;
 
     return this.inventoryAdjustmentsService.create(
       {
@@ -130,7 +174,8 @@ export class PhysicalCountsService {
   async finish(id: string): Promise<any> {
     const count = await this.prisma.physicalCount.findUnique({ where: { id } });
     if (!count) throw new PhysicalCountNotFoundException(id);
-    if (count.state !== PhysicalCountState.OPEN) throw new PhysicalCountNotOpenException(id);
+    if (count.state !== PhysicalCountState.OPEN)
+      throw new PhysicalCountNotOpenException(id);
 
     return this.prisma.physicalCount.update({
       where: { id },
@@ -141,7 +186,8 @@ export class PhysicalCountsService {
   async review(id: string): Promise<any> {
     const count = await this.prisma.physicalCount.findUnique({ where: { id } });
     if (!count) throw new PhysicalCountNotFoundException(id);
-    if (count.state !== PhysicalCountState.COUNTED) throw new PhysicalCountNotCountedException(id);
+    if (count.state !== PhysicalCountState.COUNTED)
+      throw new PhysicalCountNotCountedException(id);
 
     return this.prisma.physicalCount.update({
       where: { id },
@@ -152,19 +198,28 @@ export class PhysicalCountsService {
   async approve(id: string, userId: string): Promise<any> {
     const count = await this.prisma.physicalCount.findUnique({
       where: { id },
-      include: { adjustmentDocuments: { where: { state: AdjustmentState.DRAFT } } },
+      include: {
+        adjustmentDocuments: { where: { state: AdjustmentState.DRAFT } },
+      },
     });
     if (!count) throw new PhysicalCountNotFoundException(id);
-    if (count.state !== PhysicalCountState.REVIEWED) throw new PhysicalCountNotReviewedException(id);
+    if (count.state !== PhysicalCountState.REVIEWED)
+      throw new PhysicalCountNotReviewedException(id);
 
     for (const adjDoc of count.adjustmentDocuments) {
       await this.inventoryAdjustmentsService.submit(adjDoc.id, userId);
-      await this.inventoryAdjustmentsService.approve(adjDoc.id, userId, { approvalNotes: undefined });
+      await this.inventoryAdjustmentsService.approve(adjDoc.id, userId, {
+        approvalNotes: undefined,
+      });
     }
 
     return this.prisma.physicalCount.update({
       where: { id },
-      data: { state: PhysicalCountState.APPROVED, approvedAt: new Date(), approvedByUserId: userId },
+      data: {
+        state: PhysicalCountState.APPROVED,
+        approvedAt: new Date(),
+        approvedByUserId: userId,
+      },
     });
   }
 
@@ -172,10 +227,13 @@ export class PhysicalCountsService {
     return this.prisma.$transaction(async (tx) => {
       const count = await tx.physicalCount.findUnique({
         where: { id },
-        include: { adjustmentDocuments: { where: { state: AdjustmentState.APPROVED } } },
+        include: {
+          adjustmentDocuments: { where: { state: AdjustmentState.APPROVED } },
+        },
       });
       if (!count) throw new PhysicalCountNotFoundException(id);
-      if (count.state !== PhysicalCountState.APPROVED) throw new PhysicalCountNotApprovedException(id);
+      if (count.state !== PhysicalCountState.APPROVED)
+        throw new PhysicalCountNotApprovedException(id);
 
       for (const adjDoc of count.adjustmentDocuments) {
         // Pass the shared transaction so all applies succeed or fail atomically
@@ -192,10 +250,15 @@ export class PhysicalCountsService {
   async annul(id: string, userId: string): Promise<any> {
     const count = await this.prisma.physicalCount.findUnique({
       where: { id },
-      include: { adjustmentDocuments: { where: { state: { not: AdjustmentState.ANNULLED } } } },
+      include: {
+        adjustmentDocuments: {
+          where: { state: { not: AdjustmentState.ANNULLED } },
+        },
+      },
     });
     if (!count) throw new PhysicalCountNotFoundException(id);
-    if (count.state === PhysicalCountState.APPLIED) throw new PhysicalCountCannotBeAnnulledException(id);
+    if (count.state === PhysicalCountState.APPLIED)
+      throw new PhysicalCountCannotBeAnnulledException(id);
 
     for (const adjDoc of count.adjustmentDocuments) {
       await this.inventoryAdjustmentsService.annul(adjDoc.id, userId, {

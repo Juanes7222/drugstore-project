@@ -8,9 +8,15 @@ import { NotImplementedForPhaseException } from '@/common/exceptions/not-impleme
 import { QueryLotDto } from '../dto/query-lot.dto';
 import { BlockLotDto } from '../dto/block-lot.dto';
 import { QueryInventoryMovementDto } from '../dto/query-inventory-movement.dto';
-import { ConsumeStockForSaleParams, ConsumedLot } from '../types/consume-stock.types';
+import {
+  ConsumeStockForSaleParams,
+  ConsumedLot,
+} from '../types/consume-stock.types';
 import { ReceiveStockParams } from '../types/receive-stock.types';
-import { ReverseStockForSaleParams, ReversedSaleLot } from '../types/reverse-stock-for-sale.types';
+import {
+  ReverseStockForSaleParams,
+  ReversedSaleLot,
+} from '../types/reverse-stock-for-sale.types';
 import { ConsumeStockForSupplierReturnParams } from '../types/consume-stock-for-supplier-return.types';
 import { ReceiveStockFromClientReturnParams } from '../types/receive-stock-from-client-return.types';
 import { InsufficientStockException } from '../exceptions/insufficient-stock.exception';
@@ -73,7 +79,11 @@ export class LotsService {
       baseWhere.updatedAt = { gte: new Date(input.updatedSince) };
     }
 
-    const page = await paginateWithCursor<unknown, Prisma.LotWhereInput, Prisma.LotOrderByWithRelationInput>({
+    const page = await paginateWithCursor<
+      unknown,
+      Prisma.LotWhereInput,
+      Prisma.LotOrderByWithRelationInput
+    >({
       model: this.prisma.lot,
       baseWhere,
       limit: input.limit ?? 200,
@@ -102,7 +112,12 @@ export class LotsService {
     return this.prisma.$transaction(async (tx) => {
       const updatedLot = await tx.lot.update({
         where: { id },
-        data: { state: LotState.BLOCKED, blockedAt: new Date(), blockedByUserId: userId, blockReason: dto.reason },
+        data: {
+          state: LotState.BLOCKED,
+          blockedAt: new Date(),
+          blockedByUserId: userId,
+          blockReason: dto.reason,
+        },
       });
       await this.createMovement(tx, {
         lotId: id,
@@ -122,11 +137,17 @@ export class LotsService {
     if (lot.state !== LotState.BLOCKED) {
       throw new LotNotBlockedException(id);
     }
-    const newState = lot.currentStock > 0 ? LotState.ACTIVE : LotState.EXHAUSTED;
+    const newState =
+      lot.currentStock > 0 ? LotState.ACTIVE : LotState.EXHAUSTED;
     return this.prisma.$transaction(async (tx) => {
       const updatedLot = await tx.lot.update({
         where: { id },
-        data: { state: newState, blockedAt: null, blockedByUserId: null, blockReason: null },
+        data: {
+          state: newState,
+          blockedAt: null,
+          blockedByUserId: null,
+          blockReason: null,
+        },
       });
       await this.createMovement(tx, {
         lotId: id,
@@ -143,7 +164,8 @@ export class LotsService {
   async listMovements(query: QueryInventoryMovementDto): Promise<any> {
     const where: Prisma.InventoryMovementWhereInput = {};
     if (query.lotId) where.lotId = query.lotId;
-    if (query.movementType) where.movementType = query.movementType as MovementType;
+    if (query.movementType)
+      where.movementType = query.movementType as MovementType;
     if (query.createdAtFrom || query.createdAtTo) {
       const dateFilter: Prisma.DateTimeFilter = {};
       if (query.createdAtFrom) dateFilter.gte = new Date(query.createdAtFrom);
@@ -151,19 +173,48 @@ export class LotsService {
       where.createdAt = dateFilter;
     }
 
+    if (query.cursor) {
+      const page = await paginateWithCursor<
+        unknown,
+        Prisma.InventoryMovementWhereInput,
+        Prisma.InventoryMovementOrderByWithRelationInput
+      >({
+        model: this.prisma.inventoryMovement,
+        baseWhere: where,
+        limit: query.pageSize,
+        cursor: query.cursor,
+        timeField: 'createdAt',
+        direction: 'desc',
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
+      return {
+        data: page.items,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        pageSize: query.pageSize,
+      };
+    }
+
     const [movements, total] = await Promise.all([
       this.prisma.inventoryMovement.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.inventoryMovement.count({ where }),
     ]);
-    return { data: movements, total, page: query.page, pageSize: query.pageSize };
+    return {
+      data: movements,
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
-  async consumeStockForSale(params: ConsumeStockForSaleParams): Promise<ConsumedLot[]> {
+  async consumeStockForSale(
+    params: ConsumeStockForSaleParams,
+  ): Promise<ConsumedLot[]> {
     const { productId, quantity, saleId, tx } = params;
     const availableLots = await tx.lot.findMany({
       where: { productId, state: LotState.ACTIVE, currentStock: { gt: 0 } },
@@ -173,15 +224,21 @@ export class LotsService {
     // Fetch cost data for all lots (PurchaseReceptionItem relation was flattened;
     // explicit query replaces the previous Prisma include).
     const lotIds = availableLots.map((l) => l.id);
-    const receptionItems = lotIds.length > 0
-      ? await tx.purchaseReceptionItem.findMany({
-          where: { lotId: { in: lotIds } },
-          select: { lotId: true, realUnitCost: true },
-        })
-      : [];
-    const costByLotId = new Map(receptionItems.map((r) => [r.lotId, r.realUnitCost]));
+    const receptionItems =
+      lotIds.length > 0
+        ? await tx.purchaseReceptionItem.findMany({
+            where: { lotId: { in: lotIds } },
+            select: { lotId: true, realUnitCost: true },
+          })
+        : [];
+    const costByLotId = new Map(
+      receptionItems.map((r) => [r.lotId, r.realUnitCost]),
+    );
 
-    const totalAvailable = availableLots.reduce((sum, lot) => sum + lot.currentStock, 0);
+    const totalAvailable = availableLots.reduce(
+      (sum, lot) => sum + lot.currentStock,
+      0,
+    );
     if (totalAvailable < quantity) {
       throw new InsufficientStockException(productId, quantity, totalAvailable);
     }
@@ -211,7 +268,11 @@ export class LotsService {
         throw new LotCostUnavailableException(lot.id);
       }
 
-      consumedLots.push({ lotId: lot.id, quantity: consumeFromLot, unitCostAtSale });
+      consumedLots.push({
+        lotId: lot.id,
+        quantity: consumeFromLot,
+        unitCostAtSale,
+      });
       await this.createMovement(tx, {
         lotId: lot.id,
         movementType: MovementType.SALE,
@@ -227,7 +288,16 @@ export class LotsService {
   }
 
   async receiveStock(params: ReceiveStockParams): Promise<{ lotId: string }> {
-    const { productId, quantity, unitCost, batchNumber, expirationDate, locationCode, purchaseReceptionId, tx } = params;
+    const {
+      productId,
+      quantity,
+      unitCost,
+      batchNumber,
+      expirationDate,
+      locationCode,
+      purchaseReceptionId,
+      tx,
+    } = params;
     const newLotId = crypto.randomUUID();
 
     // Known limitation: composite unique constraint on (productId, batchNumber) is deferred.
@@ -260,7 +330,9 @@ export class LotsService {
     return { lotId: newLot.id };
   }
 
-  async reverseStockForSale(params: ReverseStockForSaleParams): Promise<ReversedSaleLot[]> {
+  async reverseStockForSale(
+    params: ReverseStockForSaleParams,
+  ): Promise<ReversedSaleLot[]> {
     const { saleId, tx } = params;
     const lotAggregations = await this.aggregateSaleLots(tx, saleId);
     if (lotAggregations.size === 0) return [];
@@ -275,12 +347,18 @@ export class LotsService {
     return reversedLots;
   }
 
-  async consumeStockForSupplierReturn(params: ConsumeStockForSupplierReturnParams): Promise<void> {
+  async consumeStockForSupplierReturn(
+    params: ConsumeStockForSupplierReturnParams,
+  ): Promise<void> {
     const { lotId, quantity, supplierReturnId, tx } = params;
     const lot = await tx.lot.findUnique({ where: { id: lotId } });
     if (!lot) throw new LotNotFoundException(lotId);
     if (lot.currentStock < quantity) {
-      throw new InsufficientStockException(lot.productId, quantity, lot.currentStock);
+      throw new InsufficientStockException(
+        lot.productId,
+        quantity,
+        lot.currentStock,
+      );
     }
 
     const newStock = lot.currentStock - quantity;
@@ -291,7 +369,8 @@ export class LotsService {
       where: { id: lot.id, version: lot.version },
       data: { currentStock: newStock, version: newVersion, state: newState },
     });
-    if (updated.count === 0) throw new ConcurrentStockModificationException(lot.id);
+    if (updated.count === 0)
+      throw new ConcurrentStockModificationException(lot.id);
 
     await this.createMovement(tx, {
       lotId: lot.id,
@@ -319,7 +398,12 @@ export class LotsService {
     tx: Prisma.TransactionClient,
     lotId: string,
     data?: LotSyncData,
-  ): Promise<{ id: string; currentStock: number; version: number; state: LotState }> {
+  ): Promise<{
+    id: string;
+    currentStock: number;
+    version: number;
+    state: LotState;
+  }> {
     const existing = await tx.lot.findUnique({ where: { id: lotId } });
     if (existing) {
       return existing;
@@ -348,7 +432,9 @@ export class LotsService {
     return created;
   }
 
-  async receiveStockFromClientReturn(params: ReceiveStockFromClientReturnParams): Promise<void> {
+  async receiveStockFromClientReturn(
+    params: ReceiveStockFromClientReturnParams,
+  ): Promise<void> {
     const { lotId, quantity, clientReturnId, tx } = params;
     const lot = await tx.lot.findUnique({ where: { id: lotId } });
     if (!lot) throw new LotNotFoundException(lotId);
@@ -366,7 +452,8 @@ export class LotsService {
       where: { id: lot.id, version: lot.version },
       data: { currentStock: newStock, version: newVersion, state: newState },
     });
-    if (updated.count === 0) throw new ConcurrentStockModificationException(lot.id);
+    if (updated.count === 0)
+      throw new ConcurrentStockModificationException(lot.id);
 
     await this.createMovement(tx, {
       lotId: lot.id,
@@ -382,26 +469,51 @@ export class LotsService {
   private async aggregateSaleLots(
     tx: Prisma.TransactionClient,
     saleId: string,
-  ): Promise<Map<string, { lot: { id: string; currentStock: number; version: number; state: LotState }; quantity: number }>> {
+  ): Promise<
+    Map<
+      string,
+      {
+        lot: {
+          id: string;
+          currentStock: number;
+          version: number;
+          state: LotState;
+        };
+        quantity: number;
+      }
+    >
+  > {
     const rows = await tx.saleItemLot.findMany({
       where: { saleItem: { saleId } },
       include: { lot: true },
     });
 
-    const map = new Map<string, { lot: typeof rows[0]['lot']; quantity: number }>();
+    const map = new Map<
+      string,
+      { lot: (typeof rows)[0]['lot']; quantity: number }
+    >();
     for (const row of rows) {
       const existing = map.get(row.lotId);
-      if (existing) { existing.quantity += row.quantity; }
-      else { map.set(row.lotId, { lot: row.lot, quantity: row.quantity }); }
+      if (existing) {
+        existing.quantity += row.quantity;
+      } else {
+        map.set(row.lotId, { lot: row.lot, quantity: row.quantity });
+      }
     }
     return map;
   }
 
   private assertNoDisqualifiedLots(
-    lotAggregations: Map<string, { lot: { id: string; state: LotState }; quantity: number }>,
+    lotAggregations: Map<
+      string,
+      { lot: { id: string; state: LotState }; quantity: number }
+    >,
   ): void {
     for (const [, agg] of lotAggregations) {
-      if (agg.lot.state === LotState.EXPIRED || agg.lot.state === LotState.BLOCKED) {
+      if (
+        agg.lot.state === LotState.EXPIRED ||
+        agg.lot.state === LotState.BLOCKED
+      ) {
         throw new LotStateChangedSinceSaleException(agg.lot.id, agg.lot.state);
       }
     }
@@ -409,18 +521,28 @@ export class LotsService {
 
   private async applyLotReversal(
     tx: Prisma.TransactionClient,
-    agg: { lot: { id: string; currentStock: number; version: number; state: LotState }; quantity: number },
+    agg: {
+      lot: {
+        id: string;
+        currentStock: number;
+        version: number;
+        state: LotState;
+      };
+      quantity: number;
+    },
     saleId: string,
   ): Promise<ReversedSaleLot> {
     const newStock = agg.lot.currentStock + agg.quantity;
     const newVersion = agg.lot.version + 1;
-    const newState = agg.lot.currentStock === 0 ? LotState.ACTIVE : agg.lot.state;
+    const newState =
+      agg.lot.currentStock === 0 ? LotState.ACTIVE : agg.lot.state;
 
     const updated = await tx.lot.updateMany({
       where: { id: agg.lot.id, version: agg.lot.version },
       data: { currentStock: newStock, version: newVersion, state: newState },
     });
-    if (updated.count === 0) throw new ConcurrentStockModificationException(agg.lot.id);
+    if (updated.count === 0)
+      throw new ConcurrentStockModificationException(agg.lot.id);
 
     // Reuse SALE movementType; previousStock < resultingStock signals the reversal direction
     await this.createMovement(tx, {
@@ -476,74 +598,128 @@ export class LotsService {
 
   // Methods for InventoryAdjustmentDocument and PhysicalCount remain as stubs
   async createInventoryAdjustment(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'createInventoryAdjustment');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'createInventoryAdjustment',
+    );
   }
 
   async updateInventoryAdjustment(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'updateInventoryAdjustment');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'updateInventoryAdjustment',
+    );
   }
 
   async submitInventoryAdjustment(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'submitInventoryAdjustment');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'submitInventoryAdjustment',
+    );
   }
 
   async approveInventoryAdjustment(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'approveInventoryAdjustment');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'approveInventoryAdjustment',
+    );
   }
 
   async rejectInventoryAdjustment(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'rejectInventoryAdjustment');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'rejectInventoryAdjustment',
+    );
   }
 
   async applyInventoryAdjustment(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'applyInventoryAdjustment');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'applyInventoryAdjustment',
+    );
   }
 
   async annulInventoryAdjustment(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'annulInventoryAdjustment');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'annulInventoryAdjustment',
+    );
   }
 
   async findAllInventoryAdjustments(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'findAllInventoryAdjustments');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'findAllInventoryAdjustments',
+    );
   }
 
   async findInventoryAdjustmentById(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'findInventoryAdjustmentById');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'findInventoryAdjustmentById',
+    );
   }
 
   async createPhysicalCount(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'createPhysicalCount');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'createPhysicalCount',
+    );
   }
 
   async updatePhysicalCount(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'updatePhysicalCount');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'updatePhysicalCount',
+    );
   }
 
   async submitPhysicalCount(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'submitPhysicalCount');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'submitPhysicalCount',
+    );
   }
 
   async approvePhysicalCount(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'approvePhysicalCount');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'approvePhysicalCount',
+    );
   }
 
   async rejectPhysicalCount(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'rejectPhysicalCount');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'rejectPhysicalCount',
+    );
   }
 
   async applyPhysicalCount(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'applyPhysicalCount');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'applyPhysicalCount',
+    );
   }
 
   async annulPhysicalCount(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'annulPhysicalCount');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'annulPhysicalCount',
+    );
   }
 
   async findAllPhysicalCounts(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'findAllPhysicalCounts');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'findAllPhysicalCounts',
+    );
   }
 
   async findPhysicalCountById(): Promise<any> {
-    throw new NotImplementedForPhaseException('inventory-lots', 'findPhysicalCountById');
+    throw new NotImplementedForPhaseException(
+      'inventory-lots',
+      'findPhysicalCountById',
+    );
   }
 }

@@ -12,6 +12,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import { DomainException } from '@/common/exceptions/domain.exception';
 import {
   AuditAction as PrismaAuditAction,
@@ -560,15 +561,40 @@ export class DataImportService {
 
   async listImports(query: QueryImportsDto): Promise<{
     data: DataImport[];
-    total: number;
-    page: number;
+    total?: number;
+    nextCursor?: string | null;
+    hasMore?: boolean;
+    page?: number;
     pageSize: number;
   }> {
     const where = query.entityKey ? { entityKey: query.entityKey } : {};
+
+    if (query.cursor) {
+      const result = await paginateWithCursor<
+        DataImport,
+        Prisma.DataImportWhereInput,
+        Prisma.DataImportOrderByWithRelationInput
+      >({
+        model: this.prisma.dataImport,
+        baseWhere: where,
+        limit: query.pageSize,
+        cursor: query.cursor,
+        timeField: 'createdAt',
+        direction: 'desc',
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
+      return {
+        data: result.items,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore,
+        pageSize: query.pageSize,
+      };
+    }
+
     const [items, total] = await Promise.all([
       this.prisma.dataImport.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
       }),

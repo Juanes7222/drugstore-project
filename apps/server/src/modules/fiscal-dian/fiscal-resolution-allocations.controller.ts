@@ -34,8 +34,10 @@ export class FiscalResolutionAllocationsController {
   async findAll(
     @Query('page') page = 1,
     @Query('pageSize') pageSize = 20,
+    // Keyset continuation token; wins over page when present.
+    @Query('cursor') cursor?: string,
   ): Promise<any> {
-    return this.service.findAll(Number(page), Number(pageSize));
+    return this.service.findAll(Number(page), Number(pageSize), cursor);
   }
 
   @Get(':id')

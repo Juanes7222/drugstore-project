@@ -8,6 +8,9 @@ export class QuerySaleDto {
   @Type(() => Number)
   pageSize: number = 20;
 
+  // When present, wins over page/pageSize: keyset walk over (startedAt, id).
+  cursor?: string;
+
   cashShiftId?: string;
   clientId?: string;
   operationalState?: string;

@@ -14,6 +14,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import { EnvConfig } from '@/config/env.schema';
 import * as crypto from 'node:crypto';
 
@@ -292,15 +293,50 @@ export class OfflineTokenService {
   }
 
   /**
-   * Get the full revocation list (paginated).
+   * Get the full revocation list (paginated). Cursor mode walks
+   * (revokedAt desc, id desc); the legacy offset path is kept.
    */
   async getRevocationList(params: {
     limit?: number;
     offset?: number;
-  }): Promise<{ entries: RevocationListEntry[]; total: number }> {
+    cursor?: string;
+  }): Promise<{
+    entries: RevocationListEntry[];
+    total: number;
+    nextCursor?: string | null;
+    hasMore?: boolean;
+  }> {
+    if (params.cursor) {
+      const [page, total] = await Promise.all([
+        paginateWithCursor<{
+          jti: string;
+          revokedAt: Date;
+          reason: string;
+        }>({
+          model: this.prisma.offlineTokenRevocation,
+          limit: params.limit ?? 100,
+          cursor: params.cursor,
+          timeField: 'revokedAt',
+          direction: 'desc',
+          orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
+        }),
+        this.prisma.offlineTokenRevocation.count(),
+      ]);
+      return {
+        entries: page.items.map((e) => ({
+          jti: e.jti,
+          revokedAt: e.revokedAt,
+          reason: e.reason,
+        })),
+        total,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+      };
+    }
+
     const [rows, total] = await Promise.all([
       this.prisma.offlineTokenRevocation.findMany({
-        orderBy: { revokedAt: 'desc' },
+        orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
         take: params.limit ?? 100,
         skip: params.offset ?? 0,
       }),

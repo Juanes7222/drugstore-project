@@ -29,6 +29,7 @@ model PurchaseReception {
   @@unique([subscriptionId, sequentialNumber])
   @@index([supplierId, receivedAt])
   @@index([receivedAt])
+  @@index([createdAt, id])
   @@index([state])
 }
 

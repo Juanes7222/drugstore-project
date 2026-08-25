@@ -4,7 +4,9 @@ import { Queue } from 'bullmq';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
+import { Prisma } from '@pharmacy/database';
 import { QueryFiscalDocumentsDto } from '../dto/query-fiscal-documents.dto';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import { DocumentNotRetryableException } from '../exceptions/document-not-retryable.exception';
 import { DuplicateFiscalDocumentException } from '../exceptions/duplicate-fiscal-document.exception';
 import { FiscalDocumentNotFoundException } from '../exceptions/fiscal-document-not-found.exception';
@@ -34,16 +36,44 @@ export class FiscalDocumentsService {
       where.issueDate = dateFilter;
     }
 
+    const listInclude = {
+      resolution: { select: { prefix: true, resolutionNumber: true } },
+      allocation: { select: { workstationId: true } },
+    } satisfies Prisma.FiscalDocumentInclude;
+
+    if (query.cursor) {
+      // Cursor mode walks (issueDate desc, id desc): fiscal documents grow
+      // with every issued invoice, so deep history pages must not re-scan.
+      const page = await paginateWithCursor<
+        unknown,
+        Prisma.FiscalDocumentWhereInput,
+        Prisma.FiscalDocumentOrderByWithRelationInput,
+        Prisma.FiscalDocumentInclude
+      >({
+        model: this.prisma.fiscalDocument,
+        baseWhere: where,
+        limit: query.pageSize,
+        cursor: query.cursor,
+        timeField: 'issueDate',
+        direction: 'desc',
+        orderBy: [{ issueDate: 'desc' }, { id: 'desc' }],
+        include: listInclude,
+      });
+      return {
+        data: page.items,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        pageSize: query.pageSize,
+      };
+    }
+
     const [docs, total] = await Promise.all([
       this.prisma.fiscalDocument.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        orderBy: { issueDate: 'desc' },
-        include: {
-          resolution: { select: { prefix: true, resolutionNumber: true } },
-          allocation: { select: { workstationId: true } },
-        },
+        orderBy: [{ issueDate: 'desc' }, { id: 'desc' }],
+        include: listInclude,
       }),
       this.prisma.fiscalDocument.count({ where }),
     ]);

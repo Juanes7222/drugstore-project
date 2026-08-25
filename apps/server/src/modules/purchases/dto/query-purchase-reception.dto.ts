@@ -8,6 +8,9 @@ export class QueryPurchaseReceptionDto {
   @Type(() => Number)
   pageSize: number = 20;
 
+  // When present, wins over page/pageSize: keyset walk over the list's time field.
+  cursor?: string;
+
   supplierId?: string;
   purchaseOrderId?: string;
   state?: string;

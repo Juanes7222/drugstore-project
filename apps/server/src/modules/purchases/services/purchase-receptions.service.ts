@@ -1,9 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
-import { Prisma, PurchaseReceptionState, PurchaseOrderState, MovementType, LotState } from '@pharmacy/database';
+import {
+  Prisma,
+  PurchaseReceptionState,
+  PurchaseOrderState,
+  MovementType,
+  LotState,
+} from '@pharmacy/database';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import * as crypto from 'crypto';
-import { CreatePurchaseReceptionDto, CreatePurchaseReceptionItemDto } from '../dto/create-purchase-reception.dto';
+import {
+  CreatePurchaseReceptionDto,
+  CreatePurchaseReceptionItemDto,
+} from '../dto/create-purchase-reception.dto';
 import { QueryPurchaseReceptionDto } from '../dto/query-purchase-reception.dto';
 import { PurchaseReceptionNotConfirmedException } from '../exceptions/purchase-reception-not-confirmed.exception';
 import { PurchaseReceptionNotDraftException } from '../exceptions/purchase-reception-not-draft.exception';
@@ -44,23 +54,62 @@ export class PurchaseReceptionsService {
       where.receivedAt = dateFilter;
     }
 
+    const listInclude = {
+      supplier: true,
+      purchaseOrder: true,
+      items: true,
+    } satisfies Prisma.PurchaseReceptionInclude;
+
+    if (query.cursor) {
+      const page = await paginateWithCursor<
+        unknown,
+        Prisma.PurchaseReceptionWhereInput,
+        Prisma.PurchaseReceptionOrderByWithRelationInput,
+        Prisma.PurchaseReceptionInclude
+      >({
+        model: this.prisma.purchaseReception,
+        baseWhere: where,
+        limit: query.pageSize,
+        cursor: query.cursor,
+        timeField: 'createdAt',
+        direction: 'desc',
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: listInclude,
+      });
+      return {
+        data: page.items,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        pageSize: query.pageSize,
+      };
+    }
+
     const [receptions, total] = await Promise.all([
       this.prisma.purchaseReception.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        orderBy: { createdAt: 'desc' },
-        include: { supplier: true, purchaseOrder: true, items: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: listInclude,
       }),
       this.prisma.purchaseReception.count({ where }),
     ]);
-    return { data: receptions, total, page: query.page, pageSize: query.pageSize };
+    return {
+      data: receptions,
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   async findById(id: string): Promise<any> {
     const reception = await this.prisma.purchaseReception.findUnique({
       where: { id },
-      include: { supplier: true, purchaseOrder: true, items: { include: { product: true, purchaseOrderItem: true } } },
+      include: {
+        supplier: true,
+        purchaseOrder: true,
+        items: { include: { product: true, purchaseOrderItem: true } },
+      },
     });
     if (!reception) {
       throw new PurchaseReceptionNotFoundException(id);
@@ -68,14 +117,21 @@ export class PurchaseReceptionsService {
     return reception;
   }
 
-  async create(createDto: CreatePurchaseReceptionDto, userId: string): Promise<any> {
+  async create(
+    createDto: CreatePurchaseReceptionDto,
+    userId: string,
+  ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
-      const supplier = await tx.supplier.findUnique({ where: { id: createDto.supplierId } });
+      const supplier = await tx.supplier.findUnique({
+        where: { id: createDto.supplierId },
+      });
       if (!supplier) {
         throw new SupplierNotFoundException(createDto.supplierId);
       }
 
-      let purchaseOrder: Prisma.PurchaseOrderGetPayload<{ include: { items: true } }> | null;
+      let purchaseOrder: Prisma.PurchaseOrderGetPayload<{
+        include: { items: true };
+      }> | null;
       if (createDto.purchaseOrderId) {
         purchaseOrder = await tx.purchaseOrder.findUnique({
           where: { id: createDto.purchaseOrderId },
@@ -86,47 +142,75 @@ export class PurchaseReceptionsService {
         }
       }
 
-      const itemsData = await Promise.all(createDto.items.map(async (itemDto) => {
-        const product = await tx.product.findUnique({ where: { id: itemDto.productId } });
-        if (!product) {
-          throw new ProductNotFoundException(itemDto.productId);
-        }
-
-        let purchaseOrderItem: Awaited<ReturnType<typeof tx.purchaseOrderItem.findUnique>>;
-        if (itemDto.purchaseOrderItemId) {
-          purchaseOrderItem = await tx.purchaseOrderItem.findUnique({
-            where: { id: itemDto.purchaseOrderItemId },
+      const itemsData = await Promise.all(
+        createDto.items.map(async (itemDto) => {
+          const product = await tx.product.findUnique({
+            where: { id: itemDto.productId },
           });
-          if (!purchaseOrderItem) {
-            throw new PurchaseOrderItemNotFoundException(itemDto.purchaseOrderItemId);
+          if (!product) {
+            throw new ProductNotFoundException(itemDto.productId);
           }
-          if (purchaseOrderItem.purchaseOrderId !== createDto.purchaseOrderId) {
-            throw new PurchaseOrderItemMismatchException(itemDto.purchaseOrderItemId, 'Does not belong to the specified purchase order.');
-          }
-          if (purchaseOrderItem.productId !== itemDto.productId) {
-            throw new PurchaseOrderItemMismatchException(itemDto.purchaseOrderItemId, 'Product ID mismatch.');
-          }
-          if (itemDto.receivedQuantity > (purchaseOrderItem.requestedQuantity - purchaseOrderItem.receivedQuantity)) {
-            throw new OverReceptionException(itemDto.purchaseOrderItemId, purchaseOrderItem.requestedQuantity - purchaseOrderItem.receivedQuantity, itemDto.receivedQuantity);
-          }
-        }
 
-        return {
-          id: crypto.randomUUID(),
-          subscriptionId: this.tenantContext.getSubscriptionId(),
-          productId: itemDto.productId,
-          purchaseOrderItemId: itemDto.purchaseOrderItemId || null,
-          receivedQuantity: itemDto.receivedQuantity,
-          lotNumber: itemDto.lotNumber || null,
-          expirationDate: itemDto.expirationDate ? new Date(itemDto.expirationDate) : null,
-          realUnitCost: new Prisma.Decimal(itemDto.realUnitCost),
-          taxSchemeId: itemDto.taxSchemeId,
-          taxRate: new Prisma.Decimal(itemDto.taxRate),
-          discountAmount: new Prisma.Decimal(itemDto.discountAmount || 0),
-        };
-      }));
+          let purchaseOrderItem: Awaited<
+            ReturnType<typeof tx.purchaseOrderItem.findUnique>
+          >;
+          if (itemDto.purchaseOrderItemId) {
+            purchaseOrderItem = await tx.purchaseOrderItem.findUnique({
+              where: { id: itemDto.purchaseOrderItemId },
+            });
+            if (!purchaseOrderItem) {
+              throw new PurchaseOrderItemNotFoundException(
+                itemDto.purchaseOrderItemId,
+              );
+            }
+            if (
+              purchaseOrderItem.purchaseOrderId !== createDto.purchaseOrderId
+            ) {
+              throw new PurchaseOrderItemMismatchException(
+                itemDto.purchaseOrderItemId,
+                'Does not belong to the specified purchase order.',
+              );
+            }
+            if (purchaseOrderItem.productId !== itemDto.productId) {
+              throw new PurchaseOrderItemMismatchException(
+                itemDto.purchaseOrderItemId,
+                'Product ID mismatch.',
+              );
+            }
+            if (
+              itemDto.receivedQuantity >
+              purchaseOrderItem.requestedQuantity -
+                purchaseOrderItem.receivedQuantity
+            ) {
+              throw new OverReceptionException(
+                itemDto.purchaseOrderItemId,
+                purchaseOrderItem.requestedQuantity -
+                  purchaseOrderItem.receivedQuantity,
+                itemDto.receivedQuantity,
+              );
+            }
+          }
 
-      const { subtotal, totalTax, totalAmount } = this.calculateReceptionTotals(itemsData);
+          return {
+            id: crypto.randomUUID(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
+            productId: itemDto.productId,
+            purchaseOrderItemId: itemDto.purchaseOrderItemId || null,
+            receivedQuantity: itemDto.receivedQuantity,
+            lotNumber: itemDto.lotNumber || null,
+            expirationDate: itemDto.expirationDate
+              ? new Date(itemDto.expirationDate)
+              : null,
+            realUnitCost: new Prisma.Decimal(itemDto.realUnitCost),
+            taxSchemeId: itemDto.taxSchemeId,
+            taxRate: new Prisma.Decimal(itemDto.taxRate),
+            discountAmount: new Prisma.Decimal(itemDto.discountAmount || 0),
+          };
+        }),
+      );
+
+      const { subtotal, totalTax, totalAmount } =
+        this.calculateReceptionTotals(itemsData);
 
       // Serialize sequential-number allocation per tenant so two concurrent
       // cashier creations cannot read the same MAX and produce duplicates.
@@ -157,13 +241,20 @@ export class PurchaseReceptionsService {
     });
   }
 
-  async confirm(id: string, userId: string, workstationId: string): Promise<any> {
+  async confirm(
+    id: string,
+    userId: string,
+    workstationId: string,
+  ): Promise<any> {
     let fiscalDocumentId: string | null = null;
 
     const result = await this.prisma.$transaction(async (tx) => {
       const reception = await tx.purchaseReception.findUnique({
         where: { id },
-        include: { items: { include: { purchaseOrderItem: true } }, purchaseOrder: { include: { items: true } } },
+        include: {
+          items: { include: { purchaseOrderItem: true } },
+          purchaseOrder: { include: { items: true } },
+        },
       });
 
       if (!reception) {
@@ -218,10 +309,13 @@ export class PurchaseReceptionsService {
       const purchaseOrder = reception.purchaseOrder;
       if (purchaseOrder) {
         const hasPendingItems = purchaseOrder.items.some((poItem) => {
-          const receivedNow = receivedByOrderItemId.get(poItem.id) ?? poItem.receivedQuantity;
+          const receivedNow =
+            receivedByOrderItemId.get(poItem.id) ?? poItem.receivedQuantity;
           return poItem.requestedQuantity - receivedNow > 0;
         });
-        const newOrderState = hasPendingItems ? PurchaseOrderState.PARTIALLY_RECEIVED : PurchaseOrderState.FULLY_RECEIVED;
+        const newOrderState = hasPendingItems
+          ? PurchaseOrderState.PARTIALLY_RECEIVED
+          : PurchaseOrderState.FULLY_RECEIVED;
 
         if (purchaseOrder.state !== newOrderState) {
           await tx.purchaseOrder.update({
@@ -242,11 +336,13 @@ export class PurchaseReceptionsService {
       // Fiscal document created inside the same transaction — if it fails,
       // the whole reception confirmation rolls back.
       const fiscalDoc =
-        await this.fiscalDocumentsService.createPendingDocumentForPurchaseReception({
-          purchaseReceptionId: id,
-          workstationId,
-          tx,
-        });
+        await this.fiscalDocumentsService.createPendingDocumentForPurchaseReception(
+          {
+            purchaseReceptionId: id,
+            workstationId,
+            tx,
+          },
+        );
       if (fiscalDoc) {
         fiscalDocumentId = fiscalDoc.id;
       }
@@ -299,7 +395,10 @@ export class PurchaseReceptionsService {
       }
 
       const existing = await tx.purchaseReception.findFirst({
-        where: { sequentialNumber: payload.sequentialNumber, supplierId: payload.supplierId },
+        where: {
+          sequentialNumber: payload.sequentialNumber,
+          supplierId: payload.supplierId,
+        },
         select: { id: true, state: true },
       });
       if (existing) {
@@ -314,7 +413,9 @@ export class PurchaseReceptionsService {
         userId,
       );
 
-      let purchaseOrder: Prisma.PurchaseOrderGetPayload<{ include: { items: true } }> | null;
+      let purchaseOrder: Prisma.PurchaseOrderGetPayload<{
+        include: { items: true };
+      }> | null;
       if (payload.purchaseOrderId) {
         purchaseOrder = await tx.purchaseOrder.findUnique({
           where: { id: payload.purchaseOrderId },
@@ -325,7 +426,9 @@ export class PurchaseReceptionsService {
         // Create a minimal PO stub so the reception can proceed. The real PO
         // confirmation operation (when it arrives) will skip via idempotency.
         if (!purchaseOrder) {
-          const nextSeq = await tx.purchaseOrder.aggregate({ _max: { sequentialNumber: true } });
+          const nextSeq = await tx.purchaseOrder.aggregate({
+            _max: { sequentialNumber: true },
+          });
           const stubSeq = (nextSeq._max.sequentialNumber ?? 0) + 1;
           await tx.purchaseOrder.create({
             data: {
@@ -353,7 +456,8 @@ export class PurchaseReceptionsService {
         orderBy: { createdAt: 'asc' },
         select: { id: true, rate: true },
       });
-      const taxSchemeId = defaultTaxScheme?.id ?? '00000000-0000-0000-0000-000000000000';
+      const taxSchemeId =
+        defaultTaxScheme?.id ?? '00000000-0000-0000-0000-000000000000';
       const taxRate = defaultTaxScheme?.rate ?? new Prisma.Decimal(0);
 
       // Use the POS-originated reception ID so downstream sync operations
@@ -374,7 +478,9 @@ export class PurchaseReceptionsService {
 
       if (payload.items && payload.items.length > 0) {
         for (const item of payload.items) {
-          const product = await tx.product.findUnique({ where: { id: item.productId } });
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+          });
           if (!product) {
             throw new ProductNotFoundException(item.productId);
           }
@@ -419,7 +525,9 @@ export class PurchaseReceptionsService {
             productId: item.productId,
             receivedQuantity: item.quantity,
             lotNumber: item.batchNumber || null,
-            expirationDate: item.expirationDate ? new Date(item.expirationDate) : null,
+            expirationDate: item.expirationDate
+              ? new Date(item.expirationDate)
+              : null,
             // Zod-validated at the dispatcher, but cast through toDecimal so a
             // missing/non-numeric value surfaces a clear `SYNC_PAYLOAD_VALIDATION`
             // error pointing at `items[N].unitCost` instead of a raw
@@ -435,12 +543,18 @@ export class PurchaseReceptionsService {
         }
       }
 
-      const subtotal = itemsData.length > 0
-        ? itemsData.reduce(
-            (sum, item) => sum.plus(new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost)),
-            new Prisma.Decimal(0),
-          )
-        : new Prisma.Decimal(0);
+      const subtotal =
+        itemsData.length > 0
+          ? itemsData.reduce(
+              (sum, item) =>
+                sum.plus(
+                  new Prisma.Decimal(item.receivedQuantity).times(
+                    item.realUnitCost,
+                  ),
+                ),
+              new Prisma.Decimal(0),
+            )
+          : new Prisma.Decimal(0);
 
       // Compute notes — append a marker when items were missing from payload
       let notes = payload.notes ?? null;
@@ -525,7 +639,9 @@ export class PurchaseReceptionsService {
           },
         });
         if (updated.count === 0) {
-          throw new Error(`Concurrent stock modification on lot ${item.lotId} during reception annulment`);
+          throw new Error(
+            `Concurrent stock modification on lot ${item.lotId} during reception annulment`,
+          );
         }
 
         // Record reversal movement
@@ -562,8 +678,12 @@ export class PurchaseReceptionsService {
         const allItems = await tx.purchaseOrderItem.findMany({
           where: { purchaseOrderId: reception.purchaseOrder.id },
         });
-        const hasAnyReceived = allItems.some(poItem => poItem.receivedQuantity > 0);
-        const newOrderState = hasAnyReceived ? PurchaseOrderState.PARTIALLY_RECEIVED : PurchaseOrderState.CONFIRMED;
+        const hasAnyReceived = allItems.some(
+          (poItem) => poItem.receivedQuantity > 0,
+        );
+        const newOrderState = hasAnyReceived
+          ? PurchaseOrderState.PARTIALLY_RECEIVED
+          : PurchaseOrderState.CONFIRMED;
         if (reception.purchaseOrder.state !== newOrderState) {
           await tx.purchaseOrder.update({
             where: { id: reception.purchaseOrder.id },
@@ -574,7 +694,10 @@ export class PurchaseReceptionsService {
 
       // Annul associated fiscal document if one exists
       const fiscalDoc = await tx.fiscalDocument.findFirst({
-        where: { purchaseReceptionId: id, fiscalState: { notIn: ['ANNULLED'] } },
+        where: {
+          purchaseReceptionId: id,
+          fiscalState: { notIn: ['ANNULLED'] },
+        },
         select: { id: true },
       });
       if (fiscalDoc) {
@@ -592,25 +715,39 @@ export class PurchaseReceptionsService {
   }
 
   private calculateReceptionTotals(
-    items: Array<{ receivedQuantity: number; realUnitCost: Prisma.Decimal; discountAmount: Prisma.Decimal; taxRate: Prisma.Decimal }>,
+    items: Array<{
+      receivedQuantity: number;
+      realUnitCost: Prisma.Decimal;
+      discountAmount: Prisma.Decimal;
+      taxRate: Prisma.Decimal;
+    }>,
   ): {
     subtotal: Prisma.Decimal;
     totalTax: Prisma.Decimal;
     totalAmount: Prisma.Decimal;
   } {
     const subtotal = items.reduce(
-      (sum, item) => sum.plus(new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost).minus(item.discountAmount)),
+      (sum, item) =>
+        sum.plus(
+          new Prisma.Decimal(item.receivedQuantity)
+            .times(item.realUnitCost)
+            .minus(item.discountAmount),
+        ),
       new Prisma.Decimal(0),
     );
     const totalTax = items.reduce((sum, item) => {
-      const itemSubtotal = new Prisma.Decimal(item.receivedQuantity).times(item.realUnitCost).minus(item.discountAmount);
+      const itemSubtotal = new Prisma.Decimal(item.receivedQuantity)
+        .times(item.realUnitCost)
+        .minus(item.discountAmount);
       return sum.plus(itemSubtotal.times(item.taxRate).dividedBy(100));
     }, new Prisma.Decimal(0));
     const totalAmount = subtotal.plus(totalTax);
     return { subtotal, totalTax, totalAmount };
   }
 
-  private async getNextSequentialNumber(tx: Prisma.TransactionClient): Promise<number> {
+  private async getNextSequentialNumber(
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
     const latestReception = await tx.purchaseReception.findFirst({
       orderBy: { sequentialNumber: 'desc' },
       select: { sequentialNumber: true },

@@ -25,4 +25,5 @@ model PhysicalCount {
   @@unique([subscriptionId, sequentialNumber])
   @@index([state])
   @@index([startedAt])
+  @@index([createdAt, id])
 }

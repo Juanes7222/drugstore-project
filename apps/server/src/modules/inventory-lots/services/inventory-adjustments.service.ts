@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
-import { Prisma, AdjustmentState, MovementType, LotState } from '@pharmacy/database';
+import {
+  Prisma,
+  AdjustmentState,
+  MovementType,
+  LotState,
+} from '@pharmacy/database';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import * as crypto from 'crypto';
 import {
   CreateInventoryAdjustmentDto,
@@ -33,7 +39,12 @@ interface AdjustmentItemPrep {
 }
 
 interface LotWithMovement {
-  movement: { movementType: MovementType; quantity: number; lotId: string; previousStock: number };
+  movement: {
+    movementType: MovementType;
+    quantity: number;
+    lotId: string;
+    previousStock: number;
+  };
   lot: { id: string; currentStock: number; version: number; state: LotState };
 }
 
@@ -55,12 +66,34 @@ export class InventoryAdjustmentsService {
       where.createdAt = dateFilter;
     }
 
+    if (query.cursor) {
+      const page = await paginateWithCursor<
+        unknown,
+        Prisma.InventoryAdjustmentDocumentWhereInput,
+        Prisma.InventoryAdjustmentDocumentOrderByWithRelationInput
+      >({
+        model: this.prisma.inventoryAdjustmentDocument,
+        baseWhere: where,
+        limit: query.pageSize,
+        cursor: query.cursor,
+        timeField: 'createdAt',
+        direction: 'desc',
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
+      return {
+        data: page.items,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        pageSize: query.pageSize,
+      };
+    }
+
     const [docs, total] = await Promise.all([
       this.prisma.inventoryAdjustmentDocument.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.inventoryAdjustmentDocument.count({ where }),
     ]);
@@ -89,11 +122,17 @@ export class InventoryAdjustmentsService {
   ): Promise<any> {
     // Business validation: at least one adjustment item is required.
     if (!createDto.items || createDto.items.length === 0) {
-      throw new Error('At least one item is required for an inventory adjustment');
+      throw new Error(
+        'At least one item is required for an inventory adjustment',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
-      const itemsData = await this.prepareAdjustmentItems(tx, createDto.items, syncLotContext);
+      const itemsData = await this.prepareAdjustmentItems(
+        tx,
+        createDto.items,
+        syncLotContext,
+      );
       const sequentialNumber = await this.getNextSequentialNumber(tx);
       const doc = await tx.inventoryAdjustmentDocument.create({
         data: {
@@ -132,9 +171,12 @@ export class InventoryAdjustmentsService {
   }
 
   async submit(id: string, userId: string): Promise<any> {
-    const doc = await this.prisma.inventoryAdjustmentDocument.findUnique({ where: { id } });
+    const doc = await this.prisma.inventoryAdjustmentDocument.findUnique({
+      where: { id },
+    });
     if (!doc) throw new AdjustmentNotFoundException(id);
-    if (doc.state !== AdjustmentState.DRAFT) throw new AdjustmentNotDraftException(id);
+    if (doc.state !== AdjustmentState.DRAFT)
+      throw new AdjustmentNotDraftException(id);
 
     return this.prisma.inventoryAdjustmentDocument.update({
       where: { id },
@@ -145,8 +187,14 @@ export class InventoryAdjustmentsService {
     });
   }
 
-  async approve(id: string, userId: string, dto: ApproveInventoryAdjustmentDto): Promise<any> {
-    const doc = await this.prisma.inventoryAdjustmentDocument.findUnique({ where: { id } });
+  async approve(
+    id: string,
+    userId: string,
+    dto: ApproveInventoryAdjustmentDto,
+  ): Promise<any> {
+    const doc = await this.prisma.inventoryAdjustmentDocument.findUnique({
+      where: { id },
+    });
     if (!doc) throw new AdjustmentNotFoundException(id);
     if (doc.state !== AdjustmentState.PENDING_APPROVAL) {
       throw new AdjustmentNotPendingApprovalException(id);
@@ -163,8 +211,14 @@ export class InventoryAdjustmentsService {
     });
   }
 
-  async reject(id: string, userId: string, dto: RejectInventoryAdjustmentDto): Promise<any> {
-    const doc = await this.prisma.inventoryAdjustmentDocument.findUnique({ where: { id } });
+  async reject(
+    id: string,
+    userId: string,
+    dto: RejectInventoryAdjustmentDto,
+  ): Promise<any> {
+    const doc = await this.prisma.inventoryAdjustmentDocument.findUnique({
+      where: { id },
+    });
     if (!doc) throw new AdjustmentNotFoundException(id);
     if (doc.state !== AdjustmentState.PENDING_APPROVAL) {
       throw new AdjustmentNotPendingApprovalException(id);
@@ -181,13 +235,18 @@ export class InventoryAdjustmentsService {
     });
   }
 
-  async apply(id: string, userId: string, tx?: Prisma.TransactionClient): Promise<any> {
+  async apply(
+    id: string,
+    userId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<any> {
     const executor = async (client: Prisma.TransactionClient) => {
       const doc = await client.inventoryAdjustmentDocument.findUnique({
         where: { id },
       });
       if (!doc) throw new AdjustmentNotFoundException(id);
-      if (doc.state !== AdjustmentState.APPROVED) throw new AdjustmentNotApprovedException(id);
+      if (doc.state !== AdjustmentState.APPROVED)
+        throw new AdjustmentNotApprovedException(id);
 
       // Fetch movements separately: InventoryMovement has adjustmentDocumentId as a scalar
       // with no Prisma-level relation declared.
@@ -213,10 +272,17 @@ export class InventoryAdjustmentsService {
     return this.prisma.$transaction(executor);
   }
 
-  async annul(id: string, userId: string, dto: AnnulInventoryAdjustmentDto): Promise<any> {
-    const doc = await this.prisma.inventoryAdjustmentDocument.findUnique({ where: { id } });
+  async annul(
+    id: string,
+    userId: string,
+    dto: AnnulInventoryAdjustmentDto,
+  ): Promise<any> {
+    const doc = await this.prisma.inventoryAdjustmentDocument.findUnique({
+      where: { id },
+    });
     if (!doc) throw new AdjustmentNotFoundException(id);
-    if (doc.state === AdjustmentState.APPLIED) throw new AdjustmentNotAnnullableException(id);
+    if (doc.state === AdjustmentState.APPLIED)
+      throw new AdjustmentNotAnnullableException(id);
 
     return this.prisma.inventoryAdjustmentDocument.update({
       where: { id },
@@ -243,7 +309,8 @@ export class InventoryAdjustmentsService {
         if (!lotData) {
           // Attempt to extract productId from item.lot (new format) or
           // item.productId (some old payload variants have it at item level)
-          const productIdFromItem = (item as any).lot?.productId ?? (item as any).productId;
+          const productIdFromItem =
+            (item as any).lot?.productId ?? (item as any).productId;
           if (productIdFromItem) {
             lotData = {
               productId: productIdFromItem,
@@ -275,13 +342,21 @@ export class InventoryAdjustmentsService {
           lotData,
         );
 
-        if (item.movementType === MovementType.NEGATIVE_ADJUSTMENT && item.quantity > lot.currentStock) {
-          throw new InsufficientStockForAdjustmentException(item.lotId, item.quantity, lot.currentStock);
+        if (
+          item.movementType === MovementType.NEGATIVE_ADJUSTMENT &&
+          item.quantity > lot.currentStock
+        ) {
+          throw new InsufficientStockForAdjustmentException(
+            item.lotId,
+            item.quantity,
+            lot.currentStock,
+          );
         }
 
-        const signedQuantity = item.movementType === MovementType.NEGATIVE_ADJUSTMENT
-          ? -item.quantity
-          : item.quantity;
+        const signedQuantity =
+          item.movementType === MovementType.NEGATIVE_ADJUSTMENT
+            ? -item.quantity
+            : item.quantity;
 
         return {
           lotId: lot.id,
@@ -298,14 +373,24 @@ export class InventoryAdjustmentsService {
   private async verifyAndLoadLots(
     tx: Prisma.TransactionClient,
     documentId: string,
-    movements: Array<{ lotId: string; previousStock: number; movementType: MovementType; quantity: number }>,
+    movements: Array<{
+      lotId: string;
+      previousStock: number;
+      movementType: MovementType;
+      quantity: number;
+    }>,
   ): Promise<LotWithMovement[]> {
     return Promise.all(
       movements.map(async (movement) => {
         const lot = await tx.lot.findUnique({ where: { id: movement.lotId } });
         if (!lot) throw new LotNotFoundException(movement.lotId);
         if (lot.currentStock !== movement.previousStock) {
-          throw new StaleAdjustmentException(documentId, movement.lotId, movement.previousStock, lot.currentStock);
+          throw new StaleAdjustmentException(
+            documentId,
+            movement.lotId,
+            movement.previousStock,
+            lot.currentStock,
+          );
         }
         return { movement, lot };
       }),
@@ -317,17 +402,27 @@ export class InventoryAdjustmentsService {
     movement: { movementType: MovementType; quantity: number; lotId: string },
     lot: { currentStock: number; version: number; state: LotState },
   ): Promise<void> {
-    const isNegative = movement.movementType === MovementType.NEGATIVE_ADJUSTMENT;
-    const newStock = lot.currentStock + (isNegative ? -movement.quantity : movement.quantity);
-    const newState = newStock === 0
-      ? LotState.EXHAUSTED
-      : (lot.currentStock === 0 && newStock > 0 ? LotState.ACTIVE : lot.state);
+    const isNegative =
+      movement.movementType === MovementType.NEGATIVE_ADJUSTMENT;
+    const newStock =
+      lot.currentStock + (isNegative ? -movement.quantity : movement.quantity);
+    const newState =
+      newStock === 0
+        ? LotState.EXHAUSTED
+        : lot.currentStock === 0 && newStock > 0
+          ? LotState.ACTIVE
+          : lot.state;
 
     const updated = await tx.lot.updateMany({
       where: { id: movement.lotId, version: lot.version },
-      data: { currentStock: newStock, version: { increment: 1 }, state: newState },
+      data: {
+        currentStock: newStock,
+        version: { increment: 1 },
+        state: newState,
+      },
     });
-    if (updated.count === 0) throw new ConcurrentStockModificationException(movement.lotId);
+    if (updated.count === 0)
+      throw new ConcurrentStockModificationException(movement.lotId);
   }
 
   /**
@@ -344,7 +439,9 @@ export class InventoryAdjustmentsService {
    * existing documents — otherwise a hardcoded initial value would collide
    * with records that were created before the counter table existed.
    */
-  private async getNextSequentialNumber(tx: Prisma.TransactionClient): Promise<number> {
+  private async getNextSequentialNumber(
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
     const maxSeq =
       (
         await tx.inventoryAdjustmentDocument.aggregate({

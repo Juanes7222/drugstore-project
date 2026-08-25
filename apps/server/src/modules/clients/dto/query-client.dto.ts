@@ -8,6 +8,9 @@ export class QueryClientDto {
   @Type(() => Number)
   pageSize: number = 20;
 
+  // When present, wins over page/pageSize: keyset walk over (updatedAt, id).
+  cursor?: string;
+
   search?: string;
   municipality?: string;
   classificationId?: string;

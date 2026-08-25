@@ -47,4 +47,5 @@ model FiscalResolutionAllocation {
 
   @@index([subscriptionId])
   @@index([workstationId, resolutionId])
+  @@index([allocatedAt, id])
 }

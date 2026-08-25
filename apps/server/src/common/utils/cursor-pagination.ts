@@ -20,7 +20,12 @@
  * server but clients store and return the raw string.
  */
 
-export type CursorTimeField = 'updatedAt' | 'createdAt';
+/**
+ * Timestamp DateTime column the keyset walks (createdAt, updatedAt,
+ * startedAt, issueDate, revokedAt, ...). Must exist on the model and match
+ * the first entry of orderBy.
+ */
+export type CursorTimeField = string;
 
 export interface CursorPaginationInput<Where, OrderBy, Include = undefined> {
   /** Prisma delegate (e.g. prisma.product, prisma.lot). */

@@ -28,7 +28,7 @@ model PurchaseOrder {
   @@unique([subscriptionId, sequentialNumber])
   @@index([supplierId, state])
   @@index([state])
-  @@index([createdAt])
+  @@index([createdAt, id])
 }
 
 model PurchaseOrderItem {

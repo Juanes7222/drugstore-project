@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
-import type { FiscalResolutionAllocation } from '@pharmacy/database';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
+import { Prisma, type FiscalResolutionAllocation } from '@pharmacy/database';
 import { CreateFiscalResolutionAllocationDto } from './dto/create-fiscal-resolution-allocation.dto';
 import { AllocationRangeInvalidException } from './exceptions/allocation-range-invalid.exception';
 
@@ -12,13 +13,38 @@ export class FiscalResolutionAllocationsService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
-  /** Paginated list of all allocations. */
-  async findAll(page = 1, pageSize = 20): Promise<any> {
+  /**
+   * Paginated list of all allocations. Cursor mode walks (allocatedAt desc,
+   * id desc): allocations accumulate one per consumed document number, so
+   * deep history pages must not re-scan.
+   */
+  async findAll(page = 1, pageSize = 20, cursor?: string): Promise<any> {
+    if (cursor) {
+      const result = await paginateWithCursor<
+        unknown,
+        Record<string, never>,
+        Prisma.FiscalResolutionAllocationOrderByWithRelationInput
+      >({
+        model: this.prisma.fiscalResolutionAllocation,
+        limit: pageSize,
+        cursor,
+        timeField: 'allocatedAt',
+        direction: 'desc',
+        orderBy: [{ allocatedAt: 'desc' }, { id: 'desc' }],
+      });
+      return {
+        data: result.items,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore,
+        pageSize,
+      };
+    }
+
     const [data, total] = await Promise.all([
       this.prisma.fiscalResolutionAllocation.findMany({
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { allocatedAt: 'desc' },
+        orderBy: [{ allocatedAt: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.fiscalResolutionAllocation.count(),
     ]);

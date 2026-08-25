@@ -11,6 +11,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { AuditService, AuditEvent } from '../services/audit.service';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 
 export interface RevocationListEntry {
   jti: string;
@@ -20,8 +21,18 @@ export interface RevocationListEntry {
 
 export interface RevocationListResult {
   entries: RevocationListEntry[];
+  /** Range-wide count regardless of pagination mode (offset or cursor). */
   total: number;
+  nextCursor?: string | null;
+  hasMore?: boolean;
 }
+
+/** Full model row shape the cursor helper returns before mapping. */
+type RevocationListEntryShape = {
+  jti: string;
+  revokedAt: Date;
+  reason: string;
+};
 
 @Injectable()
 export class RevocationListService {
@@ -52,26 +63,57 @@ export class RevocationListService {
   }
 
   /**
-   * Get paginated revocation list.
+   * Get paginated revocation list. Cursor mode walks (revokedAt desc, id
+   * desc): the table only grows, so deep pages must not re-scan.
    */
   async getList(params: {
     since?: Date;
     limit?: number;
     offset?: number;
+    cursor?: string;
   }): Promise<RevocationListResult> {
     const where = params.since ? { revokedAt: { gt: params.since } } : {};
 
-    const [rows, total] = await Promise.all([
-      this.prisma.offlineTokenRevocation.findMany({
-        where,
-        orderBy: { revokedAt: 'desc' },
-        take: params.limit ?? 100,
-        skip: params.offset ?? 0,
-      }),
-      this.prisma.offlineTokenRevocation.count({ where }),
-    ]);
+    // Both modes keep `total` in the response contract (existing consumers,
+    // e.g. the blessing flow) and share the audit log below, so a full
+    // migration to cursor pages does not open an observability hole.
+    let rows: RevocationListEntryShape[];
+    let total: number;
+    let nextCursor: string | null = null;
+    let hasMore = false;
 
-    // Audit: log the revocation list fetch
+    if (params.cursor) {
+      const [page, count] = await Promise.all([
+        paginateWithCursor<RevocationListEntryShape>({
+          model: this.prisma.offlineTokenRevocation,
+          baseWhere: where,
+          limit: params.limit ?? 100,
+          cursor: params.cursor,
+          timeField: 'revokedAt',
+          direction: 'desc',
+          orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
+        }),
+        this.prisma.offlineTokenRevocation.count({ where }),
+      ]);
+      rows = page.items;
+      total = count;
+      nextCursor = page.nextCursor;
+      hasMore = page.hasMore;
+    } else {
+      const [findManyRows, count] = await Promise.all([
+        this.prisma.offlineTokenRevocation.findMany({
+          where,
+          orderBy: [{ revokedAt: 'desc' }, { id: 'desc' }],
+          take: params.limit ?? 100,
+          skip: params.offset ?? 0,
+        }),
+        this.prisma.offlineTokenRevocation.count({ where }),
+      ]);
+      rows = findManyRows;
+      total = count;
+    }
+
+    // Audit: log the revocation list fetch regardless of pagination mode.
     await this.auditService.log(AuditEvent.REVOCATION_LIST_UPDATED, {
       actorId: null,
       actorRole: null,
@@ -89,6 +131,7 @@ export class RevocationListService {
         reason: e.reason,
       })),
       total,
+      ...(params.cursor ? { nextCursor, hasMore } : {}),
     };
   }
 

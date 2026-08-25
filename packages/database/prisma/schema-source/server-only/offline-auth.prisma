@@ -65,7 +65,7 @@ model OfflineTokenRevocation {
   reasonDetail    String?   @db.Text
   revokedAt       DateTime  @default(now())
 
-  @@index([revokedAt])
+  @@index([revokedAt, id])
   @@index([userId])
 }
 

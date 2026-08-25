@@ -22,7 +22,12 @@ import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-types';
+import {
+  AuditAction,
+  SystemModule,
+  RoleType,
+  User,
+} from '@pharmacy/shared-types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 @Controller('inventory-lots/physical-counts')
@@ -36,11 +41,13 @@ export class PhysicalCountsController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('state') state?: string,
+    @Query('cursor') cursor?: string,
   ): Promise<any> {
     return this.physicalCountsService.findAll({
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
       state,
+      cursor,
     });
   }
 
@@ -90,9 +97,7 @@ export class PhysicalCountsController {
     module: SystemModule.INVENTORY,
     entityType: 'PhysicalCount',
   })
-  async finish(
-    @Param('id') id: string,
-  ): Promise<any> {
+  async finish(@Param('id') id: string): Promise<any> {
     return this.physicalCountsService.finish(id);
   }
 
@@ -104,9 +109,7 @@ export class PhysicalCountsController {
     module: SystemModule.INVENTORY,
     entityType: 'PhysicalCount',
   })
-  async review(
-    @Param('id') id: string,
-  ): Promise<any> {
+  async review(@Param('id') id: string): Promise<any> {
     return this.physicalCountsService.review(id);
   }
 

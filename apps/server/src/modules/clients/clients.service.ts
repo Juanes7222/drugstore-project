@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, DataSubjectRequestStatus } from '@pharmacy/database';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import * as crypto from 'crypto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -44,7 +45,11 @@ export class ClientsService {
    *               the latest data.  This implements the basic conflict-resolution
    *               strategy required by the offline-first sync design.
    */
-  async create(dto: CreateClientDto, userId: string, clientId?: string): Promise<any> {
+  async create(
+    dto: CreateClientDto,
+    userId: string,
+    clientId?: string,
+  ): Promise<any> {
     const recordId = clientId ?? crypto.randomUUID();
     try {
       return await this.prisma.client.create({
@@ -77,7 +82,10 @@ export class ClientsService {
             },
           });
         }
-        throw new DuplicateClientIdentificationException(dto.identificationType, dto.identificationNumber);
+        throw new DuplicateClientIdentificationException(
+          dto.identificationType,
+          dto.identificationNumber,
+        );
       }
       throw error;
     }
@@ -93,7 +101,10 @@ export class ClientsService {
     } catch (error: unknown) {
       const err = error as { code?: string };
       if (err.code === 'P2002') {
-        throw new DuplicateClientIdentificationException(dto.identificationType || '', dto.identificationNumber || '');
+        throw new DuplicateClientIdentificationException(
+          dto.identificationType || '',
+          dto.identificationNumber || '',
+        );
       }
       throw error;
     }
@@ -128,7 +139,11 @@ export class ClientsService {
     });
   }
 
-  async registerConsent(id: string, dto: RegisterConsentDto, userId: string): Promise<any> {
+  async registerConsent(
+    id: string,
+    dto: RegisterConsentDto,
+    userId: string,
+  ): Promise<any> {
     await this.findById(id);
     return this.prisma.client.update({
       where: { id },
@@ -141,7 +156,11 @@ export class ClientsService {
     });
   }
 
-  async setClassification(id: string, dto: SetClassificationDto, userId: string): Promise<any> {
+  async setClassification(
+    id: string,
+    dto: SetClassificationDto,
+    userId: string,
+  ): Promise<any> {
     await this.findById(id);
     return this.prisma.client.update({
       where: { id },
@@ -152,31 +171,52 @@ export class ClientsService {
     });
   }
 
-  async requestDataSubjectAction(id: string, dto: RequestDataSubjectActionDto, userId: string): Promise<any> {
+  async requestDataSubjectAction(
+    id: string,
+    dto: RequestDataSubjectActionDto,
+    userId: string,
+  ): Promise<any> {
     const client = await this.findById(id);
-    if (client.dataSubjectRequestStatus === 'PENDING_RECTIFICATION' || client.dataSubjectRequestStatus === 'PENDING_ERASURE') {
+    if (
+      client.dataSubjectRequestStatus === 'PENDING_RECTIFICATION' ||
+      client.dataSubjectRequestStatus === 'PENDING_ERASURE'
+    ) {
       throw new DataSubjectRequestAlreadyPendingException(id);
     }
     return this.prisma.client.update({
       where: { id },
       data: {
-        dataSubjectRequestStatus: dto.requestType === 'RECTIFICATION' ? 'PENDING_RECTIFICATION' : 'PENDING_ERASURE',
+        dataSubjectRequestStatus:
+          dto.requestType === 'RECTIFICATION'
+            ? 'PENDING_RECTIFICATION'
+            : 'PENDING_ERASURE',
         dataSubjectRequestAt: new Date(),
         updatedById: userId,
       },
     });
   }
 
-  async resolveDataSubjectRequest(id: string, dto: ResolveDataSubjectRequestDto, userId: string): Promise<any> {
+  async resolveDataSubjectRequest(
+    id: string,
+    dto: ResolveDataSubjectRequestDto,
+    userId: string,
+  ): Promise<any> {
     const client = await this.findById(id);
-    const isPendingRectification = client.dataSubjectRequestStatus === 'PENDING_RECTIFICATION';
-    const isPendingErasure = client.dataSubjectRequestStatus === 'PENDING_ERASURE';
+    const isPendingRectification =
+      client.dataSubjectRequestStatus === 'PENDING_RECTIFICATION';
+    const isPendingErasure =
+      client.dataSubjectRequestStatus === 'PENDING_ERASURE';
     if (!isPendingRectification && !isPendingErasure) {
       throw new NoPendingDataSubjectRequestException(id);
     }
 
-    const newStatus = dto.resolution === 'REJECT' ? 'REJECTED' : (isPendingRectification ? 'RECTIFIED' : 'ERASURED');
-    
+    const newStatus =
+      dto.resolution === 'REJECT'
+        ? 'REJECTED'
+        : isPendingRectification
+          ? 'RECTIFIED'
+          : 'ERASURED';
+
     if (dto.resolution === 'APPROVE' && isPendingErasure) {
       return this.anonymizeClient(id, newStatus, userId);
     }
@@ -190,7 +230,11 @@ export class ClientsService {
   // Erasure is implemented as anonymization to preserve historical Sale records.
   // The Sale model keeps its own immutable snapshot of client data at the time of purchase,
   // allowing us to safely overwrite the Client row without corrupting past transactions.
-  private async anonymizeClient(id: string, status: DataSubjectRequestStatus, userId: string): Promise<any> {
+  private async anonymizeClient(
+    id: string,
+    status: DataSubjectRequestStatus,
+    userId: string,
+  ): Promise<any> {
     return this.prisma.client.update({
       where: { id },
       data: {
@@ -240,7 +284,7 @@ export class ClientsService {
     if (!creator) {
       throw new Error(
         `Generic client record not found (UUID: ${GENERIC_CLIENT_UUID}). ` +
-        'Run migration 20260730000001_seed_generic_client to seed it.',
+          'Run migration 20260730000001_seed_generic_client to seed it.',
       );
     }
     return this.prisma.client.create({
@@ -267,7 +311,7 @@ export class ClientsService {
     // Bounded query: the previous unbounded findMany() returned every client
     // (full PII) on a single response. Reuses the keyset-friendly, paginated
     // sync query shape.
-    const { page = 1, pageSize = 20, since, search } = query;
+    const { page = 1, pageSize = 20, since, search, cursor } = query;
 
     const where: Record<string, unknown> = {};
     if (since) {
@@ -276,9 +320,28 @@ export class ClientsService {
     if (search) {
       where.OR = [
         { fullName: { contains: search, mode: 'insensitive' } },
-        { businessName: { contains: search, mode: 'insensitive' } },
+        // Client has no businessName column — filtering on it made every
+        // searched request fail Prisma's runtime validation.
         { identificationNumber: { contains: search } },
       ];
+    }
+
+    if (cursor) {
+      const result = await paginateWithCursor<unknown>({
+        model: this.prisma.client,
+        baseWhere: where,
+        limit: pageSize,
+        cursor,
+        timeField: 'updatedAt',
+        direction: 'desc',
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      });
+      return {
+        data: result.items,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore,
+        pageSize,
+      };
     }
 
     const [data, total] = await Promise.all([
@@ -286,7 +349,7 @@ export class ClientsService {
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { updatedAt: 'desc' },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.client.count({ where }),
     ]);
@@ -304,10 +367,17 @@ export class ClientsService {
    * This is intentionally a separate method from `findAll` to avoid
    * changing the public API shape of the original endpoint.
    */
-  async findSync(since?: string, page: number = 1, pageSize: number = 200): Promise<{
+  async findSync(
+    since?: string,
+    page: number = 1,
+    pageSize: number = 200,
+    cursor?: string,
+  ): Promise<{
     data: unknown[];
-    total: number;
-    page: number;
+    total?: number;
+    nextCursor?: string | null;
+    hasMore?: boolean;
+    page?: number;
     pageSize: number;
   }> {
     const where: Record<string, unknown> = {};
@@ -315,12 +385,30 @@ export class ClientsService {
       where.updatedAt = { gte: new Date(since) };
     }
 
+    if (cursor) {
+      const result = await paginateWithCursor<unknown>({
+        model: this.prisma.client,
+        baseWhere: where,
+        limit: pageSize,
+        cursor,
+        timeField: 'updatedAt',
+        direction: 'desc',
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      });
+      return {
+        data: result.items,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore,
+        pageSize,
+      };
+    }
+
     const [data, total] = await Promise.all([
       this.prisma.client.findMany({
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { updatedAt: 'desc' },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       }),
       this.prisma.client.count({ where }),
     ]);
@@ -356,7 +444,12 @@ export class ClientsService {
       },
     };
 
-    await this.insertSyncQueueRow(tx, 'CLIENT_DEACTIVATE', payloadObj, createdAt);
+    await this.insertSyncQueueRow(
+      tx,
+      'CLIENT_DEACTIVATE',
+      payloadObj,
+      createdAt,
+    );
   }
 
   /**
@@ -369,7 +462,10 @@ export class ClientsService {
     createdAt: Date,
   ): Promise<void> {
     const payload = JSON.stringify(payloadObj);
-    const payloadHash = crypto.createHash('sha256').update(payload).digest('hex');
+    const payloadHash = crypto
+      .createHash('sha256')
+      .update(payload)
+      .digest('hex');
     const payloadSize = Buffer.byteLength(payload, 'utf-8');
     const operationUuid = crypto.randomUUID();
 

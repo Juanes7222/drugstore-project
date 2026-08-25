@@ -3,6 +3,7 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { Prisma, PurchaseReturnState } from '@pharmacy/database';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import * as crypto from 'crypto';
 import { CreateSupplierReturnDto } from '../dto/create-supplier-return.dto';
 import { QuerySupplierReturnDto } from '../dto/query-supplier-return.dto';
@@ -29,16 +30,46 @@ export class SupplierReturnsService {
   async findAll(query: QuerySupplierReturnDto): Promise<any> {
     const where: Prisma.SupplierReturnWhereInput = {};
     if (query.supplierId) where.supplierId = query.supplierId;
-    if (query.purchaseReceptionId) where.purchaseReceptionId = query.purchaseReceptionId;
+    if (query.purchaseReceptionId)
+      where.purchaseReceptionId = query.purchaseReceptionId;
     if (query.state) where.state = query.state as PurchaseReturnState;
+
+    const listInclude = {
+      supplier: true,
+      items: true,
+    } satisfies Prisma.SupplierReturnInclude;
+
+    if (query.cursor) {
+      const page = await paginateWithCursor<
+        unknown,
+        Prisma.SupplierReturnWhereInput,
+        Prisma.SupplierReturnOrderByWithRelationInput,
+        Prisma.SupplierReturnInclude
+      >({
+        model: this.prisma.supplierReturn,
+        baseWhere: where,
+        limit: query.pageSize,
+        cursor: query.cursor,
+        timeField: 'createdAt',
+        direction: 'desc',
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: listInclude,
+      });
+      return {
+        data: page.items,
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        pageSize: query.pageSize,
+      };
+    }
 
     const [returns, total] = await Promise.all([
       this.prisma.supplierReturn.findMany({
         where,
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        orderBy: { createdAt: 'desc' },
-        include: { supplier: true, items: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: listInclude,
       }),
       this.prisma.supplierReturn.count({ where }),
     ]);
@@ -58,11 +89,17 @@ export class SupplierReturnsService {
 
     // SupplierReturnItem has productId and lotId as scalars with no Prisma-level relations.
     // Fetch related entities separately.
-    const itemProductIds = [...new Set(supplierReturn.items.map((i: any) => i.productId))];
-    const itemLotIds = [...new Set(supplierReturn.items.map((i: any) => i.lotId))];
+    const itemProductIds = [
+      ...new Set(supplierReturn.items.map((i: any) => i.productId)),
+    ];
+    const itemLotIds = [
+      ...new Set(supplierReturn.items.map((i: any) => i.lotId)),
+    ];
     const [products, lots] = await Promise.all([
       itemProductIds.length > 0
-        ? this.prisma.product.findMany({ where: { id: { in: itemProductIds } } })
+        ? this.prisma.product.findMany({
+            where: { id: { in: itemProductIds } },
+          })
         : Promise.resolve([]),
       itemLotIds.length > 0
         ? this.prisma.lot.findMany({ where: { id: { in: itemLotIds } } })
@@ -79,21 +116,34 @@ export class SupplierReturnsService {
     return supplierReturn;
   }
 
-  async create(createDto: CreateSupplierReturnDto, userId: string): Promise<any> {
+  async create(
+    createDto: CreateSupplierReturnDto,
+    userId: string,
+  ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
-      const supplier = await tx.supplier.findUnique({ where: { id: createDto.supplierId } });
+      const supplier = await tx.supplier.findUnique({
+        where: { id: createDto.supplierId },
+      });
       if (!supplier) throw new SupplierNotFoundException(createDto.supplierId);
 
       if (createDto.purchaseReceptionId) {
         const reception = await tx.purchaseReception.findUnique({
           where: { id: createDto.purchaseReceptionId },
         });
-        if (!reception) throw new PurchaseReceptionNotFoundException(createDto.purchaseReceptionId);
+        if (!reception)
+          throw new PurchaseReceptionNotFoundException(
+            createDto.purchaseReceptionId,
+          );
       }
 
       const itemsData: Array<{
-        id: string; subscriptionId: string; productId: string; lotId: string; quantity: number;
-        unitCost: Prisma.Decimal; totalAmount: Prisma.Decimal;
+        id: string;
+        subscriptionId: string;
+        productId: string;
+        lotId: string;
+        quantity: number;
+        unitCost: Prisma.Decimal;
+        totalAmount: Prisma.Decimal;
       }> = [];
 
       for (const item of createDto.items) {
@@ -108,7 +158,8 @@ export class SupplierReturnsService {
           select: { realUnitCost: true },
         });
         const unitCost = receptionItem?.realUnitCost;
-        if (!unitCost) throw new SupplierReturnLotCostUnavailableException(item.lotId);
+        if (!unitCost)
+          throw new SupplierReturnLotCostUnavailableException(item.lotId);
 
         itemsData.push({
           id: crypto.randomUUID(),
@@ -121,7 +172,10 @@ export class SupplierReturnsService {
         });
       }
 
-      const subtotal = itemsData.reduce((sum, it) => sum.plus(it.totalAmount), new Prisma.Decimal(0));
+      const subtotal = itemsData.reduce(
+        (sum, it) => sum.plus(it.totalAmount),
+        new Prisma.Decimal(0),
+      );
 
       // Serialize sequential-number allocation per tenant so two concurrent
       // cashier creations cannot read the same MAX and produce duplicates.
@@ -213,7 +267,10 @@ export class SupplierReturnsService {
       }
 
       const existing = await tx.supplierReturn.findFirst({
-        where: { sequentialNumber: payload.sequentialNumber, supplierId: payload.supplierId },
+        where: {
+          sequentialNumber: payload.sequentialNumber,
+          supplierId: payload.supplierId,
+        },
         select: { id: true, state: true },
       });
       if (existing) {
@@ -233,7 +290,9 @@ export class SupplierReturnsService {
           where: { id: payload.purchaseReceptionId },
         });
         if (!reception) {
-          throw new PurchaseReceptionNotFoundException(payload.purchaseReceptionId);
+          throw new PurchaseReceptionNotFoundException(
+            payload.purchaseReceptionId,
+          );
         }
       }
 
@@ -268,7 +327,10 @@ export class SupplierReturnsService {
         }
       }
 
-      const subtotal = itemsData.reduce((sum, it) => sum.plus(it.totalAmount), new Prisma.Decimal(0));
+      const subtotal = itemsData.reduce(
+        (sum, it) => sum.plus(it.totalAmount),
+        new Prisma.Decimal(0),
+      );
 
       // Compute notes — append a marker when items were missing from payload
       let notes = payload.reason ?? null;
@@ -299,7 +361,9 @@ export class SupplierReturnsService {
   }
 
   async approve(id: string): Promise<any> {
-    const supplierReturn = await this.prisma.supplierReturn.findUnique({ where: { id } });
+    const supplierReturn = await this.prisma.supplierReturn.findUnique({
+      where: { id },
+    });
     if (!supplierReturn) throw new SupplierReturnNotFoundException(id);
     if (supplierReturn.state !== PurchaseReturnState.CONFIRMED) {
       throw new SupplierReturnNotDraftException(id, 'CONFIRMED');
@@ -312,7 +376,9 @@ export class SupplierReturnsService {
   }
 
   async annul(id: string): Promise<any> {
-    const supplierReturn = await this.prisma.supplierReturn.findUnique({ where: { id } });
+    const supplierReturn = await this.prisma.supplierReturn.findUnique({
+      where: { id },
+    });
     if (!supplierReturn) throw new SupplierReturnNotFoundException(id);
     if (supplierReturn.state !== PurchaseReturnState.DRAFT) {
       throw new SupplierReturnCannotBeAnnulledException(id);
@@ -324,7 +390,9 @@ export class SupplierReturnsService {
     });
   }
 
-  private async getNextSequentialNumber(tx: Prisma.TransactionClient): Promise<number> {
+  private async getNextSequentialNumber(
+    tx: Prisma.TransactionClient,
+  ): Promise<number> {
     const latest = await tx.supplierReturn.findFirst({
       orderBy: { sequentialNumber: 'desc' },
       select: { sequentialNumber: true },

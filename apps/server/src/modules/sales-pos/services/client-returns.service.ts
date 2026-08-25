@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
-import { Prisma, ClientReturnState, ShiftState, SaleOperationalState } from '@pharmacy/database';
+import {
+  Prisma,
+  ClientReturnState,
+  ShiftState,
+  SaleOperationalState,
+} from '@pharmacy/database';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import * as crypto from 'crypto';
 import { CreateClientReturnDto } from '../dto/create-client-return.dto';
 import { RejectClientReturnDto } from '../dto/reject-client-return.dto';
@@ -27,13 +33,53 @@ export class ClientReturnsService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
-  async findAll(query: { page?: number; pageSize?: number; state?: string }): Promise<any> {
+  /**
+   * Cursor mode walks (createdAt desc, id desc) for cheap deep pages on the
+   * returns ledger; the legacy offset path is kept for existing callers.
+   */
+  async findAll(query: {
+    page?: number;
+    pageSize?: number;
+    state?: string;
+    cursor?: string;
+  }): Promise<any> {
     const page = query.page || 1;
     const pageSize = query.pageSize || 20;
     const where: Prisma.ClientReturnWhereInput = {};
     if (query.state) where.state = query.state as ClientReturnState;
+
+    if (query.cursor) {
+      const result = await paginateWithCursor<
+        unknown,
+        Prisma.ClientReturnWhereInput,
+        Prisma.ClientReturnOrderByWithRelationInput,
+        Prisma.ClientReturnInclude
+      >({
+        model: this.prisma.clientReturn,
+        baseWhere: where,
+        limit: pageSize,
+        cursor: query.cursor,
+        timeField: 'createdAt',
+        direction: 'desc',
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: { sale: true, client: true, items: true },
+      });
+      return {
+        data: result.items,
+        nextCursor: result.nextCursor,
+        hasMore: result.hasMore,
+        pageSize,
+      };
+    }
+
     const [data, total] = await Promise.all([
-      this.prisma.clientReturn.findMany({ where, skip: (page - 1) * pageSize, take: pageSize, orderBy: { createdAt: 'desc' }, include: { sale: true, client: true, items: true } }),
+      this.prisma.clientReturn.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: { sale: true, client: true, items: true },
+      }),
       this.prisma.clientReturn.count({ where }),
     ]);
     return { data, total, page, pageSize };
@@ -48,41 +94,92 @@ export class ClientReturnsService {
 
     // ClientReturnItemLot has lotId as a scalar with no Prisma-level relation.
     // Fetch lots separately.
-    const lotIds = [...new Set(ret.items.flatMap((i: any) => i.lots.map((l: any) => l.lotId)))];
-    const lots = lotIds.length > 0
-      ? await this.prisma.lot.findMany({ where: { id: { in: lotIds } } })
-      : [];
+    const lotIds = [
+      ...new Set(
+        ret.items.flatMap((i: any) => i.lots.map((l: any) => l.lotId)),
+      ),
+    ];
+    const lots =
+      lotIds.length > 0
+        ? await this.prisma.lot.findMany({ where: { id: { in: lotIds } } })
+        : [];
     const lotMap = new Map(lots.map((l) => [l.id, l]));
     ret.items = ret.items.map((item: any) => ({
       ...item,
-      lots: item.lots.map((l: any) => ({ ...l, lot: lotMap.get(l.lotId) ?? null })),
+      lots: item.lots.map((l: any) => ({
+        ...l,
+        lot: lotMap.get(l.lotId) ?? null,
+      })),
     }));
 
     return ret;
   }
 
-  async create(createDto: CreateClientReturnDto, userId: string, workstationId: string): Promise<any> {
+  async create(
+    createDto: CreateClientReturnDto,
+    userId: string,
+    workstationId: string,
+  ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
-      const { sale, cashShift } = await this.validatePreconditions(tx, createDto, userId, workstationId);
-      const refundMethodId = createDto.refundMethodId ?? (await this.calc.getDefaultRefundMethod(tx, sale.id));
-      const itemsData = await Promise.all(
-        createDto.items.map((item) => this.calc.prepareReturnItem(tx, sale.id, item)),
+      const { sale, cashShift } = await this.validatePreconditions(
+        tx,
+        createDto,
+        userId,
+        workstationId,
       );
-      const subtotalReturned = itemsData.reduce((s, i) => s.plus(i.totalAmount.minus(i.taxAmount)), new Prisma.Decimal(0));
-      const taxReturned = itemsData.reduce((s, i) => s.plus(i.taxAmount), new Prisma.Decimal(0));
+      const refundMethodId =
+        createDto.refundMethodId ??
+        (await this.calc.getDefaultRefundMethod(tx, sale.id));
+      const itemsData = await Promise.all(
+        createDto.items.map((item) =>
+          this.calc.prepareReturnItem(tx, sale.id, item),
+        ),
+      );
+      const subtotalReturned = itemsData.reduce(
+        (s, i) => s.plus(i.totalAmount.minus(i.taxAmount)),
+        new Prisma.Decimal(0),
+      );
+      const taxReturned = itemsData.reduce(
+        (s, i) => s.plus(i.taxAmount),
+        new Prisma.Decimal(0),
+      );
       const refundAmount = subtotalReturned.plus(taxReturned);
       const sequentialNumber = await this.calc.getNextSequentialNumber(tx);
       return tx.clientReturn.create({
         data: {
-          id: crypto.randomUUID(), subscriptionId: this.tenantContext.getSubscriptionId(), sequentialNumber, saleId: sale.id, clientId: sale.clientId!,
-          refundAmount, subtotalReturned, taxReturned, refundMethodId, reason: createDto.reason,
-          cashShiftId: cashShift.id, workstationId: cashShift.workstationId, createdById: userId,
-          items: { create: itemsData.map((item) => ({
-            id: crypto.randomUUID(), subscriptionId: this.tenantContext.getSubscriptionId(), saleItemId: item.saleItemId, quantity: item.quantity,
-            unitPriceAtSale: item.unitPriceAtSale, unitPriceAtReturn: item.unitPriceAtReturn,
-            taxAmount: item.taxAmount, totalAmount: item.totalAmount,
-            lots: { create: item.lots.map((l) => ({ id: crypto.randomUUID(), subscriptionId: this.tenantContext.getSubscriptionId(), lotId: l.lotId, quantity: l.quantity })) },
-          })) },
+          id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
+          sequentialNumber,
+          saleId: sale.id,
+          clientId: sale.clientId!,
+          refundAmount,
+          subtotalReturned,
+          taxReturned,
+          refundMethodId,
+          reason: createDto.reason,
+          cashShiftId: cashShift.id,
+          workstationId: cashShift.workstationId,
+          createdById: userId,
+          items: {
+            create: itemsData.map((item) => ({
+              id: crypto.randomUUID(),
+              subscriptionId: this.tenantContext.getSubscriptionId(),
+              saleItemId: item.saleItemId,
+              quantity: item.quantity,
+              unitPriceAtSale: item.unitPriceAtSale,
+              unitPriceAtReturn: item.unitPriceAtReturn,
+              taxAmount: item.taxAmount,
+              totalAmount: item.totalAmount,
+              lots: {
+                create: item.lots.map((l) => ({
+                  id: crypto.randomUUID(),
+                  subscriptionId: this.tenantContext.getSubscriptionId(),
+                  lotId: l.lotId,
+                  quantity: l.quantity,
+                })),
+              },
+            })),
+          },
         },
         include: { items: { include: { lots: true } } },
       });
@@ -92,8 +189,12 @@ export class ClientReturnsService {
   async markPendingPickup(id: string): Promise<any> {
     const ret = await this.prisma.clientReturn.findUnique({ where: { id } });
     if (!ret) throw new ClientReturnNotFoundException(id);
-    if (ret.state !== ClientReturnState.DRAFT) throw new ClientReturnNotDraftException(id);
-    return this.prisma.clientReturn.update({ where: { id }, data: { state: ClientReturnState.PENDING_PICKUP } });
+    if (ret.state !== ClientReturnState.DRAFT)
+      throw new ClientReturnNotDraftException(id);
+    return this.prisma.clientReturn.update({
+      where: { id },
+      data: { state: ClientReturnState.PENDING_PICKUP },
+    });
   }
 
   async confirm(id: string, _userId: string): Promise<any> {
@@ -101,18 +202,36 @@ export class ClientReturnsService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       const ret = await this.requireReturn(tx, id);
-      if (ret.state !== ClientReturnState.DRAFT && ret.state !== ClientReturnState.PENDING_PICKUP) {
+      if (
+        ret.state !== ClientReturnState.DRAFT &&
+        ret.state !== ClientReturnState.PENDING_PICKUP
+      ) {
         throw new ClientReturnNotDraftException(id);
       }
       for (const item of ret.items) {
-        const alreadyReturned = await this.calc.getAlreadyReturnedQuantity(tx, item.saleItemId);
-        const saleItem = await tx.saleItem.findUnique({ where: { id: item.saleItemId } });
+        const alreadyReturned = await this.calc.getAlreadyReturnedQuantity(
+          tx,
+          item.saleItemId,
+        );
+        const saleItem = await tx.saleItem.findUnique({
+          where: { id: item.saleItemId },
+        });
         const available = (saleItem?.quantity || 0) - alreadyReturned;
-        if (item.quantity > available) throw new ReturnQuantityExceedsAvailableException(item.saleItemId, item.quantity, available);
+        if (item.quantity > available)
+          throw new ReturnQuantityExceedsAvailableException(
+            item.saleItemId,
+            item.quantity,
+            available,
+          );
       }
       for (const item of ret.items) {
         for (const lot of item.lots) {
-          await this.lotsService.receiveStockFromClientReturn({ lotId: lot.lotId, quantity: lot.quantity, clientReturnId: ret.id, tx });
+          await this.lotsService.receiveStockFromClientReturn({
+            lotId: lot.lotId,
+            quantity: lot.quantity,
+            clientReturnId: ret.id,
+            tx,
+          });
         }
       }
 
@@ -147,31 +266,63 @@ export class ClientReturnsService {
   async reject(id: string, dto: RejectClientReturnDto): Promise<any> {
     const ret = await this.prisma.clientReturn.findUnique({ where: { id } });
     if (!ret) throw new ClientReturnNotFoundException(id);
-    if (ret.state !== ClientReturnState.DRAFT && ret.state !== ClientReturnState.PENDING_PICKUP) throw new ClientReturnNotDraftException(id);
-    return this.prisma.clientReturn.update({ where: { id }, data: { state: ClientReturnState.REJECTED, reason: dto.reason } });
-  }
-
-  async annul(id: string, userId: string, dto: AnnulClientReturnDto): Promise<any> {
-    const ret = await this.prisma.clientReturn.findUnique({ where: { id } });
-    if (!ret) throw new ClientReturnNotFoundException(id);
-    if (ret.state === ClientReturnState.CONFIRMED) throw new ClientReturnCannotBeAnnulledException(id);
+    if (
+      ret.state !== ClientReturnState.DRAFT &&
+      ret.state !== ClientReturnState.PENDING_PICKUP
+    )
+      throw new ClientReturnNotDraftException(id);
     return this.prisma.clientReturn.update({
       where: { id },
-      data: { state: ClientReturnState.ANNULLED, annulledAt: new Date(), annulledById: userId, annulmentReason: dto.annulmentReason },
+      data: { state: ClientReturnState.REJECTED, reason: dto.reason },
     });
   }
 
-  private async validatePreconditions(tx: Prisma.TransactionClient, dto: CreateClientReturnDto, userId: string, workstationId: string): Promise<{ sale: any; cashShift: any }> {
+  async annul(
+    id: string,
+    userId: string,
+    dto: AnnulClientReturnDto,
+  ): Promise<any> {
+    const ret = await this.prisma.clientReturn.findUnique({ where: { id } });
+    if (!ret) throw new ClientReturnNotFoundException(id);
+    if (ret.state === ClientReturnState.CONFIRMED)
+      throw new ClientReturnCannotBeAnnulledException(id);
+    return this.prisma.clientReturn.update({
+      where: { id },
+      data: {
+        state: ClientReturnState.ANNULLED,
+        annulledAt: new Date(),
+        annulledById: userId,
+        annulmentReason: dto.annulmentReason,
+      },
+    });
+  }
+
+  private async validatePreconditions(
+    tx: Prisma.TransactionClient,
+    dto: CreateClientReturnDto,
+    userId: string,
+    workstationId: string,
+  ): Promise<{ sale: any; cashShift: any }> {
     const sale = await tx.sale.findUnique({ where: { id: dto.saleId } });
     if (!sale) throw new SaleNotFoundException(dto.saleId);
-    if (sale.operationalState !== SaleOperationalState.CONFIRMED) throw new SaleNotConfirmedException(dto.saleId);
-    const cashShift = await tx.cashShift.findFirst({ where: { userId, workstationId, state: ShiftState.OPEN } });
-    if (!cashShift) throw new CashShiftNotOpenForWorkstationException(workstationId);
+    if (sale.operationalState !== SaleOperationalState.CONFIRMED)
+      throw new SaleNotConfirmedException(dto.saleId);
+    const cashShift = await tx.cashShift.findFirst({
+      where: { userId, workstationId, state: ShiftState.OPEN },
+    });
+    if (!cashShift)
+      throw new CashShiftNotOpenForWorkstationException(workstationId);
     return { sale, cashShift };
   }
 
-  private async requireReturn(tx: Prisma.TransactionClient, id: string): Promise<any> {
-    const ret = await tx.clientReturn.findUnique({ where: { id }, include: { items: { include: { lots: true } } } });
+  private async requireReturn(
+    tx: Prisma.TransactionClient,
+    id: string,
+  ): Promise<any> {
+    const ret = await tx.clientReturn.findUnique({
+      where: { id },
+      include: { items: { include: { lots: true } } },
+    });
     if (!ret) throw new ClientReturnNotFoundException(id);
     return ret;
   }

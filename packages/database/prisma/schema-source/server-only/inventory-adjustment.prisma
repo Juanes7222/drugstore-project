@@ -33,6 +33,7 @@ model InventoryAdjustmentDocument {
 
   @@index([subscriptionId])
   @@unique([subscriptionId, sequentialNumber])
+  @@index([createdAt, id])
 }
 
 // Single-row counter that allocates sequentialNumber for InventoryAdjustmentDocument.
