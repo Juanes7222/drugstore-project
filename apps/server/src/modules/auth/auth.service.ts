@@ -1491,6 +1491,11 @@ export class AuthService {
       avatarUrl: dbUser.avatarUrl,
       avatarColor: dbUser.avatarColor,
       authMethod: dbUser.authMethod as User['authMethod'],
+      // Presence flags only: the POS login screen needs to know which
+      // credential types an account supports (PIN vs password prompt);
+      // the hashes themselves are never projected onto this DTO.
+      hasPin: dbUser.pinHash != null,
+      hasPassword: dbUser.passwordHash != null,
       identificationType: null,
       identificationNumber: null,
       isActive: dbUser.isActive,

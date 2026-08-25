@@ -26,6 +26,7 @@ import {
 import { createSecureStorage } from '../../infrastructure/secure-storage';
 import { WORKSTATION_NAME } from '../../infrastructure/config';
 import { createOfflineAuthService } from '../../renderer/services/auth/offline/offline-auth-service';
+import { mapServerUserToLocalUserInfo } from './local-users';
 
 /**
  * Shape the server's POST /auth/login endpoint returns.
@@ -49,6 +50,9 @@ interface ServerAuthResponse {
     avatarUrl: string | null;
     avatarColor: string | null;
     mustChangePassword: boolean;
+    /** Credential-presence flags — absent on servers predating them. */
+    hasPin?: boolean;
+    hasPassword?: boolean;
   };
   /** Offline JWT token for offline-first authentication, returned when the server supports it. */
   offlineToken?: { token: string; expiresAt: string };
@@ -113,14 +117,7 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
       // Cache the authenticated user's profile for the login avatar grid
       // and QuickSwitch offline fallback. Non-fatal.
       import('./local-user-cache')
-        .then(({ cacheUser }) => cacheUser({
-          id: response.user.id,
-          displayName: response.user.displayName,
-          role: response.user.role as RoleType,
-          avatarUrl: response.user.avatarUrl ?? null,
-          avatarColor: response.user.avatarColor ?? null,
-          username: response.user.username,
-        }))
+        .then(({ cacheUser }) => cacheUser(mapServerUserToLocalUserInfo(response.user)))
         .catch(() => { /* non-fatal */ });
 
       // Cache offline credentials for future offline-first logins.
@@ -186,14 +183,7 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
       // Cache the authenticated user's profile for the login avatar grid
       // and QuickSwitch offline fallback. Non-fatal.
       import('./local-user-cache')
-        .then(({ cacheUser }) => cacheUser({
-          id: response.user.id,
-          displayName: response.user.displayName,
-          role: response.user.role as RoleType,
-          avatarUrl: response.user.avatarUrl ?? null,
-          avatarColor: response.user.avatarColor ?? null,
-          username: response.user.username,
-        }))
+        .then(({ cacheUser }) => cacheUser(mapServerUserToLocalUserInfo(response.user)))
         .catch(() => { /* non-fatal */ });
 
       // Cache offline credentials for future offline-first logins.
@@ -230,14 +220,7 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
 
       // Cache the authenticated user's profile. Non-fatal.
       import('./local-user-cache')
-        .then(({ cacheUser }) => cacheUser({
-          id: response.user.id,
-          displayName: response.user.displayName,
-          role: response.user.role as RoleType,
-          avatarUrl: response.user.avatarUrl ?? null,
-          avatarColor: response.user.avatarColor ?? null,
-          username: response.user.username,
-        }))
+        .then(({ cacheUser }) => cacheUser(mapServerUserToLocalUserInfo(response.user)))
         .catch(() => { /* non-fatal */ });
 
       // Cache offline credentials for future offline-first logins.

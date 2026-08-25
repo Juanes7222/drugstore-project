@@ -194,6 +194,29 @@ describe('AuthService', () => {
       expect(result.user.id).toBe('existing-1');
     });
 
+    it('includes credential-presence flags in the firebase login user DTO', async () => {
+      const existing = buildPrismaUser({
+        id: 'existing-1',
+        firebaseUid: 'fb-uid-flags',
+        email: 'flags@example.com',
+        pinHash: 'stored-pin-hash',
+        passwordHash: null,
+      });
+      prisma.user.findFirst.mockResolvedValueOnce(existing as never);
+
+      const result = await service.loginWithFirebase({
+        firebaseUid: 'fb-uid-flags',
+        email: 'flags@example.com',
+        displayName: null,
+        photoURL: null,
+        workstationId: 'ws-1',
+      });
+
+      expect(result.user.hasPin).toBe(true);
+      expect(result.user.hasPassword).toBe(false);
+      expect(result.user).not.toHaveProperty('pinHash');
+    });
+
     it('creates a new OWNER/OAUTH_GOOGLE user in PENDING_SETUP when no local account matches', async () => {
       prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(null as never);
       const created = buildPrismaUser({
@@ -465,6 +488,52 @@ describe('AuthService', () => {
       expect(result.user.id).toBe('user-1');
       expect(result.user).not.toHaveProperty('passwordHash');
       expect(result.user).not.toHaveProperty('passwordAlgorithm');
+    });
+
+    it('reports credential presence via hasPin/hasPassword when both hashes exist', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({
+          id: 'user-1',
+          pinHash: 'stored-pin-hash',
+          passwordHash: 'stored-argon2-hash',
+        }) as never,
+      );
+
+      const result = await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-1',
+      });
+
+      expect(result.user.hasPin).toBe(true);
+      expect(result.user.hasPassword).toBe(true);
+      // Presence only — the hash material itself must never reach the DTO.
+      expect(result.user).not.toHaveProperty('pinHash');
+    });
+
+    it('reports hasPin false for an account whose PIN hash is null (POS regression)', async () => {
+      // Regression: cashiers with pinHash = null used to trap the POS on the
+      // PIN keypad; the client now learns the PIN is absent from this flag.
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({
+          id: 'cashier-1',
+          role: 'CASHIER',
+          authMethod: 'PIN_ONLY',
+          pinHash: null,
+          passwordHash: 'stored-argon2-hash',
+        }) as never,
+      );
+
+      const result = await service.login({
+        identifier: 'cashier@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-1',
+      });
+
+      expect(result.user.hasPin).toBe(false);
+      expect(result.user.hasPassword).toBe(true);
     });
   });
 

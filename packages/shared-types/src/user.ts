@@ -14,6 +14,9 @@ export interface User {
   avatarUrl: string | null;
   avatarColor: string | null;
   authMethod: AuthMethod;
+  /** Presence-only credential flags; the hash material itself never leaves the server. */
+  hasPin?: boolean;
+  hasPassword?: boolean;
   identificationType: IdentificationType | null;
   identificationNumber: string | null;
   isActive: boolean;

@@ -26,6 +26,9 @@ interface QuickUser {
   avatarUrl: string | null;
   avatarColor: string | null;
   username: string;
+  /** Server-reported credential presence. Undefined = unknown (stale cache). */
+  hasPin?: boolean;
+  hasPassword?: boolean;
 }
 
 export const QuickSwitch: FC = () => {
@@ -79,13 +82,15 @@ export const QuickSwitch: FC = () => {
         if (cancelled) return;
 
         const mapped: QuickUser[] = (result.users ?? []).map(
-          (u: { id: string; displayName?: string; fullName?: string; role: string; avatarUrl?: string | null; avatarColor?: string | null; username?: string }) => ({
+          (u: { id: string; displayName?: string; fullName?: string; role: string; avatarUrl?: string | null; avatarColor?: string | null; username?: string; hasPin?: boolean; hasPassword?: boolean }) => ({
             id: u.id,
             displayName: u.displayName ?? u.fullName ?? '',
             role: u.role as RoleType,
             avatarUrl: u.avatarUrl ?? null,
             avatarColor: u.avatarColor ?? null,
             username: u.username ?? '',
+            hasPin: u.hasPin,
+            hasPassword: u.hasPassword,
           }),
         );
         setUsers(mapped);
@@ -127,6 +132,8 @@ export const QuickSwitch: FC = () => {
                 avatarUrl: u.avatarUrl,
                 avatarColor: u.avatarColor,
                 username: u.username,
+                hasPin: u.hasPin,
+                hasPassword: u.hasPassword,
               })),
             );
           } else {
@@ -156,12 +163,12 @@ export const QuickSwitch: FC = () => {
     setError(null);
     setPassword('');
 
-    // Cashiers and Managers use PIN; Owners and Admins use password.
-    setSwitchState(
-      user.role === RoleType.CASHIER || user.role === RoleType.MANAGER
-        ? 'pin'
-        : 'password',
-    );
+    // Default input follows the credentials the server reports. Entries
+    // without flags (stale cache) keep the legacy role heuristic.
+    const pinAvailable =
+      user.hasPin ??
+      (user.role === RoleType.CASHIER || user.role === RoleType.MANAGER);
+    setSwitchState(pinAvailable ? 'pin' : 'password');
   }, []);
 
   const handleSwitchComplete = useCallback(async () => {
@@ -417,6 +424,27 @@ export const QuickSwitch: FC = () => {
                 isLoading={isLoading}
                 label=""
               />
+              {selectedUser.hasPassword !== false && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSwitchState('password');
+                    setError(null);
+                    setPassword('');
+                  }}
+                  className="text-sm mt-2"
+                  style={{
+                    color: 'var(--color-ink-muted)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    textUnderlineOffset: 2,
+                  }}
+                >
+                  {t('auth.use_password')}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -478,6 +506,29 @@ export const QuickSwitch: FC = () => {
                 >
                   {error}
                 </p>
+              )}
+              {(selectedUser.hasPin ??
+                (selectedUser.role === RoleType.CASHIER ||
+                  selectedUser.role === RoleType.MANAGER)) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSwitchState('pin');
+                    setError(null);
+                    setPassword('');
+                  }}
+                  className="text-sm mb-2"
+                  style={{
+                    color: 'var(--color-ink-muted)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    textUnderlineOffset: 2,
+                  }}
+                >
+                  {t('auth.use_pin')}
+                </button>
               )}
               <div className="flex gap-2">
                 <button

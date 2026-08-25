@@ -100,18 +100,29 @@ function buildTargetUser(
 describe('UsersController', () => {
   let prisma: MockProxy<PrismaClient>;
   let auditServiceMock: { log: jest.Mock };
+  let pinServiceMock: { hash: jest.Mock; generate: jest.Mock };
+  let passwordHasherMock: { hash: jest.Mock };
   let controller: UsersController;
 
   beforeEach(async () => {
     prisma = mockDeep<PrismaClient>();
     auditServiceMock = { log: jest.fn().mockResolvedValue(undefined) };
+    pinServiceMock = {
+      hash: jest.fn().mockResolvedValue('hashed-pin'),
+      generate: jest.fn().mockReturnValue('482913'),
+    };
+    passwordHasherMock = {
+      hash: jest
+        .fn()
+        .mockResolvedValue({ hash: 'hashed-password', algorithm: 'argon2id' }),
+    };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [UsersController],
       providers: [
         { provide: PrismaService, useValue: prisma },
-        { provide: PinService, useValue: {} },
-        { provide: PasswordHasherService, useValue: {} },
+        { provide: PinService, useValue: pinServiceMock },
+        { provide: PasswordHasherService, useValue: passwordHasherMock },
         { provide: SessionService, useValue: {} },
         { provide: AuditService, useValue: auditServiceMock },
         { provide: OfflineTokenService, useValue: {} },
@@ -219,6 +230,169 @@ describe('UsersController', () => {
           details: { role: RoleType.CASHIER },
         },
       );
+    });
+  });
+
+  describe('listUsers', () => {
+    function buildUserRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'row-1',
+        displayName: 'Row User',
+        fullName: 'Row User Full',
+        email: 'row@example.com',
+        username: 'rowuser',
+        role: RoleType.CASHIER,
+        status: 'ACTIVE',
+        isActive: true,
+        avatarUrl: null,
+        avatarColor: null,
+        authMethod: 'PIN_ONLY',
+        pinHash: 'argon2-hash-value',
+        passwordHash: null,
+        totpEnabled: false,
+        emailVerifiedAt: null,
+        lastLoginAt: null,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        createdById: 'actor-1',
+        deletedAt: null,
+        ...overrides,
+      };
+    }
+
+    it('exposes credential presence as booleans and never serializes the hashes (offset path)', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        buildUserRow(),
+        buildUserRow({
+          id: 'row-2',
+          pinHash: null,
+          passwordHash: 'argon2-password-hash',
+        }),
+        buildUserRow({ id: 'row-3', pinHash: null, passwordHash: null }),
+      ] as never);
+      prisma.user.count.mockResolvedValue(3 as never);
+
+      const result = await controller.listUsers(buildActor());
+
+      expect(result.users[0]).toMatchObject({
+        id: 'row-1',
+        hasPin: true,
+        hasPassword: false,
+      });
+      expect(result.users[1]).toMatchObject({
+        id: 'row-2',
+        hasPin: false,
+        hasPassword: true,
+      });
+      expect(result.users[2]).toMatchObject({
+        id: 'row-3',
+        hasPin: false,
+        hasPassword: false,
+      });
+      expect(result.total).toBe(3);
+
+      const serialized = JSON.stringify(result.users);
+      expect(serialized).not.toContain('argon2-hash-value');
+      expect(serialized).not.toContain('argon2-password-hash');
+      for (const user of result.users) {
+        expect(user).not.toHaveProperty('pinHash');
+        expect(user).not.toHaveProperty('passwordHash');
+      }
+    });
+
+    it('strips credential hashes on keyset continuation pages too', async () => {
+      // Real cursor payload — the controller hands it to paginateWithCursor,
+      // which fetches full rows (no select) on this path.
+      const cursor = Buffer.from(
+        JSON.stringify({
+          lastUpdatedAt: '2026-01-01T00:00:00.000Z',
+          lastId: 'prev-row',
+        }),
+      ).toString('base64');
+
+      prisma.user.findMany.mockResolvedValue([
+        buildUserRow({ id: 'row-cursor' }),
+      ] as never);
+
+      const result = await controller.listUsers(buildActor(), undefined, undefined, undefined, undefined, undefined, undefined, cursor);
+
+      expect(result.users[0]).toMatchObject({
+        id: 'row-cursor',
+        hasPin: true,
+        hasPassword: false,
+      });
+
+      const serialized = JSON.stringify(result.users);
+      expect(serialized).not.toContain('argon2-hash-value');
+      expect(result.users[0]).not.toHaveProperty('pinHash');
+      expect(result.users[0]).not.toHaveProperty('passwordHash');
+    });
+  });
+
+  describe('createUser', () => {
+    function buildCreateDto(overrides: Record<string, unknown> = {}) {
+      return {
+        displayName: 'Nuevo Cajero',
+        role: 'CASHIER',
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      prisma.user.create.mockResolvedValue({
+        id: 'new-1',
+        displayName: 'Nuevo Cajero',
+        fullName: 'Nuevo Cajero',
+        username: 'nuevo-cajero',
+        role: RoleType.CASHIER,
+      } as never);
+    });
+
+    it('auto-generates a PIN for a cashier without one and returns its plaintext once', async () => {
+      const result = await controller.createUser(
+        buildActor(),
+        buildCreateDto() as never,
+      );
+
+      expect(pinServiceMock.generate).toHaveBeenCalledTimes(1);
+      expect(pinServiceMock.hash).toHaveBeenCalledWith('482913');
+      expect(result.initialPin).toBe('482913');
+
+      const createData = (prisma.user.create as jest.Mock).mock.calls[0][0]
+        .data;
+      expect(createData.pinHash).toBe('hashed-pin');
+    });
+
+    it('echoes the supplied initialPin instead of generating one', async () => {
+      const result = await controller.createUser(
+        buildActor(),
+        buildCreateDto({ initialPin: '135790' }) as never,
+      );
+
+      expect(pinServiceMock.generate).not.toHaveBeenCalled();
+      expect(pinServiceMock.hash).toHaveBeenCalledWith('135790');
+      expect(result.initialPin).toBe('135790');
+    });
+
+    it('returns no initialPin and persists no PIN hash for a manager without one', async () => {
+      prisma.user.create.mockResolvedValue({
+        id: 'new-2',
+        displayName: 'Nueva Gerente',
+        fullName: 'Nueva Gerente',
+        username: 'nueva-gerente',
+        role: RoleType.MANAGER,
+      } as never);
+
+      const result = await controller.createUser(
+        buildActor(),
+        buildCreateDto({ role: 'MANAGER' }) as never,
+      );
+
+      expect(pinServiceMock.generate).not.toHaveBeenCalled();
+      expect(result.initialPin).toBeNull();
+
+      const createData = (prisma.user.create as jest.Mock).mock.calls[0][0]
+        .data;
+      expect(createData.pinHash).toBeNull();
     });
   });
 });

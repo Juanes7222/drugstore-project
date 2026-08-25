@@ -46,6 +46,91 @@ import {
 } from './dto/create-user.dto';
 import { ResetPinSchema, ResetPinDto } from './dto/reset-pin.dto';
 
+/**
+ * Columns for the users list. Includes the credential-hash columns only so
+ * presence booleans can be computed; they are stripped before responding.
+ */
+const USER_LIST_SELECT = {
+  id: true,
+  displayName: true,
+  fullName: true,
+  email: true,
+  username: true,
+  role: true,
+  status: true,
+  isActive: true,
+  avatarUrl: true,
+  avatarColor: true,
+  authMethod: true,
+  pinHash: true,
+  passwordHash: true,
+  totpEnabled: true,
+  emailVerifiedAt: true,
+  lastLoginAt: true,
+  createdAt: true,
+  createdById: true,
+  deletedAt: true,
+} satisfies Prisma.UserSelect;
+
+type UserListRow = Prisma.UserGetPayload<{ select: typeof USER_LIST_SELECT }>;
+
+type UserListItem = Omit<UserListRow, 'pinHash' | 'passwordHash'> & {
+  hasPin: boolean;
+  hasPassword: boolean;
+};
+
+const USER_DETAIL_SELECT = {
+  id: true,
+  displayName: true,
+  fullName: true,
+  email: true,
+  username: true,
+  role: true,
+  status: true,
+  isActive: true,
+  authMethod: true,
+  totpEnabled: true,
+  avatarUrl: true,
+  avatarColor: true,
+  failedLoginAttempts: true,
+  lockedUntil: true,
+  emailVerifiedAt: true,
+  lastLoginAt: true,
+  lastPasswordChangeAt: true,
+  mustChangePassword: true,
+  createdAt: true,
+  createdById: true,
+  deletedAt: true,
+  // Credential-hash columns are read only to compute presence booleans and
+  // stripped before the response is built — same contract as USER_LIST_SELECT.
+  pinHash: true,
+  passwordHash: true,
+  locationAccess: {
+    select: { locationId: true },
+  },
+} satisfies Prisma.UserSelect;
+
+type UserDetailRow = Prisma.UserGetPayload<{
+  select: typeof USER_DETAIL_SELECT;
+}>;
+
+type UserDetailItem = Omit<UserDetailRow, 'pinHash' | 'passwordHash'> & {
+  hasPin: boolean;
+  hasPassword: boolean;
+};
+
+/**
+ * Presence booleans derived from credential-hash columns, shared by the list
+ * and detail projections so both endpoints answer "can this account log in
+ * with a PIN / password?" identically without ever exposing the hashes.
+ */
+function credentialPresence(
+  pinHash: string | null,
+  passwordHash: string | null,
+): { hasPin: boolean; hasPassword: boolean } {
+  return { hasPin: pinHash != null, hasPassword: passwordHash != null };
+}
+
 @ApiTags('users')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -61,6 +146,17 @@ export class UsersController {
     private readonly authService: AuthService,
   ) {}
 
+  /**
+   * Strip credential-hash columns from a user row and expose only their
+   * presence as booleans. Clients need to know which login methods an
+   * account supports (e.g. the POS picking a PIN vs password prompt);
+   * hash material itself never leaves the server.
+   */
+  private toUserListItem(row: UserListRow): UserListItem {
+    const { pinHash, passwordHash, ...safeUser } = row;
+    return { ...safeUser, ...credentialPresence(pinHash, passwordHash) };
+  }
+
   @Get()
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @ApiOperation({ summary: 'List users in the accessible scope' })
@@ -75,7 +171,7 @@ export class UsersController {
     // Keyset continuation token; wins over offset when present.
     @Query('cursor') cursor?: string,
   ): Promise<{
-    users: unknown[];
+    users: UserListItem[];
     total?: number;
     nextCursor?: string | null;
     hasMore?: boolean;
@@ -107,28 +203,12 @@ export class UsersController {
       ];
     }
 
-    const userSelect = {
-      id: true,
-      displayName: true,
-      fullName: true,
-      email: true,
-      username: true,
-      role: true,
-      status: true,
-      isActive: true,
-      avatarUrl: true,
-      avatarColor: true,
-      authMethod: true,
-      totpEnabled: true,
-      emailVerifiedAt: true,
-      lastLoginAt: true,
-      createdAt: true,
-      createdById: true,
-      deletedAt: true,
-    } satisfies Prisma.UserSelect;
+    const userSelect = USER_LIST_SELECT;
 
     if (cursor) {
-      const page = await paginateWithCursor<unknown>({
+      // Forward the same projection the offset path uses so continuation
+      // pages never pull credential columns from the database at all.
+      const page = await paginateWithCursor<UserListRow>({
         model: this.prisma.user,
         baseWhere: where as Prisma.UserWhereInput,
         limit: limit ?? 50,
@@ -136,9 +216,10 @@ export class UsersController {
         timeField: 'createdAt',
         direction: 'desc',
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: userSelect,
       });
       return {
-        users: page.items,
+        users: page.items.map((item) => this.toUserListItem(item)),
         nextCursor: page.nextCursor,
         hasMore: page.hasMore,
       };
@@ -155,7 +236,7 @@ export class UsersController {
       this.prisma.user.count({ where }),
     ]);
 
-    return { users, total };
+    return { users: users.map((row) => this.toUserListItem(row)), total };
   }
 
   @Post()
@@ -186,12 +267,17 @@ export class UsersController {
       );
     }
 
+    // A cashier created without an explicit PIN gets an auto-generated one.
+    // Its plaintext is returned exactly once in this response (same one-time
+    // exposure contract as POST :id/reset-pin) so the creating admin can hand
+    // it over; only the hash is persisted and it is never retrievable again.
+    let initialPin: string | null = dto.initialPin ?? null;
     let pinHash: string | null = null;
     if (dto.initialPin) {
       pinHash = await this.pinService.hash(dto.initialPin);
     } else if (dto.role === 'CASHIER') {
-      const generatedPin = this.pinService.generate();
-      pinHash = await this.pinService.hash(generatedPin);
+      initialPin = this.pinService.generate();
+      pinHash = await this.pinService.hash(initialPin);
     }
 
     let passwordHash: string | null = null;
@@ -206,11 +292,6 @@ export class UsersController {
       dto.username ??
       dto.email?.split('@')[0] ??
       `user-${crypto.randomBytes(4).toString('hex')}`;
-
-    const generatedPinForResponse =
-      dto.role === 'CASHIER' && !dto.initialPin
-        ? null
-        : (dto.initialPin ?? null);
 
     const newUser = await this.prisma.user.create({
       data: {
@@ -258,7 +339,9 @@ export class UsersController {
       displayName: newUser.displayName ?? newUser.fullName,
       username: newUser.username ?? '',
       role: newUser.role,
-      initialPin: generatedPinForResponse,
+      // One-time secret: populated only when the PIN was auto-generated above
+      // (or echoed when the admin supplied it). Never exposed again afterwards.
+      initialPin,
       mustChangePassword: true,
     };
   }
@@ -266,42 +349,23 @@ export class UsersController {
   @Get(':id')
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @ApiOperation({ summary: 'Get user details' })
-  async getUser(@CurrentUser() user: User, @Param('id') id: string) {
+  async getUser(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+  ): Promise<UserDetailItem> {
     const targetUser = await this.prisma.user.findUnique({
       where: { id },
-      select: {
-        id: true,
-        displayName: true,
-        fullName: true,
-        email: true,
-        username: true,
-        role: true,
-        status: true,
-        isActive: true,
-        authMethod: true,
-        totpEnabled: true,
-        avatarUrl: true,
-        avatarColor: true,
-        failedLoginAttempts: true,
-        lockedUntil: true,
-        emailVerifiedAt: true,
-        lastLoginAt: true,
-        lastPasswordChangeAt: true,
-        mustChangePassword: true,
-        createdAt: true,
-        createdById: true,
-        deletedAt: true,
-        locationAccess: {
-          select: { locationId: true },
-        },
-      },
+      select: USER_DETAIL_SELECT,
     });
 
     if (!targetUser) {
       throw new NotFoundException('User not found');
     }
 
-    return targetUser;
+    // Hashes are read only to derive credential presence, then stripped —
+    // the detail response honors the same invariant as the list response.
+    const { pinHash, passwordHash, ...safeUser } = targetUser;
+    return { ...safeUser, ...credentialPresence(pinHash, passwordHash) };
   }
 
   @Patch(':id')

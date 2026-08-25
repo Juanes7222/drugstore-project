@@ -1,13 +1,15 @@
 /**
- * Selected user credential entry — animated PIN/password form.
+ * Selected user credential entry - animated PIN/password form.
  *
  * After selecting a user from the avatar grid, this component slides in
- * with the selected user's avatar prominently displayed, followed by
- * the appropriate credential entry:
- * - Cashier / Manager → PinKeypad (numeric PIN entry)
- * - Owner / Admin     → password text input with lockout handling
+ * with the selected user's avatar prominently displayed, followed by the
+ * appropriate credential entry:
+ * - Default input chosen from the server-reported credentials (hasPin /
+ *   hasPassword), falling back to the role heuristic for stale cache
+ *   entries.
+ * - A link always offers the alternative method when it exists.
  */
-import { type FC } from "react";
+import { type FC, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
 import { RoleType } from "@pharmacy/shared-types";
@@ -66,19 +68,29 @@ export const SelectedUserCredential: FC<SelectedUserCredentialProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  /**
-   * Whether to show a PIN keypad instead of a password input.
-   *
-   * Cashiers and Managers authenticate via numeric PIN on the POS.
-   * Owners and Admins use a full password (longer, mixed-case).
-   *
-   * The PIN must have been provisioned server-side (via `resetPin`
-   * endpoint or user creation with `initialPin`). If no PIN hash
-   * exists yet, the server returns `AUTH_INVALID_CREDENTIALS` and
-   * the error is surfaced to the user.
-   */
-  const isPinUser =
+  // Data-driven credential selection: the server reports which credentials
+  // actually exist (hasPin / hasPassword). Entries cached before those
+  // flags were introduced carry `undefined` — for those, fall back to the
+  // legacy role heuristic for the DEFAULT input, but keep a link to switch
+  // to the other method so a user without the assumed credential can
+  // still sign in (a cashier with no server-side PIN used to be trapped:
+  // every keypad submission ended in AUTH_INVALID_CREDENTIALS).
+  const legacyPinHeuristic =
     user.role === RoleType.CASHIER || user.role === RoleType.MANAGER;
+  const pinAvailable = user.hasPin ?? legacyPinHeuristic;
+  const passwordAvailable = user.hasPassword ?? true;
+
+  const [entryMode, setEntryMode] = useState<"pin" | "password">(
+    pinAvailable ? "pin" : "password",
+  );
+
+  // Reset the entry mode whenever a different user is selected.
+  useEffect(() => {
+    setEntryMode(pinAvailable ? "pin" : "password");
+  }, [user.id, pinAvailable]);
+
+  const showPasswordToggle = entryMode === "pin" && passwordAvailable;
+  const showPinToggle = entryMode === "password" && pinAvailable;
 
   const accentColor = getRoleAccent(user.role);
 
@@ -164,20 +176,39 @@ export const SelectedUserCredential: FC<SelectedUserCredentialProps> = ({
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15, duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
       >
-        {isPinUser ? (
-          <PinKeypad
-            maxLength={6}
-            minLength={4}
-            onComplete={onPinComplete}
-            onCancel={onChangeUser}
-            error={error}
-            isLoading={isLoading}
-            label={
-              user.role === RoleType.CASHIER
-                ? t("auth.pin_label")
-                : t("auth.manager_pin_label")
-            }
-          />
+        {entryMode === "pin" ? (
+          <div className="flex flex-col items-center gap-3">
+            <PinKeypad
+              maxLength={6}
+              minLength={4}
+              onComplete={onPinComplete}
+              onCancel={onChangeUser}
+              error={error}
+              isLoading={isLoading}
+              label={
+                user.role === RoleType.CASHIER
+                  ? t("auth.pin_label")
+                  : t("auth.manager_pin_label")
+              }
+            />
+            {showPasswordToggle && (
+              <button
+                type="button"
+                onClick={() => setEntryMode("password")}
+                className="text-caption"
+                style={{
+                  color: "var(--color-pharma)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                }}
+              >
+                {t("auth.use_password")}
+              </button>
+            )}
+          </div>
         ) : (
           <div className="flex flex-col gap-4">
             {/* Password input */}
@@ -260,6 +291,25 @@ export const SelectedUserCredential: FC<SelectedUserCredentialProps> = ({
             >
               {t("auth.forgot_password")}
             </button>
+
+            {/* Switch to PIN entry when the user has a PIN credential */}
+            {showPinToggle && (
+              <button
+                type="button"
+                onClick={() => setEntryMode("pin")}
+                className="text-caption"
+                style={{
+                  color: "var(--color-pharma)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 2,
+                }}
+              >
+                {t("auth.use_pin")}
+              </button>
+            )}
           </div>
         )}
       </motion.div>

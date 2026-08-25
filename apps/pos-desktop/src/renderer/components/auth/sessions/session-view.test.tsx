@@ -77,11 +77,18 @@ vi.mock("../../../hooks/use-offline-auth", () => ({
   }),
 }));
 
-vi.mock("../../../../domain/auth", () => ({
-  useLocalSessionStore: (selector: (s: any) => unknown) => {
-    return selector({ session: mockSessionRef.current });
-  },
-}));
+vi.mock("../../../../domain/auth", async (importOriginal) => {
+  // Real hasMinRole so the back-navigation fallback exercises the actual
+  // role hierarchy; only the store hook is replaced.
+  const actual =
+    await importOriginal<typeof import("../../../../domain/auth")>();
+  return {
+    ...actual,
+    useLocalSessionStore: (selector: (s: any) => unknown) => {
+      return selector({ session: mockSessionRef.current });
+    },
+  };
+});
 
 vi.mock("../../../../domain/auth/offline", () => ({
   useOfflineSessionStore: (selector: (s: any) => unknown) => {
@@ -307,8 +314,22 @@ describe("SessionView", () => {
     expect(screen.getByText("session_view.status_online")).toBeVisible();
   });
 
-  it("dispatches setActiveScreen when back button is clicked", async () => {
+  it("falls back to home when the back button is clicked without admin access", async () => {
     const user = userEvent.setup();
+    mockSessionRef.current = makeOnlineSession({ role: "CASHIER" });
+    render(<SessionView />);
+
+    await user.click(screen.getByRole("button", { name: "common.back" }));
+
+    expect(dispatchMock).toHaveBeenCalledWith({
+      type: "ui/setActiveScreen",
+      payload: "home",
+    });
+  });
+
+  it("falls back to admin-menu when the back button is clicked with owner access", async () => {
+    const user = userEvent.setup();
+    mockSessionRef.current = makeOnlineSession({ role: "OWNER" });
     render(<SessionView />);
 
     await user.click(screen.getByRole("button", { name: "common.back" }));

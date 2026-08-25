@@ -64,6 +64,13 @@ export interface CursorPaginationInput<Where, OrderBy, Include = undefined> {
   cursor?: string | null;
   /** Prisma include, forwarded verbatim to findMany. */
   include?: Include;
+  /**
+   * Prisma select, forwarded verbatim to findMany so every page (including
+   * continuations) fetches only projected columns. Optional: existing callers
+   * that omit it keep fetching full rows. Mutually exclusive with `include`,
+   * as Prisma itself requires.
+   */
+  select?: Record<string, unknown>;
 }
 
 export interface CursorPage<T> {
@@ -130,6 +137,7 @@ export async function paginateWithCursor<
     timeField = 'updatedAt',
     direction = 'asc',
     include,
+    select,
   } = input;
   const cursorValue = decodeCursor(cursor);
   // Merge both filter inputs up front: dropping `where` whenever a cursor is
@@ -169,6 +177,7 @@ export async function paginateWithCursor<
     orderBy: effectiveOrderBy,
     take: effectiveLimit + 1,
     ...(include !== undefined ? { include } : {}),
+    ...(select !== undefined ? { select } : {}),
   });
 
   const hasMore = (items as T[]).length > effectiveLimit;

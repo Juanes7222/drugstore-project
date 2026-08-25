@@ -16,6 +16,7 @@ import { setActiveScreen } from '@/store/slices/ui-slice';
 import { useOfflineAuth } from '../../../hooks/use-offline-auth';
 import { useLocalSessionStore } from '../../../../domain/auth';
 import { useOfflineSessionStore } from '../../../../domain/auth/offline';
+import { canAccessScreen } from '../../Navigation/screen-access';
 import { ChevronLeftIcon } from "@/components/ui/icons";
 
 // ---------------------------------------------------------------------------
@@ -100,9 +101,15 @@ export const SessionView: FC = () => {
     [offlineSessions],
   );
 
+  // Back targets the admin menu only for roles that can open it; other
+  // allowed roles (e.g. MANAGER) land on home instead of bouncing off the
+  // route guard.
   const handleBack = useCallback(() => {
-    dispatch(setActiveScreen('admin-menu'));
-  }, [dispatch]);
+    const fallbackScreen = canAccessScreen(currentSession, 'admin-menu')
+      ? 'admin-menu'
+      : 'home';
+    dispatch(setActiveScreen(fallbackScreen));
+  }, [currentSession, dispatch]);
 
   const handleRevalidate = useCallback(() => {
     triggerBlessing();
