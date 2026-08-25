@@ -207,8 +207,14 @@ describe("CompanySetupWizard", () => {
     );
     await user.click(screen.getByRole("button", { name: "Continuar" }));
 
-    // 3. Resolution step — fill the DIAN resolution
+    // 3. Resolution step — born collapsed; expand it to fill the DIAN data
     expect(screen.getByText("Paso 3 de 3")).toBeInTheDocument();
+    const toggle = screen.getByRole("button", {
+      name: "Completar resolución ahora",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await user.click(toggle);
+    expect(screen.getByLabelText("Número de resolución")).toBeVisible();
     await user.type(
       screen.getByLabelText("Número de resolución"),
       "18760000001234",
@@ -252,7 +258,10 @@ describe("CompanySetupWizard", () => {
       screen.getByRole("button", { name: "Ingresar datos manualmente" }),
     );
     await user.click(screen.getByRole("button", { name: "Continuar" }));
-    await user.click(screen.getByRole("button", { name: "Continuar" }));
+    // Collapsed resolution — the skip shortcut is the way to the summary.
+    await user.click(
+      screen.getByRole("button", { name: "Omitir por ahora" }),
+    );
 
     await user.click(
       screen.getByRole("button", { name: "Guardar datos de la empresa" }),
@@ -285,6 +294,86 @@ describe("CompanySetupWizard", () => {
     await user.click(screen.getByRole("button", { name: "Volver" }));
 
     expect(screen.getByText("Paso 1 de 3")).toBeInTheDocument();
+  });
+
+  describe("optional resolution step", () => {
+    const goToResolutionStep = async (
+      user: ReturnType<typeof userEvent.setup>,
+    ): Promise<void> => {
+      await user.click(
+        screen.getByRole("button", { name: "Ingresar datos manualmente" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Continuar" }));
+    };
+
+    it("lands collapsed with the skip shortcut and the form hidden", async () => {
+      const user = userEvent.setup();
+      render(<CompanySetupWizard />);
+
+      await goToResolutionStep(user);
+
+      expect(screen.getByText("Paso 3 de 3")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Omitir por ahora" }),
+      ).toBeVisible();
+      const toggle = screen.getByRole("button", {
+        name: "Completar resolución ahora",
+      });
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(
+        screen.queryByLabelText("Número de resolución"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("reveals the resolution form when the toggle is expanded", async () => {
+      const user = userEvent.setup();
+      render(<CompanySetupWizard />);
+
+      await goToResolutionStep(user);
+      await user.click(
+        screen.getByRole("button", { name: "Completar resolución ahora" }),
+      );
+
+      expect(
+        screen.getByLabelText("Número de resolución"),
+      ).toBeVisible();
+      const expandedToggle = screen.getByRole("button", {
+        name: "Ocultar formulario",
+      });
+      expect(expandedToggle).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("goes straight to the summary when skipped", async () => {
+      const user = userEvent.setup();
+      render(<CompanySetupWizard />);
+
+      await goToResolutionStep(user);
+      await user.click(
+        screen.getByRole("button", { name: "Omitir por ahora" }),
+      );
+
+      expect(
+        screen.getByRole("heading", { name: "Resumen y guardado" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByLabelText("Número de resolución"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows the automatic electronic-billing strip on a resolution-less summary", async () => {
+      const user = userEvent.setup();
+      render(<CompanySetupWizard />);
+
+      await goToResolutionStep(user);
+      await user.click(
+        screen.getByRole("button", { name: "Omitir por ahora" }),
+      );
+
+      // role=status — the summary states e-invoicing self-provisions.
+      const strip = screen.getByRole("status");
+      expect(strip).toHaveTextContent("Facturación electrónica");
+      expect(strip).toHaveTextContent(/automáticamente/i);
+    });
   });
 
   describe("edit mode", () => {
@@ -327,6 +416,23 @@ describe("CompanySetupWizard", () => {
       expect(screen.getByLabelText("Desde")).toHaveValue("1000");
       expect(screen.getByLabelText("Hasta")).toHaveValue("1999");
       expect(screen.getByLabelText("ID de software DIAN")).toHaveValue("SW-42");
+    });
+
+    it("omits the automatic-billing strip on the summary when the draft carries a resolution", async () => {
+      const user = userEvent.setup();
+      render(<CompanySetupWizard />);
+
+      // Saved draft is born with resolution data → form open; two
+      // Continuar clicks reach the summary.
+      await user.click(screen.getByRole("button", { name: "Continuar" }));
+      await user.click(screen.getByRole("button", { name: "Continuar" }));
+
+      expect(
+        screen.getByRole("heading", { name: "Resumen y guardado" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      // The resolution rows render in its place.
+      expect(screen.getByText("Número de resolución")).toBeInTheDocument();
     });
 
     it("backs out to the admin menu from the review view", async () => {
@@ -408,7 +514,10 @@ describe("CompanySetupWizard", () => {
         screen.getByRole("button", { name: "Ingresar datos manualmente" }),
       );
       await user.click(screen.getByRole("button", { name: "Continuar" }));
-      await user.click(screen.getByRole("button", { name: "Continuar" }));
+      // Minimal path: skip the optional resolution entirely.
+      await user.click(
+        screen.getByRole("button", { name: "Omitir por ahora" }),
+      );
       await user.click(
         screen.getByRole("button", { name: "Guardar datos de la empresa" }),
       );

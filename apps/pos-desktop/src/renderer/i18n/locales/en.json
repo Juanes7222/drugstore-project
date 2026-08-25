@@ -1856,9 +1856,12 @@
   "company_setup": {
     "gate": {
       "title": "Set up your company to invoice",
-      "description": "To issue electronic invoicing (DIAN), the system needs your company details: tax ID (NIT), business name, tax regime, and the numbering resolution. Asked only once.",
+      "description": "To issue electronic invoicing (DIAN), the system needs your company details: tax ID (NIT), business name, and tax regime. Asked only once; the numbering resolution is optional.",
       "configure": "Set up now",
       "later": "I'll do it later"
+    },
+    "entry": {
+      "electronic_pending_hint": "Electronic invoicing pending: it will activate automatically once the company is enabled with the DIAN."
     },
     "wizard": {
       "title": "Set up your company to invoice",
@@ -1869,10 +1872,17 @@
       "step_rut": "RUT",
       "step_review": "Review",
       "step_resolution": "Resolution",
+      "step_resolution_optional": "Numbering / resolution (optional)",
       "step_of": "Step {{current}} of {{total}}",
       "continue": "Continue",
+      "resolution_optional_title": "Numbering / resolution (optional)",
+      "skip_for_now": "Skip for now",
+      "fill_resolution_cta": "Fill in the resolution now",
+      "hide_resolution_cta": "Hide form",
       "summary_title": "Summary and save",
-      "summary_subtitle": "Check every field before saving. The numbering resolution must match the document issued by the DIAN.",
+      "summary_subtitle": "Check every field before saving.",
+      "summary_electronic_pending_title": "Electronic invoicing",
+      "summary_electronic_pending_body": "It will activate automatically once your company is enabled with the DIAN.",
       "submit": "Save company details",
       "submitting": "Saving...",
       "submit_error": "The details could not be saved. Check the connection and try again.",
@@ -1892,7 +1902,7 @@
       "parsing": "Reading the RUT...",
       "parsing_detail": "Extracting the data from the document. One moment.",
       "manual_title": "Don't have the RUT as a PDF?",
-      "manual_hint": "You can type the details by hand. The numbering resolution is always asked separately.",
+      "manual_hint": "You can type the details by hand. The numbering resolution is completed separately, optionally.",
       "manual_cta": "Enter details manually",
       "error_title": "The RUT could not be read",
       "error_unparseable": "The file is not a legible RUT or it is damaged. Make sure it is the RUT PDF and try again.",
@@ -1931,6 +1941,7 @@
     "resolution": {
       "title": "Numbering resolution",
       "subtitle": "The resolution the DIAN assigned to your pharmacy. It does not come from the RUT: look it up in the habilitación document.",
+      "optional_note": "Electronic invoicing gets its numbering range automatically once your company is enabled with the DIAN (certificate uploaded). This step is only needed if you also issue paper or thermal invoices under a physical resolution.",
       "number": "Resolution number",
       "date": "Date",
       "prefix": "Prefix",
@@ -2008,7 +2019,7 @@
     },
     "company_setup": {
       "title": "Company details (electronic invoicing)",
-      "description": "The NIT, business name and DIAN resolution that identify the pharmacy as an electronic issuer.",
+      "description": "The NIT and business name that identify the pharmacy as an electronic issuer. The numbering resolution is optional.",
       "nit": "NIT",
       "name": "Business name",
       "edit": "Edit",

@@ -23,6 +23,7 @@ import {
   type CustomStrictnessToggle,
 } from "../../../domain/config";
 import { useCompanySetup } from "@/hooks/use-company-setup";
+import { hasAnyResolutionData } from "@/components/company-setup/resolution-step";
 import { useAppDispatch } from "@/store/hooks";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import { ActiveModeIndicator } from "./active-mode-indicator";
@@ -164,6 +165,9 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
               name={companyDraft?.name ?? null}
               isConfigured={
                 companySetupStatus === "complete" && companyDraft !== null
+              }
+              hasResolution={
+                companyDraft !== null && hasAnyResolutionData(companyDraft)
               }
               onOpen={handleOpenCompanySetup}
             />

@@ -61,6 +61,45 @@ const makeRutText = (dv: string): string =>
     "CORREO ELECTRÓNICO: contacto@farmaciaandesa.com",
   ].join("\n");
 
+// Regression fixture: the current DIAN numbered-box form, anonymized legal
+// entity, exactly as the pdf.js line reconstruction hands it to the parser.
+const NUMBERED_BOX_RUT_TEXT = [
+  "Inscripción 0 1 2. Concepto",
+  "4. Número de formulario 141270915303",
+  "5. Número de Identificación Tributaria (NIT) 6. DV 12. Dirección seccional 14. Buzón electrónico",
+  "Impuestos y Aduanas de Tuluá 2 1",
+  "9 0 0 1 2 3 4 5 6 8",
+  "IDENTIFICACIÓN",
+  "24. Tipo de contribuyente 25. Tipo de documento 26. Número de Identificación",
+  "2 1 3 9 0 0 1 2 3 4 5 6 Persona Jurídica",
+  "28. País Lugar de expedición 29. Departamento 30. Ciudad/Municipio",
+  "1 6 9 5 5001 COLOMBIA Antioquia Medellín",
+  "31. Primer apellido 32. Segundo apellido 33. Primer nombre 34. Otros nombres",
+  "35. Razón social DROGUERIA LA SALUD SAS",
+  "36. Nombre comercial 37. Sigla",
+  "UBICACIÓN",
+  "38. País 40. Ciudad/Municipio 39. Departamento",
+  "1 6 9 5 5001 COLOMBIA Antioquia Medellín",
+  "41. Dirección principal",
+  "CL 45 B # 12 - 34",
+  "test@droguerialasalud.com 42. Correo electrónico",
+  // The phone's ten box digits share the row with the label numbering; the
+  // spaced run swallows the label's "2" and the parser anchors on the 3.
+  "43. Código postal 44. Teléfono 1 45. Teléfono 2 3 1 2 4 5 6 7 8 9 0",
+  "CLASIFICACIÓN",
+  "Ocupación Actividad económica",
+  "Actividad principal Actividad secundaria Otras actividades 52. Número",
+  "establecimientos 51. Código 46. Código 47. Fecha inicio actividad 48. Código 49. Fecha inicio actividad 1 2",
+  "50. Código",
+  "5 8 2 0 2 0 2 6 0 8 1 7",
+  "Responsabilidades, Calidades y Atributos",
+  "53. Código 4 9",
+  "37 - Responsable de IVA",
+  "Firma autorizada:",
+  "DROGUERIA LA SALUD SAS 984. Nombre",
+  "Fecha generación documento PDF: 25-08-2026 09:51:03AM",
+].join("\n");
+
 const makeDraft = (overrides: Partial<CompanyDraft> = {}): CompanyDraft => ({
   nit: NIT,
   dv: DV,
@@ -164,7 +203,9 @@ describe("useCompanySetup", () => {
       expect(useCompanySetupStore.getState().parsedFromRut).toBeNull();
     });
 
-    it("returns INVALID_NIT_DV when the RUT NIT does not match its DV", async () => {
+    it("returns UNPARSEABLE when the NIT does not verify against its DV", async () => {
+      // The parser drops every field up front when no NIT+DV candidate
+      // validates, so the hook never reaches its own INVALID_NIT_DV check.
       const wrongDv = DV === "9" ? "0" : "9";
       const extractor = vi.fn().mockResolvedValue(makeRutText(wrongDv));
       const { result } = renderHook(() =>
@@ -175,7 +216,41 @@ describe("useCompanySetup", () => {
         return result.current.uploadRutFile(makeRutFile());
       });
 
-      expect(parseResult).toEqual({ ok: false, errorCode: "INVALID_NIT_DV" });
+      expect(parseResult).toEqual({ ok: false, errorCode: "UNPARSEABLE" });
+    });
+
+    it("autofills a complete draft from the current numbered-box RUT form", async () => {
+      const extractor = vi.fn().mockResolvedValue(NUMBERED_BOX_RUT_TEXT);
+      const { result } = renderHook(() =>
+        useCompanySetup({ baseUrl: "http://api.test", extractor }),
+      );
+
+      const parseResult = await act(async () => {
+        return result.current.uploadRutFile(makeRutFile());
+      });
+
+      expect(parseResult).toEqual({
+        ok: true,
+        draft: expect.objectContaining({
+          nit: NIT,
+          dv: DV,
+          name: "DROGUERIA LA SALUD SAS",
+          regimen: "RESPONSABLE DE IVA",
+          organizationType: "PERSONA JURÍDICA",
+          ciiu: null,
+          municipio: "MEDELLÍN",
+          municipioCode: null,
+          departamento: "ANTIOQUIA",
+          address: "CL 45 B # 12 - 34",
+          phone: "3124567890",
+          email: "test@droguerialasalud.com",
+          resolutionNumber: null,
+          softwareId: null,
+        }),
+      });
+      expect(
+        useCompanySetupStore.getState().parsedFromRut?.phone,
+      ).toBe("3124567890");
     });
 
     it("returns UNPARSEABLE when the extractor throws", async () => {

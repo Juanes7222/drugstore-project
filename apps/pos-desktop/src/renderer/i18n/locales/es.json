@@ -1987,9 +1987,12 @@
   "company_setup": {
     "gate": {
       "title": "Configura tu empresa para facturar",
-      "description": "Para emitir facturación electrónica (DIAN), el sistema necesita los datos de tu empresa: NIT, razón social, régimen tributario y la resolución de numeración. Solo se piden una vez.",
+      "description": "Para emitir facturación electrónica (DIAN), el sistema necesita los datos de tu empresa: NIT, razón social y régimen tributario. Solo se piden una vez; la resolución de numeración es opcional.",
       "configure": "Configurar ahora",
       "later": "Lo haré después"
+    },
+    "entry": {
+      "electronic_pending_hint": "Facturación electrónica pendiente: se activará automáticamente cuando la empresa esté habilitada ante la DIAN."
     },
     "wizard": {
       "title": "Configura tu empresa para facturar",
@@ -2000,10 +2003,17 @@
       "step_rut": "RUT",
       "step_review": "Revisión",
       "step_resolution": "Resolución",
+      "step_resolution_optional": "Numeración / resolución (opcional)",
       "step_of": "Paso {{current}} de {{total}}",
       "continue": "Continuar",
+      "resolution_optional_title": "Numeración / resolución (opcional)",
+      "skip_for_now": "Omitir por ahora",
+      "fill_resolution_cta": "Completar resolución ahora",
+      "hide_resolution_cta": "Ocultar formulario",
       "summary_title": "Resumen y guardado",
-      "summary_subtitle": "Verifique cada dato antes de guardarlo. La resolución de numeración debe coincidir con el documento emitido por la DIAN.",
+      "summary_subtitle": "Verifique cada dato antes de guardarlo.",
+      "summary_electronic_pending_title": "Facturación electrónica",
+      "summary_electronic_pending_body": "Se activará automáticamente cuando tu empresa esté habilitada ante la DIAN.",
       "submit": "Guardar datos de la empresa",
       "submitting": "Guardando...",
       "submit_error": "No se pudieron guardar los datos. Verifique la conexión e intente de nuevo.",
@@ -2023,7 +2033,7 @@
       "parsing": "Leyendo el RUT...",
       "parsing_detail": "Se extraen los datos del documento. Un momento.",
       "manual_title": "¿No tiene el RUT en PDF?",
-      "manual_hint": "Puede escribir los datos a mano. La resolución de numeración se pide siempre aparte.",
+      "manual_hint": "Puede escribir los datos a mano. La resolución de numeración se completa aparte, de forma opcional.",
       "manual_cta": "Ingresar datos manualmente",
       "error_title": "No se pudo leer el RUT",
       "error_unparseable": "El archivo no es un RUT legible o está dañado. Verifique que sea el PDF del RUT y vuelva a intentarlo.",
@@ -2062,6 +2072,7 @@
     "resolution": {
       "title": "Resolución de numeración",
       "subtitle": "La resolución que la DIAN asignó a tu droguería. No viene en el RUT: búsquela en el documento de habilitación.",
+      "optional_note": "La factura electrónica obtiene su rango de numeración automáticamente cuando tu empresa esté habilitada ante la DIAN (certificado cargado). Este paso es solo si además facturas en papel o térmica con resolución física.",
       "number": "Número de resolución",
       "date": "Fecha",
       "prefix": "Prefijo",
@@ -2147,7 +2158,7 @@
     },
     "company_setup": {
       "title": "Datos de la empresa (facturación electrónica)",
-      "description": "NIT, razón social y resolución DIAN que identifican a la droguería como emisor electrónico.",
+      "description": "NIT y razón social que identifican a la droguería como emisor electrónico. La resolución de numeración es opcional.",
       "nit": "NIT",
       "name": "Razón social",
       "edit": "Editar",

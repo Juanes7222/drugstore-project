@@ -143,16 +143,16 @@ describe("CompanyProfileService", () => {
       );
     });
 
-    it("throws CompanyNotConfiguredException when the resolution prefix is missing", () => {
-      const draft = makeDraft({ resolutionPrefix: "" });
+    it("throws CompanyNotConfiguredException when municipio is an empty string", () => {
+      const draft = makeDraft({ municipio: "" });
 
       expect(() => service.validateDraft(draft)).toThrow(
         CompanyNotConfiguredException,
       );
     });
 
-    it("throws CompanyNotConfiguredException when the resolution has no validity end", () => {
-      const draft = makeDraft({ resolutionValidTo: undefined });
+    it("throws CompanyNotConfiguredException when departamento is null", () => {
+      const draft = makeDraft({ departamento: null });
 
       expect(() => service.validateDraft(draft)).toThrow(
         CompanyNotConfiguredException,
@@ -185,12 +185,19 @@ describe("CompanyProfileService", () => {
       expect(() => service.validateDraft(makeDraft())).not.toThrow();
     });
 
-    it("throws CompanyNotConfiguredException when the resolution has no validity end", () => {
-      const draft = makeDraft({ resolutionValidTo: null });
+    it("accepts a draft without any numbering-resolution data", () => {
+      // Regression: the resolution used to be mandatory at validation;
+      // it is now optional (the range self-provisions from DIAN).
+      const draft = makeDraft({
+        resolutionNumber: null,
+        resolutionDate: null,
+        resolutionValidTo: null,
+        resolutionPrefix: "",
+        resolutionRangeStart: null,
+        resolutionRangeEnd: null,
+      });
 
-      expect(() => service.validateDraft(draft)).toThrow(
-        CompanyNotConfiguredException,
-      );
+      expect(() => service.validateDraft(draft)).not.toThrow();
     });
   });
 
@@ -371,13 +378,75 @@ describe("CompanyProfileService", () => {
       );
     });
 
-    it("rejects a draft without a resolution number before any POST", async () => {
-      await expect(
-        service.submitCompany(makeDraft({ resolutionNumber: null })),
-      ).rejects.toThrow(CompanyNotConfiguredException);
+    it("completes the submit without any resolution POST when the draft has no resolution", async () => {
+      vi.mocked(http.patch).mockResolvedValue({});
 
+      const draft = makeDraft({
+        resolutionNumber: null,
+        resolutionDate: null,
+        resolutionValidTo: null,
+        resolutionRangeStart: null,
+        resolutionRangeEnd: null,
+      });
+
+      await expect(service.submitCompany(draft)).resolves.toBeUndefined();
+
+      // The issuer-config PATCH still happens; only the resolution
+      // registration (and its allocation) is skipped.
+      expect(http.patch).toHaveBeenCalledTimes(1);
       expect(http.post).not.toHaveBeenCalled();
-      expect(http.patch).not.toHaveBeenCalled();
+
+      const seller = useLocalConfigStore.getState().sellerInfo;
+      expect(seller.resolutionNumber).toBeNull();
+      expect(useCompanySetupStore.getState().status).toBe("complete");
+    });
+
+    it("registers the resolution even when its validity end is missing", async () => {
+      vi.mocked(http.patch).mockResolvedValue({});
+      vi.mocked(http.post).mockResolvedValue({ id: "res-1" });
+
+      await service.submitCompany(makeDraft({ resolutionValidTo: undefined }));
+
+      // The gate is the resolution number alone; the server payload falls
+      // back to the resolution start date for validTo.
+      expect(http.post).toHaveBeenCalledWith(
+        `${BASE_URL}/fiscal-dian/resolutions`,
+        expect.objectContaining({
+          resolutionNumber: "18760000001234",
+          validFrom: "2026-01-15T00:00:00.000Z",
+          validTo: "2026-01-15T00:00:00.000Z",
+        }),
+        { Authorization: "Bearer tok-1" },
+      );
+    });
+
+    it("falls back to PERSONA NATURAL in the PATCH payload when organizationType and regimen are absent", async () => {
+      vi.mocked(http.patch).mockResolvedValue({});
+
+      await service.submitCompany(
+        makeDraft({ regimen: "", organizationType: null }),
+      );
+
+      const payload = vi.mocked(http.patch).mock
+        .calls[0][1] as IssuerConfigPayload;
+      expect(payload.organizationType).toBe("PERSONA NATURAL");
+      expect(payload.taxRegime).toBe("R-99-PN");
+    });
+
+    it("keeps a present organizationType in the PATCH payload instead of inferring one", async () => {
+      vi.mocked(http.patch).mockResolvedValue({});
+
+      await service.submitCompany(
+        makeDraft({
+          regimen: "RÉGIMEN COMÚN",
+          organizationType: "PERSONA NATURAL",
+        }),
+      );
+
+      const payload = vi.mocked(http.patch).mock
+        .calls[0][1] as IssuerConfigPayload;
+      expect(payload.organizationType).toBe("PERSONA NATURAL");
+      expect(payload.taxRegime).toBe("R-99-PN");
     });
 
     it("does not touch the server when the draft fails validation", async () => {

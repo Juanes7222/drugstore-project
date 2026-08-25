@@ -263,7 +263,14 @@ export class CompanyProfileService {
   }
 
   /**
-   * Validate that a draft satisfies the DIAN minimum for invoicing.
+   * Validate that a draft satisfies the minimum to register the company.
+   *
+   * Deliberately minimal: the numbering resolution is NOT required here —
+   * electronic invoicing obtains its range automatically once the
+   * contributor is habilitated with DIAN (certificate loaded), and a
+   * physical paper/thermal resolution can be added later from the
+   * backoffice or the edit flow. The user's job at onboarding is only to
+   * confirm their identity data.
    */
   validateDraft(draft: CompanyDraft): void {
     if (!isValidNitDv(draft.nit, draft.dv)) {
@@ -272,14 +279,9 @@ export class CompanyProfileService {
 
     const required: Array<keyof CompanyDraft> = [
       'name',
-      'regimen',
       'address',
       'municipio',
       'departamento',
-      'ciiu',
-      'resolutionNumber',
-      'resolutionRangeStart',
-      'resolutionRangeEnd',
     ];
 
     for (const key of required) {
@@ -287,16 +289,6 @@ export class CompanyProfileService {
       if (typeof value !== 'string' || value.trim().length === 0) {
         throw new CompanyNotConfiguredException();
       }
-    }
-
-    if (!draft.resolutionPrefix?.trim()) {
-      throw new CompanyNotConfiguredException();
-    }
-
-    // A resolution needs an explicit validity end — the server DTO
-    // requires it and DIAN resolutions always carry one.
-    if (draft.resolutionNumber && !draft.resolutionValidTo?.trim()) {
-      throw new CompanyNotConfiguredException();
     }
 
     // A municipio code that does not exist in the DANE catalog would reach
@@ -377,7 +369,12 @@ function mapDraftToIssuerConfig(draft: CompanyDraft): IssuerConfigPayload {
     nit: draft.nit,
     verificationDigit: draft.dv,
     businessName: draft.name,
-    organizationType: draft.organizationType ?? null,
+    organizationType:
+      draft.organizationType ??
+      // Server requires a non-empty type; infer it from the mapped regime.
+      (mapRegimenToTaxLevelCode(draft.regimen, null) === 'R-99-PJ'
+        ? 'PERSONA JURIDICA'
+        : 'PERSONA NATURAL'),
     taxRegime: mapRegimenToTaxLevelCode(draft.regimen, draft.organizationType),
     address: draft.address ?? null,
     municipality: draft.municipio ?? null,

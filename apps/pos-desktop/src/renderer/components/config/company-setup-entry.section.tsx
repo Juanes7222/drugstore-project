@@ -10,7 +10,7 @@
  */
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
-import { Building2Icon, PencilIcon } from "@/components/ui/icons";
+import { Building2Icon, InfoIcon, PencilIcon } from "@/components/ui/icons";
 
 export interface CompanySetupEntrySectionProps {
   /** NIT digits of the saved issuer profile, or null when unset. */
@@ -19,6 +19,13 @@ export interface CompanySetupEntrySectionProps {
   name: string | null;
   /** True when a complete profile exists (edit mode available). */
   isConfigured: boolean;
+  /**
+   * True when the saved draft carries a numbering resolution. False shows
+   * the pending-electronic-invoicing hint — a calm, normal state, since
+   * the e-invoice range self-provisions at DIAN habilitación.
+   * Defaults to true (no hint) when omitted.
+   */
+  hasResolution?: boolean;
   /** Opens the company-setup wizard (edit or first-time setup). */
   onOpen: () => void;
 }
@@ -27,6 +34,7 @@ export const CompanySetupEntrySection: FC<CompanySetupEntrySectionProps> = ({
   nit,
   name,
   isConfigured,
+  hasResolution = true,
   onOpen,
 }) => {
   const { t } = useTranslation();
@@ -81,6 +89,16 @@ export const CompanySetupEntrySection: FC<CompanySetupEntrySectionProps> = ({
             ) : (
               <p className="mt-pos-md text-body-sm text-ink-muted">
                 {t("config.company_setup.empty")}
+              </p>
+            )}
+
+            {isConfigured && nit && !hasResolution && (
+              <p className="mt-pos-sm flex items-start gap-pos-xs text-caption text-ink-muted">
+                <InfoIcon
+                  className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                  aria-hidden="true"
+                />
+                {t("company_setup.entry.electronic_pending_hint")}
               </p>
             )}
           </div>

@@ -1,12 +1,15 @@
 /**
  * CompanySetupWizard — post-activation onboarding for the DIAN fiscal
- * emitter data (NIT, razón social, régimen, resolución de numeración).
+ * emitter data (NIT, razón social, régimen).
  *
- * Composition container of the three-step flow: RUT upload (or manual
- * entry) → editable review → DIAN resolution, then a final summary before
- * submit. All parsing, persistence and validation go through
- * `useCompanySetup` (pos-local contract); this component only orchestrates
- * the views and holds the editable draft while the user moves through them.
+ * Composition container of the flow: RUT upload (or manual entry) →
+ * editable review → optional/collapsible numbering resolution → summary →
+ * submit. The resolution step is skippable ("Omitir por ahora"):
+ * electronic invoicing receives its range automatically once the company
+ * is enabled with the DIAN, so the minimal path is RUT → review → submit.
+ * All parsing, persistence and validation go through `useCompanySetup`
+ * (pos-local contract); this component only orchestrates the views and
+ * holds the editable draft while the user moves through them.
  *
  * @category Page
  */
@@ -19,8 +22,10 @@ import { useLicenseStore } from "../../../domain/licensing/license.store";
 import {
   CheckIcon,
   CheckCircleIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   FileTextIcon,
+  InfoIcon,
   PencilIcon,
   ShieldIcon,
   type IconComponent,
@@ -32,7 +37,11 @@ import {
   type CompanyIdentityField,
   type DvStatus,
 } from "./rut-review-step";
-import { ResolutionStep, type ResolutionField } from "./resolution-step";
+import {
+  ResolutionStep,
+  hasAnyResolutionData,
+  type ResolutionField,
+} from "./resolution-step";
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -81,7 +90,7 @@ const STEP_META: Record<StepView, StepMeta> = {
     icon: PencilIcon,
   },
   resolution: {
-    labelKey: "company_setup.wizard.step_resolution",
+    labelKey: "company_setup.wizard.step_resolution_optional",
     icon: ShieldIcon,
   },
 };
@@ -156,6 +165,14 @@ export const CompanySetupWizard: FC = () => {
   // Manual entry leaves the check digit unverified.
   const dvStatus: DvStatus =
     parseSource === "rut" || parseSource === "saved" ? "valid" : "unknown";
+
+  // The resolution step is optional and collapsible. Collapsed on a fresh
+  // flow (skip is the low-friction path); open when the draft already
+  // carries resolution data (edit mode / re-entry) since that is what the
+  // user came to see.
+  const [isResolutionFormOpen, setIsResolutionFormOpen] = useState(() =>
+    hasAnyResolutionData(draft),
+  );
 
   // Guards the auto-jump below: once the user has interacted with the flow
   // (chose manual entry or uploaded a file), a late "complete" status must
@@ -332,6 +349,10 @@ export const CompanySetupWizard: FC = () => {
     if (view === "upload" || view === "done") return null;
 
     const isLastStep = view === "summary";
+    // Collapsed resolution has nothing to advance past — its prominent
+    // skip button in the card body is the way forward.
+    const showContinue =
+      !isLastStep && !(view === "resolution" && !isResolutionFormOpen);
     return (
       <div className="mt-pos-lg flex items-center justify-between gap-pos-md">
         <button
@@ -370,7 +391,7 @@ export const CompanySetupWizard: FC = () => {
               ? t("company_setup.wizard.submitting")
               : t("company_setup.wizard.submit")}
           </button>
-        ) : (
+        ) : showContinue ? (
           <button
             type="button"
             className="pos-button pos-button-primary inline-flex min-w-40 items-center justify-center py-pos-md text-ui font-bold"
@@ -382,7 +403,7 @@ export const CompanySetupWizard: FC = () => {
           >
             {t("company_setup.wizard.continue")}
           </button>
-        )}
+        ) : null}
       </div>
     );
   };
@@ -525,10 +546,75 @@ export const CompanySetupWizard: FC = () => {
                   total: STEP_ORDER.length,
                 })}
               </p>
-              <ResolutionStep
-                draft={draft}
-                onFieldChange={handleResolutionFieldChange}
-              />
+              <section
+                className="rounded-pos border px-pos-lg py-pos-md"
+                aria-label={t(
+                  "company_setup.wizard.resolution_optional_title",
+                )}
+              >
+                <div className="flex items-center justify-between gap-pos-md">
+                  <div className="flex items-center gap-pos-sm">
+                    <ShieldIcon
+                      className="h-5 w-5 shrink-0"
+                      style={{ color: "var(--color-restrict)" }}
+                      aria-hidden="true"
+                    />
+                    <h2 className="text-ui font-semibold text-ink">
+                      {t("company_setup.wizard.resolution_optional_title")}
+                    </h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="pos-button pos-button-secondary inline-flex shrink-0 items-center gap-pos-xs py-pos-xs text-caption font-semibold"
+                    aria-expanded={isResolutionFormOpen}
+                    aria-controls="company-setup-resolution-form"
+                    onClick={() =>
+                      setIsResolutionFormOpen((open) => !open)
+                    }
+                  >
+                    <ChevronDownIcon
+                      className={`h-4 w-4 transition-transform duration-150 motion-reduce:transition-none ${
+                        isResolutionFormOpen ? "" : "-rotate-90"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {isResolutionFormOpen
+                      ? t("company_setup.wizard.hide_resolution_cta")
+                      : t("company_setup.wizard.fill_resolution_cta")}
+                  </button>
+                </div>
+
+                <p className="mt-pos-sm flex items-start gap-pos-xs text-body-sm text-ink-muted">
+                  <InfoIcon
+                    className="mt-0.5 h-4 w-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  {t("company_setup.resolution.optional_note")}
+                </p>
+
+                {isResolutionFormOpen ? (
+                  <div
+                    id="company-setup-resolution-form"
+                    className="mt-pos-md"
+                  >
+                    <ResolutionStep
+                      draft={draft}
+                      onFieldChange={handleResolutionFieldChange}
+                    />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="pos-button pos-button-primary mt-pos-md w-full py-pos-md text-ui font-bold"
+                    onClick={() => {
+                      setSubmitFailed(false);
+                      setView("summary");
+                    }}
+                  >
+                    {t("company_setup.wizard.skip_for_now")}
+                  </button>
+                )}
+              </section>
             </>
           )}
 
@@ -566,6 +652,10 @@ interface SummaryTableProps {
 const SummaryTable: FC<SummaryTableProps> = ({ draft }) => {
   const { t } = useTranslation();
 
+  // Resolution present → render its rows as before; absent → the summary
+  // states that electronic invoicing self-provisions at DIAN habilitación.
+  const hasResolution = hasAnyResolutionData(draft);
+
   const rows: Array<{ label: string; value: string; mono?: boolean }> = [
     // Identity
     {
@@ -592,54 +682,86 @@ const SummaryTable: FC<SummaryTableProps> = ({ draft }) => {
     // Contact
     { label: t("company_setup.review.phone"), value: draft.phone ?? "", mono: true },
     { label: t("company_setup.review.email"), value: draft.email ?? "" },
-    // Resolution — the DIAN-authorized numbering
-    {
-      label: t("company_setup.resolution.number"),
-      value: draft.resolutionNumber ?? "",
-      mono: true,
-    },
-    {
-      label: t("company_setup.resolution.date"),
-      value: formatResolutionDate(draft.resolutionDate ?? ""),
-    },
-    {
-      label: t("company_setup.resolution.prefix"),
-      value: draft.resolutionPrefix,
-      mono: true,
-    },
-    {
-      label: `${t("company_setup.resolution.range_start")} — ${t(
-        "company_setup.resolution.range_end",
-      )}`,
-      value: `${draft.resolutionRangeStart} — ${draft.resolutionRangeEnd}`,
-      mono: true,
-    },
-    {
-      label: t("company_setup.resolution.software_id"),
-      value: draft.softwareId ?? "",
-      mono: true,
-    },
+    // Resolution — the DIAN-authorized numbering (only when provided)
+    ...(hasResolution
+      ? [
+          {
+            label: t("company_setup.resolution.number"),
+            value: draft.resolutionNumber ?? "",
+            mono: true,
+          },
+          {
+            label: t("company_setup.resolution.date"),
+            value: formatResolutionDate(draft.resolutionDate ?? ""),
+          },
+          {
+            label: t("company_setup.resolution.prefix"),
+            value: draft.resolutionPrefix,
+            mono: true,
+          },
+          {
+            label: `${t("company_setup.resolution.range_start")} — ${t(
+              "company_setup.resolution.range_end",
+            )}`,
+            value: `${draft.resolutionRangeStart} — ${draft.resolutionRangeEnd}`,
+            mono: true,
+          },
+          {
+            label: t("company_setup.resolution.software_id"),
+            value: draft.softwareId ?? "",
+            mono: true,
+          },
+        ]
+      : []),
   ];
 
   return (
-    <dl className="overflow-hidden rounded-pos border border-border">
-      {rows.map((row, index) => (
-        <div
-          key={row.label}
-          className={`grid grid-cols-[10rem_1fr] items-baseline gap-pos-md px-pos-md py-pos-sm ${
-            index > 0 ? "border-t border-border/70" : ""
-          }`}
-        >
-          <dt className="text-body-sm font-medium text-ink-muted">
-            {row.label}
-          </dt>
-          <dd
-            className={`text-body-sm text-ink ${row.mono ? "font-data tabular-nums" : ""}`}
+    <>
+      <dl className="overflow-hidden rounded-pos border border-border">
+        {rows.map((row, index) => (
+          <div
+            key={row.label}
+            className={`grid grid-cols-[10rem_1fr] items-baseline gap-pos-md px-pos-md py-pos-sm ${
+              index > 0 ? "border-t border-border/70" : ""
+            }`}
           >
-            {row.value || "—"}
-          </dd>
+            <dt className="text-body-sm font-medium text-ink-muted">
+              {row.label}
+            </dt>
+            <dd
+              className={`text-body-sm text-ink ${row.mono ? "font-data tabular-nums" : ""}`}
+            >
+              {row.value || "—"}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      {!hasResolution && (
+        <div
+          className="mt-pos-md flex items-start gap-pos-sm rounded-pos border px-pos-md py-pos-sm"
+          role="status"
+          style={{
+            backgroundColor: "var(--color-success-container)",
+            borderColor:
+              "color-mix(in srgb, var(--color-success) 35%, transparent)",
+          }}
+        >
+          <InfoIcon
+            className="mt-0.5 h-4 w-4 shrink-0"
+            style={{ color: "var(--color-success)" }}
+            aria-hidden="true"
+          />
+          <div>
+            <p className="text-body-sm font-semibold text-ink">
+              {t("company_setup.wizard.summary_electronic_pending_title")}
+            </p>
+            <p className="text-caption text-ink-muted">
+              {t("company_setup.wizard.summary_electronic_pending_body")}
+            </p>
+          </div>
         </div>
-      ))}
-    </dl>
+      )}
+    </>
   );
 };

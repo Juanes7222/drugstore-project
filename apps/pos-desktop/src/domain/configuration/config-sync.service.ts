@@ -167,6 +167,12 @@ export interface ConfigSyncConfig {
   numberingService?: FiscalNumberingService;
 }
 
+/** Minimum interval between automatic "fetch ranges from DIAN" requests. */
+const DIAN_RESOLUTION_SYNC_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+const DIAN_RESOLUTION_SYNC_STORAGE_KEY =
+  'pharmacy_dian_resolution_sync_last_attempt';
+
 export const createConfigSyncService = (
   prisma: PrismaClient,
   config: ConfigSyncConfig,
@@ -291,6 +297,53 @@ export class ConfigSyncService {
         console.error('[ConfigSyncService] Resolution sync failed:', error);
       }
     }
+
+    // Step 4: when the tenant has no numbering resolution yet, ask the
+    // server to fetch it from DIAN (GetNumberingRange). Fire-and-forget
+    // with a local cooldown — once the server job applies, the next pull
+    // delivers the resolution and step 3 initializes the counters. This is
+    // what lets the owner start selling without ever typing a range.
+    if (!resolution && this.accessToken) {
+      this.requestResolutionSyncFromDian();
+    }
+  }
+
+  /**
+   * Ask the server to fetch this tenant's numbering ranges from DIAN.
+   *
+   * Idempotent server-side; locally rate-limited to one attempt per
+   * cooldown window so an un-habilitated contributor doesn't spam DIAN
+   * with doomed jobs on every config cycle. Failures are silent by design:
+   * the next cycle retries after the cooldown expires.
+   */
+  private requestResolutionSyncFromDian(): void {
+    const now = Date.now();
+    const lastAttempt = Number(
+      globalThis.localStorage?.getItem(DIAN_RESOLUTION_SYNC_STORAGE_KEY) ?? 0,
+    );
+    if (now - lastAttempt < DIAN_RESOLUTION_SYNC_COOLDOWN_MS) return;
+
+    try {
+      globalThis.localStorage?.setItem(
+        DIAN_RESOLUTION_SYNC_STORAGE_KEY,
+        String(now),
+      );
+    } catch {
+      // Storage unavailable (private mode) — proceed without cooldown.
+    }
+
+    this.http
+      .post?.(
+        `${this.baseUrl}/fiscal-dian/resolutions/sync-from-dian`,
+        {},
+        this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {},
+      )
+      ?.catch((error) => {
+        console.error(
+          '[ConfigSyncService] Resolution sync-from-DIAN request failed:',
+          error,
+        );
+      });
   }
 
   // -----------------------------------------------------------------------

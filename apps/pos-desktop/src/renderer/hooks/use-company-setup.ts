@@ -174,7 +174,11 @@ export function useCompanySetup(
 
         useCompanySetupStore.getState().setParsedFromRut(draft);
         return { ok: true, draft };
-      } catch {
+      } catch (error) {
+        // Log the underlying cause so an unreadable RUT (broken worker,
+        // scanned image without text layer...) is diagnosable from the
+        // webview console instead of surfacing as a generic error.
+        console.error('[useCompanySetup] RUT extraction failed:', error);
         return { ok: false, errorCode: 'UNPARSEABLE' };
       }
     },

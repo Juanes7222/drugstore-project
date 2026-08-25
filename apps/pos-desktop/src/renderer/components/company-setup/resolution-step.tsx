@@ -1,18 +1,21 @@
 /**
- * ResolutionStep — step 3 of the company setup wizard.
+ * ResolutionStep — optional step of the company setup wizard.
  *
- * The DIAN numbering resolution (resolución de numeración). Never comes
- * from the RUT — the cashier types it from the habilitación document. Gets
- * the Restrict Violet treatment: this is the only datum in the flow typed
- * by hand under DIAN authority, the same regulatory break used for
- * restricted-sale confirmation.
+ * The DIAN numbering resolution (resolución de numeración), only relevant
+ * for paper/thermal invoicing under a physical resolution: electronic
+ * invoicing receives its range automatically once the company is enabled
+ * with the DIAN (certificate uploaded). Never comes from the RUT — typed
+ * by hand from the habilitación document. Gets the Restrict Violet
+ * treatment: this is the only datum in the flow typed by hand under DIAN
+ * authority, the same regulatory break used for restricted-sale
+ * confirmation.
  *
  * @category Component
  */
 import { type FC } from "react";
 import { useTranslation } from "react-i18next";
 import type { CompanyDraft } from "@/hooks/use-company-setup";
-import { ShieldIcon } from "@/components/ui/icons";
+import { InfoIcon, ShieldIcon } from "@/components/ui/icons";
 
 /** The draft fields this step edits — the DIAN resolution plus the optional software habilitación ID. */
 export type ResolutionField =
@@ -29,6 +32,22 @@ export interface ResolutionStepProps {
   onFieldChange: (field: ResolutionField, value: string) => void;
 }
 
+/**
+ * True when the draft already carries any resolution datum entered by the
+ * user. Drives the wizard's collapsible default (open when data exists,
+ * collapsed on a fresh flow) and the summary's pending state. Deliberately
+ * ignores `resolutionPrefix`: the parser prefills "FE" as a default, which
+ * is not evidence of a physical resolution.
+ */
+export function hasAnyResolutionData(draft: CompanyDraft): boolean {
+  return Boolean(
+    draft.resolutionNumber?.trim() ||
+      draft.resolutionDate?.trim() ||
+      draft.resolutionRangeStart?.trim() ||
+      draft.resolutionRangeEnd?.trim(),
+  );
+}
+
 export const ResolutionStep: FC<ResolutionStepProps> = ({
   draft,
   onFieldChange,
@@ -36,16 +55,25 @@ export const ResolutionStep: FC<ResolutionStepProps> = ({
   const { t } = useTranslation();
 
   return (
-    <div
-      className="rounded-pos border px-pos-lg py-pos-md"
-      role="region"
-      aria-label={t("company_setup.resolution.title")}
-      style={{
-        backgroundColor: "var(--color-restrict-surface)",
-        borderColor:
-          "color-mix(in srgb, var(--color-restrict) 35%, transparent)",
-      }}
-    >
+    <div>
+      {/* Why this is skippable — e-invoicing self-provisions at habilitación */}
+      <p className="mb-pos-sm flex items-start gap-pos-xs text-body-sm text-ink-muted">
+        <InfoIcon
+          className="mt-0.5 h-4 w-4 shrink-0"
+          aria-hidden="true"
+        />
+        {t("company_setup.resolution.optional_note")}
+      </p>
+      <div
+        className="rounded-pos border px-pos-lg py-pos-md"
+        role="region"
+        aria-label={t("company_setup.resolution.title")}
+        style={{
+          backgroundColor: "var(--color-restrict-surface)",
+          borderColor:
+            "color-mix(in srgb, var(--color-restrict) 35%, transparent)",
+        }}
+      >
       {/* Heading — the regulatory frame, not a decorative accent */}
       <div className="mb-pos-sm flex items-center gap-pos-sm">
         <ShieldIcon
@@ -239,6 +267,7 @@ export const ResolutionStep: FC<ResolutionStepProps> = ({
       >
         {t("company_setup.resolution.range_note")}
       </p>
+      </div>
     </div>
   );
 };

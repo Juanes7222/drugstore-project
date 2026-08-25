@@ -26,6 +26,7 @@ const makeMockPrisma = () => {
 
 const makeMockHttpClient = (): SyncHttpClient => ({
   get: vi.fn(),
+  post: vi.fn(),
 });
 
 const makeResolutionPayload = (
@@ -447,6 +448,95 @@ describe("ConfigSyncService", () => {
           resolution: makeResolutionPayload(),
         }),
       ).resolves.toBeUndefined();
+    });
+
+    // Step 4 of applyConfiguration: when the tenant has no resolution yet,
+    // ask the server to fetch the numbering range from DIAN — once per
+    // 24h cooldown window, persisted in localStorage.
+    describe("DIAN range auto-sync", () => {
+      // Mirrors the private DIAN_RESOLUTION_SYNC_STORAGE_KEY constant in
+      // config-sync.service.ts (not exported).
+      const DIAN_SYNC_STORAGE_KEY = "pharmacy_dian_resolution_sync_last_attempt";
+      const DAY_MS = 24 * 60 * 60 * 1000;
+
+      const makeAuthedService = (): ConfigSyncService =>
+        createConfigSyncService(prisma, {
+          baseUrl: "http://localhost:3000",
+          httpClient: http,
+          accessToken: "tok-dian",
+        });
+
+      const basePayload = () => ({
+        paymentMethods: [],
+        discountLimits,
+        alertThresholds,
+        syncDefaults,
+      });
+
+      beforeEach(() => {
+        localStorage.clear();
+      });
+
+      it("posts sync-from-dian with the bearer token when the payload has no resolution", async () => {
+        const svc = makeAuthedService();
+
+        await svc.applyConfiguration(basePayload());
+
+        expect(http.post).toHaveBeenCalledTimes(1);
+        expect(http.post).toHaveBeenCalledWith(
+          "http://localhost:3000/fiscal-dian/resolutions/sync-from-dian",
+          {},
+          { Authorization: "Bearer tok-dian" },
+        );
+      });
+
+      it("does not post again on a second pull within the cooldown window", async () => {
+        const svc = makeAuthedService();
+
+        await svc.applyConfiguration(basePayload());
+        await svc.applyConfiguration(basePayload());
+
+        expect(http.post).toHaveBeenCalledTimes(1);
+      });
+
+      it("posts again once the last attempt is older than the cooldown", async () => {
+        localStorage.setItem(
+          DIAN_SYNC_STORAGE_KEY,
+          String(Date.now() - DAY_MS - 1),
+        );
+        const svc = makeAuthedService();
+
+        await svc.applyConfiguration(basePayload());
+
+        expect(http.post).toHaveBeenCalledTimes(1);
+      });
+
+      it("does not post when the payload carries a resolution", async () => {
+        const svc = makeAuthedService();
+
+        await svc.applyConfiguration({
+          ...basePayload(),
+          resolution: makeResolutionPayload(),
+        });
+
+        expect(http.post).not.toHaveBeenCalled();
+      });
+
+      it("does not post without an access token", async () => {
+        await service.applyConfiguration(basePayload());
+
+        expect(http.post).not.toHaveBeenCalled();
+      });
+
+      it("still resolves the apply when the sync-from-dian request rejects", async () => {
+        // The factory always defines post; SyncHttpClient types it optional.
+        vi.mocked(http.post!).mockRejectedValue(new Error("dian unreachable"));
+        const svc = makeAuthedService();
+
+        await expect(svc.applyConfiguration(basePayload())).resolves.toBeUndefined();
+
+        expect(useLocalConfigStore.getState().syncDefaults.batchSize).toBe(25);
+      });
     });
   });
 

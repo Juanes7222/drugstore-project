@@ -45,11 +45,29 @@ import {
 
 export interface SyncHttpClient {
   get<T>(url: string, headers?: Record<string, string>): Promise<T>;
+  /** Optional — only pull-sync services that also trigger server jobs use it. */
+  post?<T>(url: string, body: unknown, headers?: Record<string, string>): Promise<T>;
 }
 
 const defaultHttpClient: SyncHttpClient = {
   get: async <T>(url: string, headers?: Record<string, string>): Promise<T> => {
     const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new CatalogSyncHttpError(url, response.status, await response.text());
+    }
+    return response.json() as Promise<T>;
+  },
+
+  post: async <T>(
+    url: string,
+    body: unknown,
+    headers?: Record<string, string>,
+  ): Promise<T> => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    });
     if (!response.ok) {
       throw new CatalogSyncHttpError(url, response.status, await response.text());
     }
