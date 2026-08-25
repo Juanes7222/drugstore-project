@@ -62,6 +62,16 @@ const CustomerDetailPage = lazy(() =>
     default: m.CustomerDetailPage,
   })),
 );
+const FraudAlertsPage = lazy(() =>
+  import("./pages/admin/fraud-alerts-page").then((m) => ({
+    default: m.FraudAlertsPage,
+  })),
+);
+const PlatformAuditPage = lazy(() =>
+  import("./pages/admin/platform-audit-page").then((m) => ({
+    default: m.PlatformAuditPage,
+  })),
+);
 
 function RequireAuth() {
   const location = useLocation();
@@ -115,6 +125,8 @@ export function App() {
               <Route index element={<PlatformOverviewPage />} />
               <Route path="customers" element={<CustomersPage />} />
               <Route path="customers/:customerId" element={<CustomerDetailPage />} />
+              <Route path="fraud" element={<FraudAlertsPage />} />
+              <Route path="audit" element={<PlatformAuditPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Route>

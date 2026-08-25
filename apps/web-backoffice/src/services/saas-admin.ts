@@ -1,11 +1,14 @@
 import { api } from "./api";
 import type {
+  SaasAdminAccessAuditResponse,
   SaasAdminCustomerDashboard,
   SaasAdminCustomerRow,
   SaasAdminCustomersResponse,
+  SaasAdminFraudAlertsResponse,
   SaasAdminFiscalStatusResponse,
   SaasAdminSalesResponse,
   SaasAdminSessionsResponse,
+  SaasAdminTrialsEndingResult,
   SaasAdminUsersResponse,
   SaasAdminWorkstationsResponse,
   PlatformOverviewResult,
@@ -98,6 +101,59 @@ export async function fetchSaasCustomerFiscalStatus(
   const { data } = await api.get<SaasAdminFiscalStatusResponse>(
     `/saas-admin/customers/${id}/fiscal-status`,
     { params: from ? { from } : undefined },
+  );
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Fraud queue, platform audit, trials
+// ---------------------------------------------------------------------------
+
+/** Absent status = unresolved queue; "ALL" disables server filtering. */
+export type FraudAlertsFilter = "" | "ALL" | string;
+
+export async function fetchSaasFraudAlerts(
+  page: number,
+  pageSize: number,
+  status: FraudAlertsFilter = "",
+): Promise<SaasAdminFraudAlertsResponse> {
+  const { data } = await api.get<SaasAdminFraudAlertsResponse>(
+    "/saas-admin/fraud-alerts",
+    { params: { page, pageSize, status: status || undefined } },
+  );
+  return data;
+}
+
+export interface ResolveFraudAlertInput {
+  alertId: string;
+  note?: string;
+}
+
+export async function resolveSaasFraudAlert(
+  input: ResolveFraudAlertInput,
+): Promise<void> {
+  await api.post(`/saas-admin/fraud-alerts/${input.alertId}/resolve`, {
+    note: input.note || undefined,
+  });
+}
+
+export async function fetchSaasAccessAudit(
+  page: number,
+  pageSize: number,
+): Promise<SaasAdminAccessAuditResponse> {
+  const { data } = await api.get<SaasAdminAccessAuditResponse>(
+    "/saas-admin/access-audit",
+    { params: { page, pageSize } },
+  );
+  return data;
+}
+
+export async function fetchSaasTrialsEnding(
+  days = 14,
+): Promise<SaasAdminTrialsEndingResult> {
+  const { data } = await api.get<SaasAdminTrialsEndingResult>(
+    "/saas-admin/trials-ending",
+    { params: { days } },
   );
   return data;
 }

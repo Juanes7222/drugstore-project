@@ -22,6 +22,8 @@ import {
   MenuIcon,
   DashboardIcon,
   PeopleIcon,
+  WarningAmberIcon,
+  HistoryIcon,
   DarkModeIcon,
   LightModeIcon,
   LogoutIcon,
@@ -44,6 +46,8 @@ interface AdminNavItem {
 const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { to: "/admin", labelKey: "saas.navOverview", icon: DashboardIcon },
   { to: "/admin/customers", labelKey: "saas.navCustomers", icon: PeopleIcon },
+  { to: "/admin/fraud", labelKey: "saas.navFraud", icon: WarningAmberIcon },
+  { to: "/admin/audit", labelKey: "saas.navAudit", icon: HistoryIcon },
 ];
 
 function initialsOf(name: string): string {

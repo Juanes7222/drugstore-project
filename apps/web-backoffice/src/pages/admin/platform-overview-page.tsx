@@ -1,11 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import Box from "@mui/material/Box";
+import Card from "@mui/material/Card";
+import CardContent from "@mui/material/CardContent";
 import Grid from "@mui/material/Grid";
+import List from "@mui/material/List";
+import ListItem from "@mui/material/ListItem";
+import ListItemButton from "@mui/material/ListItemButton";
+import ListItemText from "@mui/material/ListItemText";
+import Typography from "@mui/material/Typography";
 import {
   fetchPlatformOverview,
+  fetchSaasTrialsEnding,
 } from "../../services/saas-admin";
-import { formatCop, formatNumber } from "../../utils/format";
+import { formatCop, formatDate, formatNumber } from "../../utils/format";
 import type { KpiIconComponent } from "../../components/common/kpi-card";
 import { KpiCard } from "../../components/common/kpi-card";
 import { PageHeader } from "../../components/common/page-header";
@@ -28,6 +37,81 @@ interface KpiEntry {
   icon: KpiIconComponent;
   tone?: "default" | "ok" | "info" | "warning" | "error";
   live?: boolean;
+}
+
+const TRIALS_DAYS = 14;
+
+function daysUntil(isoDate: string): number {
+  const diff = new Date(isoDate).getTime() - Date.now();
+  return Math.max(0, Math.ceil(diff / 86_400_000));
+}
+
+/** Trials converting soon — the outreach list for the owner. */
+function TrialsEndingCard() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { data, isLoading } = useQuery({
+    queryKey: ["saas-trials-ending", TRIALS_DAYS],
+    queryFn: () => fetchSaasTrialsEnding(TRIALS_DAYS),
+  });
+
+  return (
+    <Card variant="outlined" className="animate-fade-up" sx={{ mt: 3 }}>
+      <CardContent>
+        <Typography variant="overline" color="text.secondary">
+          {t("saas.trials.title", { days: TRIALS_DAYS })}
+        </Typography>
+        {isLoading ? (
+          <Typography variant="body2" color="text.secondary" py={2}>
+            {t("common.loading")}
+          </Typography>
+        ) : !data || data.trials.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" py={2}>
+            {t("saas.trials.empty")}
+          </Typography>
+        ) : (
+          <List disablePadding>
+            {data.trials.map((trial, index) => {
+              const days = daysUntil(trial.trialEndsAt);
+              return (
+                <ListItem
+                  key={trial.subscriptionId}
+                  disablePadding
+                  {...(index > 0 ? { divider: true } : {})}
+                >
+                  <ListItemButton
+                    onClick={() =>
+                      navigate(`/admin/customers/${trial.subscriptionId}`)
+                    }
+                    sx={{ px: 1, borderRadius: 1 }}
+                  >
+                    <ListItemText
+                      primary={trial.customerName}
+                      secondary={`${trial.plan.name} · ${trial.customerEmail ?? "—"}`}
+                      primaryTypographyProps={{ fontWeight: 600 }}
+                    />
+                    <Box sx={{ textAlign: "right", flexShrink: 0, ml: 2 }}>
+                      <Typography
+                        variant="body2"
+                        fontWeight={700}
+                        color={days <= 3 ? "warning.main" : "text.primary"}
+                        sx={{ fontVariantNumeric: "tabular-nums" }}
+                      >
+                        {t("saas.trials.daysLeft", { count: days })}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatDate(trial.trialEndsAt)}
+                      </Typography>
+                    </Box>
+                  </ListItemButton>
+                </ListItem>
+              );
+            })}
+          </List>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 /** Platform-wide metrics for the project owner. Read-only by design. */
@@ -117,6 +201,10 @@ export function PlatformOverviewPage() {
           </Grid>
         ))}
       </Grid>
+
+      {/* Outreach list: trials converting within the window. Mounts only on
+          the success path, so its query does not fire for error states. */}
+      <TrialsEndingCard />
     </Box>
   );
 }

@@ -40,6 +40,7 @@ import { PageHeader } from "../../components/common/page-header";
 import { DataTable } from "../../components/tables/data-table";
 import { StatusChip } from "../../components/common/status-chip";
 import { FiscalStateBar } from "../../components/charts/fiscal-state-bar";
+import { SalesTrendChart } from "../../components/charts/sales-trend-chart";
 import { LoadingState, ErrorState } from "../../components/common/states";
 
 const PAGE_SIZE = 20;
@@ -139,7 +140,13 @@ function OverviewPanel({ id }: { id: string }) {
   if (isLoading && !data) return <LoadingState />;
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
 
-  // Period-over-period movement for the 30-day window.
+  // The shared chart expects the tenant dashboard's day shape; the saas
+  // trend uses count/totalAmount naming.
+  const trendDays = data.salesTrend.days.map((day) => ({
+    date: day.date,
+    confirmedCount: day.count,
+    confirmedAmount: day.totalAmount,
+  }));
   const current = Number(data.sales30d.totalAmount);
   const previous = Number(data.sales30d.previousTotal);
   const pct =
@@ -155,7 +162,9 @@ function OverviewPanel({ id }: { id: string }) {
         };
 
   return (
-    <Grid container spacing={2}>
+    <>
+      <SalesTrendChart days={trendDays} />
+      <Grid container spacing={2}>
       <Grid item xs={12} sm={6} md={3}>
         <KpiCard
           title={t("saas.customer.salesToday")}
@@ -205,7 +214,8 @@ function OverviewPanel({ id }: { id: string }) {
           tone={data.fiscal.rejected > 0 ? "error" : "default"}
         />
       </Grid>
-    </Grid>
+      </Grid>
+    </>
   );
 }
 
