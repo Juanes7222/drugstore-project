@@ -166,3 +166,6 @@ apps/server/storage/
 secrets/
 backups/
 !.env.prod.example
+
+# graphify knowledge-graph output (generated)
+graphify-out/
