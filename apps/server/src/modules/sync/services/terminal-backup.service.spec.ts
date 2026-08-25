@@ -1,132 +1,203 @@
-import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
-import { Readable } from 'stream';
-import { ConfigService } from '@nestjs/config';
+import { Readable } from 'node:stream';
+import { ObjectStorage } from '../../../infrastructure/storage/object-storage.port';
 import { TerminalBackupService } from './terminal-backup.service';
 
-describe('TerminalBackupService', () => {
-  let service: TerminalBackupService;
-  let tempDir: string;
-  let configService: ConfigService<{ BACKUP_STORAGE_PATH: string }>;
+/**
+ * Fake implementing the ObjectStorage port in memory so tests observe real
+ * key-layout and collision behavior without touching the filesystem.
+ */
+class InMemoryObjectStorage implements ObjectStorage {
+  readonly objects = new Map<string, Buffer>();
 
-  beforeEach(async () => {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'terminal-backup-test-'));
-    configService = {
-      get: jest.fn().mockReturnValue(tempDir),
-    } as unknown as ConfigService<{ BACKUP_STORAGE_PATH: string }>;
-    service = new TerminalBackupService(configService);
-  });
-
-  afterEach(async () => {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  });
-
-  function streamFromString(value: string): Readable {
-    return Readable.from([Buffer.from(value)]);
+  async put(key: string, body: Readable | Buffer): Promise<void> {
+    this.objects.set(
+      key,
+      Buffer.isBuffer(body) ? body : await streamToBuffer(body),
+    );
   }
 
-  it('streams the payload to the expected path and returns metadata', async () => {
-    const createdAt = new Date('2026-07-09T10:30:00.000Z');
+  async get(key: string): Promise<Buffer> {
+    const value = this.objects.get(key);
+    if (value === undefined) {
+      throw new Error(`Object not found: ${key}`);
+    }
+    return value;
+  }
 
-    const result = await service.storeBackup({
-      workstationId: 'ws-1',
-      uploadId: 'upload-abc',
-      createdAt,
-      payload: streamFromString('encrypted-payload'),
+  async getStream(key: string): Promise<Readable> {
+    return Readable.from(await this.get(key));
+  }
+
+  async exists(key: string): Promise<boolean> {
+    return this.objects.has(key);
+  }
+
+  async remove(key: string): Promise<void> {
+    this.objects.delete(key);
+  }
+
+  async removePrefix(prefix: string): Promise<void> {
+    const searchPrefix = `${prefix.replace(/\/+$/, '')}/`;
+    for (const key of [...this.objects.keys()]) {
+      if (key.startsWith(searchPrefix)) {
+        this.objects.delete(key);
+      }
+    }
+  }
+}
+
+async function streamToBuffer(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+function streamFromString(value: string): Readable {
+  return Readable.from([Buffer.from(value)]);
+}
+
+describe('TerminalBackupService', () => {
+  describe('storeBackup', () => {
+    let storage: InMemoryObjectStorage;
+    let service: TerminalBackupService;
+
+    beforeEach(() => {
+      storage = new InMemoryObjectStorage();
+      service = new TerminalBackupService(storage);
     });
 
-    expect(result).toEqual({
-      uploadId: 'upload-abc',
-      workstationId: 'ws-1',
-      createdAt: '2026-07-09T10:30:00.000Z',
+    it('streams the payload to terminal-backups/{workstationId}/{date}/{uploadId}', async () => {
+      const payload = streamFromString('encrypted-payload');
+      const putSpy = jest.spyOn(storage, 'put');
+
+      await service.storeBackup({
+        workstationId: 'ws-1',
+        uploadId: 'upload-abc',
+        createdAt: new Date('2026-07-09T10:30:00.000Z'),
+        payload,
+      });
+
+      expect(putSpy).toHaveBeenCalledWith(
+        'terminal-backups/ws-1/2026-07-09/upload-abc',
+        payload,
+      );
+      expect(
+        storage.objects.get('terminal-backups/ws-1/2026-07-09/upload-abc'),
+      ).toEqual(Buffer.from('encrypted-payload'));
     });
 
-    const expectedFile = path.join(
-      tempDir,
-      'terminal-backups',
-      'ws-1',
-      '2026-07-09',
-      'upload-abc',
-    );
-    const content = await fs.readFile(expectedFile, 'utf-8');
-    expect(content).toBe('encrypted-payload');
-  });
+    it('returns the upload metadata unchanged', async () => {
+      const result = await service.storeBackup({
+        workstationId: 'ws-1',
+        uploadId: 'upload-abc',
+        createdAt: new Date('2026-07-09T10:30:00.000Z'),
+        payload: streamFromString('encrypted-payload'),
+      });
 
-  it('appends uploadId to the filename on collision', async () => {
-    const createdAt = new Date('2026-07-09T10:30:00.000Z');
-    const baseDir = path.join(tempDir, 'terminal-backups', 'ws-1', '2026-07-09');
-    await fs.mkdir(baseDir, { recursive: true });
-    await fs.writeFile(path.join(baseDir, 'upload-abc'), 'first');
-
-    const result = await service.storeBackup({
-      workstationId: 'ws-1',
-      uploadId: 'upload-abc',
-      createdAt,
-      payload: streamFromString('second'),
+      expect(result).toEqual({
+        uploadId: 'upload-abc',
+        workstationId: 'ws-1',
+        createdAt: '2026-07-09T10:30:00.000Z',
+      });
     });
 
-    expect(result.uploadId).toBe('upload-abc');
+    it('appends the uploadId to the key when the base key already exists', async () => {
+      storage.objects.set(
+        'terminal-backups/ws-1/2026-07-09/upload-abc',
+        Buffer.from('first'),
+      );
 
-    const files = await fs.readdir(baseDir);
-    expect(files.sort()).toEqual(['upload-abc', 'upload-abc-upload-abc']);
+      await service.storeBackup({
+        workstationId: 'ws-1',
+        uploadId: 'upload-abc',
+        createdAt: new Date('2026-07-09T10:30:00.000Z'),
+        payload: streamFromString('second'),
+      });
 
-    const secondContent = await fs.readFile(
-      path.join(baseDir, 'upload-abc-upload-abc'),
-      'utf-8',
-    );
-    expect(secondContent).toBe('second');
-  });
-
-  it('uses a numeric counter when repeated collisions occur', async () => {
-    const createdAt = new Date('2026-07-09T10:30:00.000Z');
-    const baseDir = path.join(tempDir, 'terminal-backups', 'ws-1', '2026-07-09');
-    await fs.mkdir(baseDir, { recursive: true });
-    await fs.writeFile(path.join(baseDir, 'upload-abc'), 'first');
-    await fs.writeFile(path.join(baseDir, 'upload-abc-upload-abc'), 'second');
-
-    const result = await service.storeBackup({
-      workstationId: 'ws-1',
-      uploadId: 'upload-abc',
-      createdAt,
-      payload: streamFromString('third'),
+      expect(
+        storage.objects.get('terminal-backups/ws-1/2026-07-09/upload-abc'),
+      ).toEqual(Buffer.from('first'));
+      expect(
+        storage.objects.get(
+          'terminal-backups/ws-1/2026-07-09/upload-abc-upload-abc',
+        ),
+      ).toEqual(Buffer.from('second'));
     });
 
-    expect(result.uploadId).toBe('upload-abc');
+    it('falls back to a numeric counter when the uploadId-suffixed key is taken', async () => {
+      storage.objects.set(
+        'terminal-backups/ws-1/2026-07-09/upload-abc',
+        Buffer.from('first'),
+      );
+      storage.objects.set(
+        'terminal-backups/ws-1/2026-07-09/upload-abc-upload-abc',
+        Buffer.from('second'),
+      );
 
-    const files = await fs.readdir(baseDir);
-    expect(files.sort()).toEqual([
-      'upload-abc',
-      'upload-abc-upload-abc',
-      'upload-abc-upload-abc-1',
-    ]);
-  });
+      await service.storeBackup({
+        workstationId: 'ws-1',
+        uploadId: 'upload-abc',
+        createdAt: new Date('2026-07-09T10:30:00.000Z'),
+        payload: streamFromString('third'),
+      });
 
-  it('isolates backups by workstation and date', async () => {
-    await service.storeBackup({
-      workstationId: 'ws-a',
-      uploadId: 'upload-x',
-      createdAt: new Date('2026-07-08T12:00:00.000Z'),
-      payload: streamFromString('ws-a-payload'),
+      expect(
+        storage.objects.get(
+          'terminal-backups/ws-1/2026-07-09/upload-abc-upload-abc-1',
+        ),
+      ).toEqual(Buffer.from('third'));
     });
 
-    await service.storeBackup({
-      workstationId: 'ws-b',
-      uploadId: 'upload-x',
-      createdAt: new Date('2026-07-09T12:00:00.000Z'),
-      payload: streamFromString('ws-b-payload'),
+    it('keeps incrementing the counter past prior collisions', async () => {
+      storage.objects.set(
+        'terminal-backups/ws-1/2026-07-09/upload-abc',
+        Buffer.from('first'),
+      );
+      storage.objects.set(
+        'terminal-backups/ws-1/2026-07-09/upload-abc-upload-abc',
+        Buffer.from('second'),
+      );
+      storage.objects.set(
+        'terminal-backups/ws-1/2026-07-09/upload-abc-upload-abc-1',
+        Buffer.from('third'),
+      );
+
+      await service.storeBackup({
+        workstationId: 'ws-1',
+        uploadId: 'upload-abc',
+        createdAt: new Date('2026-07-09T10:30:00.000Z'),
+        payload: streamFromString('fourth'),
+      });
+
+      expect(
+        storage.objects.get(
+          'terminal-backups/ws-1/2026-07-09/upload-abc-upload-abc-2',
+        ),
+      ).toEqual(Buffer.from('fourth'));
     });
 
-    const aContent = await fs.readFile(
-      path.join(tempDir, 'terminal-backups', 'ws-a', '2026-07-08', 'upload-x'),
-      'utf-8',
-    );
-    const bContent = await fs.readFile(
-      path.join(tempDir, 'terminal-backups', 'ws-b', '2026-07-09', 'upload-x'),
-      'utf-8',
-    );
+    it('isolates backups by workstation and date folder', async () => {
+      await service.storeBackup({
+        workstationId: 'ws-a',
+        uploadId: 'upload-x',
+        createdAt: new Date('2026-07-08T12:00:00.000Z'),
+        payload: streamFromString('ws-a-payload'),
+      });
+      await service.storeBackup({
+        workstationId: 'ws-b',
+        uploadId: 'upload-x',
+        createdAt: new Date('2026-07-09T12:00:00.000Z'),
+        payload: streamFromString('ws-b-payload'),
+      });
 
-    expect(aContent).toBe('ws-a-payload');
-    expect(bContent).toBe('ws-b-payload');
+      expect(
+        storage.objects.get('terminal-backups/ws-a/2026-07-08/upload-x'),
+      ).toEqual(Buffer.from('ws-a-payload'));
+      expect(
+        storage.objects.get('terminal-backups/ws-b/2026-07-09/upload-x'),
+      ).toEqual(Buffer.from('ws-b-payload'));
+    });
   });
 });

@@ -1,15 +1,9 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { createWriteStream } from 'fs';
+import { Inject, Injectable } from '@nestjs/common';
+import { Readable } from 'node:stream';
 import {
-  mkdir,
-  access,
-  constants,
-} from 'fs/promises';
-import * as path from 'path';
-import { Readable } from 'stream';
-import { pipeline } from 'stream/promises';
-import { EnvConfig } from '@/config/env.schema';
+  BACKUP_OBJECT_STORAGE,
+  ObjectStorage,
+} from '../../../infrastructure/storage/object-storage.port';
 
 export interface StoreTerminalBackupInput {
   workstationId: string;
@@ -25,37 +19,38 @@ export interface StoreTerminalBackupResult {
 }
 
 /**
- * Persists encrypted terminal backup payloads to the local filesystem.
+ * Persists encrypted terminal backup payloads through the backup-scoped
+ * ObjectStorage (local disk or Cloudflare R2 depending on STORAGE_DRIVER).
  * The service never inspects or decrypts the payload; it only validates
- * identifiers and ensures a safe, collision-free path.
+ * identifiers and ensures a collision-free key.
  */
 @Injectable()
 export class TerminalBackupService {
-  constructor(private configService: ConfigService<EnvConfig>) {}
+  constructor(
+    @Inject(BACKUP_OBJECT_STORAGE) private readonly storage: ObjectStorage,
+  ) {}
 
   /**
-   * Streams an encrypted backup payload to disk and returns the metadata
-   * needed by the caller. If a file with the same uploadId already exists
-   * for this workstation and day, the uploadId is appended to the filename
-   * (followed by a numeric counter if necessary) so no upload is overwritten.
+   * Streams an encrypted backup payload to object storage. If a file with the
+   * same uploadId already exists for this workstation and day, the uploadId
+   * is appended to the filename (followed by a numeric counter if necessary)
+   * so no upload is overwritten.
    */
   async storeBackup(
     input: StoreTerminalBackupInput,
   ): Promise<StoreTerminalBackupResult> {
-    const storageRoot = this.configService.get('BACKUP_STORAGE_PATH')!;
     const dateFolder = input.createdAt.toISOString().split('T')[0];
-    const targetDir = path.join(
-      storageRoot,
+    // Key layout mirrors the historical directory tree so previously stored
+    // backups keep their address under either driver.
+    const baseKey = [
       'terminal-backups',
       input.workstationId,
       dateFolder,
-    );
+      input.uploadId,
+    ].join('/');
+    const key = await this.resolveUniqueKey(baseKey);
 
-    await mkdir(targetDir, { recursive: true });
-
-    const filePath = await this.resolveUniqueFilePath(targetDir, input.uploadId);
-
-    await pipeline(input.payload, createWriteStream(filePath));
+    await this.storage.put(key, input.payload);
 
     return {
       uploadId: input.uploadId,
@@ -64,37 +59,25 @@ export class TerminalBackupService {
     };
   }
 
-  private async resolveUniqueFilePath(
-    dir: string,
-    baseName: string,
-  ): Promise<string> {
-    const basePath = path.join(dir, baseName);
-    if (!(await this.pathExists(basePath))) {
-      return basePath;
+  private async resolveUniqueKey(baseKey: string): Promise<string> {
+    const uploadId = baseKey.split('/').pop() ?? '';
+    if (!(await this.storage.exists(baseKey))) {
+      return baseKey;
     }
 
     // Append the uploadId to itself per the collision-avoidance rule.
-    const withUploadId = path.join(dir, `${baseName}-${baseName}`);
-    if (!(await this.pathExists(withUploadId))) {
+    const withUploadId = `${baseKey}-${uploadId}`;
+    if (!(await this.storage.exists(withUploadId))) {
       return withUploadId;
     }
 
     let counter = 1;
     while (true) {
-      const candidate = path.join(dir, `${baseName}-${baseName}-${counter}`);
-      if (!(await this.pathExists(candidate))) {
+      const candidate = `${baseKey}-${uploadId}-${counter}`;
+      if (!(await this.storage.exists(candidate))) {
         return candidate;
       }
       counter++;
-    }
-  }
-
-  private async pathExists(filePath: string): Promise<boolean> {
-    try {
-      await access(filePath, constants.F_OK);
-      return true;
-    } catch {
-      return false;
     }
   }
 }

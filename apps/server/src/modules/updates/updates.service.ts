@@ -63,7 +63,7 @@ export class UpdatesService {
     }
 
     // Store the binary
-    const { fileHash, downloadUrl, fileSize } = this.binaryStorage.storeBinary(
+    const { fileHash, downloadUrl, fileSize } = await this.binaryStorage.storeBinary(
       data.channel,
       data.version,
       data.binaryFilename,
