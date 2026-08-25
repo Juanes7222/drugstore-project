@@ -2,8 +2,9 @@ import { RoleType } from "@pharmacy/shared-types";
 import { useAuthStore } from "./use-auth";
 
 /**
- * Role-based helpers. Subscriptions is the only SAAS_ADMIN-only surface;
- * everything else is available to any authenticated admin/owner/manager.
+ * Role-based helpers for the tenant backoffice. The platform-owner surface
+ * (/admin) additionally requires the server-backed isPlatformAdmin flag;
+ * role alone is not sufficient to reach it.
  */
 export function usePermissions() {
   const user = useAuthStore((state) => state.user);
@@ -12,7 +13,8 @@ export function usePermissions() {
   return {
     role,
     isSaaSAdmin: role === RoleType.SAAS_ADMIN,
-    canViewSubscriptions: role === RoleType.SAAS_ADMIN,
+    isPlatformAdmin:
+      role === RoleType.SAAS_ADMIN && user?.isPlatformAdmin === true,
     canManageUsers: role !== null,
   };
 }

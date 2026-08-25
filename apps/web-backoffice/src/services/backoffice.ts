@@ -9,7 +9,6 @@ import type {
   SaleDetail,
   SalesResponse,
   SessionsResponse,
-  SubscriptionsResponse,
   UserListResponse,
   UserSessionSummary,
   WorkstationsResponse,
@@ -168,17 +167,6 @@ export async function fetchSessions(
 export async function fetchWorkstations(): Promise<WorkstationsResponse> {
   const { data } = await api.get<WorkstationsResponse>(
     "/backoffice/workstations",
-  );
-  return data;
-}
-
-export async function fetchSubscriptions(
-  page: number,
-  pageSize: number,
-): Promise<SubscriptionsResponse> {
-  const { data } = await api.get<SubscriptionsResponse>(
-    "/backoffice/subscriptions",
-    { params: { page, pageSize } },
   );
   return data;
 }

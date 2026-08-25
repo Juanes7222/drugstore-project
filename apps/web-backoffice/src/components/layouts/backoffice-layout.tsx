@@ -28,7 +28,6 @@ import {
   ReceiptIcon,
   DevicesIcon,
   DesktopWindowsIcon,
-  WorkspacePremiumIcon,
   HistoryIcon,
   DarkModeIcon,
   LightModeIcon,
@@ -72,12 +71,6 @@ const NAV_ITEMS: NavItem[] = [
     to: "/workstations",
     labelKey: "nav.workstations",
     icon: DesktopWindowsIcon,
-  },
-  {
-    to: "/subscriptions",
-    labelKey: "nav.subscriptions",
-    icon: WorkspacePremiumIcon,
-    roles: [RoleType.SAAS_ADMIN],
   },
 ];
 

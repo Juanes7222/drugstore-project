@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { RoleType } from "@pharmacy/shared-types";
 import { useAuthStore } from "./hooks/use-auth";
 import { BackofficeLayout } from "./components/layouts/backoffice-layout";
+import { SuperAdminLayout } from "./components/layouts/super-admin-layout";
 import { LoadingState } from "./components/common/states";
 
 const LoginPage = lazy(() =>
@@ -41,13 +42,25 @@ const WorkstationsPage = lazy(() =>
     default: m.WorkstationsPage,
   })),
 );
-const SubscriptionsPage = lazy(() =>
-  import("./pages/subscriptions-page").then((m) => ({
-    default: m.SubscriptionsPage,
-  })),
-);
 const NotFoundPage = lazy(() =>
   import("./pages/not-found-page").then((m) => ({ default: m.NotFoundPage })),
+);
+
+// Platform-owner surface (/admin) — separate layout, palette and pages.
+const PlatformOverviewPage = lazy(() =>
+  import("./pages/admin/platform-overview-page").then((m) => ({
+    default: m.PlatformOverviewPage,
+  })),
+);
+const CustomersPage = lazy(() =>
+  import("./pages/admin/customers-page").then((m) => ({
+    default: m.CustomersPage,
+  })),
+);
+const CustomerDetailPage = lazy(() =>
+  import("./pages/admin/customer-detail-page").then((m) => ({
+    default: m.CustomerDetailPage,
+  })),
 );
 
 function RequireAuth() {
@@ -67,9 +80,17 @@ function RequireAuth() {
   return <Outlet />;
 }
 
-function RequireRole({ role }: { role: RoleType }) {
+/**
+ * Gate for the platform-owner surface: requires the SAAS_ADMIN role AND the
+ * server-backed isPlatformAdmin flag. The server enforces the same condition
+ * on every /saas-admin endpoint; this guard only avoids dead-end navigation.
+ */
+function RequirePlatformAdmin() {
   const user = useAuthStore((state) => state.user);
-  if (user?.role !== role) {
+  if (
+    user?.role !== RoleType.SAAS_ADMIN ||
+    user.isPlatformAdmin !== true
+  ) {
     return <Navigate to="/dashboard" replace />;
   }
   return <Outlet />;
@@ -81,6 +102,24 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
+          {/* Platform owner surface */}
+          <Route element={<RequirePlatformAdmin />}>
+            <Route
+              path="/admin"
+              element={
+                <SuperAdminLayout>
+                  <Outlet />
+                </SuperAdminLayout>
+              }
+            >
+              <Route index element={<PlatformOverviewPage />} />
+              <Route path="customers" element={<CustomersPage />} />
+              <Route path="customers/:customerId" element={<CustomerDetailPage />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
+          </Route>
+
+          {/* Tenant backoffice surface */}
           <Route
             element={
               <BackofficeLayout>
@@ -98,9 +137,6 @@ export function App() {
             <Route path="/sessions" element={<SessionsPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/workstations" element={<WorkstationsPage />} />
-            <Route element={<RequireRole role={RoleType.SAAS_ADMIN} />}>
-              <Route path="/subscriptions" element={<SubscriptionsPage />} />
-            </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Route>

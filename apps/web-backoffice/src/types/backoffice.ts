@@ -293,30 +293,6 @@ export interface WorkstationsResponse {
 }
 
 // ---------------------------------------------------------------------------
-// GET /backoffice/subscriptions
-// ---------------------------------------------------------------------------
-
-export interface SubscriptionRow {
-  id: string;
-  customerName: string;
-  customerTaxId: string | null;
-  customerEmail: string | null;
-  status: string;
-  currentPeriodStart: string | null;
-  currentPeriodEnd: string | null;
-  trialEndsAt: string | null;
-  cancelAtPeriodEnd: boolean;
-  plan: { code: string; name: string };
-  _count: {
-    locations: number;
-    workstationActivations: number;
-    fraudAlerts: number;
-  };
-}
-
-export type SubscriptionsResponse = Paginated<SubscriptionRow>;
-
-// ---------------------------------------------------------------------------
 // GET /users (auth module) and related actions
 // ---------------------------------------------------------------------------
 

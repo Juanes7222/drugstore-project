@@ -24,6 +24,7 @@ const PALETTE = {
     textPrimary: "#0F172A",
     textSecondary: "#5B6779",
     primary: "#0E7490",
+    primaryContrast: "#FFFFFF",
     success: "#15803D",
     warning: "#B45309",
     error: "#DC2626",
@@ -36,6 +37,7 @@ const PALETTE = {
     textPrimary: "#EDF2F7",
     textSecondary: "#94A3B8",
     primary: "#22D3EE",
+    primaryContrast: "#083344",
     success: "#4ADE80",
     warning: "#FBBF24",
     error: "#F87171",
@@ -43,13 +45,59 @@ const PALETTE = {
   },
 } as const;
 
-export function buildTheme(mode: "light" | "dark"): Theme {
-  const c = PALETTE[mode];
+/**
+ * Platform-admin accent: violet family on a violet-tinted canvas so the
+ * owner surface reads as a distinct product next to the teal tenant panel.
+ */
+const ADMIN_PALETTE = {
+  light: {
+    canvas: "#F7F6FB",
+    paper: "#FFFFFF",
+    divider: "#E4E1EF",
+    textPrimary: "#171326",
+    textSecondary: "#5F5878",
+    primary: "#7C3AED",
+    primaryContrast: "#FFFFFF",
+    success: "#15803D",
+    warning: "#B45309",
+    error: "#DC2626",
+    info: "#0369A1",
+  },
+  dark: {
+    canvas: "#141226",
+    paper: "#1C1936",
+    divider: "#2E2A4A",
+    textPrimary: "#EDEBFA",
+    textSecondary: "#A29EC0",
+    primary: "#A78BFA",
+    primaryContrast: "#2E1065",
+    success: "#4ADE80",
+    warning: "#FBBF24",
+    error: "#F87171",
+    info: "#38BDF8",
+  },
+} as const;
+
+interface PaletteSet {
+  canvas: string;
+  paper: string;
+  divider: string;
+  textPrimary: string;
+  textSecondary: string;
+  primary: string;
+  primaryContrast: string;
+  success: string;
+  warning: string;
+  error: string;
+  info: string;
+}
+
+function buildThemeFromPalette(mode: "light" | "dark", c: PaletteSet): Theme {
 
   return createTheme({
     palette: {
       mode,
-      primary: { main: c.primary, contrastText: mode === "light" ? "#FFFFFF" : "#083344" },
+      primary: { main: c.primary, contrastText: c.primaryContrast },
       secondary: { main: mode === "light" ? "#475569" : "#CBD5E1" },
       success: { main: c.success },
       warning: { main: c.warning },
@@ -145,4 +193,14 @@ export function buildTheme(mode: "light" | "dark"): Theme {
       },
     },
   });
+}
+
+/** Tenant-facing backoffice theme (teal). */
+export function buildTheme(mode: "light" | "dark"): Theme {
+  return buildThemeFromPalette(mode, PALETTE[mode]);
+}
+
+/** Platform-owner surface theme (violet) for the /admin routes. */
+export function buildAdminTheme(mode: "light" | "dark"): Theme {
+  return buildThemeFromPalette(mode, ADMIN_PALETTE[mode]);
 }

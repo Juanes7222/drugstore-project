@@ -16,7 +16,8 @@ import Divider from "@mui/material/Divider";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import { BrandMark } from "../components/common/brand-mark";
-import { useAuthStore } from "../hooks/use-auth";
+import { homePathFor, useAuthStore } from "../hooks/use-auth";
+import type { AuthUser } from "../types/backoffice";
 import {
   completeTwoFactor,
   fetchFirebaseConfig,
@@ -75,6 +76,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const setSession = useAuthStore((state) => state.setSession);
+  const storedUser = useAuthStore((state) => state.user);
   const hasSession = useAuthStore((state) => Boolean(state.accessToken));
 
   const [error, setError] = useState<string | null>(null);
@@ -96,12 +98,17 @@ export function LoginPage() {
   });
 
   if (hasSession) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={homePathFor(storedUser)} replace />;
   }
 
-  const from =
-    (location.state as { from?: { pathname?: string } } | null)?.from
-      ?.pathname ?? "/dashboard";
+  // Return to the originally requested route when present; otherwise land
+  // each account on its own surface (platform owners → /admin).
+  const redirectAfterLogin = (user: AuthUser) => {
+    const target =
+      (location.state as { from?: { pathname?: string } } | null)?.from
+        ?.pathname ?? homePathFor(user);
+    navigate(target, { replace: true });
+  };
 
   const handleLogin = async (values: LoginFormValues) => {
     setError(null);
@@ -118,7 +125,7 @@ export function LoginPage() {
         result.expiresAt,
         result.user,
       );
-      navigate(from, { replace: true });
+      redirectAfterLogin(result.user);
     } catch {
       setError(t("login.invalid"));
     } finally {
@@ -142,7 +149,7 @@ export function LoginPage() {
         result.expiresAt,
         result.user,
       );
-      navigate(from, { replace: true });
+      redirectAfterLogin(result.user);
     } catch {
       setError(t("login.twoFactorInvalid"));
     } finally {
@@ -201,7 +208,7 @@ export function LoginPage() {
         result.expiresAt,
         result.user,
       );
-      navigate(from, { replace: true });
+      redirectAfterLogin(result.user);
     } catch (err) {
       const mapped = mapGoogleError(err);
       if (mapped) {
