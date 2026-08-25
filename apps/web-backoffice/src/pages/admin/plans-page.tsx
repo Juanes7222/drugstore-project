@@ -27,6 +27,7 @@ import { formatCop } from "../../utils/format";
 import { PageHeader } from "../../components/common/page-header";
 import { DataTable } from "../../components/tables/data-table";
 import { ConfirmDialog } from "../../components/common/confirm-dialog";
+import { toast } from "../../components/common/toaster";
 import { LoadingState, ErrorState } from "../../components/common/states";
 
 // Form prices are entered in main currency units and stored as cents.
@@ -136,6 +137,10 @@ export function PlansPage() {
       void queryClient.invalidateQueries({ queryKey: ["saas-plan-options"] });
       void queryClient.invalidateQueries({ queryKey: ["saas-revenue"] });
       setDialog({ kind: "closed" });
+      toast.success(t("saas.plans.saved"));
+    },
+    onError: () => {
+      toast.error(t("saas.plans.saveFailed"));
     },
   });
 
@@ -149,6 +154,10 @@ export function PlansPage() {
       void queryClient.invalidateQueries({ queryKey: ["saas-plan-options"] });
       void queryClient.invalidateQueries({ queryKey: ["saas-revenue"] });
       setDialog({ kind: "closed" });
+      toast.success(t("saas.plans.deleted"));
+    },
+    onError: () => {
+      toast.error(t("saas.plans.deleteFailed"));
     },
   });
 

@@ -21,6 +21,7 @@ import { formatDateTime } from "../../utils/format";
 import { PageHeader } from "../../components/common/page-header";
 import { DataTable } from "../../components/tables/data-table";
 import { ConfirmDialog } from "../../components/common/confirm-dialog";
+import { toast } from "../../components/common/toaster";
 import { LoadingState, ErrorState } from "../../components/common/states";
 
 const PAGE_SIZE = 20;
@@ -68,7 +69,10 @@ export function FraudAlertsPage() {
       void queryClient.invalidateQueries({
         queryKey: ["saas-platform-overview"],
       });
-      setPendingResolve(null);
+      toast.success(t("saas.fraud.resolved"));
+    },
+    onError: () => {
+      toast.error(t("saas.fraud.resolveFailed"));
     },
   });
 

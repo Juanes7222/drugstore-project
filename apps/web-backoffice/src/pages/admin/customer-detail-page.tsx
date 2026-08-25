@@ -53,6 +53,7 @@ import {
 import { Alert } from "@mui/material";
 import { KpiCard } from "../../components/common/kpi-card";
 import { PageHeader } from "../../components/common/page-header";
+import { toast } from "../../components/common/toaster";
 import { DataTable } from "../../components/tables/data-table";
 import { StatusChip } from "../../components/common/status-chip";
 import { FiscalStateBar } from "../../components/charts/fiscal-state-bar";
@@ -143,6 +144,18 @@ function CustomerDetailContent({ id }: { id: string }) {
       void queryClient.invalidateQueries({ queryKey: ["saas-customers"] });
       void queryClient.invalidateQueries({ queryKey: ["saas-platform-overview"] });
       void queryClient.invalidateQueries({ queryKey: ["saas-trials-ending"] });
+      // Success feedback per action; failures stay inline in the dialog
+      // because they map to the field the user is fixing.
+      if (dialog === "suspend") toast.success(t("saas.actions.suspended"));
+      else if (dialog === "reactivate") toast.success(t("saas.actions.reactivated"));
+      else if (dialog === "plan") {
+        const planName =
+          plansQuery.data?.find((plan) => plan.code === planCode)?.name ??
+          planCode;
+        toast.success(t("saas.actions.planChanged", { plan: planName }));
+      } else if (dialog === "trial") {
+        toast.success(t("saas.actions.trialExtended", { days: trialDays }));
+      }
       closeDialog();
     },
     onError: (error) => {

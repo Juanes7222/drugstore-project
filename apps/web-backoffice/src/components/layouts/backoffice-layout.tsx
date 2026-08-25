@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useLocation, useNavigate, NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { RoleType } from "@pharmacy/shared-types";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
@@ -20,59 +19,20 @@ import useTheme from "@mui/material/styles/useTheme";
 import { alpha } from "@mui/material/styles";
 import {
   MenuIcon,
-  DashboardIcon,
-  PeopleIcon,
-  PointOfSaleIcon,
-  PaymentsIcon,
-  InventoryIcon,
-  ReceiptIcon,
-  DevicesIcon,
-  DesktopWindowsIcon,
-  HistoryIcon,
   DarkModeIcon,
   LightModeIcon,
   LogoutIcon,
+  SearchIcon,
 } from "../icons/app-icons";
-import type { AppIconComponent } from "../icons/app-icon-component";
+import { BACKOFFICE_NAV_ITEMS } from "../navigation";
 import { BrandMark } from "../common/brand-mark";
+import { CommandPalette } from "../common/command-palette";
 import { useAuthStore } from "../../hooks/use-auth";
 import { useUiStore } from "../../store/ui-store";
 import { usePermissions } from "../../hooks/use-permissions";
 import { logout } from "../../services/auth";
 
 const DRAWER_WIDTH = 248;
-
-interface NavItem {
-  to: string;
-  labelKey: string;
-  icon: AppIconComponent;
-  roles?: RoleType[];
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { to: "/dashboard", labelKey: "nav.dashboard", icon: DashboardIcon },
-  { to: "/users", labelKey: "nav.users", icon: PeopleIcon },
-  { to: "/sales", labelKey: "nav.sales", icon: PointOfSaleIcon },
-  { to: "/cash-shifts", labelKey: "nav.cashShifts", icon: PaymentsIcon },
-  {
-    to: "/inventory-alerts",
-    labelKey: "nav.inventoryAlerts",
-    icon: InventoryIcon,
-  },
-  { to: "/fiscal", labelKey: "nav.fiscal", icon: ReceiptIcon },
-  { to: "/sessions", labelKey: "nav.sessions", icon: DevicesIcon },
-  {
-    to: "/audit",
-    labelKey: "nav.audit",
-    icon: HistoryIcon,
-    roles: [RoleType.ADMIN],
-  },
-  {
-    to: "/workstations",
-    labelKey: "nav.workstations",
-    icon: DesktopWindowsIcon,
-  },
-];
 
 function initialsOf(name: string): string {
   return name
@@ -91,6 +51,9 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
   const isDark = theme.palette.mode === "dark";
   const { user, clearSession } = useAuthStore();
   const { themeMode, setThemeMode } = useUiStore();
+  const setCommandPaletteOpen = useUiStore(
+    (state) => state.setCommandPaletteOpen,
+  );
   const { role } = usePermissions();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -108,7 +71,7 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
     }
   };
 
-  const visibleItems = NAV_ITEMS.filter(
+  const visibleItems = BACKOFFICE_NAV_ITEMS.filter(
     (item) => !item.roles || (role && item.roles.includes(role)),
   );
 
@@ -189,6 +152,16 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
           >
             {t("common.appName")}
           </Typography>
+          <Tooltip
+            title={`${t("palette.placeholder")} (Ctrl+K)`}
+          >
+            <IconButton
+              onClick={() => setCommandPaletteOpen(true)}
+              aria-label={`${t("palette.placeholder")} (Ctrl+K)`}
+            >
+              <SearchIcon />
+            </IconButton>
+          </Tooltip>
           <Tooltip
             title={
               themeMode === "dark"
@@ -277,6 +250,9 @@ export function BackofficeLayout({ children }: { children: ReactNode }) {
           {children}
         </Box>
       </Box>
+
+      {/* Inside the layout so the palette inherits this surface's theme. */}
+      <CommandPalette />
     </Box>
   );
 }

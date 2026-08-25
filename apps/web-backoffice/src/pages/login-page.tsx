@@ -10,14 +10,23 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
+import IconButton from "@mui/material/IconButton";
+import InputAdornment from "@mui/material/InputAdornment";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { alpha } from "@mui/material/styles";
 import { BrandMark } from "../components/common/brand-mark";
 import { homePathFor, useAuthStore } from "../hooks/use-auth";
 import type { AuthUser } from "../types/backoffice";
+import {
+  ArrowUpRightIcon,
+  CheckCircleIcon,
+  EyeIcon,
+  EyeOffIcon,
+  LockIcon,
+} from "../components/icons/app-icons";
 import {
   completeTwoFactor,
   fetchFirebaseConfig,
@@ -71,10 +80,157 @@ function GoogleIcon() {
   );
 }
 
+/** Modules shown on the day-summary ticket; reuses nav labels so the
+ * vocabulary matches what the user will see after signing in. */
+function ReceiptStub() {
+  const { t } = useTranslation();
+  const rows = [
+    t("nav.sales"),
+    t("nav.cashShifts"),
+    t("nav.inventoryAlerts"),
+    t("nav.fiscal"),
+    t("nav.sessions"),
+  ];
+
+  return (
+    <Box className="animate-fade-up" sx={{ animationDelay: "120ms", width: 296 }}>
+      <Box
+        sx={{
+          bgcolor: "#FFFFFF",
+          borderRadius: "10px 10px 0 0",
+          px: 2.5,
+          pt: 2,
+          pb: 1.5,
+          boxShadow: "0 18px 44px rgba(3, 25, 32, 0.4)",
+        }}
+      >
+        <Typography
+          component="p"
+          m={0}
+          mb={1.25}
+          sx={{
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: "#64748B",
+          }}
+        >
+          {t("login.receiptTitle")}
+        </Typography>
+        {rows.map((label) => (
+          <Box key={label} display="flex" alignItems="baseline" py={0.5}>
+            <Typography
+              component="span"
+              m={0}
+              sx={{ fontSize: 12.5, fontWeight: 600, color: "#334155", whiteSpace: "nowrap" }}
+            >
+              {label}
+            </Typography>
+            <Box flex={1} mx={1} sx={{ borderBottom: "2px dotted #CBD5E1", transform: "translateY(-3px)" }} />
+            <Box
+              component="span"
+              sx={{ color: "#15803D", display: "flex", flexShrink: 0, transform: "translateY(3px)" }}
+            >
+              <CheckCircleIcon size={15} />
+            </Box>
+          </Box>
+        ))}
+      </Box>
+      {/* Torn perforation: white strip with circular bites cut out along its
+          top edge, revealing the teal panel behind it. */}
+      <Box
+        aria-hidden
+        sx={{
+          height: 12,
+          backgroundImage:
+            "radial-gradient(circle at 7px 0px, transparent 7px, #FFFFFF 7.5px)",
+          backgroundSize: "16px 12px",
+          backgroundRepeat: "repeat-x",
+        }}
+      />
+    </Box>
+  );
+}
+
+function BrandPanel() {
+  const { t } = useTranslation();
+
+  return (
+    <Box
+      sx={{
+        display: { xs: "block", md: "flex" },
+        flexDirection: "column",
+        justifyContent: "center",
+        px: { xs: 3, md: 8 },
+        py: { xs: 5, md: 0 },
+        color: "#FFFFFF",
+        background:
+          "linear-gradient(165deg, #083944 0%, #0E7490 62%, #1094A6 100%)",
+      }}
+    >
+      <Box sx={{ maxWidth: 460, mx: { xs: "auto", md: 0 } }}>
+        <Box display="flex" alignItems="center" gap={1.5} className="animate-fade-up">
+          <BrandMark size={34} />
+          <Typography
+            sx={{
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: "0.09em",
+              textTransform: "uppercase",
+              color: alpha("#FFFFFF", 0.82),
+            }}
+          >
+            {t("common.appName")}
+          </Typography>
+        </Box>
+
+        <Typography
+          component="h2"
+          className="animate-fade-up"
+          sx={{
+            mt: { xs: 1.5, md: 4 },
+            fontSize: { xs: 26, md: 34 },
+            lineHeight: 1.15,
+            fontWeight: 800,
+            letterSpacing: "-0.03em",
+            animationDelay: "60ms",
+          }}
+        >
+          {t("login.headline")}
+        </Typography>
+
+        <Typography
+          component="p"
+          m={0}
+          className="animate-fade-up"
+          sx={{
+            mt: 1.5,
+            fontSize: 15,
+            lineHeight: 1.6,
+            color: alpha("#FFFFFF", 0.78),
+            animationDelay: "90ms",
+          }}
+        >
+          {t("login.heroSub")}
+        </Typography>
+
+        <Box mt={{ xs: 0, md: 5 }} display={{ xs: "none", md: "block" }}>
+          <ReceiptStub />
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
 export function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  // Account creation (plan selection + Wompi checkout) lives on the public
+  // site; when no landing URL is configured the entry point stays hidden.
+  const landingUrl = import.meta.env.VITE_LANDING_URL?.replace(/\/$/, "");
+  const signupUrl = landingUrl ? `${landingUrl}/#planes` : null;
   const setSession = useAuthStore((state) => state.setSession);
   const storedUser = useAuthStore((state) => state.user);
   const hasSession = useAuthStore((state) => Boolean(state.accessToken));
@@ -83,6 +239,8 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
 
   const loginForm = useForm<LoginFormValues>({
     resolver: zodResolver(LOGIN_SCHEMA),
@@ -108,6 +266,10 @@ export function LoginPage() {
       (location.state as { from?: { pathname?: string } } | null)?.from
         ?.pathname ?? homePathFor(user);
     navigate(target, { replace: true });
+  };
+
+  const trackCapsLock = (event: React.KeyboardEvent) => {
+    setCapsLockOn(event.getModifierState?.("CapsLock") ?? false);
   };
 
   const handleLogin = async (values: LoginFormValues) => {
@@ -220,101 +382,64 @@ export function LoginPage() {
   };
 
   return (
-    <Box
-      display="flex"
-      alignItems="center"
-      justifyContent="center"
-      minHeight="100vh"
-      bgcolor="background.default"
-      px={2}
-    >
-      <Card variant="outlined" sx={{ maxWidth: 420, width: "100%" }}>
-        <CardContent sx={{ p: 4 }}>
-          <Box display="flex" alignItems="center" gap={1.5} mb={1}>
-            <BrandMark size={36} />
-            <Typography variant="h5" component="h1" fontWeight={700}>
-              {t("common.appName")}
+    <Box sx={{ display: { md: "flex" }, minHeight: "100vh", bgcolor: "background.default" }}>
+      <BrandPanel />
+
+      <Box
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        sx={{
+          flex: 1,
+          px: 2,
+          py: { xs: 4, md: 6 },
+        }}
+      >
+        <Card
+          variant="outlined"
+          className="animate-fade-up"
+          sx={{ width: "100%", maxWidth: 408 }}
+        >
+          <Box px={{ xs: 3, sm: 4 }} py={{ xs: 3.5, sm: 4 }}>
+            <Typography variant="h5" component="h1" fontWeight={700} sx={{ letterSpacing: "-0.02em" }}>
+              {challengeToken ? t("login.twoFactorTitle") : t("login.title")}
             </Typography>
-          </Box>
-          <Typography variant="body2" color="text.secondary" mb={3}>
-            {t("login.subtitle")}
-          </Typography>
+            <Typography variant="body2" color="text.secondary" mt={0.5} mb={3}>
+              {challengeToken ? t("login.twoFactorHint") : t("login.subtitle")}
+            </Typography>
 
-          {error ? (
-            <Alert severity="error" sx={{ mb: 2 }} role="alert">
-              {error}
-            </Alert>
-          ) : null}
-
-          {challengeToken ? (
-            <Box
-              component="form"
-              onSubmit={twoFactorForm.handleSubmit(handleTwoFactor)}
-              noValidate
-            >
-              <Typography variant="h6" mb={2}>
-                {t("login.twoFactorTitle")}
-              </Typography>
-              <Typography variant="body2" color="text.secondary" mb={2}>
-                {t("login.twoFactorHint")}
-              </Typography>
-              <TextField
-                label={t("login.totpCode")}
-                inputMode="numeric"
-                fullWidth
-                margin="normal"
-                autoFocus
-                {...twoFactorForm.register("totpCode")}
-                error={Boolean(twoFactorForm.formState.errors.totpCode)}
-                helperText={twoFactorForm.formState.errors.totpCode?.message}
-              />
-              <TextField
-                label={t("login.backupCode")}
-                fullWidth
-                margin="normal"
-                {...twoFactorForm.register("backupCode")}
-              />
-              <Button
-                type="submit"
-                variant="contained"
-                fullWidth
-                size="large"
-                disabled={submitting}
-                sx={{ mt: 3 }}
-              >
-                {submitting ? (
-                  <CircularProgress size={22} color="inherit" />
-                ) : (
-                  t("login.twoFactorSubmit")
-                )}
-              </Button>
+            {/* Assertive live region so screen readers announce failures. */}
+            <Box aria-live="assertive">
+              {error ? (
+                <Alert severity="error" variant="outlined" sx={{ mb: 2 }}>
+                  {error}
+                </Alert>
+              ) : null}
             </Box>
-          ) : (
-            <Box>
+
+            {challengeToken ? (
               <Box
                 component="form"
-                onSubmit={loginForm.handleSubmit(handleLogin)}
+                onSubmit={twoFactorForm.handleSubmit(handleTwoFactor)}
                 noValidate
               >
                 <TextField
-                  label={t("login.identifier")}
+                  label={t("login.totpCode")}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   fullWidth
                   margin="normal"
                   autoFocus
-                  autoComplete="username"
-                  {...loginForm.register("identifier")}
-                  error={Boolean(loginForm.formState.errors.identifier)}
-                  helperText={loginForm.formState.errors.identifier?.message}
+                  {...twoFactorForm.register("totpCode")}
+                  error={Boolean(twoFactorForm.formState.errors.totpCode)}
+                  helperText={twoFactorForm.formState.errors.totpCode?.message}
                 />
                 <TextField
-                  label={t("login.secret")}
-                  type="password"
+                  label={t("login.backupCode")}
+                  autoComplete="off"
                   fullWidth
                   margin="normal"
-                  autoComplete="current-password"
-                  {...loginForm.register("secret")}
-                  error={Boolean(loginForm.formState.errors.secret)}
-                  helperText={loginForm.formState.errors.secret?.message}
+                  {...twoFactorForm.register("backupCode")}
                 />
                 <Button
                   type="submit"
@@ -322,60 +447,175 @@ export function LoginPage() {
                   fullWidth
                   size="large"
                   disabled={submitting}
+                  startIcon={
+                    submitting ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : undefined
+                  }
                   sx={{ mt: 3 }}
                 >
-                  {submitting ? (
-                    <CircularProgress size={22} color="inherit" />
-                  ) : (
-                    t("login.submit")
-                  )}
+                  {t("login.twoFactorSubmit")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="text"
+                  fullWidth
+                  disabled={submitting}
+                  onClick={() => setChallengeToken(null)}
+                  sx={{ mt: 1 }}
+                >
+                  {t("common.cancel")}
                 </Button>
               </Box>
+            ) : (
+              <Box>
+                <Box
+                  component="form"
+                  onSubmit={loginForm.handleSubmit(handleLogin)}
+                  noValidate
+                >
+                  <TextField
+                    label={t("login.identifier")}
+                    fullWidth
+                    margin="normal"
+                    autoFocus
+                    autoComplete="username"
+                    {...loginForm.register("identifier")}
+                    error={Boolean(loginForm.formState.errors.identifier)}
+                    helperText={loginForm.formState.errors.identifier?.message}
+                  />
+                  <TextField
+                    label={t("login.secret")}
+                    type={showSecret ? "text" : "password"}
+                    fullWidth
+                    margin="normal"
+                    autoComplete="current-password"
+                    onKeyDown={trackCapsLock}
+                    onKeyUp={trackCapsLock}
+                    {...loginForm.register("secret", {
+                      onBlur: () => setCapsLockOn(false),
+                    })}
+                    error={Boolean(loginForm.formState.errors.secret)}
+                    helperText={
+                      loginForm.formState.errors.secret?.message ??
+                      (capsLockOn ? t("login.capsLock") : undefined)
+                    }
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton
+                            size="small"
+                            edge="end"
+                            onClick={() => setShowSecret((v) => !v)}
+                            aria-label={
+                              showSecret
+                                ? t("login.hideSecret")
+                                : t("login.showSecret")
+                            }
+                          >
+                            {showSecret ? (
+                              <EyeOffIcon size={17} />
+                            ) : (
+                              <EyeIcon size={17} />
+                            )}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    fullWidth
+                    size="large"
+                    disabled={submitting}
+                    startIcon={
+                      submitting ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : undefined
+                    }
+                    sx={{ mt: 3 }}
+                  >
+                    {t("login.submit")}
+                  </Button>
+                </Box>
 
-              <Box
-                display="flex"
-                alignItems="center"
-                gap={1.5}
-                my={3}
-                role="separator"
-                aria-label={t("login.googleDivider")}
-              >
-                <Divider sx={{ flex: 1 }} />
-                <Typography variant="body2" color="text.secondary">
-                  {t("login.googleDivider")}
+                <Divider sx={{ my: 3 }}>
+                  <Typography variant="body2" color="text.secondary" px={1}>
+                    {t("login.googleDivider")}
+                  </Typography>
+                </Divider>
+
+                <Button
+                  type="button"
+                  variant="outlined"
+                  fullWidth
+                  size="large"
+                  startIcon={<GoogleIcon />}
+                  disabled={submitting || googleSubmitting}
+                  onClick={handleGoogleLogin}
+                  aria-label={t("login.google")}
+                >
+                  {googleSubmitting ? (
+                    <CircularProgress size={20} />
+                  ) : (
+                    t("login.google")
+                  )}
+                </Button>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  align="center"
+                  display="block"
+                  mt={1.5}
+                >
+                  {t("login.googleHint")}
                 </Typography>
-                <Divider sx={{ flex: 1 }} />
-              </Box>
 
-              <Button
-                type="button"
-                variant="outlined"
-                fullWidth
-                size="large"
-                startIcon={<GoogleIcon />}
-                disabled={submitting || googleSubmitting}
-                onClick={handleGoogleLogin}
-                aria-label={t("login.google")}
-              >
-                {googleSubmitting ? (
-                  <CircularProgress size={22} />
-                ) : (
-                  t("login.google")
-                )}
-              </Button>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                align="center"
-                display="block"
-                mt={1.5}
-              >
-                {t("login.googleHint")}
+                {signupUrl ? (
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    gap={0.5}
+                    mt={3}
+                  >
+                    <Typography variant="body2" color="text.secondary">
+                      {t("login.noAccount")}
+                    </Typography>
+                    <Button
+                      component="a"
+                      href={signupUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      variant="text"
+                      size="small"
+                      endIcon={<ArrowUpRightIcon size={14} />}
+                      sx={{ textTransform: "none", fontWeight: 700 }}
+                    >
+                      {t("login.createAccount")}
+                    </Button>
+                  </Box>
+                ) : null}
+              </Box>
+            )}
+
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              gap={0.75}
+              mt={4}
+              sx={{ color: "text.disabled" }}
+            >
+              <LockIcon size={13} aria-hidden />
+              <Typography variant="caption" sx={{ fontSize: 11 }}>
+                {t("login.securityNote")}
               </Typography>
             </Box>
-          )}
-        </CardContent>
-      </Card>
+          </Box>
+        </Card>
+      </Box>
     </Box>
   );
 }

@@ -20,45 +20,20 @@ import Typography from "@mui/material/Typography";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import {
   MenuIcon,
-  DashboardIcon,
-  PeopleIcon,
-  AttachMoneyIcon,
-  TrendingDownIcon,
-  WarningAmberIcon,
-  DevicesIcon,
-  WorkspacePremiumIcon,
-  HowToRegIcon,
-  HistoryIcon,
+  SearchIcon,
   DarkModeIcon,
   LightModeIcon,
   LogoutIcon,
 } from "../icons/app-icons";
-import type { AppIconComponent } from "../icons/app-icon-component";
+import { ADMIN_NAV_ITEMS } from "../navigation";
 import { BrandMark } from "../common/brand-mark";
+import { CommandPalette } from "../common/command-palette";
 import { buildAdminTheme } from "../../theme";
 import { useAuthStore } from "../../hooks/use-auth";
 import { useUiStore } from "../../store/ui-store";
 import { logout } from "../../services/auth";
 
 const DRAWER_WIDTH = 248;
-
-interface AdminNavItem {
-  to: string;
-  labelKey: string;
-  icon: AppIconComponent;
-}
-
-const ADMIN_NAV_ITEMS: AdminNavItem[] = [
-  { to: "/admin", labelKey: "saas.navOverview", icon: DashboardIcon },
-  { to: "/admin/customers", labelKey: "saas.navCustomers", icon: PeopleIcon },
-  { to: "/admin/revenue", labelKey: "saas.navRevenue", icon: AttachMoneyIcon },
-  { to: "/admin/at-risk", labelKey: "saas.navAtRisk", icon: TrendingDownIcon },
-  { to: "/admin/fraud", labelKey: "saas.navFraud", icon: WarningAmberIcon },
-  { to: "/admin/sync", labelKey: "saas.navSync", icon: DevicesIcon },
-  { to: "/admin/plans", labelKey: "saas.navPlans", icon: WorkspacePremiumIcon },
-  { to: "/admin/admins", labelKey: "saas.navAdmins", icon: HowToRegIcon },
-  { to: "/admin/audit", labelKey: "saas.navAudit", icon: HistoryIcon },
-];
 
 function initialsOf(name: string): string {
   return name
@@ -195,6 +170,16 @@ function SuperAdminShell({ children }: { children: ReactNode }) {
             >
               {t("saas.appName")}
             </Typography>
+            <Tooltip title={`${t("palette.placeholder")} (Ctrl+K)`}>
+              <IconButton
+                onClick={() =>
+                  useUiStore.getState().setCommandPaletteOpen(true)
+                }
+                aria-label={`${t("palette.placeholder")} (Ctrl+K)`}
+              >
+                <SearchIcon />
+              </IconButton>
+            </Tooltip>
             <Tooltip
               title={
                 themeMode === "dark" ? t("common.lightMode") : t("common.darkMode")
@@ -280,6 +265,8 @@ function SuperAdminShell({ children }: { children: ReactNode }) {
           </Box>
         </Box>
       </Box>
+      {/* Inside the nested provider so the palette reads violet on /admin. */}
+      <CommandPalette />
     </ThemeProvider>
   );
 }
