@@ -76,6 +76,41 @@ export async function getAppLocalDataDir(): Promise<string> {
 let instance: { client: PGlite; prisma: unknown } | null = null;
 let initPromise: Promise<{ client: PGlite; prisma: unknown }> | null = null;
 
+/**
+ * Identity of the database this process is currently talking to. Generated
+ * once per database lifetime and persisted in _SchemaMeta ('install_id');
+ * exposed via getLocalDatabaseInstallId for state that lives OUTSIDE the
+ * database but is scoped to one install (e.g. the update module's crash
+ * counter) — after a wipe/recreate the id changes, telling such state to
+ * reset itself. Null before init completes or after close.
+ */
+let databaseInstallId: string | null = null;
+
+/**
+ * Read the per-install identity from _SchemaMeta, generating and persisting
+ * one if absent (fresh database, or an install that predates the column).
+ * Caller must have run ensureSchemaMetaTable first.
+ */
+async function ensureDatabaseInstallId(client: PGlite): Promise<string> {
+  const existing = await client.query<{ value: string }>(
+    `SELECT value FROM "_SchemaMeta" WHERE key = 'install_id'`,
+  );
+  const stored = existing.rows[0]?.value;
+  if (stored) return stored;
+
+  const generated = globalThis.crypto.randomUUID();
+  await client.query(
+    `INSERT INTO "_SchemaMeta" (key, value) VALUES ('install_id', $1)
+     ON CONFLICT (key) DO NOTHING`,
+    [generated],
+  );
+  // Re-read so a concurrent writer's value (not ours) becomes the truth.
+  const written = await client.query<{ value: string }>(
+    `SELECT value FROM "_SchemaMeta" WHERE key = 'install_id'`,
+  );
+  return written.rows[0]?.value ?? generated;
+}
+
 // ---------------------------------------------------------------------------
 // SQL helpers
 // ---------------------------------------------------------------------------
@@ -1177,6 +1212,12 @@ export async function getLocalDatabase(): Promise<{
       // The schema SQL is auto-generated from the Prisma schema, so we use a
       // deterministic hash to detect changes — no manual version bump needed.
       await ensureSchemaMetaTable(client);
+
+      // ---- Database identity ----
+      // Resolved before anything else so external install-scoped state can
+      // compare against it during this same boot sequence.
+      databaseInstallId = await ensureDatabaseInstallId(client);
+
       const processedSql = LOCAL_SCHEMA_SQL
         .replace(/^--\s*CreateSchema[\s\S]*?CREATE SCHEMA IF NOT EXISTS "public";\s*/m, '')
         .trim();
@@ -1289,6 +1330,17 @@ export async function closeLocalDatabase(): Promise<void> {
     instance = null;
   }
   initPromise = null;
+  databaseInstallId = null;
+}
+
+/**
+ * Identity of the currently-initialized local database (see the
+ * `databaseInstallId` module comment). Null before getLocalDatabase() has
+ * completed or after closeLocalDatabase(); consumers must treat null as
+ * "identity unknown" and skip comparisons rather than assume a match.
+ */
+export function getLocalDatabaseInstallId(): string | null {
+  return databaseInstallId;
 }
 
 // ---------------------------------------------------------------------------
