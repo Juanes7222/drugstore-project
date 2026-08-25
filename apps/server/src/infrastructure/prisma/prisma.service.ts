@@ -20,12 +20,28 @@ import { buildTenantAwareProxy } from './tenant-aware-proxy';
 
 const REQUEST_TRANSACTION_TIMEOUT_MS = 60_000;
 const REQUEST_TRANSACTION_MAX_WAIT_MS = 10_000;
+// Every HTTP handler runs inside a request-scoped RLS transaction, so each
+// in-flight request holds one pooled connection for its full duration. The pg
+// default (max 10 per process) exhausts quickly under concurrent traffic;
+// size the pool explicitly and let deployments tune it via DB_POOL_MAX.
+const DEFAULT_DB_POOL_MAX = 20;
+
+// Positive finite number, floored — '2.5' → 2, invalid input falls back to the default.
+function resolveDbPoolMax(): number {
+  const raw = Number(process.env.DB_POOL_MAX);
+  return Number.isFinite(raw) && raw > 0
+    ? Math.floor(raw)
+    : DEFAULT_DB_POOL_MAX;
+}
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   constructor(private readonly tenantContext: TenantContextService) {
     const connectionString = process.env.DATABASE_URL;
-    const adapter = new PrismaPg({ connectionString });
+    const adapter = new PrismaPg({ connectionString, max: resolveDbPoolMax() });
     super({ adapter });
     // Return the tenant-aware proxy as the DI instance: `this.prisma.x`
     // inside a request resolves to the active transaction, outside to the
@@ -98,7 +114,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
    * current context (a request or an explicit withTenant wrapper). Kept as
    * the entry point for nested flows that re-use the already-open savepoints.
    */
-  tenantTransaction<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  tenantTransaction<T>(
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
     const subscriptionId = this.tenantContext.getSubscriptionId();
     return this.runWithTenant(subscriptionId, fn);
   }
