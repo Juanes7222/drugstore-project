@@ -5,6 +5,8 @@ export const FirebaseLoginSchema = z.object({
   // Optional: web backoffice logins have no POS terminal and fall back to
   // the shared WEB_ADMIN virtual workstation server-side.
   workstationId: z.string().min(1).optional(),
+  // Friendly label for workstation self-registration on first login.
+  workstationName: z.string().min(1).max(200).optional(),
   hardwareFingerprint: z.string().optional(),
   deviceInfo: z.string().optional(),
 });
@@ -12,6 +14,7 @@ export const FirebaseLoginSchema = z.object({
 export class FirebaseLoginDto implements z.infer<typeof FirebaseLoginSchema> {
   idToken!: string;
   workstationId?: string;
+  workstationName?: string;
   hardwareFingerprint?: string;
   deviceInfo?: string;
 }

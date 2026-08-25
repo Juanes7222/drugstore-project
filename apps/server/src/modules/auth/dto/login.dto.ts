@@ -7,6 +7,9 @@ export const LoginSchema = z.object({
   // Optional: web backoffice logins have no POS terminal and fall back to
   // the shared WEB_ADMIN virtual workstation server-side.
   workstationId: z.string().min(1).optional(),
+  // Friendly label used when the workstation self-registers on first login
+  // from an unknown machine (see AuthService.ensureWorkstation).
+  workstationName: z.string().min(1).max(200).optional(),
   hardwareFingerprint: z.string().optional(),
   deviceInfo: z.string().optional(),
 });
@@ -16,6 +19,7 @@ export class LoginDto implements z.infer<typeof LoginSchema> {
   secret!: string;
   sessionType!: 'PASSWORD' | 'PIN';
   workstationId?: string;
+  workstationName?: string;
   hardwareFingerprint?: string;
   deviceInfo?: string;
 }

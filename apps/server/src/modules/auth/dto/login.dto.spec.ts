@@ -65,4 +65,49 @@ describe('LoginSchema', () => {
 
     expect(result.workstationId).toBe('ws-1');
   });
+
+  it('accepts a workstationName for self-registration', () => {
+    const result = LoginSchema.parse({
+      identifier: 'admin',
+      secret: 'secret',
+      sessionType: 'PASSWORD',
+      workstationId: 'ws-1',
+      workstationName: 'Caja Principal',
+    });
+
+    expect(result.workstationName).toBe('Caja Principal');
+  });
+
+  it('parses without workstationName', () => {
+    const result = LoginSchema.parse({
+      identifier: 'admin',
+      secret: 'secret',
+      sessionType: 'PASSWORD',
+      workstationId: 'ws-1',
+    });
+
+    expect(result.workstationName).toBeUndefined();
+  });
+
+  it('rejects an empty workstationName', () => {
+    expect(() =>
+      LoginSchema.parse({
+        identifier: 'admin',
+        secret: 'secret',
+        sessionType: 'PASSWORD',
+        workstationName: '',
+      }),
+    ).toThrow(ZodError);
+  });
+
+  it('rejects a workstationName longer than 200 characters', () => {
+    expect(() =>
+      LoginSchema.parse({
+        identifier: 'admin',
+        secret: 'secret',
+        sessionType: 'PASSWORD',
+        workstationName: 'a'.repeat(201),
+      }),
+    ).toThrow(ZodError);
+  });
 });

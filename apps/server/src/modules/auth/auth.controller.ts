@@ -81,6 +81,7 @@ export class AuthController {
       secret: dto.secret,
       sessionType: dto.sessionType,
       workstationId: dto.workstationId,
+      workstationName: dto.workstationName,
       hardwareFingerprint: dto.hardwareFingerprint,
       deviceInfo: dto.deviceInfo,
       ipAddress: clientIp,
@@ -141,6 +142,7 @@ export class AuthController {
       displayName: claims.displayName,
       photoURL: claims.photoURL,
       workstationId: dto.workstationId,
+      workstationName: dto.workstationName,
       hardwareFingerprint: dto.hardwareFingerprint,
       deviceInfo: dto.deviceInfo,
       ipAddress:

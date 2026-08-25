@@ -89,6 +89,11 @@ function buildPrismaUser(overrides: Record<string, unknown> = {}): any {
 
 describe('AuthService', () => {
   let prisma: MockProxy<PrismaClient>;
+  // Separate deep mock for the interactive-transaction client: workstation
+  // self-registration must prove writes go THROUGH the tx (never
+  // this.prisma.*), so the callback receives a distinct mock whose delegates
+  // are asserted directly.
+  let tx: MockProxy<PrismaClient>;
   let service: InstanceType<typeof AuthService>;
   let jwtService: { sign: jest.Mock };
   let configService: { get: jest.Mock };
@@ -139,6 +144,18 @@ describe('AuthService', () => {
     };
     prisma.user.update.mockResolvedValue({} as never);
     prisma.userLocationAccess.findMany.mockResolvedValue([] as never);
+    // ensureWorkstation always looks up a supplied workstation id before
+    // deciding whether to self-register; resolve an existing row by default
+    // so logins that pass a known id keep their previous behavior (no
+    // transaction, no create). Lookups by `code` find nothing by default,
+    // which is what code-generation expects.
+    prisma.workstation.findUnique.mockImplementation(async (args: any) =>
+      args.where.id !== undefined ? { id: args.where.id } : null,
+    );
+    // $transaction(interactive) must invoke its callback with the tx client -
+    // never assume a transaction callback runs without wiring this explicitly.
+    tx = mockDeep<PrismaClient>();
+    prisma.$transaction.mockImplementation(async (cb: any) => cb(tx));
 
     service = new AuthService(
       prisma as unknown as PrismaClient,
@@ -546,6 +563,262 @@ describe('AuthService', () => {
       expect(sessionService.createSession).toHaveBeenCalledWith(
         expect.objectContaining({ workstationId: 'ws-firebase-1', userId: 'user-1' }),
       );
+    });
+  });
+
+  describe('login (workstation self-registration)', () => {
+    it('self-registers an unknown workstationId inside a transaction, acquiring the advisory lock before creating', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }) as never,
+      );
+      // Outer lookup and in-tx re-check both find nothing; no code/name clashes.
+      prisma.workstation.findUnique.mockResolvedValue(null as never);
+      tx.workstation.findUnique.mockResolvedValue(null as never);
+      tx.workstation.findFirst.mockResolvedValue(null as never);
+      tx.workstation.create.mockResolvedValue({
+        id: 'ws-new-1',
+        name: 'POS N-1',
+      } as never);
+
+      await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-new-1',
+      });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+      const lockCallOrder = (tx.$executeRaw as jest.Mock).mock
+        .invocationCallOrder[0];
+      const createCallOrder = (tx.workstation.create as jest.Mock).mock
+        .invocationCallOrder[0];
+      expect(lockCallOrder).toBeLessThan(createCallOrder);
+      expect(tx.workstation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            id: 'ws-new-1',
+            code: expect.stringMatching(/^AUTO-[0-9A-F]{6}$/),
+            isActive: true,
+            registeredAt: expect.any(Date),
+          }),
+        }),
+      );
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ workstationId: 'ws-new-1', userId: 'user-1' }),
+      );
+    });
+
+    it('does not open a transaction when the supplied workstationId already exists', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }) as never,
+      );
+      // beforeEach default resolves findUnique({ where: { id } }) to a row.
+
+      await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-known-1',
+      });
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(tx.workstation.create).not.toHaveBeenCalled();
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workstationId: 'ws-known-1',
+          userId: 'user-1',
+        }),
+      );
+    });
+
+    it('skips creation when the in-transaction re-check finds the workstation created by a racing login', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }) as never,
+      );
+      // Outer lookup misses, but the re-check inside the transaction wins.
+      prisma.workstation.findUnique.mockResolvedValue(null as never);
+      tx.workstation.findUnique.mockResolvedValue({ id: 'ws-raced' } as never);
+
+      await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-raced',
+      });
+
+      expect(tx.workstation.create).not.toHaveBeenCalled();
+      expect(sessionService.createSession).toHaveBeenCalledWith(
+        expect.objectContaining({ workstationId: 'ws-raced' }),
+      );
+    });
+
+    it('uses the requested workstation name verbatim when it is free', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }) as never,
+      );
+      prisma.workstation.findUnique.mockResolvedValue(null as never);
+      tx.workstation.findUnique.mockResolvedValue(null as never);
+      tx.workstation.findFirst.mockResolvedValue(null as never);
+      tx.workstation.create.mockResolvedValue({
+        id: 'ws-caja',
+        name: 'Caja Principal',
+      } as never);
+
+      await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-caja-ab12cd34',
+        workstationName: 'Caja Principal',
+      });
+
+      expect(tx.workstation.findFirst).toHaveBeenCalledWith({
+        where: { name: 'Caja Principal' },
+        select: { id: true },
+      });
+      expect(tx.workstation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ name: 'Caja Principal' }),
+        }),
+      );
+    });
+
+    it('falls back to the POS id fragment when the requested name is taken', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }) as never,
+      );
+      prisma.workstation.findUnique.mockResolvedValue(null as never);
+      tx.workstation.findUnique.mockResolvedValue(null as never);
+      // First candidate ('Caja Principal') clashes; 'POS CD34' is free.
+      tx.workstation.findFirst
+        .mockResolvedValueOnce({ id: 'other-ws' } as never)
+        .mockResolvedValue(null as never);
+      tx.workstation.create.mockResolvedValue({
+        id: 'ws-caja-ab12cd34',
+        name: 'POS CD34',
+      } as never);
+
+      await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-caja-ab12cd34',
+        workstationName: 'Caja Principal',
+      });
+
+      expect(tx.workstation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ name: 'POS CD34' }),
+        }),
+      );
+    });
+
+    it('suffixes the requested name with the id fragment when every candidate clashes', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }) as never,
+      );
+      prisma.workstation.findUnique.mockResolvedValue(null as never);
+      tx.workstation.findUnique.mockResolvedValue(null as never);
+      // Both candidates taken.
+      tx.workstation.findFirst.mockResolvedValue({ id: 'other-ws' } as never);
+      tx.workstation.create.mockResolvedValue({
+        id: 'ws-caja-ab12cd34',
+        name: 'Caja Principal (CD34)',
+      } as never);
+
+      await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-caja-ab12cd34',
+        workstationName: 'Caja Principal',
+      });
+
+      expect(tx.workstation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ name: 'Caja Principal (CD34)' }),
+        }),
+      );
+    });
+
+    it('retries code generation past collisions until an unused AUTO- code is found', async () => {
+      prisma.user.findFirst.mockResolvedValue(
+        buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }),
+      );
+      prisma.workstation.findUnique.mockResolvedValue(null as never);
+      const seenCodes: string[] = [];
+      // The in-tx re-check runs first (lookup by id); after two code
+      // candidates clash, the third is accepted.
+      tx.workstation.findUnique.mockImplementation(async (args: any) => {
+        if (args.where.id !== undefined) return null;
+        seenCodes.push(args.where.code);
+        return seenCodes.length <= 2 ? { id: 'other-ws' } : null;
+      });
+      tx.workstation.findFirst.mockResolvedValue(null as never);
+      tx.workstation.create.mockResolvedValue({
+        id: 'ws-collide',
+        name: 'POS LIDE',
+      } as never);
+
+      await service.login({
+        identifier: 'user@example.com',
+        secret: 'pw',
+        sessionType: 'PASSWORD',
+        workstationId: 'ws-collide',
+      });
+
+      expect(seenCodes.length).toBe(3);
+      expect(seenCodes[0]).not.toBe(seenCodes[1]);
+      expect(seenCodes[1]).not.toBe(seenCodes[2]);
+      expect(tx.workstation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            // The create must use the accepted third candidate, not a fresh one.
+            code: seenCodes[2],
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('loginWithFirebase (workstation self-registration)', () => {
+    it('self-registers an unknown workstationId the same way password login does', async () => {
+      const existing = buildPrismaUser({
+        id: 'fb-user-1',
+        firebaseUid: 'fb-uid-1',
+        email: 'existing@example.com',
+      });
+      prisma.user.findFirst.mockResolvedValue(existing as never);
+      prisma.workstation.findUnique.mockResolvedValue(null as never);
+      tx.workstation.findUnique.mockResolvedValue(null as never);
+      tx.workstation.findFirst.mockResolvedValue(null as never);
+      tx.workstation.create.mockResolvedValue({
+        id: 'ws-fb-new',
+        name: 'Caja Firebase',
+      } as never);
+
+      const result = await service.loginWithFirebase({
+        firebaseUid: 'fb-uid-1',
+        email: 'existing@example.com',
+        displayName: null,
+        photoURL: null,
+        workstationId: 'ws-fb-new',
+        workstationName: 'Caja Firebase',
+      });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.workstation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            id: 'ws-fb-new',
+            name: 'Caja Firebase',
+            isActive: true,
+          }),
+        }),
+      );
+      expect(result.accessToken).toBe('signed-jwt');
+      expect(result.user.id).toBe('fb-user-1');
     });
   });
 

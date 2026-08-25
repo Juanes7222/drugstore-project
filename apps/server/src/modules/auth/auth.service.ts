@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { acquireAdvisoryLock } from '@/common/utils/advisory-lock';
 import { EnvConfig } from '@/config/env.schema';
 import {
   AuthMethod,
@@ -9,7 +10,7 @@ import {
   SessionRevocationReason,
   UserStatus,
 } from '@pharmacy/database';
-import type { User as PrismaUser } from '@pharmacy/database';
+import type { Prisma, User as PrismaUser } from '@pharmacy/database';
 import { User } from '@pharmacy/shared-types';
 import * as crypto from 'node:crypto';
 import { PasswordHasherService } from './services/password-hasher.service';
@@ -181,18 +182,22 @@ export class AuthService {
     secret: string;
     sessionType: 'PASSWORD' | 'PIN';
     workstationId?: string;
+    workstationName?: string;
     hardwareFingerprint?: string;
     ipAddress?: string;
     userAgent?: string;
     deviceInfo?: string;
   }): Promise<AuthResponseData> {
     // Web backoffice sessions have no POS terminal; fall back to the shared
-    // WEB_ADMIN virtual workstation when none is supplied.
+    // WEB_ADMIN virtual workstation when none is supplied. Unknown POS ids
+    // self-register here (first login from a new machine).
     const { workstationId: suppliedWorkstationId, ...restParams } = params;
     const resolvedParams = {
       ...restParams,
-      workstationId:
-        suppliedWorkstationId ?? (await this.resolveWebWorkstationId()),
+      workstationId: await this.ensureWorkstation(
+        suppliedWorkstationId,
+        params.workstationName,
+      ),
     };
 
     const user = await this.validateCredentials(
@@ -257,18 +262,22 @@ export class AuthService {
     displayName: string | null;
     photoURL: string | null;
     workstationId?: string;
+    workstationName?: string;
     hardwareFingerprint?: string;
     ipAddress?: string;
     userAgent?: string;
     deviceInfo?: string;
   }): Promise<AuthResponseData> {
     // Same WEB_ADMIN fallback as password login: Firebase login is also
-    // used by the web backoffice without a POS terminal.
+    // used by the web backoffice without a POS terminal. Unknown POS ids
+    // self-register here (first login from a new machine).
     const { workstationId: suppliedWorkstationId, ...restParams } = params;
     const resolvedParams = {
       ...restParams,
-      workstationId:
-        suppliedWorkstationId ?? (await this.resolveWebWorkstationId()),
+      workstationId: await this.ensureWorkstation(
+        suppliedWorkstationId,
+        params.workstationName,
+      ),
     };
 
     let user = await this.prisma.user.findFirst({
@@ -1069,6 +1078,102 @@ export class AuthService {
       select: { id: true },
     });
     return workstation.id;
+  }
+
+  /**
+   * Resolve the workstation a login comes from, self-registering unknown
+   * machines. A POS install generates its own stable workstation id and
+   * persists it locally; the first login from that machine creates the row
+   * here, so no seeding step is needed when a pharmacy plugs in another PC.
+   * The licensing layer still caps how many of these can be ACTIVATED per
+   * location (plan.maxWorkstationsPerLocation) — registration itself is free.
+   *
+   * Serialized by an advisory lock keyed on the supplied id: two logins from
+   * the same new machine racing would otherwise both try to create the row.
+   */
+  private async ensureWorkstation(
+    suppliedWorkstationId?: string,
+    workstationName?: string,
+  ): Promise<string> {
+    if (!suppliedWorkstationId) {
+      return this.resolveWebWorkstationId();
+    }
+
+    const existing = await this.prisma.workstation.findUnique({
+      where: { id: suppliedWorkstationId },
+      select: { id: true },
+    });
+    if (existing) return existing.id;
+
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLock(
+        tx,
+        `${suppliedWorkstationId}:WORKSTATION_SELF_REGISTER`,
+      );
+
+      const raced = await tx.workstation.findUnique({
+        where: { id: suppliedWorkstationId },
+        select: { id: true },
+      });
+      if (raced) return raced.id;
+
+      const created = await tx.workstation.create({
+        data: {
+          id: suppliedWorkstationId,
+          code: await this.generateWorkstationCode(tx),
+          name: await this.generateWorkstationName(
+            tx,
+            suppliedWorkstationId,
+            workstationName,
+          ),
+          isActive: true,
+          registeredAt: new Date(),
+        },
+        select: { id: true, name: true },
+      });
+      this.logger.log(
+        `Self-registered workstation ${created.id} (${created.name})`,
+      );
+      return created.id;
+    });
+  }
+
+  /** Unique machine-readable code for a self-registered workstation. */
+  private async generateWorkstationCode(tx: Prisma.TransactionClient): Promise<string> {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = `AUTO-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+      const clash = await tx.workstation.findUnique({
+        where: { code: candidate },
+        select: { id: true },
+      });
+      if (!clash) return candidate;
+    }
+    throw new Error('Could not generate a unique workstation code');
+  }
+
+  /**
+   * Unique display name: uses the client-supplied label when available and
+   * disambiguates collisions with an id fragment (name is @unique).
+   */
+  private async generateWorkstationName(
+    tx: Prisma.TransactionClient,
+    workstationId: string,
+    requestedName?: string,
+  ): Promise<string> {
+    const candidates = [
+      ...(requestedName ? [requestedName] : []),
+      `POS ${workstationId.slice(-4).toUpperCase()}`,
+    ];
+    for (const candidate of candidates) {
+      const clash = await tx.workstation.findFirst({
+        where: { name: candidate },
+        select: { id: true },
+      });
+      if (!clash) return candidate;
+    }
+    // Both candidates taken — fall back to the id fragment suffix, which is
+    // unique per workstation by construction.
+    return `${requestedName ?? 'POS'} (${workstationId.slice(-4).toUpperCase()})`;
   }
 
   private async issueSessionInternal(

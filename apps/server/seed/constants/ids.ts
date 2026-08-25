@@ -45,6 +45,11 @@ const CLASS_INSTITUCIONAL = 'class_institucional' as const;
 // Estaciones de trabajo
 const WS_PRINCIPAL = 'ws_principal' as const;
 const WS_SECUNDARIA = 'ws_secundaria' as const;
+// Extra stations for multi-station dev testing (dev:multi --stations=N).
+// Seeded WITHOUT activations: they authenticate fine but must be rejected
+// at license activation by the plan's maxWorkstationsPerLocation limit.
+const WS_TERCERA = 'ws_tercera' as const;
+const WS_CUARTA = 'ws_cuarta' as const;
 
 // Usuarios
 const USER_ADMIN = 'user_admin' as const;
@@ -312,6 +317,8 @@ export const IDS = {
   CLASS_INSTITUCIONAL,
   WS_PRINCIPAL,
   WS_SECUNDARIA,
+  WS_TERCERA,
+  WS_CUARTA,
   USER_ADMIN,
   USER_CASHIER1,
   USER_CASHIER2,

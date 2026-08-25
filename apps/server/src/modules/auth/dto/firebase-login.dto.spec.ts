@@ -24,4 +24,32 @@ describe('FirebaseLoginSchema', () => {
       FirebaseLoginSchema.parse({ idToken: 'tok', workstationId: '' }),
     ).toThrow(ZodError);
   });
+
+  it('accepts a workstationName for self-registration', () => {
+    const result = FirebaseLoginSchema.parse({
+      idToken: 'tok',
+      workstationId: 'ws-1',
+      workstationName: 'Caja Firebase',
+    });
+
+    expect(result.workstationName).toBe('Caja Firebase');
+  });
+
+  it('parses without workstationName', () => {
+    const result = FirebaseLoginSchema.parse({ idToken: 'tok' });
+
+    expect(result.workstationName).toBeUndefined();
+  });
+
+  it('rejects an empty workstationName', () => {
+    expect(() =>
+      FirebaseLoginSchema.parse({ idToken: 'tok', workstationName: '' }),
+    ).toThrow(ZodError);
+  });
+
+  it('rejects a workstationName longer than 200 characters', () => {
+    expect(() =>
+      FirebaseLoginSchema.parse({ idToken: 'tok', workstationName: 'a'.repeat(201) }),
+    ).toThrow(ZodError);
+  });
 });
