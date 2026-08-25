@@ -8,7 +8,7 @@
  * Role-gated to MANAGER, OWNER, or SAAS_ADMIN.
  */
 
-import { type CSSProperties, type FC, useCallback, useEffect, useState } from 'react';
+import { type CSSProperties, type FC, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocalSessionStore } from '../auth/local-session.store';
 import { useLocalAdjustmentService, useSalesHistoryService, useInvoiceService } from '../../renderer/components/common/service-context';
@@ -81,7 +81,19 @@ export const SalesHistoryPage: FC = () => {
     role === RoleType.OWNER ||
     role === RoleType.SAAS_ADMIN;
 
+  // Dev-only invocation counter — makes "the list keeps reloading" diagnosable
+  // from the console: the log line shows how often loadSales fires and with
+  // which filters, without touching production builds.
+  const loadCountRef = useRef(0);
+
   const loadSales = useCallback(async () => {
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.info(
+        `[SalesHistoryPage] loadSales #${++loadCountRef.current}`,
+        JSON.stringify(filters),
+      );
+    }
     setLoading(true);
     setError(null);
     try {
@@ -96,9 +108,15 @@ export const SalesHistoryPage: FC = () => {
     }
   }, [salesHistoryService, filters, t]);
 
+  // Re-fetch only when the filter set actually changes. Keying the effect on
+  // the serialized filters (not on `loadSales` itself) keeps transient
+  // identity churn — a new `t` from i18next, a re-provisioned context value —
+  // from re-triggering full list reloads in a loop.
+  const filtersKey = JSON.stringify(filters);
   useEffect(() => {
     void loadSales();
-  }, [loadSales]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersKey]);
 
   const loadDetail = useCallback(
     async (saleId: string) => {
