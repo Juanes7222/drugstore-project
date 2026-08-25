@@ -57,6 +57,8 @@ export class SaasAdminAccessAuditService {
     subscriptionId: string;
     endpoint: string;
     ipAddress?: string | null;
+    /** Extra payload merged into the stored details JSON (e.g. suspension reason). */
+    details?: Record<string, unknown>;
   }): Promise<void> {
     try {
       await this.prisma.auditLog.create({
@@ -70,7 +72,7 @@ export class SaasAdminAccessAuditService {
           userRole: params.actorUser.role,
           subscriptionId: params.subscriptionId,
           ipAddress: params.ipAddress ?? null,
-          details: JSON.stringify({ endpoint: params.endpoint }),
+          details: JSON.stringify({ endpoint: params.endpoint, ...params.details }),
         },
       });
     } catch (error) {

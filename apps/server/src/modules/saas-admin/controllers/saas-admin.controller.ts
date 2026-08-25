@@ -16,21 +16,34 @@ import { SaasAdminOverviewService } from '../services/saas-admin-overview.servic
 import { SaasAdminCustomerService } from '../services/saas-admin-customer.service';
 import { SaasAdminFraudService } from '../services/saas-admin-fraud.service';
 import { SaasAdminAccessAuditService } from '../services/saas-admin-access-audit.service';
+import { SaasAdminLifecycleService } from '../services/saas-admin-lifecycle.service';
+import { SaasAdminRevenueService } from '../services/saas-admin-revenue.service';
+import { SaasAdminAtRiskService } from '../services/saas-admin-at-risk.service';
 import {
   AccessAuditQueryDto,
   AccessAuditQuerySchema,
+  AtRiskQueryDto,
+  AtRiskQuerySchema,
+  ChangePlanBodyDto,
+  ChangePlanBodySchema,
   CustomerIdParamDto,
   CustomerIdParamSchema,
+  CustomerPaymentsQueryDto,
+  CustomerPaymentsQuerySchema,
   CustomerSalesQueryDto,
   CustomerSalesQuerySchema,
   CustomersQueryDto,
   CustomersQuerySchema,
+  ExtendTrialBodyDto,
+  ExtendTrialBodySchema,
   FraudAlertIdParamDto,
   FraudAlertIdParamSchema,
   FraudAlertsQueryDto,
   FraudAlertsQuerySchema,
   ResolveFraudAlertBodyDto,
   ResolveFraudAlertBodySchema,
+  SuspendCustomerBodyDto,
+  SuspendCustomerBodySchema,
   TrialsEndingQueryDto,
   TrialsEndingQuerySchema,
 } from '../dto/saas-admin-query.dto';
@@ -43,12 +56,29 @@ export class SaasAdminController {
     private readonly customer: SaasAdminCustomerService,
     private readonly fraud: SaasAdminFraudService,
     private readonly accessAudit: SaasAdminAccessAuditService,
+    private readonly lifecycle: SaasAdminLifecycleService,
+    private readonly revenue: SaasAdminRevenueService,
+    private readonly atRisk: SaasAdminAtRiskService,
   ) {}
 
   /** GET /saas-admin/platform-overview — cross-tenant KPIs. */
   @Get('platform-overview')
   getPlatformOverview() {
     return this.overview.getPlatformOverview();
+  }
+
+  /** GET /saas-admin/revenue — platform revenue aggregates (read-only). */
+  @Get('revenue')
+  getRevenue() {
+    return this.revenue.getRevenue();
+  }
+
+  /** GET /saas-admin/at-risk — tenants with stale or no confirmed sales. */
+  @Get('at-risk')
+  getAtRiskCustomers(
+    @Query(new ZodValidationPipe(AtRiskQuerySchema)) query: AtRiskQueryDto,
+  ) {
+    return this.atRisk.getAtRiskCustomers(query.inactiveDays);
   }
 
   /** GET /saas-admin/customers — paginated subscription listing. */
@@ -116,6 +146,63 @@ export class SaasAdminController {
     @Param(new ZodValidationPipe(CustomerIdParamSchema)) params: CustomerIdParamDto,
   ) {
     return this.customer.getFiscalStatus(user, params.id);
+  }
+
+  /** GET /saas-admin/customers/:id/payments — paged payment history, newest first. */
+  @Get('customers/:id/payments')
+  getCustomerPayments(
+    @CurrentUser() user: User,
+    @Param(new ZodValidationPipe(CustomerIdParamSchema)) params: CustomerIdParamDto,
+    @Query(new ZodValidationPipe(CustomerPaymentsQuerySchema))
+    query: CustomerPaymentsQueryDto,
+  ) {
+    return this.revenue.getCustomerPayments(user, params.id, query);
+  }
+
+  // Lifecycle actions reuse licensing's SubscriptionsService transition
+  // rules; each returns the same row shape as GET /customers/:id.
+
+  /** POST /saas-admin/customers/:id/suspend — idempotent on SUSPENDED. */
+  @Post('customers/:id/suspend')
+  suspendCustomer(
+    @CurrentUser() user: User,
+    @Param(new ZodValidationPipe(CustomerIdParamSchema)) params: CustomerIdParamDto,
+    @Body(new ZodValidationPipe(SuspendCustomerBodySchema)) body: SuspendCustomerBodyDto,
+    @Req() request: Request,
+  ) {
+    return this.lifecycle.suspend(user, params.id, body.reason, request.ip || null);
+  }
+
+  /** POST /saas-admin/customers/:id/reactivate — only from SUSPENDED/PAST_DUE. */
+  @Post('customers/:id/reactivate')
+  reactivateCustomer(
+    @CurrentUser() user: User,
+    @Param(new ZodValidationPipe(CustomerIdParamSchema)) params: CustomerIdParamDto,
+    @Req() request: Request,
+  ) {
+    return this.lifecycle.reactivate(user, params.id, request.ip || null);
+  }
+
+  /** POST /saas-admin/customers/:id/change-plan — keeps the current period. */
+  @Post('customers/:id/change-plan')
+  changeCustomerPlan(
+    @CurrentUser() user: User,
+    @Param(new ZodValidationPipe(CustomerIdParamSchema)) params: CustomerIdParamDto,
+    @Body(new ZodValidationPipe(ChangePlanBodySchema)) body: ChangePlanBodyDto,
+    @Req() request: Request,
+  ) {
+    return this.lifecycle.changePlan(user, params.id, body, request.ip || null);
+  }
+
+  /** POST /saas-admin/customers/:id/extend-trial — TRIAL only. */
+  @Post('customers/:id/extend-trial')
+  extendCustomerTrial(
+    @CurrentUser() user: User,
+    @Param(new ZodValidationPipe(CustomerIdParamSchema)) params: CustomerIdParamDto,
+    @Body(new ZodValidationPipe(ExtendTrialBodySchema)) body: ExtendTrialBodyDto,
+    @Req() request: Request,
+  ) {
+    return this.lifecycle.extendTrial(user, params.id, body.days, request.ip || null);
   }
 
   /** GET /saas-admin/fraud-alerts — paged cross-tenant fraud queue. */

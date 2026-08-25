@@ -71,6 +71,28 @@ export const TrialsEndingQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(90).default(14),
 });
 
+/** Lifecycle action bodies — platform operator, cross-tenant mutations. */
+export const SuspendCustomerBodySchema = z.object({
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+
+export const ChangePlanBodySchema = z.object({
+  planCode: z.string().trim().min(1).max(50),
+});
+
+export const ExtendTrialBodySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90),
+});
+
+export const CustomerPaymentsQuerySchema = z.object({
+  page: pageSchema.optional(),
+  pageSize: pageSizeSchema.optional(),
+});
+
+export const AtRiskQuerySchema = z.object({
+  inactiveDays: z.coerce.number().int().min(7).max(90).default(14),
+});
+
 export type CustomersQueryDto = z.infer<typeof CustomersQuerySchema>;
 export type CustomerIdParamDto = z.infer<typeof CustomerIdParamSchema>;
 export type CustomerSalesQueryDto = z.infer<typeof CustomerSalesQuerySchema>;
@@ -81,3 +103,10 @@ export type ResolveFraudAlertBodyDto = z.infer<
 >;
 export type AccessAuditQueryDto = z.infer<typeof AccessAuditQuerySchema>;
 export type TrialsEndingQueryDto = z.infer<typeof TrialsEndingQuerySchema>;
+export type SuspendCustomerBodyDto = z.infer<typeof SuspendCustomerBodySchema>;
+export type ChangePlanBodyDto = z.infer<typeof ChangePlanBodySchema>;
+export type ExtendTrialBodyDto = z.infer<typeof ExtendTrialBodySchema>;
+export type CustomerPaymentsQueryDto = z.infer<
+  typeof CustomerPaymentsQuerySchema
+>;
+export type AtRiskQueryDto = z.infer<typeof AtRiskQuerySchema>;

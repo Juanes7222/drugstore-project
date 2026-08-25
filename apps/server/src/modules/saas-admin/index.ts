@@ -23,3 +23,12 @@ export type {
   SaasAdminAccessAuditResult,
   AccessAuditQuery,
 } from './services/saas-admin-access-audit.service';
+export type {
+  SaasAdminRevenueResult,
+  SaasAdminRevenueWindow,
+  SaasAdminMonthlyRevenue,
+  SaasAdminPlanDistributionRow,
+  SaasAdminPaymentRow,
+  SaasAdminCustomerPaymentsResult,
+} from './services/saas-admin-revenue.service';
+export type { SaasAdminAtRiskRow } from './services/saas-admin-at-risk.service';

@@ -14,6 +14,7 @@ import {
   SubscriptionStatus,
 } from '@pharmacy/database';
 import { SubscriptionNotFoundException } from '../exceptions/subscription-not-found.exception';
+import { aggregateAcrossTenants } from './saas-admin-tenant-aggregation';
 
 export interface PlatformCustomersSummary {
   total: number;
@@ -81,8 +82,6 @@ export interface SaasAdminTrialsEndingResult {
   trials: SaasAdminTrialEndingRow[];
 }
 
-type SubscriptionTx = Prisma.TransactionClient;
-
 const CUSTOMER_ROW_SELECT = {
   id: true,
   customerName: true,
@@ -102,9 +101,6 @@ const CUSTOMER_ROW_SELECT = {
     },
   },
 } as const;
-
-/** How many tenants are aggregated concurrently inside RLS-scoped transactions. */
-const TENANT_AGGREGATION_CONCURRENCY = 10;
 
 @Injectable()
 export class SaasAdminOverviewService {
@@ -136,7 +132,8 @@ export class SaasAdminOverviewService {
     // Sale enforces FORCE ROW LEVEL SECURITY, so the platform-wide 30-day
     // total must be aggregated once per tenant inside an RLS-scoped
     // transaction; one unscoped aggregate would fail closed to zero rows.
-    const partials = await this.aggregateAcrossTenants(
+    const partials = await aggregateAcrossTenants(
+      this.prisma,
       subscriptions.map((s) => s.id),
       async (tx, subscriptionId) => {
         const aggregate = await tx.sale.aggregate({
@@ -343,7 +340,8 @@ export class SaasAdminOverviewService {
     // confirmed sale; aggregateAcrossTenants preserves input order.
     const missing = subscriptionIds.filter((id) => !latest.has(id));
     if (missing.length > 0) {
-      const saleMaxima = await this.aggregateAcrossTenants(
+      const saleMaxima = await aggregateAcrossTenants(
+        this.prisma,
         missing,
         async (tx, subscriptionId) => {
           const latestSale = await tx.sale.findFirst({
@@ -363,36 +361,6 @@ export class SaasAdminOverviewService {
     }
 
     return latest;
-  }
-
-  /**
-   * Run a per-tenant read inside an RLS-scoped transaction for each
-   * subscription id, bounded concurrency, results in input order.
-   */
-  private async aggregateAcrossTenants<T>(
-    subscriptionIds: string[],
-    fn: (tx: SubscriptionTx, subscriptionId: string) => Promise<T>,
-  ): Promise<T[]> {
-    const results = new Array<T>(subscriptionIds.length);
-    for (
-      let start = 0;
-      start < subscriptionIds.length;
-      start += TENANT_AGGREGATION_CONCURRENCY
-    ) {
-      const batch = subscriptionIds.slice(
-        start,
-        start + TENANT_AGGREGATION_CONCURRENCY,
-      );
-      const settled = await Promise.all(
-        batch.map((subscriptionId) =>
-          this.prisma.withTenant(subscriptionId, (tx) => fn(tx, subscriptionId)),
-        ),
-      );
-      for (let i = 0; i < batch.length; i += 1) {
-        results[start + i] = settled[i];
-      }
-    }
-    return results;
   }
 
   private summarizeSubscriptionStatuses(
