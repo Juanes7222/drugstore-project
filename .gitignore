@@ -160,6 +160,7 @@ prompts/
 .kiro/
 # Root runtime upload dir only — anchored so source dirs named storage/ stay tracked
 /storage/
+apps/server/storage/
 
 # Production deployment local state (docker-compose.prod.yml)
 secrets/
