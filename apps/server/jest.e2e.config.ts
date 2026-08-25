@@ -18,9 +18,13 @@ const config: Config = {
       '<rootDir>/../../packages/shared-types/src/index.ts',
     '^@pharmacy/shared-validation$':
       '<rootDir>/../../packages/shared-validation/src/index.ts',
-    '^@pharmacy/database$':
-      '<rootDir>/../../packages/database/src/index.ts',
-    '^@prisma/client$': '<rootDir>/generated/client',
+    // Runtime Prisma: the generated CJS client at the workspace root. The
+    // TS source barrel (packages/database/src/index.ts) re-exports the
+    // generated client through './x.js' specifiers and import.meta, which
+    // jest-resolve/ts-jest cannot execute; the generated client's own
+    // runtime shape is identical.
+    '^@pharmacy/database$': '<rootDir>/../../node_modules/.prisma/client',
+    '^@prisma/client$': '<rootDir>/../../node_modules/.prisma/client',
   },
   setupFiles: ['./test/set-env.ts'],
   coverageDirectory: './coverage-e2e',

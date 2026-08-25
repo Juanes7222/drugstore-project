@@ -9,12 +9,14 @@ allowBuilds:
   '@scarf/scarf': true
   argon2: true
   core-js: true
+  cpu-features: true
   edgedriver: false
   esbuild: true
   geckodriver: false
   msgpackr-extract: true
   prisma: true
   protobufjs: true
+  ssh2: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@turbo/darwin-64@2.10.4'
