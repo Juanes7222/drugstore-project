@@ -10,7 +10,11 @@ import {
 } from '@nestjs/common';
 import { UpdatesService } from './updates.service';
 import { TelemetryService } from './telemetry.service';
-import { UpdateCheckQuerySchema, UpdateTelemetrySchema } from './dto';
+import {
+  UpdateCheckQuerySchema,
+  UpdateTelemetryRequestSchema,
+  type UpdateTelemetryRequestInput,
+} from './dto';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import { Public } from '@/common/decorators/public.decorator';
 
@@ -55,15 +59,26 @@ export class UpdatesController {
 
   /**
    * Ingest telemetry from a workstation after an update attempt.
-   * The body includes an HMAC signature for verification.
-   * Returns 202 Accepted after persisting the event.
+   * Accepts either a single event or a batch envelope ({ events: [...] })
+   * from the offline-queue flush, capped at MAX_TELEMETRY_BATCH_SIZE.
+   * Each body includes an HMAC signature for verification; in a batch,
+   * events are verified independently and reported per-event.
+   * Returns 202 Accepted after persisting.
    */
   @Post('telemetry')
   @Public()
   @HttpCode(HttpStatus.ACCEPTED)
   async telemetry(
-    @Body(new ZodValidationPipe(UpdateTelemetrySchema)) body: any,
+    @Body(new ZodValidationPipe(UpdateTelemetryRequestSchema))
+    body: UpdateTelemetryRequestInput,
   ) {
+    if ('events' in body) {
+      const results = await this.telemetryService.ingestTelemetryBatch(
+        body.events,
+      );
+      return { accepted: true, results };
+    }
+
     await this.telemetryService.ingestTelemetry(body);
     return { accepted: true };
   }
