@@ -1399,3 +1399,70 @@ to pos-local's `certificate.page.tsx`.
   are `role="alert"` with text (never color alone); banner is a
   `role="region"` with a translated label; skip is a real button with a
   reason line, not a guilt-trip link.
+
+---
+
+## Suscripción — merged plan/license screen (redesigned 2026-08-25)
+
+Replaces the two separate sections ("Estado de Licencia" + "Planes y suscripción")
+with ONE screen for activated terminals. The unactivated onboarding gate still
+lands on the standalone plan catalog (fresh install must buy first).
+
+### Brief
+
+Subject: the pharmacy's own subscription. Audience: owner/manager. Job: see what
+you have, decide whether to switch, execute the switch — in that order.
+
+### Layout
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ SUSCRIPCIÓN                              [Check-in] [Exportar]     │
+│                                                                    │
+│ ┌ TU PLAN ────────────────────────────── border-l-pharma ────────┐ │
+│ │ Tu certificado DIAN        ● Activa hasta 12 sep · 28 días     │ │
+│ │ $190.000/mes · Locales ilimitados · 3 puestos por local        │ │
+│ │ [chips: cada beneficio del plan]                               │ │
+│ └────────────────────────────────────────────────────────────────┘ │
+│                                                                    │
+│ CAMBIAR DE PLAN            período (Mensual|Trimestral|Anual)      │
+│ ┌───────────────────────────┐  ┌───────────────────────────────┐   │
+│ │ Facturación incluida      │  │ Tu certificado DIAN           │   │
+│ │ $190.000/mes  −$9.000 vs  │  │ PLAN ACTUAL                   │   │
+│ │ ✓ GANAS                   │  │ (sin CTA; ya lo tienes)       │   │
+│ │   Sin trámite de certif.  │  └───────────────────────────────┘   │
+│ │ ✗ CONSIDERA               │                                      │
+│ │   Nosotros firmas tus...  │                                      │
+│ │ [Cambiar a este plan]     │                                      │
+│ └───────────────────────────┘                                      │
+│ ▸ Detalles técnicos (asignación · check-ins)   ← collapsed native  │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### Signature device — the delta ledger
+
+Candidate plans never repeat the full feature checklist. Each card shows ONLY
+the diff against the current plan: "GANAS" (teal check) and "CONSIDERA"
+(amber minus) lines computed from a real feature-set diff plus the billing-method
+tradeoff (the one true difference between the two plans). A price-delta line in
+`font-data` tabular figures states the monthly difference ("+$9.500/mes vs tu
+plan"). This only makes sense because an incumbent plan exists — it cannot be
+pasted onto a marketing pricing page.
+
+### Pass 2 critique notes
+
+- Generic answer rejected: keeping both sections + adding an "Actual" ribbon to
+  an identical third card + a 15-row feature matrix. The matrix is exactly the
+  template pricing-table look; current plan now appears exactly once (hero).
+- Risk taken: candidate cards drop the full feature list entirely. Justified:
+  the user already owns that list in the hero chips; repetition was noise.
+- Offline: catalog fetch fails → benefits stay visible from local license store;
+  change-plan area shows calm Sync Slate note ("se necesita conexión para
+  comparar planes"), never a red error banner. Changing plans requires the
+  server by nature; saying so calmly is honest.
+- No extra confirmation dialog for switching: the Wompi hosted payment page is
+  the deliberate step, and the "CONSIDERA" ledger is the warning, read before
+  any click.
+- Numbers: every price/delta in JetBrains Mono tabular; cents→pesos conversion
+  centralized in `renderer/utils/format-currency.ts` (fixes the ×100 display
+  bug that showed $19.000 as "$ 19.000.000").

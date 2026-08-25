@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { BillingPeriod } from "@pharmacy/shared-types";
 import { AlertTriangleIcon, ArrowLeftIcon, CreditCardIcon } from "@/components/ui/icons";
 import { LoaderIcon } from "@/components/ui/icons/animated";
+import { formatCurrency } from "@/utils/format-currency";
 
 export interface CustomerDraft {
   planCode: string;
@@ -34,12 +35,6 @@ export interface CheckoutCustomerFormProps {
   onSubmit: (draft: CustomerDraft) => void;
   onBack: () => void;
 }
-
-const COP_FORMATTER = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  maximumFractionDigits: 0,
-});
 
 const PERIOD_LABEL_KEY: Record<BillingPeriod, string> = {
   [BillingPeriod.MONTHLY]: "licensing.plans.period.monthly",
@@ -149,7 +144,7 @@ export const CheckoutCustomerForm: FC<CheckoutCustomerFormProps> = ({
             <div className="flex items-center justify-between gap-pos-md border-t border-border pt-pos-xs">
               <dt className="font-medium text-ink">{t("licensing.plans.form.summary_amount")}</dt>
               <dd className="font-data text-price font-semibold tabular-nums text-pharma">
-                {COP_FORMATTER.format(amountCents)}
+                {formatCurrency(amountCents)}
               </dd>
             </div>
           </dl>

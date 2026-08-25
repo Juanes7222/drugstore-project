@@ -1,9 +1,10 @@
 /**
- * PlanCatalog — subscription plan list with billing-period selector.
+ * PlanCatalog — compact plan catalog for terminals without an active license.
  *
- * Renders the public Wompi checkout plans with period pricing (quarterly
- * 10% off, annual 20% off, computed by estimatePeriodAmountCents), capacity
- * and feature lines, and the CTA that starts the checkout flow.
+ * The onboarding gate view: two plans, one billing-period selector, minimal
+ * prose. Each card answers three questions only — how DIAN billing works,
+ * what it costs, what is included. Feature lists render as a dense chip grid
+ * instead of stacked rows so the price line stays the tallest element.
  *
  * @category Component
  */
@@ -14,10 +15,26 @@ import {
   estimatePeriodAmountCents,
   type CheckoutPlan,
 } from "../../../domain/licensing/wompi-checkout.service";
-import { AlertTriangleIcon, Building2Icon, CheckCircleIcon, CloudIcon, CreditCardIcon, HelpCircleIcon, MonitorIcon, ShieldIcon } from "@/components/ui/icons";
+import { formatCurrency } from "@/utils/format-currency";
+import {
+  AlertTriangleIcon,
+  Building2Icon,
+  CheckIcon,
+  CloudIcon,
+  CreditCardIcon,
+  HelpCircleIcon,
+  MonitorIcon,
+  ShieldIcon,
+} from "@/components/ui/icons";
 import { LoaderIcon } from "@/components/ui/icons/animated";
 import { useAssistantStore } from "../../../stores/assistant.store";
 import { FEATURE_LABELS } from "./license-status.helpers";
+import { isUnlimitedLocations } from "./plan-comparison.helpers";
+import {
+  BillingPeriodSelector,
+  PERIOD_DISCOUNT_KEY,
+  PERIOD_UNIT_KEY,
+} from "./billing-period-selector";
 
 /** Help topic id for the DIAN digital certificate explainer. */
 const DIAN_CERTIFICATE_HELP_TOPIC = "fiscal-dian-certificate";
@@ -29,84 +46,6 @@ export interface PlanCatalogProps {
   errorCode: string | null;
   onSelectPlan: (plan: CheckoutPlan, period: BillingPeriod) => void;
 }
-
-// COP has no minor units in practice; whole-peso formatting keeps price
-// columns short and unambiguous at a glance.
-const COP_FORMATTER = new Intl.NumberFormat("es-CO", {
-  style: "currency",
-  currency: "COP",
-  maximumFractionDigits: 0,
-});
-
-const PERIODS: BillingPeriod[] = [
-  BillingPeriod.MONTHLY,
-  BillingPeriod.QUARTERLY,
-  BillingPeriod.ANNUAL,
-];
-
-const PERIOD_LABEL_KEY: Record<BillingPeriod, string> = {
-  [BillingPeriod.MONTHLY]: "licensing.plans.period.monthly",
-  [BillingPeriod.QUARTERLY]: "licensing.plans.period.quarterly",
-  [BillingPeriod.ANNUAL]: "licensing.plans.period.annual",
-};
-
-const PERIOD_DISCOUNT_KEY: Partial<Record<BillingPeriod, string>> = {
-  [BillingPeriod.QUARTERLY]: "licensing.plans.discount.quarterly",
-  [BillingPeriod.ANNUAL]: "licensing.plans.discount.annual",
-};
-
-const PERIOD_UNIT_KEY: Record<BillingPeriod, string> = {
-  [BillingPeriod.MONTHLY]: "licensing.plans.card.per_month",
-  [BillingPeriod.QUARTERLY]: "licensing.plans.card.per_quarter",
-  [BillingPeriod.ANNUAL]: "licensing.plans.card.per_year",
-};
-
-interface PeriodSelectorProps {
-  period: BillingPeriod;
-  onChange: (period: BillingPeriod) => void;
-}
-
-const PeriodSelector: FC<PeriodSelectorProps> = ({ period, onChange }) => {
-  const { t } = useTranslation();
-
-  return (
-    <div
-      role="radiogroup"
-      aria-label={t("licensing.plans.period.selector_aria")}
-      className="inline-flex rounded-pos border border-border bg-panel p-pos-xs shadow-pos-panel"
-    >
-      {PERIODS.map((option) => {
-        const isSelected = option === period;
-        const discountKey = PERIOD_DISCOUNT_KEY[option];
-        return (
-          <button
-            key={option}
-            type="button"
-            role="radio"
-            aria-checked={isSelected}
-            className={`inline-flex items-center gap-pos-xs rounded-pos px-pos-md py-pos-sm text-body-sm font-medium transition-colors ${
-              isSelected
-                ? "bg-pharma text-panel"
-                : "text-ink-muted hover:bg-surface-variant hover:text-ink"
-            }`}
-            onClick={() => onChange(option)}
-          >
-            {t(PERIOD_LABEL_KEY[option])}
-            {discountKey && (
-              <span
-                className={`rounded-pos px-pos-xs py-px font-data text-caption font-semibold ${
-                  isSelected ? "bg-panel/20 text-panel" : "bg-pharma/10 text-pharma"
-                }`}
-              >
-                {t(discountKey)}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-};
 
 interface PlanCardProps {
   plan: CheckoutPlan;
@@ -120,55 +59,47 @@ const PlanCard: FC<PlanCardProps> = ({ plan, period, onSelect }) => {
   const amountCents = estimatePeriodAmountCents(plan.basePriceCents, period);
   const discountKey = PERIOD_DISCOUNT_KEY[period];
   const isCertificatePlan = plan.billingMethod === "CERTIFICATE";
+  const unlimitedLocations = isUnlimitedLocations(plan.maxLocations, plan.features);
 
   return (
-    <article className="flex flex-col rounded-pos border border-border bg-panel p-pos-lg shadow-pos-panel">
+    <article className="flex flex-col rounded-pos border border-border border-t-4 bg-panel p-pos-lg shadow-pos-panel [border-top-color:var(--color-pharma)]">
+      {/* Billing method — the one real structural difference between plans */}
+      <div className="mb-pos-sm flex flex-wrap items-center gap-pos-sm">
+        <span
+          className={`inline-flex items-center gap-pos-xs rounded-pos px-pos-sm py-0.5 text-caption font-semibold ${
+            isCertificatePlan
+              ? "bg-restrict/10 text-restrict"
+              : "bg-pharma/10 text-pharma"
+          }`}
+        >
+          {isCertificatePlan ? (
+            <ShieldIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <CloudIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          {t(`licensing.plans.card.billing_method.${plan.billingMethod ?? "PROVIDER"}`)}
+        </span>
+        {isCertificatePlan && (
+          <button
+            type="button"
+            className="inline-flex items-center gap-pos-xs text-caption font-medium text-restrict underline underline-offset-2 transition-colors hover:text-pharma"
+            aria-label={t("licensing.plans.card.billing_help_aria")}
+            onClick={() => openHelp(DIAN_CERTIFICATE_HELP_TOPIC)}
+          >
+            <HelpCircleIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            {t("licensing.plans.card.billing_help")}
+          </button>
+        )}
+      </div>
+
       <h3 className="text-ui font-semibold text-ink">{plan.name}</h3>
-      <p className="mt-pos-xs mb-pos-md text-body-sm text-ink-muted">{plan.description}</p>
+      <p className="mt-pos-xs text-caption text-ink-muted">{plan.description}</p>
 
-      {/* Billing method — how DIAN transmission happens. Hidden for legacy
-          plans whose billingMethod is null. */}
-      {plan.billingMethod && (
-        <div className="mb-pos-md">
-          <div className="flex flex-wrap items-center gap-pos-sm">
-            <span
-              className={`inline-flex items-center gap-pos-xs rounded-pos px-pos-sm py-0.5 text-caption font-semibold ${
-                isCertificatePlan
-                  ? "bg-restrict/10 text-restrict"
-                  : "bg-pharma/10 text-pharma"
-              }`}
-            >
-              {isCertificatePlan ? (
-                <ShieldIcon className="h-3.5 w-3.5" aria-hidden="true" />
-              ) : (
-                <CloudIcon className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-              {t(`licensing.plans.card.billing_method.${plan.billingMethod}`)}
-            </span>
-            {isCertificatePlan && (
-              <button
-                type="button"
-                className="inline-flex items-center gap-pos-xs text-caption font-medium underline underline-offset-2 transition-colors hover:text-pharma"
-                style={{ color: "var(--color-restrict)" }}
-                aria-label={t("licensing.plans.card.billing_help_aria")}
-                onClick={() => openHelp(DIAN_CERTIFICATE_HELP_TOPIC)}
-              >
-                <HelpCircleIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                {t("licensing.plans.card.billing_help")}
-              </button>
-            )}
-          </div>
-          <p className="mt-pos-xs text-caption text-ink-muted">
-            {t(`licensing.plans.card.billing_note.${plan.billingMethod}`)}
-          </p>
-        </div>
-      )}
-
-      {/* Price line — mono, tabular, with period unit so a quarterly total
-          can never be read as a monthly rate. */}
-      <div className="mb-pos-md flex items-baseline gap-pos-sm">
+      {/* Price line — mono, tabular; the unit makes a quarterly total impossible
+          to misread as a monthly rate. */}
+      <div className="mt-pos-md mb-pos-md flex items-baseline gap-pos-sm">
         <span className="font-data text-price font-semibold tabular-nums text-ink">
-          {COP_FORMATTER.format(amountCents)}
+          {formatCurrency(amountCents)}
         </span>
         <span className="text-body-sm text-ink-muted">{t(PERIOD_UNIT_KEY[period])}</span>
         {discountKey && (
@@ -178,35 +109,37 @@ const PlanCard: FC<PlanCardProps> = ({ plan, period, onSelect }) => {
         )}
       </div>
 
-      {/* Capacity */}
-      <div className="mb-pos-md space-y-pos-xs">
-        <div className="flex items-center gap-pos-sm text-body-sm text-ink-muted">
+      {/* Capacity — the sentinel value never reaches the user as "999" */}
+      <div className="mb-pos-md space-y-pos-xs text-body-sm text-ink-muted">
+        <p className="flex items-center gap-pos-sm">
           <Building2Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-          <span>
-            {t("licensing.plans.card.capacity", { count: plan.maxLocations })}
-          </span>
-        </div>
-        <div className="flex items-center gap-pos-sm text-body-sm text-ink-muted">
+          {unlimitedLocations
+            ? t("licensing.subscription.unlimited_locations")
+            : t("licensing.plans.card.capacity", { count: plan.maxLocations })}
+        </p>
+        <p className="flex items-center gap-pos-sm">
           <MonitorIcon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-          <span>
-            {t("licensing.plans.card.workstations", { count: plan.includedWorkstations })}
-          </span>
-        </div>
-        {plan.extraWorkstationPriceCents !== null && (
-          <p className="text-caption text-ink-muted">
-            {t("licensing.plans.card.extra_workstation", {
-              price: COP_FORMATTER.format(plan.extraWorkstationPriceCents),
-            })}
-          </p>
-        )}
+          {t("licensing.plans.card.workstations", { count: plan.includedWorkstations })}
+          {plan.extraWorkstationPriceCents !== null && (
+            <span className="text-caption">
+              ·{" "}
+              {t("licensing.plans.card.extra_workstation", {
+                price: formatCurrency(plan.extraWorkstationPriceCents),
+              })}
+            </span>
+          )}
+        </p>
       </div>
 
-      {/* Features */}
+      {/* Included features as a dense chip grid */}
       {plan.features.length > 0 && (
-        <ul className="mb-pos-lg space-y-pos-xs">
+        <ul className="mb-pos-lg flex flex-wrap gap-pos-xs" aria-label={t("licensing.status_page.features_title")}>
           {plan.features.map((feature) => (
-            <li key={feature} className="flex items-center gap-pos-sm text-body-sm text-ink">
-              <CheckCircleIcon className="h-4 w-4 flex-shrink-0 text-pharma" aria-hidden="true" />
+            <li
+              key={feature}
+              className="inline-flex items-center gap-1 rounded-pos bg-surface-variant px-pos-sm py-0.5 text-caption text-ink"
+            >
+              <CheckIcon className="h-3 w-3 flex-shrink-0 text-pharma" aria-hidden="true" />
               {t(FEATURE_LABELS[feature] ?? feature)}
             </li>
           ))}
@@ -282,9 +215,9 @@ export const PlanCatalog: FC<PlanCatalogProps> = ({
       {!isLoading && !errorCode && sortedPlans.length > 0 && (
         <>
           <div className="mb-pos-lg flex justify-center">
-            <PeriodSelector period={period} onChange={setPeriod} />
+            <BillingPeriodSelector period={period} onChange={setPeriod} />
           </div>
-          <div className="grid grid-cols-1 gap-pos-md md:grid-cols-2 xl:grid-cols-3">
+          <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-pos-md md:grid-cols-2">
             {sortedPlans.map((plan) => (
               <PlanCard key={plan.code} plan={plan} period={period} onSelect={onSelectPlan} />
             ))}

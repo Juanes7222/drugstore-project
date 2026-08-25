@@ -43,7 +43,6 @@ import {
   RotateCcwIcon,
   ScrollTextIcon,
   SettingsIcon,
-  TagIcon,
   UserIcon,
   UsersIcon as UsersIconModule,
   WifiIcon,
@@ -131,10 +130,6 @@ const NavAdminIcon: FC<{ className?: string }> = ({ className }) => (
 
 const NavLicenseIcon: FC<{ className?: string }> = ({ className }) => (
   <CreditCardIcon className={className} size={20} />
-);
-
-const NavPlansIcon: FC<{ className?: string }> = ({ className }) => (
-  <TagIcon className={className} size={20} />
 );
 
 const NavUsersIcon: FC<{ className?: string }> = ({ className }) => (
@@ -261,16 +256,9 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     screen: "license-status",
-    labelKey: "navigation.license_status",
+    labelKey: "licensing.subscription.title",
     roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
     icon: NavLicenseIcon,
-    category: "management",
-  },
-  {
-    screen: "licensing-plans",
-    labelKey: "licensing.plans.sidebar",
-    roles: [RoleType.MANAGER, RoleType.OWNER, RoleType.SAAS_ADMIN],
-    icon: NavPlansIcon,
     category: "management",
   },
   {
