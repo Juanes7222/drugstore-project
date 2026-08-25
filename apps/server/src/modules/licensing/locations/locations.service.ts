@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { DomainException } from '@/common/exceptions/domain.exception';
-import { HttpStatus } from '@nestjs/common';
-import type { CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
+import { Injectable, Logger } from "@nestjs/common";
+import { PrismaService } from "@/infrastructure/prisma/prisma.service";
+import { DomainException } from "@/common/exceptions/domain.exception";
+import { acquireAdvisoryLock } from "@/common/utils/advisory-lock";
+import { HttpStatus } from "@nestjs/common";
+import type { CreateLocationDto, UpdateLocationDto } from "./dto/location.dto";
 
 @Injectable()
 export class LocationsService {
@@ -13,7 +14,7 @@ export class LocationsService {
   async findBySubscription(subscriptionId: string) {
     return this.prisma.location.findMany({
       where: { subscriptionId },
-      orderBy: { name: 'asc' },
+      orderBy: { name: "asc" },
     });
   }
 
@@ -23,15 +24,19 @@ export class LocationsService {
       include: {
         workstationActivations: {
           include: { subscription: { select: { status: true } } },
-          orderBy: { activatedAt: 'desc' },
+          orderBy: { activatedAt: "desc" },
         },
         activationCodes: {
-          where: { status: 'UNUSED' },
+          where: { status: "UNUSED" },
         },
       },
     });
     if (!location) {
-      throw new DomainException('LOCATION_NOT_FOUND', `Location with ID ${id} not found`, HttpStatus.NOT_FOUND);
+      throw new DomainException(
+        "LOCATION_NOT_FOUND",
+        `Location with ID ${id} not found`,
+        HttpStatus.NOT_FOUND,
+      );
     }
     return location;
   }
@@ -40,41 +45,53 @@ export class LocationsService {
     // Validate subscription exists
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
-      include: { plan: true, locations: { where: { isActive: true } } },
+      include: { plan: true },
     });
     if (!subscription) {
-      throw new DomainException('SUBSCRIPTION_NOT_FOUND', `Subscription with ID ${subscriptionId} not found`, HttpStatus.NOT_FOUND);
-    }
-
-    // Enforce maxLocations limit from the plan
-    const activeLocationCount = subscription.locations?.length ?? 0;
-    if (activeLocationCount >= subscription.plan.maxLocations) {
       throw new DomainException(
-        'PLAN_LIMIT_EXCEEDED',
-        `Plan ${subscription.plan.code} allows max ${subscription.plan.maxLocations} location(s). ` +
-        `Cannot add another location. Current: ${activeLocationCount}, Limit: ${subscription.plan.maxLocations}`,
-        HttpStatus.FORBIDDEN,
+        "SUBSCRIPTION_NOT_FOUND",
+        `Subscription with ID ${subscriptionId} not found`,
+        HttpStatus.NOT_FOUND,
       );
     }
 
-    return this.prisma.location.create({
-      data: {
-        id: crypto.randomUUID(),
-        subscriptionId,
-        name: dto.name,
-        address: dto.address ?? null,
-        city: dto.city ?? null,
-        region: dto.region ?? null,
-        country: dto.country ?? 'CO',
-        taxId: dto.taxId ?? null,
-        phone: dto.phone ?? null,
-        email: dto.email ?? null,
-        latitude: dto.latitude ? undefined : undefined,
-        longitude: dto.longitude ? undefined : undefined,
-        notes: dto.notes ?? null,
-        ...(dto.latitude !== undefined && { latitude: dto.latitude }),
-        ...(dto.longitude !== undefined && { longitude: dto.longitude }),
-      },
+    // Count-then-create against maxLocations runs under a per-subscription
+    // advisory lock inside the transaction: two concurrent creates would
+    // otherwise both read a count below the plan limit and both insert.
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLock(tx, `${subscriptionId}:LOCATION`);
+
+      const activeLocationCount = await tx.location.count({
+        where: { subscriptionId, isActive: true },
+      });
+      if (activeLocationCount >= subscription.plan.maxLocations) {
+        throw new DomainException(
+          "PLAN_LIMIT_EXCEEDED",
+          `Plan ${subscription.plan.code} allows max ${subscription.plan.maxLocations} location(s). ` +
+            `Cannot add another location. Current: ${activeLocationCount}, Limit: ${subscription.plan.maxLocations}`,
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      return tx.location.create({
+        data: {
+          id: crypto.randomUUID(),
+          subscriptionId,
+          name: dto.name,
+          address: dto.address ?? null,
+          city: dto.city ?? null,
+          region: dto.region ?? null,
+          country: dto.country ?? "CO",
+          taxId: dto.taxId ?? null,
+          phone: dto.phone ?? null,
+          email: dto.email ?? null,
+          latitude: dto.latitude ? undefined : undefined,
+          longitude: dto.longitude ? undefined : undefined,
+          notes: dto.notes ?? null,
+          ...(dto.latitude !== undefined && { latitude: dto.latitude }),
+          ...(dto.longitude !== undefined && { longitude: dto.longitude }),
+        },
+      });
     });
   }
 
@@ -114,7 +131,11 @@ export class LocationsService {
       include: { plan: true, locations: { where: { isActive: true } } },
     });
     if (!subscription) {
-      throw new DomainException('SUBSCRIPTION_NOT_FOUND', `Subscription with ID ${subscriptionId} not found`, HttpStatus.NOT_FOUND);
+      throw new DomainException(
+        "SUBSCRIPTION_NOT_FOUND",
+        `Subscription with ID ${subscriptionId} not found`,
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     const activeLocations = subscription.locations?.length ?? 0;

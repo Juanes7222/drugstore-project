@@ -5,6 +5,7 @@ jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient } from '@pharmacy/database';
+import { HttpStatus } from '@nestjs/common';
 import { LocationsService } from './locations.service';
 import { DomainException } from '@/common/exceptions/domain.exception';
 import type { CreateLocationDto, UpdateLocationDto } from './dto/location.dto';
@@ -147,9 +148,17 @@ function buildWorkstationActivation(
 describe('LocationsService', () => {
   let service: LocationsService;
   let mockPrisma: DeepMockProxy<PrismaClient>;
+  // Separate deep mock for the interactive-transaction client so tests can
+  // assert writes go THROUGH tx and never bypass it via this.prisma.*.
+  let mockTx: DeepMockProxy<PrismaClient>;
 
   beforeEach(() => {
+    jest.clearAllMocks();
+    // $transaction(interactive) must invoke its callback with the tx client -
+    // never assume a transaction callback runs without wiring this explicitly.
     mockPrisma = mockDeep<PrismaClient>();
+    mockTx = mockDeep<PrismaClient>();
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockTx));
     service = new LocationsService(mockPrisma as any);
   });
 
@@ -178,10 +187,7 @@ describe('LocationsService', () => {
 
     it('creates location successfully within plan limits', async () => {
       const plan = buildPlan({ maxLocations: 3 });
-      const subscription = buildSubscription({
-        plan,
-        locations: [buildLocation({ id: 'loc-1' }), buildLocation({ id: 'loc-2' })],
-      });
+      const subscription = buildSubscription({ plan });
       const newLocation = buildLocation({
         id: 'loc-new',
         name: 'New Store',
@@ -190,15 +196,19 @@ describe('LocationsService', () => {
         region: 'Antioquia',
       });
       mockPrisma.subscription.findUnique.mockResolvedValue(subscription);
-      mockPrisma.location.create.mockResolvedValue(newLocation);
+      mockTx.location.count.mockResolvedValue(2);
+      mockTx.location.create.mockResolvedValue(newLocation);
 
       const result = await service.create(SUBSCRIPTION_ID, createDto);
 
       expect(mockPrisma.subscription.findUnique).toHaveBeenCalledWith({
         where: { id: SUBSCRIPTION_ID },
-        include: { plan: true, locations: { where: { isActive: true } } },
+        include: { plan: true },
       });
-      expect(mockPrisma.location.create).toHaveBeenCalledWith(
+      expect(mockTx.location.count).toHaveBeenCalledWith({
+        where: { subscriptionId: SUBSCRIPTION_ID, isActive: true },
+      });
+      expect(mockTx.location.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             subscriptionId: SUBSCRIPTION_ID,
@@ -210,23 +220,48 @@ describe('LocationsService', () => {
             taxId: '900987654',
             phone: '+574000000000',
             email: 'newstore@example.com',
+            latitude: 6.2476,
+            longitude: -75.5658,
+            notes: 'Second location',
           }),
         }),
       );
+      // The insert went through the transaction client, not this.prisma.*
+      expect(mockPrisma.location.create).not.toHaveBeenCalled();
       expect(result).toEqual(newLocation);
+    });
+
+    it('acquires the advisory lock before the count-then-create section', async () => {
+      const plan = buildPlan({ maxLocations: 3 });
+      const subscription = buildSubscription({ plan });
+      mockPrisma.subscription.findUnique.mockResolvedValue(subscription);
+      mockTx.location.count.mockResolvedValue(2);
+      mockTx.location.create.mockResolvedValue(buildLocation());
+
+      await service.create(SUBSCRIPTION_ID, createDto);
+
+      // Lock (raw SQL) runs inside tx before count and before insert
+      expect(mockTx.$executeRaw).toHaveBeenCalled();
+      expect(mockTx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        mockTx.location.count.mock.invocationCallOrder[0],
+      );
+      expect(mockTx.location.count.mock.invocationCallOrder[0]).toBeLessThan(
+        mockTx.location.create.mock.invocationCallOrder[0],
+      );
     });
 
     it('creates location without optional fields', async () => {
       const plan = buildPlan({ maxLocations: 3 });
-      const subscription = buildSubscription({ plan, locations: [] });
+      const subscription = buildSubscription({ plan });
       const minimalDto: CreateLocationDto = { name: 'Minimal Store' };
       const newLocation = buildLocation({ name: 'Minimal Store' });
       mockPrisma.subscription.findUnique.mockResolvedValue(subscription);
-      mockPrisma.location.create.mockResolvedValue(newLocation);
+      mockTx.location.count.mockResolvedValue(0);
+      mockTx.location.create.mockResolvedValue(newLocation);
 
       const result = await service.create(SUBSCRIPTION_ID, minimalDto);
 
-      expect(mockPrisma.location.create).toHaveBeenCalledWith(
+      expect(mockTx.location.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             name: 'Minimal Store',
@@ -255,16 +290,15 @@ describe('LocationsService', () => {
       ).rejects.toMatchObject({
         errorCode: 'SUBSCRIPTION_NOT_FOUND',
       });
+      expect(mockTx.location.create).not.toHaveBeenCalled();
       expect(mockPrisma.location.create).not.toHaveBeenCalled();
     });
 
-    it('throws PLAN_LIMIT_EXCEEDED when max locations already reached', async () => {
+    it('throws PLAN_LIMIT_EXCEEDED when active location count equals maxLocations and inserts nothing', async () => {
       const plan = buildPlan({ maxLocations: 2 });
-      const subscription = buildSubscription({
-        plan,
-        locations: [buildLocation({ id: 'loc-1' }), buildLocation({ id: 'loc-2' })],
-      });
+      const subscription = buildSubscription({ plan });
       mockPrisma.subscription.findUnique.mockResolvedValue(subscription);
+      mockTx.location.count.mockResolvedValue(2);
 
       await expect(service.create(SUBSCRIPTION_ID, createDto)).rejects.toThrow(
         DomainException,
@@ -272,8 +306,10 @@ describe('LocationsService', () => {
       await expect(service.create(SUBSCRIPTION_ID, createDto)).rejects.toMatchObject(
         {
           errorCode: 'PLAN_LIMIT_EXCEEDED',
+          status: HttpStatus.FORBIDDEN,
         },
       );
+      expect(mockTx.location.create).not.toHaveBeenCalled();
       expect(mockPrisma.location.create).not.toHaveBeenCalled();
     });
   });

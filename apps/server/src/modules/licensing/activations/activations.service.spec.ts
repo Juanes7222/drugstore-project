@@ -3,7 +3,7 @@ import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-databa
 jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 
-import { mockDeep } from 'jest-mock-extended';
+import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import type { PrismaClient } from '@pharmacy/database';
 import { HttpStatus } from '@nestjs/common';
 import { ActivationsService } from './activations.service';
@@ -118,6 +118,13 @@ function buildTokenResult(tokenOverrides: Record<string, unknown> = {}) {
 
 const mockPrisma = mockDeep<PrismaClient>();
 
+// Separate deep mock for the interactive-transaction client: unlike specs
+// that replay the callback with mockPrisma itself, these flows are required
+// to prove writes go THROUGH the tx (never this.prisma.*) and share ONE tx
+// client, so the callback receives a distinct mock whose delegates are
+// asserted directly.
+let mockTx: DeepMockProxy<PrismaClient>;
+
 const mockLicenseTokenService = {
   generateToken: jest.fn(),
 } as unknown as jest.Mocked<LicenseTokenService>;
@@ -135,6 +142,10 @@ describe('ActivationsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // $transaction(interactive) must invoke its callback with the tx client -
+    // never assume a transaction callback runs without wiring this explicitly.
+    mockTx = mockDeep<PrismaClient>();
+    mockPrisma.$transaction.mockImplementation(async (cb: any) => cb(mockTx));
     service = new ActivationsService(
       mockPrisma as any,
       mockLicenseTokenService,
@@ -150,17 +161,20 @@ describe('ActivationsService', () => {
 
     it('generates a WORKSTATION code with location', async () => {
       const subscription = buildSubscription();
-      const location = buildLocation({ workstationActivations: [] });
+      const location = buildLocation();
       mockPrisma.subscription.findUnique.mockResolvedValue(subscription as any);
-      mockPrisma.location.findUnique.mockResolvedValue(location as any);
-      // The activation code creation — just capture that it was called
-      mockPrisma.activationCode.create.mockResolvedValue({ id: 'new-code-uuid' } as any);
+      mockTx.location.findUnique.mockResolvedValue(location as any);
+      mockTx.workstationActivation.count.mockResolvedValue(0);
+      mockTx.activationCode.create.mockResolvedValue({ id: 'new-code-uuid' } as any);
 
       const dto = buildGenerateActivationCodeDto();
       const result = await service.generateActivationCode(SUBSCRIPTION_ID, dto);
 
-      expect(result).toBeDefined();
-      expect(mockPrisma.activationCode.create).toHaveBeenCalledWith(
+      expect(result).toEqual({ id: 'new-code-uuid' });
+      expect(mockTx.workstationActivation.count).toHaveBeenCalledWith({
+        where: { locationId: 'loc-uuid-1', isActive: true },
+      });
+      expect(mockTx.activationCode.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             subscriptionId: SUBSCRIPTION_ID,
@@ -170,6 +184,7 @@ describe('ActivationsService', () => {
           }),
         }),
       );
+      expect(mockPrisma.activationCode.create).not.toHaveBeenCalled();
     });
 
     it('throws SUBSCRIPTION_NOT_FOUND when subscription does not exist', async () => {
@@ -200,18 +215,13 @@ describe('ActivationsService', () => {
       });
     });
 
-    it('throws WORKSTATION_LIMIT_EXCEEDED when location already has max workstations', async () => {
+    it('throws WORKSTATION_LIMIT_EXCEEDED when the target location is at its plan limit', async () => {
       const subscription = buildSubscription({
         plan: { ...buildSubscription().plan, maxWorkstationsPerLocation: 2 },
       });
-      const location = buildLocation({
-        workstationActivations: [
-          { isActive: true, id: 'ws-1' },
-          { isActive: true, id: 'ws-2' },
-        ],
-      });
       mockPrisma.subscription.findUnique.mockResolvedValue(subscription as any);
-      mockPrisma.location.findUnique.mockResolvedValue(location as any);
+      mockTx.location.findUnique.mockResolvedValue(buildLocation() as any);
+      mockTx.workstationActivation.count.mockResolvedValue(2);
 
       const dto = buildGenerateActivationCodeDto();
 
@@ -221,11 +231,13 @@ describe('ActivationsService', () => {
         errorCode: 'WORKSTATION_LIMIT_EXCEEDED',
         status: HttpStatus.FORBIDDEN,
       });
+      expect(mockTx.activationCode.create).not.toHaveBeenCalled();
+      expect(mockPrisma.activationCode.create).not.toHaveBeenCalled();
     });
 
     it('throws LOCATION_NOT_FOUND when locationId does not exist', async () => {
       mockPrisma.subscription.findUnique.mockResolvedValue(buildSubscription() as any);
-      mockPrisma.location.findUnique.mockResolvedValue(null);
+      mockTx.location.findUnique.mockResolvedValue(null);
 
       const dto = buildGenerateActivationCodeDto();
 
@@ -239,7 +251,7 @@ describe('ActivationsService', () => {
 
     it('throws LOCATION_MISMATCH when location belongs to a different subscription', async () => {
       mockPrisma.subscription.findUnique.mockResolvedValue(buildSubscription() as any);
-      mockPrisma.location.findUnique.mockResolvedValue(
+      mockTx.location.findUnique.mockResolvedValue(
         buildLocation({ subscriptionId: 'other-sub-uuid' }) as any,
       );
 
@@ -251,6 +263,43 @@ describe('ActivationsService', () => {
         errorCode: 'LOCATION_MISMATCH',
         status: HttpStatus.FORBIDDEN,
       });
+      expect(mockTx.activationCode.create).not.toHaveBeenCalled();
+    });
+
+    it('throws INVALID_CODE_TYPE_FOR_ENDPOINT for a SUBSCRIPTION-type code', async () => {
+      // SUBSCRIPTION codes are minted only by SubscriptionsService at
+      // checkout; the endpoint must never issue one (unlimited-location bypass).
+      mockPrisma.subscription.findUnique.mockResolvedValue(buildSubscription() as any);
+
+      const dto = buildGenerateActivationCodeDto({
+        type: 'SUBSCRIPTION',
+        locationId: null,
+      });
+
+      await expect(
+        service.generateActivationCode(SUBSCRIPTION_ID, dto),
+      ).rejects.toMatchObject({
+        errorCode: 'INVALID_CODE_TYPE_FOR_ENDPOINT',
+        status: HttpStatus.BAD_REQUEST,
+      });
+      expect(mockTx.$executeRaw).not.toHaveBeenCalled();
+      expect(mockTx.activationCode.create).not.toHaveBeenCalled();
+      expect(mockPrisma.activationCode.create).not.toHaveBeenCalled();
+    });
+
+    it('throws LOCATION_ID_REQUIRED for a WORKSTATION code without a locationId', async () => {
+      mockPrisma.subscription.findUnique.mockResolvedValue(buildSubscription() as any);
+
+      const dto = buildGenerateActivationCodeDto({ locationId: null });
+
+      await expect(
+        service.generateActivationCode(SUBSCRIPTION_ID, dto),
+      ).rejects.toMatchObject({
+        errorCode: 'LOCATION_ID_REQUIRED',
+        status: HttpStatus.BAD_REQUEST,
+      });
+      expect(mockTx.$executeRaw).not.toHaveBeenCalled();
+      expect(mockTx.activationCode.create).not.toHaveBeenCalled();
     });
   });
 
@@ -259,8 +308,6 @@ describe('ActivationsService', () => {
   // -----------------------------------------------------------------------
   describe('activate', () => {
     const REQUEST_IP = '192.168.1.100';
-    const futureExpiry = new Date();
-    futureExpiry.setFullYear(futureExpiry.getFullYear() + 1);
 
     beforeEach(() => {
       // Default fraud check passes
@@ -271,11 +318,14 @@ describe('ActivationsService', () => {
       });
       // Default token
       mockLicenseTokenService.generateToken.mockReturnValue(buildTokenResult());
-      // Default activation code creation
-      mockPrisma.activationCode.update.mockResolvedValue({} as any);
-      mockPrisma.workstationActivation.create.mockResolvedValue(
+      // Defaults for the interactive-transaction body (WORKSTATION flow)
+      mockTx.location.findUnique.mockResolvedValue(buildLocation() as any);
+      mockTx.location.count.mockResolvedValue(0);
+      mockTx.workstationActivation.count.mockResolvedValue(0);
+      mockTx.workstationActivation.create.mockResolvedValue(
         buildWorkstationActivation() as any,
       );
+      mockTx.activationCode.update.mockResolvedValue({} as any);
     });
 
     it('fully activates a SUBSCRIPTION type (creates location + activation)', async () => {
@@ -288,14 +338,14 @@ describe('ActivationsService', () => {
       const newLocation = buildLocation({ id: 'new-loc-uuid' });
 
       mockPrisma.activationCode.findUnique.mockResolvedValue(activationCode as any);
-      mockPrisma.location.create.mockResolvedValue(newLocation as any);
-      mockPrisma.location.findUnique.mockResolvedValue(newLocation as any);
+      mockTx.location.create.mockResolvedValue(newLocation as any);
+      mockTx.location.findUnique.mockResolvedValue(newLocation as any);
 
       const dto = buildActivateDto({ locationName: 'New Store' });
       const result = await service.activate(dto, REQUEST_IP);
 
-      // Location was created (address, city, region default to null from DTO)
-      expect(mockPrisma.location.create).toHaveBeenCalledWith(
+      // Location was created from dto.locationName (optional fields default to null)
+      expect(mockTx.location.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             subscriptionId: 'sub-uuid-1',
@@ -309,20 +359,87 @@ describe('ActivationsService', () => {
         }),
       );
 
-      // Activation was created
-      expect(mockPrisma.workstationActivation.create).toHaveBeenCalled();
+      // Activation was created and bound to the newly created location
+      expect(mockTx.workstationActivation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            subscriptionId: 'sub-uuid-1',
+            locationId: 'new-loc-uuid',
+          }),
+        }),
+      );
 
       // Code was marked as used
-      expect(mockPrisma.activationCode.update).toHaveBeenCalled();
+      expect(mockTx.activationCode.update).toHaveBeenCalled();
 
       // Token was generated
       expect(mockLicenseTokenService.generateToken).toHaveBeenCalled();
+
+      // Writes went through the transaction client, never through this.prisma.*
+      expect(mockPrisma.location.create).not.toHaveBeenCalled();
+      expect(mockPrisma.workstationActivation.create).not.toHaveBeenCalled();
+      expect(mockPrisma.activationCode.update).not.toHaveBeenCalled();
 
       // Response shape
       expect(result.activationToken).toBe('signed-jwt-token-string');
       expect(result.subscription.id).toBe('sub-uuid-1');
       expect(result.location).not.toBeNull();
+      expect(result.location?.id).toBe('new-loc-uuid');
       expect(result.plan.code).toBe('PHARMACY_PRO');
+    });
+
+    it('throws PLAN_LIMIT_EXCEEDED for a SUBSCRIPTION code when active locations equal maxLocations and creates nothing', async () => {
+      const subscription = buildSubscription({
+        plan: { ...buildSubscription().plan, maxLocations: 2 },
+      });
+      const activationCode = buildActivationCode({
+        type: 'SUBSCRIPTION',
+        subscription,
+        locationId: null,
+      });
+
+      mockPrisma.activationCode.findUnique.mockResolvedValue(activationCode as any);
+      mockTx.location.count.mockResolvedValue(2);
+
+      const dto = buildActivateDto({ locationName: 'Overflow Store' });
+
+      await expect(service.activate(dto, REQUEST_IP)).rejects.toMatchObject({
+        errorCode: 'PLAN_LIMIT_EXCEEDED',
+        status: HttpStatus.FORBIDDEN,
+      });
+      // Rejection happens before any write in the transaction body
+      expect(mockTx.location.create).not.toHaveBeenCalled();
+      expect(mockTx.workstationActivation.create).not.toHaveBeenCalled();
+      expect(mockTx.activationCode.update).not.toHaveBeenCalled();
+    });
+
+    it('acquires the location advisory lock before counting and creating on the SUBSCRIPTION path', async () => {
+      const subscription = buildSubscription();
+      const activationCode = buildActivationCode({
+        type: 'SUBSCRIPTION',
+        subscription,
+        locationId: null,
+      });
+      const newLocation = buildLocation({ id: 'new-loc-uuid' });
+
+      mockPrisma.activationCode.findUnique.mockResolvedValue(activationCode as any);
+      mockTx.location.count.mockResolvedValue(0);
+      mockTx.location.create.mockResolvedValue(newLocation as any);
+      mockTx.location.findUnique.mockResolvedValue(newLocation as any);
+
+      const dto = buildActivateDto({ locationName: 'New Store' });
+      await service.activate(dto, REQUEST_IP);
+
+      // First lock (scope `${subscriptionId}:LOCATION`) runs before the
+      // location count-then-create section
+      expect(mockTx.$executeRaw).toHaveBeenCalled();
+      const firstLockOrder = mockTx.$executeRaw.mock.invocationCallOrder[0];
+      expect(firstLockOrder).toBeLessThan(
+        mockTx.location.count.mock.invocationCallOrder[0],
+      );
+      expect(firstLockOrder).toBeLessThan(
+        mockTx.location.create.mock.invocationCallOrder[0],
+      );
     });
 
     it('fully activates a WORKSTATION type (uses existing location)', async () => {
@@ -332,19 +449,17 @@ describe('ActivationsService', () => {
         subscription,
         locationId: 'loc-uuid-1',
       });
-      const location = buildLocation({ workstationActivations: [] });
 
       mockPrisma.activationCode.findUnique.mockResolvedValue(activationCode as any);
-      mockPrisma.location.findUnique.mockResolvedValue(location as any);
 
       const dto = buildActivateDto({ locationName: undefined });
       const result = await service.activate(dto, REQUEST_IP);
 
       // No location was created
-      expect(mockPrisma.location.create).not.toHaveBeenCalled();
+      expect(mockTx.location.create).not.toHaveBeenCalled();
 
       // Activation was created
-      expect(mockPrisma.workstationActivation.create).toHaveBeenCalledWith(
+      expect(mockTx.workstationActivation.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             locationId: 'loc-uuid-1',
@@ -356,6 +471,34 @@ describe('ActivationsService', () => {
 
       expect(result.subscription.id).toBe('sub-uuid-1');
       expect(result.plan.code).toBe('PHARMACY_PRO');
+      expect(result.location?.id).toBe('loc-uuid-1');
+    });
+
+    it('acquires the advisory lock before counting workstations and performs every write on the same transaction client', async () => {
+      const subscription = buildSubscription();
+      const activationCode = buildActivationCode({
+        type: 'WORKSTATION',
+        subscription,
+        locationId: 'loc-uuid-1',
+      });
+
+      mockPrisma.activationCode.findUnique.mockResolvedValue(activationCode as any);
+
+      const dto = buildActivateDto({ locationName: undefined });
+      await service.activate(dto, REQUEST_IP);
+
+      // Advisory lock ran inside the tx before the count-then-create section
+      expect(mockTx.$executeRaw).toHaveBeenCalled();
+      expect(mockTx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        mockTx.workstationActivation.count.mock.invocationCallOrder[0],
+      );
+
+      // Both writes happened on the SAME tx client (the single mockTx handed
+      // to the callback), and neither bypassed it through this.prisma.*
+      expect(mockTx.workstationActivation.create).toHaveBeenCalledTimes(1);
+      expect(mockTx.activationCode.update).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.workstationActivation.create).not.toHaveBeenCalled();
+      expect(mockPrisma.activationCode.update).not.toHaveBeenCalled();
     });
 
     it('throws INVALID_ACTIVATION_CODE when code is not found', async () => {
@@ -427,7 +570,7 @@ describe('ActivationsService', () => {
       });
     });
 
-    it('throws LOCATION_NAME_REQUIRED for SUBSCRIPTION type with no location name', async () => {
+    it('throws LOCATION_NAME_REQUIRED for SUBSCRIPTION type with no location name and creates nothing', async () => {
       const subscription = buildSubscription();
       const activationCode = buildActivationCode({
         type: 'SUBSCRIPTION',
@@ -442,9 +585,13 @@ describe('ActivationsService', () => {
         errorCode: 'LOCATION_NAME_REQUIRED',
         status: HttpStatus.BAD_REQUEST,
       });
+      expect(mockTx.location.create).not.toHaveBeenCalled();
+      expect(mockTx.workstationActivation.create).not.toHaveBeenCalled();
+      expect(mockTx.activationCode.update).not.toHaveBeenCalled();
+      expect(mockLicenseTokenService.generateToken).not.toHaveBeenCalled();
     });
 
-    it('throws WORKSTATION_LIMIT_EXCEEDED when location is at capacity', async () => {
+    it('throws WORKSTATION_LIMIT_EXCEEDED when the location already has activeWorkstations equal to the plan limit and creates nothing', async () => {
       const subscription = buildSubscription({
         plan: { ...buildSubscription().plan, maxWorkstationsPerLocation: 1 },
       });
@@ -453,12 +600,9 @@ describe('ActivationsService', () => {
         subscription,
         locationId: 'loc-uuid-1',
       });
-      const location = buildLocation({
-        workstationActivations: [{ isActive: true, id: 'ws-1' }],
-      });
 
       mockPrisma.activationCode.findUnique.mockResolvedValue(activationCode as any);
-      mockPrisma.location.findUnique.mockResolvedValue(location as any);
+      mockTx.workstationActivation.count.mockResolvedValue(1);
 
       const dto = buildActivateDto({ locationName: undefined });
 
@@ -466,6 +610,8 @@ describe('ActivationsService', () => {
         errorCode: 'WORKSTATION_LIMIT_EXCEEDED',
         status: HttpStatus.FORBIDDEN,
       });
+      expect(mockTx.workstationActivation.create).not.toHaveBeenCalled();
+      expect(mockTx.activationCode.update).not.toHaveBeenCalled();
     });
 
     it('passes requestIp to fraud detection service', async () => {
@@ -475,10 +621,8 @@ describe('ActivationsService', () => {
         subscription,
         locationId: 'loc-uuid-1',
       });
-      const location = buildLocation({ workstationActivations: [] });
 
       mockPrisma.activationCode.findUnique.mockResolvedValue(activationCode as any);
-      mockPrisma.location.findUnique.mockResolvedValue(location as any);
 
       const dto = buildActivateDto({ locationName: undefined });
       await service.activate(dto, REQUEST_IP);
@@ -499,10 +643,8 @@ describe('ActivationsService', () => {
         subscription,
         locationId: 'loc-uuid-1',
       });
-      const location = buildLocation({ workstationActivations: [] });
 
       mockPrisma.activationCode.findUnique.mockResolvedValue(activationCode as any);
-      mockPrisma.location.findUnique.mockResolvedValue(location as any);
 
       const dto = buildActivateDto({ locationName: undefined });
       await service.activate(dto);

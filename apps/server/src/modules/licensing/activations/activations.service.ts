@@ -1,13 +1,19 @@
 import { Injectable, Logger, HttpStatus } from "@nestjs/common";
 import { PrismaService } from "@/infrastructure/prisma/prisma.service";
 import { DomainException } from "@/common/exceptions/domain.exception";
+import { acquireAdvisoryLock } from "@/common/utils/advisory-lock";
 import { LicenseTokenService } from "../tokens/license-token.service";
 import { FraudDetectionService } from "../fraud/fraud-detection.service";
 import {
   ActivationCodeStatus,
   ActivationCodeType,
 } from "@pharmacy/shared-types";
-import type { ActivationCode } from "@pharmacy/database";
+import type {
+  ActivationCode,
+  Location,
+  Prisma,
+  WorkstationActivation,
+} from "@pharmacy/database";
 import {
   DEFAULT_SUBSCRIPTION_CODE_TTL_DAYS,
   generateActivationCode,
@@ -16,6 +22,11 @@ import type {
   ActivateDto,
   GenerateActivationCodeDto,
 } from "./dto/activation.dto";
+
+/** Subscription with its Plan — the shape the limit checks read. */
+type SubscriptionWithPlan = Prisma.SubscriptionGetPayload<{
+  include: { plan: true };
+}>;
 
 @Injectable()
 export class ActivationsService {
@@ -55,51 +66,87 @@ export class ActivationsService {
       );
     }
 
-    // If WORKSTATION type, validate workstation limit for the location
-    if (dto.type === "WORKSTATION" && dto.locationId) {
-      const location = await this.prisma.location.findUnique({
-        where: { id: dto.locationId },
-        include: {
-          workstationActivations: { where: { isActive: true } },
-        },
-      });
-      if (!location) {
-        throw new DomainException(
-          "LOCATION_NOT_FOUND",
-          "Location not found",
-          HttpStatus.NOT_FOUND,
-        );
-      }
-      if (location.subscriptionId !== subscriptionId) {
-        throw new DomainException(
-          "LOCATION_MISMATCH",
-          "Location does not belong to this subscription",
-          HttpStatus.FORBIDDEN,
-        );
-      }
+    const codeExpiresAt = new Date();
+    codeExpiresAt.setFullYear(codeExpiresAt.getFullYear() + 1);
 
-      const activeWorkstations = location.workstationActivations?.length ?? 0;
-      if (activeWorkstations >= subscription.plan.maxWorkstationsPerLocation) {
-        throw new DomainException(
-          "WORKSTATION_LIMIT_EXCEEDED",
-          `Plan ${subscription.plan.code} allows max ${subscription.plan.maxWorkstationsPerLocation} workstation(s) per location. ` +
-            `Location ${location.name} already has ${activeWorkstations}.`,
-          HttpStatus.FORBIDDEN,
-        );
-      }
+    // The WORKSTATION-limit validation and the code insert share the same
+    // per-location advisory lock as activate(), so codes cannot be generated
+    // past the plan limit while a concurrent activation is mid-commit.
+    return this.prisma.$transaction((tx) =>
+      this.createWorkstationCodeGuarded(tx, subscription, dto, codeExpiresAt),
+    );
+  }
+
+  /**
+   * Transactional body of generateActivationCode(): validates the target
+   * location against the plan's workstation limit under the per-location
+   * advisory lock, then inserts the code.
+   */
+  private async createWorkstationCodeGuarded(
+    tx: Prisma.TransactionClient,
+    subscription: SubscriptionWithPlan,
+    dto: GenerateActivationCodeDto,
+    expiresAt: Date,
+  ) {
+    // SUBSCRIPTION codes bootstrap new locations on activation and are only
+    // ever minted internally (SubscriptionsService / checkout flow). Allowing
+    // them here would let this endpoint mint unlimited-location codes and
+    // bypass maxLocations entirely.
+    if (dto.type === "SUBSCRIPTION") {
+      throw new DomainException(
+        "INVALID_CODE_TYPE_FOR_ENDPOINT",
+        "SUBSCRIPTION codes are generated automatically at checkout; use WORKSTATION codes to add workstations",
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
-    const code = generateActivationCode();
-    const expiresAt = new Date();
-    expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    if (!dto.locationId) {
+      throw new DomainException(
+        "LOCATION_ID_REQUIRED",
+        "A locationId is required to generate a WORKSTATION code",
+        HttpStatus.BAD_REQUEST,
+      );
+    }
 
-    return this.prisma.activationCode.create({
+    await acquireAdvisoryLock(tx, `${dto.locationId}:WORKSTATION_ACTIVATION`);
+
+    const location = await tx.location.findUnique({
+      where: { id: dto.locationId },
+    });
+    if (!location) {
+      throw new DomainException(
+        "LOCATION_NOT_FOUND",
+        "Location not found",
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    if (location.subscriptionId !== subscription.id) {
+      throw new DomainException(
+        "LOCATION_MISMATCH",
+        "Location does not belong to this subscription",
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    const activeWorkstations = await tx.workstationActivation.count({
+      where: { locationId: dto.locationId, isActive: true },
+    });
+    if (activeWorkstations >= subscription.plan.maxWorkstationsPerLocation) {
+      throw new DomainException(
+        "WORKSTATION_LIMIT_EXCEEDED",
+        `Plan ${subscription.plan.code} allows max ${subscription.plan.maxWorkstationsPerLocation} workstation(s) per location. ` +
+          `Location ${location.name} already has ${activeWorkstations}.`,
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    return tx.activationCode.create({
       data: {
         id: crypto.randomUUID(),
-        subscriptionId,
-        locationId: dto.locationId ?? null,
-        code,
-        type: dto.type ?? "WORKSTATION",
+        subscriptionId: subscription.id,
+        locationId: dto.locationId,
+        code: generateActivationCode(),
+        type: "WORKSTATION",
         status: "UNUSED",
         expiresAt,
       },
@@ -249,89 +296,29 @@ export class ActivationsService {
       );
     }
 
-    // 4. Handle SUBSCRIPTION type — create the first location
-    let locationId = activationCode.locationId;
+    // 4-7. Location resolution, workstation-limit enforcement, activation
+    // creation, and code consumption run in ONE transaction. The per-location
+    // advisory lock inside serializes the count-then-create section: without
+    // it two concurrent activations (e.g. several stations activating at once
+    // after a fresh install) can both read a count below the plan limit and
+    // both insert, exceeding maxWorkstationsPerLocation.
+    const { activation, location } = await this.prisma.$transaction((tx) =>
+      this.activateInTransaction(
+        tx,
+        activationCode,
+        subscription,
+        dto,
+        requestIp,
+      ),
+    );
 
-    if (activationCode.type === "SUBSCRIPTION") {
-      // Create the first location from the activation data
-      if (!dto.locationName) {
-        throw new DomainException(
-          "LOCATION_NAME_REQUIRED",
-          "Location name is required for initial activation",
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-
-      const location = await this.prisma.location.create({
-        data: {
-          id: crypto.randomUUID(),
-          subscriptionId: subscription.id,
-          name: dto.locationName,
-          address: dto.locationAddress ?? null,
-          city: dto.locationCity ?? null,
-          region: dto.locationRegion ?? null,
-          country: "CO",
-          isActive: true,
-        },
-      });
-      locationId = location.id;
-    }
-
-    // 5. Validate workstation limit for the location
-    if (locationId) {
-      const location = await this.prisma.location.findUnique({
-        where: { id: locationId },
-        include: { workstationActivations: { where: { isActive: true } } },
-      });
-      if (
-        location &&
-        location.workstationActivations.length >=
-          subscription.plan.maxWorkstationsPerLocation
-      ) {
-        throw new DomainException(
-          "WORKSTATION_LIMIT_EXCEEDED",
-          `Location ${location.name} has reached its workstation limit of ${subscription.plan.maxWorkstationsPerLocation}`,
-          HttpStatus.FORBIDDEN,
-        );
-      }
-    }
-
-    // 6. Create the workstation activation
-    const activation = await this.prisma.workstationActivation.create({
-      data: {
-        id: crypto.randomUUID(),
-        subscriptionId: subscription.id,
-        locationId: locationId!,
-        hardwareFingerprint: dto.hardwareFingerprint,
-        workstationName: dto.workstationName,
-        activationCodeId: activationCode.id,
-        isActive: true,
-        activatedAt: new Date(),
-        initialActivationIp: requestIp ?? null,
-      },
-    });
-
-    // 7. Mark the code as used
-    await this.prisma.activationCode.update({
-      where: { id: activationCode.id },
-      data: {
-        status: "USED",
-        usedAt: new Date(),
-        locationId: locationId!,
-        usedByActivationId: activation.id,
-      },
-    });
-
-    // 8. Generate activation token
-    const location = await this.prisma.location.findUnique({
-      where: { id: locationId! },
-    });
+    // 8. Generate activation token (after commit — signing only, no DB access)
     const token = this.licenseTokenService.generateToken({
       subscriptionId: subscription.id,
       subscriptionStatus: subscription.status,
       planId: subscription.plan.id,
       planFeatures: subscription.plan.features,
-      locationId: locationId!,
+      locationId: activation.locationId,
       locationName: location?.name ?? "",
       workstationId: activation.id,
       hardwareFingerprint: dto.hardwareFingerprint,
@@ -375,6 +362,130 @@ export class ActivationsService {
         activatedAt: activation.activatedAt,
       },
     };
+  }
+
+  /**
+   * Transactional body of activate(): resolves/creates the location, enforces
+   * the plan's per-location workstation limit under an advisory lock, creates
+   * the activation, and consumes the code — all atomically.
+   */
+  private async activateInTransaction(
+    tx: Prisma.TransactionClient,
+    activationCode: ActivationCode & {
+      subscription: SubscriptionWithPlan;
+    },
+    subscription: SubscriptionWithPlan,
+    dto: ActivateDto,
+    requestIp?: string,
+  ): Promise<{
+    activation: WorkstationActivation;
+    location: Location | null;
+  }> {
+    let locationId = activationCode.locationId;
+
+    // SUBSCRIPTION codes bootstrap the first location of the subscription.
+    // The location count runs under the same per-subscription advisory lock
+    // as LocationsService.create, so a SUBSCRIPTION code cannot create a
+    // location past the plan's maxLocations while another is mid-commit —
+    // previously this branch skipped the limit entirely.
+    if (activationCode.type === "SUBSCRIPTION") {
+      if (!dto.locationName) {
+        throw new DomainException(
+          "LOCATION_NAME_REQUIRED",
+          "Location name is required for initial activation",
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      await acquireAdvisoryLock(tx, `${subscription.id}:LOCATION`);
+
+      const activeLocations = await tx.location.count({
+        where: { subscriptionId: subscription.id, isActive: true },
+      });
+      if (activeLocations >= subscription.plan.maxLocations) {
+        throw new DomainException(
+          "PLAN_LIMIT_EXCEEDED",
+          `Plan ${subscription.plan.code} allows max ${subscription.plan.maxLocations} location(s). ` +
+            `Subscription already has ${activeLocations}.`,
+          HttpStatus.FORBIDDEN,
+        );
+      }
+
+      const created = await tx.location.create({
+        data: {
+          id: crypto.randomUUID(),
+          subscriptionId: subscription.id,
+          name: dto.locationName,
+          address: dto.locationAddress ?? null,
+          city: dto.locationCity ?? null,
+          region: dto.locationRegion ?? null,
+          country: "CO",
+          isActive: true,
+        },
+      });
+      locationId = created.id;
+    }
+
+    // A WORKSTATION code is always bound to a location at generation time;
+    // reaching this point without one is a malformed code.
+    if (!locationId) {
+      throw new DomainException(
+        "LOCATION_NOT_ASSIGNED",
+        "Activation code is not bound to a location",
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // Serialize concurrent activations for this location before the
+    // count-then-create section (see the comment at the call site).
+    await acquireAdvisoryLock(tx, `${locationId}:WORKSTATION_ACTIVATION`);
+
+    const location = await tx.location.findUnique({
+      where: { id: locationId },
+    });
+    if (!location) {
+      throw new DomainException(
+        "LOCATION_NOT_FOUND",
+        `Location ${locationId} does not exist`,
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const activeWorkstations = await tx.workstationActivation.count({
+      where: { locationId, isActive: true },
+    });
+    if (activeWorkstations >= subscription.plan.maxWorkstationsPerLocation) {
+      throw new DomainException(
+        "WORKSTATION_LIMIT_EXCEEDED",
+        `Location ${location.name} has reached its workstation limit of ${subscription.plan.maxWorkstationsPerLocation}`,
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    const activation = await tx.workstationActivation.create({
+      data: {
+        id: crypto.randomUUID(),
+        subscriptionId: subscription.id,
+        locationId,
+        hardwareFingerprint: dto.hardwareFingerprint,
+        workstationName: dto.workstationName,
+        activationCodeId: activationCode.id,
+        isActive: true,
+        activatedAt: new Date(),
+        initialActivationIp: requestIp ?? null,
+      },
+    });
+
+    await tx.activationCode.update({
+      where: { id: activationCode.id },
+      data: {
+        status: "USED",
+        usedAt: new Date(),
+        locationId,
+        usedByActivationId: activation.id,
+      },
+    });
+
+    return { activation, location };
   }
 
   async findBySubscription(subscriptionId: string) {
