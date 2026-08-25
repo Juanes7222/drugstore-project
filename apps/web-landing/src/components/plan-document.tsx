@@ -59,6 +59,9 @@ export function PlanDocument({ plan, period, revealDelayMs = 0 }: PlanDocumentPr
         <p className="mt-1 text-[11px] text-tinta-media">{t('pricing.doc_disclaimer')}</p>
 
         <p className="display mt-4 text-xl font-bold">{plan.name}</p>
+        {plan.description ? (
+          <p className="mt-1 text-sm leading-relaxed text-tinta-media">{plan.description}</p>
+        ) : null}
 
         {/* Concept rows */}
         <table className="mt-5 w-full text-sm">

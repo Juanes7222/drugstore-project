@@ -8,9 +8,9 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { BillingPeriod } from '@pharmacy/shared-types';
-import { PUBLIC_PLANS } from '../data/plans';
 import { calculatePeriodPriceCents, formatCOP } from '../lib/format';
 import { useCheckoutStore } from '../stores/checkout-store';
+import { usePlansStore } from '../stores/plans-store';
 import { XIcon } from './icons';
 
 type CheckoutError =
@@ -80,7 +80,9 @@ export function CheckoutDialog() {
     }
   };
 
-  const plan = PUBLIC_PLANS.find((candidate) => candidate.code === planCode);
+  const plan = usePlansStore((state) => state.plans).find(
+    (candidate) => candidate.code === planCode,
+  );
   const totalCents = plan ? calculatePeriodPriceCents(plan.basePriceCents, billingPeriod) : 0;
   const apiBaseUrl = import.meta.env.VITE_API_URL as string | undefined;
 

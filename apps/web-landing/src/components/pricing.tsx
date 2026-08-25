@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { BillingPeriod } from '@pharmacy/shared-types';
-import { PUBLIC_PLANS } from '../data/plans';
 import { PlanDocument } from './plan-document';
 import { useCheckoutStore } from '../stores/checkout-store';
+import { usePlansStore } from '../stores/plans-store';
 
 const PERIOD_OPTIONS: BillingPeriod[] = [BillingPeriod.MONTHLY, BillingPeriod.QUARTERLY, BillingPeriod.ANNUAL];
 
@@ -20,6 +20,14 @@ export function Pricing() {
   const { t } = useTranslation();
   const billingPeriod = useCheckoutStore((state) => state.billingPeriod);
   const setBillingPeriod = useCheckoutStore((state) => state.setBillingPeriod);
+  const plans = usePlansStore((state) => state.plans);
+  const plansSource = usePlansStore((state) => state.source);
+  const checkedAt = usePlansStore((state) => state.checkedAt);
+
+  // Provenance of the numbers below — quiet mono line, never an alarm.
+  const checkedTimeLabel = checkedAt
+    ? new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit' }).format(checkedAt)
+    : null;
 
   return (
     <section id="planes" aria-labelledby="pricing-title" className="bg-menta py-20 lg:py-28">
@@ -54,9 +62,25 @@ export function Pricing() {
           </div>
         </fieldset>
 
+        {/* Price provenance — announced politely when the live swap lands */}
+        <p
+          role="status"
+          className="data mt-8 flex items-center gap-2 text-xs text-tinta-media"
+        >
+          <span
+            aria-hidden="true"
+            className={`inline-block size-1.5 rounded-full ${
+              plansSource === 'server' ? 'bg-verde-cruz' : 'bg-tinta/30'
+            }`}
+          />
+          {plansSource === 'server'
+            ? t('pricing.source_live', { time: checkedTimeLabel ?? '' })
+            : t('pricing.source_fallback')}
+        </p>
+
         {/* The twin documents */}
-        <div className="mx-auto mt-14 grid max-w-4xl gap-x-10 gap-y-12 md:grid-cols-2">
-          {PUBLIC_PLANS.map((plan, index) => (
+        <div className="mx-auto mt-6 grid max-w-4xl gap-x-10 gap-y-12 md:grid-cols-2">
+          {plans.map((plan, index) => (
             <PlanDocument
               key={plan.code}
               plan={plan}

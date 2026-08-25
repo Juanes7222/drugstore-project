@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { PUBLIC_PLANS } from '../data/plans';
 import { calculatePeriodPriceCents, formatCOP, periodMonths } from '../lib/format';
 import { useCheckoutStore } from '../stores/checkout-store';
+import { usePlansStore } from '../stores/plans-store';
 
 /**
  * Mobile-only sticky buy bar. Appears once the hero scrolls out of view so the
@@ -13,6 +13,7 @@ export function MobileBuyBar() {
   const { t } = useTranslation();
   const openCheckout = useCheckoutStore((state) => state.openCheckout);
   const billingPeriod = useCheckoutStore((state) => state.billingPeriod);
+  const livePlans = usePlansStore((state) => state.plans);
   const [heroScrolledPast, setHeroScrolledPast] = useState(false);
 
   useEffect(() => {
@@ -31,7 +32,7 @@ export function MobileBuyBar() {
     return () => observer.disconnect();
   }, []);
 
-  const basePriceCents = PUBLIC_PLANS[0].basePriceCents;
+  const basePriceCents = livePlans[0].basePriceCents;
   const monthlyEquivalentCents = Math.round(
     calculatePeriodPriceCents(basePriceCents, billingPeriod) / periodMonths(billingPeriod),
   );

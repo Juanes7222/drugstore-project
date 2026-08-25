@@ -212,4 +212,43 @@ identidad fiscal propia.
 - Definir canal real de soporte/contacto y llenar `support.channel_email`.
 - Confirmar nombre de marca (sigue siendo PuntoFarma provisional).
 
+---
+
+## Planes en vivo desde el servidor (mismo día, segunda revisión)
+
+La sección de planes ya no depende solo de la semilla: consume
+`GET {VITE_API_URL}/public/plans` (endpoint público existente en
+`plans.controller.ts`, filas Prisma ordenadas por `displayOrder`).
+
+### Patrón elegido: cached-first, no skeleton
+
+- **Primer pintado:** catálogo semilla (`SEED_PLANS`, misma fuente del
+  servidor) al instante — la página nunca espera red ni muestra esqueletos.
+- **Intercambio silencioso:** cuando la respuesta pasa la validación Zod
+  (`PublicPlansResponseSchema`, 8 s de timeout), el store
+  (`stores/plans-store.ts`) reemplaza los planes en sitio. Sin layout shift.
+- **Falla = semilla, nunca error:** sin `VITE_API_URL`, red caída, respuesta
+  malformada o catálogo vacío → siguen los precios de referencia. Una página
+  de ventas no se rinde ante un timeout.
+- **Procedencia visible:** línea mono con punto de estado sobre los documentos
+  (`role="status"`, anunciado amablemente): «Precios verificados contra el
+  servidor · HH:mm» en verde, o «Precios de referencia» en tinta apagada.
+  Coherente con la honestidad fiscal del resto del sitio.
+
+### Cambios de visualización aprovechando datos vivos
+
+- Cada documento muestra ahora la `description` del plan (difiere entre los
+  gemelos: es la única prosa propia de cada uno).
+- La cuadrícula acepta N planes (si administración publica un tercero, entra
+  sin cambios de código).
+- Checkout dialog, tirilla final y barra móvil leen del mismo store — un solo
+  precio mostrado en toda la página, siempre consistente.
+
+### Archivos
+
+- Nuevos: `lib/public-plans-api.ts` (fetch + Zod), `stores/plans-store.ts`
+- Modificados: `data/plans.ts` (`PUBLIC_PLANS` → `SEED_PLANS` + descripción),
+  `pricing.tsx`, `plan-document.tsx`, `cta-band.tsx`, `mobile-buy-bar.tsx`,
+  `checkout-dialog.tsx`, `App.tsx`, `es.json`, `.env.example`
+- Dependencia nueva: `zod@^4` (validación de la respuesta; regla del repo)
 

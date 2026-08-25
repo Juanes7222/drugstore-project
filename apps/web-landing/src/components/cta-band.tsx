@@ -1,11 +1,11 @@
 import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BillingPeriod } from '@pharmacy/shared-types';
-import { PUBLIC_PLANS } from '../data/plans';
 import { calculatePeriodPriceCents, formatCOP } from '../lib/format';
 import { usePrintReveal } from '../hooks/use-print-reveal';
 import { ArrowRightIcon, LogoMark } from './icons';
 import { useCheckoutStore } from '../stores/checkout-store';
+import { usePlansStore } from '../stores/plans-store';
 
 const PERIOD_LABEL_KEY: Record<BillingPeriod, string> = {
   MONTHLY: 'pricing.period_monthly',
@@ -28,10 +28,12 @@ export function CtaBand() {
   const { t } = useTranslation();
   const openCheckout = useCheckoutStore((state) => state.openCheckout);
   const billingPeriod = useCheckoutStore((state) => state.billingPeriod);
+  const livePlans = usePlansStore((state) => state.plans);
   const revealRef = usePrintReveal<HTMLElement>();
 
-  // Both plans share the same price; the receipt quotes the catalog's base.
-  const basePriceCents = PUBLIC_PLANS[0].basePriceCents;
+  // Both plans share the same price; the receipt quotes whichever plan is
+  // first in the effective catalog (seed or server).
+  const basePriceCents = livePlans[0].basePriceCents;
   const totalCents = calculatePeriodPriceCents(basePriceCents, billingPeriod);
 
   return (

@@ -12,6 +12,7 @@ import { MobileBuyBar } from './components/mobile-buy-bar';
 import { SiteFooter } from './components/site-footer';
 import { CheckoutDialog } from './components/checkout-dialog';
 import { LegalPage } from './components/legal-page';
+import { usePlansStore } from './stores/plans-store';
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -24,6 +25,15 @@ function ScrollToTop() {
 }
 
 function LandingPage() {
+  // Seed prices paint immediately; this refreshes them in place from the
+  // server. Fire-and-forget: failures keep the seed and the status line
+  // in the pricing section explains it.
+  const loadPlansFromServer = usePlansStore((state) => state.loadFromServer);
+
+  useEffect(() => {
+    void loadPlansFromServer();
+  }, [loadPlansFromServer]);
+
   return (
     <>
       <SiteHeader />

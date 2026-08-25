@@ -120,7 +120,9 @@
     "doc_cta": "Comprar este plan",
     "all_features_note": "Todos los planes incluyen: multi-sede, modo offline, inventario y lotes, prescripciones, impresión fiscal y de etiquetas, pantalla de cliente, informes, soporte prioritario, API, respaldo y recuperación.",
     "workstation_note": "Incluye 3 puestos de venta por sede. Puesto adicional: $40.000 COP/mes, máximo 5 por sede. Sedes ilimitadas.",
-    "payment_note": "Pago seguro por Wompi: tarjetas, PSE y Botón Bancario."
+    "payment_note": "Pago seguro por Wompi: tarjetas, PSE y Botón Bancario.",
+    "source_live": "Precios verificados contra el servidor · {{time}}",
+    "source_fallback": "Precios de referencia — sin conexión con el servidor"
   },
   "steps": {
     "title": "Cómo empieza",
