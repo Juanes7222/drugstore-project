@@ -22,6 +22,14 @@ export interface RollbackDetectorConfig {
   /** The current app version (from the running build). */
   currentVersion: string;
   /**
+   * Returns the identity of the current local database install, or null
+   * when unknown (database not initialized yet, or in-memory dev mode).
+   * The crash counter is scoped to one database install: a sentinel
+   * written by a different install (the DB was wiped or recreated) is
+   * stale and must not feed the crash-loop decision.
+   */
+  databaseInstallId?: () => string | null;
+  /**
    * Optional callback invoked when rollback is recommended.
    * The caller (e.g. UpdateService) performs the actual rollback.
    */
@@ -70,9 +78,11 @@ export function createRollbackDetector(config: RollbackDetectorConfig): Rollback
 
 class RollbackDetectorImpl implements RollbackDetector {
   private readonly onRollbackRecommended?: (reason: string) => void;
+  private readonly databaseInstallId?: () => string | null;
 
   constructor(private readonly config: RollbackDetectorConfig) {
     this.onRollbackRecommended = config.onRollbackRecommended;
+    this.databaseInstallId = config.databaseInstallId;
   }
 
   async checkForRollback(): Promise<{
@@ -86,24 +96,32 @@ class RollbackDetectorImpl implements RollbackDetector {
       // 1. Read or create the sentinel file (tracks startup attempts)
       let startupCount = 0;
       let lastVersion = '';
+      let sentinelInstallId: string | null = null;
 
       if (isTauriEnv) {
         const sentinelData = await invoke<{
           count: number;
           version: string;
+          dbInstallId?: string | null;
         }>('read_sentinel_command', {
           key: SENTINEL_KEY,
         });
         startupCount = sentinelData.count;
         lastVersion = sentinelData.version;
+        sentinelInstallId = sentinelData.dbInstallId ?? null;
       } else {
         // Dev fallback: use sessionStorage
         const raw = sessionStorage.getItem(SENTINEL_KEY);
         if (raw) {
           try {
-            const parsed = JSON.parse(raw) as { count: number; version: string };
+            const parsed = JSON.parse(raw) as {
+              count: number;
+              version: string;
+              dbInstallId?: string | null;
+            };
             startupCount = parsed.count;
             lastVersion = parsed.version;
+            sentinelInstallId = parsed.dbInstallId ?? null;
           } catch {
             // Ignore parse errors
           }
@@ -111,24 +129,35 @@ class RollbackDetectorImpl implements RollbackDetector {
         lastVersion = lastVersion || this.config.currentVersion;
       }
 
-      // 2. If this is a different version from the sentinel, reset counter
+      // 2. A sentinel from a different database install describes crashes of
+      // an installation that no longer exists (the DB was wiped or
+      // recreated). Reset instead of inheriting its count — otherwise a
+      // wiped database leaves a permanently poisoned crash-loop signal.
+      // Comparison only fires when both ids are known; an unknown id keeps
+      // the legacy version-only behavior.
+      const currentInstallId = this.databaseInstallId?.() ?? null;
+      if (
+        sentinelInstallId &&
+        currentInstallId &&
+        sentinelInstallId !== currentInstallId
+      ) {
+        console.warn(
+          '[rollback-detector] Local database install changed — resetting stale crash counter.',
+        );
+        await this.writeSentinel(1);
+
+        this.scheduleStabilityClear();
+        return { needsRollback: false, reason: null };
+      }
+
+      // 3. If this is a different version from the sentinel, reset counter
       if (lastVersion && lastVersion !== this.config.currentVersion) {
         // The version changed (new update installed) — this is the first run.
         // Increment the counter (this call itself IS a startup attempt).
         startupCount = 1;
         await this.writeSentinel(startupCount);
 
-        if (isTauriEnv) {
-          // Set a one-shot timer to clear the sentinel after 60 seconds.
-          // This runs in the JS context; if the app crashes, the timer never fires.
-          setTimeout(async () => {
-            try {
-              await this.markStartupSuccess();
-            } catch {
-              // Ignore cleanup errors.
-            }
-          }, STABILITY_WINDOW_MS);
-        }
+        this.scheduleStabilityClear();
 
         return {
           needsRollback: false,
@@ -136,22 +165,16 @@ class RollbackDetectorImpl implements RollbackDetector {
         };
       }
 
-      // 3. Same version — increment crash counter
+      // 4. Same version — increment crash counter
       startupCount += 1;
       await this.writeSentinel(startupCount);
 
       // If this is the first startup of an existing version, set stability timer
-      if (startupCount <= 1 && isTauriEnv) {
-        setTimeout(async () => {
-          try {
-            await this.markStartupSuccess();
-          } catch {
-            // Ignore cleanup errors.
-          }
-        }, STABILITY_WINDOW_MS);
+      if (startupCount <= 1) {
+        this.scheduleStabilityClear();
       }
 
-      // 4. Check if we've exceeded the crash threshold
+      // 5. Check if we've exceeded the crash threshold
       if (startupCount > MAX_CONSECUTIVE_CRASHES) {
         const reason = `App crashed ${startupCount} consecutive times on version ${this.config.currentVersion}.`;
         console.error(`[rollback-detector] ${reason}`);
@@ -196,6 +219,25 @@ class RollbackDetectorImpl implements RollbackDetector {
   // Private
   // -----------------------------------------------------------------------
 
+  /**
+   * Set a one-shot timer to clear the sentinel after 60 seconds of stable
+   * uptime. Only armed in Tauri, where the sentinel outlives the process;
+   * if the app crashes first, the timer never fires and the count stands.
+   */
+  private scheduleStabilityClear(): void {
+    const isTauriEnv =
+      typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    if (!isTauriEnv) return;
+
+    setTimeout(async () => {
+      try {
+        await this.markStartupSuccess();
+      } catch {
+        // Ignore cleanup errors.
+      }
+    }, STABILITY_WINDOW_MS);
+  }
+
   private async writeSentinel(count: number): Promise<void> {
     const isTauriEnv =
       typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -203,6 +245,7 @@ class RollbackDetectorImpl implements RollbackDetector {
     const data = JSON.stringify({
       count,
       version: this.config.currentVersion,
+      dbInstallId: this.databaseInstallId?.() ?? null,
       updatedAt: new Date().toISOString(),
     });
 

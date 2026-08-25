@@ -17,6 +17,7 @@
 import type { HttpClient } from '../../infrastructure/http-client';
 import { createHttpClient } from '../../infrastructure/http-client';
 import { API_BASE_URL } from '../../infrastructure/config';
+import { getLocalDatabaseInstallId } from '../../infrastructure/local-database';
 import { isOnline } from '../../common/is-online';
 import {
   UpdateType,
@@ -184,6 +185,10 @@ class UpdateServiceImpl implements UpdateService {
     this.rollbackDetector = createRollbackDetector({
       prisma: this.prisma,
       currentVersion: this.currentVersion,
+      // Scopes the crash counter to the current database install so a
+      // wiped/recreated database resets it instead of keeping a poisoned
+      // crash-loop signal.
+      databaseInstallId: getLocalDatabaseInstallId,
       onRollbackRecommended: (reason) => {
         this.stateMachine.rollback();
         void this.telemetryService.enqueue({

@@ -36,7 +36,14 @@ export type UpdateState =
 // ---------------------------------------------------------------------------
 
 const TRANSITIONS: Record<UpdateState, ReadonlySet<UpdateState>> = {
-  IDLE: new Set(['CHECKING']),
+  // ROLLED_BACK is reachable from IDLE because startup crash-loop recovery is
+  // precisely the rollback that happens when NO update cycle is in progress in
+  // this process: the machine adopts the rolled-back posture from persisted
+  // evidence (crash counter), keeping the invariant that the state records
+  // which phase produced the current binary. Driving the fake path
+  // IDLE -> CHECKING -> ROLLED_BACK instead would emit spurious CHECKING
+  // transitions to UI listeners for a check that never ran.
+  IDLE: new Set(['CHECKING', 'ROLLED_BACK']),
   CHECKING: new Set(['UPDATE_AVAILABLE', 'NO_UPDATE', 'CHECK_FAILED', 'IDLE']),
   UPDATE_AVAILABLE: new Set(['DOWNLOADING', 'IDLE']),
   DOWNLOADING: new Set([
@@ -56,7 +63,10 @@ const TRANSITIONS: Record<UpdateState, ReadonlySet<UpdateState>> = {
   INSTALLED_PENDING_RESTART: new Set(['INSTALLED_VERIFIED', 'ROLLED_BACK']),
   INSTALL_FAILED: new Set(['IDLE', 'DOWNLOADING']),
   INSTALLED_VERIFIED: new Set(['IDLE']),
-  ROLLED_BACK: new Set(['IDLE']),
+  // CHECKING allowed so a session that entered ROLLED_BACK at startup can
+  // still look for updates again; without it the machine would dead-end
+  // until restart.
+  ROLLED_BACK: new Set(['IDLE', 'CHECKING']),
   NO_UPDATE: new Set(['IDLE', 'CHECKING']),
   CHECK_FAILED: new Set(['IDLE', 'CHECKING']),
 };
@@ -169,7 +179,11 @@ export class UpdateStateMachine {
     this.transitionTo('INSTALLED_VERIFIED');
   }
 
-  /** Rollback triggered after crash or migration failure. */
+  /**
+   * Rollback triggered after crash or migration failure. Legal both
+   * mid-cycle (INSTALLING / INSTALLED_PENDING_RESTART) and from IDLE,
+   * where it records startup crash-loop recovery of a previous cycle.
+   */
   rollback(): void {
     this.transitionTo('ROLLED_BACK');
   }
