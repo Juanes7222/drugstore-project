@@ -19,6 +19,7 @@ import TableSortLabel from "@mui/material/TableSortLabel";
 import Typography from "@mui/material/Typography";
 import Skeleton from "@mui/material/Skeleton";
 import Button from "@mui/material/Button";
+import { alpha, useTheme } from "@mui/material/styles";
 import { useTranslation } from "react-i18next";
 import { InboxIcon, RefreshIcon } from "../icons/app-icons";
 
@@ -66,6 +67,7 @@ export function DataTable<T>({
   ariaLabel,
 }: DataTableProps<T>) {
   const { t } = useTranslation();
+  const theme = useTheme();
   const [sorting, setSorting] = useState<SortingState>([]);
 
   const table = useReactTable({
@@ -154,11 +156,28 @@ export function DataTable<T>({
                     display="flex"
                     flexDirection="column"
                     alignItems="center"
-                    gap={1}
+                    gap={1.5}
                     py={6}
                     color={isError ? "error.main" : "text.secondary"}
                   >
-                    <InboxIcon size={36} aria-hidden />
+                    {/* Soft tinted disc: the empty state reads as an
+                        invitation, not a broken cell. */}
+                    <Box
+                      aria-hidden
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      sx={{
+                        width: 52,
+                        height: 52,
+                        borderRadius: "50%",
+                        bgcolor: isError
+                          ? alpha(theme.palette.error.main, 0.1)
+                          : alpha(theme.palette.text.primary, 0.05),
+                      }}
+                    >
+                      <InboxIcon size={24} />
+                    </Box>
                     <Typography variant="body2" align="center">
                       {isError
                         ? (errorHint ?? t("common.error"))

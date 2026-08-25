@@ -14,11 +14,9 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 import MenuItem from "@mui/material/MenuItem";
-import Snackbar from "@mui/material/Snackbar";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import Alert from "@mui/material/Alert";
 import {
   HowToRegIcon,
   BlockIcon,
@@ -41,6 +39,7 @@ import { PageHeader } from "../components/common/page-header";
 import { DataTable } from "../components/tables/data-table";
 import { StatusChip } from "../components/common/status-chip";
 import { ConfirmDialog } from "../components/common/confirm-dialog";
+import { toast } from "../components/common/toaster";
 import { LoadingState, ErrorState } from "../components/common/states";
 
 const USER_STATUSES = ["ALL", "PENDING_SETUP", "ACTIVE", "DISABLED", "LOCKED"];
@@ -71,7 +70,6 @@ export function UsersPage() {
     null,
   );
   const [sessionsUser, setSessionsUser] = useState<UserListItem | null>(null);
-  const [snackbar, setSnackbar] = useState<string | null>(null);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["users", { status: statusFilter, page }],
@@ -104,7 +102,10 @@ export function UsersPage() {
     },
     onSuccess: () => {
       invalidateUsers();
-      setSnackbar(t("users.userUpdated"));
+      toast.success(t("users.userUpdated"));
+    },
+    onError: () => {
+      toast.error(t("users.actionFailed"));
     },
   });
 
@@ -117,7 +118,10 @@ export function UsersPage() {
       });
       void queryClient.invalidateQueries({ queryKey: ["sessions"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      setSnackbar(t("users.revoked"));
+      toast.success(t("users.revoked"));
+    },
+    onError: () => {
+      toast.error(t("users.revokeFailed"));
     },
   });
 
@@ -349,21 +353,6 @@ export function UsersPage() {
         onRevoke={(sessionId) => sessionRevokeMutation.mutate(sessionId)}
         revoking={sessionRevokeMutation.isPending}
       />
-
-      <Snackbar
-        open={snackbar !== null}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          severity="success"
-          variant="filled"
-          onClose={() => setSnackbar(null)}
-        >
-          {snackbar}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 }

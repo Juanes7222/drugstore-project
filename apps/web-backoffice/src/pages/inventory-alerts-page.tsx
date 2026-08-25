@@ -7,12 +7,10 @@ import {
 } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import LinearProgress from "@mui/material/LinearProgress";
 import Paper from "@mui/material/Paper";
-import Snackbar from "@mui/material/Snackbar";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -28,6 +26,7 @@ import { formatDate, formatDateTime, formatNumber } from "../utils/format";
 import type { LotAlert, PendingAdjustment } from "../types/backoffice";
 import { PageHeader } from "../components/common/page-header";
 import { ConfirmDialog } from "../components/common/confirm-dialog";
+import { toast } from "../components/common/toaster";
 import { LoadingState, ErrorState } from "../components/common/states";
 
 function SectionCard({
@@ -131,9 +130,6 @@ export function InventoryAlertsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [result, setResult] = useState<{ approved: number; failed: number } | null>(
-    null,
-  );
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["inventory-alerts"],
     queryFn: fetchInventoryAlerts,
@@ -153,12 +149,18 @@ export function InventoryAlertsPage() {
       }
       return { approved: ids.length - failed, failed };
     },
-    onSuccess: ({ approved }) => {
+    onSuccess: ({ approved, failed }) => {
       void queryClient.invalidateQueries({ queryKey: ["inventory-alerts"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      if (approved > 0) setResult({ approved, failed: 0 });
+      const message = t("inventory.approveAllResult", { approved, failed });
+      // Partial failures stay on screen longer as a warning.
+      if (failed === 0) toast.success(message);
+      else if (approved > 0) toast.warning(message, { duration: 6000 });
+      else toast.error(message);
     },
-    onError: () => setResult({ approved: 0, failed: 1 }),
+    onError: () => {
+      toast.error(t("inventory.approveAllResult", { approved: 0, failed: 1 }));
+    },
   });
 
   const pendingColumns = useMemo<ColumnDef<PendingAdjustment, unknown>[]>(
@@ -379,26 +381,6 @@ export function InventoryAlertsPage() {
           );
         }}
       />
-
-      <Snackbar
-        open={result !== null}
-        autoHideDuration={6000}
-        onClose={() => setResult(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          severity={
-            result && result.failed === 0 ? "success" : "warning"
-          }
-          variant="filled"
-          onClose={() => setResult(null)}
-        >
-          {t("inventory.approveAllResult", {
-            approved: result?.approved ?? 0,
-            failed: result?.failed ?? 0,
-          })}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 }

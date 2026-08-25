@@ -178,6 +178,31 @@ function buildThemeFromPalette(mode: "light" | "dark", c: PaletteSet): Theme {
           outlined: { backgroundColor: alpha(c.textPrimary, 0.03) },
         },
       },
+      MuiDialog: {
+        styleOverrides: {
+          // Floating surface treatment shared by every modal in the app.
+          paper: {
+            borderRadius: 14,
+            border: `1px solid ${c.divider}`,
+            backgroundImage: "none",
+            boxShadow:
+              mode === "light"
+                ? "0 16px 48px rgba(15, 23, 42, 0.16)"
+                : "0 16px 48px rgba(2, 6, 23, 0.6)",
+          },
+        },
+      },
+      MuiDialogTitle: {
+        styleOverrides: {
+          root: {
+            fontSize: 17,
+            fontWeight: 700,
+            letterSpacing: "-0.01em",
+            paddingTop: 20,
+            paddingRight: 20,
+          },
+        },
+      },
       MuiSkeleton: {
         styleOverrides: {
           root: {

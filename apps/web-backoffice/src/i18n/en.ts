@@ -40,6 +40,7 @@ export const en: typeof es = {
     dataTable: "Data table",
     exportCsv: "Export CSV",
     exportError: "Could not export the file. Please try again.",
+    notifications: "Notifications",
   },
   nav: {
     dashboard: "Dashboard",
@@ -163,6 +164,8 @@ export const en: typeof es = {
     statusLocked: "Locked",
     revoked: "Session revoked",
     userUpdated: "User updated",
+    actionFailed: "Could not update the user. Please try again.",
+    revokeFailed: "Could not revoke the session. Please try again.",
   },
   sales: {
     title: "Sales",
@@ -297,6 +300,7 @@ export const en: typeof es = {
     revoke: "Revoke",
     confirmRevoke: "Revoke this session?",
     revoked: "Session revoked",
+    revokeFailed: "Could not revoke the session. Please try again.",
   },
   workstations: {
     title: "Terminals",

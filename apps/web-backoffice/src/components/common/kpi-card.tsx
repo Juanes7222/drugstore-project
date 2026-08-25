@@ -3,6 +3,7 @@ import CardContent from "@mui/material/CardContent";
 import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
 import { alpha, useTheme } from "@mui/material/styles";
+import Tooltip from "@mui/material/Tooltip";
 import type { SvgIconProps } from "@mui/material/SvgIcon";
 import type { ComponentType } from "react";
 import { TrendingDownIcon, TrendingUpIcon } from "../icons/app-icons";
@@ -49,20 +50,25 @@ const TONE_COLOR: Record<KpiTone, string> = {
 function DeltaLine({ delta }: { delta: KpiDelta }) {
   const color = delta.positive ? "success.main" : "error.main";
   return (
-    <Typography
-      component="p"
-      variant="caption"
-      m={0}
-      sx={{ display: "inline-flex", alignItems: "center", gap: 0.25, color }}
+    <Tooltip
       title={delta.detail ?? delta.label}
+      // Native title attr replaced: MUI tooltips match the rest of the app.
+      disableInteractive
     >
-      {delta.direction === "up" ? (
-        <TrendingUpIcon size={13} aria-hidden />
-      ) : (
-        <TrendingDownIcon size={13} aria-hidden />
-      )}
-      {delta.label}
-    </Typography>
+      <Typography
+        component="p"
+        variant="caption"
+        m={0}
+        sx={{ display: "inline-flex", alignItems: "center", gap: 0.25, color, cursor: "default" }}
+      >
+        {delta.direction === "up" ? (
+          <TrendingUpIcon size={13} aria-hidden />
+        ) : (
+          <TrendingDownIcon size={13} aria-hidden />
+        )}
+        {delta.label}
+      </Typography>
+    </Tooltip>
   );
 }
 

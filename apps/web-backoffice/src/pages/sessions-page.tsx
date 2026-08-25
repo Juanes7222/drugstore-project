@@ -4,10 +4,8 @@ import { useTranslation } from "react-i18next";
 import type { ColumnDef } from "@tanstack/react-table";
 import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
-import Snackbar from "@mui/material/Snackbar";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import Alert from "@mui/material/Alert";
 import { BlockIcon } from "../components/icons/app-icons";
 import { fetchSessions, revokeSession } from "../services/backoffice";
 import { formatDateTime } from "../utils/format";
@@ -15,6 +13,7 @@ import type { SessionRow } from "../types/backoffice";
 import { PageHeader } from "../components/common/page-header";
 import { DataTable } from "../components/tables/data-table";
 import { ConfirmDialog } from "../components/common/confirm-dialog";
+import { toast } from "../components/common/toaster";
 import { LoadingState, ErrorState } from "../components/common/states";
 
 const PAGE_SIZE = 20;
@@ -24,7 +23,6 @@ export function SessionsPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [pendingRevoke, setPendingRevoke] = useState<SessionRow | null>(null);
-  const [snackbar, setSnackbar] = useState<string | null>(null);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["sessions", page],
@@ -39,7 +37,10 @@ export function SessionsPage() {
       void queryClient.invalidateQueries({ queryKey: ["sessions"] });
       void queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       void queryClient.invalidateQueries({ queryKey: ["user-sessions"] });
-      setSnackbar(t("sessions.revoked"));
+      toast.success(t("sessions.revoked"));
+    },
+    onError: () => {
+      toast.error(t("sessions.revokeFailed"));
     },
   });
 
@@ -176,21 +177,6 @@ export function SessionsPage() {
         }}
         onClose={() => setPendingRevoke(null)}
       />
-
-      <Snackbar
-        open={snackbar !== null}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-      >
-        <Alert
-          severity="success"
-          variant="filled"
-          onClose={() => setSnackbar(null)}
-        >
-          {snackbar}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 }

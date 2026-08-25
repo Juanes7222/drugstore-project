@@ -38,6 +38,7 @@ export const es = {
     dataTable: "Tabla de datos",
     exportCsv: "Exportar CSV",
     exportError: "No se pudo exportar el archivo. Intenta de nuevo.",
+    notifications: "Notificaciones",
   },
   nav: {
     dashboard: "Panel",
@@ -165,6 +166,8 @@ export const es = {
     statusLocked: "Bloqueada",
     revoked: "Sesión revocada",
     userUpdated: "Usuario actualizado",
+    actionFailed: "No se pudo actualizar el usuario. Intenta de nuevo.",
+    revokeFailed: "No se pudo revocar la sesión. Intenta de nuevo.",
   },
   sales: {
     title: "Ventas",
@@ -300,6 +303,7 @@ export const es = {
     revoke: "Revocar",
     confirmRevoke: "¿Revocar esta sesión?",
     revoked: "Sesión revocada",
+    revokeFailed: "No se pudo revocar la sesión. Intenta de nuevo.",
   },
   workstations: {
     title: "Terminales",

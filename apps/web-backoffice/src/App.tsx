@@ -5,6 +5,7 @@ import { useAuthStore } from "./hooks/use-auth";
 import { BackofficeLayout } from "./components/layouts/backoffice-layout";
 import { SuperAdminLayout } from "./components/layouts/super-admin-layout";
 import { LoadingState } from "./components/common/states";
+import { AppToaster } from "./components/common/toaster";
 
 const LoginPage = lazy(() =>
   import("./pages/login-page").then((m) => ({ default: m.LoginPage })),
@@ -134,8 +135,7 @@ function RequirePlatformAdmin() {
 export function App() {
   return (
     <Suspense fallback={<LoadingState />}>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
+      <Routes>        <Route path="/login" element={<LoginPage />} />
         <Route element={<RequireAuth />}>
           {/* Platform owner surface */}
           <Route element={<RequirePlatformAdmin />}>
@@ -183,6 +183,8 @@ export function App() {
           </Route>
         </Route>
       </Routes>
+      {/* Single global viewport for toast.success/error calls. */}
+      <AppToaster />
     </Suspense>
   );
 }
