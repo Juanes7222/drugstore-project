@@ -2,7 +2,7 @@
  * Cursor-based pagination helper.
  *
  * Produces an opaque `nextCursor` that clients pass back to continue
- * the pagination. Uses compound (updatedAt, id) keyset pagination,
+ * the pagination. Uses compound (timeField, id) keyset pagination,
  * efficient with a compound index on both fields.
  *
  * Usage:
@@ -20,7 +20,9 @@
  * server but clients store and return the raw string.
  */
 
-export interface CursorPaginationInput<Where, OrderBy> {
+export type CursorTimeField = 'updatedAt' | 'createdAt';
+
+export interface CursorPaginationInput<Where, OrderBy, Include = undefined> {
   /** Prisma delegate (e.g. prisma.product, prisma.lot). */
   model: {
     findMany: (args: {
@@ -30,19 +32,33 @@ export interface CursorPaginationInput<Where, OrderBy> {
       cursor?: { id: string };
       skip?: number;
       select?: Record<string, unknown>;
+      include?: Include;
     }) => Promise<unknown[]>;
     count: (args: { where?: Where }) => Promise<number>;
   };
   /** Prisma where clause. */
   where?: Where;
-  /** Sort order. Must include (updatedAt, id) for cursor consistency. */
+  /** Where merged before cursor conditions (used by callers that always filter). */
+  baseWhere?: Where;
+  /**
+   * Timestamp field the keyset walks. Must exist on the model and match the
+   * first entry of orderBy. Defaults to updatedAt (models without it, like
+   * append-only ledgers, pass createdAt).
+   */
+  timeField?: CursorTimeField;
+  /**
+   * Sort direction of the keyset walk. Must match the first entry of
+   * orderBy. Defaults to asc.
+   */
+  direction?: 'asc' | 'desc';
+  /** Sort order. Must start with (timeField, id) for cursor consistency. */
   orderBy?: OrderBy | OrderBy[];
   /** Max items per page (default 200). */
   limit?: number;
   /** Opaque cursor string from a previous response, or undefined for first page. */
   cursor?: string | null;
-  /** Optional base where to merge with cursor conditions. */
-  baseWhere?: Where;
+  /** Prisma include, forwarded verbatim to findMany. */
+  include?: Include;
 }
 
 export interface CursorPage<T> {
@@ -53,9 +69,14 @@ export interface CursorPage<T> {
 }
 
 interface CursorValue {
+  // Key names are historical (the payload is opaque to clients): they hold
+  // whatever timestamp field timeField points at, not literally updatedAt.
   lastUpdatedAt: string;
   lastId: string;
 }
+
+/** Hard ceiling so a client cannot request an unbounded page via the cursor path. */
+const CURSOR_LIMIT_CEILING = 500;
 
 /**
  * Encode cursor data into an opaque string.
@@ -66,12 +87,19 @@ function encodeCursor(value: CursorValue): string {
 
 /**
  * Decode an opaque cursor string, or return null for invalid/missing.
+ * A well-shaped payload whose timestamp is not a parseable date is also
+ * rejected, so garbage cursors fall back to the first page instead of
+ * reaching Prisma with an Invalid Date.
  */
 function decodeCursor(raw: string | null | undefined): CursorValue | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
-    if (typeof parsed.lastUpdatedAt === 'string' && typeof parsed.lastId === 'string') {
+    if (
+      typeof parsed.lastUpdatedAt === 'string' &&
+      typeof parsed.lastId === 'string' &&
+      !Number.isNaN(new Date(parsed.lastUpdatedAt).getTime())
+    ) {
       return parsed as CursorValue;
     }
     return null;
@@ -80,52 +108,79 @@ function decodeCursor(raw: string | null | undefined): CursorValue | null {
   }
 }
 
-export async function paginateWithCursor<T, Where = Record<string, unknown>, OrderBy = Record<string, 'asc' | 'desc'>>(
-  input: CursorPaginationInput<Where, OrderBy>,
+export async function paginateWithCursor<
+  T,
+  Where = Record<string, unknown>,
+  OrderBy = Record<string, 'asc' | 'desc'>,
+  Include = undefined,
+>(
+  input: CursorPaginationInput<Where, OrderBy, Include>,
 ): Promise<CursorPage<T>> {
-  const { model, orderBy, limit = 200, cursor, baseWhere } = input;
+  const {
+    model,
+    orderBy,
+    limit = 200,
+    cursor,
+    baseWhere,
+    timeField = 'updatedAt',
+    direction = 'asc',
+    include,
+  } = input;
   const cursorValue = decodeCursor(cursor);
-
-  // Build the where clause
-  const where: Record<string, unknown> = { ...(baseWhere ?? {}) };
+  // Merge both filter inputs up front: dropping `where` whenever a cursor is
+  // present would silently unfilter continuation pages for callers that pass
+  // filters via `where` instead of `baseWhere`.
+  const where: Record<string, unknown> = {
+    ...(baseWhere ?? {}),
+    ...(input.where ?? {}),
+  };
 
   if (cursorValue) {
-    // Compound cursor condition: (updatedAt > lastUpdatedAt) OR (updatedAt = lastUpdatedAt AND id > lastId)
+    // Compound cursor condition: continue strictly after (or before, for
+    // desc) the (timeField, id) position the cursor encodes.
+    const lastTime = new Date(cursorValue.lastUpdatedAt);
+    const timeCmp = direction === 'desc' ? 'lt' : 'gt';
+    const idCmp = direction === 'desc' ? 'lt' : 'gt';
     where.OR = [
-      { updatedAt: { gt: new Date(cursorValue.lastUpdatedAt) } },
+      { [timeField]: { [timeCmp]: lastTime } },
       {
-        updatedAt: new Date(cursorValue.lastUpdatedAt),
-        id: { gt: cursorValue.lastId },
+        [timeField]: lastTime,
+        id: { [idCmp]: cursorValue.lastId },
       },
     ];
-  } else if (input.where) {
-    // No cursor — use input where directly
-    Object.assign(where, input.where);
   }
 
   // Ensure consistent ordering for cursor pagination
-  const effectiveOrderBy = orderBy ?? [{ updatedAt: 'asc' as const }, { id: 'asc' as const }] as any;
+  const effectiveOrderBy =
+    orderBy ??
+    ([{ [timeField]: direction }, { id: direction }] as unknown as OrderBy[]);
+
+  const effectiveLimit = Math.min(limit, CURSOR_LIMIT_CEILING);
 
   // Fetch limit + 1 to detect if there are more items
   const items = await model.findMany({
     // `where` is built as a plain record but the delegate expects `Where`
     where: where as Where,
     orderBy: effectiveOrderBy,
-    take: limit + 1,
+    take: effectiveLimit + 1,
+    ...(include !== undefined ? { include } : {}),
   });
 
-  const hasMore = (items as T[]).length > limit;
-  const resultItems = hasMore ? (items as T[]).slice(0, limit) : (items as T[]);
+  const hasMore = (items as T[]).length > effectiveLimit;
+  const resultItems = hasMore
+    ? (items as T[]).slice(0, effectiveLimit)
+    : (items as T[]);
 
   // Build next cursor from the last item
   let nextCursor: string | null = null;
   if (hasMore && resultItems.length > 0) {
     const last = resultItems[resultItems.length - 1] as Record<string, unknown>;
-    const lastUpdatedAt = last.updatedAt;
+    const lastTime = last[timeField];
     const lastId = last.id;
-    if (lastUpdatedAt && lastId) {
+    if (lastTime && lastId) {
       nextCursor = encodeCursor({
-        lastUpdatedAt: lastUpdatedAt instanceof Date ? lastUpdatedAt.toISOString() : String(lastUpdatedAt),
+        lastUpdatedAt:
+          lastTime instanceof Date ? lastTime.toISOString() : String(lastTime),
         lastId: String(lastId),
       });
     }

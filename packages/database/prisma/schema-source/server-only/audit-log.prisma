@@ -28,6 +28,7 @@ model AuditLog {
   createdAt         DateTime  @default(now())
 
   @@index([subscriptionId])
+  @@index([createdAt, id])
   @@index([createdAt, module])
   @@index([entityType, entityId])
   @@index([userId, createdAt])

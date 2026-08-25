@@ -29,7 +29,14 @@ export class AuditController {
     @Query('toDate') toDate?: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
-  ): Promise<{ rows: AuditLogModel[]; total: number }> {
+    // Keyset continuation token; wins over offset when present.
+    @Query('cursor') cursor?: string,
+  ): Promise<{
+    rows: AuditLogModel[];
+    total?: number;
+    nextCursor?: string | null;
+    hasMore?: boolean;
+  }> {
     return this.auditService.query({
       event: (event as AuditEventType) ?? undefined,
       actorId,
@@ -40,6 +47,7 @@ export class AuditController {
       toDate: toDate ? new Date(toDate) : undefined,
       limit: limit ?? 50,
       offset: offset ?? 0,
+      cursor,
     });
   }
 }

@@ -23,7 +23,7 @@ model InventoryMovement {
 
   @@index([lotId])
   @@index([lotId, createdAt])
-  @@index([createdAt])
+  @@index([createdAt, id])
   @@index([movementType, createdAt])
   @@index([adjustmentDocumentId])
   @@index([saleId])

@@ -8,6 +8,9 @@ export class QueryInventoryMovementDto {
   @Type(() => Number)
   pageSize: number = 20;
 
+  // When present, wins over page/pageSize: keyset walk over (createdAt, id).
+  cursor?: string;
+
   movementType?: string;
   lotId?: string;
   createdAtFrom?: string;
