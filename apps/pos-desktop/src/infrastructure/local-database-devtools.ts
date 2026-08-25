@@ -14,6 +14,9 @@
  *   fetchServerTable(table)   — fetch table from server API
  *   diffTable(table, baseUrl?)— compare local vs server
  *   diffTableWithJSON(table, serverRows) — compare local vs pasted JSON
+ *   reset(opts?)              — WIPE the whole local database and reload
+ *                               (guarded: refuses while unsynced SyncQueue
+ *                               operations exist unless { force: true })
  *   client                    — raw PGlite instance
  *   prisma                    — PrismaClient (Tauri mode only)
  */
@@ -61,6 +64,11 @@ export interface DbDevtools {
    * column names.
    */
   diffTableWithJSON(tableName: string, serverRows: unknown[]): Promise<TableDiff>;
+  /**
+   * Wipe the entire local database and reload the app into a fresh state.
+   * See `resetLocalDatabase` for the safety guards.
+   */
+  reset(opts?: { force?: boolean }): Promise<void>;
   /** Raw PGlite client reference. */
   readonly client: PGlite;
   /** PrismaClient (only in Tauri mode; undefined in dev Vite). */
@@ -97,6 +105,33 @@ export interface TableDiff {
   changedSample: Array<{ local: unknown; server: unknown }>;
   /** Summary string for quick console read. */
   summary: string;
+}
+
+/** Pre-reset scan: what a wipe would destroy that exists nowhere else. */
+export interface ResetSafetyReport {
+  /**
+   * SyncQueue operations the server never confirmed
+   * (PENDING / PROCESSING / FAILED / PERMANENT_FAILURE). These are the
+   * offline POS's only copy of the sales, shifts, and adjustments they
+   * carry — losing them is unrecoverable.
+   */
+  unsyncedOperations: number;
+  /** Breakdown of `unsyncedOperations` by SyncQueue status. */
+  byStatus: Record<string, number>;
+  /** Total user-table rows the wipe would delete. */
+  totalRows: number;
+  /** Number of user tables the wipe would drop. */
+  tableCount: number;
+}
+
+/** Injected side effects of `resetLocalDatabase`, overridable in tests. */
+export interface ResetDependencies {
+  /** Close Prisma/PGlite singletons so IndexedDB releases its locks. */
+  closeDatabase(): Promise<void>;
+  /** Delete the persisted PGlite store (no-op outside Tauri). */
+  deletePersistentStore(): Promise<void>;
+  /** Restart the app into the freshly-created database. */
+  reloadPage(): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +228,226 @@ function computeRowDiff(
     serverOnly,
     changed,
   };
+}
+
+/**
+ * Scan the live database and report what a wipe would destroy.
+ *
+ * Exported for tests: the reset guard is exercised against a fake PGlite
+ * client, mirroring how `applyMissingSchema` is tested in local-database.
+ */
+export async function collectResetSafetyReport(
+  client: Pick<PGlite, 'query'>,
+): Promise<ResetSafetyReport> {
+  // Unsynced sync-queue operations — the only truly unrecoverable loss.
+  const byStatus: Record<string, number> = {};
+  try {
+    const queueRows = await client.query<{ status: string; count: number }>(
+      `SELECT status::text AS status, COUNT(*)::int AS count
+         FROM "SyncQueue"
+        WHERE status IN ('PENDING', 'PROCESSING', 'FAILED', 'PERMANENT_FAILURE')
+        GROUP BY status`,
+    );
+    for (const row of queueRows.rows) {
+      byStatus[row.status] = row.count;
+    }
+  } catch {
+    // SyncQueue missing (fresh or broken database) — nothing to protect.
+  }
+  const unsyncedOperations = Object.values(byStatus).reduce((a, b) => a + b, 0);
+
+  // Volume overview across all user tables.
+  const tables = await client.query<{ tableName: string }>(
+    `SELECT table_name AS "tableName"
+       FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_type = 'BASE TABLE'
+        AND table_name NOT LIKE '\\_%'
+      ORDER BY table_name`,
+  );
+
+  let totalRows = 0;
+  for (const { tableName } of tables.rows) {
+    // eslint-disable-next-line no-await-in-loop
+    const counted = await client.query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM "${tableName}"`,
+    );
+    totalRows += counted.rows[0]?.count ?? 0;
+  }
+
+  return { unsyncedOperations, byStatus, totalRows, tableCount: tables.rows.length };
+}
+
+/**
+ * Detect the Tauri webview — same check as local-database's `isTauri`.
+ * Kept local so devtools does not import the eager side effects of the
+ * database module at top level.
+ */
+function isTauriWebview(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+/**
+ * Delete an IndexedDB database, rejecting if blocked by an open connection.
+ * PGlite holds its store open until `client.close()`, so callers must close
+ * the database singletons first or this promise never settles.
+ */
+function deleteIndexedDbDatabase(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('[devtools] indexedDB API unavailable in this context.'));
+      return;
+    }
+    const request = indexedDB.deleteDatabase(name);
+    request.onsuccess = () => resolve();
+    request.onerror = () =>
+      reject(
+        request.error ??
+          new Error(`[devtools] Failed to delete IndexedDB database "${name}".`),
+      );
+    request.onblocked = () =>
+      reject(
+        new Error(
+          `[devtools] Deleting IndexedDB database "${name}" is blocked by another ` +
+            'open connection. Close other windows/tabs of the app and retry.',
+        ),
+      );
+  });
+}
+
+/** List every IndexedDB database name, or [] if enumeration is unavailable. */
+async function listIndexedDbDatabases(): Promise<string[]> {
+  if (
+    typeof indexedDB === 'undefined' ||
+    typeof indexedDB.databases !== 'function'
+  ) {
+    return [];
+  }
+  try {
+    // Newer DOM libs type databases() as a Promise-returning API.
+    const infos = await indexedDB.databases();
+    return (infos ?? [])
+      .map((info) => info.name)
+      .filter((name): name is string => typeof name === 'string');
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Known IndexedDB database names PGlite data can live under.
+ *
+ * PGlite mounts Emscripten's IDBFS at `/pglite/<dataDir>` and Emscripten
+ * names the backing IndexedDB database after the FULL mount-point path —
+ * so for `idb://pglite-data` (local-database.ts) the actual database is
+ * literally named "/pglite/pglite-data". Deleting the bare "pglite-data"
+ * succeeds silently as a no-op on a nonexistent database, which is exactly
+ * how a first cut of this helper failed to wipe anything. The bare variant
+ * is kept in the fallback list for older/other layout possibilities.
+ */
+const PGLITE_IDB_DB_NAMES = ['/pglite/pglite-data', 'pglite-data'];
+
+/**
+ * Delete every IndexedDB database belonging to PGlite, then verify none
+ * remain. Verification matters: a silent no-op delete (wrong name) or a
+ * blocked deletion would otherwise reload the app straight back into the
+ * old data with no signal that anything went wrong.
+ */
+export async function deletePgliteIndexedDbStores(): Promise<void> {
+  const listed = await listIndexedDbDatabases();
+
+  let targets = listed.filter((name) => name.toLowerCase().includes('pglite'));
+
+  if (targets.length === 0 && listed.length > 0) {
+    // Enumeration works and nothing matches — genuinely nothing to wipe.
+    return;
+  }
+  if (targets.length === 0) {
+    // databases() unavailable (or empty) — fall back to the known names.
+    targets = [...PGLITE_IDB_DB_NAMES];
+  }
+
+  for (const name of targets) {
+    // eslint-disable-next-line no-await-in-loop
+    await deleteIndexedDbDatabase(name);
+    console.log(`[devtools] Deleted IndexedDB database "${name}".`);
+  }
+
+  const remaining = (await listIndexedDbDatabases()).filter((name) =>
+    name.toLowerCase().includes('pglite'),
+  );
+  if (remaining.length > 0) {
+    throw new Error(
+      `[devtools] IndexedDB still contains PGlite database(s) after deletion: ` +
+        `${remaining.join(', ')}. Close other windows/tabs and retry.`,
+    );
+  }
+}
+
+/** Side effects wired for the real app environment. */
+export function createDefaultResetDependencies(): ResetDependencies {
+  return {
+    closeDatabase: async () => {
+      const { closeLocalDatabase } = await import('./local-database');
+      await closeLocalDatabase();
+    },
+    deletePersistentStore: async () => {
+      if (!isTauriWebview()) {
+        console.log(
+          '[devtools] Browser dev mode uses an in-memory database — nothing persisted to delete.',
+        );
+        return;
+      }
+      await deletePgliteIndexedDbStores();
+    },
+    reloadPage: () => {
+      location.reload();
+    },
+  };
+}
+
+/**
+ * Wipe the local database and reload the app into a fresh state.
+ *
+ * Guards, in order:
+ *
+ * 1. **Data-loss gate** — refuses while `SyncQueue` holds operations the
+ *    server never confirmed (PENDING / PROCESSING / FAILED /
+ *    PERMANENT_FAILURE), unless `{ force: true }` is passed. Those rows are
+ *    the only copy of offline sales/shifts/adjustments; DISCARDED rows are
+ *    already manager-approved losses and do not block.
+ * 2. **Close before delete** — Prisma and PGlite are closed first because
+ *    an open PGlite connection blocks `deleteDatabase` indefinitely.
+ *
+ * On next boot local-database.ts recreates schema + seeds automatically
+ * (tax schemes, CONSUMIDOR FINAL). Session token and workstation id live
+ * in localStorage and survive the wipe deliberately.
+ *
+ * Dev-only surface: `window.__db` is stripped from production builds.
+ */
+export async function resetLocalDatabase(
+  client: Pick<PGlite, 'query'>,
+  opts: { force?: boolean } | undefined,
+  deps: ResetDependencies,
+): Promise<void> {
+  const report = await collectResetSafetyReport(client);
+
+  if (report.unsyncedOperations > 0 && !opts?.force) {
+    throw new Error(
+      `[devtools] reset aborted — ${report.unsyncedOperations} sync operation(s) were never ` +
+        `confirmed by the server (${JSON.stringify(report.byStatus)}). Pushing them first is ` +
+        'the safe path; call __db.reset({ force: true }) to discard them permanently.',
+    );
+  }
+
+  console.log(
+    `[devtools] Resetting local database: ${report.totalRows} row(s) across ` +
+      `${report.tableCount} table(s) will be deleted.`,
+  );
+
+  await deps.closeDatabase();
+  await deps.deletePersistentStore();
+  deps.reloadPage();
 }
 
 // ---------------------------------------------------------------------------
@@ -365,6 +620,10 @@ export function createDbDevtools(client: PGlite, prisma: unknown): DbDevtools {
         localRowsRaw as Record<string, unknown>[],
         serverRows as Record<string, unknown>[],
       );
+    },
+
+    reset(opts?: { force?: boolean }): Promise<void> {
+      return resetLocalDatabase(client, opts, createDefaultResetDependencies());
     },
   };
 

@@ -77,6 +77,16 @@ import {
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
+ * Compact, single-line description of a swallowed sync-step error so the
+ * console.warn calls in `tick()` stay greppable without dumping full stack
+ * traces on every retry cycle.
+ */
+function describeSyncError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+/**
  * Reconnect burst schedule.
  *
  * After an offline → online transition the scheduler runs a denser
@@ -957,8 +967,10 @@ export class SyncScheduler {
     try {
       const payload = await this.configSync.fetchConfiguration();
       await this.withLock(() => this.configSync.applyConfiguration(payload));
-    } catch {
-      // Logged downstream; continue to push regardless.
+    } catch (err) {
+      // Swallowed so the rest of the cycle still runs, but never silently —
+      // a config pull failing on every tick must be visible in the console.
+      console.warn('[SyncScheduler] config pull failed:', describeSyncError(err));
     }
 
     // 0.5. Tenant config — the effective config drives field requirements
@@ -992,16 +1004,19 @@ export class SyncScheduler {
     try {
       const payload = await this.catalogSync.fetchCatalog();
       await this.withLock(() => this.catalogSync.applyCatalog(payload));
-    } catch {
-      // Logged downstream; continue.
+    } catch (err) {
+      // A catalog apply that rolls back (FK/enum mismatch, oversized
+      // transaction) must be visible — it is the difference between a POS
+      // with products and one selling from an empty mirror forever.
+      console.warn('[SyncScheduler] catalog pull failed:', describeSyncError(err));
     }
 
     // 3. Lot sync
     try {
       const lots = await this.lotSync.fetchLots();
       await this.withLock(() => this.lotSync.applyLots(lots));
-    } catch {
-      // Logged downstream; continue.
+    } catch (err) {
+      console.warn('[SyncScheduler] lot pull failed:', describeSyncError(err));
     }
 
     // 4. Client classifications — must be pulled BEFORE clients so the
@@ -1009,16 +1024,19 @@ export class SyncScheduler {
     try {
       const rows = await this.clientPull.fetchClassifications();
       await this.withLock(() => this.clientPull.applyClassifications(rows));
-    } catch {
-      // Logged downstream; continue.
+    } catch (err) {
+      console.warn(
+        '[SyncScheduler] client-classification pull failed:',
+        describeSyncError(err),
+      );
     }
 
     // 5. Client pull
     try {
       const clients = await this.clientPull.fetchClients();
       await this.withLock(() => this.clientPull.applyClients(clients));
-    } catch {
-      // Logged downstream; continue.
+    } catch (err) {
+      console.warn('[SyncScheduler] client pull failed:', describeSyncError(err));
     }
 
     // 5. Pull invoice transmission results (only if the invoice service is available)

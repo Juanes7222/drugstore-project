@@ -3,7 +3,7 @@
  *
  * Keeps the last-successful-sync timestamp for every pull-based sync
  * operation (catalog, inventory lots, clients, client-classifications, …)
- * in a single `localStorage` key so a reader can query any field without
+ * in a single `localStorage` record so a reader can query any field without
  * caring about which module does the writing.
  *
  * Fields
@@ -12,9 +12,33 @@
  * - `lotsLastSyncedAt` – written by `LotSyncService.pullLots()`
  * - `clientsLastSyncedAt` – written by `ClientPullService.pullClients()`
  * - `classificationsLastSyncedAt` – written by `ClientPullService.pullClassifications()`
+ *
+ * Scoping
+ * -------
+ * The record is keyed to the LOCAL DATABASE's install id
+ * (`getLocalDatabaseInstallId`, persisted in `_SchemaMeta`). A sync cursor
+ * describes the state of one specific database — reusing it against a
+ * different database makes the server send only "recent" changes while the
+ * local mirror is empty, which silently starves the POS of data. This is
+ * exactly what happened when the devtools database reset wiped IndexedDB
+ * while the old cursor survived in localStorage. Keying by install id makes
+ * every fresh database start with null cursors (one full pull) without
+ * needing the reset path to know about this store.
  */
 
+import { getLocalDatabaseInstallId } from '../infrastructure/local-database';
+
 const STORAGE_KEY = 'pharmacy_sync_metadata';
+
+/**
+ * Storage key scoped to the current database install. Falls back to a fixed
+ * suffix before initialization (or after close) — reads then return defaults,
+ * which is the safe behavior: no cursor means a full pull.
+ */
+const scopedStorageKey = (): string => {
+  const installId = getLocalDatabaseInstallId();
+  return `${STORAGE_KEY}__${installId ?? 'uninitialized'}`;
+};
 
 interface SyncMetadataRecord {
   catalogLastSyncedAt: string | null;
@@ -41,7 +65,7 @@ export const readSyncMetadata = (): SyncMetadataRecord => {
     return { ...DEFAULTS };
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(scopedStorageKey());
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw) as Partial<SyncMetadataRecord>;
     return { ...DEFAULTS, ...parsed };
@@ -56,7 +80,7 @@ export const readSyncMetadata = (): SyncMetadataRecord => {
 const writeSyncMetadata = (record: SyncMetadataRecord): void => {
   if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
+    localStorage.setItem(scopedStorageKey(), JSON.stringify(record));
   } catch {
     // localStorage full or disabled — best-effort only.
   }

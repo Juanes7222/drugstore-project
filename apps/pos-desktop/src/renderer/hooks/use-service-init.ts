@@ -253,6 +253,7 @@ export async function initializeServices(
       '\n  await __db.counts()       — row counts',
       '\n  await __db.exportJSON()   — download all tables as JSON',
       '\n  await __db.query("SELECT * FROM \"Product\" LIMIT 5") — raw SQL',
+      '\n  await __db.reset({ force: true }) — WIPE local DB & reload (refuses if unsynced ops exist)',
     );
   }
 

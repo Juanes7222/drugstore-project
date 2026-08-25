@@ -2,26 +2,45 @@
  * Tests for the sync-metadata localStorage helpers.
  *
  * Each test clears localStorage before running so state never leaks
- * between cases.
+ * between cases. The record key is scoped to the local database's
+ * install id (`getLocalDatabaseInstallId`); that dependency is mocked
+ * so every test controls which database "owns" the cursors.
  */
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getCatalogLastSyncedAt,
+  getClassificationsLastSyncedAt,
   getClientsLastSyncedAt,
   getLotsLastSyncedAt,
   readSyncMetadata,
   setCatalogLastSyncedAt,
+  setClassificationsLastSyncedAt,
   setClientsLastSyncedAt,
   setLotsLastSyncedAt,
 } from "./sync-metadata";
 
+const installIdRef = vi.hoisted(() => ({ current: null as string | null }));
+
+vi.mock("../infrastructure/local-database", () => ({
+  getLocalDatabaseInstallId: () => installIdRef.current,
+}));
+
+const STORAGE_KEY = "pharmacy_sync_metadata";
+const UNINITIALIZED_SUFFIX = "uninitialized";
+
+/** Build the exact storage key the production code derives for an install id. */
+const scopedStorageKey = (installId: string | null): string =>
+  `${STORAGE_KEY}__${installId ?? UNINITIALIZED_SUFFIX}`;
+
 describe("sync-metadata", () => {
   beforeEach(() => {
     localStorage.clear();
+    installIdRef.current = null;
   });
 
   afterEach(() => {
     localStorage.clear();
+    installIdRef.current = null;
   });
 
   describe("readSyncMetadata", () => {
@@ -37,7 +56,8 @@ describe("sync-metadata", () => {
     });
 
     it("returns defaults when stored JSON is malformed", () => {
-      localStorage.setItem("pharmacy_sync_metadata", "not-json");
+      installIdRef.current = "install-A";
+      localStorage.setItem(scopedStorageKey("install-A"), "not-json");
 
       const meta = readSyncMetadata();
 
@@ -64,6 +84,82 @@ describe("sync-metadata", () => {
       } finally {
         (globalThis as any).localStorage = originalLocalStorage;
       }
+    });
+
+    it("ignores a legacy record stored under the unscoped key", () => {
+      // Regression guard: cursors from before install-id scoping must not
+      // migrate into a fresh database's namespace.
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          catalogLastSyncedAt: "2026-01-01T00:00:00Z",
+          lotsLastSyncedAt: "2026-01-02T00:00:00Z",
+          clientsLastSyncedAt: "2026-01-03T00:00:00Z",
+          classificationsLastSyncedAt: "2026-01-04T00:00:00Z",
+        }),
+      );
+      installIdRef.current = "install-A";
+
+      const meta = readSyncMetadata();
+
+      expect(meta).toEqual({
+        catalogLastSyncedAt: null,
+        lotsLastSyncedAt: null,
+        clientsLastSyncedAt: null,
+        classificationsLastSyncedAt: null,
+      });
+    });
+  });
+
+  describe("install-id scoping", () => {
+    it("round-trips a value while the install id is unchanged", () => {
+      installIdRef.current = "install-A";
+
+      setCatalogLastSyncedAt("2026-07-09T00:00:00Z");
+
+      expect(getCatalogLastSyncedAt()).toBe("2026-07-09T00:00:00Z");
+    });
+
+    it("returns null when the record was written under another install id", () => {
+      installIdRef.current = "install-A";
+      setCatalogLastSyncedAt("2026-07-09T00:00:00Z");
+
+      installIdRef.current = "install-B";
+
+      expect(getCatalogLastSyncedAt()).toBeNull();
+    });
+
+    it("restores the original value when switching back to its install id", () => {
+      installIdRef.current = "install-A";
+      setCatalogLastSyncedAt("2026-07-09T00:00:00Z");
+
+      installIdRef.current = "install-B";
+      expect(getCatalogLastSyncedAt()).toBeNull();
+
+      installIdRef.current = "install-A";
+      expect(getCatalogLastSyncedAt()).toBe("2026-07-09T00:00:00Z");
+    });
+
+    it("uses the 'uninitialized' bucket while the install id is null", () => {
+      installIdRef.current = null;
+
+      setLotsLastSyncedAt("2026-07-08T12:00:00Z");
+      expect(getLotsLastSyncedAt()).toBe("2026-07-08T12:00:00Z");
+
+      installIdRef.current = "install-A";
+      expect(getLotsLastSyncedAt()).toBeNull();
+    });
+
+    it("writes each install id to its own physical localStorage record", () => {
+      installIdRef.current = "install-A";
+      setCatalogLastSyncedAt("2026-07-09T00:00:00Z");
+
+      expect(localStorage.getItem(scopedStorageKey("install-A"))).toContain(
+        "2026-07-09T00:00:00Z",
+      );
+      expect(
+        localStorage.getItem(scopedStorageKey("install-B")),
+      ).toBeNull();
     });
   });
 
@@ -135,15 +231,31 @@ describe("sync-metadata", () => {
     });
   });
 
+  describe("getClassificationsLastSyncedAt", () => {
+    it("returns null when no sync has been performed", () => {
+      expect(getClassificationsLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("setClassificationsLastSyncedAt + getClassificationsLastSyncedAt", () => {
+    it("persists and retrieves a timestamp", () => {
+      setClassificationsLastSyncedAt("2026-07-06T10:15:00Z");
+
+      expect(getClassificationsLastSyncedAt()).toBe("2026-07-06T10:15:00Z");
+    });
+  });
+
   describe("multiple independent timestamps", () => {
     it("stores and retrieves each field without interference", () => {
       setCatalogLastSyncedAt("2026-07-09T00:00:00Z");
       setLotsLastSyncedAt("2026-07-08T12:00:00Z");
       setClientsLastSyncedAt("2026-07-07T08:30:00Z");
+      setClassificationsLastSyncedAt("2026-07-06T10:15:00Z");
 
       expect(getCatalogLastSyncedAt()).toBe("2026-07-09T00:00:00Z");
       expect(getLotsLastSyncedAt()).toBe("2026-07-08T12:00:00Z");
       expect(getClientsLastSyncedAt()).toBe("2026-07-07T08:30:00Z");
+      expect(getClassificationsLastSyncedAt()).toBe("2026-07-06T10:15:00Z");
     });
   });
 });
