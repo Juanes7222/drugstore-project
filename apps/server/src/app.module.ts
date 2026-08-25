@@ -2,8 +2,9 @@ import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { envSchema, EnvConfig } from './config/env.schema';
+import { envSchemaWithStoragePolicy, EnvConfig } from './config/env.schema';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
+import { StorageModule } from './infrastructure/storage/storage.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BackofficeModule } from './modules/backoffice/backoffice.module';
 import { SaasAdminModule } from './modules/saas-admin/saas-admin.module';
@@ -37,7 +38,7 @@ const DEV_MODULES = process.env.NODE_ENV === 'development' ? [DevModule] : [];
       // process.env by loadInfisicalSecretsIfNeeded in main.ts) — never from
       // a local .env file.
       ignoreEnvFile: process.env.NODE_ENV === 'production',
-      validate: (config) => envSchema.parse(config),
+      validate: (config) => envSchemaWithStoragePolicy.parse(config),
     }),
     ScheduleModule.forRoot(),
     // Global modules must be imported before any module that consumes them:
@@ -46,6 +47,7 @@ const DEV_MODULES = process.env.NODE_ENV === 'development' ? [DevModule] : [];
     // TenantContextService once their @Global modules are registered.
     TenantModule,
     PrismaModule,
+    StorageModule,
     AuthModule,
     BackofficeModule,
     SaasAdminModule,

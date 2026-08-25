@@ -1,5 +1,17 @@
 import { z } from 'zod';
 
+/**
+ * Env files commonly leave optional variables present but empty (`VAR=`).
+ * dotenv loads those as empty strings, which would otherwise fail format
+ * validations even though the variable is effectively unset.
+ */
+function emptyStringToUndefined(value: unknown): unknown {
+  if (typeof value === 'string' && value.trim() === '') {
+    return undefined;
+  }
+  return value;
+}
+
 export const envSchema = z.object({
   DATABASE_URL: z.url().describe('PostgreSQL connection string'),
   JWT_ACCESS_SECRET: z.string().min(32).describe('JWT access token secret'),
@@ -72,6 +84,58 @@ export const envSchema = z.object({
     .default('http://localhost:5173')
     .describe('Allowed CORS origin for the frontend'),
 
+  // ----------------------------------------------------------------------------
+  // Object storage (Cloudflare R2) — terminal backups and POS update binaries.
+  // Two separate S3-compatible API tokens, one per bucket, both scoped with
+  // "Object Read & Write" to their specific bucket only (never an Admin token).
+  // The account id inside R2_ENDPOINT is not secret material.
+  //
+  // STORAGE_DRIVER deliberately defaults to 'local' in every environment: a
+  // single-VM production deployment may legitimately keep disk storage. The
+  // production Infisical checklist documents setting it explicitly to 'r2'
+  // together with the full R2_* credential set.
+  //
+  // Every R2_* variable tolerates present-but-empty entries (`VAR=`) by
+  // treating them as unset: with the local driver no R2 configuration is
+  // needed at all, and with the r2 driver an incomplete set surfaces as the
+  // storage-policy message instead of a raw format error.
+  // ----------------------------------------------------------------------------
+  STORAGE_DRIVER: z
+    .enum(['local', 'r2'])
+    .default('local')
+    .describe('Where uploaded backups and update binaries are stored'),
+  R2_ENDPOINT: z
+    .preprocess(emptyStringToUndefined, z.url().optional())
+    .describe('R2 S3 endpoint: https://<account_id>.r2.cloudflarestorage.com'),
+  R2_BACKUPS_BUCKET: z
+    .preprocess(
+      emptyStringToUndefined,
+      z.string().trim().min(1).optional(),
+    )
+    .describe('Bucket holding uploaded terminal backups'),
+  R2_BACKUPS_ACCESS_KEY_ID: z.preprocess(
+    emptyStringToUndefined,
+    z.string().trim().min(1).optional(),
+  ),
+  R2_BACKUPS_SECRET_ACCESS_KEY: z.preprocess(
+    emptyStringToUndefined,
+    z.string().trim().min(1).optional(),
+  ),
+  R2_UPDATES_BUCKET: z
+    .preprocess(
+      emptyStringToUndefined,
+      z.string().trim().min(1).optional(),
+    )
+    .describe('Bucket holding published POS update binaries'),
+  R2_UPDATES_ACCESS_KEY_ID: z.preprocess(
+    emptyStringToUndefined,
+    z.string().trim().min(1).optional(),
+  ),
+  R2_UPDATES_SECRET_ACCESS_KEY: z.preprocess(
+    emptyStringToUndefined,
+    z.string().trim().min(1).optional(),
+  ),
+
   // Wompi Colombia payment gateway
   WOMPI_PUBLIC_KEY: z
     .string()
@@ -119,5 +183,28 @@ export const envSchema = z.object({
     .optional()
     .describe('Firebase measurement id'),
 });
+
+// When the R2 driver is selected, its full credential set is mandatory — a
+// half-configured driver would fail later at first upload instead of boot.
+const R2_REQUIRED_KEYS_WHEN_DRIVER_IS_R2 = [
+  'R2_ENDPOINT',
+  'R2_BACKUPS_BUCKET',
+  'R2_BACKUPS_ACCESS_KEY_ID',
+  'R2_BACKUPS_SECRET_ACCESS_KEY',
+  'R2_UPDATES_BUCKET',
+  'R2_UPDATES_ACCESS_KEY_ID',
+  'R2_UPDATES_SECRET_ACCESS_KEY',
+] as const;
+
+export const envSchemaWithStoragePolicy = envSchema.refine(
+  (env) =>
+    env.STORAGE_DRIVER !== 'r2' ||
+    R2_REQUIRED_KEYS_WHEN_DRIVER_IS_R2.every((key) => Boolean(env[key])),
+  {
+    message:
+      'STORAGE_DRIVER=r2 requires: ' +
+      R2_REQUIRED_KEYS_WHEN_DRIVER_IS_R2.join(', '),
+  },
+);
 
 export type EnvConfig = z.infer<typeof envSchema>;
