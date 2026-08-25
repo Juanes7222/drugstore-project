@@ -7,6 +7,7 @@ import { useLocalSessionStore, type LocalSession } from "./local-session.store";
 import { InvalidCredentialsException, NoActiveSessionException, InsufficientRoleException } from "./exceptions";
 import type { AuthHttpClient } from "./auth-http-client";
 import { RoleType } from "@pharmacy/shared-types";
+import { WORKSTATION_NAME } from "../../infrastructure/config";
 
 // ---------------------------------------------------------------------------
 // Factory helpers
@@ -125,6 +126,85 @@ describe("AuthService", () => {
       await expect(
         auth.login("cajero1", "secret123", "PASSWORD", "ws-1"),
       ).rejects.toThrow();
+    });
+
+    it("sends a non-empty workstationName while the remaining body fields stay unchanged", async () => {
+      vi.mocked(http.post).mockResolvedValue({
+        accessToken: "token-body",
+        refreshToken: "refresh-body",
+        expiresAt: "2099-12-31T23:59:59Z",
+        sessionId: "sess-body",
+        user: {
+          id: "user-1",
+          role: "CASHIER",
+          email: "cajero@pharmacy.com",
+          username: "cajero1",
+          displayName: "Cajero Uno",
+          subscriptionId: "sub-1",
+          totpEnabled: false,
+          avatarUrl: null,
+          avatarColor: null,
+          mustChangePassword: false,
+        },
+      });
+
+      await auth.login("cajero1", "secret123", "PASSWORD", "ws-1", "fingerprint-abc", "Windows 11");
+
+      expect(http.post).toHaveBeenCalledWith("/auth/login", {
+        identifier: "cajero1",
+        secret: "secret123",
+        sessionType: "PASSWORD",
+        workstationId: "ws-1",
+        workstationName: WORKSTATION_NAME,
+        hardwareFingerprint: "fingerprint-abc",
+        deviceInfo: "Windows 11",
+      });
+      expect(WORKSTATION_NAME.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("loginWithGoogle", () => {
+    it("sends a non-empty workstationName alongside the firebase token and device metadata", async () => {
+      const googleHttp = {
+        ...makeMockHttpClient(),
+        postWithStatus: vi.fn(),
+      };
+      vi.mocked(googleHttp.postWithStatus).mockResolvedValue({
+        accessToken: "token-google",
+        refreshToken: "refresh-google",
+        expiresAt: "2099-12-31T23:59:59Z",
+        sessionId: "sess-google",
+        user: {
+          id: "user-google-1",
+          role: "CASHIER",
+          email: "google@pharmacy.com",
+          username: "googleuser",
+          displayName: "Google User",
+          subscriptionId: "sub-1",
+          totpEnabled: false,
+          avatarUrl: null,
+          avatarColor: null,
+          mustChangePassword: false,
+        },
+      });
+      const googleAuth = createAuthService({ baseUrl: "http://localhost:3000", httpClient: googleHttp });
+
+      const result = await googleAuth.loginWithGoogle(
+        "firebase-id-token",
+        "ws-1",
+        "fingerprint-xyz",
+        "Chrome",
+      );
+
+      expect(googleHttp.postWithStatus).toHaveBeenCalledWith("/auth/login/firebase", {
+        idToken: "firebase-id-token",
+        workstationId: "ws-1",
+        workstationName: WORKSTATION_NAME,
+        hardwareFingerprint: "fingerprint-xyz",
+        deviceInfo: "Chrome",
+      });
+      expect(WORKSTATION_NAME.length).toBeGreaterThan(0);
+      expect(result.session.userId).toBe("user-google-1");
     });
   });
 

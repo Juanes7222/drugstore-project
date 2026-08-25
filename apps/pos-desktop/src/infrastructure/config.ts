@@ -20,6 +20,8 @@
  * ceremony for zero benefit.
  */
 
+import { resolveWorkstationId, resolveWorkstationName } from './workstation-identity';
+
 // ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
@@ -43,14 +45,30 @@ export const API_BASE_URL: string =
 /**
  * Local workstation identifier sent with every auth request.
  *
- * Must match one of the seeded workstations (`ws_principal`, `ws_secundaria`)
- * in `apps/server/seed/seed/workstation.ts`, or a workstation registered in
- * the production database.
+ * Resolution priority (see `workstation-identity.ts`):
+ * 1. `VITE_WORKSTATION_ID` build-time override (used by
+ *    scripts/dev-multi-station.mjs to pin deterministic ids per dev window),
+ * 2. an id persisted locally on a previous run,
+ * 3. a generated UUID v4, persisted on first boot — the server then
+ *    auto-registers the workstation on first login (self-registration).
  *
- * Falls back to `"ws_principal"` for local development.
+ * The old hardcoded "ws_principal" seed fallback is gone: a fresh install
+ * no longer impersonates the seeded principal terminal.
  */
-export const WORKSTATION_ID: string =
-  (import.meta.env.VITE_WORKSTATION_ID as string | undefined) ?? "ws_principal";
+export const WORKSTATION_ID: string = resolveWorkstationId({
+  envWorkstationId: import.meta.env.VITE_WORKSTATION_ID as string | undefined,
+}).workstationId;
+
+/**
+ * Human-readable workstation name sent with login requests for server-side
+ * self-registration. Prefers `VITE_FRIENDLY_NAME`; otherwise derives a
+ * stable label from the id (the OS hostname would need the Tauri os plugin,
+ * which is deliberately not a dependency).
+ */
+export const WORKSTATION_NAME: string = resolveWorkstationName(
+  WORKSTATION_ID,
+  import.meta.env.VITE_FRIENDLY_NAME as string | undefined,
+);
 
 // ---------------------------------------------------------------------------
 // Feature flags

@@ -345,7 +345,7 @@ describe("initializeServices", () => {
       ).rejects.toThrow(/clave t.cnica de contingencia/i);
     });
 
-    it("falls back to env var WORKSTATION_ID when no session and no override", async () => {
+    it("falls back to resolved WORKSTATION_ID identity when no session and no override", async () => {
       // Session returns null (not yet logged in)
       const nullSession = vi.fn(() => ({ session: null }));
 
@@ -357,9 +357,11 @@ describe("initializeServices", () => {
         discoverPrinters: mockDiscoverPrinters,
       });
 
-      // WORKSTATION_ID defaults to "ws_principal" in test environment
+      // WORKSTATION_ID resolves through workstation-identity.ts: env
+      // override, else locally persisted id, else a generated UUID.
+      const { WORKSTATION_ID } = await import("../../infrastructure/config");
       expect(createFiscalServices).toHaveBeenCalledWith(
-        expect.objectContaining({ workstationId: "ws_principal" }),
+        expect.objectContaining({ workstationId: WORKSTATION_ID }),
       );
     });
 

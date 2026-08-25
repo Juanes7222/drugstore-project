@@ -24,6 +24,7 @@ import {
   InvalidFirebaseTokenException,
 } from './exceptions';
 import { createSecureStorage } from '../../infrastructure/secure-storage';
+import { WORKSTATION_NAME } from '../../infrastructure/config';
 import { createOfflineAuthService } from '../../renderer/services/auth/offline/offline-auth-service';
 
 /**
@@ -89,6 +90,8 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
         secret,
         sessionType,
         workstationId,
+        // Server self-registers an unknown workstationId using this name.
+        workstationName: WORKSTATION_NAME,
         hardwareFingerprint,
         deviceInfo,
       });
@@ -155,7 +158,8 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
       try {
         response = await postWithStatus<ServerAuthResponse>(
           '/auth/login/firebase',
-          { idToken, workstationId, hardwareFingerprint, deviceInfo },
+          // Same self-registration metadata as the password login.
+          { idToken, workstationId, workstationName: WORKSTATION_NAME, hardwareFingerprint, deviceInfo },
         );
       } catch (err) {
         if (err instanceof HttpStatusException) {
