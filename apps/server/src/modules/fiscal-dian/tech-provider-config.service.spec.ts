@@ -33,7 +33,8 @@ describe('TechProviderConfigService', () => {
     const mockConfig = {
       id: TECH_PROVIDER_CONFIG_ID,
       endpointUrl: 'https://dian-test.example.com/api',
-      environment: 'HABILITACION',
+      // Rows store the DIAN TipoAmbiente wire literal ("2" = habilitación).
+      environment: '2',
       timeoutSeconds: 30,
     };
 
@@ -66,7 +67,9 @@ describe('TechProviderConfigService', () => {
   describe('upsert', () => {
     const dto = {
       endpointUrl: 'https://dian-prod.example.com/api',
-      environment: 'PRODUCCION' as const,
+      // The DTO layer persists the normalized wire literal ("1" producción),
+      // matching what UpsertTechProviderConfigSchema.transform produces.
+      environment: '1' as const,
       timeoutSeconds: 30,
       credentialReference: 'vault:prod/dian-cert',
     };

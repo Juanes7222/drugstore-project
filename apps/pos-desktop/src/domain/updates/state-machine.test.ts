@@ -26,6 +26,14 @@ describe("UpdateStateMachine", () => {
       expect(() => fsm.startInstall()).toThrow(IllegalStateTransitionException);
       expect(() => fsm.verifyInstall()).toThrow(IllegalStateTransitionException);
     });
+
+    it("transitions to ROLLED_BACK on rollback (startup crash-loop recovery)", () => {
+      const fsm = new UpdateStateMachine();
+
+      expect(() => fsm.rollback()).not.toThrow(IllegalStateTransitionException);
+
+      expect(fsm.state).toBe("ROLLED_BACK");
+    });
   });
 
   describe("CHECKING", () => {
@@ -212,6 +220,25 @@ describe("UpdateStateMachine", () => {
       fsm.rollback();
 
       expect(fsm.state).toBe("ROLLED_BACK");
+    });
+  });
+
+  describe("ROLLED_BACK", () => {
+    it("starts a new update check cycle after a startup rollback", () => {
+      const fsm = new UpdateStateMachine();
+      fsm.rollback();
+      fsm.startCheck();
+
+      expect(fsm.state).toBe("CHECKING");
+    });
+
+    it("can reset to IDLE", () => {
+      const fsm = new UpdateStateMachine();
+      fsm.rollback();
+
+      fsm.reset();
+
+      expect(fsm.state).toBe("IDLE");
     });
   });
 

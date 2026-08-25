@@ -22,7 +22,12 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
-import { applyMissingSchema } from "./local-database";
+import {
+  applyMissingSchema,
+  closeLocalDatabase,
+  ensureDatabaseInstallId,
+  getLocalDatabaseInstallId,
+} from "./local-database";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -176,5 +181,57 @@ describe("applyMissingSchema", () => {
       [productId],
     );
     expect(inserted.rows[0]?.commissionType).toBe("NONE");
+  });
+});
+
+describe("database install identity", () => {
+  let pg: PGlite;
+
+  beforeEach(async () => {
+    pg = new PGlite("memory://");
+    await pg.exec(`
+      CREATE TABLE "_SchemaMeta" (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `);
+  });
+
+  afterEach(async () => {
+    await pg.close();
+  });
+
+  it("generates and persists an install id on first boot", async () => {
+    expect(await ensureDatabaseInstallId(pg)).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+
+    const rows = await pg.query<{ value: string }>(
+      `SELECT value FROM "_SchemaMeta" WHERE key = 'install_id'`,
+    );
+    expect(rows.rows).toHaveLength(1);
+  });
+
+  it("returns the same id on the next boot against the same database", async () => {
+    const firstBootId = await ensureDatabaseInstallId(pg);
+
+    const secondBootId = await ensureDatabaseInstallId(pg);
+
+    expect(secondBootId).toBe(firstBootId);
+    const rows = await pg.query<{ value: string }>(
+      `SELECT value FROM "_SchemaMeta" WHERE key = 'install_id'`,
+    );
+    expect(rows.rows).toHaveLength(1);
+  });
+
+  it("resets the module-level install id to null after closeLocalDatabase", async () => {
+    // The full init path that assigns a non-null module-level id needs a
+    // browser/Tauri environment (PGlite WASM asset fetch), so only the null
+    // semantics are assertable here; see getLocalDatabase() in local-database.ts.
+    expect(getLocalDatabaseInstallId()).toBeNull();
+
+    await closeLocalDatabase();
+
+    expect(getLocalDatabaseInstallId()).toBeNull();
   });
 });

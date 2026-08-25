@@ -90,8 +90,12 @@ let databaseInstallId: string | null = null;
  * Read the per-install identity from _SchemaMeta, generating and persisting
  * one if absent (fresh database, or an install that predates the column).
  * Caller must have run ensureSchemaMetaTable first.
+ *
+ * Exported for tests: driving `getLocalDatabase()` under Vitest requires a
+ * browser/Tauri environment (fetch of `/pglite/` WASM assets), so install-id
+ * behavior is exercised directly against an in-memory PGlite instance.
  */
-async function ensureDatabaseInstallId(client: PGlite): Promise<string> {
+export async function ensureDatabaseInstallId(client: PGlite): Promise<string> {
   const existing = await client.query<{ value: string }>(
     `SELECT value FROM "_SchemaMeta" WHERE key = 'install_id'`,
   );

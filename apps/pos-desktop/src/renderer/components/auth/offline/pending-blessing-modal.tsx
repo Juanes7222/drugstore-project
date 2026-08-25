@@ -20,7 +20,7 @@ import {
 import { useOfflineAuth } from '../../../hooks/use-offline-auth';
 import { useOfflineSessionStore } from '../../../../domain/auth/offline';
 import type { OfflineSession } from '../../../../domain/auth';
-import { XIcon } from "@/components/ui/icons";
+import { XIcon } from '@/components/ui/icons';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -28,23 +28,23 @@ import { XIcon } from "@/components/ui/icons";
 
 const REJECTION_MESSAGES: Record<string, string> = {
   USER_DISABLED:
-    'Tu cuenta fue deshabilitada. Contactá al manager.',
+    'Tu cuenta fue deshabilitada. Contacta al manager.',
   USER_LOCKED:
-    'Tu cuenta fue bloqueada. Contactá al manager.',
+    'Tu cuenta fue bloqueada. Contacta al manager.',
   WORKSTATION_REVOKED:
-    'Este dispositivo fue deshabilitado. Contactá al operador del SaaS.',
+    'Este dispositivo fue deshabilitado. Contacta al operador del SaaS.',
   LOCATION_ACCESS_REVOKED:
-    'Tu acceso a esta ubicación fue revocado. Contactá al manager.',
+    'Tu acceso a esta ubicación fue revocado. Contacta al manager.',
   TOKEN_EXPIRED:
     'Tu sesión offline expiró.',
   TOKEN_SIGNATURE_INVALID:
-    'El token de sesión no es válido. Iniciá sesión de nuevo.',
+    'El token de sesión no es válido. Inicie sesión de nuevo.',
   TOKEN_REVOKED:
-    'Tu sesión fue revocada. Iniciá sesión de nuevo.',
+    'Tu sesión fue revocada. Inicie sesión de nuevo.',
   FRAUD_DETECTED:
-    'Se detectó actividad sospechosa. Contactá al manager.',
+    'Se detectó actividad sospechosa. Contacta al manager.',
   WORKSTATION_FINGERPRINT_MISMATCH:
-    'El dispositivo no coincide con la sesión. Iniciá sesión de nuevo.',
+    'El dispositivo no coincide con la sesión. Inicie sesión de nuevo.',
 };
 
 // ---------------------------------------------------------------------------
