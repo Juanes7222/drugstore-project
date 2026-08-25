@@ -23,6 +23,7 @@ import { SyncIntegrityService } from './services/sync-integrity.service';
 import { SyncRequeueService } from './services/sync-requeue.service';
 import { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
 import { SyncProcessingJob } from './jobs/sync-processing.job';
+import { SyncQueueCleanupJob } from './jobs/sync-queue-cleanup.job';
 import { SyncAuthGuard } from './guards/sync-auth.guard';
 
 @Module({
@@ -37,7 +38,13 @@ import { SyncAuthGuard } from './guards/sync-auth.guard';
     CatalogModule,
     PurchasesModule,
   ],
-  controllers: [SyncController, TerminalsController, SyncEventController, HeartbeatController, SyncIntegrityController],
+  controllers: [
+    SyncController,
+    TerminalsController,
+    SyncEventController,
+    HeartbeatController,
+    SyncIntegrityController,
+  ],
   providers: [
     SyncService,
     SyncHealthService,
@@ -45,6 +52,7 @@ import { SyncAuthGuard } from './guards/sync-auth.guard';
     WorkstationHeartbeatService,
     SyncOperationDispatcherService,
     SyncProcessingJob,
+    SyncQueueCleanupJob,
     TerminalBackupService,
     InvoiceTransmissionResultService,
     SyncIntegrityService,

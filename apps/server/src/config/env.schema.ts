@@ -18,6 +18,14 @@ export const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32).describe('JWT refresh token secret'),
   JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   JWT_REFRESH_TTL_SECONDS: z.coerce.number().int().positive().default(604800),
+  // Days a finished sync-queue row (COMPLETED / PERMANENT_FAILURE / DISCARDED)
+  // is kept before the cleanup job deletes it.
+  SYNC_QUEUE_RETENTION_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .default(30),
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z
     .enum(['development', 'production', 'test'])
@@ -108,10 +116,7 @@ export const envSchema = z.object({
     .preprocess(emptyStringToUndefined, z.url().optional())
     .describe('R2 S3 endpoint: https://<account_id>.r2.cloudflarestorage.com'),
   R2_BACKUPS_BUCKET: z
-    .preprocess(
-      emptyStringToUndefined,
-      z.string().trim().min(1).optional(),
-    )
+    .preprocess(emptyStringToUndefined, z.string().trim().min(1).optional())
     .describe('Bucket holding uploaded terminal backups'),
   R2_BACKUPS_ACCESS_KEY_ID: z.preprocess(
     emptyStringToUndefined,
@@ -122,10 +127,7 @@ export const envSchema = z.object({
     z.string().trim().min(1).optional(),
   ),
   R2_UPDATES_BUCKET: z
-    .preprocess(
-      emptyStringToUndefined,
-      z.string().trim().min(1).optional(),
-    )
+    .preprocess(emptyStringToUndefined, z.string().trim().min(1).optional())
     .describe('Bucket holding published POS update binaries'),
   R2_UPDATES_ACCESS_KEY_ID: z.preprocess(
     emptyStringToUndefined,
