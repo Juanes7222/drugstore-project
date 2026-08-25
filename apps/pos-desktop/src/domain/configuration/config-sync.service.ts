@@ -28,6 +28,7 @@ import { PaymentMethodSyncService } from '../catalog/payment-method-sync.service
 import { useLocalConfigStore } from './local-config.store';
 import type { SyncHttpClient } from '../catalog/catalog-sync.service';
 import type { FiscalNumberingService } from '../fiscal/numbering.service';
+import { useCompanySetupStore } from '../company/company.store';
 
 // ---------------------------------------------------------------------------
 // Types matching the server's PosSettingsResponse
@@ -147,6 +148,11 @@ export interface PosSettingsPayload {
    * Absent on JWT-free boots. Drives automatic counter initialization.
    */
   resolution?: PosResolutionPayload | null;
+  /**
+   * Whether the tenant has an ACTIVE signing certificate on the server.
+   * Absent on JWT-free boots or older servers.
+   */
+  certificateStatus?: 'ACTIVE' | 'NONE';
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +311,14 @@ export class ConfigSyncService {
     // what lets the owner start selling without ever typing a range.
     if (!resolution && this.accessToken) {
       this.requestResolutionSyncFromDian();
+    }
+
+    // Step 5: mirror the certificate status so the habilitation checklist
+    // can detect that step automatically (the owner never marks it).
+    if (payload.certificateStatus) {
+      useCompanySetupStore
+        .getState()
+        .setCertificateActive(payload.certificateStatus === 'ACTIVE');
     }
   }
 

@@ -54,6 +54,12 @@ export interface UseCompanySetupResult {
   uploadRutFile(file: File): Promise<RutParseResult>;
   submitCompany(draft: CompanyDraft): Promise<void>;
   reset(): void;
+  /**
+   * Whether the tenant has an ACTIVE signing certificate on the server
+   * (last config pull). Null = unknown. Drives automatic detection of
+   * the habilitation checklist's certificate step.
+   */
+  certificateActive: boolean | null;
 }
 
 export function useCompanySetup(
@@ -77,6 +83,10 @@ export function useCompanySetup(
   const parsedFromRut = useSyncExternalStore(
     useCompanySetupStore.subscribe,
     () => useCompanySetupStore.getState().parsedFromRut,
+  );
+  const habilitationCertificateActive = useSyncExternalStore(
+    useCompanySetupStore.subscribe,
+    () => useCompanySetupStore.getState().certificateActive,
   );
 
   const [isResolving, setIsResolving] = useState(false);
@@ -209,5 +219,6 @@ export function useCompanySetup(
     uploadRutFile,
     submitCompany,
     reset,
+    certificateActive: habilitationCertificateActive,
   };
 }

@@ -379,6 +379,10 @@
       "fallback": "Detalles de operación"
     }
   },
+  "access": {
+    "screen_not_allowed": "No tienes permisos para ver esta pantalla. Redirigiendo al inicio…",
+    "close_session": "Cerrar sesión"
+  },
   "navigation": {
     "label": "Navegación principal",
     "home": "Inicio",
@@ -1069,6 +1073,8 @@
     "password_reset_login": "Ahora puede iniciar sesión con su nueva contraseña.",
     "pin_incorrect": "PIN incorrecto. Intente de nuevo.",
     "password_incorrect": "Usuario o contraseña incorrectos.",
+    "use_password": "Iniciar sesión con contraseña",
+    "use_pin": "Usar PIN",
     "connection_error": "Error de conexión. Verifique su conexión a internet.",
     "too_many_attempts": "Demasiados intentos. Vuelva a intentar más tarde.",
     "too_many_attempts_minutes": "Demasiados intentos. Vuelva a intentar en 5 minutos.",
@@ -2086,6 +2092,59 @@
       "software_id_helper": "Se completa cuando la habilitación del software esté lista — déjalo vacío si no lo tienes."
     }
   },
+  "dian_habilitation": {
+    "title": "Habilitación ante la DIAN",
+    "subtitle_nit": "Facturación electrónica · NIT {{nit}}",
+    "subtitle_no_nit": "Facturación electrónica",
+    "stamp_operating": "Operando",
+    "stamp_in_progress": "En trámite",
+    "steps_aria": "Expediente del trámite de habilitación: 6 pasos en orden obligatorio",
+    "status_done": "Completado automáticamente",
+    "status_pending": "Pendiente",
+    "responsibility": {
+      "you": "Te toca",
+      "assisted": "Te acompañamos",
+      "software": "Tu software"
+    },
+    "steps": {
+      "certificado": {
+        "title": "Certificado digital de firma",
+        "description": "Obtén tu certificado digital de firma ante una autoridad certificadora habilitada. Es tu firma tributaria.",
+        "pending_hint": "Carga tu certificado digital en la plataforma o solicita asistencia.",
+        "link": "Instructivo de certificados digitales"
+      },
+      "registro": {
+        "title": "Registro como facturador",
+        "description": "Ingresa al portal Habilitación con el token que llega al correo de tu RUT y formaliza tu registro como facturador.",
+        "link": "Abrir portal de Habilitación"
+      },
+      "modo": {
+        "title": "Modo de operación",
+        "description": "Elige el modo de operación «Software de proveedor tecnológico» y asocia nuestro software."
+      },
+      "pruebas": {
+        "title": "Set de documentos de prueba",
+        "description": "Envía el set de documentos de prueba. Nuestro equipo te acompaña; el software genera todo."
+      },
+      "fecha": {
+        "title": "Fecha de inicio de facturación",
+        "description": "Declara tu fecha de inicio de facturación electrónica; el RUT se actualiza solo.",
+        "link": "Actualizar el RUT en MUISCA"
+      },
+      "rango": {
+        "title": "Rango de numeración autorizado"
+      }
+    },
+    "range_obtained": "Obtenido automáticamente",
+    "range_prefix": "Prefijo {{prefix}}",
+    "range_range": "Rango {{start}}–{{end}}",
+    "range_pending": "Tu software lo solicita a DIAN automáticamente cuando completes tu certificado y habilitación.",
+    "footer": {
+      "support_cta": "Solicitar asistencia",
+      "support_email": "soporte@drugstore-pos.com",
+      "official_guide": "Instructivo oficial de registro y habilitación"
+    }
+  },
   "certificate_setup": {
     "title": "Tu certificado DIAN",
     "subtitle": "Sube el certificado digital de tu farmacia para firmar y transmitir facturación electrónica.",
@@ -2279,6 +2338,17 @@
       "tax_regime_simple": "Régimen simple",
       "tax_regime_exento": "Exento",
       "default_tax_rate": "Tasa de IVA predeterminada",
+      "profile_title": "Perfil fiscal (sincronizado)",
+      "sync_note": "Estos datos se sincronizan desde tu perfil fiscal.",
+      "sync_contact": "Escríbenos si algo no coincide.",
+      "legal_name": "Razón social",
+      "nit_dv": "NIT",
+      "value_unavailable": "Sin dato",
+      "numbering_range": "Rango autorizado",
+      "valid_until": "Vigencia hasta",
+      "numbering_pending": "Pendiente de habilitación — se obtiene automáticamente",
+      "profile_unavailable": "Tu perfil fiscal aparecerá aquí cuando se sincronice.",
+      "receipt_section": "Recibo",
       "additional_taxes": "Impuestos adicionales",
       "dian_resolution": "Resolución DIAN",
       "dian_resolution_number": "Número de resolución",

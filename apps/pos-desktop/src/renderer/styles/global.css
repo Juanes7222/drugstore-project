@@ -108,6 +108,17 @@
     25% { opacity: 1; transform: scale(1); }
     100% { opacity: 0; transform: scale(1.04); }
   }
+
+  /* ---- DIAN habilitation stamp — one-shot on the transition to OPERANDO.
+     Plays once via a keyed remount (never on mount, hover, or scroll);
+     reduced-motion collapses it to an instant appearance. Rotation lives on
+     the parent frame so the scale never fights the -4deg tilt. ---- */
+  --animate-dian-stamp: dian-stamp 300ms ease-out both;
+
+  @keyframes dian-stamp {
+    0% { opacity: 0; transform: scale(1.12); }
+    100% { opacity: 1; transform: scale(1); }
+  }
 }
 
 /* ------------------------------------------------------------------ */

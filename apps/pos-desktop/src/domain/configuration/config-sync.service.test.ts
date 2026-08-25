@@ -6,6 +6,7 @@ import { createConfigSyncService, type ConfigSyncService, ConfigSyncHttpError, t
 import type { SyncHttpClient } from "../catalog/catalog-sync.service";
 import type { FiscalNumberingService } from "../fiscal/numbering.service";
 import { useLocalConfigStore } from "./local-config.store";
+import { useCompanySetupStore } from "../company/company.store";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -536,6 +537,49 @@ describe("ConfigSyncService", () => {
         await expect(svc.applyConfiguration(basePayload())).resolves.toBeUndefined();
 
         expect(useLocalConfigStore.getState().syncDefaults.batchSize).toBe(25);
+      });
+    });
+
+    // Step 5 of applyConfiguration: mirror the tenant's certificate status
+    // into the company store so the habilitation checklist detects that
+    // step automatically (the owner never marks it by hand).
+    describe("certificate status mirroring", () => {
+      const basePayload = () => ({
+        paymentMethods: [],
+        discountLimits,
+        alertThresholds,
+        syncDefaults,
+      });
+
+      beforeEach(() => {
+        localStorage.clear();
+        useCompanySetupStore.getState().reset();
+      });
+
+      it("marks the certificate active when the payload reports ACTIVE", async () => {
+        await service.applyConfiguration({
+          ...basePayload(),
+          certificateStatus: "ACTIVE",
+        });
+
+        expect(useCompanySetupStore.getState().certificateActive).toBe(true);
+      });
+
+      it("marks the certificate inactive when the payload reports NONE", async () => {
+        await service.applyConfiguration({
+          ...basePayload(),
+          certificateStatus: "NONE",
+        });
+
+        expect(useCompanySetupStore.getState().certificateActive).toBe(false);
+      });
+
+      it("leaves the mirrored status untouched when the payload omits it", async () => {
+        useCompanySetupStore.getState().setCertificateActive(true);
+
+        await service.applyConfiguration(basePayload());
+
+        expect(useCompanySetupStore.getState().certificateActive).toBe(true);
       });
     });
   });

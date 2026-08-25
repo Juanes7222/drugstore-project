@@ -48,6 +48,7 @@ describe('useCompanySetupStore', () => {
       expect(state.draft).toBeNull();
       expect(state.parsedFromRut).toBeNull();
       expect(state.lastSavedAt).toBeNull();
+      expect(state.certificateActive).toBeNull();
     });
   });
 
@@ -103,6 +104,28 @@ describe('useCompanySetupStore', () => {
     });
   });
 
+  describe('setCertificateActive', () => {
+    it('stores true when the config pull reports an ACTIVE certificate', () => {
+      useCompanySetupStore.getState().setCertificateActive(true);
+
+      expect(useCompanySetupStore.getState().certificateActive).toBe(true);
+    });
+
+    it('stores false when the server reports no active certificate', () => {
+      useCompanySetupStore.getState().setCertificateActive(false);
+
+      expect(useCompanySetupStore.getState().certificateActive).toBe(false);
+    });
+
+    it('keeps a previously known status when updated again', () => {
+      useCompanySetupStore.getState().setCertificateActive(true);
+
+      useCompanySetupStore.getState().setCertificateActive(false);
+
+      expect(useCompanySetupStore.getState().certificateActive).toBe(false);
+    });
+  });
+
   describe('reset', () => {
     it('returns the store to its idle state', () => {
       useCompanySetupStore.getState().markComplete(makeDraft());
@@ -116,6 +139,14 @@ describe('useCompanySetupStore', () => {
       expect(state.parsedFromRut).toBeNull();
       expect(state.lastSavedAt).toBeNull();
     });
+
+    it('clears the certificate status back to unknown', () => {
+      useCompanySetupStore.getState().setCertificateActive(true);
+
+      useCompanySetupStore.getState().reset();
+
+      expect(useCompanySetupStore.getState().certificateActive).toBeNull();
+    });
   });
 
   describe('persistence', () => {
@@ -128,6 +159,16 @@ describe('useCompanySetupStore', () => {
 
       expect(persisted.state.status).toBe('complete');
       expect(persisted.state.draft?.nit).toBe('900123456');
+    });
+
+    it('persists the certificate status to localStorage', () => {
+      useCompanySetupStore.getState().setCertificateActive(true);
+
+      const persisted = JSON.parse(
+        localStorage.getItem('pharmacy_company_setup') ?? '{}',
+      );
+
+      expect(persisted.state.certificateActive).toBe(true);
     });
 
     it('rehydrates a fresh module instance from localStorage', async () => {

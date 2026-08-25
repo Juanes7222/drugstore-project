@@ -20,11 +20,19 @@ export interface CompanySetupState {
   parsedFromRut: CompanyDraft | null;
   /** ISO timestamp of the last successful server submit. */
   lastSavedAt: string | null;
+  /**
+   * Whether the tenant has an ACTIVE signing certificate on the server,
+   * as reported by the last config pull. Null = not yet known.
+   * Drives the automatic detection of the habilitation checklist's
+   * certificate step — the owner never marks it by hand.
+   */
+  certificateActive: boolean | null;
 
   setStatus(status: CompanySetupStatus): void;
   setDraft(draft: CompanyDraft | null): void;
   setParsedFromRut(draft: CompanyDraft | null): void;
   markComplete(draft: CompanyDraft): void;
+  setCertificateActive(active: boolean): void;
   reset(): void;
 }
 
@@ -38,6 +46,7 @@ export const useCompanySetupStore: StoreApi<CompanySetupState> =
         draft: null,
         parsedFromRut: null,
         lastSavedAt: null,
+        certificateActive: null,
 
         setStatus(status) {
           set({ status });
@@ -59,12 +68,17 @@ export const useCompanySetupStore: StoreApi<CompanySetupState> =
           });
         },
 
+        setCertificateActive(active) {
+          set({ certificateActive: active });
+        },
+
         reset() {
           set({
             status: 'idle',
             draft: null,
             parsedFromRut: null,
             lastSavedAt: null,
+            certificateActive: null,
           });
         },
       }),

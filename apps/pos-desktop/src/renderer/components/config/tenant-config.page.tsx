@@ -24,6 +24,7 @@ import {
 } from "../../../domain/config";
 import { useCompanySetup } from "@/hooks/use-company-setup";
 import { hasAnyResolutionData } from "@/components/company-setup/resolution-step";
+import { DianHabilitationChecklist } from "@/components/company-setup/dian-habilitation-checklist";
 import { useAppDispatch } from "@/store/hooks";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import { ActiveModeIndicator } from "./active-mode-indicator";
@@ -171,6 +172,7 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
               }
               onOpen={handleOpenCompanySetup}
             />
+            <DianHabilitationChecklist />
             <CompanyConfigTab
               config={config}
               effectiveConfig={effectiveConfig}

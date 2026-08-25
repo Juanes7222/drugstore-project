@@ -629,7 +629,56 @@ motion collapses it to a static panel (global CSS rule).
 
 ---
 
-## Motion budget (added in Phase 3)
+## DIAN Habilitation Checklist (added 2026-08-25)
+
+The administrative file (expediente) of the six mandatory, sequential DIAN
+habilitation steps, rendered on the Empresa tab below the company-setup entry
+card. Component: `components/company-setup/dian-habilitation-checklist.tsx`;
+state comes from `useCompanySetup()` (`habilitationStepsDone` +
+`toggleHabilitationStep`, owned by pos-local; the sixth step derives from
+`draft.resolutionNumber`, never hand-checked).
+
+### Brief
+
+- **Grammar:** the RUT checkbox form this product parses. A continuous 2px
+  ink/15% vertical line connects square 28px casillas (2px ink border,
+  JetBrains Mono bold numeral); completed casillas flip to Pharma Teal with a
+  white check. Numbering encodes legal order — steps are never reorderable.
+- **Signature:** the rotated (-4deg) double-frame seal in the header —
+  outline 1px + inner ring, uppercase tracking-widest. Derives state:
+  `resolutionNumber` present → OPERANDO (Pharma Teal on success-container);
+  absent → EN TRÁMITE (Urgency Amber on urgency-surface, amber darkened via
+  color-mix with ink to hold AA contrast).
+- **Motion:** one-shot stamp animation (scale 1.12→1 + opacity, 300ms
+  ease-out) only on the transition into OPERANDO — an approved "document
+  confirmed by DIAN" beat. Never on mount, hover, scroll. Reduced-motion:
+  the global rule collapses it to instant appearance (calmer than a fade;
+  consistent with system-wide policy).
+- **Responsibility chips:** small uppercase outline chips right-aligned —
+  TE TOCA (ink), TE ACOMPAÑAMOS (pharma), TU SOFTWARE (sync slate). At ≤768px
+  they wrap below the step title; the expediente line never breaks.
+- **Actions:** manual steps get a real accessible checkbox (sr-only input +
+  secondary-button label toggle); official DIAN links open in a new tab with
+  ↗. The rango row has no action: obtained → success-container strip with
+  prefix/range in font-data; pending → sync-slate line with a static dot
+  (deliberately unpulsed).
+- **Footer:** mailto assistance button (email is an i18n value) + caption link
+  to the official micrositios instructive.
+
+### Pass 2 critique
+
+- Reject-list check: no gradient chrome, no shadow-card grid, no generic
+  stepper — the rotated seal and casilla-expediente grammar only make sense
+  for a Colombian fiscal trámite; a CRM pasting this would have no reason to
+  render a numbering-resolution-derived seal. Passes.
+- Contrast: raw Urgency Amber fails AA on urgency-surface at caption size, so
+  the seal's pending text/border use `color-mix(urgency 70%, ink)` (~4.5:1).
+- Revision made during critique: the assisted chip initially reused the ink
+  outline; switched to pharma outline so the three responsibilities read as
+  three distinct owners without introducing any new color.
+
+---
+
 
 Motion is reserved for the sale-completing handoff, not for the high-throughput search/scan/add-to-cart path.
 
@@ -1466,3 +1515,39 @@ pasted onto a marketing pricing page.
 - Numbers: every price/delta in JetBrains Mono tabular; cents→pesos conversion
   centralized in `renderer/utils/format-currency.ts` (fixes the ×100 display
   bug that showed $19.000 as "$ 19.000.000").
+
+---
+
+## Phase: DIAN Habilitación Checklist
+
+Subject: the contributor's own bureaucratic file — six sequential steps the DIAN mandates before electronic invoicing works. Numbering is load-bearing (legal order, not decoration).
+
+Signature: an administrative rubber-stamp of overall status, rotated -4deg, double border, letterspaced caps (AMBER 'EN TRAMITE' / PHARMA TEAL 'OPERANDO'). Single stamp-in moment when the file completes; everything else stays quiet.
+
+Form vernacular: square step boxes (2px ink border, JetBrains Mono numeral) connected by a continuous file-line down the left edge — the same box grammar as the RUT form this product parses. Responsibility labels ('Te toca' / 'Tu software') are the friction-reducer: they answer who acts, per step.
+
+Palette: existing tokens only (panel white file sheet, ink text, border rules, pharma teal done/auto, urgency amber pending, sync slate for software-owned rows). No icons per step; the boxed numeral is the marker. Motion budget: one orchestrated stamp; reduced-motion fades instead.
+
+### Decision: fully derived checklist states (auto, no hand-checking)
+
+The owner never marks steps manually. Every casilla is DERIVED: step 1
+(certificate) reads `useCompanySetup().certificateActive` (null = pending,
+never done); steps 2-5 are proven en bloc by `!!draft.resolutionNumber`
+(the resolution's existence proves registration/mode/test-set/start-date);
+step 6 keeps its existing derived rendering. Checkboxes and "Marcar como
+hecho" controls are gone; steps are informative content (list/listitem,
+sr-only done/pending status so color alone never carries state). Pending
+certificate step shows a calm sync-slate hint ("carga tu certificado o
+solicita asistencia").
+
+### Decision: fiscal tab mirrors the synced profile read-only
+
+Regime, default VAT rate, DIAN resolution and numbering format are fiscal
+IDENTITY data derived from `useCompanySetup().draft` — rendered as a
+read-only `<dl>` panel ("Perfil fiscal (sincronizado)") in font-data
+tabular figures. VAT rate is computed x100 correctly from the domain
+regime mapper (COMUN -> 19 %, else 0 %), fixing the raw-fraction "0.19 %"
+display bug. Without a resolution the numbering block shows the calm
+"Pendiente de habilitacion" slate line. Only presentation preferences stay
+editable (logo/QR on receipt, header/footer). Note above the panel points
+to the support mailto for discrepancies.

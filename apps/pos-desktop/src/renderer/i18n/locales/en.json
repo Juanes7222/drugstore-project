@@ -309,6 +309,10 @@
       "UNKNOWN": "Unknown"
     }
   },
+  "access": {
+    "screen_not_allowed": "You don't have permission to view this screen. Redirecting home…",
+    "close_session": "Sign out"
+  },
   "navigation": {
     "label": "Main navigation",
     "home": "Home",
@@ -981,6 +985,8 @@
     "password_reset_login": "You can now sign in with your new password.",
     "pin_incorrect": "Incorrect PIN. Try again.",
     "password_incorrect": "Incorrect username or password.",
+    "use_password": "Sign in with password",
+    "use_pin": "Use PIN",
     "connection_error": "Connection error. Check your internet connection.",
     "too_many_attempts": "Too many attempts. Try again later.",
     "too_many_attempts_minutes": "Too many attempts. Try again in 5 minutes.",
@@ -1955,6 +1961,59 @@
       "software_id_helper": "Complete this when the software habilitación is ready — leave it empty if you don't have it yet."
     }
   },
+  "dian_habilitation": {
+    "title": "DIAN habilitation",
+    "subtitle_nit": "Electronic invoicing · Tax ID {{nit}}",
+    "subtitle_no_nit": "Electronic invoicing",
+    "stamp_operating": "Operating",
+    "stamp_in_progress": "In progress",
+    "steps_aria": "Habilitation file: 6 steps in mandatory order",
+    "status_done": "Completed automatically",
+    "status_pending": "Pending",
+    "responsibility": {
+      "you": "Your task",
+      "assisted": "We assist you",
+      "software": "Your software"
+    },
+    "steps": {
+      "certificado": {
+        "title": "Digital signature certificate",
+        "description": "Obtain your digital signature certificate from an accredited certification authority. It is your tax signature.",
+        "pending_hint": "Upload your digital certificate on the platform or request assistance.",
+        "link": "Digital certificate instructions"
+      },
+      "registro": {
+        "title": "Registration as e-invoicer",
+        "description": "Sign in to the Habilitación portal with the token sent to your RUT email and formalize your registration as an e-invoicer.",
+        "link": "Open the Habilitación portal"
+      },
+      "modo": {
+        "title": "Operating mode",
+        "description": "Choose the «Technological provider software» operating mode and associate our software."
+      },
+      "pruebas": {
+        "title": "Test document set",
+        "description": "Submit the test document set. Our team guides you; the software generates everything."
+      },
+      "fecha": {
+        "title": "Invoicing start date",
+        "description": "Declare your electronic invoicing start date; the RUT updates itself.",
+        "link": "Update the RUT on MUISCA"
+      },
+      "rango": {
+        "title": "Authorized numbering range"
+      }
+    },
+    "range_obtained": "Obtained automatically",
+    "range_prefix": "Prefix {{prefix}}",
+    "range_range": "Range {{start}}–{{end}}",
+    "range_pending": "Your software requests it from the DIAN automatically once you complete your certificate and habilitación.",
+    "footer": {
+      "support_cta": "Request assistance",
+      "support_email": "soporte@drugstore-pos.com",
+      "official_guide": "Official registration & habilitación instructive"
+    }
+  },
   "certificate_setup": {
     "title": "Your DIAN certificate",
     "subtitle": "Upload your pharmacy's digital certificate to sign and transmit electronic invoicing.",
@@ -2140,6 +2199,17 @@
       "tax_regime_simple": "Simple regime",
       "tax_regime_exento": "Exempt",
       "default_tax_rate": "Default VAT rate",
+      "profile_title": "Fiscal profile (synchronized)",
+      "sync_note": "These values are synchronized from your fiscal profile.",
+      "sync_contact": "Write to us if anything doesn't match.",
+      "legal_name": "Legal name",
+      "nit_dv": "Tax ID (NIT)",
+      "value_unavailable": "No data",
+      "numbering_range": "Authorized range",
+      "valid_until": "Valid until",
+      "numbering_pending": "Pending habilitation — obtained automatically",
+      "profile_unavailable": "Your fiscal profile will appear here once it synchronizes.",
+      "receipt_section": "Receipt",
       "additional_taxes": "Additional taxes",
       "dian_resolution": "DIAN resolution",
       "dian_resolution_number": "Resolution number",

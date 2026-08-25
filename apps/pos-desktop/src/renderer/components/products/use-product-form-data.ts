@@ -12,12 +12,35 @@ import {
   getStockValidationBehavior,
   getPrescriptionEnforcementBehavior,
 } from "../../../domain/config/field-requirements";
+import {
+  mapRegimenToTaxLevelCode,
+} from "../../../domain/company";
+import type { CompanyDraft } from "../../../domain/company";
+import { useCompanySetup } from "../../hooks/use-company-setup";
 import type {
   CategoryOption,
   PharmaceuticalFormOption,
   TaxSchemeOption,
   ProductFormFieldRequirements,
 } from "./products.types";
+
+/** IVA charged by COMÚN regimens (R-99-PN / R-99-PJ / R-99-PN-ENT). */
+const RESPONSABLE_VAT_RATE = 0.19;
+/** Simplified (R-99-PN-SIM) and O-99 issuers charge no IVA. */
+const EXEMPT_VAT_RATE = 0;
+
+/**
+ * Default IVA rate for the new-product form, derived from the synced
+ * company regimen — same source as the read-only fiscal panel. A missing
+ * draft falls back to the responsible (0.19) rate.
+ */
+function deriveDefaultVatRate(draft: CompanyDraft | null): number {
+  if (!draft) return RESPONSABLE_VAT_RATE;
+  const code = mapRegimenToTaxLevelCode(draft.regimen, draft.organizationType);
+  return code === "R-99-PN" || code === "R-99-PJ" || code === "R-99-PN-ENT"
+    ? RESPONSABLE_VAT_RATE
+    : EXEMPT_VAT_RATE;
+}
 
 export interface ProductFormDataResult {
   categories: CategoryOption[];
@@ -40,11 +63,12 @@ const DEFAULT_FIELD_REQUIREMENTS: ProductFormFieldRequirements = {
  * Load reference data once on mount.
  *
  * - Categories, pharmaceutical forms, and tax schemes from the local DB.
- * - Default tax scheme from the tenant config defaultTaxRate.
+ * - Default tax scheme derived from the synced company regimen.
  * - Field visibility from the tenant strictness config.
  * - Default sale type from prescription enforcement config.
  */
 export function useProductFormData(): ProductFormDataResult {
+  const { draft: companyDraft } = useCompanySetup();
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [pharmaceuticalForms, setPharmaceuticalForms] = useState<
     PharmaceuticalFormOption[]
@@ -103,18 +127,8 @@ export function useProductFormData(): ProductFormDataResult {
           }));
           setTaxSchemes(mappedTaxSchemes);
 
-          // Auto-select tax scheme matching the tenant default tax rate
-          const configState = getTenantConfigState();
-          const defaultRate = configState.config?.fiscal?.defaultTaxRate;
-          if (defaultRate != null && mappedTaxSchemes.length > 0) {
-            const targetRatePct = Math.round(defaultRate * 100);
-            const match = mappedTaxSchemes.find(
-              (s) => Math.round(s.rate) === targetRatePct,
-            );
-            if (match) setDefaultTaxSchemeId(match.id);
-          }
-
           // Compute field visibility from tenant strictness config
+          const configState = getTenantConfigState();
           const effectiveConfig = configState.effectiveConfig;
           if (effectiveConfig) {
             const stockBehavior = getStockValidationBehavior(effectiveConfig);
@@ -151,6 +165,15 @@ export function useProductFormData(): ProductFormDataResult {
       cancelled = true;
     };
   }, []);
+
+  // Auto-select the tax scheme whose rate matches the regimen-derived IVA.
+  // Re-runs on draft arrival: the company profile resolves asynchronously,
+  // so the scheme may need to change after the reference data has loaded.
+  useEffect(() => {
+    const targetRatePct = Math.round(deriveDefaultVatRate(companyDraft) * 100);
+    const match = taxSchemes.find((s) => Math.round(s.rate) === targetRatePct);
+    if (match) setDefaultTaxSchemeId(match.id);
+  }, [companyDraft, taxSchemes]);
 
   return {
     categories,

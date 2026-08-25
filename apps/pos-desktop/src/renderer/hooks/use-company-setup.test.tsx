@@ -457,4 +457,37 @@ describe("useCompanySetup", () => {
       });
     });
   });
+
+  describe("certificate status", () => {
+    it("exposes certificateActive from the company store", () => {
+      useCompanySetupStore.getState().setCertificateActive(true);
+
+      const { result } = renderHook(() =>
+        useCompanySetup({ baseUrl: "http://api.test" }),
+      );
+
+      expect(result.current.certificateActive).toBe(true);
+    });
+
+    it("exposes a false certificateActive once the server reports NONE", async () => {
+      useCompanySetupStore.getState().setCertificateActive(true);
+      const { result } = renderHook(() =>
+        useCompanySetup({ baseUrl: "http://api.test" }),
+      );
+
+      act(() => {
+        useCompanySetupStore.getState().setCertificateActive(false);
+      });
+
+      expect(result.current.certificateActive).toBe(false);
+    });
+
+    it("starts with an unknown certificateActive on a fresh setup", () => {
+      const { result } = renderHook(() =>
+        useCompanySetup({ baseUrl: "http://api.test" }),
+      );
+
+      expect(result.current.certificateActive).toBeNull();
+    });
+  });
 });
