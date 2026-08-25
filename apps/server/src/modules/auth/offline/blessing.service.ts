@@ -284,31 +284,12 @@ export class BlessingService {
       };
     }
 
-    // Step 7: Verify workstation is still active
-    const workstation = await this.prisma.workstation.findUnique({
-      where: { id: claims.sid ? undefined : undefined },
+    // Step 7: Verify the workstation is still registered and active
+    const activation = await this.prisma.workstationActivation.findFirst({
+      where: { hardwareFingerprint: requestWorkstationFingerprint },
+      select: { isActive: true },
     });
-
-    // Look up workstation by the session's claims or the request context
-    const workstationRecord = await this.prisma.workstation.findFirst({
-      where: {
-        sessions: {
-          some: { id: claims.sid },
-        },
-      },
-    });
-
-    // If we can't find by session, try direct lookup
-    const directWorkstation = await this.prisma.workstationActivation.findFirst(
-      {
-        where: {
-          hardwareFingerprint: requestWorkstationFingerprint,
-          isActive: true,
-        },
-      },
-    );
-
-    if (directWorkstation && !directWorkstation.isActive) {
+    if (!activation || !activation.isActive) {
       return {
         localSessionId: req.localSessionId,
         status: 'REJECTED',

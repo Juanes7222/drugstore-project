@@ -39,10 +39,11 @@ const mockUserLocationAccess = {
 const mockUserSession = {
   create: jest.fn(),
 };
-const mockWorkstation = {
-  findUnique: jest.fn(),
-  findFirst: jest.fn(),
-};
+// Step 7 queries workstationActivation directly; the old prisma.workstation
+// lookups are gone from the service, so their mocks are gone from here too.
+// If the service ever regresses to calling prisma.workstation.*, mockDeep's
+// undefined delegate makes it throw inside the per-session catch, which the
+// regression test below catches as an unexpected REJECTED/INTERNAL_ERROR.
 const mockWorkstationActivation = {
   findFirst: jest.fn(),
 };
@@ -54,7 +55,6 @@ const mockOfflineSessionBlessing = {
 (mockPrisma as any).offlineTokenRevocation = mockOfflineTokenRevocation;
 (mockPrisma as any).userLocationAccess = mockUserLocationAccess;
 (mockPrisma as any).userSession = mockUserSession;
-(mockPrisma as any).workstation = mockWorkstation;
 (mockPrisma as any).workstationActivation = mockWorkstationActivation;
 (mockPrisma as any).offlineSessionBlessing = mockOfflineSessionBlessing;
 
@@ -324,6 +324,11 @@ describe('BlessingService', () => {
         buildUserRecord({ role: 'MANAGER' }),
       ]);
       mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(false);
+      // Step 7 must pass so the flow reaches the Step 8 location check.
+      mockWorkstationActivation.findFirst.mockResolvedValue({
+        id: 'activation-uuid-1',
+        isActive: true,
+      });
       mockUserLocationAccess.findMany.mockResolvedValue([
         { locationId: 'loc-1' },
       ]); // Only 1 of 2 locations
@@ -575,6 +580,127 @@ describe('BlessingService', () => {
           reasonDetail: 'Replaced by blessed session',
         }),
       );
+    });
+
+    // ---------------------------------------------------------------------
+    // Step 7 — workstation activation check
+    // ---------------------------------------------------------------------
+    describe('workstation activation check', () => {
+      /**
+       * Arranges every check except Step 7 to pass (valid signature,
+       * unexpired, unrevoked, fingerprint match, active user, no user-level
+       * revocation) and the post-Step-7 blessing path to succeed, so the
+       * activation lookup result is the only variable under test.
+       */
+      function arrangeSessionThatReachesStep7(): void {
+        mockOfflineTokenService.verifyToken.mockReturnValue(
+          buildDecodedClaims(),
+        );
+        mockUserModel.findMany.mockResolvedValue([buildUserRecord()]);
+        mockOfflineTokenService.isUserRevokedSince.mockResolvedValue(false);
+        mockUserLocationAccess.findMany.mockResolvedValue([
+          { locationId: 'loc-1' },
+          { locationId: 'loc-2' },
+        ]);
+        mockUserSession.create.mockResolvedValue({ id: 'new-session-uuid' });
+        mockOfflineTokenService.issueToken.mockResolvedValue({
+          token: 'new-offline-jwt',
+          expiresAt: new Date(Date.now() + 86400000 * 30),
+          jti: 'new-jti-uuid',
+        });
+        mockOfflineSessionBlessing.create.mockResolvedValue({});
+        mockJwtService.sign.mockReturnValue('new-access-jwt');
+      }
+
+      it('blesses the session when an active activation matches the request fingerprint', async () => {
+        arrangeSessionThatReachesStep7();
+        mockWorkstationActivation.findFirst.mockResolvedValue({
+          id: 'activation-uuid-1',
+          isActive: true,
+        });
+
+        const response = await service.blessSessions(
+          [buildBlessingRequest()],
+          REQUEST_FINGERPRINT,
+        );
+
+        expect(response.results[0]).toMatchObject({
+          status: 'BLESSED',
+          replacementToken: expect.objectContaining({
+            accessToken: 'new-access-jwt',
+            offlineToken: 'new-offline-jwt',
+          }),
+        });
+        expect(mockWorkstationActivation.findFirst).toHaveBeenCalledWith({
+          where: { hardwareFingerprint: REQUEST_FINGERPRINT },
+          select: { isActive: true },
+        });
+      });
+
+      it('rejects with WORKSTATION_REVOKED when no activation row exists for the request fingerprint', async () => {
+        arrangeSessionThatReachesStep7();
+        mockWorkstationActivation.findFirst.mockResolvedValue(null);
+
+        const response = await service.blessSessions(
+          [buildBlessingRequest()],
+          REQUEST_FINGERPRINT,
+        );
+
+        expect(response.results[0]).toMatchObject({
+          localSessionId: 'local-session-uuid-1',
+          status: 'REJECTED',
+          reason: 'WORKSTATION_REVOKED',
+        });
+        // Rejection must short-circuit before any replacement tokens exist.
+        expect(mockOfflineTokenService.issueToken).not.toHaveBeenCalled();
+        expect(mockJwtService.sign).not.toHaveBeenCalled();
+      });
+
+      it('rejects with WORKSTATION_REVOKED when the activation row is inactive', async () => {
+        arrangeSessionThatReachesStep7();
+        mockWorkstationActivation.findFirst.mockResolvedValue({
+          id: 'activation-uuid-1',
+          isActive: false,
+        });
+
+        const response = await service.blessSessions(
+          [buildBlessingRequest()],
+          REQUEST_FINGERPRINT,
+        );
+
+        expect(response.results[0]).toMatchObject({
+          status: 'REJECTED',
+          reason: 'WORKSTATION_REVOKED',
+        });
+        expect(mockOfflineTokenService.issueToken).not.toHaveBeenCalled();
+      });
+
+      it('blesses a fully valid session instead of failing with INTERNAL_ERROR from the removed workstation lookup', async () => {
+        // Regression guard: the old Step 7 called workstation.findUnique with
+        // an invalid where clause, which threw PrismaClientValidationError on
+        // every call; the per-session catch swallowed it into REJECTED /
+        // INTERNAL_ERROR. This exact arrangement previously produced that
+        // wrong rejection and must now reach BLESSED.
+        arrangeSessionThatReachesStep7();
+        mockWorkstationActivation.findFirst.mockResolvedValue({
+          id: 'activation-uuid-1',
+          isActive: true,
+        });
+
+        const response = await service.blessSessions(
+          [buildBlessingRequest()],
+          REQUEST_FINGERPRINT,
+        );
+
+        const result = response.results[0];
+        expect(result.status).toBe('BLESSED');
+        expect(result.reason).toBeUndefined();
+
+        // The single real activation lookup replaced the dead lookups; if
+        // prisma.workstation.* were ever called again, its unmocked delegate
+        // would throw and this result would come back INTERNAL_ERROR instead.
+        expect(mockWorkstationActivation.findFirst).toHaveBeenCalledTimes(1);
+      });
     });
   });
 });
