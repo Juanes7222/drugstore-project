@@ -38,6 +38,46 @@ export const CustomerSalesQuerySchema = z.object({
   state: z.string().min(1).max(30).optional(),
 });
 
+/** FraudAlertStatus values from the licensing schema, plus ALL. */
+const fraudAlertStatusSchema = z.enum([
+  'OPEN',
+  'INVESTIGATING',
+  'DISMISSED',
+  'CONFIRMED_FRAUD',
+]);
+
+export const FraudAlertsQuerySchema = z.object({
+  page: pageSchema.optional(),
+  pageSize: pageSizeSchema.optional(),
+  status: fraudAlertStatusSchema
+    .or(z.literal('ALL'))
+    .optional(),
+});
+
+export const FraudAlertIdParamSchema = z.object({
+  id: z.string().min(1).max(64),
+});
+
+export const ResolveFraudAlertBodySchema = z.object({
+  note: z.string().min(1).max(2000).optional(),
+});
+
+export const AccessAuditQuerySchema = z.object({
+  page: pageSchema.optional(),
+  pageSize: pageSizeSchema.optional(),
+});
+
+export const TrialsEndingQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(14),
+});
+
 export type CustomersQueryDto = z.infer<typeof CustomersQuerySchema>;
 export type CustomerIdParamDto = z.infer<typeof CustomerIdParamSchema>;
 export type CustomerSalesQueryDto = z.infer<typeof CustomerSalesQuerySchema>;
+export type FraudAlertsQueryDto = z.infer<typeof FraudAlertsQuerySchema>;
+export type FraudAlertIdParamDto = z.infer<typeof FraudAlertIdParamSchema>;
+export type ResolveFraudAlertBodyDto = z.infer<
+  typeof ResolveFraudAlertBodySchema
+>;
+export type AccessAuditQueryDto = z.infer<typeof AccessAuditQuerySchema>;
+export type TrialsEndingQueryDto = z.infer<typeof TrialsEndingQuerySchema>;

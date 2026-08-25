@@ -17,6 +17,32 @@ const ACCESS_MODULE = 'REPORTS' as const;
 const ACCESS_ACTION = 'ACCESS' as const;
 const ENTITY_TYPE = 'Subscription';
 
+export interface AccessAuditQuery {
+  page?: number;
+  pageSize?: number;
+}
+
+/** One row of GET /saas-admin/access-audit. */
+export interface SaasAdminAccessAuditRow {
+  id: string;
+  actorEmail: string | null;
+  action: string;
+  subscriptionId: string | null;
+  customerName: string | null;
+  /** Stored details payload (the accessed endpoint descriptor), if any. */
+  summary: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+}
+
+export interface SaasAdminAccessAuditResult {
+  data: SaasAdminAccessAuditRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 @Injectable()
 export class SaasAdminAccessAuditService {
   private readonly logger = new Logger(SaasAdminAccessAuditService.name);
@@ -53,5 +79,81 @@ export class SaasAdminAccessAuditService {
         error,
       );
     }
+  }
+
+  /**
+   * Paged platform access-audit trail, newest first. Reads the shared
+   * AuditLog table filtered to this service's own write convention
+   * (ACCESS / REPORTS / Subscription) — no dedicated table. Customer
+   * names are resolved in one batched lookup for the page's distinct
+   * subscription ids.
+   */
+  async listAccessEvents(
+    query: AccessAuditQuery,
+  ): Promise<SaasAdminAccessAuditResult> {
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.max(1, Math.min(100, query.pageSize ?? 20));
+    const where = {
+      action: ACCESS_ACTION,
+      module: ACCESS_MODULE,
+      entityType: ENTITY_TYPE,
+    };
+
+    const [events, total] = await Promise.all([
+      this.prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: { user: { select: { email: true } } },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+
+    const customerNames = await this.loadCustomerNames(
+      events
+        .map((event) => event.subscriptionId)
+        .filter((id): id is string => id !== null),
+    );
+
+    return {
+      data: events.map((event) => ({
+        id: event.id,
+        actorEmail: event.user?.email ?? null,
+        action: event.action,
+        subscriptionId: event.subscriptionId,
+        customerName:
+          (event.subscriptionId &&
+            customerNames.get(event.subscriptionId)) ??
+          null,
+        summary: event.details,
+        ipAddress: event.ipAddress,
+        createdAt: event.createdAt.toISOString(),
+      })),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
+
+  /** Batched customerName resolution for a page of audit rows. */
+  private async loadCustomerNames(
+    subscriptionIds: string[],
+  ): Promise<Map<string, string>> {
+    const uniqueIds = [...new Set(subscriptionIds)];
+    if (uniqueIds.length === 0) {
+      return new Map();
+    }
+    const subscriptions = await this.prisma.subscription.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, customerName: true },
+    });
+    return new Map(
+      subscriptions.map((subscription) => [
+        subscription.id,
+        subscription.customerName,
+      ]),
+    );
   }
 }

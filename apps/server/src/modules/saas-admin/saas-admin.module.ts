@@ -13,6 +13,7 @@ import { SaasAdminController } from './controllers/saas-admin.controller';
 import { SaasAdminOverviewService } from './services/saas-admin-overview.service';
 import { SaasAdminCustomerService } from './services/saas-admin-customer.service';
 import { SaasAdminAccessAuditService } from './services/saas-admin-access-audit.service';
+import { SaasAdminFraudService } from './services/saas-admin-fraud.service';
 
 @Module({
   imports: [PrismaModule, BackofficeModule],
@@ -22,6 +23,7 @@ import { SaasAdminAccessAuditService } from './services/saas-admin-access-audit.
     SaasAdminOverviewService,
     SaasAdminCustomerService,
     SaasAdminAccessAuditService,
+    SaasAdminFraudService,
   ],
   exports: [],
 })

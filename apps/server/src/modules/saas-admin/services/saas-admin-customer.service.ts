@@ -24,6 +24,10 @@ import type { WorkstationOverviewResult } from '@/modules/backoffice/services/wo
 import { WorkstationOverviewService } from '@/modules/backoffice/services/workstation-overview.service';
 import type { FiscalStatusResult } from '@/modules/backoffice/services/fiscal-status.service';
 import { FiscalStatusService } from '@/modules/backoffice/services/fiscal-status.service';
+import {
+  buildSalesTrendDays,
+  type SalesTrendDay,
+} from '@/modules/backoffice/services/sales-trend';
 import { SaasAdminAccessAuditService } from './saas-admin-access-audit.service';
 
 /** Mirrors UsersController.listUsers' projection so both user listings stay identical. */
@@ -59,6 +63,8 @@ const FISCAL_PENDING_STATES = new Set([
 export interface SaasAdminCustomerDashboard {
   salesToday: { count: number; totalAmount: string };
   sales30d: { count: number; totalAmount: string; previousTotal: string };
+  /** Zero-filled daily buckets over the same trailing window as sales30d. */
+  salesTrend: { days: SalesTrendDay[] };
   cashShifts: { openCount: number; differenceAmount30d: string };
   users: { pendingApproval: number };
   fiscal: { pending: number; rejected: number };
@@ -186,6 +192,25 @@ export class SaasAdminCustomerService {
     return users.map((u) => u.id);
   }
 
+  /**
+   * Local midnights covering exactly the sliding window sales30d
+   * aggregates ([currentFrom, now)). The 30×24h span crosses 31 local
+   * dates, so emitting all of them keeps sum(days) equal to the sales30d
+   * aggregate; bucketing itself is shared with the backoffice dashboard.
+   */
+  private buildTrailingDayStarts(
+    windowFrom: Date,
+    todayStart: Date,
+  ): Date[] {
+    const days: Date[] = [];
+    const cursor = new Date(windowFrom);
+    while (cursor.getTime() <= todayStart.getTime()) {
+      days.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return days;
+  }
+
   private async collectDashboard(
     tx: TenantTx,
     subscriptionId: string,
@@ -193,6 +218,12 @@ export class SaasAdminCustomerService {
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
     const currentFrom = new Date(dayStart.getTime() - 30 * 24 * 60 * 60 * 1000);
+    // Exclusive upper bound at tomorrow's local midnight (same convention as
+    // backoffice DashboardService) so future-dated confirmed sales are kept
+    // out of BOTH the sales30d aggregate and the trend buckets — otherwise
+    // sum(trend.days) diverges from sales30d.totalAmount.
+    const windowTo = new Date(dayStart);
+    windowTo.setDate(windowTo.getDate() + 1);
     const previousFrom = new Date(
       dayStart.getTime() - 60 * 24 * 60 * 60 * 1000,
     );
@@ -201,6 +232,7 @@ export class SaasAdminCustomerService {
       salesToday,
       sales30d,
       previousSales30d,
+      trendSales,
       openShifts,
       shiftDifferences,
       pendingUsers,
@@ -218,7 +250,7 @@ export class SaasAdminCustomerService {
       tx.sale.aggregate({
         where: {
           cashShift: { subscriptionId },
-          confirmedAt: { gte: currentFrom },
+          confirmedAt: { gte: currentFrom, lt: windowTo },
           operationalState: SaleOperationalState.CONFIRMED,
         },
         _count: { id: true },
@@ -232,6 +264,14 @@ export class SaasAdminCustomerService {
         },
         _count: { id: true },
         _sum: { totalAmount: true },
+      }),
+      tx.sale.findMany({
+        where: {
+          cashShift: { subscriptionId },
+          confirmedAt: { gte: currentFrom, lt: windowTo },
+          operationalState: SaleOperationalState.CONFIRMED,
+        },
+        select: { confirmedAt: true, totalAmount: true },
       }),
       tx.cashShift.count({
         where: { subscriptionId, state: ShiftState.OPEN },
@@ -274,6 +314,12 @@ export class SaasAdminCustomerService {
         count: sales30d._count.id,
         totalAmount: sales30d._sum.totalAmount?.toString() ?? '0',
         previousTotal: previousSales30d._sum.totalAmount?.toString() ?? '0',
+      },
+      salesTrend: {
+        days: buildSalesTrendDays(
+          trendSales,
+          this.buildTrailingDayStarts(currentFrom, dayStart),
+        ),
       },
       cashShifts: {
         openCount: openShifts,

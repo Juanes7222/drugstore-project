@@ -67,6 +67,20 @@ export interface CustomersQuery {
   query?: string;
 }
 
+/** One row of GET /saas-admin/trials-ending. */
+export interface SaasAdminTrialEndingRow {
+  subscriptionId: string;
+  customerName: string;
+  customerEmail: string | null;
+  trialEndsAt: string;
+  plan: { code: string; name: string };
+}
+
+export interface SaasAdminTrialsEndingResult {
+  days: number;
+  trials: SaasAdminTrialEndingRow[];
+}
+
 type SubscriptionTx = Prisma.TransactionClient;
 
 const CUSTOMER_ROW_SELECT = {
@@ -194,6 +208,50 @@ export class SaasAdminOverviewService {
     }
     const [row] = await this.toCustomerRows([subscription]);
     return row;
+  }
+
+  /**
+   * TRIAL subscriptions whose trialEndsAt falls in [now, now + days],
+   * soonest first. The upper bound is inclusive so a trial ending
+   * exactly on day N is reported.
+   */
+  async getTrialsEnding(days: number): Promise<SaasAdminTrialsEndingResult> {
+    const now = new Date();
+    const until = new Date();
+    until.setDate(until.getDate() + days);
+
+    const trials = await this.prisma.subscription.findMany({
+      where: {
+        status: SubscriptionStatus.TRIAL,
+        trialEndsAt: { gte: now, lte: until },
+      },
+      orderBy: { trialEndsAt: 'asc' },
+      select: {
+        id: true,
+        customerName: true,
+        customerEmail: true,
+        trialEndsAt: true,
+        plan: { select: { code: true, name: true } },
+      },
+    });
+
+    return {
+      days,
+      trials: trials
+        // The where clause guarantees trialEndsAt; the guard only satisfies the nullable column type.
+        .filter(
+          (subscription): subscription is typeof subscription & {
+            trialEndsAt: Date;
+          } => subscription.trialEndsAt !== null,
+        )
+        .map((subscription) => ({
+          subscriptionId: subscription.id,
+          customerName: subscription.customerName,
+          customerEmail: subscription.customerEmail,
+          trialEndsAt: subscription.trialEndsAt.toISOString(),
+          plan: subscription.plan,
+        })),
+    };
   }
 
   private buildCustomerFilter(query?: string): Record<string, unknown> | undefined {

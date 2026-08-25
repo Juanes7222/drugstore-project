@@ -15,6 +15,7 @@ import {
   UserStatus,
 } from '@pharmacy/database';
 import { BackofficeScopeService } from './backoffice-scope.service';
+import { buildSalesTrendDays, type TrendSale } from './sales-trend';
 
 const EXPIRING_LOT_DAYS = 90;
 /** Trend series length for the default `today` period; other periods use one bucket per window day. */
@@ -338,41 +339,17 @@ export class DashboardService {
   }
 
   private buildSalesTrend(
-    sales: { confirmedAt: Date | null; totalAmount: Prisma.Decimal }[],
+    sales: TrendSale[],
     dayStarts: Date[],
   ): DashboardResponse['salesTrend'] {
-    const counts = dayStarts.map(() => 0);
-    const amounts = dayStarts.map(() => new Prisma.Decimal(0));
-    const bucketIndexByMidnight = new Map(
-      dayStarts.map((start, index) => [start.getTime(), index]),
-    );
-
-    for (const sale of sales) {
-      if (sale.confirmedAt === null) continue;
-      // Bucket by the sale's own local-day midnight, not UTC, matching the
-      // startOfLocalDay convention used for the dashboard period.
-      const saleDayMidnight = new Date(sale.confirmedAt);
-      saleDayMidnight.setHours(0, 0, 0, 0);
-      const bucketIndex = bucketIndexByMidnight.get(saleDayMidnight.getTime());
-      if (bucketIndex === undefined) continue;
-      counts[bucketIndex] += 1;
-      amounts[bucketIndex] = amounts[bucketIndex].plus(sale.totalAmount);
-    }
-
+    const days = buildSalesTrendDays(sales, dayStarts);
     return {
-      days: dayStarts.map((start, index) => ({
-        date: this.formatLocalDate(start),
-        confirmedCount: counts[index],
-        confirmedAmount: amounts[index].toString(),
+      days: days.map((day) => ({
+        date: day.date,
+        confirmedCount: day.count,
+        confirmedAmount: day.totalAmount,
       })),
     };
-  }
-
-  /** Local YYYY-MM-DD; toISOString would shift the day near UTC offsets. */
-  private formatLocalDate(day: Date): string {
-    const month = String(day.getMonth() + 1).padStart(2, '0');
-    const dayOfMonth = String(day.getDate()).padStart(2, '0');
-    return `${day.getFullYear()}-${month}-${dayOfMonth}`;
   }
 
   private summarizeFiscal(
