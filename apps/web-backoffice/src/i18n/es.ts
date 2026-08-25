@@ -539,6 +539,7 @@ export const es = {
       model_PER_LOCATION: "Por sede",
       model_PER_WORKSTATION: "Por terminal",
       model_TIERED: "Por niveles",
+      locations: "Sedes"
     },
     admins: {
       title: "Cuentas admin de plataforma",

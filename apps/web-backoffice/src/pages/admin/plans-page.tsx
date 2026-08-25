@@ -211,7 +211,7 @@ export function PlansPage() {
       },
       {
         id: "maxLocations",
-        header: t("subscriptions.locations"),
+        header: t("saas.plans.locations"),
         accessorKey: "maxLocations",
         meta: { align: "right" },
         cell: (info) => info.row.original.maxLocations ?? "—",
@@ -403,7 +403,7 @@ export function PlansPage() {
             ))}
           </TextField>
           <TextField
-            label={t("subscriptions.locations")}
+            label={t("saas.plans.locations")}
             type="number"
             fullWidth
             margin="normal"
