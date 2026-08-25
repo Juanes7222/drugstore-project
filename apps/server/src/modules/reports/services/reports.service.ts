@@ -238,24 +238,30 @@ export class ReportsService {
     assertValidDateRange(query.dateFrom, query.dateTo);
     const [dateFrom, dateTo] = parseDateRange(query);
 
-    // LEFT JOIN so documents without items still count toward totalDocuments
-    // (the window-style distinct count is computed over documents regardless
-    // of items). Documents without items land in the NULL-rate group row and
-    // are stripped below.
+    // LEFT JOIN so documents without items still count toward totalDocuments.
+    // Documents without items land in the NULL-rate group row and are
+    // stripped below. totalDocuments comes from a scalar over the scoped CTE:
+    // a plain COUNT(DISTINCT fd.id) inside GROUP BY is per-group, and PG does
+    // not implement DISTINCT window aggregates either (both caught by the
+    // reports-raw-sql e2e suite).
     const rows = await this.prisma.$queryRaw<NullableTaxRateGroupRow[]>`
+      WITH scoped_docs AS (
+        SELECT fd.id AS id, fd."saleId" AS "saleId"
+        FROM "FiscalDocument" fd
+        JOIN "Sale" s ON s.id = fd."saleId"
+        WHERE fd."documentType" = 'INVOICE'
+          AND fd."fiscalState" = 'VALIDATED'
+          AND fd."updatedAt" >= ${dateFrom}
+          AND fd."updatedAt" <= ${dateTo}
+          AND s."operationalState" = 'CONFIRMED'
+      )
       SELECT si."taxRate" AS "taxRate",
              COALESCE(SUM(si.subtotal), 0)::numeric(15,2) AS "taxableBase",
              COALESCE(SUM(si."taxAmount"), 0)::numeric(15,2) AS "taxAmount",
-             COUNT(DISTINCT CASE WHEN si.id IS NOT NULL THEN fd.id END)::bigint AS "documentCount",
-             COUNT(DISTINCT fd.id)::bigint AS "totalDocuments"
-      FROM "FiscalDocument" fd
-      JOIN "Sale" s ON s.id = fd."saleId"
-      LEFT JOIN "SaleItem" si ON si."saleId" = s.id
-      WHERE fd."documentType" = 'INVOICE'
-        AND fd."fiscalState" = 'VALIDATED'
-        AND fd."updatedAt" >= ${dateFrom}
-        AND fd."updatedAt" <= ${dateTo}
-        AND s."operationalState" = 'CONFIRMED'
+             COUNT(DISTINCT CASE WHEN si.id IS NOT NULL THEN sd.id END)::bigint AS "documentCount",
+             (SELECT COUNT(*) FROM scoped_docs)::bigint AS "totalDocuments"
+      FROM scoped_docs sd
+      LEFT JOIN "SaleItem" si ON si."saleId" = sd."saleId"
       GROUP BY si."taxRate"
       ORDER BY si."taxRate"
     `;
@@ -263,8 +269,8 @@ export class ReportsService {
     // Documents with no items land in the NULL-rate bucket; they contribute
     // to totalDocuments only, never to monetary buckets (mirrors the previous
     // in-memory aggregation skipping docs without items). rows[0].totalDocuments
-    // is safe only because COUNT(DISTINCT fd.id) is group-independent — every
-    // row carries the same window-wide total; do not turn it into a per-bucket count.
+    // is safe because the scalar subquery repeats the same range-wide count
+    // on every row.
     const itemRows = rows.filter(isTaxRateBucket);
     const totalDocuments = Number(rows[0]?.totalDocuments ?? 0);
     const totalTaxableBase = itemRows.reduce(
