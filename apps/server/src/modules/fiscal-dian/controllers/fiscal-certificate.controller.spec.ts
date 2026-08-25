@@ -1,10 +1,8 @@
-jest.mock('@pharmacy/database', () => {
-  class MockPrismaClient {
-    $connect = jest.fn();
-    $disconnect = jest.fn();
-  }
-  return { PrismaClient: MockPrismaClient };
-});
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { FiscalCertificateController } from './fiscal-certificate.controller';

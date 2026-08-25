@@ -1,37 +1,13 @@
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient, Prisma, MovementType } from '@pharmacy/database';
 import { InventoryMovementsService } from './inventory-movements.service';
 import { QueryInventoryMovementDto } from '../dto/query-inventory-movement.dto';
-
-jest.mock('@pharmacy/database', () => {
-  const DecimalMock = jest.fn().mockImplementation((v: any) => ({
-    toString: () => String(v),
-    toNumber: () => Number(v),
-    times: (o: any) => new DecimalMock(Number(v) * Number(o)),
-    dividedBy: (o: any) => new DecimalMock(Number(v) / Number(o)),
-    plus: (o: any) => new DecimalMock(Number(v) + Number(o)),
-    minus: (o: any) => new DecimalMock(Number(v) - Number(o)),
-  }));
-  return {
-    PrismaClient: jest.fn(),
-    MovementType: {
-      PURCHASE_RECEIPT: 'PURCHASE_RECEIPT',
-      SALE: 'SALE',
-      POSITIVE_ADJUSTMENT: 'POSITIVE_ADJUSTMENT',
-      NEGATIVE_ADJUSTMENT: 'NEGATIVE_ADJUSTMENT',
-      CLIENT_RETURN: 'CLIENT_RETURN',
-      SUPPLIER_RETURN: 'SUPPLIER_RETURN',
-      ADMIN_BLOCK: 'ADMIN_BLOCK',
-      ADMIN_UNBLOCK: 'ADMIN_UNBLOCK',
-      AUTO_EXPIRATION: 'AUTO_EXPIRATION',
-      PHYSICAL_COUNT: 'PHYSICAL_COUNT',
-      INITIAL_STOCK: 'INITIAL_STOCK',
-    },
-    Prisma: {
-      Decimal: DecimalMock,
-    },
-  };
-});
 
 describe('InventoryMovementsService', () => {
   let service: InventoryMovementsService;

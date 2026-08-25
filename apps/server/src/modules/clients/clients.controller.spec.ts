@@ -1,11 +1,7 @@
-// Mock @pharmacy/database before any imports that depend on it
-jest.mock('@pharmacy/database', () => {
-  class MockPrismaClient {
-    $connect = jest.fn();
-    $disconnect = jest.fn();
-  }
-  return { PrismaClient: MockPrismaClient };
-});
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ClientsController } from './clients.controller';

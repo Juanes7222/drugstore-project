@@ -6,42 +6,11 @@ import type { PrismaClient } from '@pharmacy/database';
 jest.mock('@/infrastructure/prisma/prisma.service', () => ({
   PrismaService: class {},
 }));
-jest.mock('@pharmacy/database', () => {
-  class MockTrendDecimal {
-    constructor(private readonly value: number) {}
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
 
-    plus(addend: MockTrendDecimal | number): MockTrendDecimal {
-      const addendValue =
-        addend instanceof MockTrendDecimal ? addend.valueOf() : addend;
-      return new MockTrendDecimal(this.value + addendValue);
-    }
-
-    dividedBy(divisor: number): MockTrendDecimal {
-      return new MockTrendDecimal(this.value / divisor);
-    }
-
-    toDecimalPlaces(): this {
-      return this;
-    }
-
-    valueOf(): number {
-      return this.value;
-    }
-
-    toString(): string {
-      return String(this.value);
-    }
-  }
-
-  return {
-    PrismaClient: class {},
-    Prisma: { Decimal: MockTrendDecimal },
-    SaleOperationalState: { CONFIRMED: 'CONFIRMED', ANNULLED: 'ANNULLED' },
-    ShiftState: { OPEN: 'OPEN' },
-    SessionStatus: { ACTIVE: 'ACTIVE' },
-    UserStatus: { PENDING_SETUP: 'PENDING_SETUP' },
-  };
-});
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { DashboardService } from './dashboard.service';
 
@@ -59,30 +28,11 @@ function localMidnight(daysAgo: number): Date {
   return day;
 }
 
-class FakeDecimal {
-  constructor(private readonly value: number) {}
-
-  dividedBy(divisor: number): FakeDecimal {
-    return new FakeDecimal(this.value / divisor);
-  }
-
-  toDecimalPlaces(): FakeDecimal {
-    return this;
-  }
-
-  plus(addend: FakeDecimal | number): FakeDecimal {
-    const addendValue =
-      addend instanceof FakeDecimal ? addend.valueOf() : addend;
-    return new FakeDecimal(this.value + addendValue);
-  }
-
-  valueOf(): number {
-    return this.value;
-  }
-
-  toString(): string {
-    return String(this.value);
-  }
+// Fixtures feed real Prisma.Decimal arithmetic in the service, so they must
+// be real Decimals (loaded from the mocked module), not a local fake.
+const { Prisma } = jest.requireMock('@pharmacy/database');
+function FakeDecimal(value: number) {
+  return new Prisma.Decimal(value);
 }
 
 function buildUser(overrides: Partial<User> = {}): User {
@@ -90,6 +40,7 @@ function buildUser(overrides: Partial<User> = {}): User {
     id: 'user-1',
     subscriptionId: 'sub-1',
     role: RoleType.OWNER,
+    isPlatformAdmin: false,
     email: 'owner@example.com',
     username: 'owner',
     displayName: 'Owner',
@@ -261,13 +212,15 @@ describe('DashboardService', () => {
       });
     });
 
-    it('counts all active sessions when tenantUserIds returns null', async () => {
-      scope.tenantUserIds.mockResolvedValue(null);
+    it('keeps the session count tenant-scoped even for SAAS_ADMIN callers', async () => {
+      scope.tenantUserIds.mockResolvedValue(['u9']);
 
-      await service.getDashboard(buildUser());
+      await service.getDashboard(
+        buildUser({ role: RoleType.SAAS_ADMIN }),
+      );
 
       expect(prisma.userSession.count).toHaveBeenCalledWith({
-        where: { status: 'ACTIVE' },
+        where: { status: 'ACTIVE', userId: { in: ['u9'] } },
       });
     });
 

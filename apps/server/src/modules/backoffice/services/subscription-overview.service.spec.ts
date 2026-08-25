@@ -6,9 +6,11 @@ import type { PrismaClient } from '@pharmacy/database';
 jest.mock('@/infrastructure/prisma/prisma.service', () => ({
   PrismaService: class {},
 }));
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: class {},
-}));
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { SubscriptionOverviewService } from './subscription-overview.service';
 
@@ -17,6 +19,7 @@ function buildUser(overrides: Partial<User> = {}): User {
     id: 'user-1',
     subscriptionId: 'sub-1',
     role: RoleType.SAAS_ADMIN,
+    isPlatformAdmin: false,
     email: 'admin@example.com',
     username: 'admin',
     displayName: 'Admin',

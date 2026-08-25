@@ -1,9 +1,8 @@
-// Mock @pharmacy/database before importing the service: its import chain
-// pulls in PrismaService, which value-imports the generated Prisma client.
-// Same pattern as fiscal-resolutions.service.spec.ts.
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-}));
+// The service's import chain pulls in PrismaService, which value-imports the
+// generated Prisma client — the real client must not load under jest.
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import * as forge from 'node-forge';
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';

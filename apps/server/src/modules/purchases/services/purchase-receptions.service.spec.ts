@@ -1,34 +1,9 @@
 // Mock @pharmacy/database before any imports that depend on it
-jest.mock('@pharmacy/database', () => {
-  class MockPrismaClient {
-    $connect = jest.fn();
-    $disconnect = jest.fn();
-  }
-  class MockDecimal {
-    constructor(public value: string | number) {}
-    plus(other: MockDecimal) {
-      return new MockDecimal(Number(this.value) + Number(other.value));
-    }
-    times(other: MockDecimal) {
-      return new MockDecimal(Number(this.value) * Number(other.value));
-    }
-    minus(other: MockDecimal) {
-      return new MockDecimal(Number(this.value) - Number(other.value));
-    }
-    dividedBy(other: MockDecimal) {
-      return new MockDecimal(Number(this.value) / Number(other.value));
-    }
-    toNumber() { return Number(this.value); }
-  }
-  return {
-    PrismaClient: MockPrismaClient,
-    Prisma: { Decimal: MockDecimal },
-    PurchaseReceptionState: { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', ANNULLED: 'ANNULLED' },
-    PurchaseOrderState: { CONFIRMED: 'CONFIRMED', PARTIALLY_RECEIVED: 'PARTIALLY_RECEIVED', FULLY_RECEIVED: 'FULLY_RECEIVED', ANNULLED: 'ANNULLED' },
-    MovementType: { NEGATIVE_ADJUSTMENT: 'NEGATIVE_ADJUSTMENT', PURCHASE_RECEIPT: 'PURCHASE_RECEIPT' },
-    LotState: { ACTIVE: 'ACTIVE', EXHAUSTED: 'EXHAUSTED' },
-  };
-});
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { PurchaseReceptionsService } from './purchase-receptions.service';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
@@ -289,7 +264,13 @@ describe('PurchaseReceptionsService', () => {
     it('creates without purchaseOrderId when not provided', async () => {
       const dtoWithoutOrder = {
         supplierId: UUID,
-        items: [{ productId: UUID, quantity: 10 }],
+        items: [{
+          productId: UUID,
+          receivedQuantity: 10,
+          realUnitCost: 5000,
+          taxSchemeId: UUID,
+          taxRate: 19,
+        }],
       };
       mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
         mockTx.supplier.findUnique.mockResolvedValue({ id: UUID });

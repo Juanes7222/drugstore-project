@@ -1,31 +1,14 @@
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient, Prisma } from '@pharmacy/database';
 import { ClientReturnCalculatorService } from './client-return-calculator.service';
 import { SaleItemNotFoundException } from '../exceptions/sale-item-not-found.exception';
 import { ReturnQuantityExceedsAvailableException } from '../exceptions/return-quantity-exceeds-available.exception';
-
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  ClientReturnState: { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' },
-  Prisma: {
-    Decimal: class Decimal {
-      constructor(private val: number | string | Decimal) {
-        if (typeof val === 'object' && 'val' in val) {
-          this.val = (val as any).val;
-        }
-      }
-      get value(): number { return typeof this.val === 'string' ? parseFloat(this.val) : typeof this.val === 'number' ? this.val : 0; }
-      times(other: any): Decimal { return new Decimal(this.value * (other instanceof Decimal ? other.value : other)); }
-      dividedBy(other: any): Decimal { return new Decimal(this.value / (other instanceof Decimal ? other.value : other)); }
-      plus(other: any): Decimal { return new Decimal(this.value + (other instanceof Decimal ? other.value : other)); }
-      minus(other: any): Decimal { return new Decimal(this.value - (other instanceof Decimal ? other.value : other)); }
-      toNumber(): number { return this.value; }
-      equals(other: any): boolean { return this.value === (other instanceof Decimal ? other.value : other); }
-      greaterThan(other: any): boolean { return this.value > (other instanceof Decimal ? other.value : other); }
-      toString(): string { return String(this.value); }
-    },
-  },
-}));
 
 describe('ClientReturnCalculatorService', () => {
   let service: ClientReturnCalculatorService;

@@ -1,3 +1,9 @@
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient, Prisma } from '@pharmacy/database';
 import { ClientReturnsService } from './client-returns.service';
@@ -11,28 +17,6 @@ import { ReturnQuantityExceedsAvailableException } from '../exceptions/return-qu
 import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { ClientReturnCalculatorService } from './client-return-calculator.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
-
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  ClientReturnState: { DRAFT: 'DRAFT', PENDING_PICKUP: 'PENDING_PICKUP', CONFIRMED: 'CONFIRMED', REJECTED: 'REJECTED', ANNULLED: 'ANNULLED' },
-  ShiftState: { OPEN: 'OPEN', CLOSED: 'CLOSED' },
-  SaleOperationalState: { DRAFT: 'DRAFT', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED' },
-  Prisma: {
-    Decimal: class Decimal {
-      constructor(private val: number | string | { value: number }) {
-        if (typeof val === 'object' && 'value' in val) this.val = val.value;
-      }
-      get value(): number { return typeof this.val === 'string' ? parseFloat(this.val) : typeof this.val === 'number' ? this.val : 0; }
-      times(o: any): Decimal { return new Decimal(this.value * (o instanceof Decimal ? o.value : o)); }
-      dividedBy(o: any): Decimal { return new Decimal(this.value / (o instanceof Decimal ? o.value : o)); }
-      plus(o: any): Decimal { return new Decimal(this.value + (o instanceof Decimal ? o.value : o)); }
-      minus(o: any): Decimal { return new Decimal(this.value - (o instanceof Decimal ? o.value : o)); }
-      toNumber(): number { return this.value; }
-      equals(o: any): boolean { return this.value === (o instanceof Decimal ? o.value : o); }
-      greaterThan(o: any): boolean { return this.value > (o instanceof Decimal ? o.value : o); }
-    },
-  },
-}));
 
 describe('ClientReturnsService', () => {
   let service: ClientReturnsService;

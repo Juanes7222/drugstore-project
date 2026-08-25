@@ -3,11 +3,10 @@
 // stored in SystemConfig key-value store.
 // ---------------------------------------------------------------------------
 
-// Mock before any imports that depend on the generated Prisma client
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  SystemModule: { CONFIGURATION: 'CONFIGURATION' },
-}));
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient } from '@pharmacy/database';

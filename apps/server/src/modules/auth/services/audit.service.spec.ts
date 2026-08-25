@@ -5,19 +5,11 @@ import type { PrismaClient } from '@pharmacy/database';
 jest.mock('@/infrastructure/prisma/prisma.service', () => ({
   PrismaService: class {},
 }));
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: class {},
-  AuditAction: {
-    CREATE: 'CREATE',
-    UPDATE: 'UPDATE',
-    DELETE: 'DELETE',
-    LOGIN: 'LOGIN',
-    ACCESS: 'ACCESS',
-    LOGOUT: 'LOGOUT',
-    STATE_CHANGE: 'STATE_CHANGE',
-  },
-  SystemModule: { AUTH_USERS: 'AUTH_USERS' },
-}));
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { AuditService, AuditEvent } from './audit.service';
 

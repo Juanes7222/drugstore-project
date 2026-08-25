@@ -1,22 +1,8 @@
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  SupplierIdentificationType: { NIT: 'NIT', CC: 'CC', CE: 'CE', PASSPORT: 'PASSPORT' },
-  Prisma: {
-    Decimal: class Decimal {
-      constructor(private v: any) {}
-      toString(): string { return String(this.v); }
-      toNumber(): number { return Number(this.v); }
-      valueOf(): number { return Number(this.v); }
-      times(o: any): Decimal { return new Decimal(Number(this.v) * Number(o)); }
-      dividedBy(o: any): Decimal { return new Decimal(Number(this.v) / Number(o)); }
-      plus(o: any): Decimal { return new Decimal(Number(this.v) + Number(o)); }
-      minus(o: any): Decimal { return new Decimal(Number(this.v) - Number(o)); }
-    },
-    PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {
-      constructor(m: string, public code: string, public meta?: any) { super(m); }
-    },
-  },
-}));
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { SuppliersController } from './suppliers.controller';

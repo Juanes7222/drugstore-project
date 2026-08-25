@@ -1,12 +1,10 @@
-// Mock @pharmacy/database before any imports that depend on it (import chain:
-// local.strategy.ts -> auth.service.ts -> prisma.service.ts -> @pharmacy/database)
-jest.mock('@pharmacy/database', () => {
-  class MockPrismaClient {
-    $connect = jest.fn();
-    $disconnect = jest.fn();
-  }
-  return { PrismaClient: MockPrismaClient };
-});
+// Import chain that depends on @pharmacy/database:
+// local.strategy.ts -> auth.service.ts -> prisma.service.ts -> @pharmacy/database
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 // Mock passport modules before any imports that depend on them
 jest.mock('@nestjs/passport', () => ({

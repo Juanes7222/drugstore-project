@@ -3,9 +3,10 @@ import type { PrismaClient } from '@pharmacy/database';
 
 // The Prisma 7 client is generated at build time; keep the real package out
 // of the module graph so the spec can run without the generated client.
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-}));
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 
 import { NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { DevController } from './dev.controller';

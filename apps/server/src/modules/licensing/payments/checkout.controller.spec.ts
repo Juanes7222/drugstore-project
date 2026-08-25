@@ -1,14 +1,7 @@
-// Mock @pharmacy/database before any imports that pull in PrismaClient,
-// because the generated client is ESM and Jest's CommonJS runner cannot
-// parse it without a transform layer.
-jest.mock('@pharmacy/database', () => {
-  class MockPrismaClient {
-    $connect = jest.fn();
-    $disconnect = jest.fn();
-    $on = jest.fn();
-  }
-  return { PrismaClient: MockPrismaClient };
-});
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, HttpStatus } from '@nestjs/common';

@@ -1,10 +1,9 @@
 // Mock @pharmacy/database before importing AppModule: the module graph
 // transitively imports the generated Prisma client, which is not generated in
 // packages/database at test time (same pattern as auth.service.spec.ts).
-// Every named export other than PrismaClient is an enum or model-type used
-// only at runtime, so a lazy proxy returning the accessed key is enough.
-// The two enums fed to z.nativeEnum at import time get real member sets
-// (mirrored from packages/database/prisma/schema).
+// The shared helper exposes the real generated enums plus the real Prisma
+// runtime surface (Decimal, error/null sentinels), so import-time consumers
+// (z.nativeEnum, EXTENSION_TO_FORMAT) see production values.
 // Mock firebase-admin before importing AppModule: the module graph pulls in
 // firebase-auth.service, whose real firebase-admin dependency chain
 // (jwks-rsa -> jose) ships ESM builds that the CJS module runner cannot parse.
@@ -16,32 +15,9 @@ jest.mock('firebase-admin/auth', () => ({
   getAuth: jest.fn(),
 }));
 
-jest.mock('@pharmacy/database', () => {
-  const lazyEnum = new Proxy(
-    {},
-    {
-      get: (target, prop) => {
-        if (typeof prop !== 'string') return undefined;
-        if (!(prop in target)) {
-          target[prop] = prop;
-        }
-        return target[prop];
-      },
-    },
-  );
-  const enumFrom = (members: string[]) =>
-    Object.fromEntries(members.map((member) => [member, member]));
-  return {
-    PrismaClient: class MockPrismaClient {},
-    Prisma: lazyEnum,
-    BillingPeriod: enumFrom(['MONTHLY', 'QUARTERLY', 'ANNUAL']),
-    SupplierIdentificationType: enumFrom(['NIT', 'CC', 'CE', 'PASSPORT']),
-    // Read at module load by data-import's import-source.adapter
-    // (EXTENSION_TO_FORMAT) since AppModule now imports DataImportModule.
-    ImportSourceFormat: enumFrom(['CSV', 'XLSX', 'JSON']),
-    __esModule: true,
-  };
-});
+import { createPrismaDatabaseMock } from '../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { AppModule } from './app.module';
 import { AuthModule } from './modules/auth/auth.module';

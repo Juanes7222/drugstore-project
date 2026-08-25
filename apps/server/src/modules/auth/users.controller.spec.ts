@@ -12,20 +12,11 @@ import type { PrismaClient } from '@pharmacy/database';
 jest.mock('@/infrastructure/prisma/prisma.service', () => ({
   PrismaService: class {},
 }));
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: class {},
-  UserStatus: {
-    PENDING_SETUP: 'PENDING_SETUP',
-    ACTIVE: 'ACTIVE',
-    DISABLED: 'DISABLED',
-  },
-  SessionRevocationReason: {
-    USER_DEACTIVATION: 'USER_DEACTIVATION',
-    PASSWORD_CHANGED: 'PASSWORD_CHANGED',
-    ADMIN_REVOCATION: 'ADMIN_REVOCATION',
-  },
-  AuthMethod: { PIN_ONLY: 'PIN_ONLY', PASSWORD_ONLY: 'PASSWORD_ONLY' },
-}));
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 jest.mock('./services/pin.service', () => ({ PinService: class {} }));
 jest.mock('./services/password-hasher.service', () => ({
   PasswordHasherService: class {},
@@ -64,6 +55,7 @@ function buildActor(overrides: Partial<User> = {}): User {
     id: 'actor-1',
     subscriptionId: 'sub-1',
     role: RoleType.OWNER,
+    isPlatformAdmin: false,
     email: 'owner@example.com',
     username: 'owner',
     displayName: 'Owner',
@@ -96,6 +88,7 @@ function buildTargetUser(
     id: 'target-1',
     subscriptionId: 'sub-1',
     role: RoleType.CASHIER,
+    isPlatformAdmin: false,
     email: 'cashier@example.com',
     username: 'cashier',
     displayName: 'Cashier',

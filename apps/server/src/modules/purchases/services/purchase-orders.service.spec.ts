@@ -1,3 +1,9 @@
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient } from '@pharmacy/database';
 import { PurchaseOrdersService } from './purchase-orders.service';
@@ -7,32 +13,6 @@ import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exce
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 import type { PurchaseOrderConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
 import { hashAdvisoryKey } from '@/common/utils/advisory-lock';
-
-jest.mock('@pharmacy/database', () => {
-  class Decimal {
-    constructor(private v: any) { /* mock */ }
-    toString(): string { return String(this.v); }
-    toNumber(): number { return Number(this.v); }
-    valueOf(): number { return Number(this.v); }
-    times(o: any): Decimal { return new Decimal(Number(this.v) * Number(o)); }
-    dividedBy(o: any): Decimal { return new Decimal(Number(this.v) / Number(o)); }
-    plus(o: any): Decimal { return new Decimal(Number(this.v) + Number(o)); }
-    minus(o: any): Decimal { return new Decimal(Number(this.v) - Number(o)); }
-  }
-  return {
-    PrismaClient: jest.fn(),
-    PurchaseOrderState: {
-      DRAFT: 'DRAFT',
-      CONFIRMED: 'CONFIRMED',
-      PARTIALLY_RECEIVED: 'PARTIALLY_RECEIVED',
-      FULLY_RECEIVED: 'FULLY_RECEIVED',
-      ANNULLED: 'ANNULLED',
-    },
-    Prisma: {
-      Decimal,
-    },
-  };
-});
 
 describe('PurchaseOrdersService', () => {
   let service: PurchaseOrdersService;

@@ -3,33 +3,11 @@
 jest.mock('@/infrastructure/prisma/prisma.service', () => ({
   PrismaService: class {},
 }));
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: class {},
-  Prisma: {},
-  RoleType: {
-    SAAS_ADMIN: 'SAAS_ADMIN',
-    OWNER: 'OWNER',
-    MANAGER: 'MANAGER',
-    CASHIER: 'CASHIER',
-  },
-  AuthMethod: {
-    PASSWORD_ONLY: 'PASSWORD_ONLY',
-    PIN_ONLY: 'PIN_ONLY',
-    OAUTH_GOOGLE: 'OAUTH_GOOGLE',
-  },
-  UserStatus: {
-    ACTIVE: 'ACTIVE',
-    INACTIVE: 'INACTIVE',
-    PENDING_SETUP: 'PENDING_SETUP',
-    DISABLED: 'DISABLED',
-    LOCKED: 'LOCKED',
-  },
-  SessionRevocationReason: {
-    SECURITY_ANOMALY: 'SECURITY_ANOMALY',
-    LOGOUT: 'LOGOUT',
-    PASSWORD_CHANGED: 'PASSWORD_CHANGED',
-  },
-}));
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 jest.mock('./services/password-hasher.service', () => ({
   PasswordHasherService: class {},
 }));

@@ -1,3 +1,9 @@
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient, Prisma } from '@pharmacy/database';
 import { SalesService } from './sales.service';
@@ -14,43 +20,6 @@ import { CreditRequiresRegisteredClientException } from '../exceptions/credit-re
 import { CreditLimitExceededException } from '../exceptions/credit-limit-exceeded.exception';
 import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
 import { DiscountReasonRequiredException } from '@/modules/catalog/exceptions/discount-reason-required.exception';
-
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  ShiftState: { OPEN: 'OPEN', CLOSED: 'CLOSED' },
-  SaleOperationalState: { DRAFT: 'DRAFT', IN_PROGRESS: 'IN_PROGRESS', CONFIRMED: 'CONFIRMED', CANCELLED: 'CANCELLED', ANNULLED: 'ANNULLED' },
-  ClientReturnState: { DRAFT: 'DRAFT', PENDING_PICKUP: 'PENDING_PICKUP', CONFIRMED: 'CONFIRMED', REJECTED: 'REJECTED', ANNULLED: 'ANNULLED' },
-  SaleType: { FREE_SALE: 'FREE_SALE', PRESCRIPTION: 'PRESCRIPTION' },    Prisma: {
-    Decimal: class Decimal {
-      static ROUND_HALF_UP = 1;
-      static max(...args: any[]): Decimal {
-        const values: any[] = Array.isArray(args[0]) ? args[0] : args;
-        return new Decimal(
-          Math.max(...values.map((v) => (v instanceof Decimal ? v.value : Number(v)))),
-        );
-      }
-      constructor(private val: number | string | { value: number }) {
-        if (typeof val === 'object' && 'value' in val) this.val = val.value;
-      }
-      get value(): number { return typeof this.val === 'string' ? parseFloat(this.val) : typeof this.val === 'number' ? this.val : 0; }
-      times(o: any): Decimal { return new Decimal(this.value * (o instanceof Decimal ? o.value : Number(o))); }
-      dividedBy(o: any): Decimal { return new Decimal(this.value / (o instanceof Decimal ? o.value : Number(o))); }
-      plus(o: any): Decimal { return new Decimal(this.value + (o instanceof Decimal ? o.value : Number(o))); }
-      minus(o: any): Decimal { return new Decimal(this.value - (o instanceof Decimal ? o.value : Number(o))); }
-      toDecimalPlaces(dp: number): Decimal { return new Decimal(Number(this.value.toFixed(dp))); }
-      toNumber(): number { return this.value; }
-      valueOf(): number { return this.value; }
-      toString(): string { return String(this.value); }
-      equals(o: any): boolean { return this.value === (o instanceof Decimal ? o.value : Number(o)); }
-      greaterThan(o: any): boolean { return this.value > (o instanceof Decimal ? o.value : Number(o)); }
-      lessThan(o: any): boolean { return this.value < (o instanceof Decimal ? o.value : Number(o)); }
-      lessThanOrEqualTo(o: any): boolean { return this.value <= (o instanceof Decimal ? o.value : Number(o)); }
-    },
-    PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {
-      constructor(m: string, public code: string, public meta?: any) { super(m); }
-    },
-  },
-}));
 
 describe('SalesService', () => {
   let service: SalesService;
@@ -395,8 +364,11 @@ describe('SalesService', () => {
       const Prisma = jest.requireMock('@pharmacy/database').Prisma;
       const p2002Error = new Prisma.PrismaClientKnownRequestError(
         'Unique constraint',
-        'P2002',
-        { target: 'ux_sale_local_per_ws' },
+        {
+          code: 'P2002',
+          clientVersion: 'test-client-version',
+          meta: { target: 'ux_sale_local_per_ws' },
+        },
       );
       (prisma.cashShift.findFirst as jest.Mock).mockResolvedValue(mockCashShift);
       (prisma.product.findUnique as jest.Mock).mockResolvedValue(mockProduct);

@@ -1,10 +1,7 @@
-// Mock @pharmacy/database before any imports that depend on it
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  AdjustmentState: { DRAFT: 'DRAFT', PENDING_APPROVAL: 'PENDING_APPROVAL', APPROVED: 'APPROVED', REJECTED: 'REJECTED', APPLIED: 'APPLIED', ANNULLED: 'ANNULLED' },
-  MovementType: { POSITIVE_ADJUSTMENT: 'POSITIVE_ADJUSTMENT', NEGATIVE_ADJUSTMENT: 'NEGATIVE_ADJUSTMENT' },
-  LotState: { ACTIVE: 'ACTIVE', EXHAUSTED: 'EXHAUSTED' },
-}));
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient } from '@pharmacy/database';

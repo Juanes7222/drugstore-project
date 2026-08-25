@@ -1,3 +1,9 @@
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient, Prisma, LotState, MovementType } from '@pharmacy/database';
 import { LotsService } from './lots.service';
@@ -11,31 +17,6 @@ import { LotStateChangedSinceSaleException } from '../exceptions/lot-state-chang
 import { LotNotEligibleForReturnException } from '../exceptions/lot-not-eligible-for-return.exception';
 import { NotImplementedForPhaseException } from '@/common/exceptions/not-implemented-for-phase.exception';
 import type { LotSyncData } from '@/modules/sync/dto/purchase-sync-payloads';
-
-jest.mock('@pharmacy/database', () => {
-  const DecimalMock = jest.fn().mockImplementation((v: any) => ({
-    toString: () => String(v),
-    toNumber: () => Number(v),
-    times: function (o: any) { return new DecimalMock(Number(v) * Number(o)); },
-    dividedBy: function (o: any) { return new DecimalMock(Number(v) / Number(o)); },
-    plus: function (o: any) { return new DecimalMock(Number(v) + Number(o)); },
-    minus: function (o: any) { return new DecimalMock(Number(v) - Number(o)); },
-  }));
-  return {
-    PrismaClient: jest.fn(),
-    LotState: { ACTIVE: 'ACTIVE', BLOCKED: 'BLOCKED', EXPIRED: 'EXPIRED', QUARANTINE: 'QUARANTINE', COMMITTED: 'COMMITTED' },
-    MovementType: {
-      INCOMING: 'INCOMING', OUTGOING: 'OUTGOING', ADJUSTMENT: 'ADJUSTMENT',
-      RETURN: 'RETURN', CANCEL: 'CANCEL',
-      ADMIN_BLOCK: 'ADMIN_BLOCK', ADMIN_UNBLOCK: 'ADMIN_UNBLOCK',
-      PURCHASE_RECEIPT: 'PURCHASE_RECEIPT', SUPPLIER_RETURN: 'SUPPLIER_RETURN',
-      CLIENT_RETURN: 'CLIENT_RETURN',
-    },
-    Prisma: {
-      Decimal: DecimalMock,
-    },
-  };
-});
 
 describe('LotsService', () => {
   let service: LotsService;

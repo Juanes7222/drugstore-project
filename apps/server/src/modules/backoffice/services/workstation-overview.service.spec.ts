@@ -6,11 +6,11 @@ import type { PrismaClient } from '@pharmacy/database';
 jest.mock('@/infrastructure/prisma/prisma.service', () => ({
   PrismaService: class {},
 }));
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: class {},
-  SessionStatus: { ACTIVE: 'ACTIVE' },
-  SaleOperationalState: { CONFIRMED: 'CONFIRMED' },
-}));
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { WorkstationOverviewService } from './workstation-overview.service';
 
@@ -19,6 +19,7 @@ function buildUser(overrides: Partial<User> = {}): User {
     id: 'user-1',
     subscriptionId: 'sub-1',
     role: RoleType.OWNER,
+    isPlatformAdmin: false,
     email: 'owner@example.com',
     username: 'owner',
     displayName: 'Owner',
@@ -74,23 +75,7 @@ describe('WorkstationOverviewService', () => {
   });
 
   describe('getWorkstations', () => {
-    it('lets SAAS_ADMIN see every workstation without a filter', async () => {
-      prisma.workstation.findMany.mockResolvedValue([
-        { id: 'ws-1', name: 'Caja 1' },
-      ] as never);
-
-      const result = await service.getWorkstations(
-        buildUser({ role: RoleType.SAAS_ADMIN }),
-      );
-
-      expect(prisma.workstation.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} }),
-      );
-      expect(prisma.userSession.findMany).not.toHaveBeenCalled();
-      expect(result.workstations).toHaveLength(1);
-    });
-
-    it('restricts non-SAAS_ADMIN to workstations with tenant user sessions', async () => {
+    it('restricts the listing to workstations with active tenant user sessions', async () => {
       prisma.userSession.findMany.mockResolvedValue([
         { workstationId: 'ws-1' },
         { workstationId: 'ws-2' },
@@ -108,14 +93,24 @@ describe('WorkstationOverviewService', () => {
       );
     });
 
-    it('falls back to no workstation filter when tenantUserIds returns null', async () => {
-      scope.tenantUserIds.mockResolvedValue(null);
+    it('scopes SAAS_ADMIN callers through their own subscription like any other role', async () => {
+      prisma.workstation.findMany.mockResolvedValue([
+        { id: 'ws-1', name: 'Caja 1' },
+      ] as never);
 
-      await service.getWorkstations(buildUser());
-
-      expect(prisma.workstation.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} }),
+      const result = await service.getWorkstations(
+        buildUser({ role: RoleType.SAAS_ADMIN }),
       );
+
+      expect(scope.tenantUserIds).toHaveBeenCalledWith(
+        expect.objectContaining({ role: RoleType.SAAS_ADMIN }),
+      );
+      expect(prisma.workstation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: { in: [] } },
+        }),
+      );
+      expect(result.workstations).toHaveLength(1);
     });
 
     it('enriches workstations with active session and sales-today counts', async () => {
@@ -156,11 +151,51 @@ describe('WorkstationOverviewService', () => {
       });
     });
 
-    it('counts all active sessions for the activeSessionCount metric', async () => {
+    it('counts all active sessions for the headline metric (preserved behavior)', async () => {
       await service.getWorkstations(buildUser());
 
       expect(prisma.userSession.count).toHaveBeenCalledWith({
         where: { status: 'ACTIVE' },
+      });
+    });
+  });
+
+  describe('getWorkstationsForTenant', () => {
+    it('scopes sessions, workstations and sales to the explicit subscription', async () => {
+      prisma.userSession.findMany.mockResolvedValue([
+        { workstationId: 'ws-7' },
+      ] as never);
+
+      await service.getWorkstationsForTenant({
+        subscriptionId: 'sub-42',
+        userIds: ['ua', 'ub'],
+      });
+
+      expect(prisma.userSession.findMany).toHaveBeenCalledWith({
+        where: { userId: { in: ['ua', 'ub'] }, status: 'ACTIVE' },
+        select: { workstationId: true },
+        distinct: ['workstationId'],
+      });
+      expect(prisma.workstation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['ws-7'] } } }),
+      );
+      expect(prisma.sale.groupBy).toHaveBeenCalledWith({
+        by: ['workstationId'],
+        where: expect.objectContaining({
+          cashShift: { subscriptionId: 'sub-42' },
+        }),
+        _count: { _all: true },
+      });
+    });
+
+    it('filters the session counter by the tenant users', async () => {
+      await service.getWorkstationsForTenant({
+        subscriptionId: 'sub-42',
+        userIds: ['ua'],
+      });
+
+      expect(prisma.userSession.count).toHaveBeenCalledWith({
+        where: { status: 'ACTIVE', userId: { in: ['ua'] } },
       });
     });
   });

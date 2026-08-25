@@ -1,7 +1,7 @@
-jest.mock('@pharmacy/database', () => {
-  class MockPrismaClient {}
-  return { PrismaClient: MockPrismaClient };
-});
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 
 import { mockDeep } from 'jest-mock-extended';
 import type { PrismaClient } from '@pharmacy/database';

@@ -1,10 +1,8 @@
-// Mock @pharmacy/database before importing the job: its import chain pulls in
-// PrismaService, which value-imports the generated Prisma client. Same pattern
-// as resolution-expiration-alert.job.spec.ts.
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: class MockPrismaClient {},
-  Prisma: {},
-}));
+// The job's import chain pulls in PrismaService, which value-imports the
+// generated Prisma client — the real client must not load under jest.
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { Logger } from '@nestjs/common';
 import { mockDeep, type DeepMockProxy } from 'jest-mock-extended';

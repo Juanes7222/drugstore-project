@@ -1,29 +1,15 @@
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient, Prisma } from '@pharmacy/database';
 import { SuppliersService } from './suppliers.service';
 import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
 import { DuplicateSupplierIdentificationException } from '../exceptions/duplicate-supplier-identification.exception';
 import type { SupplierSyncData } from '@/modules/sync/dto/purchase-sync-payloads';
-
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  SupplierIdentificationType: { NIT: 'NIT', CC: 'CC', CE: 'CE' },
-  Prisma: {
-    Decimal: class Decimal {
-      constructor(private v: any) { /* mock */ }
-      toString(): string { return String(this.v); }
-      toNumber(): number { return Number(this.v); }
-      valueOf(): number { return Number(this.v); }
-      times(o: any): Decimal { return new Decimal(Number(this.v) * Number(o)); }
-      dividedBy(o: any): Decimal { return new Decimal(Number(this.v) / Number(o)); }
-      plus(o: any): Decimal { return new Decimal(Number(this.v) + Number(o)); }
-      minus(o: any): Decimal { return new Decimal(Number(this.v) - Number(o)); }
-    },
-    PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {
-      constructor(m: string, public code: string, public meta?: any) { super(m); }
-    },
-  },
-}));
 
 describe('SuppliersService', () => {
   let service: SuppliersService;
@@ -196,8 +182,11 @@ describe('SuppliersService', () => {
       const Prisma = jest.requireMock('@pharmacy/database').Prisma;
       const p2002Error = new Prisma.PrismaClientKnownRequestError(
         'Unique constraint violation',
-        'P2002',
-        {},
+        {
+          code: 'P2002',
+          clientVersion: 'test-client-version',
+          meta: {},
+        },
       );
       (prisma.supplier.create as jest.Mock).mockRejectedValue(p2002Error);
 
@@ -245,8 +234,11 @@ describe('SuppliersService', () => {
       const Prisma = jest.requireMock('@pharmacy/database').Prisma;
       const p2002Error = new Prisma.PrismaClientKnownRequestError(
         'Unique constraint',
-        'P2002',
-        {},
+        {
+          code: 'P2002',
+          clientVersion: 'test-client-version',
+          meta: {},
+        },
       );
       (prisma.supplier.findUnique as jest.Mock).mockResolvedValue(mockSupplier);
       (prisma.supplier.update as jest.Mock).mockRejectedValue(p2002Error);

@@ -1,29 +1,10 @@
 // Mock @pharmacy/database before any imports that depend on it (the processor
 // imports DataImportService, which pulls in @pharmacy/database at module load).
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  Prisma: {
-    Decimal: class {},
-    JsonNull: 'JSON_NULL',
-    PrismaClientKnownRequestError: class extends Error {
-      constructor(
-        m: string,
-        public code: string,
-        public meta?: unknown,
-      ) {
-        super(m);
-      }
-    },
-  },
-  ImportSourceFormat: { CSV: 'CSV', XLSX: 'XLSX', JSON: 'JSON' },
-  DataImportRowStatus: { VALID: 'VALID', ERROR: 'ERROR' },
-  DataImportStatus: {
-    PROCESSING: 'PROCESSING',
-    COMPLETED: 'COMPLETED',
-    FAILED: 'FAILED',
-  },
-  AuditAction: { IMPORT: 'IMPORT' },
-}));
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { DataImportProcessingJob } from './data-import-processing.job';
 

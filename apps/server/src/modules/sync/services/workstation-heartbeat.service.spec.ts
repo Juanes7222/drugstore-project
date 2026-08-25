@@ -1,11 +1,11 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import type { PrismaClient } from '@pharmacy/database';
 
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
 // The Prisma 7 client is generated at build time; keep the real package out
 // of the module graph so the spec can run without the generated client.
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-}));
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import {
   WorkstationHeartbeatService,

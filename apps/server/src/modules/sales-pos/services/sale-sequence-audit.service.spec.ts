@@ -1,9 +1,10 @@
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import type { PrismaClient } from '@pharmacy/database';
 
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-}));
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 
 import { SaleSequenceAuditService } from './sale-sequence-audit.service';
 

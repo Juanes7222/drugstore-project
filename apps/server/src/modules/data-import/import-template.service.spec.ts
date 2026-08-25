@@ -1,9 +1,9 @@
 // Mock @pharmacy/database before any imports that depend on it
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  Prisma: { Decimal: class {} },
-  ImportSourceFormat: { CSV: 'CSV', XLSX: 'XLSX', JSON: 'JSON' },
-}));
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { Workbook } from 'exceljs';
 import { ImportSourceFormat } from '@pharmacy/database';

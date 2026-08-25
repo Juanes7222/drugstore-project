@@ -1,17 +1,20 @@
 // Mock @pharmacy/database before any imports that depend on it
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
 const mockConnect = jest.fn().mockResolvedValue(undefined);
 const mockDisconnect = jest.fn().mockResolvedValue(undefined);
 const mockTransaction = jest.fn();
 
-jest.mock('@pharmacy/database', () => {
-  return {
-    PrismaClient: class MockPrismaClient {
-      $connect = mockConnect;
-      $disconnect = mockDisconnect;
-      $transaction = mockTransaction;
-    },
-  };
-});
+// The PrismaClient stub keeps the lifecycle hooks as spies: this suite
+// asserts on $connect/$disconnect/$transaction directly.
+jest.mock('@pharmacy/database', () => ({
+  ...createPrismaDatabaseMock(),
+  PrismaClient: class MockPrismaClient {
+    $connect = mockConnect;
+    $disconnect = mockDisconnect;
+    $transaction = mockTransaction;
+  },
+}));
 
 import { PrismaService } from './prisma.service';
 

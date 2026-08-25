@@ -10,13 +10,11 @@ jest.mock('@/common/guards/jwt-auth.guard', () => ({
 }));
 jest.mock('@/common/guards/roles.guard', () => ({ RolesGuard: class {} }));
 jest.mock('./guards/jwt-refresh.guard', () => ({ JwtRefreshGuard: class {} }));
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: class {},
-  Prisma: {},
-  UserStatus: { ACTIVE: 'ACTIVE' },
-  SessionRevocationReason: { LOGOUT: 'LOGOUT' },
-  UserSession: class {},
-}));
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { INestApplication } from '@nestjs/common';

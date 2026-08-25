@@ -1,20 +1,9 @@
 // Mock @pharmacy/database before any imports that depend on it
-jest.mock('@pharmacy/database', () => {
-  class MockPrismaClient {
-    $connect = jest.fn();
-    $disconnect = jest.fn();
-  }
-  return {
-    PrismaClient: MockPrismaClient,
-    Prisma: {
-      Decimal: jest
-        .fn()
-        .mockImplementation(
-          (v: string) => ({ value: v, toString: () => v }) as any,
-        ),
-    },
-  };
-});
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { TaxSchemesService } from './tax-schemes.service';
 import { DuplicateActiveTaxSchemeException } from './exceptions/duplicate-active-tax-scheme.exception';

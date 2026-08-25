@@ -2,22 +2,10 @@
 // Tests for WorkstationConfigController — per-workstation config endpoints
 // ---------------------------------------------------------------------------
 
-// Mock @pharmacy/database before any imports that depend on it
-jest.mock('@pharmacy/database', () => {
-  class MockPrismaClient {
-    $connect = jest.fn();
-    $disconnect = jest.fn();
-  }
-  return {
-    PrismaClient: MockPrismaClient,
-    ConfigValueType: {
-      NUMBER: 'NUMBER', BOOLEAN: 'BOOLEAN', STRING: 'STRING',
-      ARRAY: 'ARRAY', OBJECT: 'OBJECT',
-    },
-    SystemModule: { CONFIGURATION: 'CONFIGURATION' },
-    AuditAction: { UPDATE: 'UPDATE' },
-  };
-});
+import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-database-mock';
+
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { WorkstationConfigController } from './workstation-config.controller';
@@ -35,6 +23,7 @@ describe('WorkstationConfigController', () => {
     id: 'user-1',
     subscriptionId: 'sub-1',
     role: RoleType.OWNER,
+    isPlatformAdmin: false,
     username: 'admin',
     displayName: 'Admin',
     email: 'admin@test.com',

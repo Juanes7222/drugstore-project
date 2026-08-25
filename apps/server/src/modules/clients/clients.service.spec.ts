@@ -1,3 +1,9 @@
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient, Prisma } from '@pharmacy/database';
 import { ClientsService } from './clients.service';
@@ -5,15 +11,6 @@ import { ClientNotFoundException } from './exceptions/client-not-found.exception
 import { DuplicateClientIdentificationException } from './exceptions/duplicate-client-identification.exception';
 import { DataSubjectRequestAlreadyPendingException } from './exceptions/data-subject-request-already-pending.exception';
 import { NoPendingDataSubjectRequestException } from './exceptions/no-pending-data-subject-request.exception';
-
-jest.mock('@pharmacy/database', () => ({
-  PrismaClient: jest.fn(),
-  Prisma: {
-    PrismaClientKnownRequestError: class extends Error {
-      constructor(m: string, public code: string, public meta?: any) { super(m); }
-    },
-  },
-}));
 
 describe('ClientsService', () => {
   let service: ClientsService;
@@ -145,7 +142,11 @@ describe('ClientsService', () => {
     });
 
     it('throws DuplicateClientIdentificationException on P2002', async () => {
-      const error = new Prisma.PrismaClientKnownRequestError('Unique constraint', 'P2002', {});
+      const error = new Prisma.PrismaClientKnownRequestError('Unique constraint', {
+        code: 'P2002',
+        clientVersion: 'test-client-version',
+        meta: {},
+      });
       (prisma.client.create as jest.Mock).mockRejectedValue(error);
 
       await expect(

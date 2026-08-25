@@ -1,3 +1,9 @@
+import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-mock';
+
+// Enum values come from the real generated client via the shared helper,
+// so they cannot drift when the schema changes.
+jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
+
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { PrismaClient, Prisma } from '@pharmacy/database';
 import { CashShiftService } from './cash-shift.service';
@@ -6,26 +12,6 @@ import { ShiftNotOpenException } from './exceptions/shift-not-open.exception';
 import { MissingClosingCashCountsException } from './exceptions/missing-closing-cash-counts.exception';
 import { InvalidCashCountForNonCashMethodException } from './exceptions/invalid-cash-count-for-non-cash-method.exception';
 import { PaymentMethodNotFoundException } from './exceptions/payment-method-not-found.exception';
-
-jest.mock('@pharmacy/database', () => {
-  // eslint-disable-next-line @typescript-eslint/no-shadow
-  const DecimalMock = jest.fn().mockImplementation((v: any) => ({
-    toString: () => String(v),
-    toNumber: () => Number(v),
-    minus: function (other: any) { return new DecimalMock(Number(v) - Number(other)); },
-    plus: function (other: any) { return new DecimalMock(Number(v) + Number(other)); },
-    equals: function (other: any) { return Number(v) === Number(other); },
-    greaterThan: function (other: any) { return Number(v) > Number(other); },
-  }));
-  return {
-    PrismaClient: jest.fn(),
-    Prisma: {
-      Decimal: DecimalMock,
-      DbNull: 'DB_NULL',
-      PrismaClientKnownRequestError: class extends Error { constructor(m: string, public code: string, public meta?: any) { super(m); } },
-    },
-  };
-});
 
 describe('CashShiftService', () => {
   let service: CashShiftService;
