@@ -158,4 +158,10 @@ prompts/
 
 .agents/
 .kiro/
-storage/
+# Root runtime upload dir only — anchored so source dirs named storage/ stay tracked
+/storage/
+
+# Production deployment local state (docker-compose.prod.yml)
+secrets/
+backups/
+!.env.prod.example

@@ -1,0 +1,103 @@
+# Builds, scans, and publishes production container images to GHCR.
+#
+# Images produced per release tag:
+#   ghcr.io/<owner>/pharmacy-server        (target: server)
+#   ghcr.io/<owner>/pharmacy-migrator      (target: migrator)
+#   ghcr.io/<owner>/pharmacy-fiscal-engine (target: fiscal)
+#
+# Trivy gates the push: CRITICAL/HIGH findings without an available fix fail
+# the release. Base-image noise tends to age quickly — revisit ignore rules
+# (.trivyignore) rather than dropping the gate.
+
+name: release-images
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image-name: pharmacy-server
+            dockerfile: docker/server.Dockerfile
+            target: server
+            pnpm-cache: pnpm-server
+          - image-name: pharmacy-migrator
+            dockerfile: docker/server.Dockerfile
+            target: migrator
+            pnpm-cache: pnpm-server
+          - image-name: pharmacy-fiscal-engine
+            dockerfile: docker/fiscal-engine.Dockerfile
+            target: fiscal
+            pnpm-cache: pnpm-fiscal
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image-name }}
+          # metadata-action lowercases the owner automatically (GHCR requirement).
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Build image (local load for scanning)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          load: true
+          tags: ${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image-name }}
+          cache-to: type=gha,scope=${{ matrix.image-name }},mode=max
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.version }}
+          format: table
+          exit-code: "1"
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.image-name }}

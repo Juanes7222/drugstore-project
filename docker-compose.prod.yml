@@ -1,0 +1,189 @@
+# =============================================================================
+# Production stack — single VM behind an nginx reverse proxy.
+#
+# SECRET POLICY: containers receive ONLY Infisical bootstrap credentials via
+# .env.prod. NODE_ENV=production activates Infisical-only mode inside both
+# apps (packages/infisical-config): DATABASE_URL, REDIS_URL, JWT secrets, etc.
+# are fetched at boot and must exist in the Infisical 'prod' environment.
+#
+# NETWORK POLICY: only nginx publishes ports. The internal network is NOT
+# flagged `internal: true` on purpose — server and fiscal-engine need outbound
+# HTTPS (Infisical, DIAN providers, Firebase). Isolation comes from having no
+# published ports on any backend service.
+# =============================================================================
+
+name: pharmacy
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-hardening: &default-hardening
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env.prod}
+    volumes:
+      - ./docker/nginx/templates:/etc/nginx/templates:ro
+      - ./docker/nginx/snippets:/etc/nginx/snippets:ro
+      - certbot-conf:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    networks: [edge, internal]
+    mem_limit: 128m
+    logging: *default-logging
+
+  # One-shot certificate issuance/renewal; driven by scripts/deploy.sh init
+  # and a host cron (`deploy.sh renew-certs`). Not started with the stack.
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["certbot"]
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    networks: [edge]
+
+  server:
+    build:
+      context: .
+      dockerfile: docker/server.Dockerfile
+      target: server
+    image: pharmacy/server:local
+    restart: unless-stopped
+    env_file: .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Any HTTP response proves the listener is up (404 included).
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    volumes:
+      - server-storage:/data
+    <<: *default-hardening
+    networks: [internal]
+    mem_limit: 768m
+    logging: *default-logging
+
+  # Run explicitly: docker compose --profile tools run --rm migrate
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/server.Dockerfile
+      target: migrator
+    image: pharmacy/migrator:local
+    profiles: ["tools"]
+    restart: "no"
+    env_file: .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+    logging: *default-logging
+
+  fiscal-engine:
+    build:
+      context: .
+      dockerfile: docker/fiscal-engine.Dockerfile
+      target: fiscal
+    image: pharmacy/fiscal-engine:local
+    restart: unless-stopped
+    env_file: .env.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # No HTTP surface: liveness = PID 1 still signalable by its own user.
+      test: ["CMD", "node", "-e", "try { process.kill(1, 0); } catch { process.exit(1); }"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    <<: *default-hardening
+    networks: [internal]
+    mem_limit: 512m
+    logging: *default-logging
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pharmacy_app
+      POSTGRES_DB: pharmacy_prod_db
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      TZ: America/Bogota
+    secrets: [postgres_password]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pharmacy_app -d pharmacy_prod_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [internal]
+    mem_limit: 512m
+    logging: *default-logging
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # AOF persistence: BullMQ jobs (DIAN transmission retries) must survive
+    # container restarts.
+    command: >
+      sh -c 'exec redis-server
+      --requirepass "$$(cat /run/secrets/redis_password)"
+      --appendonly yes'
+    secrets: [redis_password]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$(cat /run/secrets/redis_password) redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [internal]
+    mem_limit: 256m
+    logging: *default-logging
+
+networks:
+  edge:
+  internal:
+
+volumes:
+  postgres-data:
+    name: pharmacy-postgres-prod-data
+  redis-data:
+    name: pharmacy-redis-prod-data
+  server-storage:
+    name: pharmacy-server-storage
+  certbot-conf:
+    name: pharmacy-certbot-conf
+  certbot-www:
+    name: pharmacy-certbot-www
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  redis_password:
+    file: ./secrets/redis_password

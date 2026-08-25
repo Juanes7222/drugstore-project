@@ -27,6 +27,9 @@ async function bootstrap(): Promise<void> {
   }
 
   const app = await NestFactory.create(AppModule);
+  // Production sits behind a single nginx hop; trusting exactly that proxy
+  // makes req.ip (and therefore rate limiting) see real client addresses.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
   const configService = app.get(ConfigService<EnvConfig>);
 
   // CORS_ORIGIN accepts one origin or a comma-separated list; the default
@@ -79,15 +82,23 @@ async function bootstrap(): Promise<void> {
   // class-transformer's surprising boolean coercion (": false" → true).
   app.useGlobalPipes(new ValidationPipe({ transform: true }));
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Pharmacy POS API')
-    .setDescription('Local-first pharmacy POS system for Colombian regulatory context')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
+  // Swagger is a documentation surface, not a production feature; keep it off
+  // unless explicitly enabled (SWAGGER_ENABLED=true) in a non-dev environment.
+  const swaggerEnabled =
+    configService.get('NODE_ENV') !== 'production' ||
+    process.env.SWAGGER_ENABLED === 'true';
 
-  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('docs', app, swaggerDocument);
+  if (swaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Pharmacy POS API')
+      .setDescription('Local-first pharmacy POS system for Colombian regulatory context')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+
+    const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('docs', app, swaggerDocument);
+  }
 
   const port = configService.get('PORT', 3000);
 

@@ -1,0 +1,27 @@
+# VCS and local tooling
+.git
+.turbo
+**/.turbo
+.agents
+.opencode
+.kiro
+graphify-out
+skills-lock.json
+
+# Dependencies and build outputs (rebuilt inside the image)
+**/node_modules
+**/dist
+**/coverage
+**/generated
+**/*.tsbuildinfo
+
+# Local state and secrets — never baked into images
+.env*
+secrets/
+backups/
+storage/
+
+# Documentation and heavy native artifacts
+docs
+*.md
+apps/pos-desktop/src-tauri/target
