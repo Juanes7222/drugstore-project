@@ -41,7 +41,7 @@ export function Hero() {
               onClick={() => openCheckout('PROVIDER')}
             >
               {t('hero.cta_primary')}
-              <ArrowRightIcon className="text-base" />
+              <ArrowRightIcon className="btn-arrow text-base" />
             </button>
             <a href="#planes" className="btn btn-secondary">
               {t('hero.cta_secondary')}

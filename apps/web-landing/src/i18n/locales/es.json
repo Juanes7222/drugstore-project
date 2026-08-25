@@ -3,6 +3,10 @@
     "name": "PuntoFarma",
     "tagline": "El punto de venta de las droguerías colombianas."
   },
+  "support": {
+    "channel_email": "",
+    "channel_label": "Escríbanos"
+  },
   "nav": {
     "product": "Producto",
     "pricing": "Planes",
@@ -14,7 +18,7 @@
   "hero": {
     "eyebrow": "POS para droguerías colombianas",
     "title": "La caja que no se detiene cuando se va internet.",
-    "subtitle": "PuntoFarma escanea, controla lotes y vencimientos, revisa fórmulas y factura ante la DIAN desde su computador — con o sin conexión.",
+    "subtitle": "Cobre, revise lotes y vencimientos y facture ante la DIAN desde un solo computador. Si la conexión se cae, siga vendiendo: todo sube solo cuando vuelve.",
     "cta_primary": "Comprar licencia",
     "cta_secondary": "Ver planes",
     "chip_dian": "Facturación electrónica DIAN",
@@ -46,29 +50,33 @@
       {
         "icon": "barcode",
         "title": "Escaneo y lotes",
-        "body": "Cada producto entra al carrito con su lote y fecha de vencimiento a la vista. Lo que está por vencer se señala antes de facturar."
+        "body": "Pase el código de barras y el producto entra al carrito con su lote y su fecha de vencimiento a la vista. Lo que está por vencer se marca antes de facturar, no después del reclamo.",
+        "detail": "L-2481 · vence 30 sep 26 · por vencer"
       },
       {
         "icon": "shield-check",
         "title": "Medicamentos controlados",
-        "body": "La venta de fórmula médica pasa por una confirmación propia, diseñada para que no se atraviese de memoria."
+        "body": "Las ventas que exigen fórmula médica piden una confirmación aparte, pensada para que nadie la pase de memoria ni por costumbre.",
+        "detail": "F-00214 · fórmula verificada ✓"
       },
       {
         "icon": "clock",
         "title": "Turno de caja",
-        "body": "Cada jornada abre con turno: cajero, base inicial y cuadre final. Las diferencias se ven, no se adivinan."
+        "body": "La jornada abre con turno: quién vende, con cuánto empieza y con cuánto cierra. Si al cuadrar falta dinero, el turno muestra dónde quedó la diferencia.",
+        "detail": "Turno #38 · base $200.000"
       },
       {
         "icon": "refresh-cw",
-        "title": "Sincronización sola",
-        "body": "Lo vendido queda guardado en el equipo y sube al servidor cuando vuelve la conexión. Nadie tiene que hacer nada."
+        "title": "Se sincroniza solo",
+        "body": "Cada venta queda guardada en el equipo y sube al servidor cuando vuelve la conexión, en orden y sin duplicados. Nadie tiene que hacer nada.",
+        "detail": "Cola: 0 pendientes · última 14:11"
       }
     ]
   },
   "offline": {
     "eyebrow": "Modo offline",
     "title": "Se fue internet. La caja sigue abierta.",
-    "body": "PuntoFarma guarda cada venta en el computador de la tienda. Cuando la conexión vuelve, la cola sube sola, en orden y sin duplicados. Vender sin internet es el modo normal de trabajo, no una falla.",
+    "body": "Cada venta se guarda primero en el computador de la tienda. Cuando la conexión vuelve, la cola sube sola, en orden y sin duplicados. Vender sin internet no es una falla del sistema: es para eso está hecho.",
     "queue_label": "Cola local (ejemplo)",
     "status_sent": "enviada",
     "status_queued": "en cola",
@@ -82,7 +90,7 @@
   "pricing": {
     "eyebrow": "Planes",
     "title": "Un precio. Dos maneras de facturar.",
-    "subtitle": "Los dos planes incluyen todo el sistema por $199.000 COP al mes. Solo cambia quién maneja el certificado ante la DIAN — usted escoge lo que conviene a su farmacia.",
+    "subtitle": "Los dos planes traen todo el sistema por $199.000 COP al mes. La única diferencia es quién maneja el certificado ante la DIAN — usted escoge lo que conviene a su farmacia.",
     "period_label": "Período de pago",
     "period_monthly": "Mensual",
     "period_quarterly": "Trimestral −10 %",
@@ -119,15 +127,15 @@
     "items": [
       {
         "title": "Escoja su plan y pague",
-        "body": "Complete el formulario y pague por Wompi con tarjeta, PSE o Botón Bancario."
+        "body": "Llene el formulario y pague por Wompi con tarjeta, PSE o Botón Bancario. Sin cotizaciones ni llamadas de ventas."
       },
       {
         "title": "Reciba su código",
-        "body": "Enviamos un código de activación al correo electrónico que registró."
+        "body": "Llega un código de activación al correo electrónico que registró. Si no lo ve, revise la carpeta de spam."
       },
       {
         "title": "Actívelo en el POS",
-        "body": "Ingrese el código en PuntoFarma y empiece a vender el mismo día."
+        "body": "Digite el código una sola vez en PuntoFarma, abra turno y ese mismo día puede estar vendiendo."
       }
     ]
   },
@@ -141,11 +149,11 @@
       },
       {
         "q": "¿Qué necesito para instalarlo?",
-        "a": "Un computador con Windows, macOS o Linux, una impresora térmica para el tirilla, y conexión a internet solo para la activación y la sincronización."
+        "a": "Un computador con Windows, macOS o Linux y una impresora térmica para el tirilla. La conexión a internet solo hace falta para la activación y la sincronización."
       },
       {
         "q": "¿Cuál es la diferencia entre los dos planes?",
-        "a": "El precio y las funciones son idénticos. En «Facturación incluida» nosotros transmitimos sus facturas ante la DIAN como proveedor tecnológico. En «Su certificado DIAN» usted emite con su propio certificado digital cargado en el POS."
+        "a": "El precio y las funciones son idénticos. En «Gestionada por nosotros» transmitimos sus facturas ante la DIAN como proveedor tecnológico. En «Con su certificado DIAN» usted emite con su propio certificado digital cargado en el POS."
       },
       {
         "q": "¿Cómo activo la licencia?",
@@ -156,23 +164,31 @@
         "a": "Cada sede incluye 3 puestos. Puede agregar hasta 5 por sede, a $40.000 COP al mes cada puesto adicional."
       },
       {
-        "q": "¿Cómo se paga la mensualidad?",
-        "a": "Por Wompi: tarjetas de crédito y débito, PSE y Botón Bancario. La suscripción se renueva cada mes y puede cancelar cuando quiera."
+        "q": "¿Cómo se paga y puedo cancelar?",
+        "a": "El pago se hace por Wompi: tarjetas de crédito y débito, PSE o Botón Bancario. La licencia es mensual, se renueva sola y puede cancelar cuando quiera; la cancelación aplica al cierre del período ya pagado."
+      },
+      {
+        "q": "¿Cómo funciona el soporte?",
+        "a": "Todos los planes incluyen soporte prioritario en horario hábil colombiano, por los canales que recibe junto con su código de activación."
       },
       {
         "q": "¿Qué pasa con los datos de mis clientes?",
         "a": "Se tratan conforme a la Ley 1581 de 2012 (régimen de Habeas Data) y a nuestra Política de tratamiento de datos personales, disponible en el pie de página."
-      },
-      {
-        "q": "¿Hay contrato de permanencia?",
-        "a": "No. La licencia es mensual y puede cancelarla en cualquier momento escribiendo a soporte."
       }
     ]
   },
   "cta_band": {
-    "title": "Empiece a vender con calma.",
-    "body": "Active PuntoFarma hoy y deje que la caja siga funcionando, con o sin internet.",
-    "button": "Comprar licencia"
+    "doc_title": "Licencia mensual · PuntoFarma POS",
+    "doc_line_sedes": "Sedes ilimitadas · 3 puestos por sede",
+    "doc_line_features": "DIAN · Lotes INVIMA · Modo offline",
+    "total_row": "Total",
+    "title": "Abra su turno hoy.",
+    "button": "Comprar licencia",
+    "note": "Sin contrato de permanencia. Cancela cuando quiera."
+  },
+  "mobile_bar": {
+    "price_note": "al mes · cancela cuando quiera",
+    "label": "Barra de compra"
   },
   "footer": {
     "rights": "© {{year}} PuntoFarma. Todos los derechos reservados.",

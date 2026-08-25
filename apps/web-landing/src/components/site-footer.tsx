@@ -8,9 +8,10 @@ const LEGAL_LINKS = [
   { to: '/datos-personales', key: 'footer.legal_data' },
 ] as const;
 
-/** Dark footer with the legal routes and the brand sign-off. */
+/** Dark footer with the contact slot, legal routes and the brand sign-off. */
 export function SiteFooter() {
   const { t } = useTranslation();
+  const supportEmail = t('support.channel_email');
 
   return (
     <footer className="bg-tinta text-papel">
@@ -24,6 +25,18 @@ export function SiteFooter() {
             <p className="mt-3 text-sm leading-relaxed text-papel/60">
               {t('brand.tagline')}
             </p>
+            {/* Renders only once a real channel is configured — never ship a
+                placeholder address to a live marketing site. */}
+            {supportEmail ? (
+              <p className="mt-4 text-sm">
+                <a
+                  href={`mailto:${supportEmail}`}
+                  className="underline-offset-4 hover:text-menta hover:underline"
+                >
+                  {t('support.channel_label')}: {supportEmail}
+                </a>
+              </p>
+            ) : null}
           </div>
 
           <nav aria-label={t('footer.legal_terms')}>

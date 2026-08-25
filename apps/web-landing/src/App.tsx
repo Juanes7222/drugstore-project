@@ -8,6 +8,7 @@ import { Pricing } from './components/pricing';
 import { Steps } from './components/steps';
 import { Faq } from './components/faq';
 import { CtaBand } from './components/cta-band';
+import { MobileBuyBar } from './components/mobile-buy-bar';
 import { SiteFooter } from './components/site-footer';
 import { CheckoutDialog } from './components/checkout-dialog';
 import { LegalPage } from './components/legal-page';
@@ -36,6 +37,8 @@ function LandingPage() {
         <CtaBand />
       </main>
       <SiteFooter />
+      {/* Mobile-only; hidden ≥ md. Sits above the footer until unmounted. */}
+      <MobileBuyBar />
     </>
   );
 }

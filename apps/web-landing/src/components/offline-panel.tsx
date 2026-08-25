@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
+import type { CSSProperties } from 'react';
 import { CheckIcon } from './icons';
+import { usePrintReveal } from '../hooks/use-print-reveal';
 
 interface QueueItem {
   sent: boolean;
@@ -16,6 +18,7 @@ const QUEUE_ITEMS: QueueItem[] = [{ sent: true }, { sent: true }, { sent: false 
 export function OfflinePanel() {
   const { t } = useTranslation();
   const queueLines = t('offline.queue_items', { returnObjects: true }) as string[];
+  const queueRevealRef = usePrintReveal<HTMLDivElement>();
 
   return (
     <section aria-labelledby="offline-title" className="bg-papel py-20 lg:py-24">
@@ -35,6 +38,8 @@ export function OfflinePanel() {
           </div>
 
           <div
+            ref={queueRevealRef}
+            data-printed="false"
             role="img"
             aria-label={t('offline.queue_label')}
             className="rounded-xl border border-papel/15 bg-papel/5 p-5"
@@ -46,7 +51,11 @@ export function OfflinePanel() {
               {queueLines.map((line, index) => {
                 const sent = QUEUE_ITEMS[index]?.sent ?? false;
                 return (
-                  <li key={line} className="flex items-center justify-between gap-3">
+                  <li
+                    key={line}
+                    className="queue-line flex items-center justify-between gap-3"
+                    style={{ '--queue-index': index } as CSSProperties}
+                  >
                     <span className="data min-w-0 shrink truncate text-papel/85">{line}</span>
                     {sent ? (
                       <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-verde-cruz/25 px-2 py-0.5 text-[11px] font-medium text-menta">

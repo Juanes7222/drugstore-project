@@ -142,3 +142,74 @@ disculpas ni vaguedades. Nada promete prueba gratis (el sistema no la siembra).
   corre en **5174 strictPort** → documentar `CORS_ORIGIN=http://localhost:5173,http://localhost:5174`.
 - Iconos: lucide vía better-icons CLI, inline SVG stroke `currentColor`,
   paths normalizados sin `fill` heredado.
+
+---
+
+## Revisión de agosto de 2026 — rediseño de copy y cierre de conversión
+
+Segunda pasada sobre el sitio ya implementado, con tres focos: voz humana,
+información que falta y momentos finales de conversión. La paleta, la
+tipografía y la firma (documentos fiscales) no cambian; se extienden.
+
+### Voz (regla para todo copy nuevo)
+
+Escribir como le hablaría un asesor de confianza a la dueña de una droguería:
+frases cortas, consecuencias concretas en vez de listas de funciones, cero
+jerga de software («sincronización», «multi-sede» solo si aporta). Mal:
+«PuntoFarma escanea, controla lotes…» (volcado de especificación). Bien:
+«Lo que está por vencer se marca antes de facturar, no después del reclamo.»
+
+Cambios aplicados: subtítulo del héroe reescrito desde la consecuencia;
+«Sincronización sola» → «Se sincroniza solo»; FAQ fusionó pago+cancelación
+(en los términos son una sola respuesta) y sumó «¿Cómo funciona el
+soporte?»; pasos de compra con expectativas realistas (sin SLA inventado).
+
+### Información nueva (y lo que NO se inventó)
+
+- Cada pilar lleva una línea `data` en mono con un artefacto real del POS
+  (lote por vencer, turno #38, cola en 0) — prueba concreta, no adjetivo.
+- Canal de contacto: **no existe** correo/WhatsApp real en el repo, así que
+  NO se inventó dirección. Quedó el slot `support.channel_email` (vacío):
+  mientras no tenga valor, el footer no renderiza nada. Pendiente del negocio.
+- Nada promete importación de inventario ni tiempos de entrega: el sistema
+  aún no los documenta; prometerlos sería mentir en una página de ventas.
+
+### Extensiones de diseño
+
+1. **La tirilla final (CTA band).** El cierre ya no es una caja verde
+   genérica: es un recibo térmico blanco con perforación inferior sobre el
+   verde farmacia, filas en mono (sedes, DIAN·INVIMA·offline, soporte,
+   período), total grande y el botón dentro del documento. Respeta el total
+   del período escogido arriba (misma fórmula del servidor). Reutiliza el
+   reveal de impresión — tercera aparición, misma firma.
+2. **Drenaje de la cola (offline).** Al entrar en pantalla, las líneas de la
+   cola aparecen escalonadas (160 ms) después del panel — la frase «la cola
+   sube sola» contada con movimiento, no con prosa. Transiciones CSS
+   disparadas por el mismo `data-printed`; reduced motion → fade corto.
+3. **Barra de compra móvil.** Fija abajo, aparece cuando el héroe sale de
+   vista (`threshold: 0.9`, IO), cita el equivalente mensual del período
+   activo. `md:hidden`; entra deslizando 260 ms ease-out (transición, no
+   keyframe); respeta safe-area iOS.
+
+### Detalles Emil aplicados
+
+- Flecha de CTAs primarios: `translateX(2px)` al hover, gated a
+  `(hover:hover) and (pointer:fine)`.
+- Todo lo nuevo usa transiciones retargeteables (barra, cola) o el reveal
+  existente; ningún keyframe nuevo salvo los ya presentes.
+- Duraciones ≤ 300 ms salvo los reveals tipo impresión (900 ms, una vez).
+
+### Componentes de terceros — veredicto
+
+Búsqueda en catálogo (pricing cards, product reveal/bounce cards): todos
+genéricos SaaS; ninguno supera los documentos fiscales propios. La barra
+móvil se escribió a mano (~60 líneas) en vez de adoptar un bloque ajeno.
+Conclusión: esta landing no gana nada con bloques stock; su valor está en la
+identidad fiscal propia.
+
+### Pendientes del negocio (bloquean lanzamiento, no de diseño)
+
+- Definir canal real de soporte/contacto y llenar `support.channel_email`.
+- Confirmar nombre de marca (sigue siendo PuntoFarma provisional).
+
+

@@ -13,6 +13,8 @@ interface PillarItem {
   icon: string;
   title: string;
   body: string;
+  /** Mono data fragment grounding the claim in a real POS artifact. */
+  detail?: string;
 }
 
 const ICONS: Record<string, IconComponent> = {
@@ -44,6 +46,9 @@ export function Pillars() {
                 </span>
                 <h3 className="display mt-5 text-lg font-bold">{item.title}</h3>
                 <p className="mt-2 leading-relaxed text-tinta-media">{item.body}</p>
+                {item.detail ? (
+                  <p className="data mt-3 text-xs text-verde-cruz-oscuro">{item.detail}</p>
+                ) : null}
               </li>
             );
           })}
