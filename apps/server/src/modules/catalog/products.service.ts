@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { searchIdsIgnoringAccents } from '@/common/text/accent-insensitive-search';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma } from '@pharmacy/database';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -31,14 +32,24 @@ export class ProductsService {
     search?: string,
     page: number = 1,
     pageSize: number = 50,
-  ): Promise<{ data: unknown[]; total: number; page: number; pageSize: number }> {
+  ): Promise<{
+    data: unknown[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }> {
     const where: Prisma.ProductWhereInput = { ...filters };
 
     if (search) {
-      where.OR = [
-        { commercialName: { contains: search, mode: 'insensitive' } },
-        { internalCode: { contains: search, mode: 'insensitive' } },
-      ];
+      // Accent-insensitive match ("Dolex" finds "Dólex"); ids feed the typed
+      // filters so every other condition keeps its index path.
+      const ids = await searchIdsIgnoringAccents(
+        this.prisma,
+        'Product',
+        ['commercialName', 'internalCode'],
+        search,
+      );
+      where.id = { in: ids };
     }
 
     const [items, total] = await Promise.all([
@@ -140,8 +151,12 @@ export class ProductsService {
           pharmaceuticalFormId: dto.pharmaceuticalFormId || null,
           commissionType: dto.commissionType,
           commissionValue: new Prisma.Decimal(dto.commissionValue),
-          commissionStartsAt: dto.commissionStartsAt ? new Date(dto.commissionStartsAt) : null,
-          commissionEndsAt: dto.commissionEndsAt ? new Date(dto.commissionEndsAt) : null,
+          commissionStartsAt: dto.commissionStartsAt
+            ? new Date(dto.commissionStartsAt)
+            : null,
+          commissionEndsAt: dto.commissionEndsAt
+            ? new Date(dto.commissionEndsAt)
+            : null,
           currentPriceId: null,
           currentTaxHistoryId: null,
           createdById: userId,
@@ -218,26 +233,44 @@ export class ProductsService {
 
     const updateData: any = {};
 
-    if (dto.commercialName !== undefined) updateData.commercialName = dto.commercialName;
-    if (dto.concentration !== undefined) updateData.concentration = dto.concentration;
-    if (dto.concentrationUnit !== undefined) updateData.concentrationUnit = dto.concentrationUnit;
+    if (dto.commercialName !== undefined)
+      updateData.commercialName = dto.commercialName;
+    if (dto.concentration !== undefined)
+      updateData.concentration = dto.concentration;
+    if (dto.concentrationUnit !== undefined)
+      updateData.concentrationUnit = dto.concentrationUnit;
     if (dto.laboratory !== undefined) updateData.laboratory = dto.laboratory;
     if (dto.saleType !== undefined) updateData.saleType = dto.saleType;
-    if (dto.minimumStock !== undefined) updateData.minimumStock = dto.minimumStock;
-    if (dto.discontinuationReason !== undefined) updateData.discontinuationReason = dto.discontinuationReason;
-    if (dto.invimaRegistry !== undefined) updateData.invimaRegistry = dto.invimaRegistry;
+    if (dto.minimumStock !== undefined)
+      updateData.minimumStock = dto.minimumStock;
+    if (dto.discontinuationReason !== undefined)
+      updateData.discontinuationReason = dto.discontinuationReason;
+    if (dto.invimaRegistry !== undefined)
+      updateData.invimaRegistry = dto.invimaRegistry;
     if (dto.atcCode !== undefined) updateData.atcCode = dto.atcCode;
-    if (dto.therapeuticIndication !== undefined) updateData.therapeuticIndication = dto.therapeuticIndication;
-    if (dto.storageConditions !== undefined) updateData.storageConditions = dto.storageConditions;
-    if (dto.internalNotes !== undefined) updateData.internalNotes = dto.internalNotes;
+    if (dto.therapeuticIndication !== undefined)
+      updateData.therapeuticIndication = dto.therapeuticIndication;
+    if (dto.storageConditions !== undefined)
+      updateData.storageConditions = dto.storageConditions;
+    if (dto.internalNotes !== undefined)
+      updateData.internalNotes = dto.internalNotes;
     if (dto.categoryId !== undefined) updateData.categoryId = dto.categoryId;
-    if (dto.pharmaceuticalFormId !== undefined) updateData.pharmaceuticalFormId = dto.pharmaceuticalFormId;
+    if (dto.pharmaceuticalFormId !== undefined)
+      updateData.pharmaceuticalFormId = dto.pharmaceuticalFormId;
     if (dto.isActive !== undefined) updateData.isActive = dto.isActive;
-    if (dto.commissionType !== undefined) updateData.commissionType = dto.commissionType;
-    if (dto.commissionValue !== undefined) updateData.commissionValue = new Prisma.Decimal(dto.commissionValue);
+    if (dto.commissionType !== undefined)
+      updateData.commissionType = dto.commissionType;
+    if (dto.commissionValue !== undefined)
+      updateData.commissionValue = new Prisma.Decimal(dto.commissionValue);
     // Explicit null clears the window bound; undefined leaves it untouched.
-    if (dto.commissionStartsAt !== undefined) updateData.commissionStartsAt = dto.commissionStartsAt === null ? null : new Date(dto.commissionStartsAt);
-    if (dto.commissionEndsAt !== undefined) updateData.commissionEndsAt = dto.commissionEndsAt === null ? null : new Date(dto.commissionEndsAt);
+    if (dto.commissionStartsAt !== undefined)
+      updateData.commissionStartsAt =
+        dto.commissionStartsAt === null
+          ? null
+          : new Date(dto.commissionStartsAt);
+    if (dto.commissionEndsAt !== undefined)
+      updateData.commissionEndsAt =
+        dto.commissionEndsAt === null ? null : new Date(dto.commissionEndsAt);
 
     updateData.updatedAt = new Date();
 
@@ -335,7 +368,9 @@ export class ProductsService {
     }
 
     const priceDecimal = new Prisma.Decimal(dto.price);
-    const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
+    const effectiveFrom = dto.effectiveFrom
+      ? new Date(dto.effectiveFrom)
+      : new Date();
 
     return this.prisma.$transaction(async (tx: any) => {
       await this.closeActivePriceHistory(tx, productId);
@@ -375,7 +410,9 @@ export class ProductsService {
       throw new ProductNotFoundException(productId);
     }
 
-    const effectiveFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
+    const effectiveFrom = dto.effectiveFrom
+      ? new Date(dto.effectiveFrom)
+      : new Date();
 
     return this.prisma.$transaction(async (tx: any) => {
       await this.closeActiveTaxHistory(tx, productId);
@@ -402,10 +439,7 @@ export class ProductsService {
     });
   }
 
-  async addBarcode(
-    productId: string,
-    dto: AddProductBarcodeDto,
-  ): Promise<any> {
+  async addBarcode(productId: string, dto: AddProductBarcodeDto): Promise<any> {
     if (dto.isPrimary) {
       return this.prisma.$transaction(async (tx: any) => {
         await this.unsetExistingPrimaryBarcode(tx, productId);
@@ -444,10 +478,7 @@ export class ProductsService {
     }
   }
 
-  async setPrimaryBarcode(
-    productId: string,
-    barcodeId: string,
-  ): Promise<any> {
+  async setPrimaryBarcode(productId: string, barcodeId: string): Promise<any> {
     return this.prisma.$transaction(async (tx: any) => {
       await this.unsetExistingPrimaryBarcode(tx, productId);
 
@@ -458,7 +489,10 @@ export class ProductsService {
     });
   }
 
-  private async closeActivePriceHistory(tx: any, productId: string): Promise<void> {
+  private async closeActivePriceHistory(
+    tx: any,
+    productId: string,
+  ): Promise<void> {
     const activePrice = await tx.productPriceHistory.findFirst({
       where: {
         productId,
@@ -474,7 +508,10 @@ export class ProductsService {
     }
   }
 
-  private async closeActiveCostHistory(tx: any, productId: string): Promise<void> {
+  private async closeActiveCostHistory(
+    tx: any,
+    productId: string,
+  ): Promise<void> {
     const activeCost = await tx.productCostHistory.findFirst({
       where: {
         productId,
@@ -490,7 +527,10 @@ export class ProductsService {
     }
   }
 
-  private async closeActiveTaxHistory(tx: any, productId: string): Promise<void> {
+  private async closeActiveTaxHistory(
+    tx: any,
+    productId: string,
+  ): Promise<void> {
     const activeTax = await tx.productTaxHistory.findFirst({
       where: {
         productId,
@@ -506,7 +546,10 @@ export class ProductsService {
     }
   }
 
-  private async unsetExistingPrimaryBarcode(tx: any, productId: string): Promise<void> {
+  private async unsetExistingPrimaryBarcode(
+    tx: any,
+    productId: string,
+  ): Promise<void> {
     const existingPrimary = await tx.productBarcode.findFirst({
       where: {
         productId,

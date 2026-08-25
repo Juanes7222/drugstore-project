@@ -72,21 +72,35 @@ describe('SuppliersService', () => {
       });
     });
 
-    it('filters by search term using OR on businessName and identificationNumber', async () => {
+    it('narrows searched suppliers to ids resolved by the accent-insensitive search, keeping the other filters', async () => {
       mockFindAll();
+      (prisma.$queryRawUnsafe as jest.Mock).mockResolvedValue([{ id: 'sup-9' }]);
 
-      await service.findAll({ page: 1, pageSize: 20, search: 'Pharma' });
+      await service.findAll({
+        page: 1,
+        pageSize: 20,
+        search: 'Pharma',
+        isActive: 'true',
+      });
 
+      // Exact where shape: no OR/contains block may survive next to the
+      // resolved id set.
       expect(prisma.supplier.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {
-            OR: [
-              { businessName: { contains: 'Pharma', mode: 'insensitive' } },
-              { identificationNumber: { contains: 'Pharma', mode: 'insensitive' } },
-            ],
-          },
+          where: { isActive: true, id: { in: ['sup-9'] } },
         }),
       );
+    });
+
+    it('leaves the where clause free of id filters when no search term is given', async () => {
+      mockFindAll();
+
+      await service.findAll({ page: 1, pageSize: 20 });
+
+      expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+      const where = (prisma.supplier.findMany as jest.Mock).mock.calls[0][0]
+        .where;
+      expect(where.id).toBeUndefined();
     });
 
     it('filters by isActive when provided', async () => {

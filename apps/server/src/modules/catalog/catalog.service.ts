@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { searchIdsIgnoringAccents } from '@/common/text/accent-insensitive-search';
 import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -39,10 +40,14 @@ export class CatalogService {
     const where: Prisma.ProductWhereInput = {};
 
     if (query.search) {
-      where.OR = [
-        { commercialName: { contains: query.search, mode: 'insensitive' } },
-        { internalCode: { contains: query.search, mode: 'insensitive' } },
-      ];
+      // Accent-insensitive match; see searchIdsIgnoringAccents.
+      const ids = await searchIdsIgnoringAccents(
+        this.prisma,
+        'Product',
+        ['commercialName', 'internalCode'],
+        query.search,
+      );
+      where.id = { in: ids };
     }
 
     if (query.categoryId) {
@@ -128,7 +133,11 @@ export class CatalogService {
       baseWhere.updatedAt = { gte: new Date(input.updatedSince) };
     }
 
-    const page = await paginateWithCursor<unknown, Prisma.ProductWhereInput, Prisma.ProductOrderByWithRelationInput>({
+    const page = await paginateWithCursor<
+      unknown,
+      Prisma.ProductWhereInput,
+      Prisma.ProductOrderByWithRelationInput
+    >({
       model: this.prisma.product,
       baseWhere,
       limit: input.limit ?? 200,
@@ -138,7 +147,9 @@ export class CatalogService {
 
     // Attach relations for each product
     const items = await this.prisma.product.findMany({
-      where: { id: { in: (page.items as Array<{ id: string }>).map((i) => i.id) } },
+      where: {
+        id: { in: (page.items as Array<{ id: string }>).map((i) => i.id) },
+      },
       include: {
         category: true,
         pharmaceuticalForm: true,
@@ -217,7 +228,10 @@ export class CatalogService {
    * Create a product with initial price and tax history.
    * Requires a userId from the authenticated user.
    */
-  async createProduct(userId: string, createDto: CreateProductDto): Promise<unknown> {
+  async createProduct(
+    userId: string,
+    createDto: CreateProductDto,
+  ): Promise<unknown> {
     return this.productsService.createProduct(userId, createDto);
   }
 
@@ -225,7 +239,10 @@ export class CatalogService {
    * Update a product's mutable fields.
    * Throws if the product does not exist.
    */
-  async updateProduct(id: string, updateDto: UpdateProductDto): Promise<unknown> {
+  async updateProduct(
+    id: string,
+    updateDto: UpdateProductDto,
+  ): Promise<unknown> {
     const existing = await this.prisma.product.findUnique({
       where: { id },
       select: { id: true },

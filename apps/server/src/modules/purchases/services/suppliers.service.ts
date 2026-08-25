@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { searchIdsIgnoringAccents } from '@/common/text/accent-insensitive-search';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, SupplierIdentificationType } from '@pharmacy/database';
 import * as crypto from 'crypto';
@@ -19,10 +20,14 @@ export class SuppliersService {
   async findAll(query: any): Promise<any> {
     const where: Prisma.SupplierWhereInput = {};
     if (query.search) {
-      where.OR = [
-        { businessName: { contains: query.search, mode: 'insensitive' } },
-        { identificationNumber: { contains: query.search, mode: 'insensitive' } },
-      ];
+      // Accent-insensitive match; see searchIdsIgnoringAccents.
+      const ids = await searchIdsIgnoringAccents(
+        this.prisma,
+        'Supplier',
+        ['businessName', 'identificationNumber'],
+        query.search,
+      );
+      where.id = { in: ids };
     }
     if (query.isActive !== undefined) {
       where.isActive = query.isActive === 'true';
@@ -37,7 +42,12 @@ export class SuppliersService {
       }),
       this.prisma.supplier.count({ where }),
     ]);
-    return { data: suppliers, total, page: query.page, pageSize: query.pageSize };
+    return {
+      data: suppliers,
+      total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
   }
 
   async findById(id: string): Promise<any> {
@@ -61,7 +71,10 @@ export class SuppliersService {
     } catch (error: unknown) {
       const err = error as { code?: string };
       if (err.code === 'P2002') {
-        throw new DuplicateSupplierIdentificationException(createDto.identificationType, createDto.identificationNumber);
+        throw new DuplicateSupplierIdentificationException(
+          createDto.identificationType,
+          createDto.identificationNumber,
+        );
       }
       throw error;
     }
@@ -77,7 +90,10 @@ export class SuppliersService {
     } catch (error: unknown) {
       const err = error as { code?: string };
       if (err.code === 'P2002') {
-        throw new DuplicateSupplierIdentificationException(updateDto.identificationType || '', updateDto.identificationNumber || '');
+        throw new DuplicateSupplierIdentificationException(
+          updateDto.identificationType || '',
+          updateDto.identificationNumber || '',
+        );
       }
       throw error;
     }
@@ -123,7 +139,8 @@ export class SuppliersService {
           id: supplierId,
           subscriptionId: this.tenantContext.getSubscriptionId(),
           businessName: data.businessName,
-          identificationType: data.identificationType as SupplierIdentificationType,
+          identificationType:
+            data.identificationType as SupplierIdentificationType,
           identificationNumber: data.identificationNumber,
           contactName: data.contactName ?? null,
           phone: data.phone ?? null,

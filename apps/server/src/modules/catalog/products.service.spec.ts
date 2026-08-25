@@ -128,6 +128,7 @@ const mockPrisma = {
   $transaction: jest.fn().mockImplementation(
     async (cb: (tx: typeof mockTx) => unknown) => cb(mockTx),
   ),
+  $queryRawUnsafe: jest.fn(),
   product: {
     findUnique: jest.fn().mockResolvedValue({ id: 'product-uuid-1' }),
     findMany: jest.fn(),
@@ -357,22 +358,37 @@ describe('ProductsService', () => {
       });
     });
 
-    it('searches commercialName and internalCode case-insensitively when search is provided', async () => {
+    it('narrows searched results to ids resolved by the accent-insensitive search, keeping the other filters', async () => {
+      mockPrisma.$queryRawUnsafe.mockResolvedValue([
+        { id: 'prod-match-1' },
+        { id: 'prod-match-2' },
+      ]);
       mockPrisma.product.findMany.mockResolvedValue([]);
       mockPrisma.product.count.mockResolvedValue(0);
 
-      await service.findAll({}, 'para');
+      await service.findAll({ saleType: 'FREE_SALE' }, 'para');
 
+      // Exact where shape: no OR/contains block may survive next to the
+      // resolved id set.
       expect(mockPrisma.product.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
-            OR: [
-              { commercialName: { contains: 'para', mode: 'insensitive' } },
-              { internalCode: { contains: 'para', mode: 'insensitive' } },
-            ],
+            saleType: 'FREE_SALE',
+            id: { in: ['prod-match-1', 'prod-match-2'] },
           },
         }),
       );
+    });
+
+    it('leaves the where clause free of id filters when no search term is given', async () => {
+      mockPrisma.product.findMany.mockResolvedValue([]);
+      mockPrisma.product.count.mockResolvedValue(0);
+
+      await service.findAll({ saleType: 'FREE_SALE' });
+
+      expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
+      const where = mockPrisma.product.findMany.mock.calls[0][0].where;
+      expect(where.id).toBeUndefined();
     });
 
     it('defaults to page 1 and pageSize 50', async () => {

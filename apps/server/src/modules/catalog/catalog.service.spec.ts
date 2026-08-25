@@ -63,21 +63,35 @@ describe('CatalogService', () => {
       expect(result.totalPages).toBe(1);
     });
 
-    it('filters by search term across multiple fields', async () => {
+    it('narrows searched results to ids resolved by the accent-insensitive search, keeping the other filters', async () => {
+      (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.product.count as jest.Mock).mockResolvedValue(0);
+      (prisma.$queryRawUnsafe as jest.Mock).mockResolvedValue([
+        { id: 'p9' },
+        { id: 'p10' },
+      ]);
+
+      await service.findAllProducts({ search: 'aspirina', categoryId: 'cat-1' });
+
+      // Exact where shape: no OR/contains block may survive next to the
+      // resolved id set.
+      expect(prisma.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { categoryId: 'cat-1', id: { in: ['p9', 'p10'] } },
+        }),
+      );
+    });
+
+    it('leaves the where clause free of id filters when no search term is given', async () => {
       (prisma.product.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.product.count as jest.Mock).mockResolvedValue(0);
 
-      await service.findAllProducts({ search: 'aspirina' });
+      await service.findAllProducts({ categoryId: 'cat-1' });
 
-      expect(prisma.product.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            OR: expect.arrayContaining([
-              expect.objectContaining({ commercialName: expect.objectContaining({ contains: 'aspirina' }) }),
-            ]),
-          }),
-        }),
-      );
+      expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+      const where = (prisma.product.findMany as jest.Mock).mock.calls[0][0]
+        .where;
+      expect(where.id).toBeUndefined();
     });
 
     it('filters by categoryId when provided', async () => {

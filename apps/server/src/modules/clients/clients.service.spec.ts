@@ -104,28 +104,36 @@ describe('ClientsService', () => {
       );
     });
 
-    it('searches fullName and identificationNumber without the removed businessName column', async () => {
+    it('narrows searched results to ids resolved by the accent-insensitive search on fullName and identificationNumber only', async () => {
       // Regression: Client has no businessName column; filtering on it made
       // every searched request fail Prisma runtime validation. The exact-shape
-      // assertion below fails if businessName ever reappears in the clause.
+      // assertion below fails if any other column ever sneaks back into the
+      // clause.
       (prisma.client.findMany as jest.Mock).mockResolvedValue([]);
       (prisma.client.count as jest.Mock).mockResolvedValue(0);
-      (prisma.$transaction as jest.Mock).mockImplementation(
-        (operations: Promise<unknown>[]) => Promise.all(operations),
-      );
+      (prisma.$queryRawUnsafe as jest.Mock).mockResolvedValue([
+        { id: 'client-77' },
+      ]);
 
       await service.findAll({ page: 1, pageSize: 20, search: 'Farma' });
 
       expect(prisma.client.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {
-            OR: [
-              { fullName: { contains: 'Farma', mode: 'insensitive' } },
-              { identificationNumber: { contains: 'Farma' } },
-            ],
-          },
+          where: { id: { in: ['client-77'] } },
         }),
       );
+    });
+
+    it('leaves the where clause free of id filters when no search term is given', async () => {
+      (prisma.client.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.client.count as jest.Mock).mockResolvedValue(0);
+
+      await service.findAll({ page: 1, pageSize: 20 });
+
+      expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+      const where = (prisma.client.findMany as jest.Mock).mock.calls[0][0]
+        .where;
+      expect(where.id).toBeUndefined();
     });
 
     describe('cursor mode', () => {

@@ -3,6 +3,7 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, DataSubjectRequestStatus } from '@pharmacy/database';
 import { paginateWithCursor } from '@/common/utils/cursor-pagination';
+import { searchIdsIgnoringAccents } from '@/common/text/accent-insensitive-search';
 import * as crypto from 'crypto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
@@ -318,12 +319,16 @@ export class ClientsService {
       where.updatedAt = { gte: new Date(since) };
     }
     if (search) {
-      where.OR = [
-        { fullName: { contains: search, mode: 'insensitive' } },
-        // Client has no businessName column — filtering on it made every
-        // searched request fail Prisma's runtime validation.
-        { identificationNumber: { contains: search } },
-      ];
+      // Accent-insensitive match; see searchIdsIgnoringAccents. Client has
+      // no businessName column — filtering on it made every searched request
+      // fail Prisma's runtime validation.
+      const ids = await searchIdsIgnoringAccents(
+        this.prisma,
+        'Client',
+        ['fullName', 'identificationNumber'],
+        search,
+      );
+      where.id = { in: ids };
     }
 
     if (cursor) {
