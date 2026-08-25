@@ -6,7 +6,7 @@ import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-databa
 jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
-import { PrismaClient } from '@pharmacy/database';
+import { Prisma, PrismaClient } from '@pharmacy/database';
 import { ReportsService } from './reports.service';
 
 function validQuery(overrides: Record<string, unknown> = {}) {
@@ -16,6 +16,33 @@ function validQuery(overrides: Record<string, unknown> = {}) {
     view: 'fiscal' as const,
     ...overrides,
   };
+}
+
+interface QueryRawRoute {
+  matches: (sql: string) => boolean;
+  resolve: () => unknown;
+}
+
+/**
+ * Routes $queryRaw tagged-template calls to canned rows by inspecting the
+ * SQL text. Promise.all makes call order nondeterministic within a tick, so
+ * matching on SQL content (not call index) is the only stable dispatch. An
+ * unmatched SQL fails the test loudly instead of resolving wrong rows.
+ */
+function routeQueryRaw(
+  prismaMock: DeepMockProxy<PrismaClient>,
+  routes: QueryRawRoute[],
+): void {
+  (prismaMock.$queryRaw as jest.Mock).mockImplementation(
+    (...args: unknown[]) => {
+      const sql = (args[0] as TemplateStringsArray).join(' ');
+      const route = routes.find((r) => r.matches(sql));
+      if (!route) {
+        throw new Error(`Unexpected $queryRaw call in test: ${sql}`);
+      }
+      return Promise.resolve(route.resolve());
+    },
+  );
 }
 
 describe('ReportsService', () => {
@@ -28,19 +55,71 @@ describe('ReportsService', () => {
   });
 
   describe('getSalesSummary', () => {
-    it('returns aggregated sales summary for the date range', async () => {
-      // FIX-013: totals and breakdown are aggregated via raw SQL ($queryRaw),
-      // not by loading every CONFIRMED sale into memory.
-      (prisma.$queryRaw as jest.Mock)
-        .mockResolvedValueOnce([{ totalSales: '10000', totalQuantity: 3 }])
-        .mockResolvedValueOnce([
-          { saleType: 'FREE_SALE', count: 1, totalAmount: '5000' },
-          { saleType: 'PRESCRIPTION', count: 1, totalAmount: '5000' },
-        ]);
+    it('returns aggregated totals and per-saleType breakdown for the date range', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"saleType"'),
+          resolve: () => [
+            {
+              saleType: 'PRESCRIPTION',
+              count: 1,
+              totalAmount: new Prisma.Decimal('5000.50'),
+            },
+            {
+              saleType: 'FREE_SALE',
+              count: 6,
+              totalAmount: new Prisma.Decimal('5000'),
+            },
+          ],
+        },
+        {
+          matches: (sql) => sql.includes('"totalSales"'),
+          resolve: () => [
+            { totalSales: new Prisma.Decimal('10000.50'), totalQuantity: 7 },
+          ],
+        },
+      ]);
+
       const result = await service.getSalesSummary(validQuery());
-      expect(result.totalSales).toBe('10000.00');
-      expect(result.totalQuantity).toBe(3);
-      expect(result.breakdownBySaleType).toHaveLength(2);
+
+      expect(result.totalSales).toBe('10000.50');
+      expect(result.totalQuantity).toBe(7);
+      expect(result.breakdownBySaleType).toEqual([
+        {
+          saleType: 'PRESCRIPTION',
+          count: 1,
+          totalAmount: '5000.50',
+          averageAmount: '5000.50',
+        },
+        {
+          saleType: 'FREE_SALE',
+          count: 6,
+          totalAmount: '5000.00',
+          averageAmount: '833.33',
+        },
+      ]);
+    });
+
+    it('sends both aggregate queries with parsed Date bounds', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"saleType"'),
+          resolve: () => [],
+        },
+        {
+          matches: (sql) => sql.includes('"totalSales"'),
+          resolve: () => [],
+        },
+      ]);
+
+      await service.getSalesSummary(validQuery());
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      const calls = (prisma.$queryRaw as jest.Mock).mock.calls as unknown[][];
+      for (const call of calls) {
+        expect(call[1]).toEqual(new Date('2026-01-01'));
+        expect(call[2]).toEqual(new Date('2026-01-31'));
+      }
     });
 
     it('throws ReportInvalidDateRangeException when dateFrom > dateTo', async () => {
@@ -48,237 +127,470 @@ describe('ReportsService', () => {
         .rejects.toThrow(/date range is invalid/);
     });
 
-    it('handles items with null product saleType', async () => {
-      (prisma.$queryRaw as jest.Mock)
-        .mockResolvedValueOnce([{ totalSales: '5000', totalQuantity: 1 }])
-        .mockResolvedValueOnce([{ saleType: null, count: 1, totalAmount: '5000' }]);
+    it('keeps breakdown rows with null saleType', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"saleType"'),
+          resolve: () => [
+            { saleType: null, count: 1, totalAmount: new Prisma.Decimal('5000') },
+          ],
+        },
+        {
+          matches: (sql) => sql.includes('"totalSales"'),
+          resolve: () => [
+            { totalSales: new Prisma.Decimal('5000'), totalQuantity: 1 },
+          ],
+        },
+      ]);
+
       const result = await service.getSalesSummary(validQuery());
-      expect(result.totalSales).toBe('5000.00');
-      expect(result.breakdownBySaleType).toHaveLength(1);
+
+      expect(result.breakdownBySaleType[0].saleType).toBeNull();
+      expect(result.breakdownBySaleType[0].averageAmount).toBe('5000.00');
     });
 
-    it('handles items with missing quantity and total', async () => {
-      (prisma.$queryRaw as jest.Mock)
-        .mockResolvedValueOnce([{ totalSales: '0', totalQuantity: 0 }])
-        .mockResolvedValueOnce([]);
+    it('falls back to zeroed totals and empty breakdown when both queries return no rows', async () => {
+      routeQueryRaw(prisma, [
+        { matches: (sql) => sql.includes('"saleType"'), resolve: () => [] },
+        { matches: (sql) => sql.includes('"totalSales"'), resolve: () => [] },
+      ]);
+
       const result = await service.getSalesSummary(validQuery());
+
       expect(result.totalQuantity).toBe(0);
       expect(result.totalSales).toBe('0.00');
+      expect(result.breakdownBySaleType).toEqual([]);
     });
 
-    it('handles sales with undefined totalAmount and items', async () => {
-      // No rows at all → the service falls back to zeroed totals.
-      (prisma.$queryRaw as jest.Mock)
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([]);
-      const result = await service.getSalesSummary(validQuery());
-      expect(result.totalQuantity).toBe(0);
-      expect(result.totalSales).toBe('0.00');
-    });
+    it('returns zero average amount when a breakdown row has zero count', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"saleType"'),
+          resolve: () => [
+            { saleType: 'FREE_SALE', count: 0, totalAmount: new Prisma.Decimal('0') },
+          ],
+        },
+        {
+          matches: (sql) => sql.includes('"totalSales"'),
+          resolve: () => [
+            { totalSales: new Prisma.Decimal('0'), totalQuantity: 0 },
+          ],
+        },
+      ]);
 
-    it('returns zero average amount when breakdown entry has zero count', async () => {
-      (prisma.$queryRaw as jest.Mock)
-        .mockResolvedValueOnce([{ totalSales: '0', totalQuantity: 0 }])
-        .mockResolvedValueOnce([{ saleType: 'FREE_SALE', count: 0, totalAmount: '0' }]);
       const result = await service.getSalesSummary(validQuery());
+
       expect(result.breakdownBySaleType[0].averageAmount).toBe('0.00');
     });
   });
 
   describe('getCashShiftSummary', () => {
-    it('returns cash shift summary with payment breakdown', async () => {
-      (prisma.cashShift.findMany as jest.Mock).mockResolvedValue([
-        { id: 'cs-1', expectedClosingAmount: 50000 },
-        { id: 'cs-2', expectedClosingAmount: 30000 },
+    it('returns shift totals and payment-category breakdown with averages', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"category"'),
+          resolve: () => [
+            { category: 'CASH', count: 4, totalAmount: new Prisma.Decimal('90000') },
+            { category: 'CARD', count: 2, totalAmount: new Prisma.Decimal('35000') },
+          ],
+        },
+        {
+          matches: (sql) => sql.includes('"totalShifts"'),
+          resolve: () => [
+            { totalShifts: 3, totalCashMovement: new Prisma.Decimal('125000.75') },
+          ],
+        },
       ]);
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([
-        { payments: [{ amount: 40000, paymentMethod: { category: 'CASH' } }, { amount: 10000, paymentMethod: { category: 'CARD' } }] },
-        { payments: [{ amount: 30000, paymentMethod: { category: 'CASH' } }] },
-      ]);
+
       const result = await service.getCashShiftSummary(validQuery());
-      expect(result.totalShifts).toBe(2);
-      expect(result.totalCashMovement).toBe('80000.00');
-      expect(result.breakdownByPaymentMethod).toHaveLength(2);
+
+      expect(result.totalShifts).toBe(3);
+      expect(result.totalCashMovement).toBe('125000.75');
+      expect(result.breakdownByPaymentMethod).toEqual([
+        {
+          paymentMethodCategory: 'CASH',
+          count: 4,
+          totalAmount: '90000.00',
+          averageAmount: '22500.00',
+        },
+        {
+          paymentMethodCategory: 'CARD',
+          count: 2,
+          totalAmount: '35000.00',
+          averageAmount: '17500.00',
+        },
+      ]);
     });
 
-    it('returns zero values when no shifts exist', async () => {
-      (prisma.cashShift.findMany as jest.Mock).mockResolvedValue([]);
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([]);
+    it('returns zeroed totals when the shifts query returns no rows', async () => {
+      routeQueryRaw(prisma, [
+        { matches: (sql) => sql.includes('"category"'), resolve: () => [] },
+        { matches: (sql) => sql.includes('"totalShifts"'), resolve: () => [] },
+      ]);
+
       const result = await service.getCashShiftSummary(validQuery());
+
       expect(result.totalShifts).toBe(0);
       expect(result.totalCashMovement).toBe('0.00');
       expect(result.breakdownByPaymentMethod).toEqual([]);
     });
 
-    it('handles shifts with undefined expectedClosingAmount', async () => {
-      (prisma.cashShift.findMany as jest.Mock).mockResolvedValue([{ id: 'cs-1', expectedClosingAmount: undefined }]);
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([]);
-      const result = await service.getCashShiftSummary(validQuery());
-      expect(result.totalCashMovement).toBe('0.00');
-    });
-
-    it('handles payments without paymentMethod category as OTHER', async () => {
-      (prisma.cashShift.findMany as jest.Mock).mockResolvedValue([{ id: 'cs-1', expectedClosingAmount: 10000 }]);
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([
-        { payments: [{ amount: 10000, paymentMethod: null }] },
+    it('maps null payment category rows to OTHER', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"category"'),
+          resolve: () => [
+            { category: null, count: 1, totalAmount: new Prisma.Decimal('10000') },
+          ],
+        },
+        {
+          matches: (sql) => sql.includes('"totalShifts"'),
+          resolve: () => [
+            { totalShifts: 1, totalCashMovement: new Prisma.Decimal('10000') },
+          ],
+        },
       ]);
-      const result = await service.getCashShiftSummary(validQuery());
-      expect(result.breakdownByPaymentMethod[0].paymentMethodCategory).toBe('OTHER');
-    });
 
-    it('handles sales with undefined or empty payments', async () => {
-      (prisma.cashShift.findMany as jest.Mock).mockResolvedValue([{ id: 'cs-1', expectedClosingAmount: 5000 }]);
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([{ payments: undefined }, {}]);
       const result = await service.getCashShiftSummary(validQuery());
-      expect(result.totalCashMovement).toBe('5000.00');
-      expect(result.breakdownByPaymentMethod).toEqual([]);
+
+      expect(result.breakdownByPaymentMethod[0].paymentMethodCategory).toBe(
+        'OTHER',
+      );
+      expect(result.breakdownByPaymentMethod[0].averageAmount).toBe('10000.00');
     });
   });
 
   describe('getInventoryValuation', () => {
-    it('returns valuation breakdown by product', async () => {
-      (prisma.lot.findMany as jest.Mock).mockResolvedValue([
-        { id: 'lot-1', currentStock: 10, expirationDate: new Date('2027-01-01'), product: { id: 'prod-1', commercialName: 'Product A' }, purchaseReceptionItems: [{ realUnitCost: 5000 }] },
-        { id: 'lot-2', currentStock: 5, expirationDate: new Date('2026-06-01'), product: { id: 'prod-2', commercialName: 'Product B' }, purchaseReceptionItems: [{ realUnitCost: 2000 }] },
+    function valuationRow(overrides: Record<string, unknown> = {}) {
+      return {
+        productId: 'prod-a',
+        productName: 'Product A',
+        quantity: BigInt(15),
+        totalValue: new Prisma.Decimal('75000'),
+        activeLots: BigInt(2),
+        expiringLots: BigInt(1),
+        unknownCostLots: BigInt(0),
+        ...overrides,
+      };
+    }
+
+    it('values inventory per product from grouped lot rows', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"activeLots"'),
+          resolve: () => [valuationRow()],
+        },
       ]);
+
       const result = await service.getInventoryValuation(validQuery());
+
+      expect(result.valuationDate).toBe(
+        new Date('2026-01-01').toISOString(),
+      );
       expect(result.totalLotsActive).toBe(2);
-      expect(result.breakdownByProduct).toHaveLength(2);
-      expect(result.totalInventoryValue).toBe('60000.00');
-    });
-
-    it('tracks lots with unknown cost separately', async () => {
-      (prisma.lot.findMany as jest.Mock).mockResolvedValue([
-        { id: 'lot-1', currentStock: 10, expirationDate: new Date('2027-01-01'), product: { id: 'prod-1', commercialName: 'Product A' }, purchaseReceptionItems: [] },
-      ]);
-      const result = await service.getInventoryValuation(validQuery());
-      expect(result.lotsWithUnknownCost).toBe(1);
-      expect(result.totalInventoryValue).toBe('0.00');
-    });
-
-    it('handles lots with null realUnitCost', async () => {
-      (prisma.lot.findMany as jest.Mock).mockResolvedValue([
-        { id: 'lot-nc', currentStock: 10, expirationDate: new Date('2027-01-01'), product: { id: 'prod-1', commercialName: 'Product A' }, purchaseReceptionItems: [{ realUnitCost: null }] },
-      ]);
-      const result = await service.getInventoryValuation(validQuery());
-      expect(result.totalInventoryValue).toBe('0.00');
-    });
-
-    it('flags lots expiring before the threshold date', async () => {
-      (prisma.lot.findMany as jest.Mock).mockResolvedValue([
-        { id: 'lot-expiring', currentStock: 5, expirationDate: new Date('2026-02-15'), product: { id: 'prod-1', commercialName: 'Product A' }, purchaseReceptionItems: [{ realUnitCost: 1000 }] },
-      ]);
-      const result = await service.getInventoryValuation(validQuery({ dateFrom: '2026-01-01' }));
       expect(result.totalLotsExpiring).toBe(1);
-      expect(result.totalLotsActive).toBe(1);
+      expect(result.lotsWithUnknownCost).toBe(0);
+      expect(result.totalInventoryValue).toBe('75000.00');
+      expect(result.breakdownByProduct).toEqual([
+        {
+          productId: 'prod-a',
+          productName: 'Product A',
+          quantity: 15,
+          unitCost: '5000.00',
+          totalValue: '75000.00',
+          expiringLotCount: 1,
+        },
+      ]);
     });
 
-    it('aggregates multiple lots with the same product ID', async () => {
-      (prisma.lot.findMany as jest.Mock).mockResolvedValue([
-        { id: 'lot-a', currentStock: 10, expirationDate: new Date('2027-01-01'), product: { id: 'prod-1', commercialName: 'Product A' }, purchaseReceptionItems: [{ realUnitCost: 5000 }] },
-        { id: 'lot-b', currentStock: 20, expirationDate: new Date('2028-01-01'), product: { id: 'prod-1', commercialName: 'Product A' }, purchaseReceptionItems: [{ realUnitCost: 6000 }] },
+    it('counts unknown-cost lots in lot counters but contributes zero to value', async () => {
+      // Product B: every active lot has unknown cost (unknownCostLots === activeLots).
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"activeLots"'),
+          resolve: () => [
+            valuationRow(),
+            valuationRow({
+              productId: 'prod-b',
+              productName: 'Product B',
+              quantity: BigInt(4),
+              totalValue: new Prisma.Decimal('0'),
+              activeLots: BigInt(1),
+              expiringLots: BigInt(0),
+              unknownCostLots: BigInt(1),
+            }),
+          ],
+        },
       ]);
+
       const result = await service.getInventoryValuation(validQuery());
-      expect(result.breakdownByProduct).toHaveLength(1);
-      expect(result.totalInventoryValue).toBe('170000.00');
+
+      expect(result.totalLotsActive).toBe(3);
+      expect(result.totalLotsExpiring).toBe(1);
+      expect(result.lotsWithUnknownCost).toBe(1);
+      expect(result.totalInventoryValue).toBe('75000.00');
+      expect(result.breakdownByProduct[1]).toEqual({
+        productId: 'prod-b',
+        productName: 'Product B',
+        quantity: 4,
+        unitCost: '0.00',
+        totalValue: '0.00',
+        expiringLotCount: 0,
+      });
+    });
+
+    it('returns zeroed valuation when no lots have current stock', async () => {
+      routeQueryRaw(prisma, [
+        { matches: (sql) => sql.includes('"activeLots"'), resolve: () => [] },
+      ]);
+
+      const result = await service.getInventoryValuation(validQuery());
+
+      expect(result.totalLotsActive).toBe(0);
+      expect(result.totalLotsExpiring).toBe(0);
+      expect(result.lotsWithUnknownCost).toBe(0);
+      expect(result.totalInventoryValue).toBe('0.00');
+      expect(result.breakdownByProduct).toEqual([]);
     });
   });
 
   describe('getTaxSummary', () => {
-    it('returns tax breakdown grouped by rate', async () => {
-      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([
-        { sale: { items: [{ taxRate: 0.19, subtotal: 10000, taxAmount: 1900 }, { taxRate: 0.19, subtotal: 5000, taxAmount: 950 }] } },
-        { sale: { items: [{ taxRate: 0.00, subtotal: 8000, taxAmount: 0 }] } },
+    function taxRow(overrides: Record<string, unknown> = {}) {
+      return {
+        taxRate: new Prisma.Decimal('0.19'),
+        taxableBase: new Prisma.Decimal('15000.00'),
+        taxAmount: new Prisma.Decimal('2850.00'),
+        documentCount: BigInt(3),
+        totalDocuments: BigInt(5),
+        ...overrides,
+      };
+    }
+
+    it('counts documents without items via the NULL-rate row but excludes them from monetary buckets', async () => {
+      // PostgreSQL ORDER BY "taxRate" ASC sorts NULL last; mirror that here.
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"taxRate"'),
+          resolve: () => [
+            taxRow({ taxRate: new Prisma.Decimal('0.05'), taxableBase: new Prisma.Decimal('2000.00'), taxAmount: new Prisma.Decimal('100.00'), documentCount: BigInt(2) }),
+            taxRow(),
+            taxRow({ taxRate: null, taxableBase: null, taxAmount: null, documentCount: BigInt(0) }),
+          ],
+        },
       ]);
+
       const result = await service.getTaxSummary(validQuery());
-      expect(result.totalDocuments).toBe(2);
-      expect(result.breakdownByTaxRate).toHaveLength(2);
-      expect(result.breakdownByTaxRate[0]).toMatchObject({ taxRate: '0.0000', taxableBase: '8000.00' });
+
+      expect(result.reportPeriod).toEqual({
+        dateFrom: '2026-01-01',
+        dateTo: '2026-01-31',
+      });
+      expect(result.totalDocuments).toBe(5);
+      expect(result.totalTaxableBase).toBe('17000.00');
+      expect(result.totalTaxAmount).toBe('2950.00');
+      expect(result.breakdownByTaxRate).toEqual([
+        {
+          taxRate: '0.0500',
+          taxableBase: '2000.00',
+          taxAmount: '100.00',
+          documentCount: 2,
+        },
+        {
+          taxRate: '0.1900',
+          taxableBase: '15000.00',
+          taxAmount: '2850.00',
+          documentCount: 3,
+        },
+      ]);
     });
 
-    it('merges multiple items into same tax rate bucket', async () => {
-      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([
-        { sale: { items: [{ taxRate: 0.19, subtotal: 5000, taxAmount: 950 }, { taxRate: 0.19, subtotal: 3000, taxAmount: 570 }] } },
+    it('returns zeroed monetary totals when only documents without items exist', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"taxRate"'),
+          resolve: () => [
+            taxRow({ taxRate: null, taxableBase: null, taxAmount: null, documentCount: BigInt(0), totalDocuments: BigInt(4) }),
+          ],
+        },
       ]);
+
       const result = await service.getTaxSummary(validQuery());
-      expect(result.breakdownByTaxRate).toHaveLength(1);
-      expect(result.breakdownByTaxRate[0].taxableBase).toBe('8000.00');
+
+      expect(result.totalDocuments).toBe(4);
+      expect(result.totalTaxableBase).toBe('0.00');
+      expect(result.totalTaxAmount).toBe('0.00');
+      expect(result.breakdownByTaxRate).toEqual([]);
     });
 
-    it('handles fiscal documents with null sale', async () => {
-      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([
-        { sale: null },
-        { sale: { items: [] } },
+    it('returns zeroed report when the query returns no group rows at all', async () => {
+      routeQueryRaw(prisma, [
+        { matches: (sql) => sql.includes('"taxRate"'), resolve: () => [] },
       ]);
+
       const result = await service.getTaxSummary(validQuery());
-      expect(result.totalDocuments).toBe(2);
+
+      expect(result.totalDocuments).toBe(0);
       expect(result.breakdownByTaxRate).toEqual([]);
     });
   });
 
   describe('getFiscalReport', () => {
-    it('returns fiscal document breakdown by type and state', async () => {
-      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([
-        { documentType: 'INVOICE', fiscalState: 'VALIDATED', subtotal: 10000, totalTax: 1900, totalAmount: 11900 },
-        { documentType: 'INVOICE', fiscalState: 'PENDING_GENERATION', subtotal: 5000, totalTax: 0, totalAmount: 5000 },
-        { documentType: 'CREDIT_NOTE', fiscalState: 'VALIDATED', subtotal: 2000, totalTax: 0, totalAmount: 2000 },
+    function fiscalRow(overrides: Record<string, unknown> = {}) {
+      return {
+        documentType: 'INVOICE',
+        fiscalState: 'VALIDATED',
+        count: 5,
+        subtotal: new Prisma.Decimal('50000'),
+        totalTax: new Prisma.Decimal('9500'),
+        totalAmount: new Prisma.Decimal('59500'),
+        ...overrides,
+      };
+    }
+
+    it('nests states by descending count inside alphabetically ordered types and sums totals across rows', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"fiscalState"'),
+          resolve: () => [
+            fiscalRow(),
+            fiscalRow({ fiscalState: 'REJECTED', count: 1, subtotal: new Prisma.Decimal('8000'), totalTax: new Prisma.Decimal('0'), totalAmount: new Prisma.Decimal('8000') }),
+            fiscalRow({ fiscalState: 'PENDING_GENERATION', count: 2, subtotal: new Prisma.Decimal('12000'), totalTax: new Prisma.Decimal('0'), totalAmount: new Prisma.Decimal('12000') }),
+            fiscalRow({ documentType: 'CREDIT_NOTE', fiscalState: 'ACCEPTED', count: 1, subtotal: new Prisma.Decimal('2000'), totalTax: new Prisma.Decimal('0'), totalAmount: new Prisma.Decimal('2000') }),
+            fiscalRow({ documentType: 'CREDIT_NOTE', fiscalState: 'VALIDATED', count: 3, subtotal: new Prisma.Decimal('6000'), totalTax: new Prisma.Decimal('300'), totalAmount: new Prisma.Decimal('6300') }),
+          ],
+        },
       ]);
+
       const result = await service.getFiscalReport(validQuery());
-      expect(result.totalDocuments).toBe(3);
-      expect(result.breakdownByType).toHaveLength(2);
-      expect(result.breakdownByType[0].documentType).toBe('CREDIT_NOTE');
-      expect(result.breakdownByType[1].documentType).toBe('INVOICE');
+
+      expect(result.reportPeriod).toEqual({
+        dateFrom: '2026-01-01',
+        dateTo: '2026-01-31',
+      });
+      expect(result.view).toBe('fiscal');
+      expect(result.totalDocuments).toBe(12);
+      expect(result.totalSubtotal).toBe('78000.00');
+      expect(result.totalTax).toBe('9800.00');
+      expect(result.totalAmount).toBe('87800.00');
+
+      expect(result.breakdownByType.map((t: any) => t.documentType)).toEqual([
+        'CREDIT_NOTE',
+        'INVOICE',
+      ]);
+      expect(
+        result.breakdownByType[1].states.map((s: any) => s.state),
+      ).toEqual(['VALIDATED', 'PENDING_GENERATION', 'REJECTED']);
+      expect(
+        result.breakdownByType[1].states.map((s: any) => s.count),
+      ).toEqual([5, 2, 1]);
+      expect(result.breakdownByType[1].count).toBe(8);
+      expect(result.breakdownByType[1].totalAmount.toFixed(2)).toBe(
+        '79500.00',
+      );
+      expect(result.breakdownByType[0].states).toEqual([
+        { state: 'VALIDATED', count: 3 },
+        { state: 'ACCEPTED', count: 1 },
+      ]);
     });
 
-    it('returns empty breakdown when no documents exist', async () => {
-      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([]);
+    it('returns zeroed totals and empty breakdown when no documents exist', async () => {
+      routeQueryRaw(prisma, [
+        { matches: (sql) => sql.includes('"fiscalState"'), resolve: () => [] },
+      ]);
+
       const result = await service.getFiscalReport(validQuery());
+
       expect(result.totalDocuments).toBe(0);
+      expect(result.totalSubtotal).toBe('0.00');
+      expect(result.totalTax).toBe('0.00');
+      expect(result.totalAmount).toBe('0.00');
       expect(result.breakdownByType).toEqual([]);
-    });
-
-    it('handles documents with undefined documentType and fiscalState', async () => {
-      (prisma.fiscalDocument.findMany as jest.Mock).mockResolvedValue([
-        { subtotal: 1000, totalTax: 100, totalAmount: 1100 },
-      ]);
-      const result = await service.getFiscalReport(validQuery());
-      expect(result.totalDocuments).toBe(1);
-      expect(result.breakdownByType[0].documentType).toBe('UNKNOWN');
-      expect(result.breakdownByType[0].states[0].state).toBe('UNKNOWN');
     });
   });
 
   describe('getDailyReport', () => {
-    it('returns daily sales aggregation', async () => {
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([
-        { id: 's1', confirmedAt: new Date('2026-01-01T10:00:00Z'), totalAmount: 50000, totalTax: 9500, items: [{ quantity: 3 }] },
-        { id: 's2', confirmedAt: new Date('2026-01-01T14:00:00Z'), totalAmount: 30000, totalTax: 5700, items: [{ quantity: 1 }] },
-        { id: 's3', confirmedAt: new Date('2026-01-02T10:00:00Z'), totalAmount: 20000, totalTax: 3800, items: [{ quantity: 2 }] },
+    function dailyRow(overrides: Record<string, unknown> = {}) {
+      return {
+        day: '2026-01-01',
+        salesCount: 2,
+        totalAmount: new Prisma.Decimal('80000'),
+        totalTax: new Prisma.Decimal('15200'),
+        commissionAmount: new Prisma.Decimal('1600'),
+        quantity: 4,
+        ...overrides,
+      };
+    }
+
+    it('computes per-day average tickets and roll-up totals across days', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"commissionAmount"'),
+          resolve: () => [
+            dailyRow(),
+            dailyRow({
+              day: '2026-01-02',
+              salesCount: 1,
+              totalAmount: new Prisma.Decimal('20000'),
+              totalTax: new Prisma.Decimal('3800'),
+              commissionAmount: new Prisma.Decimal('400'),
+              quantity: 2,
+            }),
+          ],
+        },
       ]);
+
       const result = await service.getDailyReport(validQuery());
+
+      expect(result.reportPeriod).toEqual({
+        dateFrom: '2026-01-01',
+        dateTo: '2026-01-31',
+      });
+      expect(result.view).toBe('fiscal');
       expect(result.totalDays).toBe(2);
-      expect(result.totals.totalSales).toBe(3);
-      expect(result.totals.totalAmount).toBe('100000.00');
-      expect(result.dailyEntries).toHaveLength(2);
-      expect(result.dailyEntries[0].date).toBe('2026-01-01');
-      expect(result.dailyEntries[0].salesCount).toBe(2);
-      expect(result.dailyEntries[0].averageTicket).toBe('40000.00');
+      expect(result.totals).toEqual({
+        totalSales: 3,
+        totalAmount: '100000.00',
+        totalTax: '19000.00',
+        totalQuantity: 6,
+        averageTicket: '33333.33',
+        totalCommission: '2000.00',
+      });
+      expect(result.dailyEntries).toEqual([
+        {
+          date: '2026-01-01',
+          salesCount: 2,
+          totalAmount: '80000.00',
+          totalTax: '15200.00',
+          quantity: 4,
+          commissionAmount: '1600.00',
+          averageTicket: '40000.00',
+        },
+        {
+          date: '2026-01-02',
+          salesCount: 1,
+          totalAmount: '20000.00',
+          totalTax: '3800.00',
+          quantity: 2,
+          commissionAmount: '400.00',
+          averageTicket: '20000.00',
+        },
+      ]);
     });
 
-    it('returns empty daily entries when no sales exist', async () => {
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([]);
+    it('returns zeroed totals with zero average ticket when no sales exist', async () => {
+      routeQueryRaw(prisma, [
+        {
+          matches: (sql) => sql.includes('"commissionAmount"'),
+          resolve: () => [],
+        },
+      ]);
+
       const result = await service.getDailyReport(validQuery());
+
       expect(result.totalDays).toBe(0);
       expect(result.totals.totalSales).toBe(0);
+      expect(result.totals.averageTicket).toBe('0.00');
       expect(result.dailyEntries).toEqual([]);
-    });
-
-    it('skips sales with null confirmedAt', async () => {
-      (prisma.sale.findMany as jest.Mock).mockResolvedValue([
-        { id: 's1', confirmedAt: null, totalAmount: 50000, totalTax: 9500, items: [{ quantity: 3 }] },
-      ]);
-      const result = await service.getDailyReport(validQuery());
-      expect(result.totalDays).toBe(0);
     });
   });
 });

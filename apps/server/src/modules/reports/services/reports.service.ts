@@ -1,11 +1,14 @@
+// Sales, cash-shift, inventory-valuation, tax, and fiscal summary reports.
+// Every report aggregates in PostgreSQL ($queryRaw); none loads full result
+// sets into memory. The raw queries do not filter by subscriptionId on
+// purpose: they run inside the request-scoped RLS transaction, so tenant
+// isolation is enforced by the row-level security policies (same contract as
+// every other query in this app).
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { Prisma } from '@pharmacy/database';
 import { ReportDateRangeQueryDto } from '../dto/report-date-range.query.dto';
 import { ReportInvalidDateRangeException } from '../exceptions/report-invalid-date-range.exception';
-
-/** Number of days from the valuation date beyond which a lot is not considered expiring soon. */
-const EXPIRING_SOON_DAYS = 90;
 
 @Injectable()
 export class ReportsService {
@@ -21,25 +24,36 @@ export class ReportsService {
    */
   async getSalesSummary(query: ReportDateRangeQueryDto): Promise<any> {
     assertValidDateRange(query.dateFrom, query.dateTo);
-    const dateFrom = new Date(query.dateFrom);
-    const dateTo = new Date(query.dateTo);
+    const [dateFrom, dateTo] = parseDateRange(query);
 
-    // Aggregate in SQL instead of loading every CONFIRMED sale (with items
-    // and products) into memory — the previous implementation fetched all
-    // rows and summed them in JS.
+    // Two independent aggregates instead of a joined one: joining Sale to
+    // SaleItem would multiply each sale's totalAmount by its item count. A
+    // previous version used a correlated per-sale subquery mixed with an
+    // ungrouped outer reference, which was both slower and invalid under
+    // strict grouping rules.
     const [totals, breakdown] = await Promise.all([
-      this.prisma.$queryRaw<Array<{ totalSales: Prisma.Decimal; totalQuantity: number }>>`
-        SELECT COALESCE(SUM(s."totalAmount"), 0)::numeric(15,2) AS "totalSales",
-               COALESCE((
-                 SELECT SUM(si.quantity) FROM "SaleItem" si
-                 WHERE si."saleId" = s.id
-               ), 0)::int AS "totalQuantity"
-        FROM "Sale" s
-        WHERE s."operationalState" = 'CONFIRMED'
-          AND s."confirmedAt" >= ${dateFrom}
-          AND s."confirmedAt" <= ${dateTo}
+      this.prisma.$queryRaw<
+        Array<{ totalSales: Prisma.Decimal; totalQuantity: number }>
+      >`
+        SELECT
+          COALESCE((
+            SELECT SUM(s."totalAmount") FROM "Sale" s
+            WHERE s."operationalState" = 'CONFIRMED'
+              AND s."confirmedAt" >= ${dateFrom}
+              AND s."confirmedAt" <= ${dateTo}
+          ), 0)::numeric(15,2) AS "totalSales",
+          COALESCE((
+            SELECT SUM(si.quantity)
+            FROM "SaleItem" si
+            JOIN "Sale" s ON s.id = si."saleId"
+            WHERE s."operationalState" = 'CONFIRMED'
+              AND s."confirmedAt" >= ${dateFrom}
+              AND s."confirmedAt" <= ${dateTo}
+          ), 0)::int AS "totalQuantity"
       `,
-      this.prisma.$queryRaw<Array<{ saleType: string; count: number; totalAmount: Prisma.Decimal }>>`
+      this.prisma.$queryRaw<
+        Array<{ saleType: string; count: number; totalAmount: Prisma.Decimal }>
+      >`
         SELECT p."saleType" AS "saleType",
                COUNT(*)::int AS "count",
                COALESCE(SUM(si."total"), 0)::numeric(15,2) AS "totalAmount"
@@ -53,14 +67,18 @@ export class ReportsService {
       `,
     ]);
 
-    const totalRow = totals[0] ?? { totalSales: new Prisma.Decimal(0), totalQuantity: 0 };
+    const totalRow = totals[0] ?? {
+      totalSales: new Prisma.Decimal(0),
+      totalQuantity: 0,
+    };
     const breakdownBySaleType = breakdown.map((b) => ({
       saleType: b.saleType,
       count: b.count,
       totalAmount: new Prisma.Decimal(b.totalAmount).toFixed(2),
-      averageAmount: b.count > 0
-        ? new Prisma.Decimal(b.totalAmount).dividedBy(b.count).toFixed(2)
-        : '0.00',
+      averageAmount:
+        b.count > 0
+          ? new Prisma.Decimal(b.totalAmount).dividedBy(b.count).toFixed(2)
+          : '0.00',
     }));
 
     return {
@@ -76,37 +94,135 @@ export class ReportsService {
    */
   async getCashShiftSummary(query: ReportDateRangeQueryDto): Promise<any> {
     assertValidDateRange(query.dateFrom, query.dateTo);
-    const shifts = await this.fetchClosedShifts(query);
-    const totalCashMovement = shifts.reduce(
-      (sum: Prisma.Decimal, s: any) => sum.plus(s.expectedClosingAmount ?? 0),
-      new Prisma.Decimal(0),
-    );
-    const payments = await this.fetchShiftPayments(shifts.map((s: any) => s.id));
+    const [dateFrom, dateTo] = parseDateRange(query);
+
+    const [shiftAggregates, paymentsByCategory] = await Promise.all([
+      this.prisma.$queryRaw<
+        Array<{ totalShifts: number; totalCashMovement: Prisma.Decimal }>
+      >`
+        SELECT COUNT(*)::int AS "totalShifts",
+               COALESCE(SUM("expectedClosingAmount"), 0)::numeric(15,2) AS "totalCashMovement"
+        FROM "CashShift"
+        WHERE state = 'CLOSED'
+          AND "closedAt" >= ${dateFrom}
+          AND "closedAt" <= ${dateTo}
+      `,
+      this.prisma.$queryRaw<
+        Array<{ category: string; count: number; totalAmount: Prisma.Decimal }>
+      >`
+        SELECT pm.category AS "category",
+               COUNT(*)::int AS "count",
+               COALESCE(SUM(p.amount), 0)::numeric(15,2) AS "totalAmount"
+        FROM "SalePayment" p
+        JOIN "PaymentMethod" pm ON pm.id = p."paymentMethodId"
+        JOIN "Sale" s ON s.id = p."saleId"
+        WHERE s."operationalState" = 'CONFIRMED'
+          AND s."cashShiftId" IN (
+            SELECT id FROM "CashShift"
+            WHERE state = 'CLOSED'
+              AND "closedAt" >= ${dateFrom}
+              AND "closedAt" <= ${dateTo}
+          )
+        GROUP BY pm.category
+        ORDER BY pm.category
+      `,
+    ]);
+
+    const shifts = shiftAggregates[0] ?? {
+      totalShifts: 0,
+      totalCashMovement: new Prisma.Decimal(0),
+    };
     return {
-      totalShifts: shifts.length,
-      totalCashMovement: totalCashMovement.toFixed(2),
-      breakdownByPaymentMethod: formatPaymentEntries(payments),
+      totalShifts: shifts.totalShifts,
+      totalCashMovement: new Prisma.Decimal(shifts.totalCashMovement).toFixed(
+        2,
+      ),
+      breakdownByPaymentMethod: paymentsByCategory.map((p) => ({
+        paymentMethodCategory: p.category ?? 'OTHER',
+        count: p.count,
+        totalAmount: new Prisma.Decimal(p.totalAmount).toFixed(2),
+        averageAmount:
+          p.count > 0
+            ? new Prisma.Decimal(p.totalAmount).dividedBy(p.count).toFixed(2)
+            : '0.00',
+      })),
     };
   }
 
   /**
    * Values every Lot with currentStock > 0 as of asOfDate (taken from
-   * query.dateFrom). Lots without a PurchaseReceptionItem record are counted
-   * in `lotsWithUnknownCost` and excluded from the monetary total; they still
-   * contribute to lot counts.
+   * query.dateFrom). Lots whose cost cannot be resolved from a
+   * PurchaseReceptionItem are counted in `lotsWithUnknownCost` and excluded
+   * from the monetary total; they still contribute to lot counts.
    */
   async getInventoryValuation(query: ReportDateRangeQueryDto): Promise<any> {
     assertValidDateRange(query.dateFrom, query.dateTo);
     const asOfDate = new Date(query.dateFrom);
-    const lots = await this.prisma.lot.findMany({
-      where: { currentStock: { gt: 0 } },
-      include: {
-        product: { select: { id: true, commercialName: true } },
-        purchaseReceptionItems: { select: { realUnitCost: true }, orderBy: { id: 'asc' }, take: 1 },
-      },
+    const expiryThresholdDate = expiryThreshold(asOfDate);
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        productId: string;
+        productName: string;
+        quantity: bigint;
+        totalValue: Prisma.Decimal;
+        activeLots: bigint;
+        expiringLots: bigint;
+        unknownCostLots: bigint;
+      }>
+    >`
+      SELECT p.id AS "productId",
+             p."commercialName" AS "productName",
+             COALESCE(SUM(l."currentStock"), 0)::bigint AS "quantity",
+             COALESCE(SUM(cost.unit_cost * l."currentStock"), 0)::numeric AS "totalValue",
+             COUNT(*)::bigint AS "activeLots",
+             COUNT(*) FILTER (WHERE l."expirationDate" <= ${expiryThresholdDate})::bigint AS "expiringLots",
+             COUNT(*) FILTER (WHERE cost.unit_cost IS NULL)::bigint AS "unknownCostLots"
+      FROM "Lot" l
+      JOIN "Product" p ON p.id = l."productId"
+      LEFT JOIN LATERAL (
+        SELECT pri."realUnitCost" AS unit_cost
+        FROM "PurchaseReceptionItem" pri
+        WHERE pri."lotId" = l.id AND pri."realUnitCost" IS NOT NULL
+        ORDER BY pri.id ASC
+        LIMIT 1
+      ) cost ON true
+      WHERE l."currentStock" > 0
+      GROUP BY p.id, p."commercialName"
+      ORDER BY p."commercialName"
+    `;
+
+    let totalActive = 0;
+    let totalExpiring = 0;
+    let totalUnknownCost = 0;
+    let totalValue = new Prisma.Decimal(0);
+    const breakdownByProduct = rows.map((row) => {
+      const quantity = Number(row.quantity);
+      const value = new Prisma.Decimal(row.totalValue);
+      totalActive += Number(row.activeLots);
+      totalExpiring += Number(row.expiringLots);
+      totalUnknownCost += Number(row.unknownCostLots);
+      // Unknown-cost lots already contribute zero to the SQL SUM (their
+      // unit_cost is NULL), so adding every product's value here is exact.
+      totalValue = totalValue.plus(value);
+      return {
+        productId: row.productId,
+        productName: row.productName,
+        quantity,
+        unitCost: quantity > 0 ? value.dividedBy(quantity).toFixed(2) : '0.00',
+        totalValue: value.toFixed(2),
+        expiringLotCount: Number(row.expiringLots),
+      };
     });
-    const valuation = computeLotValuation(lots, expiryThreshold(asOfDate));
-    return { valuationDate: asOfDate.toISOString(), ...valuation };
+
+    return {
+      valuationDate: asOfDate.toISOString(),
+      totalLotsActive: totalActive,
+      totalLotsExpiring: totalExpiring,
+      lotsWithUnknownCost: totalUnknownCost,
+      totalInventoryValue: totalValue.toFixed(2),
+      breakdownByProduct,
+    };
   }
 
   /**
@@ -115,35 +231,61 @@ export class ReportsService {
    * within the requested range, grouped by the stored taxRate.
    *
    * Important: This report counts VALIDATED INVOICEs but does NOT net out
-   * CREDIT_NOTEs issued against those same sales in the same period.  Proper
+   * CREDIT_NOTEs issued against those same sales in the same period. Proper
    * credit-note netting is deferred to a later refinement.
    */
   async getTaxSummary(query: ReportDateRangeQueryDto): Promise<any> {
     assertValidDateRange(query.dateFrom, query.dateTo);
+    const [dateFrom, dateTo] = parseDateRange(query);
 
-    const dateFrom = new Date(query.dateFrom);
-    const dateTo = new Date(query.dateTo);
+    // LEFT JOIN so documents without items still count toward totalDocuments
+    // (the window-style distinct count is computed over documents regardless
+    // of items). Documents without items land in the NULL-rate group row and
+    // are stripped below.
+    const rows = await this.prisma.$queryRaw<NullableTaxRateGroupRow[]>`
+      SELECT si."taxRate" AS "taxRate",
+             COALESCE(SUM(si.subtotal), 0)::numeric(15,2) AS "taxableBase",
+             COALESCE(SUM(si."taxAmount"), 0)::numeric(15,2) AS "taxAmount",
+             COUNT(DISTINCT CASE WHEN si.id IS NOT NULL THEN fd.id END)::bigint AS "documentCount",
+             COUNT(DISTINCT fd.id)::bigint AS "totalDocuments"
+      FROM "FiscalDocument" fd
+      JOIN "Sale" s ON s.id = fd."saleId"
+      LEFT JOIN "SaleItem" si ON si."saleId" = s.id
+      WHERE fd."documentType" = 'INVOICE'
+        AND fd."fiscalState" = 'VALIDATED'
+        AND fd."updatedAt" >= ${dateFrom}
+        AND fd."updatedAt" <= ${dateTo}
+        AND s."operationalState" = 'CONFIRMED'
+      GROUP BY si."taxRate"
+      ORDER BY si."taxRate"
+    `;
 
-    const fiscalDocs = await this.fetchTaxSummaryFiscalDocs(dateFrom, dateTo);
-    const { breakdown, totalDocuments } = aggregateByTaxRate(fiscalDocs);
-
-    const totalTaxableBase = breakdown.reduce(
-      (sum, b) => sum.plus(b.taxableBase), new Prisma.Decimal(0),
+    // Documents with no items land in the NULL-rate bucket; they contribute
+    // to totalDocuments only, never to monetary buckets (mirrors the previous
+    // in-memory aggregation skipping docs without items). rows[0].totalDocuments
+    // is safe only because COUNT(DISTINCT fd.id) is group-independent — every
+    // row carries the same window-wide total; do not turn it into a per-bucket count.
+    const itemRows = rows.filter(isTaxRateBucket);
+    const totalDocuments = Number(rows[0]?.totalDocuments ?? 0);
+    const totalTaxableBase = itemRows.reduce(
+      (sum, r) => sum.plus(r.taxableBase),
+      new Prisma.Decimal(0),
     );
-    const totalTaxAmount = breakdown.reduce(
-      (sum, b) => sum.plus(b.taxAmount), new Prisma.Decimal(0),
+    const totalTaxAmount = itemRows.reduce(
+      (sum, r) => sum.plus(r.taxAmount),
+      new Prisma.Decimal(0),
     );
 
     return {
-      reportPeriod: { dateFrom: query.dateFrom, dateTo: query.dateTo },
+      reportPeriod: periodOf(query),
       totalDocuments,
       totalTaxableBase: totalTaxableBase.toFixed(2),
       totalTaxAmount: totalTaxAmount.toFixed(2),
-      breakdownByTaxRate: breakdown.map((b) => ({
-        taxRate: b.taxRate,
-        taxableBase: b.taxableBase.toFixed(2),
-        taxAmount: b.taxAmount.toFixed(2),
-        documentCount: b.documentCount,
+      breakdownByTaxRate: itemRows.map((r) => ({
+        taxRate: new Prisma.Decimal(r.taxRate).toFixed(4),
+        taxableBase: r.taxableBase.toFixed(2),
+        taxAmount: r.taxAmount.toFixed(2),
+        documentCount: Number(r.documentCount),
       })),
     };
   }
@@ -158,27 +300,31 @@ export class ReportsService {
    */
   async getFiscalReport(query: ReportDateRangeQueryDto): Promise<any> {
     assertValidDateRange(query.dateFrom, query.dateTo);
+    const [dateFrom, dateTo] = parseDateRange(query);
 
-    const dateFrom = new Date(query.dateFrom);
-    const dateTo = new Date(query.dateTo);
+    const rows = await this.prisma.$queryRaw<FiscalDocumentGroupRow[]>`
+      SELECT "documentType" AS "documentType",
+             "fiscalState" AS "fiscalState",
+             COUNT(*)::int AS "count",
+             COALESCE(SUM(subtotal), 0)::numeric(15,2) AS "subtotal",
+             COALESCE(SUM("totalTax"), 0)::numeric(15,2) AS "totalTax",
+             COALESCE(SUM("totalAmount"), 0)::numeric(15,2) AS "totalAmount"
+      FROM "FiscalDocument"
+      WHERE "issueDate" >= ${dateFrom}
+        AND "issueDate" <= ${dateTo}
+      GROUP BY "documentType", "fiscalState"
+    `;
 
-    const docs = await this.fetchFiscalDocuments(dateFrom, dateTo);
-    const { breakdownByType, totalSubtotal, totalTax, totalAmount, totalDocuments } =
-      aggregateFiscalDocuments(docs);
+    const { breakdownByType, totals } = reshapeFiscalRows(rows);
 
     return {
-      reportPeriod: { dateFrom: query.dateFrom, dateTo: query.dateTo },
+      reportPeriod: periodOf(query),
       view: query.view,
-      totalDocuments,
-      totalSubtotal: totalSubtotal.toFixed(2),
-      totalTax: totalTax.toFixed(2),
-      totalAmount: totalAmount.toFixed(2),
-      breakdownByType: breakdownByType.map((b) => ({
-        documentType: b.documentType,
-        count: b.count,
-        totalAmount: b.totalAmount.toFixed(2),
-        states: b.states.map((s) => ({ state: s.state, count: s.count })),
-      })),
+      totalDocuments: totals.documents,
+      totalSubtotal: totals.subtotal.toFixed(2),
+      totalTax: totals.tax.toFixed(2),
+      totalAmount: totals.amount.toFixed(2),
+      breakdownByType,
     };
   }
 
@@ -192,16 +338,43 @@ export class ReportsService {
    */
   async getDailyReport(query: ReportDateRangeQueryDto): Promise<any> {
     assertValidDateRange(query.dateFrom, query.dateTo);
+    const [dateFrom, dateTo] = parseDateRange(query);
 
-    const dateFrom = new Date(query.dateFrom);
-    const dateTo = new Date(query.dateTo);
+    // LATERAL pre-aggregation keeps sale-level columns from being multiplied
+    // by the item join while still summing item quantity/commission per day.
+    const rows = await this.prisma.$queryRaw<DailySaleRow[]>`
+      SELECT to_char(date_trunc('day', s."confirmedAt"), 'YYYY-MM-DD') AS "day",
+             COUNT(DISTINCT s.id)::int AS "salesCount",
+             COALESCE(SUM(s."totalAmount"), 0)::numeric(15,2) AS "totalAmount",
+             COALESCE(SUM(s."totalTax"), 0)::numeric(15,2) AS "totalTax",
+             COALESCE(SUM(items.quantity), 0)::int AS "quantity",
+             COALESCE(SUM(items.commission_amount), 0)::numeric(15,2) AS "commissionAmount"
+      FROM "Sale" s
+      LEFT JOIN LATERAL (
+        SELECT SUM(quantity) AS quantity,
+               SUM("commissionAmount") AS commission_amount
+        FROM "SaleItem" si
+        WHERE si."saleId" = s.id
+      ) items ON true
+      WHERE s."operationalState" = 'CONFIRMED'
+        AND s."confirmedAt" >= ${dateFrom}
+        AND s."confirmedAt" <= ${dateTo}
+      GROUP BY date_trunc('day', s."confirmedAt")
+      ORDER BY date_trunc('day', s."confirmedAt") ASC
+    `;
 
-    const sales = await this.fetchConfirmedSalesForDaily(dateFrom, dateTo);
-    const dailyEntries = aggregateDailySales(sales);
+    const dailyEntries = rows.map((row) => ({
+      date: row.day,
+      salesCount: row.salesCount,
+      totalAmount: new Prisma.Decimal(row.totalAmount),
+      totalTax: new Prisma.Decimal(row.totalTax),
+      quantity: row.quantity,
+      commissionAmount: new Prisma.Decimal(row.commissionAmount),
+    }));
     const totals = computeDailyTotals(dailyEntries);
 
     return {
-      reportPeriod: { dateFrom: query.dateFrom, dateTo: query.dateTo },
+      reportPeriod: periodOf(query),
       view: query.view,
       totalDays: dailyEntries.length,
       totals: {
@@ -209,9 +382,10 @@ export class ReportsService {
         totalAmount: totals.totalAmount.toFixed(2),
         totalTax: totals.totalTax.toFixed(2),
         totalQuantity: totals.totalQuantity,
-        averageTicket: totals.totalSales > 0
-          ? totals.totalAmount.dividedBy(totals.totalSales).toFixed(2)
-          : '0.00',
+        averageTicket:
+          totals.totalSales > 0
+            ? totals.totalAmount.dividedBy(totals.totalSales).toFixed(2)
+            : '0.00',
         totalCommission: totals.totalCommission.toFixed(2),
       },
       dailyEntries: dailyEntries.map((d) => ({
@@ -221,118 +395,75 @@ export class ReportsService {
         totalTax: d.totalTax.toFixed(2),
         quantity: d.quantity,
         commissionAmount: d.commissionAmount.toFixed(2),
-        averageTicket: d.salesCount > 0
-          ? d.totalAmount.dividedBy(d.salesCount).toFixed(2)
-          : '0.00',
+        averageTicket:
+          d.salesCount > 0
+            ? d.totalAmount.dividedBy(d.salesCount).toFixed(2)
+            : '0.00',
       })),
     };
   }
-
-  // ── Private database-access helpers ──────────────────────────────
-
-  private async fetchClosedShifts(query: ReportDateRangeQueryDto): Promise<any[]> {
-    return this.prisma.cashShift.findMany({
-      where: {
-        closedAt: { gte: new Date(query.dateFrom), lte: new Date(query.dateTo) },
-        state: 'CLOSED',
-      },
-      select: { id: true, expectedClosingAmount: true },
-    });
-  }
-
-  private async fetchShiftPayments(shiftIds: string[]): Promise<any[]> {
-    return this.prisma.sale.findMany({
-      where: { cashShiftId: { in: shiftIds }, operationalState: 'CONFIRMED' },
-      include: { payments: { include: { paymentMethod: { select: { category: true } } } } },
-    });
-  }
-
-  /**
-   * Returns validated INVOICE fiscal documents (with their Sale items) whose
-   * updatedAt falls within [dateFrom, dateTo].
-   *
-   * Note: The schema has no validatedAt column, so updatedAt is the closest
-   * proxy for when the document reached VALIDATED state.
-   */
-  private async fetchTaxSummaryFiscalDocs(dateFrom: Date, dateTo: Date): Promise<any[]> {
-    return this.prisma.fiscalDocument.findMany({
-      where: {
-        documentType: 'INVOICE',
-        fiscalState: 'VALIDATED',
-        updatedAt: { gte: dateFrom, lte: dateTo },
-        sale: { operationalState: 'CONFIRMED' },
-      },
-      select: {
-        id: true,
-        sale: {
-          select: {
-            items: {
-              select: {
-                taxRate: true,
-                subtotal: true,
-                taxAmount: true,
-              },
-            },
-          },
-        },
-      },
-    });
-  }
-
-  /**
-   * Returns all fiscal documents whose issueDate falls within [dateFrom, dateTo],
-   * with aggregated totals at the document level.
-   */
-  private async fetchFiscalDocuments(dateFrom: Date, dateTo: Date): Promise<any[]> {
-    return this.prisma.fiscalDocument.findMany({
-      where: {
-        issueDate: { gte: dateFrom, lte: dateTo },
-      },
-      select: {
-        id: true,
-        documentType: true,
-        fiscalState: true,
-        subtotal: true,
-        totalTax: true,
-        totalAmount: true,
-      },
-    });
-  }
-
-  /**
-   * Returns CONFIRMED sales whose confirmedAt falls within [dateFrom, dateTo],
-   * with item-level detail needed for daily aggregation.
-   */
-  private async fetchConfirmedSalesForDaily(dateFrom: Date, dateTo: Date): Promise<any[]> {
-    return this.prisma.sale.findMany({
-      where: {
-        operationalState: 'CONFIRMED',
-        confirmedAt: { gte: dateFrom, lte: dateTo },
-      },
-      select: {
-        id: true,
-        confirmedAt: true,
-        totalAmount: true,
-        totalTax: true,
-        items: {
-          select: {
-            quantity: true,
-            commissionAmount: true,
-          },
-        },
-      },
-      orderBy: { confirmedAt: 'asc' },
-    });
-  }
 }
 
-// ── Module-level pure computation helpers ──────────────────────────
+// ── Shared row shapes and pure helpers ─────────────────────────────
 
-function assertValidDateRange(dateFrom: string, dateTo: string): void {
-  if (new Date(dateFrom) > new Date(dateTo)) {
-    throw new ReportInvalidDateRangeException(dateFrom, dateTo);
-  }
+interface NullableTaxRateGroupRow {
+  taxRate: Prisma.Decimal | null;
+  taxableBase: Prisma.Decimal | null;
+  taxAmount: Prisma.Decimal | null;
+  documentCount: bigint;
+  totalDocuments: bigint;
 }
+
+type TaxRateGroupRow = TaxRateBucket & {
+  documentCount: bigint;
+  totalDocuments: bigint;
+};
+
+function isTaxRateBucket(row: NullableTaxRateGroupRow): row is TaxRateGroupRow {
+  return (
+    row.taxRate !== null && row.taxableBase !== null && row.taxAmount !== null
+  );
+}
+
+/** Non-null per-rate bucket produced by the tax summary GROUP BY query. */
+interface TaxRateBucket {
+  taxRate: Prisma.Decimal;
+  taxableBase: Prisma.Decimal;
+  taxAmount: Prisma.Decimal;
+}
+
+interface FiscalDocumentGroupRow {
+  documentType: string;
+  fiscalState: string;
+  count: number;
+  subtotal: Prisma.Decimal;
+  totalTax: Prisma.Decimal;
+  totalAmount: Prisma.Decimal;
+}
+
+interface DailySaleRow {
+  day: string;
+  salesCount: number;
+  totalAmount: Prisma.Decimal;
+  totalTax: Prisma.Decimal;
+  quantity: number;
+  commissionAmount: Prisma.Decimal;
+}
+
+/** Parses an asserted-valid range into Date bounds shared by every query. */
+function parseDateRange(query: ReportDateRangeQueryDto): [Date, Date] {
+  return [new Date(query.dateFrom), new Date(query.dateTo)];
+}
+
+function periodOf(query: ReportDateRangeQueryDto): {
+  dateFrom: string;
+  dateTo: string;
+} {
+  return { dateFrom: query.dateFrom, dateTo: query.dateTo };
+}
+
+/** Number of days from the valuation date beyond which a lot is not considered expiring soon. */
+const EXPIRING_SOON_DAYS = 90;
 
 function expiryThreshold(from: Date): Date {
   const t = new Date(from);
@@ -340,243 +471,77 @@ function expiryThreshold(from: Date): Date {
   return t;
 }
 
-function formatPaymentEntries(sales: any[]): any[] {
-  const map = new Map<string, { category: string; count: number; totalAmount: Prisma.Decimal }>();
-  for (const sale of sales) {
-    for (const payment of sale.payments ?? []) {
-      const cat = payment.paymentMethod?.category ?? 'OTHER';
-      const entry = map.get(cat) ?? { category: cat, count: 0, totalAmount: new Prisma.Decimal(0) };
-      entry.count += 1;
-      entry.totalAmount = entry.totalAmount.plus(payment.amount ?? 0);
-      map.set(cat, entry);
-    }
+function assertValidDateRange(dateFrom: string, dateTo: string): void {
+  if (new Date(dateFrom) > new Date(dateTo)) {
+    throw new ReportInvalidDateRangeException(dateFrom, dateTo);
   }
-  return Array.from(map.values()).map((e) => ({
-    paymentMethodCategory: e.category,
-    count: e.count,
-    totalAmount: e.totalAmount.toFixed(2),
-    averageAmount: e.count > 0 ? e.totalAmount.dividedBy(e.count).toFixed(2) : '0.00',
-  }));
 }
 
 /**
- * Aggregates SaleItem subtotal and taxAmount from validated INVOICE fiscal
- * documents, grouped by the stored taxRate at the time of sale.
- *
- * Important: This function counts VALIDATED INVOICEs but does not net out
- * CREDIT_NOTEs issued against the same sales — that is deferred to a later
- * refinement.
- *
- * The function is kept as a single block because splitting it would force
- * jumping across helper-only sub-steps that make the aggregation flow
- * harder to read.
+ * Folds (documentType, fiscalState) group rows into the nested response
+ * breakdown, preserving the historical ordering: types alphabetically,
+ * states by descending document count.
  */
-function aggregateByTaxRate(
-  fiscalDocs: any[],
-): { breakdown: Array<{ taxRate: string; taxableBase: Prisma.Decimal; taxAmount: Prisma.Decimal; documentCount: number }>; totalDocuments: number } {
-  const rateBuckets = new Map<string, { taxableBase: Prisma.Decimal; taxAmount: Prisma.Decimal; documentIds: Set<string> }>();
-  let totalDocuments = 0;
-
-  for (const fd of fiscalDocs) {
-    totalDocuments++;
-    const sale = fd.sale;
-    if (!sale?.items) continue;
-    for (const item of sale.items) {
-      const rateKey = item.taxRate.toFixed(4);
-      let bucket = rateBuckets.get(rateKey);
-      if (!bucket) {
-        bucket = { taxableBase: new Prisma.Decimal(0), taxAmount: new Prisma.Decimal(0), documentIds: new Set<string>() };
-        rateBuckets.set(rateKey, bucket);
-      }
-      bucket.taxableBase = bucket.taxableBase.plus(item.subtotal ?? 0);
-      bucket.taxAmount = bucket.taxAmount.plus(item.taxAmount ?? 0);
-      bucket.documentIds.add(fd.id);
-    }
-  }
-
-  const breakdown = Array.from(rateBuckets.entries())
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([taxRate, bucket]) => ({
-      taxRate,
-      taxableBase: bucket.taxableBase,
-      taxAmount: bucket.taxAmount,
-      documentCount: bucket.documentIds.size,
-    }));
-
-  return { breakdown, totalDocuments };
-}
-
-function computeLotValuation(lots: any[], threshold: Date) {
-  const agg = aggregateLots(lots, threshold);
-  const totalValue = Array.from(agg.productMap.values()).reduce(
-    (sum: any, e: any) => sum.plus(e.value), new Prisma.Decimal(0),
-  );
-  return {
-    totalLotsActive: agg.active,
-    totalLotsExpiring: agg.expiring,
-    lotsWithUnknownCost: agg.unknownCost,
-    totalInventoryValue: totalValue.toFixed(2),
-    breakdownByProduct: formatProductEntries(agg.productMap),
-  };
-}
-
-/** Single-pass lot aggregation: builds the per-product map and counts lot-level stats. */
-function aggregateLots(lots: any[], threshold: Date) {
-  let active = 0, expiring = 0, unknownCost = 0;
-  const productMap = new Map<string, any>();
-
-  for (const lot of lots) {
-    active++;
-    if (lot.expirationDate <= threshold) expiring++;
-    const pri = lot.purchaseReceptionItems?.[0];
-    if (!pri) unknownCost++;
-    const cost = pri ? new Prisma.Decimal(pri.realUnitCost ?? 0) : new Prisma.Decimal(0);
-    const lotVal = cost.times(lot.currentStock ?? 0);
-    const pid = lot.product?.id;
-    const entry = productMap.get(pid) ?? { pid, name: lot.product?.commercialName ?? 'Unknown', qty: 0, value: new Prisma.Decimal(0), expCount: 0 };
-    entry.qty += lot.currentStock ?? 0;
-    entry.value = entry.value.plus(lotVal);
-    if (lot.expirationDate <= threshold) entry.expCount++;
-    productMap.set(pid, entry);
-  }
-  return { active, expiring, unknownCost, productMap };
-}
-
-/** Formats the per-product map into the response breakdown array. */
-function formatProductEntries(productMap: Map<string, any>): any[] {
-  return Array.from(productMap.values()).map((e) => ({
-    productId: e.pid,
-    productName: e.name,
-    quantity: e.qty,
-    unitCost: e.qty > 0 ? e.value.dividedBy(e.qty).toFixed(2) : '0.00',
-    totalValue: e.value.toFixed(2),
-    expiringLotCount: e.expCount,
-  }));
-}
-
-// ── Fiscal report aggregation ─────────────────────────────────
-
-/**
- * Aggregates fiscal documents by document type and fiscal state.
- *
- * Kept as a single block because splitting across helper-only sub-steps
- * would make the two-level grouping flow harder to follow.
- */
-function aggregateFiscalDocuments(
-  docs: any[],
-): {
+function reshapeFiscalRows(rows: FiscalDocumentGroupRow[]): {
   breakdownByType: Array<{
     documentType: string;
     count: number;
     totalAmount: Prisma.Decimal;
     states: Array<{ state: string; count: number }>;
   }>;
-  totalSubtotal: Prisma.Decimal;
-  totalTax: Prisma.Decimal;
-  totalAmount: Prisma.Decimal;
-  totalDocuments: number;
+  totals: {
+    documents: number;
+    subtotal: Prisma.Decimal;
+    tax: Prisma.Decimal;
+    amount: Prisma.Decimal;
+  };
 } {
-  const typeBuckets = new Map<string, {
-    documentType: string;
-    count: number;
-    totalAmount: Prisma.Decimal;
-    stateBuckets: Map<string, { state: string; count: number }>;
-  }>();
-
-  let totalSubtotal = new Prisma.Decimal(0);
-  let totalTax = new Prisma.Decimal(0);
-  let totalAmount = new Prisma.Decimal(0);
-  let totalDocuments = 0;
-
-  for (const doc of docs) {
-    totalDocuments++;
-    totalSubtotal = totalSubtotal.plus(doc.subtotal ?? 0);
-    totalTax = totalTax.plus(doc.totalTax ?? 0);
-    totalAmount = totalAmount.plus(doc.totalAmount ?? 0);
-
-    const type = doc.documentType ?? 'UNKNOWN';
-    let bucket = typeBuckets.get(type);
-    if (!bucket) {
-      bucket = {
-        documentType: type,
-        count: 0,
-        totalAmount: new Prisma.Decimal(0),
-        stateBuckets: new Map(),
-      };
-      typeBuckets.set(type, bucket);
+  const typeBuckets = new Map<
+    string,
+    {
+      count: number;
+      totalAmount: Prisma.Decimal;
+      states: Array<{ state: string; count: number }>;
     }
-    bucket.count++;
-    bucket.totalAmount = bucket.totalAmount.plus(doc.totalAmount ?? 0);
+  >();
+  const totals = {
+    documents: 0,
+    subtotal: new Prisma.Decimal(0),
+    tax: new Prisma.Decimal(0),
+    amount: new Prisma.Decimal(0),
+  };
 
-    const state = doc.fiscalState ?? 'UNKNOWN';
-    let stateBucket = bucket.stateBuckets.get(state);
-    if (!stateBucket) {
-      stateBucket = { state, count: 0 };
-      bucket.stateBuckets.set(state, stateBucket);
-    }
-    stateBucket.count++;
+  for (const row of rows) {
+    totals.documents += row.count;
+    totals.subtotal = totals.subtotal.plus(row.subtotal);
+    totals.tax = totals.tax.plus(row.totalTax);
+    totals.amount = totals.amount.plus(row.totalAmount);
+
+    const type = row.documentType ?? 'UNKNOWN';
+    const bucket = typeBuckets.get(type) ?? {
+      count: 0,
+      totalAmount: new Prisma.Decimal(0),
+      states: [],
+    };
+    bucket.count += row.count;
+    bucket.totalAmount = bucket.totalAmount.plus(row.totalAmount);
+    bucket.states.push({
+      state: row.fiscalState ?? 'UNKNOWN',
+      count: row.count,
+    });
+    typeBuckets.set(type, bucket);
   }
 
-  const breakdownByType = Array.from(typeBuckets.values())
-    .sort((a, b) => a.documentType.localeCompare(b.documentType))
-    .map((b) => ({
-      documentType: b.documentType,
-      count: b.count,
-      totalAmount: b.totalAmount,
-      states: Array.from(b.stateBuckets.values())
-        .sort((a, s) => s.count - a.count),
+  const breakdownByType = Array.from(typeBuckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([documentType, bucket]) => ({
+      documentType,
+      count: bucket.count,
+      totalAmount: bucket.totalAmount,
+      states: bucket.states.sort((a, s) => s.count - a.count),
     }));
 
-  return { breakdownByType, totalSubtotal, totalTax, totalAmount, totalDocuments };
-}
-
-// ── Daily report aggregation ───────────────────────────────────
-
-/** Groups CONFIRMED sales by calendar day (YYYY-MM-DD). */
-function aggregateDailySales(
-  sales: any[],
-): Array<{
-  date: string;
-  salesCount: number;
-  totalAmount: Prisma.Decimal;
-  totalTax: Prisma.Decimal;
-  quantity: number;
-  commissionAmount: Prisma.Decimal;
-}> {
-  const dayMap = new Map<string, {
-    salesCount: number;
-    totalAmount: Prisma.Decimal;
-    totalTax: Prisma.Decimal;
-    quantity: number;
-    commissionAmount: Prisma.Decimal;
-  }>();
-
-  for (const sale of sales) {
-    if (!sale.confirmedAt) continue;
-    const dateKey = toDateString(sale.confirmedAt);
-    let entry = dayMap.get(dateKey);
-    if (!entry) {
-      entry = {
-        salesCount: 0,
-        totalAmount: new Prisma.Decimal(0),
-        totalTax: new Prisma.Decimal(0),
-        quantity: 0,
-        commissionAmount: new Prisma.Decimal(0),
-      };
-      dayMap.set(dateKey, entry);
-    }
-    entry.salesCount++;
-    entry.totalAmount = entry.totalAmount.plus(sale.totalAmount ?? 0);
-    entry.totalTax = entry.totalTax.plus(sale.totalTax ?? 0);
-    for (const item of sale.items ?? []) {
-      entry.quantity += item.quantity ?? 0;
-      entry.commissionAmount = entry.commissionAmount.plus(item.commissionAmount ?? 0);
-    }
-  }
-
-  return Array.from(dayMap.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, entry]) => ({ date, ...entry }));
+  return { breakdownByType, totals };
 }
 
 /** Computes roll-up totals from the daily entries array. */
@@ -610,13 +575,4 @@ function computeDailyTotals(
   }
 
   return { totalSales, totalAmount, totalTax, totalQuantity, totalCommission };
-}
-
-/** Formats a Date or ISO string as YYYY-MM-DD. */
-function toDateString(d: Date | string): string {
-  const date = typeof d === 'string' ? new Date(d) : d;
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
 }
