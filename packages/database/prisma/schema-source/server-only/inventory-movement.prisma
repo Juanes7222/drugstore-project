@@ -28,4 +28,5 @@ model InventoryMovement {
   @@index([createdAt])
   @@index([movementType, createdAt])
   @@index([adjustmentDocumentId])
+  @@index([saleId])
 }
