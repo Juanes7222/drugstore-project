@@ -30,6 +30,7 @@
 
 import { PGlite } from '@electric-sql/pglite';
 import { LOCAL_SCHEMA_SQL } from '@pharmacy/database/local-schema';
+import { fetchWithRetry } from '../common/fetch-with-retry';
 
 /**
  * Compute a deterministic 32-bit hash of the processed schema SQL.
@@ -1042,9 +1043,22 @@ async function loadPgliteAssets(): Promise<{
    * Fetch a URL and return the raw ArrayBuffer, throwing on non-OK responses
    * with a message that includes the HTTP status and the first bytes of the
    * body so we can diagnose content-type mismatches.
+   *
+   * Transient network failures (connection reset while the dev server
+   * restarts, socket closed mid-body) are retried with backoff — a single
+   * dropped ~10 MB response must not abort database boot.
    */
   async function fetchBuffer(url: string): Promise<ArrayBuffer> {
-    const response = await fetch(url);
+    const response = await fetchWithRetry(url, {
+      onRetry: ({ attempt, attempts, delayMs, error }) => {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[local-database] transient network error fetching ${url}` +
+            ` (attempt ${attempt}/${attempts}), retrying in ${delayMs}ms:` +
+            ` ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    });
     if (!response.ok) {
       throw new Error(
         `Failed to fetch ${url}: ${response.status} ${response.statusText}` +
@@ -1068,7 +1082,16 @@ async function loadPgliteAssets(): Promise<{
   const [pgliteWasmBuffer, initdbWasmBuffer, fsBundleResponse] = await Promise.all([
     fetchBuffer('/pglite/pglite.wasm'),
     fetchBuffer('/pglite/initdb.wasm'),
-    fetch('/pglite/pglite.data').then((r) => {
+    fetchWithRetry('/pglite/pglite.data', {
+      onRetry: ({ attempt, attempts, delayMs, error }) => {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[local-database] transient network error fetching /pglite/pglite.data` +
+            ` (attempt ${attempt}/${attempts}), retrying in ${delayMs}ms:` +
+            ` ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    }).then((r) => {
       if (!r.ok)
         throw new Error(
           `Failed to fetch /pglite/pglite.data: ${r.status} ${r.statusText}`,

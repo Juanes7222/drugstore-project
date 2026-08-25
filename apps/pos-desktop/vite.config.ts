@@ -1,10 +1,18 @@
-import { defineConfig, searchForWorkspaceRoot, type Plugin } from "vite";
+import { defineConfig, searchForWorkspaceRoot, type Plugin, type Connect } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve, join } from "path";
-import { accessSync, constants, existsSync, readFileSync, readdirSync, statSync } from "fs";
+import { accessSync, constants, existsSync, createReadStream, readdirSync, statSync } from "fs";
 
 const host = process.env.TAURI_DEV_HOST;
+
+/**
+ * Workstation identity injected by scripts/dev-multi-station.mjs. When set,
+ * each station gets its own dependency-optimizer cache so two concurrently
+ * running dev servers never race on (or invalidate each other through) the
+ * shared node_modules/.vite directory.
+ */
+const workstationId = process.env.VITE_WORKSTATION_ID;
 
 /**
  * Resolve the PGlite dist directory from the project's node_modules.
@@ -59,13 +67,53 @@ function pgliteAssetsPlugin(): Plugin {
     name: "pglite-assets",
     apply: "serve",
     configureServer(server) {
-      // Serve PGlite's dist/ files at the `/pglite/` URL prefix so that
-      // PGlite's fetch()-based asset loading works in dev mode.
       const extMap: Record<string, string> = {
         ".wasm": "application/wasm",
         ".tar.gz": "application/gzip",
         ".js": "application/javascript",
         ".map": "application/json",
+      };
+
+      /**
+       * Stream one file from disk as a raw binary response.
+       *
+       * Streams instead of readFileSync so concurrent large responses (two
+       * stations booting in parallel each pull ~16 MB) never block the event
+       * loop, and aborts (client navigated away mid-download) destroy the
+       * read stream instead of piping into a dead socket. Returns false when
+       * the file cannot be stat'd/read so the caller can fall through to the
+       * next middleware.
+       */
+      const serveFile = (
+        filePath: string,
+        contentType: string,
+        req: Connect.IncomingMessage,
+        res: Connect.ServerResponse,
+      ): boolean => {
+        try {
+          const { size } = statSync(filePath);
+          const stream = createReadStream(filePath);
+          res.on("close", () => stream.destroy());
+          stream.on("error", () => {
+            if (!res.headersSent) res.writeHead(500);
+            res.end();
+          });
+          stream.on("open", () => {
+            res.writeHead(200, {
+              "Content-Type": contentType,
+              "Content-Length": size,
+              // PGlite asset bytes are immutable for an installed dependency
+              // version. Caching them keeps full dev-server reloads from
+              // re-downloading ~16 MB — and shrinks the window in which a
+              // server restart can cut a fetch short with ERR_CONNECTION_RESET.
+              "Cache-Control": "public, max-age=31536000, immutable",
+            });
+            stream.pipe(res);
+          });
+          return true;
+        } catch {
+          return false;
+        }
       };
 
       // Diagnostic endpoint — visit http://localhost:5173/pglite/__diag
@@ -115,55 +163,31 @@ function pgliteAssetsPlugin(): Plugin {
       //
       // PGlite's data file (pglite.data) is also intercepted here because some
       // internal Emscripten data-loading paths may attempt to fetch it.
-      const catchAllHandler = (req: any, res: any, next: any) => {
+      const catchAllHandler = (
+        req: Connect.IncomingMessage,
+        res: Connect.ServerResponse,
+        next: () => void,
+      ) => {
         if (req.method !== 'GET') return next();
         const pathname = req.url ?? '';
         const basename = pathname.split('/').pop()?.split('?')[0] ?? '';
-        // Intercept W A S M files (any path, any .wasm) + pglite.data
-        if (basename.endsWith('.wasm')) {
-          // Try the PGlite dist first, then fall back to resolving from
-          // node_modules via Vite's static server (by calling next()).
-          if (basename === 'pglite.wasm' || basename === 'initdb.wasm') {
-            const pgliteFilePath = join(pgliteDist, basename);
-            try {
-              if (existsSync(pgliteFilePath)) {
-                const content = readFileSync(pgliteFilePath);
-                console.log(
-                  `[pglite-assets] WASM: "${pathname}" → "${basename}" (${content.length} bytes)`,
-                );
-                res.writeHead(200, {
-                  'Content-Type': 'application/wasm',
-                  'Content-Length': content.length,
-                });
-                res.end(content);
-                return;
-              }
-            } catch { /* fall through to next middleware */ }
+        // PGlite's own binaries — served from the resolved dist directory.
+        if (basename === 'pglite.wasm' || basename === 'initdb.wasm') {
+          if (serveFile(join(pgliteDist, basename), 'application/wasm', req, res)) {
+            return;
           }
-          // For non-PGlite .wasm files (e.g. Prisma query engine), we need to
-          // serve them as raw binary.  Vite's static server normally does this
-          // correctly, but we add an extra safety header and log the request.
-          console.log(
-            `[pglite-assets] WASM (passthrough): "${pathname}"`,
-          );
+          return next();
+        }
+        // Any other .wasm (e.g. Prisma's query engine) must also reach the
+        // browser as raw binary, but from its own node_modules location —
+        // Vite's static server handles that correctly, so pass through.
+        if (basename.endsWith('.wasm')) {
           return next();
         }
         if (basename === 'pglite.data') {
-          const filePath = join(pgliteDist, basename);
-          try {
-            if (existsSync(filePath)) {
-              const content = readFileSync(filePath);
-              console.log(
-                `[pglite-assets] DATA: "${pathname}" → "${basename}" (${content.length} bytes)`,
-              );
-              res.writeHead(200, {
-                'Content-Type': 'application/octet-stream',
-                'Content-Length': content.length,
-              });
-              res.end(content);
-              return;
-            }
-          } catch { /* fall through */ }
+          if (serveFile(join(pgliteDist, basename), 'application/octet-stream', req, res)) {
+            return;
+          }
         }
         return next();
       };
@@ -172,32 +196,22 @@ function pgliteAssetsPlugin(): Plugin {
       server.middlewares.stack.unshift({ route: '', handle: catchAllHandler });
 
       server.middlewares.use("/pglite", (req, res, next) => {
-        // Connect calls this handler for any request starting with "/pglite".
-        // req.url is the FULL path (e.g. "/pglite/pglite.wasm"), NOT stripped.
-        // We strip the "/pglite/" prefix to get the relative file inside the
-        // PGlite dist directory.
-        const relativePath = req.url?.replace(/^\/pglite\//, "") ?? "";
-        if (!relativePath) return next();
-        const decodedPath = decodeURIComponent(relativePath);
-        const filePath = join(pgliteDist, decodedPath);
-
-        console.log(
-          `[pglite-assets] REQ: "${req.url}" → rel: "${relativePath}" → file: "${filePath}"`,
-        );
+        if (req.method !== "GET") return next();
+        // Connect strips the mounted prefix from req.url inside this scope
+        // ("/pglite/pglite.wasm" arrives as "/pglite.wasm"); older setups or
+        // direct hits may still carry it. Normalize both forms defensively.
+        let relativePath = decodeURIComponent(req.url ?? "");
+        relativePath = relativePath.replace(/^\/pglite\//, "").replace(/^\/+/, "");
+        // Reject traversal attempts before touching the filesystem.
+        if (!relativePath || relativePath.includes("..")) return next();
+        const filePath = join(pgliteDist, relativePath);
 
         try {
-          if (!existsSync(filePath)) {
-            console.warn(`[pglite-assets] NOT FOUND: ${filePath}`);
-            return next();
-          }
-          const content = readFileSync(filePath);
-          const ext = Object.keys(extMap).find((e) => decodedPath.endsWith(e));
+          const ext = Object.keys(extMap).find((e) => relativePath.endsWith(e));
           const contentType = ext ? extMap[ext] : "application/octet-stream";
-          console.log(
-            `[pglite-assets] OK: "${decodedPath}" (${content.length} bytes, ${contentType})`,
-          );
-          res.writeHead(200, { "Content-Type": contentType, "Content-Length": content.length });
-          res.end(content);
+          if (!serveFile(filePath, contentType, req, res)) {
+            next();
+          }
         } catch (err) {
           console.error(`[pglite-assets] ERR: "${filePath}":`, err);
           next();
@@ -436,6 +450,14 @@ export default defineConfig(() => ({
   },
 
   clearScreen: false,
+
+  // Per-station dependency-optimizer cache (multi-station dev only). Without
+  // this, two concurrently running dev servers share node_modules/.vite and
+  // each one's optimizer passes invalidate the other's mid-boot.
+  ...(workstationId
+    ? { cacheDir: resolve(__dirname, `node_modules/.vite-${workstationId}`) }
+    : {}),
+
   server: {
     port: 5173,
     strictPort: true,
@@ -454,7 +476,17 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: [
+        "**/src-tauri/**",
+        // Build/test output written while dev servers run (concurrent vitest
+        // coverage runs, tauri builds, e2e artifacts). A write here used to
+        // trigger HMR reload storms — and with several stations sharing the
+        // tree, all stations reloaded at once.
+        "**/coverage/**",
+        "**/dist/**",
+        "**/test-results/**",
+        "**/*.tsbuildinfo",
+      ],
     },
     // Allow Vite's dev server to serve PGlite's distribution binaries and
     // extension tarballs from node_modules so the middleware can access them.
