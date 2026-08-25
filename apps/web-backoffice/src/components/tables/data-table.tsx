@@ -86,6 +86,21 @@ export function DataTable<T>({
     [pageSize, table],
   );
 
+  // Callers sometimes pass a page size that mirrors the server payload
+  // (e.g. "all rows on one page"); the select must never receive a value
+  // outside its option list.
+  const paginationOptions = useMemo(
+    () =>
+      pageSizeOptions.includes(pageSize)
+        ? pageSizeOptions
+        : [...pageSizeOptions, pageSize].sort((a, b) => a - b),
+    [pageSizeOptions, pageSize],
+  );
+
+  // Single-page tables render without pagination controls: they carry no
+  // information there and only invite dead interactions.
+  const showPagination = totalPages > 1;
+
   const handlePageChange = (_: unknown, nextPage: number) => {
     onPageChange(nextPage + 1);
   };
@@ -217,20 +232,22 @@ export function DataTable<T>({
           </TableBody>
         </Table>
       </TableContainer>
-      <TablePagination
-        component="div"
-        count={total}
-        page={page - 1}
-        rowsPerPage={pageSize}
-        onPageChange={handlePageChange}
-        onRowsPerPageChange={handlePageSizeChange}
-        rowsPerPageOptions={pageSizeOptions}
-        labelRowsPerPage={t("common.rowsPerPage")}
-        labelDisplayedRows={({ from, to, count }) =>
-          `${from}–${to} ${t("common.of")} ${count}`
-        }
-        disabled={isLoading}
-      />
+      {showPagination ? (
+        <TablePagination
+          component="div"
+          count={total}
+          page={page - 1}
+          rowsPerPage={pageSize}
+          onPageChange={handlePageChange}
+          onRowsPerPageChange={handlePageSizeChange}
+          rowsPerPageOptions={paginationOptions}
+          labelRowsPerPage={t("common.rowsPerPage")}
+          labelDisplayedRows={({ from, to, count }) =>
+            `${from}–${to} ${t("common.of")} ${count}`
+          }
+          disabled={isLoading}
+        />
+      ) : null}
     </Paper>
   );
 }
