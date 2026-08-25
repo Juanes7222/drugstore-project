@@ -319,7 +319,6 @@
     "cash_shift": "Cash Shift",
     "clients": "Clients",
     "user_management": "Users",
-    "license_status": "License",
     "print_queue": "Print Queue",
     "printers": "Printers",
     "printing": "Printing",
@@ -1665,7 +1664,6 @@
       "recover_email_invalid": "Enter a valid email address."
     },
     "status_page": {
-      "title": "License Status",
       "active_label": "Active until {{date}}",
       "grace_period_label": "Grace period until {{date}}",
       "locked_label": "Locked — contact your provider",
@@ -1719,6 +1717,31 @@
       "checkin_error": "Check-in failed. Check connectivity and try again.",
       "export_triggered": "Export started. The data will download shortly."
     },
+    "subscription": {
+      "title": "Subscription",
+      "unlimited_locations": "Unlimited locations",
+      "change_title": "Change plan",
+      "change_to_plan": "Switch to this plan",
+      "current_badge": "Current plan",
+      "current_card_aria": "Your current plan",
+      "current_hint": "No action needed. Plan changes are made from the options next to this card.",
+      "technical_details": "Technical details (assignment and check-ins)",
+      "offline_title": "We could not load the plans",
+      "offline_body": "Comparing plans needs an internet connection. Your current benefits keep working normally; please try again later.",
+      "delta": {
+        "gains_title": "You gain",
+        "considers_title": "Consider",
+        "price_more": "+{{price}}/month vs your current plan",
+        "price_less": "−{{price}}/month vs your current plan",
+        "price_same": "Same monthly price as your current plan",
+        "billing": {
+          "from_provider_to_certificate_gain": "Sign and transmit invoices with your own DIAN certificate",
+          "from_provider_to_certificate_consider": "You must obtain and upload your digital certificate (.pfx/.p12) and renew it when it expires",
+          "from_certificate_to_provider_gain": "We handle DIAN invoicing for you: no certificates, no paperwork",
+          "from_certificate_to_provider_consider": "Invoice signing becomes dependent on the technology provider"
+        }
+      }
+    },
     "banner": {
       "upcoming_renewal": "Your subscription renews on {{date}}. Make sure payment is up to date.",
       "grace_period": "Payment overdue. The app is still working. You have until {{date}} to renew.",
@@ -1727,7 +1750,6 @@
       "revoked": "Your license has been revoked. Contact your provider."
     },
     "plans": {
-      "sidebar": "Plans & Subscription",
       "title": "Plans & Subscription",
       "subtitle": "Choose the plan that best fits your pharmacy. Payment is processed securely.",
       "period": {

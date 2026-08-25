@@ -396,7 +396,6 @@
     "audit_log": "Auditoría",
     "admin_menu": "Configuración",
     "sync_health": "Salud de Sinc.",
-    "license_status": "Estado de Licencia",
     "recovery": "Recuperación",
     "local_network": "Red Local",
     "suppliers": "Compras",
@@ -1796,7 +1795,6 @@
       "recover_email_invalid": "Ingrese un correo electrónico válido."
     },
     "status_page": {
-      "title": "Estado de Licencia",
       "active_label": "Activa hasta {{date}}",
       "grace_period_label": "En período de gracia hasta {{date}}",
       "locked_label": "Bloqueada - Contacta a tu proveedor",
@@ -1850,6 +1848,31 @@
       "checkin_error": "No se pudo realizar el check-in. Verifique la conexión e Intente de nuevo.",
       "export_triggered": "Exportación iniciada. Los datos se descargarán en breve."
     },
+    "subscription": {
+      "title": "Suscripción",
+      "unlimited_locations": "Locales ilimitados",
+      "change_title": "Cambiar de plan",
+      "change_to_plan": "Cambiar a este plan",
+      "current_badge": "Plan actual",
+      "current_card_aria": "Tu plan actual",
+      "current_hint": "No requiere ninguna acción. Los cambios de plan se hacen desde las opciones de al lado.",
+      "technical_details": "Detalles técnicos (asignación y check-ins)",
+      "offline_title": "No pudimos cargar los planes",
+      "offline_body": "Comparar planes necesita conexión a internet. Tus beneficios actuales siguen funcionando con normalidad; vuelve a intentarlo más tarde.",
+      "delta": {
+        "gains_title": "Ganas",
+        "considers_title": "Considera",
+        "price_more": "+{{price}}/mes frente a tu plan actual",
+        "price_less": "−{{price}}/mes frente a tu plan actual",
+        "price_same": "Mismo precio mensual que tu plan actual",
+        "billing": {
+          "from_provider_to_certificate_gain": "Firmas y transmite facturas con tu propio certificado DIAN",
+          "from_provider_to_certificate_consider": "Debes obtener y subir tu certificado digital (.pfx/.p12) y renovarlo cuando venza",
+          "from_certificate_to_provider_gain": "Nosotros gestionamos la facturación DIAN: sin certificados ni trámites",
+          "from_certificate_to_provider_consider": "La firma de tus facturas pasa a depender del proveedor tecnológico"
+        }
+      }
+    },
     "banner": {
       "upcoming_renewal": "Tu suscripción se renueva el {{date}}. Verifique que el pago esté al día.",
       "grace_period": "Suscripción pendiente de pago. La app sigue funcionando. Tiene hasta {{date}} para renovar.",
@@ -1858,7 +1881,6 @@
       "revoked": "Su licencia fue revocada. Contacte a su proveedor."
     },
     "plans": {
-      "sidebar": "Planes y suscripción",
       "title": "Planes y suscripción",
       "subtitle": "Elija el plan que mejor se ajuste a su farmacia. El pago se procesa de forma segura.",
       "period": {

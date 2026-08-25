@@ -33,6 +33,7 @@ model Sale {
   cashShiftId                       String
   cashShift                         CashShift @relation(fields: [cashShiftId], references: [id])
   workstationId                     String
+  workstation                       Workstation @relation(fields: [workstationId], references: [id])
   userId                            String
   sourceWorkstationId               String
   sourceCreatedAt                   DateTime?
@@ -46,6 +47,7 @@ model Sale {
   items                             SaleItem[]
   payments                          SalePayment[]
   movements                         InventoryMovement[]
+  clientReturns                     ClientReturn[]
   /// Local-only inverse relation — the full server build carries it through
   /// server-only/client-return.prisma instead, so it is absent here.
   // clientReturns                   ClientReturn[]
@@ -55,6 +57,7 @@ model Sale {
   @@index([workstationId, confirmedAt])
   /// Descending so getNextLocalNumber (findFirst orderBy localNumber desc filtered by workstationId) avoids a sort on every confirmed sale.
   @@index([workstationId, localNumber(sort: Desc)])
+  @@index([startedAt, id])
   @@index([confirmedAt])
   @@index([operationalState, confirmedAt])
   @@index([clientId, confirmedAt])

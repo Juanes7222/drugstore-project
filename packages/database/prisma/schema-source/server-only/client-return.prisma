@@ -10,6 +10,8 @@ model ClientReturn {
   state                 ClientReturnState @default(DRAFT)
   saleId                String
   clientId              String
+  sale                  Sale      @relation(fields: [saleId], references: [id])
+  client                Client    @relation(fields: [clientId], references: [id])
   refundAmount          Decimal   @db.Decimal(15, 2)
   subtotalReturned      Decimal   @db.Decimal(15, 2) @default(0)
   taxReturned           Decimal   @db.Decimal(15, 2) @default(0)
@@ -33,7 +35,9 @@ model ClientReturn {
 
   @@index([subscriptionId])
   @@unique([subscriptionId, sequentialNumber])
+  @@index([createdAt, id])
   @@index([saleId])
+  @@index([clientId])
   @@index([cashShiftId])
   @@index([state])
   @@index([creditNoteId])

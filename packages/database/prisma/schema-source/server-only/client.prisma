@@ -45,6 +45,7 @@ model Client {
   /// Falls back to the tenant default credit limit when not set explicitly.
   creditLimit               Decimal?   @db.Decimal(15, 2)
   sales                     Sale[]
+  clientReturns             ClientReturn[]
 
   @@index([subscriptionId])
   @@unique([subscriptionId, identificationType, identificationNumber])

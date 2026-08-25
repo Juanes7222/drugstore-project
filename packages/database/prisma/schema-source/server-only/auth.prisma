@@ -118,6 +118,7 @@ model Workstation {
   sessions      UserSession[]
   auditLogs     AuditLog[]
   clientReturns ClientReturn[]
+  sales         Sale[]
   fiscalResolutions           FiscalResolution[]
   resolutionAllocations       FiscalResolutionAllocation[]
   offlineSessionBlessings     OfflineSessionBlessing[]
