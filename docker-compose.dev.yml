@@ -8,6 +8,15 @@ services:
     image: postgres:16-alpine
     container_name: pharmacy-postgres-dev
     restart: unless-stopped
+    # shared_preload_libraries enables pg_stat_statements (created by the
+    # 20260825 ops-tuning migration) for slow-query monitoring; track_io_timing
+    # enriches its stats with I/O time per query.
+    command:
+      - 'postgres'
+      - '-c'
+      - 'shared_preload_libraries=pg_stat_statements'
+      - '-c'
+      - 'track_io_timing=on'
     environment:
       POSTGRES_USER: pharmacy_dev
       POSTGRES_PASSWORD: pharmacy_dev

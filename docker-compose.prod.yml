@@ -126,6 +126,14 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    # shared_preload_libraries enables pg_stat_statements (created by the
+    # 20260825 ops-tuning migration) for slow-query monitoring.
+    command:
+      - 'postgres'
+      - '-c'
+      - 'shared_preload_libraries=pg_stat_statements'
+      - '-c'
+      - 'track_io_timing=on'
     environment:
       POSTGRES_USER: pharmacy_app
       POSTGRES_DB: pharmacy_prod_db
