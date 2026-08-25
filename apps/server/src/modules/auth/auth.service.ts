@@ -1377,6 +1377,7 @@ export class AuthService {
       id: dbUser.id,
       subscriptionId: dbUser.subscriptionId,
       role: dbUser.role as User['role'],
+      isPlatformAdmin: dbUser.isPlatformAdmin,
       email: dbUser.email,
       username: dbUser.username,
       displayName: dbUser.displayName ?? dbUser.fullName,

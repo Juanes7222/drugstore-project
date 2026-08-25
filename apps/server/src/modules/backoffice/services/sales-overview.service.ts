@@ -182,11 +182,38 @@ export class SalesOverviewService {
     user: User,
     query: SalesOverviewQuery,
   ): Promise<SalesOverviewResult> {
-    const where: Record<string, unknown> = {
-      ...this.scope.saleTenantWhere(user),
-      ...this.buildSaleFilters(query),
-    };
+    return this.list(
+      {
+        ...this.scope.saleTenantWhere(user),
+        ...this.buildSaleFilters(query),
+      },
+      query,
+    );
+  }
 
+  /**
+   * Explicit-subscription variant used by the saas-admin module. Reuses the
+   * exact listing/summary pipeline of getSales — only the tenant filter is
+   * derived from the given subscription id instead of the caller's identity
+   * (Sale is reached through its CashShift, as in BackofficeScopeService).
+   */
+  async getSalesForSubscription(
+    subscriptionId: string,
+    query: SalesOverviewQuery,
+  ): Promise<SalesOverviewResult> {
+    return this.list(
+      {
+        cashShift: { subscriptionId },
+        ...this.buildSaleFilters(query),
+      },
+      query,
+    );
+  }
+
+  private async list(
+    where: Record<string, unknown>,
+    query: SalesOverviewQuery,
+  ): Promise<SalesOverviewResult> {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.max(1, Math.min(100, query.pageSize ?? 20));
     const skip = (page - 1) * pageSize;

@@ -6,6 +6,7 @@ import { envSchema, EnvConfig } from './config/env.schema';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BackofficeModule } from './modules/backoffice/backoffice.module';
+import { SaasAdminModule } from './modules/saas-admin/saas-admin.module';
 import { CashShiftModule } from './modules/cash-shift/cash-shift.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { ClientsModule } from './modules/clients/clients.module';
@@ -47,6 +48,7 @@ const DEV_MODULES = process.env.NODE_ENV === 'development' ? [DevModule] : [];
     PrismaModule,
     AuthModule,
     BackofficeModule,
+    SaasAdminModule,
     CashShiftModule,
     CatalogModule,
     ClientsModule,

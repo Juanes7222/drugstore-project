@@ -22,7 +22,25 @@ export class FiscalStatusService {
   ) {}
 
   async getStatus(user: User, from?: string): Promise<FiscalStatusResult> {
-    const scope = this.scope.tenantWhere(user);
+    return this.collect(this.scope.tenantWhere(user), from);
+  }
+
+  /**
+   * Explicit-subscription variant used by the saas-admin module: same
+   * response shape, scoped to the given subscription instead of the
+   * caller's own.
+   */
+  async getStatusForSubscription(
+    subscriptionId: string,
+    from?: string,
+  ): Promise<FiscalStatusResult> {
+    return this.collect({ subscriptionId }, from);
+  }
+
+  private async collect(
+    scope: Record<string, unknown>,
+    from?: string,
+  ): Promise<FiscalStatusResult> {
     const where: Record<string, unknown> = { ...scope };
     if (from) {
       where.issueDate = { gte: new Date(from) };

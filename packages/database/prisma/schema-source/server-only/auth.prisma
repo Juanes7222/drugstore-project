@@ -6,6 +6,9 @@ model User {
   id                        String    @id
   subscriptionId            String?
   role                      RoleType
+  /// Platform-level admin flag for the SaaS owner. Never settable through
+  /// any HTTP endpoint; granted only via scripts/set-platform-admin.mjs.
+  isPlatformAdmin           Boolean   @default(false)
   email                     String?   @unique
   username                  String?
   firebaseUid               String?   @unique

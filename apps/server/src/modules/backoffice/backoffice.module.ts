@@ -60,5 +60,13 @@ import { AuditLogOverviewService } from './services/audit-log-overview.service';
     SubscriptionOverviewService,
     AuditLogOverviewService,
   ],
+  // Read-projection services reused by the saas-admin module's
+  // explicit-subscription variants (same response shapes, no duplication).
+  exports: [
+    SalesOverviewService,
+    SessionOverviewService,
+    WorkstationOverviewService,
+    FiscalStatusService,
+  ],
 })
 export class BackofficeModule {}

@@ -4,6 +4,8 @@ export interface User {
   id: string;
   subscriptionId: string | null;
   role: RoleType;
+  /** Platform-level admin flag for the SaaS owner; never settable via API. */
+  isPlatformAdmin: boolean;
   email: string | null;
   username: string | null;
   displayName: string;

@@ -117,7 +117,6 @@ export class DashboardService {
     const expiringBefore = new Date(
       Date.now() + EXPIRING_LOT_DAYS * 24 * 60 * 60 * 1000,
     );
-    const userIds = await this.scope.tenantUserIds(user);
 
     const [
       confirmedAggregate,
@@ -206,16 +205,14 @@ export class DashboardService {
       this.prisma.user.count({
         where: { ...scope, status: UserStatus.PENDING_SETUP },
       }),
-      userIds === null
-        ? this.prisma.userSession.count({
-            where: { status: SessionStatus.ACTIVE },
-          })
-        : this.prisma.userSession.count({
-            where: {
-              status: SessionStatus.ACTIVE,
-              userId: { in: userIds },
-            },
-          }),
+      // tenantUserIds always returns ids (it throws for callers without a
+      // subscription), so the session count is always tenant-scoped.
+      this.prisma.userSession.count({
+        where: {
+          status: SessionStatus.ACTIVE,
+          userId: { in: await this.scope.tenantUserIds(user) },
+        },
+      }),
     ]);
 
     const confirmedWindow = confirmedAggregate

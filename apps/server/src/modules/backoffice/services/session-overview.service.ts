@@ -34,11 +34,27 @@ export class SessionOverviewService {
     query: SessionsOverviewQuery,
   ): Promise<SessionsOverviewResult> {
     const userWhere = await this.scope.userTenantWhere(user);
-    const where: Record<string, unknown> = {
-      status: SessionStatus.ACTIVE,
-      ...userWhere,
-    };
+    return this.list({ status: SessionStatus.ACTIVE, ...userWhere }, query);
+  }
 
+  /**
+   * Explicit-subscription variant used by the saas-admin module: same
+   * response shape, scoped to the given users instead of the caller's own.
+   */
+  async getActiveSessionsForUsers(
+    userIds: string[],
+    query: SessionsOverviewQuery,
+  ): Promise<SessionsOverviewResult> {
+    return this.list(
+      { status: SessionStatus.ACTIVE, userId: { in: userIds } },
+      query,
+    );
+  }
+
+  private async list(
+    where: Record<string, unknown>,
+    query: SessionsOverviewQuery,
+  ): Promise<SessionsOverviewResult> {
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.max(1, Math.min(100, query.pageSize ?? 20));
     const skip = (page - 1) * pageSize;
