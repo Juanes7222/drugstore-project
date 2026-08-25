@@ -19,6 +19,17 @@ export default tseslint.config(
       'src/generated/**',
     ],
   },
+  {
+    // typescript-eslint >=8.66 infers tsconfigRootDir from the directories of
+    // every eslint.config.* loaded in-process. Editor integrations load all
+    // apps' configs into one ESLint instance, so inference sees multiple
+    // candidates and fails parsing. Pin it per app to skip inference.
+    languageOptions: {
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
