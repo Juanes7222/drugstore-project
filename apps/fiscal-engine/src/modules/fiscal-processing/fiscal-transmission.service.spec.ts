@@ -11,6 +11,7 @@ import { FiscalTransmissionService } from './fiscal-transmission.service';
 import { FiscalTransmissionFailedException } from './exceptions/fiscal-transmission-failed.exception';
 import { FiscalDocumentRejectedException } from './exceptions/fiscal-document-rejected.exception';
 import { TechProviderConfigNotFoundException } from './exceptions/tech-provider-config-not-found.exception';
+import { InvalidDianEnvironmentException } from './exceptions/invalid-dian-environment.exception';
 import type { FiscalTransmissionPort } from './ports/fiscal-transmission.port';
 import type { SecretReaderPort, SecretData } from './ports/secret-reader.port';
 import type { SendResult } from './ports/transmission-results.type';
@@ -23,7 +24,7 @@ function createTransmissionFake() {
   return {
     signAndSend: jest.fn<Promise<SendResult>, any[]>(),
     checkStatus: jest.fn(),
-    getNumberingRange: jest.fn(),
+    fetchNumberingRanges: jest.fn(),
   } as unknown as FiscalTransmissionPort;
 }
 
@@ -251,6 +252,32 @@ describe('FiscalTransmissionService', () => {
           ptResponseMessage: 'certificate could not be loaded',
         },
       });
+    });
+
+    it('transitions to SIGNATURE_ERROR without consuming a retry on a structured DIAN environment failure', async () => {
+      transmission.signAndSend.mockRejectedValue(
+        new InvalidDianEnvironmentException('PRODUCCION'),
+      );
+
+      await expect(service.transmit('fd-1')).rejects.toThrow(
+        InvalidDianEnvironmentException,
+      );
+      expect(prisma.fiscalDocument.update).toHaveBeenCalledWith({
+        where: { id: 'fd-1' },
+        data: {
+          fiscalState: 'SIGNATURE_ERROR',
+          ptResponseMessage: expect.stringContaining('PRODUCCION'),
+        },
+      });
+
+      // Regression: the structured-errorCode branch classifies before the
+      // retry logic runs, so its update must never carry retryCount —
+      // a config fault fixed by re-triggering must not burn retries.
+      const updatePayload = (prisma.fiscalDocument.update as jest.Mock).mock
+        .calls[0][0].data as Record<string, unknown>;
+      expect(
+        Object.prototype.hasOwnProperty.call(updatePayload, 'retryCount'),
+      ).toBe(false);
     });
 
     it('leaves the document in IN_TRANSMISSION with retryCount incremented when the outcome is unknown', async () => {

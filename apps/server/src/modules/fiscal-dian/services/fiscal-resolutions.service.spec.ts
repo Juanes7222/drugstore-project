@@ -9,6 +9,7 @@ import { PrismaClient } from '@pharmacy/database';
 import { FiscalResolutionsService } from './fiscal-resolutions.service';
 import { InvalidResolutionRangeException } from '../exceptions/invalid-resolution-range.exception';
 import { OverlappingActiveResolutionException } from '../exceptions/overlapping-active-resolution.exception';
+import { DianRangeConflictException } from '../exceptions/dian-range-conflict.exception';
 import { CreateFiscalResolutionDto } from '../dto/create-fiscal-resolution.dto';
 
 describe('FiscalResolutionsService', () => {
@@ -200,6 +201,170 @@ describe('FiscalResolutionsService', () => {
           data: expect.objectContaining({ workstationId: null }),
         }),
       );
+    });
+  });
+
+  // ── applyDianRanges ───────────────────────────────────────────────────
+
+  describe('applyDianRanges', () => {
+    // Far-future window so ranges are never treated as expired by accident.
+    const FUTURE_FROM = '2030-01-01T00:00:00Z';
+    const FUTURE_TO = '2032-12-31T00:00:00Z';
+    const PAST_TO = '2020-01-01T00:00:00Z';
+
+    const range = (overrides: Record<string, unknown> = {}) => ({
+      resolutionNumber: '9310000085419',
+      prefix: 'F002',
+      fromNumber: 1,
+      toNumber: 99999999,
+      validFrom: FUTURE_FROM,
+      validTo: FUTURE_TO,
+      technicalKey: 'FC8EAC422EBA16E22FFD8C6F94B3F40A6E38162C',
+      ...overrides,
+    });
+
+    it('creates an ACTIVE master resolution (workstationId null) for a new range', async () => {
+      (prisma.fiscalResolution.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.fiscalResolution.create as jest.Mock).mockResolvedValue({
+        id: 'res-created',
+      });
+
+      const result = await service.applyDianRanges([range()]);
+
+      expect(result.created).toHaveLength(1);
+      expect(result.conflicts).toHaveLength(0);
+      expect(prisma.fiscalResolution.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            resolutionNumber: '9310000085419',
+            prefix: 'F002',
+            documentType: 'INVOICE',
+            state: 'ACTIVE',
+            currentConsecutive: 0,
+            workstationId: null,
+            subscriptionId: 'test-subscription-id',
+          }),
+        }),
+      );
+    });
+
+    it.each([
+      ['NS001', 'POS_TICKET'],
+      ['NC01', 'CREDIT_NOTE'],
+      ['ND02', 'DEBIT_NOTE'],
+      ['FV1', 'INVOICE'],
+    ])('maps prefix %s to %s', async (prefix, expectedType) => {
+      (prisma.fiscalResolution.findFirst as jest.Mock).mockResolvedValue(null);
+      (prisma.fiscalResolution.create as jest.Mock).mockResolvedValue({
+        id: 'res-x',
+      });
+
+      await service.applyDianRanges([range({ prefix, resolutionNumber: `R-${prefix}` })]);
+
+      expect(prisma.fiscalResolution.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ documentType: expectedType }),
+        }),
+      );
+    });
+
+    it('skips IDENTICAL_EXISTS when the same ACTIVE resolution already exists', async () => {
+      (prisma.fiscalResolution.findFirst as jest.Mock).mockResolvedValue({
+        id: 'res-existing',
+        state: 'ACTIVE',
+        prefix: 'F002',
+        documentType: 'INVOICE',
+        rangeFrom: 1,
+        rangeTo: 99999999,
+        validFrom: new Date(FUTURE_FROM),
+        validTo: new Date(FUTURE_TO),
+      });
+
+      const result = await service.applyDianRanges([range()]);
+
+      expect(result.skipped).toEqual([
+        {
+          resolutionNumber: '9310000085419',
+          prefix: 'F002',
+          reason: 'IDENTICAL_EXISTS',
+        },
+      ]);
+      expect(prisma.fiscalResolution.create).not.toHaveBeenCalled();
+    });
+
+    it('skips EXPIRED ranges without creating rows', async () => {
+      const result = await service.applyDianRanges([
+        range({ validTo: PAST_TO }),
+      ]);
+
+      expect(result.skipped).toEqual([
+        {
+          resolutionNumber: '9310000085419',
+          prefix: 'F002',
+          reason: 'EXPIRED',
+        },
+      ]);
+      expect(prisma.fiscalResolution.create).not.toHaveBeenCalled();
+    });
+
+    it('collects a conflict when the same resolution number exists with different data', async () => {
+      (prisma.fiscalResolution.findFirst as jest.Mock).mockResolvedValue({
+        id: 'res-diff',
+        state: 'ACTIVE',
+        prefix: 'F002',
+        documentType: 'INVOICE',
+        rangeFrom: 1,
+        rangeTo: 500,
+        validFrom: new Date(FUTURE_FROM),
+        validTo: new Date(FUTURE_TO),
+      });
+
+      await expect(service.applyDianRanges([range()])).rejects.toThrow(
+        DianRangeConflictException,
+      );
+      expect(prisma.fiscalResolution.create).not.toHaveBeenCalled();
+    });
+
+    it('collects a conflict when a different ACTIVE resolution occupies the tuple', async () => {
+      // First findFirst (existing-by-number) → null; second (overlap check)
+      // → an active row on the same (documentType, prefix).
+      (prisma.fiscalResolution.findFirst as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'res-overlap', state: 'ACTIVE' });
+
+      await expect(service.applyDianRanges([range()])).rejects.toThrow(
+        DianRangeConflictException,
+      );
+      expect(prisma.fiscalResolution.create).not.toHaveBeenCalled();
+    });
+
+    it('reports unparseable validity dates as conflicts', async () => {
+      await expect(
+        service.applyDianRanges([range({ validFrom: 'not-a-date' })]),
+      ).rejects.toThrow(DianRangeConflictException);
+      expect(prisma.fiscalResolution.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('throws with all conflicts aggregated (all-or-nothing)', async () => {
+      // Range A: same number different data. Range B: expired (skip, not conflict).
+      (prisma.fiscalResolution.findFirst as jest.Mock).mockResolvedValue({
+        id: 'res-diff',
+        state: 'ACTIVE',
+        prefix: 'OTHER',
+        documentType: 'INVOICE',
+        rangeFrom: 1,
+        rangeTo: 500,
+        validFrom: new Date(FUTURE_FROM),
+        validTo: new Date(FUTURE_TO),
+      });
+
+      try {
+        await service.applyDianRanges([range(), range({ validTo: PAST_TO })]);
+        fail('expected DianRangeConflictException');
+      } catch (error) {
+        expect(error).toBeInstanceOf(DianRangeConflictException);
+        expect((error as DianRangeConflictException).conflicts).toHaveLength(1);
+      }
     });
   });
 });

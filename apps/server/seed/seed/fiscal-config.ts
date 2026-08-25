@@ -39,7 +39,9 @@ async function seedTechProvider(): Promise<void> {
       id: IDS.TECH_PROVIDER,
       subscriptionId: IDS.SUBSCRIPTION_DEFAULT,
       endpointUrl: 'https://vpfe-hab-dian-v2-0-1-2.pymedigital.com/v1/',
-      environment: 'TEST',
+      // DIAN TipoAmbiente wire literal: "2" = habilitación (the URL above is
+      // a habilitación proxy). The engine rejects any other value.
+      environment: '2',
       timeoutSeconds: 30,
       credentialReference: 'vault://dian/tech-provider-creds',
     },

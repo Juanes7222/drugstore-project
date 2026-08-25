@@ -7,6 +7,7 @@ jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 import { Test, TestingModule } from '@nestjs/testing';
 import { FiscalResolutionsController } from './fiscal-resolutions.controller';
 import { FiscalResolutionsService } from '../services/fiscal-resolutions.service';
+import { FiscalResolutionSyncService } from '../services/fiscal-resolution-sync.service';
 
 const mockService = {
   findAll: jest.fn(),
@@ -14,16 +15,25 @@ const mockService = {
   create: jest.fn(),
 };
 
+const mockSyncService = {
+  startSync: jest.fn(),
+  getSyncStatus: jest.fn(),
+};
+
 describe('FiscalResolutionsController (integration)', () => {
   let controller: FiscalResolutionsController;
   let service: jest.Mocked<typeof mockService>;
+  let syncService: jest.Mocked<typeof mockSyncService>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [FiscalResolutionsController],
-      providers: [{ provide: FiscalResolutionsService, useValue: mockService }],
+      providers: [
+        { provide: FiscalResolutionsService, useValue: mockService },
+        { provide: FiscalResolutionSyncService, useValue: mockSyncService },
+      ],
     }).compile();
 
     controller = module.get<FiscalResolutionsController>(
@@ -31,6 +41,9 @@ describe('FiscalResolutionsController (integration)', () => {
     );
     service = module.get(FiscalResolutionsService) as jest.Mocked<
       typeof mockService
+    >;
+    syncService = module.get(FiscalResolutionSyncService) as jest.Mocked<
+      typeof mockSyncService
     >;
   });
 
@@ -100,6 +113,55 @@ describe('FiscalResolutionsController (integration)', () => {
 
       await expect(controller.create({} as any)).rejects.toThrow(
         'Invalid resolution',
+      );
+    });
+  });
+
+  describe('POST /fiscal-dian/resolutions/sync-from-dian', () => {
+    it('should delegate to syncService.startSync with the current user id', async () => {
+      const expected = { syncJobId: 'job-1' };
+      mockSyncService.startSync.mockResolvedValue(expected);
+      const user = { id: 'user-1' } as any;
+
+      const result = await controller.syncFromDian(
+        { workstationId: 'ws-1' } as any,
+        user,
+      );
+
+      expect(mockSyncService.startSync).toHaveBeenCalledWith(
+        { workstationId: 'ws-1' },
+        'user-1',
+      );
+      expect(result).toEqual(expected);
+    });
+
+    it('should pass null when the request carries no user', async () => {
+      mockSyncService.startSync.mockResolvedValue({ syncJobId: 'job-2' });
+
+      await controller.syncFromDian({} as any, undefined as any);
+
+      expect(mockSyncService.startSync).toHaveBeenCalledWith({}, null);
+    });
+  });
+
+  describe('GET /fiscal-dian/resolutions/sync-from-dian/:jobId', () => {
+    it('should delegate to syncService.getSyncStatus with the job id', async () => {
+      const expected = { status: 'APPLIED', created: [], skipped: [] };
+      mockSyncService.getSyncStatus.mockResolvedValue(expected);
+
+      const result = await controller.syncStatus('job-1');
+
+      expect(mockSyncService.getSyncStatus).toHaveBeenCalledWith('job-1');
+      expect(result).toEqual(expected);
+    });
+
+    it('should propagate typed failures (conflicts, not found)', async () => {
+      mockSyncService.getSyncStatus.mockRejectedValue(
+        new Error('DIAN_SYNC_JOB_NOT_FOUND'),
+      );
+
+      await expect(controller.syncStatus('missing')).rejects.toThrow(
+        'DIAN_SYNC_JOB_NOT_FOUND',
       );
     });
   });

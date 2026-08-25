@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { FiscalTransmissionPort } from '../ports/fiscal-transmission.port';
 import { SendResult, StatusResult } from '../ports/transmission-results.type';
+import type { DianNumberingRange } from '@pharmacy/shared-types';
 import { CertificateLoader, CertificateData } from '../signing/certificate.loader';
 import { XadesSigner } from '../signing/xades-signer';
 import { SoapSigner } from '../soap/soap-signer';
@@ -12,6 +13,8 @@ import {
   SOAP_ACTION_GET_STATUS,
   SOAP_ACTION_GET_NUMBERING_RANGE,
 } from '../signing/dian-constants';
+import { parseNumberingRangeResult } from '../soap/numbering-range.parser';
+import { InvalidDianEnvironmentException } from '../exceptions/invalid-dian-environment.exception';
 
 /**
  * Adapter that implements FiscalTransmissionPort using pure TypeScript:
@@ -22,7 +25,7 @@ import {
  * This replaces the previous DianSdkFiscalTransmissionAdapter which
  * depended on the unpublished dian-sdk-node package.
  *
- * Architecture note: the three operations (signAndSend, getNumberingRange,
+ * Architecture note: the three operations (signAndSend, fetchNumberingRanges,
  * checkStatus) each initialise the certificate from the raw buffer on
  * every call. This is deliberate — the FiscalTransmissionPort interface
  * does not expose a session or reusable client, so each call is fully
@@ -31,8 +34,6 @@ import {
  */
 @Injectable()
 export class SoapFiscalTransmissionAdapter implements FiscalTransmissionPort {
-  private readonly logger = new Logger(SoapFiscalTransmissionAdapter.name);
-
   private readonly certificateLoader = new CertificateLoader();
   private readonly xadesSigner = new XadesSigner();
   private readonly soapSigner = new SoapSigner();
@@ -50,6 +51,11 @@ export class SoapFiscalTransmissionAdapter implements FiscalTransmissionPort {
   ): Promise<SendResult> {
     const certData = await this.certificateLoader.loadFromBuffer(certificate, certPassword);
 
+    // Resolve the endpoint first: an invalid environment must fail before
+    // any signing work is done (fail-fast, never silently fall back to
+    // habilitación — see getEndpoint).
+    const url = this.getEndpoint(environment);
+
     // Step 1: XAdES-EPES sign the UBL XML
     const signedXml = this.xadesSigner.sign(unsignedXml, certData);
 
@@ -60,7 +66,6 @@ export class SoapFiscalTransmissionAdapter implements FiscalTransmissionPort {
     const unsignedSoap = this.envelopeBuilder.buildSendBillSync(fileName, contentFile);
 
     // Step 4: Apply WS-Security
-    const url = this.getEndpoint(environment);
     const signedSoap = this.soapSigner.sign(
       unsignedSoap,
       certData,
@@ -79,15 +84,19 @@ export class SoapFiscalTransmissionAdapter implements FiscalTransmissionPort {
     return this.parseSendResult(result);
   }
 
-  async getNumberingRange(
+  async fetchNumberingRanges(
     certificate: Buffer,
     certPassword: string,
     environment: string,
-    resolutionNumber: string,
-  ): Promise<{ clTec: string }> {
+    accountCode: string,
+    accountCodeT: string,
+  ): Promise<DianNumberingRange[]> {
     const certData = await this.certificateLoader.loadFromBuffer(certificate, certPassword);
 
-    const unsignedSoap = this.envelopeBuilder.buildGetNumberingRange(resolutionNumber);
+    const unsignedSoap = this.envelopeBuilder.buildGetNumberingRangeByTaxId(
+      accountCode,
+      accountCodeT,
+    );
 
     const url = this.getEndpoint(environment);
     const signedSoap = this.soapSigner.sign(
@@ -104,15 +113,7 @@ export class SoapFiscalTransmissionAdapter implements FiscalTransmissionPort {
       'GetNumberingRangeResponse',
     );
 
-    const clTec: string = String(result?.ClTec ?? result?.clTec ?? '');
-
-    if (!clTec) {
-      this.logger.warn(
-        `GetNumberingRange returned empty ClTec for resolution ${resolutionNumber}`,
-      );
-    }
-
-    return { clTec };
+    return parseNumberingRangeResult(result);
   }
 
   async checkStatus(
@@ -145,8 +146,18 @@ export class SoapFiscalTransmissionAdapter implements FiscalTransmissionPort {
 
   // ── Private helpers ───────────────────────────────────────────────
 
+  /**
+   * Maps a DIAN TipoAmbiente literal to its SOAP endpoint. Only the two
+   * annex-defined values ("1" producción, "2" habilitación) are accepted;
+   * anything else throws instead of silently routing to habilitación, which
+   * could hide a production misconfiguration behind test-environment traffic.
+   */
   private getEndpoint(environment: string): string {
-    return DIAN_ENDPOINTS[environment] ?? DIAN_ENDPOINTS['2'];
+    const url = DIAN_ENDPOINTS[environment];
+    if (!url) {
+      throw new InvalidDianEnvironmentException(environment);
+    }
+    return url;
   }
 
   private parseSendResult(result: Record<string, unknown> | null): SendResult {

@@ -64,14 +64,14 @@ export class FiscalDocumentsService {
     // ── Load related domain data ──
     const sale = await this.loadSale(doc.saleId, fiscalDocumentId);
     const saleItems = await this.loadSaleItems(doc.saleId ?? '', fiscalDocumentId);
-    const issuerConfig = await this.loadIssuerConfig(fiscalDocumentId);
+    const issuerConfig = await this.loadIssuerConfig(doc.subscriptionId, fiscalDocumentId);
     const customer = await this.loadCustomer(sale, fiscalDocumentId);
 
     const issueDateStr = this.formatIssueDate(doc.issueDate);
     const issueTimeStr = this.formatIssueTime(doc.issueDate);
 
     // ── Resolve secrets and fetch ClTec from DIAN ──
-    const techConfig = await this.loadTechProviderConfig(fiscalDocumentId);
+    const techConfig = await this.loadTechProviderConfig(doc.subscriptionId, fiscalDocumentId);
 
     // Same party as transmission: the plan's billingMethod picks between our
     // server-side credential (PROVIDER) and the tenant's certificate.
@@ -88,12 +88,15 @@ export class FiscalDocumentsService {
       route === 'PROVIDER' ? techConfig.credentialReference ?? '' : '',
     );
 
-    const { clTec } = await this.transmission.getNumberingRange(
-      secretData.certificate,
-      secretData.password,
-      techConfig.environment,
-      doc.resolution.resolutionNumber,
-    );
+    const clTec = await this.fetchClTec({
+      documentId: fiscalDocumentId,
+      resolutionNumber: doc.resolution.resolutionNumber,
+      resolutionPrefix: doc.resolution.prefix,
+      issuerNit: issuerConfig.nit,
+      certificate: secretData.certificate,
+      certPassword: secretData.password,
+      environment: techConfig.environment,
+    });
 
     // ── Determine customer ID for CUFE NumAdq ──
     // When the sale has no client, use DIAN's documented final-consumer identity
@@ -196,12 +199,19 @@ export class FiscalDocumentsService {
     return items;
   }
 
-  private async loadIssuerConfig(fiscalDocumentId: string): Promise<any> {
-    const config = await this.prisma.fiscalIssuerConfig.findFirst();
+  // Scoped by subscription, same criterion as NumberingRangeProcessor: an
+  // unscoped findFirst could return another tenant's fiscal identity.
+  private async loadIssuerConfig(
+    subscriptionId: string,
+    fiscalDocumentId: string,
+  ): Promise<any> {
+    const config = await this.prisma.fiscalIssuerConfig.findFirst({
+      where: { subscriptionId },
+    });
     if (!config) {
       throw new FiscalDocumentGenerationFailedException(
         fiscalDocumentId,
-        'No fiscal issuer configuration found',
+        `No FiscalIssuerConfig found for subscription ${subscriptionId}`,
       );
     }
     return config;
@@ -217,15 +227,12 @@ export class FiscalDocumentsService {
     });
   }
 
-private async loadTechProviderConfig(
+  private async loadTechProviderConfig(
+    subscriptionId: string,
     fiscalDocumentId: string,
   ): Promise<any> {
-    const doc = await this.prisma.fiscalDocument.findUnique({
-      where: { id: fiscalDocumentId },
-      select: { subscriptionId: true },
-    });
     const config = await this.prisma.techProviderConfig.findFirst({
-      where: { subscriptionId: doc?.subscriptionId },
+      where: { subscriptionId },
     });
     if (!config) {
       throw new FiscalDocumentGenerationFailedException(
@@ -234,6 +241,51 @@ private async loadTechProviderConfig(
       );
     }
     return config;
+  }
+
+  /**
+   * Fetches the live ClTec for the document's resolution (CUFE formula,
+   * annex §11.2) by querying every range DIAN has registered for the issuer
+   * NIT (Annex §7.15) and selecting the one backing this document — matching
+   * on resolution number AND prefix, since DIAN can hold several ranges per
+   * taxpayer.
+   *
+   * Both request fields carry the tenant NIT: accountCode is the invoicing
+   * party, accountCodeT the software owner, identical under own-software
+   * mode; a provider-owned-software mode would need the provider NIT here
+   * once TechProviderConfig carries one.
+   */
+  private async fetchClTec(options: {
+    documentId: string;
+    resolutionNumber: string;
+    resolutionPrefix: string;
+    issuerNit: string;
+    certificate: Buffer;
+    certPassword: string;
+    environment: string;
+  }): Promise<string> {
+    const ranges = await this.transmission.fetchNumberingRanges(
+      options.certificate,
+      options.certPassword,
+      options.environment,
+      // Both request fields are the NIT without verification digit.
+      options.issuerNit,
+      options.issuerNit,
+    );
+
+    const match = ranges.find(
+      (range) =>
+        range.resolutionNumber === options.resolutionNumber &&
+        range.prefix === options.resolutionPrefix,
+    );
+    if (!match || !match.technicalKey) {
+      throw new FiscalDocumentGenerationFailedException(
+        options.documentId,
+        'DIAN returned no numbering range with a technical key matching ' +
+          `resolution ${options.resolutionNumber} (${options.resolutionPrefix})`,
+      );
+    }
+    return match.technicalKey;
   }
 
   // ── Formatting helpers ────────────────────────────────────────────────

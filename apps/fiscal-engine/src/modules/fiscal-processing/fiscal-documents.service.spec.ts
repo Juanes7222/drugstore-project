@@ -20,7 +20,46 @@ function createTransmissionFake() {
   return {
     signAndSend: jest.fn(),
     checkStatus: jest.fn(),
-    getNumberingRange: jest.fn().mockResolvedValue({ clTec: 'CLTEC-ABC-123' }),
+    fetchNumberingRanges: jest
+      .fn()
+      .mockResolvedValue([
+        {
+          resolutionNumber: '18764000000001',
+          prefix: 'NV',
+          fromNumber: 1,
+          toNumber: 500,
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          technicalKey: 'CLTEC-SAME-NUMBER',
+        },
+        {
+          resolutionNumber: '18764000000002',
+          prefix: 'FV',
+          fromNumber: 1,
+          toNumber: 500,
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          technicalKey: 'CLTEC-SAME-PREFIX',
+        },
+        {
+          resolutionNumber: '18764000000003',
+          prefix: 'NV',
+          fromNumber: 1,
+          toNumber: 500,
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          technicalKey: 'CLTEC-OTHER-RANGE',
+        },
+        {
+          resolutionNumber: '18764000000001',
+          prefix: 'FV',
+          fromNumber: 1,
+          toNumber: 1000,
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          technicalKey: 'CLTEC-ABC-123',
+        },
+      ]),
   } as unknown as FiscalTransmissionPort;
 }
 
@@ -151,11 +190,10 @@ describe('FiscalDocumentsService', () => {
     it('fetches the ClTec live from DIAN before computing the CUFE', async () => {
       await service.generate('fd-1');
 
-      // The provider config lookup first resolves the document's own
-      // subscription, then scopes the config search to it.
-      expect(prisma.fiscalDocument.findUnique).toHaveBeenCalledWith({
-        where: { id: 'fd-1' },
-        select: { subscriptionId: true },
+      // The config lookups are scoped to the document's own subscription
+      // (same criterion as NumberingRangeProcessor).
+      expect(prisma.fiscalIssuerConfig.findFirst).toHaveBeenCalledWith({
+        where: { subscriptionId: 'sub-test' },
       });
       expect(prisma.techProviderConfig.findFirst).toHaveBeenCalledWith({
         where: { subscriptionId: 'sub-test' },
@@ -163,12 +201,80 @@ describe('FiscalDocumentsService', () => {
       // CERTIFICATE/legacy route: the tenant's own certificate, so the
       // reference handed to the secret reader is empty.
       expect(secrets.readSecret).toHaveBeenCalledWith('sub-test', '');
-      expect(transmission.getNumberingRange).toHaveBeenCalledWith(
+      // Annex §7.15: both account fields carry the issuer NIT without
+      // verification digit (accountCodeT = software owner, same NIT for
+      // own-software mode).
+      expect(transmission.fetchNumberingRanges).toHaveBeenCalledWith(
         Buffer.from('fake-p12-bytes'),
         'test-password',
         '2',
-        '18764000000001',
+        '800197268',
+        '800197268',
       );
+    });
+
+    it('selects the ClTec of the range matching the document resolution', async () => {
+      // The default fake leads with two decoys that each share exactly one
+      // field with the document resolution (same number wrong prefix, same
+      // prefix wrong number), so an OR between the match criteria would pick
+      // a decoy key and fail here. Real calculator, spied so the test can
+      // observe which technical key reached the CUFE formula without
+      // reproducing the hash inputs.
+      const cufeCalculator = new CufeCalculator();
+      const computeCufeSpy = jest.spyOn(cufeCalculator, 'computeCufe');
+      const spiedService = new FiscalDocumentsService(
+        prisma as any,
+        cufeCalculator,
+        new UblInvoiceBuilder(new CufeCalculator()),
+        transmission,
+        secrets,
+        routeResolver as unknown as TransmissionRouteResolver,
+      );
+
+      await spiedService.generate('fd-1');
+
+      expect(computeCufeSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ clTec: 'CLTEC-ABC-123' }),
+      );
+    });
+
+    it('throws FiscalDocumentGenerationFailedException when DIAN returns no range matching the document resolution', async () => {
+      (transmission.fetchNumberingRanges as jest.Mock).mockResolvedValue([
+        {
+          resolutionNumber: '18764000000002',
+          prefix: 'NV',
+          fromNumber: 1,
+          toNumber: 500,
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          technicalKey: 'CLTEC-OTHER-RANGE',
+        },
+      ]);
+
+      await expect(service.generate('fd-1')).rejects.toThrow(
+        FiscalDocumentGenerationFailedException,
+      );
+      await expect(service.generate('fd-1')).rejects.toThrow('18764000000001');
+      expect(prisma.fiscalDocument.update).not.toHaveBeenCalled();
+    });
+
+    it('throws FiscalDocumentGenerationFailedException when the matching range carries no technical key', async () => {
+      (transmission.fetchNumberingRanges as jest.Mock).mockResolvedValue([
+        {
+          resolutionNumber: '18764000000001',
+          prefix: 'FV',
+          fromNumber: 1,
+          toNumber: 1000,
+          validFrom: '2026-01-01',
+          validTo: '2026-12-31',
+          technicalKey: '',
+        },
+      ]);
+
+      await expect(service.generate('fd-1')).rejects.toThrow(
+        FiscalDocumentGenerationFailedException,
+      );
+      expect(prisma.fiscalDocument.update).not.toHaveBeenCalled();
     });
 
     it('falls back to the final-consumer identity when the sale has no client', async () => {
@@ -230,12 +336,43 @@ describe('FiscalDocumentsService', () => {
       );
     });
 
-    it('throws FiscalDocumentGenerationFailedException when no issuer config exists', async () => {
+    it('scopes the issuer-config lookup to the document subscription when several tenants have configs', async () => {
+      // Only the document's own tenant config is visible to the query; a
+      // config belonging to another subscription must never be returned.
+      const otherTenantConfig = { ...ISSUER_CONFIG, nit: '900999999' };
+      (prisma.fiscalIssuerConfig.findFirst as jest.Mock).mockImplementation(
+        (args: { where: { subscriptionId: string } }) =>
+          args.where.subscriptionId === 'sub-test'
+            ? ISSUER_CONFIG
+            : otherTenantConfig,
+      );
+
+      await service.generate('fd-1');
+
+      expect(prisma.fiscalIssuerConfig.findFirst).toHaveBeenCalledWith({
+        where: { subscriptionId: 'sub-test' },
+      });
+      // The tenant's own NIT (not the other tenant's) reaches the DIAN
+      // numbering-range lookup and therefore the CUFE.
+      expect(transmission.fetchNumberingRanges).toHaveBeenCalledWith(
+        Buffer.from('fake-p12-bytes'),
+        'test-password',
+        '2',
+        '800197268',
+        '800197268',
+      );
+    });
+
+    it('throws FiscalDocumentGenerationFailedException naming the subscription when no issuer config exists', async () => {
       (prisma.fiscalIssuerConfig.findFirst as jest.Mock).mockResolvedValue(null);
 
       await expect(service.generate('fd-1')).rejects.toThrow(
         FiscalDocumentGenerationFailedException,
       );
+      await expect(service.generate('fd-1')).rejects.toThrow('sub-test');
+      // The failure happens before any downstream loader runs.
+      expect(prisma.techProviderConfig.findFirst).not.toHaveBeenCalled();
+      expect(secrets.readSecret).not.toHaveBeenCalled();
     });
 
     it('throws FiscalDocumentGenerationFailedException when no tech provider config exists', async () => {
@@ -256,7 +393,7 @@ describe('FiscalDocumentsService', () => {
         'sub-test',
         'file:test-cert.json',
       );
-      expect(transmission.getNumberingRange).toHaveBeenCalled();
+      expect(transmission.fetchNumberingRanges).toHaveBeenCalled();
     });
 
     it('throws FiscalDocumentGenerationFailedException when a PROVIDER plan has no credentialReference', async () => {
@@ -273,7 +410,7 @@ describe('FiscalDocumentsService', () => {
         'plan uses provider transmission but TechProviderConfig has no credentialReference',
       );
       expect(secrets.readSecret).not.toHaveBeenCalled();
-      expect(transmission.getNumberingRange).not.toHaveBeenCalled();
+      expect(transmission.fetchNumberingRanges).not.toHaveBeenCalled();
     });
 
     it('forwards the issuer softwareId into the UBL sts:softwareID', async () => {

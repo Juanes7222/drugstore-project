@@ -111,6 +111,21 @@ export type {
   MigrationLogEntry,
 } from "./update-types";
 
+// DIAN numbering-range sync contract (server <-> fiscal-engine queue job)
+export type {
+  DianNumberingRange,
+  FetchNumberingRangesJobData,
+  NumberingRangeSyncErrorCode,
+  NumberingRangeSyncFailure,
+  NumberingRangeSyncSuccess,
+  NumberingRangeSyncResult,
+} from "./fiscal-sync";
+export {
+  FISCAL_DIAN_QUERIES_QUEUE,
+  FETCH_NUMBERING_RANGES_JOB,
+  dianOperationCodeToErrorCode,
+} from "./fiscal-sync";
+
 // Local sync types
 export {
   HubRole,

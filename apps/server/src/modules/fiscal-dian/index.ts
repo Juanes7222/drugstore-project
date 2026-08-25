@@ -1,6 +1,11 @@
 export { FiscalDianModule } from './fiscal-dian.module';
 export { FiscalDocumentsService } from './services/fiscal-documents.service';
 export { FiscalResolutionsService } from './services/fiscal-resolutions.service';
+export { FiscalResolutionSyncService } from './services/fiscal-resolution-sync.service';
+export type {
+  StartSyncResult,
+  SyncStatusResult,
+} from './services/fiscal-resolution-sync.service';
 export { FiscalCertificateService } from './services/fiscal-certificate.service';
 export { FiscalCertificateCryptoService } from './services/fiscal-certificate-crypto.service';
 export { FiscalWebhookService } from './services/fiscal-webhook.service';
@@ -18,3 +23,7 @@ export { DuplicateFiscalDocumentException } from './exceptions/duplicate-fiscal-
 export { ResolutionExhaustedException } from './exceptions/resolution-exhausted.exception';
 export { NoActiveResolutionForWorkstationException } from './exceptions/no-active-resolution-for-workstation.exception';
 export { AllocationRangeInvalidException } from './exceptions/allocation-range-invalid.exception';
+export { DianSyncJobNotFoundException } from './exceptions/dian-sync-job-not-found.exception';
+export { DianRangeConflictException } from './exceptions/dian-range-conflict.exception';
+export type { DianRangeConflict } from './exceptions/dian-range-conflict.exception';
+export { FiscalActiveCertificateMissingException } from './exceptions/fiscal-active-certificate-missing.exception';

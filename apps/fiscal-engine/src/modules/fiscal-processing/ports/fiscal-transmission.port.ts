@@ -1,4 +1,5 @@
 import { SendResult, StatusResult } from './transmission-results.type';
+import type { DianNumberingRange } from '@pharmacy/shared-types';
 
 /**
  * Port that abstracts DIAN document transmission behind a local interface.
@@ -47,21 +48,24 @@ export interface FiscalTransmissionPort {
   ): Promise<StatusResult>;
 
   /**
-   * Fetches the technical key (ClTec) for a numbering range from DIAN's
-   * GetNumberingRange web service. The ClTec is required by the CUFE formula
-   * (section 11.2 of the technical annex) and is fetched live at generation
-   * time rather than cached, because a cached value could go stale relative
-   * to what DIAN has on record for that range.
+   * Standalone query of every numbering range DIAN has registered for the
+   * given taxpayer identity (Technical Annex §7.15). Backs both the
+   * "sync resolutions from DIAN" admin flow and the live ClTec lookup at
+   * document-generation time (the caller selects the range matching its
+   * resolution from the returned list).
    *
-   * @param certificate       The PKCS#12 certificate used for authentication.
-   * @param certPassword      The certificate's private-key password.
-   * @param environment       DIAN environment identifier: "1" production, "2" habilitación.
-   * @param resolutionNumber  The FiscalResolution.resolutionNumber (InvoiceAuthorization).
+   * @param certificate    The PKCS#12 certificate used for authentication.
+   * @param certPassword   The certificate's private-key password.
+   * @param environment    DIAN environment identifier: "1" production, "2" habilitación.
+   * @param accountCode    NIT of the invoicing party, no verification digit.
+   * @param accountCodeT   NIT of the software owner (same NIT for own-software mode).
+   * @throws DianNumberingRangeOperationException when OperationCode is not 100.
    */
-  getNumberingRange(
+  fetchNumberingRanges(
     certificate: Buffer,
     certPassword: string,
     environment: string,
-    resolutionNumber: string,
-  ): Promise<{ clTec: string }>;
+    accountCode: string,
+    accountCodeT: string,
+  ): Promise<DianNumberingRange[]>;
 }

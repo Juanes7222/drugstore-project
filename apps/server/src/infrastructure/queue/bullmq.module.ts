@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
+import { FISCAL_DIAN_QUERIES_QUEUE } from '@pharmacy/shared-types';
 
 /**
  * Registers the BullMQ root connection and the queues used by apps/server:
@@ -8,6 +9,9 @@ import { ConfigService } from '@nestjs/config';
  *   lives in apps/fiscal-engine.
  * - fiscal-webhook-events: producer side (FiscalWebhookService); the
  *   consumer lives in apps/fiscal-engine.
+ * - fiscal-dian-queries: producer side (FiscalResolutionSyncService,
+ *   standalone GetNumberingRange queries); consumer lives in
+ *   apps/fiscal-engine.
  * - imports: data-import module — enqueue + in-process worker both live in
  *   this app (DataImportProcessingJob).
  */
@@ -21,6 +25,7 @@ import { ConfigService } from '@nestjs/config';
     }),
     BullModule.registerQueue({ name: 'fiscal-documents' }),
     BullModule.registerQueue({ name: 'fiscal-webhook-events' }),
+    BullModule.registerQueue({ name: FISCAL_DIAN_QUERIES_QUEUE }),
     BullModule.registerQueue({ name: 'imports' }),
   ],
   exports: [BullModule],

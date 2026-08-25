@@ -43,7 +43,17 @@ export const SOAP_ACTION_GET_NUMBERING_RANGE =
   'http://wcf.dian.colombia/IWcfDianCustomerServices/GetNumberingRange';
 
 // ── DIAN environment endpoints ───────────────────────────────────────
-export const DIAN_ENDPOINTS: Record<string, string> = {
-  '1': 'https://vpfe.dian.gov.co/WcfDianCustomerServices.svc?wsdl',
-  '2': 'https://vpfe-hab.dian.gov.co/WcfDianCustomerServices.svc?wsdl',
-};
+// Null-prototype dictionary. A plain object literal inherits Object.prototype
+// members, so a lookup like DIAN_ENDPOINTS['toString'] or ['constructor']
+// returns an inherited function instead of undefined and slips past every
+// invalid-environment guard downstream. Object.create(null) removes the
+// prototype chain entirely, so any miss — known literal or inherited key —
+// returns undefined. Protection lives on the data itself, covering current
+// and future consumers of this export, not just today's call sites.
+export const DIAN_ENDPOINTS: Record<string, string> = Object.assign(
+  Object.create(null),
+  {
+    '1': 'https://vpfe.dian.gov.co/WcfDianCustomerServices.svc?wsdl',
+    '2': 'https://vpfe-hab.dian.gov.co/WcfDianCustomerServices.svc?wsdl',
+  },
+);

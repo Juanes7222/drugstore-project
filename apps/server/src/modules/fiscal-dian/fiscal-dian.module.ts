@@ -10,6 +10,7 @@ import { TechProviderConfigController } from './tech-provider-config.controller'
 import { FiscalResolutionAllocationsController } from './fiscal-resolution-allocations.controller';
 import { FiscalDocumentsService } from './services/fiscal-documents.service';
 import { FiscalResolutionsService } from './services/fiscal-resolutions.service';
+import { FiscalResolutionSyncService } from './services/fiscal-resolution-sync.service';
 import { FiscalCertificateService } from './services/fiscal-certificate.service';
 import { FiscalCertificateCryptoService } from './services/fiscal-certificate-crypto.service';
 import { FiscalCertificateParser } from './services/fiscal-certificate.parser';
@@ -48,6 +49,7 @@ import { FiscalCertificateExpirationJob } from './jobs/fiscal-certificate-expira
   providers: [
     FiscalDocumentsService,
     FiscalResolutionsService,
+    FiscalResolutionSyncService,
     FiscalCertificateService,
     FiscalCertificateCryptoService,
     FiscalCertificateParser,
@@ -65,6 +67,7 @@ import { FiscalCertificateExpirationJob } from './jobs/fiscal-certificate-expira
   exports: [
     FiscalDocumentsService,
     FiscalResolutionsService,
+    FiscalResolutionSyncService,
     FiscalCertificateService,
     FiscalIssuerConfigService,
     TechProviderConfigService,

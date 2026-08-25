@@ -37,15 +37,35 @@ describe('SoapEnvelopeBuilder', () => {
     });
   });
 
-  describe('buildGetNumberingRange', () => {
-    it('echoes the resolution number into accountCode and accountCodeT', () => {
-      const xml = builder.buildGetNumberingRange('18764000000001');
+  describe('buildGetNumberingRangeByTaxId', () => {
+    it('sends the taxpayer NIT in both account fields per Annex §7.15', () => {
+      const xml = builder.buildGetNumberingRangeByTaxId('999690829', '999690829');
 
       const parsed = parseXml(xml);
       const op = parsed['soap:Envelope']['soap:Body']['wcf:GetNumberingRange'];
-      expect(op['wcf:accountCode']).toBe('18764000000001');
-      expect(op['wcf:accountCodeT']).toBe('18764000000001');
+      expect(op['wcf:accountCode']).toBe('999690829');
+      expect(op['wcf:accountCodeT']).toBe('999690829');
       expect(op['wcf:softwareCode']).toBe('');
+    });
+
+    it('carries an explicit software code when given', () => {
+      const xml = builder.buildGetNumberingRangeByTaxId(
+        '900123456',
+        '900123456',
+        'e26828e4-f284-4ed',
+      );
+
+      const parsed = parseXml(xml);
+      const op = parsed['soap:Envelope']['soap:Body']['wcf:GetNumberingRange'];
+      expect(op['wcf:softwareCode']).toBe('e26828e4-f284-4ed');
+    });
+
+    it('escapes XML metacharacters in the identifiers', () => {
+      const xml = builder.buildGetNumberingRangeByTaxId('9<0&0>', '9<0&0>');
+
+      const parsed = parseXml(xml);
+      const op = parsed['soap:Envelope']['soap:Body']['wcf:GetNumberingRange'];
+      expect(op['wcf:accountCode']).toBe('9<0&0>');
     });
   });
 

@@ -11,11 +11,13 @@ import type {
 import { FiscalTransmissionFailedException } from './exceptions/fiscal-transmission-failed.exception';
 import { FiscalDocumentRejectedException } from './exceptions/fiscal-document-rejected.exception';
 import { TechProviderConfigNotFoundException } from './exceptions/tech-provider-config-not-found.exception';
+import { DIAN_ENVIRONMENT_INVALID_ERROR_CODE } from './exceptions/invalid-dian-environment.exception';
 import {
   TransmissionRouteResolver,
   type TransmissionRoute,
 } from './transmission-route.resolver';
 import type { FiscalProvider } from '@pharmacy/database';
+import { DomainException } from '../../common/exceptions/domain.exception';
 
 /**
  * Orchestrates the signing and transmission of a fiscal document to DIAN.
@@ -251,13 +253,18 @@ export class FiscalTransmissionService {
   /**
    * Handles exceptions thrown during signAndSend.
    *
-   * Three-way classification per architectural decision:
-   *   - If the failure happened before the SDK's send call (certificate
-   *     read failure, malformed request), the document transitions to
-   *     SIGNATURE_ERROR.
-   *   - If the failure happened during or after transmission and the
-   *     outcome is genuinely unknown, the document stays in IN_TRANSMISSION
-   *     with the error message recorded and retryCount incremented.
+   * Classification order, most reliable signal first:
+   *   - Structured: a DomainException whose errorCode marks a deterministic
+   *     pre-transmission failure (e.g. DIAN_ENVIRONMENT_INVALID — endpoint
+   *     resolution happens before any HTTP traffic). Transitions the
+   *     document to SIGNATURE_ERROR; retrying cannot change the outcome.
+   *   - Heuristic: if the failure message suggests the SOAP envelope was
+   *     never built (certificate read failure, malformed request), treat it
+   *     as a signing error, also SIGNATURE_ERROR.
+   *   - Otherwise the failure happened during or after transmission and
+   *     the outcome is genuinely unknown: the document stays in
+   *     IN_TRANSMISSION with the error message recorded and retryCount
+   *     incremented.
    *
    * Known limitation: there is no idempotency guarantee on the DIAN side,
    * so blindly resending an already-transmitted document risks DIAN
@@ -269,9 +276,14 @@ export class FiscalTransmissionService {
   ): Promise<void> {
     const message = error instanceof Error ? error.message : 'Unknown error';
 
-    // Heuristic: if we never built the SOAP envelope (e.g. cert failure),
-    // treat it as a signing error. Otherwise the document may have reached
-    // DIAN — leave it in IN_TRANSMISSION.
+    if (this.isDeterministicPreSendFailure(error)) {
+      await this.markSignatureError(fiscalDocumentId, message);
+      return;
+    }
+
+    // Fallback heuristic for untyped errors: if we never built the SOAP
+    // envelope (e.g. cert failure), treat it as a signing error. Otherwise
+    // the document may have reached DIAN — leave it in IN_TRANSMISSION.
     const isBeforeSend =
       message.includes('certificate') ||
       message.includes('initialize') ||
@@ -279,26 +291,60 @@ export class FiscalTransmissionService {
       message.includes('not been initialized');
 
     if (isBeforeSend) {
-      await this.prisma.fiscalDocument.update({
-        where: { id: fiscalDocumentId },
-        data: {
-          fiscalState: 'SIGNATURE_ERROR',
-          ptResponseMessage: message,
-        },
-      });
-    } else {
-      // Outcome unknown — increment retry and preserve the IN_TRANSMISSION
-      // state rather than picking a resolution that might be wrong.
-      await this.prisma.fiscalDocument.update({
-        where: { id: fiscalDocumentId },
-        data: {
-          ptResponseMessage: message,
-          retryCount: { increment: 1 },
-        },
-      });
-      this.logger.warn(
-        `Document ${fiscalDocumentId} left in IN_TRANSMISSION after exception: ${message}`,
-      );
+      await this.markSignatureError(fiscalDocumentId, message);
+      return;
     }
+
+    // Outcome unknown — increment retry and preserve the IN_TRANSMISSION
+    // state rather than picking a resolution that might be wrong.
+    await this.prisma.fiscalDocument.update({
+      where: { id: fiscalDocumentId },
+      data: {
+        ptResponseMessage: message,
+        retryCount: { increment: 1 },
+      },
+    });
+    this.logger.warn(
+      `Document ${fiscalDocumentId} left in IN_TRANSMISSION after exception: ${message}`,
+    );
+  }
+
+  /** Error codes whose failures are deterministic and occur before any HTTP traffic, so no retry can succeed. */
+  private static readonly DETERMINISTIC_PRE_SEND_ERROR_CODES: readonly string[] = [
+    DIAN_ENVIRONMENT_INVALID_ERROR_CODE,
+  ];
+
+  /**
+   * Matches by stable errorCode on structured exceptions, never by message
+   * text: an InvalidDianEnvironmentException describes a configuration
+   * fault fixed before the request exists, so it must not consume retries
+   * or strand the document in IN_TRANSMISSION awaiting manual intervention.
+   */
+  private isDeterministicPreSendFailure(error: unknown): boolean {
+    return (
+      error instanceof DomainException &&
+      FiscalTransmissionService.DETERMINISTIC_PRE_SEND_ERROR_CODES.includes(
+        error.errorCode,
+      )
+    );
+  }
+
+  /**
+   * Terminal pre-send failure transition — the same one used for
+   * certificate-load failures. The document never reached DIAN, so
+   * SIGNATURE_ERROR (not REJECTED, which implies DIAN saw and refused it)
+   * records that the failure needs a config/fix + re-trigger, not a retry.
+   */
+  private async markSignatureError(
+    fiscalDocumentId: string,
+    message: string,
+  ): Promise<void> {
+    await this.prisma.fiscalDocument.update({
+      where: { id: fiscalDocumentId },
+      data: {
+        fiscalState: 'SIGNATURE_ERROR',
+        ptResponseMessage: message,
+      },
+    });
   }
 }

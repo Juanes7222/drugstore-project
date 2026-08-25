@@ -27,22 +27,26 @@ export class SoapEnvelopeBuilder {
   }
 
   /**
-   * Builds a SOAP envelope for GetNumberingRange.
+   * Builds a SOAP envelope for GetNumberingRange using the taxpayer
+   * identity, per Technical Annex §7.15:
+   *   - accountCode:  NIT of the invoicing party, no verification digit.
+   *   - accountCodeT: NIT of the software owner — the same NIT for
+   *     own-software pharmacies (the annex example sends both equal).
+   *   - softwareCode: optional 16-char software identifier.
    *
-   * Note: The SDK's GetNumberingRange takes accountCode, accountCodeT,
-   * and softwareCode. However, the current FiscalTransmissionPort
-   * interface receives a resolutionNumber. This builder supports the
-   * interface contract — if DIAN's actual WSDL requires different
-   * parameters, update this method and the caller accordingly.
-   *
-   * @param resolutionNumber  The FiscalResolution.resolutionNumber.
+   * This is the standalone "list my current ranges" query; it does not
+   * require any prior document transmission.
    */
-  buildGetNumberingRange(resolutionNumber: string): string {
+  buildGetNumberingRangeByTaxId(
+    accountCode: string,
+    accountCodeT: string,
+    softwareCode = '',
+  ): string {
     return this.wrapBody(`
       <wcf:GetNumberingRange xmlns:wcf="${NS_DIAN_COLOMBIA}">
-        <wcf:accountCode>${this.escapeXml(resolutionNumber)}</wcf:accountCode>
-        <wcf:accountCodeT>${this.escapeXml(resolutionNumber)}</wcf:accountCodeT>
-        <wcf:softwareCode></wcf:softwareCode>
+        <wcf:accountCode>${this.escapeXml(accountCode)}</wcf:accountCode>
+        <wcf:accountCodeT>${this.escapeXml(accountCodeT)}</wcf:accountCodeT>
+        <wcf:softwareCode>${this.escapeXml(softwareCode)}</wcf:softwareCode>
       </wcf:GetNumberingRange>
     `);
   }
