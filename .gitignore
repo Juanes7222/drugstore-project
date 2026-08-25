@@ -171,3 +171,5 @@ backups/
 graphify-out/
 
 RUT.pdf
+# Per-station cargo target dirs created by scripts/dev-multi-station.mjs --desktop
+apps/pos-desktop/src-tauri/.target-*
