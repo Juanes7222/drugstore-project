@@ -5,12 +5,12 @@
  * subscription id and is audit-logged by SaasAdminCustomerService.
  */
 
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 import type { User } from '@pharmacy/shared-types';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { SaasAdminGuard } from '../saas-admin.guard';
 import { SaasAdminOverviewService } from '../services/saas-admin-overview.service';
 import { SaasAdminCustomerService } from '../services/saas-admin-customer.service';
@@ -19,6 +19,10 @@ import { SaasAdminAccessAuditService } from '../services/saas-admin-access-audit
 import { SaasAdminLifecycleService } from '../services/saas-admin-lifecycle.service';
 import { SaasAdminRevenueService } from '../services/saas-admin-revenue.service';
 import { SaasAdminAtRiskService } from '../services/saas-admin-at-risk.service';
+import { SaasAdminExportService } from '../services/saas-admin-export.service';
+import { SaasAdminPlatformAdminService } from '../services/saas-admin-platform-admin.service';
+import { SaasAdminSyncHealthService } from '../services/saas-admin-sync-health.service';
+import { CsvBuilderService } from '@/modules/backoffice/services/csv-builder.service';
 import {
   AccessAuditQueryDto,
   AccessAuditQuerySchema,
@@ -32,6 +36,8 @@ import {
   CustomerPaymentsQuerySchema,
   CustomerSalesQueryDto,
   CustomerSalesQuerySchema,
+  CustomersExportQueryDto,
+  CustomersExportQuerySchema,
   CustomersQueryDto,
   CustomersQuerySchema,
   ExtendTrialBodyDto,
@@ -59,6 +65,11 @@ export class SaasAdminController {
     private readonly lifecycle: SaasAdminLifecycleService,
     private readonly revenue: SaasAdminRevenueService,
     private readonly atRisk: SaasAdminAtRiskService,
+    private readonly exports: SaasAdminExportService,
+    private readonly platformAdmins: SaasAdminPlatformAdminService,
+    private readonly syncHealth: SaasAdminSyncHealthService,
+    // Header stamping only — the export service owns the payload itself.
+    private readonly csvBuilder: CsvBuilderService,
   ) {}
 
   /** GET /saas-admin/platform-overview — cross-tenant KPIs. */
@@ -79,6 +90,63 @@ export class SaasAdminController {
     @Query(new ZodValidationPipe(AtRiskQuerySchema)) query: AtRiskQueryDto,
   ) {
     return this.atRisk.getAtRiskCustomers(query.inactiveDays);
+  }
+
+  /** GET /saas-admin/customers/export — CSV of every matching subscription. */
+  @Get('customers/export')
+  async exportCustomers(
+    @CurrentUser() user: User,
+    @Query(new ZodValidationPipe(CustomersExportQuerySchema)) query: CustomersExportQueryDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<string> {
+    const csv = await this.exports.getCustomersCsv(
+      user,
+      query.query,
+      request.ip || null,
+    );
+    response.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="saas-customers-${this.csvBuilder.exportFileStamp().slice(0, 8)}.csv"`,
+    });
+    return csv;
+  }
+
+  /** GET /saas-admin/at-risk/export — CSV of the at-risk report. */
+  @Get('at-risk/export')
+  async exportAtRiskCustomers(
+    @CurrentUser() user: User,
+    @Query(new ZodValidationPipe(AtRiskQuerySchema)) query: AtRiskQueryDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<string> {
+    const csv = await this.exports.getAtRiskCsv(
+      user,
+      query.inactiveDays,
+      request.ip || null,
+    );
+    response.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="saas-at-risk-${this.csvBuilder.exportFileStamp().slice(0, 8)}.csv"`,
+    });
+    return csv;
+  }
+
+  /**
+   * GET /saas-admin/platform-admins — read-only directory of flag holders.
+   * The isPlatformAdmin flag stays script-granted by design (see
+   * SaasAdminPlatformAdminService); this surface intentionally exposes no
+   * way to change it.
+   */
+  @Get('platform-admins')
+  getPlatformAdmins() {
+    return this.platformAdmins.getPlatformAdmins();
+  }
+
+  /** GET /saas-admin/sync-health — per-tenant sync backlog, worst first. */
+  @Get('sync-health')
+  getSyncHealth() {
+    return this.syncHealth.getSyncHealth();
   }
 
   /** GET /saas-admin/customers — paginated subscription listing. */

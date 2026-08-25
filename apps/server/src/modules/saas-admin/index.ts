@@ -32,3 +32,7 @@ export type {
   SaasAdminCustomerPaymentsResult,
 } from './services/saas-admin-revenue.service';
 export type { SaasAdminAtRiskRow } from './services/saas-admin-at-risk.service';
+export { SaasAdminPlatformAdminService } from './services/saas-admin-platform-admin.service';
+export type { SaasAdminPlatformAdminRow } from './services/saas-admin-platform-admin.service';
+export { SaasAdminSyncHealthService } from './services/saas-admin-sync-health.service';
+export type { SaasAdminSyncHealthRow } from './services/saas-admin-sync-health.service';

@@ -175,13 +175,7 @@ export class SaasAdminOverviewService {
     const where = this.buildCustomerFilter(query.query);
 
     const [subscriptions, total] = await Promise.all([
-      this.prisma.subscription.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: pageSize,
-        select: { ...CUSTOMER_ROW_SELECT },
-      }),
+      this.fetchCustomerRows(where, skip, pageSize),
       this.prisma.subscription.count({ where }),
     ]);
     const rows = await this.toCustomerRows(subscriptions);
@@ -193,6 +187,33 @@ export class SaasAdminOverviewService {
       pageSize,
       totalPages: Math.ceil(total / pageSize),
     };
+  }
+
+  /**
+   * Every customer row matching the list filter, without pagination — the
+   * row source for GET /saas-admin/customers/export. Same filter, ordering,
+   * and mapping as getCustomers so both surfaces can never drift.
+   */
+  async getCustomerRowsForExport(
+    query?: string,
+  ): Promise<SaasAdminCustomerRow[]> {
+    const subscriptions = await this.fetchCustomerRows(
+      this.buildCustomerFilter(query),
+    );
+    return this.toCustomerRows(subscriptions);
+  }
+
+  private fetchCustomerRows(
+    where: Record<string, unknown> | undefined,
+    skip?: number,
+    take?: number,
+  ) {
+    return this.prisma.subscription.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      ...(skip !== undefined && take !== undefined ? { skip, take } : {}),
+      select: { ...CUSTOMER_ROW_SELECT },
+    });
   }
 
   async getCustomer(subscriptionId: string): Promise<SaasAdminCustomerRow> {

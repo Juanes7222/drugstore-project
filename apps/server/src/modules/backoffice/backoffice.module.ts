@@ -67,6 +67,9 @@ import { AuditLogOverviewService } from './services/audit-log-overview.service';
     SessionOverviewService,
     WorkstationOverviewService,
     FiscalStatusService,
+    // Shared CSV serialization so saas-admin exports keep one escaping/BOM
+    // implementation instead of a parallel builder.
+    CsvBuilderService,
   ],
 })
 export class BackofficeModule {}

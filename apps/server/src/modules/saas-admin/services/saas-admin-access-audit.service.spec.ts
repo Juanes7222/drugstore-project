@@ -58,11 +58,11 @@ describe('SaasAdminAccessAuditService', () => {
   });
 
   describe('listAccessEvents', () => {
-    it('reads only this service own write convention (ACCESS / REPORTS / Subscription)', async () => {
+    it('reads this service own write conventions (ACCESS / REPORTS / Subscription or CsvExport)', async () => {
       const expectedWhere = {
         action: 'ACCESS',
         module: 'REPORTS',
-        entityType: 'Subscription',
+        entityType: { in: ['Subscription', 'CsvExport'] },
       };
 
       await service.listAccessEvents({});

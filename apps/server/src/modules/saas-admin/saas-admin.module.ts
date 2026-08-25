@@ -20,6 +20,9 @@ import { SaasAdminFraudService } from './services/saas-admin-fraud.service';
 import { SaasAdminLifecycleService } from './services/saas-admin-lifecycle.service';
 import { SaasAdminRevenueService } from './services/saas-admin-revenue.service';
 import { SaasAdminAtRiskService } from './services/saas-admin-at-risk.service';
+import { SaasAdminExportService } from './services/saas-admin-export.service';
+import { SaasAdminPlatformAdminService } from './services/saas-admin-platform-admin.service';
+import { SaasAdminSyncHealthService } from './services/saas-admin-sync-health.service';
 
 @Module({
   imports: [PrismaModule, BackofficeModule, LicensingModule],
@@ -33,6 +36,9 @@ import { SaasAdminAtRiskService } from './services/saas-admin-at-risk.service';
     SaasAdminLifecycleService,
     SaasAdminRevenueService,
     SaasAdminAtRiskService,
+    SaasAdminExportService,
+    SaasAdminPlatformAdminService,
+    SaasAdminSyncHealthService,
   ],
   exports: [],
 })

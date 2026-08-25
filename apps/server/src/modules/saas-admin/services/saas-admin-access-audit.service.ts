@@ -16,6 +16,10 @@ import * as crypto from 'node:crypto';
 const ACCESS_MODULE = 'REPORTS' as const;
 const ACCESS_ACTION = 'ACCESS' as const;
 const ENTITY_TYPE = 'Subscription';
+// Bulk CSV exports touch every tenant at once, so they have no single
+// subscription target; they are audited once per export under their own
+// entity type and kept visible in the same access trail.
+const EXPORT_ENTITY_TYPE = 'CsvExport';
 
 export interface AccessAuditQuery {
   page?: number;
@@ -84,11 +88,48 @@ export class SaasAdminAccessAuditService {
   }
 
   /**
+   * Record a platform admin's bulk CSV export (cross-tenant read with no
+   * single subscription target). One row per export, best-effort.
+   */
+  async recordExportAccess(params: {
+    actorUser: { id: string; role: string };
+    endpoint: string;
+    fileName: string;
+    rowCount: number;
+    ipAddress?: string | null;
+  }): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          id: crypto.randomUUID(),
+          action: ACCESS_ACTION,
+          module: ACCESS_MODULE,
+          entityType: EXPORT_ENTITY_TYPE,
+          entityId: params.fileName,
+          userId: params.actorUser.id,
+          userRole: params.actorUser.role,
+          subscriptionId: null,
+          ipAddress: params.ipAddress ?? null,
+          details: JSON.stringify({
+            endpoint: params.endpoint,
+            rowCount: params.rowCount,
+          }),
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to audit saas-admin export ${params.fileName}`,
+        error,
+      );
+    }
+  }
+
+  /**
    * Paged platform access-audit trail, newest first. Reads the shared
-   * AuditLog table filtered to this service's own write convention
-   * (ACCESS / REPORTS / Subscription) — no dedicated table. Customer
-   * names are resolved in one batched lookup for the page's distinct
-   * subscription ids.
+   * AuditLog table filtered to this service's own write conventions
+   * (ACCESS / REPORTS / Subscription or CsvExport) — no dedicated table.
+   * Customer names are resolved in one batched lookup for the page's
+   * distinct subscription ids.
    */
   async listAccessEvents(
     query: AccessAuditQuery,
@@ -98,7 +139,7 @@ export class SaasAdminAccessAuditService {
     const where = {
       action: ACCESS_ACTION,
       module: ACCESS_MODULE,
-      entityType: ENTITY_TYPE,
+      entityType: { in: [ENTITY_TYPE, EXPORT_ENTITY_TYPE] },
     };
 
     const [events, total] = await Promise.all([

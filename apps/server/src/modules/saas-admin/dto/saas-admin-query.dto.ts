@@ -16,6 +16,14 @@ export const CustomersQuerySchema = z.object({
   query: z.string().min(1).max(200).optional(),
 });
 
+/**
+ * CSV export variant of the customers list filter — pagination params are
+ * deliberately absent because an export always covers every matching page.
+ */
+export const CustomersExportQuerySchema = z.object({
+  query: z.string().min(1).max(200).optional(),
+});
+
 export const CustomerIdParamSchema = z.object({
   id: z.string().min(1).max(64),
 });
@@ -94,6 +102,7 @@ export const AtRiskQuerySchema = z.object({
 });
 
 export type CustomersQueryDto = z.infer<typeof CustomersQuerySchema>;
+export type CustomersExportQueryDto = z.infer<typeof CustomersExportQuerySchema>;
 export type CustomerIdParamDto = z.infer<typeof CustomerIdParamSchema>;
 export type CustomerSalesQueryDto = z.infer<typeof CustomerSalesQuerySchema>;
 export type FraudAlertsQueryDto = z.infer<typeof FraudAlertsQuerySchema>;
