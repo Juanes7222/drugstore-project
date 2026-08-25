@@ -15,6 +15,7 @@ import { FISCAL_CERTIFICATE_KEK_ENV } from './fiscal-certificate-crypto.service'
 import { FiscalCertificateInvalidException } from '../exceptions/fiscal-certificate-invalid.exception';
 import { FiscalCertificateNotFoundException } from '../exceptions/fiscal-certificate-not-found.exception';
 import { FISCAL_ISSUER_CONFIG_ID } from '../constants/fiscal-singleton-ids';
+import { FiscalCertificateStatus } from '@pharmacy/shared-types';
 
 const SOFTWARE_SECURITY_CODE =
   'abcdef0123456789abcdef0123456789abcdef0123456789ab';
@@ -307,6 +308,31 @@ describe('FiscalCertificateService', () => {
         FiscalCertificateNotFoundException,
       );
       expect(prisma.fiscalCertificate.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('hasActiveCertificate', () => {
+    it('returns true when the tenant has a certificate in ACTIVE status', async () => {
+      (prisma.fiscalCertificate.findFirst as jest.Mock).mockResolvedValue({
+        id: 'cert-1',
+      });
+
+      const result = await service.hasActiveCertificate();
+
+      // The status filter is what excludes EXPIRED/REVOKED/ROTATED rows.
+      expect(prisma.fiscalCertificate.findFirst).toHaveBeenCalledWith({
+        where: { subscriptionId: 'sub-1', status: FiscalCertificateStatus.ACTIVE },
+        select: { id: true },
+      });
+      expect(result).toBe(true);
+    });
+
+    it('returns false when no ACTIVE-status row matches (expired, revoked, rotated or none)', async () => {
+      (prisma.fiscalCertificate.findFirst as jest.Mock).mockResolvedValue(null);
+
+      const result = await service.hasActiveCertificate();
+
+      expect(result).toBe(false);
     });
   });
 });

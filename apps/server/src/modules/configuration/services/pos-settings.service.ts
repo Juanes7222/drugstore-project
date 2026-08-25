@@ -2,9 +2,9 @@
  * Service that assembles the POS settings payload.
  *
  * Gathers payment methods, discount limits from SystemConfig, static
- * alert/sync-defaults, the fiscal issuer identity, and the active fiscal
- * resolution into a single structured response for the
- * `GET /configuration/pos-settings` endpoint.
+ * alert/sync-defaults, the fiscal issuer identity, the active fiscal
+ * resolution, and DIAN certificate availability into a single structured
+ * response for the `GET /configuration/pos-settings` endpoint.
  */
 
 import { Injectable } from '@nestjs/common';
@@ -12,12 +12,14 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { FiscalIssuerConfigService } from '@/modules/fiscal-dian/fiscal-issuer-config.service';
 import { FiscalResolutionsService } from '@/modules/fiscal-dian/services/fiscal-resolutions.service';
+import { FiscalCertificateService } from '@/modules/fiscal-dian/services/fiscal-certificate.service';
 import { FiscalResolutionAllocationsService } from '@/modules/fiscal-dian/fiscal-resolution-allocations.service';
 import { FiscalIssuerConfigNotSetException } from '@/modules/fiscal-dian/exceptions/fiscal-issuer-config-not-set.exception';
 import { QueryFiscalResolutionsDto } from '@/modules/fiscal-dian/dto/query-fiscal-resolutions.dto';
 import type { FiscalResolution } from '@pharmacy/database';
 import type {
   PosSettingsResponse,
+  PosCertificateStatus,
   SellerInfoPayload,
   PosResolutionPayload,
 } from '../dto/pos-settings-response.dto';
@@ -30,6 +32,7 @@ export class PosSettingsService {
     private readonly issuerConfigService: FiscalIssuerConfigService,
     private readonly resolutionsService: FiscalResolutionsService,
     private readonly allocationsService: FiscalResolutionAllocationsService,
+    private readonly certificateService: FiscalCertificateService,
   ) {}
 
   /**
@@ -47,6 +50,7 @@ export class PosSettingsService {
       syncDefaultsConfig,
       salesConfigConfig,
       activeResolution,
+      hasActiveCertificate,
     ] = await Promise.all([
       this.fetchPaymentMethods(),
       this.findConfigValue<DiscountLimits>('POS_DISCOUNT_LIMITS'),
@@ -54,9 +58,10 @@ export class PosSettingsService {
       this.findConfigValue<SyncDefaults>('POS_SYNC_DEFAULTS'),
       this.findConfigValue<SalesConfig>('POS_SALES_CONFIG'),
       this.findMostRecentActiveResolution(),
+      this.findCertificateStatus(),
     ]);
 
-    return {
+    const response: PosSettingsResponse = {
       paymentMethods,
       discountLimits: this.applyDiscountLimitsDefaults(discountLimitsConfig),
       alertThresholds: this.applyAlertThresholdsDefaults(alertThresholdsConfig),
@@ -71,6 +76,28 @@ export class PosSettingsService {
       sellerInfo: await this.buildSellerInfo(activeResolution),
       resolution: await this.buildResolutionPayload(activeResolution),
     };
+
+    if (hasActiveCertificate) {
+      response.certificateStatus = hasActiveCertificate;
+    }
+
+    return response;
+  }
+
+  /**
+   * Certificate availability for the tenant. Undefined when no tenant
+   * context is bound (JWT-free first boot), so the field stays absent from
+   * the payload like sellerInfo/resolution.
+   */
+  private async findCertificateStatus(): Promise<
+    PosCertificateStatus | undefined
+  > {
+    if (!this.tenantContext.hasTenant()) {
+      return undefined;
+    }
+    return (await this.certificateService.hasActiveCertificate())
+      ? 'ACTIVE'
+      : 'NONE';
   }
 
   /**

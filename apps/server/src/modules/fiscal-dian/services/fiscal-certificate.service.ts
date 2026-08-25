@@ -9,6 +9,7 @@ import { FISCAL_ISSUER_CONFIG_ID } from '../constants/fiscal-singleton-ids';
 import { UploadFiscalCertificateInput } from '../dto/upload-fiscal-certificate.dto';
 import { FiscalCertificateNotFoundException } from '../exceptions/fiscal-certificate-not-found.exception';
 import { FiscalCertificateInvalidException } from '../exceptions/fiscal-certificate-invalid.exception';
+import { FiscalCertificateStatus } from '@pharmacy/shared-types';
 
 const MAX_DECODED_CERTIFICATE_BYTES = 3 * 1024 * 1024;
 
@@ -132,6 +133,22 @@ export class FiscalCertificateService {
         },
       });
     });
+  }
+
+  /**
+   * Whether the tenant currently has a certificate eligible for direct DIAN
+   * signing: only status ACTIVE counts — EXPIRED, REVOKED and ROTATED rows
+   * do not.
+   */
+  async hasActiveCertificate(): Promise<boolean> {
+    const active = await this.prisma.fiscalCertificate.findFirst({
+      where: {
+        subscriptionId: this.tenantContext.getSubscriptionId(),
+        status: FiscalCertificateStatus.ACTIVE,
+      },
+      select: { id: true },
+    });
+    return active !== null;
   }
 
   /** Lists certificates without any credential material. */

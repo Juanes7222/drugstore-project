@@ -41,6 +41,7 @@ describe('PosSettingsService', () => {
   const mockIssuerConfigService = { find: jest.fn() };
   const mockResolutionsService = { findAll: jest.fn() };
   const mockAllocationsService = { findLatestForResolution: jest.fn() };
+  const mockCertificateService = { hasActiveCertificate: jest.fn() };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -53,6 +54,7 @@ describe('PosSettingsService', () => {
       pageSize: 1,
     });
     mockAllocationsService.findLatestForResolution.mockResolvedValue(null);
+    mockCertificateService.hasActiveCertificate.mockResolvedValue(false);
     prisma = mockDeep<PrismaClient>();
     service = new PosSettingsService(
       prisma as any,
@@ -60,6 +62,7 @@ describe('PosSettingsService', () => {
       mockIssuerConfigService as any,
       mockResolutionsService as any,
       mockAllocationsService as any,
+      mockCertificateService as any,
     );
   });
 
@@ -338,6 +341,42 @@ describe('PosSettingsService', () => {
       const result = await service.getPosSettings();
 
       expect(result.resolution?.currentConsecutive).toBe(0);
+    });
+  });
+
+  describe('certificateStatus', () => {
+    const stubBasePayload = () => {
+      (prisma.paymentMethod.findMany as jest.Mock).mockResolvedValue([]);
+      (prisma.systemConfig.findUnique as jest.Mock).mockResolvedValue(null);
+    };
+
+    it('reports ACTIVE when the tenant has an active DIAN certificate', async () => {
+      stubBasePayload();
+      mockCertificateService.hasActiveCertificate.mockResolvedValue(true);
+
+      const result = await service.getPosSettings();
+
+      expect(mockCertificateService.hasActiveCertificate).toHaveBeenCalledTimes(1);
+      expect(result.certificateStatus).toBe('ACTIVE');
+    });
+
+    it('reports NONE when the tenant has no active DIAN certificate', async () => {
+      stubBasePayload();
+      mockCertificateService.hasActiveCertificate.mockResolvedValue(false);
+
+      const result = await service.getPosSettings();
+
+      expect(result.certificateStatus).toBe('NONE');
+    });
+
+    it('omits certificateStatus and skips the lookup when no tenant context is bound', async () => {
+      (mockTenantContext.hasTenant as jest.Mock).mockImplementation(() => false);
+      stubBasePayload();
+
+      const result = await service.getPosSettings();
+
+      expect('certificateStatus' in result).toBe(false);
+      expect(mockCertificateService.hasActiveCertificate).not.toHaveBeenCalled();
     });
   });
 });

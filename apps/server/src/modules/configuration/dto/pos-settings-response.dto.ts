@@ -114,6 +114,13 @@ export interface PosResolutionPayload {
   state: ResolutionState;
 }
 
+/**
+ * Availability of the tenant's DIAN digital certificate for direct signing.
+ * ACTIVE when a FiscalCertificate row exists with status ACTIVE; NONE
+ * otherwise (EXPIRED/REVOKED/ROTATED do not count).
+ */
+export type PosCertificateStatus = 'ACTIVE' | 'NONE';
+
 export interface PosSettingsResponse {
   paymentMethods: PosPaymentMethod[];
   discountLimits: DiscountLimits;
@@ -133,4 +140,11 @@ export interface PosSettingsResponse {
    * builds that predate it can ignore it.
    */
   resolution?: PosResolutionPayload | null;
+  /**
+   * Whether the tenant has an ACTIVE DIAN digital certificate ready for
+   * direct signing. Absent when the request carries no tenant context
+   * (JWT-free first boot), same pattern as sellerInfo/resolution. Additive
+   * field: POS builds that predate it can ignore it.
+   */
+  certificateStatus?: PosCertificateStatus;
 }
