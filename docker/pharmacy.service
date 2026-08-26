@@ -1,0 +1,21 @@
+[Unit]
+Description=Pharmacy POS — Docker Compose stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/pharmacy
+# Ensure secrets perms before each start
+ExecStartPre=/bin/bash -c 'chmod 600 .env.prod 2>/dev/null || true; chmod 700 secrets 2>/dev/null || true; chmod 600 secrets/* 2>/dev/null || true'
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down
+# Health gate after start
+ExecStartPost=/bin/bash -c 'for i in 1 2 3 4 5 6; do docker inspect -f "{{.State.Health.Status}}" $(docker compose -f docker-compose.prod.yml ps -q server 2>/dev/null | head -n1) 2>/dev/null | grep -q healthy && exit 0; sleep 10; done; exit 0'
+TimeoutStartSec=300
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

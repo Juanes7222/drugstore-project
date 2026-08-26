@@ -4,7 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { loadInfisicalSecretsIfNeeded } from '@pharmacy/infisical-config';
 
-const PRISMA_CLI_PATH = '/tmp/node_modules/prisma/build/index.js';
+const PRISMA_CLI_PATH = '/usr/local/bin/prisma';
 const PRISMA_CONFIG_PATH = '/app/prisma.full.config.ts';
 
 const result = await loadInfisicalSecretsIfNeeded();
@@ -13,8 +13,8 @@ if (!result.skipped) {
 }
 
 const migration = spawnSync(
-  process.execPath,
-  [PRISMA_CLI_PATH, 'migrate', 'deploy', '--config', PRISMA_CONFIG_PATH],
+  PRISMA_CLI_PATH,
+  ['migrate', 'deploy', '--config', PRISMA_CONFIG_PATH],
   { stdio: 'inherit', env: process.env },
 );
 

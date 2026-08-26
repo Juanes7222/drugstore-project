@@ -1,25 +1,46 @@
 # Rendered to /etc/nginx/conf.d/pharmacy.conf by the official image entrypoint
-# (envsubst over /etc/nginx/templates/*.template). ${DOMAIN} comes from the
-# compose environment.
+# (envsubst over /etc/nginx/templates/*.template).
+# Variables from compose environment:
+#   DOMAIN            — legacy single domain (fallback for DOMAIN_API)
+#   DOMAIN_API        — api domain, defaults to DOMAIN
+#   DOMAIN_BACKOFFICE — backoffice SPA domain (optional)
+#   DOMAIN_LANDING    — landing SPA domain (optional)
+# Upstreams for proxy targets (web-* services are optional; nginx resolves at request time via resolver).
 
 upstream pharmacy_server {
     server server:3000;
     keepalive 32;
 }
 
-# Per-IP request budget for authentication endpoints. The rest of the API
-# stays unthrottled at the edge so legitimate POS sync bursts pass through;
-# in-app throttling (@nestjs/throttler) still protects every endpoint.
+upstream pharmacy_backoffice {
+    server web-backoffice:80;
+    keepalive 16;
+}
+
+upstream pharmacy_landing {
+    server web-landing:80;
+    keepalive 16;
+}
+
+# Per-IP request budget for authentication endpoints.
 limit_req_zone $binary_remote_addr zone=auth_zone:10m rate=1r/s;
 
+# --- HTTP: ACME challenge + redirect to HTTPS (all domains) ---
 server {
     listen 80;
-    server_name ${DOMAIN};
+    # Catch-all for ACME; redirect others to https
+    server_name ${DOMAIN} ${DOMAIN_API} ${DOMAIN_BACKOFFICE} ${DOMAIN_LANDING};
 
-    # ACME http-01 challenge served from the shared certbot webroot.
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
         default_type "text/plain";
+    }
+
+    # Health for compose (no TLS needed)
+    location /nginx-health {
+        access_log off;
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
     }
 
     location / {
@@ -27,13 +48,14 @@ server {
     }
 }
 
+# --- API (api.example.com) ---
 server {
     listen 443 ssl;
     http2 on;
-    server_name ${DOMAIN};
+    server_name ${DOMAIN_API};
 
-    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN_API}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_API}/privkey.pem;
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
@@ -49,9 +71,14 @@ server {
     add_header X-Frame-Options DENY always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
 
-    # Room for base64 certificate uploads and offline sync batches; the app
-    # enforces its own stricter JSON body limit (2 MB).
     client_max_body_size 25m;
+
+    # Health without TLS termination noise
+    location /nginx-health {
+        access_log off;
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
+    }
 
     location /auth/ {
         limit_req zone=auth_zone burst=5 nodelay;
@@ -62,5 +89,63 @@ server {
     location / {
         proxy_pass http://pharmacy_server;
         include /etc/nginx/snippets/proxy.conf;
+    }
+}
+
+# --- Backoffice SPA (admin.example.com) — only active if DOMAIN_BACKOFFICE is set ---
+# Nginx will warn if server_name is empty; template renders with empty string -> ignored.
+# To avoid empty server_name, this block uses the variable directly; if unset, it won't match.
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN_BACKOFFICE};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN_API}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_API}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    location / {
+        proxy_pass http://pharmacy_backoffice;
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_read_timeout 30s;
+    }
+}
+
+# --- Landing SPA (example.com) ---
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${DOMAIN_LANDING};
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN_API}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_API}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    server_tokens off;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    location / {
+        proxy_pass http://pharmacy_landing;
+        include /etc/nginx/snippets/proxy.conf;
+        proxy_read_timeout 30s;
     }
 }

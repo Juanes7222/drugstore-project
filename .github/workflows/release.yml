@@ -1,9 +1,11 @@
 # Builds, scans, and publishes production container images to GHCR.
 #
 # Images produced per release tag:
-#   ghcr.io/<owner>/pharmacy-server        (target: server)
+#   ghcr.io/<owner>/pharmacy-server
 #   ghcr.io/<owner>/pharmacy-migrator      (target: migrator)
 #   ghcr.io/<owner>/pharmacy-fiscal-engine (target: fiscal)
+#   ghcr.io/<owner>/pharmacy-web-backoffice
+#   ghcr.io/<owner>/pharmacy-web-landing
 #
 # Trivy gates the push: CRITICAL/HIGH findings without an available fix fail
 # the release. Base-image noise tends to age quickly — revisit ignore rules
@@ -42,6 +44,14 @@ jobs:
             dockerfile: docker/fiscal-engine.Dockerfile
             target: fiscal
             pnpm-cache: pnpm-fiscal
+          - image-name: pharmacy-web-backoffice
+            dockerfile: docker/web-backoffice.Dockerfile
+            target: runtime
+            pnpm-cache: pnpm-web-backoffice
+          - image-name: pharmacy-web-landing
+            dockerfile: docker/web-landing.Dockerfile
+            target: runtime
+            pnpm-cache: pnpm-web-landing
 
     steps:
       - name: Checkout
@@ -80,9 +90,13 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image-name }}
           cache-to: type=gha,scope=${{ matrix.image-name }},mode=max
+          # Frontend build-args: safe defaults for scan; real prod values via compose
+          build-args: |
+            VITE_API_URL=https://api.example.com
+            VITE_LANDING_URL=https://www.example.com
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.32.0
         with:
           image-ref: ${{ steps.meta.outputs.version }}
           format: table
@@ -99,5 +113,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          provenance: false
+          provenance: true
+          sbom: true
           cache-from: type=gha,scope=${{ matrix.image-name }}
+          build-args: |
+            VITE_API_URL=https://api.example.com
+            VITE_LANDING_URL=https://www.example.com

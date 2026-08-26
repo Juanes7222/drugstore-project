@@ -5,11 +5,17 @@
 # .env.prod. NODE_ENV=production activates Infisical-only mode inside both
 # apps (packages/infisical-config): DATABASE_URL, REDIS_URL, JWT secrets, etc.
 # are fetched at boot and must exist in the Infisical 'prod' environment.
+# Ensure .env.prod is 600 (enforced by scripts/deploy.sh).
 #
 # NETWORK POLICY: only nginx publishes ports. The internal network is NOT
 # flagged `internal: true` on purpose — server and fiscal-engine need outbound
 # HTTPS (Infisical, DIAN providers, Firebase). Isolation comes from having no
 # published ports on any backend service.
+#
+# IMAGE PINS: digests recommended for reproducibility. Run
+#   docker pull <image> && docker inspect --format '{{.RepoDigests}}' <image>
+# and pin via `image: nginx:1.27-alpine@sha256:...`. Current tags use
+# --pull on build to get latest patches; pin when you need hermetic prod.
 # =============================================================================
 
 name: pharmacy
@@ -23,11 +29,22 @@ x-logging: &default-logging
 x-hardening: &default-hardening
   security_opt:
     - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add:
+    - CHOWN
+    - SETGID
+    - SETUID
+    - DAC_OVERRIDE
+  read_only: true
+  tmpfs:
+    - /tmp:noexec,nosuid,size=64m
 
 services:
   nginx:
-    image: nginx:1.27-alpine
+    image: nginx:1.27-alpine@sha256:62223d644fa234c3a1cc785ee14242ec47a77364226f1c811d2f669f96dc2ac8
     restart: unless-stopped
+    init: true
     depends_on:
       server:
         condition: service_healthy
@@ -35,7 +52,10 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN in .env.prod}
+      DOMAIN: ${DOMAIN:-api.example.com}
+      DOMAIN_API: ${DOMAIN_API:-${DOMAIN:-api.example.com}}
+      DOMAIN_BACKOFFICE: ${DOMAIN_BACKOFFICE:-admin.example.com}
+      DOMAIN_LANDING: ${DOMAIN_LANDING:-www.example.com}
     volumes:
       - ./docker/nginx/templates:/etc/nginx/templates:ro
       - ./docker/nginx/snippets:/etc/nginx/snippets:ro
@@ -43,17 +63,35 @@ services:
       - certbot-www:/var/www/certbot:ro
     networks: [edge, internal]
     mem_limit: 128m
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID, NET_BIND_SERVICE]
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:noexec,nosuid,size=32m
+      - /var/run:noexec,nosuid,size=8m
+      - /tmp:noexec,nosuid,size=16m
+    security_opt: [no-new-privileges:true]
     logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # One-shot certificate issuance/renewal; driven by scripts/deploy.sh init
   # and a host cron (`deploy.sh renew-certs`). Not started with the stack.
   certbot:
-    image: certbot/certbot:latest
+    image: certbot/certbot:latest@sha256:d07bd043d61d6bee1114235ac12c2e9a5c54b6931b3ccf5e1174d6c8c4afaa95
     profiles: ["certbot"]
     volumes:
       - certbot-conf:/etc/letsencrypt
       - certbot-www:/var/www/certbot
     networks: [edge]
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=16m
+      - /var/log/letsencrypt:noexec,nosuid,size=16m
 
   server:
     build:
@@ -62,21 +100,17 @@ services:
       target: server
     image: pharmacy/server:local
     restart: unless-stopped
+    init: true
     env_file: .env.prod
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    healthcheck:
-      # Any HTTP response proves the listener is up (404 included).
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/').then(()=>process.exit(0)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 40s
     volumes:
       - server-storage:/data
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     <<: *default-hardening
     networks: [internal]
     mem_limit: 768m
@@ -91,11 +125,18 @@ services:
     image: pharmacy/migrator:local
     profiles: ["tools"]
     restart: "no"
+    init: true
     env_file: .env.prod
     depends_on:
       postgres:
         condition: service_healthy
     networks: [internal]
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
     logging: *default-logging
 
   fiscal-engine:
@@ -105,26 +146,80 @@ services:
       target: fiscal
     image: pharmacy/fiscal-engine:local
     restart: unless-stopped
+    init: true
     env_file: .env.prod
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    healthcheck:
-      # No HTTP surface: liveness = PID 1 still signalable by its own user.
-      test: ["CMD", "node", "-e", "try { process.kill(1, 0); } catch { process.exit(1); }"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
     <<: *default-hardening
     networks: [internal]
     mem_limit: 512m
     logging: *default-logging
 
+  # --- Frontend SPAs (static, served by nginx) ---
+  # Built as separate nginx images; nginx reverse-proxies to them.
+  # Comment out if you serve frontends externally (CDN/Vercel).
+  web-backoffice:
+    build:
+      context: .
+      dockerfile: docker/web-backoffice.Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-https://${DOMAIN_API:-${DOMAIN:-api.example.com}}}
+        VITE_LANDING_URL: ${VITE_LANDING_URL:-https://${DOMAIN_LANDING:-www.example.com}}
+    image: pharmacy/web-backoffice:local
+    restart: unless-stopped
+    init: true
+    networks: [internal]
+    mem_limit: 64m
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /var/cache/nginx:noexec,nosuid,size=16m
+      - /var/run:noexec,nosuid,size=8m
+      - /tmp:noexec,nosuid,size=16m
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  web-landing:
+    build:
+      context: .
+      dockerfile: docker/web-landing.Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-https://${DOMAIN_API:-${DOMAIN:-api.example.com}}}
+    image: pharmacy/web-landing:local
+    restart: unless-stopped
+    init: true
+    networks: [internal]
+    mem_limit: 64m
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID, DAC_OVERRIDE, NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /var/cache/nginx:noexec,nosuid,size=16m
+      - /var/run:noexec,nosuid,size=8m
+      - /tmp:noexec,nosuid,size=16m
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:075f7ba66bc9b3ce7d6b8b635208ff61cd7cf1a67d71ec530eec5d7ae0cbe571
     restart: unless-stopped
     # shared_preload_libraries enables pg_stat_statements (created by the
     # 20260825 ops-tuning migration) for slow-query monitoring.
@@ -153,7 +248,7 @@ services:
     logging: *default-logging
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:1db42ccef14898aa29bae778452d567534b59c107129cbc1163fb552de184d3c
     restart: unless-stopped
     # AOF persistence: BullMQ jobs (DIAN transmission retries) must survive
     # container restarts.

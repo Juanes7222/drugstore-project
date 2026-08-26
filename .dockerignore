@@ -16,7 +16,10 @@ skills-lock.json
 **/*.tsbuildinfo
 
 # Local state and secrets — never baked into images
-.env*
+.env
+.env.*
+!.env.example
+!.env.prod.example
 secrets/
 backups/
 storage/
