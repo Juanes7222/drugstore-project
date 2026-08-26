@@ -38,6 +38,7 @@ const SUPPORTED_TYPES: SyncQueueEntry['operationType'][] = [
 @Injectable()
 export class SyncProcessingJob {
   private readonly logger = new Logger(SyncProcessingJob.name);
+  private processing = false;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -56,19 +57,28 @@ export class SyncProcessingJob {
    */
   @Cron(CronExpression.EVERY_30_SECONDS)
   async processPendingOperations(): Promise<void> {
-    // The cron tick has no request context, and SyncQueue rows are
-    // RLS-scoped — iterate tenant by tenant inside withTenant.
-    const subscriptions = await this.prisma.subscription.findMany({
-      select: { id: true },
-    });
-
-    for (const subscription of subscriptions) {
-      await this.prisma.withTenant(subscription.id, async () => {
-        const entries = await this.fetchSupportedEntries();
-        for (const entry of entries) {
-          await this.processEntry(entry);
-        }
+    if (this.processing) {
+      this.logger.warn('SyncProcessingJob already running — skipping overlapping tick');
+      return;
+    }
+    this.processing = true;
+    try {
+      // The cron tick has no request context, and SyncQueue rows are
+      // RLS-scoped — iterate tenant by tenant inside withTenant.
+      const subscriptions = await this.prisma.subscription.findMany({
+        select: { id: true },
       });
+
+      for (const subscription of subscriptions) {
+        await this.prisma.withTenant(subscription.id, async () => {
+          const entries = await this.fetchSupportedEntries();
+          for (const entry of entries) {
+            await this.processEntry(entry);
+          }
+        });
+      }
+    } finally {
+      this.processing = false;
     }
   }
 

@@ -508,9 +508,15 @@ export class SalesService {
     workstationId: string,
     fallbackCashShiftId?: string,
   ): Promise<any> {
+    // Explicit subscription filter: RLS requires app.current_tenant set, but
+    // nested savepoint transactions may lose the context if the outer
+    // withTenant transaction was not correctly propagated (see
+    // SyncProcessingJob duplicate). Explicit filter makes the query succeed
+    // even if RLS context is missing, while RLS still enforces tenant isolation.
+    const subscriptionId = this.tenantContext.getSubscriptionId();
     // 1. Happy path — the single tenant-wide OPEN shift
     const openShift = await tx.cashShift.findFirst({
-      where: { state: ShiftState.OPEN },
+      where: { state: ShiftState.OPEN, subscriptionId },
       orderBy: { openedAt: 'desc' },
     });
     if (openShift) return openShift;
@@ -520,12 +526,22 @@ export class SalesService {
       const closedShift = await tx.cashShift.findFirst({
         where: {
           id: fallbackCashShiftId,
+          subscriptionId,
           state: { in: [ShiftState.CLOSED, ShiftState.FORCED_CLOSE] },
         },
       });
       if (closedShift) return closedShift;
     }
 
+    // Debug: log why not found (subscriptionId, fallback, count of OPEN)
+    // This log is critical for diagnosing the 26/08 "No open cash shift" loop
+    // where pharmacy_app saw 0 rows due to RLS without tenant context.
+    const openCount = await tx.cashShift.count({
+      where: { state: ShiftState.OPEN, subscriptionId },
+    });
+    console.warn(
+      `[getOpenCashShift] no OPEN found for workstation=${workstationId} subscription=${subscriptionId} fallback=${fallbackCashShiftId} openCount=${openCount}`,
+    );
     // 3. No shift at all — refuse
     throw new CashShiftNotOpenForWorkstationException(workstationId);
   }

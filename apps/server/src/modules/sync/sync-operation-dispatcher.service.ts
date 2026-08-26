@@ -404,8 +404,9 @@ export class SyncOperationDispatcherService {
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
+      const subscriptionId = this.tenantContext.getSubscriptionId();
       const openShift = await tx.cashShift.findFirst({
-        where: { state: 'OPEN' },
+        where: { state: 'OPEN', subscriptionId },
         orderBy: { openedAt: 'desc' },
         select: { id: true },
       });
