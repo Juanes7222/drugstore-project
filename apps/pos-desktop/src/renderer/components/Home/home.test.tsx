@@ -15,6 +15,7 @@ import {
   useLocalSessionStore,
   type LocalSession,
 } from "../../../domain/auth";
+import { useLicenseStore } from "../../../domain/licensing/license.store";
 import { getLocalDatabase } from "../../../infrastructure/local-database";
 
 // ---------------------------------------------------------------------------
@@ -62,6 +63,33 @@ vi.mock("@/hooks/use-online-status", () => ({
   useOnlineStatus: () => mockIsOnline,
 }));
 
+// The certificate banner fires GET /fiscal-dian/certificates on mount via
+// useFiscalCertificate. Mocking the hook at this module boundary lets the
+// gating tests below assert whether Home mounts the banner at all (and so
+// whether the fiscal endpoint is ever hit) without any network activity.
+const mockUseFiscalCertificate = vi.hoisted(() => vi.fn());
+
+vi.mock("@/hooks/use-fiscal-certificate", () => ({
+  useFiscalCertificate: mockUseFiscalCertificate,
+}));
+
+// Benign default so any test whose session may open the fiscal screen
+// (OWNER+) mounts the banner without crashing on an undefined hook result.
+// The gating tests below override this per scenario.
+mockUseFiscalCertificate.mockReturnValue({
+  status: "ACTIVE",
+  alias: null,
+  subjectCn: null,
+  validTo: null,
+  lastCheckedAt: null,
+  uploadErrorCode: null,
+  isUploading: false,
+  needsCertificate: false,
+  upload: vi.fn(),
+  refresh: vi.fn(),
+  clearUploadError: vi.fn(),
+});
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -104,6 +132,57 @@ const renderHome = (store = createTestStore()) =>
       <Home />
     </Provider>,
   );
+
+/**
+ * Put the license store on a self-managed CERTIFICATE plan so the banner
+ * would actually render when the fiscal screen is allowed — otherwise a
+ * "banner absent" assertion would pass vacuously.
+ */
+const setCertificatePlan = (): void => {
+  useLicenseStore.getState().setActivated({
+    activationToken: "token-abc",
+    expiresAt: "2027-01-01T00:00:00.000Z",
+    subscription: {
+      id: "sub-1",
+      status: "ACTIVE",
+      currentPeriodEnd: "2027-01-01T00:00:00.000Z",
+      gracePeriodDays: 7,
+    },
+    location: null,
+    plan: {
+      id: "plan-1",
+      code: "CUSTOM",
+      name: "Autogestionado",
+      billingMethod: "CERTIFICATE",
+      features: [],
+      maxLocations: 1,
+      maxWorkstationsPerLocation: 1,
+    },
+    workstationActivation: {
+      id: "ws-1",
+      workstationName: "Caja-01",
+      activatedAt: "2026-01-15T10:00:00.000Z",
+    },
+    hardwareFingerprint: "fp-001",
+  });
+};
+
+/** Hook result with a missing certificate — the state that renders a banner. */
+const mockHookWithMissingCertificate = (): void => {
+  mockUseFiscalCertificate.mockReturnValue({
+    status: "NONE",
+    alias: null,
+    subjectCn: null,
+    validTo: null,
+    lastCheckedAt: null,
+    uploadErrorCode: null,
+    isUploading: false,
+    needsCertificate: true,
+    upload: vi.fn(),
+    refresh: vi.fn(),
+    clearUploadError: vi.fn(),
+  });
+};
 
 // ---------------------------------------------------------------------------
 // Suite
@@ -434,9 +513,9 @@ describe("Home", () => {
     it("shows role badge for manager", () => {
       renderHome();
 
-      // "roles.manager" → "Manager"
+      // "roles.manager" → "Gerente" (es locale is default in i18n/index.ts)
       expect(
-        screen.getByText("Manager"),
+        screen.getByText("Gerente"),
       ).toBeInTheDocument();
     });
   });
@@ -541,6 +620,60 @@ describe("Home", () => {
       // "roles.owner" → "Dueño"
       expect(
         screen.getByText("Dueño"),
+      ).toBeInTheDocument();
+    });
+  });
+
+  // ── Certificate status banner gating ──────────────────────────
+
+  // Home mounts the banner only when the session may open the fiscal
+  // screen (OWNER_ROLES). The banner's hook fires GET /fiscal-dian/certificates
+  // on mount, so a denied role must never even reach that mount.
+  describe("certificate status banner gating", () => {
+    const BANNER_REGION = { name: "Estado del certificado DIAN" };
+
+    beforeEach(() => {
+      setCertificatePlan();
+      mockHookWithMissingCertificate();
+      mockUseFiscalCertificate.mockClear();
+    });
+
+    afterEach(() => {
+      useLicenseStore.getState().reset();
+    });
+
+    it("does not mount the banner for CASHIER — the fiscal hook never runs", () => {
+      setSessionRole("CASHIER");
+      renderHome();
+
+      expect(mockUseFiscalCertificate).not.toHaveBeenCalled();
+      expect(screen.queryByRole("region", BANNER_REGION)).not.toBeInTheDocument();
+    });
+
+    it("does not mount the banner for ACCOUNTANT", () => {
+      setSessionRole("ACCOUNTANT");
+      renderHome();
+
+      expect(mockUseFiscalCertificate).not.toHaveBeenCalled();
+      expect(screen.queryByRole("region", BANNER_REGION)).not.toBeInTheDocument();
+    });
+
+    it("does not mount the banner for MANAGER (fiscal endpoints reject MANAGER server-side)", () => {
+      setSessionRole("MANAGER");
+      renderHome();
+
+      expect(mockUseFiscalCertificate).not.toHaveBeenCalled();
+      expect(screen.queryByRole("region", BANNER_REGION)).not.toBeInTheDocument();
+    });
+
+    it("mounts the banner for OWNER on a CERTIFICATE plan with no certificate", () => {
+      setSessionRole("OWNER");
+      renderHome();
+
+      expect(mockUseFiscalCertificate).toHaveBeenCalled();
+      expect(screen.getByRole("region", BANNER_REGION)).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Subir certificado" }),
       ).toBeInTheDocument();
     });
   });

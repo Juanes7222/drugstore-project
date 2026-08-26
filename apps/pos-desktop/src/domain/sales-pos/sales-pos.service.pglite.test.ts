@@ -364,6 +364,59 @@ describe("PGlite data integrity", () => {
     });
   });
 
+  describe("CashShift — store-wide open-shift lookup", () => {
+    it("finds the open shift regardless of which workstation or user opened it", async () => {
+      // Global shift semantics: the selling station resolves the OPEN shift
+      // with no user/workstation filter — this is exactly the query shape
+      // SalesPosService.getOpenCashShift issues through Prisma.
+      // Seed already has one OPEN shift (ws-001). Close it so the store has
+      // exactly the foreign OPEN row — mirrors the "single global shift"
+      // invariant the service enforces.
+      await pg.exec(`DELETE FROM "Sale" WHERE "cashShiftId" = '${seeds.cashShiftId}'`);
+      await pg.exec(`DELETE FROM "CashShift" WHERE id = '${seeds.cashShiftId}'`);
+      const foreignShiftId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await pg.exec(`
+        INSERT INTO "CashShift" (id, "workstationId", "userId", state,
+          "openedAt", "createdAt", "updatedAt")
+        VALUES ('${foreignShiftId}', 'ws-backoffice', 'user-admin-77',
+          'OPEN', '${now}', '${now}', '${now}');
+      `);
+
+      const result = await pg.query(
+        `SELECT id, "workstationId" FROM "CashShift"
+          WHERE state = 'OPEN'::"ShiftState"`,
+      );
+
+      expect(result.rows).toHaveLength(1);
+      const row = result.rows[0] as Record<string, unknown>;
+      expect(row.id).toBe(foreignShiftId);
+      expect(row.workstationId).toBe("ws-backoffice");
+    });
+
+    it("returns nothing when every shift is closed, even from other workstations", async () => {
+      // Close the seed OPEN shift first — otherwise the store-wide OPEN
+      // query would still return the seed row.
+      const now = new Date().toISOString();
+      await pg.exec(`
+        UPDATE "CashShift" SET state = 'CLOSED'::"ShiftState", "closedAt" = '${now}'
+        WHERE id = '${seeds.cashShiftId}'
+      `);
+      await pg.exec(`
+        INSERT INTO "CashShift" (id, "workstationId", "userId", state,
+          "openedAt", "closedAt", "createdAt", "updatedAt")
+        VALUES ('${crypto.randomUUID()}', 'ws-closed', 'user-admin-77',
+          'CLOSED', '${now}', '${now}', '${now}', '${now}');
+      `);
+
+      const result = await pg.query(
+        `SELECT id FROM "CashShift" WHERE state = 'OPEN'::"ShiftState"`,
+      );
+
+      expect(result.rows).toHaveLength(0);
+    });
+  });
+
   describe("SaleItem table", () => {
     it("enforces foreign key to Sale", async () => {
       const fakeSaleId = crypto.randomUUID();

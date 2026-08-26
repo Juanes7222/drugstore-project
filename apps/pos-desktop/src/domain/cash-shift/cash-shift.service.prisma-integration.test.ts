@@ -31,6 +31,7 @@ import {
   beforeAll,
   afterAll,
   beforeEach,
+  afterEach,
   vi,
 } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
@@ -48,6 +49,9 @@ import {
   PaymentMethodNotFoundException,
 } from "./exceptions";
 import { Prisma } from "@pharmacy/database/local";
+import { RoleType } from "@pharmacy/shared-types";
+import { useCashShiftStore } from "./cash-shift.store";
+import { useLocalSessionStore } from "../auth/local-session.store";
 
 // Mock the backup service so closeShift works without Tauri.
 vi.mock("../backup", () => ({
@@ -143,8 +147,14 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
     await pg.close();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     auth = { requireRole: vi.fn() };
+    // Global shift — one OPEN row pollutes every later test. Clear the
+    // shift tables between tests (payment methods stay).
+    await prisma.shiftCashCount.deleteMany({});
+    await prisma.cashShift.deleteMany({});
+    useCashShiftStore.getState().setCurrentShift(null);
+    useLocalSessionStore.getState().clearSession();
   });
 
   /** Create a fresh service with a unique workstation session. */
@@ -173,7 +183,7 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
       expect(shift.userId).toBe("user-cashier-int-01");
     });
 
-    it("throws ShiftAlreadyOpenException when a shift is already open for the workstation", async () => {
+    it("throws ShiftAlreadyOpenException when a shift is already open (same workstation)", async () => {
       // Create two services that share the SAME workstation
       const session1 = nextSession();
       auth.requireRole.mockReturnValue(session1);
@@ -191,11 +201,30 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
       ).rejects.toThrow(ShiftAlreadyOpenException);
     });
 
-    it("calls requireRole with CASHIER and ADMIN", async () => {
+    it("throws ShiftAlreadyOpenException when another workstation's shift is OPEN", async () => {
+      // The first service opens a shift at its own (unique) workstation.
+      const opener = makeService();
+      await opener.openShift({ openingBalance: new Prisma.Decimal("100000.00") });
+
+      // A second service at a DIFFERENT workstation must still be rejected:
+      // at most one OPEN shift may exist in the whole store.
+      const secondWorkstationService = makeService();
+      await expect(
+        secondWorkstationService.openShift({
+          openingBalance: new Prisma.Decimal("300000.00"),
+        }),
+      ).rejects.toThrow(ShiftAlreadyOpenException);
+
+      // Exactly one OPEN row exists after both attempts.
+      const openCount = await prisma.cashShift.count({ where: { state: "OPEN" } });
+      expect(openCount).toBe(1);
+    });
+
+    it("calls requireRole with ADMIN only (global shifts are admin-opened)", async () => {
       const service = makeService();
       await service.openShift({ openingBalance: new Prisma.Decimal("0") });
 
-      expect(auth.requireRole).toHaveBeenCalledWith("CASHIER", "ADMIN");
+      expect(auth.requireRole).toHaveBeenCalledWith(RoleType.ADMIN);
     });
 
     it("persists the shift in the database", async () => {
@@ -212,6 +241,54 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
       expect(stored).not.toBeNull();
       expect(stored!.state).toBe("OPEN");
       expect(Number(stored!.openingBalance)).toBe(750000);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // hydrateStore — the shift is store-wide
+  // -----------------------------------------------------------------------
+  describe("hydrateStore", () => {
+    afterEach(() => {
+      useCashShiftStore.getState().setCurrentShift(null);
+      useLocalSessionStore.getState().clearSession();
+    });
+
+    it("hydrates an OPEN shift opened at another workstation by another user", async () => {
+      const openerService = makeService();
+      await openerService.openShift({
+        openingBalance: new Prisma.Decimal("100000.00"),
+      });
+
+      // A cashier logs in at a different workstation — hydration must still
+      // surface the single store-wide OPEN shift.
+      useLocalSessionStore.getState().setSession({
+        userId: "user-cashier-elsewhere",
+        username: "cajero2",
+        fullName: "Cajero Dos",
+        displayName: "Cajero Dos",
+        email: null,
+        role: "CASHIER",
+        subscriptionId: null,
+        workstationId: "ws-elsewhere",
+        accessToken: "token",
+        refreshToken: "refresh",
+        expiresAt: new Date("2099-12-31"),
+        sessionId: "sess-hydrate",
+        totpEnabled: false,
+        avatarUrl: null,
+        avatarColor: null,
+        mustChangePassword: false,
+        sessionTrust: "SERVER_VERIFIED",
+      } as any);
+      const reader = createCashShiftService(prisma, auth as any);
+
+      await reader.hydrateStore();
+
+      const current = useCashShiftStore.getState().currentShift;
+      expect(current).not.toBeNull();
+      expect(current!.state).toBe("OPEN");
+      expect(current!.userId).toBe("user-cashier-int-01");
+      expect(current!.workstationId).toMatch(/^ws-int-/);
     });
   });
 

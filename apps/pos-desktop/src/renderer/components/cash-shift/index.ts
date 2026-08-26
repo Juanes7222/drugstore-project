@@ -7,6 +7,7 @@ export { SummaryStep } from './summary-step';
 export { CountStep } from './count-step';
 export { ConfirmStep } from './confirm-step';
 export { OpenShiftForm } from './open-shift-form';
+export { OpenShiftAdminRequired } from './open-shift-admin-required';
 export { OperationalDriftBanner } from './operational-drift-banner';
 export type { OperationalDriftBannerProps } from './operational-drift-banner';
 export { ReconciliationView } from './reconciliation-view';

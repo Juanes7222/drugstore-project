@@ -1,11 +1,9 @@
 /**
  * Shift-required overlay — blocks the sales screen when no cash shift is open.
  *
- * Shows a centered warning with a direct "Go to Cash Shift" button so the
- * cashier can open a shift without manually navigating. The button is gated
- * to roles that can open a shift (CASHIER+). Users without permission (e.g.
- * a role error scenario) see the message without the button, though in
- * practice the navigation sidebar already limits sales access to CASHIER+.
+ * Shows a centered warning. The "Go to Cash Shift" button appears only for
+ * ADMIN-level sessions (the store-wide shift is opened by an admin); other
+ * roles see a read-only message telling them an administrator must open it.
  *
  * @category Component
  */
@@ -13,16 +11,21 @@ import { type FC, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppDispatch } from '@/store/hooks';
 import { navigateToCashShift } from '@/store/slices/ui-slice';
-import { useLocalSessionStore, hasMinRole } from '../../../domain/auth/local-session.store';
+import {
+  useLocalSessionStore,
+  hasMinRole,
+} from '../../../domain/auth/local-session.store';
 import { RoleType } from '@pharmacy/shared-types';
-import { DollarSignIcon } from "@/components/ui/icons";
+import { DollarSignIcon } from '@/components/ui/icons';
 
 export const ShiftRequiredOverlay: FC = () => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
 
   const session = useLocalSessionStore((s) => s.session);
-  const canOpenShift = hasMinRole(session, RoleType.CASHIER);
+  // Store-wide model: only ADMIN-level roles (ADMIN/OWNER/SAAS_ADMIN) can
+  // open the shift, so only they get the action shortcut.
+  const canOpenShift = hasMinRole(session, RoleType.ADMIN);
 
   const handleGoToCashShift = useCallback(() => {
     dispatch(navigateToCashShift());
@@ -34,18 +37,24 @@ export const ShiftRequiredOverlay: FC = () => {
         className="mx-auto max-w-md rounded-pos p-pos-xl text-center"
         style={{
           backgroundColor: 'var(--color-panel)',
-          border: '1px solid color-mix(in srgb, var(--color-ink) 10%, transparent)',
+          border:
+            '1px solid color-mix(in srgb, var(--color-ink) 10%, transparent)',
         }}
       >
         {/* Cash icon */}
         <div
           className="mx-auto mb-pos-lg flex h-16 w-16 items-center justify-center rounded-full"
           style={{
-            backgroundColor: 'color-mix(in srgb, var(--color-attention) 15%, transparent)',
+            backgroundColor:
+              'color-mix(in srgb, var(--color-attention) 15%, transparent)',
           }}
           aria-hidden="true"
         >
-          <DollarSignIcon size={32} strokeWidth={1.5} style={{ color: 'var(--color-attention)' }} />
+          <DollarSignIcon
+            size={32}
+            strokeWidth={1.5}
+            style={{ color: 'var(--color-attention)' }}
+          />
         </div>
 
         <h2
@@ -59,7 +68,9 @@ export const ShiftRequiredOverlay: FC = () => {
           className="mb-pos-xl text-body-sm leading-relaxed"
           style={{ color: 'var(--color-ink-muted)' }}
         >
-          {t('shift_guard.no_active_shift_description')}
+          {canOpenShift
+            ? t('shift_guard.no_active_shift_description')
+            : t('shift_guard.no_active_shift_read_only_description')}
         </p>
 
         {canOpenShift && (

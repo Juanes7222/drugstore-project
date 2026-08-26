@@ -5,9 +5,15 @@
  * plain class (no NestJS decorators) constructed with the local Prisma
  * client from the PGlite database singleton.
  *
- * Business rules are unchanged from the server:
- * - No opening a shift when one is already open for the current session's workstation
- * - `difference` is always computed server-side (here, computed by this local service)
+ * Business rules (global-shift model — one OPEN shift per store, shared by
+ * every workstation):
+ * - Only ADMIN-level roles can open or close the shift (`requireRole(ADMIN)`;
+ *   OWNER/SAAS_ADMIN pass through role supersession, CASHIER does not)
+ * - No opening a shift when one is already open anywhere (not per-workstation)
+ * - Any user with selling permission sells into the single open shift; sale
+ *   creation only requires that an OPEN shift exists, never that it belongs
+ *   to the selling user or workstation
+ * - `difference` is always computed locally by this service
  * - `denominationsBreakdown` is rejected for a non-cash payment method
  * - Closing requires a `CLOSING` count already registered for every payment method with activity
  *
@@ -91,11 +97,11 @@ export class CashShiftService {
   ) {}
 
   /**
-   * Open a cash shift for the current session's workstation.
+   * Open the store-wide cash shift.
    *
-   * Requires CASHIER or ADMIN role.
-   * Throws `ShiftAlreadyOpenException` if there is already an open shift
-   * for this workstation.
+   * Requires an ADMIN-level role (CASHIER cannot open shifts). Throws
+   * `ShiftAlreadyOpenException` if a shift is already open anywhere in the
+   * store — the shift is global, not per-workstation.
    */
   async openShift(dto: {
     openingBalance: Prisma.Decimal;
@@ -108,9 +114,11 @@ export class CashShiftService {
     // behind queued background sync steps.
     await dbWriteLock.acquire('foreground');
     try {
-      const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+      // Role supersession lets OWNER/SAAS_ADMIN satisfy this check; CASHIER
+      // and every other non-admin role are rejected.
+      const session = this.auth.requireRole(RoleType.ADMIN);
 
-      await this.assertNoOpenShiftExists(session.workstationId);
+      await this.assertNoOpenShiftExists();
 
       const shift = await this.prisma.cashShift.create({
         data: {
@@ -250,9 +258,17 @@ export class CashShiftService {
   }
 
   /**
+   * Require an ADMIN-level role for the close flow. CASHIER cannot close the
+   * shift; OWNER/SAAS_ADMIN pass through role supersession.
+   */
+  private requireAdminForClose(): CashShiftSession {
+    return this.auth.requireRole(RoleType.ADMIN) as CashShiftSession;
+  }
+
+  /**
    * Close a cash shift.
    *
-   * Requires CASHIER or ADMIN role.
+   * Requires an ADMIN-level role.
    * Throws `ShiftNotOpenException` if the shift is not open.
    * Throws `MissingClosingCashCountsException` if any active payment method
    * does not have a CLOSING count registered.
@@ -279,7 +295,7 @@ export class CashShiftService {
     try {
       await dbWriteLock.acquire('foreground');
       try {
-        const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+        const session = this.requireAdminForClose();
 
         await this.getOpenShift(shiftId);
 
@@ -1006,8 +1022,10 @@ export class CashShiftService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Fetch shift history for the current workstation.
-   * Returns both open and closed shifts, newest first.
+   * Fetch shift history for the whole store.
+   * Returns both open and closed shifts, newest first. The shift is global,
+   * so the history is not filtered by workstation — rows opened at any
+   * workstation appear here.
    *
    * Pagination: keyset (`cursor`) is preferred for large histories because
    * OFFSET re-scans and discards rows on every page. A tie-breaker on `id`
@@ -1021,7 +1039,7 @@ export class CashShiftService {
     /** Keyset pagination cursor — the id of the last row of the previous page. */
     cursor?: { id: string };
   }): Promise<{ shifts: CashShiftRecord[]; total: number }> {
-    const session = this.auth.requireRole(
+    this.auth.requireRole(
       RoleType.CASHIER,
       RoleType.MANAGER,
       RoleType.OWNER,
@@ -1032,16 +1050,13 @@ export class CashShiftService {
 
     const [shifts, total] = await Promise.all([
       this.prisma.cashShift.findMany({
-        where: { workstationId: session.workstationId },
         orderBy: [{ openedAt: 'desc' as const }, { id: 'desc' as const }],
         take: limit,
         ...(cursor
           ? { skip: 1, cursor: { id: cursor.id } }
           : { skip: offset }),
       }) as Promise<CashShiftRecord[]>,
-      this.prisma.cashShift.count({
-        where: { workstationId: session.workstationId },
-      }),
+      this.prisma.cashShift.count({}),
     ]);
 
     return { shifts, total };
@@ -1050,9 +1065,10 @@ export class CashShiftService {
   /**
    * Re-hydrate the in-memory cash shift store from the local database.
    *
-   * Reads the current session's workstationId and queries for the most
-   * recent OPEN shift. Useful after login / user switch to ensure the
-   * store reflects the correct workstation state.
+   * Queries for the most recent OPEN shift regardless of which workstation
+   * or user opened it — the shift is store-wide, so every machine shows and
+   * sells into the same one. Useful after login / user switch to ensure the
+   * store reflects the current shift state.
    */
   async hydrateStore(): Promise<void> {
     const session = useLocalSessionStore.getState().session;
@@ -1063,7 +1079,7 @@ export class CashShiftService {
 
     try {
       const openShift = (await this.prisma.cashShift.findFirst({
-        where: { workstationId: session.workstationId, state: 'OPEN' },
+        where: { state: 'OPEN' },
         orderBy: { openedAt: 'desc' },
       })) as CashShiftRecord | null;
 
@@ -1162,7 +1178,8 @@ export class CashShiftService {
   /**
    * Register CLOSING cash counts for multiple payment methods at once,
    * then immediately close the shift. This is the standard close flow
-   * used by the UI wizard.
+   * used by the UI wizard. Requires an ADMIN-level role (same as
+   * `closeShift`).
    *
    * Each entry must include the declared amount. For cash methods an
    * optional denominations breakdown can be provided.
@@ -1194,7 +1211,7 @@ export class CashShiftService {
     try {
       await dbWriteLock.acquire('foreground');
       try {
-        const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+        const session = this.requireAdminForClose();
         // Single open-shift validation for the whole flow.
         await this.getOpenShift(shiftId);
 
@@ -1325,12 +1342,13 @@ export class CashShiftService {
     return shift;
   }
 
-  private async assertNoOpenShiftExists(workstationId: string): Promise<void> {
+  /**
+   * The shift is store-wide: at most one OPEN shift may exist in the whole
+   * database, regardless of which workstation or user opened it.
+   */
+  private async assertNoOpenShiftExists(): Promise<void> {
     const openShift = await this.prisma.cashShift.findFirst({
-      where: {
-        workstationId,
-        state: 'OPEN',
-      },
+      where: { state: 'OPEN' },
     });
 
     if (openShift) {

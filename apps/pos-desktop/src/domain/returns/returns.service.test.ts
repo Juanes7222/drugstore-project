@@ -3,7 +3,7 @@
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { ReturnsService, createReturnsService, type CreateReturnInput } from "./returns.service";
-import { SaleForReturnNotFoundException, SaleNotConfirmedForReturnException, ReturnQuantityExceedsSaleException, ReturnSaleItemNotFoundException, ReturnNotInDraftException, ReturnNotFoundException, ReturnStockReversalFailedException } from "./exceptions";
+import { SaleForReturnNotFoundException, SaleNotConfirmedForReturnException, ReturnQuantityExceedsSaleException, ReturnSaleItemNotFoundException, ReturnNotInDraftException, ReturnNotFoundException, ReturnStockReversalFailedException, NoOpenCashShiftForReturnException } from "./exceptions";
 import { Prisma } from "@pharmacy/database/local";
 
 // ---------------------------------------------------------------------------
@@ -226,6 +226,43 @@ describe("ReturnsService", () => {
           items: [{ saleItemId: "nonexistent-item", quantity: 1 }],
         }),
       ).rejects.toThrow(ReturnSaleItemNotFoundException);
+    });
+
+    it("throws NoOpenCashShiftForReturnException when no shift is open anywhere", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findUnique.mockResolvedValue(makeSale());
+      tx.cashShift.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create(validCreateInput),
+      ).rejects.toThrow(NoOpenCashShiftForReturnException);
+      // Store-wide lookup — state filter only, never the workstation.
+      expect(tx.cashShift.findFirst).toHaveBeenCalledWith({
+        where: { state: "OPEN" },
+        select: { id: true },
+      });
+    });
+
+    it("attaches the return to the shift opened at another workstation", async () => {
+      // Global shift: an admin opened it at the back office; this cashier
+      // at ws-1 registers the return against that same shift.
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.sale.findUnique.mockResolvedValue(makeSale());
+      tx.cashShift.findFirst.mockResolvedValue({ id: "shift-other-ws" });
+      tx.clientReturn.findFirst.mockResolvedValue(null); // sequential = 1
+      tx.clientReturn.create.mockResolvedValue({
+        id: "return-1",
+        state: "DRAFT",
+        items: [],
+      });
+
+      const result = await service.create(validCreateInput) as { id: string };
+
+      expect(result.id).toBe("return-1");
+      const createArg = tx.clientReturn.create.mock.calls[0][0] as {
+        data: { cashShiftId: string };
+      };
+      expect(createArg.data.cashShiftId).toBe("shift-other-ws");
     });
   });
 

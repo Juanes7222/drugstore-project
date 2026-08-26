@@ -331,14 +331,14 @@ export class CreditService {
         throw new CreditPaymentExceedsDebtException(input.amountCents, debtCents);
       }
 
+      // The shift is global (opened by an admin, possibly at another
+      // workstation), so the abono attaches to whatever OPEN shift exists.
       const cashShift = await tx.cashShift.findFirst({
-        where: { workstationId: session.workstationId, state: 'OPEN' },
+        where: { state: 'OPEN' },
         select: { id: true },
       });
       if (!cashShift) {
-        throw new NoOpenCashShiftForCreditPaymentException(
-          session.workstationId,
-        );
+        throw new NoOpenCashShiftForCreditPaymentException();
       }
 
       const id = globalThis.crypto.randomUUID();

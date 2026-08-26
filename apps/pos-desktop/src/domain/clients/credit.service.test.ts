@@ -347,12 +347,35 @@ describe("CreditService", () => {
       );
     });
 
-    it("rejects when no open cash shift exists for the workstation", async () => {
+    it("rejects when no cash shift is open anywhere in the store", async () => {
       prisma.cashShift.findFirst.mockResolvedValue(null);
 
       await expect(service.recordCreditPayment(validInput)).rejects.toMatchObject(
         { errorCode: "NO_OPEN_CASH_SHIFT_FOR_CREDIT_PAYMENT" },
       );
+      // The abono lookup is store-wide — no workstationId in the filter.
+      expect(prisma.cashShift.findFirst).toHaveBeenCalledWith({
+        where: { state: "OPEN" },
+        select: { id: true },
+      });
+    });
+
+    it("attaches the abono to the shift opened at another workstation", async () => {
+      // Global shift: an admin opened it at the back office; the cashier
+      // recording the abono here works at ws-1.
+      prisma.cashShift.findFirst.mockResolvedValue({ id: "shift-other-ws" });
+      prisma.clientCreditPayment.findFirst.mockResolvedValue(null);
+      prisma.clientCreditPayment.create.mockResolvedValue({ id: "abono-foreign" });
+      prisma.syncQueue.findFirst.mockResolvedValue(null);
+      prisma.syncQueue.create.mockResolvedValue({});
+
+      await service.recordCreditPayment(validInput);
+
+      const createArg = prisma.clientCreditPayment.create.mock
+        .calls[0][0] as { data: { cashShiftId: string; workstationId: string } };
+      expect(createArg.data.cashShiftId).toBe("shift-other-ws");
+      // The payment row keeps the PAYER's workstation for traceability.
+      expect(createArg.data.workstationId).toBe("ws-1");
     });
 
     it("recomputes the debt inside the transaction and caps the abono", async () => {

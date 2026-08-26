@@ -10,7 +10,7 @@ export class ShiftAlreadyOpenException extends DomainError {
   constructor() {
     super(
       'SHIFT_ALREADY_OPEN',
-      'A shift is already open for this workstation',
+      'A shift is already open for this store',
     );
   }
 }

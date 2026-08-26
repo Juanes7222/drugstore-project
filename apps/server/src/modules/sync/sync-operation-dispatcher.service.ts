@@ -312,28 +312,19 @@ export class SyncOperationDispatcherService {
       return;
     }
 
-    // Ensure the cash shift exists on the server before replaying the sale.
-    // The POS manages shifts entirely locally and never syncs SHIFT_OPEN.
-    // Without this step, every SALE_CONFIRMATION fails with
-    // CashShiftNotOpenForWorkstationException because no server-side
-    // CashShift record exists for this workstation yet.
-    //
-    // Uses upsert to avoid a TOCTOU race when two concurrent sync jobs
-    // try to create the same cash shift id simultaneously.
+    // Ensure the sale's cash-shift reference resolves under the GLOBAL
+    // shift model before replaying. The POS manages shifts locally and
+    // never syncs SHIFT_OPEN, so the referenced shift may not exist
+    // server-side yet. Resolution order:
+    //   1. Referenced shift already exists (OPEN or closed) → done;
+    //      SalesService.getOpenCashShift handles attribution.
+    //   2. A tenant-wide OPEN shift exists (opened by ANOTHER workstation
+    //      or user) → rewrite cashShiftId to join it. Workstation
+    //      ownership of the shift is irrelevant by design.
+    //   3. Neither → legacy-compat bootstrap: materialize the offline
+    //      shift as the tenant's OPEN shift.
     if (createSaleDto?.cashShiftId) {
-      await this.prisma.cashShift.upsert({
-        where: { id: createSaleDto.cashShiftId },
-        update: {},
-        create: {
-          id: createSaleDto.cashShiftId,
-          subscriptionId: this.tenantContext.getSubscriptionId(),
-          workstationId,
-          userId,
-          state: 'OPEN',
-          openedAt: new Date(),
-          openingBalance: new Prisma.Decimal(0),
-        },
-      });
+      await this.ensureGlobalShiftAttribution(createSaleDto, workstationId, userId);
     }
 
     // ── Product ID remapping ─────────────────────────────────────────
@@ -377,7 +368,77 @@ export class SyncOperationDispatcherService {
     );
   }
 
-  /** Replays a SHIFT_CLOSURE: registers closing cash counts then closes the shift. */
+  /**
+   * Resolves a replayed sale's cash-shift reference against the GLOBAL
+   * shift model (exactly one OPEN shift per tenant).
+   *
+   * The check-and-materialize runs inside one transaction guarded by a
+   * PostgreSQL advisory lock keyed per subscription: without it, two
+   * workstations replaying offline sales concurrently could both observe
+   * "no open shift" and each materialize their own, silently breaking the
+   * one-open-shift invariant (the schema has no partial unique index on
+   * `state = 'OPEN'` to catch it at the database level).
+   *
+   * Mutates `createSaleDto.cashShiftId` in place when the sale is adopted
+   * into an existing OPEN shift — the DTO instance is dispatcher-local, so
+   * this never leaks back to any client payload.
+   */
+  private async ensureGlobalShiftAttribution(
+    createSaleDto: CreateSaleDto,
+    workstationId: string,
+    userId: string,
+  ): Promise<void> {
+    const referencedShift = await this.prisma.cashShift.findUnique({
+      where: { id: createSaleDto.cashShiftId },
+      select: { id: true },
+    });
+    if (referencedShift) return;
+
+    const lockKey = `${this.tenantContext.getSubscriptionId()}:cash-shift-global-open`;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+      const openShift = await tx.cashShift.findFirst({
+        where: { state: 'OPEN' },
+        orderBy: { openedAt: 'desc' },
+        select: { id: true },
+      });
+
+      if (openShift) {
+        // Join THE global shift opened by another workstation/user.
+        createSaleDto.cashShiftId = openShift.id;
+        return;
+      }
+
+      // Legacy-compat bootstrap: POS versions that never sync SHIFT_OPEN.
+      // Opening balance is unknowable at replay time → 0. Upsert keeps
+      // same-id retries safe even though the lock already serializes.
+      await tx.cashShift.upsert({
+        where: { id: createSaleDto.cashShiftId },
+        update: {},
+        create: {
+          id: createSaleDto.cashShiftId,
+          subscriptionId: this.tenantContext.getSubscriptionId(),
+          workstationId,
+          userId,
+          state: 'OPEN',
+          openedAt: new Date(),
+          openingBalance: new Prisma.Decimal(0),
+        },
+      });
+    });
+  }
+
+  /**
+   * Replays a SHIFT_CLOSURE: registers closing cash counts then closes the shift.
+   *
+   * Global shift model: `shiftId` IS THE store-wide shift — a closure pushed
+   * from any workstation closes it for every other workstation. This runs at
+   * service level, bypassing the ADMIN-only HTTP guard on POST /cash-shifts/:id/close
+   * by design; the POS-side authorization of who may close is enforced when
+   * the operation is queued locally.
+   */
   private async handleShiftClosure(entry: SyncQueueEntry): Promise<void> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
     const userId = payload.userId as string;

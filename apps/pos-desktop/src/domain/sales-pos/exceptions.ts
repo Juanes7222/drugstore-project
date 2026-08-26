@@ -228,6 +228,20 @@ export class DeliveryFeePolicyException extends DomainError {
 }
 
 /**
+ * Thrown when a sale is being created (or confirmed) and no store-wide cash
+ * shift is OPEN. The shift is global: any permitted user may sell, but only
+ * into the single shift opened by an admin.
+ */
+export class NoOpenCashShiftException extends DomainError {
+  constructor() {
+    super(
+      'NO_OPEN_CASH_SHIFT',
+      'No cash shift is currently open. An administrator must open the shift before selling.',
+    );
+  }
+}
+
+/**
  * Thrown when a sale with a CREDIT payment has no registered client
  * (generic consumer or none). Store credit is only for registered clients.
  */

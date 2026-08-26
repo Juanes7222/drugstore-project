@@ -33,11 +33,8 @@ export interface CashShiftState {
 
   /** Replace the current shift record (after open / after DB hydrate). */
   setCurrentShift: (shift: CashShiftRecord | null) => void;
-  /** Load the open shift from the local database for a given workstation. */
-  hydrateFromDb: (
-    prisma: PrismaClient,
-    workstationId: string,
-  ) => Promise<void>;
+  /** Load the store-wide open shift from the local database. */
+  hydrateFromDb: (prisma: PrismaClient) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,10 +49,12 @@ export const useCashShiftStore: StoreApi<CashShiftState> = createStore<
 
   setCurrentShift: (shift) => set({ currentShift: shift, isLoading: false }),
 
-  hydrateFromDb: async (prisma, workstationId) => {
+  // The shift is global (not per-workstation), so hydration reads the most
+  // recent OPEN shift in the whole database — whoever opened it, wherever.
+  hydrateFromDb: async (prisma) => {
     try {
       const openShift = (await prisma.cashShift.findFirst({
-        where: { workstationId, state: 'OPEN' },
+        where: { state: 'OPEN' },
         orderBy: { openedAt: 'desc' },
       })) as CashShiftRecord | null;
 

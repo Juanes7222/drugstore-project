@@ -25,8 +25,12 @@ import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 export class LotsController {
   constructor(private lotsService: LotsService) {}
 
+  // Read endpoints intentionally exclude CASHIER: lot data is inventory
+  // management data, and the POS sale flow works from its local catalog
+  // cache (pushed through /sync/batch), not from direct lot reads. The set
+  // mirrors the POS desktop's INVENTORY_ROLES screen gate.
   @Get('sync')
-  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async syncLots(
     @Query('updatedSince') updatedSince?: string,
     @Query('cursor') cursor?: string,
@@ -40,13 +44,13 @@ export class LotsController {
   }
 
   @Get()
-  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findAll(@Query() query: QueryLotDto): Promise<any> {
     return this.lotsService.findAll(query);
   }
 
   @Get(":id")
-  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findById(@Param("id") id: string): Promise<any> {
     return this.lotsService.findById(id);
   }
@@ -75,7 +79,7 @@ export class LotsController {
   }
 
   @Get("movements")
-  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async listMovements(@Query() query: QueryInventoryMovementDto): Promise<any> {
     return this.lotsService.listMovements(query);
   }

@@ -383,7 +383,7 @@ export const QuickSwitch: FC = () => {
                         className="text-xs"
                         style={{ color: 'var(--color-ink-muted)' }}
                       >
-                        {user.role}
+                        {t(`roles.${user.role.toLowerCase()}`, user.role)}
                       </span>
                     </div>
                   </button>

@@ -486,12 +486,18 @@ export class SalesService {
   }
 
   /**
-   * Resolve the cash shift a sale belongs to.
+   * Resolve the cash shift a sale belongs to — GLOBAL shift model.
    *
-   * Prefers the open shift for (userId, workstationId).  When no open shift
-   * exists (e.g. a sync replay that arrives after the shift was already
-   * closed), falls back to the shift the POS recorded at sale time, provided
-   * it belongs to the same user and workstation.
+   * 1. Happy path: THE tenant-wide OPEN shift, regardless of which user or
+   *    workstation opened it. A sale must never be rejected because it was
+   *    made from another workstation or by another user than whoever
+   *    opened the shift.
+   * 2. Fallback: when no shift is open anymore (e.g. a sync replay that
+   *    arrives after close), accept the shift id the POS recorded at sale
+   *    time provided that shift exists and is CLOSED / FORCED_CLOSE — a
+   *    sale legitimately belonging to a just-closed shift period. The
+   *    shift's own workstation ownership is irrelevant under this model.
+   * 3. Otherwise refuse.
    */
   private async getOpenCashShift(
     tx: Prisma.TransactionClient,
@@ -499,9 +505,10 @@ export class SalesService {
     workstationId: string,
     fallbackCashShiftId?: string,
   ): Promise<any> {
-    // 1. Happy path — shift is still open
+    // 1. Happy path — the single tenant-wide OPEN shift
     const openShift = await tx.cashShift.findFirst({
-      where: { userId, workstationId, state: ShiftState.OPEN },
+      where: { state: ShiftState.OPEN },
+      orderBy: { openedAt: 'desc' },
     });
     if (openShift) return openShift;
 
@@ -510,9 +517,7 @@ export class SalesService {
       const closedShift = await tx.cashShift.findFirst({
         where: {
           id: fallbackCashShiftId,
-          userId,
-          workstationId,
-          state: ShiftState.CLOSED,
+          state: { in: [ShiftState.CLOSED, ShiftState.FORCED_CLOSE] },
         },
       });
       if (closedShift) return closedShift;

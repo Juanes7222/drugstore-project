@@ -1,6 +1,9 @@
 /**
- * Active shift view — shows shift metadata (cashier, opened-at, opening
- * balance, state) and a "Cerrar turno" button that triggers the close wizard.
+ * Active shift view — shows the store-wide shift metadata (opened by,
+ * opened-at, opening balance, state) and, for admin-level sessions, a
+ * "Cerrar turno" button that triggers the close wizard. Non-admin sessions
+ * get the same information read-only with a note that an admin manages
+ * open/close.
  *
  * @category Component
  */
@@ -15,7 +18,8 @@ import type {
 
 interface ActiveShiftViewProps {
   currentShift: CashShiftRecord;
-  cashierName: string;
+  /** Whether the session may close the shift (admin-level roles). */
+  canClose?: boolean;
   onStartClose: () => void;
   actionError: string | null;
   isSubmitting: boolean;
@@ -25,7 +29,7 @@ interface ActiveShiftViewProps {
 
 export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
   currentShift,
-  cashierName,
+  canClose = true,
   onStartClose,
   actionError,
   isSubmitting,
@@ -42,23 +46,40 @@ export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
       })}
     >
       <div className="flex flex-col gap-pos-lg">
+        {/* Store-wide scope hint — the shift is shared by every workstation */}
+        <p className="text-caption" style={{ color: 'var(--color-ink-muted)' }}>
+          {t('cash_shift.store_wide_hint')}
+        </p>
+
         {/* Shift summary grid */}
         <div
           className="grid grid-cols-2 gap-pos-md rounded-pos p-pos-md"
           style={{
-            backgroundColor: 'color-mix(in srgb, var(--color-pharma) 6%, transparent)',
+            backgroundColor:
+              'color-mix(in srgb, var(--color-pharma) 6%, transparent)',
           }}
         >
           <div>
-            <span className="block text-caption font-medium" style={{ color: 'var(--color-ink-muted)' }}>
-              {t('cash_shift.cashier')}
+            <span
+              className="block text-caption font-medium"
+              style={{ color: 'var(--color-ink-muted)' }}
+            >
+              {t('cash_shift.opened_by')}
             </span>
-            <span className="font-data tabular-nums text-body">
-              {cashierName}
+            {/* The record carries only the opener's userId today; show a
+                short mono form until a name resolver is available. */}
+            <span
+              className="font-data tabular-nums text-body"
+              title={currentShift.userId}
+            >
+              {currentShift.userId.slice(0, 8).toUpperCase()}
             </span>
           </div>
           <div>
-            <span className="block text-caption font-medium" style={{ color: 'var(--color-ink-muted)' }}>
+            <span
+              className="block text-caption font-medium"
+              style={{ color: 'var(--color-ink-muted)' }}
+            >
               {t('cash_shift.opened_at')}
             </span>
             <span className="font-data tabular-nums text-body">
@@ -66,7 +87,10 @@ export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
             </span>
           </div>
           <div>
-            <span className="block text-caption font-medium" style={{ color: 'var(--color-ink-muted)' }}>
+            <span
+              className="block text-caption font-medium"
+              style={{ color: 'var(--color-ink-muted)' }}
+            >
               {t('cash_shift.opening_balance')}
             </span>
             <span className="font-data tabular-nums text-body">
@@ -74,13 +98,17 @@ export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
             </span>
           </div>
           <div>
-            <span className="block text-caption font-medium" style={{ color: 'var(--color-ink-muted)' }}>
+            <span
+              className="block text-caption font-medium"
+              style={{ color: 'var(--color-ink-muted)' }}
+            >
               {t('cash_shift.state')}
             </span>
             <span
               className="inline-flex items-center gap-1 rounded-full px-pos-sm py-0.5 font-data text-caption font-medium"
               style={{
-                backgroundColor: 'color-mix(in srgb, var(--color-verified) 15%, transparent)',
+                backgroundColor:
+                  'color-mix(in srgb, var(--color-verified) 15%, transparent)',
                 color: 'var(--color-verified)',
               }}
             >
@@ -100,21 +128,37 @@ export const ActiveShiftView: FC<ActiveShiftViewProps> = ({
           </p>
         )}
 
-        {/* Close shift button */}
-        <div className="flex justify-end border-t pt-pos-lg"
-          style={{
-            borderColor: 'color-mix(in srgb, var(--color-ink) 8%, transparent)',
-          }}
-        >
-          <button
-            type="button"
-            onClick={onStartClose}
-            disabled={isSubmitting}
-            className="pos-button pos-button-danger"
+        {canClose ? (
+          /* Close shift button — admin-level only */
+          <div
+            className="flex justify-end border-t pt-pos-lg"
+            style={{
+              borderColor:
+                'color-mix(in srgb, var(--color-ink) 8%, transparent)',
+            }}
           >
-            {t('cash_shift.close_shift_action')}
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={onStartClose}
+              disabled={isSubmitting}
+              className="pos-button pos-button-danger"
+            >
+              {t('cash_shift.close_shift_action')}
+            </button>
+          </div>
+        ) : (
+          /* Non-admin read-only note */
+          <p
+            className="border-t pt-pos-lg text-body-sm leading-relaxed"
+            style={{
+              borderColor:
+                'color-mix(in srgb, var(--color-ink) 8%, transparent)',
+              color: 'var(--color-ink-muted)',
+            }}
+          >
+            {t('cash_shift.read_only_close_note')}
+          </p>
+        )}
       </div>
     </ReconciliationView>
   );

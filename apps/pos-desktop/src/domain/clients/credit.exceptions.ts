@@ -36,14 +36,15 @@ export class CreditPaymentExceedsDebtException extends DomainError {
 
 /**
  * Thrown when a credit payment (abono) is recorded while no cash shift is
- * open for the workstation — the payment must be tied to the open shift for
- * cash reconciliation.
+ * open anywhere in the store — the payment must be tied to the open shift
+ * for cash reconciliation. The shift is global, so the lookup is not scoped
+ * to the paying workstation.
  */
 export class NoOpenCashShiftForCreditPaymentException extends DomainError {
-  constructor(workstationId: string) {
+  constructor() {
     super(
       'NO_OPEN_CASH_SHIFT_FOR_CREDIT_PAYMENT',
-      `No open cash shift found for workstation ${workstationId}.`,
+      'No cash shift is currently open. An administrator must open the shift before recording credit payments.',
     );
   }
 }

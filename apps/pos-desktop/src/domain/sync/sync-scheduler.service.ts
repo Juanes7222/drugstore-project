@@ -33,6 +33,7 @@ import {
   useLocalSessionStore,
   type LocalSession,
 } from '../auth/local-session.store';
+import { HttpStatusException } from '../auth/auth-http-client';
 import { decodeOfflineToken } from '../auth/offline';
 import type {
   CatalogSyncService,
@@ -49,6 +50,10 @@ import type {
   ClientPullConfig,
 } from '../clients/client-pull.service';
 import { createClientPullService } from '../clients/client-pull.service';
+import type {
+  OpenShiftPullService,
+} from '../cash-shift/open-shift-pull.service';
+import { createOpenShiftPullService } from '../cash-shift/open-shift-pull.service';
 import type {
   ConfigSyncService,
   ConfigSyncConfig,
@@ -163,11 +168,19 @@ export class SyncScheduler {
    * being sent without reaching into the service.
    */
   private offlineToken?: string;
+  /**
+   * Pulls the server answered with 403 for the current session's role.
+   * Skipping them keeps the sync cycle quiet instead of logging the same
+   * authorization failure every interval; updateAccessToken() clears the
+   * set on re-login because a different user may be allowed to pull.
+   */
+  private readonly pullSuppressed = new Set<string>();
   private configSync: ConfigSyncService;
   private tenantConfigSync?: TenantConfigSyncService;
   private catalogSync: CatalogSyncService;
   private lotSync: LotSyncService;
   private clientPull: ClientPullService;
+  private openShiftPull: OpenShiftPullService;
   private pushService: SyncPushService;
   private readonly metricsService: SyncMetricsService;
   private readonly backupService: BackupService;
@@ -205,6 +218,11 @@ export class SyncScheduler {
       ...config.clients,
       accessToken: config.accessToken ?? config.clients.accessToken,
     });
+    this.openShiftPull = createOpenShiftPullService(
+      config.prisma,
+      { baseUrl: config.baseUrl, accessToken: config.accessToken },
+      this.readWorkstationContext(),
+    );
     this.offlineToken =
       useLocalSessionStore.getState().session?.offlineToken ?? undefined;
     this.pushService = createSyncPushService({
@@ -243,11 +261,19 @@ export class SyncScheduler {
    */
   updateAccessToken(token: string): void {
     this.accessToken = token;
+    // A fresh login may carry different roles — re-enable pulls that were
+    // suppressed because the previous session was forbidden to run them.
+    this.pullSuppressed.clear();
     const baseConfig = { baseUrl: this.baseUrl, accessToken: token };
     this.configSync = createConfigSyncService(this.prisma, baseConfig);
     this.catalogSync = createCatalogSyncService(this.prisma, baseConfig);
     this.lotSync = createLotSyncService(this.prisma, baseConfig);
     this.clientPull = createClientPullService(this.prisma, baseConfig);
+    this.openShiftPull = createOpenShiftPullService(
+      this.prisma,
+      { baseUrl: this.baseUrl, accessToken: token },
+      this.readWorkstationContext(),
+    );
     this.offlineToken =
       useLocalSessionStore.getState().session?.offlineToken ?? undefined;
     this.pushService = createSyncPushService({
@@ -263,6 +289,45 @@ export class SyncScheduler {
       baseUrl: this.baseUrl,
       accessToken: token,
     });
+  }
+
+  /**
+   * Workstation identity for the open-shift pull's conflict heuristic.
+   * Read at construction/re-creation time — a fresh login always carries a
+   * session, so the value is real by then; 'unknown' before it only makes
+   * the pull conservative (never supersedes an unattributed local shift).
+   */
+  private readWorkstationContext(): { workstationId: string } {
+    return {
+      workstationId:
+        useLocalSessionStore.getState().session?.workstationId ?? 'unknown',
+    };
+  }
+
+  /**
+   * Whether the error is the server refusing this session's role (403).
+   * Falls back to message matching because some pull services wrap the
+   * original HttpStatusException into a domain exception carrying the
+   * status in the message text.
+   */
+  private isForbidden(err: unknown): boolean {
+    if (err instanceof HttpStatusException) return err.status === 403;
+    const message = describeSyncError(err);
+    return /\b403\b|\bForbidden\b/i.test(message);
+  }
+
+  /**
+   * Stop attempting a pull the server forbids for this role, logging once.
+   * The suppression lives until the next login (updateAccessToken clears
+   * it) — retrying every cycle would only repeat the same authorization
+   * failure against an endpoint that will not change its answer.
+   */
+  private suppressPull(name: string): void {
+    if (this.pullSuppressed.has(name)) return;
+    this.pullSuppressed.add(name);
+    console.info(
+      `[SyncScheduler] ${name} pull forbidden for this role — suppressed until next login`,
+    );
   }
 
   // -----------------------------------------------------------------------
@@ -1001,42 +1066,92 @@ export class SyncScheduler {
     }
 
     // 2. Catalog first — lots depend on product references being current.
-    try {
-      const payload = await this.catalogSync.fetchCatalog();
-      await this.withLock(() => this.catalogSync.applyCatalog(payload));
-    } catch (err) {
-      // A catalog apply that rolls back (FK/enum mismatch, oversized
-      // transaction) must be visible — it is the difference between a POS
-      // with products and one selling from an empty mirror forever.
-      console.warn('[SyncScheduler] catalog pull failed:', describeSyncError(err));
+    if (!this.pullSuppressed.has('catalog')) {
+      try {
+        const payload = await this.catalogSync.fetchCatalog();
+        await this.withLock(() => this.catalogSync.applyCatalog(payload));
+      } catch (err) {
+        if (this.isForbidden(err)) {
+          this.suppressPull('catalog');
+        } else {
+          // A catalog apply that rolls back (FK/enum mismatch, oversized
+          // transaction) must be visible — it is the difference between a POS
+          // with products and one selling from an empty mirror forever.
+          console.warn('[SyncScheduler] catalog pull failed:', describeSyncError(err));
+        }
+      }
     }
 
     // 3. Lot sync
-    try {
-      const lots = await this.lotSync.fetchLots();
-      await this.withLock(() => this.lotSync.applyLots(lots));
-    } catch (err) {
-      console.warn('[SyncScheduler] lot pull failed:', describeSyncError(err));
+    if (!this.pullSuppressed.has('lots')) {
+      try {
+        const lots = await this.lotSync.fetchLots();
+        await this.withLock(() => this.lotSync.applyLots(lots));
+      } catch (err) {
+        if (this.isForbidden(err)) {
+          this.suppressPull('lots');
+        } else {
+          console.warn('[SyncScheduler] lot pull failed:', describeSyncError(err));
+        }
+      }
     }
 
     // 4. Client classifications — must be pulled BEFORE clients so the
     //    FK from Client.classificationId to ClientClassification resolves.
-    try {
-      const rows = await this.clientPull.fetchClassifications();
-      await this.withLock(() => this.clientPull.applyClassifications(rows));
-    } catch (err) {
-      console.warn(
-        '[SyncScheduler] client-classification pull failed:',
-        describeSyncError(err),
-      );
+    if (!this.pullSuppressed.has('client-classifications')) {
+      try {
+        const rows = await this.clientPull.fetchClassifications();
+        await this.withLock(() => this.clientPull.applyClassifications(rows));
+      } catch (err) {
+        if (this.isForbidden(err)) {
+          this.suppressPull('client-classifications');
+        } else {
+          console.warn(
+            '[SyncScheduler] client-classification pull failed:',
+            describeSyncError(err),
+          );
+        }
+      }
     }
 
     // 5. Client pull
-    try {
-      const clients = await this.clientPull.fetchClients();
-      await this.withLock(() => this.clientPull.applyClients(clients));
-    } catch (err) {
-      console.warn('[SyncScheduler] client pull failed:', describeSyncError(err));
+    if (!this.pullSuppressed.has('clients')) {
+      try {
+        const clients = await this.clientPull.fetchClients();
+        await this.withLock(() => this.clientPull.applyClients(clients));
+      } catch (err) {
+        if (this.isForbidden(err)) {
+          this.suppressPull('clients');
+        } else {
+          console.warn('[SyncScheduler] client pull failed:', describeSyncError(err));
+        }
+      }
+    }
+
+    // 5.5. Open-shift mirror — the shift is store-wide; another workstation
+    //      may have opened it. Adopting the server's OPEN row here lets this
+    //      POS sell into the same shift even before its next full restart.
+    //      A 404 (no open shift anywhere) is normal, not an error.
+    if (!this.pullSuppressed.has('open-shift')) {
+      try {
+        const row = await this.openShiftPull.fetchOpenShift();
+        if (row) {
+          const result = await this.withLock(() =>
+            this.openShiftPull.applyOpenShift(row),
+          );
+          if (result.status === 'local-open-conflict') {
+            console.warn(
+              `[SyncScheduler] open-shift conflict: local ${result.localShiftId} vs server ${result.serverShiftId} — keeping local until its push lands`,
+            );
+          }
+        }
+      } catch (err) {
+        if (this.isForbidden(err)) {
+          this.suppressPull('open-shift');
+        } else {
+          console.warn('[SyncScheduler] open-shift pull failed:', describeSyncError(err));
+        }
+      }
     }
 
     // 5. Pull invoice transmission results (only if the invoice service is available)

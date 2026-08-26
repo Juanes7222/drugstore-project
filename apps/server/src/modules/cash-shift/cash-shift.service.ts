@@ -7,6 +7,7 @@ import { RegisterCashCountDto } from './dto/register-cash-count.dto';
 import { CloseCashShiftDto } from './dto/close-cash-shift.dto';
 import { ForceCloseCashShiftDto } from './dto/force-close-cash-shift.dto';
 import { ShiftAlreadyOpenException } from './exceptions/shift-already-open.exception';
+import { NoOpenShiftException } from './exceptions/no-open-shift.exception';
 import { ShiftNotOpenException } from './exceptions/shift-not-open.exception';
 import { MissingClosingCashCountsException } from './exceptions/missing-closing-cash-counts.exception';
 import { InvalidCashCountForNonCashMethodException } from './exceptions/invalid-cash-count-for-non-cash-method.exception';
@@ -22,12 +23,20 @@ export class CashShiftService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
+  /**
+   * Opens the store-wide cash shift.
+   *
+   * `workstationId` records the ORIGIN workstation that opened the shift;
+   * it no longer scopes the shift. Under the global shift model exactly one
+   * OPEN shift may exist per tenant at any time, and any selling user on
+   * any workstation sells into it.
+   */
   async openShift(
     workstationId: string,
     userId: string,
     dto: OpenCashShiftDto,
   ): Promise<any> {
-    await this.assertNoOpenShiftExists(workstationId);
+    await this.assertNoOpenShiftExists();
 
     return this.prisma.cashShift.create({
       data: {
@@ -43,12 +52,49 @@ export class CashShiftService {
     });
   }
 
+  /**
+   * Returns the tenant's current OPEN shift, or throws `NoOpenShiftException`
+   * (HTTP 404) when none exists.
+   *
+   * Consumed by GET /cash-shifts/open so POS workstations can mirror the
+   * global open shift locally before selling offline. Deliberately readable
+   * by CASHIER-level roles: selling users must be able to discover which
+   * shift their sales will attach to.
+   */
+  async getOpenShift(): Promise<{
+    id: string;
+    workstationId: string;
+    userId: string;
+    openedAt: Date;
+    openingBalance: Prisma.Decimal;
+    state: string;
+  }> {
+    const shift = await this.prisma.cashShift.findFirst({
+      where: { state: 'OPEN' },
+      orderBy: { openedAt: 'desc' },
+      select: {
+        id: true,
+        workstationId: true,
+        userId: true,
+        openedAt: true,
+        openingBalance: true,
+        state: true,
+      },
+    });
+
+    if (!shift) {
+      throw new NoOpenShiftException();
+    }
+
+    return shift;
+  }
+
   async registerCashCount(
     shiftId: string,
     userId: string,
     dto: RegisterCashCountDto,
   ): Promise<any> {
-    const shift = await this.getOpenShift(shiftId);
+    const shift = await this.requireOpenShiftById(shiftId);
 
     const paymentMethod = await this.prisma.paymentMethod.findUnique({
       where: { id: dto.paymentMethodId },
@@ -89,7 +135,7 @@ export class CashShiftService {
     userId: string,
     dto: CloseCashShiftDto,
   ): Promise<any> {
-    const shift = await this.getOpenShift(shiftId);
+    const shift = await this.requireOpenShiftById(shiftId);
 
     const closingCounts = await this.prisma.shiftCashCount.findMany({
       where: {
@@ -140,7 +186,7 @@ export class CashShiftService {
       throw new Error('Closing notes are required for force close');
     }
 
-    const shift = await this.getOpenShift(shiftId);
+    const shift = await this.requireOpenShiftById(shiftId);
 
     const closingCounts = await this.prisma.shiftCashCount.findMany({
       where: {
@@ -203,7 +249,8 @@ export class CashShiftService {
     }
   }
 
-  private async getOpenShift(shiftId: string): Promise<any> {
+  /** Loads a shift by id and requires it to still be OPEN. */
+  private async requireOpenShiftById(shiftId: string): Promise<any> {
     const shift = await this.prisma.cashShift.findUnique({
       where: { id: shiftId },
     });
@@ -215,10 +262,20 @@ export class CashShiftService {
     return shift;
   }
 
-  private async assertNoOpenShiftExists(workstationId: string): Promise<void> {
+  /**
+   * Global shift model: at most ONE OPEN shift per tenant.
+   *
+   * Enforced here at the application level — the CashShift schema has no
+   * partial unique index on `state = 'OPEN'` yet (see
+   * packages/database/prisma/schema-source/shared/cash-shift.prisma), so the
+   * database alone does not protect this invariant. Concurrent HTTP opens can
+   * still race past this check until that index is added by a future
+   * migration; the sync bootstrap path additionally serializes through a
+   * PostgreSQL advisory lock (see SyncOperationDispatcherService).
+   */
+  private async assertNoOpenShiftExists(): Promise<void> {
     const openShift = await this.prisma.cashShift.findFirst({
       where: {
-        workstationId,
         state: 'OPEN',
       },
     });

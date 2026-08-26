@@ -40,6 +40,7 @@ import {
   ReturnNotInDraftException,
   ReturnNotFoundException,
   ReturnStockReversalFailedException,
+  NoOpenCashShiftForReturnException,
 } from './exceptions';
 
 // ---------------------------------------------------------------------------
@@ -202,13 +203,14 @@ export class ReturnsService {
         throw new SaleNotConfirmedForReturnException(input.saleId, sale.operationalState);
       }
 
-      // 2. Fetch the open cash shift
+      // 2. Fetch the store-wide open cash shift (global — opened by an
+      //    admin, possibly at another workstation).
       const cashShift = await tx.cashShift.findFirst({
-        where: { workstationId: session.workstationId, state: 'OPEN' },
+        where: { state: 'OPEN' },
         select: { id: true },
       });
       if (!cashShift) {
-        throw new Error(`No open cash shift found for workstation ${session.workstationId}.`);
+        throw new NoOpenCashShiftForReturnException();
       }
 
       // 3. Validate each return item against the original sale

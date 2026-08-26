@@ -20,6 +20,7 @@ import { getLocalDatabase } from "../../../infrastructure/local-database";
 import { useAppDispatch } from "@/store/hooks";
 import { navigateToSales } from "@/store/slices/ui-slice";
 import { useLocalSessionStore, hasMinRole } from "../../../domain/auth";
+import { canAccessScreen } from "../Navigation/screen-access";
 import { RoleType } from "@pharmacy/shared-types";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import { QuickActionsCard } from "./quick-actions-card";
@@ -283,8 +284,12 @@ export const Home: FC = () => {
       </motion.div>
 
       {/* ── Persistent DIAN certificate reminder (CERTIFICATE plan) ── */}
-      <CertificateStatusBanner />
-
+      {/* Persistent DIAN certificate reminder (CERTIFICATE plan) — fiscal
+          endpoints reject non-management roles with 403, so the banner only
+          mounts for roles that can actually read them. */}
+      {session && canAccessScreen(session, "fiscal") && (
+        <CertificateStatusBanner />
+      )}
       {/* ── Quick actions grid ── */}
       <motion.div
         {...fadeUp}

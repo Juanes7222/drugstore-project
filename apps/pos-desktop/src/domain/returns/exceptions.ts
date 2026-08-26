@@ -81,3 +81,17 @@ export class ReturnStockReversalFailedException extends DomainError {
     super('RETURN_STOCK_REVERSAL_FAILED', `Stock reversal failed for lot ${lotId}: ${message}`);
   }
 }
+
+/**
+ * Thrown when a return is attempted and no store-wide cash shift is OPEN.
+ * The shift is global: returns attach to the single shift opened by an
+ * admin, regardless of which workstation or user processes the return.
+ */
+export class NoOpenCashShiftForReturnException extends DomainError {
+  constructor() {
+    super(
+      'NO_OPEN_CASH_SHIFT_FOR_RETURN',
+      'No cash shift is currently open. An administrator must open the shift before processing returns.',
+    );
+  }
+}

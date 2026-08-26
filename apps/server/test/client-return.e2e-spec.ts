@@ -10,6 +10,8 @@ import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter
 const TEST_WORKSTATION_ID = 'e2e-ws-ret-001';
 const TEST_USERNAME = 'e2e-cashier@return.test';
 const TEST_PASSWORD = 'CashierPass123!';
+const TEST_ADMIN_USERNAME = 'e2e-admin@return.test';
+const TEST_ADMIN_PASSWORD = 'AdminPass123!';
 const TEST_PRODUCT_ID = 'e2e-ret-product-id-001';
 const TEST_TAX_SCHEME_ID = 'e2e-ret-tax-scheme-001';
 const TEST_LOT_ID = 'e2e-ret-lot-id-001';
@@ -26,6 +28,7 @@ describe('Client return (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaClient;
   let cashierToken: string;
+  let adminToken: string;
   let shiftId: string;
   let clientReturnId: string;
 
@@ -54,8 +57,8 @@ describe('Client return (e2e)', () => {
     await prisma.product.deleteMany({ where: { id: TEST_PRODUCT_ID } });
     await prisma.taxScheme.deleteMany({ where: { id: TEST_TAX_SCHEME_ID } });
     await prisma.paymentMethod.deleteMany({ where: { id: { in: [TEST_CASH_PM_ID] } } });
-    await prisma.userSession.deleteMany({ where: { userId: 'e2e-ret-cashier-id' } });
-    await prisma.user.deleteMany({ where: { username: TEST_USERNAME } });
+    await prisma.userSession.deleteMany({ where: { userId: { in: ['e2e-ret-cashier-id', 'e2e-ret-admin-id'] } } });
+    await prisma.user.deleteMany({ where: { username: { in: [TEST_USERNAME, TEST_ADMIN_USERNAME] } } });
     await prisma.workstation.deleteMany({ where: { id: TEST_WORKSTATION_ID } });
 
     // Seed: Workstation
@@ -79,6 +82,21 @@ describe('Client return (e2e)', () => {
         passwordHash,
         passwordAlgorithm: 'argon2',
         role: 'CASHIER',
+        isActive: true,
+      },
+    });
+
+    // Seed: Admin user — lot stock assertions read GET /inventory-lots/lots/:id,
+    // which requires INVENTORY_ASSISTANT/MANAGER/ADMIN; a CASHIER is denied by design.
+    const adminHash = await argon2.hash(TEST_ADMIN_PASSWORD);
+    await prisma.user.create({
+      data: {
+        id: 'e2e-ret-admin-id',
+        username: TEST_ADMIN_USERNAME,
+        fullName: 'E2E Return Admin',
+        passwordHash: adminHash,
+        passwordAlgorithm: 'argon2',
+        role: 'ADMIN',
         isActive: true,
       },
     });
@@ -297,6 +315,19 @@ describe('Client return (e2e)', () => {
     });
   });
 
+  describe('Step 1b: Login as ADMIN', () => {
+    it('should return tokens for valid admin credentials', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ username: TEST_ADMIN_USERNAME, password: TEST_ADMIN_PASSWORD })
+        .set('x-workstation-id', TEST_WORKSTATION_ID)
+        .expect(200);
+
+      expect(res.body.user.role).toBe('ADMIN');
+      adminToken = res.body.accessToken;
+    });
+  });
+
   describe('Step 2: Create a client return (DRAFT)', () => {
     it('should create a return with DRAFT state', async () => {
       const res = await request(app.getHttpServer())
@@ -343,7 +374,7 @@ describe('Client return (e2e)', () => {
     it('should have increased lot stock after confirmation', async () => {
       const res = await request(app.getHttpServer())
         .get(`/inventory-lots/lots/${TEST_LOT_ID}`)
-        .set('Authorization', `Bearer ${cashierToken}`)
+        .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
       // Stock was INITIAL_LOT_STOCK - SALE_QUANTITY before return.

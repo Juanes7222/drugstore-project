@@ -101,8 +101,10 @@ export class ClientsService {
   /**
    * Search clients by document number or partial name match.
    *
-   * Requires CASHIER or ADMIN role.
-   * Returns results directly from the local database — no network call.
+   * Requires a floor role (cashier through owner). Mirrors the server's
+   * read guard for the clients endpoints — offline sale flows resolve
+   * clients, so every selling role may read them.
+   * Returns results directly from the local database - no network call.
    *
    * @param query  Search term.  When the term is a non-empty string the
    *               method searches `identificationNumber` (prefix match) and
@@ -110,7 +112,12 @@ export class ClientsService {
    *               queries return recently-updated clients (limit 50).
    */
   async search(query?: string): Promise<ClientSearchResult[]> {
-    this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
+    this.auth.requireRole(
+      RoleType.CASHIER,
+      RoleType.INVENTORY_ASSISTANT,
+      RoleType.MANAGER,
+      RoleType.ADMIN,
+    );
 
     if (!query || query.trim().length === 0) {
       const clients = await this.prisma.client.findMany({

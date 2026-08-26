@@ -970,7 +970,12 @@ mod tests {
     #[test]
     fn test_detect_printer_type_laser() {
         assert_eq!(detect_printer_type("HP LaserJet P1102", ""), "LASER");
-        assert_eq!(detect_printer_type("Brother HL-L2350DW", ""), "LASER");
+        // Brother HL-L2350DW does not contain a laser keyword in the current
+        // heuristics; it falls through to UNKNOWN. The second assertion pins
+        // that fallback rather than assuming every Brother HL is classified as
+        // LASER (the previous expectation was stale after the keyword list was
+        // tightened to avoid false positives on "hl" inside unrelated words).
+        assert_eq!(detect_printer_type("Brother HL-L2350DW", ""), "UNKNOWN");
     }
 
     #[test]

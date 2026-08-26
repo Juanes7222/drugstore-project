@@ -42,6 +42,14 @@ vi.mock("../clients/client-pull.service", () => ({
   })),
 }));
 
+vi.mock("../cash-shift/open-shift-pull.service", () => ({
+  createOpenShiftPullService: vi.fn(() => ({
+    fetchOpenShift: vi.fn(),
+    applyOpenShift: vi.fn(),
+    refreshOpenShift: vi.fn(),
+  })),
+}));
+
 vi.mock("./sync-push.service", () => ({
   createSyncPushService: vi.fn(() => ({
     preparePush: vi.fn(),
@@ -74,6 +82,7 @@ import { createCatalogSyncService } from "../catalog/catalog-sync.service";
 import { createLotSyncService } from "../inventory-lots/lot-sync.service";
 import { createClientPullService } from "../clients/client-pull.service";
 import { createSyncPushService } from "./sync-push.service";
+import { createOpenShiftPullService } from "../cash-shift/open-shift-pull.service";
 import { createBackupService } from "../backup/backup.service";
 import { createSyncMetricsService } from "./sync-metrics.service";
 import { useLocalSessionStore } from "../auth/local-session.store";
@@ -160,6 +169,40 @@ describe("SyncScheduler.updateAccessToken", () => {
       expect(createClientPullService).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ accessToken: "token-v2" }),
+      );
+    });
+
+    it("re-creates OpenShiftPullService with the new token and the session workstation", () => {
+      // The open-shift pull's conflict heuristic needs a workstation id; a
+      // seeded session must flow into its context on re-creation.
+      useLocalSessionStore.getState().setSession({
+        userId: "user-1",
+        username: "test-user",
+        fullName: "Test User",
+        displayName: "Test User",
+        email: null,
+        role: "ADMIN",
+        subscriptionId: null,
+        workstationId: "ws-open-shift",
+        accessToken: "access-token-123",
+        refreshToken: "refresh-token-123",
+        expiresAt: new Date(Date.now() + 600_000),
+        sessionId: "session-1",
+        totpEnabled: false,
+        avatarUrl: null,
+        avatarColor: null,
+        mustChangePassword: false,
+        sessionTrust: "SERVER_VERIFIED",
+      } as any);
+      scheduler = createSyncScheduler(makeSchedulerConfig());
+      vi.clearAllMocks();
+
+      scheduler.updateAccessToken("token-v2");
+
+      expect(createOpenShiftPullService).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ accessToken: "token-v2" }),
+        { workstationId: "ws-open-shift" },
       );
     });
 

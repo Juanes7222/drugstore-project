@@ -7,6 +7,10 @@
  * 3. Delegates rendering to extracted presentational components
  * 4. Manages history fetching + pagination
  *
+ * The shift is store-wide (one open shift shared by all workstations), so
+ * only ADMIN-level sessions see the open/close controls; everyone else
+ * gets a read-only view of the same state.
+ *
  * The close wizard follows a 3-step flow:
  *   1. Summary — sales totals per payment method (SummaryStep)
  *   2. Count   — declare actual amounts per payment method (CountStep)
@@ -23,36 +27,38 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-} from "react";
-import { useTranslation } from "react-i18next";
-import { Prisma } from "@pharmacy/database/local";
-import { useCashShiftService } from "../common/service-context";
-import { useCashShiftStore } from "../../../domain/cash-shift/cash-shift.store";
-import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
-import { useCompanySetup } from "@/hooks/use-company-setup";
-import { useAppDispatch } from "@/store/hooks";
-import { setActiveScreen } from "@/store/slices/ui-slice";
-import { CompanySetupGate } from "../company-setup/company-setup-gate";
+} from 'react';
+import { useTranslation } from 'react-i18next';
+import { Prisma } from '@pharmacy/database/local';
+import { RoleType } from '@pharmacy/shared-types';
+import { useCashShiftService } from '../common/service-context';
+import { useCashShiftStore } from '../../../domain/cash-shift/cash-shift.store';
+import {
+  useLocalSessionStore,
+  hasMinRole,
+  InsufficientRoleException,
+} from '../../../domain/auth';
+import { useCompanySetup } from '@/hooks/use-company-setup';
+import { useAppDispatch } from '@/store/hooks';
+import { setActiveScreen } from '@/store/slices/ui-slice';
+import { CompanySetupGate } from '../company-setup/company-setup-gate';
 import {
   ShiftAlreadyOpenException,
   ShiftNotOpenException,
   MissingClosingCashCountsException,
-} from "../../../domain/cash-shift/exceptions";
+} from '../../../domain/cash-shift/exceptions';
 import type {
   CashShiftRecord,
   ShiftFiscalComparison,
-} from "../../../domain/cash-shift/cash-shift.service";
-import { ActiveShiftView } from "./active-shift-view";
-import { SummaryStep } from "./summary-step";
-import { CountStep } from "./count-step";
-import { ConfirmStep } from "./confirm-step";
-import { OpenShiftForm } from "./open-shift-form";
-import { ShiftHistorySection } from "./shift-history-section";
-import type {
-  PageState,
-  CloseWizardStep,
-  CountEntry,
-} from "./types";
+} from '../../../domain/cash-shift/cash-shift.service';
+import { ActiveShiftView } from './active-shift-view';
+import { SummaryStep } from './summary-step';
+import { CountStep } from './count-step';
+import { ConfirmStep } from './confirm-step';
+import { OpenShiftForm } from './open-shift-form';
+import { OpenShiftAdminRequired } from './open-shift-admin-required';
+import { ShiftHistorySection } from './shift-history-section';
+import type { PageState, CloseWizardStep, CountEntry } from './types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -72,20 +78,28 @@ export const CashShiftPage: FC = () => {
   const { status: companySetupStatus } = useCompanySetup();
 
   // Reactive store subscription via useSyncExternalStore (vanilla zustand)
-  const cashShiftState = useSyncExternalStore(
-    useCashShiftStore.subscribe,
-    () => useCashShiftStore.getState(),
+  const cashShiftState = useSyncExternalStore(useCashShiftStore.subscribe, () =>
+    useCashShiftStore.getState(),
   );
   const currentShift = cashShiftState.currentShift;
   const isLoading = cashShiftState.isLoading;
 
+  // Reactive session subscription — role gating must follow quick user
+  // switches without a remount.
+  const session = useLocalSessionStore((s) => s.session);
+  // The shift is store-wide: only ADMIN-level roles (ADMIN/OWNER/SAAS_ADMIN,
+  // matching requireRole(RoleType.ADMIN) supersession) may open or close it.
+  const canManageShift = hasMinRole(session, RoleType.ADMIN);
+
   // ---- Local UI state ----
-  const [openingBalance, setOpeningBalance] = useState("");
+  const [openingBalance, setOpeningBalance] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ---- Close wizard state ----
-  const [closeWizard, setCloseWizard] = useState<CloseWizardStep>({ step: "idle" });
+  const [closeWizard, setCloseWizard] = useState<CloseWizardStep>({
+    step: 'idle',
+  });
   const requiresStepUpRef = useRef(false);
 
   // ---- Fiscal vs operational drift comparison ----
@@ -103,9 +117,9 @@ export const CashShiftPage: FC = () => {
 
   // ---- Derived page state ----
   const pageState: PageState = useMemo(() => {
-    if (isLoading) return { status: "loading" };
-    if (currentShift) return { status: "open" };
-    return { status: "no-shift" };
+    if (isLoading) return { status: 'loading' };
+    if (currentShift) return { status: 'open' };
+    return { status: 'no-shift' };
   }, [isLoading, currentShift]);
 
   // ---- Clear transient errors when shift state changes ----
@@ -144,7 +158,7 @@ export const CashShiftPage: FC = () => {
 
   // ---- Reset wizard when shift changes ----
   useEffect(() => {
-    setCloseWizard({ step: "idle" });
+    setCloseWizard({ step: 'idle' });
     requiresStepUpRef.current = false;
   }, [currentShift?.id]);
 
@@ -202,7 +216,7 @@ export const CashShiftPage: FC = () => {
   const handleOpenShift = useCallback(async () => {
     const balanceNum = Number(openingBalance);
     if (Number.isNaN(balanceNum) || balanceNum < 0) {
-      setActionError(t("cash_shift.errors.invalid_balance"));
+      setActionError(t('cash_shift.errors.invalid_balance'));
       return;
     }
 
@@ -214,13 +228,15 @@ export const CashShiftPage: FC = () => {
         openingBalance: new Prisma.Decimal(balanceNum),
       });
       useCashShiftStore.getState().setCurrentShift(shift);
-      setOpeningBalance("");
+      setOpeningBalance('');
     } catch (err) {
       if (err instanceof ShiftAlreadyOpenException) {
-        setActionError(t("cash_shift.errors.shift_already_open"));
+        setActionError(t('cash_shift.errors.shift_already_open'));
+      } else if (err instanceof InsufficientRoleException) {
+        setActionError(t('cash_shift.errors.insufficient_role'));
       } else {
         setActionError(
-          err instanceof Error ? err.message : t("common.unexpected_error"),
+          err instanceof Error ? err.message : t('common.unexpected_error'),
         );
       }
     } finally {
@@ -231,8 +247,12 @@ export const CashShiftPage: FC = () => {
   const handleStartClose = useCallback(async () => {
     if (!currentShift) return;
     setCloseWizard({
-      step: "summary",
-      data: { transactionCount: 0, totalSalesAmount: "0", totalsByPaymentMethod: [] },
+      step: 'summary',
+      data: {
+        transactionCount: 0,
+        totalSalesAmount: '0',
+        totalsByPaymentMethod: [],
+      },
     });
     try {
       // The drift comparison already computed the operational totals for
@@ -249,45 +269,48 @@ export const CashShiftPage: FC = () => {
             )
           : undefined,
       );
-      setCloseWizard({ step: "summary", data: summary });
+      setCloseWizard({ step: 'summary', data: summary });
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : t("common.unexpected_error"),
+        err instanceof Error ? err.message : t('common.unexpected_error'),
       );
-      setCloseWizard({ step: "idle" });
+      setCloseWizard({ step: 'idle' });
     }
   }, [currentShift, cashShiftService, driftComparison, t]);
 
   const handleSummaryNext = useCallback(() => {
     const w = closeWizard;
-    if (w.step !== "summary") return;
-    setCloseWizard({ step: "count", data: w.data });
+    if (w.step !== 'summary') return;
+    setCloseWizard({ step: 'count', data: w.data });
   }, [closeWizard]);
 
   const handleCountsSubmit = useCallback(
     (counts: CountEntry[]) => {
       const w = closeWizard;
-      if (w.step !== "count") return;
+      if (w.step !== 'count') return;
 
       const hasLargeDiff = counts.some((c) => {
         const method = w.data.totalsByPaymentMethod.find(
           (m) => m.paymentMethodId === c.paymentMethodId,
         );
         if (!method || !method.isCash) return false;
-        return Math.abs(c.declaredAmount - Number(method.expectedAmount)) >= STEP_UP_THRESHOLD;
+        return (
+          Math.abs(c.declaredAmount - Number(method.expectedAmount)) >=
+          STEP_UP_THRESHOLD
+        );
       });
       requiresStepUpRef.current = hasLargeDiff;
 
-      setCloseWizard({ step: "confirm", data: { summary: w.data, counts } });
+      setCloseWizard({ step: 'confirm', data: { summary: w.data, counts } });
     },
     [closeWizard],
   );
 
   const handleConfirmClose = useCallback(async () => {
     const w = closeWizard;
-    if (w.step !== "confirm") return;
+    if (w.step !== 'confirm') return;
 
-    setCloseWizard({ step: "closing" });
+    setCloseWizard({ step: 'closing' });
     setActionError(null);
 
     try {
@@ -298,7 +321,7 @@ export const CashShiftPage: FC = () => {
         })),
       });
       useCashShiftStore.getState().setCurrentShift(null);
-      setCloseWizard({ step: "done" });
+      setCloseWizard({ step: 'done' });
     } catch (err) {
       if (err instanceof ShiftNotOpenException) {
         // Double-submit guard: another close already closed this shift
@@ -306,30 +329,33 @@ export const CashShiftPage: FC = () => {
         // the shift as CLOSED). The shift is closed either way — surface
         // success instead of an error.
         useCashShiftStore.getState().setCurrentShift(null);
-        setCloseWizard({ step: "done" });
+        setCloseWizard({ step: 'done' });
       } else if (err instanceof MissingClosingCashCountsException) {
-        setActionError(t("cash_shift.errors.missing_closing_counts"));
-        setCloseWizard({ step: "idle" });
+        setActionError(t('cash_shift.errors.missing_closing_counts'));
+        setCloseWizard({ step: 'idle' });
+      } else if (err instanceof InsufficientRoleException) {
+        setActionError(t('cash_shift.errors.insufficient_role'));
+        setCloseWizard({ step: 'idle' });
       } else {
         setActionError(
-          err instanceof Error ? err.message : t("common.unexpected_error"),
+          err instanceof Error ? err.message : t('common.unexpected_error'),
         );
-        setCloseWizard({ step: "idle" });
+        setCloseWizard({ step: 'idle' });
       }
     }
   }, [closeWizard, cashShiftService, currentShift, t]);
 
   const handleWizardCancel = useCallback(() => {
-    setCloseWizard({ step: "idle" });
+    setCloseWizard({ step: 'idle' });
     requiresStepUpRef.current = false;
   }, []);
 
   // ---- Loading state ----
-  if (pageState.status === "loading") {
+  if (pageState.status === 'loading') {
     return (
       <div className="flex h-full items-center justify-center">
-        <p className="text-body-sm" style={{ color: "var(--color-ink-muted)" }}>
-          {t("common.loading")}
+        <p className="text-body-sm" style={{ color: 'var(--color-ink-muted)' }}>
+          {t('common.loading')}
         </p>
       </div>
     );
@@ -338,64 +364,61 @@ export const CashShiftPage: FC = () => {
   // ---- Company-setup gate ----
   // No electronic invoice can be issued without the fiscal emitter
   // profile, so opening a cash shift is blocked until it exists.
-  if (companySetupStatus === "needs-setup") {
+  if (companySetupStatus === 'needs-setup') {
     return (
       <CompanySetupGate
-        onConfigure={() => dispatch(setActiveScreen("company-setup"))}
+        onConfigure={() => dispatch(setActiveScreen('company-setup'))}
       />
     );
   }
 
   // ---- Render ----
-  const session = useLocalSessionStore.getState().session;
-  const cashierName = session?.fullName ?? "—";
-
   return (
     <div className="flex h-full flex-col gap-pos-xl overflow-y-auto p-pos-xl">
-      <h1 className="pos-page-title">{t("cash_shift.label")}</h1>
+      <h1 className="pos-page-title">{t('cash_shift.label')}</h1>
 
       {/* Active shift / wizard section */}
       <section
         className="rounded-pos p-pos-xl"
         style={{
-          backgroundColor: "var(--color-panel)",
+          backgroundColor: 'var(--color-panel)',
           border:
-            "1px solid color-mix(in srgb, var(--color-ink) 10%, transparent)",
+            '1px solid color-mix(in srgb, var(--color-ink) 10%, transparent)',
         }}
       >
         <h2 className="mb-pos-lg text-body-lg font-semibold">
           {currentShift
-            ? t("cash_shift.active_shift_title")
-            : t("cash_shift.open_shift")}
+            ? t('cash_shift.active_shift_title')
+            : t('cash_shift.open_shift')}
         </h2>
 
         {currentShift ? (
           <>
-            {closeWizard.step === "idle" && (
+            {closeWizard.step === 'idle' && (
               <ActiveShiftView
                 currentShift={currentShift}
-                cashierName={cashierName}
+                canClose={canManageShift}
                 onStartClose={handleStartClose}
                 actionError={actionError}
                 isSubmitting={isSubmitting}
                 drift={driftComparison}
               />
             )}
-            {closeWizard.step === "summary" && (
+            {closeWizard.step === 'summary' && (
               <SummaryStep
                 summary={closeWizard.data}
                 onNext={handleSummaryNext}
                 onCancel={handleWizardCancel}
               />
             )}
-            {closeWizard.step === "count" && (
+            {closeWizard.step === 'count' && (
               <CountStep
                 summary={closeWizard.data}
                 onSubmit={handleCountsSubmit}
                 onCancel={handleWizardCancel}
               />
             )}
-            {closeWizard.step === "confirm" && (
+            {closeWizard.step === 'confirm' && (
               <ConfirmStep
                 summary={closeWizard.data.summary}
                 counts={closeWizard.data.counts}
@@ -405,22 +428,28 @@ export const CashShiftPage: FC = () => {
                 actionError={actionError}
               />
             )}
-            {closeWizard.step === "closing" && (
+            {closeWizard.step === 'closing' && (
               <div className="flex items-center justify-center py-pos-xl">
-                <p className="text-body-sm" style={{ color: "var(--color-ink-muted)" }}>
-                  {t("cash_shift.close_in_progress")}
+                <p
+                  className="text-body-sm"
+                  style={{ color: 'var(--color-ink-muted)' }}
+                >
+                  {t('cash_shift.close_in_progress')}
                 </p>
               </div>
             )}
-            {closeWizard.step === "done" && (
+            {closeWizard.step === 'done' && (
               <div className="flex flex-col items-center gap-pos-lg py-pos-xl">
-                <p className="text-body-lg font-semibold" style={{ color: "var(--color-verified)" }}>
-                  {t("cash_shift.close_success")}
+                <p
+                  className="text-body-lg font-semibold"
+                  style={{ color: 'var(--color-verified)' }}
+                >
+                  {t('cash_shift.close_success')}
                 </p>
               </div>
             )}
           </>
-        ) : (
+        ) : canManageShift ? (
           <OpenShiftForm
             openingBalance={openingBalance}
             onOpeningBalanceChange={setOpeningBalance}
@@ -428,6 +457,9 @@ export const CashShiftPage: FC = () => {
             isSubmitting={isSubmitting}
             actionError={actionError}
           />
+        ) : (
+          /* Store-wide shift is closed and this session cannot open it */
+          <OpenShiftAdminRequired />
         )}
       </section>
 

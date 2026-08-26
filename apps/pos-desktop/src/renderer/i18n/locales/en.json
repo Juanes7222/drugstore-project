@@ -161,6 +161,14 @@
     "state_open": "Open",
     "state_closed": "Closed",
     "state_forced_close": "Forced close",
+    "header_label": "Cash Shift",
+    "no_open_shift_short": "No shift open",
+    "operator_label": "Operator",
+    "opened_by": "Opened by",
+    "store_wide_hint": "Store-wide shift shared by all registers.",
+    "read_only_close_note": "This shift is opened and closed by an administrator. You can keep selling normally while it stays open.",
+    "admin_gate_open_title": "Restricted action",
+    "admin_gate_open_description": "Only an administrator can open the store's cash shift. Ask an administrator to open it so you can start selling.",
     "active_shift_title": "Active Shift",
     "close_shift_action": "Close Shift",
     "cash": "Cash",
@@ -197,8 +205,12 @@
     "history_load_more": "Load more",
     "errors": {
       "invalid_balance": "Opening balance is invalid",
-      "shift_already_open": "A shift is already open",
-      "missing_closing_counts": "Missing closing cash counts"
+      "shift_already_open": "A shift is already open for this store",
+      "missing_closing_counts": "Missing closing cash counts",
+      "no_open_shift": "There is no open cash shift in this store. An administrator must open one before selling.",
+      "no_open_shift_return": "Cannot register the return: there is no open cash shift in this store.",
+      "no_open_shift_credit_payment": "Cannot register the credit payment: there is no open cash shift in this store.",
+      "insufficient_role": "You do not have permission for this operation: an administrator role is required."
     }
   },
   "sync": {
@@ -1064,7 +1076,8 @@
     "owner": "Owner",
     "saas_admin": "SaaS Admin",
     "inventory_assistant": "Inventory Assistant",
-    "accountant": "Accountant"
+    "accountant": "Accountant",
+    "admin": "Administrator"
   },
   "user_management": {
     "title": "Users",
@@ -2363,6 +2376,7 @@
   "shift_guard": {
     "no_active_shift_title": "No active shift",
     "no_active_shift_description": "You must open a cash shift before you can make sales. Go to the Cash Shift section to start one.",
+    "no_active_shift_read_only_description": "An administrator must open the store's cash shift before sales can start. Your role cannot open it.",
     "open_shift_button": "Go to Cash Shift"
   },
   "local_sync": {

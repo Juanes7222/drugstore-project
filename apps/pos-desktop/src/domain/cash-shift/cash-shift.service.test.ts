@@ -9,6 +9,8 @@ import { BackupFailedException } from "../backup/exceptions";
 import { Prisma } from "@pharmacy/database/local";
 import { RoleType } from "@pharmacy/shared-types";
 import { useLocalConfigStore } from "../configuration/local-config.store";
+import { useLocalSessionStore } from "../auth/local-session.store";
+import { useCashShiftStore } from "./cash-shift.store";
 
 // Mock shift-close-html and print-payload-writer for printRouter tests
 vi.mock("./shift-close-html", () => ({
@@ -241,7 +243,7 @@ describe("CashShiftService", () => {
       expect(releaseSpy).toHaveBeenCalledAfter(acquireSpy);
     });
 
-    it("creates a shift with OPEN state when no shift is already open", async () => {
+    it("requires only the ADMIN role to open the shift", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.cashShift.findFirst.mockResolvedValue(null); // no open shift
       tx.cashShift.create.mockResolvedValue({
@@ -253,13 +255,24 @@ describe("CashShiftService", () => {
         openedAt: new Date(),
       });
 
-      const result = await service.openShift({
+      await service.openShift({
         openingBalance: new Prisma.Decimal(500000),
       });
 
-      expect(auth.requireRole).toHaveBeenCalledWith("CASHIER", "ADMIN");
+      // Global shifts are admin-opened: CASHIER is not accepted here.
+      expect(auth.requireRole).toHaveBeenCalledWith(RoleType.ADMIN);
       expect(tx.cashShift.create).toHaveBeenCalled();
-      expect(result.state).toBe("OPEN");
+    });
+
+    it("propagates the role rejection when the caller is not an admin", async () => {
+      auth.requireRole.mockImplementation(() => {
+        throw new Error("Insufficient role");
+      });
+
+      await expect(
+        service.openShift({ openingBalance: new Prisma.Decimal(500000) }),
+      ).rejects.toThrow("Insufficient role");
+      expect(tx.cashShift.create).not.toHaveBeenCalled();
     });
 
     it("throws ShiftAlreadyOpenException when a shift is already open", async () => {
@@ -273,6 +286,25 @@ describe("CashShiftService", () => {
       await expect(
         service.openShift({ openingBalance: new Prisma.Decimal(100000) }),
       ).rejects.toThrow(ShiftAlreadyOpenException);
+    });
+
+    it("rejects opening when another workstation's shift is OPEN (global uniqueness)", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue({
+        id: "shift-other-ws",
+        state: "OPEN",
+        workstationId: "ws-backoffice",
+        userId: "user-admin",
+      });
+
+      await expect(
+        service.openShift({ openingBalance: new Prisma.Decimal(100000) }),
+      ).rejects.toThrow(ShiftAlreadyOpenException);
+
+      // The guard matches on state alone — no workstationId filter.
+      expect(tx.cashShift.findFirst).toHaveBeenCalledWith({
+        where: { state: "OPEN" },
+      });
     });
   });
 
@@ -370,6 +402,33 @@ describe("CashShiftService", () => {
   });
 
   describe("closeShift", () => {
+    it("requires only the ADMIN role for the close flow", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findUnique.mockResolvedValue({
+        id: "shift-1", state: "OPEN", userId: "user-1",
+        openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(0),
+      });
+      tx.shiftCashCount.findMany.mockResolvedValue([]);
+      tx.salePayment.groupBy.mockResolvedValue([]);
+      tx.clientCreditPayment.groupBy.mockResolvedValue([]);
+      tx.syncQueue.count.mockResolvedValue(0);
+      tx.syncQueue.aggregate.mockResolvedValue({ _max: { clientSequence: 0n } });
+      tx.cashShift.update.mockResolvedValue({
+        id: "shift-1", state: "CLOSED",
+        closedAt: new Date(), openedAt: new Date(),
+        openingBalance: new Prisma.Decimal(0),
+        expectedClosingAmount: new Prisma.Decimal(0),
+        actualClosingAmount: new Prisma.Decimal(0),
+        closingDifference: new Prisma.Decimal(0),
+        closingNotes: null,
+      });
+
+      await service.closeShift("shift-1", {});
+
+      expect(auth.requireRole).toHaveBeenCalledWith(RoleType.ADMIN);
+    });
+
     it("closes the shift when CLOSING counts exist for all active methods", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.cashShift.findUnique.mockResolvedValue({
@@ -2519,7 +2578,7 @@ describe("CashShiftService", () => {
   });
 
   describe("getShiftHistory", () => {
-    it("returns workstation shifts for a MANAGER session without a permission exception", async () => {
+    it("returns store-wide shifts for a MANAGER session without a permission exception", async () => {
       // A session whose only allowed role is MANAGER proves the guard
       // accepts the manager role instead of throwing.
       auth.requireRole.mockImplementation((...roles: string[]) => {
@@ -2536,9 +2595,9 @@ describe("CashShiftService", () => {
 
       expect(result.shifts).toEqual([shift]);
       expect(result.total).toBe(1);
-      // Legacy offset path keeps the prev/next UI working.
+      // The shift is global: history is NOT scoped to the session's
+      // workstation — rows opened at any station appear.
       expect(tx.cashShift.findMany).toHaveBeenCalledWith({
-        where: { workstationId: "ws-1" },
         orderBy: [{ openedAt: "desc" }, { id: "desc" }],
         take: 50,
         skip: 0,
@@ -2560,12 +2619,70 @@ describe("CashShiftService", () => {
       // Keyset: skip the cursor row itself and anchor on its id instead of
       // scanning-and-discarding an OFFSET.
       expect(tx.cashShift.findMany).toHaveBeenCalledWith({
-        where: { workstationId: "ws-1" },
         orderBy: [{ openedAt: "desc" }, { id: "desc" }],
         take: 20,
         skip: 1,
         cursor: { id: "shift-1" },
       });
+    });
+  });
+
+  describe("hydrateStore", () => {
+    /** LocalSession-compatible seed — the service only reads workstationId. */
+    const seedHydrationSession = (workstationId: string | null) => {
+      useLocalSessionStore.getState().setSession({
+        ...makeMockSession(),
+        sessionTrust: "SERVER_VERIFIED",
+        ...(workstationId === null ? { workstationId: undefined } : { workstationId }),
+      } as any);
+    };
+
+    afterEach(() => {
+      useCashShiftStore.getState().setCurrentShift(null);
+      useLocalSessionStore.getState().clearSession();
+    });
+
+    it("hydrates the most recent OPEN shift regardless of owning workstation", async () => {
+      seedHydrationSession("ws-1");
+      // The OPEN shift belongs to a DIFFERENT workstation — hydration must
+      // still surface it (the shift is store-wide).
+      const foreignOpenShift = {
+        id: "shift-foreign",
+        workstationId: "ws-backoffice",
+        userId: "user-admin",
+        state: "OPEN",
+        openedAt: new Date(),
+      };
+      tx.cashShift.findFirst.mockResolvedValue(foreignOpenShift);
+
+      await service.hydrateStore();
+
+      expect(useCashShiftStore.getState().currentShift).toMatchObject({
+        id: "shift-foreign",
+        workstationId: "ws-backoffice",
+      });
+      expect(tx.cashShift.findFirst).toHaveBeenCalledWith({
+        where: { state: "OPEN" },
+        orderBy: { openedAt: "desc" },
+      });
+    });
+
+    it("clears the current shift when no session exists", async () => {
+      useLocalSessionStore.getState().clearSession();
+
+      await service.hydrateStore();
+
+      expect(useCashShiftStore.getState().currentShift).toBeNull();
+      expect(tx.cashShift.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("clears the current shift when the database read fails", async () => {
+      seedHydrationSession("ws-1");
+      tx.cashShift.findFirst.mockRejectedValue(new Error("PGlite down"));
+
+      await service.hydrateStore();
+
+      expect(useCashShiftStore.getState().currentShift).toBeNull();
     });
   });
 });

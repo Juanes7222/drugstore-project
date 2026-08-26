@@ -246,6 +246,22 @@ describe('Sale lifecycle (e2e)', () => {
     });
   });
 
+  // Lot stock assertions read GET /inventory-lots/lots/:id, which requires
+  // INVENTORY_ASSISTANT/MANAGER/ADMIN — a CASHIER is denied by design.
+  describe('Step 1b: Login as ADMIN', () => {
+    it('should return tokens for valid admin credentials', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ username: TEST_ADMIN_USERNAME, password: TEST_ADMIN_PASSWORD })
+        .set('x-workstation-id', TEST_WORKSTATION_ID)
+        .expect(200);
+
+      expect(res.body.user.role).toBe('ADMIN');
+
+      adminToken = res.body.accessToken;
+    });
+  });
+
   describe('Step 2: Open a cash shift', () => {
     it('should create a cash shift with OPEN state', async () => {
       const res = await request(app.getHttpServer())
@@ -318,7 +334,7 @@ describe('Sale lifecycle (e2e)', () => {
     it('should have reduced lot stock after confirmation', async () => {
       const res = await request(app.getHttpServer())
         .get(`/inventory-lots/lots/${TEST_LOT_ID}`)
-        .set('Authorization', `Bearer ${cashierToken}`)
+        .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
       expect(res.body.currentStock).toBe(INITIAL_LOT_STOCK - SALE_QUANTITY);
@@ -344,7 +360,7 @@ describe('Sale lifecycle (e2e)', () => {
     it('should have restored lot stock after annulment', async () => {
       const res = await request(app.getHttpServer())
         .get(`/inventory-lots/lots/${TEST_LOT_ID}`)
-        .set('Authorization', `Bearer ${cashierToken}`)
+        .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
 
       expect(res.body.currentStock).toBe(INITIAL_LOT_STOCK);

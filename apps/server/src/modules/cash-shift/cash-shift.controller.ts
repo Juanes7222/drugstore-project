@@ -33,13 +33,43 @@ export class CashShiftController {
   constructor(private cashShiftService: CashShiftService) {}
 
   /**
+   * Returns the tenant-wide OPEN shift so POS workstations can mirror it
+   * locally and sell offline against it.
+   *
+   * CASHIER-readable on purpose: any selling user must be able to discover
+   * the shift their sales will attach to. 404 (NO_OPEN_CASH_SHIFT) means
+   * no shift is open — an admin must open one before offline selling.
+   */
+  @Get('open')
+  @Roles(RoleType.CASHIER, RoleType.ADMIN)
+  async getOpenShift(): Promise<{
+    id: string;
+    workstationId: string;
+    userId: string;
+    openedAt: Date;
+    openingBalance: string;
+    state: string;
+  }> {
+    const shift = await this.cashShiftService.getOpenShift();
+    return {
+      ...shift,
+      // Decimal serialized as string for exact JSON transport (money).
+      openingBalance: shift.openingBalance.toString(),
+    };
+  }
+
+  /**
    * @deprecated The POS desktop no longer calls this endpoint directly.
    * Cash shift opening is now triggered through `POST /sync/batch` as a
    * `SHIFT_CLOSURE` operation flow. This endpoint is preserved **exclusively**
    * for Backoffice administrative use and manual overrides from the web interface.
+   *
+   * Global shift model: opening the (single) store shift is ADMIN-only.
+   * OWNER and SAAS_ADMIN pass via role supersession in RolesGuard;
+   * CASHIER must not open or close shifts.
    */
   @Post()
-  @Roles(RoleType.CASHIER, RoleType.ADMIN)
+  @Roles(RoleType.ADMIN)
   @HttpCode(201)
   @Auditable({
     action: AuditAction.CREATE,
@@ -94,8 +124,16 @@ export class CashShiftController {
    * `SHIFT_CLOSURE` operation. This endpoint is preserved **exclusively**
    * for Backoffice administrative use and manual overrides from the web interface.
    */
+  /**
+   * Global shift model: closing the (single) store shift is ADMIN-only.
+   * OWNER and SAAS_ADMIN pass via role supersession in RolesGuard;
+   * CASHIER must not open or close shifts.
+   *
+   * Note: SHIFT_CLOSURE sync replays bypass this HTTP guard by design —
+   * they call CashShiftService.closeShift directly from the dispatcher.
+   */
   @Post(':id/close')
-  @Roles(RoleType.CASHIER, RoleType.ADMIN)
+  @Roles(RoleType.ADMIN)
   @Auditable({
     action: AuditAction.STATE_CHANGE,
     module: SystemModule.CASH_SHIFT,

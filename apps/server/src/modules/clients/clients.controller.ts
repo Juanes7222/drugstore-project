@@ -20,14 +20,18 @@ import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 export class ClientsController {
   constructor(private clientsService: ClientsService) {}
 
+  // Read endpoints grant CASHIER because the offline-first sale flow must
+  // resolve clients (search cache via /clients/sync + classifications);
+  // MANAGER is granted to match the POS desktop's FLOOR_ROLES gate on the
+  // clients screen. ACCOUNTANT stays excluded: reports-only role.
   @Get()
-  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findAll(@Query() query: QueryClientDto): Promise<any> {
     return this.clientsService.findAll(query);
   }
 
   @Get('sync')
-  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findSync(
     @Query('since') since?: string,
     @Query('page') page: string = '1',
@@ -41,13 +45,13 @@ export class ClientsController {
   }
 
   @Get('classifications/all')
-  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findAllClassifications(): Promise<any> {
     return this.clientsService.findAllClassifications();
   }
 
   @Get(':id')
-  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findById(@Param('id') id: string): Promise<any> {
     return this.clientsService.findById(id);
   }

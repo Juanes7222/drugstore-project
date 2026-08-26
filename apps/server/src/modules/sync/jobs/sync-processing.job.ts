@@ -127,12 +127,13 @@ export class SyncProcessingJob {
         },
       });
     } catch (error: unknown) {
-      // CashShiftNotOpenForWorkstation is potentially transient during a
-      // replay burst: salesService.create opens a nested interactive
-      // transaction on its own connection, which cannot see this job's
-      // still-uncommitted cash-shift upsert. The next retry runs on a
-      // fresh connection where the committed shift is visible, so treat
-      // it as retriable instead of permanently failing the sale.
+      // CashShiftNotOpenForWorkstation remains potentially transient during
+      // a replay burst under the GLOBAL shift model: salesService.create
+      // opens a nested interactive transaction on its own connection, which
+      // cannot see this dispatcher's still-uncommitted shift bootstrap
+      // (adoption or legacy upsert). The next retry runs on a fresh
+      // connection where the committed shift — global or adopted — is
+      // visible, so treat it as retriable instead of permanently failing.
       if (error instanceof CashShiftNotOpenForWorkstationException) {
         await this.markFailed(entry, error);
         return;

@@ -124,7 +124,6 @@ export class ClientReturnsService {
       const { sale, cashShift } = await this.validatePreconditions(
         tx,
         createDto,
-        userId,
         workstationId,
       );
       const refundMethodId =
@@ -297,10 +296,15 @@ export class ClientReturnsService {
     });
   }
 
+  /**
+   * Global shift model: a return refunds into THE tenant-wide OPEN shift,
+   * from any workstation, regardless of who opened the shift. Only refused
+   * when no shift is open at all — a return cannot exist outside a shift
+   * period.
+   */
   private async validatePreconditions(
     tx: Prisma.TransactionClient,
     dto: CreateClientReturnDto,
-    userId: string,
     workstationId: string,
   ): Promise<{ sale: any; cashShift: any }> {
     const sale = await tx.sale.findUnique({ where: { id: dto.saleId } });
@@ -308,7 +312,8 @@ export class ClientReturnsService {
     if (sale.operationalState !== SaleOperationalState.CONFIRMED)
       throw new SaleNotConfirmedException(dto.saleId);
     const cashShift = await tx.cashShift.findFirst({
-      where: { userId, workstationId, state: ShiftState.OPEN },
+      where: { state: ShiftState.OPEN },
+      orderBy: { openedAt: 'desc' },
     });
     if (!cashShift)
       throw new CashShiftNotOpenForWorkstationException(workstationId);

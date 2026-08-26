@@ -4,6 +4,13 @@ import type { SaleDeliveryInfo } from '@pharmacy/shared-types';
 
 export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
   saleType!: 'FREE_SALE' | 'PRESCRIPTION' | 'CONTROLLED_SUBSTANCE';
+  /**
+   * The shift the sale belongs to. Wire shape unchanged by the global shift
+   * model; semantics widened — this now references THE tenant-wide shift
+   * regardless of which workstation opened it, and on sync replay the
+   * dispatcher may rewrite it to the current global OPEN shift's id when
+   * the POS-recorded id has no server-side row yet.
+   */
   cashShiftId!: string;
   clientId?: string | null;
   items!: Array<{

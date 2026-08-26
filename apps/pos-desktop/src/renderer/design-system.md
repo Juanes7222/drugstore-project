@@ -1551,3 +1551,41 @@ display bug. Without a resolution the numbering block shows the calm
 "Pendiente de habilitacion" slate line. Only presentation preferences stay
 editable (logo/QR on receipt, header/footer). Note above the panel points
 to the support mailto for discrepancies.
+
+---
+
+## Phase: Store-wide (global) cash shift
+
+Domain change: one OPEN shift per store, shared by all workstations. Only
+ADMIN-level roles (ADMIN / OWNER / SAAS_ADMIN, matching the domain's
+`requireRole(RoleType.ADMIN)` supersession) may open or close it; any selling
+session sells into it. UI consequence: open/close is a *management* action,
+viewing state is for everyone.
+
+### Decisions
+
+- **Gating is compositional, not disabled-state.** The cash-shift page swaps
+  whole regions per role: non-admin + closed shift renders
+  `OpenShiftAdminRequired` (calm dashed panel, lock glyph, attention tint)
+  instead of the opening-balance form; non-admin + open shift renders
+  `ActiveShiftView canClose=false`, which replaces the danger close button
+  with a one-line read-only note. No greyed-out buttons implying a broken
+  permission.
+- **Ownership language removed everywhere.** The header now reads
+  "Turno de caja: [state chip]" first and labels the session separately as
+  "Operador: {name}" — the shift belongs to the store, the name belongs to
+  the person. `ActiveShiftView` shows "Abierto por {userId short-form}"
+  plus a muted store-wide hint line ("Turno compartido por todas las cajas
+  de la tienda.") so nobody reads the shift as local to this register.
+- **userId displayed gracefully, not resolved.** The record carries only
+  `userId`; it renders as a short mono code with the full id in `title`
+  until a name resolver exists (service-layer gap, flagged).
+- **Palette/type:** no new tokens. Verified green chip reuses
+  `--color-verified` at 15% mix; restricted-open notice reuses the attention
+  amber family already used by `ShiftRequiredOverlay`. All numerals stay
+  JetBrains Mono tabular.
+- **Error copy contract:** every new domain error code has an i18n key under
+  `cash_shift.errors.*` (`no_open_shift`, `no_open_shift_return`,
+  `no_open_shift_credit_payment`, `insufficient_role`;
+  `shift_already_open` reworded store-wide) so any surface can map
+  `DomainError.errorCode` without hardcoding Spanish.

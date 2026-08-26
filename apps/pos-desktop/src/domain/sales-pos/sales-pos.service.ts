@@ -61,6 +61,7 @@ import {
   CreditRequiresRegisteredClientException,
   CreditNotEnabledForClientException,
   CreditLimitExceededException,
+  NoOpenCashShiftException,
 } from './exceptions';
 import {
   validateItemPricing,
@@ -234,7 +235,7 @@ export class SalesPosService {
     const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
     return this.prisma.$transaction(async (tx) => {
-      const cashShift = await this.getOpenCashShift(tx, session.userId, session.workstationId);
+      const cashShift = await this.getOpenCashShift(tx);
 
       const resolvedClientId = input.clientId ?? GENERIC_CLIENT_UUID;
       // Defensive fallback for the generic client — getClientSnapshot normally
@@ -753,23 +754,22 @@ export class SalesPosService {
   // -----------------------------------------------------------------------
 
   /**
-   * Find the open cash shift for the given user and workstation.
+   * Find the store-wide open cash shift.
    *
-   * Reuses the same state check pattern as CashShiftService (querying
-   * CashShift with state === OPEN) rather than importing the service's
-   * private method.
+   * The shift is global: it may have been opened by an admin at any
+   * workstation, so the lookup matches on state only — never on the
+   * selling user or workstation. This is what lets every permitted user
+   * sell into the same shift.
    */
   private async getOpenCashShift(
     tx: Prisma.TransactionClient,
-    userId: string,
-    workstationId: string,
   ): Promise<{ id: string; workstationId: string }> {
     const cashShift = await tx.cashShift.findFirst({
-      where: { userId, workstationId, state: ShiftState.OPEN },
+      where: { state: ShiftState.OPEN },
       select: { id: true, workstationId: true },
     });
     if (!cashShift) {
-      throw new Error(`No open cash shift found for workstation ${workstationId}.`);
+      throw new NoOpenCashShiftException();
     }
     return cashShift;
   }

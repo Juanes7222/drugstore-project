@@ -15,8 +15,9 @@ import {
   CreditRequiresRegisteredClientException,
   CreditNotEnabledForClientException,
   CreditLimitExceededException,
+  NoOpenCashShiftException,
 } from "./exceptions";
-import { Prisma, SaleOperationalState } from "@pharmacy/database/local";
+import { Prisma, SaleOperationalState, ShiftState } from "@pharmacy/database/local";
 import { useLocalConfigStore, type DiscountLimits, type SalesConfig } from "../configuration/local-config.store";
 import { RoleType } from "@pharmacy/shared-types";
 import { GENERIC_CLIENT_UUID } from "../clients/constants/clients.constants";
@@ -238,6 +239,56 @@ describe("SalesPosService", () => {
       expect(tx.client.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: GENERIC_CLIENT_UUID } }),
       );
+    });
+
+    it("sells into a shift opened by a different user and workstation", async () => {
+      // Global shift: an admin opened it at the back-office station; the
+      // cashier selling here is user-1 at ws-1.
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue({
+        id: "shift-admin-opened",
+        workstationId: "ws-backoffice",
+      });
+      tx.product.findUnique.mockResolvedValue(makeProduct());
+      tx.sale.findFirst.mockResolvedValue(null);
+      tx.sale.create.mockResolvedValue({
+        id: "sale-1",
+        localNumber: 1n,
+        operationalState: "IN_PROGRESS",
+        items: [],
+      });
+
+      const result = await service.create(validInput) as { localNumber: bigint };
+
+      expect(result.localNumber).toBe(1n);
+      expect(tx.sale.create).toHaveBeenCalled();
+      const createArg = tx.sale.create.mock.calls[0][0] as { data: { cashShiftId: string } };
+      // The sale attaches to the foreign, admin-opened shift — not to any
+      // (user, workstation) pair of the seller.
+      expect(createArg.data.cashShiftId).toBe("shift-admin-opened");
+    });
+
+    it("looks up the open shift globally — no user or workstation filter", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+
+      await expect(
+        service.create(validInput),
+      ).rejects.toThrow(); // product missing — irrelevant, lookup already ran
+
+      expect(tx.cashShift.findFirst).toHaveBeenCalledWith({
+        where: { state: ShiftState.OPEN },
+        select: { id: true, workstationId: true },
+      });
+    });
+
+    it("throws NoOpenCashShiftException when no shift is open anywhere", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.create({ items: [{ productId: "prod-1", quantity: 1 }] }),
+      ).rejects.toThrow(NoOpenCashShiftException);
     });
 
     it("throws PrescriptionRequiredNotSupportedException when a product requires prescription", async () => {

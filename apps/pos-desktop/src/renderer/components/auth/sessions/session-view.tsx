@@ -332,7 +332,7 @@ const SessionCard: FC<SessionCardProps> = ({ session }) => {
           {session.displayName}
         </p>
         <p className="text-xs" style={{ color: 'var(--color-ink-muted)' }}>
-          {session.username} &middot; {session.role}
+          {session.username} &middot; {t(`roles.${session.role.toLowerCase()}`, session.role)}
         </p>
       </div>
 

@@ -228,6 +228,48 @@ describe("Cash shift — PGlite data layer", () => {
       ).rejects.toThrow();
     });
 
+    it("global open-shift lookup finds a shift owned by another workstation and user", async () => {
+      // The store-wide semantics: the selling workstation looks up the OPEN
+      // shift with NO workstationId/userId filter — mirrors the service's
+      // findFirst({ where: { state: 'OPEN' } }).
+      const foreignWs = "ws-backoffice";
+      const foreignUser = "user-admin-02";
+      const shiftId = await insertOpenShift(
+        pg,
+        { userId: foreignUser, workstationId: foreignWs },
+      );
+
+      const result = await pg.query(
+        `SELECT id, "workstationId", "userId" FROM "CashShift"
+          WHERE state = 'OPEN'::"ShiftState"`,
+      );
+
+      expect(result.rows).toHaveLength(1);
+      const row = result.rows[0] as Record<string, unknown>;
+      expect(row.id).toBe(shiftId);
+      expect(row.workstationId).toBe(foreignWs);
+      expect(row.userId).toBe(foreignUser);
+    });
+
+    it("global open-shift lookup ignores closed shifts from other workstations", async () => {
+      // A CLOSED shift left by another station must not satisfy the lookup —
+      // only a row in OPEN state does.
+      const closedShiftId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await pg.exec(`
+        INSERT INTO "CashShift" (id, "workstationId", "userId", state,
+          "openedAt", "closedAt", "createdAt", "updatedAt")
+        VALUES ('${closedShiftId}', 'ws-closed-station', 'user-old', 'CLOSED',
+          '${now}', '${now}', '${now}', '${now}');
+      `);
+
+      const result = await pg.query(
+        `SELECT id FROM "CashShift" WHERE state = 'OPEN'::"ShiftState"`,
+      );
+
+      expect(result.rows).toHaveLength(0);
+    });
+
     it("stores Decimal amounts with correct precision", async () => {
       const shiftId = await insertOpenShift(pg, seeds, {
         openingBalance: "1234567.89",

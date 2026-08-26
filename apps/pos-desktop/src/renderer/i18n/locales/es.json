@@ -202,6 +202,14 @@
     "state_open": "Abierto",
     "state_closed": "Cerrado",
     "state_forced_close": "Cierre forzado",
+    "header_label": "Turno de caja",
+    "no_open_shift_short": "Sin turno abierto",
+    "operator_label": "Operador",
+    "opened_by": "Abierto por",
+    "store_wide_hint": "Turno compartido por todas las cajas de la tienda.",
+    "read_only_close_note": "Este turno lo abre y cierra un usuario administrador. Puedes vender con normalidad mientras esté abierto.",
+    "admin_gate_open_title": "Apertura restringida",
+    "admin_gate_open_description": "Solo un usuario administrador puede abrir el turno de caja de la tienda. Solicita a un administrador que lo abra para comenzar a vender.",
     "active_shift_title": "Turno activo",
     "close_shift_action": "Cerrar turno",
     "cash": "Efectivo",
@@ -238,8 +246,12 @@
     "history_load_more": "Cargar más",
     "errors": {
       "invalid_balance": "El saldo de apertura no es válido",
-      "shift_already_open": "Ya hay un turno abierto",
-      "missing_closing_counts": "Faltan los conteos de cierre"
+      "shift_already_open": "Ya existe un turno abierto en la tienda",
+      "missing_closing_counts": "Faltan los conteos de cierre",
+      "no_open_shift": "No hay un turno abierto en la tienda. Un administrador debe abrirlo antes de vender.",
+      "no_open_shift_return": "No se puede registrar la devolución: no hay un turno abierto en la tienda.",
+      "no_open_shift_credit_payment": "No se puede registrar el abono: no hay un turno abierto en la tienda.",
+      "insufficient_role": "No tienes permisos para esta operación: requiere rol de administrador."
     }
   },
   "sync": {
@@ -1162,7 +1174,7 @@
   },
   "roles": {
     "cashier": "Cajero",
-    "manager": "Manager",
+    "manager": "Gerente",
     "owner": "Dueño",
     "saas_admin": "Administrador SaaS",
     "inventory_assistant": "Asistente de inventario",
@@ -2502,6 +2514,7 @@
   "shift_guard": {
     "no_active_shift_title": "No hay turno activo",
     "no_active_shift_description": "Debe abrir un turno de caja antes de poder realizar ventas. Vaya a la sección de Turno para iniciar uno.",
+    "no_active_shift_read_only_description": "Un administrador debe abrir el turno de caja de la tienda antes de poder realizar ventas. Con tu rol no puedes abrirlo.",
     "open_shift_button": "Ir a Turno"
   },
   "local_sync": {
