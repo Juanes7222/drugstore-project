@@ -7,6 +7,7 @@ mod backup;
 mod commands;
 mod hardware_fingerprint;
 mod hub_election;
+mod hub_supervisor;
 mod local_sync_client;
 mod local_sync_server;
 mod mdns_discovery;
@@ -78,6 +79,10 @@ pub fn run() {
 
             // Local sync modules start empty; TS initialises after config load.
             app.manage(LocalSyncModules::empty());
+
+            // Hub role supervisor — spawned for real by initialize_local_sync
+            // once the modules exist; the managed state must exist before.
+            app.manage(hub_supervisor::HubSupervisorState::new());
 
             // Hub election — always initialised with defaults.
             // TS updates the ID/name via election command after config load.

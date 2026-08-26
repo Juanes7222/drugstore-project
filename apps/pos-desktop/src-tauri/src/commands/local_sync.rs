@@ -14,12 +14,13 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 use crate::hub_election::{HubInfo, HubScore, HubElectionState};
+use crate::hub_supervisor;
 use crate::LocalSyncModules;
 use crate::local_sync_client::{LocalSyncStatus, LocalSyncClientState};
 use crate::local_sync_server::{
     ConflictInfo, LocalSyncServerState, LocalOperation, PushResponse, PullResponse,
 };
-use crate::mdns_discovery::{DiscoveredPeer, MdnsDiscoveryState};
+use crate::mdns_discovery::{resolve_advertisable_ip, DiscoveredPeer, MdnsDiscoveryState};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,9 +76,15 @@ pub async fn initialize_local_sync(
     port: Option<u16>,
 ) -> Result<(), String> {
     let app_version = env!("CARGO_PKG_VERSION").to_string();
-    let ip: IpAddr = host_ip
+    let parsed_ip: IpAddr = host_ip
         .parse()
         .map_err(|e| format!("invalid host_ip '{host_ip}': {e}"))?;
+
+    // The frontend defaults to 127.0.0.1 when VITE_HOST_IP is not set.
+    // Advertising loopback over mDNS would make every peer dial itself, so
+    // detect the real site-local address when the reported one is not
+    // usable on the LAN.
+    let ip = resolve_advertisable_ip(parsed_ip).await;
 
     // Create all three modules.
     let mdns_state = MdnsDiscoveryState::new(
@@ -124,6 +131,10 @@ pub async fn initialize_local_sync(
     election
         .reconfigure(workstation_id, friendly_name, hub_eligible)
         .await;
+
+    // Start supervising the hub role: periodic election + server start/stop.
+    // Without this loop no workstation would ever actually take the hub role.
+    hub_supervisor::spawn(app_handle.clone()).await;
 
     log::info!("Local sync initialised");
     Ok(())
@@ -329,18 +340,19 @@ pub async fn set_local_sync_enabled(
     let modules = app_handle.state::<LocalSyncModules>();
 
     if enabled {
-        // Re-enable: update mDNS TXT to mark as eligible.
+        // Resume supervision; the loop re-elects and restarts the server
+        // within one tick if this workstation is the hub.
+        hub_supervisor::spawn(app_handle.clone()).await;
+
         let mdns = resolve_mdns(&modules.mdns).await?;
         mdns.update_own_txt("hubEligible", "true").await.ok();
     } else {
-        // Disable: mark as ineligible and stop the server.
+        // Disable: halt supervision, mark as ineligible and stop the server.
+        hub_supervisor::shutdown(app_handle.clone()).await;
+
         let mdns_opt = modules.mdns.lock().await.clone();
         if let Some(mdns) = mdns_opt {
             mdns.update_own_txt("hubEligible", "false").await.ok();
-        }
-        let server_opt = modules.server.lock().await.clone();
-        if let Some(server) = server_opt {
-            server.stop().await.ok();
         }
     }
 

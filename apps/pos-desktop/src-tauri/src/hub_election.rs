@@ -163,25 +163,20 @@ pub fn elect_hub(
     }
 
     // Auto-election: find the best candidate among online peers.
-    // Include ourselves in the candidate pool.
     let mut candidates: Vec<&DiscoveredPeer> = peers.iter().filter(|p| p.is_online).collect();
-
-    // Always consider ourselves even if not in discovered peers.
-    // (We always know our own score; this is handled by the caller.)
 
     if candidates.is_empty() {
         return None;
     }
 
-    // Sort by hub_eligible first, then by some heuristic.
-    // Since we don't have per-peer scores in `DiscoveredPeer`, we sort by
-    // `is_current_hub` (prefer the current hub to avoid flapping) and then
-    // by `workstation_id` for determinism.
+    // Deterministic preference order across all workstations:
+    // 1. Hub-eligible peers (an ineligible workstation must never win).
+    // 2. The current hub, to avoid role flapping.
+    // 3. Workstation ID ascending as the final tie-breaker.
     candidates.sort_by(|a, b| {
-        // Prefer the current hub.
-        let a_hub = a.is_current_hub as u8;
-        let b_hub = b.is_current_hub as u8;
-        b_hub.cmp(&a_hub)
+        b.hub_eligible
+            .cmp(&a.hub_eligible)
+            .then_with(|| b.is_current_hub.cmp(&a.is_current_hub))
             .then_with(|| a.workstation_id.cmp(&b.workstation_id))
     });
 
@@ -240,10 +235,17 @@ impl HubElectionState {
 
         let our_wid = self.our_workstation_id.read().await.clone();
         let our_name = self.our_friendly_name.read().await.clone();
+        let our_eligible = *self.our_always_on.read().await;
 
         let elected = elect_hub(&peers, &override_val, &our_wid, our_score)
             .or_else(|| {
-                // If no peers and no override, we elect ourselves.
+                // If no peers are visible we stay as a solo hub — but only
+                // when this workstation is actually allowed to serve. An
+                // ineligible workstation must report "no hub" so the
+                // supervisor never starts the server on it.
+                if !our_eligible {
+                    return None;
+                }
                 Some(HubInfo {
                     workstation_id: our_wid.clone(),
                     friendly_name: our_name.clone(),
@@ -310,6 +312,14 @@ impl HubElectionState {
             .unwrap_or(false)
     }
 
+    /// Whether this workstation is allowed to serve as hub at all.
+    ///
+    /// Read by the supervisor before promoting: election winning alone is
+    /// not sufficient when the operator marked this terminal ineligible.
+    pub async fn our_hub_eligible(&self) -> bool {
+        *self.our_always_on.read().await
+    }
+
     /// Compute hub scores for all known peers (for the UI).
     pub async fn compute_all_scores(
         &self,
@@ -367,3 +377,138 @@ impl HubElectionState {
 
 // Tauri commands are defined in commands/local_sync.rs, not here.
 // This module exports the election algorithm and state API only.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Online peer fixture. Election-relevant flags passed explicitly;
+    /// everything else is inert filler so assertions stay focused on
+    /// the preference order.
+    fn peer(workstation_id: &str, hub_eligible: bool, is_current_hub: bool) -> DiscoveredPeer {
+        DiscoveredPeer {
+            workstation_id: workstation_id.to_string(),
+            friendly_name: format!("Terminal {workstation_id}"),
+            ip_address: "192.168.1.50".to_string(),
+            port: 49_500,
+            hub_eligible,
+            is_current_hub,
+            auth_token_hash: String::new(),
+            app_version: "0.1.0".to_string(),
+            first_seen_at: String::new(),
+            last_seen_at: String::new(),
+            is_online: true,
+        }
+    }
+
+    #[test]
+    fn eligible_peer_beats_ineligible_peer_with_smaller_id_and_current_hub_flag() {
+        // Regression guard: hub_eligible was previously ignored by the
+        // sort, letting a retired terminal keep the hub role forever.
+        let peers = [peer("alpha", false, true), peer("zulu", true, false)];
+
+        let elected = elect_hub(&peers, &None, "ws-self", 42.0);
+
+        let hub = elected.expect("an eligible candidate exists");
+        assert_eq!(hub.workstation_id, "zulu");
+        assert_eq!(hub.role, HubRole::Auto);
+    }
+
+    #[test]
+    fn current_hub_wins_among_equal_eligibility_when_it_has_larger_id() {
+        let peers = [peer("alpha", true, false), peer("zulu", true, true)];
+
+        let elected = elect_hub(&peers, &None, "ws-self", 42.0);
+
+        let hub = elected.expect("candidates exist");
+        assert_eq!(hub.workstation_id, "zulu");
+    }
+
+    #[test]
+    fn current_hub_wins_among_equal_eligibility_when_it_has_smaller_id() {
+        let peers = [peer("alpha", true, true), peer("zulu", true, false)];
+
+        let elected = elect_hub(&peers, &None, "ws-self", 42.0);
+
+        let hub = elected.expect("candidates exist");
+        assert_eq!(hub.workstation_id, "alpha");
+    }
+
+    #[test]
+    fn full_tie_elects_lexicographically_smallest_workstation_id_deterministically() {
+        let peers = [peer("bravo", true, false), peer("alpha", true, false)];
+
+        let first = elect_hub(&peers, &None, "ws-self", 42.0);
+        let second = elect_hub(&peers, &None, "ws-self", 42.0);
+
+        assert_eq!(first.expect("candidates exist").workstation_id, "alpha");
+        assert_eq!(second.expect("candidates exist").workstation_id, "alpha");
+    }
+
+    #[test]
+    fn override_pointing_at_self_returns_forced_role_marked_is_self() {
+        let peers = [peer("other", true, false)];
+
+        let elected = elect_hub(&peers, &Some("ws-self".to_string()), "ws-self", 42.0);
+
+        let hub = elected.expect("self override always resolves");
+        assert_eq!(hub.role, HubRole::Forced);
+        assert!(hub.is_self);
+    }
+
+    #[test]
+    fn override_pointing_at_known_peer_elects_that_peer_as_forced_hub() {
+        let peers = [peer("aaa", true, false), peer("forced-one", true, false)];
+
+        let elected = elect_hub(&peers, &Some("forced-one".to_string()), "ws-self", 42.0);
+
+        let hub = elected.expect("override target is present in peers");
+        assert_eq!(hub.workstation_id, "forced-one");
+        assert_eq!(hub.role, HubRole::Forced);
+        assert!(!hub.is_self);
+    }
+
+    #[test]
+    fn override_pointing_at_unknown_peer_returns_none() {
+        let peers = [peer("aaa", true, false)];
+
+        let elected = elect_hub(&peers, &Some("ghost".to_string()), "ws-self", 42.0);
+
+        assert!(elected.is_none());
+    }
+
+    #[test]
+    fn empty_peer_list_returns_none_leaving_solo_fallback_to_caller() {
+        let elected = elect_hub(&[], &None, "ws-self", 42.0);
+
+        assert!(elected.is_none());
+    }
+
+    #[test]
+    fn offline_peers_are_excluded_from_election() {
+        let mut gone = peer("aaa", true, false);
+        gone.is_online = false;
+
+        let elected = elect_hub(std::slice::from_ref(&gone), &None, "ws-self", 42.0);
+
+        assert!(elected.is_none());
+    }
+
+    // run_election()'s eligibility-gated solo fallback is NOT covered here:
+    // it needs a live MdnsDiscoveryState whose ::new() spawns a real mDNS
+    // daemon — too heavy for unit tests. The gating logic mirrors the
+    // our_hub_eligible() getter tested below.
+
+    #[tokio::test]
+    async fn our_hub_eligible_reflects_configured_always_on_flag() {
+        let state = HubElectionState::new("ws-self".to_string(), "Self".to_string(), false);
+
+        assert!(!state.our_hub_eligible().await);
+
+        state
+            .reconfigure("ws-self".to_string(), "Self".to_string(), true)
+            .await;
+
+        assert!(state.our_hub_eligible().await);
+    }
+}

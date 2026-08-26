@@ -138,6 +138,44 @@ pub fn compute_auth_token_hash(local_network_key: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
+/// Best-effort detection of an address usable for LAN announcements.
+///
+/// The frontend defaults `host_ip` to 127.0.0.1 (or an empty value) when
+/// `VITE_HOST_IP` is not configured. Advertising loopback over mDNS makes
+/// every peer resolve the hub to *its own* loopback, so cross-workstation
+/// sync silently fails. A UDP `connect` performs a routing-table lookup
+/// without emitting any packet, which yields the interface address a real
+/// connection would use — it works offline as long as a default route to
+/// the LAN exists. When detection is impossible (no route at all) the
+/// caller-provided address is kept unchanged.
+pub async fn resolve_advertisable_ip(reported: IpAddr) -> IpAddr {
+    if !reported.is_loopback() && !reported.is_unspecified() {
+        return reported;
+    }
+
+    let bind_addr: &str = if reported.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
+    let detected = async {
+        let socket = tokio::net::UdpSocket::bind(bind_addr).await.ok()?;
+        socket.connect("8.8.8.8:80").await.ok()?;
+        socket.local_addr().ok().map(|addr| addr.ip())
+    }
+    .await;
+
+    match detected {
+        Some(ip) if !ip.is_loopback() && !ip.is_unspecified() => {
+            log::info!("Detected LAN address {ip} for mDNS announcement");
+            ip
+        }
+        _ => {
+            log::warn!(
+                "Could not detect a LAN address; falling back to {reported}. \
+                 Configure VITE_HOST_IP so peers can reach this workstation."
+            );
+            reported
+        }
+    }
+}
+
 fn build_service_info(info: &OwnServiceInfo) -> Result<ServiceInfo, String> {
     let mut properties = HashMap::new();
     properties.insert("workstationId".to_string(), info.workstation_id.clone());

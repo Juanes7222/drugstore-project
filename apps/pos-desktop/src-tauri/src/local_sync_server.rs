@@ -35,7 +35,7 @@ use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -45,7 +45,13 @@ use tower_http::cors::{Any, CorsLayer};
 
 /// An operation exchanged between workstations on the LAN.
 /// Mirrors the shape used for server-facing sync.
+///
+/// Wire format is camelCase to match the TypeScript `LocalOperation`
+/// shared type — Tauri deserialises invoke arguments straight into these
+/// structs, so a snake_case field name here would silently break every
+/// push from the renderer.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalOperation {
     pub operation_uuid: String,
     pub operation_type: String,
@@ -58,16 +64,23 @@ pub struct LocalOperation {
 
 /// Push request body.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PushRequest {
     pub operations: Vec<LocalOperation>,
 }
 
 /// Push response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PushResponse {
     pub accepted: u32,
     pub rejected: u32,
     pub conflicts: Vec<ConflictInfo>,
+    /// UUIDs of the operations durably accepted by this hub. Per-operation
+    /// granularity lets the sender mark exactly those entries as relayed;
+    /// anything absent (including disk-full rejections) stays eligible and
+    /// is retried on the next cycle.
+    pub accepted_operation_uuids: Vec<String>,
 }
 
 /// Pull request query parameters (deserialised from query string).
@@ -79,6 +92,7 @@ pub struct PullQuery {
 
 /// Pull response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PullResponse {
     pub operations: Vec<LocalOperation>,
     pub next_since: String,
@@ -96,6 +110,7 @@ pub struct HeartbeatPayload {
 
 /// A conflict that occurred during push.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConflictInfo {
     pub operation_uuid: String,
     pub reason: String,
@@ -176,19 +191,40 @@ pub struct LocalSyncServerState {
     local_network_key: String,
     /// Operations accepted from peers (not yet pushed to server).
     received_operations: RwLock<Vec<LocalOperation>>,
+    /// Append-only on-disk mirror of `received_operations`.
+    ///
+    /// The in-memory buffer alone would lose every peer operation on a hub
+    /// restart — unacceptable when those operations are sales. Each accepted
+    /// operation is appended as one JSON line before the push is confirmed,
+    /// and the log is reloaded on startup. Dedup by `operation_uuid` on load
+    /// tolerates a torn final line after a crash mid-append.
+    op_log: RwLock<Option<std::fs::File>>,
     /// Peer heartbeats.
     peers: RwLock<HashMap<String, PeerTrack>>,
     /// Conflict log.
     conflicts: RwLock<Vec<ConflictInfo>>,
-    /// Port the server is listening on.
-    port: u16,
+    /// Port the server is listening on (updated when a fallback port is
+    /// used because the preferred one was busy).
+    port: RwLock<u16>,
     /// Whether the server is currently running.
     is_running: RwLock<bool>,
+    /// Handle to the spawned serve loop so `stop()` can actually tear the
+    /// listener down instead of only flipping a flag.
+    serve_task: RwLock<Option<tokio::task::JoinHandle<()>>>,
     /// Tauri app handle for emitting events to the frontend.
     app_handle: RwLock<Option<AppHandle>>,
     /// Server startup timestamp (Unix epoch ms).
     started_at: RwLock<u64>,
 }
+
+/// Operations older than this are dropped from the hub log on startup.
+/// The internet sync cycle should have flushed them to the server long
+/// before; keeping them forever would grow the file unbounded.
+const OP_LOG_RETENTION_DAYS: i64 = 30;
+
+/// Directory (inside the OS app-data dir) holding the hub operation log.
+const OP_LOG_DIR: &str = "local-sync";
+const OP_LOG_FILE: &str = "hub-op-log.jsonl";
 
 // ---------------------------------------------------------------------------
 // HMAC helpers
@@ -248,6 +284,7 @@ async fn handle_push(
                 accepted: 0,
                 rejected: 0,
                 conflicts: vec![],
+                accepted_operation_uuids: vec![],
             }));
         }
     };
@@ -257,10 +294,13 @@ async fn handle_push(
             accepted: 0,
             rejected: 0,
             conflicts: vec![],
+            accepted_operation_uuids: vec![],
         }));
     }
 
     let mut accepted = 0u32;
+    let mut rejected = 0u32;
+    let mut accepted_uuids = Vec::new();
     let mut conflicts = Vec::new();
     let mut received = state.received_operations.write().await;
 
@@ -269,14 +309,29 @@ async fn handle_push(
         let conflict = check_for_conflict(&received, op);
         if let Some(conflict_info) = conflict {
             conflicts.push(conflict_info);
+            rejected += 1;
+            continue;
+        }
+
+        // Persist BEFORE confirming acceptance: a peer that sees "accepted"
+        // must be able to assume the hub durably holds the operation, even
+        // across a hub restart. A failed disk write therefore counts as a
+        // rejection so the peer retries on its next cycle.
+        if !state.append_op_to_log(op) {
+            log::error!(
+                "Failed to persist operation {} — rejecting so peer retries",
+                op.operation_uuid
+            );
+            rejected += 1;
             continue;
         }
 
         received.push(op.clone());
+        accepted_uuids.push(op.operation_uuid.clone());
         accepted += 1;
     }
 
-    let rejected = body.operations.len() as u32 - accepted;
+    drop(received);
 
     // Record conflicts in the conflict log.
     if !conflicts.is_empty() {
@@ -288,6 +343,7 @@ async fn handle_push(
         accepted,
         rejected,
         conflicts,
+        accepted_operation_uuids: accepted_uuids,
     }))
 }
 
@@ -568,17 +624,109 @@ impl LocalSyncServerState {
         Self {
             local_network_key,
             received_operations: RwLock::new(Vec::new()),
+            op_log: RwLock::new(None),
             peers: RwLock::new(HashMap::new()),
             conflicts: RwLock::new(Vec::new()),
-            port,
+            port: RwLock::new(port),
             is_running: RwLock::new(false),
+            serve_task: RwLock::new(None),
             app_handle: RwLock::new(None),
             started_at: RwLock::new(0),
         }
     }
 
+    /// Load previously accepted operations from the on-disk log and open it
+    /// for appending. Deduplicates by `operation_uuid` (a torn final line
+    /// after a crash mid-append is skipped) and drops entries older than the
+    /// retention window.
+    async fn restore_op_log(&self, app_handle: &AppHandle) {
+        let dir = match app_handle.path().app_data_dir() {
+            Ok(dir) => dir.join(OP_LOG_DIR),
+            Err(e) => {
+                log::error!("Cannot resolve app data dir for hub log: {e}");
+                return;
+            }
+        };
+        let path = dir.join(OP_LOG_FILE);
+
+        let mut restored: HashMap<String, LocalOperation> = HashMap::new();
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let cutoff = Utc::now() - chrono::Duration::days(OP_LOG_RETENTION_DAYS);
+            for line in content.lines() {
+                let Ok(op) = serde_json::from_str::<LocalOperation>(line) else {
+                    // Torn/partial line — skip; the next append rewrites a
+                    // clean copy of any operation that still matters.
+                    continue;
+                };
+                let fresh = DateTime::parse_from_rfc3339(&op.source_created_at)
+                    .map(|ts| ts.with_timezone(&Utc) > cutoff)
+                    .unwrap_or(false);
+                if !fresh {
+                    continue;
+                }
+                restored.insert(op.operation_uuid.clone(), op);
+            }
+        }
+        if !restored.is_empty() {
+            log::info!(
+                "Restored {} buffered peer operations from hub log",
+                restored.len()
+            );
+        }
+
+        let mut ops = self.received_operations.write().await;
+        *ops = restored.into_values().collect();
+        ops.sort_by(|a, b| a.source_created_at.cmp(&b.source_created_at));
+        drop(ops);
+
+        // Open (or create) for appending so subsequent accepts persist.
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            Ok(file) => {
+                *self.op_log.write().await = Some(file);
+            }
+            Err(e) => {
+                // Disk-full or permission problems are expected states in an
+                // offline-first terminal: keep serving from memory, but every
+                // append failure will now reject peer pushes so they retry.
+                log::error!("Cannot open hub op log {}: {e}", path.display());
+            }
+        }
+    }
+
+    /// Append one operation to the on-disk log. Returns false when the write
+    /// failed, signalling the caller to reject the push so the peer retries
+    /// instead of assuming the hub durably holds the operation.
+    fn append_op_to_log(&self, op: &LocalOperation) -> bool {
+        match self.op_log.try_write() {
+            Ok(mut guard) => {
+                if let Some(file) = guard.as_mut() {
+                    use std::io::Write;
+                    let line = match serde_json::to_string(op) {
+                        Ok(l) => l,
+                        Err(_) => return false,
+                    };
+                    file.write_all(line.as_bytes()).is_ok()
+                        && file.write_all(b"\n").is_ok()
+                        && file.flush().is_ok()
+                } else {
+                    false
+                }
+            }
+            Err(_) => false,
+        }
+    }
+
     pub async fn is_running(&self) -> bool {
         *self.is_running.read().await
+    }
+
+    /// The port the server is actually listening on.
+    pub async fn bound_port(&self) -> u16 {
+        *self.port.read().await
     }
 
     /// Start the HTTP server, sharing this Arc with the Axum router.
@@ -588,26 +736,29 @@ impl LocalSyncServerState {
     pub async fn start_shared(self: Arc<Self>, app_handle: AppHandle) -> Result<(), String> {
         let mut running = self.is_running.write().await;
         if *running {
-            log::info!("Local sync server already running on port {}", self.port);
+            log::info!("Local sync server already running");
             return Ok(());
         }
 
         // Store the app handle so handlers can emit Tauri events.
-        *self.app_handle.write().await = Some(app_handle);
+        *self.app_handle.write().await = Some(app_handle.clone());
         *self.started_at.write().await = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
 
-        let port = self.port;
-        let state: Arc<LocalSyncServerState> = self.clone();
+        // Reload any operations buffered by a previous hub session before
+        // the listener opens — peers may pull immediately after discovery.
+        self.restore_op_log(&app_handle).await;
+
+        let preferred_port = *self.port.read().await;
 
         let cors = CorsLayer::new()
             .allow_origin(Any)
             .allow_methods([Method::GET, Method::POST])
             .allow_headers(Any);
 
-        let app = Router::new()
+        let router = Router::new()
             // Authenticated local-sync endpoints (HMAC required).
             .route("/local-sync/health", get(handle_health))
             .route("/local-sync/push", post(handle_push))
@@ -619,36 +770,75 @@ impl LocalSyncServerState {
             .route("/sync/heartbeat", post(handle_simple_heartbeat))
             .route("/health", get(handle_health_json))
             .layer(cors)
-            .with_state(state);
+            .with_state(self.clone());
 
-        let addr = SocketAddr::from(([0, 0, 0, 0], port));
-        log::info!("Starting local sync server on {addr}");
-
-        tokio::spawn(async move {
-            let listener = match tokio::net::TcpListener::bind(addr).await {
-                Ok(l) => l,
-                Err(e) => {
-                    log::error!("Failed to bind local sync server: {e}");
-                    return;
+        // Bind synchronously so a failure reaches the caller (and the hub
+        // supervisor can retry on a later tick) instead of leaving the
+        // running flag set with no listener behind it. If the preferred
+        // port is taken, walk up to a few neighbouring ports — mirrors the
+        // port-fallback behaviour documented on the TypeScript LanServer.
+        const PORT_FALLBACK_STEPS: u16 = 10;
+        let mut listener = None;
+        let mut effective_port = preferred_port;
+        for offset in 0..PORT_FALLBACK_STEPS {
+            let candidate = preferred_port.saturating_add(offset);
+            let addr = SocketAddr::from(([0, 0, 0, 0], candidate));
+            match tokio::net::TcpListener::bind(addr).await {
+                Ok(l) => {
+                    listener = Some(l);
+                    effective_port = candidate;
+                    break;
                 }
-            };
+                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                    log::warn!("Port {candidate} in use; trying the next one");
+                }
+                Err(e) => {
+                    return Err(format!("failed to bind local sync server on {addr}: {e}"));
+                }
+            }
+        }
 
-            axum::serve(listener, app)
-                .await
-                .unwrap_or_else(|e| log::error!("Local sync server error: {e}"));
+        let listener = listener.ok_or_else(|| {
+            format!(
+                "no free port found between {preferred_port} and {}",
+                preferred_port + PORT_FALLBACK_STEPS - 1
+            )
+        })?;
+
+        if effective_port != preferred_port {
+            log::warn!(
+                "Preferred port {preferred_port} busy — local sync server using {effective_port}. \
+                 mDNS still advertises {preferred_port}; restart the workstation when possible."
+            );
+            *self.port.write().await = effective_port;
+        }
+
+        let addr = SocketAddr::from(([0, 0, 0, 0], effective_port));
+        log::info!("Local sync server listening on {addr}");
+
+        let serve_handle = tokio::spawn(async move {
+            if let Err(e) = axum::serve(listener, router).await {
+                log::error!("Local sync server error: {e}");
+            }
         });
+        *self.serve_task.write().await = Some(serve_handle);
 
         *running = true;
         Ok(())
     }
 
-    /// Stop the HTTP server (mark as not running; the actual listener stops
-    /// when the tokio task handle is dropped).
+    /// Stop the HTTP server and abort the serve loop so the port is
+    /// released and a later `start_shared` can re-bind cleanly.
     pub async fn stop(&self) -> Result<(), String> {
         let mut running = self.is_running.write().await;
         if !*running {
             return Ok(());
         }
+
+        if let Some(handle) = self.serve_task.write().await.take() {
+            handle.abort();
+        }
+
         *running = false;
         log::info!("Local sync server stopped");
         Ok(())
@@ -667,3 +857,95 @@ impl LocalSyncServerState {
 
 // Tauri commands are defined in commands/local_sync.rs, not here.
 // This module exports the state and API methods only.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // start_shared() needs a real AppHandle and is covered by LAN
+    // integration runs, not unit tests. These tests pin the port-state
+    // surface that must hold before any bind happens.
+
+    const NETWORK_KEY: &str = "test-network-key";
+    const PREFERRED_PORT: u16 = 49_500;
+
+    #[tokio::test]
+    async fn new_state_is_not_running_and_reports_preferred_port_as_bound() {
+        let state = LocalSyncServerState::new(NETWORK_KEY.to_string(), PREFERRED_PORT);
+
+        assert!(!state.is_running().await);
+        assert_eq!(state.bound_port().await, PREFERRED_PORT);
+        assert!(state.serve_task.write().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn stop_on_never_started_server_returns_ok_and_leaves_state_untouched() {
+        let state = LocalSyncServerState::new(NETWORK_KEY.to_string(), PREFERRED_PORT);
+
+        let result = state.stop().await;
+
+        assert!(result.is_ok());
+        assert!(!state.is_running().await);
+        assert_eq!(state.bound_port().await, PREFERRED_PORT);
+        assert!(state.serve_task.write().await.is_none());
+    }
+
+    #[test]
+    fn push_response_serde_uses_camel_case() {
+        let resp = PushResponse {
+            accepted: 2,
+            rejected: 1,
+            conflicts: vec![ConflictInfo {
+                operation_uuid: "op-1".to_string(),
+                reason: "FIRST_WRITE_WINS".to_string(),
+                winning_operation_uuid: "op-0".to_string(),
+            }],
+            accepted_operation_uuids: vec!["uuid-1".to_string(), "uuid-2".to_string()],
+        };
+
+        let json = serde_json::to_string(&resp).expect("serialize PushResponse");
+        // Wire format must be camelCase to match TypeScript LocalOperation.
+        assert!(json.contains("\"acceptedOperationUuids\""), "json was: {json}");
+        assert!(!json.contains("accepted_operation_uuids"), "snake_case leaked: {json}");
+        assert!(json.contains("\"winningOperationUuid\""), "json was: {json}");
+
+        let de: PushResponse = serde_json::from_str(&json).expect("deserialize PushResponse");
+        assert_eq!(de.accepted, 2);
+        assert_eq!(de.rejected, 1);
+        assert_eq!(de.accepted_operation_uuids, vec!["uuid-1", "uuid-2"]);
+        assert_eq!(de.conflicts[0].operation_uuid, "op-1");
+    }
+
+    #[test]
+    fn local_operation_serde_uses_camel_case() {
+        let op = LocalOperation {
+            operation_uuid: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            operation_type: "SALE_CONFIRMATION".to_string(),
+            payload: "{\"total\":100}".to_string(),
+            payload_hash: "abc123".to_string(),
+            source_workstation_id: "ws-1".to_string(),
+            source_created_at: "2026-01-15T12:00:00.000Z".to_string(),
+            retry_count: 3,
+        };
+
+        let json = serde_json::to_string(&op).expect("serialize LocalOperation");
+        assert!(json.contains("\"operationUuid\""), "json was: {json}");
+        assert!(json.contains("\"operationType\""), "json was: {json}");
+        assert!(json.contains("\"sourceWorkstationId\""), "json was: {json}");
+        assert!(json.contains("\"sourceCreatedAt\""), "json was: {json}");
+        assert!(json.contains("\"retryCount\""), "json was: {json}");
+        assert!(!json.contains("operation_uuid"), "snake_case leaked: {json}");
+        assert!(!json.contains("source_workstation_id"), "snake_case leaked: {json}");
+
+        let de: LocalOperation = serde_json::from_str(&json).expect("deserialize LocalOperation");
+        assert_eq!(de.operation_uuid, op.operation_uuid);
+        assert_eq!(de.operation_type, op.operation_type);
+        assert_eq!(de.source_workstation_id, op.source_workstation_id);
+        assert_eq!(de.retry_count, 3);
+
+        // Verify camelCase input also deserializes (Tauri invoke path).
+        let camel_input = r#"{"operationUuid":"uuid-2","operationType":"PRODUCT_CREATION","payload":"{}","payloadHash":"h","sourceWorkstationId":"ws-2","sourceCreatedAt":"2026-01-15T12:00:00.000Z","retryCount":0}"#;
+        let from_camel: LocalOperation = serde_json::from_str(camel_input).unwrap();
+        assert_eq!(from_camel.operation_uuid, "uuid-2");
+    }
+}

@@ -48,6 +48,12 @@ model SyncQueue {
   processedAt           DateTime?
   correlationId         String?
   workstationId         String?
+  // LAN relay marker: set when this entry has been delivered to the
+  // local-network hub (or adopted locally from it). Server delivery is
+  // tracked by `status`; the LAN channel needs its own independent flag
+  // so an entry can be relayed to peers long before the internet returns,
+  // without ever being mistaken for "accepted by the server".
+  lanRelayedAt          DateTime?
 
   attempts    SyncAttempt[]
   recoveryLog SyncRecoveryLog[]
@@ -57,6 +63,7 @@ model SyncQueue {
   @@index([operationType, status])
   @@index([correlationId])
   @@index([status, failureCategory])
+  @@index([lanRelayedAt, status])
 }
 
 model SyncAttempt {

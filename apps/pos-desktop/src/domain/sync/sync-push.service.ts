@@ -59,8 +59,11 @@ export const MAX_RETRY_ATTEMPTS = 10;
  * | 5 | Fiscal         | INVOICE_TRANSMISSION, INVOICE_ADJUSTMENT, FISCAL_DOCUMENT_SYNC |
  * | 6 | Purchases      | PURCHASE_ORDER_CONFIRMATION, PURCHASE_RECEPTION_CONFIRMATION, SUPPLIER_RETURN_CONFIRMATION |
  * | 7 (lowest) | Misc  | CLIENT_DEACTIVATE, RESOLUTION_ALLOCATION, INVOICE_TRANSMISSION_RESULT |
+ *
+ * Exported so the LAN relay engine reuses the exact same dependency-safe
+ * ordering when picking entries to broadcast to the local-network hub.
  */
-const OPERATION_PRIORITY: Record<string, number> = {
+export const OPERATION_PRIORITY: Record<string, number> = {
   PRODUCT_CREATION: 1,
   CLIENT_CREATION: 1,
   PRODUCT_UPDATE: 2,

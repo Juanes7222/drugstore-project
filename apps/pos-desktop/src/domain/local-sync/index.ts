@@ -13,6 +13,12 @@ export {
   type HubElectionInput,
   type ElectionResult,
 } from './hub-election';
+export {
+  createLocalSyncEngine,
+  type LocalSyncEngine,
+  type LocalSyncEngineConfig,
+  type LocalSyncCycleResult,
+} from './local-sync-engine.service';
 
 export type {
   LocalSyncConfig,

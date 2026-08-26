@@ -55,6 +55,8 @@ import { createSyncScheduler, type SyncScheduler } from '../../domain/sync/sync-
 import { createLocalAuditWriter } from '../../domain/audit/local-audit-writer.service';
 import { createUpdateService } from '../../domain/updates/update.service';
 import type { UpdateService, UpdateServiceConfig } from '../../domain/updates/update.service';
+import { createLocalSyncEngine } from '../../domain/local-sync/local-sync-engine.service';
+import type { LocalSyncEngine } from '../../domain/local-sync/local-sync-engine.service';
 import type { PrintPayloadType, DiscoveredPrinter } from '../../domain/printing/printing-types';
 import type { ServerPrintConfig } from '../../domain/printing/print-router';
 
@@ -71,6 +73,7 @@ import type { SalesPosService } from '../../domain/sales-pos/sales-pos.service';
 import { createSalesHistoryService } from '../../domain/sales-pos/sales-history.service';
 import type { SalesHistoryService } from '../../domain/sales-pos/sales-history.service';
 import { useCashShiftStore } from '../../domain/cash-shift/cash-shift.store';
+import { useLocalSyncStore } from '../store/local-sync/local-sync.store';
 import { createInventoryLotsService, type InventoryLotsService } from '../../domain/inventory-lots/inventory-lots.service';
 import type { ProductService } from '../../domain/catalog/product.service';
 import type { ClientsService } from '../../domain/clients/clients.service';
@@ -136,6 +139,7 @@ export interface Services {
   cashDrawerService: CashDrawerService;
   customerDisplayService: CustomerDisplayService;
   syncScheduler: SyncScheduler;
+  localSyncEngine: LocalSyncEngine;
   updateService: UpdateService;
   suppliersService: SuppliersService;
   purchaseOrdersService: PurchaseOrdersService;
@@ -452,7 +456,7 @@ export async function initializeServices(
     printingServices.printRouter,
     auditWriter,
   );
-  await useCashShiftStore.getState().hydrateFromDb(prismaClient, workstationId);
+  await useCashShiftStore.getState().hydrateFromDb(prismaClient);
 
   // 10. Start printer health check loop
   printingServices.printerHealth.start();
@@ -472,6 +476,20 @@ export async function initializeServices(
     auditWriter,
     productService: domainServices.productService,
   });
+
+  // 11b. Create and start the LAN relay engine — the automatic half of
+  //      local-network sync. It pushes un-relayed SyncQueue entries to the
+  //      elected hub and adopts peers' operations, so cross-station
+  //      replication happens without any operator action. Cycle outcomes
+  //      are surfaced through the existing local-sync store.
+  const localSyncEngine = createLocalSyncEngine({
+    prisma: prismaClient,
+    workstationId,
+    onCycleResult: (result) => {
+      useLocalSyncStore.getState().applyCycleResult(result);
+    },
+  });
+  localSyncEngine.start();
 
   // Flatten into the services interface consumers expect
   return {
@@ -496,6 +514,7 @@ export async function initializeServices(
     printQueueService: printingServices.printQueue,
     printRouter: printingServices.printRouter,
     syncScheduler,
+    localSyncEngine,
     printerHealthService: printingServices.printerHealth,
     configExportService: printingServices.configExport,
     printingMetricsService: printingServices.printingMetrics,

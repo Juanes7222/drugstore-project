@@ -106,7 +106,12 @@ impl LocalSyncClientState {
                 last_error: None,
                 backoff_until: None,
                 consecutive_failures: 0,
-                pulled_since: Utc::now().to_rfc3339(),
+                // Start the pull cursor at the Unix epoch: every fresh
+                // process must re-read the hub's full buffer, otherwise
+                // operations accepted while this app was closed would be
+                // silently skipped. Re-adopting already-known operations is
+                // harmless — adoption dedupes by operation_uuid.
+                pulled_since: "1970-01-01T00:00:00+00:00".to_string(),
             }),
         }
     }

@@ -71,6 +71,8 @@ export interface PushResponse {
   accepted: number;
   rejected: number;
   conflicts: ConflictInfo[];
+  /** UUIDs the hub durably accepted — only these get marked as relayed. */
+  acceptedOperationUuids: string[];
 }
 
 export interface PullResponse {

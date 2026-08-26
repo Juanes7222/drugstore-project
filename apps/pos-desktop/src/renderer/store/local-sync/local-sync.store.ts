@@ -20,6 +20,7 @@ import {
   type InitializeLocalSyncParams,
 } from '../../services/local-sync/local-sync.service';
 import type { ConflictInfo } from '../../services/local-sync/local-sync.service';
+import type { LocalSyncCycleResult } from '../../../domain/local-sync/local-sync-engine.service';
 
 export interface LocalSyncState {
   /** List of discovered LAN workstations. */
@@ -70,6 +71,8 @@ export interface LocalSyncStoreActions {
   refreshHubScores: () => Promise<void>;
   /** Refresh conflicts list. */
   refreshConflicts: () => Promise<void>;
+  /** Reflect one automatic LAN relay cycle outcome into the UI state. */
+  applyCycleResult: (result: LocalSyncCycleResult) => void;
 }
 
 export type LocalSyncStore = LocalSyncState & LocalSyncStoreActions;
@@ -223,5 +226,24 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
     } catch (error) {
       console.error('Failed to refresh conflicts:', error);
     }
+  },
+
+  applyCycleResult(result: LocalSyncCycleResult) {
+    if (result.outcome === 'ok') {
+      set({
+        lastSyncAt: result.ranAt,
+        lastSyncError: null,
+        pendingPushCount: get().pendingPushCount - result.pushedToHub > 0
+          ? get().pendingPushCount - result.pushedToHub
+          : 0,
+      });
+      return;
+    }
+
+    if (result.outcome === 'error') {
+      set({ lastSyncError: result.errorMessage ?? 'LAN sync cycle failed' });
+    }
+    // 'skipped-no-hub' leaves the current state untouched: not having a hub
+    // is a normal state for a single-terminal store, not an error.
   },
 }));
