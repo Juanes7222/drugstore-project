@@ -22,8 +22,6 @@ import {
   type CustomCompanyField,
   type CustomStrictnessToggle,
 } from "../../../domain/config";
-import { useCompanySetup } from "@/hooks/use-company-setup";
-import { hasAnyResolutionData } from "@/components/company-setup/resolution-step";
 import { DianHabilitationChecklist } from "@/components/company-setup/dian-habilitation-checklist";
 import { useAppDispatch } from "@/store/hooks";
 import { setActiveScreen } from "@/store/slices/ui-slice";
@@ -32,7 +30,6 @@ import { StrictnessSection } from "./strictness.section";
 import { CustomFieldEditor } from "./custom-field-editor";
 import { UserPreferencesSection } from "./user-preferences.section";
 import { CompanyConfigTab } from "./company-config-tab";
-import { CompanySetupEntrySection } from "./company-setup-entry.section";
 import { FiscalConfigTab } from "./fiscal-config-tab";
 import { SystemPreferencesTab } from "./system-preferences-tab";
 import { PurchasesConfigTab } from "./purchases-config-tab";
@@ -87,13 +84,6 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
     updateCustomField,
     removeCustomField,
   } = useTenantConfig();
-
-  // Saved DIAN fiscal-emitter profile — shown on the Empresa tab as the
-  // entry point into the company-setup wizard (edit mode when configured).
-  const {
-    draft: companyDraft,
-    status: companySetupStatus,
-  } = useCompanySetup();
 
   const [activeTab, setActiveTab] = useState<TabId>("company");
   const [customFieldEditorOpen, setCustomFieldEditorOpen] = useState(false);
@@ -161,27 +151,16 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
       case "company":
         return (
           <div className="space-y-6">
-            <CompanySetupEntrySection
-              nit={companyDraft?.nit ?? null}
-              name={companyDraft?.name ?? null}
-              isConfigured={
-                companySetupStatus === "complete" && companyDraft !== null
-              }
-              hasResolution={
-                companyDraft !== null && hasAnyResolutionData(companyDraft)
-              }
-              onOpen={handleOpenCompanySetup}
-            />
-            <DianHabilitationChecklist />
             <CompanyConfigTab
               config={config}
               effectiveConfig={effectiveConfig}
               readOnly={readOnly}
-              onFieldChange={handleFieldChange}
               onAddCustomField={handleAddCustomField}
               onEditCustomField={handleEditCustomField}
               onRemoveCustomField={handleRemoveCustomField}
+              onOpenCompanySetup={handleOpenCompanySetup}
             />
+            <DianHabilitationChecklist />
           </div>
         );
       case "fiscal":
@@ -190,6 +169,7 @@ export const TenantConfigPage: FC<TenantConfigPageProps> = ({
             config={config}
             readOnly={readOnly}
             onFieldChange={handleFieldChange}
+            onNavigateToCompany={() => setActiveTab("company")}
           />
         );
       case "operation":

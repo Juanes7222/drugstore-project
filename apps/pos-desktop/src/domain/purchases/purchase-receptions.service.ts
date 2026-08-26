@@ -242,51 +242,68 @@ export class PurchaseReceptionsService {
       }
 
       // Build items data (pre-validate purchase order item links)
-      const itemsData = await Promise.all(
-        input.items.map(async (item) => {
-          if (item.purchaseOrderItemId) {
-            const poItem = await tx.purchaseOrderItem.findUnique({
-              where: { id: item.purchaseOrderItemId },
-            });
-            if (!poItem) {
-              throw new PurchaseOrderItemNotFoundException(item.purchaseOrderItemId);
-            }
-            if (poItem.purchaseOrderId !== input.purchaseOrderId) {
-              throw new PurchaseOrderItemMismatchException(
-                item.purchaseOrderItemId,
-                'Does not belong to the specified purchase order.',
-              );
-            }
-            if (poItem.productId !== item.productId) {
-              throw new PurchaseOrderItemMismatchException(
-                item.purchaseOrderItemId,
-                'Product ID mismatch.',
-              );
-            }
+      // Sequential — parallel tx queries inside the same PGlite
+      // transaction trigger "commands ignored until end of transaction
+      // block" (25P02) with adapter-pg / PGlite's single connection
+      // (mirror of the server-side fix).
+      const itemsData: Array<{
+        id: string;
+        productId: string;
+        purchaseOrderItemId: string | null;
+        receivedQuantity: number;
+        lotNumber: string | null;
+        expirationDate: Date | null;
+        realUnitCost: Prisma.Decimal;
+        taxSchemeId: string;
+        taxRate: Prisma.Decimal;
+        discountAmount: Prisma.Decimal;
+        subtotal: Prisma.Decimal;
+        taxAmount: Prisma.Decimal;
+        total: Prisma.Decimal;
+      }> = [];
+      for (const item of input.items) {
+        if (item.purchaseOrderItemId) {
+          const poItem = await tx.purchaseOrderItem.findUnique({
+            where: { id: item.purchaseOrderItemId },
+          });
+          if (!poItem) {
+            throw new PurchaseOrderItemNotFoundException(item.purchaseOrderItemId);
           }
+          if (poItem.purchaseOrderId !== input.purchaseOrderId) {
+            throw new PurchaseOrderItemMismatchException(
+              item.purchaseOrderItemId,
+              'Does not belong to the specified purchase order.',
+            );
+          }
+          if (poItem.productId !== item.productId) {
+            throw new PurchaseOrderItemMismatchException(
+              item.purchaseOrderItemId,
+              'Product ID mismatch.',
+            );
+          }
+        }
 
-          const lineSubtotal = new Prisma.Decimal(item.receivedQuantity)
-            .times(item.realUnitCost)
-            .minus(item.discountAmount ?? 0);
-          const taxAmount = lineSubtotal.times(item.taxRate).dividedBy(100);
+        const lineSubtotal = new Prisma.Decimal(item.receivedQuantity)
+          .times(item.realUnitCost)
+          .minus(item.discountAmount ?? 0);
+        const taxAmount = lineSubtotal.times(item.taxRate).dividedBy(100);
 
-          return {
-            id: globalThis.crypto.randomUUID(),
-            productId: item.productId,
-            purchaseOrderItemId: item.purchaseOrderItemId ?? null,
-            receivedQuantity: item.receivedQuantity,
-            lotNumber: item.lotNumber ?? null,
-            expirationDate: item.expirationDate ? new Date(item.expirationDate) : null,
-            realUnitCost: new Prisma.Decimal(item.realUnitCost),
-            taxSchemeId: item.taxSchemeId,
-            taxRate: new Prisma.Decimal(item.taxRate),
-            discountAmount: new Prisma.Decimal(item.discountAmount ?? 0),
-            subtotal: lineSubtotal,
-            taxAmount,
-            total: lineSubtotal.plus(taxAmount),
-          };
-        }),
-      );
+        itemsData.push({
+          id: globalThis.crypto.randomUUID(),
+          productId: item.productId,
+          purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+          receivedQuantity: item.receivedQuantity,
+          lotNumber: item.lotNumber ?? null,
+          expirationDate: item.expirationDate ? new Date(item.expirationDate) : null,
+          realUnitCost: new Prisma.Decimal(item.realUnitCost),
+          taxSchemeId: item.taxSchemeId,
+          taxRate: new Prisma.Decimal(item.taxRate),
+          discountAmount: new Prisma.Decimal(item.discountAmount ?? 0),
+          subtotal: lineSubtotal,
+          taxAmount,
+          total: lineSubtotal.plus(taxAmount),
+        });
+      }
 
       // Calculate totals
       const { subtotal, totalTax, totalAmount } =

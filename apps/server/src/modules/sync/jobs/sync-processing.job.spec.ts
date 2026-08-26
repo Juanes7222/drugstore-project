@@ -16,14 +16,32 @@ describe('SyncProcessingJob', () => {
   let prisma: DeepMockProxy<PrismaClient>;
   let dispatcher: jest.Mocked<SyncOperationDispatcherService>;
 
+  let tenantContext: { getSubscriptionId: jest.Mock; runWithTenant: jest.Mock; hasTenant: jest.Mock };
+
   beforeEach(() => {
     prisma = mockDeep<PrismaClient>();
-    // withTenant executes the callback with the mock itself (no real tenant transaction).
+    tenantContext = {
+      getSubscriptionId: jest.fn(() => 'sub-1'),
+      runWithTenant: jest.fn((_: string, fn: () => unknown) => fn()),
+      hasTenant: jest.fn(() => true),
+    };
+    // withTenant should bind the subscription into tenantContext for the duration of fn,
+    // mirroring the real PrismaService.withTenant -> TenantContext.runWithTenant behavior.
+    let currentSub: string | null = 'sub-1';
+    tenantContext.getSubscriptionId.mockImplementation(() => currentSub ?? 'sub-1');
     (prisma.withTenant as jest.Mock).mockImplementation(
-      async (_subscriptionId: string, fn: () => Promise<void>) => fn(),
+      async (subscriptionId: string, fn: () => Promise<void>) => {
+        const prev = currentSub;
+        currentSub = subscriptionId;
+        try {
+          return await fn();
+        } finally {
+          currentSub = prev;
+        }
+      },
     );
     dispatcher = { dispatch: jest.fn() } as any;
-    job = new SyncProcessingJob(prisma as any, dispatcher);
+    job = new SyncProcessingJob(prisma as any, dispatcher as any, tenantContext as any);
   });
 
   describe('processPendingOperations', () => {
@@ -168,6 +186,59 @@ describe('SyncProcessingJob', () => {
             nextRetryAt: null,
           }),
         }),
+      );
+    });
+
+    it('processes each subscription tenant exactly once and does not duplicate entries across tenants', async () => {
+      (prisma.subscription.findMany as jest.Mock).mockResolvedValue([{ id: 'sub-a' }, { id: 'sub-b' }]);
+
+      const entryA = { id: 'q-a', operationType: 'SALE_CONFIRMATION', status: 'PENDING', retryCount: 0, subscriptionId: 'sub-a' };
+      const entryB = { id: 'q-b', operationType: 'SALE_CONFIRMATION', status: 'PENDING', retryCount: 0, subscriptionId: 'sub-b' };
+
+      // fetchSupportedEntries should be called once per subscription with the correct tenant filter
+      (prisma.syncQueue.findMany as jest.Mock).mockImplementation(async (args: any) => {
+        const sub = tenantContext.getSubscriptionId();
+        if (sub === 'sub-a') return [entryA];
+        if (sub === 'sub-b') return [entryB];
+        return [];
+      });
+      (prisma.syncQueue.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+      (prisma.syncQueue.update as jest.Mock).mockResolvedValue({});
+      dispatcher.dispatch.mockResolvedValue({ entityId: 'e', entityInternalCode: 'c' });
+
+      await job.processPendingOperations();
+
+      // Each entry dispatched exactly once — no duplicate WARN from leaking entries across tenants
+      expect(dispatcher.dispatch).toHaveBeenCalledTimes(2);
+      expect(dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({ id: 'q-a' }));
+      expect(dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({ id: 'q-b' }));
+
+      // fetch was scoped per tenant
+      expect(prisma.syncQueue.findMany).toHaveBeenCalledTimes(2);
+      expect(prisma.syncQueue.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: expect.objectContaining({ subscriptionId: 'sub-a' }) }));
+      expect(prisma.syncQueue.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ subscriptionId: 'sub-b' }) }));
+
+      // claim includes subscriptionId — prevents cross-tenant take-over
+      expect(prisma.syncQueue.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ subscriptionId: expect.any(String), id: 'q-a' }) }),
+      );
+      expect(prisma.syncQueue.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ subscriptionId: expect.any(String), id: 'q-b' }) }),
+      );
+    });
+
+    it('fetchSupportedEntries includes subscriptionId and withTenant binding', async () => {
+      (prisma.subscription.findMany as jest.Mock).mockResolvedValue([{ id: 'sub-a' }]);
+      (prisma.syncQueue.findMany as jest.Mock).mockResolvedValue([]);
+      // track that withTenant was invoked with the subscription
+      const withTenantSpy = prisma.withTenant as jest.Mock;
+      withTenantSpy.mockClear();
+
+      await job.processPendingOperations();
+
+      expect(withTenantSpy).toHaveBeenCalledWith('sub-a', expect.any(Function));
+      expect(prisma.syncQueue.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ subscriptionId: 'sub-a' }) }),
       );
     });
   });

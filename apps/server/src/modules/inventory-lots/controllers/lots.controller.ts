@@ -25,12 +25,13 @@ import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 export class LotsController {
   constructor(private lotsService: LotsService) {}
 
-  // Read endpoints intentionally exclude CASHIER: lot data is inventory
-  // management data, and the POS sale flow works from its local catalog
-  // cache (pushed through /sync/batch), not from direct lot reads. The set
-  // mirrors the POS desktop's INVENTORY_ROLES screen gate.
+  // CASHIER needs read/sync access: POS sale flow consumes lot stock
+  // (consumeStockForSale / FEFO) and hydrates offline cache via
+  // GET /inventory-lots/lots/sync. Blocking CASHIER caused 403 during
+  // startup sync for both workstations (see 26/08 logs). Write
+  // operations (block/unblock) stay ADMIN-only.
   @Get('sync')
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async syncLots(
     @Query('updatedSince') updatedSince?: string,
     @Query('cursor') cursor?: string,
@@ -44,13 +45,13 @@ export class LotsController {
   }
 
   @Get()
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findAll(@Query() query: QueryLotDto): Promise<any> {
     return this.lotsService.findAll(query);
   }
 
   @Get(":id")
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findById(@Param("id") id: string): Promise<any> {
     return this.lotsService.findById(id);
   }
@@ -79,7 +80,7 @@ export class LotsController {
   }
 
   @Get("movements")
-  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
+  @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async listMovements(@Query() query: QueryInventoryMovementDto): Promise<any> {
     return this.lotsService.listMovements(query);
   }

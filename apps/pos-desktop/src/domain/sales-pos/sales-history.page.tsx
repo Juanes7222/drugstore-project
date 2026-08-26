@@ -5,7 +5,8 @@
  * invoice and its editable operational (pharmacy) view. The presentational
  * components live under `src/renderer/components/sales-history/`.
  *
- * Role-gated to MANAGER, OWNER, or SAAS_ADMIN.
+ * Cashiers may view (read-only); only MANAGER, OWNER, ADMIN and SAAS_ADMIN
+ * may modify invoices (adjustments, cancellations).
  */
 
 import { type CSSProperties, type FC, useCallback, useEffect, useRef, useState } from 'react';
@@ -76,9 +77,16 @@ export const SalesHistoryPage: FC = () => {
   const [allowedAdjustmentTypes, setAllowedAdjustmentTypes] = useState<AdjustmentType[]>([]);
 
   const role = session?.role as RoleType | undefined;
-  const isAllowed =
+  const canView =
+    role === RoleType.CASHIER ||
     role === RoleType.MANAGER ||
     role === RoleType.OWNER ||
+    role === RoleType.ADMIN ||
+    role === RoleType.SAAS_ADMIN;
+  const canModify =
+    role === RoleType.MANAGER ||
+    role === RoleType.OWNER ||
+    role === RoleType.ADMIN ||
     role === RoleType.SAAS_ADMIN;
 
   // Dev-only invocation counter — makes "the list keeps reloading" diagnosable
@@ -182,6 +190,7 @@ export const SalesHistoryPage: FC = () => {
   }, [selectedDetail]);
 
   const handleCancelInvoice = useCallback(async () => {
+    if (!canModify) return;
     const mainInvoice = selectedDetail?.invoices[0];
     if (!mainInvoice || !invoiceService) return;
     try {
@@ -194,9 +203,10 @@ export const SalesHistoryPage: FC = () => {
     } catch (err) {
       console.error('[SalesHistoryPage] handleCancelInvoice failed:', err);
     }
-  }, [selectedDetail, invoiceService, t, loadDetail, loadSales]);
+  }, [canModify, selectedDetail, invoiceService, t, loadDetail, loadSales]);
 
   const handleOpenAdjustmentModal = useCallback(async () => {
+    if (!canModify) return;
     const mainInvoice = selectedDetail?.invoices[0];
     if (!mainInvoice || !localAdjustmentService) return;
     setAdjustmentModalError(null);
@@ -211,7 +221,7 @@ export const SalesHistoryPage: FC = () => {
       );
       setShowAdjustmentModal(true);
     }
-  }, [selectedDetail, localAdjustmentService, t]);
+  }, [canModify, selectedDetail, localAdjustmentService, t]);
 
   const handleCloseAdjustmentModal = useCallback(() => {
     setShowAdjustmentModal(false);
@@ -222,6 +232,7 @@ export const SalesHistoryPage: FC = () => {
 
   const handleApplyAdjustment = useCallback(
     async (type: AdjustmentType, newValue: unknown, reason: string) => {
+      if (!canModify) return;
       const mainInvoice = selectedDetail?.invoices[0];
       if (!mainInvoice || !localAdjustmentService) return;
 
@@ -248,10 +259,10 @@ export const SalesHistoryPage: FC = () => {
         setAdjustmentHistoryLoading(false);
       }
     },
-    [selectedDetail, localAdjustmentService, loadSales, t],
+    [canModify, selectedDetail, localAdjustmentService, loadSales, t],
   );
 
-  if (!isAllowed) {
+  if (!canView) {
     return (
       <section className="flex h-full items-center justify-center p-6">
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-center">
@@ -332,6 +343,7 @@ export const SalesHistoryPage: FC = () => {
               operationalView={operationalView}
               adjustmentHistory={adjustmentHistory}
               adjustmentHistoryLoading={adjustmentHistoryLoading}
+              canModify={canModify}
               onViewModeChange={setDetailView}
               onClose={handleCloseDetail}
               onCreateAdjustment={handleOpenAdjustmentModal}

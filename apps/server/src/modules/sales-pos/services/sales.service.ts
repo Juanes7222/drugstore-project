@@ -179,15 +179,18 @@ export class SalesService {
       const clientData = useGeneric
         ? await this.resolveGenericClient(tx)
         : await this.getClientSnapshot(tx, createDto.clientId!);
-      const saleItems = await Promise.all(
-        createDto.items.map((item) =>
-          this.buildSaleItemFromRequest(
+      // Sequential: adapter-pg interactive transaction uses a single
+      // pg connection — concurrent tx.* queries abort with 25P02.
+      const saleItems: Prisma.SaleItemCreateWithoutSaleInput[] = [];
+      for (const item of createDto.items) {
+        saleItems.push(
+          await this.buildSaleItemFromRequest(
             tx,
             item,
             clientData?.classification?.discountPercentage,
           ),
-        ),
-      );
+        );
+      }
 
       const totalCalculations = this.calculateSaleTotals(
         saleItems as unknown as SaleItemTotals[],

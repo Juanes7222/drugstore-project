@@ -1082,17 +1082,25 @@ export class SyncScheduler {
       }
     }
 
-    // 3. Lot sync
-    if (!this.pullSuppressed.has('lots')) {
-      try {
-        const lots = await this.lotSync.fetchLots();
-        await this.withLock(() => this.lotSync.applyLots(lots));
-      } catch (err) {
-        if (this.isForbidden(err)) {
-          this.suppressPull('lots');
-        } else {
-          console.warn('[SyncScheduler] lot pull failed:', describeSyncError(err));
-        }
+    // 3. Lot sync — server 26/08 fix: GET /inventory-lots/lots/sync and
+    //    legacy GET /inventory-lots/lots now allow CASHIER (previously 403
+    //    when the POS ran as cashier). The POS must hydrate the offline
+    //    Lot cache for every workstation (ws_principal, ws_secundaria, …)
+    //    without requiring an ADMIN token. A 403 here is no longer an
+    //    expected role mismatch to suppress permanently — log and retry
+    //    next tick so a previously-suppressed workstation recovers without
+    //    a fresh ADMIN login.
+    try {
+      const lots = await this.lotSync.fetchLots();
+      await this.withLock(() => this.lotSync.applyLots(lots));
+    } catch (err) {
+      if (this.isForbidden(err)) {
+        console.warn(
+          '[SyncScheduler] lot pull forbidden (unexpected after 26/08 CASHIER fix) — will retry next tick:',
+          describeSyncError(err),
+        );
+      } else {
+        console.warn('[SyncScheduler] lot pull failed:', describeSyncError(err));
       }
     }
 

@@ -98,8 +98,9 @@ describe("NavigationSidebar", () => {
     it("shows Sales and Returns for CASHIER role", () => {
       renderSidebar();
 
+      // Exact name — /ventas/i also matches "Historial Ventas" now visible to CASHIER (read-only)
       expect(
-        screen.getByRole("menuitem", { name: /ventas/i }),
+        screen.getByRole("menuitem", { name: "Ventas" }),
       ).toBeInTheDocument();
       expect(
         screen.getByRole("menuitem", { name: /devoluciones/i }),

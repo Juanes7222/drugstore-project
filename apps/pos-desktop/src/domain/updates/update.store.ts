@@ -163,17 +163,16 @@ export const useUpdateStore = create<UpdateStoreState>()((set, get) => ({
   ...DEFAULT_STATE,
 
   async hydrateFromDb(prisma: unknown): Promise<void> {
-    try {
-      const db = prisma as any;
-      const row = await db.updateState.findUnique({
-        where: { id: 'singleton' },
-      });
+    const db = prisma as any;
 
-      if (!row) {
-        // First launch: create default singleton
-        const db = prisma as any;
-        await db.updateState.create({
-          data: {
+    // Prefer atomic upsert when available — race-safe for StrictMode double-mount
+    // or any concurrent caller (no findUnique+create window).
+    if (typeof db.updateState?.upsert === 'function') {
+      try {
+        const row = await db.updateState.upsert({
+          where: { id: 'singleton' },
+          update: {},
+          create: {
             id: 'singleton',
             currentVersion: get().currentVersion,
             channel: get().channel,
@@ -181,6 +180,80 @@ export const useUpdateStore = create<UpdateStoreState>()((set, get) => ({
             installOnClose: get().installOnClose,
           },
         });
+        set({
+          currentVersion: row.currentVersion,
+          lastCheckAt: row.lastCheckAt?.toISOString() ?? null,
+          lastAvailableVersion: row.lastAvailableVersion,
+          lastAvailableType: row.lastAvailableType as UpdateType | null,
+          lastAvailableChangelog: row.lastAvailableChangelog,
+          lastAvailableDownloadUrl: row.lastAvailableDownloadUrl,
+          lastAvailableFileSize: row.lastAvailableFileSize,
+          downloadStatus: row.downloadStatus as DownloadStatus | null,
+          downloadProgress: row.downloadProgress,
+          installStatus: row.installStatus as InstallStatus | null,
+          lastErrorMessage: row.lastErrorMessage,
+          userDismissedVersion: row.userDismissedVersion,
+          channel: row.channel as UpdateChannel,
+          autoDownload: row.autoDownload,
+          installOnClose: row.installOnClose,
+        });
+        return;
+      } catch (err) {
+        console.warn('[update.store] Failed to hydrate from DB:', err);
+        return;
+      }
+    }
+
+    // Fallback for test mocks / environments without upsert: findUnique + create
+    // with unique-constraint retry to handle the race where two callers both
+    // see null and race on create.
+    try {
+      const row = await db.updateState.findUnique({
+        where: { id: 'singleton' },
+      });
+
+      if (!row) {
+        try {
+          await db.updateState.create({
+            data: {
+              id: 'singleton',
+              currentVersion: get().currentVersion,
+              channel: get().channel,
+              autoDownload: get().autoDownload,
+              installOnClose: get().installOnClose,
+            },
+          });
+        } catch (createErr: unknown) {
+          const isUniqueViolation =
+            (createErr as { code?: string })?.code === 'P2002' ||
+            String((createErr as Error)?.message ?? '').includes('Unique constraint');
+          if (isUniqueViolation) {
+            const existing = await db.updateState.findUnique({
+              where: { id: 'singleton' },
+            });
+            if (existing) {
+              set({
+                currentVersion: existing.currentVersion,
+                lastCheckAt: existing.lastCheckAt?.toISOString() ?? null,
+                lastAvailableVersion: existing.lastAvailableVersion,
+                lastAvailableType: existing.lastAvailableType as UpdateType | null,
+                lastAvailableChangelog: existing.lastAvailableChangelog,
+                lastAvailableDownloadUrl: existing.lastAvailableDownloadUrl,
+                lastAvailableFileSize: existing.lastAvailableFileSize,
+                downloadStatus: existing.downloadStatus as DownloadStatus | null,
+                downloadProgress: existing.downloadProgress,
+                installStatus: existing.installStatus as InstallStatus | null,
+                lastErrorMessage: existing.lastErrorMessage,
+                userDismissedVersion: existing.userDismissedVersion,
+                channel: existing.channel as UpdateChannel,
+                autoDownload: existing.autoDownload,
+                installOnClose: existing.installOnClose,
+              });
+            }
+            return;
+          }
+          throw createErr;
+        }
         return;
       }
 

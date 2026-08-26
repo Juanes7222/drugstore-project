@@ -183,6 +183,13 @@ export interface UseServiceInitOptions {
 }
 
 // ---------------------------------------------------------------------------
+// Deduplication for fiscal warn (StrictMode double-mount)
+// ---------------------------------------------------------------------------
+
+/** Suppress duplicate fiscal dev-warn when two callers race. */
+const fiscalWarnedWorkstations = new Set<string>();
+
+// ---------------------------------------------------------------------------
 // Initialiser (pure async — testable without React)
 // ---------------------------------------------------------------------------
 
@@ -341,11 +348,14 @@ export async function initializeServices(
     try {
       await fiscalServices.fiscalNumberingService.ensureCounters();
     } catch {
-      console.warn(
-        '[use-service-init] Fiscal counters not initialized for workstation ' +
-        `"${workstationId}". Auto-initializing with development defaults. ` +
-        'A manager must configure the authorized DIAN numbering range for production use.',
-      );
+      if (!fiscalWarnedWorkstations.has(workstationId)) {
+        fiscalWarnedWorkstations.add(workstationId);
+        console.warn(
+          '[use-service-init] Fiscal counters not initialized for workstation ' +
+            `"${workstationId}". Auto-initializing with development defaults. ` +
+            'A manager must configure the authorized DIAN numbering range for production use.',
+        );
+      }
       await fiscalServices.fiscalNumberingService.initializeCounters({
         workstationId,
         currentRegularNumber: 0,

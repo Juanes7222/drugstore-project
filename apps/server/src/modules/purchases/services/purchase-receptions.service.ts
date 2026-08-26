@@ -142,72 +142,84 @@ export class PurchaseReceptionsService {
         }
       }
 
-      const itemsData = await Promise.all(
-        createDto.items.map(async (itemDto) => {
-          const product = await tx.product.findUnique({
-            where: { id: itemDto.productId },
+      // Sequential — adapter-pg: single connection per interactive tx.
+      const itemsData: Array<{
+        id: string;
+        subscriptionId: string;
+        productId: string;
+        purchaseOrderItemId: string | null;
+        receivedQuantity: number;
+        lotNumber: string | null;
+        expirationDate: Date | null;
+        realUnitCost: Prisma.Decimal;
+        taxSchemeId: string;
+        taxRate: Prisma.Decimal;
+        discountAmount: Prisma.Decimal;
+      }> = [];
+      for (const itemDto of createDto.items) {
+        const product = await tx.product.findUnique({
+          where: { id: itemDto.productId },
+        });
+        if (!product) {
+          throw new ProductNotFoundException(itemDto.productId);
+        }
+
+        let purchaseOrderItem: Awaited<
+          ReturnType<typeof tx.purchaseOrderItem.findUnique>
+        >;
+        if (itemDto.purchaseOrderItemId) {
+          purchaseOrderItem = await tx.purchaseOrderItem.findUnique({
+            where: { id: itemDto.purchaseOrderItemId },
           });
-          if (!product) {
-            throw new ProductNotFoundException(itemDto.productId);
+          if (!purchaseOrderItem) {
+            throw new PurchaseOrderItemNotFoundException(
+              itemDto.purchaseOrderItemId,
+            );
           }
-
-          let purchaseOrderItem: Awaited<
-            ReturnType<typeof tx.purchaseOrderItem.findUnique>
-          >;
-          if (itemDto.purchaseOrderItemId) {
-            purchaseOrderItem = await tx.purchaseOrderItem.findUnique({
-              where: { id: itemDto.purchaseOrderItemId },
-            });
-            if (!purchaseOrderItem) {
-              throw new PurchaseOrderItemNotFoundException(
-                itemDto.purchaseOrderItemId,
-              );
-            }
-            if (
-              purchaseOrderItem.purchaseOrderId !== createDto.purchaseOrderId
-            ) {
-              throw new PurchaseOrderItemMismatchException(
-                itemDto.purchaseOrderItemId,
-                'Does not belong to the specified purchase order.',
-              );
-            }
-            if (purchaseOrderItem.productId !== itemDto.productId) {
-              throw new PurchaseOrderItemMismatchException(
-                itemDto.purchaseOrderItemId,
-                'Product ID mismatch.',
-              );
-            }
-            if (
-              itemDto.receivedQuantity >
+          if (
+            purchaseOrderItem.purchaseOrderId !== createDto.purchaseOrderId
+          ) {
+            throw new PurchaseOrderItemMismatchException(
+              itemDto.purchaseOrderItemId,
+              'Does not belong to the specified purchase order.',
+            );
+          }
+          if (purchaseOrderItem.productId !== itemDto.productId) {
+            throw new PurchaseOrderItemMismatchException(
+              itemDto.purchaseOrderItemId,
+              'Product ID mismatch.',
+            );
+          }
+          if (
+            itemDto.receivedQuantity >
+            purchaseOrderItem.requestedQuantity -
+              purchaseOrderItem.receivedQuantity
+          ) {
+            throw new OverReceptionException(
+              itemDto.purchaseOrderItemId,
               purchaseOrderItem.requestedQuantity -
-                purchaseOrderItem.receivedQuantity
-            ) {
-              throw new OverReceptionException(
-                itemDto.purchaseOrderItemId,
-                purchaseOrderItem.requestedQuantity -
-                  purchaseOrderItem.receivedQuantity,
-                itemDto.receivedQuantity,
-              );
-            }
+                purchaseOrderItem.receivedQuantity,
+              itemDto.receivedQuantity,
+            );
           }
+        }
 
-          return {
-            id: crypto.randomUUID(),
-            subscriptionId: this.tenantContext.getSubscriptionId(),
-            productId: itemDto.productId,
-            purchaseOrderItemId: itemDto.purchaseOrderItemId || null,
-            receivedQuantity: itemDto.receivedQuantity,
-            lotNumber: itemDto.lotNumber || null,
-            expirationDate: itemDto.expirationDate
-              ? new Date(itemDto.expirationDate)
-              : null,
-            realUnitCost: new Prisma.Decimal(itemDto.realUnitCost),
-            taxSchemeId: itemDto.taxSchemeId,
-            taxRate: new Prisma.Decimal(itemDto.taxRate),
-            discountAmount: new Prisma.Decimal(itemDto.discountAmount || 0),
-          };
-        }),
-      );
+        itemsData.push({
+          id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
+          productId: itemDto.productId,
+          purchaseOrderItemId: itemDto.purchaseOrderItemId || null,
+          receivedQuantity: itemDto.receivedQuantity,
+          lotNumber: itemDto.lotNumber || null,
+          expirationDate: itemDto.expirationDate
+            ? new Date(itemDto.expirationDate)
+            : null,
+          realUnitCost: new Prisma.Decimal(itemDto.realUnitCost),
+          taxSchemeId: itemDto.taxSchemeId,
+          taxRate: new Prisma.Decimal(itemDto.taxRate),
+          discountAmount: new Prisma.Decimal(itemDto.discountAmount || 0),
+        });
+      }
 
       const { subtotal, totalTax, totalAmount } =
         this.calculateReceptionTotals(itemsData);

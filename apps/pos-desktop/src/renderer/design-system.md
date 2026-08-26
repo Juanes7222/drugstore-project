@@ -1589,3 +1589,9 @@ viewing state is for everyone.
   `no_open_shift_credit_payment`, `insufficient_role`;
   `shift_already_open` reworded store-wide) so any surface can map
   `DomainError.errorCode` without hardcoding Spanish.
+
+---
+
+## Config: Empresa dedup (2026-08-26)
+
+Fuente unica = CompanyDraft (RUT). Empresa tab: ledger read-only + CTA Editar / Actualizar con nuevo RUT. Fiscal tab: solo numeracion + recibo, banner referencia Empresa. Wizard review expone Subir nuevo RUT -> upload view.

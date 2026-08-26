@@ -147,9 +147,11 @@ export class InventoryAdjustmentsService {
       });
       // Create movements separately: InventoryMovement has adjustmentDocumentId as a scalar
       // with no Prisma-level relation declared.
-      const movements = await Promise.all(
-        itemsData.map((m) =>
-          tx.inventoryMovement.create({
+      // Sequential — see prepareAdjustmentItems for adapter-pg reason.
+      const movements: any[] = [];
+      for (const m of itemsData) {
+        movements.push(
+          await tx.inventoryMovement.create({
             data: {
               id: crypto.randomUUID(),
               subscriptionId: this.tenantContext.getSubscriptionId(),
@@ -164,8 +166,8 @@ export class InventoryAdjustmentsService {
               adjustmentDocumentId: doc.id,
             },
           }),
-        ),
-      );
+        );
+      }
       return { ...doc, movements };
     });
   }
@@ -300,74 +302,78 @@ export class InventoryAdjustmentsService {
     items: CreateInventoryAdjustmentItemDto[],
     syncLotContext?: Map<string, LotSyncData>,
   ): Promise<AdjustmentItemPrep[]> {
-    return Promise.all(
-      items.map(async (item) => {
-        let lotData = syncLotContext?.get(item.lotId);
+    // Sequential: @prisma/adapter-pg uses a single pg connection per
+    // interactive transaction — concurrent queries on that connection
+    // trigger "client.query() already executing" (pg@9 deprecation) and
+    // abort the transaction (25P02). See sales.service.create for same pattern.
+    const result: AdjustmentItemPrep[] = [];
+    for (const item of items) {
+      let lotData = syncLotContext?.get(item.lotId);
 
-        // Legacy payloads (before POS refactor e631860) may omit lot data.
-        // When that happens, try to hydrate from any available source.
-        if (!lotData) {
-          // Attempt to extract productId from item.lot (new format) or
-          // item.productId (some old payload variants have it at item level)
-          const productIdFromItem =
-            (item as any).lot?.productId ?? (item as any).productId;
-          if (productIdFromItem) {
+      // Legacy payloads (before POS refactor e631860) may omit lot data.
+      // When that happens, try to hydrate from any available source.
+      if (!lotData) {
+        // Attempt to extract productId from item.lot (new format) or
+        // item.productId (some old payload variants have it at item level)
+        const productIdFromItem =
+          (item as any).lot?.productId ?? (item as any).productId;
+        if (productIdFromItem) {
+          lotData = {
+            productId: productIdFromItem,
+            batchNumber: 'UNKNOWN',
+            expirationDate: new Date().toISOString(),
+            currentStock: 0,
+          };
+        } else if (typeof (tx as any).product?.findFirst === 'function') {
+          // Last resort: pick the first active product from catalog
+          const fallbackProduct = await tx.product.findFirst({
+            where: { isActive: true },
+            select: { id: true },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (fallbackProduct) {
             lotData = {
-              productId: productIdFromItem,
-              batchNumber: 'UNKNOWN',
+              productId: fallbackProduct.id,
+              batchNumber: 'SYNC-UNKNOWN',
               expirationDate: new Date().toISOString(),
               currentStock: 0,
             };
-          } else if (typeof (tx as any).product?.findFirst === 'function') {
-            // Last resort: pick the first active product from catalog
-            const fallbackProduct = await tx.product.findFirst({
-              where: { isActive: true },
-              select: { id: true },
-              orderBy: { createdAt: 'asc' },
-            });
-            if (fallbackProduct) {
-              lotData = {
-                productId: fallbackProduct.id,
-                batchNumber: 'SYNC-UNKNOWN',
-                expirationDate: new Date().toISOString(),
-                currentStock: 0,
-              };
-            }
           }
         }
+      }
 
-        const lot = await this.lotsService.resolveLotForSync(
-          tx,
+      const lot = await this.lotsService.resolveLotForSync(
+        tx,
+        item.lotId,
+        lotData,
+      );
+
+      if (
+        item.movementType === MovementType.NEGATIVE_ADJUSTMENT &&
+        item.quantity > lot.currentStock
+      ) {
+        throw new InsufficientStockForAdjustmentException(
           item.lotId,
-          lotData,
+          item.quantity,
+          lot.currentStock,
         );
+      }
 
-        if (
-          item.movementType === MovementType.NEGATIVE_ADJUSTMENT &&
-          item.quantity > lot.currentStock
-        ) {
-          throw new InsufficientStockForAdjustmentException(
-            item.lotId,
-            item.quantity,
-            lot.currentStock,
-          );
-        }
+      const signedQuantity =
+        item.movementType === MovementType.NEGATIVE_ADJUSTMENT
+          ? -item.quantity
+          : item.quantity;
 
-        const signedQuantity =
-          item.movementType === MovementType.NEGATIVE_ADJUSTMENT
-            ? -item.quantity
-            : item.quantity;
-
-        return {
-          lotId: lot.id,
-          movementType: item.movementType,
-          quantity: item.quantity,
-          previousStock: lot.currentStock,
-          resultingStock: lot.currentStock + signedQuantity,
-          reason: item.reason,
-        };
-      }),
-    );
+      result.push({
+        lotId: lot.id,
+        movementType: item.movementType,
+        quantity: item.quantity,
+        previousStock: lot.currentStock,
+        resultingStock: lot.currentStock + signedQuantity,
+        reason: item.reason,
+      });
+    }
+    return result;
   }
 
   private async verifyAndLoadLots(
@@ -380,21 +386,22 @@ export class InventoryAdjustmentsService {
       quantity: number;
     }>,
   ): Promise<LotWithMovement[]> {
-    return Promise.all(
-      movements.map(async (movement) => {
-        const lot = await tx.lot.findUnique({ where: { id: movement.lotId } });
-        if (!lot) throw new LotNotFoundException(movement.lotId);
-        if (lot.currentStock !== movement.previousStock) {
-          throw new StaleAdjustmentException(
-            documentId,
-            movement.lotId,
-            movement.previousStock,
-            lot.currentStock,
-          );
-        }
-        return { movement, lot };
-      }),
-    );
+    // Sequential for same adapter-pg reason as prepareAdjustmentItems.
+    const result: LotWithMovement[] = [];
+    for (const movement of movements) {
+      const lot = await tx.lot.findUnique({ where: { id: movement.lotId } });
+      if (!lot) throw new LotNotFoundException(movement.lotId);
+      if (lot.currentStock !== movement.previousStock) {
+        throw new StaleAdjustmentException(
+          documentId,
+          movement.lotId,
+          movement.previousStock,
+          lot.currentStock,
+        );
+      }
+      result.push({ movement, lot });
+    }
+    return result;
   }
 
   private async applyMovementToLot(

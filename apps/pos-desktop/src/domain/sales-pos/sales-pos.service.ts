@@ -247,16 +247,22 @@ export class SalesPosService {
         ? new Prisma.Decimal(clientData.classification.discountPercentage.toString())
         : new Prisma.Decimal(0);
 
-      const saleItems: BuiltSaleItem[] = await Promise.all(
-        input.items.map((item) =>
-          this.buildSaleItemFromRequest(
+      // Sequential — parallel tx queries inside the same PGlite
+      // transaction trigger "commands ignored until end of transaction
+      // block" (25P02) with adapter-pg / PGlite's single connection.
+      // The server already fixed the same pattern (see
+      // sales.sequential.spec.ts); the POS must mirror it.
+      const saleItems: BuiltSaleItem[] = [];
+      for (const item of input.items) {
+        saleItems.push(
+          await this.buildSaleItemFromRequest(
             tx,
             item,
             clientDiscountPct,
             session.role,
           ),
-        ),
-      );
+        );
+      }
 
       const totals: SaleTotals = this.calculateSaleTotals(
         saleItems as unknown as SaleItemTotals[],

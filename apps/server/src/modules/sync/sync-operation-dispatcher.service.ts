@@ -323,9 +323,10 @@ export class SyncOperationDispatcherService {
     //      ownership of the shift is irrelevant by design.
     //   3. Neither → legacy-compat bootstrap: materialize the offline
     //      shift as the tenant's OPEN shift.
-    if (createSaleDto?.cashShiftId) {
-      await this.ensureGlobalShiftAttribution(createSaleDto, workstationId, userId);
-    }
+    // If cashShiftId is missing (POS payload without shift), still
+    // ensure an OPEN shift exists and assign it — otherwise
+    // salesService.create throws CashShiftNotOpenForWorkstation on every retry.
+    await this.ensureGlobalShiftAttribution(createSaleDto, workstationId, userId);
 
     // ── Product ID remapping ─────────────────────────────────────────
     // The POS records the local UUID of each product in the sale item.
@@ -388,11 +389,15 @@ export class SyncOperationDispatcherService {
     workstationId: string,
     userId: string,
   ): Promise<void> {
-    const referencedShift = await this.prisma.cashShift.findUnique({
-      where: { id: createSaleDto.cashShiftId },
-      select: { id: true },
-    });
-    if (referencedShift) return;
+    // If DTO already references an existing shift (OPEN or CLOSED fallback),
+    // no bootstrapping needed — salesService.getOpenCashShift handles it.
+    if (createSaleDto.cashShiftId) {
+      const referencedShift = await this.prisma.cashShift.findUnique({
+        where: { id: createSaleDto.cashShiftId },
+        select: { id: true },
+      });
+      if (referencedShift) return;
+    }
 
     const lockKey = `${this.tenantContext.getSubscriptionId()}:cash-shift-global-open`;
 
@@ -411,14 +416,16 @@ export class SyncOperationDispatcherService {
         return;
       }
 
-      // Legacy-compat bootstrap: POS versions that never sync SHIFT_OPEN.
-      // Opening balance is unknowable at replay time → 0. Upsert keeps
-      // same-id retries safe even though the lock already serializes.
+      // No OPEN shift exists — bootstrap one. If the DTO already carries a
+      // cashShiftId (offline local shift id), reuse it so retries stay
+      // idempotent; otherwise generate a new UUID for the GLOBAL shift.
+      const bootstrapId = createSaleDto.cashShiftId ?? crypto.randomUUID();
+      createSaleDto.cashShiftId = bootstrapId;
       await tx.cashShift.upsert({
-        where: { id: createSaleDto.cashShiftId },
+        where: { id: bootstrapId },
         update: {},
         create: {
-          id: createSaleDto.cashShiftId,
+          id: bootstrapId,
           subscriptionId: this.tenantContext.getSubscriptionId(),
           workstationId,
           userId,

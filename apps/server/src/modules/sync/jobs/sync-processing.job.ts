@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { SyncStatus } from '@pharmacy/database';
 import { DomainException } from '@/common/exceptions/domain.exception';
 import { SyncOperationDispatcherService } from '../sync-operation-dispatcher.service';
@@ -41,6 +42,7 @@ export class SyncProcessingJob {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(SyncOperationDispatcherService) private readonly dispatcher: SyncOperationDispatcherService,
+    @Inject(TenantContextService) private readonly tenantContext: TenantContextService,
   ) {}
 
   /**
@@ -72,8 +74,14 @@ export class SyncProcessingJob {
 
   /** Queries for supported entries that are ready to process. */
   private async fetchSupportedEntries(): Promise<SyncQueueEntry[]> {
+    // Explicit subscription filter: withTenant sets RLS context but if RLS
+    // is misconfigured or the table lacks a policy the entry would leak
+    // to every tenant iteration, causing the duplicate WARN seen in logs
+    // (same operationUuid processed once per subscription).
+    const subscriptionId = this.tenantContext.getSubscriptionId();
     return this.prisma.syncQueue.findMany({
       where: {
+        subscriptionId,
         operationType: { in: SUPPORTED_TYPES },
         status: { notIn: [SyncStatus.COMPLETED, SyncStatus.PROCESSING, SyncStatus.PERMANENT_FAILURE, SyncStatus.DISCARDED] },
         retryCount: { lt: MAX_RETRY_ATTEMPTS },
@@ -99,6 +107,7 @@ export class SyncProcessingJob {
     const claimed = await this.prisma.syncQueue.updateMany({
       where: {
         id: entry.id,
+        subscriptionId: this.tenantContext.getSubscriptionId(),
         status: { notIn: [SyncStatus.PROCESSING, SyncStatus.COMPLETED, SyncStatus.PERMANENT_FAILURE, SyncStatus.DISCARDED] },
       },
       data: { status: SyncStatus.PROCESSING },

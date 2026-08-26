@@ -331,6 +331,12 @@ function toIsoDate(value: string | null | undefined): string {
 
 /**
  * Map the DIAN TaxLevelCode catalog onto a human-readable regimen label.
+ *
+ * O-99 previously returned "OTRO" (generic server fallback). Now returns
+ * "NO RESPONSABLE" so the fiscal tab and product form show a coherent
+ * regime/rate pair (0% IVA) and the round-trip
+ * taxRegimeToLabel(O-99) → mapRegimenToTaxLevelCode(...) stays O-99
+ * instead of degrading to R-99-PN (19%).
  */
 export function taxRegimeToLabel(code: TaxLevelCode): string {
   switch (code) {
@@ -343,21 +349,45 @@ export function taxRegimeToLabel(code: TaxLevelCode): string {
     case 'R-99-PN-SIM':
       return 'RÉGIMEN SIMPLIFICADO';
     case 'O-99':
-      return 'OTRO';
+      return 'NO RESPONSABLE';
   }
 }
 
 /**
  * Map a draft regimen/organization-type pair onto the DIAN catalog.
  * Best effort — the wizard's free-text regimen comes from the RUT.
+ *
+ * Order matters: exempt / non-responsible regimes must be caught before
+ * the generic R-99-PN fallback, otherwise "NO RESPONSABLE DE IVA" would
+ * incorrectly map to R-99-PN (19%). SIMPLE covers "RÉGIMEN SIMPLE" and
+ * also matches "SIMPLIFICADO" (both → R-99-PN-SIM); kept as separate
+ * checks to preserve explicit intent.
  */
 export function mapRegimenToTaxLevelCode(
   regimen: string,
   organizationType: string | null,
 ): TaxLevelCode {
   const regimenUpper = regimen.toUpperCase();
+  // 0% IVA — non-responsible / exempt / excluded. Must be first.
+  if (
+    regimenUpper.includes('NO RESPONSABLE') ||
+    regimenUpper.includes('NO_RESPONSABLE') ||
+    regimenUpper.includes('EXENTO') ||
+    regimenUpper.includes('EXCLUIDO') ||
+    // Legacy label for O-99 was "OTRO" — keep mapping for stored drafts
+    regimenUpper.includes('OTRO')
+  ) {
+    return 'O-99';
+  }
+  // Both map to the same DIAN code; keep separate checks for explicit intent.
+  // SIMPLIFICADO first so the SIMPLE substring check does not shadow it
+  // (dead-code) — outcome is identical either way.
   if (regimenUpper.includes('SIMPLIFICADO')) return 'R-99-PN-SIM';
-  if (regimenUpper.includes('SIN ÁNIMO') || regimenUpper.includes('SIN ANIMO')) {
+  if (regimenUpper.includes('SIMPLE')) return 'R-99-PN-SIM';
+  if (
+    regimenUpper.includes('SIN ÁNIMO') ||
+    regimenUpper.includes('SIN ANIMO')
+  ) {
     return 'R-99-PN-ENT';
   }
   if (organizationType?.toUpperCase().includes('JUR')) return 'R-99-PJ';

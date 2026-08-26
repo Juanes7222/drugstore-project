@@ -2085,7 +2085,9 @@
       "departamento": "Departamento",
       "address": "Dirección",
       "phone": "Teléfono",
-      "email": "Correo electrónico"
+      "email": "Correo electrónico",
+      "reupload_hint": "¿Cambió tu información? Sube el nuevo RUT para actualizar todo automáticamente.",
+      "reupload_cta": "Subir nuevo RUT"
     },
     "resolution": {
       "title": "Resolución de numeración",
@@ -2370,7 +2372,12 @@
       "show_logo_on_receipt": "Mostrar logo en recibo",
       "show_qr_on_receipt": "Mostrar código QR en recibo",
       "invoice_header": "Encabezado de factura",
-      "invoice_footer": "Pie de factura"
+      "invoice_footer": "Pie de factura",
+      "managed_in_company_title": "Datos de empresa en pestaña Empresa",
+      "managed_in_company_body": "Razón social, NIT y régimen se gestionan en Empresa como fuente única. Aquí solo ves lo fiscal.",
+      "go_to_company": "Ir a Empresa",
+      "resolution_section_title": "Numeración DIAN y tarifa",
+      "resolution_section_hint": "Resolución autorizada y tarifa de IVA derivada del régimen."
     },
     "workflow": {
       "title": "Preferencias de operación",
@@ -2509,6 +2516,21 @@
       "suggested_preset": "Configuración sugerida: {{preset}}",
       "confirm": "Usar esta configuración",
       "skip": "Configurar después"
+    },
+    "company_profile": {
+      "title": "Perfil de la empresa",
+      "sync_hint": "Datos sincronizados desde tu RUT. Se completan solos al cargar el RUT o la configuración inicial. Edítalos desde el wizard.",
+      "edit": "Editar datos",
+      "update_rut": "Actualizar con nuevo RUT",
+      "update_rut_hint": "Reemplaza los datos con un RUT actualizado",
+      "configure": "Configurar empresa",
+      "section_identity": "Identificación",
+      "section_location": "Ubicación",
+      "section_contact": "Contacto",
+      "organization_type": "Tipo de organización",
+      "rut_synced_badge": "Sincronizado desde RUT — fuente única",
+      "empty_title": "Aún no se han configurado los datos del emisor",
+      "empty_body": "Carga tu RUT para autocompletar razón social, NIT, dirección y contacto. La resolución DIAN se configura aparte."
     }
   },
   "shift_guard": {
@@ -3288,14 +3310,30 @@
       "print": "Imprimir"
     },
     "screens": {
-      "salesHistory": { "title": "Historial de ventas" },
-      "clients": { "title": "Clientes" },
-      "products": { "title": "Productos" },
-      "inventoryLots": { "title": "Inventario por lotes" },
-      "suppliers": { "title": "Proveedores" },
-      "purchaseOrders": { "title": "Órdenes de compra" },
-      "purchaseReceptions": { "title": "Recepciones de compra" },
-      "supplierReturns": { "title": "Devoluciones a proveedor" }
+      "salesHistory": {
+        "title": "Historial de ventas"
+      },
+      "clients": {
+        "title": "Clientes"
+      },
+      "products": {
+        "title": "Productos"
+      },
+      "inventoryLots": {
+        "title": "Inventario por lotes"
+      },
+      "suppliers": {
+        "title": "Proveedores"
+      },
+      "purchaseOrders": {
+        "title": "Órdenes de compra"
+      },
+      "purchaseReceptions": {
+        "title": "Recepciones de compra"
+      },
+      "supplierReturns": {
+        "title": "Devoluciones a proveedor"
+      }
     },
     "cols": {
       "confirmedAt": "Fecha",

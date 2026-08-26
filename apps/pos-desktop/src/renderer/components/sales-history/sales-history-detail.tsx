@@ -36,6 +36,8 @@ export interface SalesHistoryDetailProps {
   operationalView: OperationalInvoiceView | null;
   adjustmentHistory: AdjustmentHistoryEntry[];
   adjustmentHistoryLoading: boolean;
+  /** Whether the current role may modify invoices (cashier = read-only). */
+  canModify?: boolean;
   onViewModeChange: (mode: "fiscal" | "operational") => void;
   onClose: () => void;
   onCreateAdjustment: () => void;
@@ -58,6 +60,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
   operationalView,
   adjustmentHistory,
   adjustmentHistoryLoading,
+  canModify = true,
   onViewModeChange,
   onClose,
   onCreateAdjustment,
@@ -634,14 +637,16 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                   icon={<UserIcon className="size-4" />}
                   title={t("salesHistory.adjustment.client_change_label")}
                   action={
-                    <button
-                      type="button"
-                      onClick={onCreateAdjustment}
-                      className="pos-button pos-button-secondary inline-flex items-center gap-1 py-1 px-2 text-caption"
-                    >
-                      <Edit3Icon className="size-3.5" aria-hidden="true" />
-                      {t("salesHistory.detail.actions.adjust")}
-                    </button>
+                    canModify ? (
+                      <button
+                        type="button"
+                        onClick={onCreateAdjustment}
+                        className="pos-button pos-button-secondary inline-flex items-center gap-1 py-1 px-2 text-caption"
+                      >
+                        <Edit3Icon className="size-3.5" aria-hidden="true" />
+                        {t("salesHistory.detail.actions.adjust")}
+                      </button>
+                    ) : undefined
                   }
                 >
                   <div className="space-y-1 text-caption">
@@ -1014,27 +1019,29 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
         )}
       </div>
 
-      {/* Footer actions */}
+      {/* Footer actions — reprint is read-only; cancel/adjust require modify permission */}
       <div
         className="flex items-center justify-end gap-2 border-t px-4 py-3"
         style={{
           borderColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
         }}
       >
-        <button
-          type="button"
-          onClick={onCancelInvoice}
-          className="pos-button inline-flex items-center gap-1.5 py-1 px-3 text-body-sm"
-          style={{
-            backgroundColor: "var(--color-error-container)",
-            color: "var(--color-error)",
-            borderColor: "var(--color-error)",
-            border: "1px solid",
-          }}
-        >
-          <XIcon className="size-4" aria-hidden="true" />
-          {t("salesHistory.detail.actions.cancel_invoice")}
-        </button>
+        {canModify && (
+          <button
+            type="button"
+            onClick={onCancelInvoice}
+            className="pos-button inline-flex items-center gap-1.5 py-1 px-3 text-body-sm"
+            style={{
+              backgroundColor: "var(--color-error-container)",
+              color: "var(--color-error)",
+              borderColor: "var(--color-error)",
+              border: "1px solid",
+            }}
+          >
+            <XIcon className="size-4" aria-hidden="true" />
+            {t("salesHistory.detail.actions.cancel_invoice")}
+          </button>
+        )}
         <button
           type="button"
           onClick={onReprint}
@@ -1043,14 +1050,16 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
           <PrinterIcon className="size-4" aria-hidden="true" />
           {t("salesHistory.detail.actions.reprint")}
         </button>
-        <button
-          type="button"
-          onClick={onCreateAdjustment}
-          className="pos-button pos-button-primary inline-flex items-center gap-1.5 py-1 px-3 text-body-sm"
-        >
-          <Edit3Icon className="size-4" aria-hidden="true" />
-          {t("salesHistory.detail.actions.adjust")}
-        </button>
+        {canModify && (
+          <button
+            type="button"
+            onClick={onCreateAdjustment}
+            className="pos-button pos-button-primary inline-flex items-center gap-1.5 py-1 px-3 text-body-sm"
+          >
+            <Edit3Icon className="size-4" aria-hidden="true" />
+            {t("salesHistory.detail.actions.adjust")}
+          </button>
+        )}
       </div>
     </div>
   );

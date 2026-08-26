@@ -1955,7 +1955,9 @@
       "departamento": "Department",
       "address": "Address",
       "phone": "Phone",
-      "email": "Email address"
+      "email": "Email address",
+      "reupload_hint": "Information changed? Upload the new RUT to update automatically.",
+      "reupload_cta": "Upload new RUT"
     },
     "resolution": {
       "title": "Numbering resolution",
@@ -2079,7 +2081,7 @@
   },
   "config": {
     "title": "System Configuration",
-"tabs": {
+    "tabs": {
       "company": "Company",
       "fiscal": "Fiscal",
       "operation": "Operation",
@@ -2232,7 +2234,12 @@
       "show_logo_on_receipt": "Show logo on receipt",
       "show_qr_on_receipt": "Show QR on receipt",
       "invoice_header": "Invoice header",
-      "invoice_footer": "Invoice footer"
+      "invoice_footer": "Invoice footer",
+      "managed_in_company_title": "Company data in Company tab",
+      "managed_in_company_body": "Legal name, NIT and regime are managed in Company as single source. Fiscal details only here.",
+      "go_to_company": "Go to Company",
+      "resolution_section_title": "DIAN numbering & rate",
+      "resolution_section_hint": "Authorized resolution and VAT rate derived from regime."
     },
     "workflow": {
       "title": "Workflow preferences",
@@ -2371,6 +2378,21 @@
       "suggested_preset": "Suggested configuration: {{preset}}",
       "confirm": "Use this configuration",
       "skip": "Configure later"
+    },
+    "company_profile": {
+      "title": "Company profile",
+      "sync_hint": "Data synced from your RUT. Auto-filled at setup. Edit via wizard.",
+      "edit": "Edit data",
+      "update_rut": "Update with new RUT",
+      "update_rut_hint": "Replace data with an updated RUT",
+      "configure": "Configure company",
+      "section_identity": "Identity",
+      "section_location": "Location",
+      "section_contact": "Contact",
+      "organization_type": "Organization type",
+      "rut_synced_badge": "Synced from RUT — single source",
+      "empty_title": "Emitter data not configured yet",
+      "empty_body": "Upload your RUT to autofill legal name, NIT, address and contact."
     }
   },
   "shift_guard": {
@@ -3150,14 +3172,30 @@
       "print": "Print"
     },
     "screens": {
-      "salesHistory": { "title": "Sales history" },
-      "clients": { "title": "Clients" },
-      "products": { "title": "Products" },
-      "inventoryLots": { "title": "Inventory by lot" },
-      "suppliers": { "title": "Suppliers" },
-      "purchaseOrders": { "title": "Purchase orders" },
-      "purchaseReceptions": { "title": "Purchase receptions" },
-      "supplierReturns": { "title": "Supplier returns" }
+      "salesHistory": {
+        "title": "Sales history"
+      },
+      "clients": {
+        "title": "Clients"
+      },
+      "products": {
+        "title": "Products"
+      },
+      "inventoryLots": {
+        "title": "Inventory by lot"
+      },
+      "suppliers": {
+        "title": "Suppliers"
+      },
+      "purchaseOrders": {
+        "title": "Purchase orders"
+      },
+      "purchaseReceptions": {
+        "title": "Purchase receptions"
+      },
+      "supplierReturns": {
+        "title": "Supplier returns"
+      }
     },
     "cols": {
       "confirmedAt": "Date",

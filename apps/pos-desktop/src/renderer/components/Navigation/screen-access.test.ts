@@ -126,8 +126,17 @@ const INVENTORY_SCREENS: PosScreen[] = [
   "supplier-returns",
 ];
 
+const SALES_HISTORY_SCREENS: PosScreen[] = ["sales-history"];
+
+const SALES_HISTORY_ROLES: RoleType[] = [
+  RoleType.CASHIER,
+  RoleType.MANAGER,
+  RoleType.OWNER,
+  RoleType.ADMIN,
+  RoleType.SAAS_ADMIN,
+];
+
 const MANAGEMENT_SCREENS: PosScreen[] = [
-  "sales-history",
   "license-status",
   "printing",
   "printers",
@@ -176,6 +185,7 @@ const EVERY_MAPPED_SCREEN: PosScreen[] = [
   ...ALL_ROLES_SCREENS,
   ...FLOOR_SCREENS,
   ...INVENTORY_SCREENS,
+  ...SALES_HISTORY_SCREENS,
   ...MANAGEMENT_SCREENS,
   ...MANAGER_OWNER_ADMIN_SCREENS,
   ...OWNER_SCREENS,
@@ -305,12 +315,12 @@ describe("canAccessScreen", () => {
   // Management screens — ACCOUNTANT deliberately absent
   // -------------------------------------------------------------------------
 
-  describe("management screens (MANAGEMENT_ROLES)", () => {
-    it.each(MANAGEMENT_ROLES)("admits %s on sales-history", (role) => {
+  describe("sales-history screen (SALES_HISTORY_ROLES — cashier read-only)", () => {
+    it.each(SALES_HISTORY_ROLES)("admits %s on sales-history", (role) => {
       expect(canAccessScreen(makeSession(role), "sales-history")).toBe(true);
     });
 
-    it.each([RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ACCOUNTANT])(
+    it.each([RoleType.INVENTORY_ASSISTANT, RoleType.ACCOUNTANT])(
       "denies %s on sales-history",
       (role) => {
         expect(canAccessScreen(makeSession(role), "sales-history")).toBe(
@@ -318,7 +328,9 @@ describe("canAccessScreen", () => {
         );
       },
     );
+  });
 
+  describe("management screens (MANAGEMENT_ROLES)", () => {
     it.each(MANAGEMENT_SCREENS)(
       "denies ACCOUNTANT on %s (not listed even at the MANAGER level)",
       (screen) => {
@@ -484,6 +496,7 @@ describe("canAccessScreen", () => {
       { screens: ALL_ROLES_SCREENS, admitted: ALL_ROLES_EXPECTED },
       { screens: FLOOR_SCREENS, admitted: FLOOR_ROLES },
       { screens: INVENTORY_SCREENS, admitted: INVENTORY_ROLES },
+      { screens: SALES_HISTORY_SCREENS, admitted: SALES_HISTORY_ROLES },
       { screens: MANAGEMENT_SCREENS, admitted: MANAGEMENT_ROLES },
       {
         screens: MANAGER_OWNER_ADMIN_SCREENS,

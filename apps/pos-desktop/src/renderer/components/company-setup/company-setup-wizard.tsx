@@ -490,6 +490,16 @@ export const CompanySetupWizard: FC = () => {
                   total: STEP_ORDER.length,
                 })}
               </p>
+              {isEditing && (
+                <button
+                  type="button"
+                  className="pos-button pos-button-secondary mb-pos-md inline-flex items-center gap-pos-xs text-caption"
+                  onClick={() => setView("review")}
+                >
+                  <ChevronLeftIcon className="h-4 w-4" aria-hidden="true" />
+                  {t("common.back")}
+                </button>
+              )}
               <RutUploadStep
                 isParsing={isParsing}
                 parseError={parseError}
@@ -525,6 +535,34 @@ export const CompanySetupWizard: FC = () => {
                     ? t("company_setup.review.saved_subtitle")
                     : t("company_setup.review.manual_subtitle")}
               </p>
+              {/* Re-upload RUT: visible in edit/saved mode so company data can be refreshed from a new RUT */}
+              {parseSource === "saved" && (
+                <div
+                  className="mb-pos-md flex flex-wrap items-center justify-between gap-pos-sm rounded-pos border px-pos-md py-pos-sm"
+                  style={{
+                    backgroundColor:
+                      "color-mix(in srgb, var(--color-pharma) 6%, transparent)",
+                    borderColor:
+                      "color-mix(in srgb, var(--color-pharma) 20%, transparent)",
+                  }}
+                >
+                  <p className="text-body-sm text-ink-muted">
+                    {t("company_setup.review.reupload_hint")}
+                  </p>
+                  <button
+                    type="button"
+                    className="pos-button pos-button-secondary inline-flex items-center gap-pos-xs text-caption font-semibold"
+                    onClick={() => {
+                      userStartedRef.current = true;
+                      setParseError(null);
+                      setView("upload");
+                    }}
+                  >
+                    <FileTextIcon className="h-4 w-4" aria-hidden="true" />
+                    {t("company_setup.review.reupload_cta")}
+                  </button>
+                </div>
+              )}
               <RutReviewStep
                 draft={draft}
                 isManual={parseSource === "manual"}

@@ -66,6 +66,15 @@ const OWNER_ROLES: RoleType[] = [
   RoleType.SAAS_ADMIN,
 ];
 
+/** Sales history: cashiers may view (read-only), managers and above may modify. */
+const SALES_HISTORY_ROLES: RoleType[] = [
+  RoleType.CASHIER,
+  RoleType.MANAGER,
+  RoleType.OWNER,
+  RoleType.ADMIN,
+  RoleType.SAAS_ADMIN,
+];
+
 /**
  * Allowed roles per screen. The Record is total over PosScreen, so the
  * compiler fails when a new screen is added without deciding its access.
@@ -107,7 +116,7 @@ export const SCREEN_ALLOWED_ROLES: Record<PosScreen, RoleType[]> = {
   "supplier-returns": INVENTORY_ROLES,
 
   // Management
-  "sales-history": MANAGEMENT_ROLES,
+  "sales-history": SALES_HISTORY_ROLES,
   "user-management": [RoleType.MANAGER, RoleType.OWNER, RoleType.ADMIN],
   "audit-log": [RoleType.MANAGER, RoleType.OWNER, RoleType.ADMIN],
   "offline-sessions": [RoleType.MANAGER, RoleType.OWNER, RoleType.ADMIN],

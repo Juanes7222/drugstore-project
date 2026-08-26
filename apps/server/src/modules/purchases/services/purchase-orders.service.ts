@@ -121,25 +121,33 @@ export class PurchaseOrdersService {
         throw new SupplierNotFoundException(createDto.supplierId);
       }
 
-      const itemsData = await Promise.all(
-        createDto.items.map(async (itemDto) => {
-          const product = await tx.product.findUnique({
-            where: { id: itemDto.productId },
-          });
-          if (!product) {
-            throw new ProductNotFoundException(itemDto.productId);
-          }
-          return {
-            id: crypto.randomUUID(),
-            subscriptionId: this.tenantContext.getSubscriptionId(),
-            productId: itemDto.productId,
-            requestedQuantity: itemDto.requestedQuantity,
-            receivedQuantity: 0,
-            pendingQuantity: itemDto.requestedQuantity, // Initial pending quantity
-            expectedUnitCost: new Prisma.Decimal(itemDto.expectedUnitCost),
-          };
-        }),
-      );
+      // Sequential — adapter-pg: single connection per interactive tx.
+      const itemsData: Array<{
+        id: string;
+        subscriptionId: string;
+        productId: string;
+        requestedQuantity: number;
+        receivedQuantity: number;
+        pendingQuantity: number;
+        expectedUnitCost: Prisma.Decimal;
+      }> = [];
+      for (const itemDto of createDto.items) {
+        const product = await tx.product.findUnique({
+          where: { id: itemDto.productId },
+        });
+        if (!product) {
+          throw new ProductNotFoundException(itemDto.productId);
+        }
+        itemsData.push({
+          id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
+          productId: itemDto.productId,
+          requestedQuantity: itemDto.requestedQuantity,
+          receivedQuantity: 0,
+          pendingQuantity: itemDto.requestedQuantity,
+          expectedUnitCost: new Prisma.Decimal(itemDto.expectedUnitCost),
+        });
+      }
 
       const subtotal = itemsData.reduce(
         (sum, item) =>
