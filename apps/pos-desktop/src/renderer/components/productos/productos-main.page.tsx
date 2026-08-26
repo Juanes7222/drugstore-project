@@ -19,7 +19,8 @@ import {
 import { useLocalSessionStore, hasMinRole } from "../../../domain/auth/local-session.store";
 import { useRequireLotOnReception } from "../../../domain/configuration";
 import { RoleType } from "@pharmacy/shared-types";
-import { BarcodeIcon, ClipboardListIcon, PackageIcon } from "@/components/ui/icons";
+import { BarcodeIcon, ClipboardListIcon, PackageIcon, TruckIcon } from "@/components/ui/icons";
+import { HubCard, HubPageLayout } from "@/components/ui/hub";
 
 // ---------------------------------------------------------------------------
 // Card type
@@ -29,7 +30,7 @@ interface ProductosCard {
   key: string;
   titleKey: string;
   descriptionKey: string;
-  icon: FC<{ className?: string }>;
+  icon: FC<{ size?: number; className?: string }>;
   onClick: () => void;
   requiredRole: RoleType;
 }
@@ -84,69 +85,25 @@ export const ProductosMainPage: FC = () => {
   );
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto p-6">
-      {/* Page header */}
-      <div className="mb-8">
-        <h1 className="text-heading-lg font-semibold" style={{ color: "var(--color-ink-text)" }}>
-          {t("productos_main.title")}
-        </h1>
-        <p className="text-body-sm mt-1" style={{ color: "var(--color-ink-muted)" }}>
-          {t("productos_main.subtitle")}
-        </p>
-      </div>
-
-      {/* Card grid */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {visibleCards.map((card) => {
-          const Icon = card.icon;
-          return (
-            <button
-              key={card.key}
-              type="button"
-              onClick={card.onClick}
-              className="flex flex-col items-start gap-4 rounded-lg border p-6 text-left transition-all duration-200 hover:shadow-md focus:outline-none focus-visible:ring-2"
-              style={{
-                borderColor: "var(--color-border-base)",
-                backgroundColor: "var(--color-surface-base)",
-                color: "var(--color-ink-text)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--color-accent-base)";
-                e.currentTarget.style.backgroundColor = "var(--color-surface-raised)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--color-border-base)";
-                e.currentTarget.style.backgroundColor = "var(--color-surface-base)";
-              }}
-            >
-              <div
-                className="flex h-14 w-14 items-center justify-center rounded-lg"
-                style={{ backgroundColor: "var(--color-accent-subtle)", color: "var(--color-accent-base)" }}
-              >
-                <Icon className="h-8 w-8" />
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <span className="text-heading-sm font-medium">
-                  {t(card.titleKey)}
-                </span>
-                <span className="text-body-sm" style={{ color: "var(--color-ink-muted)" }}>
-                  {t(card.descriptionKey)}
-                </span>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Empty state when no cards accessible */}
-      {visibleCards.length === 0 && (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-body-sm" style={{ color: "var(--color-ink-muted)" }}>
-            {t("productos_main.no_access")}
-          </p>
-        </div>
-      )}
-    </div>
+    <HubPageLayout
+      title={t("productos_main.title")}
+      subtitle={t("productos_main.subtitle")}
+      isEmpty={visibleCards.length === 0}
+      emptyMessage={t("productos_main.no_access")}
+      footerItems={[
+        { icon: PackageIcon, label: t("productos_main.title") },
+        { icon: TruckIcon, label: t("purchases.main.offlineReady") },
+      ]}
+    >
+      {visibleCards.map((card) => (
+        <HubCard
+          key={card.key}
+          icon={card.icon}
+          title={t(card.titleKey)}
+          description={t(card.descriptionKey)}
+          onClick={card.onClick}
+        />
+      ))}
+    </HubPageLayout>
   );
 };
