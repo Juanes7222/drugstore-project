@@ -328,6 +328,54 @@ export class SyncOperationDispatcherService {
     // salesService.create throws CashShiftNotOpenForWorkstation on every retry.
     await this.ensureGlobalShiftAttribution(createSaleDto, workstationId, userId);
 
+    // ── Client ID remapping ──────────────────────────────────────────
+    // POS sales reference the local client UUID (e.g. 0b904f37...). When that
+    // client was created offline, the server may have reused the UUID or,
+    // if the identification already existed (duplicate handling), updated the
+    // existing server row (73656...). The sale payload still carries the local
+    // UUID, which does not exist on the server → sale becomes generic →
+    // credit fails. Remap via SyncQueue CLIENT_CREATION localClientId.
+    if (createSaleDto?.clientId) {
+      const direct = await this.prisma.client.findUnique({
+        where: { id: createSaleDto.clientId },
+        select: { id: true },
+      });
+      if (!direct) {
+        // Find the CLIENT_CREATION that created this localId and resolve by identification
+        const creation = await this.prisma.syncQueue.findFirst({
+          where: {
+            operationType: 'CLIENT_CREATION',
+            payload: { contains: createSaleDto.clientId },
+          },
+          orderBy: { receivedAt: 'desc' },
+          select: { payload: true },
+        });
+        if (creation?.payload) {
+          try {
+            const cp = JSON.parse(creation.payload) as any;
+            const identNumber = cp.createClientDto?.identificationNumber as string | undefined;
+            const identType = cp.createClientDto?.identificationType as string | undefined;
+            if (identNumber && identType) {
+              const byIdent = await this.prisma.client.findFirst({
+                where: {
+                  subscriptionId: this.tenantContext.getSubscriptionId(),
+                  identificationNumber: identNumber,
+                  identificationType: identType as any,
+                },
+                select: { id: true },
+              });
+              if (byIdent) {
+                this.logger.log(
+                  `SALE_CONFIRMATION client remap: local ${createSaleDto.clientId} → server ${byIdent.id} via identification ${identType} ${identNumber}`,
+                );
+                createSaleDto.clientId = byIdent.id;
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+
     // ── Product ID remapping ─────────────────────────────────────────
     // The POS records the local UUID of each product in the sale item.
     // When the product was created via PRODUCT_CREATION sync, the server
