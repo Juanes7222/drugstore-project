@@ -3,6 +3,7 @@ import { Prisma } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { CashCountType } from '@pharmacy/shared-types';
+import { GENERIC_CLIENT_UUID } from '@/modules/clients/constants/clients.constants';
 import { CashShiftService } from '@/modules/cash-shift/cash-shift.service';
 import { ClientsService } from '@/modules/clients/clients.service';
 import { SalesService } from '@/modules/sales-pos/services/sales.service';
@@ -282,50 +283,10 @@ export class SyncOperationDispatcherService {
     const workstationId = entry.sourceWorkstationId;
     const createSaleDto = payload.createSaleDto as unknown as CreateSaleDto;
 
-    // ── Idempotency guard ───────────────────────────────────────────
-    // If this operationUuid already created a sale via a prior attempt,
-    // use the existing sale for confirmation instead of creating a
-    // duplicate. Without this guard, a transient failure after
-    // create() (e.g. confirm() throws due to stock issue) leaves the
-    // SyncQueue entry FAILED; the retry would create a new IN_PROGRESS
-    // orphan each time — the exact duplication pattern seen in the bug.
-    // Follows the same pattern as handleProductCreation.
-    const existingSale = await this.prisma.sale.findUnique({
-      where: { sourceOperationUuid: entry.operationUuid },
-      select: { id: true, operationalState: true },
-    });
-    if (existingSale) {
-      this.logger.log(
-        `SALE_CONFIRMATION idempotent: operationUuid=${entry.operationUuid} ` +
-        `already created sale ${existingSale.id} (${existingSale.operationalState}) — confirming existing`,
-      );
-      if (existingSale.operationalState === 'CONFIRMED') {
-        // Already confirmed — nothing to do.
-        return;
-      }
-      // Sale exists but is not yet confirmed — attempt confirmation.
-      await this.salesService.confirm(
-        existingSale.id,
-        payload.confirmSaleDto as unknown as ConfirmSaleDto,
-        userId,
-      );
-      return;
-    }
-
     // Ensure the sale's cash-shift reference resolves under the GLOBAL
-    // shift model before replaying. The POS manages shifts locally and
-    // never syncs SHIFT_OPEN, so the referenced shift may not exist
-    // server-side yet. Resolution order:
-    //   1. Referenced shift already exists (OPEN or closed) → done;
-    //      SalesService.getOpenCashShift handles attribution.
-    //   2. A tenant-wide OPEN shift exists (opened by ANOTHER workstation
-    //      or user) → rewrite cashShiftId to join it. Workstation
-    //      ownership of the shift is irrelevant by design.
-    //   3. Neither → legacy-compat bootstrap: materialize the offline
-    //      shift as the tenant's OPEN shift.
-    // If cashShiftId is missing (POS payload without shift), still
-    // ensure an OPEN shift exists and assign it — otherwise
-    // salesService.create throws CashShiftNotOpenForWorkstation on every retry.
+    // shift model before replaying. Resolution order as described below.
+    // If cashShiftId is missing, still ensure an OPEN shift exists and assign
+    // it — otherwise salesService.create throws CashShiftNotOpenForWorkstation.
     await this.ensureGlobalShiftAttribution(createSaleDto, workstationId, userId);
 
     // ── Client ID remapping ──────────────────────────────────────────
@@ -402,6 +363,58 @@ export class SyncOperationDispatcherService {
         // the original productId — that's the correct behaviour for a
         // product that genuinely does not exist on the server.
       }
+    }
+
+    // ── Idempotency guard (after remapping) ──────────────────────────
+    // Must run after client/product remapping so the guard sees the
+    // remapped IDs when deciding whether to patch an existing IN_PROGRESS
+    // orphan that was created with NULL client (bug 26/08).
+    const existingSale = await this.prisma.sale.findUnique({
+      where: { sourceOperationUuid: entry.operationUuid },
+      select: { id: true, operationalState: true, clientId: true },
+    });
+    if (existingSale) {
+      this.logger.log(
+        `SALE_CONFIRMATION idempotent: operationUuid=${entry.operationUuid} ` +
+        `already created sale ${existingSale.id} (${existingSale.operationalState}) — confirming existing`,
+      );
+      if (existingSale.operationalState === 'CONFIRMED') {
+        return;
+      }
+      // Patch orphan IN_PROGRESS that has NULL/generic client but payload now has correct remapped id
+      // (e.g. credit sale 040ec59c where first attempt created sale with NULL client).
+      if (
+        existingSale.clientId !== createSaleDto.clientId &&
+        createSaleDto.clientId &&
+        (!existingSale.clientId || existingSale.clientId === GENERIC_CLIENT_UUID)
+      ) {
+        const clientData = await this.prisma.client.findUnique({
+          where: { id: createSaleDto.clientId },
+          include: { classification: true },
+        });
+        if (clientData) {
+          this.logger.log(
+            `Patching orphan sale ${existingSale.id} client NULL → ${clientData.id} (${clientData.identificationNumber})`,
+          );
+          await this.prisma.sale.update({
+            where: { id: existingSale.id },
+            data: {
+              clientId: clientData.id,
+              clientIdentificationTypeSnapshot: clientData.identificationType,
+              clientIdentificationNumberSnapshot: clientData.identificationNumber,
+              clientNameSnapshot: clientData.fullName,
+              clientClassificationIdSnapshot: clientData.classification?.id ?? null,
+              clientTypeSnapshot: (clientData as any).classification?.type ?? null,
+            },
+          });
+        }
+      }
+      await this.salesService.confirm(
+        existingSale.id,
+        payload.confirmSaleDto as unknown as ConfirmSaleDto,
+        userId,
+      );
+      return;
     }
 
     const sale = await this.salesService.create(
