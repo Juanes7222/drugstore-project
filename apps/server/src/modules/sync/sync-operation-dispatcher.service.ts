@@ -779,12 +779,14 @@ export class SyncOperationDispatcherService {
   }
 
   /**
-   * Replays an INVENTORY_ADJUSTMENT by creating the document in DRAFT.
-   *
-   * If the payload carries lot data alongside item references, it is
-   * passed to the service so missing lots can be created inline
-   * (offline-first scenario). The normal Phase 16 approval chain must
-   * be followed — sync does not bypass that gate.
+   * Replays an INVENTORY_ADJUSTMENT by creating the document and immediately
+   * applying it so Lot.currentStock is updated on the server. The POS has
+   * already applied the adjustment offline (its service updates Lots
+   * immediately), so leaving the server document in DRAFT would keep
+   * Lots stale and break lot-sync pulls and any later server-side apply()
+   * (stale stock check). The auto-apply runs inside a single transaction
+   * (createAndApply) with tenant RLS set and lot version increment via
+   * optimistic locking, preserving the adjustmentDocument ↔ movements link.
    */
   private async handleInventoryAdjustment(entry: SyncQueueEntry): Promise<void> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
@@ -792,19 +794,25 @@ export class SyncOperationDispatcherService {
     const items = (createAdjustmentDto?.items ?? []) as Array<Record<string, unknown>>;
 
     // Extract lot creation data keyed by lotId for each item
+    // POS (apps/pos-desktop src/domain/inventory-adjustments) sends
+    // { lotId, movementType, quantity, reason, lot: { productId, batchNumber, expirationDate, currentStock, locationCode } }
     const lotContext = new Map<string, LotSyncData>();
     for (const item of items) {
       const lotId = item.lotId as string | undefined;
       const lotData = item.lot as LotSyncData | undefined;
-      if (lotId && lotData) {
+      if (lotId && lotData?.productId && lotData?.batchNumber) {
         lotContext.set(lotId, lotData);
       }
     }
+    if (items.length > 0 && lotContext.size === 0) {
+      this.logger.warn(
+        `INVENTORY_ADJUSTMENT sync: ${items.length} items without lotContext (lot inline data missing) — service will use fallback hydration`,
+      );
+    }
 
-    await this.inventoryAdjustmentsService.create(
+    await this.inventoryAdjustmentsService.createAndApply(
       createAdjustmentDto as unknown as CreateInventoryAdjustmentDto,
       payload.userId as string,
-      undefined,
       lotContext.size > 0 ? lotContext : undefined,
     );
   }

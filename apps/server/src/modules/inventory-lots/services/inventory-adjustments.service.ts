@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import {
@@ -50,11 +50,19 @@ interface LotWithMovement {
 
 @Injectable()
 export class InventoryAdjustmentsService {
+  private readonly logger = new Logger(InventoryAdjustmentsService.name);
+
   constructor(
     private prisma: PrismaService,
     private lotsService: LotsService,
     private readonly tenantContext: TenantContextService,
   ) {}
+
+  private async ensureTenant(tx: Prisma.TransactionClient): Promise<void> {
+    try {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${this.tenantContext.getSubscriptionId()}, true)`;
+    } catch {}
+  }
 
   async findAll(query: QueryInventoryAdjustmentDto): Promise<any> {
     const where: Prisma.InventoryAdjustmentDocumentWhereInput = {};
@@ -128,6 +136,7 @@ export class InventoryAdjustmentsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await this.ensureTenant(tx);
       const itemsData = await this.prepareAdjustmentItems(
         tx,
         createDto.items,
@@ -168,6 +177,87 @@ export class InventoryAdjustmentsService {
           }),
         );
       }
+      return { ...doc, movements };
+    });
+  }
+
+  /**
+   * Creates an adjustment and immediately applies it — Lot.currentStock is
+   * updated and version incremented inside the same transaction so the POS
+   * sync path does not leave Lots stale. Used by SyncOperationDispatcher for
+   * offline-first adjustments that were already applied on the POS. The
+   * document is created directly in APPLIED state (auto-approved via sync)
+   * so the server Lot mirrors the POS Lot and the next lot-sync pull carries
+   * the new stock. Tenant RLS is set via ensureTenant and the
+   * InventoryMovement rows remain linked via adjustmentDocumentId.
+   */
+  async createAndApply(
+    createDto: CreateInventoryAdjustmentDto,
+    userId: string,
+    syncLotContext?: Map<string, LotSyncData>,
+  ): Promise<any> {
+    if (!createDto.items || createDto.items.length === 0) {
+      throw new Error(
+        'At least one item is required for an inventory adjustment',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.ensureTenant(tx);
+      const itemsData = await this.prepareAdjustmentItems(
+        tx,
+        createDto.items,
+        syncLotContext,
+      );
+      const sequentialNumber = await this.getNextSequentialNumber(tx);
+      const now = new Date();
+      const doc = await tx.inventoryAdjustmentDocument.create({
+        data: {
+          id: crypto.randomUUID(),
+          subscriptionId: this.tenantContext.getSubscriptionId(),
+          sequentialNumber,
+          reason: createDto.reason,
+          notes: createDto.notes,
+          createdByUserId: userId,
+          physicalCountId: null,
+          state: AdjustmentState.APPLIED,
+          submittedForApprovalAt: now,
+          approvedAt: now,
+          approvedByUserId: userId,
+          approvalNotes: 'auto-approved via sync',
+          appliedAt: now,
+        },
+      });
+      const movements: any[] = [];
+      for (const m of itemsData) {
+        movements.push(
+          await tx.inventoryMovement.create({
+            data: {
+              id: crypto.randomUUID(),
+              subscriptionId: this.tenantContext.getSubscriptionId(),
+              lotId: m.lotId,
+              movementType: m.movementType,
+              quantity: m.quantity,
+              previousStock: m.previousStock,
+              resultingStock: m.resultingStock,
+              createdById: userId,
+              createdAt: now,
+              reason: m.reason,
+              adjustmentDocumentId: doc.id,
+            },
+          }),
+        );
+      }
+
+      // Apply stock changes atomically within the same tx so no
+      // concurrent writer can interleave between creation and Lot update
+      // and trigger StaleAdjustmentException. Reuses the same
+      // verify+optimistic-lock path as apply().
+      const lots = await this.verifyAndLoadLots(tx, doc.id, movements);
+      for (const { movement, lot } of lots) {
+        await this.applyMovementToLot(tx, movement, lot);
+      }
+
       return { ...doc, movements };
     });
   }
@@ -243,6 +333,7 @@ export class InventoryAdjustmentsService {
     tx?: Prisma.TransactionClient,
   ): Promise<any> {
     const executor = async (client: Prisma.TransactionClient) => {
+      await this.ensureTenant(client);
       const doc = await client.inventoryAdjustmentDocument.findUnique({
         where: { id },
       });
@@ -318,6 +409,9 @@ export class InventoryAdjustmentsService {
         const productIdFromItem =
           (item as any).lot?.productId ?? (item as any).productId;
         if (productIdFromItem) {
+          this.logger.warn(
+            `INVENTORY_ADJUSTMENT sync: lot ${item.lotId} missing lotContext, hydrating from inline productId ${productIdFromItem} with placeholder batch`,
+          );
           lotData = {
             productId: productIdFromItem,
             batchNumber: 'UNKNOWN',
@@ -326,8 +420,15 @@ export class InventoryAdjustmentsService {
           };
         } else if (typeof (tx as any).product?.findFirst === 'function') {
           // Last resort: pick the first active product from catalog
+          // Tenant-scoped to avoid cross-tenant leakage via RLS fallback.
+          this.logger.warn(
+            `INVENTORY_ADJUSTMENT sync: lot ${item.lotId} missing lotContext and inline productId — falling back to first active product (tenant-scoped)`,
+          );
           const fallbackProduct = await tx.product.findFirst({
-            where: { isActive: true },
+            where: {
+              isActive: true,
+              subscriptionId: this.tenantContext.getSubscriptionId(),
+            },
             select: { id: true },
             orderBy: { createdAt: 'asc' },
           });
@@ -338,6 +439,10 @@ export class InventoryAdjustmentsService {
               expirationDate: new Date().toISOString(),
               currentStock: 0,
             };
+          } else {
+            this.logger.warn(
+              `INVENTORY_ADJUSTMENT sync: no active product found for fallback on lot ${item.lotId}`,
+            );
           }
         }
       }
