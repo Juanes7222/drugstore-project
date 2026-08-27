@@ -41,6 +41,8 @@ export {
   type PriceOverrideRoleKey,
 } from './sales-pricing-validator';
 
+export { createSalesSyncService, SalesSyncService } from './sales-sync.service';
+
 export {
   calculateCommission,
   isCommissionWindowActive,

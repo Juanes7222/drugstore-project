@@ -76,6 +76,55 @@ export class SupplierReturnsService {
     return { data: returns, total, page: query.page, pageSize: query.pageSize };
   }
 
+  /**
+   * Sync-pull supplier returns with cursor pagination for POS hydration.
+   *
+   * Walks (updatedAt asc, id asc). Includes items + supplier so the POS
+   * can upsert locally, including lotId for inventory reconciliation.
+   * Filtered by updatedAt >= updatedSince. Tenant-scoped.
+   * Returns { data, nextCursor, hasMore }.
+   */
+  async findSync(input: {
+    updatedSince?: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{
+    data: unknown[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const baseWhere: Prisma.SupplierReturnWhereInput = {
+      subscriptionId: this.tenantContext.getSubscriptionId(),
+    };
+    if (input.updatedSince) {
+      baseWhere.updatedAt = { gte: new Date(input.updatedSince) };
+    }
+
+    const page = await paginateWithCursor<
+      unknown,
+      Prisma.SupplierReturnWhereInput,
+      Prisma.SupplierReturnOrderByWithRelationInput,
+      Prisma.SupplierReturnInclude
+    >({
+      model: this.prisma.supplierReturn,
+      baseWhere,
+      limit: input.limit ?? 200,
+      cursor: input.cursor ?? null,
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      include: {
+        supplier: true,
+        purchaseReception: true,
+        items: true,
+      },
+    });
+
+    return {
+      data: page.items,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
+  }
+
   async findOne(id: string): Promise<any> {
     const supplierReturn = await this.prisma.supplierReturn.findUnique({
       where: { id },

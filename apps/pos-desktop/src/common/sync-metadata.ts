@@ -45,6 +45,11 @@ interface SyncMetadataRecord {
   lotsLastSyncedAt: string | null;
   clientsLastSyncedAt: string | null;
   classificationsLastSyncedAt: string | null;
+  suppliersLastSyncedAt: string | null;
+  purchaseOrdersLastSyncedAt: string | null;
+  purchaseReceptionsLastSyncedAt: string | null;
+  supplierReturnsLastSyncedAt: string | null;
+  salesLastSyncedAt: string | null;
 }
 
 const DEFAULTS: SyncMetadataRecord = {
@@ -52,6 +57,11 @@ const DEFAULTS: SyncMetadataRecord = {
   lotsLastSyncedAt: null,
   clientsLastSyncedAt: null,
   classificationsLastSyncedAt: null,
+  suppliersLastSyncedAt: null,
+  purchaseOrdersLastSyncedAt: null,
+  purchaseReceptionsLastSyncedAt: null,
+  supplierReturnsLastSyncedAt: null,
+  salesLastSyncedAt: null,
 };
 
 /**
@@ -151,5 +161,50 @@ export const getClassificationsLastSyncedAt = (): string | null => {
 export const setClassificationsLastSyncedAt = (iso: string): void => {
   const record = readSyncMetadata();
   record.classificationsLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+export const getSuppliersLastSyncedAt = (): string | null =>
+  readSyncMetadata().suppliersLastSyncedAt;
+
+export const setSuppliersLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.suppliersLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+export const getPurchaseOrdersLastSyncedAt = (): string | null =>
+  readSyncMetadata().purchaseOrdersLastSyncedAt;
+
+export const setPurchaseOrdersLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.purchaseOrdersLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+export const getPurchaseReceptionsLastSyncedAt = (): string | null =>
+  readSyncMetadata().purchaseReceptionsLastSyncedAt;
+
+export const setPurchaseReceptionsLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.purchaseReceptionsLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+export const getSupplierReturnsLastSyncedAt = (): string | null =>
+  readSyncMetadata().supplierReturnsLastSyncedAt;
+
+export const setSupplierReturnsLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.supplierReturnsLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+export const getSalesLastSyncedAt = (): string | null =>
+  readSyncMetadata().salesLastSyncedAt;
+
+export const setSalesLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.salesLastSyncedAt = iso;
   writeSyncMetadata(record);
 };

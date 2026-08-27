@@ -11,6 +11,8 @@
  * 3. **Pull catalog** — refresh product, category, and form data.
  * 4. **Pull lots** — refresh inventory lot data (depends on product refs).
  * 5. **Pull clients** — download recently-updated clients from the server.
+ * 6. **Pull purchases** — suppliers → purchase orders → receptions → supplier returns (FK order).
+ * 7. **Pull sales history** — confirmed sales + items/payments so a new device hydrates.
  *
  * Configuration is pulled *first* so that downstream steps (catalog, lots,
  * clients) operate under the latest business rules.
@@ -74,6 +76,31 @@ import {
   type TenantConfigSyncService,
   type TenantConfigSyncConfig,
 } from '../config/config-sync.service';
+import type {
+  SupplierSyncService,
+  SupplierSyncConfig,
+} from '../purchases/supplier-sync.service';
+import { createSupplierSyncService } from '../purchases/supplier-sync.service';
+import type {
+  PurchaseOrderSyncService,
+  PurchaseOrderSyncConfig,
+} from '../purchases/purchase-order-sync.service';
+import { createPurchaseOrderSyncService } from '../purchases/purchase-order-sync.service';
+import type {
+  PurchaseReceptionSyncService,
+  PurchaseReceptionSyncConfig,
+} from '../purchases/purchase-reception-sync.service';
+import { createPurchaseReceptionSyncService } from '../purchases/purchase-reception-sync.service';
+import type {
+  SupplierReturnSyncService,
+  SupplierReturnSyncConfig,
+} from '../purchases/supplier-return-sync.service';
+import { createSupplierReturnSyncService } from '../purchases/supplier-return-sync.service';
+import type {
+  SalesSyncService,
+  SalesSyncConfig,
+} from '../sales-pos/sales-sync.service';
+import { createSalesSyncService } from '../sales-pos/sales-sync.service';
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -125,6 +152,12 @@ export interface SyncSchedulerConfig {
   catalog: CatalogSyncConfig;
   lots: LotSyncConfig;
   clients: ClientPullConfig;
+  /** Supplier / purchases / sales hydration (optional, default = same baseUrl + token) */
+  suppliers?: SupplierSyncConfig;
+  purchaseOrders?: PurchaseOrderSyncConfig;
+  purchaseReceptions?: PurchaseReceptionSyncConfig;
+  supplierReturns?: SupplierReturnSyncConfig;
+  sales?: SalesSyncConfig;
   /** Config for tenant config sync (optional). */
   tenantConfig?: TenantConfigSyncConfig;
   /** Optional auth token for protected endpoints. */
@@ -181,6 +214,11 @@ export class SyncScheduler {
   private lotSync: LotSyncService;
   private clientPull: ClientPullService;
   private openShiftPull: OpenShiftPullService;
+  private supplierSync: SupplierSyncService;
+  private purchaseOrderSync: PurchaseOrderSyncService;
+  private purchaseReceptionSync: PurchaseReceptionSyncService;
+  private supplierReturnSync: SupplierReturnSyncService;
+  private salesSync: SalesSyncService;
   private pushService: SyncPushService;
   private readonly metricsService: SyncMetricsService;
   private readonly backupService: BackupService;
@@ -223,6 +261,32 @@ export class SyncScheduler {
       { baseUrl: config.baseUrl, accessToken: config.accessToken },
       this.readWorkstationContext(),
     );
+    const purchasesBase = { baseUrl: config.baseUrl, accessToken: config.accessToken };
+    this.supplierSync = createSupplierSyncService(config.prisma, {
+      ...purchasesBase,
+      ...config.suppliers,
+      accessToken: config.accessToken ?? config.suppliers?.accessToken,
+    });
+    this.purchaseOrderSync = createPurchaseOrderSyncService(config.prisma, {
+      ...purchasesBase,
+      ...config.purchaseOrders,
+      accessToken: config.accessToken ?? config.purchaseOrders?.accessToken,
+    });
+    this.purchaseReceptionSync = createPurchaseReceptionSyncService(config.prisma, {
+      ...purchasesBase,
+      ...config.purchaseReceptions,
+      accessToken: config.accessToken ?? config.purchaseReceptions?.accessToken,
+    });
+    this.supplierReturnSync = createSupplierReturnSyncService(config.prisma, {
+      ...purchasesBase,
+      ...config.supplierReturns,
+      accessToken: config.accessToken ?? config.supplierReturns?.accessToken,
+    });
+    this.salesSync = createSalesSyncService(config.prisma, {
+      ...purchasesBase,
+      ...config.sales,
+      accessToken: config.accessToken ?? config.sales?.accessToken,
+    });
     this.offlineToken =
       useLocalSessionStore.getState().session?.offlineToken ?? undefined;
     this.pushService = createSyncPushService({
@@ -274,6 +338,11 @@ export class SyncScheduler {
       { baseUrl: this.baseUrl, accessToken: token },
       this.readWorkstationContext(),
     );
+    this.supplierSync = createSupplierSyncService(this.prisma, baseConfig);
+    this.purchaseOrderSync = createPurchaseOrderSyncService(this.prisma, baseConfig);
+    this.purchaseReceptionSync = createPurchaseReceptionSyncService(this.prisma, baseConfig);
+    this.supplierReturnSync = createSupplierReturnSyncService(this.prisma, baseConfig);
+    this.salesSync = createSalesSyncService(this.prisma, baseConfig);
     this.offlineToken =
       useLocalSessionStore.getState().session?.offlineToken ?? undefined;
     this.pushService = createSyncPushService({
@@ -1159,6 +1228,62 @@ export class SyncScheduler {
         } else {
           console.warn('[SyncScheduler] open-shift pull failed:', describeSyncError(err));
         }
+      }
+    }
+
+    // 6. Purchases hydration — order matters: suppliers first (FK for orders/receptions/returns),
+    //    then orders, then receptions, then supplier-returns. Each step fetches without lock
+    //    and applies under lock so the PGlite lock is held only for the upsert.
+    if (!this.pullSuppressed.has('suppliers')) {
+      try {
+        const rows = await this.supplierSync.fetchSuppliers();
+        await this.withLock(() => this.supplierSync.applySuppliers(rows));
+      } catch (err) {
+        if (this.isForbidden(err)) this.suppressPull('suppliers');
+        else console.warn('[SyncScheduler] suppliers pull failed:', describeSyncError(err));
+      }
+    }
+
+    if (!this.pullSuppressed.has('purchase-orders')) {
+      try {
+        const rows = await this.purchaseOrderSync.fetchPurchaseOrders();
+        await this.withLock(() => this.purchaseOrderSync.applyPurchaseOrders(rows));
+      } catch (err) {
+        if (this.isForbidden(err)) this.suppressPull('purchase-orders');
+        else console.warn('[SyncScheduler] purchase-orders pull failed:', describeSyncError(err));
+      }
+    }
+
+    if (!this.pullSuppressed.has('purchase-receptions')) {
+      try {
+        const rows = await this.purchaseReceptionSync.fetchReceptions();
+        await this.withLock(() => this.purchaseReceptionSync.applyReceptions(rows));
+      } catch (err) {
+        if (this.isForbidden(err)) this.suppressPull('purchase-receptions');
+        else console.warn('[SyncScheduler] purchase-receptions pull failed:', describeSyncError(err));
+      }
+    }
+
+    if (!this.pullSuppressed.has('supplier-returns')) {
+      try {
+        const rows = await this.supplierReturnSync.fetchSupplierReturns();
+        await this.withLock(() => this.supplierReturnSync.applySupplierReturns(rows));
+      } catch (err) {
+        if (this.isForbidden(err)) this.suppressPull('supplier-returns');
+        else console.warn('[SyncScheduler] supplier-returns pull failed:', describeSyncError(err));
+      }
+    }
+
+    // 6.5 Sales history — hydrates local Sale + items/payments so a new device
+    //     sees full history. Must run after clients + suppliers (FK via snapshots)
+    //     but does not block purchases.
+    if (!this.pullSuppressed.has('sales')) {
+      try {
+        const rows = await this.salesSync.fetchSales();
+        await this.withLock(() => this.salesSync.applySales(rows));
+      } catch (err) {
+        if (this.isForbidden(err)) this.suppressPull('sales');
+        else console.warn('[SyncScheduler] sales pull failed:', describeSyncError(err));
       }
     }
 

@@ -40,6 +40,20 @@ const CreateSaleWithDeliverySchema = CreateSaleSchema.extend({
 export class SalesController {
   constructor(private salesService: SalesService) {}
 
+  @Get('sync')
+  @Roles(RoleType.CASHIER, RoleType.ADMIN)
+  async sync(
+    @Query('updatedSince') updatedSince?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ): Promise<any> {
+    return this.salesService.findSync({
+      updatedSince,
+      cursor: cursor ?? null,
+      limit: limit ? Math.min(Math.max(Number(limit), 1), 500) : 200,
+    });
+  }
+
   @Get()
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   async findAll(@Query() query: QuerySaleDto): Promise<any> {

@@ -89,6 +89,52 @@ export class PurchaseOrdersService {
     };
   }
 
+  /**
+   * Sync-pull purchase orders with cursor-based pagination for POS hydration.
+   *
+   * Walks (createdAt asc, id asc) — PurchaseOrder has no updatedAt, so
+   * incremental pulls filter on createdAt >= updatedSince. Includes items
+   * so the POS can upsert locally without a second fetch. Tenant-scoped
+   * via subscriptionId; shape { data, nextCursor, hasMore }.
+   */
+  async findSync(input: {
+    updatedSince?: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{
+    data: unknown[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const baseWhere: Prisma.PurchaseOrderWhereInput = {
+      subscriptionId: this.tenantContext.getSubscriptionId(),
+    };
+    if (input.updatedSince) {
+      baseWhere.createdAt = { gte: new Date(input.updatedSince) };
+    }
+
+    const page = await paginateWithCursor<
+      unknown,
+      Prisma.PurchaseOrderWhereInput,
+      Prisma.PurchaseOrderOrderByWithRelationInput,
+      Prisma.PurchaseOrderInclude
+    >({
+      model: this.prisma.purchaseOrder,
+      baseWhere,
+      limit: input.limit ?? 200,
+      cursor: input.cursor ?? null,
+      timeField: 'createdAt',
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      include: { supplier: true, items: true },
+    });
+
+    return {
+      data: page.items,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
+  }
+
   async findById(id: string): Promise<any> {
     const purchaseOrder = await this.prisma.purchaseOrder.findUnique({
       where: { id },

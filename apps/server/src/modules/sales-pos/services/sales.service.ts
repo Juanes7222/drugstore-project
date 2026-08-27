@@ -136,6 +136,61 @@ export class SalesService {
     return { data: sales, total, page: query.page, pageSize: query.pageSize };
   }
 
+  /**
+   * Sync-pull confirmed sales for POS hydration (read-only, lightweight).
+   *
+   * Returns confirmed sales with items + payments + client snapshots (the
+   * snapshots live on the Sale row; no fiscal XML is included). Walks
+   * (lastModifiedAt asc, id asc) — lastModifiedAt is the Sale equivalent
+   * of updatedAt and tracks confirmation time. For incremental pulls,
+   * `updatedSince` filters lastModifiedAt >= updatedSince.
+   *
+   * Shape: { data, nextCursor, hasMore } — POS handles both this shape and
+   * the catalog variant { items, nextCursor, hasMore }.
+   * Tenant isolation: explicit subscriptionId filter + operationalState CONFIRMED.
+   */
+  async findSync(input: {
+    updatedSince?: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{
+    data: unknown[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const baseWhere: Prisma.SaleWhereInput = {
+      subscriptionId: this.tenantContext.getSubscriptionId(),
+      operationalState: SaleOperationalState.CONFIRMED,
+    };
+    if (input.updatedSince) {
+      baseWhere.lastModifiedAt = { gte: new Date(input.updatedSince) };
+    }
+
+    const page = await paginateWithCursor<
+      unknown,
+      Prisma.SaleWhereInput,
+      Prisma.SaleOrderByWithRelationInput,
+      Prisma.SaleInclude
+    >({
+      model: this.prisma.sale,
+      baseWhere,
+      limit: input.limit ?? 200,
+      cursor: input.cursor ?? null,
+      timeField: 'lastModifiedAt',
+      orderBy: [{ lastModifiedAt: 'asc' }, { id: 'asc' }],
+      include: {
+        items: true,
+        payments: true,
+      },
+    });
+
+    return {
+      data: page.items,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
+  }
+
   async findById(id: string): Promise<any> {
     const sale = await this.prisma.sale.findUnique({
       where: { id },

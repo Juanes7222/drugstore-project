@@ -27,6 +27,20 @@ import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 export class SuppliersController {
   constructor(private suppliersService: SuppliersService) {}
 
+  @Get('sync')
+  @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
+  async sync(
+    @Query('updatedSince') updatedSince?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ): Promise<any> {
+    return this.suppliersService.findSync({
+      updatedSince,
+      cursor: cursor ?? null,
+      limit: limit ? Math.min(Math.max(Number(limit), 1), 500) : 200,
+    });
+  }
+
   @Get()
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findAll(@Query() query: QuerySupplierDto): Promise<any> {

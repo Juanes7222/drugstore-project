@@ -126,6 +126,55 @@ export class PurchaseReceptionsService {
     return reception;
   }
 
+  /**
+   * Sync-pull purchase receptions with cursor pagination for POS hydration.
+   *
+   * Walks (updatedAt asc, id asc). Includes items (with lotId) plus
+   * supplier/purchaseOrder so the POS can upsert locally. Filtered by
+   * updatedAt >= updatedSince for incremental pulls. Tenant-scoped.
+   * Returns { data, nextCursor, hasMore }.
+   */
+  async findSync(input: {
+    updatedSince?: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{
+    data: unknown[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const baseWhere: Prisma.PurchaseReceptionWhereInput = {
+      subscriptionId: this.tenantContext.getSubscriptionId(),
+    };
+    if (input.updatedSince) {
+      baseWhere.updatedAt = { gte: new Date(input.updatedSince) };
+    }
+
+    const page = await paginateWithCursor<
+      unknown,
+      Prisma.PurchaseReceptionWhereInput,
+      Prisma.PurchaseReceptionOrderByWithRelationInput,
+      Prisma.PurchaseReceptionInclude
+    >({
+      model: this.prisma.purchaseReception,
+      baseWhere,
+      limit: input.limit ?? 200,
+      cursor: input.cursor ?? null,
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      include: {
+        supplier: true,
+        purchaseOrder: true,
+        items: true,
+      },
+    });
+
+    return {
+      data: page.items,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
+  }
+
   async create(
     createDto: CreatePurchaseReceptionDto,
     userId: string,

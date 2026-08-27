@@ -3,6 +3,7 @@ import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { searchIdsIgnoringAccents } from '@/common/text/accent-insensitive-search';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { Prisma, SupplierIdentificationType } from '@pharmacy/database';
+import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import * as crypto from 'crypto';
 import { CreateSupplierDto } from '../dto/create-supplier.dto';
 import { UpdateSupplierDto } from '../dto/update-supplier.dto';
@@ -56,6 +57,53 @@ export class SuppliersService {
       throw new SupplierNotFoundException(id);
     }
     return supplier;
+  }
+
+  /**
+   * Sync-pull suppliers with cursor-based pagination.
+   *
+   * Designed for POS hydration on a new device: incremental pulls via
+   * `updatedSince` and resumable pulls via opaque `cursor`. Walks
+   * (updatedAt asc, id asc) so the keyset stays consistent with the
+   * cursor helper's OR condition.
+   *
+   * Shape: { data, nextCursor, hasMore } — POS handles both this shape
+   * and the catalog variant { items, nextCursor, hasMore }.
+   * Tenant isolation: explicit subscriptionId filter (RLS also applies).
+   */
+  async findSync(input: {
+    updatedSince?: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{
+    data: unknown[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const baseWhere: Prisma.SupplierWhereInput = {
+      subscriptionId: this.tenantContext.getSubscriptionId(),
+    };
+    if (input.updatedSince) {
+      baseWhere.updatedAt = { gte: new Date(input.updatedSince) };
+    }
+
+    const page = await paginateWithCursor<
+      unknown,
+      Prisma.SupplierWhereInput,
+      Prisma.SupplierOrderByWithRelationInput
+    >({
+      model: this.prisma.supplier,
+      baseWhere,
+      limit: input.limit ?? 200,
+      cursor: input.cursor ?? null,
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+    });
+
+    return {
+      data: page.items,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
   }
 
   async create(createDto: CreateSupplierDto, userId: string): Promise<any> {
