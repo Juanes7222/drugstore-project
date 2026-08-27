@@ -42,6 +42,12 @@ export class PurchaseReceptionsService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
+  private async ensureTenant(tx: Prisma.TransactionClient): Promise<void> {
+    try {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${this.tenantContext.getSubscriptionId()}, true)`;
+    } catch {}
+  }
+
   async findAll(query: QueryPurchaseReceptionDto): Promise<any> {
     const where: Prisma.PurchaseReceptionWhereInput = {};
     if (query.supplierId) where.supplierId = query.supplierId;
@@ -122,6 +128,7 @@ export class PurchaseReceptionsService {
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
+      await this.ensureTenant(tx);
       const supplier = await tx.supplier.findUnique({
         where: { id: createDto.supplierId },
       });
@@ -261,6 +268,7 @@ export class PurchaseReceptionsService {
     let fiscalDocumentId: string | null = null;
 
     const result = await this.prisma.$transaction(async (tx) => {
+      await this.ensureTenant(tx);
       const reception = await tx.purchaseReception.findUnique({
         where: { id },
         include: {
@@ -385,6 +393,7 @@ export class PurchaseReceptionsService {
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
+      await this.ensureTenant(tx);
       // Serialize concurrent access to this reception ID via PostgreSQL
       // advisory lock. BullMQ may deliver the same job to two workers
       // concurrently — the lock ensures only one reaches the idempotency
@@ -617,6 +626,7 @@ export class PurchaseReceptionsService {
 
   async annul(id: string, userId: string): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
+      await this.ensureTenant(tx);
       const reception = await tx.purchaseReception.findUnique({
         where: { id },
         include: {

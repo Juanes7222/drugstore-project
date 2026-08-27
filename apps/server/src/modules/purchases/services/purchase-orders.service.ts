@@ -339,15 +339,19 @@ export class PurchaseOrdersService {
         notes = notes ? `${notes} ${legacyMarker}` : legacyMarker;
       }
 
+      // Server sequentialNumber is global per subscription (@@unique [subscriptionId, sequentialNumber]),
+      // but POS local sequentialNumbers are per-workstation and can collide with
+      // existing server numbers (e.g. payload 1 vs server po_disfarma 1). Don't use
+      // payload's number directly; allocate the next global number instead.
+      // Advisory lock at the top of this transaction already serializes allocation.
+      const sequentialNumber = await this.getNextSequentialNumber(tx);
       // Use the POS-originated order ID so downstream sync operations
       // (receptions, returns) can reference this PO by the same ID.
-      // Advisory lock at the top of this transaction serializes concurrent
-      // access for this order ID, so the race that causes P2002 cannot occur.
       const purchaseOrder = await tx.purchaseOrder.create({
         data: {
           id: payload.orderId,
           subscriptionId: this.tenantContext.getSubscriptionId(),
-          sequentialNumber: payload.sequentialNumber,
+          sequentialNumber,
           state: PurchaseOrderState.CONFIRMED,
           supplierId: payload.supplierId,
           notes,
