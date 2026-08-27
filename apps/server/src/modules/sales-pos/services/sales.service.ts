@@ -956,20 +956,34 @@ export class SalesService {
       },
       _sum: { amount: true },
     });
-    const creditRefunds = await tx.clientReturn.aggregate({
-      where: {
-        clientId,
-        state: ClientReturnState.CONFIRMED,
-        refundMethod: { category: 'CREDIT' },
-      },
-      _sum: { refundAmount: true },
-    });
+    // ClientReturn has no direct relation to PaymentMethod in the Prisma schema
+    // (only refundMethodId scalar), so filter via the set of CREDIT method ids
+    // instead of the nested `refundMethod: { category }` which throws
+    // "Unknown argument `refundMethod`" and aborts the transaction (25P02).
+    const creditRefundMethodIds = (
+      await tx.paymentMethod.findMany({
+        where: { category: 'CREDIT' },
+        select: { id: true },
+      })
+    ).map((m) => m.id);
+    let creditRefundsAmount: Prisma.Decimal | null = null;
+    if (creditRefundMethodIds.length > 0) {
+      const agg = await tx.clientReturn.aggregate({
+        where: {
+          clientId,
+          state: ClientReturnState.CONFIRMED,
+          refundMethodId: { in: creditRefundMethodIds },
+        },
+        _sum: { refundAmount: true },
+      });
+      creditRefundsAmount = agg._sum.refundAmount;
+    }
     const creditPayments = await tx.clientCreditPayment.aggregate({
       where: { clientId, annulledAt: null },
       _sum: { amount: true },
     });
     const debt = (creditDebt._sum.amount ?? new Prisma.Decimal(0))
-      .minus(creditRefunds._sum.refundAmount ?? new Prisma.Decimal(0))
+      .minus(creditRefundsAmount ?? new Prisma.Decimal(0))
       .minus(creditPayments._sum.amount ?? new Prisma.Decimal(0));
     return Prisma.Decimal.max(debt, new Prisma.Decimal(0));
   }
