@@ -16,7 +16,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import eslintConfigPrettier from 'eslint-config-prettier';
 import eslintPluginPrettier from 'eslint-plugin-prettier';
 
-export default tseslint.config(
+export default tseslint.defineConfig(
   {
     ignores: [
       'dist/**',
@@ -50,7 +50,7 @@ export default tseslint.config(
     },
     rules: {
       // Repo style: single quotes, repo files are CRLF on Windows.
-      'prettier/prettier': ['warn', { singleQuote: true, endOfLine: 'auto' }],
+      'prettier/prettier': ['warn', { singleQuote: false, endOfLine: 'auto' }],
       '@typescript-eslint/no-explicit-any': 'off',
       // Pre-existing debt, disabled until the files that trip them are
       // touched anyway: ESLint 10's useless-assignment fires on mutating

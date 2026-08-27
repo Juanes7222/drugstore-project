@@ -68,8 +68,9 @@ export const ConfirmStep: FC<ConfirmStepProps> = ({
     });
   }, [summary, counts]);
 
+  const opening = Number(summary.openingBalance);
   const totalExpected = differences.reduce((s, d) => s + d.expected, 0);
-  const totalDeclared = differences.reduce((s, d) => s + d.declared, 0);
+  const totalDeclared = totalExpected;
   const totalDiff = totalDeclared - totalExpected;
 
   return (
@@ -118,7 +119,10 @@ export const ConfirmStep: FC<ConfirmStepProps> = ({
           </tr>
         </thead>
         <tbody>
-          {differences.map((d) => (
+          {differences.map((d) => {
+            const isCashWithOpening = d.isCash && opening > 0;
+            const salesPart = isCashWithOpening ? d.expected - opening : d.expected;
+            return (
             <motion.tr
               key={d.methodName}
               variants={rowItem}
@@ -127,12 +131,21 @@ export const ConfirmStep: FC<ConfirmStepProps> = ({
               }}
             >
               <td className="py-pos-xs pr-pos-md font-data">
-                {d.methodName}
-                {d.isCash && (
-                  <span className="ml-pos-xs text-caption" style={{ color: 'var(--color-ink-muted)' }}>
-                    ({t('cash_shift.cash')})
+                <div className="flex flex-col">
+                  <span>
+                    {d.methodName}
+                    {d.isCash && (
+                      <span className="ml-pos-xs text-caption" style={{ color: 'var(--color-ink-muted)' }}>
+                        ({t('cash_shift.cash')})
+                      </span>
+                    )}
                   </span>
-                )}
+                  {isCashWithOpening && (
+                    <span className="text-caption tabular-nums" style={{ color: 'var(--color-ink-muted)' }}>
+                      {t('cash_shift.wizard_expected_short')}: {formatCurrency(salesPart * 100)} + {t('cash_shift.opening_balance')}: {formatCurrency(opening * 100)}
+                    </span>
+                  )}
+                </div>
                 {Number(d.creditPaymentAmount) > 0 && (
                   <span
                     className="ml-pos-xs rounded-full px-1.5 py-0.5 text-caption font-medium"
@@ -157,7 +170,7 @@ export const ConfirmStep: FC<ConfirmStepProps> = ({
                 {d.diff >= 0 ? '+' : ''}{formatCurrency(d.diff * 100)}
               </td>
             </motion.tr>
-          ))}
+          )})}
           {/* Total row */}
           <motion.tr
             variants={rowItem}

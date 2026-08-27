@@ -466,7 +466,9 @@
       "newProduct": "New product",
       "createProduct": "Create product",
       "createSupplier": "Create supplier",
-      "receive": "Receive"
+      "receive": "Receive",
+      "emptyState": "No purchase orders registered"
+
     },
     "receptions": {
       "title": "Receptions",

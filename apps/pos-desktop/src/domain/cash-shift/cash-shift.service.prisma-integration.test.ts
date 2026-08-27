@@ -417,12 +417,12 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
         openingBalance: new Prisma.Decimal("500000.00"),
       });
 
-      // Register CLOSING counts for both payment methods
+      // Register CLOSING counts for both payment methods — efectivo incluye apertura
       await service.registerCashCount(shift.id, {
         countType: "CLOSING",
         paymentMethodId: cashPmId,
-        expectedAmount: new Prisma.Decimal("500000.00"),
-        declaredAmount: new Prisma.Decimal("502000.00"),
+        expectedAmount: new Prisma.Decimal("1000000.00"),
+        declaredAmount: new Prisma.Decimal("1002000.00"),
       });
       await service.registerCashCount(shift.id, {
         countType: "CLOSING",
@@ -437,8 +437,8 @@ describe("CashShiftService — PrismaClient + PGlite integration", () => {
 
       expect((result as any).state).toBe("CLOSED");
       expect((result as any).closingNotes).toBe("Turno cerrado sin novedades");
-      expect(Number((result as any).expectedClosingAmount)).toBe(650000);
-      expect(Number((result as any).actualClosingAmount)).toBe(652000);
+      expect(Number((result as any).expectedClosingAmount)).toBe(1150000);
+      expect(Number((result as any).actualClosingAmount)).toBe(1152000);
       expect(Number((result as any).closingDifference)).toBe(2000);
     });
 

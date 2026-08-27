@@ -85,7 +85,10 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find((o) => o.id === selectedId);
-  const selectedLabel = selectedOption?.label ?? '';
+  // When options are filtered, the selected item may not be in the visible
+  // subset. Fall back to selectedId (id === label for DIVIPOLA catalog) so
+  // the closed input never appears empty while a value is stored.
+  const selectedLabel = selectedOption?.label ?? selectedId ?? "";
   const listboxId = `searchable-listbox-${placeholder.replace(/\s+/g, '-').toLowerCase()}`;
 
   // ── Position dropdown below input — recalculates on open ──────────────
@@ -318,7 +321,10 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
                   ? 'bg-pharma/10 text-pharma'
                   : 'hover:bg-surface'
               } ${option.disabled ? 'opacity-40 cursor-default' : ''}`}
-              onClick={() => handleSelect(option)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelect(option);
+              }}
               onMouseEnter={() => setHighlightedIndex(index)}
             >
               <span className="font-medium">{option.label}</span>
@@ -334,7 +340,7 @@ export const SearchableSelect: FC<SearchableSelectProps> = ({
               className={`px-3 py-2 cursor-pointer text-sm border-t border-border text-pharma font-semibold inline-flex items-center gap-1 hover:bg-pharma/5 ${
                 highlightedIndex === options.length ? 'bg-pharma/10' : ''
               }`}
-              onClick={(e) => { e.stopPropagation(); setIsOpen(false); onCreateNew(); }}
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsOpen(false); onCreateNew(); }}
               onMouseEnter={() => setHighlightedIndex(options.length)}
             >
               <PlusIcon size={14} aria-hidden="true" />

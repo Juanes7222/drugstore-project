@@ -42,10 +42,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       ...(details !== undefined ? { details } : {}),
     };
 
-    this.logger.error(
-      `[${request.method}] ${request.url} - ${errorCode}: ${message}`,
-      exception.stack,
-    );
+    // 4xx are expected client errors (expired tokens, validation, etc.) —
+    // do not spam ERROR level + stack trace. 5xx remain ERROR.
+    if (status >= 500) {
+      this.logger.error(
+        `[${request.method}] ${request.url} - ${errorCode}: ${message}`,
+        exception.stack,
+      );
+    } else if (status === HttpStatus.UNAUTHORIZED || status === HttpStatus.FORBIDDEN) {
+      this.logger.warn(`[${request.method}] ${request.url} - ${errorCode}: ${message}`);
+    } else {
+      this.logger.warn(`[${request.method}] ${request.url} - ${errorCode}: ${message}`);
+    }
 
     response.status(status).json(errorResponse);
   }

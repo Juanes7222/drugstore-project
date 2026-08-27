@@ -228,7 +228,10 @@ export const SyncHealthPage: FC = () => {
     try {
       const session = useLocalSessionStore.getState().session;
       const headers: Record<string, string> = {};
-      if (session?.userId) headers["Authorization"] = `Bearer ${session.userId}`;
+      const accessToken = session?.accessToken?.trim();
+      if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+      const offlineToken = session?.offlineToken?.trim();
+      if (offlineToken) headers["X-Offline-Token"] = offlineToken;
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);

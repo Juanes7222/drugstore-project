@@ -536,7 +536,8 @@
       "newProduct": "Nuevo producto",
       "createProduct": "Crear producto",
       "createSupplier": "Crear proveedor",
-      "receive": "Recibir"
+      "receive": "Recibir",
+      "emptyState": "No hay órdenes de compra registradas"
     },
     "receptions": {
       "title": "Recepciones",

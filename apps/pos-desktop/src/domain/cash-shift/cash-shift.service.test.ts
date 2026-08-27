@@ -1496,8 +1496,8 @@ describe("CashShiftService", () => {
         {
           paymentMethodId: "pm-cash",
           countType: "CLOSING",
-          expectedAmount: new Prisma.Decimal(500000),
-          declaredAmount: new Prisma.Decimal(510000),
+          expectedAmount: new Prisma.Decimal(1000000),
+          declaredAmount: new Prisma.Decimal(1010000),
           difference: new Prisma.Decimal(10000),
           paymentMethodIsCash: true,
           paymentMethod: { name: "Efectivo" },
@@ -1516,8 +1516,8 @@ describe("CashShiftService", () => {
         closedAt: new Date(),
         openedAt: new Date(),
         openingBalance: new Prisma.Decimal(500000),
-        expectedClosingAmount: new Prisma.Decimal(500000),
-        actualClosingAmount: new Prisma.Decimal(510000),
+        expectedClosingAmount: new Prisma.Decimal(1000000),
+        actualClosingAmount: new Prisma.Decimal(1010000),
         closingDifference: new Prisma.Decimal(10000),
         closingNotes: null,
       });
@@ -1535,8 +1535,8 @@ describe("CashShiftService", () => {
           userRole: "CASHIER",
           workstationId: "ws-1",
           details: expect.objectContaining({
-            expectedClosingAmount: "500000",
-            actualClosingAmount: "510000",
+            expectedClosingAmount: "1000000",
+            actualClosingAmount: "1010000",
             closingDifference: "10000",
             paymentMethodCount: 1,
             pendingSyncCount: 0,
@@ -2182,9 +2182,10 @@ describe("CashShiftService", () => {
       expect((result as any).state).toBe("CLOSED");
       // One resolution for the single adjusted invoice — never two.
       expect(adjustmentService.resolveOperationalView).toHaveBeenCalledTimes(1);
-      // The whole flow validates the open shift exactly once — the internal
-      // count/close variants skip re-reading it per count.
-      expect(tx.cashShift.findUnique).toHaveBeenCalledTimes(1);
+      // The whole flow validates the open shift once plus one extra read for
+      // the fondo inicial (openingBalance) in closeShiftInternal, plus one
+      // for the per-method opening merge in getShiftSalesSummary/closeWithCounts.
+      expect(tx.cashShift.findUnique).toHaveBeenCalledTimes(3);
       // Payment methods are loaded once by closeWithCounts (methodMap) and
       // passed down — registerCashCountInternal must not re-fetch them.
       expect(tx.paymentMethod.findUnique).not.toHaveBeenCalled();

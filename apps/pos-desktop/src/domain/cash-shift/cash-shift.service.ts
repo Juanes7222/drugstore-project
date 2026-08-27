@@ -44,6 +44,7 @@ import { useLocalSessionStore } from '../auth/local-session.store';
 import { useCashShiftStore } from './cash-shift.store';
 import { getSalesConfig } from '../configuration/local-config.store';
 import { createBackupService, BackupFailedException } from '../backup';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import type { LocalAdjustmentService } from '../fiscal/local-adjustment.service';
 import type { OperationalInvoiceView } from '../fiscal/local-adjustment.types';
 import type { PrintRouter } from '../printing/print-router';
@@ -131,6 +132,14 @@ export class CashShiftService {
           state: 'OPEN',
         },
       });
+
+      // No SyncQueue entry for SHIFT_OPEN: SyncOperationType on both
+      // local and server schemas has no SHIFT_OPEN value (only
+      // SHIFT_CLOSURE). Server's `ensureGlobalShiftAttribution`
+      // bootstraps the OPEN shift when the next SALE_CONFIRMATION
+      // replays, so the following sale implicitly creates the new
+      // shift server-side without a dedicated operation. Enqueuing a
+      // SHIFT_OPEN here would fail Prisma enum validation.
 
       // Audit trail
       this.auditWriter?.write(LocalAuditEvent.CASH_SHIFT_OPENED, {
@@ -381,12 +390,54 @@ export class CashShiftService {
       );
     }
 
-    const closedShift = await this.prisma.cashShift
-      .update({
+    // --- SyncQueue: SHIFT_CLOSURE ---
+    // Replayed server-side by `handleShiftClosure` which expects
+    // { userId, shiftId, cashCounts, closingNotes }. The same
+    // per-workstation `clientSequence` monotonic counter used by
+    // sales-pos is reused here so ordering per workstation stays
+    // correct and the sync-push priority (SHIFT_CLOSURE = 3) is
+    // honored without extra work. Global-shift invariant already
+    // enforced by `assertNoOpenShiftExists` (open) / single OPEN
+    // row check — clientSequence stays per-workstation by design.
+    //
+    // SHIFT_OPEN is intentionally NOT enqueued: SyncOperationType
+    // on both local and server schemas has no SHIFT_OPEN value;
+    // the server's `ensureGlobalShiftAttribution` bootstraps a
+    // new OPEN shift when the next SALE_CONFIRMATION lands, so the
+    // next sale after a close implicitly creates the following
+    // shift server-side without a dedicated operation.
+    const now = new Date();
+    const payloadObj = {
+      userId: session.userId,
+      shiftId,
+      cashCounts: closingCounts.map((c) => ({
+        countType: (c as { countType: string }).countType,
+        paymentMethodId: (c as { paymentMethodId: string }).paymentMethodId,
+        expectedAmount: (c as { expectedAmount: Prisma.Decimal }).expectedAmount.toString(),
+        declaredAmount: (c as { declaredAmount: Prisma.Decimal }).declaredAmount.toString(),
+        denominationsBreakdown: (c as { denominationsBreakdown?: unknown }).denominationsBreakdown ?? null,
+      })),
+      closingNotes: dto.closingNotes ?? null,
+    };
+    const payload = JSON.stringify(payloadObj);
+    const payloadHash = await this.computePayloadHash(payload);
+    const payloadSize = new TextEncoder().encode(payload).length;
+    const operationUuid = globalThis.crypto.randomUUID();
+
+    let closedShift: CashShiftRecord & { cashCounts: unknown[] };
+    await this.prisma.$transaction(async (tx) => {
+      const latest = await tx.syncQueue.findFirst({
+        where: { sourceWorkstationId: session.workstationId },
+        orderBy: { clientSequence: 'desc' },
+        select: { clientSequence: true },
+      });
+      const clientSequence = latest ? latest.clientSequence + 1n : 1n;
+
+      closedShift = (await tx.cashShift.update({
         where: { id: shiftId },
         data: {
           state: 'CLOSED',
-          closedAt: new Date(),
+          closedAt: now,
           closedByUserId: session.userId,
           expectedClosingAmount: expectedAmount,
           actualClosingAmount: actualAmount,
@@ -396,7 +447,25 @@ export class CashShiftService {
         include: {
           cashCounts: true,
         },
+      })) as CashShiftRecord & { cashCounts: unknown[] };
+
+      await tx.syncQueue.create({
+        data: {
+          id: globalThis.crypto.randomUUID(),
+          operationUuid,
+          operationType: 'SHIFT_CLOSURE',
+          payload,
+          payloadHash,
+          payloadSize,
+          versionSchema: 1,
+          status: 'PENDING',
+          retryCount: 0,
+          sourceWorkstationId: session.workstationId,
+          sourceCreatedAt: now,
+          clientSequence,
+        },
       });
+    });
 
     // Audit trail
     this.auditWriter?.write(LocalAuditEvent.CASH_SHIFT_CLOSED, {
@@ -419,7 +488,14 @@ export class CashShiftService {
       },
     });
 
-    return this.handlePostClose(closedShift, session, closingCounts, shiftId, dto.closingNotes);
+    // Trigger immediate push. `closeShift` / `closeWithCounts` run with
+    // `dbWriteLock.pauseBackground()` so a direct `notifyPendingEntry()`
+    // would be dropped by `triggerPush`'s `isBackgroundPaused()` guard.
+    // Defer to the next microtask so the outer `resumeBackground()` in
+    // the public caller has already run when the scheduler checks.
+    queueMicrotask(() => notifyPendingEntry());
+
+    return this.handlePostClose(closedShift!, session, closingCounts, shiftId, dto.closingNotes);
   }
 
   // ---------------------------------------------------------------------------
@@ -1109,6 +1185,7 @@ export class CashShiftService {
   ): Promise<{
     transactionCount: number;
     totalSalesAmount: string;
+    openingBalance: string;
     totalsByPaymentMethod: Array<{
       paymentMethodId: string;
       methodName: string;
@@ -1121,13 +1198,20 @@ export class CashShiftService {
     this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
     // Count and total aggregated in SQL — no row materialization in JS.
-    const aggregate = await this.prisma.sale.aggregate({
-      where: { cashShiftId: shiftId, operationalState: 'CONFIRMED' },
-      _count: true,
-      _sum: { totalAmount: true },
-    });
+    const [aggregate, shiftRow] = await Promise.all([
+      this.prisma.sale.aggregate({
+        where: { cashShiftId: shiftId, operationalState: 'CONFIRMED' },
+        _count: true,
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.cashShift.findUnique({
+        where: { id: shiftId },
+        select: { openingBalance: true },
+      }),
+    ]);
 
     const totalAmount = aggregate._sum.totalAmount ?? new Prisma.Decimal(0);
+    const openingBalance = shiftRow?.openingBalance ?? new Prisma.Decimal(0);
 
     // Compute expected amounts via operational view (or fallback) ONCE —
     // this is the expensive path (small resolveOperationalView batches) —
@@ -1146,13 +1230,20 @@ export class CashShiftService {
     // map is fetched once and reused for both the merge and the per-method
     // breakdown field.
     const creditPaymentTotals = await this.getCreditPaymentTotals(shiftId);
-    const totalsByMethodWithCreditPayments = totalsByMethod
+    let totalsByMethodWithCreditPayments = totalsByMethod
       ? await this.mergeCreditPaymentTotals(
           shiftId,
           totalsByMethod,
           creditPaymentTotals,
         )
       : totalsByMethodComputed;
+
+    totalsByMethodWithCreditPayments =
+      await this.applyOpeningBalanceToCashTotals(
+        shiftId,
+        totalsByMethodWithCreditPayments,
+      );
+
     const activeMethods = await this.getActivePaymentMethodsWithNames(
       shiftId,
       totalsByMethodWithCreditPayments,
@@ -1171,6 +1262,7 @@ export class CashShiftService {
     return {
       transactionCount: aggregate._count,
       totalSalesAmount: totalAmount.toString(),
+      openingBalance: openingBalance.toString(),
       totalsByPaymentMethod: totalsByMethodArray,
     };
   }
@@ -1215,8 +1307,12 @@ export class CashShiftService {
         // Single open-shift validation for the whole flow.
         await this.getOpenShift(shiftId);
 
-        // 1. Compute expected totals per payment method
-        const expectedTotals = await this.computeExpectedTotalsWithFallback(shiftId);
+        // 1. Compute expected totals per payment method (sales + abonos)
+        let expectedTotals = await this.computeExpectedTotalsWithFallback(shiftId);
+        expectedTotals = await this.applyOpeningBalanceToCashTotals(
+          shiftId,
+          expectedTotals,
+        );
 
       // 2. Fetch payment methods for isCash check — only the fields the
       //    methodMap and the internal count registration consume.
@@ -1297,6 +1393,62 @@ export class CashShiftService {
     shiftId: string,
   ): Promise<Map<string, Prisma.Decimal>> {
     return this.computeExpectedTotalsByPaymentMethod(shiftId);
+  }
+
+  /**
+   * Add the shift's openingBalance to the cash payment method's expected
+   * total so the close wizard's "expected" includes the fondo inicial.
+   * Without this, a shift opened with $200.000 and $300.000 in cash sales
+   * would show $300.000 expected instead of the $500.000 actually in the
+   * drawer, producing a false shortage.
+   */
+  private async applyOpeningBalanceToCashTotals(
+    shiftId: string,
+    totals: Map<string, Prisma.Decimal>,
+  ): Promise<Map<string, Prisma.Decimal>> {
+    const shift = await this.prisma.cashShift.findUnique({
+      where: { id: shiftId },
+      select: { openingBalance: true },
+    });
+    const opening = shift?.openingBalance ?? new Prisma.Decimal(0);
+    if (opening.equals(0)) return totals;
+
+    // Find the cash method that is part of the current totals, otherwise
+    // fall back to any active cash method so the opening still appears
+    // even on a shift with no cash sales. Use a single findMany to stay
+    // compatible with test mocks (which often mock findMany but not
+    // findFirst/findUnique per-id).
+    let cashMethods: Array<{ id: string; isCash: boolean }> = [];
+    try {
+      const all = await this.prisma.paymentMethod.findMany({
+        where: { isActive: true },
+        select: { id: true, isCash: true },
+      });
+      if (Array.isArray(all)) cashMethods = all;
+    } catch {
+      // findMany not mocked — fall back to no-op (do not add opening)
+      return totals;
+    }
+    const cashIds = new Set(
+      cashMethods.filter((m) => m.isCash).map((m) => m.id),
+    );
+    if (cashIds.size === 0) return totals;
+
+    let cashId: string | undefined;
+    // Prefer a cash method already present in totals
+    for (const id of totals.keys()) {
+      if (cashIds.has(id)) {
+        cashId = id;
+        break;
+      }
+    }
+    if (!cashId) return totals;
+
+    const current = totals.get(cashId) ?? new Prisma.Decimal(0);
+    const next = current.plus(opening);
+    const updated = new Map(totals);
+    updated.set(cashId, next);
+    return updated;
   }
 
   /**
@@ -1544,6 +1696,18 @@ export class CashShiftService {
       return list.filter((m) => m.category !== 'CREDIT');
     }
     return list;
+  }
+
+  /**
+   * Hash a string payload using SHA-256, returning lowercase hex.
+   * Mirrors sales-pos.service.ts:1359 pattern via Web Crypto API.
+   */
+  private async computePayloadHash(payload: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(payload);
+    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
   private generateId(): string {

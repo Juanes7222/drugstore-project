@@ -8,12 +8,14 @@
 export interface ShiftSummary {
   transactionCount: number;
   totalSalesAmount: string;
+  /** Opening balance (fondo inicial) for the shift — cash float at open. */
+  openingBalance: string;
   totalsByPaymentMethod: Array<{
     paymentMethodId: string;
     methodName: string;
     isCash: boolean;
     expectedAmount: string;
-    /** Portion of the expected amount collected as credit payments (abonos). */
+    /** Portion of the expected total that came from credit payments (abonos). */
     creditPaymentAmount: string;
   }>;
 }

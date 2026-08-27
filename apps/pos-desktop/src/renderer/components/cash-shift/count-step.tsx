@@ -207,6 +207,14 @@ export const CountStep: FC<CountStepProps> = ({
                 <p className="mt-pos-xs text-caption tabular-nums" style={{ color: 'var(--color-ink-muted)' }}>
                   {t('cash_shift.wizard_expected_short')}: {formatCurrency(Number(currentMethod.expectedAmount) * 100)}
                 </p>
+                {currentMethod.isCash && Number(summary.openingBalance) > 0 && (
+                  <p
+                    className="mt-pos-xs text-caption tabular-nums font-medium"
+                    style={{ color: 'var(--color-ink-muted)' }}
+                  >
+                    {t('cash_shift.opening_balance')}: {formatCurrency(Number(summary.openingBalance) * 100)} — {t('cash_shift.wizard_total')}: {formatCurrency((Number(currentMethod.expectedAmount)) * 100)} {t('cash_shift.wizard_expected').toLowerCase()}
+                  </p>
+                )}
                 {Number(currentMethod.creditPaymentAmount) > 0 && (
                   <p
                     className="mt-pos-xs text-caption tabular-nums font-medium"

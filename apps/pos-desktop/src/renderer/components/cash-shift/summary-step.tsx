@@ -57,11 +57,19 @@ export const SummaryStep: FC<SummaryStepProps> = ({
 
       <motion.div
         variants={item}
-        className="grid grid-cols-2 gap-pos-md rounded-pos p-pos-md"
+        className="grid grid-cols-3 gap-pos-md rounded-pos p-pos-md"
         style={{
           backgroundColor: 'color-mix(in srgb, var(--color-pharma) 6%, transparent)',
         }}
       >
+        <div>
+          <span className="block text-caption font-medium" style={{ color: 'var(--color-ink-muted)' }}>
+            {t('cash_shift.opening_balance')}
+          </span>
+          <span className="font-data tabular-nums text-body-lg font-semibold">
+            {formatCurrency(Number(summary.openingBalance) * 100)}
+          </span>
+        </div>
         <div>
           <span className="block text-caption font-medium" style={{ color: 'var(--color-ink-muted)' }}>
             {t('cash_shift.wizard_transactions')}
@@ -104,7 +112,11 @@ export const SummaryStep: FC<SummaryStepProps> = ({
                 </td>
               </tr>
             )}
-            {summary.totalsByPaymentMethod.map((m, idx) => (
+            {summary.totalsByPaymentMethod.map((m, idx) => {
+              const opening = Number(summary.openingBalance);
+              const isCashWithOpening = m.isCash && opening > 0;
+              const salesPart = isCashWithOpening ? Number(m.expectedAmount) - opening : Number(m.expectedAmount);
+              return (
               <motion.tr
                 key={m.paymentMethodId}
                 variants={item}
@@ -115,12 +127,21 @@ export const SummaryStep: FC<SummaryStepProps> = ({
                 }}
               >
                 <td className="py-pos-xs pr-pos-md font-data">
-                  {m.methodName}
-                  {m.isCash && (
-                    <span className="ml-pos-xs text-caption" style={{ color: 'var(--color-ink-muted)' }}>
-                      ({t('cash_shift.cash')})
+                  <div className="flex flex-col">
+                    <span>
+                      {m.methodName}
+                      {m.isCash && (
+                        <span className="ml-pos-xs text-caption" style={{ color: 'var(--color-ink-muted)' }}>
+                          ({t('cash_shift.cash')})
+                        </span>
+                      )}
                     </span>
-                  )}
+                    {isCashWithOpening && (
+                      <span className="text-caption tabular-nums" style={{ color: 'var(--color-ink-muted)' }}>
+                        {t('cash_shift.wizard_expected_short')}: {formatCurrency(salesPart * 100)} + {t('cash_shift.opening_balance')}: {formatCurrency(opening * 100)}
+                      </span>
+                    )}
+                  </div>
                   {Number(m.creditPaymentAmount) > 0 && (
                     <span
                       className="ml-pos-xs rounded-full px-1.5 py-0.5 text-caption font-medium"
@@ -138,7 +159,7 @@ export const SummaryStep: FC<SummaryStepProps> = ({
                   {formatCurrency(Number(m.expectedAmount) * 100)}
                 </td>
               </motion.tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </motion.div>

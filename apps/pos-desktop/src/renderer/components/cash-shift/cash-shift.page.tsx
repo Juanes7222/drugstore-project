@@ -251,6 +251,7 @@ export const CashShiftPage: FC = () => {
       data: {
         transactionCount: 0,
         totalSalesAmount: '0',
+        openingBalance: '0',
         totalsByPaymentMethod: [],
       },
     });

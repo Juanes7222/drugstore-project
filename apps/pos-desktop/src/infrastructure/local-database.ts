@@ -935,8 +935,11 @@ const DEFAULT_TAX_SCHEMES = [
  *
  * This runs once on first app startup (or first startup after this code is
  * deployed) so the product form always has tax scheme options even when
- * offline.  Server sync later upserts authoritative data by id, overwriting
- * these seed rows without creating duplicates.
+ * offline. Server sync upserts authoritative rows by id — but because seed
+ * ids (`seed-*`) differ from server UUIDs, the sync creates duplicates for
+ * the same rate/taxType. Duplicates are hidden in the product form via
+ * `deduplicateTaxSchemes` in `use-product-form-data` and cleaned up here
+ * when safe (unreferenced seed rows).
  */
 async function seedTaxSchemesIfEmpty(client: PGlite): Promise<void> {
   const hasRows = await client.query<{ count: number }>(
@@ -968,6 +971,63 @@ async function seedTaxSchemesIfEmpty(client: PGlite): Promise<void> {
   console.log(
     `[local-database] Seeded ${DEFAULT_TAX_SCHEMES.length} default tax schemes.`,
   );
+}
+
+/**
+ * Remove offline-seed tax schemes that now have a server-authoritative
+ * duplicate (same taxType + rate). Without this, `useProductFormData`
+ * would have to hide duplicates forever. Only deletes `seed-*` rows that
+ * are not referenced by any ProductTaxHistory, so existing products keep
+ * their linked scheme.
+ */
+async function cleanupDuplicateTaxSchemes(client: PGlite): Promise<void> {
+  try {
+    const groups = await client.query<{
+      taxType: string;
+      rate: string;
+      ids: string[];
+    }>(
+      `SELECT "taxType", "rate"::text as rate, array_agg("id" ORDER BY "id") as ids
+       FROM "TaxScheme"
+       WHERE "isActive" = true
+       GROUP BY "taxType", "rate"
+       HAVING COUNT(*) > 1`,
+    );
+
+    for (const group of groups.rows) {
+      const ids: string[] = (group as unknown as { ids: string[] }).ids ?? (group as any).ids;
+      if (!Array.isArray(ids) || ids.length <= 1) continue;
+      const serverIds = ids.filter((id: string) => !id.startsWith("seed-"));
+      const seedIds = ids.filter((id: string) => id.startsWith("seed-"));
+      // Keep one authoritative id — prefer a server UUID when available.
+      const keepId = serverIds[0] ?? ids[0];
+      const toRemove = ids.filter((id: string) => id !== keepId && id.startsWith("seed-"));
+
+      for (const dupId of toRemove) {
+        // Skip if any product history still references this seed scheme.
+        const ref = await client.query<{ count: number }>(
+          `SELECT COUNT(*)::int AS count FROM "ProductTaxHistory" WHERE "taxSchemeId" = $1`,
+          [dupId],
+        );
+        if ((ref.rows[0]?.count ?? 0) > 0) continue;
+
+        await client.query(`DELETE FROM "TaxScheme" WHERE "id" = $1`, [dupId]);
+        // eslint-disable-next-line no-console
+        console.log(`[local-database] Removed duplicate seed tax scheme ${dupId} (kept ${keepId})`);
+      }
+      // Also log merged seed ids for observability even when not deleted (referenced)
+      if (seedIds.length > 0 && serverIds.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[local-database] Dedup taxType=${group.taxType} rate=${group.rate}: kept ${keepId}, duplicates ${toRemove.join(",") || "none (seed still referenced)"}`,
+        );
+      }
+    }
+  } catch (err) {
+    // Non-fatal — UI already deduplicates, this is just storage hygiene.
+    // eslint-disable-next-line no-console
+    console.warn("[local-database] cleanupDuplicateTaxSchemes failed:", err);
+  }
 }
 
 /**
@@ -1302,6 +1362,10 @@ export async function getLocalDatabase(): Promise<{
       // Seed tax schemes so the product form works without a server.
       // Server sync later overwrites these with authoritative data.
       await seedTaxSchemesIfEmpty(client);
+      // Clean up seed-vs-server duplicates (e.g. seed-iva-19 + server UUID
+      // for "IVA 19%") that would otherwise show as duplicated options in
+      // the product form. Safe: only deletes unreferenced seed rows.
+      await cleanupDuplicateTaxSchemes(client);
 
       // Seed the generic client (CONSUMIDOR FINAL) so sales without a
       // selected client always have a valid DIAN-compliant consumer record.

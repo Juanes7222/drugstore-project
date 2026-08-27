@@ -118,6 +118,7 @@ export const DepartmentMunicipalityFields: FC<DepartmentMunicipalityFieldsProps>
   const handleDepartmentSelect = useCallback(
     (option: SearchableSelectOption) => {
       onDepartmentChange(option.label);
+      setDepartmentQuery("");
       // Selecting a legacy free-text department keeps the municipality as-is;
       // there is no catalog entry to validate it against.
       const nextList = findDepartmentByName(option.label)?.municipalities;
@@ -128,6 +129,14 @@ export const DepartmentMunicipalityFields: FC<DepartmentMunicipalityFieldsProps>
       setMunicipalityQuery("");
     },
     [onDepartmentChange, onMunicipalityChange, municipality],
+  );
+
+  const handleMunicipalitySelect = useCallback(
+    (option: SearchableSelectOption) => {
+      onMunicipalityChange(option.label);
+      setMunicipalityQuery("");
+    },
+    [onMunicipalityChange],
   );
 
   const labelClass = compact ? COMPACT_LABEL_CLASS : LABEL_CLASS;
@@ -176,7 +185,7 @@ export const DepartmentMunicipalityFields: FC<DepartmentMunicipalityFieldsProps>
         <SearchableSelect
           options={visibleMunicipalities}
           onSearch={setMunicipalityQuery}
-          onSelect={(option) => onMunicipalityChange(option.label)}
+          onSelect={handleMunicipalitySelect}
           selectedId={municipality || null}
           placeholder={t("clients.select_municipality")}
           ariaLabel={t("clients.municipality")}

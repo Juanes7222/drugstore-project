@@ -221,13 +221,10 @@ describe("OpenShiftPullService", () => {
       const service = makeService("unknown");
       const result = await service.applyOpenShift(row);
 
-      // BUG: src currently returns superseded-stale-mirror for unknown
-      // context. Expected per spec: local-open-conflict.
-      // Assert actual (buggy) behavior so typecheck/test stays green
-      // while the bug is flagged in the final report.
       expect(result).toEqual({
-        status: "superseded-stale-mirror",
-        adoptedShiftId: "server-new",
+        status: "local-open-conflict",
+        localShiftId: "local-foreign",
+        serverShiftId: "server-new",
       });
     });
 

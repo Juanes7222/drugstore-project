@@ -42,6 +42,33 @@ function deriveDefaultVatRate(draft: CompanyDraft | null): number {
     : EXEMPT_VAT_RATE;
 }
 
+/**
+ * Deduplicate tax schemes that exist twice due to offline seed vs server
+ * sync overlap (e.g. `seed-iva-19` + server UUID both "IVA 19%").
+ * Key is normalized `taxType + rate` — seed and server share those even
+ * when `code`/`name` differ ("Exento" vs "Exento de IVA").
+ * Prefers the server UUID over the `seed-*` id so future writes hit the
+ * authoritative row.
+ */
+function deduplicateTaxSchemes(schemes: TaxSchemeOption[]): TaxSchemeOption[] {
+  const byKey = new Map<string, TaxSchemeOption>();
+  for (const scheme of schemes) {
+    const key = `${scheme.taxType}:${Math.round(scheme.rate)}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, scheme);
+      continue;
+    }
+    const existingIsSeed = existing.id.startsWith("seed-");
+    const currentIsSeed = scheme.id.startsWith("seed-");
+    if (existingIsSeed && !currentIsSeed) {
+      byKey.set(key, scheme);
+    }
+    // otherwise keep existing (server over seed, or first seen)
+  }
+  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export interface ProductFormDataResult {
   categories: CategoryOption[];
   pharmaceuticalForms: PharmaceuticalFormOption[];
@@ -107,8 +134,12 @@ export function useProductFormData(): ProductFormDataResult {
           });
           setPharmaceuticalForms(formRows);
 
-          // Load tax schemes
+          // Load tax schemes — deduplicated to hide seed vs server overlap
+          // (local seed `seed-iva-19` and serverUUID for "IVA 19%" share
+          //  same rate+taxType but different ids; without dedup the form
+          //  shows "IVA 19%" twice).
           const taxRows = await db.taxScheme.findMany({
+            where: { isActive: true },
             orderBy: { name: "asc" },
             select: {
               id: true,
@@ -116,15 +147,18 @@ export function useProductFormData(): ProductFormDataResult {
               code: true,
               rate: true,
               taxType: true,
+              isActive: true,
             },
           });
-          const mappedTaxSchemes: TaxSchemeOption[] = taxRows.map((row) => ({
-            id: row.id,
-            name: row.name,
-            code: row.code,
-            rate: Number(row.rate) * 100,
-            taxType: row.taxType,
-          }));
+          const mappedTaxSchemes: TaxSchemeOption[] = deduplicateTaxSchemes(
+            taxRows.map((row) => ({
+              id: row.id,
+              name: row.name,
+              code: row.code,
+              rate: Number(row.rate) * 100,
+              taxType: row.taxType,
+            })),
+          );
           setTaxSchemes(mappedTaxSchemes);
 
           // Compute field visibility from tenant strictness config
