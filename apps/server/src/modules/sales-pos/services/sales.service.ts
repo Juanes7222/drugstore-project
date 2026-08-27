@@ -163,6 +163,9 @@ export class SalesService {
     const delivery = this.parseDeliveryOrThrow(createDto.delivery);
 
     return this.prisma.$transaction(async (tx) => {
+      try {
+        await tx.$executeRaw`SELECT set_config('app.current_tenant', ${this.tenantContext.getSubscriptionId()}, true)`;
+      } catch {}
       const cashShift = await this.getOpenCashShift(
         tx,
         userId,
@@ -311,6 +314,9 @@ export class SalesService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
+      try {
+        await tx.$executeRaw`SELECT set_config('app.current_tenant', ${this.tenantContext.getSubscriptionId()}, true)`;
+      } catch {}
       const sale = await tx.sale.findUnique({
         where: { id: saleId },
         include: { items: { include: { product: true } } },
@@ -508,12 +514,14 @@ export class SalesService {
     workstationId: string,
     fallbackCashShiftId?: string,
   ): Promise<any> {
-    // Explicit subscription filter: RLS requires app.current_tenant set, but
-    // nested savepoint transactions may lose the context if the outer
-    // withTenant transaction was not correctly propagated (see
-    // SyncProcessingJob duplicate). Explicit filter makes the query succeed
-    // even if RLS context is missing, while RLS still enforces tenant isolation.
     const subscriptionId = this.tenantContext.getSubscriptionId();
+    // Ensure RLS context is set even when this tx is a new pooled connection
+    // (nested $transaction inside withTenant becomes a separate connection
+    // on adapter-pg and loses the outer SET LOCAL). Without this, RLS hides
+    // CashShift rows and we get current_setting=null, openCount=0.
+    try {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${subscriptionId}, true)`;
+    } catch {}
     // 1. Happy path — the single tenant-wide OPEN shift
     const openShift = await tx.cashShift.findFirst({
       where: { state: ShiftState.OPEN, subscriptionId },
@@ -533,15 +541,20 @@ export class SalesService {
       if (closedShift) return closedShift;
     }
 
-    // Debug: log why not found (subscriptionId, fallback, count of OPEN)
-    // This log is critical for diagnosing the 26/08 "No open cash shift" loop
-    // where pharmacy_app saw 0 rows due to RLS without tenant context.
-    const openCount = await tx.cashShift.count({
-      where: { state: ShiftState.OPEN, subscriptionId },
-    });
-    console.warn(
-      `[getOpenCashShift] no OPEN found for workstation=${workstationId} subscription=${subscriptionId} fallback=${fallbackCashShiftId} openCount=${openCount}`,
-    );
+    // Keep debug but ensure it doesn't abort the transaction: run in separate try
+    try {
+      const currentTenant = await (tx as any).$queryRawUnsafe(
+        `SELECT current_setting('app.current_tenant', true) as val`,
+      ) as Array<{ val: string | null }>;
+      const openCount = await tx.cashShift.count({
+        where: { state: ShiftState.OPEN, subscriptionId },
+      });
+      console.warn(
+        `[getOpenCashShift] no OPEN found for workstation=${workstationId} subscription=${subscriptionId} current_setting=${currentTenant[0]?.val} prismaCount=${openCount} fallback=${fallbackCashShiftId}`,
+      );
+    } catch (e) {
+      console.warn(`[getOpenCashShift] debug query failed`, e);
+    }
     // 3. No shift at all — refuse
     throw new CashShiftNotOpenForWorkstationException(workstationId);
   }

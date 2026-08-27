@@ -402,9 +402,10 @@ export class SyncOperationDispatcherService {
     const lockKey = `${this.tenantContext.getSubscriptionId()}:cash-shift-global-open`;
 
     await this.prisma.$transaction(async (tx) => {
+      const subscriptionId = this.tenantContext.getSubscriptionId();
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${subscriptionId}, true)`;
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-      const subscriptionId = this.tenantContext.getSubscriptionId();
       const openShift = await tx.cashShift.findFirst({
         where: { state: 'OPEN', subscriptionId },
         orderBy: { openedAt: 'desc' },
