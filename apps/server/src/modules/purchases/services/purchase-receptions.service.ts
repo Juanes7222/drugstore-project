@@ -584,11 +584,14 @@ export class PurchaseReceptionsService {
         notes = notes ? `${notes} ${legacyMarker}` : legacyMarker;
       }
 
+      // Server sequentialNumber is global per subscription, POS local is per-workstation and can collide (see purchase-orders fix)
+      const sequentialNumber = await this.getNextSequentialNumber(tx);
+
       const reception = await tx.purchaseReception.create({
         data: {
           id: receptionId,
           subscriptionId: this.tenantContext.getSubscriptionId(),
-          sequentialNumber: payload.sequentialNumber,
+          sequentialNumber,
           state: PurchaseReceptionState.CONFIRMED,
           supplierId: payload.supplierId,
           purchaseOrderId: payload.purchaseOrderId || null,
