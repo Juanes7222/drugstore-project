@@ -30,7 +30,10 @@ import { LotsService } from '@/modules/inventory-lots/services/lots.service';
 import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
 import { toDecimal } from '@/common/to-decimal';
 import { acquireAdvisoryLock } from '@/common/utils/advisory-lock';
-import type { PurchaseReceptionConfirmationPayload } from '@/modules/sync/dto/purchase-sync-payloads';
+import type {
+  PurchaseReceptionConfirmationPayload,
+  LotSyncData,
+} from '@/modules/sync/dto/purchase-sync-payloads';
 
 @Injectable()
 export class PurchaseReceptionsService {
@@ -506,21 +509,26 @@ export class PurchaseReceptionsService {
             throw new ProductNotFoundException(item.productId);
           }
 
-          // Create/resolve Lot record when the payload carries a lotId.
-          // The POS knows on which lot each received unit lands; the server
-          // mirrors that so subsequent sync ops (inventory adjustments,
-          // supplier returns) can reference the lot.
+          // Create/resolve Lot record when the payload carries lot data.
+          // POS sends `lot: { batchNumber, expirationDate, ... }` without a top-level lotId;
+          // even without lotId we must materialize the Lot so stock becomes available.
           let resolvedLotId: string | null = null;
-          if (item.lotId) {
-            const resolved = await this.lotsService.resolveLotForSync(
-              tx,
-              item.lotId,
-              item.lot ?? {
-                batchNumber: item.batchNumber ?? 'UNKNOWN',
-                expirationDate: item.expirationDate ?? new Date().toISOString(),
+          const lotPayload = (item as any).lot as LotSyncData | undefined;
+          const incomingLotId = (item as any).lotId as string | undefined;
+          if (lotPayload || incomingLotId) {
+            const lotIdForResolve = incomingLotId ?? crypto.randomUUID();
+            const lotDataForResolve: LotSyncData =
+              lotPayload ??
+              ({
+                batchNumber: (item as any).batchNumber ?? 'UNKNOWN',
+                expirationDate: (item as any).expirationDate ?? new Date().toISOString(),
                 productId: item.productId,
                 currentStock: item.quantity,
-              },
+              } as LotSyncData);
+            const resolved = await this.lotsService.resolveLotForSync(
+              tx,
+              lotIdForResolve,
+              lotDataForResolve,
             );
             resolvedLotId = resolved.id;
 
