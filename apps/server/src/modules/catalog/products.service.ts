@@ -121,6 +121,12 @@ export class ProductsService {
     };
   }
 
+  private async ensureTenant(tx: any): Promise<void> {
+    try {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${this.tenantContext.getSubscriptionId()}, true)`;
+    } catch {}
+  }
+
   async createProduct(
     userId: string,
     dto: CreateProductDto,
@@ -130,6 +136,7 @@ export class ProductsService {
     const priceDecimal = new Prisma.Decimal(dto.initialPrice);
 
     return this.prisma.$transaction(async (tx: any) => {
+      await this.ensureTenant(tx);
       const product = await tx.product.create({
         data: {
           id: sourceProductId ?? this.generateId(),
@@ -291,6 +298,7 @@ export class ProductsService {
     }
 
     return this.prisma.$transaction(async (tx: any) => {
+      await this.ensureTenant(tx);
       const txUpdateData = { ...updateData };
 
       if (needsPriceUpdate) {
@@ -373,6 +381,7 @@ export class ProductsService {
       : new Date();
 
     return this.prisma.$transaction(async (tx: any) => {
+      await this.ensureTenant(tx);
       await this.closeActivePriceHistory(tx, productId);
 
       const newPriceHistory = await tx.productPriceHistory.create({
@@ -415,6 +424,7 @@ export class ProductsService {
       : new Date();
 
     return this.prisma.$transaction(async (tx: any) => {
+      await this.ensureTenant(tx);
       await this.closeActiveTaxHistory(tx, productId);
 
       const newTaxHistory = await tx.productTaxHistory.create({
@@ -442,6 +452,7 @@ export class ProductsService {
   async addBarcode(productId: string, dto: AddProductBarcodeDto): Promise<any> {
     if (dto.isPrimary) {
       return this.prisma.$transaction(async (tx: any) => {
+        await this.ensureTenant(tx);
         await this.unsetExistingPrimaryBarcode(tx, productId);
 
         return tx.productBarcode.create({
@@ -480,6 +491,7 @@ export class ProductsService {
 
   async setPrimaryBarcode(productId: string, barcodeId: string): Promise<any> {
     return this.prisma.$transaction(async (tx: any) => {
+      await this.ensureTenant(tx);
       await this.unsetExistingPrimaryBarcode(tx, productId);
 
       return tx.productBarcode.update({
