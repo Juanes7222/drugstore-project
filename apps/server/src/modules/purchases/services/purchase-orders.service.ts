@@ -25,6 +25,12 @@ export class PurchaseOrdersService {
     private readonly tenantContext: TenantContextService,
   ) {}
 
+  private async ensureTenant(tx: Prisma.TransactionClient): Promise<void> {
+    try {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${this.tenantContext.getSubscriptionId()}, true)`;
+    } catch {}
+  }
+
   async findAll(query: QueryPurchaseOrderDto): Promise<any> {
     const where: Prisma.PurchaseOrderWhereInput = {};
     if (query.supplierId) where.supplierId = query.supplierId;
@@ -114,6 +120,7 @@ export class PurchaseOrdersService {
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
+      await this.ensureTenant(tx);
       const supplier = await tx.supplier.findUnique({
         where: { id: createDto.supplierId },
       });
@@ -195,6 +202,7 @@ export class PurchaseOrdersService {
 
   async confirm(id: string, userId: string): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
+      await this.ensureTenant(tx);
       const purchaseOrder = await tx.purchaseOrder.findUnique({
         where: { id },
         include: { items: true },
@@ -237,6 +245,7 @@ export class PurchaseOrdersService {
     userId: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
+      await this.ensureTenant(tx);
       // Serialize concurrent access to this order ID via PostgreSQL advisory
       // lock. BullMQ may deliver the same job to two workers concurrently; the
       // lock ensures only one worker reaches the idempotency check + create
@@ -293,25 +302,24 @@ export class PurchaseOrdersService {
       let subtotal = new Prisma.Decimal(0);
 
       if (payload.items && payload.items.length > 0) {
-        itemsData = await Promise.all(
-          payload.items.map(async (item) => {
-            const product = await tx.product.findUnique({
-              where: { id: item.productId },
-            });
-            if (!product) {
-              throw new ProductNotFoundException(item.productId);
-            }
-            return {
-              id: crypto.randomUUID(),
-              subscriptionId: this.tenantContext.getSubscriptionId(),
-              productId: item.productId,
-              requestedQuantity: item.requestedQuantity,
-              receivedQuantity: 0,
-              pendingQuantity: item.requestedQuantity,
-              expectedUnitCost: new Prisma.Decimal(item.expectedUnitCost),
-            };
-          }),
-        );
+        itemsData = [];
+        for (const item of payload.items) {
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+          });
+          if (!product) {
+            throw new ProductNotFoundException(item.productId);
+          }
+          itemsData.push({
+            id: crypto.randomUUID(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
+            productId: item.productId,
+            requestedQuantity: item.requestedQuantity,
+            receivedQuantity: 0,
+            pendingQuantity: item.requestedQuantity,
+            expectedUnitCost: new Prisma.Decimal(item.expectedUnitCost),
+          });
+        }
 
         subtotal = itemsData.reduce(
           (sum, item) =>

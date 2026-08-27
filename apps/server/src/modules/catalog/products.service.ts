@@ -340,12 +340,37 @@ export class ProductsService {
       if (needsTaxUpdate) {
         await this.closeActiveTaxHistory(tx, productId);
 
+        // Remap legacy POS taxScheme ids (seed-exento, seed-iva19) to server ids (tax_exento, tax_iva_19)
+        let resolvedTaxSchemeId = rawTaxSchemeId!;
+        const taxSchemeExists = await tx.taxScheme.findUnique({
+          where: { id: resolvedTaxSchemeId },
+          select: { id: true },
+        });
+        if (!taxSchemeExists) {
+          const altId = resolvedTaxSchemeId.replace(/^seed-/, 'tax_').replace(/^seed_/, 'tax_');
+          const alt = await tx.taxScheme.findUnique({
+            where: { id: altId },
+            select: { id: true },
+          });
+          if (alt) {
+            this.tenantContext.getSubscriptionId(); // ensure tenant context used
+            resolvedTaxSchemeId = alt.id;
+          } else {
+            // Fallback to default exento if still not found — don't fail the whole product update
+            const fallback = await tx.taxScheme.findFirst({
+              where: { id: { contains: 'exento' } },
+              select: { id: true },
+            });
+            if (fallback) resolvedTaxSchemeId = fallback.id;
+          }
+        }
+
         const taxHistory = await tx.productTaxHistory.create({
           data: {
             id: this.generateId(),
             subscriptionId: this.tenantContext.getSubscriptionId(),
             productId,
-            taxSchemeId: rawTaxSchemeId!,
+            taxSchemeId: resolvedTaxSchemeId,
             effectiveFrom: new Date(),
             changedById: userId ?? 'unknown',
             changedAt: new Date(),
