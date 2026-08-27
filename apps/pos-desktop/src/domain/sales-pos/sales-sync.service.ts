@@ -23,6 +23,7 @@ export interface SalesSyncConfig {
   baseUrl: string;
   httpClient?: SyncHttpClient;
   accessToken?: string;
+  offlineToken?: string;
 }
 
 export const createSalesSyncService = (
@@ -34,6 +35,7 @@ export class SalesSyncService {
   private readonly http: SyncHttpClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly offlineToken?: string;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -42,6 +44,7 @@ export class SalesSyncService {
     this.http = config.httpClient ?? defaultHttpClient;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
+    this.offlineToken = config.offlineToken;
   }
 
   /** Convenience wrapper — respects offline. */
@@ -95,10 +98,39 @@ export class SalesSyncService {
       for (const sale of rows) {
         if (pendingSaleIds.has(sale.id)) continue;
 
+        // Ensure CashShift FK exists — sales on server reference shifts that
+        // this workstation never opened. Without stub, FK violation rolls back
+        // entire batch and leaves Sale empty (the bug reported: Select * from "Sale" = 0).
+        if (sale.cashShiftId) {
+          const existingShift = await tx.cashShift.findUnique({ where: { id: sale.cashShiftId }, select: { id: true } });
+          if (!existingShift) {
+            await tx.cashShift.create({
+              data: {
+                id: sale.cashShiftId,
+                workstationId: sale.workstationId ?? 'unknown',
+                userId: sale.userId ?? 'system',
+                state: 'CLOSED' as any,
+                openedAt: new Date(sale.startedAt),
+                closedAt: sale.confirmedAt ? new Date(sale.confirmedAt) : new Date(sale.startedAt),
+                openingBalance: new Prisma.Decimal(0),
+              },
+            });
+          }
+        }
+
+        // If client referenced does not exist locally yet (client pull hasn't landed
+        // or was filtered), null it out to avoid FK violation — snapshots on Sale
+        // already preserve display name/ID for history view.
+        let clientId = sale.clientId ?? null;
+        if (clientId) {
+          const clientExists = await tx.client.findUnique({ where: { id: clientId }, select: { id: true } });
+          if (!clientExists) clientId = null;
+        }
+
         await tx.sale.upsert({
           where: { id: sale.id },
-          create: mapSaleForCreate(sale),
-          update: mapSaleForUpdate(sale),
+          create: mapSaleForCreate({ ...sale, clientId } as SaleSyncRow),
+          update: mapSaleForUpdate({ ...sale, clientId } as SaleSyncRow),
         });
 
         // Items — upsert by id, delete orphans not in payload
@@ -181,8 +213,10 @@ export class SalesSyncService {
   }
 
   private buildAuthHeaders(): Record<string, string> {
-    if (this.accessToken) return { Authorization: `Bearer ${this.accessToken}` };
-    return {};
+    const headers: Record<string, string> = {};
+    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
+    if (this.offlineToken) headers['X-Offline-Token'] = this.offlineToken;
+    return headers;
   }
 
   private async fetchAll(authHeaders: Record<string, string>): Promise<SaleSyncRow[]> {
@@ -199,7 +233,10 @@ export class SalesSyncService {
         all.push(...(res.data ?? []));
         if (!res.hasMore || !res.nextCursor) break;
         cursor = res.nextCursor;
-      } catch {
+      } catch (err: unknown) {
+        if (err instanceof SalesSyncHttpError && (err.statusCode === 401 || err.statusCode === 403)) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/\b401\b|\b403\b|\bUnauthorized\b|\bForbidden\b/i.test(msg)) throw err;
         // Fallback: legacy offset endpoint (paginated, no cursor)
         return this.fetchLegacy(authHeaders);
       }

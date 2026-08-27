@@ -13,6 +13,7 @@
  * 5. **Pull clients** — download recently-updated clients from the server.
  * 6. **Pull purchases** — suppliers → purchase orders → receptions → supplier returns (FK order).
  * 7. **Pull sales history** — confirmed sales + items/payments so a new device hydrates.
+ * 8. **Pull invoices** — fiscal documents for those sales (Facturación) so detail view has invoices.
  *
  * Configuration is pulled *first* so that downstream steps (catalog, lots,
  * clients) operate under the latest business rules.
@@ -101,6 +102,16 @@ import type {
   SalesSyncConfig,
 } from '../sales-pos/sales-sync.service';
 import { createSalesSyncService } from '../sales-pos/sales-sync.service';
+import type {
+  InvoiceSyncService,
+  InvoiceSyncConfig,
+} from '../fiscal/invoice-sync.service';
+import { createInvoiceSyncService } from '../fiscal/invoice-sync.service';
+import type {
+  InvoiceAdjustmentSyncService,
+  InvoiceAdjustmentSyncConfig,
+} from '../fiscal/invoice-adjustment-sync.service';
+import { createInvoiceAdjustmentSyncService } from '../fiscal/invoice-adjustment-sync.service';
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -158,6 +169,8 @@ export interface SyncSchedulerConfig {
   purchaseReceptions?: PurchaseReceptionSyncConfig;
   supplierReturns?: SupplierReturnSyncConfig;
   sales?: SalesSyncConfig;
+  invoices?: InvoiceSyncConfig;
+  invoiceAdjustments?: InvoiceAdjustmentSyncConfig;
   /** Config for tenant config sync (optional). */
   tenantConfig?: TenantConfigSyncConfig;
   /** Optional auth token for protected endpoints. */
@@ -219,6 +232,8 @@ export class SyncScheduler {
   private purchaseReceptionSync: PurchaseReceptionSyncService;
   private supplierReturnSync: SupplierReturnSyncService;
   private salesSync: SalesSyncService;
+  private invoiceSync: InvoiceSyncService;
+  private invoiceAdjustmentSync: InvoiceAdjustmentSyncService;
   private pushService: SyncPushService;
   private readonly metricsService: SyncMetricsService;
   private readonly backupService: BackupService;
@@ -261,34 +276,51 @@ export class SyncScheduler {
       { baseUrl: config.baseUrl, accessToken: config.accessToken },
       this.readWorkstationContext(),
     );
-    const purchasesBase = { baseUrl: config.baseUrl, accessToken: config.accessToken };
+    this.offlineToken =
+      useLocalSessionStore.getState().session?.offlineToken ?? undefined;
+    const purchasesBase = { baseUrl: config.baseUrl, accessToken: config.accessToken, offlineToken: this.offlineToken };
     this.supplierSync = createSupplierSyncService(config.prisma, {
       ...purchasesBase,
       ...config.suppliers,
       accessToken: config.accessToken ?? config.suppliers?.accessToken,
+      offlineToken: this.offlineToken ?? config.suppliers?.offlineToken,
     });
     this.purchaseOrderSync = createPurchaseOrderSyncService(config.prisma, {
       ...purchasesBase,
       ...config.purchaseOrders,
       accessToken: config.accessToken ?? config.purchaseOrders?.accessToken,
+      offlineToken: this.offlineToken ?? config.purchaseOrders?.offlineToken,
     });
     this.purchaseReceptionSync = createPurchaseReceptionSyncService(config.prisma, {
       ...purchasesBase,
       ...config.purchaseReceptions,
       accessToken: config.accessToken ?? config.purchaseReceptions?.accessToken,
+      offlineToken: this.offlineToken ?? config.purchaseReceptions?.offlineToken,
     });
     this.supplierReturnSync = createSupplierReturnSyncService(config.prisma, {
       ...purchasesBase,
       ...config.supplierReturns,
       accessToken: config.accessToken ?? config.supplierReturns?.accessToken,
+      offlineToken: this.offlineToken ?? config.supplierReturns?.offlineToken,
     });
     this.salesSync = createSalesSyncService(config.prisma, {
       ...purchasesBase,
       ...config.sales,
       accessToken: config.accessToken ?? config.sales?.accessToken,
+      offlineToken: this.offlineToken ?? config.sales?.offlineToken,
     });
-    this.offlineToken =
-      useLocalSessionStore.getState().session?.offlineToken ?? undefined;
+    this.invoiceSync = createInvoiceSyncService(config.prisma, {
+      ...purchasesBase,
+      ...config.invoices,
+      accessToken: config.accessToken ?? config.invoices?.accessToken,
+      offlineToken: this.offlineToken ?? config.invoices?.offlineToken,
+    });
+    this.invoiceAdjustmentSync = createInvoiceAdjustmentSyncService(config.prisma, {
+      ...purchasesBase,
+      ...config.invoiceAdjustments,
+      accessToken: config.accessToken ?? config.invoiceAdjustments?.accessToken,
+      offlineToken: this.offlineToken ?? config.invoiceAdjustments?.offlineToken,
+    });
     this.pushService = createSyncPushService({
       prisma: config.prisma,
       baseUrl: config.baseUrl,
@@ -328,7 +360,9 @@ export class SyncScheduler {
     // A fresh login may carry different roles — re-enable pulls that were
     // suppressed because the previous session was forbidden to run them.
     this.pullSuppressed.clear();
-    const baseConfig = { baseUrl: this.baseUrl, accessToken: token };
+    this.offlineToken =
+      useLocalSessionStore.getState().session?.offlineToken ?? undefined;
+    const baseConfig = { baseUrl: this.baseUrl, accessToken: token, offlineToken: this.offlineToken };
     this.configSync = createConfigSyncService(this.prisma, baseConfig);
     this.catalogSync = createCatalogSyncService(this.prisma, baseConfig);
     this.lotSync = createLotSyncService(this.prisma, baseConfig);
@@ -343,8 +377,8 @@ export class SyncScheduler {
     this.purchaseReceptionSync = createPurchaseReceptionSyncService(this.prisma, baseConfig);
     this.supplierReturnSync = createSupplierReturnSyncService(this.prisma, baseConfig);
     this.salesSync = createSalesSyncService(this.prisma, baseConfig);
-    this.offlineToken =
-      useLocalSessionStore.getState().session?.offlineToken ?? undefined;
+    this.invoiceSync = createInvoiceSyncService(this.prisma, baseConfig);
+    this.invoiceAdjustmentSync = createInvoiceAdjustmentSyncService(this.prisma, baseConfig);
     this.pushService = createSyncPushService({
       prisma: this.prisma,
       baseUrl: this.baseUrl,
@@ -975,14 +1009,15 @@ export class SyncScheduler {
    * normally rebuilt by `updateAccessToken()` — but that only runs when
    * the access token itself changes. If a flow writes a new offline token
    * into the session while the access token stays the same, the push
-   * would keep sending stale headers. Only the push service consumes the
-   * offline token, so it is the only service rebuilt here.
+   * would keep sending stale headers. Push and purchase/sales pulls consume
+   * the offline token, so they are rebuilt here.
    */
   private syncOfflineTokenFromSession(): void {
     const current =
       useLocalSessionStore.getState().session?.offlineToken ?? undefined;
     if (current === this.offlineToken) return;
     this.offlineToken = current;
+    const baseConfig = { baseUrl: this.baseUrl, accessToken: this.accessToken, offlineToken: current };
     this.pushService = createSyncPushService({
       prisma: this.prisma,
       baseUrl: this.baseUrl,
@@ -991,6 +1026,13 @@ export class SyncScheduler {
       invoiceService: this.invoiceService,
       auditWriter: this.auditWriter,
     });
+    this.supplierSync = createSupplierSyncService(this.prisma, baseConfig);
+    this.purchaseOrderSync = createPurchaseOrderSyncService(this.prisma, baseConfig);
+    this.purchaseReceptionSync = createPurchaseReceptionSyncService(this.prisma, baseConfig);
+    this.supplierReturnSync = createSupplierReturnSyncService(this.prisma, baseConfig);
+    this.salesSync = createSalesSyncService(this.prisma, baseConfig);
+    this.invoiceSync = createInvoiceSyncService(this.prisma, baseConfig);
+    this.invoiceAdjustmentSync = createInvoiceAdjustmentSyncService(this.prisma, baseConfig);
   }
 
   /**
@@ -1284,6 +1326,30 @@ export class SyncScheduler {
       } catch (err) {
         if (this.isForbidden(err)) this.suppressPull('sales');
         else console.warn('[SyncScheduler] sales pull failed:', describeSyncError(err));
+      }
+    }
+
+    // 6.6 Invoices — hydrates local Invoice for hydrated sales so Facturación
+    //     and sale detail have fiscal documents. Must run after sales (FK saleId).
+    if (!this.pullSuppressed.has('invoices')) {
+      try {
+        const rows = await this.invoiceSync.fetchInvoices();
+        await this.withLock(() => this.invoiceSync.applyInvoices(rows));
+      } catch (err) {
+        if (this.isForbidden(err)) this.suppressPull('invoices');
+        else console.warn('[SyncScheduler] invoices pull failed:', describeSyncError(err));
+      }
+    }
+
+    // 6.7 Invoice adjustments — CLIENT_CHANGE etc so operational view shows corrections cross-workstation.
+    //     Must run after invoices (FK invoiceId).
+    if (!this.pullSuppressed.has('invoice-adjustments')) {
+      try {
+        const rows = await this.invoiceAdjustmentSync.fetchAdjustments();
+        await this.withLock(() => this.invoiceAdjustmentSync.applyAdjustments(rows));
+      } catch (err) {
+        if (this.isForbidden(err)) this.suppressPull('invoice-adjustments');
+        else console.warn('[SyncScheduler] invoice-adjustments pull failed:', describeSyncError(err));
       }
     }
 

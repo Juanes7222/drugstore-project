@@ -50,6 +50,8 @@ interface SyncMetadataRecord {
   purchaseReceptionsLastSyncedAt: string | null;
   supplierReturnsLastSyncedAt: string | null;
   salesLastSyncedAt: string | null;
+  invoicesLastSyncedAt: string | null;
+  invoiceAdjustmentsLastSyncedAt: string | null;
 }
 
 const DEFAULTS: SyncMetadataRecord = {
@@ -62,6 +64,8 @@ const DEFAULTS: SyncMetadataRecord = {
   purchaseReceptionsLastSyncedAt: null,
   supplierReturnsLastSyncedAt: null,
   salesLastSyncedAt: null,
+  invoicesLastSyncedAt: null,
+  invoiceAdjustmentsLastSyncedAt: null,
 };
 
 /**
@@ -206,5 +210,23 @@ export const getSalesLastSyncedAt = (): string | null =>
 export const setSalesLastSyncedAt = (iso: string): void => {
   const record = readSyncMetadata();
   record.salesLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+export const getInvoicesLastSyncedAt = (): string | null =>
+  readSyncMetadata().invoicesLastSyncedAt;
+
+export const setInvoicesLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.invoicesLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+export const getInvoiceAdjustmentsLastSyncedAt = (): string | null =>
+  readSyncMetadata().invoiceAdjustmentsLastSyncedAt;
+
+export const setInvoiceAdjustmentsLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.invoiceAdjustmentsLastSyncedAt = iso;
   writeSyncMetadata(record);
 };

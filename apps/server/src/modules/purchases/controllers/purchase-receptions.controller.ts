@@ -14,6 +14,7 @@ import { CreatePurchaseReceptionDto, CreatePurchaseReceptionSchema } from '../dt
 import { QueryPurchaseReceptionDto } from '../dto/query-purchase-reception.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -21,11 +22,11 @@ import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-type
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 @Controller('purchases/receptions')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class PurchaseReceptionsController {
   constructor(private purchaseReceptionsService: PurchaseReceptionsService) {}
 
   @Get('sync')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async sync(
     @Query('updatedSince') updatedSince?: string,
@@ -40,18 +41,21 @@ export class PurchaseReceptionsController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findAll(@Query() query: QueryPurchaseReceptionDto): Promise<any> {
     return this.purchaseReceptionsService.findAll(query);
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findById(@Param('id') id: string): Promise<any> {
     return this.purchaseReceptionsService.findById(id);
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @Auditable({ action: AuditAction.CREATE, module: SystemModule.PURCHASES, entityType: 'PurchaseReception' })
   async create(
@@ -62,6 +66,7 @@ export class PurchaseReceptionsController {
   }
 
   @Post(':id/confirm')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.PURCHASES, entityType: 'PurchaseReception' })
@@ -74,6 +79,7 @@ export class PurchaseReceptionsController {
   }
 
   @Post(':id/annul')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.PURCHASES, entityType: 'PurchaseReception' })

@@ -16,6 +16,7 @@ import { ConfirmSaleDto, ConfirmSaleSchema } from '../dto/confirm-sale.dto';
 import { AnnulSaleDto, AnnulSaleSchema } from '../dto/annul-sale.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -36,11 +37,11 @@ const CreateSaleWithDeliverySchema = CreateSaleSchema.extend({
 });
 
 @Controller('sales-pos')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class SalesController {
   constructor(private salesService: SalesService) {}
 
   @Get('sync')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   async sync(
     @Query('updatedSince') updatedSince?: string,
@@ -55,12 +56,14 @@ export class SalesController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   async findAll(@Query() query: QuerySaleDto): Promise<any> {
     return this.salesService.findAll(query);
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   async findById(@Param('id') id: string): Promise<any> {
     return this.salesService.findById(id);
@@ -74,6 +77,7 @@ export class SalesController {
    * It will be removed only after the Backoffice migration is complete.
    */
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @Auditable({ action: AuditAction.CREATE, module: SystemModule.SALES, entityType: 'Sale' })
   async create(
@@ -92,6 +96,7 @@ export class SalesController {
    * from the web interface.
    */
   @Post(':id/confirm')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.SALES, entityType: 'Sale' })
@@ -110,6 +115,7 @@ export class SalesController {
    * for Backoffice administrative use and manual overrides from the web interface.
    */
   @Post(':id/annul')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.STATE_CHANGE, module: SystemModule.SALES, entityType: 'Sale' })

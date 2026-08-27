@@ -22,6 +22,7 @@ export interface SupplierSyncConfig {
   baseUrl: string;
   httpClient?: SyncHttpClient;
   accessToken?: string;
+  offlineToken?: string;
 }
 
 export const createSupplierSyncService = (
@@ -39,6 +40,7 @@ export class SupplierSyncService {
   private readonly http: SyncHttpClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly offlineToken?: string;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -47,6 +49,7 @@ export class SupplierSyncService {
     this.http = config.httpClient ?? defaultHttpClient;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
+    this.offlineToken = config.offlineToken;
   }
 
   /** Convenience wrapper — fetch + apply, respects offline. */
@@ -87,8 +90,10 @@ export class SupplierSyncService {
   // -----------------------------------------------------------------------
 
   private buildAuthHeaders(): Record<string, string> {
-    if (this.accessToken) return { Authorization: `Bearer ${this.accessToken}` };
-    return {};
+    const headers: Record<string, string> = {};
+    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
+    if (this.offlineToken) headers['X-Offline-Token'] = this.offlineToken;
+    return headers;
   }
 
   private async fetchAllSuppliers(authHeaders: Record<string, string>): Promise<SupplierRow[]> {
@@ -114,8 +119,12 @@ export class SupplierSyncService {
         all.push(...chunk);
         if (!res.hasMore || !res.nextCursor) break;
         cursor = res.nextCursor;
-      } catch {
-        // Legacy fallback — offset pagination (pre-sync-endpoint servers)
+      } catch (err: unknown) {
+        // 401/403 are auth failures — let scheduler handle suppression, don't double-request legacy
+        if (err instanceof SupplierSyncHttpError && (err.statusCode === 401 || err.statusCode === 403)) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/\b401\b|\b403\b|\bUnauthorized\b|\bForbidden\b/i.test(msg)) throw err;
+        // 404 or network error → legacy fallback (pre-sync-endpoint servers)
         return this.fetchAllSuppliersLegacy(authHeaders);
       }
     }

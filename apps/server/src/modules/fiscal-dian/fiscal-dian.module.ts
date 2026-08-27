@@ -1,14 +1,19 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/infrastructure/prisma/prisma.module';
 import { BullMqModule } from '@/infrastructure/queue/bullmq.module';
+import { AuthModule } from '@/modules/auth/auth.module';
 import { FiscalDocumentsController } from './controllers/fiscal-documents.controller';
+import { FiscalInvoiceSyncController } from './controllers/fiscal-invoice-sync.controller';
+import { FiscalInvoiceAdjustmentSyncController } from './controllers/fiscal-invoice-adjustment-sync.controller';
 import { FiscalResolutionsController } from './controllers/fiscal-resolutions.controller';
 import { FiscalCertificateController } from './controllers/fiscal-certificate.controller';
 import { FiscalWebhooksController } from './controllers/fiscal-webhooks.controller';
 import { FiscalIssuerConfigController } from './fiscal-issuer-config.controller';
 import { TechProviderConfigController } from './tech-provider-config.controller';
 import { FiscalResolutionAllocationsController } from './fiscal-resolution-allocations.controller';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { FiscalDocumentsService } from './services/fiscal-documents.service';
+import { InvoiceAdjustmentService } from './services/invoice-adjustment.service';
 import { FiscalResolutionsService } from './services/fiscal-resolutions.service';
 import { FiscalResolutionSyncService } from './services/fiscal-resolution-sync.service';
 import { FiscalCertificateService } from './services/fiscal-certificate.service';
@@ -36,9 +41,11 @@ import { FiscalCertificateExpirationJob } from './jobs/fiscal-certificate-expira
  * apps/fiscal-engine.
  */
 @Module({
-  imports: [PrismaModule, BullMqModule],
+  imports: [PrismaModule, BullMqModule, AuthModule],
   controllers: [
     FiscalDocumentsController,
+    FiscalInvoiceSyncController,
+    FiscalInvoiceAdjustmentSyncController,
     FiscalResolutionsController,
     FiscalCertificateController,
     FiscalWebhooksController,
@@ -48,6 +55,7 @@ import { FiscalCertificateExpirationJob } from './jobs/fiscal-certificate-expira
   ],
   providers: [
     FiscalDocumentsService,
+    InvoiceAdjustmentService,
     FiscalResolutionsService,
     FiscalResolutionSyncService,
     FiscalCertificateService,
@@ -63,6 +71,7 @@ import { FiscalCertificateExpirationJob } from './jobs/fiscal-certificate-expira
     FiscalResolutionAllocationsService,
     ResolutionExpirationAlertJob,
     FiscalCertificateExpirationJob,
+    SyncAuthGuard,
   ],
   exports: [
     FiscalDocumentsService,

@@ -9,6 +9,8 @@ import { ClientReturnCalculatorService } from './services/client-return-calculat
 import { CommissionCalculatorService } from './services/commission-calculator.service';
 import { InventoryLotsModule } from '@/modules/inventory-lots/inventory-lots.module';
 import { FiscalDianModule } from '@/modules/fiscal-dian/fiscal-dian.module';
+import { AuthModule } from '@/modules/auth/auth.module';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 
 /**
  * Sales-POS Module
@@ -17,9 +19,9 @@ import { FiscalDianModule } from '@/modules/fiscal-dian/fiscal-dian.module';
  * - Prescription: Prescription-based sales workflows and validation
  */
 @Module({
-  imports: [PrismaModule, InventoryLotsModule, FiscalDianModule],
+  imports: [PrismaModule, InventoryLotsModule, FiscalDianModule, AuthModule],
   controllers: [SalesController, ClientReturnsController],
-  providers: [SalesService, SaleSequenceAuditService, ClientReturnsService, ClientReturnCalculatorService, CommissionCalculatorService],
+  providers: [SalesService, SaleSequenceAuditService, ClientReturnsService, ClientReturnCalculatorService, CommissionCalculatorService, SyncAuthGuard],
   exports: [SalesService, SaleSequenceAuditService, ClientReturnsService],
 })
 export class SalesPosModule {}

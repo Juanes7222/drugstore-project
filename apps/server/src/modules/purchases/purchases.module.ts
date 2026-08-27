@@ -10,9 +10,11 @@ import { SupplierReturnsController } from './controllers/supplier-returns.contro
 import { SupplierReturnsService } from './services/supplier-returns.service';
 import { InventoryLotsModule } from '@/modules/inventory-lots/inventory-lots.module';
 import { FiscalDianModule } from '@/modules/fiscal-dian/fiscal-dian.module';
+import { AuthModule } from '@/modules/auth/auth.module';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 
 @Module({
-  imports: [PrismaModule, InventoryLotsModule, FiscalDianModule],
+  imports: [PrismaModule, InventoryLotsModule, FiscalDianModule, AuthModule],
   controllers: [
     SuppliersController,
     PurchaseOrdersController,
@@ -24,6 +26,7 @@ import { FiscalDianModule } from '@/modules/fiscal-dian/fiscal-dian.module';
     PurchaseOrdersService,
     PurchaseReceptionsService,
     SupplierReturnsService,
+    SyncAuthGuard,
   ],
   exports: [
     SuppliersService,

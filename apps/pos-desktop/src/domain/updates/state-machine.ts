@@ -67,7 +67,7 @@ const TRANSITIONS: Record<UpdateState, ReadonlySet<UpdateState>> = {
   // still look for updates again; without it the machine would dead-end
   // until restart.
   ROLLED_BACK: new Set(['IDLE', 'CHECKING']),
-  NO_UPDATE: new Set(['IDLE', 'CHECKING']),
+  NO_UPDATE: new Set(['IDLE', 'CHECKING', 'ROLLED_BACK']),
   CHECK_FAILED: new Set(['IDLE', 'CHECKING']),
 };
 
@@ -215,6 +215,12 @@ export class UpdateStateMachine {
   // -----------------------------------------------------------------------
 
   private transitionTo(target: UpdateState): void {
+    // Idempotent: callers (rollback-detector, React StrictMode double-mount)
+    // may invoke rollback() when already in ROLLED_BACK. Treat as no-op
+    // instead of throwing IllegalStateTransitionException which surfaces as
+    // "Sentinel check failed" warnings and poisons the crash-loop signal.
+    if (this._state === target) return;
+
     const allowed = TRANSITIONS[this._state];
     if (!allowed.has(target)) {
       throw new IllegalStateTransitionException(this._state, target);

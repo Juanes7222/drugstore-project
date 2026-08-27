@@ -72,6 +72,37 @@ vi.mock("../backup/backup.service", () => ({
   })),
 }));
 
+vi.mock("../purchases/supplier-sync.service", () => ({
+  createSupplierSyncService: vi.fn(() => ({
+    fetchSuppliers: vi.fn(),
+    applySuppliers: vi.fn(),
+  })),
+}));
+vi.mock("../purchases/purchase-order-sync.service", () => ({
+  createPurchaseOrderSyncService: vi.fn(() => ({
+    fetchPurchaseOrders: vi.fn(),
+    applyPurchaseOrders: vi.fn(),
+  })),
+}));
+vi.mock("../purchases/purchase-reception-sync.service", () => ({
+  createPurchaseReceptionSyncService: vi.fn(() => ({
+    fetchReceptions: vi.fn(),
+    applyReceptions: vi.fn(),
+  })),
+}));
+vi.mock("../purchases/supplier-return-sync.service", () => ({
+  createSupplierReturnSyncService: vi.fn(() => ({
+    fetchSupplierReturns: vi.fn(),
+    applySupplierReturns: vi.fn(),
+  })),
+}));
+vi.mock("../sales-pos/sales-sync.service", () => ({
+  createSalesSyncService: vi.fn(() => ({
+    fetchSales: vi.fn(),
+    applySales: vi.fn(),
+  })),
+}));
+
 // ---------------------------------------------------------------------------
 // Subject under test
 // ---------------------------------------------------------------------------

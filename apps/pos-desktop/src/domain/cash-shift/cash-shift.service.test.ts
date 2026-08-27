@@ -85,6 +85,10 @@ const makeMockPrisma = () => {
     syncQueue: {
       count: vi.fn(),
       aggregate: vi.fn(),
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({} as any),
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     inventoryAdjustmentDocument: { findFirst: vi.fn() },
     invoiceLocalAdjustment: { findMany: vi.fn() },
@@ -2182,10 +2186,9 @@ describe("CashShiftService", () => {
       expect((result as any).state).toBe("CLOSED");
       // One resolution for the single adjusted invoice — never two.
       expect(adjustmentService.resolveOperationalView).toHaveBeenCalledTimes(1);
-      // The whole flow validates the open shift once plus one extra read for
-      // the fondo inicial (openingBalance) in closeShiftInternal, plus one
-      // for the per-method opening merge in getShiftSalesSummary/closeWithCounts.
-      expect(tx.cashShift.findUnique).toHaveBeenCalledTimes(3);
+      // The whole flow validates the open shift plus the per-method opening
+      // merge in getShiftSalesSummary/closeWithCounts.
+      expect(tx.cashShift.findUnique).toHaveBeenCalledTimes(2);
       // Payment methods are loaded once by closeWithCounts (methodMap) and
       // passed down — registerCashCountInternal must not re-fetch them.
       expect(tx.paymentMethod.findUnique).not.toHaveBeenCalled();

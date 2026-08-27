@@ -23,6 +23,37 @@ vi.mock("./sync-push.service", () => ({
   MAX_RETRY_ATTEMPTS: 10,
 }));
 
+vi.mock("../purchases/supplier-sync.service", () => ({
+  createSupplierSyncService: vi.fn(() => ({
+    fetchSuppliers: vi.fn().mockResolvedValue([]),
+    applySuppliers: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../purchases/purchase-order-sync.service", () => ({
+  createPurchaseOrderSyncService: vi.fn(() => ({
+    fetchPurchaseOrders: vi.fn().mockResolvedValue([]),
+    applyPurchaseOrders: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../purchases/purchase-reception-sync.service", () => ({
+  createPurchaseReceptionSyncService: vi.fn(() => ({
+    fetchReceptions: vi.fn().mockResolvedValue([]),
+    applyReceptions: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../purchases/supplier-return-sync.service", () => ({
+  createSupplierReturnSyncService: vi.fn(() => ({
+    fetchSupplierReturns: vi.fn().mockResolvedValue([]),
+    applySupplierReturns: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../sales-pos/sales-sync.service", () => ({
+  createSalesSyncService: vi.fn(() => ({
+    fetchSales: vi.fn().mockResolvedValue([]),
+    applySales: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 // The scheduler recovers/rotates the offline-token cache through
 // SecureStorage — swap it for a controllable seam.
 vi.mock("../../infrastructure/secure-storage", () => ({

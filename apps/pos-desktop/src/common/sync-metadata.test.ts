@@ -12,11 +12,21 @@ import {
   getClassificationsLastSyncedAt,
   getClientsLastSyncedAt,
   getLotsLastSyncedAt,
+  getPurchaseOrdersLastSyncedAt,
+  getPurchaseReceptionsLastSyncedAt,
+  getSalesLastSyncedAt,
+  getSupplierReturnsLastSyncedAt,
+  getSuppliersLastSyncedAt,
   readSyncMetadata,
   setCatalogLastSyncedAt,
   setClassificationsLastSyncedAt,
   setClientsLastSyncedAt,
   setLotsLastSyncedAt,
+  setPurchaseOrdersLastSyncedAt,
+  setPurchaseReceptionsLastSyncedAt,
+  setSalesLastSyncedAt,
+  setSupplierReturnsLastSyncedAt,
+  setSuppliersLastSyncedAt,
 } from "./sync-metadata";
 
 const installIdRef = vi.hoisted(() => ({ current: null as string | null }));
@@ -52,6 +62,11 @@ describe("sync-metadata", () => {
         lotsLastSyncedAt: null,
         clientsLastSyncedAt: null,
         classificationsLastSyncedAt: null,
+        suppliersLastSyncedAt: null,
+        purchaseOrdersLastSyncedAt: null,
+        purchaseReceptionsLastSyncedAt: null,
+        supplierReturnsLastSyncedAt: null,
+        salesLastSyncedAt: null,
       });
     });
 
@@ -66,6 +81,11 @@ describe("sync-metadata", () => {
         lotsLastSyncedAt: null,
         clientsLastSyncedAt: null,
         classificationsLastSyncedAt: null,
+        suppliersLastSyncedAt: null,
+        purchaseOrdersLastSyncedAt: null,
+        purchaseReceptionsLastSyncedAt: null,
+        supplierReturnsLastSyncedAt: null,
+        salesLastSyncedAt: null,
       });
     });
 
@@ -80,6 +100,11 @@ describe("sync-metadata", () => {
           lotsLastSyncedAt: null,
           clientsLastSyncedAt: null,
           classificationsLastSyncedAt: null,
+          suppliersLastSyncedAt: null,
+          purchaseOrdersLastSyncedAt: null,
+          purchaseReceptionsLastSyncedAt: null,
+          supplierReturnsLastSyncedAt: null,
+          salesLastSyncedAt: null,
         });
       } finally {
         (globalThis as any).localStorage = originalLocalStorage;
@@ -107,6 +132,11 @@ describe("sync-metadata", () => {
         lotsLastSyncedAt: null,
         clientsLastSyncedAt: null,
         classificationsLastSyncedAt: null,
+        suppliersLastSyncedAt: null,
+        purchaseOrdersLastSyncedAt: null,
+        purchaseReceptionsLastSyncedAt: null,
+        supplierReturnsLastSyncedAt: null,
+        salesLastSyncedAt: null,
       });
     });
   });
@@ -256,6 +286,140 @@ describe("sync-metadata", () => {
       expect(getLotsLastSyncedAt()).toBe("2026-07-08T12:00:00Z");
       expect(getClientsLastSyncedAt()).toBe("2026-07-07T08:30:00Z");
       expect(getClassificationsLastSyncedAt()).toBe("2026-07-06T10:15:00Z");
+    });
+  });
+
+  describe("getSuppliersLastSyncedAt", () => {
+    it("returns null when no sync has been performed", () => {
+      expect(getSuppliersLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("setSuppliersLastSyncedAt + getSuppliersLastSyncedAt", () => {
+    it("persists and retrieves a timestamp", () => {
+      setSuppliersLastSyncedAt("2026-07-05T09:00:00Z");
+
+      expect(getSuppliersLastSyncedAt()).toBe("2026-07-05T09:00:00Z");
+    });
+
+    it("is scoped by installId", () => {
+      installIdRef.current = "install-A";
+      setSuppliersLastSyncedAt("2026-07-05T09:00:00Z");
+
+      installIdRef.current = "install-B";
+      expect(getSuppliersLastSyncedAt()).toBeNull();
+
+      installIdRef.current = "install-A";
+      expect(getSuppliersLastSyncedAt()).toBe("2026-07-05T09:00:00Z");
+    });
+  });
+
+  describe("getPurchaseOrdersLastSyncedAt", () => {
+    it("returns null when no sync has been performed", () => {
+      expect(getPurchaseOrdersLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("setPurchaseOrdersLastSyncedAt + getPurchaseOrdersLastSyncedAt", () => {
+    it("persists and retrieves a timestamp", () => {
+      setPurchaseOrdersLastSyncedAt("2026-07-04T10:00:00Z");
+
+      expect(getPurchaseOrdersLastSyncedAt()).toBe("2026-07-04T10:00:00Z");
+    });
+
+    it("is scoped by installId", () => {
+      installIdRef.current = "install-A";
+      setPurchaseOrdersLastSyncedAt("2026-07-04T10:00:00Z");
+
+      installIdRef.current = "install-B";
+      expect(getPurchaseOrdersLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("getPurchaseReceptionsLastSyncedAt", () => {
+    it("returns null when no sync has been performed", () => {
+      expect(getPurchaseReceptionsLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("setPurchaseReceptionsLastSyncedAt + getPurchaseReceptionsLastSyncedAt", () => {
+    it("persists and retrieves a timestamp", () => {
+      setPurchaseReceptionsLastSyncedAt("2026-07-03T11:00:00Z");
+
+      expect(getPurchaseReceptionsLastSyncedAt()).toBe("2026-07-03T11:00:00Z");
+    });
+
+    it("is scoped by installId", () => {
+      installIdRef.current = "install-A";
+      setPurchaseReceptionsLastSyncedAt("2026-07-03T11:00:00Z");
+
+      installIdRef.current = "install-B";
+      expect(getPurchaseReceptionsLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("getSupplierReturnsLastSyncedAt", () => {
+    it("returns null when no sync has been performed", () => {
+      expect(getSupplierReturnsLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("setSupplierReturnsLastSyncedAt + getSupplierReturnsLastSyncedAt", () => {
+    it("persists and retrieves a timestamp", () => {
+      setSupplierReturnsLastSyncedAt("2026-07-02T08:00:00Z");
+
+      expect(getSupplierReturnsLastSyncedAt()).toBe("2026-07-02T08:00:00Z");
+    });
+
+    it("is scoped by installId", () => {
+      installIdRef.current = "install-A";
+      setSupplierReturnsLastSyncedAt("2026-07-02T08:00:00Z");
+
+      installIdRef.current = "install-B";
+      expect(getSupplierReturnsLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("getSalesLastSyncedAt", () => {
+    it("returns null when no sync has been performed", () => {
+      expect(getSalesLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("setSalesLastSyncedAt + getSalesLastSyncedAt", () => {
+    it("persists and retrieves a timestamp", () => {
+      setSalesLastSyncedAt("2026-07-01T07:00:00Z");
+
+      expect(getSalesLastSyncedAt()).toBe("2026-07-01T07:00:00Z");
+    });
+
+    it("is scoped by installId", () => {
+      installIdRef.current = "install-A";
+      setSalesLastSyncedAt("2026-07-01T07:00:00Z");
+
+      installIdRef.current = "install-B";
+      expect(getSalesLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("all nine sync-metadata fields co-exist without interference", () => {
+    it("stores and retrieves each field independently across installIds", () => {
+      installIdRef.current = "install-A";
+      setSuppliersLastSyncedAt("2026-07-05T09:00:00Z");
+      setPurchaseOrdersLastSyncedAt("2026-07-04T10:00:00Z");
+      setPurchaseReceptionsLastSyncedAt("2026-07-03T11:00:00Z");
+      setSupplierReturnsLastSyncedAt("2026-07-02T08:00:00Z");
+      setSalesLastSyncedAt("2026-07-01T07:00:00Z");
+
+      expect(getSuppliersLastSyncedAt()).toBe("2026-07-05T09:00:00Z");
+      expect(getPurchaseOrdersLastSyncedAt()).toBe("2026-07-04T10:00:00Z");
+      expect(getPurchaseReceptionsLastSyncedAt()).toBe("2026-07-03T11:00:00Z");
+      expect(getSupplierReturnsLastSyncedAt()).toBe("2026-07-02T08:00:00Z");
+      expect(getSalesLastSyncedAt()).toBe("2026-07-01T07:00:00Z");
+
+      installIdRef.current = "install-B";
+      expect(getSuppliersLastSyncedAt()).toBeNull();
+      expect(getSalesLastSyncedAt()).toBeNull();
     });
   });
 });

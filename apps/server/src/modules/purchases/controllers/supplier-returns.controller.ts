@@ -16,6 +16,7 @@ import {
 import { QuerySupplierReturnDto } from '../dto/query-supplier-return.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -23,11 +24,11 @@ import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-type
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 @Controller('purchases/supplier-returns')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class SupplierReturnsController {
   constructor(private supplierReturnsService: SupplierReturnsService) {}
 
   @Get('sync')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async sync(
     @Query('updatedSince') updatedSince?: string,
@@ -42,18 +43,21 @@ export class SupplierReturnsController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findAll(@Query() query: QuerySupplierReturnDto): Promise<any> {
     return this.supplierReturnsService.findAll(query);
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findOne(@Param('id') id: string): Promise<any> {
     return this.supplierReturnsService.findOne(id);
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @Auditable({ action: AuditAction.CREATE, module: SystemModule.PURCHASES, entityType: 'SupplierReturn' })
   async create(
@@ -64,6 +68,7 @@ export class SupplierReturnsController {
   }
 
   @Post(':id/confirm')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.STATE_CHANGE, module: SystemModule.PURCHASES, entityType: 'SupplierReturn' })
@@ -75,6 +80,7 @@ export class SupplierReturnsController {
   }
 
   @Post(':id/approve')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.STATE_CHANGE, module: SystemModule.PURCHASES, entityType: 'SupplierReturn' })
@@ -85,6 +91,7 @@ export class SupplierReturnsController {
   }
 
   @Post(':id/annul')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.STATE_CHANGE, module: SystemModule.PURCHASES, entityType: 'SupplierReturn' })

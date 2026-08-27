@@ -17,6 +17,7 @@ export interface PurchaseReceptionSyncConfig {
   baseUrl: string;
   httpClient?: SyncHttpClient;
   accessToken?: string;
+  offlineToken?: string;
 }
 
 export const createPurchaseReceptionSyncService = (
@@ -28,6 +29,7 @@ export class PurchaseReceptionSyncService {
   private readonly http: SyncHttpClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly offlineToken?: string;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -36,6 +38,7 @@ export class PurchaseReceptionSyncService {
     this.http = config.httpClient ?? defaultHttpClient;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
+    this.offlineToken = config.offlineToken;
   }
 
   async pullReceptions(): Promise<void> {
@@ -111,8 +114,10 @@ export class PurchaseReceptionSyncService {
   }
 
   private buildAuthHeaders(): Record<string, string> {
-    if (this.accessToken) return { Authorization: `Bearer ${this.accessToken}` };
-    return {};
+    const headers: Record<string, string> = {};
+    if (this.accessToken) headers['Authorization'] = `Bearer ${this.accessToken}`;
+    if (this.offlineToken) headers['X-Offline-Token'] = this.offlineToken;
+    return headers;
   }
 
   private async fetchAll(authHeaders: Record<string, string>): Promise<ReceptionRow[]> {
@@ -129,7 +134,10 @@ export class PurchaseReceptionSyncService {
         all.push(...(res.data ?? []));
         if (!res.hasMore || !res.nextCursor) break;
         cursor = res.nextCursor;
-      } catch {
+      } catch (err: unknown) {
+        if (err instanceof PurchaseReceptionSyncHttpError && (err.statusCode === 401 || err.statusCode === 403)) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/\b401\b|\b403\b|\bUnauthorized\b|\bForbidden\b/i.test(msg)) throw err;
         return this.fetchLegacy(authHeaders);
       }
     }

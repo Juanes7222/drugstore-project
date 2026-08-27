@@ -221,14 +221,12 @@ class RollbackDetectorImpl implements RollbackDetector {
 
   /**
    * Set a one-shot timer to clear the sentinel after 60 seconds of stable
-   * uptime. Only armed in Tauri, where the sentinel outlives the process;
-   * if the app crashes first, the timer never fires and the count stands.
+   * uptime. In Tauri the sentinel outlives the process; if the app crashes
+   * first, the timer never fires and the count stands. In dev (sessionStorage)
+   * we also arm it so the 451-counter spam seen in Vite dev resets after 60s
+   * stable instead of poisoning every reload.
    */
   private scheduleStabilityClear(): void {
-    const isTauriEnv =
-      typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-    if (!isTauriEnv) return;
-
     setTimeout(async () => {
       try {
         await this.markStartupSuccess();

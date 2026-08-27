@@ -135,7 +135,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
     operationalView?.operational.hasDifferences ?? false;
 
   const fiscalClientName =
-    fullData?.buyer.name ?? sale.clientNameSnapshot ?? t("fiscal.client_final");
+    fullData?.buyer?.name ?? sale.clientNameSnapshot ?? t("fiscal.client_final");
 
   const operationalClient = operationalView?.operational.client ?? {
     clientId: sale.clientId,
@@ -144,18 +144,28 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
     identificationNumber: sale.clientIdentificationNumberSnapshot,
   };
 
+  const rawOperationalPayments = operationalView?.operational.payments;
   const operationalPayments =
-    operationalView?.operational.payments ??
-    sale.payments.map((p) => ({
-      paymentMethodId: p.paymentMethodId,
-      paymentMethodName: p.paymentMethodName,
-      amount: p.amount,
-      category: "",
-      transactionReference: p.transactionReference,
-      authorizationCode: p.authorizationCode,
-      cardBrand: p.cardBrand,
-      cardLastFour: p.cardLastFour,
-    }));
+    rawOperationalPayments && rawOperationalPayments.length > 0
+      ? rawOperationalPayments
+      : sale.payments.map((p) => ({
+          paymentMethodId: p.paymentMethodId,
+          paymentMethodName: p.paymentMethodName,
+          amount: p.amount,
+          category: "",
+          transactionReference: p.transactionReference,
+          authorizationCode: p.authorizationCode,
+          cardBrand: p.cardBrand,
+          cardLastFour: p.cardLastFour,
+        }));
+
+  // Contact info: operational overrides, but fallback to fiscal buyer when operational empty
+  const opContact = operationalView?.operational.contactInfo;
+  const displayContact = {
+    email: opContact?.email ?? (fullData as any)?.buyer?.email ?? null,
+    phone: opContact?.phone ?? (fullData as any)?.buyer?.phone ?? null,
+    address: opContact?.address ?? (fullData as any)?.buyer?.address ?? null,
+  };
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -387,8 +397,8 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                     >
                       {fiscalClientName}
                     </p>
-                    {fullData.buyer.identificationType &&
-                      fullData.buyer.identificationNumber && (
+                    {fullData?.buyer?.identificationType &&
+                      fullData?.buyer?.identificationNumber && (
                         <p
                           className="font-data tabular-nums"
                           style={{
@@ -400,7 +410,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           {fullData.buyer.identificationNumber}
                         </p>
                       )}
-                    {fullData.buyer.email && (
+                    {fullData?.buyer?.email && (
                       <p
                         style={{
                           color:
@@ -423,7 +433,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                       className="font-medium"
                       style={{ color: "var(--color-ink)" }}
                     >
-                      {fullData.seller.name}
+                      {fullData?.seller?.name ?? '-'}
                     </p>
                     <p
                       className="font-data tabular-nums"
@@ -432,7 +442,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           "color-mix(in srgb, var(--color-ink) 65%, transparent)",
                       }}
                     >
-                      {t("fiscal.detail_seller_nit")}: {fullData.seller.nit}
+                      {t("fiscal.detail_seller_nit")}: {fullData?.seller?.nit ?? '-'}
                     </p>
                   </div>
                 </InfoCard>
@@ -475,7 +485,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                         </tr>
                       </thead>
                       <tbody>
-                        {fullData.lineItems.map((item) => (
+                        {(fullData?.lineItems ?? []).map((item) => (
                           <tr
                             key={item.productId}
                             style={{
@@ -541,7 +551,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                         className="font-data tabular-nums"
                         style={{ color: "var(--color-ink)" }}
                       >
-                        {formatCurrency(fullData.subtotal)}
+                        {formatCurrency(fullData?.subtotal ?? sale.subtotal)}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -557,7 +567,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                         className="font-data tabular-nums"
                         style={{ color: "var(--color-ink)" }}
                       >
-                        {formatCurrency(fullData.totalDiscount)}
+                        {formatCurrency(fullData?.totalDiscount ?? sale.totalDiscount)}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -573,7 +583,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                         className="font-data tabular-nums"
                         style={{ color: "var(--color-ink)" }}
                       >
-                        {formatCurrency(fullData.totalTax)}
+                        {formatCurrency(fullData?.totalTax ?? sale.totalTax)}
                       </span>
                     </div>
                     <div
@@ -593,7 +603,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                         className="font-data tabular-nums text-price font-bold"
                         style={{ color: "var(--color-ink)" }}
                       >
-                        {formatCurrency(fullData.totalAmount)}
+                        {formatCurrency(fullData?.totalAmount ?? sale.totalAmount)}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -609,7 +619,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                         className="font-data tabular-nums"
                         style={{ color: "var(--color-ink)" }}
                       >
-                        {formatCurrency(fullData.changeAmount)}
+                        {formatCurrency(fullData?.changeAmount ?? sale.changeAmount)}
                       </span>
                     </div>
                   </div>
@@ -704,7 +714,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                   title={t("salesHistory.detail.contact_title")}
                 >
                   <div className="space-y-1 text-caption">
-                    {operationalView.operational.contactInfo.email && (
+                    {displayContact.email && (
                       <div className="flex items-center gap-1.5">
                         <MailIcon
                           className="size-3.5"
@@ -715,11 +725,11 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           aria-hidden="true"
                         />
                         <span style={{ color: "var(--color-ink)" }}>
-                          {operationalView.operational.contactInfo.email}
+                          {displayContact.email}
                         </span>
                       </div>
                     )}
-                    {operationalView.operational.contactInfo.phone && (
+                    {displayContact.phone && (
                       <div className="flex items-center gap-1.5">
                         <PhoneIcon
                           className="size-3.5"
@@ -730,11 +740,11 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           aria-hidden="true"
                         />
                         <span style={{ color: "var(--color-ink)" }}>
-                          {operationalView.operational.contactInfo.phone}
+                          {displayContact.phone}
                         </span>
                       </div>
                     )}
-                    {operationalView.operational.contactInfo.address && (
+                    {displayContact.address && (
                       <div className="flex items-center gap-1.5">
                         <MapPinIcon
                           className="size-3.5"
@@ -745,13 +755,13 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
                           aria-hidden="true"
                         />
                         <span style={{ color: "var(--color-ink)" }}>
-                          {operationalView.operational.contactInfo.address}
+                          {displayContact.address}
                         </span>
                       </div>
                     )}
-                    {!operationalView.operational.contactInfo.email &&
-                      !operationalView.operational.contactInfo.phone &&
-                      !operationalView.operational.contactInfo.address && (
+                    {!displayContact.email &&
+                      !displayContact.phone &&
+                      !displayContact.address && (
                         <p
                           style={{
                             color: "var(--color-ink-muted)",

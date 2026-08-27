@@ -14,6 +14,15 @@ import { NoActiveResolutionForWorkstationException } from '../exceptions/no-acti
 import { NoValidatedInvoiceForCreditNoteException } from '../exceptions/no-validated-invoice-for-credit-note.exception';
 import { ResolutionExhaustedException } from '../exceptions/resolution-exhausted.exception';
 
+/**
+ * POS Invoice hydration expects an Invoice row per sale (fullData, cufeProvisional
+ * etc). The server has no Invoice table — it is local-only (apps/pos-desktop
+ * schema-local). The server's FiscalDocument is the authoritative fiscal record.
+ * This mapping synthesizes an Invoice-like payload from FiscalDocument so a
+ * newly-hydrated workstation can populate its local Invoice table for sales that
+ * were confirmed on another workstation.
+ */
+
 /** Placeholder CUFE used before the actual cryptographic hash is computed. */
 const PLACEHOLDER_CUFE_PREFIX = 'PENDING_';
 
@@ -24,6 +33,211 @@ export class FiscalDocumentsService {
     @InjectQueue('fiscal-documents') private queue: Queue,
     private readonly tenantContext: TenantContextService,
   ) {}
+
+  /**
+   * Sync-pull fiscal documents for POS Invoice hydration.
+   *
+   * Returns FiscalDocuments mapped to an Invoice-like shape with fullData so
+   * the POS can populate its local Invoice table for sales that were confirmed
+   * on another workstation. Walks (updatedAt asc, id asc) — updatedAt captures
+   * both creation and later state transitions (PENDING_GENERATION → VALIDATED)
+   * so incremental pulls with `updatedSince` see retransmitted / validated docs.
+   * For the initial full hydration `updatedSince` is omitted and the full
+   * tenant slice is walked in cursor order.
+   *
+   * Shape: { data, nextCursor, hasMore } — mirrors SalesService.findSync.
+   * Tenant isolation: explicit subscriptionId filter.
+   *
+   * The server has no Invoice table (it is local-only, see
+   * packages/database/prisma/schema-local/models/fiscal.prisma). FiscalDocument
+   * is the source of truth; this method synthesizes the Invoice fields
+   * (invoiceNumber, contingencyNumber, cufeProvisional/Official, fullData, etc.)
+   * from it. If a future migration adds a server-side Invoice, replace this
+   * mapping with a direct Invoice query.
+   */
+  async findSync(input: {
+    updatedSince?: string;
+    cursor?: string | null;
+    limit?: number;
+  }): Promise<{
+    data: unknown[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> {
+    const baseWhere: Prisma.FiscalDocumentWhereInput = {
+      subscriptionId: this.tenantContext.getSubscriptionId(),
+    };
+    if (input.updatedSince) {
+      baseWhere.updatedAt = { gte: new Date(input.updatedSince) };
+    }
+
+    const syncInclude = {
+      allocation: { select: { workstationId: true } },
+      resolution: { select: { prefix: true, resolutionNumber: true } },
+    } satisfies Prisma.FiscalDocumentInclude;
+
+    const page = await paginateWithCursor<
+      unknown,
+      Prisma.FiscalDocumentWhereInput,
+      Prisma.FiscalDocumentOrderByWithRelationInput,
+      Prisma.FiscalDocumentInclude
+    >({
+      model: this.prisma.fiscalDocument,
+      baseWhere,
+      limit: input.limit ?? 200,
+      cursor: input.cursor ?? null,
+      // Uses updatedAt so state transitions (VALIDATED/REJECTED) surface on
+      // the next incremental pull. issueDate is immutable and would miss them.
+      timeField: 'updatedAt',
+      direction: 'asc',
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      include: syncInclude,
+    });
+
+    const data = (page.items as any[]).map((doc) =>
+      this.mapFiscalDocumentToInvoiceSync(doc),
+    );
+
+    return {
+      data,
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
+  }
+
+  private mapFiscalDocumentToInvoiceSync(doc: any): Record<string, unknown> {
+    const workstationId: string | null =
+      doc.allocation?.workstationId ?? null;
+    const invoiceNumber: string = doc.fullNumber;
+    const contingencyNumber: string | null =
+      doc.fiscalState === 'CONTINGENCY' ? doc.fullNumber : null;
+    const status = this.mapFiscalStateToInvoiceStatus(doc.fiscalState);
+    const cufeProvisional: string = doc.cufeCude;
+    const cufeOfficial: string | null =
+      doc.fiscalState === 'VALIDATED' ? doc.cufeCude : null;
+
+    // Synthesize fullData: the POS Invoice model stores a JSON blob with the
+    // complete fiscal view (lineItems, taxSummaries, payments, totals, seller,
+    // buyer). The server's FiscalDocument stores only scalar totals and UBL XML.
+    // This synthetic fullData carries the scalar totals and identifiers so a
+    // hydrator can populate the local Invoice table; lineItems/taxSummaries are
+    // left empty — the POS already hydrated the Sale + items/payments via
+    // /sales-pos/sync and can rebuild them if needed. Callers that need the
+    // full DIAN XML should read fiscalXml / signedXml / xmlPayload directly.
+    const fullData: Record<string, unknown> = {
+      documentType: doc.documentType,
+      invoiceType: doc.documentType,
+      fiscalState: doc.fiscalState,
+      status,
+      invoiceNumber,
+      contingencyNumber,
+      fullNumber: doc.fullNumber,
+      consecutiveNumber: doc.consecutiveNumber,
+      saleId: doc.saleId,
+      purchaseReceptionId: doc.purchaseReceptionId ?? null,
+      clientReturnId: doc.clientReturnId ?? null,
+      workstationId,
+      cufeCude: doc.cufeCude,
+      cufeProvisional,
+      cufeOfficial,
+      issuerNitSnapshot: doc.issuerNitSnapshot,
+      receiverNitSnapshot: doc.receiverNitSnapshot ?? null,
+      receiverNameSnapshot: doc.receiverNameSnapshot ?? null,
+      subtotal: doc.subtotal?.toString?.() ?? String(doc.subtotal),
+      totalTax: doc.totalTax?.toString?.() ?? String(doc.totalTax),
+      totalAmount: doc.totalAmount?.toString?.() ?? String(doc.totalAmount),
+      issueDate: doc.issueDate?.toISOString?.() ?? doc.issueDate,
+      issuedAt: doc.issueDate?.toISOString?.() ?? doc.issueDate,
+      updatedAt: doc.updatedAt?.toISOString?.() ?? doc.updatedAt,
+      createdAt: doc.createdAt?.toISOString?.() ?? doc.createdAt,
+      xmlPayload: doc.xmlPayload ?? null,
+      signedXml: doc.signedXml ?? null,
+      fiscalXml: doc.signedXml ?? doc.xmlPayload ?? null,
+      resolutionId: doc.resolutionId,
+      allocationId: doc.allocationId ?? null,
+      referenceDocumentId: doc.referenceDocumentId ?? null,
+      providerType: doc.providerType ?? null,
+      providerTrackId: doc.providerTrackId ?? null,
+      // Minimal InvoiceFullData-shaped stubs; POS hydrators that read
+      // fullData.lineItems should handle empty arrays gracefully.
+      lineItems: [],
+      taxSummaries: [],
+      payments: [],
+      totals: {
+        subtotal: doc.subtotal?.toString?.() ?? String(doc.subtotal),
+        totalTax: doc.totalTax?.toString?.() ?? String(doc.totalTax),
+        totalAmount: doc.totalAmount?.toString?.() ?? String(doc.totalAmount),
+      },
+      currency: 'COP',
+    };
+
+    return {
+      id: doc.id,
+      subscriptionId: doc.subscriptionId,
+      saleId: doc.saleId,
+      purchaseReceptionId: doc.purchaseReceptionId ?? null,
+      clientReturnId: doc.clientReturnId ?? null,
+      workstationId,
+      documentType: doc.documentType,
+      invoiceType: doc.documentType,
+      fiscalState: doc.fiscalState,
+      status,
+      invoiceNumber,
+      fullNumber: doc.fullNumber,
+      consecutiveNumber: doc.consecutiveNumber,
+      contingencyNumber,
+      cufeProvisional,
+      cufeOfficial,
+      cufeCude: doc.cufeCude,
+      issueDate: doc.issueDate,
+      issuedAt: doc.issueDate,
+      transmittedAt:
+        doc.fiscalState === 'VALIDATED' ? doc.updatedAt : null,
+      expiresAt: null,
+      updatedAt: doc.updatedAt,
+      createdAt: doc.createdAt,
+      subtotal: doc.subtotal,
+      totalTax: doc.totalTax,
+      totalAmount: doc.totalAmount,
+      issuerNitSnapshot: doc.issuerNitSnapshot,
+      receiverNitSnapshot: doc.receiverNitSnapshot ?? null,
+      receiverNameSnapshot: doc.receiverNameSnapshot ?? null,
+      resolutionId: doc.resolutionId,
+      allocationId: doc.allocationId ?? null,
+      referenceDocumentId: doc.referenceDocumentId ?? null,
+      providerType: doc.providerType ?? null,
+      providerTrackId: doc.providerTrackId ?? null,
+      xmlPayload: doc.xmlPayload ?? null,
+      signedXml: doc.signedXml ?? null,
+      fiscalXml: doc.signedXml ?? doc.xmlPayload ?? null,
+      fullData,
+      // Pass through relations for callers that prefer structured values.
+      allocation: doc.allocation ?? null,
+      resolution: doc.resolution ?? null,
+    };
+  }
+
+  private mapFiscalStateToInvoiceStatus(state: string): string {
+    switch (state) {
+      case 'VALIDATED':
+        return 'TRANSMITTED_AUTHORIZED';
+      case 'REJECTED':
+        return 'TRANSMITTED_REJECTED';
+      case 'ANNULLED':
+        return 'CANCELLED';
+      case 'CONTINGENCY':
+      case 'PENDING_GENERATION':
+      case 'GENERATION_ERROR':
+      case 'PENDING_SIGNATURE':
+      case 'SIGNATURE_ERROR':
+      case 'PENDING_TRANSMISSION':
+      case 'IN_TRANSMISSION':
+      case 'PENDING_RESPONSE':
+        return 'CONTINGENCY_PENDING_TRANSMISSION';
+      default:
+        return 'CONTINGENCY_PENDING_TRANSMISSION';
+    }
+  }
 
   async findAll(query: QueryFiscalDocumentsDto): Promise<any> {
     const where: any = {};

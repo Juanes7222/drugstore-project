@@ -63,6 +63,41 @@ vi.mock("../cash-shift/open-shift-pull.service", () => ({
   })),
 }));
 
+vi.mock("../purchases/supplier-sync.service", () => ({
+  createSupplierSyncService: vi.fn(() => ({
+    fetchSuppliers: vi.fn().mockResolvedValue([]),
+    applySuppliers: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
+vi.mock("../purchases/purchase-order-sync.service", () => ({
+  createPurchaseOrderSyncService: vi.fn(() => ({
+    fetchPurchaseOrders: vi.fn().mockResolvedValue([]),
+    applyPurchaseOrders: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
+vi.mock("../purchases/purchase-reception-sync.service", () => ({
+  createPurchaseReceptionSyncService: vi.fn(() => ({
+    fetchReceptions: vi.fn().mockResolvedValue([]),
+    applyReceptions: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
+vi.mock("../purchases/supplier-return-sync.service", () => ({
+  createSupplierReturnSyncService: vi.fn(() => ({
+    fetchSupplierReturns: vi.fn().mockResolvedValue([]),
+    applySupplierReturns: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
+vi.mock("../sales-pos/sales-sync.service", () => ({
+  createSalesSyncService: vi.fn(() => ({
+    fetchSales: vi.fn().mockResolvedValue([]),
+    applySales: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+
 vi.mock("./sync-push.service", () => ({
   createSyncPushService: vi.fn(() => ({
     preparePush: vi.fn().mockResolvedValue({ entries: [], operations: [], headers: {} }),
@@ -161,22 +196,22 @@ describe("SyncScheduler pull suppression", () => {
   });
 
   describe("403 errors suppress the failing pull", () => {
-    it("skips lotSync.fetchLots on the next cycle after a HttpStatusException 403 and logs once", async () => {
-      const lotSync = vi.mocked(createLotSyncService).mock.results[0].value as any;
-      lotSync.fetchLots.mockRejectedValueOnce(
+    it("skips catalogSync.fetchCatalog on the next cycle after a HttpStatusException 403 and logs once", async () => {
+      const catalogSync = vi.mocked(createCatalogSyncService).mock.results[0].value as any;
+      catalogSync.fetchCatalog.mockRejectedValueOnce(
         new HttpStatusException(403, null),
       );
 
       await scheduler.syncNow();
 
-      expect(lotSync.fetchLots).toHaveBeenCalledTimes(1);
+      expect(catalogSync.fetchCatalog).toHaveBeenCalledTimes(1);
       expect(consoleInfoSpy).toHaveBeenCalledWith(
-        "[SyncScheduler] lots pull forbidden for this role — suppressed until next login",
+        "[SyncScheduler] catalog pull forbidden for this role — suppressed until next login",
       );
 
       await scheduler.syncNow();
 
-      expect(lotSync.fetchLots).toHaveBeenCalledTimes(1);
+      expect(catalogSync.fetchCatalog).toHaveBeenCalledTimes(1);
     });
 
     it("suppresses a pull whose error only carries 403 in its message text", async () => {
@@ -201,38 +236,40 @@ describe("SyncScheduler pull suppression", () => {
     });
 
     it("keeps running sibling steps while another pull is suppressed", async () => {
-      const lotSync = vi.mocked(createLotSyncService).mock.results[0].value as any;
       const clientPull = vi.mocked(createClientPullService).mock.results[0]
         .value as any;
       const catalogSync = vi.mocked(createCatalogSyncService).mock.results[0]
         .value as any;
-      lotSync.fetchLots.mockRejectedValue(new HttpStatusException(403, null));
+      catalogSync.fetchCatalog.mockRejectedValue(new HttpStatusException(403, null));
 
       await scheduler.syncNow();
       await scheduler.syncNow();
 
-      // lots suppressed after cycle 1...
-      expect(lotSync.fetchLots).toHaveBeenCalledTimes(1);
+      // catalog suppressed after cycle 1...
+      expect(catalogSync.fetchCatalog).toHaveBeenCalledTimes(1);
       // ...but unrelated pulls still run every cycle.
-      expect(catalogSync.fetchCatalog).toHaveBeenCalledTimes(2);
       expect(clientPull.fetchClients).toHaveBeenCalledTimes(2);
     });
   });
 
   describe("non-403 errors are transient", () => {
-    it("warns and retries lotSync.fetchLots on every cycle", async () => {
-      const lotSync = vi.mocked(createLotSyncService).mock.results[0].value as any;
-      lotSync.fetchLots.mockRejectedValue(new Error("connection reset"));
+    it("warns and retries catalogSync.fetchCatalog on every cycle", async () => {
+      const catalogSync = vi.mocked(createCatalogSyncService).mock.results[0].value as any;
+      catalogSync.fetchCatalog.mockRejectedValue(new Error("connection reset"));
 
       await scheduler.syncNow();
       await scheduler.syncNow();
 
-      expect(lotSync.fetchLots).toHaveBeenCalledTimes(2);
+      expect(catalogSync.fetchCatalog).toHaveBeenCalledTimes(2);
       expect(consoleWarnSpy).toHaveBeenCalledWith(
-        "[SyncScheduler] lot pull failed:",
+        "[SyncScheduler] catalog pull failed:",
         "connection reset",
       );
-      expect(consoleWarnSpy).toHaveBeenCalledTimes(2);
+      // Only the catalog pull should warn; lots now warns separately with a different prefix if it fails
+      const catalogWarns = consoleWarnSpy.mock.calls.filter(
+        ([msg]: any) => typeof msg === "string" && msg.includes("catalog pull failed"),
+      );
+      expect(catalogWarns).toHaveLength(2);
     });
 
     it("does not suppress on an HTTP 500 — the status must be exactly 403", async () => {
@@ -251,27 +288,27 @@ describe("SyncScheduler pull suppression", () => {
 
   describe("updateAccessToken clears the suppression", () => {
     it("re-enables a suppressed pull after a new login token arrives", async () => {
-      const lotSync1 = vi.mocked(createLotSyncService).mock.results[0].value as any;
-      lotSync1.fetchLots.mockRejectedValueOnce(
+      const catalogSync1 = vi.mocked(createCatalogSyncService).mock.results[0].value as any;
+      catalogSync1.fetchCatalog.mockRejectedValueOnce(
         new HttpStatusException(403, null),
       );
       await scheduler.syncNow();
-      expect(lotSync1.fetchLots).toHaveBeenCalledTimes(1);
+      expect(catalogSync1.fetchCatalog).toHaveBeenCalledTimes(1);
 
       await scheduler.syncNow();
-      expect(lotSync1.fetchLots).toHaveBeenCalledTimes(1);
+      expect(catalogSync1.fetchCatalog).toHaveBeenCalledTimes(1);
 
-      // Fresh login — the new user may be allowed to pull lots again.
+      // Fresh login — the new user may be allowed to pull catalog again.
       scheduler.updateAccessToken("token-v2");
-      // updateAccessToken recreates sub-services; grab the new lotSync instance
-      const lotSync2 = vi.mocked(createLotSyncService).mock.results[1].value as any;
-      expect(lotSync2).toBeDefined();
+      // updateAccessToken recreates sub-services; grab the new catalogSync instance
+      const catalogSync2 = vi.mocked(createCatalogSyncService).mock.results[1].value as any;
+      expect(catalogSync2).toBeDefined();
 
       await scheduler.syncNow();
 
       // old instance stays at 1, new instance called once
-      expect(lotSync1.fetchLots).toHaveBeenCalledTimes(1);
-      expect(lotSync2.fetchLots).toHaveBeenCalledTimes(1);
+      expect(catalogSync1.fetchCatalog).toHaveBeenCalledTimes(1);
+      expect(catalogSync2.fetchCatalog).toHaveBeenCalledTimes(1);
     });
   });
 });
