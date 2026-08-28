@@ -173,17 +173,26 @@ export class OpenShiftPullService {
         localOpen.workstationId === this.context.workstationId;
 
       if (isLocallyOwned) {
-        // Real local open whose SHIFT_OPEN push has not landed yet. Keep
-        // it — the server will converge to our id after the push.
-        return {
-          status: 'local-open-conflict',
-          localShiftId: localOpen.id,
-          serverShiftId: row.id,
-        };
+        // Check if the local shift's SHIFT_OPEN is already doomed (PERMANENT_FAILURE
+        // or exhausted). A doomed push will never land, so keeping the local
+        // open forever would split-brain the store (local sells into 9fa..., server
+        // into e45...). In that case, retire the local and adopt the server's
+        // authoritative row — same path as a foreign stale mirror.
+        const doomed = await this.isLocalShiftDoomed(localOpen.id);
+        if (!doomed) {
+          // Real local open whose SHIFT_OPEN push has not landed yet. Keep
+          // it — the server will converge to our id after the push.
+          return {
+            status: 'local-open-conflict',
+            localShiftId: localOpen.id,
+            serverShiftId: row.id,
+          };
+        }
+        // Local shift will never land — fall through to supersede logic below.
       }
 
-      // Foreign stale mirror — the server already moved on. Retire it
-      // without fabricating totals, then adopt the new row.
+      // Foreign stale mirror OR locally-owned but doomed — the server already
+      // moved on. Retire it without fabricating totals, then adopt the new row.
       await this.prisma.cashShift.update({
         where: { id: localOpen.id },
         data: {
@@ -236,6 +245,42 @@ export class OpenShiftPullService {
           ...data,
         },
       });
+    }
+  }
+
+  /**
+   * Whether the local shift's SHIFT_OPEN will never land on the server.
+   *
+   * A locally-owned shift with a PENDING/FAILED (retryable) entry is still
+   * in-flight — keep it. If the entry is PERMANENT_FAILURE, or there is no
+   * entry at all (legacy bootstrap shift that never had a sync row), the push
+   * is doomed and the local row should be retired in favor of the server's
+   * authoritative OPEN.
+   */
+  private async isLocalShiftDoomed(shiftId: string): Promise<boolean> {
+    try {
+      const entries = await this.prisma.syncQueue.findMany({
+        where: { operationType: 'SHIFT_OPEN' },
+        select: { payload: true, status: true, retryCount: true },
+      });
+      let matched: { status: string; retryCount: number } | null = null;
+      for (const e of entries as unknown as Array<{ payload: string; status: string; retryCount: number }>) {
+        try {
+          const p = JSON.parse(e.payload) as { shiftId?: string };
+          if (p.shiftId === shiftId) {
+            matched = e;
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+      if (!matched) return true; // No sync row → legacy bootstrap, doomed in global model
+      if (matched.status === 'PERMANENT_FAILURE') return true;
+      if (matched.status === 'FAILED' && matched.retryCount >= 10) return true;
+      return false;
+    } catch {
+      return false; // On query failure, be conservative and keep local
     }
   }
 
