@@ -1,359 +1,487 @@
 /**
- * DianHabilitationChecklist — the administrative file (expediente) of the
- * six mandatory, sequential DIAN electronic-invoicing habilitation steps.
+ * DianHabilitationChecklist — expediente DIAN rediseñado.
  *
- * Visual grammar: the RUT checkbox form this product parses. Numbering
- * encodes legal order; the rotated seal in the header derives OPERANDO /
- * EN TRÁMITE from the saved resolution. Every step state is DERIVED, never
- * hand-checked: the certificate step reads the active-certificate signal,
- * steps 2–5 are proven en bloc by the existence of the numbering
- * resolution, and the numbering-range step is derived like today.
- * Reads useCompanySetup() itself — no props.
+ * 2026-08-27 redesign: de lista cuadrada genérica a pipeline de trámite
+ * con progreso visible, iconografía por paso y tarjetas densas. Mantiene
+ * la gramática legal (6 pasos en orden, expediente con línea vertical),
+ * pero con pulido Emil: stagger sutil, seal con motion y progreso animado.
+ *
+ * Todo estado sigue siendo DERIVADO — ningún checkbox manual.
+ * Lee useCompanySetup() directo, sin props.
  *
  * @category Component
  */
-import { type FC, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { CheckIcon, MailIcon } from '@/components/ui/icons';
-import { useCompanySetup } from '@/hooks/use-company-setup';
+import { type FC, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { motion } from "motion/react";
+import {
+  CheckIcon,
+  MailIcon,
+  KeyRoundIcon,
+  ClipboardListIcon,
+  Settings2Icon,
+  FileTextIcon,
+  CalendarDaysIcon,
+  ReceiptIcon,
+} from "@/components/ui/icons";
+import type { IconComponent } from "@/components/ui/icons";
+import { useCompanySetup } from "@/hooks/use-company-setup";
 
-/** Official DIAN registration & habilitación instructive (footer link). */
+/** Official DIAN instructive. */
 const OFFICIAL_GUIDE_URL =
-  'https://micrositios.dian.gov.co/sistema-de-facturacion-electronica/instructivo-de-registro-y-habilitacion-en-factura-electronica-dian/';
+  "https://micrositios.dian.gov.co/sistema-de-facturacion-electronica/instructivo-de-registro-y-habilitacion-en-factura-electronica-dian/";
 
-/** Step keys mapping to i18n copy — order is the DIAN legal order. */
-type StepKey = 'certificado' | 'registro' | 'modo' | 'pruebas' | 'fecha';
-
-type Responsibility = 'you' | 'assisted' | 'software';
-
-interface StepLink {
-  href: string;
-}
+type StepKey = "certificado" | "registro" | "modo" | "pruebas" | "fecha";
+type Responsibility = "you" | "assisted" | "software";
 
 interface StepDefinition {
   key: StepKey;
   responsibility: Responsibility;
-  link?: StepLink;
+  Icon: IconComponent;
+  href?: string;
 }
 
 const HABILITATION_STEPS: readonly StepDefinition[] = [
   {
-    key: 'certificado',
-    responsibility: 'you',
-    link: {
-      href: 'https://micrositios.dian.gov.co/sistema-de-facturacion-electronica/',
-    },
+    key: "certificado",
+    responsibility: "you",
+    Icon: KeyRoundIcon,
+    href: "https://micrositios.dian.gov.co/sistema-de-facturacion-electronica/",
   },
   {
-    key: 'registro',
-    responsibility: 'you',
-    link: { href: 'https://catalogo-vpfe.dian.gov.co/' },
+    key: "registro",
+    responsibility: "you",
+    Icon: ClipboardListIcon,
+    href: "https://catalogo-vpfe.dian.gov.co/",
   },
-  { key: 'modo', responsibility: 'you' },
-  { key: 'pruebas', responsibility: 'assisted' },
+  { key: "modo", responsibility: "you", Icon: Settings2Icon },
+  { key: "pruebas", responsibility: "assisted", Icon: FileTextIcon },
   {
-    key: 'fecha',
-    responsibility: 'you',
-    link: { href: 'https://muisca.dian.gov.co/' },
+    key: "fecha",
+    responsibility: "you",
+    Icon: CalendarDaysIcon,
+    href: "https://muisca.dian.gov.co/",
   },
 ];
 
-/** Responsibility chip palette — outline chips, no fills. */
-const RESPONSIBILITY_CHIP_CLASS: Record<Responsibility, string> = {
-  you: 'border-ink/35 text-ink',
-  assisted: 'border-pharma/40 text-pharma',
-  software: 'border-sync/40 text-sync',
+const RESPONSIBILITY_META: Record<
+  Responsibility,
+  { labelKey: string; className: string }
+> = {
+  you: {
+    labelKey: "dian_habilitation.responsibility.you",
+    className:
+      "border-ink/15 bg-ink/[0.06] text-ink",
+  },
+  assisted: {
+    labelKey: "dian_habilitation.responsibility.assisted",
+    className:
+      "border-pharma/20 bg-pharma/[0.08] text-pharma",
+  },
+  software: {
+    labelKey: "dian_habilitation.responsibility.software",
+    className:
+      "border-sync/20 bg-sync/[0.08] text-sync",
+  },
+};
+
+// Motion — Emil: corta, invisible
+const containerVariants = {
+  hidden: {},
+  show: {
+    transition: { staggerChildren: 0.06, delayChildren: 0.08 },
+  },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 6 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.26, ease: [0.16, 1, 0.3, 1] as const },
+  },
 };
 
 export const DianHabilitationChecklist: FC = () => {
   const { t } = useTranslation();
   const { draft, certificateActive } = useCompanySetup();
 
-  // The saved numbering resolution proves every pre-range process step
-  // (registration, mode, test set, start date) happened.
   const hasResolution = Boolean(draft?.resolutionNumber);
-
-  // Certificate step is its own signal: an active signing certificate on
-  // the server. Null (unknown) counts as pending — never as done.
   const certificateDone = certificateActive === true;
-
   const isOperating = hasResolution;
-  const headingId = 'dian-habilitation-heading';
 
-  // One-shot stamp animation: only on the transition into OPERANDO, never
-  // on mount when already operating, never on hover/scroll. The keyed span
-  // remounts to replay it; reduced-motion collapses it globally.
+  // progreso derivado — certificado + 4 pasos en bloque + rango
+  const stepsDoneCount =
+    (certificateDone ? 1 : 0) + (hasResolution ? 5 : 0);
+  const totalSteps = 6;
+  const progress = (stepsDoneCount / totalSteps) * 100;
+
+  const headingId = "dian-habilitation-heading";
+
   const [stampNonce, setStampNonce] = useState(0);
   const wasOperatingRef = useRef(isOperating);
   useEffect(() => {
     if (!wasOperatingRef.current && isOperating) {
-      setStampNonce((nonce) => nonce + 1);
+      setStampNonce((n) => n + 1);
     }
     wasOperatingRef.current = isOperating;
   }, [isOperating]);
 
   return (
-    <section
+    <motion.section
       aria-labelledby={headingId}
-      className="rounded-sm border border-border bg-panel p-pos-xl"
+      initial="hidden"
+      animate="show"
+      variants={containerVariants}
+      className="overflow-hidden rounded-md border border-border bg-panel"
+      style={{ boxShadow: "var(--shadow-pos-panel)" }}
     >
-      <header className="flex flex-wrap items-start justify-between gap-pos-lg">
-        <div className="min-w-0">
-          <h3 id={headingId} className="text-heading font-semibold text-ink">
-            {t('dian_habilitation.title')}
+      {/* hairline top — mismo lenguaje que expediente empresa */}
+      <div className="h-[2px] w-full bg-ink/10" aria-hidden="true">
+        <motion.div
+          className="h-full bg-pharma"
+          initial={{ width: 0 }}
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        />
+      </div>
+
+      {/* header — compacto */}
+      <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-5">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted">
+            Expediente DIAN · {stepsDoneCount}/{totalSteps} ·{" "}
+            {isOperating
+              ? t("dian_habilitation.stamp_operating")
+              : t("dian_habilitation.stamp_in_progress")}
+          </p>
+          <h3
+            id={headingId}
+            className="mt-1 text-[14px] font-bold tracking-tight text-ink"
+          >
+            {t("dian_habilitation.title")}
           </h3>
-          <p className="mt-pos-xs font-data text-body-sm text-ink-muted">
-            {draft?.nit
-              ? t('dian_habilitation.subtitle_nit', { nit: draft.nit })
-              : t('dian_habilitation.subtitle_no_nit')}
+          <p className="mt-1 flex flex-wrap items-center gap-2 font-data text-[11px] tabular-nums text-ink-muted">
+            <span>
+              {draft?.nit
+                ? t("dian_habilitation.subtitle_nit", { nit: draft.nit })
+                : t("dian_habilitation.subtitle_no_nit")}
+            </span>
+            <span
+              aria-hidden="true"
+              className="hidden h-3 w-px bg-border sm:block"
+            />
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface-variant px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-ink-muted">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{
+                  backgroundColor: isOperating
+                    ? "var(--color-pharma)"
+                    : "var(--color-sync)",
+                }}
+                aria-hidden="true"
+              />
+              {stepsDoneCount === totalSteps
+                ? "Listo para facturar"
+                : `${totalSteps - stepsDoneCount} pendientes`}
+            </span>
           </p>
         </div>
 
-        {/* The seal — double frame (outline + inner ring), rotated like a
-            stamped administrative document. */}
-        <div
+        {/* seal — rotado, doble marco, como expediente */}
+        <motion.div
           role="status"
           aria-label={
             isOperating
-              ? t('dian_habilitation.stamp_operating')
-              : t('dian_habilitation.stamp_in_progress')
+              ? t("dian_habilitation.stamp_operating")
+              : t("dian_habilitation.stamp_in_progress")
           }
-          className="-rotate-4 shrink-0 rounded-sm border p-[3px]"
+          className="-rotate-[3deg] shrink-0 rounded-sm border p-[3px]"
           style={{
             borderColor: isOperating
-              ? 'var(--color-pharma)'
-              : 'color-mix(in srgb, var(--color-urgency) 70%, var(--color-ink))',
+              ? "var(--color-pharma)"
+              : "color-mix(in srgb, var(--color-urgency) 68%, var(--color-ink))",
             backgroundColor: isOperating
-              ? 'var(--color-success-container)'
-              : 'var(--color-urgency-surface)',
+              ? "var(--color-success-container)"
+              : "var(--color-urgency-surface)",
           }}
+          initial={{ scale: 0.98, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
         >
           <span
             key={stampNonce}
-            className={`block whitespace-nowrap rounded-sm border px-pos-lg py-pos-sm text-caption font-semibold uppercase tracking-widest ${
-              stampNonce > 0 ? 'animate-dian-stamp' : ''
+            className={`block whitespace-nowrap rounded-sm border px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.14em] ${
+              stampNonce > 0 ? "animate-dian-stamp" : ""
             }`}
             style={{
               borderColor: isOperating
-                ? 'var(--color-pharma)'
-                : 'color-mix(in srgb, var(--color-urgency) 70%, var(--color-ink))',
+                ? "var(--color-pharma)"
+                : "color-mix(in srgb, var(--color-urgency) 68%, var(--color-ink))",
               color: isOperating
-                ? 'var(--color-pharma)'
-                : 'color-mix(in srgb, var(--color-urgency) 70%, var(--color-ink))',
+                ? "var(--color-pharma)"
+                : "color-mix(in srgb, var(--color-urgency) 68%, var(--color-ink))",
             }}
           >
             {isOperating
-              ? t('dian_habilitation.stamp_operating')
-              : t('dian_habilitation.stamp_in_progress')}
+              ? t("dian_habilitation.stamp_operating")
+              : t("dian_habilitation.stamp_in_progress")}
           </span>
-        </div>
-      </header>
+        </motion.div>
+      </div>
 
-      {/* Expediente — continuous left line connecting square casillas. */}
+      {/* steps — pipeline */}
       <ol
-        aria-label={t('dian_habilitation.steps_aria')}
-        className="relative mt-pos-xl"
+        aria-label={t("dian_habilitation.steps_aria")}
+        className="relative mx-4 border-t border-border sm:mx-5"
       >
+        {/* línea vertical — fondo + fill animado */}
         <span
           aria-hidden="true"
-          className="absolute bottom-[26px] left-[13px] top-[26px] w-[2px]"
-          style={{
-            backgroundColor:
-              'color-mix(in srgb, var(--color-ink) 15%, transparent)',
+          className="absolute bottom-6 left-[15px] top-3 w-px bg-border"
+        />
+        <motion.span
+          aria-hidden="true"
+          className="absolute left-[15px] top-3 w-px bg-pharma"
+          initial={{ height: 0 }}
+          animate={{
+            height: `${(stepsDoneCount / totalSteps) * 100}%`,
           }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          style={{ maxHeight: "calc(100% - 24px)" }}
         />
 
         {HABILITATION_STEPS.map((step, index) => {
           const done =
-            step.key === 'certificado'
-              ? certificateDone
-              : hasResolution;
-          const chipClass = RESPONSIBILITY_CHIP_CLASS[step.responsibility];
-          const stepTitle = t(`dian_habilitation.steps.${step.key}.title`);
+            step.key === "certificado" ? certificateDone : hasResolution;
+          const StepIcon = step.Icon;
+          const resp = RESPONSIBILITY_META[step.responsibility];
+          const title = t(`dian_habilitation.steps.${step.key}.title`);
+          const desc = t(`dian_habilitation.steps.${step.key}.description`);
 
           return (
-            <li
+            <motion.li
               key={step.key}
-              className="relative flex gap-pos-lg py-pos-md pl-1"
+              variants={itemVariants}
+              className="relative flex gap-3 py-3.5"
             >
-              {/* Square casilla node — opaque so the connector reads as
-                  passing behind it. */}
+              {/* nodo — circular, no cuadrado */}
               <div
                 aria-hidden="true"
-                className="relative z-10 mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center border-2"
+                className="relative z-10 mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 bg-panel shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
                 style={{
-                  backgroundColor: done
-                    ? 'var(--color-pharma)'
-                    : 'var(--color-panel)',
                   borderColor: done
-                    ? 'var(--color-pharma)'
-                    : 'var(--color-ink)',
+                    ? "var(--color-pharma)"
+                    : "color-mix(in srgb, var(--color-ink) 18%, transparent)",
+                  backgroundColor: done
+                    ? "var(--color-pharma)"
+                    : "var(--color-panel)",
+                  color: done ? "white" : "var(--color-ink)",
                 }}
               >
                 {done ? (
-                  <CheckIcon size={14} strokeWidth={3} className="text-white" />
+                  <CheckIcon size={14} strokeWidth={2.7} />
                 ) : (
-                  <span className="font-data text-body-sm font-bold leading-none text-ink">
+                  <span className="font-data text-[11px] font-bold leading-none tabular-nums">
                     {index + 1}
                   </span>
                 )}
               </div>
 
-              {/* Informative step content — status is text, not a control. */}
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-x-pos-md gap-y-pos-xs">
-                  <h4
-                    className={`text-ui font-semibold uppercase tracking-wide ${
-                      done ? 'text-pharma' : 'text-ink'
-                    }`}
-                  >
-                    {index + 1}. {stepTitle}
-                  </h4>
+              {/* card */}
+              <div
+                className={`min-w-0 flex-1 rounded-md border px-3 py-2.5 transition-colors ${
+                  done
+                    ? "border-pharma/15 bg-success-container/35"
+                    : "border-border bg-surface-variant/30 hover:border-border hover:bg-surface-variant/60"
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span
+                      className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border ${
+                        done
+                          ? "border-pharma/20 bg-pharma text-white"
+                          : "border-ink/10 bg-panel text-ink-muted"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      <StepIcon size={13} strokeWidth={1.7} />
+                    </span>
+                    <div className="min-w-0">
+                      <h4
+                        className={`text-[12px] font-bold uppercase tracking-wide leading-tight ${
+                          done ? "text-pharma" : "text-ink"
+                        }`}
+                      >
+                        {index + 1}. {title}
+                      </h4>
+                      <p className="mt-1 max-w-prose text-[12px] leading-relaxed text-ink-muted">
+                        {desc}
+                      </p>
+                    </div>
+                  </div>
                   <span
-                    className={`inline-flex shrink-0 items-center rounded-sm border px-pos-sm py-px text-caption font-semibold uppercase tracking-wider ${chipClass}`}
+                    className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${resp.className}`}
                   >
-                    {t(
-                      `dian_habilitation.responsibility.${step.responsibility}`,
-                    )}
+                    {t(resp.labelKey)}
                   </span>
                 </div>
 
-                <p className="mt-pos-xs max-w-prose text-body-sm text-ink-muted">
-                  {t(`dian_habilitation.steps.${step.key}.description`)}
-                </p>
-
-                {/* Screen-reader status — done/pending must not rely on
-                    the casilla color alone. */}
                 <span className="sr-only">
                   {done
-                    ? t('dian_habilitation.status_done')
-                    : t('dian_habilitation.status_pending')}
+                    ? t("dian_habilitation.status_done")
+                    : t("dian_habilitation.status_pending")}
                 </span>
 
-                {!done && step.key === 'certificado' && (
-                  <p className="mt-pos-sm flex max-w-prose items-start gap-pos-xs text-body-sm text-sync">
+                {!done && step.key === "certificado" && (
+                  <p className="mt-2 flex max-w-prose items-start gap-1.5 rounded-sm bg-sync/[0.08] px-2 py-1.5 text-[11px] leading-snug text-sync">
                     <span
                       aria-hidden="true"
-                      className="mt-[7px] h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: 'var(--color-sync)' }}
+                      className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-sync"
                     />
-                    {t('dian_habilitation.steps.certificado.pending_hint')}
+                    {t("dian_habilitation.steps.certificado.pending_hint")}
                   </p>
                 )}
 
-                {step.link && (
+                {step.href && (
                   <a
-                    href={step.link.href}
+                    href={step.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="mt-pos-sm inline-flex items-center gap-px text-body-sm font-medium underline decoration-border underline-offset-2 transition-colors hover:text-pharma focus-visible:text-pharma"
+                    className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-pharma underline decoration-pharma/25 underline-offset-2 transition-colors hover:text-pharma hover:decoration-pharma focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
                   >
                     {t(`dian_habilitation.steps.${step.key}.link`)}
-                    <span aria-hidden="true" className="ml-pos-xs">
+                    <span aria-hidden="true" className="text-[11px] leading-none">
                       ↗
                     </span>
                   </a>
                 )}
               </div>
-            </li>
+            </motion.li>
           );
         })}
 
-        {/* Step 6 — rango de numeración: derived state, like every step. */}
-        <li className="relative flex gap-pos-lg py-pos-md pl-1">
+        {/* Paso 6 — rango */}
+        <motion.li variants={itemVariants} className="relative flex gap-3 py-3.5">
           <div
             aria-hidden="true"
-            className="relative z-10 mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center border-2 bg-panel"
+            className="relative z-10 mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 bg-panel shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
             style={{
               borderColor: isOperating
-                ? 'var(--color-pharma)'
-                : 'var(--color-ink)',
+                ? "var(--color-pharma)"
+                : "color-mix(in srgb, var(--color-ink) 18%, transparent)",
+              backgroundColor: isOperating
+                ? "var(--color-pharma)"
+                : "var(--color-panel)",
+              color: isOperating ? "white" : "var(--color-ink)",
             }}
           >
-            <span
-              className={`font-data text-body-sm font-bold leading-none ${
-                isOperating ? 'text-pharma' : 'text-ink'
-              }`}
-            >
-              6
-            </span>
+            {isOperating ? (
+              <CheckIcon size={14} strokeWidth={2.7} />
+            ) : (
+              <span className="font-data text-[11px] font-bold leading-none tabular-nums">
+                6
+              </span>
+            )}
           </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline gap-x-pos-md gap-y-pos-xs">
-              <h4
-                className={`text-ui font-semibold uppercase tracking-wide ${
-                  isOperating ? 'text-pharma' : 'text-ink'
-                }`}
-              >
-                {t('dian_habilitation.steps.rango.title')}
-              </h4>
+          <div
+            className={`min-w-0 flex-1 rounded-md border px-3 py-2.5 ${
+              isOperating
+                ? "border-pharma/15 bg-success-container/35"
+                : "border-border bg-surface-variant/30"
+            }`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="flex min-w-0 items-start gap-2">
+                <span
+                  className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border ${
+                    isOperating
+                      ? "border-pharma/20 bg-pharma text-white"
+                      : "border-ink/10 bg-panel text-ink-muted"
+                  }`}
+                  aria-hidden="true"
+                >
+                  <ReceiptIcon size={13} strokeWidth={1.7} />
+                </span>
+                <h4
+                  className={`text-[12px] font-bold uppercase tracking-wide leading-tight ${
+                    isOperating ? "text-pharma" : "text-ink"
+                  }`}
+                >
+                  6. {t("dian_habilitation.steps.rango.title")}
+                </h4>
+              </div>
               <span
-                className={`inline-flex shrink-0 items-center rounded-sm border px-pos-sm py-px text-caption font-semibold uppercase tracking-wider ${RESPONSIBILITY_CHIP_CLASS.software}`}
+                className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${RESPONSIBILITY_META.software.className}`}
               >
-                {t('dian_habilitation.responsibility.software')}
+                {t(RESPONSIBILITY_META.software.labelKey)}
               </span>
             </div>
 
             {isOperating ? (
-              <p
-                className="mt-pos-sm inline-flex flex-wrap gap-x-pos-sm rounded-sm px-pos-md py-pos-sm font-data text-body-sm text-pharma"
-                style={{ backgroundColor: 'var(--color-success-container)' }}
-              >
-                <span>{t('dian_habilitation.range_obtained')}</span>
-                <span aria-hidden="true">·</span>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-sm bg-success-container px-2.5 py-2 font-data text-[11px] tabular-nums text-pharma">
+                <span className="inline-flex items-center gap-1.5 font-semibold">
+                  <span className="h-1.5 w-1.5 rounded-full bg-pharma" aria-hidden="true" />
+                  {t("dian_habilitation.range_obtained")}
+                </span>
+                <span aria-hidden="true" className="text-ink/30">
+                  ·
+                </span>
                 <span>
-                  {t('dian_habilitation.range_prefix', {
-                    prefix: draft?.resolutionPrefix ?? '',
+                  {t("dian_habilitation.range_prefix", {
+                    prefix: draft?.resolutionPrefix ?? "",
                   })}
                 </span>
                 {draft?.resolutionRangeStart && draft?.resolutionRangeEnd && (
                   <>
-                    <span aria-hidden="true">·</span>
+                    <span aria-hidden="true" className="text-ink/30">
+                      ·
+                    </span>
                     <span>
-                      {t('dian_habilitation.range_range', {
+                      {t("dian_habilitation.range_range", {
                         start: draft.resolutionRangeStart,
                         end: draft.resolutionRangeEnd,
                       })}
                     </span>
                   </>
                 )}
-              </p>
+              </div>
             ) : (
-              <p className="mt-pos-sm flex max-w-prose items-start gap-pos-xs text-body-sm text-sync">
-                {/* Static dot — deliberate: no pulse on the trámite path. */}
+              <p className="mt-2 flex max-w-prose items-start gap-1.5 rounded-sm bg-sync/[0.07] px-2 py-1.5 text-[11px] leading-snug text-ink-muted">
                 <span
                   aria-hidden="true"
-                  className="mt-[7px] h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: 'var(--color-sync)' }}
+                  className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-sync"
                 />
-                {t('dian_habilitation.range_pending')}
+                {t("dian_habilitation.range_pending")}
               </p>
             )}
           </div>
-        </li>
+        </motion.li>
       </ol>
 
-      <footer className="mt-pos-lg flex flex-col gap-pos-md border-t border-border pt-pos-lg sm:flex-row sm:items-center sm:justify-between">
+      {/* footer — compact */}
+      <div className="flex flex-col gap-2.5 border-t border-border bg-surface-variant/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <a
-          href={`mailto:${t('dian_habilitation.footer.support_email')}`}
-          className="pos-button pos-button-secondary text-body-sm font-semibold"
+          href={`mailto:${t("dian_habilitation.footer.support_email")}`}
+          className="inline-flex items-center justify-center gap-1.5 rounded-sm border border-border bg-panel px-3 py-1.5 text-[11px] font-semibold text-ink transition-colors hover:bg-panel hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pharma"
         >
-          <MailIcon size={14} strokeWidth={1.5} aria-hidden="true" />
-          {t('dian_habilitation.footer.support_cta')}
+          <MailIcon size={13} strokeWidth={1.7} aria-hidden="true" />
+          {t("dian_habilitation.footer.support_cta")}
         </a>
         <a
           href={OFFICIAL_GUIDE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center text-caption underline decoration-border underline-offset-2 transition-colors hover:text-pharma focus-visible:text-pharma"
+          className="inline-flex items-center justify-center gap-1 text-[11px] font-medium text-ink-muted underline decoration-border underline-offset-2 transition-colors hover:text-pharma focus-visible:text-pharma"
         >
-          {t('dian_habilitation.footer.official_guide')}
-          <span aria-hidden="true" className="ml-pos-xs">
+          {t("dian_habilitation.footer.official_guide")}
+          <span aria-hidden="true" className="ml-1 leading-none">
             ↗
           </span>
         </a>
-      </footer>
-    </section>
+      </div>
+    </motion.section>
   );
 };

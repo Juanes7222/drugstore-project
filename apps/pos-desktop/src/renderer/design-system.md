@@ -629,56 +629,99 @@ motion collapses it to a static panel (global CSS rule).
 
 ---
 
-## DIAN Habilitation Checklist (added 2026-08-25)
+## DIAN Habilitation Checklist (rediseñado 2026-08-27 — reemplaza 2026-08-25)
 
-The administrative file (expediente) of the six mandatory, sequential DIAN
-habilitation steps, rendered on the Empresa tab below the company-setup entry
-card. Component: `components/company-setup/dian-habilitation-checklist.tsx`;
-state comes from `useCompanySetup()` (`habilitationStepsDone` +
-`toggleHabilitationStep`, owned by pos-local; the sixth step derives from
-`draft.resolutionNumber`, never hand-checked).
+El expediente de 6 pasos obligatorios de habilitación DIAN, debajo del dossier en el tab Empresa. Component: `components/company-setup/dian-habilitation-checklist.tsx`; todo estado sigue siendo DERIVADO (`certificateActive` + `draft.resolutionNumber`), nunca manual.
 
-### Brief
+### Pass 1 — brief (rediseño)
 
-- **Grammar:** the RUT checkbox form this product parses. A continuous 2px
-  ink/15% vertical line connects square 28px casillas (2px ink border,
-  JetBrains Mono bold numeral); completed casillas flip to Pharma Teal with a
-  white check. Numbering encodes legal order — steps are never reorderable.
-- **Signature:** the rotated (-4deg) double-frame seal in the header —
-  outline 1px + inner ring, uppercase tracking-widest. Derives state:
-  `resolutionNumber` present → OPERANDO (Pharma Teal on success-container);
-  absent → EN TRÁMITE (Urgency Amber on urgency-surface, amber darkened via
-  color-mix with ink to hold AA contrast).
-- **Motion:** one-shot stamp animation (scale 1.12→1 + opacity, 300ms
-  ease-out) only on the transition into OPERANDO — an approved "document
-  confirmed by DIAN" beat. Never on mount, hover, scroll. Reduced-motion:
-  the global rule collapses it to instant appearance (calmer than a fade;
-  consistent with system-wide policy).
-- **Responsibility chips:** small uppercase outline chips right-aligned —
-  TE TOCA (ink), TE ACOMPAÑAMOS (pharma), TU SOFTWARE (sync slate). At ≤768px
-  they wrap below the step title; the expediente line never breaks.
-- **Actions:** manual steps get a real accessible checkbox (sr-only input +
-  secondary-button label toggle); official DIAN links open in a new tab with
-  ↗. The rango row has no action: obtained → success-container strip with
-  prefix/range in font-data; pending → sync-slate line with a static dot
-  (deliberately unpulsed).
-- **Footer:** mailto assistance button (email is an i18n value) + caption link
-  to the official micrositios instructive.
+- **Sujeto:** El trámite legal colombiano para facturar electrónicamente — 6 pasos en orden DIAN que el dueño ve <5 veces en la vida de la farmacia, pero cada paso bloquea la operación. Job: ver dónde está trabado y qué le toca vs. qué hace el software.
+- **Paleta:** Sin colores nuevos. Pharma Teal = progreso fill + nodos completados + seal OPERANDO; Ink 10% = track fondo + bordes tarjeta; Surface-variant = tarjetas pendientes; Success-container 35% = tarjetas completadas; Sync 8% = hint pendiente de certificado. Urgency solo para seal EN TRÁMITE.
+- **Tipo:** Inter 10-12px para títulos/descripciones, JetBrains Mono 11px tabular para NIT, rangos y contadores (2/6, 9001–9500). Los números legales piden mono.
+- **Layout — pipeline con tarjetas:**
 
-### Pass 2 critique
+```
+┌─ Habilitación DIAN ───────────────────────────────────────┐
+│ Expediente DIAN · 2/6 · EN TRÁMITE   [sello -3deg doble] │
+│ Facturación NIT 900…  ●2/6  2 pendientes                  │
+│ ██████░░░░░░░░░░░░░░ progres bar (pharma fill 33%)       │
+│──────────────────────────────────────────────────────────│
+│ ●─○ pipeline vertical (track ink/10 + fill pharma)       │
+│ ① [KeyRound] Certificado digital  [Te toca]              │
+│    Obtén tu certificado…  hint sync  ↗ Instructivo       │
+│ ② [Clipboard] Registro como facturador [Te toca]         │
+│ ③ [Settings2] Modo de operación   [Te toca]              │
+│ ④ [FileText] Set de prueba        [Te acompañamos]       │
+│ ⑤ [Calendar] Fecha inicio         [Te toca]              │
+│ ⑥ [Receipt]  Rango numeración     [Tu software]          │
+│    Obtenido · Prefijo SETP · 9001–9500 / pendiente sync  │
+│──────────────────────────────────────────────────────────│
+│ [✉ Solicitar asistencia]  Instructivo oficial ↗         │
+└───────────────────────────────────────────────────────────┘
+```
 
-- Reject-list check: no gradient chrome, no shadow-card grid, no generic
-  stepper — the rotated seal and casilla-expediente grammar only make sense
-  for a Colombian fiscal trámite; a CRM pasting this would have no reason to
-  render a numbering-resolution-derived seal. Passes.
-- Contrast: raw Urgency Amber fails AA on urgency-surface at caption size, so
-  the seal's pending text/border use `color-mix(urgency 70%, ink)` (~4.5:1).
-- Revision made during critique: the assisted chip initially reused the ink
-  outline; switched to pharma outline so the three responsibilities read as
-  three distinct owners without introducing any new color.
+- **Firma:** El sello rotado -3deg doble marco (ya existía) + la barra de progreso superior fina (2px track con fill pharma animado) + nodos circulares 32px con check vs numeral + tarjetas con icono de paso 13px. Nada de casillas cuadradas genéricas — el lenguaje es de trámite oficial colombiano: certificados, modo proveedor tecnológico, set de prueba.
+- **Riesgo tomado:** Tarjetas por paso en lugar de lista plana — más alto, pero cada tarjeta da contexto (icono, responsabilidad, descripción, link) sin abrir un drawer. Justificado porque el trámite se lee paso a paso, no se escanea como tabla; la densidad se compensa con 12px de descripción y 32px nodos espaciados 14px.
+
+### Pass 2 — critique
+
+- Rechazó templates: no cream+serif, no gradiente SaaS, no stepper genérico de 01/02/03 con números gigantes. El sello + NIT mono + CIIU/DANE/resolución solo tienen sentido para DIAN colombiana. Pass.
+- Mejoras vs. 2026-08-25: casillas 28px cuadradas → nodos 32px circulares con sombra 1px (más táctil, menos formulario fotocopiado); línea 2px ink/15% → track 1px ink/10 + fill pharma animado 0→progress 700ms (progreso legible); chips outline → pills con bg tint 6-8% (más escaneables); footer p-pos-xl → bg surface-variant/40 compacto 12px; stagger 60ms por paso + seal scale-in 280ms (Emil: invisible, 260ms easeOut). Contraste igual: seal EN TRÁMITE usa `color-mix(urgency 68%, ink)` >4.5:1.
+- Revisión tras crítica: los 6 pasos inicialmente compartían el mismo icono numeral; se añadió Icon por paso (KeyRound, Clipboard, Settings2, FileText, CalendarDays, Receipt) en badge 24px dentro de la tarjeta para diferenciación sin romper la numeración legal del nodo.
 
 ---
 
+
+## Empresa — Configuración de empresa (rediseño 2026-08-27)
+
+Rediseño del tab Empresa dentro de Configuración — el expediente fiscal de la droguería. Reemplaza el card genérico con filas grandes y poca densidad por un dossier denso inspirado en la grilla de casillas del RUT DIAN.
+
+### Pass 1 — brief
+
+- **Sujeto:** La identidad legal de la droguería tal como aparece en el RUT DIAN — no una lista de settings SaaS. Audiencia: dueño/administrador que verifica si el NIT, razón social, régimen y domicilio están completos antes de habilitar facturación electrónica. Job: confirmar de un vistazo que el expediente está completo y saber qué acción falta.
+- **Paleta:** Sin colores nuevos. Pharma Teal `#0B6E6B` = borde superior del dossier + badge SINC + strip de resolución; Ink `#171614` + `border` `#D4D2CC` = grilla gap-px; Surface-variant `#EDE9E1` = franjas de sección; Success-container `#E0F2F1` = resolución obtenida. Urgency/Sync solo para estados pendientes.
+- **Tipo:** Inter 10px uppercase tracking 0.08em para eyebrows (NIT, RÉGIMEN, DIRECCIÓN...), JetBrains Mono 13px semibold tabular-nums para todo valor preciso (NIT formateado, CIIU, DANE, teléfono, email, rangos). La lectura densa del RUT ya pide mono; no se introduce tipografía nueva.
+- **Layout:**
+
+```
+┌─ Expediente fiscal ───────────────────────────────────────┐
+│ ▓ 2px pharma top hairline                                 │
+│ [■] EMPRESA  Fuente: RUT DIAN  [● Sincronizado]   [Editar][↑ RUT]│
+│ NIT 900.123.456-7  ·  Responsable 19%  ·  CIIU 4773       │
+│───────────────────────────────────────────────────────────│
+│ ▸ IDENTIFICACIÓN            7/7 · NIT-DV verificado       │
+│ ┌─────────────┬──────────────┬──────────────┐ gap-px grid│
+│ │ Razón social (col-span 3)  │              │             │
+│ │ NIT-DV mono │ Régimen      │ CIIU · IVA   │             │
+│ └─────────────┴──────────────┴──────────────┘             │
+│ ▸ UBICACIÓN                                               │
+│ ┌──────────────────────────┬──────────┬──────┐            │
+│ │ Dirección (col-span 3)   │          │      │            │
+│ │ Municipio (código)       │ Depto    │ DANE │            │
+│ └──────────────────────────┴──────────┴──────┘            │
+│ ▸ CONTACTO                                                │
+│ ┌──────────────┬──────────────┐                           │
+│ │ Teléfono     │ Email        │                           │
+│ └──────────────┴──────────────┘                           │
+│ ── DIAN 187640… Prefijo SETP 9001-9500  Vigencia 2026-12 │
+└───────────────────────────────────────────────────────────┘
+┌─ Campos personalizados ── [Agregar] ──────────────────────┐
+│ Header + count pill + grid 1fr/90/160/72 (Tipo/Visible/Acción)│
+│ rows: nombre + key mono + REQUIRED pill · tipo badge · chips factura/reporte ─ [✎][🗑] │
+└───────────────────────────────────────────────────────────┘
+```
+
+- **Riesgo estético tomado:** La grilla gap-px con celdas `bg-panel` sobre `bg-border` imita el papel cuadriculado del RUT — un dossier compacto, no cartas aireadas. Es intencionalmente denso (13px valores, 10px eyebrows, gap-px) contra la tendencia a "más aire, más padding". Se justifica porque el dueño lee este expediente <2 veces al mes pero necesita verificar 11 campos sin scroll ni ambigüedad; densidad = completitud verificable.
+
+### Pass 2 — critique
+
+Rechazó: cream+serif, gradiente SaaS, card-grid genérica, rounded-everything. Ninguno aparece. El borde pharma superior + badge SINC + franjas surface-variant solo tienen sentido para un expediente fiscal colombiano (NIT-DV, CIIU, DANE, resolución DIAN) — un CRM no renderizaría CIIU ni rango prefijo/vigencia. El riesgo de densidad se compensa con eyebrows en 10px + mono tabular + hover `border/surface-variant` en celdas para lectura sin fatiga. Sin motion decorativo en la ruta crítica: solo entrada stagger 50ms / 240ms easeOut (Emil: polish invisible), que colapsa con `prefers-reduced-motion`. Los campos personalizados pasan de lista grande a tabla densa con header tabular y chips de visibilidad.
+
+### Motion
+
+Stagger container 50ms por sección, cada sección `opacity 0→1 + y 6→0` 240ms `cubic-bezier(0.16,1,0.3,1)`. Sin loop, sin hover bounce — solo entrada. Botones conservan el `active:scale(0.97)` global. Respeta `prefers-reduced-motion` vía regla global que colapsa a instant.
+
+---
 
 Motion is reserved for the sale-completing handoff, not for the high-throughput search/scan/add-to-cart path.
 
