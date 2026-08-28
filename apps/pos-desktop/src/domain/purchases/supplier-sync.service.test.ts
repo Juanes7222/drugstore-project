@@ -9,7 +9,6 @@ import {
   createSupplierSyncService,
   SupplierSyncService,
   SupplierSyncHttpError,
-  type SupplierSyncConfig,
 } from "./supplier-sync.service";
 import type { SyncHttpClient } from "../catalog/catalog-sync.service";
 

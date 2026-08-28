@@ -38,6 +38,7 @@ const mockClientReturnsService = {
 
 const mockInventoryAdjustmentsService = {
   create: jest.fn(),
+  createAndApply: jest.fn(),
 } as unknown as InventoryAdjustmentsService;
 
 const mockFiscalDocumentsService = {
@@ -70,6 +71,16 @@ const mockPrisma = {
   syncOperationOutcome: mockSyncOperationOutcome,
   $transaction: jest.fn(),
   $queryRaw: jest.fn(),
+  $executeRaw: jest.fn().mockResolvedValue(0),
+  auditLog: {
+    create: jest.fn(),
+    createMany: jest.fn(),
+  },
+  cashShift: {
+    findFirst: jest.fn().mockResolvedValue(null),
+    findUnique: jest.fn().mockResolvedValue(null),
+    upsert: jest.fn().mockResolvedValue({}),
+  },
   product: {
     findFirst: jest.fn(),
     findMany: jest.fn(),
@@ -148,6 +159,23 @@ describe('SyncOperationDispatcherService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: $transaction executes the callback with a tx that mirrors mockPrisma
+    // (savepoint semantics). This keeps ensureGlobalShiftAttribution and
+    // recordOutcome/auditLog savepoints functional without per-test setup.
+    (mockPrisma.$transaction as jest.Mock).mockImplementation(async (arg: any) => {
+      if (typeof arg === 'function') {
+        // The real proxy passes the outer tx; for tests the mock itself is the tx.
+        // Ensure the tx object has the helpers the callback expects.
+        const tx = mockPrisma as any;
+        // Ensure $executeRaw exists on tx
+        if (!tx.$executeRaw) tx.$executeRaw = jest.fn().mockResolvedValue(0);
+        return await arg(tx);
+      }
+      return await Promise.all(arg);
+    });
+    // Ensure cashShift findFirst defaults to no open shift so ensureGlobalShiftAttribution
+    // bootstraps deterministically unless a test overrides it
+    (mockPrisma.cashShift.findFirst as jest.Mock).mockResolvedValue(null);
     service = new SyncOperationDispatcherService(
       mockPrisma,
       mockTenantContext as any,
@@ -585,7 +613,7 @@ describe('SyncOperationDispatcherService', () => {
     });
 
     it('calls inventoryAdjustmentsService.create with the DTO built from the POS payload', async () => {
-      mockInventoryAdjustmentsService.create.mockResolvedValue({ id: 'adj-1' });
+      (mockInventoryAdjustmentsService.createAndApply as jest.Mock).mockResolvedValue({ id: 'adj-1' });
       mockSyncOperationOutcome.create.mockResolvedValue({});
 
       await service.dispatch(buildEntry({
@@ -593,7 +621,7 @@ describe('SyncOperationDispatcherService', () => {
         payload: adjPayload,
       }));
 
-      expect(mockInventoryAdjustmentsService.create).toHaveBeenCalledWith(
+      expect(mockInventoryAdjustmentsService.createAndApply).toHaveBeenCalledWith(
         expect.objectContaining({
           items: expect.arrayContaining([
             expect.objectContaining({
@@ -604,13 +632,12 @@ describe('SyncOperationDispatcherService', () => {
           ]),
         }),
         'u-1',
-        undefined, // physicalCountId
-        undefined, // syncLotContext
+        undefined,
       );
     });
 
     it('rejects with VALIDATION category when the service throws', async () => {
-      mockInventoryAdjustmentsService.create.mockRejectedValue(new Error('validation: insufficient stock'));
+      (mockInventoryAdjustmentsService.createAndApply as jest.Mock).mockRejectedValue(new Error('validation: insufficient stock'));
       mockSyncOperationOutcome.create.mockResolvedValue({});
 
       await expect(

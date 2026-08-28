@@ -11,6 +11,7 @@ import { RoleType } from "@pharmacy/shared-types";
 import { useLocalConfigStore } from "../configuration/local-config.store";
 import { useLocalSessionStore } from "../auth/local-session.store";
 import { useCashShiftStore } from "./cash-shift.store";
+import { notifyPendingEntry } from "../sync/sync-queue-notifier";
 
 // Mock shift-close-html and print-payload-writer for printRouter tests
 vi.mock("./shift-close-html", () => ({
@@ -50,6 +51,10 @@ vi.mock("../backup", async (importOriginal) => {
     createBackupService: vi.fn(() => mockBackupService),
   };
 });
+
+vi.mock("../sync/sync-queue-notifier", () => ({
+  notifyPendingEntry: vi.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -2687,6 +2692,252 @@ describe("CashShiftService", () => {
       await service.hydrateStore();
 
       expect(useCashShiftStore.getState().currentShift).toBeNull();
+    });
+  });
+
+  describe("openShift (SHIFT_OPEN sync enqueue)", () => {
+    let mockSetCurrentShift: ReturnType<typeof vi.fn>;
+    let uuidCounter: number;
+    let storeSpy: ReturnType<typeof vi.spyOn>;
+
+    const sha256Hex = async (payload: string): Promise<string> => {
+      const data = new TextEncoder().encode(payload);
+      const buf = await globalThis.crypto.subtle.digest("SHA-256", data);
+      return Array.from(new Uint8Array(buf))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    };
+
+    beforeEach(() => {
+      mockSetCurrentShift = vi.fn();
+      storeSpy = vi.spyOn(useCashShiftStore, "getState").mockReturnValue({
+        setCurrentShift: mockSetCurrentShift,
+        currentShift: null,
+        isLoading: false,
+        hydrateFromDb: vi.fn(),
+      } as any);
+      vi.mocked(notifyPendingEntry).mockClear();
+
+      uuidCounter = 0;
+      vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
+        () =>
+          `00000000-0000-0000-0000-${String(++uuidCounter).padStart(12, "0")}` as `${string}-${string}-${string}-${string}-${string}`,
+      );
+
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(null);
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.cashShift.create.mockImplementation(async ({ data }: any) => ({
+        id: data.id,
+        workstationId: data.workstationId,
+        userId: data.userId,
+        openingBalance: data.openingBalance,
+        openingNotes: data.openingNotes,
+        openedAt: data.openedAt,
+        state: data.state,
+      }));
+      tx.syncQueue.create.mockResolvedValue({} as any);
+    });
+
+    afterEach(() => {
+      storeSpy.mockRestore();
+    });
+
+    it("enqueues SHIFT_OPEN SyncQueue entry in same $transaction as cashShift create", async () => {
+      await service.openShift({ openingBalance: new Prisma.Decimal(500000) });
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+
+      expect(tx.cashShift.create).toHaveBeenCalledTimes(1);
+      expect(tx.syncQueue.create).toHaveBeenCalledTimes(1);
+
+      const queueData = tx.syncQueue.create.mock.calls[0][0].data;
+      expect(queueData.operationType).toBe("SHIFT_OPEN");
+      expect(queueData.status).toBe("PENDING");
+      expect(queueData.retryCount).toBe(0);
+      expect(queueData.versionSchema).toBe(1);
+    });
+
+    it("creates payload with idempotent shape: shiftId, userId, workstationId, openingBalance string, openingNotes, openedAt ISO", async () => {
+      const fixedNow = new Date("2026-08-15T10:00:00.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(fixedNow);
+
+      const openingBalance = new Prisma.Decimal("123456.78");
+      await service.openShift({ openingBalance, openingNotes: "nota inicial" });
+
+      const payloadStr: string = tx.syncQueue.create.mock.calls[0][0].data.payload;
+      const payload = JSON.parse(payloadStr);
+
+      expect(payload.shiftId).toBe("00000000-0000-0000-0000-000000000001");
+      expect(payload.userId).toBe("user-1");
+      expect(payload.workstationId).toBe("ws-1");
+      expect(payload.openingBalance).toBe("123456.78");
+      expect(payload.openingNotes).toBe("nota inicial");
+      expect(payload.openedAt).toBe(fixedNow.toISOString());
+
+      vi.useRealTimers();
+    });
+
+    it("creates payload with openingNotes null when not provided", async () => {
+      await service.openShift({ openingBalance: new Prisma.Decimal(100000) });
+
+      const payload = JSON.parse(tx.syncQueue.create.mock.calls[0][0].data.payload);
+
+      expect(payload.openingNotes).toBeNull();
+    });
+
+    it("computes payloadHash as SHA-256 hex of payload and payloadSize as byte length", async () => {
+      await service.openShift({ openingBalance: new Prisma.Decimal(500000) });
+
+      const data = tx.syncQueue.create.mock.calls[0][0].data;
+      const expectedHash = await sha256Hex(data.payload);
+      const expectedSize = new TextEncoder().encode(data.payload).length;
+
+      expect(data.payloadHash).toBe(expectedHash);
+      expect(data.payloadHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(data.payloadSize).toBe(expectedSize);
+    });
+
+    it("sets clientSequence to 1n when no prior entry and increments from latest", async () => {
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+
+      await service.openShift({ openingBalance: new Prisma.Decimal(100000) });
+
+      expect(tx.syncQueue.findFirst).toHaveBeenCalledWith({
+        where: { sourceWorkstationId: "ws-1" },
+        orderBy: { clientSequence: "desc" },
+        select: { clientSequence: true },
+      });
+      expect(tx.syncQueue.create.mock.calls[0][0].data.clientSequence).toBe(1n);
+
+      tx.syncQueue.findFirst.mockResolvedValue({ clientSequence: 5n });
+      tx.syncQueue.create.mockClear();
+      tx.cashShift.create.mockClear();
+      vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(
+        () => `00000000-0000-0000-0000-${String(++uuidCounter).padStart(12, "0")}` as `${string}-${string}-${string}-${string}-${string}`,
+      );
+
+      await service.openShift({ openingBalance: new Prisma.Decimal(200000) });
+
+      expect(tx.syncQueue.create.mock.calls[0][0].data.clientSequence).toBe(6n);
+    });
+
+    it("uses per-workstation clientSequence and sourceWorkstationId", async () => {
+      auth.requireRole.mockReturnValue({ ...makeMockSession(), workstationId: "ws-99" });
+
+      await service.openShift({ openingBalance: new Prisma.Decimal(300000) });
+
+      expect(tx.syncQueue.findFirst).toHaveBeenCalledWith({
+        where: { sourceWorkstationId: "ws-99" },
+        orderBy: expect.any(Object),
+        select: expect.any(Object),
+      });
+      expect(tx.syncQueue.create.mock.calls[0][0].data.sourceWorkstationId).toBe("ws-99");
+    });
+
+    it("updates the reactive store via setCurrentShift with created shift", async () => {
+      const result = await service.openShift({ openingBalance: new Prisma.Decimal(500000) });
+
+      expect(mockSetCurrentShift).toHaveBeenCalledTimes(1);
+      expect(mockSetCurrentShift).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "00000000-0000-0000-0000-000000000001",
+          state: "OPEN",
+        }),
+      );
+      expect(result).toEqual(expect.objectContaining({ id: "00000000-0000-0000-0000-000000000001" }));
+    });
+
+    it("notifies push via queueMicrotask after transaction", async () => {
+      const queueMicrotaskSpy = vi.spyOn(globalThis, "queueMicrotask");
+
+      await service.openShift({ openingBalance: new Prisma.Decimal(500000) });
+
+      expect(queueMicrotaskSpy).toHaveBeenCalledTimes(1);
+      expect(queueMicrotaskSpy.mock.calls[0][0]).toBeInstanceOf(Function);
+
+      // queued microtask already flushed after await — notify should have run
+      expect(notifyPendingEntry).toHaveBeenCalledTimes(1);
+
+      queueMicrotaskSpy.mockRestore();
+    });
+
+    it("notifies push via queueMicrotask even when auditWriter is configured", async () => {
+      const auditWriter = { write: vi.fn() };
+      service = createCashShiftService(prisma, auth as any, undefined, undefined, auditWriter as any);
+      storeSpy.mockReturnValue({
+        setCurrentShift: mockSetCurrentShift,
+      } as any);
+
+      const queueMicrotaskSpy = vi.spyOn(globalThis, "queueMicrotask");
+
+      await service.openShift({ openingBalance: new Prisma.Decimal(500000) });
+
+      expect(queueMicrotaskSpy).toHaveBeenCalledTimes(1);
+      expect(notifyPendingEntry).toHaveBeenCalledTimes(1);
+
+      queueMicrotaskSpy.mockRestore();
+    });
+
+    it("does not enqueue or notify when ShiftAlreadyOpenException is thrown", async () => {
+      const queueMicrotaskSpy = vi.spyOn(globalThis, "queueMicrotask");
+      tx.cashShift.findFirst.mockResolvedValue({ id: "existing", state: "OPEN" } as any);
+
+      await expect(service.openShift({ openingBalance: new Prisma.Decimal(100000) })).rejects.toThrow(
+        ShiftAlreadyOpenException,
+      );
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(tx.syncQueue.create).not.toHaveBeenCalled();
+      expect(mockSetCurrentShift).not.toHaveBeenCalled();
+      expect(queueMicrotaskSpy).not.toHaveBeenCalled();
+      expect(notifyPendingEntry).not.toHaveBeenCalled();
+
+      queueMicrotaskSpy.mockRestore();
+    });
+
+    it("ensures operationType is SHIFT_OPEN with sourceCreatedAt matching openedAt", async () => {
+      const fixedNow = new Date("2026-09-01T12:34:56.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(fixedNow);
+
+      await service.openShift({ openingBalance: new Prisma.Decimal(500000) });
+
+      const data = tx.syncQueue.create.mock.calls[0][0].data;
+      expect(data.operationType).toBe("SHIFT_OPEN");
+      expect(data.sourceCreatedAt).toEqual(fixedNow);
+      expect(typeof data.operationUuid).toBe("string");
+      expect(data.operationUuid).toMatch(/^[0-9a-f-]{36}$/i);
+
+      vi.useRealTimers();
+    });
+
+    it("generates distinct operationUuid and SyncQueue id per call", async () => {
+      await service.openShift({ openingBalance: new Prisma.Decimal(100000) });
+
+      const firstUuid = tx.syncQueue.create.mock.calls[0][0].data.operationUuid;
+      const firstId = tx.syncQueue.create.mock.calls[0][0].data.id;
+
+      tx.syncQueue.create.mockClear();
+      tx.cashShift.create.mockClear();
+      tx.cashShift.findFirst.mockResolvedValue(null);
+      tx.syncQueue.findFirst.mockResolvedValue({ clientSequence: 1n });
+
+      await service.openShift({ openingBalance: new Prisma.Decimal(200000) });
+
+      const secondUuid = tx.syncQueue.create.mock.calls[0][0].data.operationUuid;
+      const secondId = tx.syncQueue.create.mock.calls[0][0].data.id;
+
+      expect(firstUuid).not.toBe(secondUuid);
+      expect(firstId).not.toBe(secondId);
+    });
+
+    it("preserves Decimal precision in openingBalance payload string", async () => {
+      await service.openShift({ openingBalance: new Prisma.Decimal("999999.99") });
+
+      const payload = JSON.parse(tx.syncQueue.create.mock.calls[0][0].data.payload);
+      expect(payload.openingBalance).toBe("999999.99");
     });
   });
 });

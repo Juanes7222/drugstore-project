@@ -121,31 +121,68 @@ export class CashShiftService {
 
       await this.assertNoOpenShiftExists();
 
-      const shift = await this.prisma.cashShift.create({
-        data: {
-          id: this.generateId(),
-          workstationId: session.workstationId,
-          userId: session.userId,
-          openingBalance: dto.openingBalance,
-          openingNotes: dto.openingNotes ?? null,
-          openedAt: new Date(),
-          state: 'OPEN',
-        },
+      const shiftId = this.generateId();
+      const now = new Date();
+      const payloadObj = {
+        shiftId,
+        userId: session.userId,
+        workstationId: session.workstationId,
+        openingBalance: dto.openingBalance.toString(),
+        openingNotes: dto.openingNotes ?? null,
+        openedAt: now.toISOString(),
+      };
+      const payload = JSON.stringify(payloadObj);
+      const payloadHash = await this.computePayloadHash(payload);
+      const payloadSize = new TextEncoder().encode(payload).length;
+      const operationUuid = globalThis.crypto.randomUUID();
+
+      let shift: CashShiftRecord;
+      await this.prisma.$transaction(async (tx) => {
+        const latest = await tx.syncQueue.findFirst({
+          where: { sourceWorkstationId: session.workstationId },
+          orderBy: { clientSequence: 'desc' },
+          select: { clientSequence: true },
+        });
+        const clientSequence = latest ? latest.clientSequence + 1n : 1n;
+
+        shift = (await tx.cashShift.create({
+          data: {
+            id: shiftId,
+            workstationId: session.workstationId,
+            userId: session.userId,
+            openingBalance: dto.openingBalance,
+            openingNotes: dto.openingNotes ?? null,
+            openedAt: now,
+            state: 'OPEN',
+          },
+        })) as CashShiftRecord;
+
+        await tx.syncQueue.create({
+          data: {
+            id: globalThis.crypto.randomUUID(),
+            operationUuid,
+            operationType: 'SHIFT_OPEN',
+            payload,
+            payloadHash,
+            payloadSize,
+            versionSchema: 1,
+            status: 'PENDING',
+            retryCount: 0,
+            sourceWorkstationId: session.workstationId,
+            sourceCreatedAt: now,
+            clientSequence,
+          },
+        });
       });
 
-      // No SyncQueue entry for SHIFT_OPEN: SyncOperationType on both
-      // local and server schemas has no SHIFT_OPEN value (only
-      // SHIFT_CLOSURE). Server's `ensureGlobalShiftAttribution`
-      // bootstraps the OPEN shift when the next SALE_CONFIRMATION
-      // replays, so the following sale implicitly creates the new
-      // shift server-side without a dedicated operation. Enqueuing a
-      // SHIFT_OPEN here would fail Prisma enum validation.
+      // Keep reactive store in sync for this workstation.
+      useCashShiftStore.getState().setCurrentShift(shift!);
 
       // Audit trail
       this.auditWriter?.write(LocalAuditEvent.CASH_SHIFT_OPENED, {
         category: 'cash_shift',
         entityType: 'CashShift',
-        entityId: shift.id,
+        entityId: shift!.id,
         userId: session.userId,
         userRole: session.role,
         workstationId: session.workstationId,
@@ -155,7 +192,10 @@ export class CashShiftService {
         },
       });
 
-      return shift;
+      // Trigger immediate push — other workstations learn via open-shift pull.
+      queueMicrotask(() => notifyPendingEntry());
+
+      return shift!;
     } finally {
       dbWriteLock.release();
     }

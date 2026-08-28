@@ -22,6 +22,7 @@ export const SyncOperationSchema = z.object({
   operationType: z.enum([
     'SALE_CONFIRMATION',
     'SHIFT_CLOSURE',
+    'SHIFT_OPEN',
     'CLIENT_CREATION',
     'CLIENT_UPDATE',
     'CLIENT_DEACTIVATE',
@@ -40,6 +41,7 @@ export const SyncOperationSchema = z.object({
     'PURCHASE_ORDER_CONFIRMATION',
     'PURCHASE_RECEPTION_CONFIRMATION',
     'SUPPLIER_RETURN_CONFIRMATION',
+    'AUDIT_LOG_BATCH',
   ]),
   operationUuid: z.string().uuid('Invalid operation UUID'),
   payload: z.record(z.string(), z.any()),

@@ -14,6 +14,7 @@ export interface SyncQueueEntry {
   operationType:
     | 'SALE_CONFIRMATION'
     | 'SHIFT_CLOSURE'
+    | 'SHIFT_OPEN'
     | 'CLIENT_CREATION'
     | 'CLIENT_UPDATE'
     | 'CLIENT_DEACTIVATE'
@@ -31,7 +32,8 @@ export interface SyncQueueEntry {
     | 'PURCHASE_RECEPTION_CONFIRMATION'
     | 'SUPPLIER_RETURN_CONFIRMATION'
     | 'CLIENT_CREDIT_PAYMENT'
-    | 'CLIENT_CREDIT_PAYMENT_ANNULMENT';
+    | 'CLIENT_CREDIT_PAYMENT_ANNULMENT'
+    | 'AUDIT_LOG_BATCH';
   payload: string;
   sourceWorkstationId: string;
   sourceCreatedAt?: Date | null;

@@ -24,10 +24,16 @@ model LocalAuditLog {
   sessionId     String?
   correlationId String?
   createdAt     DateTime @default(now())
+  // Sync watermark — null until the row has been enqueued to SyncQueue
+  // and successfully marked after enqueue. Server idempotency via
+  // AuditLog.id (== LocalAuditLog.id) makes re-delivery safe, but the
+  // watermark prevents perpetual re-enqueue of the same rows.
+  syncedAt      DateTime?
 
   @@index([createdAt])
   @@index([action, createdAt])
   @@index([category, createdAt])
   @@index([entityType, entityId])
   @@index([userId, createdAt])
+  @@index([syncedAt])
 }

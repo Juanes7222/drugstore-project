@@ -18,6 +18,7 @@ function makeSummary(overrides?: Partial<ShiftSummary>): ShiftSummary {
   return {
     transactionCount: 3,
     totalSalesAmount: "500000",
+    openingBalance: "200000",
     totalsByPaymentMethod: [
       {
         paymentMethodId: "pm-cash",

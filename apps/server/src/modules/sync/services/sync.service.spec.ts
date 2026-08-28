@@ -23,6 +23,13 @@ const mockSyncQueue = {
 
 const mockPrisma = {
   syncQueue: mockSyncQueue,
+  $transaction: jest.fn(async (arg: any) => {
+    if (typeof arg === 'function') {
+      // Interactive transaction: execute callback with the mock as tx
+      return await arg(mockPrisma);
+    }
+    return await Promise.all(arg);
+  }),
 } as unknown as PrismaService;
 
 const mockDispatcher = {

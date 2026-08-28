@@ -140,6 +140,8 @@ export class SyncService {
   private readonly IMMEDIATE_DISPATCH_TYPES = new Set([
     'PRODUCT_CREATION',
     'PRODUCT_UPDATE',
+    'AUDIT_LOG_BATCH',
+    'SHIFT_OPEN',
   ]);
 
   /**
@@ -166,6 +168,13 @@ export class SyncService {
       return { operationUuid: op.operationUuid, status: 'REJECTED', error: 'PAYLOAD_HASH_MISMATCH' };
     }
 
+    // Each operation is savepoint-isolated so a DB error (e.g. RLS violation,
+    // P2002, enum validation) inside one op does not abort the outer
+    // TenantContextInterceptor batch transaction (25P02). Without a savepoint,
+    // any error leaves Postgres in aborted state and the next operation's
+    // createQueueEntry fails with "current transaction is aborted".
+    const savepoint = `sp_ingest_${op.operationUuid.replace(/-/g, '').slice(0, 16)}`;
+    await this.prisma.$executeRawUnsafe(`SAVEPOINT "${savepoint}"`);
     try {
       const entryId = await this.createQueueEntry(op, sourceWorkstationId);
 
@@ -175,6 +184,7 @@ export class SyncService {
           dispatchResult !== null &&
           this.CREATION_TYPES.has(op.operationType)
         ) {
+          await this.prisma.$executeRawUnsafe(`RELEASE SAVEPOINT "${savepoint}"`);
           return {
             operationUuid: op.operationUuid,
             status: 'ACCEPTED',
@@ -184,8 +194,12 @@ export class SyncService {
         }
       }
 
+      await this.prisma.$executeRawUnsafe(`RELEASE SAVEPOINT "${savepoint}"`);
       return { operationUuid: op.operationUuid, status: 'ACCEPTED' };
     } catch (error: any) {
+      try {
+        await this.prisma.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT "${savepoint}"`);
+      } catch {}
       if (error.code === 'P2002') {
         // The same operationUuid was already inserted — surface the
         // server-assigned entityId / entityInternalCode that the previous
@@ -222,8 +236,13 @@ export class SyncService {
    * caller can surface a `REJECTED` batch result; the POS then moves
    * its local row to `PERMANENT_FAILURE` and stops re-sending.  Any
    * other error (raw DB / network / framework exception) is treated
-   * as transient: the row stays PENDING and the background cron job
-   * will retry it.
+   * as transient: the row stays PENDING and the background cron
+   * job will retry it.
+   *
+   * Both the success path (dispatch + COMPLETED) and the permanent-
+   * failure path (FAILED) run inside nested savepoints so a DB error
+   * in one immediate op does not abort the outer TenantContextInterceptor
+   * batch transaction (25P02).
    */
   private async tryImmediateDispatch(
     entryId: string,
@@ -246,15 +265,19 @@ export class SyncService {
     };
 
     try {
-      const result = await this.dispatcher.dispatch(entry);
-      await this.prisma.syncQueue.update({
-        where: { id: entryId },
-        data: {
-          status: 'COMPLETED',
-          processedAt: new Date(),
-          entityId: result.entityId ?? null,
-          entityInternalCode: result.entityInternalCode ?? null,
-        },
+      let result: DispatchResult | null = null;
+      await this.prisma.$transaction(async (tx) => {
+        const dispatchResult = await this.dispatcher.dispatch(entry);
+        await tx.syncQueue.update({
+          where: { id: entryId },
+          data: {
+            status: 'COMPLETED',
+            processedAt: new Date(),
+            entityId: dispatchResult.entityId ?? null,
+            entityInternalCode: dispatchResult.entityInternalCode ?? null,
+          },
+        });
+        result = dispatchResult;
       });
       return result;
     } catch (error: unknown) {
@@ -263,18 +286,30 @@ export class SyncService {
         // schedule so the cron job does not pick it up.  Re-throw so
         // the batch response carries `status: 'REJECTED'` and the POS
         // transitions its local row to PERMANENT_FAILURE.
+        // Savepoint-isolated so the FAILED update does not inherit the
+        // aborted state of the dispatch savepoint, and the outer batch
+        // transaction remains healthy.
         const errorMessage = error instanceof Error ? error.message : String(error);
-        await this.prisma.syncQueue.update({
-          where: { id: entryId },
-          data: {
-            status: 'FAILED',
-            lastErrorMessage: errorMessage,
-          },
-        });
+        try {
+          await this.prisma.$transaction(async (tx) => {
+            await tx.syncQueue.update({
+              where: { id: entryId },
+              data: {
+                status: 'FAILED',
+                lastErrorMessage: errorMessage,
+              },
+            });
+          });
+        } catch (updateError: unknown) {
+          // Best-effort: if marking FAILED itself fails, do not mask the
+          // original DomainException — the row stays PENDING and the cron
+          // will retry; the caller still surfaces REJECTED.
+        }
         throw error;
       }
       // Transient — leave the row PENDING and let the background cron
-      // job retry on its 30s tick.
+      // job retry on its 30s tick. The dispatch savepoint already rolled
+      // back, so the outer batch transaction is still healthy.
       return null;
     }
   }

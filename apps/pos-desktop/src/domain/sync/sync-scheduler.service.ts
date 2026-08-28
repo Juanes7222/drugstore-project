@@ -112,6 +112,7 @@ import type {
   InvoiceAdjustmentSyncConfig,
 } from '../fiscal/invoice-adjustment-sync.service';
 import { createInvoiceAdjustmentSyncService } from '../fiscal/invoice-adjustment-sync.service';
+import { createAuditSyncService, type AuditSyncService } from '../audit/audit-sync.service';
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -240,6 +241,7 @@ export class SyncScheduler {
   private readonly invoiceService?: InvoiceService;
   private readonly auditWriter?: LocalAuditWriter;
   private readonly productService?: ProductService;
+  private auditSync: AuditSyncService;
   private readonly intervalMs: number;
   private timerId: ReturnType<typeof setInterval> | null = null;
   /** Reconnect-burst timer + remaining-tick counter.  Null when no burst is active. */
@@ -328,6 +330,11 @@ export class SyncScheduler {
       offlineToken: this.offlineToken,
       auditWriter: config.auditWriter,
     });
+    this.auditSync = createAuditSyncService({
+      prisma: config.prisma,
+      workstationId: useLocalSessionStore.getState().session?.workstationId,
+      userId: useLocalSessionStore.getState().session?.userId,
+    });
     this.metricsService = createSyncMetricsService(config.prisma);
     this.backupService = createBackupService();
     this.invoiceService = config.invoiceService;
@@ -386,6 +393,11 @@ export class SyncScheduler {
       offlineToken: this.offlineToken,
       invoiceService: this.invoiceService,
       auditWriter: this.auditWriter,
+    });
+    this.auditSync = createAuditSyncService({
+      prisma: this.prisma,
+      workstationId: useLocalSessionStore.getState().session?.workstationId,
+      userId: useLocalSessionStore.getState().session?.userId,
     });
     // Also recreate tenant config sync with new token
     this.tenantConfigSync = createTenantConfigSyncService({
@@ -801,11 +813,25 @@ export class SyncScheduler {
   }
 
   /**
+   * Enqueue any `LocalAuditLog` rows that have not yet been added to
+   * `SyncQueue`. Best-effort — a failure here does not block the push.
+   */
+  private async enqueueAuditLogs(): Promise<void> {
+    try {
+      await this.withLock(() => this.auditSync.enqueueUnsynced());
+    } catch (err) {
+      console.warn('[SyncScheduler] audit enqueue failed:', describeSyncError(err));
+    }
+  }
+
+  /**
    * Run one push cycle: prepare (DB read) → send (network) → apply (DB
    * write under the lock). The HTTP POST never holds the lock, so a slow
    * server round-trip can't block a foreground sale confirm or shift close.
    */
   private async runPush(): Promise<void> {
+    // Ensure audit rows are in the queue before we pick the batch
+    await this.enqueueAuditLogs();
     const prepared = await this.pushService.preparePush();
     if (prepared.entries.length === 0) return;
     const transport = await this.pushService.sendBatch(prepared);
@@ -1025,6 +1051,11 @@ export class SyncScheduler {
       offlineToken: current,
       invoiceService: this.invoiceService,
       auditWriter: this.auditWriter,
+    });
+    this.auditSync = createAuditSyncService({
+      prisma: this.prisma,
+      workstationId: useLocalSessionStore.getState().session?.workstationId,
+      userId: useLocalSessionStore.getState().session?.userId,
     });
     this.supplierSync = createSupplierSyncService(this.prisma, baseConfig);
     this.purchaseOrderSync = createPurchaseOrderSyncService(this.prisma, baseConfig);

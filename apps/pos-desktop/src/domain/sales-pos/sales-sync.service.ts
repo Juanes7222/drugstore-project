@@ -94,120 +94,136 @@ export class SalesSyncService {
       // syncQueue table may not exist on very old local DB — ignore
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const sale of rows) {
-        if (pendingSaleIds.has(sale.id)) continue;
+    // Process each sale in its own transaction so one P2002/FK failure
+    // does not abort the whole batch (Postgres marks the transaction
+    // aborted after any error, and subsequent queries in same tx fail
+    // with 25P02). Per-sale transactions isolate failures.
+    for (const sale of rows) {
+      if (pendingSaleIds.has(sale.id)) continue;
 
-        // Ensure CashShift FK exists — sales on server reference shifts that
-        // this workstation never opened. Without stub, FK violation rolls back
-        // entire batch and leaves Sale empty (the bug reported: Select * from "Sale" = 0).
-        if (sale.cashShiftId) {
-          const existingShift = await tx.cashShift.findUnique({ where: { id: sale.cashShiftId }, select: { id: true } });
-          if (!existingShift) {
-            await tx.cashShift.create({
-              data: {
-                id: sale.cashShiftId,
-                workstationId: sale.workstationId ?? 'unknown',
-                userId: sale.userId ?? 'system',
-                state: 'CLOSED' as any,
-                openedAt: new Date(sale.startedAt),
-                closedAt: sale.confirmedAt ? new Date(sale.confirmedAt) : new Date(sale.startedAt),
-                openingBalance: new Prisma.Decimal(0),
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          // Ensure CashShift FK exists
+          if (sale.cashShiftId) {
+            const existingShift = await tx.cashShift.findUnique({ where: { id: sale.cashShiftId }, select: { id: true } });
+            if (!existingShift) {
+              await tx.cashShift.create({
+                data: {
+                  id: sale.cashShiftId,
+                  workstationId: sale.workstationId ?? 'unknown',
+                  userId: sale.userId ?? 'system',
+                  state: 'CLOSED' as any,
+                  openedAt: new Date(sale.startedAt),
+                  closedAt: sale.confirmedAt ? new Date(sale.confirmedAt) : new Date(sale.startedAt),
+                  openingBalance: new Prisma.Decimal(0),
+                },
+              });
+            }
+          }
+
+          let clientId = sale.clientId ?? null;
+          if (clientId) {
+            const clientExists = await tx.client.findUnique({ where: { id: clientId }, select: { id: true } });
+            if (!clientExists) clientId = null;
+          }
+
+          await tx.sale.upsert({
+            where: { id: sale.id },
+            create: mapSaleForCreate({ ...sale, clientId } as SaleSyncRow),
+            update: mapSaleForUpdate({ ...sale, clientId } as SaleSyncRow),
+          });
+
+          const incomingItemIds = new Set(sale.items.map((i) => i.id));
+          await tx.saleItem.deleteMany({
+            where: { saleId: sale.id, id: { notIn: [...incomingItemIds] } },
+          });
+          for (const item of sale.items) {
+            await tx.saleItem.upsert({
+              where: { id: item.id },
+              create: {
+                id: item.id,
+                saleId: sale.id,
+                productId: item.productId,
+                quantity: item.quantity,
+                unitPrice: new Prisma.Decimal(item.unitPrice),
+                discountPercentage: new Prisma.Decimal(item.discountPercentage ?? 0),
+                discountAmount: new Prisma.Decimal(item.discountAmount ?? 0),
+                discountReason: item.discountReason ?? null,
+                taxRate: new Prisma.Decimal(item.taxRate ?? 0),
+                taxAmount: new Prisma.Decimal(item.taxAmount ?? 0),
+                subtotal: new Prisma.Decimal(item.subtotal ?? 0),
+                total: new Prisma.Decimal(item.total ?? 0),
+                productInternalCodeSnapshot: item.productInternalCodeSnapshot ?? item.productId,
+                productCommercialNameSnapshot: item.productCommercialNameSnapshot ?? '',
+                productGenericNameSnapshot: item.productGenericNameSnapshot ?? null,
+                productConcentrationSnapshot: item.productConcentrationSnapshot ?? null,
+              },
+              update: {
+                productId: item.productId,
+                quantity: item.quantity,
+                unitPrice: new Prisma.Decimal(item.unitPrice),
+                discountPercentage: new Prisma.Decimal(item.discountPercentage ?? 0),
+                discountAmount: new Prisma.Decimal(item.discountAmount ?? 0),
+                discountReason: item.discountReason ?? null,
+                taxRate: new Prisma.Decimal(item.taxRate ?? 0),
+                taxAmount: new Prisma.Decimal(item.taxAmount ?? 0),
+                subtotal: new Prisma.Decimal(item.subtotal ?? 0),
+                total: new Prisma.Decimal(item.total ?? 0),
               },
             });
           }
-        }
 
-        // If client referenced does not exist locally yet (client pull hasn't landed
-        // or was filtered), null it out to avoid FK violation — snapshots on Sale
-        // already preserve display name/ID for history view.
-        let clientId = sale.clientId ?? null;
-        if (clientId) {
-          const clientExists = await tx.client.findUnique({ where: { id: clientId }, select: { id: true } });
-          if (!clientExists) clientId = null;
-        }
-
-        await tx.sale.upsert({
-          where: { id: sale.id },
-          create: mapSaleForCreate({ ...sale, clientId } as SaleSyncRow),
-          update: mapSaleForUpdate({ ...sale, clientId } as SaleSyncRow),
-        });
-
-        // Items — upsert by id, delete orphans not in payload
-        const incomingItemIds = new Set(sale.items.map((i) => i.id));
-        await tx.saleItem.deleteMany({
-          where: { saleId: sale.id, id: { notIn: [...incomingItemIds] } },
-        });
-        for (const item of sale.items) {
-          await tx.saleItem.upsert({
-            where: { id: item.id },
-            create: {
-              id: item.id,
-              saleId: sale.id,
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: new Prisma.Decimal(item.unitPrice),
-              discountPercentage: new Prisma.Decimal(item.discountPercentage ?? 0),
-              discountAmount: new Prisma.Decimal(item.discountAmount ?? 0),
-              discountReason: item.discountReason ?? null,
-              taxRate: new Prisma.Decimal(item.taxRate ?? 0),
-              taxAmount: new Prisma.Decimal(item.taxAmount ?? 0),
-              subtotal: new Prisma.Decimal(item.subtotal ?? 0),
-              total: new Prisma.Decimal(item.total ?? 0),
-              productInternalCodeSnapshot: item.productInternalCodeSnapshot ?? item.productId,
-              productCommercialNameSnapshot: item.productCommercialNameSnapshot ?? '',
-              productGenericNameSnapshot: item.productGenericNameSnapshot ?? null,
-              productConcentrationSnapshot: item.productConcentrationSnapshot ?? null,
-            },
-            update: {
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: new Prisma.Decimal(item.unitPrice),
-              discountPercentage: new Prisma.Decimal(item.discountPercentage ?? 0),
-              discountAmount: new Prisma.Decimal(item.discountAmount ?? 0),
-              discountReason: item.discountReason ?? null,
-              taxRate: new Prisma.Decimal(item.taxRate ?? 0),
-              taxAmount: new Prisma.Decimal(item.taxAmount ?? 0),
-              subtotal: new Prisma.Decimal(item.subtotal ?? 0),
-              total: new Prisma.Decimal(item.total ?? 0),
-            },
+          const incomingPaymentIds = new Set(sale.payments.map((p) => p.id));
+          await tx.salePayment.deleteMany({
+            where: { saleId: sale.id, id: { notIn: [...incomingPaymentIds] } },
           });
-        }
-
-        // Payments — same strategy
-        const incomingPaymentIds = new Set(sale.payments.map((p) => p.id));
-        await tx.salePayment.deleteMany({
-          where: { saleId: sale.id, id: { notIn: [...incomingPaymentIds] } },
+          for (const p of sale.payments) {
+            await tx.salePayment.upsert({
+              where: { id: p.id },
+              create: {
+                id: p.id,
+                saleId: sale.id,
+                paymentMethodId: p.paymentMethodId,
+                amount: new Prisma.Decimal(p.amount),
+                transactionReference: p.transactionReference ?? null,
+                authorizationCode: p.authorizationCode ?? null,
+                cardBrand: p.cardBrand ?? null,
+                cardLastFour: p.cardLastFour ?? null,
+                batchNumber: p.batchNumber ?? null,
+                processorResponseCode: p.processorResponseCode ?? null,
+              },
+              update: {
+                paymentMethodId: p.paymentMethodId,
+                amount: new Prisma.Decimal(p.amount),
+                transactionReference: p.transactionReference ?? null,
+                authorizationCode: p.authorizationCode ?? null,
+                cardBrand: p.cardBrand ?? null,
+                cardLastFour: p.cardLastFour ?? null,
+                batchNumber: p.batchNumber ?? null,
+                processorResponseCode: p.processorResponseCode ?? null,
+              },
+            });
+          }
         });
-        for (const p of sale.payments) {
-          await tx.salePayment.upsert({
-            where: { id: p.id },
-            create: {
-              id: p.id,
-              saleId: sale.id,
-              paymentMethodId: p.paymentMethodId,
-              amount: new Prisma.Decimal(p.amount),
-              transactionReference: p.transactionReference ?? null,
-              authorizationCode: p.authorizationCode ?? null,
-              cardBrand: p.cardBrand ?? null,
-              cardLastFour: p.cardLastFour ?? null,
-              batchNumber: p.batchNumber ?? null,
-              processorResponseCode: p.processorResponseCode ?? null,
-            },
-            update: {
-              paymentMethodId: p.paymentMethodId,
-              amount: new Prisma.Decimal(p.amount),
-              transactionReference: p.transactionReference ?? null,
-              authorizationCode: p.authorizationCode ?? null,
-              cardBrand: p.cardBrand ?? null,
-              cardLastFour: p.cardLastFour ?? null,
-              batchNumber: p.batchNumber ?? null,
-              processorResponseCode: p.processorResponseCode ?? null,
-            },
-          });
+      } catch (e: unknown) {
+        if (
+          e instanceof Prisma.PrismaClientKnownRequestError &&
+          e.code === 'P2002' &&
+          String((e.meta as any)?.target ?? '').includes('localNumber')
+        ) {
+          console.warn(
+            `[SalesSync] Skipping server sale ${sale.id} due to localNumber+sourceWorkstationId conflict (localNumber=${sale.localNumber}, workstation=${sale.sourceWorkstationId}) — keeping local pending row`,
+          );
+          continue;
         }
+        if (e instanceof Prisma.PrismaClientKnownRequestError) {
+          console.warn(`[SalesSync] Skipping sale ${sale.id} due to ${e.code}: ${e.message}`);
+          continue;
+        }
+        console.warn(`[SalesSync] Skipping sale ${sale.id}: ${e instanceof Error ? e.message : String(e)}`);
+        continue;
       }
-    });
+    }
 
     setSalesLastSyncedAt(new Date().toISOString());
   }

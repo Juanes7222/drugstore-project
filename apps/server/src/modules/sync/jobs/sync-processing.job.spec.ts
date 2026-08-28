@@ -40,6 +40,17 @@ describe('SyncProcessingJob', () => {
         }
       },
     );
+    // Nested savepoints: $transaction runs the callback on the same connection.
+    // Mock it to actually execute the callback so inner prisma calls are counted.
+    (prisma.$transaction as unknown as jest.Mock).mockImplementation(async (arg: any, _opts?: any) => {
+      if (typeof arg === 'function') {
+        // Interactive transaction form: fn(tx) => ...
+        // Pass prisma as the tx so inner calls still hit the mock.
+        return await arg(prisma);
+      }
+      // Array form not used in these tests
+      return await Promise.all(arg);
+    });
     dispatcher = { dispatch: jest.fn() } as any;
     job = new SyncProcessingJob(prisma as any, dispatcher as any, tenantContext as any);
   });

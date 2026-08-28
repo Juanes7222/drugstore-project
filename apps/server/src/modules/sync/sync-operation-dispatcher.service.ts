@@ -16,7 +16,10 @@ import { PurchaseReceptionsService } from '@/modules/purchases/services/purchase
 import { SupplierReturnsService } from '@/modules/purchases/services/supplier-returns.service';
 import { InvoiceTransmissionPayloadSchema } from '@pharmacy/shared-validation';
 import { InvoiceAdjustmentPayloadSchema } from './dto/invoice-adjustment-payload.schema';
+import { AuditLogBatchPayloadSchema } from './dto/audit-log-batch.schema';
+import { ShiftOpenPayloadSchema } from './dto/shift-open-payload.schema';
 import { SyncPayloadValidationException } from './exceptions/sync-payload-validation.exception';
+import { ShiftAlreadyOpenException } from '@/modules/cash-shift/exceptions/shift-already-open.exception';
 import {
   PurchaseOrderConfirmationPayloadSchema,
   PurchaseReceptionConfirmationPayloadSchema,
@@ -95,6 +98,9 @@ export class SyncOperationDispatcherService {
         case 'SHIFT_CLOSURE':
           await this.handleShiftClosure(entry);
           break;
+        case 'SHIFT_OPEN':
+          result = await this.handleShiftOpen(entry);
+          break;
         case 'CLIENT_CREATION':
           result = await this.handleClientCreation(entry);
           break;
@@ -140,6 +146,9 @@ export class SyncOperationDispatcherService {
         case 'SUPPLIER_RETURN_CONFIRMATION':
           await this.handleSupplierReturnConfirmation(entry);
           break;
+        case 'AUDIT_LOG_BATCH':
+          await this.handleAuditLogBatch(entry);
+          break;
         // FISCAL_DOCUMENT_SYNC, RESOLUTION_ALLOCATION
         // are not dispatched — the job never selects them.
       }
@@ -157,8 +166,11 @@ export class SyncOperationDispatcherService {
   /**
    * Record a SyncOperationOutcome row.
    *
-   * Best-effort: if the insert fails (e.g. unique constraint, db connection), the
-   * dispatch is unaffected — the health metric is eventually consistent.
+   * Best-effort and savepoint-isolated: the insert runs inside a nested
+   * savepoint (prisma.$transaction via the tenant-aware proxy) so a DB
+   * error (e.g. unique constraint) does not abort the outer withTenant
+   * transaction (25P02). If the savepoint fails the dispatch is unaffected
+   * — the health metric is eventually consistent.
    */
   private async recordOutcome(
     operationUuid: string,
@@ -168,16 +180,22 @@ export class SyncOperationDispatcherService {
     operationSource: 'DIRECT' | 'LOCAL_HUB' = 'DIRECT',
   ): Promise<void> {
     try {
-      await this.prisma.syncOperationOutcome.create({
-        data: {
-          id: crypto.randomUUID(),
-          subscriptionId: this.tenantContext.getSubscriptionId(),
-          operationUuid,
-          workstationId,
-          outcome,
-          failureCategory,
-          operationSource,
-        },
+      const subscriptionId = this.tenantContext.getSubscriptionId();
+      await this.prisma.$transaction(async (tx) => {
+        // Ensure savepoint inherits tenant (SET LOCAL is transaction-local and
+        // must be visible inside the savepoint for RLS with_check).
+        await tx.$executeRaw`SELECT set_config('app.current_tenant', ${subscriptionId}, true)`;
+        await tx.syncOperationOutcome.create({
+          data: {
+            id: crypto.randomUUID(),
+            subscriptionId,
+            operationUuid,
+            workstationId,
+            outcome,
+            failureCategory,
+            operationSource,
+          },
+        });
       });
     } catch (err) {
       this.logger.warn(
@@ -529,6 +547,85 @@ export class SyncOperationDispatcherService {
     await this.cashShiftService.closeShift(shiftId, userId, {
       closingNotes: payload.closingNotes as string | undefined,
     });
+  }
+
+  /**
+   * Replays a SHIFT_OPEN: creates the global OPEN shift server-side.
+   *
+   * The local workstation's UUID (`payload.shiftId`) is preserved as the
+   * server CashShift.id so the POS and server stay consistent without an
+   * id-reconciliation step (same pattern as PRODUCT_CREATION with
+   * sourceProductId). The workstation that opened the shift is taken from
+   * `entry.sourceWorkstationId` (authenticated session), not the payload.
+   *
+   * Idempotency: if a shift with the same id already exists, the call is a
+   * no-op and returns the existing id. If another OPEN shift already exists
+   * (different id), a `ShiftAlreadyOpenException` is thrown — this is a
+   * DomainException so the sync job marks it PERMANENT_FAILURE instead of
+   * retrying forever.
+   *
+   * Concurrency: the check-and-create runs inside a transaction guarded by
+   * a PostgreSQL advisory lock keyed per subscription, mirroring
+   * `ensureGlobalShiftAttribution`. Without it two workstations pushing
+   * SHIFT_OPEN concurrently could both observe "no open shift" and each
+   * create one, breaking the one-OPEN invariant (no partial unique index).
+   */
+  private async handleShiftOpen(entry: SyncQueueEntry): Promise<DispatchResult> {
+    const payload = this.parsePayload('SHIFT_OPEN', entry.payload, ShiftOpenPayloadSchema);
+    const workstationId = entry.sourceWorkstationId;
+    const shiftId = payload.shiftId;
+    const subscriptionId = this.tenantContext.getSubscriptionId();
+
+    // Fast path: already exists (retry after transient failure before COMPLETED)
+    const existing = await this.prisma.cashShift.findUnique({
+      where: { id: shiftId },
+      select: { id: true },
+    });
+    if (existing) {
+      this.logger.log(`SHIFT_OPEN idempotent: shiftId=${shiftId} already exists — returning existing`);
+      return { entityId: shiftId };
+    }
+
+    const lockKey = `${subscriptionId}:cash-shift-global-open`;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_tenant', ${subscriptionId}, true)`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+      // Re-check inside lock
+      const dup = await tx.cashShift.findUnique({
+        where: { id: shiftId },
+        select: { id: true },
+      });
+      if (dup) return;
+
+      const openShift = await tx.cashShift.findFirst({
+        where: { state: 'OPEN', subscriptionId },
+        select: { id: true },
+      });
+      if (openShift) {
+        throw new ShiftAlreadyOpenException();
+      }
+
+      await tx.cashShift.create({
+        data: {
+          id: shiftId,
+          subscriptionId,
+          workstationId,
+          userId: payload.userId,
+          state: 'OPEN',
+          openedAt: new Date(payload.openedAt),
+          openingBalance: new Prisma.Decimal(payload.openingBalance),
+          openingNotes: payload.openingNotes ?? null,
+        },
+      });
+    });
+
+    this.logger.log(
+      `SHIFT_OPEN processed: shiftId=${shiftId}, workstationId=${workstationId}, userId=${payload.userId}, openingBalance=${payload.openingBalance}`,
+    );
+
+    return { entityId: shiftId };
   }
 
   /**
@@ -1140,12 +1237,12 @@ export class SyncOperationDispatcherService {
   }
 
   /**
-   * Replays a SUPPLIER_RETURN_CONFIRMATION by creating and confirming
-   * the supplier return server-side from the POS payload.
-   *
-   * Idempotent: if a return with the same sequentialNumber + supplierId
-   * already exists, the operation is skipped (ALREADY_ACCEPTED).
-   */
+    * Replays a SUPPLIER_RETURN_CONFIRMATION by creating and confirming
+    * the supplier return server-side from the POS payload.
+    *
+    * Idempotent: if a return with the same sequentialNumber + supplierId
+    * already exists, the operation is skipped (ALREADY_ACCEPTED).
+    */
   private async handleSupplierReturnConfirmation(entry: SyncQueueEntry): Promise<void> {
     const payload = this.parsePayload(
       'SUPPLIER_RETURN_CONFIRMATION',
@@ -1154,5 +1251,205 @@ export class SyncOperationDispatcherService {
     ) as SupplierReturnConfirmationPayload;
     const userId = payload.createdByUserId;
     await this.supplierReturnsService.confirmReturnFromSync(payload, userId);
+  }
+
+  /**
+   * Replays an AUDIT_LOG_BATCH by inserting each LocalAuditLog row into
+   * the server's `AuditLog` table.
+   *
+   * Mapping
+   * -------
+   * - `category` → `SystemModule` (e.g. `cash_shift` → `CASH_SHIFT`,
+   *   `sale` → `SALES_POS`). Unknown categories fall back to `SYNC_OFFLINE`.
+   * - `action` string → `AuditAction` enum. Uses heuristic based on the
+   *   LocalAuditEvent vocabulary; unmapped values fall back to `STATE_CHANGE`
+   *   and the original value is preserved inside `details._localAction`.
+   * - `id` is reused as `AuditLog.id` for idempotency — a retried batch
+   *   with the same local ids becomes a no-op for already-inserted rows
+   *   (catch P2002, skip).
+   * - `subscriptionId` is stamped from `TenantContext` — the server is the
+   *   source of truth, never the POS payload.
+   * - `ipAddress`/`userAgent` stay null for offline rows; they are only
+   *   populated for online HTTP-intercepted rows.
+   * - `createdAt` preserves the original offline timestamp, not `now()`.
+   */
+  private async handleAuditLogBatch(entry: SyncQueueEntry): Promise<void> {
+    const payload = this.parsePayload(
+      'AUDIT_LOG_BATCH',
+      entry.payload,
+      AuditLogBatchPayloadSchema,
+    );
+
+    const subscriptionId = this.tenantContext.getSubscriptionId();
+
+    // Build all rows first, with FKs already nullified and original ids
+    // preserved in details. Use createMany with skipDuplicates so a single
+    // duplicate id does not abort the outer withTenant transaction.
+    // Per-log try/catch inside a transaction would leave the transaction
+    // in aborted state (Postgres 25P02) even after catching in JS, and
+    // subsequent queries in same transaction would fail. createMany is a
+    // single statement, atomic, and with skipDuplicates it silently skips
+    // existing ids without error.
+    const rowsToCreate = payload.logs.map((log) => {
+      const module = this.mapAuditCategoryToModule(log.category);
+      const action = this.mapAuditAction(log.action);
+      const detailsWithProvenance = this.buildAuditDetails(log);
+      const offlineFkDetails = (() => {
+        try {
+          const base = JSON.parse(detailsWithProvenance ?? '{}');
+          return JSON.stringify({
+            ...base,
+            _offlineUserId: log.userId ?? null,
+            _offlineWorkstationId: log.workstationId ?? null,
+            _offlineSessionId: log.sessionId ?? null,
+          });
+        } catch {
+          return detailsWithProvenance;
+        }
+      })();
+      return {
+        id: log.id,
+        action,
+        module,
+        entityType: log.entityType ?? 'unknown',
+        entityId: log.entityId ?? 'unknown',
+        entityName: log.entityName ?? null,
+        details: offlineFkDetails,
+        userId: null,
+        userRole: log.userRole ?? null,
+        workstationId: null,
+        sessionId: null,
+        correlationId: log.correlationId ?? null,
+        subscriptionId,
+        ipAddress: null,
+        userAgent: null,
+        createdAt: new Date(log.createdAt),
+      };
+    });
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.auditLog.createMany({
+          data: rowsToCreate,
+          skipDuplicates: true,
+        });
+      });
+    } catch (err: unknown) {
+      // createMany can still fail on validation (e.g. invalid enum). Fall
+      // back to per-row best-effort so one bad row doesn't drop the whole
+      // batch. Each per-row insert runs in its own nested savepoint so a
+      // single bad row does not abort the outer withTenant / processEntry
+      // transaction (25P02).
+      this.logger.warn(
+        `AUDIT_LOG_BATCH createMany failed, falling back to per-row: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      for (const row of rowsToCreate) {
+        try {
+          await this.prisma.$transaction(async (tx) => {
+            await tx.auditLog.create({ data: row });
+          });
+        } catch (perRowErr: unknown) {
+          if (
+            perRowErr instanceof Prisma.PrismaClientKnownRequestError &&
+            perRowErr.code === 'P2002'
+          ) {
+            continue;
+          }
+          this.logger.warn(
+            `AUDIT_LOG_BATCH skipped log id=${row.id}: ${perRowErr instanceof Error ? perRowErr.message : String(perRowErr)}`,
+          );
+        }
+      }
+    }
+
+    this.logger.log(
+      `AUDIT_LOG_BATCH processed: ${payload.logs.length} log(s), workstationId=${entry.sourceWorkstationId}`,
+    );
+  }
+
+  private mapAuditCategoryToModule(category: string): import('@pharmacy/database').SystemModule {
+    const map: Record<string, import('@pharmacy/database').SystemModule> = {
+      cash_shift: 'CASH_SHIFT' as any,
+      sale: 'SALES_POS' as any,
+      client: 'CLIENTS' as any,
+      prescription: 'SALES_POS' as any,
+      auth: 'AUTH_USERS' as any,
+      sync: 'SYNC_OFFLINE' as any,
+      inventory: 'INVENTORY' as any,
+      purchase: 'PURCHASES' as any,
+      fiscal: 'FISCAL_DIAN' as any,
+      report: 'REPORTS' as any,
+    };
+    return map[category] ?? ('SYNC_OFFLINE' as any);
+  }
+
+  private mapAuditAction(localAction: string): import('@pharmacy/database').AuditAction {
+    const upper = localAction.toUpperCase();
+
+    // Explicit LocalAuditEvent → AuditAction mapping
+    const explicit: Record<string, import('@pharmacy/database').AuditAction> = {
+      CASH_SHIFT_OPENED: 'STATE_CHANGE' as any,
+      CASH_SHIFT_CLOSED: 'STATE_CHANGE' as any,
+      CASH_SHIFT_FORCED_CLOSE: 'STATE_CHANGE' as any,
+      CASH_COUNT_PARTIAL: 'CREATE' as any,
+      SALE_CONFIRMED: 'STATE_CHANGE' as any,
+      SALE_ANNULLED: 'STATE_CHANGE' as any,
+      CLIENT_CREATED: 'CREATE' as any,
+      CLIENT_UPDATED: 'UPDATE' as any,
+      CLIENT_DEACTIVATED: 'DELETE' as any,
+      CLIENT_RETURN_CONFIRMED: 'CREATE' as any,
+      PRESCRIPTION_REGISTERED: 'CREATE' as any,
+      OFFLINE_LOGIN: 'LOGIN' as any,
+      OFFLINE_SESSION_BLESSED: 'ACCESS' as any,
+      OFFLINE_SESSION_REJECTED: 'ACCESS' as any,
+      SYNC_PUSH_COMPLETED: 'EXPORT' as any,
+      SYNC_PUSH_FAILED: 'EXPORT' as any,
+      SYNC_PULL_COMPLETED: 'IMPORT' as any,
+      SYNC_CONFLICT: 'STATE_CHANGE' as any,
+      INVENTORY_ADJUSTMENT_CREATED: 'CREATE' as any,
+      INVENTORY_ADJUSTMENT_APPLIED: 'STATE_CHANGE' as any,
+      INVENTORY_ADJUSTMENT_APPROVED: 'STATE_CHANGE' as any,
+      INVENTORY_ADJUSTMENT_REJECTED: 'STATE_CHANGE' as any,
+      PURCHASE_ORDER_CREATED: 'CREATE' as any,
+      PURCHASE_RECEPTION_CONFIRMED: 'STATE_CHANGE' as any,
+      FISCAL_INVOICE_EMITTED: 'CREATE' as any,
+      FISCAL_CONTINGENCY_ACTIVATED: 'STATE_CHANGE' as any,
+      FISCAL_TRANSMISSION_FAILED: 'STATE_CHANGE' as any,
+      REPORT_EXPORTED: 'EXPORT' as any,
+      REPORT_SHIFT_CLOSE_DOCUMENT_PERSISTED: 'CREATE' as any,
+      REPORT_SHIFT_CLOSE_DOCUMENT_RECOVERED: 'CREATE' as any,
+    };
+    if (explicit[upper]) return explicit[upper];
+
+    // Heuristic fallback
+    if (upper.includes('CREATE') || upper.includes('OPENED')) return 'CREATE' as any;
+    if (upper.includes('UPDATE') || upper.includes('CHANGED')) return 'UPDATE' as any;
+    if (upper.includes('DELETE') || upper.includes('DEACTIVATED') || upper.includes('ANNULLED')) return 'DELETE' as any;
+    if (upper.includes('LOGIN')) return 'LOGIN' as any;
+    if (upper.includes('LOGOUT')) return 'LOGOUT' as any;
+    if (upper.includes('EXPORT') || upper.includes('PUSH_COMPLETED')) return 'EXPORT' as any;
+    if (upper.includes('IMPORT') || upper.includes('PULL_COMPLETED')) return 'IMPORT' as any;
+
+    return 'STATE_CHANGE' as any;
+  }
+
+  private buildAuditDetails(log: { details?: string | null; action: string }): string | null {
+    // Preserve original local action/category inside details for forensics,
+    // even after mapping to server enums. If details already contains JSON,
+    // merge; otherwise wrap.
+    const localAction = log.action;
+    if (!log.details) {
+      return JSON.stringify({ _localAction: localAction, _offline: true });
+    }
+    try {
+      const parsed = JSON.parse(log.details);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return JSON.stringify({ ...parsed, _localAction: localAction, _offline: true });
+      }
+      return JSON.stringify({ value: parsed, _localAction: localAction, _offline: true });
+    } catch {
+      // details is plain text, not JSON
+      return JSON.stringify({ raw: log.details, _localAction: localAction, _offline: true });
+    }
   }
 }

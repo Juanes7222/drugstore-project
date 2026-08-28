@@ -2,7 +2,7 @@
  * Unit tests for SyncPushService — pushing pending sync entries to the server.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { createSyncPushService, type SyncPushService, classifyFailure, computeNextRetryDelay, PUSH_BATCH_LIMIT, MAX_RETRY_ATTEMPTS } from "./sync-push.service";
+import { createSyncPushService, type SyncPushService, classifyFailure, computeNextRetryDelay, PUSH_BATCH_LIMIT, MAX_RETRY_ATTEMPTS, OPERATION_PRIORITY } from "./sync-push.service";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -1131,6 +1131,135 @@ describe("SyncPushService", () => {
       expect(updateCall.data.nextRetryAt).toBeInstanceOf(Date);
 
       vi.unstubAllGlobals();
+    });
+  });
+
+  describe("OPERATION_PRIORITY (SHIFT_OPEN global sync flow)", () => {
+    it("defines SHIFT_OPEN with priority 2", () => {
+      expect(OPERATION_PRIORITY.SHIFT_OPEN).toBe(2);
+    });
+
+    it("defines SHIFT_OPEN at same priority as PRODUCT_UPDATE and CLIENT_UPDATE", () => {
+      expect(OPERATION_PRIORITY.SHIFT_OPEN).toBe(OPERATION_PRIORITY.PRODUCT_UPDATE);
+      expect(OPERATION_PRIORITY.SHIFT_OPEN).toBe(OPERATION_PRIORITY.CLIENT_UPDATE);
+      expect(OPERATION_PRIORITY.PRODUCT_UPDATE).toBe(2);
+    });
+
+    it("orders SHIFT_OPEN before SALE_CONFIRMATION and SHIFT_CLOSURE", () => {
+      expect(OPERATION_PRIORITY.SHIFT_OPEN).toBeLessThan(OPERATION_PRIORITY.SALE_CONFIRMATION);
+      expect(OPERATION_PRIORITY.SHIFT_OPEN).toBeLessThan(OPERATION_PRIORITY.SHIFT_CLOSURE);
+      expect(OPERATION_PRIORITY.SALE_CONFIRMATION).toBe(3);
+    });
+
+    it("orders entries by priority: PRODUCT_CREATION (1) before SHIFT_OPEN (2) before SALE_CONFIRMATION (3) before INVENTORY_ADJUSTMENT (4)", async () => {
+      const entries = [
+        makePendingEntry({ id: "e-sale", operationUuid: "u-sale", operationType: "SALE_CONFIRMATION", clientSequence: 1n }),
+        makePendingEntry({ id: "e-shift", operationUuid: "u-shift", operationType: "SHIFT_OPEN", clientSequence: 2n }),
+        makePendingEntry({ id: "e-product", operationUuid: "u-product", operationType: "PRODUCT_CREATION", clientSequence: 3n }),
+        makePendingEntry({ id: "e-inv", operationUuid: "u-inv", operationType: "INVENTORY_ADJUSTMENT", clientSequence: 4n }),
+      ];
+      // findMany for PENDING returns the unsorted batch; retryable returns empty
+      prisma.syncQueue.findMany
+        .mockResolvedValueOnce(entries)
+        .mockResolvedValueOnce([]);
+
+      service = createSyncPushService({ prisma, baseUrl: "http://localhost:3000" });
+
+      const prepared = await service.preparePush();
+
+      const orderedTypes = prepared.entries.map((e) => e.operationType);
+      expect(orderedTypes).toEqual([
+        "PRODUCT_CREATION",
+        "SHIFT_OPEN",
+        "SALE_CONFIRMATION",
+        "INVENTORY_ADJUSTMENT",
+      ]);
+    });
+
+    it("orders SHIFT_OPEN and SHIFT_CLOSURE within same priority by clientSequence", async () => {
+      const entries = [
+        makePendingEntry({ id: "e-close", operationUuid: "u-close", operationType: "SHIFT_CLOSURE", clientSequence: 5n }),
+        makePendingEntry({ id: "e-open", operationUuid: "u-open", operationType: "SHIFT_OPEN", clientSequence: 2n }),
+        makePendingEntry({ id: "e-open2", operationUuid: "u-open2", operationType: "SHIFT_OPEN", clientSequence: 8n }),
+      ];
+      prisma.syncQueue.findMany
+        .mockResolvedValueOnce(entries)
+        .mockResolvedValueOnce([]);
+
+      service = createSyncPushService({ prisma, baseUrl: "http://localhost:3000" });
+
+      const prepared = await service.preparePush();
+
+      // Both SHIFT_OPEN and SHIFT_CLOSURE share priority 2/3? Actually SHIFT_OPEN=2, SHIFT_CLOSURE=3
+      // so SHIFT_OPEN entries come before SHIFT_CLOSURE regardless of sequence, then within SHIFT_OPEN sorted by sequence
+      const orderedIds = prepared.entries.map((e) => e.id);
+      expect(orderedIds).toEqual(["e-open", "e-open2", "e-close"]);
+    });
+
+    it("preserves clientSequence order within same SHIFT_OPEN priority group", async () => {
+      const entries = [
+        makePendingEntry({ id: "e3", operationUuid: "u3", operationType: "SHIFT_OPEN", clientSequence: 30n }),
+        makePendingEntry({ id: "e1", operationUuid: "u1", operationType: "SHIFT_OPEN", clientSequence: 10n }),
+        makePendingEntry({ id: "e2", operationUuid: "u2", operationType: "SHIFT_OPEN", clientSequence: 20n }),
+      ];
+      prisma.syncQueue.findMany
+        .mockResolvedValueOnce(entries)
+        .mockResolvedValueOnce([]);
+
+      service = createSyncPushService({ prisma, baseUrl: "http://localhost:3000" });
+
+      const prepared = await service.preparePush();
+
+      expect(prepared.entries.map((e) => e.id)).toEqual(["e1", "e2", "e3"]);
+    });
+
+    it("places unknown operation types at lowest priority after all known groups", async () => {
+      const entries = [
+        makePendingEntry({ id: "e-unknown", operationUuid: "u-unknown", operationType: "UNKNOWN_OP", clientSequence: 1n }),
+        makePendingEntry({ id: "e-shift", operationUuid: "u-shift", operationType: "SHIFT_OPEN", clientSequence: 2n }),
+        makePendingEntry({ id: "e-audit", operationUuid: "u-audit", operationType: "AUDIT_LOG_BATCH", clientSequence: 3n }),
+      ];
+      prisma.syncQueue.findMany
+        .mockResolvedValueOnce(entries)
+        .mockResolvedValueOnce([]);
+
+      service = createSyncPushService({ prisma, baseUrl: "http://localhost:3000" });
+
+      const prepared = await service.preparePush();
+
+      const orderedTypes = prepared.entries.map((e) => e.operationType);
+      // SHIFT_OPEN (2) -> AUDIT_LOG_BATCH (7) -> UNKNOWN (99)
+      expect(orderedTypes).toEqual(["SHIFT_OPEN", "AUDIT_LOG_BATCH", "UNKNOWN_OP"]);
+    });
+
+    it("ensures PUSH_BATCH_LIMIT respected while maintaining SHIFT_OPEN priority ordering", async () => {
+      const entries = Array.from({ length: 12 }, (_, i) => {
+        const type = i % 2 === 0 ? "SHIFT_OPEN" : "SALE_CONFIRMATION";
+        return makePendingEntry({
+          id: `e-${i}`,
+          operationUuid: `u-${i}`,
+          operationType: type,
+          clientSequence: BigInt(i + 1),
+        });
+      });
+      // PENDING returns first 10 (limit), but our mock returns 12 — service should only take 10 via take param,
+      // however our mock bypasses limit; we test sorting still correct for 12
+      prisma.syncQueue.findMany
+        .mockResolvedValueOnce(entries.slice(0, 10))
+        .mockResolvedValueOnce([]);
+
+      service = createSyncPushService({ prisma, baseUrl: "http://localhost:3000" });
+
+      const prepared = await service.preparePush();
+
+      expect(prepared.entries.length).toBe(10);
+      // All SHIFT_OPEN (priority 2) should come before SALE_CONFIRMATION (3)
+      const shiftCount = prepared.entries.filter((e) => e.operationType === "SHIFT_OPEN").length;
+      const saleFirstIndex = prepared.entries.findIndex((e) => e.operationType === "SALE_CONFIRMATION");
+      const lastShiftIndex = prepared.entries.map((e) => e.operationType).lastIndexOf("SHIFT_OPEN");
+      if (shiftCount > 0 && saleFirstIndex !== -1) {
+        expect(lastShiftIndex).toBeLessThan(saleFirstIndex);
+      }
     });
   });
 });

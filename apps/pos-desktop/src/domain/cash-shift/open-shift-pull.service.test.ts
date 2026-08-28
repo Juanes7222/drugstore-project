@@ -378,4 +378,109 @@ describe("OpenShiftPullService", () => {
       );
     });
   });
+
+  describe("SHIFT_OPEN global sync flow — other workstation adoption & local conflict", () => {
+    it("fetch returns new server row opened at another workstation and apply adopts it when no local shift", async () => {
+      const serverRow = makeServerRow({
+        id: "server-other-ws-shift",
+        workstationId: "ws-other-admin",
+        userId: "user-other",
+        openingBalance: "750000.00",
+      });
+      httpClient.get.mockResolvedValue(serverRow);
+
+      prisma.cashShift.findFirst
+        .mockResolvedValueOnce(null) // apply: no local OPEN
+        .mockResolvedValueOnce(serverRow as any); // refreshStore
+      prisma.cashShift.findUnique.mockResolvedValue(null);
+      prisma.cashShift.create.mockResolvedValue(serverRow as any);
+
+      const service = makeService("ws-1");
+
+      const fetched = await service.fetchOpenShift();
+      expect(fetched).toEqual(serverRow);
+      expect(fetched?.workstationId).toBe("ws-other-admin");
+
+      const result = await service.applyOpenShift(serverRow);
+
+      expect(result).toEqual({ status: "adopted", shiftId: "server-other-ws-shift" });
+      expect(prisma.cashShift.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            id: "server-other-ws-shift",
+            workstationId: "ws-other-admin",
+            userId: "user-other",
+          }),
+        }),
+      );
+    });
+
+    it("apply reports local-open-conflict when this workstation has pending SHIFT_OPEN not yet pushed", async () => {
+      const serverRow = makeServerRow({ id: "server-new-shift", workstationId: "ws-other" });
+      const localPendingShift = { id: "local-pending-shift", workstationId: "ws-1", state: "OPEN" };
+      prisma.cashShift.findFirst.mockResolvedValue(localPendingShift as any);
+
+      const service = makeService("ws-1");
+
+      const result = await service.applyOpenShift(serverRow);
+
+      expect(result).toEqual({
+        status: "local-open-conflict",
+        localShiftId: "local-pending-shift",
+        serverShiftId: "server-new-shift",
+      });
+      expect(prisma.cashShift.update).not.toHaveBeenCalled();
+      expect(prisma.cashShift.create).not.toHaveBeenCalled();
+    });
+
+    it("refreshOpenShift adopts foreign row via fetch+apply when no local shift (other workstation opened)", async () => {
+      const serverRow = makeServerRow({ id: "server-adopt-other", workstationId: "ws-foreign" });
+      httpClient.get.mockResolvedValue(serverRow);
+      prisma.cashShift.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(serverRow as any);
+      prisma.cashShift.findUnique.mockResolvedValue(null);
+      prisma.cashShift.create.mockResolvedValue(serverRow as any);
+
+      const service = makeService("ws-1");
+
+      const result = await service.refreshOpenShift();
+
+      expect(result).toEqual({ status: "adopted", shiftId: "server-adopt-other" });
+      expect(httpClient.get).toHaveBeenCalledWith(`${BASE_URL}/cash-shifts/open`, expect.any(Object));
+    });
+
+    it("refreshOpenShift keeps local shift and reports conflict when local SHIFT_OPEN push pending", async () => {
+      const serverRow = makeServerRow({ id: "server-conflict", workstationId: "ws-other" });
+      httpClient.get.mockResolvedValue(serverRow);
+      const localPending = { id: "local-pending-2", workstationId: "ws-1", state: "OPEN" };
+      prisma.cashShift.findFirst.mockResolvedValue(localPending as any);
+
+      const service = makeService("ws-1");
+
+      const result = await service.refreshOpenShift();
+
+      expect(result).toEqual({
+        status: "local-open-conflict",
+        localShiftId: "local-pending-2",
+        serverShiftId: "server-conflict",
+      });
+    });
+
+    it("fetch propagates server row shape with openingBalance string and openedAt ISO", async () => {
+      const serverRow = makeServerRow({
+        id: "server-shape",
+        openingBalance: "123456.78",
+        openedAt: "2026-08-20T15:00:00.000Z",
+      });
+      httpClient.get.mockResolvedValue(serverRow);
+
+      const service = makeService("ws-1");
+      const fetched = await service.fetchOpenShift();
+
+      expect(fetched?.openingBalance).toBe("123456.78");
+      expect(fetched?.openedAt).toBe("2026-08-20T15:00:00.000Z");
+      expect(() => new Date(fetched!.openedAt)).not.toThrow();
+    });
+  });
 });

@@ -25,6 +25,7 @@ const MAX_RETRY_ATTEMPTS = 10;
 const SUPPORTED_TYPES: SyncQueueEntry['operationType'][] = [
   'SALE_CONFIRMATION',
   'SHIFT_CLOSURE',
+  'SHIFT_OPEN',
   'CLIENT_CREATION',
   'INVENTORY_ADJUSTMENT',
   'INVOICE_ADJUSTMENT',
@@ -33,6 +34,7 @@ const SUPPORTED_TYPES: SyncQueueEntry['operationType'][] = [
   'PURCHASE_ORDER_CONFIRMATION',
   'PURCHASE_RECEPTION_CONFIRMATION',
   'SUPPLIER_RETURN_CONFIRMATION',
+  'AUDIT_LOG_BATCH',
 ];
 
 @Injectable()
@@ -112,38 +114,47 @@ export class SyncProcessingJob {
    * concurrent processors (this cron and the batch endpoint's immediate
    * dispatch) can never work the same entry — the loser observes a zero
    * count and skips.
+   *
+   * Each entry's claim + dispatch + COMPLETED update runs inside a nested
+   * savepoint (prisma.$transaction on the same connection via the tenant-
+   * aware proxy + Prisma 7.8 adapter-pg). Any DB error in one entry aborts
+   * only that savepoint, so the outer withTenant transaction and the next
+   * entry's queries remain healthy (fixes 25P02 "current transaction is
+   * aborted" after e.g. AUDIT_LOG_BATCH).
    */
   private async processEntry(entry: SyncQueueEntry): Promise<void> {
-    const claimed = await this.prisma.syncQueue.updateMany({
-      where: {
-        id: entry.id,
-        subscriptionId: this.tenantContext.getSubscriptionId(),
-        status: { notIn: [SyncStatus.PROCESSING, SyncStatus.COMPLETED, SyncStatus.PERMANENT_FAILURE, SyncStatus.DISCARDED] },
-      },
-      data: { status: SyncStatus.PROCESSING },
-    });
-    if (claimed.count === 0) {
-      return; // Another processor won the claim
-    }
-
     try {
-      const result = await this.dispatcher.dispatch(entry);
+      await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.syncQueue.updateMany({
+          where: {
+            id: entry.id,
+            subscriptionId: this.tenantContext.getSubscriptionId(),
+            status: { notIn: [SyncStatus.PROCESSING, SyncStatus.COMPLETED, SyncStatus.PERMANENT_FAILURE, SyncStatus.DISCARDED] },
+          },
+          data: { status: SyncStatus.PROCESSING },
+        });
+        if (claimed.count === 0) {
+          return; // Another processor won the claim
+        }
 
-      // Clear any previous error message from a prior failed attempt —
-      // a successful retry should not show stale error context. The
-      // dispatcher's entityId / entityInternalCode are stamped here too
-      // so a *_CREATION retried after the immediate-dispatch path
-      // failed still surfaces the server-assigned ids in the eventual
-      // ALREADY_ACCEPTED response on a subsequent push.
-      await this.prisma.syncQueue.update({
-        where: { id: entry.id },
-        data: {
-          status: SyncStatus.COMPLETED,
-          processedAt: new Date(),
-          lastErrorMessage: null,
-          entityId: result.entityId ?? null,
-          entityInternalCode: result.entityInternalCode ?? null,
-        },
+        const result = await this.dispatcher.dispatch(entry);
+
+        // Clear any previous error message from a prior failed attempt —
+        // a successful retry should not show stale error context. The
+        // dispatcher's entityId / entityInternalCode are stamped here too
+        // so a *_CREATION retried after the immediate-dispatch path
+        // failed still surfaces the server-assigned ids in the eventual
+        // ALREADY_ACCEPTED response on a subsequent push.
+        await tx.syncQueue.update({
+          where: { id: entry.id },
+          data: {
+            status: SyncStatus.COMPLETED,
+            processedAt: new Date(),
+            lastErrorMessage: null,
+            entityId: result.entityId ?? null,
+            entityInternalCode: result.entityInternalCode ?? null,
+          },
+        });
       });
     } catch (error: unknown) {
       // CashShiftNotOpenForWorkstation remains potentially transient during
@@ -169,26 +180,35 @@ export class SyncProcessingJob {
     }
   }
 
-  /** Marks an entry as PERMANENT_FAILURE immediately — no more retries. */
+  /** Marks an entry as PERMANENT_FAILURE immediately — no more retries. Savepoint-isolated so a failed update does not poison the outer withTenant tx. */
   private async markPermanentFailure(entry: SyncQueueEntry, error: unknown): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-    await this.prisma.syncQueue.update({
-      where: { id: entry.id },
-      data: {
-        status: SyncStatus.PERMANENT_FAILURE,
-        retryCount: (entry.retryCount ?? 0) + 1,
-        lastErrorMessage: `Permanent failure — no retry: ${errorMessage}`,
-        nextRetryAt: null,
-      },
-    });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.syncQueue.update({
+          where: { id: entry.id },
+          data: {
+            status: SyncStatus.PERMANENT_FAILURE,
+            retryCount: (entry.retryCount ?? 0) + 1,
+            lastErrorMessage: `Permanent failure — no retry: ${errorMessage}`,
+            nextRetryAt: null,
+          },
+        });
+      });
+    } catch (updateError: unknown) {
+      this.logger.warn(
+        `Failed to mark sync operation ${entry.id} as PERMANENT_FAILURE: ${updateError instanceof Error ? updateError.message : String(updateError)}`,
+      );
+      return;
+    }
 
     this.logger.warn(
       `Sync operation ${entry.id} (${entry.operationType}) permanently failed: ${errorMessage}`,
     );
   }
 
-  /** Marks an entry as FAILED, increments retry count, schedules next retry. */
+  /** Marks an entry as FAILED, increments retry count, schedules next retry. Savepoint-isolated so a failed update does not poison the outer withTenant tx. */
   private async markFailed(entry: SyncQueueEntry, error: unknown): Promise<void> {
     const retryCount = (entry.retryCount ?? 0) + 1;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -205,10 +225,19 @@ export class SyncProcessingJob {
         : new Date(Date.now() + RETRY_FIXED_DELAY_SECONDS * 1000),
     };
 
-    await this.prisma.syncQueue.update({
-      where: { id: entry.id },
-      data,
-    });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.syncQueue.update({
+          where: { id: entry.id },
+          data,
+        });
+      });
+    } catch (updateError: unknown) {
+      this.logger.warn(
+        `Failed to mark sync operation ${entry.id} as FAILED: ${updateError instanceof Error ? updateError.message : String(updateError)}`,
+      );
+      return;
+    }
 
     this.logger.warn(
       `Sync operation ${entry.id} (${entry.operationType}) failed: ${errorMessage}` +
