@@ -323,19 +323,23 @@ describe("useSalesTransaction", () => {
         await result.current.handleCheckout();
       });
 
-      expect(mockSalesPosService.create).toHaveBeenCalledWith({
-        clientId: null,
-        delivery: null,
-        items: [
-          {
-            productId: "p-001",
-            quantity: 1,
-            unitPrice: undefined,
-            discountPercentage: undefined,
-            discountReason: undefined,
-          },
-        ],
-      });
+      expect(mockSalesPosService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientId: null,
+          delivery: null,
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              productId: "p-001",
+              quantity: 1,
+            }),
+          ]),
+        }),
+      );
+      // unitPrice is now always sent (cart price) so the DB total matches the frontend grandTotal
+      const firstCall = mockSalesPosService.create.mock.calls[0][0] as {
+        items: Array<{ unitPrice?: unknown }>;
+      };
+      expect(firstCall.items[0].unitPrice).toBeDefined();
       expect(mockDispatch).toHaveBeenCalledWith(
         initializePayment({ totalCents: 50_000 }),
       );
@@ -367,19 +371,18 @@ describe("useSalesTransaction", () => {
         await result.current.handleCheckout();
       });
 
-      expect(mockSalesPosService.create).toHaveBeenCalledWith({
-        clientId: null,
-        delivery: deliveryDraft,
-        items: [
-          {
-            productId: "p-001",
-            quantity: 1,
-            unitPrice: undefined,
-            discountPercentage: undefined,
-            discountReason: undefined,
-          },
-        ],
-      });
+      expect(mockSalesPosService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          clientId: null,
+          delivery: deliveryDraft,
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              productId: "p-001",
+              quantity: 1,
+            }),
+          ]),
+        }),
+      );
       // 50_000 item total + 5_000 delivery fee
       expect(mockDispatch).toHaveBeenCalledWith(
         initializePayment({ totalCents: 55_000 }),

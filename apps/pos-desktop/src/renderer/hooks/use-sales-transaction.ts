@@ -208,15 +208,16 @@ export function useSalesTransaction(): UseSalesTransactionReturn {
       clientId: selectedClient?.id ?? null,
       delivery: deliveryDraft ?? null,
       items: cartItems.map((item) => {
-        const unitPriceOverride =
-          item.overrideUnitPriceCents !== null
-            ? new Prisma.Decimal(item.overrideUnitPriceCents).dividedBy(100)
-            : undefined;
+        // Always send the cart's unit price so the DB sale total matches the
+        // frontend grandTotalCents. If we omitted it, the service would re-read
+        // the latest ProductPriceHistory, which may have moved between add-to-cart
+        // and checkout and would make a transfer payment look like overpay → ChangeRequiresCash.
+        const unitPrice = new Prisma.Decimal(item.unitPriceCents).dividedBy(100);
 
         return {
           productId: item.productId,
           quantity: item.quantity,
-          unitPrice: unitPriceOverride,
+          unitPrice,
           discountPercentage: item.discountPercentage ?? undefined,
           discountReason:
             item.discountPercentage !== null && item.discountPercentage > 0

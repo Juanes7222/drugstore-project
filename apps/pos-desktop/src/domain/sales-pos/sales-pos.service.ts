@@ -451,8 +451,9 @@ export class SalesPosService {
       // without requiring the DB-stored total to match the frontend's exact
       // rounding (frontend uses Math.round for tax, DB uses Decimal).
       const ONE_CENT = new Prisma.Decimal('0.01');
-      if (changeAmount.abs().lessThan(ONE_CENT)) {
-        // treat as exact match — no change, proceed
+      if (changeAmount.abs().lessThanOrEqualTo(ONE_CENT)) {
+        // treat as exact match — no change, proceed.
+        // Covers 1¢ rounding drift between frontend cents-math and Decimal tax rounding.
       } else if (changeAmount.lessThan(0)) {
         throw new PaymentAmountMismatchException(
           saleTotalNumber,

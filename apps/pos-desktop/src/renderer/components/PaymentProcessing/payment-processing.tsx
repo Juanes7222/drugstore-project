@@ -67,7 +67,10 @@ import { useLocalConfigStore } from "../../../domain/configuration/local-config.
 import { useActivePaymentMethods } from "@/hooks/use-active-payment-methods";
 import { usePaymentKeyboard } from "@/hooks/use-payment-keyboard";
 import { useProductSyncWait } from "@/hooks/use-product-sync-wait";
-import { ProductNotSyncedYetException } from "../../../domain/sales-pos/exceptions";
+import {
+  ProductNotSyncedYetException,
+  ChangeRequiresCashPaymentException,
+} from "../../../domain/sales-pos/exceptions";
 import { formatCurrency } from "@/utils/format-currency";
 import { createMockPaymentGatewayService } from "@/services/payment-gateway-service.mock";
 import { PaymentGatewayService } from "@/services/payment-gateway-service";
@@ -254,9 +257,22 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
 
   const handleMethodChange = useCallback(
     (id: string, method: PaymentMethodOption) => {
+      const current = methods.find((m) => m.id === id);
       dispatch(updatePaymentMethod({ id, method }));
+      // If the new method is non-cash, cap its amount to the remaining balance
+      // so switching from cash → transferencia never leaves an overpay that
+      // triggers ChangeRequiresCashPaymentException on confirm.
+      if (!method.isCash && current) {
+        const otherTotal = methods
+          .filter((m) => m.id !== id)
+          .reduce((sum, m) => sum + m.amountCents, 0);
+        const remaining = Math.max(0, totalDue - otherTotal);
+        if (current.amountCents > remaining) {
+          dispatch(updatePaymentMethodAmount({ id, amountCents: remaining }));
+        }
+      }
     },
-    [dispatch],
+    [dispatch, methods, totalDue],
   );
 
   const handleAmountChange = useCallback(
@@ -421,6 +437,16 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
           }
         }
         setActionError(t("sales.cart.error_product_not_synced_yet"));
+        return;
+      }
+
+      if (err instanceof ChangeRequiresCashPaymentException) {
+        setActionError(
+          t("payment.error_change_requires_cash", {
+            defaultValue:
+              "El vuelto solo puede entregarse si hay un pago en efectivo. Ajusta el monto de la transferencia al total exacto.",
+          }),
+        );
         return;
       }
 
