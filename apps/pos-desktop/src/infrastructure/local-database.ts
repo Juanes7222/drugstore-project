@@ -1452,13 +1452,120 @@ function createDevPrismaWrapper(client: PGlite): unknown {
   // during Vite dev without a real PrismaClient.
   const modelData = new Map<string, Array<Record<string, unknown>>>();
 
+  // -----------------------------------------------------------------------
+  // Prisma where matcher — supports operators used by inventory-count &
+  // other offline services: equals, in, notIn, not, contains (insensitive),
+  // gt/lt/gte/lte, and top-level OR.
+  // -----------------------------------------------------------------------
+  const matchesWhere = (item: Record<string, unknown>, where: Record<string, unknown> | undefined): boolean => {
+    if (!where || Object.keys(where).length === 0) return true;
+
+    // Top-level OR: [{ productName: { contains } }, ...]
+    if ('OR' in where && Array.isArray((where as any).OR)) {
+      const ors = (where as any).OR as Array<Record<string, unknown>>;
+      const rest = { ...where } as Record<string, unknown>;
+      delete (rest as any).OR;
+      const restMatches = Object.keys(rest).length === 0 || matchesWhere(item, rest);
+      if (!restMatches) return false;
+      return ors.some((clause) => matchesWhere(item, clause));
+    }
+
+    return (Object.entries(where) as Array<[string, unknown]>).every(([key, value]) => {
+      const itemVal = item[key];
+
+      // Plain null / primitive equality
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        return itemVal === value;
+      }
+
+      const cond = value as Record<string, unknown>;
+
+      // contains with optional insensitive mode (listLines search)
+      if ('contains' in cond) {
+        const needle = String((cond as any).contains);
+        const hay = String(itemVal ?? '');
+        const mode = (cond as any).mode;
+        if (mode === 'insensitive') return hay.toLowerCase().includes(needle.toLowerCase());
+        return hay.includes(needle);
+      }
+
+      // in / notIn
+      if ('in' in cond) {
+        const arr = (cond as any).in as unknown[];
+        return arr.includes(itemVal as unknown);
+      }
+      if ('notIn' in cond) {
+        const arr = (cond as any).notIn as unknown[];
+        return !arr.includes(itemVal as unknown);
+      }
+
+      // not: value or { equals: val } or operator object
+      if ('not' in cond) {
+        const notVal = (cond as any).not;
+        if (notVal === null) return itemVal !== null;
+        if (typeof notVal === 'object' && notVal !== null && !Array.isArray(notVal)) {
+          // { not: { equals: 0 } } or recursive
+          return !matchesWhere({ [key]: itemVal } as any, { [key]: notVal } as any);
+        }
+        return itemVal !== notVal;
+      }
+
+      // gte/lte/gt/lt (numbers or dates)
+      if ('gte' in cond || 'lte' in cond || 'gt' in cond || 'lt' in cond) {
+        const c = cond as Record<string, unknown>;
+        // Date comparison if itemVal looks like date string
+        const isDateVal = typeof itemVal === 'string' && !Number.isNaN(Date.parse(itemVal as string));
+        const toNum = (v: unknown): number => {
+          if (typeof v === 'string' && !Number.isNaN(Date.parse(v))) return new Date(v as string).getTime();
+          return Number(v);
+        };
+        const iv = isDateVal ? new Date(itemVal as string).getTime() : Number(itemVal);
+        if ('gte' in c && !(iv >= toNum(c.gte))) return false;
+        if ('lte' in c && !(iv <= toNum(c.lte))) return false;
+        if ('gt' in c && !(iv > toNum(c.gt))) return false;
+        if ('lt' in c && !(iv < toNum(c.lt))) return false;
+        return true;
+      }
+
+      // equals explicit
+      if ('equals' in cond) return itemVal === (cond as any).equals;
+
+      // Fallback: treat as nested date range { gte, lte } without explicit key
+      const itemDate = typeof itemVal === 'string' ? new Date(itemVal as string).getTime() : NaN;
+      if (!Number.isNaN(itemDate)) {
+        const range = cond as Record<string, string>;
+        if (range.gte && itemDate < new Date(range.gte).getTime()) return false;
+        if (range.lte && itemDate > new Date(range.lte).getTime()) return false;
+        return true;
+      }
+
+      return itemVal === value;
+    });
+  };
+
+  const applyOrderBy = (results: Array<Record<string, unknown>>, orderBy: unknown): Array<Record<string, unknown>> => {
+    const clauses: Array<Record<string, 'asc' | 'desc'>> = Array.isArray(orderBy) ? orderBy as any : orderBy ? [orderBy as any] : [];
+    if (clauses.length === 0) return results;
+    return [...results].sort((a, b) => {
+      for (const clause of clauses) {
+        const [[key, dir]] = Object.entries(clause);
+        // Support nested orderBy like { product: { commercialName: 'asc' } } — ignore for shim, treat as string compare on JSON
+        const aVal = String((a as any)[key] ?? '');
+        const bVal = String((b as any)[key] ?? '');
+        if (aVal === bVal) continue;
+        return dir === 'desc' ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal);
+      }
+      return 0;
+    });
+  };
+
   function createModelDelegate(modelName: string) {
     if (!modelData.has(modelName)) {
       modelData.set(modelName, []);
     }
     const data = modelData.get(modelName)!;
 
-    return {
+    const delegate: Record<string, unknown> = {
       findMany: (
         args: {
           where?: Record<string, unknown>;
@@ -1468,27 +1575,13 @@ function createDevPrismaWrapper(client: PGlite): unknown {
           take?: number;
           skip?: number;
           cursor?: { id: string };
+          select?: Record<string, unknown>;
+          include?: Record<string, unknown>;
         } = {},
       ) => {
-        let results = [...data];
+        let results = data.filter((item) => matchesWhere(item, args.where as any));
 
-        // Apply where filter
-        const where = args.where as Record<string, unknown> | undefined;
-        if (where && Object.keys(where).length > 0) {
-          results = results.filter((item) =>
-            (Object.entries(where) as Array<[string, unknown]>).every(([key, value]) => {
-              // Handle Prisma-style date range: { gte, lte }
-              if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-                const range = value as Record<string, string>;
-                const itemDate = new Date(item[key] as string).getTime();
-                if (range.gte && itemDate < new Date(range.gte).getTime()) return false;
-                if (range.lte && itemDate > new Date(range.lte).getTime()) return false;
-                return true;
-              }
-              return item[key] === value;
-            }),
-          );
-        }
+        results = applyOrderBy(results, args.orderBy);
 
         // Apply orderBy (single object or Prisma array of { field: dir })
         const orderBy = Array.isArray(args.orderBy)
@@ -1528,23 +1621,8 @@ function createDevPrismaWrapper(client: PGlite): unknown {
       },
 
       count: (args: { where?: Record<string, unknown> } = {}) => {
-        const where = args.where as Record<string, unknown> | undefined;
-        if (where && Object.keys(where).length > 0) {
-          const filtered = data.filter((item) =>
-            (Object.entries(where) as Array<[string, unknown]>).every(([key, value]) => {
-              if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-                const range = value as Record<string, string>;
-                const itemDate = new Date(item[key] as string).getTime();
-                if (range.gte && itemDate < new Date(range.gte).getTime()) return false;
-                if (range.lte && itemDate > new Date(range.lte).getTime()) return false;
-                return true;
-              }
-              return item[key] === value;
-            }),
-          );
-          return Promise.resolve(filtered.length);
-        }
-        return Promise.resolve(data.length);
+        const filtered = data.filter((item) => matchesWhere(item, args.where as any));
+        return Promise.resolve(filtered.length);
       },
 
       aggregate: (args: {
@@ -1552,15 +1630,7 @@ function createDevPrismaWrapper(client: PGlite): unknown {
         _count?: boolean | Record<string, boolean>;
         _sum?: Record<string, boolean>;
       }) => {
-        let results = [...data];
-        const where = args.where as Record<string, unknown> | undefined;
-        if (where && Object.keys(where).length > 0) {
-          results = results.filter((item) =>
-            (Object.entries(where) as Array<[string, unknown]>).every(
-              ([key, value]) => item[key] === value,
-            ),
-          );
-        }
+        let results = data.filter((item) => matchesWhere(item, args.where as any));
         const out: Record<string, unknown> = {};
         if (args._count) {
           if (typeof args._count === 'boolean') {
@@ -1597,27 +1667,12 @@ function createDevPrismaWrapper(client: PGlite): unknown {
 
       findFirst: (args: {
         where?: Record<string, unknown>;
-        orderBy?: Record<string, 'asc' | 'desc'>;
+        orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>;
         include?: Record<string, unknown>;
       } = {}) => {
-        const where = args.where as Record<string, unknown> | undefined;
-        let results = [...data];
-        if (where && Object.keys(where).length > 0) {
-          results = results.filter((item) =>
-            (Object.entries(where) as Array<[string, unknown]>).every(
-              ([key, value]) => item[key] === value,
-            ),
-          );
-        }
+        let results = data.filter((item) => matchesWhere(item, args.where as any));
         if (args.orderBy) {
-          const [[key, dir]] = Object.entries(args.orderBy);
-          results.sort((a, b) => {
-            const aVal = String(a[key] ?? '');
-            const bVal = String(b[key] ?? '');
-            return dir === 'desc'
-              ? bVal.localeCompare(aVal)
-              : aVal.localeCompare(bVal);
-          });
+          results = applyOrderBy(results, args.orderBy);
         }
         return Promise.resolve(results[0] ?? null);
       },
@@ -1628,27 +1683,7 @@ function createDevPrismaWrapper(client: PGlite): unknown {
         _count?: Record<string, boolean>;
         _sum?: Record<string, boolean>;
       }) => {
-        const where = args.where as Record<string, unknown> | undefined;
-        let results = [...data];
-        if (where && Object.keys(where).length > 0) {
-          results = results.filter((item) =>
-            (Object.entries(where) as Array<[string, unknown]>).every(
-              ([key, value]) => {
-                // Handle Prisma-style in-clause
-                if (
-                  value !== null &&
-                  typeof value === 'object' &&
-                  !Array.isArray(value) &&
-                  'in' in value
-                ) {
-                  const inVals = (value as Record<string, unknown[]>).in;
-                  return inVals.includes(item[key] as unknown);
-                }
-                return item[key] === value;
-              },
-            ),
-          );
-        }
+        let results = data.filter((item) => matchesWhere(item, args.where as any));
 
         // Group by the specified fields
         const groups = new Map<string, Array<Record<string, unknown>>>();
@@ -1692,11 +1727,97 @@ function createDevPrismaWrapper(client: PGlite): unknown {
         data.push(entry);
         return Promise.resolve(entry);
       },
+
+      createMany: (args: { data: Array<Record<string, unknown>> | Record<string, unknown> }) => {
+        const rows = Array.isArray(args.data) ? args.data : [args.data];
+        for (const r of rows) data.push({ ...r });
+        return Promise.resolve({ count: rows.length });
+      },
+
+      update: (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+        const idx = data.findIndex((item) => Object.entries(args.where).every(([k, v]) => item[k] === v));
+        if (idx === -1) return Promise.resolve(null as unknown as Record<string, unknown>);
+        const current = data[idx];
+        const next: Record<string, unknown> = { ...current };
+        for (const [k, v] of Object.entries(args.data)) {
+          if (v !== null && typeof v === 'object' && !Array.isArray(v) && 'increment' in (v as any)) {
+            const inc = Number((v as any).increment);
+            next[k] = Number((current as any)[k] ?? 0) + inc;
+          } else {
+            next[k] = v as unknown;
+          }
+        }
+        data[idx] = next;
+        return Promise.resolve(next);
+      },
+
+      updateMany: (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+        let count = 0;
+        for (let i = 0; i < data.length; i++) {
+          if (!matchesWhere(data[i], args.where as any)) continue;
+          const current = data[i];
+          const next: Record<string, unknown> = { ...current };
+          for (const [k, v] of Object.entries(args.data)) {
+            if (v !== null && typeof v === 'object' && !Array.isArray(v) && 'increment' in (v as any)) {
+              const inc = Number((v as any).increment);
+              next[k] = Number((current as any)[k] ?? 0) + inc;
+            } else {
+              next[k] = v as unknown;
+            }
+          }
+          data[i] = next;
+          count++;
+        }
+        return Promise.resolve({ count });
+      },
+
+      upsert: (args: { where: Record<string, unknown>; update: Record<string, unknown>; create: Record<string, unknown> }) => {
+        const idx = data.findIndex((item) => Object.entries(args.where).every(([k, v]) => item[k] === v));
+        if (idx !== -1) {
+          const current = data[idx];
+          const next: Record<string, unknown> = { ...current };
+          for (const [k, v] of Object.entries(args.update)) {
+            if (v !== null && typeof v === 'object' && !Array.isArray(v) && 'increment' in (v as any)) {
+              const inc = Number((v as any).increment);
+              next[k] = Number((current as any)[k] ?? 0) + inc;
+            } else {
+              next[k] = v as unknown;
+            }
+          }
+          data[idx] = next;
+          return Promise.resolve(next);
+        }
+        const entry = { ...args.create };
+        data.push(entry);
+        return Promise.resolve(entry);
+      },
+
+      delete: (args: { where: Record<string, unknown> }) => {
+        const idx = data.findIndex((item) => Object.entries(args.where).every(([k, v]) => item[k] === v));
+        if (idx === -1) return Promise.resolve(null as unknown as Record<string, unknown>);
+        const [removed] = data.splice(idx, 1);
+        return Promise.resolve(removed);
+      },
+
+      deleteMany: (args: { where?: Record<string, unknown> } = {}) => {
+        if (!args.where || Object.keys(args.where).length === 0) {
+          const c = data.length;
+          data.length = 0;
+          return Promise.resolve({ count: c });
+        }
+        const before = data.length;
+        const kept = data.filter((item) => !matchesWhere(item, args.where as any));
+        const removed = before - kept.length;
+        data.length = 0;
+        data.push(...kept);
+        return Promise.resolve({ count: removed });
+      },
     };
+    return delegate;
   }
 
   let warned = false;
-  return new Proxy(
+  const proxy = new Proxy(
     { _client: client },
     {
       get(target, prop) {
@@ -1704,6 +1825,20 @@ function createDevPrismaWrapper(client: PGlite): unknown {
         if (prop === '$disconnect') return () => Promise.resolve();
         if (prop === '$on') return () => undefined;
         if (prop === '$extends') return () => target;
+        if (prop === '$transaction') {
+          return async (arg: unknown) => {
+            if (typeof arg === 'function') {
+              // Callback form: prisma.$transaction(async (tx) => { ... })
+              // Reuse same proxy as tx so data stays in same in-memory maps.
+              return (arg as (tx: unknown) => Promise<unknown>)(proxy);
+            }
+            if (Array.isArray(arg)) {
+              // Array form: prisma.$transaction([op1, op2])
+              return Promise.all(arg as Promise<unknown>[]);
+            }
+            return Promise.resolve(arg);
+          };
+        }
         // Run raw parameterized queries against the real in-memory PGlite
         // client so domain services that use $queryRawUnsafe (reports, sales
         // history, shift close) keep working in the dev server.
@@ -1736,4 +1871,5 @@ function createDevPrismaWrapper(client: PGlite): unknown {
       },
     },
   );
+  return proxy;
 }

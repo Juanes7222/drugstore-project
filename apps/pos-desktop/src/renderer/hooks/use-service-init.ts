@@ -67,6 +67,7 @@ import type { ServerPrintConfig } from '../../domain/printing/print-router';
 
 import type { ReturnsService } from '../../domain/returns/returns.service';
 import type { InventoryAdjustmentsService } from '../../domain/inventory-adjustments/inventory-adjustments.service';
+import type { InventoryCountService } from '../../domain/inventory-count/inventory-count.service';
 import type { PrescriptionsService } from '../../domain/prescriptions/prescriptions.service';
 import { createCashShiftService, type CashShiftService } from '../../domain/cash-shift/cash-shift.service';
 import type { SalesPosService } from '../../domain/sales-pos/sales-pos.service';
@@ -115,6 +116,7 @@ import { DataExportService } from '../../domain/export';
 export interface Services {
   returnsService: ReturnsService;
   inventoryAdjustmentsService: InventoryAdjustmentsService;
+  inventoryCountService: InventoryCountService;
   prescriptionsService: PrescriptionsService;
   cashShiftService: CashShiftService;
   salesPosService: SalesPosService;
@@ -505,6 +507,7 @@ export async function initializeServices(
   return {
     returnsService: domainServices.returnsService,
     inventoryAdjustmentsService: domainServices.inventoryAdjustmentsService,
+    inventoryCountService: domainServices.inventoryCountService,
     prescriptionsService: domainServices.prescriptionsService,
     cashShiftService,
     salesPosService: domainServices.salesPosService,

@@ -115,6 +115,10 @@ export const uiSlice = createSlice({
       state.activeScreen = "reports";
     },
 
+    navigateToInventoryCount: (state) => {
+      state.activeScreen = "inventory-count";
+    },
+
     navigateToRecovery: (state) => {
       state.activeScreen = "recovery";
     },
@@ -257,6 +261,7 @@ export const {
   navigateToPurchaseReceptions,
   navigateToSupplierReturns,
   navigateToReports,
+  navigateToInventoryCount,
   navigateToRecovery,
   navigateToUserManagement,
   navigateToAuditLog,

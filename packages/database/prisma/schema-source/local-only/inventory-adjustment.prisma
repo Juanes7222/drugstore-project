@@ -25,3 +25,13 @@ model InventoryAdjustmentDocument {
   annulmentReason         String?
   physicalCountId         String?
 }
+
+// Single-row counter that allocates sequentialNumber for InventoryAdjustmentDocument.
+// Must be duplicated here because this file overrides the shared fragment; without it
+// the local Prisma client would not expose `inventoryAdjustmentCounter` and any
+// `upsert` on it would throw "Cannot read properties of undefined (reading 'upsert')"
+// (seen in inventory-count close flow which creates an adjustment on finalize).
+model InventoryAdjustmentCounter {
+  id                   String @id @default("singleton")
+  lastSequentialNumber Int    @default(0)
+}

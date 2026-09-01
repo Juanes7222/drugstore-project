@@ -109,6 +109,7 @@ export const SCREEN_ALLOWED_ROLES: Record<PosScreen, RoleType[]> = {
   products: INVENTORY_ROLES,
   "inventory-lots": INVENTORY_ROLES,
   "inventory-adjustments": INVENTORY_ROLES,
+  "inventory-count": INVENTORY_ROLES,
   "purchases-main": INVENTORY_ROLES,
   suppliers: INVENTORY_ROLES,
   "purchase-orders": INVENTORY_ROLES,

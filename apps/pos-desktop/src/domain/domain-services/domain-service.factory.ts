@@ -33,6 +33,7 @@ import { createSuppliersService, type SuppliersService } from '../purchases/supp
 import { createPurchaseOrdersService, type PurchaseOrdersService } from '../purchases/purchase-orders.service';
 import { createPurchaseReceptionsService, type PurchaseReceptionsService } from '../purchases/purchase-receptions.service';
 import { createSupplierReturnsService, type SupplierReturnsService } from '../purchases/supplier-returns.service';
+import { createInventoryCountService, type InventoryCountService } from '../inventory-count/inventory-count.service';
 import { getTenantConfigState } from '../config/tenant-config.store';
 import type { EffectiveConfig } from '../config/types';
 import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
@@ -44,6 +45,7 @@ import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
 export interface DomainServices {
   returnsService: ReturnsService;
   inventoryAdjustmentsService: InventoryAdjustmentsService;
+  inventoryCountService: InventoryCountService;
   prescriptionsService: PrescriptionsService;
   recoveryLogService: RecoveryLogService;
   productService: ProductService;
@@ -102,6 +104,7 @@ export function createDomainServices(
   return {
     returnsService: createReturnsService(prisma, auth, invoiceService, printRouter),
     inventoryAdjustmentsService: createInventoryAdjustmentsService(prisma, auth),
+    inventoryCountService: createInventoryCountService(prisma, auth),
     prescriptionsService: createPrescriptionsService(prisma, auth),
     recoveryLogService: createRecoveryLogService(prisma),
     productService,

@@ -1,0 +1,143 @@
+// LOCAL-ONLY schema fragment — physical inventory count / reconteo completo
+// for apps/pos-desktop. Offline-first, local persistence with snapshot
+// isolation and double-count intelligence.
+//
+// This fragment is intentionally local-only. The server's PhysicalCount
+// model (server-only/physical-count.prisma) tracks the authoritative
+// count lifecycle. The local models below mirror that lifecycle but add
+// the snapshot + line detail needed to work fully offline and to generate
+// INVENTORY_ADJUSTMENT sync payloads on close.
+//
+// Lifecycle: DRAFT → IN_PROGRESS → IN_REVIEW → CLOSED | CANCELLED
+// Line lifecycle: PENDING → COUNTED → RECOUNT_NEEDED → RECOUNTED → RESOLVED | REQUIRES_REVIEW
+
+enum InventoryCountState {
+  DRAFT
+  IN_PROGRESS
+  IN_REVIEW
+  CLOSED
+  CANCELLED
+}
+
+enum InventoryCountLineStatus {
+  PENDING
+  COUNTED
+  RECOUNT_NEEDED
+  RECOUNTED
+  RESOLVED
+  REQUIRES_REVIEW
+}
+
+enum InventoryCountScopeType {
+  FULL
+  CATEGORY
+  LABORATORY
+}
+
+enum InventoryCountMode {
+  BLIND
+  INFORMED
+}
+
+model InventoryCountSession {
+  id                  String                @id
+  code                String                @unique
+  sequentialNumber    Int                   @unique
+  name                String?
+  state               InventoryCountState   @default(DRAFT)
+  scopeType           InventoryCountScopeType @default(FULL)
+  scopeValue          String?
+  scopeLabel          String?
+  mode                InventoryCountMode    @default(BLIND)
+  tolerancePercent    Float                 @default(2.0)
+  requireDoubleCount  Boolean               @default(true)
+  totalLines          Int                   @default(0)
+  countedLines        Int                   @default(0)
+  recountedLines      Int                   @default(0)
+  discrepancyCount    Int                   @default(0)
+  totalValueImpact    Decimal?              @db.Decimal(15, 2)
+  notes               String?
+  createdByUserId     String
+  createdByUserName   String?
+  workstationId       String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  startedAt           DateTime?
+  reviewedAt          DateTime?
+  closedAt            DateTime?
+  cancelledAt         DateTime?
+  lines               InventoryCountLine[]
+  snapshots           InventoryCountSnapshot[]
+  adjustmentDocumentId String?
+
+  @@index([state])
+  @@index([createdAt])
+  @@index([workstationId])
+  @@index([scopeType])
+}
+
+model InventoryCountSnapshot {
+  id              String                @id
+  sessionId       String
+  session         InventoryCountSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  productId       String
+  lotId           String?
+  productName     String
+  internalCode    String?
+  lotCode         String?
+  locationCode    String?
+  theoreticalQty  Int
+  unitCost        Decimal               @db.Decimal(15, 2) @default(0)
+  expirationDate  DateTime?
+  categoryId      String?
+  laboratory      String?
+  createdAt       DateTime              @default(now())
+
+  @@index([sessionId])
+  @@index([productId])
+  @@index([lotId])
+  @@unique([sessionId, productId, lotId])
+}
+
+model InventoryCountLine {
+  id               String                    @id
+  sessionId        String
+  session          InventoryCountSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  snapshotId       String?
+  productId        String
+  lotId            String?
+  productName      String
+  internalCode     String?
+  lotCode          String?
+  locationCode     String?
+  barcode          String?
+  theoreticalQty   Int
+  unitCost         Decimal                   @db.Decimal(15, 2) @default(0)
+  countedQty1      Int?
+  countedQty2      Int?
+  finalQty         Int?
+  difference       Int?
+  valueImpact      Decimal?                  @db.Decimal(15, 2)
+  status           InventoryCountLineStatus  @default(PENDING)
+  requiresRecount  Boolean                   @default(false)
+  isHighValue      Boolean                   @default(false)
+  notes            String?
+  countedAt1       DateTime?
+  countedAt2       DateTime?
+  resolvedAt       DateTime?
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  @@index([sessionId])
+  @@index([sessionId, status])
+  @@index([productId])
+  @@index([lotId])
+  @@index([requiresRecount])
+  @@index([isHighValue])
+  @@unique([sessionId, productId, lotId])
+}
+
+model InventoryCountCounter {
+  id                   String @id @default("singleton")
+  lastSequentialNumber Int    @default(0)
+}

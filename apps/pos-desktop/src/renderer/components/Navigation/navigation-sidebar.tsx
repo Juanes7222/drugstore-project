@@ -27,6 +27,7 @@ import { canAccessScreen } from "./screen-access";
 import {
   ArchiveIcon,
   BarChartIcon,
+  ClipboardListIcon,
   ClockIcon,
   CloudIcon,
   CreditCardIcon,
@@ -153,6 +154,10 @@ const NavFiscalIcon: FC<{ className?: string }> = ({ className }) => (
   <ReceiptIcon className={className} size={20} />
 );
 
+const NavCountIcon: FC<{ className?: string }> = ({ className }) => (
+  <ClipboardListIcon className={className} size={20} />
+);
+
 const NAV_ITEMS: NavItem[] = [
   {
     screen: "home",
@@ -187,7 +192,14 @@ const NAV_ITEMS: NavItem[] = [
       "products",
       "inventory-lots",
       "inventory-adjustments",
+      "inventory-count",
     ],
+    category: "inventory",
+  },
+  {
+    screen: "inventory-count",
+    labelKey: "navigation.inventory_count",
+    icon: NavCountIcon,
     category: "inventory",
   },
   {

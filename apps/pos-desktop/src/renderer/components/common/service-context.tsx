@@ -97,6 +97,11 @@ export const useInventoryAdjustmentsService =
   (): Services['inventoryAdjustmentsService'] =>
     useServiceContext().inventoryAdjustmentsService;
 
+/** Convenience hook — returns the InventoryCountService instance. */
+export const useInventoryCountService =
+  (): Services['inventoryCountService'] =>
+    useServiceContext().inventoryCountService;
+
 /** Convenience hook — returns the PrescriptionsService instance. */
 export const usePrescriptionsService = (): Services['prescriptionsService'] =>
   useServiceContext().prescriptionsService;

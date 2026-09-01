@@ -15,11 +15,12 @@ import {
   navigateToProducts,
   navigateToInventoryLots,
   navigateToInventoryAdjustments,
+  navigateToInventoryCount,
 } from "@/store/slices/ui-slice";
 import { useLocalSessionStore, hasMinRole } from "../../../domain/auth/local-session.store";
 import { useRequireLotOnReception } from "../../../domain/configuration";
 import { RoleType } from "@pharmacy/shared-types";
-import { BarcodeIcon, ClipboardListIcon, PackageIcon, TruckIcon } from "@/components/ui/icons";
+import { BarcodeIcon, ClipboardListIcon, PackageIcon, ScaleIcon, TruckIcon } from "@/components/ui/icons";
 import { HubCard, HubPageLayout } from "@/components/ui/hub";
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,14 @@ export const ProductosMainPage: FC = () => {
         icon: ClipboardListIcon,
         onClick: () => dispatch(navigateToInventoryAdjustments()),
         requiredRole: RoleType.MANAGER,
+      },
+      {
+        key: "count",
+        titleKey: "productos_main.card_count_title",
+        descriptionKey: "productos_main.card_count_desc",
+        icon: ScaleIcon,
+        onClick: () => dispatch(navigateToInventoryCount()),
+        requiredRole: RoleType.INVENTORY_ASSISTANT,
       },
     ],
     [dispatch, lotManagementOff],

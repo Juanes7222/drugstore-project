@@ -42,6 +42,7 @@ export type PosScreen =
   | "purchase-orders"
   | "purchase-receptions"
   | "supplier-returns"
+  | "inventory-count"
   | "reports";
 
 export type SaleCompletionPhase =

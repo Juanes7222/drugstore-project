@@ -27,6 +27,7 @@ import { SalesHistoryPage } from "../domain/sales-pos/sales-history.page";
 import { ReturnsPage } from "@/components/returns/returns.page";
 import { InventoryAdjustmentsPage } from "@/components/inventory-adjustments/inventory-adjustments.page";
 import { InventoryLotsPage } from "@/components/inventory-lots/inventory-lots.page";
+import { InventoryCountPage } from "@/components/inventory-count/inventory-count.page";
 import { ProductsPage } from "@/components/products/products.page";
 import { ProductosMainPage } from "@/components/productos/productos-main.page";
 import { PurchasesMainPage } from "@/components/purchases/purchases-main.page";
@@ -98,6 +99,7 @@ const SCREEN_ORDER: PosScreen[] = [
   "products",
   "inventory-lots",
   "inventory-adjustments",
+  "inventory-count",
   "purchases-main",
   "suppliers",
   "purchase-orders",
@@ -744,6 +746,24 @@ if (activeScreen === "company-setup") {
                 }}
               >
                 <InventoryLotsPage />
+              </motion.div>
+            )}
+
+            {activeScreen === "inventory-count" && (
+              <motion.div
+                key="inventory-count"
+                className="h-full"
+                variants={variants}
+                custom={navDirection}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : SCREEN_TRANSITION_DURATION_S,
+                  ease: "easeInOut",
+                }}
+              >
+                <InventoryCountPage />
               </motion.div>
             )}
 
