@@ -139,9 +139,16 @@ export function validateItemPricing(
 
   // -- 1. Price override permission -----------------------------------
   // Owners always allowed.  Everyone else must have
-  // `priceOverridePermissions[role].allowed === true`, and only when an
-  // explicit override is present in the request.
-  if (requestedUnitPrice !== undefined && !isOwner) {
+  // `priceOverridePermissions[role].allowed === true`, but only when an
+  // explicit override *different* from the catalog price is present.
+  // Sending the catalog price verbatim (frontend always does to avoid
+  // drift) is NOT an override — otherwise every cashier sale would fail
+  // when cashier.allowed=false (the default).
+  if (
+    requestedUnitPrice !== undefined &&
+    !requestedUnitPrice.equals(catalogUnitPrice) &&
+    !isOwner
+  ) {
     const overrideKey = resolvePriceOverrideRoleKey(role);
     if (overrideKey === null) {
       // Role not listed in the override map (e.g. SAAS_ADMIN, ADMIN
