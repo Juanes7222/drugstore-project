@@ -12,6 +12,7 @@
  *   pnpm dev:multi --desktop          # open each station as a Tauri window
  *   pnpm dev:multi --desktop --stations=3
  *   pnpm dev:multi --free-ports       # terminate whatever holds the ports
+ *   pnpm dev:multi --split-view       # per-process log panes in one screen
  *
  * Workstation ids map to rows seeded by apps/server/seed (workstation.ts):
  *   station 1 → ws_principal   (Caja Principal)   port 5173
@@ -24,10 +25,23 @@
  * stations 3+ are expected to be rejected at activation with
  * WORKSTATION_LIMIT_EXCEEDED. That rejection is the behavior under test.
  *
- * Press Ctrl+C to stop all processes gracefully.
+ * --split-view renders one pane per process (server, system, one per
+ * station) using the optional "blessed" package. It needs a real
+ * interactive terminal and falls back to the normal interleaved log if
+ * blessed isn't installed, the terminal isn't a TTY, or the screen fails
+ * to initialize for any other reason — the dev loop is never blocked by it.
+ *
+ * Whatever the shutdown path (Ctrl+C, SIGTERM, an unhandled error, or the
+ * server itself dying), every spawned process is signaled and awaited
+ * before this script exits, so no vite/nest/tauri process is left holding
+ * a port after the script ends.
+ *
+ * Press Ctrl+C to stop all processes gracefully; press it twice to force
+ * an immediate exit.
  */
 
 import { spawn, execFile } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
 import net from 'node:net';
 import { resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -38,6 +52,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
 const SERVER_PORT = 3000;
+const SERVER_READY_TIMEOUT_MS = 30_000;
+const SHUTDOWN_GRACE_PERIOD_MS = 3000;
 
 // ── CLI arguments ──────────────────────────────────────────────────────────
 const MAX_STATIONS = 8;
@@ -45,7 +61,7 @@ const DEFAULT_STATIONS = 2;
 const BASE_PORT = 5173;
 
 function parseArgs(argv) {
-  const options = { stations: DEFAULT_STATIONS, desktop: false, freePorts: false };
+  const options = { stations: DEFAULT_STATIONS, desktop: false, freePorts: false, splitView: false };
   for (const arg of argv) {
     if (arg.startsWith('--stations=')) {
       const value = Number(arg.split('=')[1]);
@@ -58,6 +74,8 @@ function parseArgs(argv) {
       options.desktop = true;
     } else if (arg === '--free-ports') {
       options.freePorts = true;
+    } else if (arg === '--split-view') {
+      options.splitView = true;
     } else {
       console.error(`Unknown argument "${arg}"`);
       process.exit(1);
@@ -83,13 +101,29 @@ function stationIdentity(index) {
   return { id: `ws_station_${num}`, name: `Estación ${num}` };
 }
 
+/** Log channel a station's processes (vite, and tauri in --desktop mode) report to. */
+function stationChannel(index) {
+  return `station-${index}`;
+}
+
 // ── Color helpers ──────────────────────────────────────────────────────────
 const RESET = '\x1b[0m';
+// ANSI codes for the plain console; kept in the same order as PALETTE_NAMES
+// below so index i means "the same hue" in both rendering modes.
 const PALETTE = ['\x1b[32m', '\x1b[33m', '\x1b[36m', '\x1b[35m', '\x1b[96m', '\x1b[95m', '\x1b[93m', '\x1b[92m'];
+const PALETTE_NAMES = ['green', 'yellow', 'cyan', 'magenta', 'green', 'magenta', 'yellow', 'cyan'];
 const COLORS = {
   server: '\x1b[34m', // blue
   meta: '\x1b[90m', // gray
 };
+
+function stationColor(index) {
+  return PALETTE[(index - 1) % PALETTE.length];
+}
+
+function stationColorName(index) {
+  return PALETTE_NAMES[(index - 1) % PALETTE_NAMES.length];
+}
 
 function log(color, tag, msg) {
   const p = `${color}[${tag}]${RESET}`;
@@ -97,6 +131,9 @@ function log(color, tag, msg) {
     console.log(`${p} ${line}`);
   }
 }
+
+const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
+const stripAnsi = (str) => str.replace(ANSI_PATTERN, '');
 
 // ── Port helpers ───────────────────────────────────────────────────────────
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -125,32 +162,38 @@ async function isPortBusy(port) {
   return v4 === 'busy' || v6 === 'busy';
 }
 
-/** PID listening on `port`, or null when undetectable on this platform. */
-async function findListenerPid(port) {
+/** PIDs listening on `port`. Empty when undetectable on this platform. */
+async function findListenerPids(port) {
   try {
     if (process.platform === 'win32') {
       const stdout = await new Promise((res, rej) =>
         execFile('netstat', ['-ano', '-p', 'tcp'], { windowsHide: true }, (e, o) => (e ? rej(e) : res(o)))
       );
+      const pids = new Set();
       for (const line of stdout.split('\n')) {
         const cols = line.trim().split(/\s+/);
         // TCP  <local>  <foreign>  LISTENING  <pid>
         if (cols.length >= 5 && cols[3] === 'LISTENING' && cols[1].endsWith(`:${port}`)) {
-          return Number(cols[4]);
+          pids.add(Number(cols[4]));
         }
       }
-      return null;
+      return [...pids];
     }
     const stdout = await new Promise((res, rej) =>
       execFile('lsof', ['-ti', `tcp:${port}`], (e, o) => (e ? rej(e) : res(o)))
     );
-    return Number(stdout.trim().split('\n')[0]) || null;
+    return stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(Number)
+      .filter((pid) => !Number.isNaN(pid));
   } catch {
-    return null;
+    return [];
   }
 }
 
-function killPidTree(pid) {
+function killPid(pid) {
   try {
     if (process.platform === 'win32') {
       spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
@@ -166,7 +209,7 @@ function killPidTree(pid) {
  * 5173/3000 after an aborted session), so surface them BEFORE launching
  * instead of failing later with a bare EADDRINUSE from vite/nest.
  */
-async function ensurePortsFree(ports, freePortsFlag) {
+async function ensurePortsFree(ports, freePortsFlag, logger) {
   const busy = [];
   for (const port of ports) {
     if (await isPortBusy(port)) busy.push(port);
@@ -174,19 +217,22 @@ async function ensurePortsFree(ports, freePortsFlag) {
   if (busy.length === 0) return;
 
   if (!freePortsFlag) {
-    log(COLORS.meta, 'PORTS', 'Required ports are already in use:');
+    logger.system('Required ports are already in use:');
     for (const port of busy) {
-      const pid = await findListenerPid(port);
-      log(COLORS.meta, 'PORTS', `  :${port} ← PID ${pid ?? 'unknown'} — rerun with --free-ports to terminate it`);
+      const pids = await findListenerPids(port);
+      const owner = pids.length > 0 ? `PID ${pids.join(', ')}` : 'unknown PID';
+      logger.system(`  :${port} ← ${owner} — rerun with --free-ports to terminate it`);
     }
+    await logger.dispose();
     process.exit(1);
   }
 
   for (const port of busy) {
-    const pid = await findListenerPid(port);
-    if (pid && pid !== process.pid) {
-      log(COLORS.meta, 'PORTS', `Terminating PID ${pid} holding :${port}`);
-      killPidTree(pid);
+    for (const pid of await findListenerPids(port)) {
+      if (pid !== process.pid) {
+        logger.system(`Terminating PID ${pid} holding :${port}`);
+        killPid(pid);
+      }
     }
   }
   await sleep(1000);
@@ -196,7 +242,8 @@ async function ensurePortsFree(ports, freePortsFlag) {
     if (await isPortBusy(port)) stillBusy.push(port);
   }
   if (stillBusy.length > 0) {
-    log(COLORS.meta, 'PORTS', `Could not free: ${stillBusy.map((p) => `:${p}`).join(', ')} — aborting`);
+    logger.system(`Could not free: ${stillBusy.map((p) => `:${p}`).join(', ')} — aborting`);
+    await logger.dispose();
     process.exit(1);
   }
 }
@@ -224,10 +271,172 @@ function waitForPort(port, timeoutMs) {
   });
 }
 
+// ── Logging ────────────────────────────────────────────────────────────────
+/**
+ * Renders every process' output interleaved on stdout, prefixed by tag —
+ * the original behavior. Always available, no dependencies.
+ */
+class PlainLogger {
+  write(_channel, tag, color, msg) {
+    log(color, tag, msg);
+  }
+
+  system(msg) {
+    log(COLORS.meta, 'SYSTEM', msg);
+  }
+
+  banner(lines) {
+    console.log(`${COLORS.meta}══════════════════════════════════════════════════════${RESET}`);
+    for (const line of lines) console.log(`${COLORS.meta}  ${line}${RESET}`);
+    console.log(`${COLORS.meta}══════════════════════════════════════════════════════${RESET}`);
+    console.log('');
+  }
+
+  async dispose() {}
+}
+
+/**
+ * Renders one bordered, scrollable pane per channel (server, system, one
+ * per station) via blessed, so each process' output stays readable instead
+ * of interleaving on a single stream. Mirrors every line to a plain-text
+ * log file too, since the alternate screen buffer blessed uses doesn't keep
+ * terminal scrollback after it exits.
+ */
+class SplitLogger {
+  #screen;
+  #boxes = new Map();
+  #logStream;
+  logFilePath;
+
+  constructor(blessed, stationCount) {
+    this.#screen = blessed.screen({ smartCSR: true, title: 'dev-multi-station' });
+    this.#buildLayout(blessed, stationCount);
+    this.logFilePath = resolve(tmpdir(), `pharmacy-dev-session-${Date.now()}.log`);
+    this.#logStream = createWriteStream(this.logFilePath, { flags: 'a' });
+
+    this.#screen.key(['tab'], () => this.#focusNext());
+    this.#screen.render();
+  }
+
+  #buildLayout(blessed, stationCount) {
+    blessed.box({
+      parent: this.#screen,
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: 1,
+      content: ' dev-multi-station — Tab: switch pane | arrows/PgUp/PgDn: scroll | Ctrl+C: quit ',
+      style: { fg: 'black', bg: 'white' },
+    });
+
+    const makeLogBox = (parent, opts, colorName) =>
+      blessed.log({
+        parent,
+        border: { type: 'line' },
+        style: { border: { fg: colorName ?? 'gray' }, label: { bold: true } },
+        scrollable: true,
+        alwaysScroll: true,
+        mouse: true,
+        keys: true,
+        vi: true,
+        ...opts,
+      });
+
+    this.#boxes.set(
+      'server',
+      makeLogBox(this.#screen, { label: ' server ', top: 1, left: 0, width: '45%', height: '70%' }, 'blue')
+    );
+    this.#boxes.set(
+      'system',
+      makeLogBox(this.#screen, { label: ' system ', top: '71%', left: 0, width: '45%', height: '29%' }, 'gray')
+    );
+
+    const stationsArea = blessed.box({ parent: this.#screen, top: 1, left: '45%', width: '55%', height: '100%-1' });
+    const columns = stationCount <= 1 ? 1 : stationCount <= 4 ? 2 : 3;
+    const rows = Math.ceil(stationCount / columns);
+    for (let i = 0; i < stationCount; i++) {
+      const col = i % columns;
+      const row = Math.floor(i / columns);
+      const box = makeLogBox(
+        stationsArea,
+        {
+          label: ` estación ${i + 1} `,
+          top: `${(row * 100) / rows}%`,
+          left: `${(col * 100) / columns}%`,
+          width: `${100 / columns}%`,
+          height: `${100 / rows}%`,
+        },
+        stationColorName(i + 1)
+      );
+      this.#boxes.set(stationChannel(i + 1), box);
+    }
+  }
+
+  #focusNext() {
+    const boxes = [...this.#boxes.values()];
+    const currentIndex = boxes.findIndex((box) => box === this.#screen.focused);
+    boxes[(currentIndex + 1) % boxes.length].focus();
+    this.#screen.render();
+  }
+
+  write(channel, tag, _color, msg) {
+    const box = this.#boxes.get(channel) ?? this.#boxes.get('system');
+    const showTagPrefix = channel !== 'server';
+    for (const line of msg.trimEnd().split('\n')) {
+      box.log(showTagPrefix ? `[${tag}] ${line}` : line);
+    }
+    this.#screen.render();
+    this.#logStream.write(`${stripAnsi(`[${tag}] ${msg.trimEnd()}`)}\n`);
+  }
+
+  system(msg) {
+    this.write('system', 'SYSTEM', COLORS.meta, msg);
+  }
+
+  banner(lines) {
+    for (const line of lines) this.system(line);
+    this.system(`Full session log: ${this.logFilePath}`);
+  }
+
+  async dispose() {
+    await new Promise((resolveClose) => this.#logStream.end(resolveClose));
+    this.#screen.destroy();
+  }
+}
+
+/**
+ * Builds a SplitLogger when requested and actually usable, otherwise the
+ * normal PlainLogger. blessed needs a real interactive terminal on both
+ * ends — without one, screen setup can hang waiting on tty control codes —
+ * so a non-TTY session (piped output, CI) always gets the plain logger.
+ */
+async function createLogger(options) {
+  if (!options.splitView) return new PlainLogger();
+
+  if (!process.stdout.isTTY || !process.stdin.isTTY) {
+    log(COLORS.meta, 'SYSTEM', '--split-view needs an interactive terminal — falling back to normal logs.');
+    return new PlainLogger();
+  }
+
+  try {
+    const { default: blessed } = await import('blessed');
+    return new SplitLogger(blessed, options.stations);
+  } catch (err) {
+    log(
+      COLORS.meta,
+      'SYSTEM',
+      `--split-view needs the "blessed" package (pnpm add -D blessed). Falling back to normal logs. (${err.message})`
+    );
+    return new PlainLogger();
+  }
+}
+
 // ── Process management ─────────────────────────────────────────────────────
 const children = [];
+let logger;
+let shuttingDown = false;
 
-function launch({ command, args, cwd, env, color, tag }) {
+function launch({ command, args, cwd, env, color, tag, channel, critical = false }) {
   const proc = spawn(command, args, {
     cwd: resolve(ROOT, cwd),
     env: { ...process.env, ...env },
@@ -238,22 +447,23 @@ function launch({ command, args, cwd, env, color, tag }) {
     // reaches the whole tree; Windows uses taskkill /T instead.
     detached: process.platform !== 'win32',
   });
+  proc.tag = tag;
+  proc.channel = channel;
+  proc.critical = critical;
 
-  proc.stdout.on('data', (data) => log(color, tag, data.toString()));
-  proc.stderr.on('data', (data) => log(color, tag, data.toString()));
+  proc.stdout.on('data', (data) => logger.write(channel, tag, color, data.toString()));
+  proc.stderr.on('data', (data) => logger.write(channel, tag, color, data.toString()));
 
   proc.on('error', (err) => {
-    log(COLORS.meta, 'ERROR', `[${tag}] Failed to start: ${err.message}`);
+    logger.system(`[${tag}] Failed to start: ${err.message}`);
   });
 
   proc.on('exit', (code) => {
-    log(COLORS.meta, 'EXIT', `[${tag}] Exited with code ${code}`);
+    logger.system(`[${tag}] Exited with code ${code}`);
     const idx = children.indexOf(proc);
     if (idx !== -1) children.splice(idx, 1);
-    // If the server dies, take everything down
-    if (tag === 'server' && code !== 0 && code !== null) {
-      log(COLORS.meta, 'SHUTDOWN', 'Server died — stopping all processes');
-      killAll();
+    if (proc.critical && code !== 0 && code !== null && !shuttingDown) {
+      shutdown(`${tag} died`);
     }
   });
 
@@ -270,38 +480,83 @@ function launch({ command, args, cwd, env, color, tag }) {
  * launch. taskkill /T walks the tree on Windows; on POSIX we signal the
  * negative pid (process group), which requires detached spawning.
  */
-function killTree(proc) {
+function killTree(proc, signal = 'SIGTERM') {
   if (proc.killed || proc.exitCode !== null) return;
   try {
     if (process.platform === 'win32') {
       spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true });
     } else {
-      try { process.kill(-proc.pid, 'SIGTERM'); } catch { proc.kill('SIGTERM'); }
+      try { process.kill(-proc.pid, signal); } catch { proc.kill(signal); }
     }
   } catch { /* already gone */ }
 }
 
-function killAll() {
-  for (const proc of children) killTree(proc);
-  // Force kill after 3 seconds
-  setTimeout(() => {
-    for (const proc of children) {
-      if (!proc.killed && proc.exitCode === null) {
-        try { proc.kill('SIGKILL'); } catch { /* ignore */ }
-      }
-    }
-  }, 3000);
+/**
+ * Signals every child, waits up to `gracePeriodMs` for them to actually
+ * exit, then force-kills whatever is still alive. Returning only once every
+ * process is confirmed gone (or force-killed) is what lets the caller exit
+ * the main process without orphaning anything — a fire-and-forget kill
+ * followed by an immediate process.exit() would race the grace-period timer.
+ */
+async function killAllAndWait(gracePeriodMs = SHUTDOWN_GRACE_PERIOD_MS) {
+  for (const proc of children) killTree(proc, 'SIGTERM');
+
+  const gracefulDeadline = Date.now() + gracePeriodMs;
+  while (children.length > 0 && Date.now() < gracefulDeadline) {
+    await sleep(100);
+  }
+
+  for (const proc of [...children]) killTree(proc, 'SIGKILL');
+
+  // SIGKILL is unmaskable, but Node still delivers its 'exit' event
+  // asynchronously — wait briefly so those exit logs land before the caller
+  // tears down the logger.
+  const forceKillDeadline = Date.now() + 1000;
+  while (children.length > 0 && Date.now() < forceKillDeadline) {
+    await sleep(50);
+  }
+}
+
+async function shutdown(reason, exitCode = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.system(`Shutting down (${reason})...`);
+  await killAllAndWait();
+  logger.system('All processes stopped.');
+  await logger.dispose();
+  process.exit(exitCode);
 }
 
 // ── Graceful shutdown ──────────────────────────────────────────────────────
 process.on('SIGINT', () => {
-  log(COLORS.meta, 'SIGINT', 'Shutting down...');
-  killAll();
-  process.exit(0);
+  if (shuttingDown) process.exit(1); // second Ctrl+C forces an immediate exit
+  shutdown('SIGINT');
 });
-process.on('SIGTERM', () => {
-  killAll();
-  process.exit(0);
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+if (process.platform === 'win32') {
+  process.on('SIGBREAK', () => shutdown('SIGBREAK'));
+}
+process.on('uncaughtException', (err) => {
+  logger.system(`Uncaught exception: ${err.stack ?? err.message}`);
+  shutdown('uncaughtException', 1);
+});
+process.on('unhandledRejection', (reason) => {
+  logger.system(`Unhandled rejection: ${reason instanceof Error ? reason.stack : reason}`);
+  shutdown('unhandledRejection', 1);
+});
+// Last-resort synchronous safety net: only reached if the process exits
+// through a path the handlers above didn't cover. Signals are synchronous,
+// so this is safe to run inside the 'exit' event.
+process.on('exit', () => {
+  for (const proc of children) {
+    try {
+      if (process.platform === 'win32') {
+        spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true });
+      } else if (!proc.killed && proc.exitCode === null) {
+        process.kill(-proc.pid, 'SIGKILL');
+      }
+    } catch { /* already gone */ }
+  }
 });
 
 // ── Desktop mode (Tauri) ───────────────────────────────────────────────────
@@ -356,17 +611,18 @@ function launchVite(station, port, index) {
       VITE_WORKSTATION_ID: station.id,
       VITE_FRIENDLY_NAME: station.name,
     },
-    color: PALETTE[(index - 1) % PALETTE.length],
+    color: stationColor(index),
     tag: `pos${index}`,
+    channel: stationChannel(index),
   });
 }
 
 async function launchDesktopStation(station, port, index) {
-  const color = PALETTE[(index - 1) % PALETTE.length];
+  const color = stationColor(index);
   try {
     await waitForPort(port, 60_000);
   } catch (err) {
-    log(COLORS.meta, `pos${index}`, `${err.message} — skipping Tauri window for ${station.id}`);
+    logger.system(`[pos${index}] ${err.message} — skipping Tauri window for ${station.id}`);
     return;
   }
   const overridePath = await buildTauriOverride(station, port);
@@ -389,6 +645,7 @@ async function launchDesktopStation(station, port, index) {
     },
     color,
     tag: `win${index}`,
+    channel: stationChannel(index),
   });
 }
 
@@ -396,24 +653,26 @@ async function launchDesktopStation(station, port, index) {
 const options = parseArgs(process.argv.slice(2));
 const stationPorts = Array.from({ length: options.stations }, (_, i) => BASE_PORT + i);
 
-await ensurePortsFree([SERVER_PORT, ...stationPorts], options.freePorts);
+logger = await createLogger(options);
 
-console.log(`${COLORS.meta}══════════════════════════════════════════════════════${RESET}`);
-console.log(`${COLORS.meta}  Multi-workstation dev environment (${options.stations} stations, ${options.desktop ? 'desktop' : 'browser'})`);
-console.log(`${COLORS.meta}  Server  → http://localhost:${SERVER_PORT}`);
-for (let i = 1; i <= options.stations; i++) {
-  const station = stationIdentity(i);
-  console.log(`${COLORS.meta}  POS ${i}   → ${options.desktop ? `window` : `http://localhost:${BASE_PORT + i - 1}`}  (${station.id})`);
-}
-console.log(`${COLORS.meta}  Note: seeded PROFESSIONAL plan allows 2 workstations; extra`);
-console.log(`${COLORS.meta}  stations must be REJECTED at activation.`);
-if (options.desktop) {
-  console.log(`${COLORS.meta}  Desktop: each station compiles into its own cargo target`);
-  console.log(`${COLORS.meta}  dir — first run per station is slow (full dep tree).`);
-}
-console.log(`${COLORS.meta}  Ctrl+C  → stop all`);
-console.log(`${COLORS.meta}══════════════════════════════════════════════════════${RESET}`);
-console.log('');
+await ensurePortsFree([SERVER_PORT, ...stationPorts], options.freePorts, logger);
+
+const bannerLines = [
+  `Multi-workstation dev environment (${options.stations} stations, ${options.desktop ? 'desktop' : 'browser'})`,
+  `Server  → http://localhost:${SERVER_PORT}`,
+  ...Array.from({ length: options.stations }, (_, i) => {
+    const station = stationIdentity(i + 1);
+    const target = options.desktop ? 'window' : `http://localhost:${BASE_PORT + i}`;
+    return `POS ${i + 1}   → ${target}  (${station.id})`;
+  }),
+  'Note: seeded PROFESSIONAL plan allows 2 workstations; extra',
+  'stations must be REJECTED at activation.',
+  ...(options.desktop
+    ? ['Desktop: each station compiles into its own cargo target', 'dir — first run per station is slow (full dep tree).']
+    : []),
+  'Ctrl+C  → stop all (twice to force)',
+];
+logger.banner(bannerLines);
 
 // 1. Server
 launch({
@@ -423,10 +682,15 @@ launch({
   env: {},
   color: COLORS.server,
   tag: 'server',
+  channel: 'server',
+  critical: true,
 });
 
-// Small delay so server starts first
-await sleep(2000);
+try {
+  await waitForPort(SERVER_PORT, SERVER_READY_TIMEOUT_MS);
+} catch (err) {
+  logger.system(`${err.message} — continuing anyway, stations may fail to reach the API.`);
+}
 
 // 2..N POS workstations
 const stationLaunches = [];
@@ -434,7 +698,9 @@ for (let i = 1; i <= options.stations; i++) {
   const station = stationIdentity(i);
   const port = BASE_PORT + (i - 1);
   launchVite(station, port, i);
-  stationLaunches.push(launchDesktopStation(station, port, i));
+  if (options.desktop) {
+    stationLaunches.push(launchDesktopStation(station, port, i));
+  }
   // Stagger spawns so simultaneous vite startups don't contend for fs watchers
   if (i < options.stations) {
     await sleep(250);
