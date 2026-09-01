@@ -229,6 +229,15 @@ async fn promote(
         .await
         .map_err(|e| format!("failed to start hub server: {e}"))?;
 
+    // If the server fell back to an adjacent port (second instance on the
+    // same host), the previous mDNS announcement still carries the preferred
+    // port. Re-publish before flipping isCurrentHub so peers dial the
+    // correct address on the next discovery sweep.
+    let bound = server.bound_port().await;
+    if let Err(e) = mdns.update_port(bound).await {
+        log::warn!("Failed to re-advertise hub port {bound}: {e}");
+    }
+
     if let Err(e) = mdns.update_own_txt("isCurrentHub", "true").await {
         // Peers fall back to election convergence if the TXT update fails;
         // not fatal for the hub itself.

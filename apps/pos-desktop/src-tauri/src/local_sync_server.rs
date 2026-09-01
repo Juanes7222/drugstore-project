@@ -808,7 +808,7 @@ impl LocalSyncServerState {
         if effective_port != preferred_port {
             log::warn!(
                 "Preferred port {preferred_port} busy — local sync server using {effective_port}. \
-                 mDNS still advertises {preferred_port}; restart the workstation when possible."
+                 Supervisor will re-advertise the correct port via mDNS."
             );
             *self.port.write().await = effective_port;
         }

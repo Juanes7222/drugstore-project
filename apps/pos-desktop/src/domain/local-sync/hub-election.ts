@@ -42,6 +42,12 @@ export interface HubElectionInput {
   hubOverride: string | null;
   ourWorkstationId: string;
   ourScore: number;
+  /** Whether this workstation may serve as hub. Defaults to `true`. */
+  ourHubEligible?: boolean;
+  /** Whether we previously advertised as hub — stabilises against flapping. */
+  ourIsCurrentHub?: boolean;
+  /** Friendly name used when we elect ourselves. */
+  ourFriendlyName?: string;
 }
 
 /**
@@ -93,7 +99,15 @@ export function computeHubScore(
  * @returns The elected hub and all scores.
  */
 export function electHub(input: HubElectionInput): ElectionResult {
-  const { peers, hubOverride, ourWorkstationId, ourScore } = input;
+  const {
+    peers,
+    hubOverride,
+    ourWorkstationId,
+    ourScore,
+    ourHubEligible = true,
+    ourIsCurrentHub = false,
+    ourFriendlyName,
+  } = input;
 
   // Handle manager override first.
   if (hubOverride) {
@@ -120,7 +134,7 @@ export function electHub(input: HubElectionInput): ElectionResult {
       return {
         hub: {
           workstationId: ourWorkstationId,
-          friendlyName: 'This workstation (override)',
+          friendlyName: ourFriendlyName ?? 'This workstation (override)',
           ipAddress: '127.0.0.1',
           port: 49_500,
           hubScore: ourScore,
@@ -132,60 +146,74 @@ export function electHub(input: HubElectionInput): ElectionResult {
     }
   }
 
-  // Auto-election: find the best candidate.
-  const onlinePeers = peers.filter((p) => p.isOnline);
+  // Auto-election: candidates are ourselves (when eligible) plus online peers.
+  // Previous implementation only considered peers, so with ≥2 stations no one
+  // ever had `isSelf=true` and no one started the LAN server — deadlock.
+  type Candidate = {
+    workstationId: string;
+    friendlyName: string;
+    ipAddress: string;
+    port: number;
+    hubEligible: boolean;
+    isCurrentHub: boolean;
+    score: number;
+    isSelf: boolean;
+  };
 
-  // If no online peers, elect ourselves.
-  if (onlinePeers.length === 0) {
-    const allScores = computeAllScores(peers, ourWorkstationId, ourScore);
-    return {
-      hub: {
-        workstationId: ourWorkstationId,
-        friendlyName: 'This workstation (solo)',
-        ipAddress: '127.0.0.1',
-        port: 49_500,
-        hubScore: ourScore,
-        role: HubRole.AUTO,
-        isSelf: true,
-      },
-      allScores,
-    };
+  const candidates: Candidate[] = [];
+
+  if (ourHubEligible) {
+    candidates.push({
+      workstationId: ourWorkstationId,
+      friendlyName: ourFriendlyName ?? 'This workstation (solo)',
+      ipAddress: '127.0.0.1',
+      port: 49_500,
+      hubEligible: true,
+      isCurrentHub: ourIsCurrentHub,
+      score: ourScore,
+      isSelf: true,
+    });
   }
 
-  // Score each online peer and sort.
-  const scored = onlinePeers
-    .map((peer) => ({
-      peer,
-      score: computeHubScore(
-        0, // We don't know each peer's online time exactly — they're approximated.
-        0, // Same for disconnection count.
-        50, // Default disk space.
-        peer.hubEligible,
-      ),
-    }))
-    .sort((a, b) => {
-      // Primary sort: score descending.
-      const scoreDiff = b.score - a.score;
-      if (scoreDiff !== 0) return scoreDiff;
-      // Secondary sort: isCurrentHub (prefer current hub for stability).
-      if (a.peer.isCurrentHub && !b.peer.isCurrentHub) return -1;
-      if (!a.peer.isCurrentHub && b.peer.isCurrentHub) return 1;
-      // Tertiary sort: workstationId ascending (deterministic tie-breaker).
-      return a.peer.workstationId.localeCompare(b.peer.workstationId);
+  for (const peer of peers) {
+    if (!peer.isOnline) continue;
+    candidates.push({
+      workstationId: peer.workstationId,
+      friendlyName: peer.friendlyName,
+      ipAddress: peer.ipAddress,
+      port: peer.port,
+      hubEligible: peer.hubEligible,
+      isCurrentHub: peer.isCurrentHub,
+      score: computeHubScore(0, 0, 50, peer.hubEligible),
+      isSelf: peer.workstationId === ourWorkstationId,
     });
+  }
 
-  const winner = scored[0];
+  if (candidates.length === 0) {
+    return { hub: null, allScores: computeAllScores(peers, ourWorkstationId, ourScore) };
+  }
+
+  // Shared precedence with Rust `elect_hub`: eligible > score > currentHub > id.
+  candidates.sort((a, b) => {
+    if (a.hubEligible !== b.hubEligible) return (b.hubEligible ? 1 : 0) - (a.hubEligible ? 1 : 0);
+    const scoreDiff = b.score - a.score;
+    if (scoreDiff !== 0) return scoreDiff;
+    if (a.isCurrentHub !== b.isCurrentHub) return (b.isCurrentHub ? 1 : 0) - (a.isCurrentHub ? 1 : 0);
+    return a.workstationId.localeCompare(b.workstationId);
+  });
+
+  const winner = candidates[0];
   const allScores = computeAllScores(peers, ourWorkstationId, ourScore);
 
   return {
     hub: {
-      workstationId: winner.peer.workstationId,
-      friendlyName: winner.peer.friendlyName,
-      ipAddress: winner.peer.ipAddress,
-      port: winner.peer.port,
+      workstationId: winner.workstationId,
+      friendlyName: winner.friendlyName,
+      ipAddress: winner.ipAddress,
+      port: winner.port,
       hubScore: winner.score,
       role: HubRole.AUTO,
-      isSelf: winner.peer.workstationId === ourWorkstationId,
+      isSelf: winner.isSelf,
     },
     allScores,
   };

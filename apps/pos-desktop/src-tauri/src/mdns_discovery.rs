@@ -275,6 +275,60 @@ impl MdnsDiscoveryState {
         result
     }
 
+    /// Update the port we advertise when the HTTP server fell back to an
+    /// adjacent port because the preferred one was busy (two instances on one
+    /// host during multi-window dev). The peer's pull address comes straight
+    /// from this TXT record, so a stale port makes the hub unreachable.
+    pub async fn update_port(&self, new_port: u16) -> Result<(), String> {
+        let mut info = self.our_info.lock().await;
+        if info.port == new_port {
+            return Ok(());
+        }
+        info.port = new_port;
+        let workstation_id = info.workstation_id.clone();
+        let friendly_name = info.friendly_name.clone();
+        let hub_eligible = info.hub_eligible;
+        let auth_token_hash = info.auth_token_hash.clone();
+        let app_version = info.app_version.clone();
+        let host_ip = info.host_ip;
+        drop(info);
+
+        // Preserve the default isCurrentHub=false for this re-announcement;
+        // the supervisor will flip it to true on the next promote tick.
+        let mut properties = HashMap::new();
+        properties.insert("workstationId".to_string(), workstation_id.clone());
+        properties.insert("friendlyName".to_string(), friendly_name.clone());
+        properties.insert(
+            "hubEligible".to_string(),
+            if hub_eligible {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            },
+        );
+        properties.insert("authTokenHash".to_string(), auth_token_hash);
+        properties.insert("appVersion".to_string(), app_version);
+        properties.insert("isCurrentHub".to_string(), "false".to_string());
+
+        let hostname = format!("{workstation_id}.local.");
+        let service_info = ServiceInfo::new(
+            SERVICE_TYPE,
+            &friendly_name,
+            &hostname,
+            host_ip,
+            new_port,
+            properties,
+        )
+        .map_err(|e| format!("failed to build service info for new port: {e}"))?;
+
+        self.daemon
+            .register(service_info)
+            .map_err(|e| format!("failed to re-register mDNS service on new port: {e}"))?;
+
+        log::info!("mDNS re-registered on fallback port {new_port}");
+        Ok(())
+    }
+
     /// Update our own TXT record (e.g., when `isCurrentHub` changes).
     pub async fn update_own_txt(&self, key: &str, value: &str) -> Result<(), String> {
         let info = self.our_info.lock().await;
