@@ -64,6 +64,7 @@ export class SyncProcessingJob {
       return;
     }
     this.processing = true;
+    const startedAt = Date.now();
     try {
       // The cron tick has no request context, and SyncQueue rows are
       // RLS-scoped — iterate tenant by tenant inside withTenant.
@@ -72,16 +73,46 @@ export class SyncProcessingJob {
       });
 
       for (const subscription of subscriptions) {
-        await this.prisma.withTenant(subscription.id, async () => {
-          const entries = await this.fetchSupportedEntries();
-          for (const entry of entries) {
-            await this.processEntry(entry);
+        const entries = await this.prisma.withTenant(subscription.id, () => this.fetchSupportedEntries());
+        if (entries.length > 0) {
+          this.logger.log(`SyncProcessingJob tick: ${entries.length} entries for subscription ${subscription.id}`);
+        }
+        for (const entry of entries) {
+          const entryStart = Date.now();
+          this.logger.log(`SyncProcessingJob start ${entry.id} ${entry.operationType} ${entry.operationUuid} retry=${entry.retryCount}`);
+          try {
+            await this.prisma.withTenant(subscription.id, () =>
+              this.withTimeout(this.processEntry(entry), 25_000, `entry ${entry.id} timeout`),
+            );
+          } catch (entryError) {
+            this.logger.error(`SyncProcessingJob entry ${entry.id} failed with timeout/error: ${entryError instanceof Error ? entryError.message : String(entryError)}`);
+            try {
+              await this.prisma.withTenant(subscription.id, () => this.markFailed(entry, entryError));
+            } catch {}
           }
-        });
+          this.logger.log(`SyncProcessingJob done ${entry.id} in ${Date.now() - entryStart}ms`);
+          if (Date.now() - startedAt > 25_000) {
+            this.logger.warn('SyncProcessingJob tick exceeded 25s — yielding to next cron');
+            break;
+          }
+        }
       }
     } finally {
       this.processing = false;
+      this.logger.log(`SyncProcessingJob tick finished in ${Date.now() - startedAt}ms`);
     }
+  }
+
+  private withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+    // Preserve ALS context — the timer callback must not lose the tenant store.
+    // Using Promise.race with a timer created inside the current ALS context
+    // keeps both branches bound to the same store (unlike a detached new Promise
+    // executor that can orphan the tx binding).
+    let timer: NodeJS.Timeout;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer!));
   }
 
   /** Queries for supported entries that are ready to process. */
@@ -123,19 +154,30 @@ export class SyncProcessingJob {
    * aborted" after e.g. AUDIT_LOG_BATCH).
    */
   private async processEntry(entry: SyncQueueEntry): Promise<void> {
+    const subId = this.tenantContext.getSubscriptionId();
     try {
       await this.prisma.$transaction(async (tx) => {
+        // Ensure RLS context inside this transaction — the outer withTenant
+        // SET LOCAL is not visible here when this $transaction is routed to
+        // a new pooled connection (proxy fallback when ALS tx is null after
+        // withTimeout's Promise wrapping). Setting it explicitly makes the
+        // claim work regardless of whether this is a savepoint or a new tx.
+        await tx.$executeRaw`SELECT set_config('app.current_tenant', ${subId}, true)`;
         const claimed = await tx.syncQueue.updateMany({
           where: {
             id: entry.id,
-            subscriptionId: this.tenantContext.getSubscriptionId(),
+            subscriptionId: subId,
             status: { notIn: [SyncStatus.PROCESSING, SyncStatus.COMPLETED, SyncStatus.PERMANENT_FAILURE, SyncStatus.DISCARDED] },
           },
           data: { status: SyncStatus.PROCESSING },
         });
         if (claimed.count === 0) {
+          // Fallback: try without status filter to diagnose RLS vs status
+          const exists = await tx.syncQueue.findUnique({ where: { id: entry.id }, select: { status: true, subscriptionId: true } });
+          this.logger.warn(`SyncProcessingJob claim failed for ${entry.id} ${entry.operationType} sub=${subId} status=${entry.status} exists=${JSON.stringify(exists)} - another processor won or RLS mismatch`);
           return; // Another processor won the claim
         }
+        this.logger.log(`SyncProcessingJob claimed ${entry.id} for dispatch`);
 
         const result = await this.dispatcher.dispatch(entry);
 
@@ -145,7 +187,7 @@ export class SyncProcessingJob {
         // so a *_CREATION retried after the immediate-dispatch path
         // failed still surfaces the server-assigned ids in the eventual
         // ALREADY_ACCEPTED response on a subsequent push.
-        await tx.syncQueue.update({
+        const updated = await tx.syncQueue.update({
           where: { id: entry.id },
           data: {
             status: SyncStatus.COMPLETED,
@@ -155,6 +197,7 @@ export class SyncProcessingJob {
             entityInternalCode: result.entityInternalCode ?? null,
           },
         });
+        this.logger.log(`SyncProcessingJob completed ${entry.id} -> COMPLETED`);
       });
     } catch (error: unknown) {
       // CashShiftNotOpenForWorkstation remains potentially transient during
@@ -183,9 +226,11 @@ export class SyncProcessingJob {
   /** Marks an entry as PERMANENT_FAILURE immediately — no more retries. Savepoint-isolated so a failed update does not poison the outer withTenant tx. */
   private async markPermanentFailure(entry: SyncQueueEntry, error: unknown): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const subId = this.tenantContext.hasTenant() ? this.tenantContext.getSubscriptionId() : (entry as any).subscriptionId;
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        if (subId) await tx.$executeRaw`SELECT set_config('app.current_tenant', ${subId}, true)`;
         await tx.syncQueue.update({
           where: { id: entry.id },
           data: {
@@ -212,6 +257,7 @@ export class SyncProcessingJob {
   private async markFailed(entry: SyncQueueEntry, error: unknown): Promise<void> {
     const retryCount = (entry.retryCount ?? 0) + 1;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const subId = this.tenantContext.hasTenant() ? this.tenantContext.getSubscriptionId() : (entry as any).subscriptionId;
 
     const exhausted = retryCount >= MAX_RETRY_ATTEMPTS;
     const data: Record<string, unknown> = {
@@ -227,6 +273,7 @@ export class SyncProcessingJob {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        if (subId) await tx.$executeRaw`SELECT set_config('app.current_tenant', ${subId}, true)`;
         await tx.syncQueue.update({
           where: { id: entry.id },
           data,
