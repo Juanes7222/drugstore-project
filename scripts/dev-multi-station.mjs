@@ -581,6 +581,7 @@ async function buildTauriOverride(station, port) {
     app: {
       windows: [
         {
+          label: 'main',
           title: `Pharmacy POS — ${station.name}`,
           width: 1440,
           height: 900,
@@ -626,6 +627,12 @@ async function launchDesktopStation(station, port, index) {
     return;
   }
   const overridePath = await buildTauriOverride(station, port);
+  // WebView2 on Windows shares a user-data dir derived from the app
+  // identifier (com.pharmacy.pos-desktop). Two concurrent windows with
+  // the same identifier contend on EBWebView and one fails with
+  // HRESULT 0x80070057 "parameter is incorrect" / profile-in-use.
+  // Point each window at its own data dir so they can run side-by-side.
+  const webviewDataDir = resolve(tmpdir(), `pharmacy-webview-${station.id}`);
   launch({
     command: 'pnpm',
     // `exec` (not the package script) keeps arg-forwarding predictable.
@@ -642,6 +649,7 @@ async function launchDesktopStation(station, port, index) {
       // at compile time, so sharing one exe across stations isn't an option.
       // Trade-off: first build per station compiles the full dep tree again.
       CARGO_TARGET_DIR: resolve(ROOT, 'apps/pos-desktop/src-tauri', `.target-${station.id}`),
+      WEBVIEW2_USER_DATA_FOLDER: webviewDataDir,
     },
     color,
     tag: `win${index}`,
