@@ -16,7 +16,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -307,9 +307,12 @@ export class UsersController {
     RoleType.ACCOUNTANT,
     RoleType.ADMIN,
   )
-  // Inert until ThrottlerModule is registered in AppModule (it currently is
-  // not); then 60 full-refresh reads per minute per IP.
+  // 60 full-refresh reads per minute per IP. ThrottlerGuard is bound at
+  // method level (after the class-level JwtAuthGuard/RolesGuard, which Nest
+  // runs first) so unauthenticated callers get 401, not 429, and only
+  // authenticated reads consume the budget.
   @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @UseGuards(ThrottlerGuard)
   @ApiOperation({
     summary: 'List login identities for the POS avatar grid (all POS roles)',
   })

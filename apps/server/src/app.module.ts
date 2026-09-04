@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { envSchemaWithStoragePolicy, EnvConfig } from './config/env.schema';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { StorageModule } from './infrastructure/storage/storage.module';
@@ -41,6 +42,20 @@ const DEV_MODULES = process.env.NODE_ENV === 'development' ? [DevModule] : [];
       validate: (config) => envSchemaWithStoragePolicy.parse(config),
     }),
     ScheduleModule.forRoot(),
+    // Rate limiting is intentionally SELECTIVE, not a global APP_GUARD: no
+    // global guards exist in this app and a global ThrottlerGuard would run
+    // before the per-controller JwtAuthGuard/RolesGuard, masking 401s as
+    // 429s and breaking the POS offline fallback (which keys off 401).
+    // The module registration below only provides the storage/options so the
+    // endpoint-level @Throttle() decorators are enforceable where
+    // ThrottlerGuard is bound explicitly (after the auth guards). The
+    // fallback below therefore only applies to a guarded route without its
+    // own @Throttle() override — currently none. 300 req/min/IP tolerates
+    // multi-terminal stores behind one NAT IP against a steady state of
+    // ~15 requests per 5-min sync cycle plus reconnect bursts.
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60000, limit: 300 }],
+    }),
     // Global modules must be imported before any module that consumes them:
     // Nest resolves module providers in import order, so AuthModule (and
     // every domain module) below can only see PrismaService and

@@ -15,7 +15,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { BlessingService } from './blessing.service';
 import { RevocationListService } from './revocation-list.service';
 import {
@@ -45,7 +45,10 @@ export class BlessingController {
   ) {}
 
   @Post('offline-sessions/bless')
-  @UseGuards(JwtAuthGuard, PermissionGuard)
+  // Guards run in declaration order: authentication/authorization first, so
+  // expired-token reconnect bursts surface 401 (POS offline fallback) rather
+  // than 429. Only authenticated bless calls consume the throttle budget.
+  @UseGuards(JwtAuthGuard, PermissionGuard, ThrottlerGuard)
   @Permission('MANAGER' as any)
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()

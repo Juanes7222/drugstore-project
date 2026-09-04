@@ -42,6 +42,8 @@ jest.mock('./offline/offline-token.service', () => ({
 jest.mock('./auth.service', () => ({ AuthService: class {} }));
 
 import { UsersController } from './users.controller';
+import { ROLES_KEY } from '@/common/decorators/roles.decorator';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { PinService } from './services/pin.service';
 import { PasswordHasherService } from './services/password-hasher.service';
@@ -119,6 +121,15 @@ describe('UsersController', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [UsersController],
+      // ThrottlerModule supplies the guard's storage/options providers, which
+      // the isolated test module otherwise lacks (overrideGuard alone cannot
+      // satisfy compile-time DI). Guards never execute under direct
+      // controller-method calls, so the generous test limit never trips.
+      imports: [
+        ThrottlerModule.forRoot({
+          throttlers: [{ name: 'default', ttl: 60000, limit: 1000 }],
+        }),
+      ],
       providers: [
         { provide: PrismaService, useValue: prisma },
         { provide: PinService, useValue: pinServiceMock },
@@ -128,7 +139,13 @@ describe('UsersController', () => {
         { provide: OfflineTokenService, useValue: {} },
         { provide: AuthService, useValue: {} },
       ],
-    }).compile();
+    })
+      // listLoginIdentities binds ThrottlerGuard at method level; its real
+      // storage/options providers live in AppModule, so unit tests stub the
+      // guard the same way other controller specs stub auth guards.
+      .overrideGuard(ThrottlerGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
 
     controller = moduleRef.get(UsersController);
   });
@@ -325,6 +342,177 @@ describe('UsersController', () => {
       expect(serialized).not.toContain('argon2-hash-value');
       expect(result.users[0]).not.toHaveProperty('pinHash');
       expect(result.users[0]).not.toHaveProperty('passwordHash');
+    });
+  });
+
+  describe('listLoginIdentities', () => {
+    function buildIdentityRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'identity-1',
+        displayName: 'Cajera Uno',
+        fullName: 'Cajera Uno Full',
+        username: 'cajera-uno',
+        role: RoleType.CASHIER,
+        status: 'ACTIVE',
+        isActive: true,
+        avatarUrl: null,
+        avatarColor: null,
+        pinHash: 'argon2-pin-hash',
+        passwordHash: null,
+        ...overrides,
+      };
+    }
+
+    it('returns an empty grid without hitting Prisma when the requester has no subscription', async () => {
+      const result = await controller.listLoginIdentities(
+        buildActor({ subscriptionId: null }),
+        { limit: 50 },
+      );
+
+      expect(result).toEqual({ users: [] });
+      expect(prisma.user.findMany).not.toHaveBeenCalled();
+    });
+
+    it('scopes the query to ACTIVE non-deleted users of the requester subscription', async () => {
+      prisma.user.findMany.mockResolvedValue([] as never);
+
+      await controller.listLoginIdentities(buildActor(), { limit: 50 });
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith({
+        where: {
+          subscriptionId: 'sub-1',
+          status: 'ACTIVE',
+          isActive: true,
+          deletedAt: null,
+        },
+        select: expect.objectContaining({
+          pinHash: true,
+          passwordHash: true,
+        }),
+        orderBy: [{ fullName: 'asc' }, { id: 'asc' }],
+        take: 50,
+      });
+    });
+
+    it('passes a custom limit through as take', async () => {
+      prisma.user.findMany.mockResolvedValue([] as never);
+
+      await controller.listLoginIdentities(buildActor(), { limit: 10 });
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 10 }),
+      );
+    });
+
+    it('prefers displayName when present', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        buildIdentityRow({ displayName: 'Mostrador' }),
+      ] as never);
+
+      const result = await controller.listLoginIdentities(buildActor(), {
+        limit: 50,
+      });
+
+      expect(result.users[0]).toMatchObject({ displayName: 'Mostrador' });
+    });
+
+    it('falls back to fullName when displayName is null', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        buildIdentityRow({ displayName: null, fullName: 'Nombre Completo' }),
+      ] as never);
+
+      const result = await controller.listLoginIdentities(buildActor(), {
+        limit: 50,
+      });
+
+      expect(result.users[0]).toMatchObject({
+        displayName: 'Nombre Completo',
+      });
+    });
+
+    it('exposes credential presence as booleans and never serializes the hashes', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        buildIdentityRow({
+          id: 'identity-both',
+          pinHash: 'argon2-pin-hash',
+          passwordHash: 'argon2-password-hash',
+        }),
+        buildIdentityRow({
+          id: 'identity-pin',
+          pinHash: 'argon2-pin-hash',
+          passwordHash: null,
+        }),
+        buildIdentityRow({
+          id: 'identity-password',
+          pinHash: null,
+          passwordHash: 'argon2-password-hash',
+        }),
+        buildIdentityRow({
+          id: 'identity-neither',
+          pinHash: null,
+          passwordHash: null,
+        }),
+      ] as never);
+
+      const result = await controller.listLoginIdentities(buildActor(), {
+        limit: 50,
+      });
+
+      expect(result.users).toMatchObject([
+        { id: 'identity-both', hasPin: true, hasPassword: true },
+        { id: 'identity-pin', hasPin: true, hasPassword: false },
+        { id: 'identity-password', hasPin: false, hasPassword: true },
+        { id: 'identity-neither', hasPin: false, hasPassword: false },
+      ]);
+
+      const serialized = JSON.stringify(result.users);
+      expect(serialized).not.toContain('argon2-pin-hash');
+      expect(serialized).not.toContain('argon2-password-hash');
+      for (const user of result.users) {
+        expect(user).not.toHaveProperty('pinHash');
+        expect(user).not.toHaveProperty('passwordHash');
+      }
+    });
+
+    it('ignores workstationId when querying', async () => {
+      prisma.user.findMany.mockResolvedValue([
+        buildIdentityRow(),
+      ] as never);
+
+      const result = await controller.listLoginIdentities(buildActor(), {
+        limit: 50,
+        workstationId: 'ws-1',
+      });
+
+      expect(prisma.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            subscriptionId: 'sub-1',
+            status: 'ACTIVE',
+            isActive: true,
+            deletedAt: null,
+          },
+          take: 50,
+        }),
+      );
+      expect(result.users).toHaveLength(1);
+      expect(result.users[0]).toMatchObject({ id: 'identity-1' });
+    });
+
+    it('restricts the avatar grid to all POS roles', () => {
+      expect(
+        Reflect.getMetadata(
+          ROLES_KEY,
+          UsersController.prototype.listLoginIdentities,
+        ),
+      ).toEqual([
+        RoleType.OWNER,
+        RoleType.MANAGER,
+        RoleType.CASHIER,
+        RoleType.INVENTORY_ASSISTANT,
+        RoleType.ACCOUNTANT,
+        RoleType.ADMIN,
+      ]);
     });
   });
 
