@@ -13,6 +13,7 @@ import { QueryLotDto } from '../dto/query-lot.dto';
 import { BlockLotDto, BlockLotSchema } from '../dto/block-lot.dto';
 import { QueryInventoryMovementDto } from '../dto/query-inventory-movement.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
@@ -21,7 +22,6 @@ import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-type
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 @Controller("inventory-lots/lots")
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class LotsController {
   constructor(private lotsService: LotsService) {}
 
@@ -31,6 +31,7 @@ export class LotsController {
   // startup sync for both workstations (see 26/08 logs). Write
   // operations (block/unblock) stay ADMIN-only.
   @Get('sync')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async syncLots(
     @Query('updatedSince') updatedSince?: string,
@@ -45,18 +46,21 @@ export class LotsController {
   }
 
   @Get()
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findAll(@Query() query: QueryLotDto): Promise<any> {
     return this.lotsService.findAll(query);
   }
 
   @Get(":id")
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findById(@Param("id") id: string): Promise<any> {
     return this.lotsService.findById(id);
   }
 
   @Post(":id/block")
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.STATE_CHANGE, module: SystemModule.INVENTORY, entityType: "Lot" })
@@ -69,6 +73,7 @@ export class LotsController {
   }
 
   @Post(":id/unblock")
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.STATE_CHANGE, module: SystemModule.INVENTORY, entityType: "Lot" })
@@ -80,6 +85,7 @@ export class LotsController {
   }
 
   @Get("movements")
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async listMovements(@Query() query: QueryInventoryMovementDto): Promise<any> {
     return this.lotsService.listMovements(query);

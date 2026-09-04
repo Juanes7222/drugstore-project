@@ -112,6 +112,7 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
         service.getCurrentHub(),
       ]);
 
+      console.log('[local-sync-store] initialize peers', peers.length, 'hub', hub?.workstationId, 'status', status.connectionStatus);
       set({
         peers,
         status: status.connectionStatus,
@@ -125,6 +126,7 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to initialise local sync';
+      console.error('[local-sync-store] initialize failed', message, error);
 
       // "command not found" / "No command" — the Tauri command does not exist
       // in the Rust binary at all (build mismatch).  Keep isInitialized false
@@ -140,10 +142,21 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
       // so the polling loop does not start and spam the console.
       const isLazyNotInit = message.includes('not initialised');
 
+      if (isLazyNotInit) {
+        // Rust modules not yet ready (race between useLocalSync mount and
+        // initializeServices). Retry after 1s instead of staying forever
+        // uninitialized — this was the root cause of "Sin hub designado"
+        // persisting even though Rust had already elected ws_principal.
+        console.log('[local-sync-store] retry initialize in 1s (lazy not init)');
+        set({ isLoading: false });
+        setTimeout(() => void get().initialize(), 1000);
+        return;
+      }
+
       set({
-        isInitialized: !isCommandMissing && !isLazyNotInit,
+        isInitialized: !isCommandMissing,
         isLoading: false,
-        lastSyncError: isCommandMissing || isLazyNotInit ? null : message,
+        lastSyncError: isCommandMissing ? null : message,
       });
     }
   },
@@ -151,6 +164,7 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
   async refreshPeers() {
     try {
       const peers = await service.forceRediscovery();
+      console.log('[local-sync-store] refreshPeers', peers.length, peers.map((p) => p.workstationId));
       set({ peers });
     } catch (error) {
       console.error('Failed to refresh peers:', error);
@@ -163,6 +177,7 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
         service.getStatus(),
         service.getCurrentHub(),
       ]);
+      console.log('[local-sync-store] refreshStatus hub', hub?.workstationId, 'isSelf', hub?.isSelf, 'status', status.connectionStatus, 'addr', status.currentHubAddress);
 
       set({
         status: status.connectionStatus,

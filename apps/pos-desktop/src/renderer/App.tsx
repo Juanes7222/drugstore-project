@@ -179,7 +179,7 @@ const InnerApp: FC = () => {
   const prevTokenRef = useRef<string | undefined>(undefined);
   const prevWorkstationRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!session?.accessToken) return;
+    if (!session || (!session.accessToken && !session.offlineToken)) return;
 
     // Re-hydrate cash shift store when workstation changes (login / user switch).
     // Called every time session changes so that the store reflects the correct
@@ -191,12 +191,18 @@ const InnerApp: FC = () => {
 
     // Update the token in sub-services every time it changes
     // (including the initial login AND subsequent re-logins).
-    if (session.accessToken !== prevTokenRef.current) {
+    // Offline-only sessions (offlineToken without accessToken) are valid —
+    // the scheduler gates pushes via offlineToken — so allow start even
+    // when accessToken is empty.
+    if (session.accessToken && session.accessToken !== prevTokenRef.current) {
       prevTokenRef.current = session.accessToken;
       svc.syncScheduler.updateAccessToken(session.accessToken);
     }
 
-    // Start the scheduler only once (not on re-login)
+    // Start the scheduler once, even for offline-only sessions. The
+    // previous guard `if (!session?.accessToken) return` prevented the
+    // background push loop from ever running when the user logged in
+    // offline (only offlineToken), forcing a manual sync.
     if (!isSyncStarted.current) {
       isSyncStarted.current = true;
       svc.syncScheduler.start();
@@ -209,7 +215,7 @@ const InnerApp: FC = () => {
       isReportSchedulerStarted.current = true;
       svc.reportScheduler.start();
     }
-  }, [session?.accessToken, session?.workstationId, svc]);
+  }, [session?.accessToken, session?.offlineToken, session?.workstationId, svc]);
 
   // Restore license from server on startup if not activated
   const licenseRestored = useRef(false);

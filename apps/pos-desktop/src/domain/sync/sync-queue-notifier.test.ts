@@ -34,7 +34,7 @@ describe('sync-queue-notifier', () => {
     expect(trigger).not.toHaveBeenCalled();
   });
 
-  it('replaces the previous trigger on subsequent setPushTrigger calls', () => {
+  it('keeps multiple triggers active (LAN + cloud) on subsequent setPushTrigger calls', () => {
     const first = vi.fn();
     const second = vi.fn();
     setPushTrigger(first);
@@ -42,7 +42,7 @@ describe('sync-queue-notifier', () => {
 
     notifyPendingEntry();
 
-    expect(first).not.toHaveBeenCalled();
+    expect(first).toHaveBeenCalledOnce();
     expect(second).toHaveBeenCalledOnce();
   });
 

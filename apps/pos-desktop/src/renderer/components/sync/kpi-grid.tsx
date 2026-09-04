@@ -4,7 +4,7 @@
  * Displays summary metrics (pending, failed, permanent failures, success
  * rate, last backup) in a responsive 2–4 column grid of accent-bordered
  * tiles. Uses design-system tokens for colours and shared ui/icons components.
- * tile. The Last Backup tile is clickable.
+ * The Last Backup tile is clickable. The Pending tile is LAN-aware.
  *
  * @category Component
  */
@@ -34,6 +34,8 @@ interface TileDef {
   iconColor: string;
   icon: typeof ClockIcon;
   subLabel?: string;
+  /** Optional class for the subLabel — e.g. to show success green. */
+  subLabelClass?: string;
   onClick?: () => void;
   testId?: string;
 }
@@ -68,6 +70,45 @@ export const KpiGrid: FC<KpiGridProps> = ({
         ? "text-warning"
         : "text-ink-muted";
 
+  // ── LAN-aware pending tile derivation ────────────────────────────────
+  const pending = counts?.pending;
+  const pendingLanRelayed = counts?.pendingLanRelayed;
+  const pendingNotRelayed = counts?.pendingNotRelayed;
+
+  let pendingSubLabel: string | undefined;
+  let pendingSubLabelClass: string | undefined;
+
+  if (counts == null || pending == null) {
+    pendingSubLabel = undefined;
+  } else if (pending === 0) {
+    // No pending cloud ops — no sublabel needed; keep tile clean.
+    pendingSubLabel = undefined;
+  } else if (
+    pendingLanRelayed != null &&
+    pendingNotRelayed != null &&
+    pendingLanRelayed > 0 &&
+    pending === pendingLanRelayed
+  ) {
+    // All pending ops already relayed to Hub — green reassurance.
+    pendingSubLabel = t("sync.lan_secured_in_hub", {
+      defaultValue: "✓ Asegurado en Hub local",
+    });
+    // Guard: t returns key when missing; still show default.
+    if (pendingSubLabel === "sync.lan_secured_in_hub") {
+      pendingSubLabel = "✓ Asegurado en Hub local";
+    }
+    pendingSubLabelClass = "text-success font-medium";
+  } else if (pendingLanRelayed != null && pendingNotRelayed != null) {
+    pendingSubLabel = t("sync.lan_pending_detail", {
+      secured: pendingLanRelayed,
+      pending: pendingNotRelayed,
+      defaultValue: `Asegurado en tienda: ${pendingLanRelayed} • Por replicar: ${pendingNotRelayed}`,
+    });
+    if (pendingSubLabel === "sync.lan_pending_detail") {
+      pendingSubLabel = `Asegurado en tienda: ${pendingLanRelayed} • Por replicar: ${pendingNotRelayed}`;
+    }
+  }
+
   const tiles: TileDef[] = [
     {
       labelKey: "sync.kpi_pending",
@@ -75,6 +116,9 @@ export const KpiGrid: FC<KpiGridProps> = ({
       borderClass: "border-l-warning",
       iconColor: "text-warning",
       icon: TILE_ICONS.pending,
+      subLabel: pendingSubLabel,
+      subLabelClass: pendingSubLabelClass,
+      testId: "kpi-pending",
     },
     {
       labelKey: "sync.kpi_failed_24h",
@@ -155,7 +199,10 @@ export const KpiGrid: FC<KpiGridProps> = ({
                 {tile.value}
               </span>
               {tile.subLabel && (
-                <span className="text-caption text-ink-muted">
+                <span
+                  className={`text-caption ${tile.subLabelClass ?? "text-ink-muted"}`}
+                  data-testid={tile.testId ? `${tile.testId}-sublabel` : undefined}
+                >
                   {tile.subLabel}
                 </span>
               )}

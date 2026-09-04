@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/infrastructure/prisma/prisma.module';
+import { AuthModule } from '@/modules/auth/auth.module';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { CatalogController } from './catalog.controller';
 import { CatalogService } from './catalog.service';
 import { ProductsController } from './products.controller';
@@ -12,7 +14,7 @@ import { TaxSchemesController } from './tax-schemes.controller';
 import { TaxSchemesService } from './tax-schemes.service';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AuthModule],
   controllers: [
     CatalogController,
     ProductsController,
@@ -26,6 +28,7 @@ import { TaxSchemesService } from './tax-schemes.service';
     CategoriesService,
     PharmaceuticalFormsService,
     TaxSchemesService,
+    SyncAuthGuard,
   ],
   exports: [
     CatalogService,

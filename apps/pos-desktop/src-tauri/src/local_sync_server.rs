@@ -31,6 +31,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use axum::extract::{Query, RawQuery};
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
@@ -185,12 +186,34 @@ struct PeerTrack {
     last_seen: Instant,
 }
 
+/// Stored operation with hub insertion time.
+///
+/// `received_at` is the hub's wall-clock when the push was accepted, not
+/// the originating workstation's `sourceCreatedAt`. Using insertion time
+/// for the pull cursor ensures operations created offline (old
+/// `sourceCreatedAt`) are still returned to peers that already advanced
+/// past that timestamp — otherwise a late push with a stale creation time
+/// would be silently missed.
+#[derive(Debug, Clone)]
+struct StoredOp {
+    operation: LocalOperation,
+    received_at: DateTime<Utc>,
+}
+
+/// Persisted form of `StoredOp` for the JSONL log.
+#[derive(Debug, Serialize, Deserialize)]
+struct PersistedOp {
+    operation: LocalOperation,
+    #[serde(rename = "receivedAt")]
+    received_at: String,
+}
+
 /// Hub server state.
 pub struct LocalSyncServerState {
     /// Location's local network key (used for HMAC verification).
     local_network_key: String,
     /// Operations accepted from peers (not yet pushed to server).
-    received_operations: RwLock<Vec<LocalOperation>>,
+    received_operations: RwLock<Vec<StoredOp>>,
     /// Append-only on-disk mirror of `received_operations`.
     ///
     /// The in-memory buffer alone would lose every peer operation on a hub
@@ -290,6 +313,11 @@ async fn handle_push(
     };
 
     if verify_auth(&headers, &body_bytes, &state.local_network_key).await.is_err() {
+        crate::local_sync_diagnostics::push_global(
+            "WARN",
+            "local_sync_server",
+            format!("push HMAC failed for {} bytes", body_bytes.len()),
+        );
         return (StatusCode::UNAUTHORIZED, Json(PushResponse {
             accepted: 0,
             rejected: 0,
@@ -306,7 +334,7 @@ async fn handle_push(
 
     for op in &body.operations {
         // Check for conflicts: same entity being modified by different peers.
-        let conflict = check_for_conflict(&received, op);
+        let conflict = check_for_conflict_stored(&received, op);
         if let Some(conflict_info) = conflict {
             conflicts.push(conflict_info);
             rejected += 1;
@@ -317,7 +345,11 @@ async fn handle_push(
         // must be able to assume the hub durably holds the operation, even
         // across a hub restart. A failed disk write therefore counts as a
         // rejection so the peer retries on its next cycle.
-        if !state.append_op_to_log(op) {
+        let stored = StoredOp {
+            operation: op.clone(),
+            received_at: Utc::now(),
+        };
+        if !state.append_stored_op_to_log(&stored) {
             log::error!(
                 "Failed to persist operation {} — rejecting so peer retries",
                 op.operation_uuid
@@ -326,7 +358,7 @@ async fn handle_push(
             continue;
         }
 
-        received.push(op.clone());
+        received.push(stored);
         accepted_uuids.push(op.operation_uuid.clone());
         accepted += 1;
     }
@@ -350,16 +382,29 @@ async fn handle_push(
 async fn handle_pull(
     AxumState(state): AxumState<Arc<LocalSyncServerState>>,
     headers: HeaderMap,
-    axum::extract::Query(query): axum::extract::Query<PullQuery>,
+    RawQuery(raw_query): RawQuery,
+    Query(query): Query<PullQuery>,
 ) -> impl IntoResponse {
-    // For GET requests, the HMAC is computed over the query string.
-    let query_bytes = format!(
-        "since={}&workstation_id={}",
-        query.since, query.workstation_id
-    )
-    .into_bytes();
+    // HMAC must be verified against the exact query bytes on the wire.
+    // Re-serialising parsed params breaks when `since` contains `+` (RFC3339
+    // UTC offset): form decoding turns `+` into a space before we rebuild.
+    let query_bytes = raw_query
+        .map(|q| q.into_bytes())
+        .unwrap_or_else(|| {
+            format!(
+                "since={}&workstation_id={}",
+                urlencoding::encode(&query.since),
+                urlencoding::encode(&query.workstation_id),
+            )
+            .into_bytes()
+        });
 
     if verify_auth(&headers, &query_bytes, &state.local_network_key).await.is_err() {
+        crate::local_sync_diagnostics::push_global(
+            "WARN",
+            "local_sync_server",
+            format!("pull HMAC failed for {}", query.workstation_id),
+        );
         return (StatusCode::UNAUTHORIZED, Json(PullResponse {
             operations: vec![],
             next_since: query.since.clone(),
@@ -380,23 +425,21 @@ async fn handle_pull(
     let mut latest = since;
     let mut ops = Vec::new();
 
-    for op in received.iter() {
-        if op.source_workstation_id == query.workstation_id {
+    for stored in received.iter() {
+        if stored.operation.source_workstation_id == query.workstation_id {
             continue; // Don't return the requesting workstation's own ops.
         }
-        if let Ok(ts) = op.source_created_at.parse::<DateTime<Utc>>() {
-            if ts > since {
-                ops.push(op.clone());
-                if ts > latest {
-                    latest = ts;
-                }
+        if stored.received_at > since {
+            ops.push(stored.operation.clone());
+            if stored.received_at > latest {
+                latest = stored.received_at;
             }
         }
     }
 
     (StatusCode::OK, Json(PullResponse {
         operations: ops,
-        next_since: latest.to_rfc3339(),
+        next_since: latest.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
     }))
 }
 
@@ -592,6 +635,7 @@ async fn handle_heartbeat(
 ///
 /// Follows first-write-wins: the operation that arrived first is applied;
 /// subsequent operations targeting the same entity are rejected.
+#[allow(dead_code)]
 fn check_for_conflict(
     received: &[LocalOperation],
     new_op: &LocalOperation,
@@ -609,6 +653,26 @@ fn check_for_conflict(
                 operation_uuid: new_op.operation_uuid.clone(),
                 reason: "FIRST_WRITE_WINS".to_string(),
                 winning_operation_uuid: existing.operation_uuid.clone(),
+            });
+        }
+    }
+    None
+}
+
+fn check_for_conflict_stored(
+    received: &[StoredOp],
+    new_op: &LocalOperation,
+) -> Option<ConflictInfo> {
+    for existing in received.iter() {
+        let e = &existing.operation;
+        if e.operation_type == new_op.operation_type
+            && e.source_workstation_id != new_op.source_workstation_id
+            && e.payload_hash == new_op.payload_hash
+        {
+            return Some(ConflictInfo {
+                operation_uuid: new_op.operation_uuid.clone(),
+                reason: "FIRST_WRITE_WINS".to_string(),
+                winning_operation_uuid: e.operation_uuid.clone(),
             });
         }
     }
@@ -640,31 +704,66 @@ impl LocalSyncServerState {
     /// after a crash mid-append is skipped) and drops entries older than the
     /// retention window.
     async fn restore_op_log(&self, app_handle: &AppHandle) {
-        let dir = match app_handle.path().app_data_dir() {
+        let dir = match app_handle.path().app_local_data_dir() {
             Ok(dir) => dir.join(OP_LOG_DIR),
             Err(e) => {
-                log::error!("Cannot resolve app data dir for hub log: {e}");
+                log::error!("Cannot resolve app local data dir for hub log: {e}");
                 return;
             }
         };
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            log::error!("Cannot create hub log dir {}: {e}", dir.display());
+            return;
+        }
         let path = dir.join(OP_LOG_FILE);
 
-        let mut restored: HashMap<String, LocalOperation> = HashMap::new();
+        let mut restored: HashMap<String, StoredOp> = HashMap::new();
         if let Ok(content) = std::fs::read_to_string(&path) {
             let cutoff = Utc::now() - chrono::Duration::days(OP_LOG_RETENTION_DAYS);
             for line in content.lines() {
+                // Try new persisted format first, fall back to legacy.
+                if let Ok(persisted) = serde_json::from_str::<PersistedOp>(line) {
+                    let received_at = persisted
+                        .received_at
+                        .parse::<DateTime<Utc>>()
+                        .unwrap_or_else(|_| {
+                            persisted
+                                .operation
+                                .source_created_at
+                                .parse::<DateTime<Utc>>()
+                                .unwrap_or_else(|_| Utc::now())
+                        });
+                    if received_at <= cutoff {
+                        continue;
+                    }
+                    restored.insert(
+                        persisted.operation.operation_uuid.clone(),
+                        StoredOp {
+                            operation: persisted.operation,
+                            received_at,
+                        },
+                    );
+                    continue;
+                }
                 let Ok(op) = serde_json::from_str::<LocalOperation>(line) else {
                     // Torn/partial line — skip; the next append rewrites a
                     // clean copy of any operation that still matters.
                     continue;
                 };
-                let fresh = DateTime::parse_from_rfc3339(&op.source_created_at)
-                    .map(|ts| ts.with_timezone(&Utc) > cutoff)
-                    .unwrap_or(false);
-                if !fresh {
+                let received_at = op
+                    .source_created_at
+                    .parse::<DateTime<Utc>>()
+                    .unwrap_or_else(|_| Utc::now());
+                if received_at <= cutoff {
                     continue;
                 }
-                restored.insert(op.operation_uuid.clone(), op);
+                restored.insert(
+                    op.operation_uuid.clone(),
+                    StoredOp {
+                        operation: op,
+                        received_at,
+                    },
+                );
             }
         }
         if !restored.is_empty() {
@@ -676,7 +775,7 @@ impl LocalSyncServerState {
 
         let mut ops = self.received_operations.write().await;
         *ops = restored.into_values().collect();
-        ops.sort_by(|a, b| a.source_created_at.cmp(&b.source_created_at));
+        ops.sort_by(|a, b| a.received_at.cmp(&b.received_at));
         drop(ops);
 
         // Open (or create) for appending so subsequent accepts persist.
@@ -700,12 +799,25 @@ impl LocalSyncServerState {
     /// Append one operation to the on-disk log. Returns false when the write
     /// failed, signalling the caller to reject the push so the peer retries
     /// instead of assuming the hub durably holds the operation.
+    #[allow(dead_code)]
     fn append_op_to_log(&self, op: &LocalOperation) -> bool {
+        let stored = StoredOp {
+            operation: op.clone(),
+            received_at: Utc::now(),
+        };
+        self.append_stored_op_to_log(&stored)
+    }
+
+    fn append_stored_op_to_log(&self, stored: &StoredOp) -> bool {
         match self.op_log.try_write() {
             Ok(mut guard) => {
                 if let Some(file) = guard.as_mut() {
                     use std::io::Write;
-                    let line = match serde_json::to_string(op) {
+                    let persisted = PersistedOp {
+                        operation: stored.operation.clone(),
+                        received_at: stored.received_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    };
+                    let line = match serde_json::to_string(&persisted) {
                         Ok(l) => l,
                         Err(_) => return false,
                     };
@@ -713,10 +825,20 @@ impl LocalSyncServerState {
                         && file.write_all(b"\n").is_ok()
                         && file.flush().is_ok()
                 } else {
+                    log::error!(
+                        "Hub op log not open — cannot persist operation {}",
+                        stored.operation.operation_uuid
+                    );
                     false
                 }
             }
-            Err(_) => false,
+            Err(_) => {
+                log::warn!(
+                    "Hub op log busy — cannot persist operation {}",
+                    stored.operation.operation_uuid
+                );
+                false
+            }
         }
     }
 
@@ -888,6 +1010,25 @@ mod tests {
         assert!(!state.is_running().await);
         assert_eq!(state.bound_port().await, PREFERRED_PORT);
         assert!(state.serve_task.write().await.is_none());
+    }
+
+    #[test]
+    fn pull_hmac_uses_url_encoded_query_bytes() {
+        const KEY: &str = "test-network-key";
+        let since = "1970-01-01T00:00:00+00:00";
+        let ws = "ws_secundaria";
+        let wire_query = format!(
+            "since={}&workstation_id={}",
+            urlencoding::encode(since),
+            urlencoding::encode(ws),
+        );
+        let mac = compute_hmac(KEY, wire_query.as_bytes()).expect("hmac");
+
+        assert!(verify_hmac(KEY, wire_query.as_bytes(), &mac));
+
+        // Rebuilding from parsed params corrupts `+` into a space — the old bug.
+        let broken = format!("since={since}&workstation_id={ws}");
+        assert!(!verify_hmac(KEY, broken.as_bytes(), &mac));
     }
 
     #[test]

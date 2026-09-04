@@ -86,6 +86,8 @@ export interface CatalogSyncConfig {
   httpClient?: SyncHttpClient;
   /** Optional auth token for protected endpoints. */
   accessToken?: string;
+  /** Long-lived offline token fallback (X-Offline-Token). */
+  offlineToken?: string;
 }
 
 export const createCatalogSyncService = (
@@ -103,6 +105,7 @@ export class CatalogSyncService {
   private readonly http: SyncHttpClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly offlineToken?: string;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -111,6 +114,7 @@ export class CatalogSyncService {
     this.http = config.httpClient ?? defaultHttpClient;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
+    this.offlineToken = config.offlineToken;
   }
 
   // -----------------------------------------------------------------------
@@ -310,10 +314,10 @@ export class CatalogSyncService {
   // -----------------------------------------------------------------------
 
   private buildAuthHeaders(): Record<string, string> {
-    if (this.accessToken) {
-      return { Authorization: `Bearer ${this.accessToken}` };
-    }
-    return {};
+    const headers: Record<string, string> = {};
+    if (this.accessToken) headers.Authorization = `Bearer ${this.accessToken}`;
+    if (this.offlineToken) headers['X-Offline-Token'] = this.offlineToken;
+    return headers;
   }
 
   /**

@@ -23,6 +23,12 @@ export interface QueueCounts {
   permanentFailure: number;
   completed24h: number;
   completedTotal: number;
+  /** PENDING entries already replicated to LAN hub (lanRelayedAt != null) — "asegurado en tienda". */
+  pendingLanRelayed: number;
+  /** PENDING entries not yet replicated to LAN hub — awaiting local relay. */
+  pendingNotRelayed: number;
+  /** LAN-replicated entries in last 5 minutes — for the Hub activity card. */
+  lanRelayedLast5Min: number;
 }
 
 export interface FailureBreakdownEntry {
@@ -125,22 +131,49 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
     const now = new Date();
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const staleThreshold = new Date(now.getTime() - STALE_PENDING_THRESHOLD_MS);
+    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
 
-    const [pending, stalePending, failed, permanentFailure, completed24h, completedTotal] =
-      await Promise.all([
-        this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
-        this.prisma.syncQueue.count({
-          where: { status: 'PENDING', sourceCreatedAt: { lt: staleThreshold } },
-        }),
-        this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
-        this.prisma.syncQueue.count({ where: { status: 'PERMANENT_FAILURE' } }),
-        this.prisma.syncQueue.count({
-          where: { status: 'COMPLETED', lastAttemptAt: { gte: twentyFourHoursAgo } },
-        }),
-        this.prisma.syncQueue.count({ where: { status: 'COMPLETED' } }),
-      ]);
+    const [
+      pending,
+      stalePending,
+      failed,
+      permanentFailure,
+      completed24h,
+      completedTotal,
+      pendingLanRelayed,
+      pendingNotRelayed,
+      lanRelayedLast5Min,
+    ] = await Promise.all([
+      this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
+      this.prisma.syncQueue.count({
+        where: { status: 'PENDING', sourceCreatedAt: { lt: staleThreshold } },
+      }),
+      this.prisma.syncQueue.count({ where: { status: 'FAILED' } }),
+      this.prisma.syncQueue.count({ where: { status: 'PERMANENT_FAILURE' } }),
+      this.prisma.syncQueue.count({
+        where: { status: 'COMPLETED', lastAttemptAt: { gte: twentyFourHoursAgo } },
+      }),
+      this.prisma.syncQueue.count({ where: { status: 'COMPLETED' } }),
+      this.prisma.syncQueue.count({ where: { status: 'PENDING', lanRelayedAt: { not: null } } }),
+      this.prisma.syncQueue.count({ where: { status: 'PENDING', lanRelayedAt: null } }),
+      this.prisma.syncQueue.count({
+        where: {
+          lanRelayedAt: { gte: fiveMinutesAgo },
+        },
+      }),
+    ]);
 
-    return { pending, stalePending, failed, permanentFailure, completed24h, completedTotal };
+    return {
+      pending,
+      stalePending,
+      failed,
+      permanentFailure,
+      completed24h,
+      completedTotal,
+      pendingLanRelayed,
+      pendingNotRelayed,
+      lanRelayedLast5Min,
+    };
   }
 
   async getFailureBreakdown(since: Date): Promise<FailureBreakdownEntry[]> {

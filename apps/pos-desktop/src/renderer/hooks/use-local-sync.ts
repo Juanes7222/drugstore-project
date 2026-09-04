@@ -8,8 +8,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useLocalSyncStore } from '../store/local-sync/local-sync.store';
 
-const POLL_INTERVAL_MS = 5_000; // 5 seconds for status refresh.
-const PEER_REFRESH_INTERVAL_MS = 30_000; // 30 seconds for peer list.
+const POLL_INTERVAL_MS = 2_000; // 2s for fast same-PC convergence (was 5s)
+const PEER_REFRESH_INTERVAL_MS = 5_000; // 5s for same-PC (was 30s)
 
 export function useLocalSync() {
   const store = useLocalSyncStore();

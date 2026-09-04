@@ -8,6 +8,7 @@ import { SetClassificationDto, SetClassificationSchema } from './dto/set-classif
 import { RequestDataSubjectActionDto, RequestDataSubjectActionSchema } from './dto/request-data-subject-action.dto';
 import { ResolveDataSubjectRequestDto, ResolveDataSubjectRequestSchema } from './dto/resolve-data-subject-request.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
@@ -16,7 +17,6 @@ import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-type
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 @Controller('clients')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class ClientsController {
   constructor(private clientsService: ClientsService) {}
 
@@ -25,12 +25,14 @@ export class ClientsController {
   // MANAGER is granted to match the POS desktop's FLOOR_ROLES gate on the
   // clients screen. ACCOUNTANT stays excluded: reports-only role.
   @Get()
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findAll(@Query() query: QueryClientDto): Promise<any> {
     return this.clientsService.findAll(query);
   }
 
   @Get('sync')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findSync(
     @Query('since') since?: string,
@@ -45,12 +47,14 @@ export class ClientsController {
   }
 
   @Get('classifications/all')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findAllClassifications(): Promise<any> {
     return this.clientsService.findAllClassifications();
   }
 
   @Get(':id')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.MANAGER, RoleType.ADMIN)
   async findById(@Param('id') id: string): Promise<any> {
     return this.clientsService.findById(id);
@@ -64,6 +68,7 @@ export class ClientsController {
    * use and manual overrides from the web interface.
    */
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @HttpCode(201)
   @Auditable({ action: AuditAction.CREATE, module: SystemModule.CLIENTS, entityType: 'Client' })
@@ -82,6 +87,7 @@ export class ClientsController {
    * overrides from the web interface.
    */
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.CLIENTS, entityType: 'Client' })
   async update(
@@ -93,6 +99,7 @@ export class ClientsController {
   }
 
   @Post(':id/consent')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.CLIENTS, entityType: 'Client' })
@@ -111,6 +118,7 @@ export class ClientsController {
    * operation so the change propagates to all POS workstations.
    */
   @Patch(':id/deactivate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN, RoleType.MANAGER)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.CLIENTS, entityType: 'Client' })
   async deactivate(
@@ -121,6 +129,7 @@ export class ClientsController {
   }
 
   @Patch(':id/classification')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @Auditable({ action: AuditAction.UPDATE, module: SystemModule.CLIENTS, entityType: 'Client' })
   async setClassification(
@@ -132,6 +141,7 @@ export class ClientsController {
   }
 
   @Post(':id/data-subject-requests')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.APPROVE, module: SystemModule.CLIENTS, entityType: 'Client' })
@@ -144,6 +154,7 @@ export class ClientsController {
   }
 
   @Post(':id/data-subject-requests/resolve')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @HttpCode(200)
   @Auditable({ action: AuditAction.APPROVE, module: SystemModule.CLIENTS, entityType: 'Client' })

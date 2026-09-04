@@ -19,13 +19,13 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 use crate::hub_election::HubElectionState;
+use crate::local_sync_diagnostics::push_global;
 use crate::LocalSyncModules;
 
 /// How often the supervisor re-evaluates the hub role.
 ///
-/// Matches the UI polling cadence (5 s) so role changes propagate within
-/// one tick on every workstation.
-const SUPERVISOR_TICK: Duration = Duration::from_secs(5);
+/// 2s for fast convergence in same-PC tests (was 5s, file heartbeat now 1s).
+const SUPERVISOR_TICK: Duration = Duration::from_secs(2);
 
 // ---------------------------------------------------------------------------
 // Managed state
@@ -85,6 +85,11 @@ pub async fn spawn(app: AppHandle) {
 
     *task_guard = Some(tauri::async_runtime::spawn(supervise(app.clone())));
     log::info!("Hub supervisor started");
+    push_global(
+        "INFO",
+        "hub_supervisor",
+        "spawn: supervisor started".to_string(),
+    );
 }
 
 /// Stop supervising and drop the hub role.
@@ -134,12 +139,7 @@ async fn tick(app: &AppHandle) -> Result<(), String> {
     }
 
     let modules = app.state::<LocalSyncModules>();
-    let mdns = modules
-        .mdns
-        .lock()
-        .await
-        .clone()
-        .ok_or_else(|| "local sync not initialised".to_string())?;
+    let mdns_opt = modules.mdns.lock().await.clone();
     let server = modules
         .server
         .lock()
@@ -154,15 +154,46 @@ async fn tick(app: &AppHandle) -> Result<(), String> {
         .ok_or_else(|| "local sync not initialised".to_string())?;
 
     let election = app.state::<HubElectionState>();
-    let hub = election.run_election(&mdns).await;
+    let hub = if let Some(ref mdns) = mdns_opt {
+        election.run_election(mdns).await
+    } else {
+        // mDNS daemon failed to start (second instance on same PC where
+        // 5353 is already bound). Still elect solo so at least one hub
+        // appears instead of "Sin hub designado".
+        election.run_election_solo().await
+    };
+    log::debug!(
+        "Election tick: peers={:?}, hub={:?}, eligible={}",
+        hub.as_ref().map(|h| h.workstation_id.clone()),
+        hub,
+        election.our_hub_eligible().await
+    );
 
     let we_are_hub = matches!(&hub, Some(info) if info.is_self)
         && election.our_hub_eligible().await;
 
-    // Keep the sync client pointed at whoever the election chose. When we
-    // are the hub there is nothing to dial — our operations are already in
-    // our own queue and peers pull them from us.
+    // Point the sync client at the elected hub. When we ARE the hub we still
+    // need a loopback target so the TS relay engine can push our own sales
+    // into the hub buffer for peers to pull — clearing the address made every
+    // hub-side cycle a no-op ("skipped-no-hub").
     match &hub {
+        Some(info) if info.is_self && we_are_hub => {
+            let bound = server.bound_port().await;
+            let address = format!("127.0.0.1:{bound}");
+            let changed =
+                client_needs_retarget(&client, &info.workstation_id, &address).await;
+            if changed {
+                log::info!("Local sync hub self-relay at {address}");
+                push_global(
+                    "INFO",
+                    "local_sync",
+                    format!("hub self-relay at {address}"),
+                );
+                client
+                    .set_hub(info.workstation_id.clone(), address.clone())
+                    .await;
+            }
+        }
         Some(info) if !info.is_self => {
             let address = format!("{}:{}", info.ip_address, info.port);
             let changed = client_needs_retarget(&client, &info.workstation_id, &address).await;
@@ -170,6 +201,11 @@ async fn tick(app: &AppHandle) -> Result<(), String> {
                 log::info!(
                     "Local sync following hub '{}' at {address}",
                     info.workstation_id
+                );
+                push_global(
+                    "INFO",
+                    "hub_supervisor",
+                    format!("following hub {} at {}", info.workstation_id, address),
                 );
                 client.set_hub(info.workstation_id.clone(), address.clone()).await;
             }
@@ -181,9 +217,15 @@ async fn tick(app: &AppHandle) -> Result<(), String> {
     }
 
     let server_running = server.is_running().await;
+    log::debug!(
+        "Hub supervisor tick: hub={:?} we_are_hub={} server_running={}",
+        hub.as_ref().map(|h| (&h.workstation_id, h.is_self)),
+        we_are_hub,
+        server_running,
+    );
 
     match (we_are_hub, server_running) {
-        (true, false) => promote(app, &server, &mdns).await?,
+        (true, false) => promote(app, &server, mdns_opt.clone()).await?,
         (false, true) => demote(app).await?,
         // Already in the desired state — nothing to do.
         _ => {}
@@ -219,7 +261,7 @@ async fn send_heartbeat(
 async fn promote(
     app: &AppHandle,
     server: &Arc<crate::local_sync_server::LocalSyncServerState>,
-    mdns: &Arc<crate::mdns_discovery::MdnsDiscoveryState>,
+    mdns_opt: Option<Arc<crate::mdns_discovery::MdnsDiscoveryState>>,
 ) -> Result<(), String> {
     log::info!("Elected as hub — starting LAN sync server");
 
@@ -229,19 +271,23 @@ async fn promote(
         .await
         .map_err(|e| format!("failed to start hub server: {e}"))?;
 
-    // If the server fell back to an adjacent port (second instance on the
-    // same host), the previous mDNS announcement still carries the preferred
-    // port. Re-publish before flipping isCurrentHub so peers dial the
-    // correct address on the next discovery sweep.
-    let bound = server.bound_port().await;
-    if let Err(e) = mdns.update_port(bound).await {
-        log::warn!("Failed to re-advertise hub port {bound}: {e}");
-    }
+    if let Some(mdns) = mdns_opt {
+        // If the server fell back to an adjacent port (second instance on the
+        // same host), the previous mDNS announcement still carries the preferred
+        // port. Re-publish before flipping isCurrentHub so peers dial the
+        // correct address on the next discovery sweep.
+        let bound = server.bound_port().await;
+        if let Err(e) = mdns.update_port(bound).await {
+            log::warn!("Failed to re-advertise hub port {bound}: {e}");
+        }
 
-    if let Err(e) = mdns.update_own_txt("isCurrentHub", "true").await {
-        // Peers fall back to election convergence if the TXT update fails;
-        // not fatal for the hub itself.
-        log::warn!("Failed to advertise isCurrentHub=true: {e}");
+        if let Err(e) = mdns.update_own_txt("isCurrentHub", "true").await {
+            // Peers fall back to election convergence if the TXT update fails;
+            // not fatal for the hub itself.
+            log::warn!("Failed to advertise isCurrentHub=true: {e}");
+        }
+    } else {
+        log::warn!("Hub promoted without mDNS — peers on other hosts will not discover this hub until mDNS recovers");
     }
 
     Ok(())

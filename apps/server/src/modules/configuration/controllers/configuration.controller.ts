@@ -11,9 +11,10 @@ import { ConfigurationService } from '../services/configuration.service';
 import { PosSettingsService } from '../services/pos-settings.service';
 import { UpsertSystemConfigDto } from '../dto/upsert-system-config.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
-import { OptionalJwtAuthGuard } from '@/common/guards/optional-jwt-auth.guard';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
+import { Public } from '@/common/decorators/public.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
@@ -30,14 +31,16 @@ export class ConfigurationController {
   /**
    * Returns the structured POS settings payload.
    *
-   * JWT is optional: the POS desktop fetches this without a session on
-   * first boot, but sends its token during normal sync so the global
-   * TenantContextInterceptor binds the subscription and RLS returns the
-   * tenant's payment methods. It only returns non-sensitive, read-only
-   * data.
+   * Dual-path auth (SyncAuthGuard) + @Public optional fallback: the POS
+   * desktop fetches this without a session on first boot (public allowed,
+   * RLS fails closed), but during normal sync it sends Bearer or
+   * X-Offline-Token so TenantContextInterceptor binds the subscription and
+   * RLS returns tenant's payment methods. Offline token path prevents 401
+   * when the 15-min access token expires during offline window.
    */
   @Get('pos-settings')
-  @UseGuards(OptionalJwtAuthGuard)
+  @Public()
+  @UseGuards(SyncAuthGuard)
   async getPosSettings(): Promise<unknown> {
     return this.posSettingsService.getPosSettings();
   }

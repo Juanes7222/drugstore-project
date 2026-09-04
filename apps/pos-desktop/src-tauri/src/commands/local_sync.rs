@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::hub_election::{HubInfo, HubScore, HubElectionState};
 use crate::hub_supervisor;
-use crate::LocalSyncModules;
+use crate::{LocalSyncInitLock, LocalSyncModules};
 use crate::local_sync_client::{LocalSyncStatus, LocalSyncClientState};
 use crate::local_sync_server::{
     ConflictInfo, LocalSyncServerState, LocalOperation, PushResponse, PullResponse,
@@ -75,6 +75,13 @@ pub async fn initialize_local_sync(
     host_ip: String,
     port: Option<u16>,
 ) -> Result<(), String> {
+    // Serialise concurrent initialisations from React StrictMode double-mount.
+    // Without this, two overlapping calls both see `None` before either writes
+    // the state and each creates its own MdnsDiscoveryState (duplicate daemons,
+    // duplicate file heartbeat loops, double `register service` logs).
+    let init_lock_state = app_handle.state::<LocalSyncInitLock>();
+    let _init_guard = init_lock_state.0.lock().await;
+
     let app_version = env!("CARGO_PKG_VERSION").to_string();
     let parsed_ip: IpAddr = host_ip
         .parse()
@@ -86,8 +93,51 @@ pub async fn initialize_local_sync(
     // usable on the LAN.
     let ip = resolve_advertisable_ip(parsed_ip).await;
 
-    // Create all three modules.
-    let mdns_state = MdnsDiscoveryState::new(
+    // Idempotency: React StrictMode mounts `initializeServices` twice in dev.
+    // Creating a second `MdnsDiscoveryState` would leak a second file heartbeat
+    // task that writes the same `heartbeat-*.json` with stale `isCurrentHub`,
+    // which is exactly the duplicate `tick write ws_principal` seen in logs.
+    {
+        let existing = app_handle.state::<LocalSyncModules>().mdns.lock().await.clone();
+        if let Some(existing_mdns) = existing {
+            if existing_mdns.workstation_id().await == workstation_id {
+                existing_mdns
+                    .reconfigure(
+                        workstation_id.clone(),
+                        friendly_name.clone(),
+                        hub_eligible,
+                        &local_network_key,
+                        ip,
+                        port,
+                    )
+                    .await
+                    .map_err(|e| format!("mDNS reconfigure failed: {e}"))?;
+                // Also update election state and ensure supervisor is running
+                let election = app_handle.state::<HubElectionState>();
+                election
+                    .reconfigure(workstation_id, friendly_name, hub_eligible)
+                    .await;
+                // StrictMode may call initialize twice; ensure the supervisor
+                // loop is running even when we short-circuit on reconfigure.
+                hub_supervisor::spawn(app_handle.clone()).await;
+                crate::local_sync_diagnostics::push_global(
+                    "INFO",
+                    "local_sync",
+                    "initialize_local_sync: already initialized, reconfigured".to_string(),
+                );
+                return Ok(());
+            }
+        }
+    }
+
+    // Create all three modules. Pass the app data dir so the file-based
+    // heartbeat fallback can share discovery between two windows on the same
+    // PC even when the OS firewall blocks mDNS.
+    let app_data_dir = app_handle
+        .path()
+        .app_local_data_dir()
+        .ok();
+    let mdns_state = MdnsDiscoveryState::new_with_dir(
         workstation_id.clone(),
         friendly_name.clone(),
         hub_eligible,
@@ -95,6 +145,7 @@ pub async fn initialize_local_sync(
         app_version.clone(),
         ip,
         port,
+        app_data_dir,
     )
     .await
     .map_err(|e| format!("mDNS init failed: {e}"))?;
@@ -296,7 +347,24 @@ pub async fn push_to_hub(
     let address = status
         .current_hub_address
         .ok_or_else(|| "No hub available".to_string())?;
-    client.push_operations(operations, &address).await
+    let count = operations.len();
+    let result = client.push_operations(operations, &address).await;
+    match &result {
+        Ok(r) => crate::local_sync_diagnostics::push_global(
+            "INFO",
+            "local_sync",
+            format!(
+                "push {count} ops -> hub {address}: {} accepted, {} rejected",
+                r.accepted, r.rejected
+            ),
+        ),
+        Err(e) => crate::local_sync_diagnostics::push_global(
+            "WARN",
+            "local_sync",
+            format!("push {count} ops -> hub {address} failed: {e}"),
+        ),
+    }
+    result
 }
 
 /// Pull operations from the current hub.
@@ -310,7 +378,24 @@ pub async fn pull_from_hub(
     let address = status
         .current_hub_address
         .ok_or_else(|| "No hub available".to_string())?;
-    client.pull_operations(&address).await
+    let result = client.pull_operations(&address).await;
+    match &result {
+        Ok(r) => crate::local_sync_diagnostics::push_global(
+            "INFO",
+            "local_sync",
+            format!(
+                "pull from hub {address}: {} ops (nextSince={})",
+                r.operations.len(),
+                r.next_since
+            ),
+        ),
+        Err(e) => crate::local_sync_diagnostics::push_global(
+            "WARN",
+            "local_sync",
+            format!("pull from hub {address} failed: {e}"),
+        ),
+    }
+    result
 }
 
 // ---------------------------------------------------------------------------

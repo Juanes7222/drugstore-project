@@ -721,6 +721,14 @@ class InvoiceServiceImpl implements InvoiceService {
     if (accessToken) {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
+    // Fallback for expired accessToken — server's SyncAuthGuard accepts X-Offline-Token
+    try {
+      const { useLocalSessionStore } = await import('../auth/local-session.store');
+      const offline = useLocalSessionStore.getState().session?.offlineToken;
+      if (offline) headers['X-Offline-Token'] = offline;
+    } catch {
+      /* best-effort */
+    }
 
     // Get the most recent transmitted result timestamp for this workstation
     const latestResult = await this.prisma.invoice.findFirst({

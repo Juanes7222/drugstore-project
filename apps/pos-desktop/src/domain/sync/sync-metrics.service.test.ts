@@ -59,7 +59,10 @@ describe("SyncMetricsService", () => {
         .mockResolvedValueOnce(3)   // failed
         .mockResolvedValueOnce(1)   // permanentFailure
         .mockResolvedValueOnce(20)  // completed24h
-        .mockResolvedValueOnce(100);// completedTotal
+        .mockResolvedValueOnce(100) // completedTotal
+        .mockResolvedValueOnce(3)   // pendingLanRelayed
+        .mockResolvedValueOnce(2)   // pendingNotRelayed
+        .mockResolvedValueOnce(4);  // lanRelayedLast5Min
 
       const counts = await service.getQueueCounts();
 
@@ -70,6 +73,9 @@ describe("SyncMetricsService", () => {
         permanentFailure: 1,
         completed24h: 20,
         completedTotal: 100,
+        pendingLanRelayed: 3,
+        pendingNotRelayed: 2,
+        lanRelayedLast5Min: 4,
       });
     });
 
@@ -85,6 +91,9 @@ describe("SyncMetricsService", () => {
         permanentFailure: 0,
         completed24h: 0,
         completedTotal: 0,
+        pendingLanRelayed: 0,
+        pendingNotRelayed: 0,
+        lanRelayedLast5Min: 0,
       });
     });
 
@@ -98,7 +107,10 @@ describe("SyncMetricsService", () => {
         .mockResolvedValueOnce(0)   // failed
         .mockResolvedValueOnce(0)   // permanentFailure
         .mockResolvedValueOnce(5)   // completed24h
-        .mockResolvedValueOnce(50); // completedTotal
+        .mockResolvedValueOnce(50) // completedTotal
+        .mockResolvedValueOnce(2)   // pendingLanRelayed
+        .mockResolvedValueOnce(1)   // pendingNotRelayed
+        .mockResolvedValueOnce(0);  // lanRelayedLast5Min
 
       const counts = await service.getQueueCounts();
 

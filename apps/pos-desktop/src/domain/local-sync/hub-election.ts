@@ -193,13 +193,14 @@ export function electHub(input: HubElectionInput): ElectionResult {
     return { hub: null, allScores: computeAllScores(peers, ourWorkstationId, ourScore) };
   }
 
-  // Shared precedence with Rust `elect_hub`: eligible > score > currentHub > id.
+  // Shared precedence with Rust: eligible > isCurrentHub > id > score
+  // (score last to avoid split-brain where self real 52.6 beats peer approx 52.5)
   candidates.sort((a, b) => {
     if (a.hubEligible !== b.hubEligible) return (b.hubEligible ? 1 : 0) - (a.hubEligible ? 1 : 0);
-    const scoreDiff = b.score - a.score;
-    if (scoreDiff !== 0) return scoreDiff;
     if (a.isCurrentHub !== b.isCurrentHub) return (b.isCurrentHub ? 1 : 0) - (a.isCurrentHub ? 1 : 0);
-    return a.workstationId.localeCompare(b.workstationId);
+    const idCmp = a.workstationId.localeCompare(b.workstationId);
+    if (idCmp !== 0) return idCmp;
+    return b.score - a.score;
   });
 
   const winner = candidates[0];

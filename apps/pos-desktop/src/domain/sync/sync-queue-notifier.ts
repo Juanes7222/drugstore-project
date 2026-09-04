@@ -12,28 +12,40 @@
 
 type PushTrigger = () => void;
 
-let trigger: PushTrigger | null = null;
+const triggers = new Set<PushTrigger>();
 
 /**
  * Register the push trigger callback.
- * Only one trigger can be active at a time; subsequent calls replace it.
- * Pass `null` to clear.
+ * Multiple triggers can be active — used by both the internet
+ * SyncScheduler and the LAN LocalSyncEngine. Passing `null` clears
+ * all registered triggers (used by tests and teardown).
  */
 export function setPushTrigger(fn: PushTrigger | null): void {
-  trigger = fn;
+  if (fn === null) {
+    triggers.clear();
+    return;
+  }
+  triggers.add(fn);
+}
+
+/** Remove a previously registered trigger. */
+export function removePushTrigger(fn: PushTrigger): void {
+  triggers.delete(fn);
 }
 
 /**
  * Notify that a new pending SyncQueue entry has been created.
- * Fires the registered push trigger (if any) as a fire-and-forget call.
+ * Fires all registered push triggers as fire-and-forget calls.
  *
- * Safe to call from any context — the trigger runs asynchronously and
+ * Safe to call from any context — each trigger runs asynchronously and
  * errors are swallowed by the trigger implementation.
  */
 export function notifyPendingEntry(): void {
-  try {
-    trigger?.();
-  } catch {
-    // Fire-and-forget — the trigger implementation logs its own errors.
+  for (const t of triggers) {
+    try {
+      t();
+    } catch {
+      // Fire-and-forget — the trigger implementation logs its own errors.
+    }
   }
 }

@@ -166,6 +166,8 @@ export interface ConfigSyncConfig {
   httpClient?: SyncHttpClient;
   /** Optional auth token for protected endpoints. */
   accessToken?: string;
+  /** Long-lived offline token fallback (X-Offline-Token). */
+  offlineToken?: string;
   /**
    * Fiscal numbering service for automatic counter initialization from
    * the tenant's active resolution.
@@ -194,6 +196,7 @@ export class ConfigSyncService {
   private readonly http: SyncHttpClient;
   private readonly baseUrl: string;
   private readonly accessToken?: string;
+  private readonly offlineToken?: string;
   private readonly numberingService?: FiscalNumberingService;
   private readonly paymentMethodSync: PaymentMethodSyncService;
 
@@ -204,6 +207,7 @@ export class ConfigSyncService {
     this.http = config.httpClient ?? defaultHttpClient;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
+    this.offlineToken = config.offlineToken;
     this.numberingService = config.numberingService;
     this.paymentMethodSync = new PaymentMethodSyncService(_prisma);
   }
@@ -350,7 +354,7 @@ export class ConfigSyncService {
       .post?.(
         `${this.baseUrl}/fiscal-dian/resolutions/sync-from-dian`,
         {},
-        this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {},
+        this.buildDianHeaders(),
       )
       ?.catch((error) => {
         console.error(
@@ -365,10 +369,18 @@ export class ConfigSyncService {
   // -----------------------------------------------------------------------
 
   private buildAuthHeaders(): Record<string, string> {
-    if (this.accessToken) {
-      return { Authorization: `Bearer ${this.accessToken}` };
-    }
-    return {};
+    const headers: Record<string, string> = {};
+    if (this.accessToken) headers.Authorization = `Bearer ${this.accessToken}`;
+    if (this.offlineToken) headers['X-Offline-Token'] = this.offlineToken;
+    return headers;
+  }
+
+  // Keep requestResolutionSyncFromDian in sync — it also needs the fallback header
+  private buildDianHeaders(): Record<string, string> {
+    const h: Record<string, string> = {};
+    if (this.accessToken) h.Authorization = `Bearer ${this.accessToken}`;
+    if (this.offlineToken) h['X-Offline-Token'] = this.offlineToken;
+    return h;
   }
 }
 

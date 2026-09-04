@@ -44,6 +44,7 @@ import type { PrismaClient } from "@pharmacy/database/local";
 import { downloadBlob } from "../../../common/download";
 import { useTranslation } from "react-i18next";
 import { useSyncIntegrityStore } from "../../../domain/sync/sync-integrity.store";
+import { useLocalSyncStore } from "../../store/local-sync/local-sync.store";
 
 // ── Presentational components (provided by frontend-pos) ────────────────
 import type { ConnectionStatus, SortField, SortDir } from "./sync-health.types";
@@ -51,6 +52,7 @@ import { SyncHealthLoading } from "./sync-health-loading";
 import { SyncHealthError } from "./sync-health-error";
 import { SyncHealthToast } from "./sync-health-toast";
 import { KpiGrid } from "./kpi-grid";
+import { LanHubCard } from "./lan-hub-card";
 import { ActionBar } from "./action-bar";
 import { TimelineChart } from "./timeline-chart";
 import { NoSyncDataPlaceholder } from "./no-sync-data-placeholder";
@@ -95,6 +97,13 @@ export const SyncHealthPage: FC = () => {
   // Advisory count from the last post-reconnect integrity verification.
   // Read-only: verdicts never mutate local queue data.
   const integrityReviewCount = useSyncIntegrityStore((s) => s.reviewRequiredCount);
+
+  // LAN hub state — reactive store populated by the Rust-side mDNS/hub modules.
+  const currentHub = useLocalSyncStore((s) => s.currentHub);
+  const lanStatus = useLocalSyncStore((s) => s.status);
+  const lanPeers = useLocalSyncStore((s) => s.peers);
+  const lanLastSyncAt = useLocalSyncStore((s) => s.lastSyncAt);
+  const lanLastSyncError = useLocalSyncStore((s) => s.lastSyncError);
 
   const servicesRef = useRef<{
     metricsService: ReturnType<typeof createSyncMetricsService> | null;
@@ -442,6 +451,24 @@ export const SyncHealthPage: FC = () => {
           successRateDisplay={successRateDisplay}
           backupSummary={backupSummary}
           onBackupClick={() => dispatch(navigateToRecovery())}
+        />
+
+        {/* LAN Hub status + replicated-in-last-5m — separates "asegurado en tienda" from "pendiente nube" */}
+        <LanHubCard
+          currentHub={currentHub}
+          status={lanStatus}
+          lanCounts={
+            counts
+              ? {
+                  pendingLanRelayed: counts.pendingLanRelayed,
+                  pendingNotRelayed: counts.pendingNotRelayed,
+                  lanRelayedLast5Min: counts.lanRelayedLast5Min,
+                }
+              : null
+          }
+          lastSyncAt={lanLastSyncAt}
+          lastSyncError={lanLastSyncError}
+          peersCount={lanPeers.length}
         />
 
         <ActionBar

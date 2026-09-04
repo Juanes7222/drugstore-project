@@ -57,6 +57,7 @@ import { createUpdateService } from '../../domain/updates/update.service';
 import type { UpdateService, UpdateServiceConfig } from '../../domain/updates/update.service';
 import { createLocalSyncEngine } from '../../domain/local-sync/local-sync-engine.service';
 import type { LocalSyncEngine } from '../../domain/local-sync/local-sync-engine.service';
+import { setPushTrigger } from '../../domain/sync/sync-queue-notifier';
 import type { PrintPayloadType, DiscoveredPrinter } from '../../domain/printing/printing-types';
 import type { ServerPrintConfig } from '../../domain/printing/print-router';
 
@@ -308,11 +309,9 @@ export async function initializeServices(
       '../services/local-sync/local-network-key.service'
     );
 
-    const networkKeyService = createLocalNetworkKeyService();
-    let localNetworkKey = await networkKeyService.getKey();
-    if (!localNetworkKey) {
-      localNetworkKey = await networkKeyService.generateKey();
-    }
+    let networkKeyService = createLocalNetworkKeyService();
+    let localNetworkKey = await networkKeyService.getKey()
+      ?? await networkKeyService.generateKey();
 
     await invoke('initialize_local_sync', {
       workstationId,
@@ -458,6 +457,7 @@ export async function initializeServices(
   const salesHistoryService = createSalesHistoryService({
     prisma: prismaClient,
     adjustmentService: localAdjustmentService,
+    workstationId,
   });
 
   // 9d. Create cash-shift service and hydrate the current shift store
@@ -502,6 +502,9 @@ export async function initializeServices(
     },
   });
   localSyncEngine.start();
+  // Make sales (and any other SyncQueue writer) trigger LAN sync
+  // within 500 ms instead of waiting for the next 3s poll tick.
+  setPushTrigger(() => localSyncEngine.triggerImmediateSync());
 
   // Flatten into the services interface consumers expect
   return {

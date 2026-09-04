@@ -450,6 +450,7 @@ describe("createLocalSyncEngine", () => {
             payload: '{"name":"Alice"}',
             status: "PENDING",
             sourceWorkstationId: "ws-99",
+            lanRelayedAt: expect.any(Date),
             clientSequence: expect.any(BigInt),
           }),
         }),
@@ -592,7 +593,7 @@ describe("createLocalSyncEngine", () => {
       engine.start();
       engine.start(); // second start must be no-op
 
-      await vi.advanceTimersByTimeAsync(8000);
+      await vi.advanceTimersByTimeAsync(2010);
       // One cycle: get_local_sync_status + pull_from_hub (push skipped when no entries)
       expect(mockInvoke).toHaveBeenCalledTimes(2);
       expect(mockInvoke).toHaveBeenCalledWith("get_local_sync_status");

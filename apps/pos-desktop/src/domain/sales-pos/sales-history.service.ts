@@ -144,6 +144,7 @@ export interface SalesHistoryService {
 export interface SalesHistoryServiceConfig {
   prisma: PrismaClient;
   adjustmentService: LocalAdjustmentService;
+  workstationId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +154,7 @@ export interface SalesHistoryServiceConfig {
 export const createSalesHistoryService = (
   config: SalesHistoryServiceConfig,
 ): SalesHistoryService => {
-  return new SalesHistoryServiceImpl(config.prisma, config.adjustmentService);
+  return new SalesHistoryServiceImpl(config.prisma, config.adjustmentService, config.workstationId);
 };
 
 // ---------------------------------------------------------------------------
@@ -164,6 +165,7 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly adjustmentService: LocalAdjustmentService,
+    private readonly workstationId?: string,
   ) {}
 
   async listConfirmedSales(filters: SaleHistoryFilters = {}): Promise<SaleHistoryListResult> {
@@ -281,6 +283,32 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
       };
     });
 
+    // Include pending LAN sales from other workstations that have been
+    // adopted into SyncQueue but whose Sale row hasn't been pulled from
+    // the server yet. This makes the "historial" immediate across LAN
+    // without waiting for the 5-minute server sync.
+    try {
+      const pendingLanItems = await this.fetchPendingLanSalesAsHistoryItems(filters);
+      if (pendingLanItems.length > 0) {
+        const existingIds = new Set(items.map((i) => i.saleId));
+        // Also dedup against localSaleId stored in payload metadata
+        const existingLocalSaleIds = new Set(
+          sales.map((s) => s.id),
+        );
+        for (const p of pendingLanItems) {
+          if (!existingIds.has(p.saleId) && !existingLocalSaleIds.has(p.saleId)) {
+            items.push(p);
+          }
+        }
+        items.sort((a, b) => new Date(b.confirmedAt).getTime() - new Date(a.confirmedAt).getTime());
+        // Re-apply limit/offset after merge for consistent pagination
+        const paged = items.slice(offset, offset + limit);
+        return { items: paged, total: items.length };
+      }
+    } catch {
+      // Best-effort — never break the main query if SyncQueue parsing fails
+    }
+
     return { items, total };
   }
 
@@ -323,7 +351,120 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
     return or;
   }
 
+  private async fetchPendingLanSalesAsHistoryItems(
+    filters: SaleHistoryFilters,
+  ): Promise<SaleHistoryListItem[]> {
+    // Only show foreign workstation sales that are pending in SyncQueue
+    const rows = await this.prisma.syncQueue.findMany({
+      where: {
+        operationType: 'SALE_CONFIRMATION',
+        status: { in: ['PENDING', 'FAILED'] },
+        ...(this.workstationId ? { sourceWorkstationId: { not: this.workstationId } } : {}),
+      },
+      orderBy: { sourceCreatedAt: 'desc' },
+      take: 100,
+    });
+
+    const result: SaleHistoryListItem[] = [];
+    for (const row of rows) {
+      try {
+        const payload = JSON.parse(row.payload as string) as {
+          createSaleDto?: { totalAmount?: string; clientId?: string; delivery?: unknown };
+          metadata?: { localSaleId?: string; localNumber?: number; confirmedAt?: string; workstationId?: string };
+        };
+        const totalAmount = payload.createSaleDto?.totalAmount ?? '0';
+        const confirmedAt = payload.metadata?.confirmedAt ?? row.sourceCreatedAt.toISOString();
+        const localNumber = String(payload.metadata?.localNumber ?? row.clientSequence ?? '');
+        const saleId = payload.metadata?.localSaleId ?? row.operationUuid;
+
+        // Apply filters
+        if (filters.since && new Date(confirmedAt) < filters.since) continue;
+        if (filters.until && new Date(confirmedAt) > filters.until) continue;
+        if (filters.clientId && payload.createSaleDto?.clientId !== filters.clientId) continue;
+        if (filters.query) {
+          const q = filters.query.toLowerCase();
+          const hay = `${localNumber} ${saleId} ${totalAmount}`.toLowerCase();
+          if (!hay.includes(q)) continue;
+        }
+
+        // Try to resolve client name for display
+        let clientName = 'CONSUMIDOR FINAL';
+        let clientIdentificationNumber: string | null = null;
+        const clientId = payload.createSaleDto?.clientId;
+        if (clientId) {
+          try {
+            const client = await this.prisma.client.findUnique({
+              where: { id: clientId },
+              select: { fullName: true, identificationNumber: true },
+            });
+            if (client?.fullName) clientName = client.fullName;
+            if (client?.identificationNumber) clientIdentificationNumber = client.identificationNumber;
+          } catch {}
+        }
+
+        const delivery = payload.createSaleDto?.delivery as { feeCents?: number; address?: string } | null | undefined;
+
+        result.push({
+          saleId,
+          localNumber,
+          confirmedAt,
+          totalAmount: String(totalAmount),
+          clientName,
+          clientIdentificationNumber,
+          invoiceId: null,
+          invoiceNumber: null,
+          invoiceStatus: null,
+          invoiceType: null,
+          hasAdjustments: false,
+          deliveryFeeCents: typeof delivery?.feeCents === 'number' ? delivery.feeCents : 0,
+          deliveryAddress: typeof delivery?.address === 'string' ? delivery.address : null,
+        });
+      } catch {}
+    }
+    return result;
+  }
+
   async getSaleHistoryDetail(saleId: string): Promise<SaleHistoryDetail | null> {
+    // Try to serve a pending LAN sale directly from SyncQueue when no Sale row exists yet
+    const pendingOp = await this.prisma.syncQueue.findFirst({
+      where: { operationUuid: saleId },
+    });
+    // Also try by metadata.localSaleId for LAN-synthesized ids
+    let pendingPayload: {
+      createSaleDto?: {
+        items?: Array<{ productId: string; quantity: number; unitPrice: string; discount?: string; discountReason?: string | null }>;
+        clientId?: string;
+        subtotal?: string;
+        totalDiscount?: string;
+        totalTax?: string;
+        totalAmount?: string;
+        delivery?: unknown;
+      };
+      confirmSaleDto?: { payments?: Array<{ paymentMethodId: string; amount: number }> };
+      metadata?: { confirmedAt?: string; workstationId?: string; localNumber?: number };
+    } | null = null;
+    if (!pendingOp) {
+      const byLocal = await this.prisma.syncQueue.findMany({
+        where: { operationType: 'SALE_CONFIRMATION' },
+        take: 100,
+      });
+      for (const r of byLocal) {
+        try {
+          const p = JSON.parse(r.payload as string);
+          if (p.metadata?.localSaleId === saleId) {
+            pendingPayload = p;
+            break;
+          }
+        } catch {}
+      }
+    } else {
+      try {
+        pendingPayload = JSON.parse(pendingOp.payload as string);
+      } catch {
+        pendingPayload = null;
+      }
+    }
+
     const sale = await this.prisma.sale.findUnique({
       where: { id: saleId },
       include: {
@@ -333,6 +474,104 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
         },
       },
     });
+
+    if (!sale && pendingPayload) {
+      // Synthesize detail from SyncQueue payload for immediate LAN visibility
+      const createDto = pendingPayload.createSaleDto;
+      const confirmDto = pendingPayload.confirmSaleDto;
+      const meta = pendingPayload.metadata;
+      // Resolve client snapshot best-effort
+      let clientName: string | null = null;
+      let clientId: string | null = createDto?.clientId ?? null;
+      let clientIdType: string | null = null;
+      let clientIdNumber: string | null = null;
+      if (clientId) {
+        try {
+          const c = await this.prisma.client.findUnique({
+            where: { id: clientId },
+            select: { fullName: true, identificationType: true, identificationNumber: true },
+          });
+          clientName = c?.fullName ?? null;
+          clientIdType = (c?.identificationType as string) ?? null;
+          clientIdNumber = c?.identificationNumber ?? null;
+        } catch {}
+      }
+      // Map items with best-effort product snapshots
+      const items: SaleHistoryItem[] = [];
+      for (const it of createDto?.items ?? []) {
+        let snap: { internalCode?: string; commercialName?: string; concentration?: string | null } = {};
+        try {
+          const prod = await this.prisma.product.findUnique({
+            where: { id: it.productId },
+            select: { internalCode: true, commercialName: true, concentration: true },
+          });
+          if (prod) snap = prod;
+        } catch {}
+        const unitPrice = it.unitPrice ?? '0';
+        const discount = it.discount ?? '0';
+        const subtotalNum = Number(unitPrice) * it.quantity;
+        items.push({
+          id: `pending-${saleId}-${it.productId}`,
+          productId: it.productId,
+          internalCode: snap.internalCode ?? it.productId.slice(0, 8),
+          commercialName: snap.commercialName ?? it.productId,
+          genericName: null,
+          concentration: snap.concentration ?? null,
+          quantity: it.quantity,
+          unitPrice: String(unitPrice),
+          discountPercentage: String(discount),
+          discountAmount: '0',
+          discountReason: it.discountReason ?? null,
+          taxRate: '0',
+          taxAmount: '0',
+          subtotal: String(subtotalNum),
+          total: String(subtotalNum),
+        });
+      }
+      const payments: SaleHistoryPayment[] = [];
+      for (const p of confirmDto?.payments ?? []) {
+        let name = 'Unknown';
+        try {
+          const pm = await this.prisma.paymentMethod.findUnique({ where: { id: p.paymentMethodId }, select: { name: true } });
+          if (pm?.name) name = pm.name;
+        } catch {}
+        payments.push({
+          id: `pending-pay-${p.paymentMethodId}`,
+          paymentMethodId: p.paymentMethodId,
+          paymentMethodName: name,
+          amount: String(p.amount),
+          transactionReference: (p as { transactionReference?: string }).transactionReference ?? null,
+          authorizationCode: null,
+          cardBrand: null,
+          cardLastFour: null,
+        });
+      }
+      return {
+        sale: {
+          id: saleId,
+          localNumber: String(meta?.localNumber ?? ''),
+          confirmedAt: meta?.confirmedAt ?? new Date().toISOString(),
+          subtotal: createDto?.subtotal ?? '0',
+          totalDiscount: createDto?.totalDiscount ?? '0',
+          totalTax: createDto?.totalTax ?? '0',
+          totalAmount: createDto?.totalAmount ?? '0',
+          changeAmount: '0',
+          clientId,
+          clientNameSnapshot: clientName,
+          clientIdentificationTypeSnapshot: clientIdType,
+          clientIdentificationNumberSnapshot: clientIdNumber,
+          cashShiftId: '',
+          workstationId: meta?.workstationId ?? '',
+          userId: '',
+          delivery: (createDto?.delivery as SaleDeliveryInfo | null) ?? null,
+          items,
+          payments,
+        },
+        invoices: [],
+        mainInvoiceOperationalView: null,
+        adjustmentHistory: [],
+      };
+    }
 
     if (!sale) return null;
 

@@ -20,8 +20,10 @@ import type { DiscoveredPeer } from '@pharmacy/shared-types';
  * e.g. "hace 2 min", "hace 3 h", "hace 5 d", "ahora mismo".
  */
 function formatRelativeTime(iso: string): string {
-  const now = Date.now();
+  if (!iso) return 'desconocido';
   const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'desconocido';
+  const now = Date.now();
   const diffMs = now - then;
 
   if (diffMs < 0) return 'ahora mismo';

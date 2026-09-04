@@ -7,12 +7,17 @@
  * @category Local Sync
  */
 
-import { type FC, useCallback, useState } from 'react';
+import { type FC, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocalSync } from '../../hooks/use-local-sync';
 import { PeerStatusCard } from './peer-status-card';
 import { HubElectionInfo } from './hub-election-info';
 import { LoaderIcon } from "@/components/ui/icons/animated";
+import {
+  createLocalSyncService,
+  type DiagnosticEntry,
+  type LocalSyncDebugInfo,
+} from '../../services/local-sync/local-sync.service';
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -110,6 +115,120 @@ const ConflictRow: FC<{ operationUuid: string; reason: string; winningOperationU
         {t('local_sync.conflict_winner', { uuid: winningOperationUuid.slice(0, 8) })}
       </p>
     </div>
+  );
+};
+
+/**
+ * Diagnostics panel — polls Rust diagnostics buffer and debug snapshot.
+ * Visible in dev and when hub fails, so the operator can copy logs.
+ */
+const DiagnosticsPanel: FC = () => {
+  const [entries, setEntries] = useState<DiagnosticEntry[]>([]);
+  const [debug, setDebug] = useState<LocalSyncDebugInfo | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  const service = createLocalSyncService();
+
+  const refresh = useCallback(async () => {
+    try {
+      const [logs, info] = await Promise.all([
+        service.getDiagnostics().catch(() => [] as DiagnosticEntry[]),
+        service.getDebugInfo().catch(() => null as unknown as LocalSyncDebugInfo),
+      ]);
+      setEntries(logs.slice(-80).reverse());
+      setDebug(info);
+    } catch {
+      // Tauri not available (browser dev) — silently ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    if (!autoRefresh) return;
+    const id = setInterval(() => void refresh(), 2000);
+    return () => clearInterval(id);
+  }, [autoRefresh, refresh]);
+
+  const handleCopy = useCallback(async () => {
+    const text = entries.map((e) => `${e.timestamp} [${e.level}] ${e.target}: ${e.message}`).join('\n');
+    const debugText = debug ? `\n--- DEBUG ---\n${JSON.stringify(debug, null, 2)}` : '';
+    try {
+      await navigator.clipboard.writeText(text + debugText);
+    } catch {
+      // Fallback: console
+      console.log(text + debugText);
+    }
+  }, [entries, debug]);
+
+  const handleClear = useCallback(async () => {
+    try {
+      await service.clearDiagnostics();
+    } catch {}
+    void refresh();
+  }, [refresh]);
+
+  return (
+    <section className="rounded-lg border bg-white p-4" style={{ borderColor: 'var(--color-border)' }}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <h2 className="text-sm font-semibold" style={{ color: 'var(--color-ink)' }}>
+          Diagnóstico Red Local {debug ? `— ws=${debug.workstationId.slice(0, 8)} hub=${debug.currentHub?.slice(0, 8) ?? 'ninguno'} mdns=${debug.mdnsPeers} file=${debug.filePeers}` : ''}
+        </h2>
+        <span style={{ color: 'var(--color-accent)' }}>{expanded ? '▲' : '▼'}</span>
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-3">
+          {debug && (
+            <div className="grid grid-cols-2 gap-2 rounded-md bg-zinc-50 p-3 text-xs" style={{ color: 'var(--color-ink)' }}>
+              <div><span className="font-medium">workstationId:</span> {debug.workstationId || '—'}</div>
+              <div><span className="font-medium">friendlyName:</span> {debug.friendlyName || '—'}</div>
+              <div><span className="font-medium">hubEligible:</span> {String(debug.hubEligible)}</div>
+              <div><span className="font-medium">isCurrentHub:</span> {String(debug.isCurrentHubFlag)}</div>
+              <div><span className="font-medium">hostIp:</span> {debug.hostIp || '—'}:{debug.port}</div>
+              <div><span className="font-medium">daemon:</span> {String(debug.daemonAvailable)}</div>
+              <div className="col-span-2 truncate"><span className="font-medium">heartbeatDir:</span> {debug.heartbeatDir ?? '—'}</div>
+              <div><span className="font-medium">mdnsPeers:</span> {debug.mdnsPeers}</div>
+              <div><span className="font-medium">filePeers:</span> {debug.filePeers}</div>
+              <div><span className="font-medium">merged:</span> {debug.mergedPeers}</div>
+              <div><span className="font-medium">currentHub:</span> {debug.currentHub ?? 'Sin hub'} {debug.hubIsSelf ? '(yo)' : ''}</div>
+              <div><span className="font-medium">server:</span> {String(debug.serverRunning)}:{debug.serverPort}</div>
+              <div className="col-span-2 truncate"><span className="font-medium">clientHub:</span> {debug.clientHubAddress ?? '—'}</div>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button type="button" onClick={() => void refresh()} className="rounded-md border px-3 py-1.5 text-xs" style={{ borderColor: 'var(--color-border)' }}>Actualizar</button>
+            <button type="button" onClick={handleCopy} className="rounded-md border px-3 py-1.5 text-xs" style={{ borderColor: 'var(--color-border)' }}>Copiar</button>
+            <button type="button" onClick={handleClear} className="rounded-md border px-3 py-1.5 text-xs" style={{ borderColor: 'var(--color-border)' }}>Limpiar</button>
+            <label className="ml-auto flex items-center gap-1 text-xs" style={{ color: 'var(--color-ink-muted)' }}>
+              <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+              auto
+            </label>
+          </div>
+
+          <div className="max-h-72 overflow-auto rounded-md bg-zinc-950 p-3 font-mono text-[11px] leading-relaxed text-zinc-100">
+            {entries.length === 0 ? (
+              <span className="text-zinc-400">Sin logs — abre la app con `cargo tauri dev` y revisa consola si sigue vacío</span>
+            ) : (
+              entries.map((e, i) => (
+                <div key={i} className={e.level === 'ERROR' ? 'text-red-300' : e.level === 'WARN' ? 'text-amber-300' : 'text-zinc-100'}>
+                  <span className="text-zinc-500">{e.timestamp.slice(11, 23)}</span> <span className="font-bold">[{e.target}]</span> {e.message}
+                </div>
+              ))
+            )}
+          </div>
+          <p className="text-xs" style={{ color: 'var(--color-ink-muted)' }}>
+            Busca líneas <code className="text-[11px]">[local_sync]</code> push/pull — ahí ves el relay de ventas.
+            Heartbeat y elección ya no saturan este panel.
+          </p>
+        </div>
+      )}
+    </section>
   );
 };
 
@@ -323,6 +442,9 @@ export const LocalNetworkPage: FC = () => {
             {t('local_sync.settings_key_rotation')}
           </button>
         </section>
+
+        {/* Diagnostics — what is being identified and what it does */}
+        <DiagnosticsPanel />
       </div>
     </div>
   );

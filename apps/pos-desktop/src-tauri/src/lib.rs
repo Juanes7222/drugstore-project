@@ -9,6 +9,7 @@ mod hardware_fingerprint;
 mod hub_election;
 mod hub_supervisor;
 mod local_sync_client;
+mod local_sync_diagnostics;
 mod local_sync_server;
 mod mdns_discovery;
 mod printer_discovery;
@@ -49,6 +50,17 @@ impl LocalSyncModules {
     }
 }
 
+/// Serialises concurrent `initialize_local_sync` calls.
+///
+/// React StrictMode mounts the initializer twice in dev; two overlapping
+/// calls both saw `None` before either wrote the state, created two
+/// `MdnsDiscoveryState` (two daemons, two file heartbeat loops) and left
+/// the process with duplicate `tick write` / `register service` logs and a
+/// closed-channel error on the first daemon's browse loop. Holding this
+/// lock across the whole check-then-create sequence makes the second call
+/// see the first call's `reconfigure` path.
+pub struct LocalSyncInitLock(pub Mutex<()>);
+
 // ---------------------------------------------------------------------------
 // App entry point
 // ---------------------------------------------------------------------------
@@ -56,6 +68,7 @@ impl LocalSyncModules {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         // Shell plugin: only the `open` command is exposed via capabilities,
@@ -79,6 +92,7 @@ pub fn run() {
 
             // Local sync modules start empty; TS initialises after config load.
             app.manage(LocalSyncModules::empty());
+            app.manage(LocalSyncInitLock(Mutex::new(())));
 
             // Hub role supervisor — spawned for real by initialize_local_sync
             // once the modules exist; the managed state must exist before.
@@ -91,6 +105,8 @@ pub fn run() {
                 String::new(),
                 true,
             ));
+
+            app.manage(local_sync_diagnostics::LocalSyncDiagnostics::new());
 
             Ok(())
         })
@@ -151,6 +167,9 @@ pub fn run() {
             commands::local_sync::push_to_hub,
             commands::local_sync::pull_from_hub,
             commands::local_sync::set_local_sync_enabled,
+            local_sync_diagnostics::get_local_sync_diagnostics,
+            local_sync_diagnostics::clear_local_sync_diagnostics,
+            local_sync_diagnostics::get_local_sync_debug_info,
             // Report export commands
             commands::report::write_report_export,
         ])

@@ -18,21 +18,58 @@
  * same `User` DTO shape that the JWT strategy produces, so downstream pipes
  * (`@CurrentUser()`, `RolesGuard`, `@Auditable()`) work identically.
  */
-import { ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ExecutionContext, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from '@/modules/auth/auth.service';
 import { OfflineTokenService } from '@/modules/auth/offline/offline-token.service';
+import { IS_PUBLIC_KEY } from '@/common/decorators/public.decorator';
 
 @Injectable()
 export class SyncAuthGuard extends AuthGuard('jwt') {
   constructor(
-    private readonly offlineTokenService: OfflineTokenService,
-    private readonly authService: AuthService,
+    @Optional() private readonly offlineTokenService: OfflineTokenService,
+    @Optional() private readonly authService: AuthService,
+    @Optional() private readonly reflector?: Reflector,
   ) {
     super();
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector?.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+
+    // Public routes: try to populate request.user from Bearer or offline token,
+    // but never throw — unauthenticated fallback is allowed (bootstrap / RLS fails closed).
+    if (isPublic) {
+      const request = context.switchToHttp().getRequest();
+      try {
+        const result = (await super.canActivate(context)) as boolean;
+        if (result) return true;
+      } catch {
+        // fall through to offline attempt
+      }
+      const offlineToken = this.extractOfflineToken(request);
+      if (offlineToken && this.offlineTokenService && this.authService) {
+        try {
+          const claims = this.offlineTokenService.verifyToken(offlineToken);
+          if (claims) {
+            const isRevoked = await this.offlineTokenService.isRevoked(claims.jti);
+            if (!isRevoked) {
+              const user = await this.authService.getActiveUser(claims.sub);
+              request.user = user;
+              return true;
+            }
+          }
+        } catch {
+          // ignore and fall through to unauthenticated allow
+        }
+      }
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest();
 
     // ---------------------------------------------------------------
@@ -57,6 +94,10 @@ export class SyncAuthGuard extends AuthGuard('jwt') {
     // ---------------------------------------------------------------
     const offlineToken = this.extractOfflineToken(request);
     if (!offlineToken) {
+      throw new UnauthorizedException('No valid authentication credentials');
+    }
+
+    if (!this.offlineTokenService || !this.authService) {
       throw new UnauthorizedException('No valid authentication credentials');
     }
 

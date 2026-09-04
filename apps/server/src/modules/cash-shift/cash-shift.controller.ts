@@ -20,6 +20,7 @@ import {
   ForceCloseCashShiftSchema,
 } from './dto/force-close-cash-shift.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -28,7 +29,6 @@ import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-type
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 @Controller('cash-shifts')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class CashShiftController {
   constructor(private cashShiftService: CashShiftService) {}
 
@@ -41,6 +41,7 @@ export class CashShiftController {
    * no shift is open — an admin must open one before offline selling.
    */
   @Get('open')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   async getOpenShift(): Promise<{
     id: string;
@@ -69,6 +70,7 @@ export class CashShiftController {
    * CASHIER must not open or close shifts.
    */
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @HttpCode(201)
   @Auditable({
@@ -96,6 +98,7 @@ export class CashShiftController {
    * for Backoffice administrative use and manual overrides from the web interface.
    */
   @Post(':id/cash-counts')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   @HttpCode(201)
   @Auditable({
@@ -113,6 +116,7 @@ export class CashShiftController {
   }
 
   @Get(':id/cash-counts')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.CASHIER, RoleType.ADMIN)
   async listCashCounts(@Param('id') shiftId: string): Promise<any> {
     return (this.cashShiftService as any).listCashCounts(shiftId);
@@ -133,6 +137,7 @@ export class CashShiftController {
    * they call CashShiftService.closeShift directly from the dispatcher.
    */
   @Post(':id/close')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @Auditable({
     action: AuditAction.STATE_CHANGE,
@@ -154,6 +159,7 @@ export class CashShiftController {
    * the POS relies entirely on `POST /sync/batch` for normal closure.
    */
   @Post(':id/force-close')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @Auditable({
     action: AuditAction.STATE_CHANGE,

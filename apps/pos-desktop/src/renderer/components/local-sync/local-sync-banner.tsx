@@ -70,6 +70,17 @@ export const LocalSyncBanner: FC = () => {
     dispatch(navigateToLocalNetwork());
   }, [dispatch]);
 
+  // Debug trace for split-brain banner
+  console.log('[local-sync-banner]', {
+    isThisWorkstationHub,
+    isDisconnected,
+    isConnected,
+    hasPendingOps,
+    currentHub: currentHub?.workstationId,
+    isSelf: currentHub?.isSelf,
+    friendlyName: currentHub?.friendlyName,
+  });
+
   // Determine which state to show (prioritised).
   let stateKey: string;
   let label: string;

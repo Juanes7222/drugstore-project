@@ -33,6 +33,7 @@ pub enum LocalSyncConnectionStatus {
 
 /// Full status report for the local sync client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalSyncStatus {
     pub connection_status: LocalSyncConnectionStatus,
     pub current_hub_id: Option<String>,
@@ -111,7 +112,9 @@ impl LocalSyncClientState {
                 // operations accepted while this app was closed would be
                 // silently skipped. Re-adopting already-known operations is
                 // harmless — adoption dedupes by operation_uuid.
-                pulled_since: "1970-01-01T00:00:00+00:00".to_string(),
+                // Use a `Z` suffix (not `+00:00`) so the pull query string
+                // survives URL encoding without HMAC mismatches.
+                pulled_since: "1970-01-01T00:00:00Z".to_string(),
             }),
         }
     }
@@ -188,12 +191,13 @@ impl LocalSyncClientState {
             state.pulled_since.clone()
         };
 
-        let query_string = format!("since={}&workstation_id={}", since, self.workstation_id);
-        let hmac = compute_hmac(&self.local_network_key, query_string.as_bytes())?;
-        let url = format!(
-            "http://{}/local-sync/pull?{}",
-            hub_address, query_string
+        let query_string = format!(
+            "since={}&workstation_id={}",
+            urlencoding::encode(&since),
+            urlencoding::encode(&self.workstation_id),
         );
+        let hmac = compute_hmac(&self.local_network_key, query_string.as_bytes())?;
+        let url = format!("http://{hub_address}/local-sync/pull?{query_string}");
 
         let resp = self
             .http_client
@@ -273,3 +277,27 @@ impl LocalSyncClientState {
 
 // Tauri commands are defined in commands/local_sync.rs, not here.
 // This module exports the client state and API methods only.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_sync_status_serde_uses_camel_case() {
+        let status = LocalSyncStatus {
+            connection_status: LocalSyncConnectionStatus::Connected,
+            current_hub_id: Some("ws-hub".to_string()),
+            current_hub_address: Some("192.168.1.5:49500".to_string()),
+            pending_push_count: 0,
+            pending_pull_count: 0,
+            last_sync_at: None,
+            last_error: None,
+            backoff_until: None,
+        };
+
+        let json = serde_json::to_string(&status).expect("serialize LocalSyncStatus");
+        assert!(json.contains("\"connectionStatus\":\"CONNECTED\""), "json was: {json}");
+        assert!(json.contains("\"currentHubAddress\""), "json was: {json}");
+        assert!(!json.contains("current_hub_address"), "snake_case leaked: {json}");
+    }
+}

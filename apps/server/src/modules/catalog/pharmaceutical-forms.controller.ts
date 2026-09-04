@@ -12,6 +12,7 @@ import { PharmaceuticalFormsService } from './pharmaceutical-forms.service';
 import { CreatePharmaceuticalFormDto, CreatePharmaceuticalFormSchema } from './dto/create-pharmaceutical-form.dto';
 import { UpdatePharmaceuticalFormDto, UpdatePharmaceuticalFormSchema } from './dto/update-pharmaceutical-form.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { Auditable } from '@/common/decorators/auditable.decorator';
@@ -19,23 +20,25 @@ import { AuditAction, SystemModule, RoleType } from '@pharmacy/shared-types';
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 @Controller('pharmaceutical-forms')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class PharmaceuticalFormsController {
   constructor(private pharmaceuticalFormsService: PharmaceuticalFormsService) {}
 
   @Get()
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findAll(): Promise<any> {
     return this.pharmaceuticalFormsService.findAll();
   }
 
   @Get(':id')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findById(@Param('id') id: string): Promise<any> {
     return this.pharmaceuticalFormsService.findById(id);
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @HttpCode(201)
   @Auditable({
@@ -51,6 +54,7 @@ export class PharmaceuticalFormsController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @Auditable({
     action: AuditAction.UPDATE,

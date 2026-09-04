@@ -65,6 +65,15 @@ export interface LocalSyncService {
 
   /** Get hub conflicts. */
   getHubConflicts(): Promise<ConflictInfo[]>;
+
+  /** Get recent diagnostics log entries. */
+  getDiagnostics(): Promise<DiagnosticEntry[]>;
+
+  /** Clear diagnostics log. */
+  clearDiagnostics(): Promise<void>;
+
+  /** Get structured debug snapshot. */
+  getDebugInfo(): Promise<LocalSyncDebugInfo>;
 }
 
 export interface PushResponse {
@@ -84,6 +93,32 @@ export interface ConflictInfo {
   operationUuid: string;
   reason: string;
   winningOperationUuid: string;
+}
+
+export interface DiagnosticEntry {
+  timestamp: string;
+  level: string;
+  target: string;
+  message: string;
+}
+
+export interface LocalSyncDebugInfo {
+  workstationId: string;
+  friendlyName: string;
+  hubEligible: boolean;
+  hostIp: string;
+  port: number;
+  isCurrentHubFlag: boolean;
+  daemonAvailable: boolean;
+  heartbeatDir: string | null;
+  mdnsPeers: number;
+  filePeers: number;
+  mergedPeers: number;
+  currentHub: string | null;
+  hubIsSelf: boolean;
+  serverRunning: boolean;
+  serverPort: number;
+  clientHubAddress: string | null;
 }
 
 /**
@@ -152,6 +187,18 @@ export function createLocalSyncService(): LocalSyncService {
 
     async getHubConflicts(): Promise<ConflictInfo[]> {
       return invoke<ConflictInfo[]>('get_hub_conflicts');
+    },
+
+    async getDiagnostics(): Promise<DiagnosticEntry[]> {
+      return invoke<DiagnosticEntry[]>('get_local_sync_diagnostics');
+    },
+
+    async clearDiagnostics(): Promise<void> {
+      await invoke<void>('clear_local_sync_diagnostics');
+    },
+
+    async getDebugInfo(): Promise<LocalSyncDebugInfo> {
+      return invoke<LocalSyncDebugInfo>('get_local_sync_debug_info');
     },
   };
 }

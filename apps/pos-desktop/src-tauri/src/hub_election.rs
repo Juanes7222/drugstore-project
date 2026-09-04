@@ -24,6 +24,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+use crate::local_sync_diagnostics::push_global;
 use crate::mdns_discovery::{DiscoveredPeer, MdnsDiscoveryState};
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ pub enum HubRole {
 
 /// Inform about the current hub.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HubInfo {
     pub workstation_id: String,
     pub friendly_name: String,
@@ -53,7 +55,8 @@ pub struct HubInfo {
 }
 
 /// A peer's computed hub score and metadata.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HubScore {
     pub workstation_id: String,
     pub friendly_name: String,
@@ -146,7 +149,23 @@ pub fn elect_hub(
     our_hub_eligible: bool,
     our_is_current_hub: bool,
     our_friendly_name: &str,
+    our_ip_address: &str,
+    our_port: u16,
 ) -> Option<HubInfo> {
+    push_global(
+        "INFO",
+        "hub_election",
+        format!(
+            "elect_hub peers={} override={:?} our_id={} score={:.1} eligible={} is_cur={} friendly={}",
+            peers.len(),
+            hub_override,
+            our_workstation_id,
+            our_score,
+            our_hub_eligible,
+            our_is_current_hub,
+            our_friendly_name
+        ),
+    );
     // If there's a manager override, that workstation is the hub.
     if let Some(override_id) = hub_override {
         if override_id == our_workstation_id {
@@ -157,8 +176,8 @@ pub fn elect_hub(
                 } else {
                     our_friendly_name.to_string()
                 },
-                ip_address: "127.0.0.1".to_string(),
-                port: 49_500,
+                ip_address: our_ip_address.to_string(),
+                port: our_port,
                 hub_score: our_score,
                 role: HubRole::Forced,
                 is_self: true,
@@ -200,8 +219,8 @@ pub fn elect_hub(
             } else {
                 our_friendly_name.to_string()
             },
-            ip_address: "127.0.0.1".to_string(),
-            port: 49_500,
+            ip_address: our_ip_address.to_string(),
+            port: our_port,
             hub_eligible: true,
             is_current_hub: our_is_current_hub,
             score: our_score,
@@ -223,23 +242,54 @@ pub fn elect_hub(
     }
 
     if candidates.is_empty() {
+        push_global(
+            "WARN",
+            "hub_election",
+            "elect_hub: no candidates (all ineligible or offline) → None".to_string(),
+        );
         return None;
     }
 
-    // Deterministic precedence shared with the TypeScript electHub.
+    // Deterministic precedence shared with TS. Score is intentionally
+    // *not* the primary key for same-PC file heartbeats: peer scores are
+    // approximated (52.5) while self is real (52.6) — that 0.1 gap made
+    // every window elect itself (split-brain). Use stable `is_current_hub`
+    // and lexicographic id to converge to a single hub.
     candidates.sort_by(|a, b| {
         b.hub_eligible
             .cmp(&a.hub_eligible)
+            .then_with(|| b.is_current_hub.cmp(&a.is_current_hub))
+            .then_with(|| a.workstation_id.cmp(&b.workstation_id))
             .then_with(|| {
                 b.score
                     .partial_cmp(&a.score)
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .then_with(|| b.is_current_hub.cmp(&a.is_current_hub))
-            .then_with(|| a.workstation_id.cmp(&b.workstation_id))
     });
 
+    push_global(
+        "INFO",
+        "hub_election",
+        format!(
+            "elect_hub sorted={:?}",
+            candidates
+                .iter()
+                .map(|c| format!(
+                    "{}:{}:{}:{}",
+                    c.workstation_id, c.is_self, c.is_current_hub, c.score
+                ))
+                .collect::<Vec<_>>()
+        ),
+    );
     let best = &candidates[0];
+    push_global(
+        "INFO",
+        "hub_election",
+        format!(
+            "elect_hub winner={} is_self={} score={:.1} eligible={} is_cur={}",
+            best.workstation_id, best.is_self, best.score, best.hub_eligible, best.is_current_hub
+        ),
+    );
     Some(HubInfo {
         workstation_id: best.workstation_id.clone(),
         friendly_name: best.friendly_name.clone(),
@@ -303,6 +353,20 @@ impl HubElectionState {
             .map(|h| h.is_self && h.workstation_id == our_wid)
             .unwrap_or(false);
 
+        push_global(
+            "INFO",
+            "hub_election",
+            format!(
+                "run_election peers={} our_id={} score={:.1} eligible={} is_cur={} override={:?}",
+                peers.len(),
+                our_wid,
+                our_score,
+                our_eligible,
+                is_current_hub,
+                override_val
+            ),
+        );
+
         let elected = elect_hub(
             &peers,
             &override_val,
@@ -311,6 +375,71 @@ impl HubElectionState {
             our_eligible,
             is_current_hub,
             &our_name,
+            &mdns_state.host_ip_string().await,
+            mdns_state.port_value().await,
+        );
+
+        push_global(
+            "INFO",
+            "hub_election",
+            format!(
+                "run_election result={:?} is_self={}",
+                elected.as_ref().map(|h| h.workstation_id.clone()),
+                elected.as_ref().map(|h| h.is_self).unwrap_or(false)
+            ),
+        );
+
+        let mut current = self.current_hub.write().await;
+        *current = elected.clone();
+        elected
+    }
+
+    /// Solo fallback used when mDNS is not yet initialised (daemon failed,
+    /// second instance on same PC where 5353 is contested). Still elects
+    /// ourselves as hub so the first window shows a hub even before any
+    /// peer is discovered.
+    pub async fn run_election_solo(&self) -> Option<HubInfo> {
+        let our_score = self.our_score().await;
+        let override_val = self.hub_override.read().await.clone();
+        let our_wid = self.our_workstation_id.read().await.clone();
+        let our_name = self.our_friendly_name.read().await.clone();
+        let our_eligible = *self.our_always_on.read().await;
+        let is_current_hub = self
+            .current_hub
+            .read()
+            .await
+            .as_ref()
+            .map(|h| h.is_self && h.workstation_id == our_wid)
+            .unwrap_or(false);
+
+        push_global(
+            "INFO",
+            "hub_election",
+            format!(
+                "run_election_solo our_id={} score={:.1} eligible={} is_cur={} override={:?}",
+                our_wid, our_score, our_eligible, is_current_hub, override_val
+            ),
+        );
+
+        let elected = elect_hub(
+            &[],
+            &override_val,
+            &our_wid,
+            our_score,
+            our_eligible,
+            is_current_hub,
+            &our_name,
+            "127.0.0.1",
+            49_500,
+        );
+
+        push_global(
+            "INFO",
+            "hub_election",
+            format!(
+                "run_election_solo result={:?}",
+                elected.as_ref().map(|h| h.workstation_id.clone())
+            ),
         );
 
         let mut current = self.current_hub.write().await;
@@ -429,6 +558,34 @@ impl HubElectionState {
 
         scores
     }
+
+    /// Snapshot for diagnostics panel.
+    pub async fn diagnostic_snapshot(&self) -> HubElectionSnapshot {
+        let workstation_id = self.our_workstation_id.read().await.clone();
+        let friendly_name = self.our_friendly_name.read().await.clone();
+        let hub_eligible = *self.our_always_on.read().await;
+        let is_current_hub = self
+            .current_hub
+            .read()
+            .await
+            .as_ref()
+            .map(|h| h.is_self)
+            .unwrap_or(false);
+        HubElectionSnapshot {
+            workstation_id,
+            friendly_name,
+            hub_eligible,
+            is_current_hub,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HubElectionSnapshot {
+    pub workstation_id: String,
+    pub friendly_name: String,
+    pub hub_eligible: bool,
+    pub is_current_hub: bool,
 }
 
 // Tauri commands are defined in commands/local_sync.rs, not here.
@@ -437,6 +594,9 @@ impl HubElectionState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const OUR_IP: &str = "192.168.1.10";
+    const OUR_PORT: u16 = 49_500;
 
     /// Online peer fixture. Election-relevant flags passed explicitly;
     /// everything else is inert filler so assertions stay focused on
@@ -463,7 +623,7 @@ mod tests {
         // sort, letting a retired terminal keep the hub role forever.
         let peers = [peer("alpha", false, true), peer("zulu", true, false)];
 
-        let elected = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self");
+        let elected = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self", OUR_IP, OUR_PORT);
 
         let hub = elected.expect("an eligible candidate exists");
         assert_eq!(hub.workstation_id, "zulu");
@@ -474,7 +634,7 @@ mod tests {
     fn current_hub_wins_among_equal_eligibility_when_it_has_larger_id() {
         let peers = [peer("alpha", true, false), peer("zulu", true, true)];
 
-        let elected = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self");
+        let elected = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self", OUR_IP, OUR_PORT);
 
         let hub = elected.expect("candidates exist");
         assert_eq!(hub.workstation_id, "zulu");
@@ -484,7 +644,7 @@ mod tests {
     fn current_hub_wins_among_equal_eligibility_when_it_has_smaller_id() {
         let peers = [peer("alpha", true, true), peer("zulu", true, false)];
 
-        let elected = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self");
+        let elected = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self", OUR_IP, OUR_PORT);
 
         let hub = elected.expect("candidates exist");
         assert_eq!(hub.workstation_id, "alpha");
@@ -494,8 +654,8 @@ mod tests {
     fn full_tie_elects_lexicographically_smallest_workstation_id_deterministically() {
         let peers = [peer("bravo", true, false), peer("alpha", true, false)];
 
-        let first = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self");
-        let second = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self");
+        let first = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self", OUR_IP, OUR_PORT);
+        let second = elect_hub(&peers, &None, "ws-self", 42.0, false, false, "Self", OUR_IP, OUR_PORT);
 
         assert_eq!(first.expect("candidates exist").workstation_id, "alpha");
         assert_eq!(second.expect("candidates exist").workstation_id, "alpha");
@@ -513,6 +673,8 @@ mod tests {
             true,
             false,
             "Self",
+            OUR_IP,
+            OUR_PORT,
         );
 
         let hub = elected.expect("self override always resolves");
@@ -532,6 +694,8 @@ mod tests {
             true,
             false,
             "Self",
+            OUR_IP,
+            OUR_PORT,
         );
 
         let hub = elected.expect("override target is present in peers");
@@ -544,14 +708,14 @@ mod tests {
     fn override_pointing_at_unknown_peer_returns_none() {
         let peers = [peer("aaa", true, false)];
 
-        let elected = elect_hub(&peers, &Some("ghost".to_string()), "ws-self", 42.0, true, false, "Self");
+        let elected = elect_hub(&peers, &Some("ghost".to_string()), "ws-self", 42.0, true, false, "Self", OUR_IP, OUR_PORT);
 
         assert!(elected.is_none());
     }
 
     #[test]
     fn empty_peer_list_with_eligible_self_elects_self() {
-        let elected = elect_hub(&[], &None, "ws-self", 42.0, true, false, "Self");
+        let elected = elect_hub(&[], &None, "ws-self", 42.0, true, false, "Self", OUR_IP, OUR_PORT);
 
         let hub = elected.expect("eligible solo workstation elects itself");
         assert_eq!(hub.workstation_id, "ws-self");
@@ -561,7 +725,7 @@ mod tests {
 
     #[test]
     fn empty_peer_list_with_ineligible_self_returns_none() {
-        let elected = elect_hub(&[], &None, "ws-self", 42.0, false, false, "Self");
+        let elected = elect_hub(&[], &None, "ws-self", 42.0, false, false, "Self", OUR_IP, OUR_PORT);
 
         assert!(elected.is_none());
     }
@@ -571,7 +735,7 @@ mod tests {
         let mut gone = peer("aaa", true, false);
         gone.is_online = false;
 
-        let elected = elect_hub(std::slice::from_ref(&gone), &None, "ws-self", 42.0, false, false, "Self");
+        let elected = elect_hub(std::slice::from_ref(&gone), &None, "ws-self", 42.0, false, false, "Self", OUR_IP, OUR_PORT);
 
         assert!(elected.is_none());
     }
@@ -582,15 +746,15 @@ mod tests {
         // and we are eligible — proves the deadlock fix: self must be in the
         // candidate set when peers exist.
         let peers = [peer("zzz", true, false)];
-        let elected = elect_hub(&peers, &None, "aaa-self", 42.0, true, false, "Self");
+        let elected = elect_hub(&peers, &None, "aaa-self", 42.0, true, false, "Self", OUR_IP, OUR_PORT);
         let hub = elected.expect("candidate exists");
         // Both eligible, scores: self 42 vs peer ~52.5 → peer wins on score,
         // so force a tie on score by giving self a high score.
         // With self score 80, self should win on higher score.
-        let elected_high = elect_hub(&peers, &None, "aaa-self", 80.0, true, false, "Self");
+        let elected_high = elect_hub(&peers, &None, "aaa-self", 80.0, true, false, "Self", OUR_IP, OUR_PORT);
         assert_eq!(elected_high.unwrap().workstation_id, "aaa-self");
         // With equal scores (52.5), lexicographically smallest wins.
-        let tied = elect_hub(&peers, &None, "aaa-self", 52.5, true, false, "Self");
+        let tied = elect_hub(&peers, &None, "aaa-self", 52.5, true, false, "Self", OUR_IP, OUR_PORT);
         assert_eq!(tied.unwrap().workstation_id, "aaa-self");
         // Original low-score self loses to higher-scoring peer — score matters.
         assert_eq!(hub.workstation_id, "zzz");
@@ -602,9 +766,9 @@ mod tests {
         // elect the same hub (lexicographically smallest when scores equal).
         let peer_a = peer("ws-a", true, false);
         let peer_b = peer("ws-b", true, false);
-        let from_a = elect_hub(&[peer_b.clone()], &None, "ws-a", 52.5, true, false, "WS A")
+        let from_a = elect_hub(&[peer_b.clone()], &None, "ws-a", 52.5, true, false, "WS A", OUR_IP, OUR_PORT)
             .expect("hub");
-        let from_b = elect_hub(&[peer_a.clone()], &None, "ws-b", 52.5, true, false, "WS B")
+        let from_b = elect_hub(&[peer_a.clone()], &None, "ws-b", 52.5, true, false, "WS B", OUR_IP, OUR_PORT)
             .expect("hub");
         assert_eq!(from_a.workstation_id, from_b.workstation_id);
         assert_eq!(from_a.workstation_id, "ws-a");

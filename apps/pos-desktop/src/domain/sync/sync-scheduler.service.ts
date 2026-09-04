@@ -120,6 +120,24 @@ import { createAuditSyncService, type AuditSyncService } from '../audit/audit-sy
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
+/** When the outbox still holds pending work, drain faster than the 5-minute default. */
+const DRAIN_INTERVAL_MS = 15_000;
+
+/**
+ * Safely parse the session's `expiresAt` regardless of whether it was
+ * deserialized as a Date object or an ISO string (Zustand persist / JSON).
+ * Returns `null` when the value is missing or unparseable.
+ */
+function getExpiryMs(value: unknown): number | null {
+  if (!value) return null;
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isNaN(t) ? null : t;
+  }
+  const t = new Date(value as string | number).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
 /**
  * Compact, single-line description of a swallowed sync-step error so the
  * console.warn calls in `tick()` stay greppable without dumping full stack
@@ -252,35 +270,48 @@ export class SyncScheduler {
   private wasOnline: boolean = false;
   /** Bound handler for `window.online` so `stop()` can detach the same reference. */
   private readonly handleOnlineEvent: () => void;
+  private pushInFlight = false;
+  private pushQueued = false;
+  /** Adaptive drain timer — fires every 15s while the outbox still holds pending work. */
+  private drainTimerId: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config: SyncSchedulerConfig) {
     this.prisma = config.prisma;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.accessToken = config.accessToken;
+    this.offlineToken =
+      useLocalSessionStore.getState().session?.offlineToken ?? undefined;
+    const syncBase = { baseUrl: config.baseUrl, accessToken: config.accessToken, offlineToken: this.offlineToken };
     this.configSync = createConfigSyncService(config.prisma, {
+      ...syncBase,
       ...config.config,
       accessToken: config.accessToken ?? config.config.accessToken,
+      offlineToken: this.offlineToken ?? (config.config as any)?.offlineToken,
     });
     this.catalogSync = createCatalogSyncService(config.prisma, {
+      ...syncBase,
       ...config.catalog,
       accessToken: config.accessToken ?? config.catalog.accessToken,
+      offlineToken: this.offlineToken ?? (config.catalog as any)?.offlineToken,
     });
     this.lotSync = createLotSyncService(config.prisma, {
+      ...syncBase,
       ...config.lots,
       accessToken: config.accessToken ?? config.lots.accessToken,
+      offlineToken: this.offlineToken ?? (config.lots as any)?.offlineToken,
     });
     this.clientPull = createClientPullService(config.prisma, {
+      ...syncBase,
       ...config.clients,
       accessToken: config.accessToken ?? config.clients.accessToken,
+      offlineToken: this.offlineToken ?? (config.clients as any)?.offlineToken,
     });
     this.openShiftPull = createOpenShiftPullService(
       config.prisma,
-      { baseUrl: config.baseUrl, accessToken: config.accessToken },
+      { ...syncBase, accessToken: config.accessToken },
       this.readWorkstationContext(),
     );
-    this.offlineToken =
-      useLocalSessionStore.getState().session?.offlineToken ?? undefined;
-    const purchasesBase = { baseUrl: config.baseUrl, accessToken: config.accessToken, offlineToken: this.offlineToken };
+    const purchasesBase = syncBase;
     this.supplierSync = createSupplierSyncService(config.prisma, {
       ...purchasesBase,
       ...config.suppliers,
@@ -517,8 +548,14 @@ export class SyncScheduler {
       clearTimeout(this.burstTimerId);
       this.burstTimerId = null;
     }
+    if (this.drainTimerId !== null) {
+      clearTimeout(this.drainTimerId);
+      this.drainTimerId = null;
+    }
     this.burstTicksRemaining = 0;
     this.burstPhase = null;
+    this.pushInFlight = false;
+    this.pushQueued = false;
     if (
       typeof window !== 'undefined' &&
       typeof window.removeEventListener === 'function'
@@ -551,27 +588,39 @@ export class SyncScheduler {
    * Fire-and-forget — errors are logged internally by `pushPending()`.
    * No-op when offline (the scheduler's tick will eventually push when
    * connectivity returns).
+   *
+   * Coalescing: rapid successive calls (e.g. a batch of sales) collapse
+   * into a single in-flight push; one extra run is queued if new work
+   * arrived while the first was still executing.
    */
   triggerPush(): void {
     if (!isOnline()) return;
-    // A shift close is running (it pauses the background around its backup);
-    // skip the immediate push — the next regular tick will catch up.
     if (dbWriteLock.isBackgroundPaused()) return;
+    if (this.pushInFlight) {
+      this.pushQueued = true;
+      return;
+    }
+    this.pushInFlight = true;
 
     void (async () => {
-      // Refresh and the push's network POST run unlocked (network + store
-      // only); only the push's DB writes take the lock.
-      const refreshed = await this.refreshAccessToken();
-      // Auth-readiness gate: only suppress pushes that are known to be
-      // unauthenticated — the refresh failed AND the push service holds
-      // no offline token to fall back on. An offline token alone is a
-      // valid credential (the server guard accepts X-Offline-Token
-      // without a Bearer header), and transient 401s with credentials
-      // still flow through the normal retry/backoff path.
-      if (refreshed || this.offlineToken !== undefined) {
-        await this.runPush();
+      try {
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed || this.offlineToken !== undefined) {
+          await this.runPush();
+        }
+        // Re-evaluate drain after an immediate push — if work remains,
+        // ensure the adaptive timer keeps polling every 15s.
+        void this.scheduleDrainIfNeeded();
+      } finally {
+        this.pushInFlight = false;
+        if (this.pushQueued) {
+          this.pushQueued = false;
+          // Defer one extra run to coalesce any burst that arrived mid-flight.
+          setTimeout(() => this.triggerPush(), 300);
+        }
       }
     })().catch(() => {
+      this.pushInFlight = false;
       /* runPush handles its own errors */
     });
   }
@@ -840,6 +889,52 @@ export class SyncScheduler {
     );
   }
 
+  /**
+   * Whether any SyncQueue rows still need cloud delivery (PENDING or
+   * retryable FAILED). Used to decide if the adaptive drain timer must
+   * keep polling every 15s instead of the 5-minute default.
+   */
+  private async hasPendingEntries(): Promise<boolean> {
+    try {
+      const count = await this.prisma.syncQueue.count({
+        where: {
+          status: { in: ['PENDING', 'FAILED'] as const },
+        },
+      });
+      return count > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Adaptive drain: if work remains after a cycle, ensure a 15s timer
+   * keeps re-running `tick()` until the outbox empties. Otherwise cancel
+   * it and let the regular 5-minute interval carry the steady state.
+   * Best-effort — a DB error here never breaks the cycle.
+   */
+  private async scheduleDrainIfNeeded(): Promise<void> {
+    try {
+      const hasPending = await this.hasPendingEntries();
+      if (hasPending) {
+        if (this.drainTimerId !== null) return;
+        this.drainTimerId = setTimeout(() => {
+          this.drainTimerId = null;
+          void this.tick().then(() => {
+            void this.scheduleDrainIfNeeded();
+          });
+        }, DRAIN_INTERVAL_MS);
+      } else {
+        if (this.drainTimerId !== null) {
+          clearTimeout(this.drainTimerId);
+          this.drainTimerId = null;
+        }
+      }
+    } catch {
+      // Advisory — ignore.
+    }
+  }
+
   // -----------------------------------------------------------------------
   // Private
   // -----------------------------------------------------------------------
@@ -869,24 +964,41 @@ export class SyncScheduler {
    */
   private async refreshAccessToken(): Promise<boolean> {
     const session = useLocalSessionStore.getState().session;
+    console.debug('[SyncScheduler] refreshAccessToken check', {
+      hasRefresh: !!session?.refreshToken,
+      hasAccess: !!session?.accessToken,
+      hasOffline: !!session?.offlineToken,
+      hasExpiresAt: !!session?.expiresAt,
+      expiresAtType: typeof session?.expiresAt,
+      expiryMs: getExpiryMs(session?.expiresAt as unknown),
+      offlineTokenCached: !!this.offlineToken,
+    });
     if (!session?.refreshToken || !session?.accessToken) {
       useSyncAuthStatusStore.getState().setNoSession();
+      console.warn('[SyncScheduler] refresh skip: missing refresh/access token', { hasOffline: !!session?.offlineToken, hasOfflineCached: !!this.offlineToken });
       return false;
     }
 
     // Check if the token is still valid for at least one more interval.
-    // Local-only sessions (no accessToken) have no expiry — skip check.
-    if (!session.expiresAt) return false;
-    const msUntilExpiry = session.expiresAt.getTime() - Date.now();
-    const bufferMs = this.intervalMs * 2; // 2x interval as safety margin
-    if (msUntilExpiry > bufferMs) {
-      useSyncAuthStatusStore.getState().setFresh();
-      // The token is fresh, so updateAccessToken() will not run on this
-      // call — but the push service's offline token snapshot may have
-      // gone stale without an access-token change. Re-sync it so a new
-      // offline token landing in the session still reaches the push.
-      this.syncOfflineTokenFromSession();
-      return true; // Still fresh
+    // `expiresAt` may be a Date or an ISO string depending on how the
+    // session was deserialized (Zustand persist / JSON). Parse robustly.
+    const expiryMs = getExpiryMs(session.expiresAt);
+    if (expiryMs === null) {
+      // No usable expiry — treat as needing refresh (don't silently fail
+      // as the old `session.expiresAt.getTime()` TypeError did).
+      // Fall through to the refresh attempt below.
+    } else {
+      const msUntilExpiry = expiryMs - Date.now();
+      const bufferMs = this.intervalMs * 2; // 2x interval as safety margin
+      if (msUntilExpiry > bufferMs) {
+        useSyncAuthStatusStore.getState().setFresh();
+        // The token is fresh, so updateAccessToken() will not run on this
+        // call — but the push service's offline token snapshot may have
+        // gone stale without an access-token change. Re-sync it so a new
+        // offline token landing in the session still reaches the push.
+        this.syncOfflineTokenFromSession();
+        return true; // Still fresh
+      }
     }
 
     // ---------------------------------------------------------
@@ -1452,5 +1564,11 @@ export class SyncScheduler {
     } catch {
       // Metrics are advisory; do not break the cycle.
     }
+
+    // 9. Adaptive drain — if pending/failed rows remain, keep a 15s
+    //    re-tick alive until empty; otherwise let the 5-minute interval
+    //    handle the idle steady state. Also triggered from triggerPush so
+    //    a burst that landed between ticks doesn't wait for the interval.
+    void this.scheduleDrainIfNeeded();
   }
 }

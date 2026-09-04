@@ -43,16 +43,20 @@ import type {
   PullResponse,
 } from '../../renderer/services/local-sync/local-sync.service';
 import { OPERATION_PRIORITY } from '../sync/sync-push.service';
+import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /** How often the engine runs a push+pull cycle. */
-const DEFAULT_CYCLE_INTERVAL_MS = 15_000;
+const DEFAULT_CYCLE_INTERVAL_MS = 3_000;
 
 /** Delay before the first cycle (lets mDNS + election settle after boot). */
-const FIRST_CYCLE_DELAY_MS = 8_000;
+const FIRST_CYCLE_DELAY_MS = 2_000;
+
+/** Debounce for immediate trigger after a new SyncQueue entry. */
+const IMMEDIATE_TRIGGER_DEBOUNCE_MS = 500;
 
 /** Maximum entries relayed per cycle. */
 const RELAY_BATCH_SIZE = 25;
@@ -96,6 +100,8 @@ export interface LocalSyncEngine {
   stop(): void;
   /** Run one cycle immediately (used by tests and manual triggers). */
   runCycle(): Promise<LocalSyncCycleResult>;
+  /** Fire-and-forget immediate cycle — called by sync-queue-notifier. */
+  triggerImmediateSync(): void;
 }
 
 type RelayableEntry = {
@@ -132,6 +138,7 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private stopped = true;
   private cycleInFlight = false;
+  private immediateDebounce: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config: LocalSyncEngineConfig) {
     this.prisma = config.prisma;
@@ -152,6 +159,25 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    if (this.immediateDebounce !== null) {
+      clearTimeout(this.immediateDebounce);
+      this.immediateDebounce = null;
+    }
+  }
+
+  triggerImmediateSync(): void {
+    if (this.stopped || this.cycleInFlight) return;
+    if (this.immediateDebounce !== null) return;
+    this.immediateDebounce = setTimeout(() => {
+      this.immediateDebounce = null;
+      if (this.stopped || this.cycleInFlight) return;
+      // Cancel the regular timer and run now; tick() will reschedule.
+      if (this.timer !== null) {
+        clearTimeout(this.timer);
+        this.timer = null;
+      }
+      void this.tick();
+    }, IMMEDIATE_TRIGGER_DEBOUNCE_MS);
   }
 
   async runCycle(): Promise<LocalSyncCycleResult> {
@@ -196,12 +222,15 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
         currentHubAddress: string | null;
         backoffUntil: string | null;
       }>('get_local_sync_status');
+      console.log('[local-sync-engine] cycle status', status);
     } catch (err) {
       // Non-Tauri environments (tests / plain browser dev) have no backend.
+      console.log('[local-sync-engine] get_local_sync_status failed, skipping', err);
       return this.result(ranAt, 'skipped-no-hub', 0, 0);
     }
 
     if (!status.currentHubAddress) {
+      console.log('[local-sync-engine] no hub address, skipping');
       return this.result(ranAt, 'skipped-no-hub', 0, 0);
     }
 
@@ -216,6 +245,9 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
     try {
       const pushed = await this.pushPendingToHub();
       const adopted = await this.pullAndAdoptFromHub();
+      console.log(
+        `[local-sync-engine] cycle ok: pushed=${pushed} adopted=${adopted}`,
+      );
       return this.result(ranAt, 'ok', pushed, adopted);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -352,6 +384,7 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
             status: 'PENDING',
             sourceWorkstationId: op.sourceWorkstationId,
             sourceCreatedAt: new Date(op.sourceCreatedAt),
+            lanRelayedAt: new Date(),
             // Adopted entries join the tail of OUR local sequence so they
             // are pushed to the server after everything created locally.
             clientSequence: BigInt(Date.now() * 1000 + index),
@@ -372,6 +405,10 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
           err instanceof Error ? err.message : err,
         );
       }
+    }
+
+    if (adopted > 0) {
+      notifyPendingEntry();
     }
 
     return adopted;

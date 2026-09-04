@@ -16,6 +16,7 @@ import { RegisterProductPriceDto, RegisterProductPriceSchema } from './dto/regis
 import { AssignProductTaxSchemeDto, AssignProductTaxSchemeSchema } from './dto/assign-product-tax-scheme.dto';
 import { AddProductBarcodeDto, AddProductBarcodeSchema } from './dto/add-product-barcode.dto';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -24,11 +25,11 @@ import { AuditAction, SystemModule, RoleType, User } from '@pharmacy/shared-type
 import { ZodValidationPipe } from '@/common/pipes/zod-validation.pipe';
 
 @Controller('products')
-@UseGuards(JwtAuthGuard, RolesGuard)
 export class ProductsController {
   constructor(private productsService: ProductsService) {}
 
   @Get()
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findAll(
     @Query('categoryId') categoryId?: string,
@@ -53,12 +54,14 @@ export class ProductsController {
   }
 
   @Get(':id')
+  @UseGuards(SyncAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   async findById(@Param('id') id: string): Promise<any> {
     return this.productsService.findById(id);
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @HttpCode(201)
   @Auditable({
@@ -75,6 +78,7 @@ export class ProductsController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @Auditable({
     action: AuditAction.UPDATE,
@@ -91,6 +95,7 @@ export class ProductsController {
   }
 
   @Post(':id/price')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @Auditable({
     action: AuditAction.UPDATE,
@@ -107,6 +112,7 @@ export class ProductsController {
   }
 
   @Post(':id/tax-scheme')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.ADMIN)
   @Auditable({
     action: AuditAction.UPDATE,
@@ -123,6 +129,7 @@ export class ProductsController {
   }
 
   @Post(':id/barcodes')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @HttpCode(201)
   @Auditable({
@@ -139,6 +146,7 @@ export class ProductsController {
   }
 
   @Patch(':id/barcodes/:barcodeId/primary')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(RoleType.INVENTORY_ASSISTANT, RoleType.ADMIN)
   @Auditable({
     action: AuditAction.UPDATE,

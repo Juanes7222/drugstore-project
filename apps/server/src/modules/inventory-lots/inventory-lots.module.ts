@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@/infrastructure/prisma/prisma.module';
+import { AuthModule } from '@/modules/auth/auth.module';
+import { SyncAuthGuard } from '@/modules/sync/guards/sync-auth.guard';
 import { LotsController } from './controllers/lots.controller';
 import { InventoryAdjustmentsController } from './controllers/inventory-adjustments.controller';
 import { InventoryMovementsController } from './controllers/inventory-movements.controller';
@@ -16,7 +18,7 @@ import { PhysicalCountsService } from './services/physical-counts.service';
  * - AutoExpirationJob: Automatic lot expiration scheduling and execution
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AuthModule],
   controllers: [
     LotsController,
     InventoryAdjustmentsController,
@@ -28,6 +30,7 @@ import { PhysicalCountsService } from './services/physical-counts.service';
     InventoryAdjustmentsService,
     InventoryMovementsService,
     PhysicalCountsService,
+    SyncAuthGuard,
   ],
   exports: [
     LotsService,
