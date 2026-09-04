@@ -12,6 +12,7 @@
  * - `lotsLastSyncedAt` – written by `LotSyncService.pullLots()`
  * - `clientsLastSyncedAt` – written by `ClientPullService.pullClients()`
  * - `classificationsLastSyncedAt` – written by `ClientPullService.pullClassifications()`
+ * - `usersLastSyncedAt` – written by `UserPullService.pullUserIdentities()`
  *
  * Scoping
  * -------
@@ -52,6 +53,7 @@ interface SyncMetadataRecord {
   salesLastSyncedAt: string | null;
   invoicesLastSyncedAt: string | null;
   invoiceAdjustmentsLastSyncedAt: string | null;
+  usersLastSyncedAt: string | null;
 }
 
 const DEFAULTS: SyncMetadataRecord = {
@@ -66,6 +68,7 @@ const DEFAULTS: SyncMetadataRecord = {
   salesLastSyncedAt: null,
   invoicesLastSyncedAt: null,
   invoiceAdjustmentsLastSyncedAt: null,
+  usersLastSyncedAt: null,
 };
 
 /**
@@ -228,5 +231,14 @@ export const getInvoiceAdjustmentsLastSyncedAt = (): string | null =>
 export const setInvoiceAdjustmentsLastSyncedAt = (iso: string): void => {
   const record = readSyncMetadata();
   record.invoiceAdjustmentsLastSyncedAt = iso;
+  writeSyncMetadata(record);
+};
+
+export const getUsersLastSyncedAt = (): string | null =>
+  readSyncMetadata().usersLastSyncedAt;
+
+export const setUsersLastSyncedAt = (iso: string): void => {
+  const record = readSyncMetadata();
+  record.usersLastSyncedAt = iso;
   writeSyncMetadata(record);
 };

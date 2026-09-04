@@ -16,6 +16,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -45,6 +46,10 @@ import {
   UpdateUserDto,
 } from './dto/create-user.dto';
 import { ResetPinSchema, ResetPinDto } from './dto/reset-pin.dto';
+import {
+  LoginIdentitiesQuerySchema,
+  LoginIdentitiesQueryDto,
+} from './dto/login-identities.dto';
 
 /**
  * Columns for the users list. Includes the credential-hash columns only so
@@ -75,6 +80,38 @@ const USER_LIST_SELECT = {
 type UserListRow = Prisma.UserGetPayload<{ select: typeof USER_LIST_SELECT }>;
 
 type UserListItem = Omit<UserListRow, 'pinHash' | 'passwordHash'> & {
+  hasPin: boolean;
+  hasPassword: boolean;
+};
+
+/**
+ * Minimal projection for the POS login avatar grid. Includes the
+ * credential-hash columns only so presence booleans can be computed; they
+ * are stripped before responding — same contract as USER_LIST_SELECT.
+ */
+const LOGIN_IDENTITY_SELECT = {
+  id: true,
+  displayName: true,
+  fullName: true,
+  username: true,
+  role: true,
+  status: true,
+  isActive: true,
+  avatarUrl: true,
+  avatarColor: true,
+  pinHash: true,
+  passwordHash: true,
+} satisfies Prisma.UserSelect;
+
+type LoginIdentityRow = Prisma.UserGetPayload<{
+  select: typeof LOGIN_IDENTITY_SELECT;
+}>;
+
+type LoginIdentity = Omit<
+  LoginIdentityRow,
+  'pinHash' | 'passwordHash' | 'displayName' | 'fullName'
+> & {
+  displayName: string;
   hasPin: boolean;
   hasPassword: boolean;
 };
@@ -157,6 +194,19 @@ export class UsersController {
     return { ...safeUser, ...credentialPresence(pinHash, passwordHash) };
   }
 
+  /**
+   * Strip credential-hash columns from a login-identity row, resolve the
+   * display-name fallback, and expose only credential presence as booleans.
+   */
+  private toLoginIdentity(row: LoginIdentityRow): LoginIdentity {
+    const { pinHash, passwordHash, displayName, fullName, ...identity } = row;
+    return {
+      ...identity,
+      displayName: displayName ?? fullName,
+      ...credentialPresence(pinHash, passwordHash),
+    };
+  }
+
   @Get()
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @ApiOperation({ summary: 'List users in the accessible scope' })
@@ -237,6 +287,63 @@ export class UsersController {
     ]);
 
     return { users: users.map((row) => this.toUserListItem(row)), total };
+  }
+
+  // Authenticated-only login identities for the POS avatar grid (Option A,
+  // variant b). A pre-login unauthenticated variant was rejected: the
+  // Workstation table carries no subscription/location linkage and
+  // self-registers on login, so `?workstationId=` authenticates nothing and
+  // the endpoint would become a cross-tenant user-enumeration oracle
+  // (usernames aid PIN/password brute force). Cold-start terminals still
+  // need one manual login before this syncs; the POS team owns that gap.
+  // Declared before `@Get(':id')` so Express does not swallow
+  // `login-identities` as an `:id` param.
+  @Get('login-identities')
+  @Roles(
+    RoleType.OWNER,
+    RoleType.MANAGER,
+    RoleType.CASHIER,
+    RoleType.INVENTORY_ASSISTANT,
+    RoleType.ACCOUNTANT,
+    RoleType.ADMIN,
+  )
+  // Inert until ThrottlerModule is registered in AppModule (it currently is
+  // not); then 60 full-refresh reads per minute per IP.
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'List login identities for the POS avatar grid (all POS roles)',
+  })
+  async listLoginIdentities(
+    @CurrentUser() user: User,
+    @Query(new ZodValidationPipe(LoginIdentitiesQuerySchema))
+    query: LoginIdentitiesQueryDto,
+  ): Promise<{ users: LoginIdentity[] }> {
+    // No tenant scope resolvable (e.g. a platform SAAS_ADMIN passing via
+    // role supersession with no subscription): fail closed instead of
+    // leaking cross-tenant rows.
+    if (!user.subscriptionId) {
+      return { users: [] };
+    }
+
+    // Tenant-scoped but deliberately NOT narrowed by UserLocationAccess: the
+    // grid must show everyone able to log in at the till, including the
+    // OWNER (implicit all-location access, no locationAccess rows), who
+    // would otherwise vanish from a cashier's grid. Same-tenant coworkers
+    // are not a secrecy boundary; the subscription filter below is the
+    // tenant-isolation invariant.
+    const users = await this.prisma.user.findMany({
+      where: {
+        subscriptionId: user.subscriptionId,
+        status: UserStatus.ACTIVE,
+        isActive: true,
+        deletedAt: null,
+      },
+      select: LOGIN_IDENTITY_SELECT,
+      orderBy: [{ fullName: 'asc' }, { id: 'asc' }],
+      take: query.limit,
+    });
+
+    return { users: users.map((row) => this.toLoginIdentity(row)) };
   }
 
   @Post()

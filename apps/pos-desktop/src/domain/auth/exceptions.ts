@@ -87,3 +87,22 @@ export class InvalidFirebaseTokenException extends DomainError {
     );
   }
 }
+
+/**
+ * Thrown when the user-identities pull (`GET /users/login-identities`)
+ * fails at the HTTP layer. The scheduler treats 403 as a role mismatch to
+ * suppress until next login; every other status is retried next tick.
+ */
+export class UserPullHttpException extends DomainError {
+  readonly statusCode: number;
+  readonly responseBody: string;
+
+  constructor(url: string, statusCode: number, responseBody: string) {
+    super(
+      'USER_PULL_FAILED',
+      `User pull HTTP error ${statusCode} for ${url}: ${responseBody}`,
+    );
+    this.statusCode = statusCode;
+    this.responseBody = responseBody;
+  }
+}

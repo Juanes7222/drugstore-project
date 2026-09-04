@@ -11,6 +11,9 @@
  * 3. **Pull catalog** — refresh product, category, and form data.
  * 4. **Pull lots** — refresh inventory lot data (depends on product refs).
  * 5. **Pull clients** — download recently-updated clients from the server.
+ * 5.6 **Pull user identities** — refresh the login-grid mirror
+ *    (`GET /users/login-identities`) into the avatar-grid cache and PGlite
+ *    identity rows.
  * 6. **Pull purchases** — suppliers → purchase orders → receptions → supplier returns (FK order).
  * 7. **Pull sales history** — confirmed sales + items/payments so a new device hydrates.
  * 8. **Pull invoices** — fiscal documents for those sales (Facturación) so detail view has invoices.
@@ -113,6 +116,11 @@ import type {
 } from '../fiscal/invoice-adjustment-sync.service';
 import { createInvoiceAdjustmentSyncService } from '../fiscal/invoice-adjustment-sync.service';
 import { createAuditSyncService, type AuditSyncService } from '../audit/audit-sync.service';
+import {
+  createUserPullService,
+  type UserPullConfig,
+  type UserPullService,
+} from '../auth/user-pull.service';
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -182,6 +190,8 @@ export interface SyncSchedulerConfig {
   catalog: CatalogSyncConfig;
   lots: LotSyncConfig;
   clients: ClientPullConfig;
+  /** User identities for the login grid (optional, default = same baseUrl + token) */
+  users?: UserPullConfig;
   /** Supplier / purchases / sales hydration (optional, default = same baseUrl + token) */
   suppliers?: SupplierSyncConfig;
   purchaseOrders?: PurchaseOrderSyncConfig;
@@ -245,6 +255,7 @@ export class SyncScheduler {
   private catalogSync: CatalogSyncService;
   private lotSync: LotSyncService;
   private clientPull: ClientPullService;
+  private userPull: UserPullService;
   private openShiftPull: OpenShiftPullService;
   private supplierSync: SupplierSyncService;
   private purchaseOrderSync: PurchaseOrderSyncService;
@@ -311,6 +322,12 @@ export class SyncScheduler {
       { ...syncBase, accessToken: config.accessToken },
       this.readWorkstationContext(),
     );
+    this.userPull = createUserPullService({
+      ...syncBase,
+      ...config.users,
+      accessToken: config.accessToken ?? config.users?.accessToken,
+      offlineToken: this.offlineToken ?? config.users?.offlineToken,
+    });
     const purchasesBase = syncBase;
     this.supplierSync = createSupplierSyncService(config.prisma, {
       ...purchasesBase,
@@ -405,6 +422,7 @@ export class SyncScheduler {
     this.catalogSync = createCatalogSyncService(this.prisma, baseConfig);
     this.lotSync = createLotSyncService(this.prisma, baseConfig);
     this.clientPull = createClientPullService(this.prisma, baseConfig);
+    this.userPull = createUserPullService(baseConfig);
     this.openShiftPull = createOpenShiftPullService(
       this.prisma,
       { baseUrl: this.baseUrl, accessToken: token },
@@ -1169,6 +1187,7 @@ export class SyncScheduler {
       workstationId: useLocalSessionStore.getState().session?.workstationId,
       userId: useLocalSessionStore.getState().session?.userId,
     });
+    this.userPull = createUserPullService(baseConfig);
     this.supplierSync = createSupplierSyncService(this.prisma, baseConfig);
     this.purchaseOrderSync = createPurchaseOrderSyncService(this.prisma, baseConfig);
     this.purchaseReceptionSync = createPurchaseReceptionSyncService(this.prisma, baseConfig);
@@ -1413,6 +1432,19 @@ export class SyncScheduler {
         } else {
           console.warn('[SyncScheduler] open-shift pull failed:', describeSyncError(err));
         }
+      }
+    }
+
+    // 5.6 User identities — login-grid mirror (GET /users/login-identities,
+    //     reachable by every POS role). Refreshes the avatar-grid cache and
+    //     upserts PGlite identity rows; never carries credential material.
+    if (!this.pullSuppressed.has('users')) {
+      try {
+        const rows = await this.userPull.fetchUserIdentities();
+        await this.withLock(() => this.userPull.applyUserIdentities(rows));
+      } catch (err) {
+        if (this.isForbidden(err)) this.suppressPull('users');
+        else console.warn('[SyncScheduler] users pull failed:', describeSyncError(err));
       }
     }
 

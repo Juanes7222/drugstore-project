@@ -17,6 +17,7 @@ import {
   getSalesLastSyncedAt,
   getSupplierReturnsLastSyncedAt,
   getSuppliersLastSyncedAt,
+  getUsersLastSyncedAt,
   readSyncMetadata,
   setCatalogLastSyncedAt,
   setClassificationsLastSyncedAt,
@@ -27,6 +28,7 @@ import {
   setSalesLastSyncedAt,
   setSupplierReturnsLastSyncedAt,
   setSuppliersLastSyncedAt,
+  setUsersLastSyncedAt,
 } from "./sync-metadata";
 
 const installIdRef = vi.hoisted(() => ({ current: null as string | null }));
@@ -67,6 +69,9 @@ describe("sync-metadata", () => {
         purchaseReceptionsLastSyncedAt: null,
         supplierReturnsLastSyncedAt: null,
         salesLastSyncedAt: null,
+        invoicesLastSyncedAt: null,
+        invoiceAdjustmentsLastSyncedAt: null,
+        usersLastSyncedAt: null,
       });
     });
 
@@ -86,6 +91,9 @@ describe("sync-metadata", () => {
         purchaseReceptionsLastSyncedAt: null,
         supplierReturnsLastSyncedAt: null,
         salesLastSyncedAt: null,
+        invoicesLastSyncedAt: null,
+        invoiceAdjustmentsLastSyncedAt: null,
+        usersLastSyncedAt: null,
       });
     });
 
@@ -105,6 +113,9 @@ describe("sync-metadata", () => {
           purchaseReceptionsLastSyncedAt: null,
           supplierReturnsLastSyncedAt: null,
           salesLastSyncedAt: null,
+          invoicesLastSyncedAt: null,
+          invoiceAdjustmentsLastSyncedAt: null,
+          usersLastSyncedAt: null,
         });
       } finally {
         (globalThis as any).localStorage = originalLocalStorage;
@@ -137,6 +148,9 @@ describe("sync-metadata", () => {
         purchaseReceptionsLastSyncedAt: null,
         supplierReturnsLastSyncedAt: null,
         salesLastSyncedAt: null,
+        invoicesLastSyncedAt: null,
+        invoiceAdjustmentsLastSyncedAt: null,
+        usersLastSyncedAt: null,
       });
     });
   });
@@ -399,6 +413,37 @@ describe("sync-metadata", () => {
 
       installIdRef.current = "install-B";
       expect(getSalesLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("getUsersLastSyncedAt", () => {
+    it("returns null when no user pull has been performed", () => {
+      expect(getUsersLastSyncedAt()).toBeNull();
+    });
+  });
+
+  describe("setUsersLastSyncedAt + getUsersLastSyncedAt", () => {
+    it("persists and retrieves a timestamp", () => {
+      setUsersLastSyncedAt("2026-09-04T07:00:00Z");
+
+      expect(getUsersLastSyncedAt()).toBe("2026-09-04T07:00:00Z");
+    });
+
+    it("is scoped by installId", () => {
+      installIdRef.current = "install-A";
+      setUsersLastSyncedAt("2026-09-04T07:00:00Z");
+
+      installIdRef.current = "install-B";
+      expect(getUsersLastSyncedAt()).toBeNull();
+    });
+
+    it("leaves the other cursors untouched", () => {
+      setSalesLastSyncedAt("2026-07-01T07:00:00Z");
+
+      setUsersLastSyncedAt("2026-09-04T07:00:00Z");
+
+      expect(getUsersLastSyncedAt()).toBe("2026-09-04T07:00:00Z");
+      expect(getSalesLastSyncedAt()).toBe("2026-07-01T07:00:00Z");
     });
   });
 

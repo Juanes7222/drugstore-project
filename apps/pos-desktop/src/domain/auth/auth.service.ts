@@ -128,6 +128,20 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
         });
       }
 
+      // Opportunistic full-list refresh so the login avatar grid (and the
+      // QuickSwitch offline fallback) picks up users created elsewhere
+      // without a manager opening user-management on this terminal.
+      // Best-effort: 403/network failures are swallowed — the scheduler
+      // retries on its next tick.
+      import('./user-pull.service')
+        .then(({ createUserPullService }) =>
+          createUserPullService({
+            baseUrl: config.baseUrl,
+            accessToken: response.accessToken,
+          }).pullUserIdentities(),
+        )
+        .catch(() => { /* non-fatal */ });
+
       return { session };
     },
 
@@ -194,6 +208,20 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
         });
       }
 
+      // Opportunistic full-list refresh so the login avatar grid (and the
+      // QuickSwitch offline fallback) picks up users created elsewhere
+      // without a manager opening user-management on this terminal.
+      // Best-effort: 403/network failures are swallowed — the scheduler
+      // retries on its next tick.
+      import('./user-pull.service')
+        .then(({ createUserPullService }) =>
+          createUserPullService({
+            baseUrl: config.baseUrl,
+            accessToken: response.accessToken,
+          }).pullUserIdentities(),
+        )
+        .catch(() => { /* non-fatal */ });
+
       return { session };
     },
 
@@ -230,6 +258,20 @@ export const createAuthService = (config: AuthServiceConfig): AuthService => {
           console.warn('Failed to cache offline credentials after 2FA:', err);
         });
       }
+
+      // Opportunistic full-list refresh so the login avatar grid (and the
+      // QuickSwitch offline fallback) picks up users created elsewhere
+      // without a manager opening user-management on this terminal.
+      // Best-effort: 403/network failures are swallowed — the scheduler
+      // retries on its next tick.
+      import('./user-pull.service')
+        .then(({ createUserPullService }) =>
+          createUserPullService({
+            baseUrl: config.baseUrl,
+            accessToken: response.accessToken,
+          }).pullUserIdentities(),
+        )
+        .catch(() => { /* non-fatal */ });
 
       return session;
     },

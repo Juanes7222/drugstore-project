@@ -23,7 +23,15 @@ export {
   FirebaseNotConfiguredException,
   GoogleAccountCollisionException,
   InvalidFirebaseTokenException,
+  UserPullHttpException,
 } from './exceptions';
+
+export {
+  createUserPullService,
+  UserPullService,
+  type UserPullConfig,
+  type LoginIdentityRow,
+} from './user-pull.service';
 
 // Auth guards
 export {

@@ -181,7 +181,14 @@ export function useLoginPage(): UseLoginPageReturn {
   // Local PGlite users for the avatar grid.
   const [localUsers, setLocalUsers] = useState<LocalUserInfo[]>([]);
 
-  /** On mount: load locally-cached users for the avatar grid. */
+  /**
+   * On mount: load locally-cached users for the avatar grid.
+   *
+   * No server fetch happens here on purpose: `GET /users/login-identities`
+   * requires a JWT, so the grid can only reflect the last synced mirror
+   * until someone logs in. The mirror is refreshed post-login by the sync
+   * scheduler and by the opportunistic pull in `auth.service`.
+   */
   const usersLoadedRef = useRef(false);
   useEffect(() => {
     if (usersLoadedRef.current) return;
