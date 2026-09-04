@@ -13,13 +13,16 @@ import type { MergeResult, RejectedOperation } from './types';
 /**
  * Merge local and remote operation queues.
  *
- * The hub calls this when it receives a push from a peer. The algorithm:
+ * First-write-wins per entity: the operation that arrived earliest (by
+ * sourceCreatedAt) is accepted; later operations targeting the same entity
+ * are rejected. Ties break by workstation ID (deterministic).
  *
- * 1. Group operations by entity (operationType + payload identity).
- * 2. For each group, apply first-write-wins: the operation that arrived
- *    earliest (by sourceCreatedAt) is accepted; later operations targeting
- *    the same entity are rejected.
- * 3. Ties are broken by workstation ID (deterministic).
+ * The live hub enforces the same rule in Rust (`entity_key()` +
+ * `check_for_conflict_stored()` in `src-tauri/src/local_sync_server.rs`)
+ * so peers get immediate first-write-wins feedback at push time; this
+ * TypeScript merge is the reference implementation and the fallback for
+ * any client-side reconciliation. Keep the entity-identity lookup order
+ * identical on both sides.
  *
  * @param local - Operations already held by the hub.
  * @param incoming - Operations being pushed by the peer.
@@ -110,19 +113,125 @@ export function mergeLocalOperations(
 /**
  * Build an entity key from an operation for conflict detection.
  *
- * Two operations conflict if they have the same operationType AND
- * target the same logical entity. The entity is identified by parsing
- * the payload (which contains entity identifiers).
+ * Two operations conflict if they have the same operationType AND target the
+ * same logical entity. The entity is identified by extracting the entity
+ * identifier from the payload — NEVER by payloadHash alone, which is a hash
+ * of the full content: two adjustments to the same lot with different
+ * quantities have different hashes but target the same entity and must
+ * conflict, while a replay of the same bytes carries the same
+ * operationUuid and is deduped before ever reaching this check.
+ *
+ * The Rust hub mirrors this lookup order in `entity_key()`
+ * (`src-tauri/src/local_sync_server.rs`) — keep both in sync. Unknown
+ * shapes fall back to `hash:<payloadHash>` (conservative: only byte-equal
+ * payloads collide).
  */
 function entityKey(op: LocalOperation): string {
-  // Use operationType + payloadHash as the conflict key.
-  // payloadHash is a hash of the payload content that identifies
-  // the target entity + the specific change.
-  //
-  // For operations that don't target the same entity (e.g., two
-  // sales of different products), the payloadHash differs and they
-  // are not considered conflicting.
-  return `${op.operationType}::${op.payloadHash}`;
+  return `${op.operationType}::${entityIdentity(op) ?? `hash:${op.payloadHash}`}`;
+}
+
+/**
+ * Extract the target-entity identifier from an operation payload.
+ * Returns null when the payload carries no recognizable entity id.
+ */
+export function entityIdentity(op: LocalOperation): string | null {
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(op.payload) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  const metadata =
+    payload.metadata as Record<string, unknown> | undefined;
+  const str = (value: unknown): string | null =>
+    typeof value === 'string' && value.length > 0 ? value : null;
+  const num = (value: unknown): string | null =>
+    typeof value === 'number' || typeof value === 'string'
+      ? String(value)
+      : null;
+
+  switch (op.operationType) {
+    case 'SALE_CONFIRMATION':
+      return (
+        str(metadata?.localSaleId) ??
+        num(metadata?.localNumber) ??
+        str(payload.localSaleId)
+      );
+    case 'SHIFT_OPEN':
+    case 'SHIFT_CLOSURE':
+      return (
+        str(payload.cashShiftId) ?? str(metadata?.cashShiftId)
+      );
+    case 'PRODUCT_CREATION':
+    case 'PRODUCT_UPDATE': {
+      const dto = (payload.createProductDto ??
+        payload.updateProductDto) as Record<string, unknown> | undefined;
+      return (
+        str(metadata?.productId) ??
+        str(dto?.internalCode) ??
+        str(dto?.id)
+      );
+    }
+    case 'CLIENT_CREATION':
+    case 'CLIENT_UPDATE': {
+      const dto = (payload.createClientDto ??
+        payload.updateClientDto) as Record<string, unknown> | undefined;
+      return (
+        str(metadata?.clientId) ??
+        str(dto?.identificationNumber) ??
+        str(dto?.fullName) ??
+        str(dto?.id)
+      );
+    }
+    case 'CLIENT_DEACTIVATE': {
+      const dto = payload.deactivateClientDto as
+        | Record<string, unknown>
+        | undefined;
+      return str(dto?.clientId) ?? str(payload.clientId);
+    }
+    case 'INVENTORY_ADJUSTMENT':
+      return (
+        str(payload.lotId) ??
+        str(metadata?.adjustmentId) ??
+        str(payload.adjustmentId)
+      );
+    case 'CLIENT_RETURN':
+      return (
+        num(payload.sequentialNumber) ??
+        num(payload.receiptNumber) ??
+        str(payload.returnId)
+      );
+    case 'CLIENT_CREDIT_PAYMENT':
+    case 'CLIENT_CREDIT_PAYMENT_ANNULMENT':
+      return (
+        num(payload.sequentialNumber) ?? str(payload.paymentId)
+      );
+    case 'PRESCRIPTION_REGISTRATION':
+      return (
+        str(payload.prescriptionNumber) ?? str(payload.prescriptionId)
+      );
+    case 'INVOICE_TRANSMISSION':
+    case 'INVOICE_TRANSMISSION_RESULT':
+    case 'INVOICE_ADJUSTMENT':
+    case 'FISCAL_DOCUMENT_SYNC':
+      return (
+        str(payload.invoiceNumber) ??
+        str(payload.invoiceId) ??
+        str(metadata?.localSaleId)
+      );
+    case 'PURCHASE_ORDER_CONFIRMATION':
+    case 'PURCHASE_RECEPTION_CONFIRMATION':
+    case 'SUPPLIER_RETURN_CONFIRMATION':
+      return num(payload.sequentialNumber) ?? str(payload.orderId);
+    case 'RESOLUTION_ALLOCATION':
+      return str(payload.resolutionId) ?? str(payload.prefix);
+    case 'AUDIT_LOG_BATCH':
+      // Audit batches are append-only bookkeeping, never entity mutations:
+      // each batch is unique by definition and must never conflict.
+      return `batch:${op.operationUuid}`;
+    default:
+      return null;
+  }
 }
 
 /**

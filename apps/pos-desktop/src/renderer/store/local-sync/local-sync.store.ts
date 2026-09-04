@@ -21,6 +21,7 @@ import {
 } from '../../services/local-sync/local-sync.service';
 import type { ConflictInfo } from '../../services/local-sync/local-sync.service';
 import type { LocalSyncCycleResult } from '../../../domain/local-sync/local-sync-engine.service';
+import { getLocalSyncEngine } from '../../../domain/local-sync/local-sync-engine-holder';
 
 export interface LocalSyncState {
   /** List of discovered LAN workstations. */
@@ -39,6 +40,13 @@ export interface LocalSyncState {
   lastSyncAt: string | null;
   /** Last sync error message. */
   lastSyncError: string | null;
+  /**
+   * Outcome of the last automatic LAN relay cycle (`ok`, `skipped-no-hub`,
+   * `skipped-backoff`, `error`, or null before the first cycle). Untouched
+   * by status polls so the UI can render sticky states like backoff without
+   * flicker. The page maps it to the LanHubCard `isBackoff` prop.
+   */
+  lastCycleOutcome: LocalSyncCycleResult['outcome'] | null;
   /** Hub scores for all peers. */
   hubScores: HubScore[];
   /** Recent sync conflicts. */
@@ -93,6 +101,7 @@ const initialState: LocalSyncState = {
   isEnabled: true,
   isInitialized: false,
   isLoading: false,
+  lastCycleOutcome: null,
 };
 
 export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
@@ -195,7 +204,17 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
   async forceSync() {
     try {
       set({ isLoading: true });
-      await service.forceSync();
+      // Drive the startup engine's full push+pull cycle when available —
+      // that is the real LAN sync. The Rust `force_local_sync` command only
+      // pulls (it cannot read the PGlite outbox), so it runs as a
+      // complement, never as the whole story.
+      const engine = getLocalSyncEngine();
+      if (engine) {
+        const result = await engine.runCycle();
+        get().applyCycleResult(result);
+      } else {
+        await service.forceSync();
+      }
       await get().refreshStatus();
     } catch (error) {
       set({
@@ -244,21 +263,41 @@ export const useLocalSyncStore = create<LocalSyncStore>((set, get) => ({
   },
 
   applyCycleResult(result: LocalSyncCycleResult) {
-    if (result.outcome === 'ok') {
+    if (result.outcome === 'ok') {      // Prefer the engine's real post-cycle count over decrementing a
+      // possibly-stale counter: the Rust status counters are informational
+      // (always zero) and retries make subtraction drift.
+      const pendingPushCount =
+        result.pendingNotRelayed ?? Math.max(0, get().pendingPushCount - result.pushedToHub);
+      // A duplicated workstation ID silently drops a peer's operations —
+      // surface it loudly until the operator fixes the identity.
+      // English code-style message (UI translates via i18n key
+      // `sync.duplicate_workstation_id`, see frontend-pos follow-up).
+      const identityError =
+        (result.identityCollisions ?? 0) > 0
+          ? `DUPLICATE_WORKSTATION_ID:${result.identityCollisions}`
+          : null;
       set({
         lastSyncAt: result.ranAt,
-        lastSyncError: null,
-        pendingPushCount: get().pendingPushCount - result.pushedToHub > 0
-          ? get().pendingPushCount - result.pushedToHub
-          : 0,
+        lastSyncError: identityError,
+        pendingPushCount,
+        lastCycleOutcome: result.outcome,
       });
       return;
     }
 
     if (result.outcome === 'error') {
-      set({ lastSyncError: result.errorMessage ?? 'LAN sync cycle failed' });
+      set({
+        lastSyncError: result.errorMessage ?? 'LAN sync cycle failed',
+        lastCycleOutcome: result.outcome,
+      });
+      return;
     }
-    // 'skipped-no-hub' leaves the current state untouched: not having a hub
+    // 'skipped-no-hub' leaves the error untouched: not having a hub
     // is a normal state for a single-terminal store, not an error.
+    // 'skipped-backoff' likewise: the hub asked us to wait and the next
+    // scheduled cycle retries on its own — no operator action needed.
+    // Both still record the outcome so the UI can render the backoff
+    // waiting state without flicker.
+    set({ lastCycleOutcome: result.outcome });
   },
 }));

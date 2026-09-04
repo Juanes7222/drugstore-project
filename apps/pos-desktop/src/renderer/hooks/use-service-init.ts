@@ -57,7 +57,8 @@ import { createUpdateService } from '../../domain/updates/update.service';
 import type { UpdateService, UpdateServiceConfig } from '../../domain/updates/update.service';
 import { createLocalSyncEngine } from '../../domain/local-sync/local-sync-engine.service';
 import type { LocalSyncEngine } from '../../domain/local-sync/local-sync-engine.service';
-import { setPushTrigger } from '../../domain/sync/sync-queue-notifier';
+import { setLocalSyncEngine, getLocalSyncEngine } from '../../domain/local-sync/local-sync-engine-holder';
+import { setPushTrigger, removePushTrigger } from '../../domain/sync/sync-queue-notifier';
 import type { PrintPayloadType, DiscoveredPrinter } from '../../domain/printing/printing-types';
 import type { ServerPrintConfig } from '../../domain/printing/print-router';
 
@@ -191,6 +192,17 @@ export interface UseServiceInitOptions {
 
 /** Suppress duplicate fiscal dev-warn when two callers race. */
 const fiscalWarnedWorkstations = new Set<string>();
+
+/**
+ * The LAN immediate-sync trigger registered by the latest
+ * `initializeServices()` run, plus the engine it belongs to. Tracked so
+ * `shutdownServices` unregisters exactly its own trigger: React StrictMode
+ * mounts this initializer twice in dev, and blindly clearing all triggers
+ * (or evicting a newer bundle's trigger from a stale late init) would
+ * break the live engine.
+ */
+let activeLanTrigger: (() => void) | null = null;
+let activeLanTriggerOwner: LocalSyncEngine | null = null;
 
 // ---------------------------------------------------------------------------
 // Initialiser (pure async — testable without React)
@@ -502,9 +514,24 @@ export async function initializeServices(
     },
   });
   localSyncEngine.start();
+  // Registered for UI-triggered cycles (sync-health, local-network page)
+  // so manual actions drive THIS engine instead of an ad-hoc replacement.
+  setLocalSyncEngine(localSyncEngine);
+  // Only one live bundle should own the LAN trigger at a time under the
+  // normal mount → cleanup → remount order (StrictMode): the cleanup of the
+  // discarded bundle removes its trigger via shutdownServices, so a fresh
+  // init normally finds none. If a STALE late init lands after a newer
+  // bundle registered (async out-of-order completion), it must NOT evict
+  // the live trigger — its own hook cleanup shuts the whole stale bundle
+  // down right after, removing only its own trigger (see owner tracking).
+  const lanTrigger = (): void => {
+    localSyncEngine.triggerImmediateSync();
+  };
+  activeLanTrigger = lanTrigger;
+  activeLanTriggerOwner = localSyncEngine;
   // Make sales (and any other SyncQueue writer) trigger LAN sync
   // within 500 ms instead of waiting for the next 3s poll tick.
-  setPushTrigger(() => localSyncEngine.triggerImmediateSync());
+  setPushTrigger(lanTrigger);
 
   // Flatten into the services interface consumers expect
   return {
@@ -558,9 +585,65 @@ export async function initializeServices(
   };
 }
 
+/**
+ * Tear down a `Services` bundle created by `initializeServices()`.
+ *
+ * Stops every background loop the bundle owns (LAN relay engine, internet
+ * sync scheduler, update telemetry, printer health) and unregisters its
+ * notifier triggers, so a discarded bundle — React StrictMode double-mount
+ * in dev, tests, or a future re-login re-init — goes fully silent instead
+ * of firing orphan pushes on every SyncQueue write. The scheduler's own
+ * `stop()` already unregisters its auto-push trigger; the LAN trigger is
+ * removed here only when it still belongs to this bundle.
+ *
+ * Never throws: teardown runs on unmount paths where an exception would
+ * only mask the original error.
+ */
+export function shutdownServices(services: Services): void {
+  try {
+    services.localSyncEngine.stop();
+  } catch {
+    // Already stopped or never started — nothing to do.
+  }
+  try {
+    services.syncScheduler.stop();
+  } catch {
+    // Already stopped — nothing to do.
+  }
+  try {
+    services.updateService.stopTelemetryFlush();
+  } catch {
+    // Telemetry never started — nothing to do.
+  }
+  try {
+    services.printerHealthService.stop();
+  } catch {
+    // Health loop never started — nothing to do.
+  }
+  if (getLocalSyncEngine() === services.localSyncEngine) {
+    setLocalSyncEngine(null);
+  }
+  if (
+    activeLanTriggerOwner === services.localSyncEngine &&
+    activeLanTrigger !== null
+  ) {
+    removePushTrigger(activeLanTrigger);
+    activeLanTrigger = null;
+    activeLanTriggerOwner = null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // React hook
 // ---------------------------------------------------------------------------
+
+/**
+ * Monotonic init generation. React StrictMode mounts this hook twice
+ * (mount → cleanup → mount) while both async inits race: the generation
+ * lets a late-completing stale init recognize itself and shut its bundle
+ * down instead of leaving a second live engine/scheduler behind.
+ */
+let initGeneration = 0;
 
 /**
  * React hook that calls `initializeServices()` on mount and manages the
@@ -572,17 +655,25 @@ export function useServiceInit(options: UseServiceInitOptions = {}): InitState {
 
   useEffect(() => {
     let cancelled = false;
+    let created: Services | null = null;
+    const generation = ++initGeneration;
 
     (async () => {
       try {
         const services = await initializeServices({ apiBaseUrl });
-        if (!cancelled) {
-          setInitState({ status: 'ready', services });
+        created = services;
+        // A superseded init (unmounted, or outrun by a newer generation)
+        // must not go live: shut its bundle down so no orphan engine,
+        // scheduler, telemetry, or trigger survives.
+        if (cancelled || generation !== initGeneration) {
+          shutdownServices(services);
+          return;
         }
+        setInitState({ status: 'ready', services });
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled && generation === initGeneration) {
           const normalized = err instanceof Error ? err : new Error(String(err));
-          // Log to console for debugging — this catch previously masked the
+          // Log to console for debugging - this catch previously masked the
           // error from DevTools while displaying it on screen via ServiceErrorPanel.
           console.error('[use-service-init] Service initialization failed:', normalized);
           setInitState({ status: 'error', error: normalized });
@@ -592,6 +683,10 @@ export function useServiceInit(options: UseServiceInitOptions = {}): InitState {
 
     return () => {
       cancelled = true;
+      if (created !== null) {
+        shutdownServices(created);
+        created = null;
+      }
     };
   }, [apiBaseUrl]);
 

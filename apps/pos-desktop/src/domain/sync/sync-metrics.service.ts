@@ -29,6 +29,15 @@ export interface QueueCounts {
   pendingNotRelayed: number;
   /** LAN-replicated entries in last 5 minutes — for the Hub activity card. */
   lanRelayedLast5Min: number;
+  /**
+   * PENDING business operations (excludes AUDIT_LOG_BATCH). This is the
+   * headline "movimientos por sincronizar": audit batches are sync
+   * bookkeeping produced BY the sync itself, so counting them alongside
+   * sales/returns makes every cycle look like it creates work.
+   */
+  pendingActionable: number;
+  /** PENDING audit batches — sync bookkeeping, shown separately. */
+  auditPending: number;
 }
 
 export interface FailureBreakdownEntry {
@@ -143,6 +152,8 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
       pendingLanRelayed,
       pendingNotRelayed,
       lanRelayedLast5Min,
+      pendingActionable,
+      auditPending,
     ] = await Promise.all([
       this.prisma.syncQueue.count({ where: { status: 'PENDING' } }),
       this.prisma.syncQueue.count({
@@ -161,6 +172,12 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
           lanRelayedAt: { gte: fiveMinutesAgo },
         },
       }),
+      this.prisma.syncQueue.count({
+        where: { status: 'PENDING', operationType: { not: 'AUDIT_LOG_BATCH' } },
+      }),
+      this.prisma.syncQueue.count({
+        where: { status: 'PENDING', operationType: 'AUDIT_LOG_BATCH' },
+      }),
     ]);
 
     return {
@@ -173,6 +190,8 @@ class SyncMetricsServiceImpl implements SyncMetricsService {
       pendingLanRelayed,
       pendingNotRelayed,
       lanRelayedLast5Min,
+      pendingActionable,
+      auditPending,
     };
   }
 

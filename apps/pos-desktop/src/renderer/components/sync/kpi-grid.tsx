@@ -6,6 +6,11 @@
  * tiles. Uses design-system tokens for colours and shared ui/icons components.
  * The Last Backup tile is clickable. The Pending tile is LAN-aware.
  *
+ * The headline pending tile shows actionable business moves
+ * (`pendingActionable`, excluding AUDIT_LOG_BATCH bookkeeping) while the
+ * audit backlog (`auditPending`) renders as a muted subordinate line below
+ * the LAN detail — never mixed into the headline count.
+ *
  * @category Component
  */
 
@@ -36,6 +41,8 @@ interface TileDef {
   subLabel?: string;
   /** Optional class for the subLabel — e.g. to show success green. */
   subLabelClass?: string;
+  /** Muted second line under subLabel — audit backlog, never a headline. */
+  secondarySubLabel?: string;
   onClick?: () => void;
   testId?: string;
 }
@@ -71,7 +78,11 @@ export const KpiGrid: FC<KpiGridProps> = ({
         : "text-ink-muted";
 
   // ── LAN-aware pending tile derivation ────────────────────────────────
+  // Headline = actionable business moves only (audit batches excluded).
+  // Falls back to raw pending for queue snapshots predating the split.
   const pending = counts?.pending;
+  const pendingActionable = counts?.pendingActionable ?? pending;
+  const auditPending = counts?.auditPending ?? 0;
   const pendingLanRelayed = counts?.pendingLanRelayed;
   const pendingNotRelayed = counts?.pendingNotRelayed;
 
@@ -109,15 +120,29 @@ export const KpiGrid: FC<KpiGridProps> = ({
     }
   }
 
+  // Audit backlog stays subordinate: muted caption under the LAN detail,
+  // hidden when zero so the tile keeps a single call-to-action line.
+  let auditSubLabel: string | undefined;
+  if (counts != null && auditPending > 0) {
+    auditSubLabel = t("sync.audit_pending_label", {
+      count: auditPending,
+      defaultValue: `Incluye ${auditPending} de auditoría`,
+    });
+    if (auditSubLabel === "sync.audit_pending_label") {
+      auditSubLabel = `Incluye ${auditPending} de auditoría`;
+    }
+  }
+
   const tiles: TileDef[] = [
     {
-      labelKey: "sync.kpi_pending",
-      value: counts?.pending.toLocaleString() ?? "\u2014",
+      labelKey: "sync.pending_actionable_label",
+      value: pendingActionable?.toLocaleString() ?? "—",
       borderClass: "border-l-warning",
       iconColor: "text-warning",
       icon: TILE_ICONS.pending,
       subLabel: pendingSubLabel,
       subLabelClass: pendingSubLabelClass,
+      secondarySubLabel: auditSubLabel,
       testId: "kpi-pending",
     },
     {
@@ -204,6 +229,14 @@ export const KpiGrid: FC<KpiGridProps> = ({
                   data-testid={tile.testId ? `${tile.testId}-sublabel` : undefined}
                 >
                   {tile.subLabel}
+                </span>
+              )}
+              {tile.secondarySubLabel && (
+                <span
+                  className="text-caption tabular-nums text-ink-muted"
+                  data-testid={tile.testId ? `${tile.testId}-audit` : undefined}
+                >
+                  {tile.secondarySubLabel}
                 </span>
               )}
             </Comp>

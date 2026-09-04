@@ -1,10 +1,16 @@
 /**
  * Card showing Hub LAN status for the Sync Health dashboard.
  *
- * Presentational only — receives all values via props. Three visual states:
+ * Presentational only — receives all values via props. Five visual states:
  *  - connected → green dot + hub identity + address
  *  - no hub    → amber dot + single-store hint
  *  - disconnected/error → red dot + lastSyncError
+ *  - backoff   → calm Sync Slate + waiting message (hub known, Rust asked
+ *    us to pause after repeated failures; the next cycle retries alone —
+ *    never error red, never an operator action)
+ *  - duplicate → hard Urgency Amber warning + translated
+ *    `DUPLICATE_WORKSTATION_ID:<n>` message (another terminal shares this
+ *    station ID, N moves skipped — operator must assign a unique ID)
  *
  * Second line always shows LAN relay activity (last 5 min) plus
  * pendingNotRelayed context.
@@ -15,7 +21,7 @@
 import type { FC } from "react";
 import { useTranslation } from "react-i18next";
 import { motion } from "motion/react";
-import { NetworkIcon, RadioIcon, WifiIcon, WifiOffIcon } from "@/components/ui/icons";
+import { AlertTriangleIcon, ClockIcon, NetworkIcon, RadioIcon, WifiIcon, WifiOffIcon } from "@/components/ui/icons";
 import type { HubInfo, LocalSyncConnectionStatus } from "@pharmacy/shared-types";
 
 // ---------------------------------------------------------------------------
@@ -41,6 +47,14 @@ export interface LanHubCardProps {
   lastSyncError?: string | null;
   /** Number of discovered peers on the LAN. */
   peersCount?: number;
+  /**
+   * True while the LAN engine reports `skipped-backoff` (hub known but the
+   * Rust side asked us to wait; the next scheduled cycle retries alone).
+   * Optional so existing callers keep working — defaults to false. The card
+   * also recognises a literal `"skipped-backoff"` lastSyncError as the same
+   * signal, in case a future wiring surfaces the outcome that way.
+   */
+  isBackoff?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +70,27 @@ function formatLastSync(iso: string | null): string | null {
   }
 }
 
+/**
+ * Code-style store error for a duplicated workstation identity:
+ * `DUPLICATE_WORKSTATION_ID:<n>`. Returns the skipped-moves count, or null
+ * when the error is anything else. The raw code is never shown — the card
+ * renders `sync.duplicate_workstation_id` instead.
+ */
+const DUPLICATE_WORKSTATION_RE = /^DUPLICATE_WORKSTATION_ID:(\d+)\s*$/;
+
+function parseDuplicateWorkstationId(error: string | null | undefined): number | null {
+  if (!error) return null;
+  const match = error.trim().match(DUPLICATE_WORKSTATION_RE);
+  if (!match) return null;
+  const count = Number.parseInt(match[1] ?? "", 10);
+  return Number.isSafeInteger(count) ? count : null;
+}
+
+/** Literal outcome string treated as a backoff signal (see `isBackoff`). */
+function isBackoffSignal(error: string | null | undefined): boolean {
+  return (error ?? "").trim().toLowerCase() === "skipped-backoff";
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -67,6 +102,7 @@ export const LanHubCard: FC<LanHubCardProps> = ({
   lastSyncAt,
   lastSyncError,
   peersCount = 0,
+  isBackoff = false,
 }) => {
   const { t } = useTranslation();
 
@@ -74,10 +110,19 @@ export const LanHubCard: FC<LanHubCardProps> = ({
   const isConnected = hasHub && status === "CONNECTED";
   const isReconnecting = hasHub && status === "RECONNECTING";
 
+  // Hard warning first: a duplicated station ID silently drops a peer's
+  // operations, so it outranks every other state until fixed.
+  const duplicateCount = parseDuplicateWorkstationId(lastSyncError);
+  // Calm waiting state: hub known, Rust backoff active, retry is automatic.
+  const backoffActive =
+    hasHub && duplicateCount == null && (isBackoff || isBackoffSignal(lastSyncError));
+
   // Derive visual variant
-  type Variant = "connected" | "no-hub" | "disconnected" | "reconnecting";
+  type Variant = "connected" | "no-hub" | "disconnected" | "reconnecting" | "backoff" | "duplicate";
   let variant: Variant;
-  if (!hasHub) variant = "no-hub";
+  if (duplicateCount != null) variant = "duplicate";
+  else if (!hasHub) variant = "no-hub";
+  else if (backoffActive) variant = "backoff";
   else if (isConnected) variant = "connected";
   else if (isReconnecting) variant = "reconnecting";
   else variant = "disconnected";
@@ -114,6 +159,20 @@ export const LanHubCard: FC<LanHubCardProps> = ({
       icon: RadioIcon,
       iconColor: "text-warning",
     },
+    backoff: {
+      borderClass: "border-l-sync",
+      dotClass: "bg-sync",
+      dotAnimate: false,
+      icon: ClockIcon,
+      iconColor: "text-sync",
+    },
+    duplicate: {
+      borderClass: "border-l-warning",
+      dotClass: "bg-warning",
+      dotAnimate: false,
+      icon: AlertTriangleIcon,
+      iconColor: "text-warning",
+    },
   };
 
   const cfg = variantConfig[variant];
@@ -121,8 +180,28 @@ export const LanHubCard: FC<LanHubCardProps> = ({
 
   // Hub identity line
   let primaryLine: string;
-  if (!hasHub) {
+  if (duplicateCount != null) {
+    if (hasHub) {
+      // Neutral identity only — the warning block below carries the message,
+      // so this line never claims a connection state it cannot prove.
+      const hubLabel = currentHub.friendlyName || currentHub.workstationId;
+      const addr = `${currentHub.ipAddress}:${currentHub.port}`;
+      primaryLine = `Hub: ${hubLabel} — ${addr}`;
+    } else {
+      primaryLine = t("sync.lan_no_hub");
+    }
+  } else if (!hasHub) {
     primaryLine = t("sync.lan_no_hub");
+  } else if (variant === "backoff") {
+    const hubLabel = currentHub.friendlyName || currentHub.workstationId;
+    const addr = `${currentHub.ipAddress}:${currentHub.port}`;
+    let waiting = t("sync.lan_backoff_waiting", {
+      defaultValue: "En espera — reintento automático",
+    });
+    if (waiting === "sync.lan_backoff_waiting") {
+      waiting = "En espera — reintento automático";
+    }
+    primaryLine = `Hub: ${hubLabel} — ${addr} • ${waiting}`;
   } else if (variant === "disconnected" || variant === "reconnecting") {
     const hubLabel = currentHub.friendlyName || currentHub.workstationId;
     const addr = `${currentHub.ipAddress}:${currentHub.port}`;
@@ -144,6 +223,18 @@ export const LanHubCard: FC<LanHubCardProps> = ({
   }
 
   const lastSyncFormatted = formatLastSync(lastSyncAt);
+
+  // Translated duplicate-identity warning (raw code is never rendered).
+  let duplicateMessage: string | undefined;
+  if (duplicateCount != null) {
+    duplicateMessage = t("sync.duplicate_workstation_id", {
+      count: duplicateCount,
+      defaultValue: `ID de estación duplicado: otro terminal usa este mismo ID. Se omitieron ${duplicateCount} movimientos — asigne un ID de estación único a cada terminal.`,
+    });
+    if (duplicateMessage === "sync.duplicate_workstation_id") {
+      duplicateMessage = `ID de estación duplicado: otro terminal usa este mismo ID. Se omitieron ${duplicateCount} movimientos — asigne un ID de estación único a cada terminal.`;
+    }
+  }
 
   return (
     <motion.div
@@ -178,15 +269,26 @@ export const LanHubCard: FC<LanHubCardProps> = ({
             {primaryLine}
           </p>
 
+          {/* Duplicate workstation ID — hard warning, never the raw code */}
+          {duplicateMessage != null && (
+            <p
+              role="alert"
+              className="mt-1 text-caption font-medium leading-relaxed text-ink"
+              data-testid="lan-hub-duplicate"
+            >
+              {duplicateMessage}
+            </p>
+          )}
+
           {/* No-hub hint */}
-          {!hasHub && (
+          {!hasHub && duplicateCount == null && (
             <p className="mt-0.5 text-caption text-ink-muted">
               {t("sync.lan_no_hub_hint")}
             </p>
           )}
 
           {/* Error line when disconnected */}
-          {hasHub && variant === "disconnected" && lastSyncError && (
+          {hasHub && variant === "disconnected" && duplicateCount == null && lastSyncError && !isBackoffSignal(lastSyncError) && (
             <p
               className="mt-1 truncate text-caption text-error"
               title={lastSyncError}

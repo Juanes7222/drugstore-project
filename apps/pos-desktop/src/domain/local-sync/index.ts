@@ -6,7 +6,7 @@
  */
 
 export { isValidPeer, type PeerValidationResult } from './peer-validation';
-export { mergeLocalOperations } from './operation-merge';
+export { mergeLocalOperations, entityIdentity } from './operation-merge';
 export {
   electHub,
   computeHubScore,
@@ -19,6 +19,10 @@ export {
   type LocalSyncEngineConfig,
   type LocalSyncCycleResult,
 } from './local-sync-engine.service';
+export {
+  setLocalSyncEngine,
+  getLocalSyncEngine,
+} from './local-sync-engine-holder';
 
 export type {
   LocalSyncConfig,

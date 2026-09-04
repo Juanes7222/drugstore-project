@@ -13,6 +13,7 @@
 import {
   type FC,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -45,6 +46,8 @@ import { downloadBlob } from "../../../common/download";
 import { useTranslation } from "react-i18next";
 import { useSyncIntegrityStore } from "../../../domain/sync/sync-integrity.store";
 import { useLocalSyncStore } from "../../store/local-sync/local-sync.store";
+import { ServiceContext } from "../common/service-context";
+import { getLocalSyncEngine } from "../../../domain/local-sync/local-sync-engine-holder";
 
 // ── Presentational components (provided by frontend-pos) ────────────────
 import type { ConnectionStatus, SortField, SortDir } from "./sync-health.types";
@@ -104,6 +107,12 @@ export const SyncHealthPage: FC = () => {
   const lanPeers = useLocalSyncStore((s) => s.peers);
   const lanLastSyncAt = useLocalSyncStore((s) => s.lastSyncAt);
   const lanLastSyncError = useLocalSyncStore((s) => s.lastSyncError);
+  const lanLastCycleOutcome = useLocalSyncStore((s) => s.lastCycleOutcome);
+
+  // Startup-wired services (null outside <ServiceProvider>, e.g. isolated
+  // tests). Manual actions prefer these over ad-hoc replacements so the LAN
+  // cycle and the cloud push run with the real configuration.
+  const startupServices = useContext(ServiceContext);
 
   const servicesRef = useRef<{
     metricsService: ReturnType<typeof createSyncMetricsService> | null;
@@ -267,27 +276,70 @@ export const SyncHealthPage: FC = () => {
   // ── Entry actions ────────────────────────────────────────────────────
 
   /**
-   * Force one immediate push cycle so a freshly requeued entry is attempted
-   * right away instead of waiting for the next scheduled tick.
+   * Manual sync trigger — drives BOTH channels with the startup-wired
+   * instances and reports each one separately:
+   *
+   * 1. **LAN relay** (`LocalSyncEngine.runCycle`): push un-relayed entries
+   *    to the elected hub + adopt peers' operations. This is the channel
+   *    that works without internet.
+   * 2. **Cloud push** (`SyncScheduler.syncNow`): full internet cycle.
+   *
+   * Only when no startup services exist (isolated tests) does it fall back
+   * to an ad-hoc scheduler for the cloud half. Either half failing never
+   * blocks the other — the automatic cycles keep retrying on their own.
    */
-  const runPushCycleNow = useCallback(async (): Promise<void> => {
-    const { createSyncScheduler } = await import("../../../domain/sync/sync-scheduler.service");
-    const { prisma: rawPrisma } = await getLocalDatabase();
-    const prisma = rawPrisma as PrismaClient;
-    const session = useLocalSessionStore.getState().session;
-    const accessToken = session?.accessToken;
-    const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
-    const scheduler = createSyncScheduler({
-      prisma,
-      baseUrl,
-      accessToken,
-      config: { baseUrl, accessToken },
-      catalog: { baseUrl, accessToken },
-      lots: { baseUrl, accessToken },
-      clients: { baseUrl, accessToken },
-    });
-    await scheduler.syncNow();
-  }, []);
+  const runPushCycleNow = useCallback(async (): Promise<{
+    lanOutcome: string;
+    pushedToHub: number;
+    adoptedFromHub: number;
+    cloudRan: boolean;
+  }> => {
+    const engine =
+      getLocalSyncEngine() ?? startupServices?.localSyncEngine ?? null;
+    let lanOutcome = 'skipped-no-engine';
+    let pushedToHub = 0;
+    let adoptedFromHub = 0;
+    if (engine) {
+      const lan = await engine.runCycle();
+      lanOutcome = lan.outcome;
+      pushedToHub = lan.pushedToHub;
+      adoptedFromHub = lan.adoptedFromHub;
+      if (lan.outcome === 'error') {
+        throw new Error(
+          `LAN relay failed: ${lan.errorMessage ?? 'unknown error'}`,
+        );
+      }
+    }
+
+    let cloudRan = false;
+    const scheduler = startupServices?.syncScheduler ?? null;
+    if (scheduler) {
+      await scheduler.syncNow();
+      cloudRan = true;
+    } else {
+      // Fallback for contexts without a provider (tests, early boot):
+      // cloud half only, with whatever credentials the session holds.
+      const { createSyncScheduler } = await import("../../../domain/sync/sync-scheduler.service");
+      const { prisma: rawPrisma } = await getLocalDatabase();
+      const prisma = rawPrisma as PrismaClient;
+      const session = useLocalSessionStore.getState().session;
+      const accessToken = session?.accessToken;
+      const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
+      const fallback = createSyncScheduler({
+        prisma,
+        baseUrl,
+        accessToken,
+        config: { baseUrl, accessToken },
+        catalog: { baseUrl, accessToken },
+        lots: { baseUrl, accessToken },
+        clients: { baseUrl, accessToken },
+      });
+      await fallback.syncNow();
+      cloudRan = true;
+    }
+
+    return { lanOutcome, pushedToHub, adoptedFromHub, cloudRan };
+  }, [startupServices]);
 
   const handleRetry = useCallback(
     async (entryId: string) => {
@@ -312,12 +364,16 @@ export const SyncHealthPage: FC = () => {
             ? "Entry queued for retry (payload re-snapshotted from current state)"
             : "Entry queued for retry (original payload preserved)",
         );
-        // Retry now: force an immediate push attempt for the entry. A
+        // Retry now: force an immediate attempt on both channels. A
         // transport failure here is not fatal — the entry stays PENDING
         // for the next cycle — but surface it so the operator knows.
         try {
-          await runPushCycleNow();
-          showToast("success", "Immediate push attempted");
+          const summary = await runPushCycleNow();
+          showToast(
+            "success",
+            `Retry pushed (LAN: ${summary.pushedToHub} relayed, ` +
+              `${summary.adoptedFromHub} adopted · Nube: ciclo ejecutado)`,
+          );
         } catch (pushErr) {
           showToast(
             "info",
@@ -387,8 +443,18 @@ export const SyncHealthPage: FC = () => {
 
   const handleRunSyncNow = useCallback(async () => {
     try {
-      await runPushCycleNow();
-      showToast("success", "Sync cycle completed");
+      const summary = await runPushCycleNow();
+      const lanPart =
+        summary.lanOutcome === 'ok'
+          ? `LAN: ${summary.pushedToHub} al hub, ${summary.adoptedFromHub} adoptadas`
+          : summary.lanOutcome === 'skipped-no-hub'
+            ? 'LAN: sin hub (terminal única o eligiendo hub)'
+            : summary.lanOutcome === 'skipped-backoff'
+              ? 'LAN: hub en pausa tras fallos, reintenta solo'
+              : summary.lanOutcome === 'skipped-no-engine'
+                ? 'LAN: motor no disponible'
+                : `LAN: ${summary.lanOutcome}`;
+      showToast("success", `Sincronización ejecutada — ${lanPart} · Nube: ciclo ejecutado`);
       await loadData();
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Sync cycle failed");
@@ -469,6 +535,7 @@ export const SyncHealthPage: FC = () => {
           lastSyncAt={lanLastSyncAt}
           lastSyncError={lanLastSyncError}
           peersCount={lanPeers.length}
+          isBackoff={lanLastCycleOutcome === "skipped-backoff"}
         />
 
         <ActionBar

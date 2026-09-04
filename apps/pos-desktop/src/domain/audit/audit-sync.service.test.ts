@@ -180,7 +180,7 @@ describe("createAuditSyncService", () => {
       expect(AUDIT_SYNC_BATCH_SIZE * 10).toBe(500);
     });
 
-    it("single batch happy path: creates one SyncQueue entry, watermarks rows, notifies", async () => {
+    it("single batch happy path: creates one SyncQueue entry, watermarks rows, does NOT notify", async () => {
       const rows = [
         makeAuditRow({ id: "audit-1", workstationId: "ws-1" }),
         makeAuditRow({ id: "audit-2", workstationId: null, action: "SALE_CONFIRMED", category: "sale" }),
@@ -235,7 +235,10 @@ describe("createAuditSyncService", () => {
         data: { syncedAt: fixedNow },
       });
 
-      expect(notifyPendingEntry).toHaveBeenCalledTimes(1);
+      // Deliberately does NOT notify: enqueueUnsynced runs at the start of
+      // every push so its output rides the in-flight push; notifying closed
+      // a self-sustaining hot loop (~1 push/sec of pure AUDIT_LOG_BATCH).
+      expect(notifyPendingEntry).not.toHaveBeenCalled();
     });
 
     it("computes correct payloadHash as SHA-256 hex of payload", async () => {
@@ -365,8 +368,8 @@ describe("createAuditSyncService", () => {
       expect(mocks.txSyncQueueCreate.mock.calls[0][0].data.clientSequence).toBe(1n);
       expect(mocks.txSyncQueueCreate.mock.calls[1][0].data.clientSequence).toBe(2n);
 
-      // notify once after all batches, not per batch
-      expect(notifyPendingEntry).toHaveBeenCalledTimes(1);
+      // Deliberately does NOT notify (see above) — not per batch either.
+      expect(notifyPendingEntry).not.toHaveBeenCalled();
 
       // watermarks are split correctly
       expect(mocks.txLocalAuditLogUpdateMany.mock.calls[0][0].where.id.in).toHaveLength(50);
@@ -387,7 +390,7 @@ describe("createAuditSyncService", () => {
       expect(result).toBe(500);
       expect(mocks.$transaction).toHaveBeenCalledTimes(10);
       expect(mocks.txSyncQueueCreate).toHaveBeenCalledTimes(10);
-      expect(notifyPendingEntry).toHaveBeenCalledTimes(1);
+      expect(notifyPendingEntry).not.toHaveBeenCalled();
     });
 
     it("watermark uses syncedAt = now inside transaction (same Date for create and update)", async () => {

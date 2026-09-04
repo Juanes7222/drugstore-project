@@ -57,18 +57,21 @@ function makePrismaMock(overrides: {
   findManyImpl?: ReturnType<typeof vi.fn>;
   updateManyImpl?: ReturnType<typeof vi.fn>;
   createImpl?: ReturnType<typeof vi.fn>;
+  countImpl?: ReturnType<typeof vi.fn>;
 } = {}) {
   const findMany = overrides.findManyImpl ?? vi.fn().mockResolvedValue([]);
   const updateMany = overrides.updateManyImpl ?? vi.fn().mockResolvedValue({ count: 0 });
   const create = overrides.createImpl ?? vi.fn().mockResolvedValue({});
+  const count = overrides.countImpl ?? vi.fn().mockResolvedValue(0);
   const prisma = {
     syncQueue: {
       findMany,
       updateMany,
       create,
+      count,
     },
   } as unknown as import("@pharmacy/database/local").PrismaClient;
-  return { prisma, findMany, updateMany, create };
+  return { prisma, findMany, updateMany, create, count };
 }
 
 function hubStatus(overrides: Partial<{ currentHubAddress: string | null; backoffUntil: string | null }> = {}) {
@@ -102,6 +105,7 @@ describe("createLocalSyncEngine", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvoke.mockReset();
+    localStorage.clear();
     // Default: hub present, nothing to push/pull
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === "get_local_sync_status") return hubStatus();
@@ -165,7 +169,8 @@ describe("createLocalSyncEngine", () => {
 
       const result = await engine.runCycle();
 
-      expect(result.outcome).toBe("skipped-no-hub");
+      expect(result.outcome).toBe("skipped-backoff");
+      expect(result.hubAddress).toBe("192.168.1.10:49500");
       expect(findMany).not.toHaveBeenCalled();
     });
 
@@ -460,6 +465,211 @@ describe("createLocalSyncEngine", () => {
       expect(seq).toBe(BigInt(1700000000000 * 1000 + 0));
 
       nowSpy.mockRestore();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Pull cursor (per hub address)
+  // -------------------------------------------------------------------------
+
+  describe("runCycle — pull cursor", () => {
+    const HUB_CURSOR_EPOCH = "1970-01-01T00:00:00Z";
+
+    function pullSinceValues() {
+      return mockInvoke.mock.calls
+        .filter(([cmd]) => cmd === "pull_from_hub")
+        .map(([, args]) => (args as { since: string }).since);
+    }
+
+    it("starts the first pull from the epoch when no cursor is stored", async () => {
+      const hubAddress = "10.9.0.11:49500";
+      const { prisma } = makePrismaMock();
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_local_sync_status") return hubStatus({ currentHubAddress: hubAddress });
+        if (cmd === "push_to_hub") return { acceptedOperationUuids: [], accepted: 0, rejected: 0, conflicts: [] };
+        if (cmd === "pull_from_hub") return { operations: [], nextSince: "2026-02-01T00:00:00.000Z" };
+        return null as unknown;
+      });
+
+      const engine = createLocalSyncEngine({ prisma, workstationId });
+
+      await engine.runCycle();
+
+      expect(pullSinceValues()).toEqual([HUB_CURSOR_EPOCH]);
+    });
+
+    it("passes the persisted nextSince on the second cycle against the same hub", async () => {
+      const hubAddress = "10.9.0.12:49500";
+      const { prisma } = makePrismaMock();
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_local_sync_status") return hubStatus({ currentHubAddress: hubAddress });
+        if (cmd === "push_to_hub") return { acceptedOperationUuids: [], accepted: 0, rejected: 0, conflicts: [] };
+        if (cmd === "pull_from_hub") return { operations: [], nextSince: "2026-02-01T00:00:00.000Z" };
+        return null as unknown;
+      });
+
+      const engine = createLocalSyncEngine({ prisma, workstationId });
+
+      await engine.runCycle();
+
+      await engine.runCycle();
+
+      expect(pullSinceValues()).toEqual([HUB_CURSOR_EPOCH, "2026-02-01T00:00:00.000Z"]);
+      expect(localStorage.getItem(`lan-pull-cursor:${hubAddress}`)).toBe("2026-02-01T00:00:00.000Z");
+    });
+
+    it("starts from the epoch again after the hub address changes", async () => {
+      const firstHub = "10.9.0.13:49500";
+      const secondHub = "10.9.0.14:49500";
+      const { prisma } = makePrismaMock();
+      let currentHub = firstHub;
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_local_sync_status") return hubStatus({ currentHubAddress: currentHub });
+        if (cmd === "push_to_hub") return { acceptedOperationUuids: [], accepted: 0, rejected: 0, conflicts: [] };
+        if (cmd === "pull_from_hub") return { operations: [], nextSince: "2026-03-01T00:00:00.000Z" };
+        return null as unknown;
+      });
+
+      const engine = createLocalSyncEngine({ prisma, workstationId });
+
+      await engine.runCycle();
+
+      currentHub = secondHub;
+
+      await engine.runCycle();
+
+      expect(pullSinceValues()).toEqual([HUB_CURSOR_EPOCH, HUB_CURSOR_EPOCH]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Identity collisions (duplicate workstationId on the LAN)
+  // -------------------------------------------------------------------------
+
+  describe("runCycle — identity collisions", () => {
+    function collisionPrisma(knownUuids: string[], notRelayed = 0) {
+      const findMany = vi.fn(async (args?: { where?: { operationUuid?: { in?: string[] } } }) => {
+        const wanted = args?.where?.operationUuid?.in;
+        if (Array.isArray(wanted)) {
+          return wanted.filter((uuid) => knownUuids.includes(uuid)).map((operationUuid) => ({ operationUuid }));
+        }
+        return [];
+      });
+      const create = vi.fn().mockResolvedValue({});
+      const count = vi.fn().mockResolvedValue(notRelayed);
+      const { prisma } = makePrismaMock({ findManyImpl: findMany, createImpl: create, countImpl: count });
+      return { prisma, findMany, create, count };
+    }
+
+    it("counts an own-claimed unknown UUID as a collision and skips adopting it", async () => {
+      const { prisma, findMany, create } = collisionPrisma([]);
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_local_sync_status") return hubStatus();
+        if (cmd === "push_to_hub") return { acceptedOperationUuids: [], accepted: 0, rejected: 0, conflicts: [] };
+        if (cmd === "pull_from_hub")
+          return {
+            operations: pullOps(
+              { operationUuid: "uuid-own-unknown", sourceWorkstationId: "ws-1" },
+              { operationUuid: "uuid-foreign-1", sourceWorkstationId: "ws-2" },
+            ),
+            nextSince: new Date().toISOString(),
+          };
+        return null as unknown;
+      });
+
+      const engine = createLocalSyncEngine({ prisma, workstationId: "ws-1" });
+
+      const result = await engine.runCycle();
+
+      expect(result.identityCollisions).toBe(1);
+      expect(result.adoptedFromHub).toBe(1);
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ operationUuid: "uuid-foreign-1" }),
+        }),
+      );
+      expect(findMany).toHaveBeenCalledWith({
+        where: { operationUuid: { in: ["uuid-own-unknown"] } },
+        select: { operationUuid: true },
+      });
+    });
+
+    it("ignores an own-claimed UUID that is already known locally", async () => {
+      const { prisma, create } = collisionPrisma(["uuid-own-known"]);
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_local_sync_status") return hubStatus();
+        if (cmd === "push_to_hub") return { acceptedOperationUuids: [], accepted: 0, rejected: 0, conflicts: [] };
+        if (cmd === "pull_from_hub")
+          return {
+            operations: pullOps(
+              { operationUuid: "uuid-own-known", sourceWorkstationId: "ws-1" },
+              { operationUuid: "uuid-foreign-2", sourceWorkstationId: "ws-2" },
+            ),
+            nextSince: new Date().toISOString(),
+          };
+        return null as unknown;
+      });
+
+      const engine = createLocalSyncEngine({ prisma, workstationId: "ws-1" });
+
+      const result = await engine.runCycle();
+
+      expect(result.identityCollisions).toBe(0);
+      expect(result.adoptedFromHub).toBe(1);
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ operationUuid: "uuid-foreign-2" }),
+        }),
+      );
+    });
+
+    it("skips the collision lookup entirely when no hub row claims our workstationId", async () => {
+      const findMany = vi.fn().mockResolvedValue([]);
+      const create = vi.fn().mockResolvedValue({});
+      const { prisma } = makePrismaMock({ findManyImpl: findMany, createImpl: create });
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_local_sync_status") return hubStatus();
+        if (cmd === "push_to_hub") return { acceptedOperationUuids: [], accepted: 0, rejected: 0, conflicts: [] };
+        if (cmd === "pull_from_hub")
+          return {
+            operations: pullOps({ operationUuid: "uuid-foreign-3", sourceWorkstationId: "ws-2" }),
+            nextSince: new Date().toISOString(),
+          };
+        return null as unknown;
+      });
+
+      const engine = createLocalSyncEngine({ prisma, workstationId: "ws-1" });
+
+      const result = await engine.runCycle();
+
+      expect(result.identityCollisions).toBe(0);
+      expect(result.adoptedFromHub).toBe(1);
+      expect(findMany).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports hubAddress and pendingNotRelayed alongside collisions", async () => {
+      const { prisma } = collisionPrisma([], 4);
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_local_sync_status") return hubStatus();
+        if (cmd === "push_to_hub") return { acceptedOperationUuids: [], accepted: 0, rejected: 0, conflicts: [] };
+        if (cmd === "pull_from_hub")
+          return {
+            operations: pullOps({ operationUuid: "uuid-own-unknown", sourceWorkstationId: "ws-1" }),
+            nextSince: new Date().toISOString(),
+          };
+        return null as unknown;
+      });
+
+      const engine = createLocalSyncEngine({ prisma, workstationId: "ws-1" });
+
+      const result = await engine.runCycle();
+
+      expect(result.outcome).toBe("ok");
+      expect(result.hubAddress).toBe("192.168.1.10:49500");
+      expect(result.pendingNotRelayed).toBe(4);
+      expect(result.identityCollisions).toBe(1);
     });
   });
 

@@ -206,6 +206,7 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
           : { skip: offset }),
         select: {
           id: true,
+          sourceOperationUuid: true,
           localNumber: true,
           startedAt: true,
           confirmedAt: true,
@@ -290,13 +291,20 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
     try {
       const pendingLanItems = await this.fetchPendingLanSalesAsHistoryItems(filters);
       if (pendingLanItems.length > 0) {
-        const existingIds = new Set(items.map((i) => i.saleId));
-        // Also dedup against localSaleId stored in payload metadata
-        const existingLocalSaleIds = new Set(
-          sales.map((s) => s.id),
-        );
+        // A pending LAN item is keyed by origin localSaleId (or the queue
+        // operationUuid for legacy payloads without metadata). It duplicates
+        // a Sale row when the row carries the same id (server preserves the
+        // origin id) or the same sourceOperationUuid (server-assigned id
+        // after replay). One set covers both linkages — a previous revision
+        // built two identical id sets here, so uuid-keyed ghosts were never
+        // filtered and rendered next to their own Sale row.
+        const knownSaleKeys = new Set<string>();
+        for (const s of sales) {
+          knownSaleKeys.add(s.id);
+          if (s.sourceOperationUuid) knownSaleKeys.add(s.sourceOperationUuid);
+        }
         for (const p of pendingLanItems) {
-          if (!existingIds.has(p.saleId) && !existingLocalSaleIds.has(p.saleId)) {
+          if (!knownSaleKeys.has(p.saleId)) {
             items.push(p);
           }
         }

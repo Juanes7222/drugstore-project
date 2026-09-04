@@ -218,6 +218,10 @@ export const useImportService = (): Services['importService'] =>
 export const useSyncSchedulerService = (): Services['syncScheduler'] =>
   useServiceContext().syncScheduler;
 
+/** Convenience hook — returns the LAN relay engine instance. */
+export const useLocalSyncEngineService = (): Services['localSyncEngine'] =>
+  useServiceContext().localSyncEngine;
+
 /** Convenience hook — returns the SuppliersService instance. */
 export const useSuppliersService = (): Services['suppliersService'] =>
   useServiceContext().suppliersService;

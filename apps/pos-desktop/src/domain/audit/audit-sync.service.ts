@@ -22,7 +22,6 @@
  */
 
 import type { PrismaClient } from '@pharmacy/database/local';
-import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 
 /** Max audit rows per SyncQueue entry. Keeps payload well under 64 KB. */
 export const AUDIT_SYNC_BATCH_SIZE = 50;
@@ -37,8 +36,17 @@ export interface AuditSyncService {
    * that creates the queue entry, so a crash before commit never leaves a
    * watermark without a queue entry.
    *
-   * Safe to call with no pending rows — returns 0, creates nothing.
-   * Safe to call concurrently — the `syncedAt IS NULL` filter plus the
+   * Deliberately does NOT notify the push triggers: this method runs at the
+   * start of every push cycle (`SyncScheduler.runPush`), so its output
+   * always rides the push already in flight, and the 15s drain timer covers
+   * the idle case while the outbox is non-empty. Notifying here closed a
+   * self-sustaining hot loop — every push writes a `SYNC_PUSH_COMPLETED`
+   * audit row, which the next enqueue picked up and immediately re-pushed,
+   * producing a permanent ~1 op/sec push cadence of pure bookkeeping that
+   * also flooded the LAN hub buffer across stations.
+   *
+   * Safe to call with no pending rows - returns 0, creates nothing.
+   * Safe to call concurrently - the `syncedAt IS NULL` filter plus the
    * transaction ordering prevents duplicate batches.
    */
   enqueueUnsynced(): Promise<number>;
@@ -90,10 +98,6 @@ class AuditSyncServiceImpl implements AuditSyncService {
       // eslint-disable-next-line no-await-in-loop
       await this.enqueueBatch(batch);
       enqueuedLogs += batch.length;
-    }
-
-    if (enqueuedLogs > 0) {
-      notifyPendingEntry();
     }
 
     return enqueuedLogs;

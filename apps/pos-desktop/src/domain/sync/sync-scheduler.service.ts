@@ -71,7 +71,7 @@ import type { SyncMetricsService } from './sync-metrics.service';
 import { createSyncMetricsService } from './sync-metrics.service';
 import { createBackupService, type BackupService } from '../backup/backup.service';
 import { useSyncAuthStatusStore } from './sync-auth-status.store';
-import { setPushTrigger } from './sync-queue-notifier';
+import { setPushTrigger, removePushTrigger } from './sync-queue-notifier';
 import type { InvoiceService } from '../fiscal/invoice.service';
 import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
 import type { ProductService } from '../catalog/product.service';
@@ -401,9 +401,20 @@ export class SyncScheduler {
 
     // Register the auto-push trigger so notifyPendingEntry() calls from domain
     // services immediately push the new SyncQueue row instead of waiting for
-    // the next 5-minute sync cycle.
-    setPushTrigger(() => this.triggerPush());
+    // the next 5-minute sync cycle. Kept as a field so stop() can unregister
+    // it: without this, a discarded scheduler (React StrictMode double-mount
+    // in dev, or any re-creation) keeps firing orphan pushes on every notify.
+    setPushTrigger(this.autoPushTrigger);
   }
+
+  /**
+   * Bound auto-push trigger registered with the SyncQueue notifier.
+   * A field (not an inline arrow) so stop() unregisters this exact
+   * reference.
+   */
+  private readonly autoPushTrigger = (): void => {
+    this.triggerPush();
+  };
 
   /**
    * Update the access token after the user logs in, so that subsequent sync
@@ -558,6 +569,10 @@ export class SyncScheduler {
    * Safe to call when already stopped — no-op.
    */
   stop(): void {
+    // Unregister first: a stopped scheduler must never fire orphan pushes
+    // from notifier calls (StrictMode double-mount leaves the first
+    // instance discarded but otherwise alive).
+    removePushTrigger(this.autoPushTrigger);
     if (this.timerId !== null) {
       clearInterval(this.timerId);
       this.timerId = null;

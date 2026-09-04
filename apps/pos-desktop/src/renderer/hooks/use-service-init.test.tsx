@@ -155,6 +155,7 @@ const mockUpdateService = {
   checkForUpdates: vi.fn(),
   applyUpdate: vi.fn(),
   startTelemetryFlush: vi.fn(),
+  stopTelemetryFlush: vi.fn(),
 };
 
 vi.mock("../../domain/updates/update.service", () => ({
@@ -631,6 +632,46 @@ describe("useServiceInit", () => {
       // Wait a tick then verify the state stayed at loading
       await new Promise((r) => setTimeout(r, 10));
       expect(result.current.status).toBe("loading");
+    });
+
+    it("shuts down the bundle on unmount after ready — engine, scheduler, telemetry, and printer health stop", async () => {
+      vi.mocked(getLocalDatabase).mockResolvedValue({ client: {} as any, prisma: mockPrisma });
+
+      const { result, unmount } = renderHook(() => useServiceInit());
+
+      await waitFor(() => {
+        expect(result.current.status).toBe("ready");
+      });
+
+      if (result.current.status !== "ready") return;
+      const services = result.current.services;
+      const engineStop = vi.spyOn(services.localSyncEngine, "stop");
+      const schedulerStop = vi.spyOn(services.syncScheduler, "stop");
+      const printerHealthStop = vi.spyOn(services.printerHealthService, "stop");
+
+      unmount();
+
+      expect(engineStop).toHaveBeenCalledTimes(1);
+      expect(schedulerStop).toHaveBeenCalledTimes(1);
+      expect(mockUpdateService.stopTelemetryFlush).toHaveBeenCalled();
+      expect(printerHealthStop).toHaveBeenCalledTimes(1);
+    });
+
+    it("clears the engine holder on unmount so a stale bundle never stays live", async () => {
+      vi.mocked(getLocalDatabase).mockResolvedValue({ client: {} as any, prisma: mockPrisma });
+
+      const { result, unmount } = renderHook(() => useServiceInit());
+
+      await waitFor(() => {
+        expect(result.current.status).toBe("ready");
+      });
+
+      unmount();
+
+      const { getLocalSyncEngine } = await import(
+        "../../domain/local-sync/local-sync-engine-holder"
+      );
+      expect(getLocalSyncEngine()).toBeNull();
     });
   });
 });

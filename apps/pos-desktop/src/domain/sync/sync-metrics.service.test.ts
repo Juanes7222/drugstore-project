@@ -62,7 +62,9 @@ describe("SyncMetricsService", () => {
         .mockResolvedValueOnce(100) // completedTotal
         .mockResolvedValueOnce(3)   // pendingLanRelayed
         .mockResolvedValueOnce(2)   // pendingNotRelayed
-        .mockResolvedValueOnce(4);  // lanRelayedLast5Min
+        .mockResolvedValueOnce(4)   // lanRelayedLast5Min
+        .mockResolvedValueOnce(4)   // pendingActionable
+        .mockResolvedValueOnce(1);  // auditPending
 
       const counts = await service.getQueueCounts();
 
@@ -76,6 +78,8 @@ describe("SyncMetricsService", () => {
         pendingLanRelayed: 3,
         pendingNotRelayed: 2,
         lanRelayedLast5Min: 4,
+        pendingActionable: 4,
+        auditPending: 1,
       });
     });
 
@@ -94,6 +98,8 @@ describe("SyncMetricsService", () => {
         pendingLanRelayed: 0,
         pendingNotRelayed: 0,
         lanRelayedLast5Min: 0,
+        pendingActionable: 0,
+        auditPending: 0,
       });
     });
 
@@ -110,7 +116,9 @@ describe("SyncMetricsService", () => {
         .mockResolvedValueOnce(50) // completedTotal
         .mockResolvedValueOnce(2)   // pendingLanRelayed
         .mockResolvedValueOnce(1)   // pendingNotRelayed
-        .mockResolvedValueOnce(0);  // lanRelayedLast5Min
+        .mockResolvedValueOnce(0)   // lanRelayedLast5Min
+        .mockResolvedValueOnce(2)   // pendingActionable
+        .mockResolvedValueOnce(1);  // auditPending
 
       const counts = await service.getQueueCounts();
 
@@ -125,6 +133,32 @@ describe("SyncMetricsService", () => {
       );
 
       vi.useRealTimers();
+    });
+
+    it("splits pending into actionable business ops and audit bookkeeping", async () => {
+      prisma.syncQueue.count
+        .mockResolvedValueOnce(6)   // pending
+        .mockResolvedValueOnce(0)   // stalePending
+        .mockResolvedValueOnce(0)   // failed
+        .mockResolvedValueOnce(0)   // permanentFailure
+        .mockResolvedValueOnce(0)   // completed24h
+        .mockResolvedValueOnce(0)   // completedTotal
+        .mockResolvedValueOnce(0)   // pendingLanRelayed
+        .mockResolvedValueOnce(6)   // pendingNotRelayed
+        .mockResolvedValueOnce(0)   // lanRelayedLast5Min
+        .mockResolvedValueOnce(4)   // pendingActionable
+        .mockResolvedValueOnce(2);  // auditPending
+
+      const counts = await service.getQueueCounts();
+
+      expect(counts.pendingActionable).toBe(4);
+      expect(counts.auditPending).toBe(2);
+      expect(prisma.syncQueue.count).toHaveBeenCalledWith({
+        where: { status: "PENDING", operationType: { not: "AUDIT_LOG_BATCH" } },
+      });
+      expect(prisma.syncQueue.count).toHaveBeenCalledWith({
+        where: { status: "PENDING", operationType: "AUDIT_LOG_BATCH" },
+      });
     });
   });
 

@@ -177,6 +177,33 @@ const createOperationalView = (
   },
 });
 
+/**
+ * SyncQueue SALE_CONFIRMATION row for LAN-ghost tests. `saleId` in the list
+ * view is `metadata.localSaleId ?? operationUuid`, so legacy payloads omit
+ * `localSaleId` to exercise the operationUuid linkage.
+ */
+const makeLanQueueRow = (overrides: Record<string, unknown> = {}) => {
+  const operationUuid = (overrides.operationUuid as string) ?? 'op-ghost-1';
+  const metadata =
+    (overrides.metadata as Record<string, unknown> | undefined) ??
+    ({
+      localSaleId: 'sale-1',
+      localNumber: 101,
+      confirmedAt: '2026-07-20T11:00:00.000Z',
+    } as Record<string, unknown>);
+  const { operationUuid: _omit, metadata: _omitMeta, ...rest } = overrides;
+  return {
+    operationUuid,
+    payload: JSON.stringify({
+      createSaleDto: { totalAmount: '119.00' },
+      metadata,
+    }),
+    sourceCreatedAt: new Date('2026-07-20T11:00:00.000Z'),
+    clientSequence: 1n,
+    ...rest,
+  };
+};
+
 // ---------------------------------------------------------------------------
 // Mock Prisma + adjustment service
 // ---------------------------------------------------------------------------
@@ -194,6 +221,13 @@ type MockPrisma = {
   invoiceLocalAdjustment: {
     groupBy: ReturnType<typeof vi.fn>;
   };
+  syncQueue: {
+    findFirst: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
+  };
+  client: {
+    findUnique: ReturnType<typeof vi.fn>;
+  };
 };
 
 function createMockPrisma(): MockPrisma {
@@ -209,6 +243,13 @@ function createMockPrisma(): MockPrisma {
     },
     invoiceLocalAdjustment: {
       groupBy: vi.fn(),
+    },
+    syncQueue: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findMany: vi.fn().mockResolvedValue([]),
+    },
+    client: {
+      findUnique: vi.fn().mockResolvedValue(null),
     },
   };
 }
@@ -483,6 +524,133 @@ describe('SalesHistoryService', () => {
       const result = await service.listConfirmedSales();
 
       expect(result.items[0]?.deliveryFeeCents).toBe(0);
+    });
+
+    it('requests sourceOperationUuid in the list projection for LAN-ghost dedup', async () => {
+      prisma.sale.findMany.mockResolvedValue([]);
+      prisma.sale.count.mockResolvedValue(0);
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+      await service.listConfirmedSales();
+
+      expect(prisma.sale.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ sourceOperationUuid: true }),
+        }),
+      );
+    });
+
+    it('skips a pending LAN ghost whose localSaleId matches a Sale row id', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        createSaleRow({ id: 'sale-1', sourceOperationUuid: 'op-1' }),
+      ]);
+      prisma.sale.count.mockResolvedValue(1);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
+      prisma.syncQueue.findMany.mockResolvedValue([
+        makeLanQueueRow({
+          operationUuid: 'op-ghost-1',
+          metadata: {
+            localSaleId: 'sale-1',
+            localNumber: 101,
+            confirmedAt: '2026-07-20T11:00:00.000Z',
+          },
+        }),
+      ]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]?.saleId).toBe('sale-1');
+      expect(result.total).toBe(1);
+    });
+
+    it('skips a legacy ghost whose operationUuid matches a Sale row sourceOperationUuid', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        createSaleRow({ id: 'sale-server-1', sourceOperationUuid: 'op-legacy-1' }),
+      ]);
+      prisma.sale.count.mockResolvedValue(1);
+      prisma.$queryRawUnsafe.mockResolvedValue([
+        createInvoiceSummaryRow({ saleId: 'sale-server-1' }),
+      ]);
+      prisma.syncQueue.findMany.mockResolvedValue([
+        makeLanQueueRow({
+          operationUuid: 'op-legacy-1',
+          metadata: {
+            localNumber: 102,
+            confirmedAt: '2026-07-20T11:00:00.000Z',
+          },
+        }),
+      ]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]?.saleId).toBe('sale-server-1');
+      expect(result.total).toBe(1);
+    });
+
+    it('keeps a pending LAN ghost with an unknown key alongside normal rows', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        createSaleRow({ id: 'sale-1', sourceOperationUuid: 'op-1' }),
+      ]);
+      prisma.sale.count.mockResolvedValue(1);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
+      prisma.syncQueue.findMany.mockResolvedValue([
+        makeLanQueueRow({
+          operationUuid: 'op-ghost-unknown',
+          metadata: {
+            localSaleId: 'ghost-unknown',
+            localNumber: 103,
+            confirmedAt: '2026-07-20T11:00:00.000Z',
+          },
+        }),
+      ]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items).toHaveLength(2);
+      expect(result.total).toBe(2);
+
+      const saleIds = result.items.map((item) => item.saleId);
+      expect(saleIds).toContain('sale-1');
+      expect(saleIds).toContain('ghost-unknown');
+    });
+
+    it('leaves normal rows unaffected when only one of two sales has a matching ghost', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        createSaleRow({ id: 'sale-1', sourceOperationUuid: 'op-1', localNumber: 100n }),
+        createSaleRow({
+          id: 'sale-2',
+          localNumber: 101n,
+          sourceOperationUuid: 'op-2',
+          clientNameSnapshot: 'Ana Gómez',
+        }),
+      ]);
+      prisma.sale.count.mockResolvedValue(2);
+      prisma.$queryRawUnsafe.mockResolvedValue([
+        createInvoiceSummaryRow({ saleId: 'sale-1' }),
+        createInvoiceSummaryRow({ id: 'inv-2', saleId: 'sale-2', invoiceNumber: 'FE0002' }),
+      ]);
+      prisma.syncQueue.findMany.mockResolvedValue([
+        makeLanQueueRow({
+          operationUuid: 'op-ghost-1',
+          metadata: {
+            localSaleId: 'sale-1',
+            localNumber: 100,
+            confirmedAt: '2026-07-20T11:00:00.000Z',
+          },
+        }),
+      ]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items).toHaveLength(2);
+      expect(result.total).toBe(2);
+
+      const byId = new Map(result.items.map((item) => [item.saleId, item]));
+      expect(byId.get('sale-1')?.localNumber).toBe('100');
+      expect(byId.get('sale-2')?.clientName).toBe('Ana Gómez');
+      expect(byId.get('sale-2')?.invoiceNumber).toBe('FE0002');
     });
   });
 

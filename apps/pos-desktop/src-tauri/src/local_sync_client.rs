@@ -45,6 +45,13 @@ pub struct LocalSyncStatus {
     pub backoff_until: Option<String>,
 }
 
+/// Pull cursor for a fresh process: re-read the hub's full buffer, otherwise
+/// operations accepted while this app was closed would be silently skipped.
+/// Re-adopting already-known operations is harmless — adoption dedupes by
+/// operation_uuid. Uses a `Z` suffix (not `+00:00`) so the pull query string
+/// survives URL encoding without HMAC mismatches.
+const EPOCH_CURSOR: &str = "1970-01-01T00:00:00Z";
+
 /// Internal sync state.
 struct SyncState {
     hub_id: Option<String>,
@@ -112,9 +119,10 @@ impl LocalSyncClientState {
                 // operations accepted while this app was closed would be
                 // silently skipped. Re-adopting already-known operations is
                 // harmless — adoption dedupes by operation_uuid.
-                // Use a `Z` suffix (not `+00:00`) so the pull query string
-                // survives URL encoding without HMAC mismatches.
-                pulled_since: "1970-01-01T00:00:00Z".to_string(),
+                // See EPOCH_CURSOR. The TypeScript relay engine persists the
+                // cursor across restarts and passes it back as `since`, so
+                // this in-memory value is only the first-boot fallback.
+                pulled_since: EPOCH_CURSOR.to_string(),
             }),
         }
     }
@@ -182,15 +190,25 @@ impl LocalSyncClientState {
     }
 
     /// Pull operations from the hub.
+    ///
+    /// `since_override` is the cursor persisted by the TypeScript relay
+    /// engine (survives app restarts; keyed per hub address on that side).
+    /// When `None`, the client's in-memory cursor is used (first boot or
+    /// older callers). Either way the resulting `next_since` is stored back
+    /// into the in-memory state so consecutive cursor-less pulls still
+    /// advance.
     pub async fn pull_operations(
         &self,
         hub_address: &str,
+        since_override: Option<&str>,
     ) -> Result<crate::local_sync_server::PullResponse, String> {
-        let since = {
-            let state = self.state.read().await;
-            state.pulled_since.clone()
+        let since = match since_override {
+            Some(s) => s.to_string(),
+            None => {
+                let state = self.state.read().await;
+                state.pulled_since.clone()
+            }
         };
-
         let query_string = format!(
             "since={}&workstation_id={}",
             urlencoding::encode(&since),
@@ -260,10 +278,20 @@ impl LocalSyncClientState {
     }
 
     /// Set the current hub address (called by the election service).
+    ///
+    /// A different hub owns a different operation buffer with its own
+    /// `received_at` timeline, so inheriting the previous hub's pull cursor
+    /// would silently skip operations. The cursor resets to the epoch on
+    /// every hub change; re-adoption dedupes by `operation_uuid`.
     pub async fn set_hub(&self, hub_id: String, hub_address: String) {
         let mut state = self.state.write().await;
+        let changed = state.hub_id.as_deref() != Some(hub_id.as_str())
+            || state.hub_address.as_deref() != Some(hub_address.as_str());
         state.hub_id = Some(hub_id);
         state.hub_address = Some(hub_address);
+        if changed {
+            state.pulled_since = EPOCH_CURSOR.to_string();
+        }
         state.consecutive_failures = 0;
     }
 
@@ -299,5 +327,69 @@ mod tests {
         assert!(json.contains("\"connectionStatus\":\"CONNECTED\""), "json was: {json}");
         assert!(json.contains("\"currentHubAddress\""), "json was: {json}");
         assert!(!json.contains("current_hub_address"), "snake_case leaked: {json}");
+    }
+
+    const EPOCH_CURSOR: &str = "1970-01-01T00:00:00Z";
+
+    fn test_client() -> LocalSyncClientState {
+        LocalSyncClientState::new(
+            "test-key".to_string(),
+            "ws-1".to_string(),
+            "WS 1".to_string(),
+        )
+    }
+
+    #[tokio::test]
+    async fn new_client_starts_pull_cursor_at_epoch() {
+        let client = test_client();
+
+        assert_eq!(client.state.read().await.pulled_since, EPOCH_CURSOR);
+    }
+
+    #[tokio::test]
+    async fn set_hub_resets_pull_cursor_to_epoch_on_hub_change() {
+        let client = test_client();
+        client.state.write().await.pulled_since = "2026-02-01T00:00:00.000Z".to_string();
+
+        client
+            .set_hub("hub-b".to_string(), "192.168.1.20:49500".to_string())
+            .await;
+
+        let state = client.state.read().await;
+        assert_eq!(state.pulled_since, EPOCH_CURSOR);
+        assert_eq!(state.hub_address.as_deref(), Some("192.168.1.20:49500"));
+    }
+
+    #[tokio::test]
+    async fn set_hub_same_hub_keeps_pull_cursor() {
+        let client = test_client();
+        client
+            .set_hub("hub-a".to_string(), "192.168.1.10:49500".to_string())
+            .await;
+        client.state.write().await.pulled_since = "2026-02-01T00:00:00.000Z".to_string();
+
+        client
+            .set_hub("hub-a".to_string(), "192.168.1.10:49500".to_string())
+            .await;
+
+        assert_eq!(
+            client.state.read().await.pulled_since,
+            "2026-02-01T00:00:00.000Z"
+        );
+    }
+
+    #[tokio::test]
+    async fn set_hub_same_id_new_address_resets_pull_cursor() {
+        let client = test_client();
+        client
+            .set_hub("hub-a".to_string(), "192.168.1.10:49500".to_string())
+            .await;
+        client.state.write().await.pulled_since = "2026-02-01T00:00:00.000Z".to_string();
+
+        client
+            .set_hub("hub-a".to_string(), "192.168.1.11:49500".to_string())
+            .await;
+
+        assert_eq!(client.state.read().await.pulled_since, EPOCH_CURSOR);
     }
 }

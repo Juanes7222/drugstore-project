@@ -73,6 +73,47 @@ const NON_RELAYABLE_STATUSES: SyncStatus[] = [
 
 const DEFAULT_OPERATION_PRIORITY = 99;
 
+/** localStorage prefix for the pull cursor, keyed per hub address. */
+const PULL_CURSOR_STORAGE_PREFIX = 'lan-pull-cursor:';
+
+/** Hub buffer epoch — first pull after install, hub change, or cursor loss. */
+const PULL_CURSOR_EPOCH = '1970-01-01T00:00:00Z';
+
+/** In-memory fallback when localStorage is unavailable (tests, SSR). */
+const pullCursorMemoryFallback = new Map<string, string>();
+
+/**
+ * Load the persisted pull cursor for a hub address.
+ * Falls back to the epoch (full re-read, deduped by operationUuid).
+ */
+function loadPullCursor(hubAddress: string): string {
+  const memory = pullCursorMemoryFallback.get(hubAddress);
+  if (memory) return memory;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return (
+        localStorage.getItem(PULL_CURSOR_STORAGE_PREFIX + hubAddress) ??
+        PULL_CURSOR_EPOCH
+      );
+    }
+  } catch {
+    // Storage blocked — fall through to epoch.
+  }
+  return PULL_CURSOR_EPOCH;
+}
+
+/** Persist the pull cursor for a hub address (best-effort). */
+function savePullCursor(hubAddress: string, cursor: string): void {
+  pullCursorMemoryFallback.set(hubAddress, cursor);
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(PULL_CURSOR_STORAGE_PREFIX + hubAddress, cursor);
+    }
+  } catch {
+    // Quota / privacy mode — the in-memory copy still advances this session.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -88,10 +129,33 @@ export interface LocalSyncEngineConfig {
 
 export interface LocalSyncCycleResult {
   ranAt: string;
-  /** 'no-hub' when this station currently has nobody to talk to. */
-  outcome: 'ok' | 'skipped-no-hub' | 'error';
+  /**
+   * - `ok`: push+pull ran against a hub.
+   * - `skipped-no-hub`: no hub elected — normal for a single terminal,
+   *   not an error.
+   * - `skipped-backoff`: hub known but Rust asked us to wait after
+   *   repeated failures — the next scheduled cycle retries on its own.
+   * - `error`: the cycle itself failed (transport / DB).
+   */
+  outcome: 'ok' | 'skipped-no-hub' | 'skipped-backoff' | 'error';
   pushedToHub: number;
   adoptedFromHub: number;
+  /** Hub address this cycle talked to (null when no hub). */
+  hubAddress?: string | null;
+  /**
+   * Real PENDING entries still missing LAN relay after this cycle.
+   * Lets the UI show a true count instead of estimating by subtraction.
+   */
+  pendingNotRelayed?: number;
+  /**
+   * Hub operations claiming OUR workstationId but unknown locally - almost
+   * certainly another terminal misconfigured with the same workstation ID
+   * (cloned image, unpinned VITE_WORKSTATION_ID). Those rows are skipped,
+   * never adopted: adopting them would launder foreign operations under
+   * our identity. Any value > 0 needs an operator fix (reassign the ID),
+   * so the store surfaces it as an error.
+   */
+  identityCollisions?: number;
   errorMessage?: string;
 }
 
@@ -222,37 +286,38 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
         currentHubAddress: string | null;
         backoffUntil: string | null;
       }>('get_local_sync_status');
-      console.log('[local-sync-engine] cycle status', status);
     } catch (err) {
       // Non-Tauri environments (tests / plain browser dev) have no backend.
-      console.log('[local-sync-engine] get_local_sync_status failed, skipping', err);
-      return this.result(ranAt, 'skipped-no-hub', 0, 0);
+      return this.result(ranAt, 'skipped-no-hub', 0, 0, { hubAddress: null });
     }
 
-    if (!status.currentHubAddress) {
-      console.log('[local-sync-engine] no hub address, skipping');
-      return this.result(ranAt, 'skipped-no-hub', 0, 0);
+    const hubAddress = status.currentHubAddress ?? null;
+    if (!hubAddress) {
+      return this.result(ranAt, 'skipped-no-hub', 0, 0, { hubAddress: null });
     }
 
     // Respect the Rust-side backoff window after repeated hub failures.
+    // Surfaced as its own outcome so the UI can tell "waiting, will retry
+    // alone" apart from "no hub at all".
     if (status.backoffUntil) {
       const backoffUntil = Date.parse(status.backoffUntil);
       if (!Number.isNaN(backoffUntil) && backoffUntil > Date.now()) {
-        return this.result(ranAt, 'skipped-no-hub', 0, 0);
+        return this.result(ranAt, 'skipped-backoff', 0, 0, { hubAddress });
       }
     }
 
     try {
       const pushed = await this.pushPendingToHub();
-      const adopted = await this.pullAndAdoptFromHub();
-      console.log(
-        `[local-sync-engine] cycle ok: pushed=${pushed} adopted=${adopted}`,
-      );
-      return this.result(ranAt, 'ok', pushed, adopted);
+      const pull = await this.pullAndAdoptFromHub(hubAddress);
+      const pendingNotRelayed = await this.countNotRelayed();
+      return this.result(ranAt, 'ok', pushed, pull.adopted, {
+        hubAddress,
+        pendingNotRelayed,
+        identityCollisions: pull.identityCollisions,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error('[local-sync-engine] Cycle error:', message);
-      return this.result(ranAt, 'error', 0, 0, message);
+      return this.result(ranAt, 'error', 0, 0, { hubAddress, errorMessage: message });
     }
   }
 
@@ -261,9 +326,32 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
     outcome: LocalSyncCycleResult['outcome'],
     pushedToHub: number,
     adoptedFromHub: number,
-    errorMessage?: string,
+    extra?: Pick<
+      LocalSyncCycleResult,
+      'hubAddress' | 'pendingNotRelayed' | 'errorMessage' | 'identityCollisions'
+    >,
   ): LocalSyncCycleResult {
-    return { ranAt, outcome, pushedToHub, adoptedFromHub, errorMessage };
+    if (outcome === 'error') {
+      console.error(
+        '[local-sync-engine] Cycle error:',
+        extra?.errorMessage ?? 'unknown',
+      );
+    }
+    return { ranAt, outcome, pushedToHub, adoptedFromHub, ...extra };
+  }
+
+  /** True PENDING entries still missing LAN relay (single cheap count). */
+  private async countNotRelayed(): Promise<number> {
+    try {
+      return await this.prisma.syncQueue.count({
+        where: {
+          lanRelayedAt: null,
+          status: { notIn: NON_RELAYABLE_STATUSES },
+        },
+      });
+    } catch {
+      return 0;
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -360,14 +448,33 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
    * into our own queue as PENDING, so the normal internet push pipeline
    * forwards them to the server once connectivity returns.
    *
+   * The pull cursor is persisted per hub address: without it every app
+   * restart re-reads the hub's full buffer (a visible "pending" spike that
+   * is really re-adoption of already-known operations). A hub change
+   * naturally starts from the epoch because the key includes the address —
+   * a different hub owns a different buffer timeline. Adoption stays
+   * idempotent regardless: `operationUuid` is unique, and re-adopting an
+   * already-known operation is a no-op.
+   *
    * Adoption is per-row defensive: one malformed operation must never abort
    * the rest of the batch.
    */
-  private async pullAndAdoptFromHub(): Promise<number> {
-    const response = await invoke<PullResponse>('pull_from_hub');
+  private async pullAndAdoptFromHub(
+    hubAddress: string,
+  ): Promise<{ adopted: number; identityCollisions: number }> {
+    const since = loadPullCursor(hubAddress);
+    const response = await invoke<PullResponse>('pull_from_hub', { since });
+    if (response.nextSince) {
+      savePullCursor(hubAddress, response.nextSince);
+    }
+    const ownClaimed = (response.operations ?? []).filter(
+      (op) => op.sourceWorkstationId === this.workstationId,
+    );
     const foreignOps = (response.operations ?? []).filter(
       (op) => op.sourceWorkstationId !== this.workstationId,
     );
+
+    const identityCollisions = await this.countIdentityCollisions(ownClaimed);
 
     let adopted = 0;
 
@@ -411,7 +518,42 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
       notifyPendingEntry();
     }
 
-    return adopted;
+    return { adopted, identityCollisions };
+  }
+
+  /**
+   * Count hub operations that claim OUR workstationId but are unknown
+   * locally. One batched lookup per cycle, only when such rows exist.
+   * Anything found is a duplicate workstation identity elsewhere on the
+   * LAN: those rows are never adopted (see the result contract), and the
+   * caller surfaces the count so the misconfiguration gets fixed instead
+   * of silently dropping a peer's sales.
+   */
+  private async countIdentityCollisions(
+    ownClaimed: Array<{ operationUuid: string }>,
+  ): Promise<number> {
+    if (ownClaimed.length === 0) return 0;
+    try {
+      const uuids = [...new Set(ownClaimed.map((op) => op.operationUuid))];
+      const known = await this.prisma.syncQueue.findMany({
+        where: { operationUuid: { in: uuids } },
+        select: { operationUuid: true },
+      });
+      const knownSet = new Set(known.map((row) => row.operationUuid));
+      const collisions = uuids.filter((uuid) => !knownSet.has(uuid)).length;
+      if (collisions > 0) {
+        console.error(
+          `[local-sync-engine] ${collisions} hub operation(s) claim our ` +
+            `workstationId (${this.workstationId}) but are unknown locally. ` +
+            `Another terminal is almost certainly misconfigured with the ` +
+            `same workstation ID - its operations are being skipped, not ` +
+            `adopted. Reassign a unique workstation ID to that terminal.`,
+        );
+      }
+      return collisions;
+    } catch {
+      return 0;
+    }
   }
 }
 

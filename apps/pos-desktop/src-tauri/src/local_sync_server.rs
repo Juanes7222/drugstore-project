@@ -332,7 +332,24 @@ async fn handle_push(
     let mut conflicts = Vec::new();
     let mut received = state.received_operations.write().await;
 
+    // Idempotency set: a push whose response was lost is retried by the peer
+    // with the SAME operation_uuid. Without this check every retry appends a
+    // duplicate row, the hub buffer grows unbounded, and peers observe an
+    // ever-increasing "pending" count. Replays are answered as accepted
+    // (the hub durably holds the operation) without storing a second copy —
+    // including duplicates inside the same batch.
+    let mut known_uuids: std::collections::HashSet<String> = received
+        .iter()
+        .map(|s| s.operation.operation_uuid.clone())
+        .collect();
+
     for op in &body.operations {
+        if known_uuids.contains(&op.operation_uuid) {
+            accepted_uuids.push(op.operation_uuid.clone());
+            accepted += 1;
+            continue;
+        }
+
         // Check for conflicts: same entity being modified by different peers.
         let conflict = check_for_conflict_stored(&received, op);
         if let Some(conflict_info) = conflict {
@@ -359,6 +376,7 @@ async fn handle_push(
         }
 
         received.push(stored);
+        known_uuids.insert(op.operation_uuid.clone());
         accepted_uuids.push(op.operation_uuid.clone());
         accepted += 1;
     }
@@ -631,6 +649,91 @@ async fn handle_heartbeat(
 // Conflict detection
 // ---------------------------------------------------------------------------
 
+/// Derive the conflict key for an operation: `operationType::entity-id`.
+///
+/// Mirrors the TypeScript `entityIdentity()` lookup order
+/// (`src/domain/local-sync/operation-merge.ts`) — keep both in sync.
+/// The entity is identified by fields inside the payload, NEVER by
+/// `payload_hash` alone: two adjustments to the same lot with different
+/// quantities share the entity but not the hash, and must conflict.
+/// Unknown shapes fall back to `hash:<payload_hash>` (conservative: only
+/// byte-equal payloads collide). Audit batches never conflict.
+fn entity_key(op: &LocalOperation) -> String {
+    fn s(v: Option<&serde_json::Value>) -> Option<String> {
+        match v {
+            Some(serde_json::Value::String(text)) if !text.is_empty() => {
+                Some(text.clone())
+            }
+            Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+            _ => None,
+        }
+    }
+
+    let payload: serde_json::Value =
+        serde_json::from_str(&op.payload).unwrap_or(serde_json::Value::Null);
+    let meta = payload.get("metadata");
+    let meta_field = |name: &str| meta.and_then(|m| m.get(name));
+    let identity: Option<String> = match op.operation_type.as_str() {
+        "SALE_CONFIRMATION" => s(meta_field("localSaleId"))
+            .or_else(|| s(meta_field("localNumber")))
+            .or_else(|| s(payload.get("localSaleId"))),
+        "SHIFT_OPEN" | "SHIFT_CLOSURE" => s(payload.get("cashShiftId"))
+            .or_else(|| s(meta_field("cashShiftId"))),
+        "PRODUCT_CREATION" | "PRODUCT_UPDATE" => {
+            let dto = payload
+                .get("createProductDto")
+                .or_else(|| payload.get("updateProductDto"));
+            s(meta_field("productId"))
+                .or_else(|| dto.and_then(|d| s(d.get("internalCode"))))
+                .or_else(|| dto.and_then(|d| s(d.get("id"))))
+        }
+        "CLIENT_CREATION" | "CLIENT_UPDATE" => {
+            let dto = payload
+                .get("createClientDto")
+                .or_else(|| payload.get("updateClientDto"));
+            s(meta_field("clientId"))
+                .or_else(|| dto.and_then(|d| s(d.get("identificationNumber"))))
+                .or_else(|| dto.and_then(|d| s(d.get("fullName"))))
+                .or_else(|| dto.and_then(|d| s(d.get("id"))))
+        }
+        "CLIENT_DEACTIVATE" => {
+            let dto = payload.get("deactivateClientDto");
+            dto.and_then(|d| s(d.get("clientId")))
+                .or_else(|| s(payload.get("clientId")))
+        }
+        "INVENTORY_ADJUSTMENT" => s(payload.get("lotId"))
+            .or_else(|| s(meta_field("adjustmentId")))
+            .or_else(|| s(payload.get("adjustmentId"))),
+        "CLIENT_RETURN" => s(payload.get("sequentialNumber"))
+            .or_else(|| s(payload.get("receiptNumber")))
+            .or_else(|| s(payload.get("returnId"))),
+        "CLIENT_CREDIT_PAYMENT" | "CLIENT_CREDIT_PAYMENT_ANNULMENT" => {
+            s(payload.get("sequentialNumber")).or_else(|| s(payload.get("paymentId")))
+        }
+        "PRESCRIPTION_REGISTRATION" => s(payload.get("prescriptionNumber"))
+            .or_else(|| s(payload.get("prescriptionId"))),
+        "INVOICE_TRANSMISSION" | "INVOICE_TRANSMISSION_RESULT" | "INVOICE_ADJUSTMENT" | "FISCAL_DOCUMENT_SYNC" => {
+            s(payload.get("invoiceNumber"))
+                .or_else(|| s(payload.get("invoiceId")))
+                .or_else(|| s(meta_field("localSaleId")))
+        }
+        "PURCHASE_ORDER_CONFIRMATION"
+        | "PURCHASE_RECEPTION_CONFIRMATION"
+        | "SUPPLIER_RETURN_CONFIRMATION" => s(payload.get("sequentialNumber"))
+            .or_else(|| s(payload.get("orderId"))),
+        "RESOLUTION_ALLOCATION" => s(payload.get("resolutionId"))
+            .or_else(|| s(payload.get("prefix"))),
+        "AUDIT_LOG_BATCH" => Some(format!("batch:{}", op.operation_uuid)),
+        _ => None,
+    };
+
+    format!(
+        "{}::{}",
+        op.operation_type,
+        identity.unwrap_or_else(|| format!("hash:{}", op.payload_hash))
+    )
+}
+
 /// Checks whether a new operation conflicts with already-received operations.
 ///
 /// Follows first-write-wins: the operation that arrived first is applied;
@@ -640,14 +743,14 @@ fn check_for_conflict(
     received: &[LocalOperation],
     new_op: &LocalOperation,
 ) -> Option<ConflictInfo> {
-    // Two operations conflict if they have the same operation_type AND
-    // target the same entity (same payload identifying fields).
-    // This is a simplified check — the TypeScript domain layer has the
-    // full merge logic.
+    // Audit batches are append-only bookkeeping, never entity mutations.
+    if new_op.operation_type == "AUDIT_LOG_BATCH" {
+        return None;
+    }
+    let new_key = entity_key(new_op);
     for existing in received.iter() {
-        if existing.operation_type == new_op.operation_type
-            && existing.source_workstation_id != new_op.source_workstation_id
-            && existing.payload_hash == new_op.payload_hash
+        if existing.source_workstation_id != new_op.source_workstation_id
+            && entity_key(existing) == new_key
         {
             return Some(ConflictInfo {
                 operation_uuid: new_op.operation_uuid.clone(),
@@ -663,11 +766,15 @@ fn check_for_conflict_stored(
     received: &[StoredOp],
     new_op: &LocalOperation,
 ) -> Option<ConflictInfo> {
+    // Audit batches are append-only bookkeeping, never entity mutations.
+    if new_op.operation_type == "AUDIT_LOG_BATCH" {
+        return None;
+    }
+    let new_key = entity_key(new_op);
     for existing in received.iter() {
         let e = &existing.operation;
-        if e.operation_type == new_op.operation_type
-            && e.source_workstation_id != new_op.source_workstation_id
-            && e.payload_hash == new_op.payload_hash
+        if e.source_workstation_id != new_op.source_workstation_id
+            && entity_key(e) == new_key
         {
             return Some(ConflictInfo {
                 operation_uuid: new_op.operation_uuid.clone(),
@@ -1088,5 +1195,228 @@ mod tests {
         let camel_input = r#"{"operationUuid":"uuid-2","operationType":"PRODUCT_CREATION","payload":"{}","payloadHash":"h","sourceWorkstationId":"ws-2","sourceCreatedAt":"2026-01-15T12:00:00.000Z","retryCount":0}"#;
         let from_camel: LocalOperation = serde_json::from_str(camel_input).unwrap();
         assert_eq!(from_camel.operation_uuid, "uuid-2");
+    }
+
+    /// Push/dedup/conflict fixture. Payloads are raw JSON strings so each
+    /// test controls exactly what `entity_key()` parses.
+    fn lan_op(
+        uuid: &str,
+        op_type: &str,
+        payload: &str,
+        hash: &str,
+        workstation: &str,
+    ) -> LocalOperation {
+        LocalOperation {
+            operation_uuid: uuid.to_string(),
+            operation_type: op_type.to_string(),
+            payload: payload.to_string(),
+            payload_hash: hash.to_string(),
+            source_workstation_id: workstation.to_string(),
+            source_created_at: "2026-01-15T12:00:00.000Z".to_string(),
+            retry_count: 0,
+        }
+    }
+
+    #[test]
+    fn entity_key_sale_reads_metadata_local_sale_id() {
+        let op = lan_op(
+            "op-1",
+            "SALE_CONFIRMATION",
+            r#"{"metadata":{"localSaleId":"sale-1","localNumber":7}}"#,
+            "hash-a",
+            "ws-1",
+        );
+
+        assert_eq!(entity_key(&op), "SALE_CONFIRMATION::sale-1");
+    }
+
+    #[test]
+    fn entity_key_inventory_adjustments_share_key_across_different_quantities() {
+        // Same lot, different quantities => different hashes but the same
+        // entity, so both keys must match and the second push conflicts.
+        let first = lan_op(
+            "adj-1",
+            "INVENTORY_ADJUSTMENT",
+            r#"{"lotId":"lot-1","quantity":5}"#,
+            "hash-a",
+            "ws-1",
+        );
+        let second = lan_op(
+            "adj-2",
+            "INVENTORY_ADJUSTMENT",
+            r#"{"lotId":"lot-1","quantity":9}"#,
+            "hash-b",
+            "ws-2",
+        );
+
+        assert_eq!(entity_key(&first), entity_key(&second));
+        assert_eq!(entity_key(&first), "INVENTORY_ADJUSTMENT::lot-1");
+    }
+
+    #[test]
+    fn entity_key_audit_batches_are_unique_per_uuid() {
+        let first = lan_op("audit-1", "AUDIT_LOG_BATCH", r#"{"events":1}"#, "hash-a", "ws-1");
+        let second = lan_op("audit-2", "AUDIT_LOG_BATCH", r#"{"events":2}"#, "hash-b", "ws-2");
+
+        assert_eq!(entity_key(&first), "AUDIT_LOG_BATCH::batch:audit-1");
+        assert_ne!(entity_key(&first), entity_key(&second));
+    }
+
+    #[test]
+    fn entity_key_unknown_shape_falls_back_to_payload_hash() {
+        let first = lan_op("new-1", "SOMETHING_NEW", r#"{"v":1}"#, "hash-a", "ws-1");
+        let same_bytes = lan_op("new-2", "SOMETHING_NEW", r#"{"v":1}"#, "hash-a", "ws-2");
+        let other_bytes = lan_op("new-3", "SOMETHING_NEW", r#"{"v":2}"#, "hash-b", "ws-2");
+
+        assert_eq!(entity_key(&first), "SOMETHING_NEW::hash:hash-a");
+        assert_eq!(entity_key(&first), entity_key(&same_bytes));
+        assert_ne!(entity_key(&first), entity_key(&other_bytes));
+    }
+
+    #[test]
+    fn entity_key_unparseable_payload_falls_back_to_payload_hash() {
+        let op = lan_op("op-1", "SALE_CONFIRMATION", "{not-json", "hash-a", "ws-1");
+
+        assert_eq!(entity_key(&op), "SALE_CONFIRMATION::hash:hash-a");
+    }
+
+    #[test]
+    fn check_for_conflict_rejects_same_entity_from_another_workstation() {
+        let received = [lan_op(
+            "adj-1",
+            "INVENTORY_ADJUSTMENT",
+            r#"{"lotId":"lot-1","quantity":5}"#,
+            "hash-a",
+            "ws-1",
+        )];
+        let incoming = lan_op(
+            "adj-2",
+            "INVENTORY_ADJUSTMENT",
+            r#"{"lotId":"lot-1","quantity":9}"#,
+            "hash-b",
+            "ws-2",
+        );
+
+        let conflict = check_for_conflict(&received, &incoming).expect("same lot must conflict");
+
+        assert_eq!(conflict.operation_uuid, "adj-2");
+        assert_eq!(conflict.reason, "FIRST_WRITE_WINS");
+        assert_eq!(conflict.winning_operation_uuid, "adj-1");
+    }
+
+    #[test]
+    fn check_for_conflict_ignores_same_workstation_replays() {
+        let received = [lan_op(
+            "adj-1",
+            "INVENTORY_ADJUSTMENT",
+            r#"{"lotId":"lot-1","quantity":5}"#,
+            "hash-a",
+            "ws-1",
+        )];
+        let replay = lan_op(
+            "adj-2",
+            "INVENTORY_ADJUSTMENT",
+            r#"{"lotId":"lot-1","quantity":5}"#,
+            "hash-a",
+            "ws-1",
+        );
+
+        assert!(check_for_conflict(&received, &replay).is_none());
+    }
+
+    #[test]
+    fn check_for_conflict_never_fires_for_audit_batches() {
+        let received = [lan_op("audit-1", "AUDIT_LOG_BATCH", r#"{"events":1}"#, "hash-a", "ws-1")];
+        let incoming = lan_op("audit-2", "AUDIT_LOG_BATCH", r#"{"events":2}"#, "hash-b", "ws-2");
+
+        assert!(check_for_conflict(&received, &incoming).is_none());
+    }
+
+    /// Build the exact HMAC the hub expects for a push body.
+    fn push_auth_header(key: &str, body: &PushRequest) -> HeaderMap {
+        use axum::http::header::HeaderValue;
+        let bytes = serde_json::to_vec(body).expect("push body serializes");
+        let mac = compute_hmac(key, &bytes).expect("hmac");
+        let mut headers = HeaderMap::new();
+        headers.insert("x-local-auth", HeaderValue::from_str(&mac).expect("hex is a valid header"));
+        headers
+    }
+
+    async fn push_response(
+        state: Arc<LocalSyncServerState>,
+        headers: HeaderMap,
+        body: PushRequest,
+    ) -> (StatusCode, PushResponse) {
+        use axum::response::IntoResponse;
+        let response = handle_push(AxumState(state), headers, Json(body)).await.into_response();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("push response body readable");
+        let parsed: PushResponse = serde_json::from_slice(&bytes).expect("push response parses");
+        (status, parsed)
+    }
+
+    #[tokio::test]
+    async fn push_replay_returns_accepted_without_a_duplicate_row() {
+        let state = Arc::new(LocalSyncServerState::new(NETWORK_KEY.to_string(), PREFERRED_PORT));
+        let stored = lan_op("op-1", "SALE_CONFIRMATION", r#"{"total":100}"#, "hash-a", "ws-1");
+        state.received_operations.write().await.push(StoredOp {
+            operation: stored,
+            received_at: Utc::now(),
+        });
+        let body = PushRequest {
+            operations: vec![lan_op("op-1", "SALE_CONFIRMATION", r#"{"total":100}"#, "hash-a", "ws-1")],
+        };
+        let headers = push_auth_header(NETWORK_KEY, &body);
+
+        let (status, resp) = push_response(state.clone(), headers, body).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(resp.accepted, 1);
+        assert_eq!(resp.rejected, 0);
+        assert_eq!(resp.accepted_operation_uuids, vec!["op-1".to_string()]);
+        assert_eq!(state.received_operation_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn push_within_batch_duplicate_replay_accepts_both_without_duplicating() {
+        let state = Arc::new(LocalSyncServerState::new(NETWORK_KEY.to_string(), PREFERRED_PORT));
+        let stored = lan_op("op-1", "SALE_CONFIRMATION", r#"{"total":100}"#, "hash-a", "ws-1");
+        state.received_operations.write().await.push(StoredOp {
+            operation: stored,
+            received_at: Utc::now(),
+        });
+        let replay = || lan_op("op-1", "SALE_CONFIRMATION", r#"{"total":100}"#, "hash-a", "ws-1");
+        let body = PushRequest {
+            operations: vec![replay(), replay()],
+        };
+        let headers = push_auth_header(NETWORK_KEY, &body);
+
+        let (status, resp) = push_response(state.clone(), headers, body).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(resp.accepted, 2);
+        assert_eq!(resp.rejected, 0);
+        assert_eq!(state.received_operation_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn push_new_operation_without_open_log_is_rejected_for_retry() {
+        // `new()` leaves the op log closed, mirroring a disk-full peer push:
+        // the hub must reject (not accept) so the peer retries next cycle.
+        let state = Arc::new(LocalSyncServerState::new(NETWORK_KEY.to_string(), PREFERRED_PORT));
+        let body = PushRequest {
+            operations: vec![lan_op("op-new", "SALE_CONFIRMATION", r#"{"total":50}"#, "hash-n", "ws-2")],
+        };
+        let headers = push_auth_header(NETWORK_KEY, &body);
+
+        let (status, resp) = push_response(state.clone(), headers, body).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(resp.accepted, 0);
+        assert_eq!(resp.rejected, 1);
+        assert!(resp.accepted_operation_uuids.is_empty());
+        assert_eq!(state.received_operation_count().await, 0);
     }
 }

@@ -11,6 +11,10 @@ import { createSecureStorage } from "../../infrastructure/secure-storage";
 import { decodeOfflineToken } from "../auth/offline";
 import { MAX_RETRY_ATTEMPTS } from "./sync-push.service";
 import type { LocalSession } from "../auth/local-session.store";
+import {
+  notifyPendingEntry,
+  setPushTrigger,
+} from "./sync-queue-notifier";
 
 // Mock createSyncPushService so it always returns a fake push service with
 // the three-phase contract (preparePush / sendBatch / applyPushResult).
@@ -215,6 +219,9 @@ describe("SyncScheduler", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // Each scheduler registers an auto-push trigger on construction — start
+    // clean so a notify in one test does not fire triggers from earlier tests.
+    setPushTrigger(null);
     // Default fetch mock — tests override per scenario.
     globalThis.fetch = vi.fn().mockResolvedValue(
       jsonResponse(REFRESH_RESPONSE),
@@ -227,6 +234,12 @@ describe("SyncScheduler", () => {
   });
 
   afterEach(() => {
+    try {
+      scheduler?.stop();
+    } catch {
+      // Already stopped — nothing to do.
+    }
+    setPushTrigger(null);
     vi.useRealTimers();
     vi.restoreAllMocks();
     useLocalSessionStore.getState().clearSession();
@@ -270,6 +283,60 @@ describe("SyncScheduler", () => {
       scheduler.start();
 
       expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // auto-push trigger lifecycle — constructor registers a field trigger,
+  // stop() unregisters that exact reference so a discarded scheduler
+  // (StrictMode double-mount) never fires orphan pushes.
+  // -----------------------------------------------------------------------
+
+  describe("auto-push trigger lifecycle", () => {
+    it("notifies the scheduler while running — notify fires triggerPush", () => {
+      seedSession();
+      scheduler = makeScheduler();
+
+      const triggerSpy = vi.spyOn(scheduler, "triggerPush").mockImplementation(() => {});
+
+      notifyPendingEntry();
+
+      expect(triggerSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("stop() unregisters its trigger — notify after stop does not push", () => {
+      seedSession();
+      scheduler = makeScheduler();
+
+      const triggerSpy = vi.spyOn(scheduler, "triggerPush").mockImplementation(() => {});
+
+      notifyPendingEntry();
+
+      expect(triggerSpy).toHaveBeenCalledTimes(1);
+
+      triggerSpy.mockClear();
+      scheduler.stop();
+      notifyPendingEntry();
+
+      expect(triggerSpy).not.toHaveBeenCalled();
+    });
+
+    it("stop() removes only its own trigger — a live scheduler still fires", () => {
+      seedSession();
+      scheduler = makeScheduler();
+      const staleScheduler = scheduler;
+      const liveScheduler = makeScheduler();
+
+      const staleSpy = vi.spyOn(staleScheduler, "triggerPush").mockImplementation(() => {});
+      const liveSpy = vi.spyOn(liveScheduler, "triggerPush").mockImplementation(() => {});
+
+      staleScheduler.stop();
+      notifyPendingEntry();
+
+      expect(staleSpy).not.toHaveBeenCalled();
+      expect(liveSpy).toHaveBeenCalledTimes(1);
+
+      liveScheduler.stop();
     });
   });
 

@@ -284,7 +284,14 @@ pub async fn get_hub_scores(
 // Local sync client
 // ---------------------------------------------------------------------------
 
-/// Trigger an immediate local push + pull cycle.
+/// Trigger an immediate local pull cycle from the current hub.
+///
+/// The push half of LAN sync belongs to the TypeScript relay engine, which
+/// owns the PGlite `SyncQueue` — this Rust side cannot read that database.
+/// Pushing an empty batch here only produced misleading "push 0 ops" success
+/// logs, so this command pulls hub-buffered peer operations (the half that
+/// needs no local-DB access) and reports the outcome. The full push+pull
+/// cycle is driven by `LocalSyncEngine.runCycle()` on the TypeScript side.
 #[tauri::command]
 pub async fn force_local_sync(
     app_handle: AppHandle,
@@ -299,30 +306,14 @@ pub async fn force_local_sync(
 
     let address = hub_address.ok_or_else(|| "No hub available".to_string())?;
 
-    // Push pending operations.
-    let push_result = client.push_operations(vec![], &address).await;
-    match &push_result {
-        Ok(r) => log::info!("Force sync push: {} accepted, {} rejected", r.accepted, r.rejected),
-        Err(e) => log::error!("Force sync push failed: {e}"),
-    }
-
-    // Pull pending operations.
-    let pull_result = client.pull_operations(&address).await;
+    // Pull pending operations buffered by the hub.
+    let pull_result = client.pull_operations(&address, None).await;
     match &pull_result {
         Ok(r) => log::info!("Force sync pull: {} operations received", r.operations.len()),
         Err(e) => log::error!("Force sync pull failed: {e}"),
     }
 
-    // Return success if either push or pull succeeded.
-    if push_result.is_ok() || pull_result.is_ok() {
-        Ok(())
-    } else {
-        Err(format!(
-            "Push: {:?}, Pull: {:?}",
-            push_result.err(),
-            pull_result.err()
-        ))
-    }
+    pull_result.map(|_| ()).map_err(|e| format!("Pull: {e:?}"))
 }
 
 /// Get the current local sync status.
@@ -368,9 +359,14 @@ pub async fn push_to_hub(
 }
 
 /// Pull operations from the current hub.
+///
+/// `since` is the cursor persisted by the TypeScript relay engine (per hub
+/// address, in `localStorage`). `None` falls back to the client's in-memory
+/// cursor (first boot / older callers).
 #[tauri::command]
 pub async fn pull_from_hub(
     app_handle: AppHandle,
+    since: Option<String>,
 ) -> Result<PullResponse, String> {
     let modules = app_handle.state::<LocalSyncModules>();
     let client = resolve_client(&modules.client).await?;
@@ -378,7 +374,7 @@ pub async fn pull_from_hub(
     let address = status
         .current_hub_address
         .ok_or_else(|| "No hub available".to_string())?;
-    let result = client.pull_operations(&address).await;
+    let result = client.pull_operations(&address, since.as_deref()).await;
     match &result {
         Ok(r) => crate::local_sync_diagnostics::push_global(
             "INFO",

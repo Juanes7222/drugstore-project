@@ -58,7 +58,7 @@ export interface LocalSyncService {
   pushToHub(operations: LocalOperation[]): Promise<PushResponse>;
 
   /** Pull operations from the current hub. */
-  pullFromHub(): Promise<PullResponse>;
+  pullFromHub(since?: string): Promise<PullResponse>;
 
   /** Enable or disable local network sync. */
   setLocalSyncEnabled(enabled: boolean): Promise<void>;
@@ -177,8 +177,8 @@ export function createLocalSyncService(): LocalSyncService {
       return invoke<PushResponse>('push_to_hub', { operations });
     },
 
-    async pullFromHub(): Promise<PullResponse> {
-      return invoke<PullResponse>('pull_from_hub');
+    async pullFromHub(since?: string): Promise<PullResponse> {
+      return invoke<PullResponse>('pull_from_hub', { since: since ?? null });
     },
 
     async setLocalSyncEnabled(enabled: boolean): Promise<void> {
