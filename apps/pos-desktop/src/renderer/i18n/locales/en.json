@@ -64,7 +64,8 @@
       "total": "Total",
       "invoice": "Invoice",
       "status": "Status",
-      "has_adjustments": "Adjustments"
+      "has_adjustments": "Adjustments",
+      "workstation_suffix": "· POS {{code}}"
     },
     "detail": {
       "title": "Sale detail",

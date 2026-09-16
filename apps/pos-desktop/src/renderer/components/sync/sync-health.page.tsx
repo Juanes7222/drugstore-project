@@ -293,6 +293,7 @@ export const SyncHealthPage: FC = () => {
     pushedToHub: number;
     adoptedFromHub: number;
     cloudRan: boolean;
+    failedPulls: Array<{ step: string; error: string }>;
   }> => {
     const engine =
       getLocalSyncEngine() ?? startupServices?.localSyncEngine ?? null;
@@ -312,10 +313,26 @@ export const SyncHealthPage: FC = () => {
     }
 
     let cloudRan = false;
+    let failedPulls: Array<{ step: string; error: string }> = [];
     const scheduler = startupServices?.syncScheduler ?? null;
+    const collectPullReport = (sched: {
+      getLastPullReport?: () => {
+        steps: Record<string, { ok: boolean; error?: string }>;
+      };
+    }): void => {
+      // Pull steps fail silently into console.warn by design (one bad pull
+      // must not break the cycle); surfacing them here is what turns "the
+      // sale never appears" into "sales pull: 401" without log-diving.
+      const report = sched.getLastPullReport?.();
+      if (!report) return;
+      failedPulls = Object.entries(report.steps)
+        .filter(([, r]) => !r.ok)
+        .map(([step, r]) => ({ step, error: r.error ?? 'unknown error' }));
+    };
     if (scheduler) {
       await scheduler.syncNow();
       cloudRan = true;
+      collectPullReport(scheduler);
     } else {
       // Fallback for contexts without a provider (tests, early boot):
       // cloud half only, with whatever credentials the session holds.
@@ -336,9 +353,10 @@ export const SyncHealthPage: FC = () => {
       });
       await fallback.syncNow();
       cloudRan = true;
+      collectPullReport(fallback);
     }
 
-    return { lanOutcome, pushedToHub, adoptedFromHub, cloudRan };
+    return { lanOutcome, pushedToHub, adoptedFromHub, cloudRan, failedPulls };
   }, [startupServices]);
 
   const handleRetry = useCallback(
@@ -374,6 +392,12 @@ export const SyncHealthPage: FC = () => {
             `Retry pushed (LAN: ${summary.pushedToHub} relayed, ` +
               `${summary.adoptedFromHub} adopted · Nube: ciclo ejecutado)`,
           );
+          if (summary.failedPulls.length > 0) {
+            showToast(
+              "error",
+              `Pulls fallidos: ${summary.failedPulls.map((f) => `${f.step} (${f.error})`).join(', ')}`,
+            );
+          }
         } catch (pushErr) {
           showToast(
             "info",
@@ -455,6 +479,16 @@ export const SyncHealthPage: FC = () => {
                 ? 'LAN: motor no disponible'
                 : `LAN: ${summary.lanOutcome}`;
       showToast("success", `Sincronización ejecutada — ${lanPart} · Nube: ciclo ejecutado`);
+      if (summary.failedPulls.length > 0) {
+        const names = summary.failedPulls.map((f) => f.step).join(', ');
+        const detail = summary.failedPulls
+          .map((f) => `${f.step}: ${f.error}`)
+          .join(' | ');
+        // A failing pull (e.g. sales: 401) is exactly how "the sale never
+        // appears in history" looks from the inside — surface it where the
+        // operator already is instead of the webview console.
+        showToast("error", `Pulls fallidos (${names}). ${detail}`);
+      }
       await loadData();
     } catch (err) {
       showToast("error", err instanceof Error ? err.message : "Sync cycle failed");

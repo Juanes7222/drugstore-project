@@ -625,6 +625,39 @@ describe("ClientDetailDialog", () => {
       expect(screen.getByText("2 ventas")).toBeInTheDocument();
     });
 
+    it("renders the workstation suffix when the sale carries workstation identity", async () => {
+      setup(makeClient(), {
+        items: [
+          makeSale({
+            saleId: "sale-ws",
+            localNumber: "15",
+            sourceWorkstationId: "ws-abc-a3f2",
+            workstationId: "ws-other-9999",
+          }),
+        ],
+        total: 1,
+      });
+
+      expect(await screen.findByText("· POS A3F2")).toBeInTheDocument();
+    });
+
+    it("renders no suffix for legacy sales without workstation identity", async () => {
+      setup(makeClient(), {
+        items: [
+          makeSale({
+            saleId: "sale-legacy",
+            localNumber: "15",
+            sourceWorkstationId: null,
+            workstationId: null,
+          }),
+        ],
+        total: 1,
+      });
+
+      expect(await screen.findByText("#15")).toBeInTheDocument();
+      expect(screen.queryByText(/POS/)).not.toBeInTheDocument();
+    });
+
     it("renders the empty state when the client has no sales", async () => {
       setup(makeClient(), { items: [], total: 0 });
 

@@ -65,6 +65,82 @@ describe('SalesHistoryList', () => {
     expect(screen.getByText('Autorizado DIAN')).toBeInTheDocument();
   });
 
+  it('renders the workstation suffix from sourceWorkstationId', () => {
+    render(
+      <SalesHistoryList
+        {...defaultProps}
+        sales={[
+          createSale({
+            saleId: 'sale-ws',
+            localNumber: '15',
+            sourceWorkstationId: 'ws-abc-a3f2',
+            workstationId: 'ws-other-9999',
+          }),
+        ]}
+      />,
+    );
+
+    // Source wins over the owning workstation; last 4 uppercased via i18n.
+    expect(screen.getByText('· POS A3F2')).toBeInTheDocument();
+  });
+
+  it('falls back to workstationId when sourceWorkstationId is missing', () => {
+    render(
+      <SalesHistoryList
+        {...defaultProps}
+        sales={[
+          createSale({
+            saleId: 'sale-ws',
+            localNumber: '15',
+            sourceWorkstationId: null,
+            workstationId: 'terminal-01-b7c1',
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('· POS B7C1')).toBeInTheDocument();
+  });
+
+  it('renders no suffix for legacy rows without workstation identity', () => {
+    render(
+      <SalesHistoryList
+        {...defaultProps}
+        sales={[
+          createSale({
+            saleId: 'sale-legacy',
+            localNumber: '15',
+            sourceWorkstationId: null,
+            workstationId: null,
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('#15')).toBeInTheDocument();
+    expect(screen.queryByText(/POS/)).not.toBeInTheDocument();
+  });
+
+  it('includes the workstation suffix in the detail button accessible name', () => {
+    render(
+      <SalesHistoryList
+        {...defaultProps}
+        sales={[
+          createSale({
+            saleId: 'sale-ws',
+            localNumber: '15',
+            sourceWorkstationId: 'ws-abc-a3f2',
+            workstationId: null,
+          }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole('button', { name: /#15.*POS A3F2/ }),
+    ).toBeInTheDocument();
+  });
+
   it('debounces the search input and notifies the parent with the query', () => {
     vi.useFakeTimers();
     try {

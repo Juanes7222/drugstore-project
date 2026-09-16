@@ -45,6 +45,7 @@ import type {
   CreditHistoryResult,
 } from "../../../domain/clients/credit.service";
 import type { SaleHistoryListItem } from "../../../domain/sales-pos/sales-history.service";
+import { getWorkstationSuffixCode } from "../sales-history/workstation-suffix";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -745,7 +746,14 @@ useEffect(() => {
                     </p>
                   ) : (
                     <ul className="m-0 list-none p-0">
-                      {sales.map((sale, idx) => (
+                      {sales.map((sale, idx) => {
+                        // Same disambiguator as the global history: ticket
+                        // numbers restart per source workstation.
+                        const workstationCode = getWorkstationSuffixCode(
+                          sale.sourceWorkstationId,
+                          sale.workstationId,
+                        );
+                        return (
                         <li
                           key={sale.saleId}
                           className="flex items-center gap-3 py-1.5"
@@ -759,10 +767,23 @@ useEffect(() => {
                           }
                         >
                           <span
-                            className="w-12 shrink-0 font-data tabular-nums font-semibold"
+                            className="min-w-12 shrink-0 font-data tabular-nums font-semibold"
                             style={{ color: "var(--color-pharma)" }}
                           >
                             #{sale.localNumber}
+                            {workstationCode ? (
+                              <span
+                                className="ml-1 text-caption font-normal"
+                                style={{
+                                  color:
+                                    "color-mix(in srgb, var(--color-ink) 45%, transparent)",
+                                }}
+                              >
+                                {t("salesHistory.list.workstation_suffix", {
+                                  code: workstationCode,
+                                })}
+                              </span>
+                            ) : null}
                           </span>
                           <div className="min-w-0 flex-1">
                             <p
@@ -787,7 +808,8 @@ useEffect(() => {
                             {formatSaleAmount(sale.totalAmount, locale)}
                           </span>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   )}
                 </div>

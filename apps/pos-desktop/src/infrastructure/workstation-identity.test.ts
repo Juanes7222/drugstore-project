@@ -8,6 +8,7 @@
  */
 import { describe, expect, it, vi, type Mock } from "vitest";
 import {
+  convergeWorkstationId,
   resolveWorkstationId,
   resolveWorkstationName,
   type IdentityStorage,
@@ -180,6 +181,157 @@ describe("workstation-identity", () => {
       const name = resolveWorkstationName("id-ending-7777", "   ");
 
       expect(name).toBe("POS 7777");
+    });
+  });
+
+  describe("convergeWorkstationId", () => {
+    const makeReadFile = (value: string | null) => vi.fn(async () => value);
+    const makeWriteFile = () => vi.fn(async (_value: string) => true);
+
+    it("prefers the shared file and heals a diverged storage", async () => {
+      const storage = makeStorage("storage-id");
+      const readFile = makeReadFile("file-id");
+      const writeFile = makeWriteFile();
+
+      const result = await convergeWorkstationId({ storage, readFile, writeFile });
+
+      expect(result).toEqual({
+        workstationId: "file-id",
+        source: "file",
+        converged: true,
+      });
+      expect(storage.setItem).toHaveBeenCalledWith("file-id");
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
+    it("reports no convergence when file and storage already agree", async () => {
+      const storage = makeStorage("same-id");
+      const readFile = makeReadFile("same-id");
+      const writeFile = makeWriteFile();
+
+      const result = await convergeWorkstationId({ storage, readFile, writeFile });
+
+      expect(result).toEqual({
+        workstationId: "same-id",
+        source: "file",
+        converged: false,
+      });
+      expect(storage.setItem).not.toHaveBeenCalled();
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
+    it("promotes a valid storage value to the missing file", async () => {
+      const storage = makeStorage("persisted-id");
+      const readFile = makeReadFile(null);
+      const writeFile = makeWriteFile();
+
+      const result = await convergeWorkstationId({ storage, readFile, writeFile });
+
+      expect(result).toEqual({
+        workstationId: "persisted-id",
+        source: "persisted",
+        converged: true,
+      });
+      expect(writeFile).toHaveBeenCalledWith("persisted-id");
+    });
+
+    it("mints a fresh id into both stores when neither exists", async () => {
+      const storage = makeStorage(null);
+      const generateUuid = makeUuidGenerator(["uuid-fresh-converge"]);
+      const readFile = makeReadFile(null);
+      const writeFile = makeWriteFile();
+
+      const result = await convergeWorkstationId({
+        storage,
+        generateUuid,
+        readFile,
+        writeFile,
+      });
+
+      expect(result).toEqual({
+        workstationId: "uuid-fresh-converge",
+        source: "generated",
+        converged: true,
+      });
+      expect(storage.setItem).toHaveBeenCalledWith("uuid-fresh-converge");
+      expect(writeFile).toHaveBeenCalledWith("uuid-fresh-converge");
+    });
+
+    it("discards corrupt values from both stores and generates fresh", async () => {
+      const storage = makeStorage("");
+      const generateUuid = makeUuidGenerator(["uuid-after-corrupt"]);
+      const readFile = makeReadFile("   ");
+      const writeFile = makeWriteFile();
+
+      const result = await convergeWorkstationId({
+        storage,
+        generateUuid,
+        readFile,
+        writeFile,
+      });
+
+      expect(result.workstationId).toBe("uuid-after-corrupt");
+      expect(result.source).toBe("generated");
+    });
+
+    it("falls back to storage when the file value is corrupt", async () => {
+      const storage = makeStorage("valid-storage-id");
+      const readFile = makeReadFile("a".repeat(129));
+      const writeFile = makeWriteFile();
+
+      const result = await convergeWorkstationId({ storage, readFile, writeFile });
+
+      expect(result).toEqual({
+        workstationId: "valid-storage-id",
+        source: "persisted",
+        converged: true,
+      });
+    });
+
+    it("prefers the file when the storage value is corrupt", async () => {
+      const storage = makeStorage("");
+      const readFile = makeReadFile("valid-file-id");
+      const writeFile = makeWriteFile();
+
+      const result = await convergeWorkstationId({ storage, readFile, writeFile });
+
+      expect(result.workstationId).toBe("valid-file-id");
+      expect(result.source).toBe("file");
+    });
+
+    it("never throws when file I/O fails", async () => {
+      const storage = makeStorage("persisted-id");
+      const readFile = vi.fn(async () => {
+        throw new Error("disk unavailable");
+      });
+      const writeFile = vi.fn(async (_value: string) => {
+        throw new Error("disk read-only");
+      });
+
+      const result = await convergeWorkstationId({ storage, readFile, writeFile });
+
+      expect(result).toEqual({
+        workstationId: "persisted-id",
+        source: "persisted",
+        converged: false,
+      });
+    });
+
+    it("never throws when storage writes fail", async () => {
+      const storage = makeStorage("stale-id");
+      vi.mocked(storage.setItem).mockImplementation(() => {
+        throw new Error("QuotaExceededError");
+      });
+      const readFile = makeReadFile("file-wins-id");
+      const writeFile = makeWriteFile();
+
+      const result = await convergeWorkstationId({ storage, readFile, writeFile });
+
+      expect(result).toEqual({
+        workstationId: "file-wins-id",
+        source: "file",
+        converged: true,
+      });
     });
   });
 });

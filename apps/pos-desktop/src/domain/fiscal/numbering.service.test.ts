@@ -1,5 +1,10 @@
 /**
  * Tests for the fiscal numbering service.
+ *
+ * `nextNumber` reserves via a single conditional UPDATE..RETURNING
+ * (`$queryRawUnsafe`), so these tests mock that call for the success path
+ * and `fiscalCounter.findUnique` only for the not-initialized/exhausted
+ * branches.
  */
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { createFiscalNumberingService } from "./numbering.service";
@@ -19,6 +24,16 @@ function createMockCounter(overrides?: Record<string, unknown>) {
     paddingLength: 8,
     authorizedStart: 1n,
     authorizedEnd: 99999999n,
+    ...overrides,
+  };
+}
+
+function createQueryRow(overrides?: Record<string, unknown>) {
+  return {
+    resolutionPrefix: "FE",
+    contingencyPrefix: "CONT",
+    paddingLength: 8,
+    next: 1n,
     ...overrides,
   };
 }
@@ -44,6 +59,7 @@ function createMockPrisma() {
       }),
       findMany: vi.fn().mockResolvedValue([]),
     },
+    $queryRawUnsafe: vi.fn(),
     $transaction: vi.fn(async (fn: any) => fn(Promise.resolve())),
   };
 }
@@ -84,6 +100,9 @@ describe("FiscalNumberingService", () => {
 
   describe("nextNumber", () => {
     it("throws FiscalCounterNotInitializedError when no counter exists", async () => {
+      vi.mocked(mockPrisma.$queryRawUnsafe).mockResolvedValue([]);
+      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(null);
+
       const service = createFiscalNumberingService({
         prisma: mockPrisma as any,
         workstationId: "ws-001",
@@ -95,9 +114,9 @@ describe("FiscalNumberingService", () => {
     });
 
     it("returns the first number when counter starts at 0", async () => {
-      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
-        createMockCounter({ currentRegularNumber: 0n }),
-      );
+      vi.mocked(mockPrisma.$queryRawUnsafe).mockResolvedValue([
+        createQueryRow({ next: 1n }),
+      ]);
 
       const service = createFiscalNumberingService({
         prisma: mockPrisma as any,
@@ -107,12 +126,17 @@ describe("FiscalNumberingService", () => {
       const number = await service.nextNumber("ELECTRONIC_INVOICE", false);
 
       expect(number).toMatch(/^FE-ws-001-0+1$/);
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+      const [sql, workstationId] = vi.mocked(mockPrisma.$queryRawUnsafe).mock
+        .calls[0];
+      expect(sql).toContain("currentRegularNumber");
+      expect(workstationId).toBe("ws-001");
     });
 
     it("increments the regular counter on each call", async () => {
-      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
-        createMockCounter({ currentRegularNumber: 5n }),
-      );
+      vi.mocked(mockPrisma.$queryRawUnsafe).mockResolvedValue([
+        createQueryRow({ next: 6n }),
+      ]);
 
       const service = createFiscalNumberingService({
         prisma: mockPrisma as any,
@@ -121,14 +145,14 @@ describe("FiscalNumberingService", () => {
 
       const number = await service.nextNumber("ELECTRONIC_INVOICE", false);
 
-      // Should be 6 (5 + 1), formatted with padding
+      // Should be 6, formatted with padding
       expect(number).toMatch(/^FE-ws-001-0+6$/);
     });
 
     it("uses the contingency prefix and counter in contingency mode", async () => {
-      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
-        createMockCounter({ currentContingencyNumber: 2n }),
-      );
+      vi.mocked(mockPrisma.$queryRawUnsafe).mockResolvedValue([
+        createQueryRow({ next: 3n }),
+      ]);
 
       const service = createFiscalNumberingService({
         prisma: mockPrisma as any,
@@ -139,9 +163,12 @@ describe("FiscalNumberingService", () => {
 
       // Should be 3 (2 + 1), with CONT prefix
       expect(number).toMatch(/^CONT-ws-001-0+3$/);
+      const [sql] = vi.mocked(mockPrisma.$queryRawUnsafe).mock.calls[0];
+      expect(sql).toContain("currentContingencyNumber");
     });
 
     it("throws FiscalCounterExhaustedError when counter reaches authorized end", async () => {
+      vi.mocked(mockPrisma.$queryRawUnsafe).mockResolvedValue([]);
       mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
         createMockCounter({
           currentRegularNumber: 99999999n,
@@ -160,16 +187,12 @@ describe("FiscalNumberingService", () => {
     });
 
     it("accepts an optional transaction client", async () => {
-      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
-        createMockCounter({ currentRegularNumber: 0n }),
-      );
-
       const mockTx = {
+        $queryRawUnsafe: vi.fn().mockResolvedValue([
+          createQueryRow({ next: 1n }),
+        ]),
         fiscalCounter: {
-          findUnique: vi.fn().mockResolvedValue(
-            createMockCounter({ currentRegularNumber: 0n }),
-          ),
-          update: vi.fn().mockResolvedValue({}),
+          findUnique: vi.fn(),
         },
       };
 
@@ -181,12 +204,14 @@ describe("FiscalNumberingService", () => {
       const number = await service.nextNumber("ELECTRONIC_INVOICE", false, mockTx as any);
 
       expect(number).toMatch(/^FE-ws-001-0+1$/);
+      expect(mockTx.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
     });
 
     it("works for all invoice types", async () => {
-      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
-        createMockCounter({ currentRegularNumber: 0n }),
-      );
+      vi.mocked(mockPrisma.$queryRawUnsafe).mockResolvedValue([
+        createQueryRow({ next: 1n }),
+      ]);
 
       const service = createFiscalNumberingService({
         prisma: mockPrisma as any,
@@ -203,6 +228,67 @@ describe("FiscalNumberingService", () => {
         const number = await service.nextNumber(type, false);
         expect(number).toMatch(/^FE-ws-001-/);
       }
+    });
+
+    it("never hands the same number to two concurrent callers", async () => {
+      // Simulate the atomic UPDATE..RETURNING at the mock level: a shared
+      // in-memory counter incremented inside the mocked query, with a small
+      // async yield so the two overlapping calls interleave.
+      let current = 0n;
+      vi.mocked(mockPrisma.$queryRawUnsafe).mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        current += 1n;
+        return [
+          createQueryRow({ next: current }),
+        ];
+      });
+
+      const service = createFiscalNumberingService({
+        prisma: mockPrisma as any,
+        workstationId: "ws-001",
+      });
+
+      const [first, second] = await Promise.all([
+        service.nextNumber("ELECTRONIC_INVOICE", false),
+        service.nextNumber("ELECTRONIC_INVOICE", false),
+      ]);
+
+      expect(first).not.toBe(second);
+      expect([first, second].sort()).toEqual([
+        "FE-ws-001-00000001",
+        "FE-ws-001-00000002",
+      ]);
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not consume a number when the range is exhausted", async () => {
+      // First call: the conditional UPDATE reserves nothing (range at its
+      // end), so the service throws without incrementing. After the range
+      // is extended, the next reservation continues the sequence instead
+      // of skipping a number.
+      vi.mocked(mockPrisma.$queryRawUnsafe)
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([createQueryRow({ next: 6n })]);
+      mockPrisma.fiscalCounter.findUnique = vi.fn().mockResolvedValue(
+        createMockCounter({
+          currentRegularNumber: 5n,
+          authorizedEnd: 5n,
+        }),
+      );
+
+      const service = createFiscalNumberingService({
+        prisma: mockPrisma as any,
+        workstationId: "ws-001",
+      });
+
+      await expect(
+        service.nextNumber("ELECTRONIC_INVOICE", false),
+      ).rejects.toThrow(FiscalCounterExhaustedError);
+
+      const number = await service.nextNumber("ELECTRONIC_INVOICE", false);
+
+      expect(number).toMatch(/^FE-ws-001-0+6$/);
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledTimes(2);
     });
   });
 

@@ -10,6 +10,7 @@ import { dbWriteLock } from "../../infrastructure/write-lock";
 import { createSecureStorage } from "../../infrastructure/secure-storage";
 import { decodeOfflineToken } from "../auth/offline";
 import { MAX_RETRY_ATTEMPTS } from "./sync-push.service";
+import { HttpStatusException } from "../auth/auth-http-client";
 import type { LocalSession } from "../auth/local-session.store";
 import {
   notifyPendingEntry,
@@ -55,6 +56,66 @@ vi.mock("../sales-pos/sales-sync.service", () => ({
   createSalesSyncService: vi.fn(() => ({
     fetchSales: vi.fn().mockResolvedValue([]),
     applySales: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../configuration/config-sync.service", () => ({
+  createConfigSyncService: vi.fn(() => ({
+    fetchConfiguration: vi.fn().mockResolvedValue({ paymentMethods: [] }),
+    applyConfiguration: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../config/config-sync.service", () => ({
+  createTenantConfigSyncService: vi.fn(() => ({
+    pullTenantConfig: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../catalog/catalog-sync.service", () => ({
+  createCatalogSyncService: vi.fn(() => ({
+    fetchCatalog: vi.fn().mockResolvedValue({
+      categories: [],
+      pharmaceuticalForms: [],
+      taxSchemes: [],
+      products: [],
+    }),
+    applyCatalog: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../inventory-lots/lot-sync.service", () => ({
+  createLotSyncService: vi.fn(() => ({
+    fetchLots: vi.fn().mockResolvedValue([]),
+    applyLots: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../clients/client-pull.service", () => ({
+  createClientPullService: vi.fn(() => ({
+    fetchClassifications: vi.fn().mockResolvedValue([]),
+    applyClassifications: vi.fn().mockResolvedValue(undefined),
+    fetchClients: vi.fn().mockResolvedValue([]),
+    applyClients: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../cash-shift/open-shift-pull.service", () => ({
+  createOpenShiftPullService: vi.fn(() => ({
+    fetchOpenShift: vi.fn().mockResolvedValue(null),
+    applyOpenShift: vi.fn().mockResolvedValue({ status: "applied" }),
+  })),
+}));
+vi.mock("../auth/user-pull.service", () => ({
+  createUserPullService: vi.fn(() => ({
+    fetchUserIdentities: vi.fn().mockResolvedValue([]),
+    applyUserIdentities: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../fiscal/invoice-sync.service", () => ({
+  createInvoiceSyncService: vi.fn(() => ({
+    fetchInvoices: vi.fn().mockResolvedValue([]),
+    applyInvoices: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
+vi.mock("../fiscal/invoice-adjustment-sync.service", () => ({
+  createInvoiceAdjustmentSyncService: vi.fn(() => ({
+    fetchAdjustments: vi.fn().mockResolvedValue([]),
+    applyAdjustments: vi.fn().mockResolvedValue(undefined),
   })),
 }));
 
@@ -1302,6 +1363,116 @@ describe("SyncScheduler", () => {
           data: { nextRetryAt: expect.any(Date) },
         }),
       );
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Last pull report — every pull step records ok/failed per tick via
+  // markPullOk/markPullFailed so the sync-health screen can surface silent
+  // pull failures (e.g. sales: 401) without log-diving. Pull services are
+  // mocked at module level above; per-test overrides inject the failure
+  // under test through the sales-sync factory.
+  // -----------------------------------------------------------------------
+
+  describe("last pull report", () => {
+    it("starts empty before any tick runs", () => {
+      scheduler = makeScheduler();
+
+      expect(scheduler.getLastPullReport()).toEqual({ steps: {}, suppressed: [] });
+    });
+
+    it("records the failing sales pull with its error while other steps record ok", async () => {
+      seedSession({
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+      });
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        configurable: true,
+      });
+      const { createSalesSyncService } = await import("../sales-pos/sales-sync.service");
+      vi.mocked(createSalesSyncService).mockReturnValue({
+        fetchSales: vi.fn().mockRejectedValue(new Error("sales pull boom")),
+        applySales: vi.fn().mockResolvedValue(undefined),
+      } as any);
+
+      scheduler = makeScheduler({ tenantConfig: { baseUrl: "http://localhost:3000" } });
+      await scheduler.syncNow();
+
+      const report = scheduler.getLastPullReport();
+
+      expect(report.steps.sales).toMatchObject({ ok: false, error: "sales pull boom" });
+      expect(typeof report.steps.sales.at).toBe("string");
+      expect(report.steps.config).toMatchObject({ ok: true });
+      expect(report.steps["tenant-config"]).toMatchObject({ ok: true });
+      expect(report.steps.catalog).toMatchObject({ ok: true });
+      expect(report.steps.lots).toMatchObject({ ok: true });
+      expect(report.steps["client-classifications"]).toMatchObject({ ok: true });
+      expect(report.steps.clients).toMatchObject({ ok: true });
+      expect(report.steps["open-shift"]).toMatchObject({ ok: true });
+      expect(report.steps.users).toMatchObject({ ok: true });
+      expect(report.steps.suppliers).toMatchObject({ ok: true });
+      expect(report.steps["purchase-orders"]).toMatchObject({ ok: true });
+      expect(report.steps["purchase-receptions"]).toMatchObject({ ok: true });
+      expect(report.steps["supplier-returns"]).toMatchObject({ ok: true });
+      expect(report.steps.invoices).toMatchObject({ ok: true });
+      expect(report.steps["invoice-adjustments"]).toMatchObject({ ok: true });
+      expect(report.suppressed).not.toContain("sales");
+    });
+
+    it("records a 403 pull as failed and suppresses the step", async () => {
+      seedSession({
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+      });
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        configurable: true,
+      });
+      const { createSalesSyncService } = await import("../sales-pos/sales-sync.service");
+      const fetchSales = vi
+        .fn()
+        .mockRejectedValue(new HttpStatusException(403, { message: "Forbidden" }));
+      vi.mocked(createSalesSyncService).mockReturnValue({
+        fetchSales,
+        applySales: vi.fn().mockResolvedValue(undefined),
+      } as any);
+
+      scheduler = makeScheduler();
+      await scheduler.syncNow();
+
+      const report = scheduler.getLastPullReport();
+
+      expect(report.steps.sales.ok).toBe(false);
+      expect(report.steps.sales.error).toContain("403");
+      expect(report.suppressed).toContain("sales");
+
+      await scheduler.syncNow();
+
+      expect(fetchSales).toHaveBeenCalledTimes(1);
+    });
+
+    it("exposes steps and suppressed from getLastPullReport", async () => {
+      seedSession({
+        expiresAt: new Date(Date.now() + 30 * 60_000),
+      });
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        configurable: true,
+      });
+      const { createSalesSyncService } = await import("../sales-pos/sales-sync.service");
+      vi.mocked(createSalesSyncService).mockReturnValue({
+        fetchSales: vi.fn().mockResolvedValue([]),
+        applySales: vi.fn().mockResolvedValue(undefined),
+      } as any);
+
+      scheduler = makeScheduler({ tenantConfig: { baseUrl: "http://localhost:3000" } });
+      await scheduler.syncNow();
+
+      const report = scheduler.getLastPullReport();
+
+      expect(report.suppressed).toEqual([]);
+      expect(report.steps.config).toEqual({ ok: true, at: expect.any(String) });
+      expect(report.steps.sales).toEqual({ ok: true, at: expect.any(String) });
+      expect(report.steps["tenant-config"]).toEqual({ ok: true, at: expect.any(String) });
     });
   });
 });

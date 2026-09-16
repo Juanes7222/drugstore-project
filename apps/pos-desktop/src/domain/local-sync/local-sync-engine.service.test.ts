@@ -814,4 +814,62 @@ describe("createLocalSyncEngine", () => {
       expect(mockInvoke).toHaveBeenCalledTimes(2);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // AUDIT_LOG_BATCH LAN exclusion (push + pull)
+  // -------------------------------------------------------------------------
+
+  describe("runCycle — AUDIT_LOG_BATCH LAN exclusion", () => {
+    it("excludes AUDIT_LOG_BATCH in the relayable fetch where clause", async () => {
+      const { prisma, findMany } = makePrismaMock();
+
+      const engine = createLocalSyncEngine({ prisma, workstationId });
+
+      await engine.runCycle();
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            lanRelayedAt: null,
+            operationType: { not: "AUDIT_LOG_BATCH" },
+          }),
+        }),
+      );
+    });
+
+    it("skips adopting foreign AUDIT_LOG_BATCH ops while business ops are adopted and the cursor advances", async () => {
+      const nextSince = "2026-04-01T00:00:00.000Z";
+      const findMany = vi.fn().mockResolvedValue([]);
+      const create = vi.fn().mockResolvedValue({});
+      const { prisma } = makePrismaMock({ findManyImpl: findMany, createImpl: create });
+
+      mockInvoke.mockImplementation(async (cmd: string) => {
+        if (cmd === "get_local_sync_status") return hubStatus();
+        if (cmd === "push_to_hub") return { acceptedOperationUuids: [], accepted: 0, rejected: 0, conflicts: [] };
+        if (cmd === "pull_from_hub")
+          return {
+            operations: pullOps(
+              { operationUuid: "uuid-audit-1", operationType: "AUDIT_LOG_BATCH", sourceWorkstationId: "ws-2" },
+              { operationUuid: "uuid-audit-2", operationType: "AUDIT_LOG_BATCH", sourceWorkstationId: "ws-3" },
+              { operationUuid: "uuid-sale-9", operationType: "SALE_CONFIRMATION", sourceWorkstationId: "ws-2" },
+            ),
+            nextSince,
+          };
+        return null as unknown;
+      });
+
+      const engine = createLocalSyncEngine({ prisma, workstationId });
+
+      const result = await engine.runCycle();
+
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ operationUuid: "uuid-sale-9" }),
+        }),
+      );
+      expect(result.adoptedFromHub).toBe(1);
+      expect(localStorage.getItem("lan-pull-cursor:192.168.1.10:49500")).toBe(nextSince);
+    });
+  });
 });

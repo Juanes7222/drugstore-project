@@ -250,6 +250,20 @@ export class SyncScheduler {
    * set on re-login because a different user may be allowed to pull.
    */
   private readonly pullSuppressed = new Set<string>();
+  /**
+   * Per-pull-step outcome of the most recent tick, keyed by the same step
+   * names used in `pullSuppressed` ('sales', 'lots', ...). Console-only
+   * warnings are invisible to operators (webview console never reaches the
+   * terminal logs they share), so every pull step records ok/failed here
+   * and `getLastPullReport()` exposes it to the sync-health screen: a sale
+   * that never appears in history is usually a silently-failing sales pull
+   * (expired token, 401), and this is where that becomes visible without
+   * human log-diving.
+   */
+  private readonly lastPullResults = new Map<
+    string,
+    { ok: boolean; error?: string; at: string }
+  >();
   private configSync: ConfigSyncService;
   private tenantConfigSync?: TenantConfigSyncService;
   private catalogSync: CatalogSyncService;
@@ -503,6 +517,36 @@ export class SyncScheduler {
     console.info(
       `[SyncScheduler] ${name} pull forbidden for this role — suppressed until next login`,
     );
+  }
+
+  /** Record a successful pull step for the health report. */
+  private markPullOk(name: string): void {
+    this.lastPullResults.set(name, { ok: true, at: new Date().toISOString() });
+  }
+
+  /** Record a failed pull step for the health report (keeps console warn). */
+  private markPullFailed(name: string, err: unknown): void {
+    this.lastPullResults.set(name, {
+      ok: false,
+      error: describeSyncError(err),
+      at: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * Snapshot of the most recent tick's pull steps for the sync-health UI.
+   * Steps that never ran (optional syncs without config) are absent;
+   * suppressed-by-403 steps are listed separately — they are expected
+   * role mismatches, not failures to chase.
+   */
+  getLastPullReport(): {
+    steps: Record<string, { ok: boolean; error?: string; at: string }>;
+    suppressed: string[];
+  } {
+    return {
+      steps: Object.fromEntries(this.lastPullResults.entries()),
+      suppressed: [...this.pullSuppressed],
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -1320,9 +1364,11 @@ export class SyncScheduler {
     try {
       const payload = await this.configSync.fetchConfiguration();
       await this.withLock(() => this.configSync.applyConfiguration(payload));
+      this.markPullOk('config');
     } catch (err) {
-      // Swallowed so the rest of the cycle still runs, but never silently —
+      // Swallowed so the rest of the cycle still runs, but never silently -
       // a config pull failing on every tick must be visible in the console.
+      this.markPullFailed('config', err);
       console.warn('[SyncScheduler] config pull failed:', describeSyncError(err));
     }
 
@@ -1332,8 +1378,10 @@ export class SyncScheduler {
     if (this.tenantConfigSync) {
       try {
         await this.tenantConfigSync!.pullTenantConfig();
-      } catch {
-        // Swallow — the store keeps the last known config.
+        this.markPullOk('tenant-config');
+      } catch (err) {
+        this.markPullFailed('tenant-config', err);
+        // Swallow - the store keeps the last known config.
       }
     }
 
@@ -1358,7 +1406,9 @@ export class SyncScheduler {
       try {
         const payload = await this.catalogSync.fetchCatalog();
         await this.withLock(() => this.catalogSync.applyCatalog(payload));
+        this.markPullOk('catalog');
       } catch (err) {
+        this.markPullFailed('catalog', err);
         if (this.isForbidden(err)) {
           this.suppressPull('catalog');
         } else {
@@ -1381,7 +1431,9 @@ export class SyncScheduler {
     try {
       const lots = await this.lotSync.fetchLots();
       await this.withLock(() => this.lotSync.applyLots(lots));
+      this.markPullOk('lots');
     } catch (err) {
+      this.markPullFailed('lots', err);
       if (this.isForbidden(err)) {
         console.warn(
           '[SyncScheduler] lot pull forbidden (unexpected after 26/08 CASHIER fix) — will retry next tick:',
@@ -1398,7 +1450,9 @@ export class SyncScheduler {
       try {
         const rows = await this.clientPull.fetchClassifications();
         await this.withLock(() => this.clientPull.applyClassifications(rows));
+        this.markPullOk('client-classifications');
       } catch (err) {
+        this.markPullFailed('client-classifications', err);
         if (this.isForbidden(err)) {
           this.suppressPull('client-classifications');
         } else {
@@ -1415,7 +1469,9 @@ export class SyncScheduler {
       try {
         const clients = await this.clientPull.fetchClients();
         await this.withLock(() => this.clientPull.applyClients(clients));
+        this.markPullOk('clients');
       } catch (err) {
+        this.markPullFailed('clients', err);
         if (this.isForbidden(err)) {
           this.suppressPull('clients');
         } else {
@@ -1437,11 +1493,13 @@ export class SyncScheduler {
           );
           if (result.status === 'local-open-conflict') {
             console.warn(
-              `[SyncScheduler] open-shift conflict: local ${result.localShiftId} vs server ${result.serverShiftId} — keeping local until its push lands`,
+              `[SyncScheduler] open-shift conflict: local ${result.localShiftId} vs server ${result.serverShiftId} - keeping local until its push lands`,
             );
           }
         }
+        this.markPullOk('open-shift');
       } catch (err) {
+        this.markPullFailed('open-shift', err);
         if (this.isForbidden(err)) {
           this.suppressPull('open-shift');
         } else {
@@ -1457,7 +1515,9 @@ export class SyncScheduler {
       try {
         const rows = await this.userPull.fetchUserIdentities();
         await this.withLock(() => this.userPull.applyUserIdentities(rows));
+        this.markPullOk('users');
       } catch (err) {
+        this.markPullFailed('users', err);
         if (this.isForbidden(err)) this.suppressPull('users');
         else console.warn('[SyncScheduler] users pull failed:', describeSyncError(err));
       }
@@ -1470,7 +1530,9 @@ export class SyncScheduler {
       try {
         const rows = await this.supplierSync.fetchSuppliers();
         await this.withLock(() => this.supplierSync.applySuppliers(rows));
+        this.markPullOk('suppliers');
       } catch (err) {
+        this.markPullFailed('suppliers', err);
         if (this.isForbidden(err)) this.suppressPull('suppliers');
         else console.warn('[SyncScheduler] suppliers pull failed:', describeSyncError(err));
       }
@@ -1480,7 +1542,9 @@ export class SyncScheduler {
       try {
         const rows = await this.purchaseOrderSync.fetchPurchaseOrders();
         await this.withLock(() => this.purchaseOrderSync.applyPurchaseOrders(rows));
+        this.markPullOk('purchase-orders');
       } catch (err) {
+        this.markPullFailed('purchase-orders', err);
         if (this.isForbidden(err)) this.suppressPull('purchase-orders');
         else console.warn('[SyncScheduler] purchase-orders pull failed:', describeSyncError(err));
       }
@@ -1490,7 +1554,9 @@ export class SyncScheduler {
       try {
         const rows = await this.purchaseReceptionSync.fetchReceptions();
         await this.withLock(() => this.purchaseReceptionSync.applyReceptions(rows));
+        this.markPullOk('purchase-receptions');
       } catch (err) {
+        this.markPullFailed('purchase-receptions', err);
         if (this.isForbidden(err)) this.suppressPull('purchase-receptions');
         else console.warn('[SyncScheduler] purchase-receptions pull failed:', describeSyncError(err));
       }
@@ -1500,7 +1566,9 @@ export class SyncScheduler {
       try {
         const rows = await this.supplierReturnSync.fetchSupplierReturns();
         await this.withLock(() => this.supplierReturnSync.applySupplierReturns(rows));
+        this.markPullOk('supplier-returns');
       } catch (err) {
+        this.markPullFailed('supplier-returns', err);
         if (this.isForbidden(err)) this.suppressPull('supplier-returns');
         else console.warn('[SyncScheduler] supplier-returns pull failed:', describeSyncError(err));
       }
@@ -1513,7 +1581,9 @@ export class SyncScheduler {
       try {
         const rows = await this.salesSync.fetchSales();
         await this.withLock(() => this.salesSync.applySales(rows));
+        this.markPullOk('sales');
       } catch (err) {
+        this.markPullFailed('sales', err);
         if (this.isForbidden(err)) this.suppressPull('sales');
         else console.warn('[SyncScheduler] sales pull failed:', describeSyncError(err));
       }
@@ -1525,7 +1595,9 @@ export class SyncScheduler {
       try {
         const rows = await this.invoiceSync.fetchInvoices();
         await this.withLock(() => this.invoiceSync.applyInvoices(rows));
+        this.markPullOk('invoices');
       } catch (err) {
+        this.markPullFailed('invoices', err);
         if (this.isForbidden(err)) this.suppressPull('invoices');
         else console.warn('[SyncScheduler] invoices pull failed:', describeSyncError(err));
       }
@@ -1537,7 +1609,9 @@ export class SyncScheduler {
       try {
         const rows = await this.invoiceAdjustmentSync.fetchAdjustments();
         await this.withLock(() => this.invoiceAdjustmentSync.applyAdjustments(rows));
+        this.markPullOk('invoice-adjustments');
       } catch (err) {
+        this.markPullFailed('invoice-adjustments', err);
         if (this.isForbidden(err)) this.suppressPull('invoice-adjustments');
         else console.warn('[SyncScheduler] invoice-adjustments pull failed:', describeSyncError(err));
       }

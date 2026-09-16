@@ -32,6 +32,7 @@ import {
   ClientReturnState,
 } from '@pharmacy/database/local';
 import { dbWriteLock } from '../../infrastructure/write-lock';
+import type { LocalSession } from '../auth/local-session.store';
 import { notifyPendingEntry } from '../sync/sync-queue-notifier';
 import type { AuthService } from '../auth/auth.service';
 import type { InventoryLotsService, ConsumedLot } from '../inventory-lots/inventory-lots.service';
@@ -222,11 +223,18 @@ export class SalesPosService {
    *    `ProductPriceHistory` (or explicit override), resolves tax from
    *    the latest `ProductTaxHistory`, computes totals.
    * 4. Computes sale-level totals.
-   * 5. Generates a sequential `localNumber` per workstation (with retry
-   *    for the `ux_sale_local_per_ws` unique constraint).
+   * 5. Reserves a sequential `localNumber` per workstation (MAX+1 under the
+   *    PGlite write lock, with an outer retry on the
+   *    `localNumber`/`sourceWorkstationId` unique conflict).
    * 6. Creates the `Sale` and its `SaleItem` rows.
    *
    * No stock is touched during create — stock is consumed on `confirm`.
+   *
+   * Concurrency: the whole create runs under the foreground write lock and
+   * every attempt runs in its own transaction. Retrying inside a single
+   * transaction cannot work — Postgres aborts the transaction on the first
+   * unique violation, so everything after it fails with 25P02 — which is
+   * why the retry loop lives outside `$transaction`, not inside it.
    *
    * @throws PrescriptionRequiredNotSupportedException if any item.product.saleType
    *   is not FREE_SALE.
@@ -234,6 +242,43 @@ export class SalesPosService {
   async create(input: CreateSaleInput): Promise<unknown> {
     const session = this.auth.requireRole(RoleType.CASHIER, RoleType.ADMIN);
 
+    // Serialize against the single PGlite connection and against concurrent
+    // creators: MAX(localNumber)+1 is only safe when no other writer can
+    // interleave between the read and the insert. Foreground priority so a
+    // checkout never waits behind queued background sync steps.
+    await dbWriteLock.acquire('foreground');
+    try {
+      let lastConflict: unknown = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          return await this.createAttempt(input, session);
+        } catch (error: unknown) {
+          if (this.isLocalNumberConflict(error) && attempt < 4) {
+            lastConflict = error;
+            continue;
+          }
+          throw error;
+        }
+      }
+      throw lastConflict instanceof Error
+        ? lastConflict
+        : new Error('Failed to create sale after multiple retries due to local number conflict.');
+    } finally {
+      dbWriteLock.release();
+    }
+  }
+
+  /**
+   * Single attempt of `create()` — runs in its own transaction.
+   *
+   * Split out so the retry loop in `create()` can open a fresh transaction
+   * per attempt. See `create()` for why the retry must not live inside the
+   * transaction callback.
+   */
+  private async createAttempt(
+    input: CreateSaleInput,
+    session: Pick<LocalSession, 'userId' | 'workstationId' | 'role'>,
+  ): Promise<unknown> {
     return this.prisma.$transaction(async (tx) => {
       const cashShift = await this.getOpenCashShift(tx);
 
@@ -286,75 +331,67 @@ export class SalesPosService {
         this.validateDeliveryAgainstPolicy(delivery, input.clientId ?? null);
       }
 
-      // Retry loop for the `ux_sale_local_per_ws` unique constraint
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const localNumber = await this.getNextLocalNumber(tx, session.workstationId);
-        try {
-          const sale = await tx.sale.create({
-            data: {
+      // Reserve the next sequential number for this workstation. The write
+      // lock held by `create()` guarantees no other local writer reserved
+      // the same number between this read and the insert below; the outer
+      // retry covers the residual race (e.g. a pulled server sale landing
+      // in between), which surfaces as a unique conflict on
+      // (localNumber, sourceWorkstationId).
+      const localNumber = await this.getNextLocalNumber(tx, session.workstationId);
+      const sale = await tx.sale.create({
+        data: {
+          id: globalThis.crypto.randomUUID(),
+          localNumber,
+          operationalState: SaleOperationalState.IN_PROGRESS,
+          startedAt: new Date(),
+          lastModifiedAt: new Date(),
+          cashShiftId: cashShift.id,
+          workstationId: session.workstationId,
+          userId: session.userId,
+          sourceWorkstationId: session.workstationId,
+          clientIdentificationTypeSnapshot: clientData?.identificationType ?? null,
+          clientIdentificationNumberSnapshot: clientData?.identificationNumber ?? null,
+          clientNameSnapshot: clientData?.fullName ?? null,
+          clientId: clientData?.id ?? null,
+          clientClassificationIdSnapshot: clientData?.classification?.id ?? null,
+          clientTypeSnapshot: clientData?.classification?.type ?? null,
+          subtotal: totals.subtotal,
+          totalDiscount: totals.totalDiscount,
+          totalTax: totals.totalTax,
+          totalAmount: totals.totalAmount,
+          delivery: delivery
+            ? (delivery as unknown as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+          items: {
+            create: saleItems.map((item) => ({
               id: globalThis.crypto.randomUUID(),
-              localNumber,
-              operationalState: SaleOperationalState.IN_PROGRESS,
-              startedAt: new Date(),
-              lastModifiedAt: new Date(),
-              cashShiftId: cashShift.id,
-              workstationId: session.workstationId,
-              userId: session.userId,
-              sourceWorkstationId: session.workstationId,
-              clientIdentificationTypeSnapshot: clientData?.identificationType ?? null,
-              clientIdentificationNumberSnapshot: clientData?.identificationNumber ?? null,
-              clientNameSnapshot: clientData?.fullName ?? null,
-              clientId: clientData?.id ?? null,
-              clientClassificationIdSnapshot: clientData?.classification?.id ?? null,
-              clientTypeSnapshot: clientData?.classification?.type ?? null,
-              subtotal: totals.subtotal,
-              totalDiscount: totals.totalDiscount,
-              totalTax: totals.totalTax,
-              totalAmount: totals.totalAmount,
-              delivery: delivery
-                ? (delivery as unknown as Prisma.InputJsonValue)
-                : Prisma.JsonNull,
-              items: {
-                create: saleItems.map((item) => ({
-                  id: globalThis.crypto.randomUUID(),
-                  productId: item.productId,
-                  productInternalCodeSnapshot: item.productSnapshot.internalCode,
-                  productCommercialNameSnapshot: item.productSnapshot.commercialName,
-                  // The Product model no longer has a generic-name field.
-                  // The snapshot column stays (historical fiscal records
-                  // reference it) but new sales store NULL.
-                  productGenericNameSnapshot: null,
-                  productConcentrationSnapshot: item.productSnapshot.concentration,
-                  quantity: item.quantity,
-                  unitPrice: item.unitPrice,
-                  taxRate: item.taxRate,
-                  taxAmount: item.taxAmount,
-                  discountPercentage: item.discountPercentage,
-                  discountAmount: item.discountAmount,
-                  discountReason: item.discountReason,
-                  subtotal: item.subtotal,
-                  total: item.total,
-                  commissionTypeSnapshot: item.commissionTypeSnapshot,
-                  commissionValueSnapshot: item.commissionValueSnapshot,
-                  commissionAmount: item.commissionAmount,
-                  requiresPrescription: false,
-                })),
-              },
-            },
-            include: { items: true },
-          });
-          return sale;
-        } catch (error: unknown) {
-          const err = error as { code?: string; meta?: { target?: string } };
-          if (err.code === 'P2002' && err.meta?.target === 'ux_sale_local_per_ws') {
-            // Unique constraint violation — another concurrent create grabbed
-            // the same localNumber. Retry with the next available number.
-            continue;
-          }
-          throw error;
-        }
-      }
-      throw new Error('Failed to create sale after multiple retries due to local number conflict.');
+              productId: item.productId,
+              productInternalCodeSnapshot: item.productSnapshot.internalCode,
+              productCommercialNameSnapshot: item.productSnapshot.commercialName,
+              // The Product model no longer has a generic-name field.
+              // The snapshot column stays (historical fiscal records
+              // reference it) but new sales store NULL.
+              productGenericNameSnapshot: null,
+              productConcentrationSnapshot: item.productSnapshot.concentration,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              taxRate: item.taxRate,
+              taxAmount: item.taxAmount,
+              discountPercentage: item.discountPercentage,
+              discountAmount: item.discountAmount,
+              discountReason: item.discountReason,
+              subtotal: item.subtotal,
+              total: item.total,
+              commissionTypeSnapshot: item.commissionTypeSnapshot,
+              commissionValueSnapshot: item.commissionValueSnapshot,
+              commissionAmount: item.commissionAmount,
+              requiresPrescription: false,
+              })),
+          },
+        },
+        include: { items: true },
+      });
+      return sale;
     });
   }
 
@@ -1012,6 +1049,12 @@ export class SalesPosService {
    *
    * Reads the maximum existing `localNumber` for this `sourceWorkstationId`
    * and returns it + 1, defaulting to 1 when no sales exist yet.
+   *
+   * Only safe under the PGlite write lock (held by `create()`) — without
+   * serialization two concurrent creators read the same maximum and collide
+   * on the unique index. The leftover race against writers that bypass the
+   * lock (a server pull applying a sale in between) is resolved by the outer
+   * retry in `create()` via `isLocalNumberConflict`.
    */
   private async getNextLocalNumber(
     tx: Prisma.TransactionClient,
@@ -1023,6 +1066,77 @@ export class SalesPosService {
       select: { localNumber: true },
     });
     return latestSale ? latestSale.localNumber + 1n : 1n;
+  }
+
+  /**
+   * Detect the unique conflict raised when two writers reserve the same
+   * `(localNumber, sourceWorkstationId)` pair.
+   *
+   * Matches on the Prisma P2002 code rather than a single index name: the
+   * physical index is `Sale_localNumber_sourceWorkstationId_key` in current
+   * DDL while older installs may carry the `ux_sale_local_per_ws` name, and
+   * Prisma reports either the constraint name or the column pair depending
+   * on the schema version.
+   */
+  private isLocalNumberConflict(error: unknown): boolean {
+    const err = error as { code?: string; meta?: { target?: unknown } };
+    if (!err || err.code !== 'P2002') return false;
+    const target = err.meta?.target;
+    if (
+      target === 'ux_sale_local_per_ws' ||
+      target === 'Sale_localNumber_sourceWorkstationId_key'
+    ) {
+      return true;
+    }
+    if (Array.isArray(target)) {
+      return (
+        target.includes('localNumber') &&
+        target.includes('sourceWorkstationId')
+      );
+    }
+    if (typeof target === 'string') {
+      return (
+        target.includes('localNumber') &&
+        target.includes('sourceWorkstationId')
+      );
+    }
+    return false;
+  }
+
+  /**
+   * Support diagnostic: groups of `(localNumber, sourceWorkstationId)` held
+   * by more than one sale.
+   *
+   * A healthy terminal returns an empty array — the unique index forbids
+   * these rows. A non-empty result means the database predates the index or
+   * the workstation identity diverged and was later healed; each group
+   * pinpoints the ticket numbers that need manual reconciliation.
+   */
+  async findDuplicateLocalNumbers(): Promise<
+    Array<{
+      localNumber: string;
+      sourceWorkstationId: string;
+      saleCount: number;
+    }>
+  > {
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{
+        localNumber: string;
+        sourceWorkstationId: string;
+        saleCount: number | bigint | string;
+      }>
+    >(
+      `SELECT "localNumber"::text AS "localNumber", "sourceWorkstationId", COUNT(*)::int AS "saleCount"
+         FROM "Sale"
+        GROUP BY "localNumber", "sourceWorkstationId"
+       HAVING COUNT(*) > 1
+        ORDER BY "localNumber"::bigint`,
+    );
+    return rows.map((row) => ({
+      localNumber: row.localNumber,
+      sourceWorkstationId: row.sourceWorkstationId,
+      saleCount: Number(row.saleCount),
+    }));
   }
 
   /**

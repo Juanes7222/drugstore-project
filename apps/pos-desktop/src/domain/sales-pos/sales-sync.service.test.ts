@@ -312,10 +312,21 @@ describe("SalesSyncService", () => {
       expect(getSalesLastSyncedAt()).not.toBeNull();
     });
 
-    it("wraps all upserts in a single $transaction", async () => {
+    it("wraps each sale in its own $transaction so a P2002 failure isolates", async () => {
       await service.applySales([makeSaleRow() as any, makeSaleRow({ id: "sale-2", localNumber: 1002 }) as any]);
 
-      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(tx.sale.upsert).toHaveBeenCalledTimes(2);
+    });
+
+    it("applies the second sale when the first fails inside its own transaction", async () => {
+      tx.sale.upsert
+        .mockRejectedValueOnce(Object.assign(new Error("Unique constraint failed"), { code: "P2002" }))
+        .mockResolvedValueOnce({ id: "sale-2" });
+
+      await service.applySales([makeSaleRow() as any, makeSaleRow({ id: "sale-2", localNumber: 1002 }) as any]);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
       expect(tx.sale.upsert).toHaveBeenCalledTimes(2);
     });
 

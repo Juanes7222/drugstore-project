@@ -310,6 +310,41 @@ describe('SalesHistoryService', () => {
       expect(result.total).toBe(1);
     });
 
+    it('populates workstationId and sourceWorkstationId on normal rows', async () => {
+      prisma.sale.findMany.mockResolvedValue([
+        createSaleRow({ workstationId: 'ws-display', sourceWorkstationId: 'ws-source' }),
+      ]);
+      prisma.sale.count.mockResolvedValue(1);
+      prisma.$queryRawUnsafe.mockResolvedValue([createInvoiceSummaryRow()]);
+      prisma.invoiceLocalAdjustment.groupBy.mockResolvedValue([]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          workstationId: 'ws-display',
+          sourceWorkstationId: 'ws-source',
+        }),
+      );
+    });
+
+    it('requests workstation identity columns in the list projection', async () => {
+      prisma.sale.findMany.mockResolvedValue([]);
+      prisma.sale.count.mockResolvedValue(0);
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
+
+      await service.listConfirmedSales();
+
+      expect(prisma.sale.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({
+            workstationId: true,
+            sourceWorkstationId: true,
+          }),
+        }),
+      );
+    });
+
     it('limits the number of returned sales', async () => {
       prisma.sale.findMany.mockResolvedValue([]);
       prisma.sale.count.mockResolvedValue(0);
@@ -651,6 +686,60 @@ describe('SalesHistoryService', () => {
       expect(byId.get('sale-1')?.localNumber).toBe('100');
       expect(byId.get('sale-2')?.clientName).toBe('Ana Gómez');
       expect(byId.get('sale-2')?.invoiceNumber).toBe('FE0002');
+    });
+
+    it('populates workstation ids on pending LAN items from payload metadata', async () => {
+      prisma.sale.findMany.mockResolvedValue([]);
+      prisma.sale.count.mockResolvedValue(0);
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
+      prisma.syncQueue.findMany.mockResolvedValue([
+        makeLanQueueRow({
+          operationUuid: 'op-lan-1',
+          sourceWorkstationId: 'ws-remote',
+          metadata: {
+            localSaleId: 'ghost-lan-1',
+            localNumber: 55,
+            confirmedAt: '2026-07-20T12:00:00.000Z',
+            workstationId: 'ws-remote',
+            sourceWorkstationId: 'ws-remote',
+          },
+        }),
+      ]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toEqual(
+        expect.objectContaining({
+          saleId: 'ghost-lan-1',
+          localNumber: '55',
+          workstationId: 'ws-remote',
+          sourceWorkstationId: 'ws-remote',
+        }),
+      );
+    });
+
+    it('falls back to SyncQueue.sourceWorkstationId on pending LAN items without metadata identity', async () => {
+      prisma.sale.findMany.mockResolvedValue([]);
+      prisma.sale.count.mockResolvedValue(0);
+      prisma.$queryRawUnsafe.mockResolvedValue([]);
+      prisma.syncQueue.findMany.mockResolvedValue([
+        makeLanQueueRow({
+          operationUuid: 'op-lan-2',
+          sourceWorkstationId: 'ws-fallback',
+          metadata: {
+            localSaleId: 'ghost-lan-2',
+            localNumber: 56,
+            confirmedAt: '2026-07-20T12:00:00.000Z',
+          },
+        }),
+      ]);
+
+      const result = await service.listConfirmedSales();
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]?.workstationId).toBe('ws-fallback');
+      expect(result.items[0]?.sourceWorkstationId).toBe('ws-fallback');
     });
   });
 

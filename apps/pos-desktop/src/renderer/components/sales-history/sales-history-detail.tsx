@@ -27,6 +27,7 @@ import type {
 } from "../../../domain/fiscal/local-adjustment.types";
 import type { InvoiceFullData } from "../../../domain/fiscal/fiscal-types";
 import { AdjustmentHistoryPanel } from "../fiscal/adjustment-history-panel";
+import { getWorkstationSuffixCode } from "./workstation-suffix";
 
 export interface SalesHistoryDetailProps {
   saleId: string;
@@ -127,6 +128,13 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
   }
 
   const { sale, invoices } = detail;
+  // The detail view only carries the owning workstation id (no source id in
+  // this payload), so the suffix falls back to it. Legacy rows with an empty
+  // id render no suffix without breaking the header layout.
+  const workstationCode = getWorkstationSuffixCode(null, sale.workstationId);
+  const workstationSuffix = workstationCode
+    ? t("salesHistory.list.workstation_suffix", { code: workstationCode })
+    : "";
   const mainInvoice = invoices[0] ?? null;
   const fullData =
     (mainInvoice?.fullData as unknown as InvoiceFullData | undefined) ??
@@ -202,6 +210,11 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
               }}
             >
               {t("salesHistory.detail.sale_number_label")} #{sale.localNumber}
+              {workstationCode ? (
+                <span className="ml-1 font-data tabular-nums">
+                  {workstationSuffix}
+                </span>
+              ) : null}
             </p>
           </div>
         </div>
@@ -235,7 +248,7 @@ export const SalesHistoryDetail: FC<SalesHistoryDetailProps> = ({
       <div
         className="flex items-center gap-1 border-b px-4 py-2"
         role="tablist"
-        aria-label={t("salesHistory.detail.title")}
+        aria-label={`${t("salesHistory.detail.title")} #${sale.localNumber}${workstationSuffix ? ` ${workstationSuffix}` : ""}`}
         style={{
           borderColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
           backgroundColor:

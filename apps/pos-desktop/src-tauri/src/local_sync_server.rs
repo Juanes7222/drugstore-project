@@ -245,6 +245,21 @@ pub struct LocalSyncServerState {
 /// before; keeping them forever would grow the file unbounded.
 const OP_LOG_RETENTION_DAYS: i64 = 30;
 
+/// Audit batches are compliance cargo, not business state: every station
+/// pushes its own audits straight to the server over the internet channel,
+/// so the hub only needs them briefly (enough for a peer to adopt a recent
+/// batch while its origin is mid-push). A short retention keeps the hub
+/// buffer from filling with thousands of audit rows during long offline
+/// stretches while business operations keep the full 30-day window.
+const AUDIT_OP_LOG_RETENTION_DAYS: i64 = 1;
+
+/// Max operations returned per pull. Bounds a single response (the hub can
+/// hold thousands after an offline stretch) so one cycle never hammers the
+/// peer's database with thousands of individual creates; the cursor
+/// advances to the max returned timestamp, so catch-up converges over
+/// consecutive cycles.
+const PULL_PAGE_SIZE: usize = 500;
+
 /// Directory (inside the OS app-data dir) holding the hub operation log.
 const OP_LOG_DIR: &str = "local-sync";
 const OP_LOG_FILE: &str = "hub-op-log.jsonl";
@@ -440,24 +455,37 @@ async fn handle_pull(
         }
     };
 
-    let mut latest = since;
-    let mut ops = Vec::new();
+    // Collect matches oldest-first so a capped page still advances the
+    // cursor monotonically and catch-up converges over consecutive cycles.
+    let mut matched: Vec<&StoredOp> = received
+        .iter()
+        .filter(|stored| {
+            stored.operation.source_workstation_id != query.workstation_id
+                && stored.received_at > since
+        })
+        .collect();
+    matched.sort_by(|a, b| a.received_at.cmp(&b.received_at));
+    if matched.len() > PULL_PAGE_SIZE {
+        matched.truncate(PULL_PAGE_SIZE);
+    }
 
-    for stored in received.iter() {
-        if stored.operation.source_workstation_id == query.workstation_id {
-            continue; // Don't return the requesting workstation's own ops.
+    let mut latest = since;
+    let mut ops = Vec::with_capacity(matched.len());
+    for stored in matched {
+        if stored.received_at > latest {
+            latest = stored.received_at;
         }
-        if stored.received_at > since {
-            ops.push(stored.operation.clone());
-            if stored.received_at > latest {
-                latest = stored.received_at;
-            }
-        }
+        ops.push(stored.operation.clone());
     }
 
     (StatusCode::OK, Json(PullResponse {
         operations: ops,
-        next_since: latest.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        // Nanos, NOT millis: with millis truncation + the strict `>` filter
+        // above, any op whose received_at carried sub-millisecond precision
+        // was re-returned on every pull forever (same "N ops" with an
+        // identical nextSince each cycle). Full precision round-trips
+        // exactly, so the next pull excludes what this one returned.
+        next_since: latest.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
     }))
 }
 
@@ -827,6 +855,8 @@ impl LocalSyncServerState {
         let mut restored: HashMap<String, StoredOp> = HashMap::new();
         if let Ok(content) = std::fs::read_to_string(&path) {
             let cutoff = Utc::now() - chrono::Duration::days(OP_LOG_RETENTION_DAYS);
+            let audit_cutoff =
+                Utc::now() - chrono::Duration::days(AUDIT_OP_LOG_RETENTION_DAYS);
             for line in content.lines() {
                 // Try new persisted format first, fall back to legacy.
                 if let Ok(persisted) = serde_json::from_str::<PersistedOp>(line) {
@@ -840,7 +870,12 @@ impl LocalSyncServerState {
                                 .parse::<DateTime<Utc>>()
                                 .unwrap_or_else(|_| Utc::now())
                         });
-                    if received_at <= cutoff {
+                    let cutoff_for_op = if persisted.operation.operation_type == "AUDIT_LOG_BATCH" {
+                        audit_cutoff
+                    } else {
+                        cutoff
+                    };
+                    if received_at <= cutoff_for_op {
                         continue;
                     }
                     restored.insert(
@@ -861,7 +896,12 @@ impl LocalSyncServerState {
                     .source_created_at
                     .parse::<DateTime<Utc>>()
                     .unwrap_or_else(|_| Utc::now());
-                if received_at <= cutoff {
+                let cutoff_for_op = if op.operation_type == "AUDIT_LOG_BATCH" {
+                    audit_cutoff
+                } else {
+                    cutoff
+                };
+                if received_at <= cutoff_for_op {
                     continue;
                 }
                 restored.insert(
@@ -1418,5 +1458,264 @@ mod tests {
         assert_eq!(resp.rejected, 1);
         assert!(resp.accepted_operation_uuids.is_empty());
         assert_eq!(state.received_operation_count().await, 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Pull paging + cursor precision (PULL_PAGE_SIZE / Nanos next_since)
+    // ------------------------------------------------------------------
+    //
+    // `handle_pull` needs no AppHandle (only `restore_op_log` /
+    // `start_shared` do), so these tests drive the real handler with an
+    // in-memory-seeded buffer, exactly like the push tests above.
+
+    fn pull_query_string(since: &str, workstation_id: &str) -> String {
+        format!(
+            "since={}&workstation_id={}",
+            urlencoding::encode(since),
+            urlencoding::encode(workstation_id),
+        )
+    }
+
+    fn pull_auth_header(key: &str, raw_query: &str) -> HeaderMap {
+        use axum::http::header::HeaderValue;
+        let mac = compute_hmac(key, raw_query.as_bytes()).expect("hmac");
+        let mut headers = HeaderMap::new();
+        headers.insert("x-local-auth", HeaderValue::from_str(&mac).expect("hex is a valid header"));
+        headers
+    }
+
+    async fn pull_response(
+        state: Arc<LocalSyncServerState>,
+        since: &str,
+        workstation_id: &str,
+    ) -> (StatusCode, PullResponse) {
+        use axum::response::IntoResponse;
+        let raw = pull_query_string(since, workstation_id);
+        let headers = pull_auth_header(NETWORK_KEY, &raw);
+        let response = handle_pull(
+            AxumState(state),
+            headers,
+            RawQuery(Some(raw)),
+            Query(PullQuery {
+                since: since.to_string(),
+                workstation_id: workstation_id.to_string(),
+            }),
+        )
+        .await
+        .into_response();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("pull response body readable");
+        let parsed: PullResponse = serde_json::from_slice(&bytes).expect("pull response parses");
+        (status, parsed)
+    }
+
+    /// Seed `count` peer ops with one-second-spaced `received_at`, inserted
+    /// newest-first so page order can only come from the handler's sort.
+    fn seed_peer_ops(received: &mut Vec<StoredOp>, count: usize, base: DateTime<Utc>) {
+        for i in (0..count).rev() {
+            let n = i as i64;
+            received.push(StoredOp {
+                operation: lan_op(
+                    &format!("op-{n}"),
+                    "SALE_CONFIRMATION",
+                    r#"{"total":1}"#,
+                    &format!("hash-{n}"),
+                    "ws-peer",
+                ),
+                received_at: base + chrono::Duration::seconds(n),
+            });
+        }
+    }
+
+    #[test]
+    fn pull_page_size_is_bounded_at_500() {
+        assert_eq!(PULL_PAGE_SIZE, 500);
+    }
+
+    #[test]
+    fn next_since_nanos_format_round_trips_submillis_precision() {
+        // Regression pin: `next_since` used SecondsFormat::Millis, so any op
+        // with sub-millisecond precision truncated the cursor and the strict
+        // `>` pull filter re-returned it on every cycle forever.
+        let t: DateTime<Utc> = "2026-02-15T10:11:12.123456789Z"
+            .parse()
+            .expect("fixture parses");
+        let rendered = t.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+
+        assert!(rendered.contains(".123456789"), "nanos truncated: {rendered}");
+        assert_eq!(
+            rendered.parse::<DateTime<Utc>>().expect("round-trips"),
+            t
+        );
+    }
+
+    #[tokio::test]
+    async fn pull_does_not_rereturn_submillis_operation_on_next_cycle() {
+        let state = Arc::new(LocalSyncServerState::new(NETWORK_KEY.to_string(), PREFERRED_PORT));
+        let received_at: DateTime<Utc> = "2026-02-15T10:11:12.123456789Z"
+            .parse()
+            .expect("fixture parses");
+        state.received_operations.write().await.push(StoredOp {
+            operation: lan_op(
+                "op-nano",
+                "SALE_CONFIRMATION",
+                r#"{"total":1}"#,
+                "hash-n",
+                "ws-peer",
+            ),
+            received_at,
+        });
+        let epoch = "1970-01-01T00:00:00Z";
+
+        let (status, first) = pull_response(state.clone(), epoch, "ws-1").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(first.operations.len(), 1);
+        assert_eq!(
+            first.next_since.parse::<DateTime<Utc>>().expect("next_since parses"),
+            received_at
+        );
+
+        let (status, second) = pull_response(state.clone(), &first.next_since, "ws-1").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            second.operations.is_empty(),
+            "sub-millis op re-returned with nextSince={}",
+            second.next_since
+        );
+    }
+
+    #[tokio::test]
+    async fn pull_pages_oldest_first_and_converges_across_cycles() {
+        let state = Arc::new(LocalSyncServerState::new(NETWORK_KEY.to_string(), PREFERRED_PORT));
+        let base: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().expect("fixture parses");
+        {
+            let mut received = state.received_operations.write().await;
+            seed_peer_ops(&mut received, PULL_PAGE_SIZE + 2, base);
+        }
+        let epoch = "1970-01-01T00:00:00Z";
+
+        let (status, first) = pull_response(state.clone(), epoch, "ws-1").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(first.operations.len(), PULL_PAGE_SIZE);
+        assert_eq!(
+            first.operations.first().expect("page non-empty").operation_uuid,
+            "op-0"
+        );
+        assert_eq!(
+            first.operations.last().expect("page non-empty").operation_uuid,
+            "op-499"
+        );
+        assert_eq!(
+            first.next_since.parse::<DateTime<Utc>>().expect("cursor parses"),
+            base + chrono::Duration::seconds(499)
+        );
+
+        let (status, second) = pull_response(state.clone(), &first.next_since, "ws-1").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(second.operations.len(), 2);
+        assert_eq!(second.operations[0].operation_uuid, "op-500");
+        assert_eq!(second.operations[1].operation_uuid, "op-501");
+        assert_eq!(
+            second.next_since.parse::<DateTime<Utc>>().expect("cursor parses"),
+            base + chrono::Duration::seconds(501)
+        );
+
+        let (status, third) = pull_response(state.clone(), &second.next_since, "ws-1").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(third.operations.is_empty());
+        assert_eq!(third.next_since, second.next_since);
+    }
+
+    // ------------------------------------------------------------------
+    // Retention split reachability note + audit-adjacent stored-path pins
+    // ------------------------------------------------------------------
+    //
+    // `restore_op_log`'s retention split (AUDIT_LOG_BATCH older than
+    // AUDIT_OP_LOG_RETENTION_DAYS dropped, business ops kept for
+    // OP_LOG_RETENTION_DAYS) is not unit-reachable: it resolves its log
+    // directory from `AppHandle.path().app_local_data_dir()` and there is
+    // no seam to inject a temp dir without a real AppHandle (pure helper
+    // extraction is out of scope), so it stays covered by LAN integration
+    // runs. These tests pin the adjacent audit invariant on the code path
+    // `handle_push` actually uses (`check_for_conflict_stored`).
+
+    fn stored_op(op: LocalOperation, received_at: DateTime<Utc>) -> StoredOp {
+        StoredOp { operation: op, received_at }
+    }
+
+    #[test]
+    fn stored_conflict_rejects_same_lot_with_different_quantity() {
+        // Regression pin for the payloadHash bug on the live push path:
+        // same lot + different quantity = different hash but the same
+        // entity, so the second push must conflict.
+        let at: DateTime<Utc> = "2026-01-15T12:00:00Z".parse().expect("fixture parses");
+        let received = [stored_op(
+            lan_op(
+                "adj-1",
+                "INVENTORY_ADJUSTMENT",
+                r#"{"lotId":"lot-1","quantity":5}"#,
+                "hash-a",
+                "ws-1",
+            ),
+            at,
+        )];
+        let incoming = lan_op(
+            "adj-2",
+            "INVENTORY_ADJUSTMENT",
+            r#"{"lotId":"lot-1","quantity":9}"#,
+            "hash-b",
+            "ws-2",
+        );
+
+        let conflict =
+            check_for_conflict_stored(&received, &incoming).expect("same lot must conflict");
+
+        assert_eq!(conflict.operation_uuid, "adj-2");
+        assert_eq!(conflict.reason, "FIRST_WRITE_WINS");
+        assert_eq!(conflict.winning_operation_uuid, "adj-1");
+    }
+
+    #[test]
+    fn stored_conflict_never_fires_for_audit_batches() {
+        let at: DateTime<Utc> = "2026-01-15T12:00:00Z".parse().expect("fixture parses");
+        let received = [stored_op(
+            lan_op("audit-1", "AUDIT_LOG_BATCH", r#"{"events":1}"#, "hash-a", "ws-1"),
+            at,
+        )];
+        let incoming =
+            lan_op("audit-2", "AUDIT_LOG_BATCH", r#"{"events":1}"#, "hash-a", "ws-2");
+
+        assert!(check_for_conflict_stored(&received, &incoming).is_none());
+    }
+
+    #[test]
+    fn stored_conflict_ignores_same_workstation_replays() {
+        let at: DateTime<Utc> = "2026-01-15T12:00:00Z".parse().expect("fixture parses");
+        let received = [stored_op(
+            lan_op(
+                "adj-1",
+                "INVENTORY_ADJUSTMENT",
+                r#"{"lotId":"lot-1","quantity":5}"#,
+                "hash-a",
+                "ws-1",
+            ),
+            at,
+        )];
+        let replay = lan_op(
+            "adj-2",
+            "INVENTORY_ADJUSTMENT",
+            r#"{"lotId":"lot-1","quantity":5}"#,
+            "hash-a",
+            "ws-1",
+        );
+
+        assert!(check_for_conflict_stored(&received, &replay).is_none());
     }
 }

@@ -161,6 +161,36 @@ describe('SalesHistoryDetail', () => {
     ).toBeInTheDocument();
   });
 
+  it('renders the workstation suffix next to the ticket number', () => {
+    render(
+      <SalesHistoryDetail
+        {...defaultProps}
+        detail={createDetail({
+          sale: { ...createDetail().sale, localNumber: '15', workstationId: 'ws-abc-a3f2' },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('· POS A3F2')).toBeInTheDocument();
+    // The tablist accessible name disambiguates duplicate #N across cajas.
+    expect(
+      screen.getByRole('tablist', { name: /#15.*POS A3F2/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders no suffix for legacy sales without workstation identity', () => {
+    render(
+      <SalesHistoryDetail
+        {...defaultProps}
+        detail={createDetail({
+          sale: { ...createDetail().sale, localNumber: '15', workstationId: '' },
+        })}
+      />,
+    );
+
+    expect(screen.queryByText(/POS/)).not.toBeInTheDocument();
+  });
+
   it('shows the fiscal client in the fiscal tab', () => {
     render(<SalesHistoryDetail {...defaultProps} viewMode="fiscal" />);
 

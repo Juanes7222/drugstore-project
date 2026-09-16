@@ -414,6 +414,15 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
       where: {
         lanRelayedAt: null,
         status: { notIn: NON_RELAYABLE_STATUSES },
+        // AUDIT_LOG_BATCH never rides the LAN: every station pushes its own
+        // audits straight to the server over the internet channel, so
+        // relaying them only fills the hub buffer (observed: thousands of
+        // audit rows, ~1 new op every few seconds per station) and forces
+        // peers to adopt, store, and re-push foreign bookkeeping. Business
+        // operations keep full LAN redundancy; audits accept a narrower
+        // guarantee (lost only if their origin station dies while offline
+        // before ever seeing the internet).
+        operationType: { not: 'AUDIT_LOG_BATCH' },
       },
       orderBy: { clientSequence: 'asc' },
       take: RELAY_BATCH_SIZE * 3,
@@ -470,8 +479,14 @@ class LocalSyncEngineImpl implements LocalSyncEngine {
     const ownClaimed = (response.operations ?? []).filter(
       (op) => op.sourceWorkstationId === this.workstationId,
     );
+    // Peers' audit batches are never adopted (mirrors the push-side skip in
+    // fetchRelayableEntries): each station delivers its own audits to the
+    // server directly. Adopting them would store and re-push foreign
+    // bookkeeping on every station for zero redundancy gain.
     const foreignOps = (response.operations ?? []).filter(
-      (op) => op.sourceWorkstationId !== this.workstationId,
+      (op) =>
+        op.sourceWorkstationId !== this.workstationId &&
+        op.operationType !== 'AUDIT_LOG_BATCH',
     );
 
     const identityCollisions = await this.countIdentityCollisions(ownClaimed);

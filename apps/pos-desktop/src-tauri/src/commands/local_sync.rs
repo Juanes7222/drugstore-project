@@ -339,13 +339,14 @@ pub async fn push_to_hub(
         .current_hub_address
         .ok_or_else(|| "No hub available".to_string())?;
     let count = operations.len();
+    let types = summarize_operation_types(&operations);
     let result = client.push_operations(operations, &address).await;
     match &result {
         Ok(r) => crate::local_sync_diagnostics::push_global(
             "INFO",
             "local_sync",
             format!(
-                "push {count} ops -> hub {address}: {} accepted, {} rejected",
+                "push {count} ops [{types}] -> hub {address}: {} accepted, {} rejected",
                 r.accepted, r.rejected
             ),
         ),
@@ -380,8 +381,9 @@ pub async fn pull_from_hub(
             "INFO",
             "local_sync",
             format!(
-                "pull from hub {address}: {} ops (nextSince={})",
+                "pull from hub {address}: {} ops [{}] (nextSince={})",
                 r.operations.len(),
+                summarize_operation_types(&r.operations),
                 r.next_since
             ),
         ),
@@ -392,6 +394,22 @@ pub async fn pull_from_hub(
         ),
     }
     result
+}
+
+/// Compact per-type summary for diagnostics (e.g. "SALE_CONFIRMATIONx1,
+/// AUDIT_LOG_BATCHx2"): log lines that only say "N ops" make it impossible
+/// to tell business traffic apart from bookkeeping at a glance.
+fn summarize_operation_types(operations: &[LocalOperation]) -> String {
+    use std::collections::BTreeMap;
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for op in operations {
+        *counts.entry(op.operation_type.as_str()).or_default() += 1;
+    }
+    counts
+        .iter()
+        .map(|(kind, n)| format!("{kind}x{n}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 // ---------------------------------------------------------------------------
@@ -438,4 +456,63 @@ pub async fn set_local_sync_enabled(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn summary_op(uuid: &str, operation_type: &str) -> LocalOperation {
+        LocalOperation {
+            operation_uuid: uuid.to_string(),
+            operation_type: operation_type.to_string(),
+            payload: "{}".to_string(),
+            payload_hash: "hash".to_string(),
+            source_workstation_id: "ws-1".to_string(),
+            source_created_at: "2026-01-15T12:00:00.000Z".to_string(),
+            retry_count: 0,
+        }
+    }
+
+    #[test]
+    fn summarize_empty_operations_returns_empty_string() {
+        assert_eq!(summarize_operation_types(&[]), "");
+    }
+
+    #[test]
+    fn summarize_single_operation_reports_count_one() {
+        let ops = [summary_op("op-1", "SALE_CONFIRMATION")];
+
+        assert_eq!(summarize_operation_types(&ops), "SALE_CONFIRMATIONx1");
+    }
+
+    #[test]
+    fn summarize_groups_repeated_types_with_counts() {
+        let ops = [
+            summary_op("op-1", "SALE_CONFIRMATION"),
+            summary_op("op-2", "AUDIT_LOG_BATCH"),
+            summary_op("op-3", "SALE_CONFIRMATION"),
+            summary_op("op-4", "AUDIT_LOG_BATCH"),
+            summary_op("op-5", "INVENTORY_ADJUSTMENT"),
+        ];
+
+        assert_eq!(
+            summarize_operation_types(&ops),
+            "AUDIT_LOG_BATCHx2, INVENTORY_ADJUSTMENTx1, SALE_CONFIRMATIONx2"
+        );
+    }
+
+    #[test]
+    fn summarize_orders_types_alphabetically_regardless_of_input_order() {
+        let ops = [
+            summary_op("op-1", "SALE_CONFIRMATION"),
+            summary_op("op-2", "INVENTORY_ADJUSTMENT"),
+            summary_op("op-3", "AUDIT_LOG_BATCH"),
+        ];
+
+        assert_eq!(
+            summarize_operation_types(&ops),
+            "AUDIT_LOG_BATCHx1, INVENTORY_ADJUSTMENTx1, SALE_CONFIRMATIONx1"
+        );
+    }
 }

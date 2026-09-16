@@ -18,6 +18,7 @@ import {
   NoOpenCashShiftException,
 } from "./exceptions";
 import { Prisma, SaleOperationalState, ShiftState } from "@pharmacy/database/local";
+import { dbWriteLock } from "../../infrastructure/write-lock";
 import { useLocalConfigStore, type DiscountLimits, type SalesConfig } from "../configuration/local-config.store";
 import { RoleType } from "@pharmacy/shared-types";
 import { GENERIC_CLIENT_UUID } from "../clients/constants/clients.constants";
@@ -74,6 +75,7 @@ const makeMockPrisma = () => {
 
   const prisma = {
     $transaction: transaction,
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
     sale: tx.sale,
     saleItem: tx.saleItem,
     saleItemLot: tx.saleItemLot,
@@ -329,6 +331,165 @@ describe("SalesPosService", () => {
       expect(result.localNumber).toBe(2n);
     });
 
+    it("retries when P2002 reports the column pair as a target array", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProduct());
+      tx.sale.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ localNumber: 1n });
+      tx.sale.create
+        .mockRejectedValueOnce({
+          code: "P2002",
+          meta: { target: ["localNumber", "sourceWorkstationId"] },
+        })
+        .mockResolvedValueOnce({ id: "sale-2", localNumber: 2n, items: [] });
+
+      const result = await service.create({ items: [{ productId: "prod-1", quantity: 1 }] }) as { localNumber: bigint };
+
+      expect(result.localNumber).toBe(2n);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries when P2002 reports the physical index name", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProduct());
+      tx.sale.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ localNumber: 4n });
+      tx.sale.create
+        .mockRejectedValueOnce({
+          code: "P2002",
+          meta: { target: "Sale_localNumber_sourceWorkstationId_key" },
+        })
+        .mockResolvedValueOnce({ id: "sale-5", localNumber: 5n, items: [] });
+
+      const result = await service.create({ items: [{ productId: "prod-1", quantity: 1 }] }) as { localNumber: bigint };
+
+      expect(result.localNumber).toBe(5n);
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries when P2002 reports the columns inside a constraint string", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProduct());
+      tx.sale.findFirst
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ localNumber: 1n });
+      tx.sale.create
+        .mockRejectedValueOnce({
+          code: "P2002",
+          meta: {
+            target:
+              "Unique constraint failed on the fields: (`localNumber`,`sourceWorkstationId`)",
+          },
+        })
+        .mockResolvedValueOnce({ id: "sale-2", localNumber: 2n, items: [] });
+
+      const result = await service.create({ items: [{ productId: "prod-1", quantity: 1 }] }) as { localNumber: bigint };
+
+      expect(result.localNumber).toBe(2n);
+    });
+
+    it("propagates the conflict after 5 failed attempts", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProduct());
+      tx.sale.findFirst.mockResolvedValue({ localNumber: 9n });
+      const conflict = Object.assign(new Error("local number conflict"), {
+        code: "P2002",
+        meta: { target: "ux_sale_local_per_ws" },
+      });
+      tx.sale.create.mockRejectedValue(conflict);
+
+      await expect(
+        service.create({ items: [{ productId: "prod-1", quantity: 1 }] }),
+      ).rejects.toBe(conflict);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(5);
+      expect(tx.sale.create).toHaveBeenCalledTimes(5);
+    });
+
+    it("does not retry errors that are not local-number conflicts", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProduct());
+      tx.sale.findFirst.mockResolvedValue(null);
+      const unrelated = Object.assign(new Error("unrelated unique conflict"), {
+        code: "P2002",
+        meta: { target: "Sale_pkey" },
+      });
+      tx.sale.create.mockRejectedValueOnce(unrelated);
+
+      await expect(
+        service.create({ items: [{ productId: "prod-1", quantity: 1 }] }),
+      ).rejects.toBe(unrelated);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry non-P2002 failures", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+      tx.product.findUnique.mockResolvedValue(makeProduct());
+      tx.sale.findFirst.mockResolvedValue(null);
+      tx.sale.create.mockRejectedValueOnce(
+        Object.assign(new Error("record not found"), { code: "P2025" }),
+      );
+
+      await expect(
+        service.create({ items: [{ productId: "prod-1", quantity: 1 }] }),
+      ).rejects.toThrow("record not found");
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+
+    it("acquires and releases the foreground write lock around create", async () => {
+      const acquireSpy = vi.spyOn(dbWriteLock, "acquire");
+      const releaseSpy = vi.spyOn(dbWriteLock, "release");
+      try {
+        auth.requireRole.mockReturnValue(makeMockSession());
+        tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
+        tx.product.findUnique.mockResolvedValue(makeProduct());
+        tx.sale.findFirst.mockResolvedValue(null);
+        tx.sale.create.mockResolvedValue({
+          id: "sale-1",
+          localNumber: 1n,
+          operationalState: "IN_PROGRESS",
+          items: [],
+        });
+
+        await service.create({ items: [{ productId: "prod-1", quantity: 1 }] });
+
+        expect(acquireSpy).toHaveBeenCalledWith("foreground");
+        expect(releaseSpy).toHaveBeenCalled();
+      } finally {
+        acquireSpy.mockRestore();
+        releaseSpy.mockRestore();
+      }
+    });
+
+    it("releases the write lock even when create fails", async () => {
+      const acquireSpy = vi.spyOn(dbWriteLock, "acquire");
+      const releaseSpy = vi.spyOn(dbWriteLock, "release");
+      try {
+        auth.requireRole.mockReturnValue(makeMockSession());
+        tx.cashShift.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.create({ items: [{ productId: "prod-1", quantity: 1 }] }),
+        ).rejects.toThrow(NoOpenCashShiftException);
+
+        expect(acquireSpy).toHaveBeenCalledWith("foreground");
+        expect(releaseSpy).toHaveBeenCalled();
+      } finally {
+        acquireSpy.mockRestore();
+        releaseSpy.mockRestore();
+      }
+    });
+
     it("creates a SyncQueue entry for any successful creation", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
@@ -454,6 +615,46 @@ describe("SalesPosService", () => {
       expect(result.id).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
+    });
+  });
+
+  describe("findDuplicateLocalNumbers", () => {
+    it("returns an empty array when no duplicates exist", async () => {
+      vi.mocked(prisma.$queryRawUnsafe).mockResolvedValue([]);
+
+      const result = await service.findDuplicateLocalNumbers();
+
+      expect(result).toEqual([]);
+    });
+
+    it("maps duplicate groups and coerces saleCount to number", async () => {
+      vi.mocked(prisma.$queryRawUnsafe).mockResolvedValue([
+        { localNumber: "5", sourceWorkstationId: "ws-1", saleCount: 2 },
+        { localNumber: "7", sourceWorkstationId: "ws-2", saleCount: 3n },
+        { localNumber: "9", sourceWorkstationId: "ws-1", saleCount: "4" },
+      ]);
+
+      const result = await service.findDuplicateLocalNumbers();
+
+      expect(result).toEqual([
+        { localNumber: "5", sourceWorkstationId: "ws-1", saleCount: 2 },
+        { localNumber: "7", sourceWorkstationId: "ws-2", saleCount: 3 },
+        { localNumber: "9", sourceWorkstationId: "ws-1", saleCount: 4 },
+      ]);
+      for (const row of result) {
+        expect(typeof row.saleCount).toBe("number");
+      }
+    });
+
+    it("queries grouped duplicates with GROUP BY and HAVING", async () => {
+      vi.mocked(prisma.$queryRawUnsafe).mockResolvedValue([]);
+
+      await service.findDuplicateLocalNumbers();
+
+      expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+      const [sql] = vi.mocked(prisma.$queryRawUnsafe).mock.calls[0];
+      expect(sql).toContain("GROUP BY");
+      expect(sql).toContain("HAVING");
     });
   });
 

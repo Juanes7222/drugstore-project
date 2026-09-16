@@ -24,6 +24,10 @@ import type {
 export interface SaleHistoryListItem {
   saleId: string;
   localNumber: string;
+  /** Workstation that owns the sale row (displayed alongside localNumber). */
+  workstationId?: string | null;
+  /** Workstation whose sequence issued localNumber — the dedup key partner. */
+  sourceWorkstationId?: string | null;
   confirmedAt: string;
   totalAmount: string;
   clientName: string;
@@ -208,6 +212,8 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
           id: true,
           sourceOperationUuid: true,
           localNumber: true,
+          workstationId: true,
+          sourceWorkstationId: true,
           startedAt: true,
           confirmedAt: true,
           totalAmount: true,
@@ -262,6 +268,11 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
       return {
         saleId: sale.id,
         localNumber: String(sale.localNumber),
+        // Ticket numbers restart per source workstation, so the list must
+        // carry the identity alongside the number — otherwise two distinct
+        // sales from different identities render as the same `#N`.
+        workstationId: sale.workstationId ?? null,
+        sourceWorkstationId: sale.sourceWorkstationId ?? null,
         confirmedAt: sale.confirmedAt?.toISOString() ?? sale.startedAt.toISOString(),
         totalAmount: sale.totalAmount.toString(),
         clientName:
@@ -378,7 +389,7 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
       try {
         const payload = JSON.parse(row.payload as string) as {
           createSaleDto?: { totalAmount?: string; clientId?: string; delivery?: unknown };
-          metadata?: { localSaleId?: string; localNumber?: number; confirmedAt?: string; workstationId?: string };
+          metadata?: { localSaleId?: string; localNumber?: number; confirmedAt?: string; workstationId?: string; sourceWorkstationId?: string };
         };
         const totalAmount = payload.createSaleDto?.totalAmount ?? '0';
         const confirmedAt = payload.metadata?.confirmedAt ?? row.sourceCreatedAt.toISOString();
@@ -415,6 +426,12 @@ class SalesHistoryServiceImpl implements SalesHistoryService {
         result.push({
           saleId,
           localNumber,
+          workstationId: payload.metadata?.workstationId ?? row.sourceWorkstationId ?? null,
+          sourceWorkstationId:
+            payload.metadata?.sourceWorkstationId ??
+            payload.metadata?.workstationId ??
+            row.sourceWorkstationId ??
+            null,
           confirmedAt,
           totalAmount: String(totalAmount),
           clientName,

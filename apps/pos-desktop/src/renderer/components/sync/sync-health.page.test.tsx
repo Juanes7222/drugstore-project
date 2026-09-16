@@ -373,4 +373,73 @@ describe("SyncHealthPage", () => {
       });
     });
   });
+
+  describe("SYNH-11: failed pull reporting on manual sync", () => {
+    it("shows a failed-pulls error toast when the scheduler report has a failing sales step", async () => {
+      const mockSyncNow = vi.fn().mockResolvedValue(undefined);
+      const { createSyncScheduler } = await import(
+        "../../../domain/sync/sync-scheduler.service"
+      );
+      vi.mocked(createSyncScheduler).mockReturnValue({
+        syncNow: mockSyncNow,
+        getLastPullReport: vi.fn().mockReturnValue({
+          steps: {
+            catalog: { ok: true, at: new Date().toISOString() },
+            sales: { ok: false, error: "sales pull boom", at: new Date().toISOString() },
+          },
+          suppressed: [],
+        }),
+      } as unknown as ReturnType<typeof createSyncScheduler>);
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /sincronizar ahora/i }),
+        ).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /sincronizar ahora/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/pulls fallidos/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/pulls fallidos/i).textContent).toContain("sales");
+      expect(screen.getByText(/pulls fallidos/i).textContent).toContain("sales pull boom");
+    });
+
+    it("shows no failed-pulls toast when the pull report is clean", async () => {
+      const mockSyncNow = vi.fn().mockResolvedValue(undefined);
+      const { createSyncScheduler } = await import(
+        "../../../domain/sync/sync-scheduler.service"
+      );
+      vi.mocked(createSyncScheduler).mockReturnValue({
+        syncNow: mockSyncNow,
+        getLastPullReport: vi.fn().mockReturnValue({
+          steps: {
+            catalog: { ok: true, at: new Date().toISOString() },
+            sales: { ok: true, at: new Date().toISOString() },
+          },
+          suppressed: [],
+        }),
+      } as unknown as ReturnType<typeof createSyncScheduler>);
+
+      renderPage();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /sincronizar ahora/i }),
+        ).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: /sincronizar ahora/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/sincronización ejecutada/i)).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText(/pulls fallidos/i)).not.toBeInTheDocument();
+    });
+  });
 });

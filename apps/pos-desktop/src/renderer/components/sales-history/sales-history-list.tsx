@@ -17,6 +17,7 @@ import type {
   SaleHistoryFilters,
 } from '../../../domain/sales-pos/sales-history.service';
 import { SalesHistoryEmpty } from './sales-history-empty';
+import { getWorkstationSuffixCode } from './workstation-suffix';
 import { StickyScrollX } from "../ui/sticky-scroll-x";
 import { ExportMenu } from "../ui/export-menu";
 
@@ -420,7 +421,19 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {sales.map((sale) => (
+                  {sales.map((sale) => {
+                    // Ticket numbers restart per source workstation, so the
+                    // suffix disambiguates two sales sharing the same #N.
+                    const workstationCode = getWorkstationSuffixCode(
+                      sale.sourceWorkstationId,
+                      sale.workstationId,
+                    );
+                    const workstationSuffix = workstationCode
+                      ? t('salesHistory.list.workstation_suffix', {
+                          code: workstationCode,
+                        })
+                      : '';
+                    return (
                     <tr
                       key={sale.saleId}
                       className="cursor-pointer transition-colors"
@@ -442,6 +455,17 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                         style={{ color: 'var(--color-pharma)' }}
                       >
                         #{sale.localNumber}
+                        {workstationCode ? (
+                          <span
+                            className="ml-1 text-caption font-normal"
+                            style={{
+                              color:
+                                'color-mix(in srgb, var(--color-ink) 45%, transparent)',
+                            }}
+                          >
+                            {workstationSuffix}
+                          </span>
+                        ) : null}
                       </td>
                       <td
                         className="px-3 py-2.5"
@@ -555,7 +579,7 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                           onSelect(sale.saleId);
                         }}
                         className="pos-button pos-button-secondary py-1 px-2 text-caption"
-                        aria-label={t('salesHistory.detail.title', { number: sale.localNumber })}
+                        aria-label={`${t('salesHistory.detail.title')} #${sale.localNumber}${workstationSuffix ? ` ${workstationSuffix}` : ''}`}
                       >
                         {t('salesHistory.detail.title')}
                         <ChevronDownIcon
@@ -565,7 +589,8 @@ export const SalesHistoryList: FC<SalesHistoryListProps> = ({
                       </button>
                     </td>
                   </tr>
-                ))}
+                    );
+                  })}
               </tbody>
               </table>
             </StickyScrollX>

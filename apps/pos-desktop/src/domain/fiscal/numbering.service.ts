@@ -100,7 +100,44 @@ class FiscalNumberingServiceImpl implements FiscalNumberingService {
     tx?: Prisma.TransactionClient,
   ): Promise<string> {
     const executor = tx ?? this.prisma;
+    const field = contingency
+      ? 'currentContingencyNumber'
+      : 'currentRegularNumber';
 
+    // Reserve the number with a single conditional UPDATE..RETURNING: the
+    // increment and the authorized-range guard happen atomically, so two
+    // concurrent callers can never receive the same number. The previous
+    // read-then-write could hand out duplicates under concurrency — the
+    // second invoice insert then failed on the unique index and its sale
+    // was left confirmed without a fiscal document.
+    const rows = await executor.$queryRawUnsafe<
+      Array<{
+        resolutionPrefix: string;
+        contingencyPrefix: string;
+        paddingLength: number;
+        next: bigint | number | string;
+      }>
+    >(
+      `UPDATE "FiscalCounter" SET "${field}" = "${field}" + 1 ` +
+        `WHERE "workstationId" = $1 AND "${field}" < "authorizedEnd" ` +
+        `RETURNING "resolutionPrefix", "contingencyPrefix", "paddingLength", "${field}" AS "next"`,
+      this.workstationId,
+    );
+    const reserved = rows?.[0] ?? null;
+    if (reserved) {
+      const next =
+        typeof reserved.next === 'bigint'
+          ? reserved.next
+          : BigInt(String(reserved.next));
+      const prefix = contingency
+        ? reserved.contingencyPrefix
+        : reserved.resolutionPrefix;
+      const padded = next.toString().padStart(reserved.paddingLength, '0');
+      return `${prefix}-${this.workstationId.slice(0, 8)}-${padded}`;
+    }
+
+    // No row reserved: either the counter was never initialized or the
+    // authorized range is exhausted — a single read tells them apart.
     const counter = await executor.fiscalCounter.findUnique({
       where: { workstationId: this.workstationId },
     });
@@ -109,28 +146,9 @@ class FiscalNumberingServiceImpl implements FiscalNumberingService {
       throw new FiscalCounterNotInitializedError(this.workstationId);
     }
 
-    const prefix = contingency ? counter.contingencyPrefix : counter.resolutionPrefix;
-    const field = contingency
-      ? 'currentContingencyNumber'
-      : 'currentRegularNumber';
-    const current = contingency
-      ? counter.currentContingencyNumber
-      : counter.currentRegularNumber;
-    const next = current + 1n;
-
-    if (next > counter.authorizedEnd) {
-      throw new FiscalCounterExhaustedError(
-        contingency ? 'contingency' : 'regular',
-      );
-    }
-
-    await executor.fiscalCounter.update({
-      where: { workstationId: this.workstationId },
-      data: { [field]: next },
-    });
-
-    const padded = next.toString().padStart(counter.paddingLength, '0');
-    return `${prefix}-${this.workstationId.slice(0, 8)}-${padded}`;
+    throw new FiscalCounterExhaustedError(
+      contingency ? 'contingency' : 'regular',
+    );
   }
 
   async ensureCounters(): Promise<void> {

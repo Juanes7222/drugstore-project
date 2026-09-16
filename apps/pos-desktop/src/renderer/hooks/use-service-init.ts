@@ -306,6 +306,67 @@ export async function initializeServices(
     );
   }
 
+  // --- Workstation identity convergence -----------------------------------
+  // Heal localStorage/file divergence so every webview on this machine sells
+  // under one identity. Without this a cleared webview profile mints a fresh
+  // id whose ticket sequence restarts at 1, and bare `#N` numbers then look
+  // duplicated in the global history. Best-effort: never blocks boot.
+  try {
+    const { convergeWorkstationId } = await import(
+      '../../infrastructure/workstation-identity'
+    );
+    const convergence = await convergeWorkstationId();
+    if (
+      convergence.workstationId !== workstationId &&
+      convergence.source === 'file'
+    ) {
+      console.warn(
+        `[use-service-init] Workstation identity converged from "${workstationId}" ` +
+          `to shared file identity "${convergence.workstationId}". ` +
+          `This run keeps the import-time id; the converged id applies from the next boot/login.`,
+      );
+    }
+  } catch {
+    // Convergence is advisory — boot continues with the import-time id.
+  }
+
+  // --- Sale-numbering divergence diagnostic --------------------------------
+  // Past identity changes leave sales under several sourceWorkstationIds, or
+  // (on databases predating the unique index) true duplicates. Both surface
+  // as repeated `#N` tickets. Report once so support knows a repair is due.
+  try {
+    const raw = prismaClient as unknown as {
+      $queryRawUnsafe?: <T>(sql: string) => Promise<T>;
+    };
+    if (typeof raw.$queryRawUnsafe === 'function') {
+      const identities = await raw.$queryRawUnsafe<
+        Array<{ sourceWorkstationId: string }>
+      >('SELECT DISTINCT "sourceWorkstationId" FROM "Sale" ORDER BY 1');
+      if (identities.length > 1) {
+        console.warn(
+          `[use-service-init] Sale history spans ${identities.length} workstation identities ` +
+            `(${identities.map((r) => r.sourceWorkstationId.slice(0, 8)).join(', ')}). ` +
+            `Ticket numbers restart per identity — equal #N values are distinct sales.`,
+        );
+      }
+      const duplicates = await raw.$queryRawUnsafe<
+        Array<{ localNumber: string }>
+      >(
+        'SELECT "localNumber"::text AS "localNumber" FROM "Sale" ' +
+          'GROUP BY "localNumber", "sourceWorkstationId" HAVING COUNT(*) > 1 LIMIT 5',
+      );
+      if (duplicates.length > 0) {
+        console.warn(
+          '[use-service-init] Found sales sharing (localNumber, sourceWorkstationId): ' +
+            `${duplicates.map((r) => `#${r.localNumber}`).join(', ')}. ` +
+            'Run salesPosService.findDuplicateLocalNumbers() for the full list — manual reconciliation needed.',
+        );
+      }
+    }
+  } catch {
+    // Diagnostics never block boot.
+  }
+
   // --- Local sync Tauri module initialisation -------------------------------
   // The Rust-side LocalSyncModules start empty (None) and must be configured
   // with workstation identity, network key, and IP before any Tauri command
