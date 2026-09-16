@@ -1,10 +1,10 @@
-import { DEFAULT_PLANS } from '@pharmacy/shared-types';
+import { DEFAULT_PLANS } from "@pharmacy/shared-types";
 
 export interface PlanView {
   code: string;
   name: string;
   description: string | null;
-  billingMethod: 'PROVIDER' | 'CERTIFICATE';
+  billingMethod: "PROVIDER" | "CERTIFICATE";
   basePriceCents: number;
   includedWorkstations: number;
   extraWorkstationPriceCents: number | null;

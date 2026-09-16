@@ -1,8 +1,12 @@
-import { useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { calculatePeriodPriceCents, formatCOP, periodMonths } from '../lib/format';
-import { useCheckoutStore } from '../stores/checkout-store';
-import { usePlansStore } from '../stores/plans-store';
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import {
+  calculatePeriodPriceCents,
+  formatCOP,
+  periodMonths,
+} from "../lib/format";
+import { useCheckoutStore } from "../stores/checkout-store";
+import { usePlansStore } from "../stores/plans-store";
 
 /**
  * Mobile-only sticky buy bar. Appears once the hero scrolls out of view so the
@@ -17,8 +21,8 @@ export function MobileBuyBar() {
   const [heroScrolledPast, setHeroScrolledPast] = useState(false);
 
   useEffect(() => {
-    const hero = document.getElementById('inicio');
-    if (!hero || typeof IntersectionObserver === 'undefined') {
+    const hero = document.getElementById("inicio");
+    if (!hero || typeof IntersectionObserver === "undefined") {
       setHeroScrolledPast(true);
       return;
     }
@@ -34,13 +38,14 @@ export function MobileBuyBar() {
 
   const basePriceCents = livePlans[0].basePriceCents;
   const monthlyEquivalentCents = Math.round(
-    calculatePeriodPriceCents(basePriceCents, billingPeriod) / periodMonths(billingPeriod),
+    calculatePeriodPriceCents(basePriceCents, billingPeriod) /
+      periodMonths(billingPeriod),
   );
 
   return (
     <div
       data-visible={heroScrolledPast}
-      aria-label={t('mobile_bar.label')}
+      aria-label={t("mobile_bar.label")}
       className="mobile-buy-bar border-t border-tinta/15 bg-papel/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-sm md:hidden"
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
@@ -48,16 +53,16 @@ export function MobileBuyBar() {
           <span className="data block text-base font-semibold">
             {formatCOP(monthlyEquivalentCents)}
             <span className="ml-1 text-xs font-normal text-tinta-media">
-              {t('mobile_bar.price_note')}
+              {t("mobile_bar.price_note")}
             </span>
           </span>
         </p>
         <button
           type="button"
           className="btn btn-primary btn-sm shrink-0"
-          onClick={() => openCheckout('PROVIDER', billingPeriod)}
+          onClick={() => openCheckout("PROVIDER", billingPeriod)}
         >
-          {t('nav.buy')}
+          {t("nav.buy")}
         </button>
       </div>
     </div>

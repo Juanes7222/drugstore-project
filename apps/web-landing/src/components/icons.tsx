@@ -1,4 +1,4 @@
-import type { SVGProps } from 'react';
+import type { SVGProps } from "react";
 
 /**
  * Inline icon set — lucide paths (ISC license), retrieved with better-icons
@@ -141,6 +141,14 @@ export function XIcon(props: IconProps) {
   );
 }
 
+export function PlusIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M12 5v14M5 12h14" />
+    </Svg>
+  );
+}
+
 export function ChevronDownIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -203,7 +211,14 @@ export function LandmarkIcon(props: IconProps) {
 /** Brand mark — green pharmacy cross on a rounded tile. */
 export function LogoMark(props: IconProps) {
   return (
-    <svg viewBox="0 0 32 32" width="1em" height="1em" aria-hidden="true" focusable="false" {...props}>
+    <svg
+      viewBox="0 0 32 32"
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
       <rect width="32" height="32" rx="7" fill="#0F6B3F" />
       <path d="M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z" fill="#F7F8F5" />
     </svg>

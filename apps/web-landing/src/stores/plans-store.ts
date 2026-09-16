@@ -1,8 +1,8 @@
-import { create } from 'zustand';
-import { SEED_PLANS, type PlanView } from '../data/plans';
-import { fetchPublicPlans } from '../lib/public-plans-api';
+import { create } from "zustand";
+import { SEED_PLANS, type PlanView } from "../data/plans";
+import { fetchPublicPlans } from "../lib/public-plans-api";
 
-type PlansSource = 'seed' | 'server';
+type PlansSource = "seed" | "server";
 
 interface PlansState {
   /** Catalog in effect. Starts as the seed so first paint never waits. */
@@ -20,7 +20,7 @@ interface PlansState {
 
 export const usePlansStore = create<PlansState>((set) => ({
   plans: SEED_PLANS,
-  source: 'seed',
+  source: "seed",
   checkedAt: null,
   loadFromServer: async () => {
     const apiBaseUrl = import.meta.env.VITE_API_URL as string | undefined;
@@ -30,7 +30,7 @@ export const usePlansStore = create<PlansState>((set) => ({
       const plans = await fetchPublicPlans(apiBaseUrl);
       // An empty catalog would blank the pricing section — keep the seed.
       if (plans.length > 0) {
-        set({ plans, source: 'server', checkedAt: Date.now() });
+        set({ plans, source: "server", checkedAt: Date.now() });
       }
     } catch {
       // Seed stays; the UI's status line explains it is reference data.

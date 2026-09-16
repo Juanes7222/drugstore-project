@@ -3,6 +3,12 @@
     "name": "PuntoFarma",
     "tagline": "El punto de venta de las droguerías colombianas."
   },
+  "a11y": {
+    "skip_to_content": "Saltar al contenido"
+  },
+  "ticker": {
+    "summary": "Estado del sistema en vivo: lotes por vencer, fórmulas verificadas, turnos y sincronización."
+  },
   "support": {
     "channel_email": "",
     "channel_label": "Escríbanos"
@@ -18,7 +24,7 @@
   "hero": {
     "eyebrow": "POS para droguerías colombianas",
     "title": "La caja que no se detiene cuando se va internet.",
-    "subtitle": "Cobre, revise lotes y vencimientos y facture ante la DIAN desde un solo computador. Si la conexión se cae, siga vendiendo: todo sube solo cuando vuelve.",
+    "subtitle": "Cobre, revise lotes y facture ante la DIAN desde un solo computador. Si se va internet, siga vendiendo: todo sube solo cuando vuelve.",
     "cta_primary": "Comprar licencia",
     "cta_secondary": "Ver planes",
     "chip_dian": "Facturación electrónica DIAN",
@@ -76,7 +82,7 @@
   "offline": {
     "eyebrow": "Modo offline",
     "title": "Se fue internet. La caja sigue abierta.",
-    "body": "Cada venta se guarda primero en el computador de la tienda. Cuando la conexión vuelve, la cola sube sola, en orden y sin duplicados. Vender sin internet no es una falla del sistema: es para eso está hecho.",
+    "body": "Cada venta se guarda en el computador de la tienda. Cuando la conexión vuelve, la cola sube sola, en orden y sin duplicados.",
     "queue_label": "Cola local (ejemplo)",
     "status_sent": "enviada",
     "status_queued": "en cola",
@@ -90,7 +96,7 @@
   "pricing": {
     "eyebrow": "Planes",
     "title": "Un precio. Dos maneras de facturar.",
-    "subtitle": "Los dos planes traen todo el sistema por $199.000 COP al mes. La única diferencia es quién maneja el certificado ante la DIAN — usted escoge lo que conviene a su farmacia.",
+    "subtitle": "Todo el sistema por $199.000 COP al mes. La única diferencia entre los dos: quién maneja el certificado ante la DIAN.",
     "period_label": "Período de pago",
     "period_monthly": "Mensual",
     "period_quarterly": "Trimestral −10 %",
@@ -118,7 +124,7 @@
     "total_suffix_quarterly": "por trimestre",
     "total_suffix_annual": "por año",
     "doc_cta": "Comprar este plan",
-    "all_features_note": "Todos los planes incluyen: multi-sede, modo offline, inventario y lotes, prescripciones, impresión fiscal y de etiquetas, pantalla de cliente, informes, soporte prioritario, API, respaldo y recuperación.",
+    "all_features_note": "Incluye: multi-sede, modo offline, inventario y lotes, prescripciones, impresión fiscal, informes, soporte prioritario, API y respaldo.",
     "workstation_note": "Incluye 3 puestos de venta por sede. Puesto adicional: $40.000 COP/mes, máximo 5 por sede. Sedes ilimitadas.",
     "payment_note": "Pago seguro por Wompi: tarjetas, PSE y Botón Bancario.",
     "source_live": "Precios verificados contra el servidor · {{time}}",
@@ -129,15 +135,15 @@
     "items": [
       {
         "title": "Escoja su plan y pague",
-        "body": "Llene el formulario y pague por Wompi con tarjeta, PSE o Botón Bancario. Sin cotizaciones ni llamadas de ventas."
+        "body": "Pague por Wompi con tarjeta, PSE o Botón Bancario. Sin cotizaciones ni llamadas."
       },
       {
         "title": "Reciba su código",
-        "body": "Llega un código de activación al correo electrónico que registró. Si no lo ve, revise la carpeta de spam."
+        "body": "Llega un código de activación a su correo electrónico. Si no aparece, revise spam."
       },
       {
         "title": "Actívelo en el POS",
-        "body": "Digite el código una sola vez en PuntoFarma, abra turno y ese mismo día puede estar vendiendo."
+        "body": "Digítelo una sola vez en el POS, abra turno y venda."
       }
     ]
   },
@@ -217,6 +223,8 @@
     "error_network": "No pudimos comunicarnos con el servidor. Revise su conexión e intente de nuevo.",
     "error_invalid": "Revise los campos marcados.",
     "error_generic": "No pudimos iniciar el pago. Intente de nuevo en unos minutos.",
+    "field_error_required": "Este campo es obligatorio.",
+    "field_error_format": "Revise el formato del dato.",
     "redirect_note": "Al continuar lo llevamos a Wompi para completar el pago."
   },
   "legal": {

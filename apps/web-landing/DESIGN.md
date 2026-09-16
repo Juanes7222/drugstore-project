@@ -1,5 +1,10 @@
 # PuntoFarma — Landing pública · Plan de diseño (dos pasadas)
 
+> **Pasada de rediseño de septiembre de 2026** (experiencia de usuario y
+> movimiento): el catálogo de identidad no cambia; esta pasada lo hace más
+> dinámico y menos saturado. Resumen de lo añadido y por qué, al final del
+> documento, en «Revisión de septiembre de 2026».
+
 > **PuntoFarma es un nombre de marca provisional.** El repo no define nombre de
 > producto; se centralizó en `src/i18n/locales/es.json` (`brand.name`) y en el
 > `<title>`/meta de `index.html`. Cambiarlo allí renombra todo el sitio.
@@ -41,7 +46,7 @@ impresora sobre papel, no grises genéricos.
 
 | Rol | Fuente | Uso |
 | --- | --- | --- |
-| Display/UI | **Archivo** (variable, eje de ancho ~118–125 % para titulares) | Grotesca institucional de Omnibus-Type (fundición argentina): peso latinoamericano real, autoridad regulatoria sin serif cliché. Cuerpo también Archivo 400/500. |
+| Display/UI | **Archivo** (variable, ancho natural; sin eje de ancho cargado) | Grotesca institucional de Omnibus-Type (fundición argentina): peso latinoamericano real, autoridad regulatoria sin serif cliché. Cuerpo también Archivo 400/500. |
 | Datos | **IBM Plex Mono** 400/500/600 | TODO número que importa: precios COP, lotes, NIT, fechas, folios, colas de sincronización. Monoespaciada = voz de recibo/factura, dígitos tabulares por naturaleza. |
 
 Regla dura: **ningún peso aparece fuera de Plex Mono.** Si es dinero o dato
@@ -125,7 +130,7 @@ Todo lo demás queda quieto o casi.
 | Crema + serif + terracota | Papel frío `#F7F8F5` (no crema), cero serif | Elegido deliberadamente lejos del cluster |
 | Casi-negro + verde ácido | Panel oscuro único (sección offline), verde farmacia media saturación, no neón | OK |
 | Broadsheet hairlines + radio 0 | Reglas solo donde hay tabla real; radios moderados (docs 10px, botones 6px); aire generoso | OK |
-| SaaS genérico (gradiente morado, Inter, mockup flotante) | Sin gradientes; Archivo Expanded; el mockup del hero es UI del dominio construida en HTML (carrito con lote ámbar y confirmación de fórmula), no captura genérica | OK |
+| SaaS genérico (gradiente morado, Inter, mockup flotante) | Sin gradientes; Archivo a ancho natural; el mockup del hero es UI del dominio construida en HTML (carrito con lote ámbar y confirmación de fórmula), no captura genérica | OK |
 | Marcadores numerados decorativos | Numeración SOLO en los 3 pasos de compra (secuencia verdadera) | OK |
 | Pricing SaaS con tiers inventados | Dos documentos gemelos que difieren en UN campo, igual que el sistema | Es el riesgo estético asumido y justificado |
 
@@ -251,4 +256,111 @@ La sección de planes ya no depende solo de la semilla: consume
   `pricing.tsx`, `plan-document.tsx`, `cta-band.tsx`, `mobile-buy-bar.tsx`,
   `checkout-dialog.tsx`, `App.tsx`, `es.json`, `.env.example`
 - Dependencia nueva: `zod@^4` (validación de la respuesta; regla del repo)
+
+---
+
+## Revisión de septiembre de 2026 — movimiento, ritmo y menos texto
+
+Tercera pasada, pedida por el cliente: «más profesional, más intuitivo, más
+bonito, menos texto saturante, buena experiencia de usuario, con efectos,
+movimientos y animaciones». La identidad (paleta, tipografía, firma fiscal)
+no cambia: lo que cambia es el ritmo — la página ahora respira, revela y
+responde.
+
+### Presupuesto de movimiento (regla dura)
+
+Como máximo dos loops ambientales a la vista, todo lo demás dispara una vez:
+
+- **Reveals de scroll** (`.reveal` + `useReveal`): fade-up 500 ms una vez,
+  stagger 70 ms por índice. En pilares, offline, planes, pasos, FAQ, notas.
+  Gateado con `html[data-js]` — sin JS no hay contenido escondido.
+- **Cinta fiscal** (`Ticker`): los datos reales del POS (lote por vencer,
+  fórmulas, turno, cola) desfilan bajo el héroe como cinta de estado, 36 s
+  por vuelta, pausa al hover. Es la respuesta de diseño a «menos texto»: el
+  texto que queda demuestra que el sistema está vivo. Bucle duplicado −50 %
+  para el loop perfecto; `sr-only` recibe el resumen.
+- **Terminal vivo** (`PosPreview`): scanline que barre el mockup una vez por
+  ciclo (5.5 s, ~40 % activo), el glyph de escaneo cambia de tono y el glyph
+  de sync gira 90° en el mismo ciclo — el mockup se lee como máquina
+  encendida, no como captura muerta.
+- **Precios que ruedan** (`useAnimatedAmount` + `AnimatedPrice`): al cambiar
+  el período, el total hace tween 420 ms ease-out-cubic en centavos
+  enteros (sin artefactos de formato). Aplica a los dos documentos y a la
+  tirilla final. Reduced motion: cambio instantáneo.
+- **Barra de progreso de lectura** en el header: 2 px verde fiscal,
+  `scaleX` con scroll pasivo — orientación silenciosa en un pitch largo.
+- **Pulso único** (`pulse-dot`): el punto verde de «precios verificados» y
+  la venta «en cola» laten 2.4 s. Un latido por zona, nunca dos a la vez.
+- **Hover disciplinado**: `card-lift` (translateY −3px + sombra) en las
+  tarjetas de pilares, indent de 4 px en preguntas FAQ. Todo gated a
+  `(hover:hover) and (pointer:fine)`.
+- **Ambient del héroe**: campo radial verde detrás del terminal + cruz de
+  farmacia delineada flotando 10 px (7 s alternate, opacidad 0.09). Estático
+  para reduced motion.
+- **Reglas de pasos**: el acento verde se dibuja (width 0→3.5rem) cuando el
+  paso entra en pantalla — los números son secuencia real, la regla lo
+  cuenta.
+
+`prefers-reduced-motion` apaga: ticker, scanline, scan-flash, sync-spin,
+pulse-dot, hero-float, y convierte reveals y tweens en fades cortos o
+saltos directos. Nada de `@keyframes` nuevos fuera de global.css.
+
+### Menos texto (qué se recortó y qué NO)
+
+- Subtítulo del héroe, subtítulo de planes, cuerpo offline y los tres pasos
+  se reescribieron más cortos. Se recortó promoción, nunca información:
+  precios, DIAN, lotes, Wompi y cancelación quedan intactos.
+- La cinta fiscal absorbe la carga de «prueba» que antes llevaban párrafos:
+  los datos en mono dicen más que dos líneas de prosa.
+- Los pilares pasaron de texto suelto a tarjetas blancas con borde y su
+  línea `data` como pie de ficha — escaneo en F, menos carga cognitiva.
+
+### Archivos
+
+- Nuevos: `hooks/use-reveal.ts`, `hooks/use-animated-amount.ts`,
+  `components/reveal.tsx`, `components/animated-price.tsx`,
+  `components/ticker.tsx`, ícono `PlusIcon`.
+- Modificados: `global.css` (sistema de movimiento), `site-header.tsx`,
+  `hero.tsx`, `pos-preview.tsx`, `pillars.tsx`, `offline-panel.tsx`,
+  `pricing.tsx`, `plan-document.tsx`, `steps.tsx`, `faq.tsx`, `cta-band.tsx`,
+  `App.tsx`, `es.json` (claves `ticker.*` + copys cortos).
+
+---
+
+## Tipografía: títulos a ancho natural (mismo día)
+
+El cliente sintió los titulares «estirados». Se elimina `font-stretch: 118%`
+de `.display` y la carga del eje variable de ancho (`wdth 62..125`) de
+Archivo en Google Fonts — los titulares quedan en su ancho de diseño
+natural, y el CSS de la fuente baja de peso. La identidad (grotesca
+institucional + Plex Mono para datos) no cambia.
+
+---
+
+## Auditoría UX de septiembre de 2026 (post-rediseño)
+
+Revisión sistemática contra una lista de reglas UX por prioridad
+(accesibilidad → touch → performance → animación → formularios → navegación).
+Todo verificado con typecheck + build. Hallazgos y correcciones:
+
+| # | Regla violada | Corrección |
+| --- | --- | --- |
+| 1 | Skip link ausente | «Saltar al contenido» visible al foco; objetivo `#contenido` en `<main>` y en legales |
+| 2 | Contraste: disclaimer `papel/40` (3.6:1) | Subido a `papel/60` (>4.5:1) |
+| 3 | Contraste: chip ámbar 11 px (4.39:1) | Token nuevo `--color-ambar-lote-texto` `#92400e` (≈6:1) |
+| 4 | Touch target: `.btn-sm` ~36 px | `min-height: 2.75rem` (44 px) en `.btn` y `.btn-sm`; inputs del checkout `min-h-11` |
+| 5 | `cursor: default` en botones | `cursor: pointer` + `touch-action: manipulation` en `.btn` |
+| 6 | Perf: barra de progreso re-renderizaba React por evento scroll | Escritura directa de `transform` dentro de rAF, sin setState |
+| 7 | Perf: scanline animaba `top` | Track de altura completa movido solo con `transform: translateY` |
+| 8 | `excessive-motion`: 4 loops en el primer viewport | Cruz del héroe estática (cinta + ciclo de máquina bastan) |
+| 9 | Anchors bajo header sticky | `scroll-mt-16/24` en `#producto`, `#planes`, `#faq` |
+| 10 | Barra móvil tapaba el footer | Footer con `pb-28 md:pb-14` |
+| 11 | `nav-state-active` ausente | Scrollspy con IntersectionObserver + `aria-current` |
+| 12 | Formularios: «Revise los campos marcados» sin marcar nada | `noValidate` + errores por campo bajo el input, `aria-invalid`, `aria-describedby`, focus al primer inválido, borde error, required `*` |
+| 13 | «≈ al mes» saltaba seco al cambiar período | Rolling con `useAnimatedAmount` (hook a nivel superior, Rules of Hooks) |
+| 14 | `<head>` sin theme-color ni OG | `theme-color #F7F8F5` + og:title/description/locale |
+| 15 | Medida de línea FAQ >75 caracteres | `max-w-3xl` + `min-w-0` en preguntas |
+
+Sin regressiones conocidas: la firma (documentos fiscales), la fórmula de
+precios y el fallback semilla siguen intactos.
 

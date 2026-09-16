@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
  * Design tokens — see DESIGN.md for the rationale behind every value.
@@ -14,11 +14,17 @@
   --color-ambar-lote-fondo: #fbeedd;
   --color-error: #a83c2c;
   --color-error-fondo: #f9e9e6;
+  --color-verde-agua: #e8f3ec;
+  /* Text-safe amber: ambar-lote on its pale fondo sits at 4.4:1, below the
+   * AA floor for the 11–12px chip text. This darker step clears 6:1. */
+  --color-ambar-lote-texto: #92400e;
+
+  --ease-print: cubic-bezier(0.23, 1, 0.32, 1);
 
   --font-sans:
-    'Archivo', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono:
-    'IBM Plex Mono', ui-monospace, 'Cascadia Mono', 'Consolas', monospace;
+    "IBM Plex Mono", ui-monospace, "Cascadia Mono", "Consolas", monospace;
 }
 
 /* ---------------------------------------------------------------------------
@@ -56,7 +62,7 @@
 /* ---------------------------------------------------------------------------
  * Components
  *
- * .display — Archivo Expanded for headlines: the institutional voice.
+ * .display — Archivo at natural width for headlines: the institutional voice.
  * .data    — IBM Plex Mono for every peso, lot code, NIT and timestamp.
  *
  * These live in @layer components so Tailwind utilities can still override
@@ -64,14 +70,13 @@
  * ------------------------------------------------------------------------- */
 @layer components {
   .display {
-    font-stretch: 118%;
     letter-spacing: -0.01em;
     text-wrap: balance;
   }
 
   .data {
     font-family: var(--font-mono);
-    font-feature-settings: 'tnum' 1;
+    font-feature-settings: "tnum" 1;
   }
 
   .eyebrow {
@@ -83,7 +88,8 @@
   }
 
   /* Buttons — press feedback per DESIGN.md motion budget. Hover transforms
-   * are gated behind hover-capable pointers only. */
+   * are gated behind hover-capable pointers only. min-height keeps every
+   * button at the 44px touch-target floor (small variant included). */
   .btn {
     display: inline-flex;
     align-items: center;
@@ -93,6 +99,9 @@
     font-weight: 600;
     line-height: 1;
     padding: 0.875rem 1.5rem;
+    min-height: 2.75rem;
+    cursor: pointer;
+    touch-action: manipulation;
     transition:
       transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
       background-color 160ms ease-out,
@@ -108,6 +117,7 @@
   .btn-sm {
     padding: 0.625rem 1.25rem;
     font-size: 0.875rem;
+    min-height: 2.75rem;
   }
 
   .btn-primary {
@@ -143,11 +153,7 @@
   @media (hover: hover) and (pointer: fine) {
     .btn-on-dark:hover {
       border-color: var(--color-papel);
-      background-color: color-mix(
-        in srgb,
-        var(--color-papel) 10%,
-        transparent
-      );
+      background-color: color-mix(in srgb, var(--color-papel) 10%, transparent);
     }
   }
 
@@ -188,7 +194,7 @@
 }
 
 .perforation::after {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   right: 0;
@@ -212,7 +218,7 @@
   transition: clip-path 900ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.print-reveal[data-printed='true'] {
+.print-reveal[data-printed="true"] {
   clip-path: inset(0 0 0% 0);
 }
 
@@ -223,7 +229,7 @@
     transition: opacity 300ms ease-out;
   }
 
-  .print-reveal[data-printed='true'] {
+  .print-reveal[data-printed="true"] {
     opacity: 1;
   }
 }
@@ -264,7 +270,7 @@
   transition: grid-template-rows 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.accordion-panel[data-open='true'] {
+.accordion-panel[data-open="true"] {
   grid-template-rows: 1fr;
 }
 
@@ -287,7 +293,7 @@
   ); /* wait for the panel itself to mostly print */
 }
 
-[data-printed='true'] .queue-line {
+[data-printed="true"] .queue-line {
   opacity: 1;
   transform: none;
 }
@@ -329,6 +335,274 @@
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * Motion system — September 2026 redesign pass. Every effect here is a
+ * transition (interruptible) or a single looping ambient; all of it respects
+ * prefers-reduced-motion and the hover-capable-pointer gate. Budget:
+ * reveals fire once, two tiny loops (ticker, scanline) and nothing else.
+ * ------------------------------------------------------------------------- */
+
+/* Scroll reveal — fade-up once, on first view. Gated on html[data-js] so
+ * content is never hidden when JavaScript is unavailable. */
+html[data-js="true"] .reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition:
+    opacity 500ms ease-out,
+    transform 500ms var(--ease-print);
+  transition-delay: calc(var(--reveal-index, 0) * 70ms);
+}
+
+html[data-js="true"] .reveal[data-visible="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-js="true"] .reveal {
+    transform: none;
+    transition: opacity 250ms ease-out;
+    transition-delay: calc(var(--reveal-index, 0) * 40ms);
+  }
+}
+
+/* Fiscal tape — the domain's real data (lotes, turnos, cola) reprinting as a
+ * live status line. Pauses on hover so a line can be read. */
+.ticker-track {
+  animation: ticker-scroll 36s linear infinite;
+}
+
+@keyframes ticker-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track {
+    animation: none;
+  }
+}
+
+/* POS scanline — a scanner pass sweeping the terminal preview. The 2px line
+ * rides a full-height track moved with transform only (never top/left), so
+ * the sweep stays on the compositor. Active ~40% of the cycle; the rest is
+ * silence so it reads as an event. */
+.scanline {
+  position: absolute;
+  inset: 8px 12px;
+  pointer-events: none;
+  opacity: 0;
+  animation: scanline-sweep 5.5s var(--ease-print) 1.4s infinite;
+  will-change: transform;
+}
+
+.scanline::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-verde-cruz) 55%, transparent),
+    transparent
+  );
+}
+
+@keyframes scanline-sweep {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+
+  5% {
+    opacity: 1;
+  }
+
+  38% {
+    transform: translateY(calc(100% - 2px));
+    opacity: 1;
+  }
+
+  43%,
+  100% {
+    transform: translateY(calc(100% - 2px));
+    opacity: 0;
+  }
+}
+
+/* The scanner glyph shifts tone in the same cycle as the sweep. */
+.scan-flash {
+  animation: scan-flash 5.5s ease-in-out 1.4s infinite;
+}
+
+@keyframes scan-flash {
+  0%,
+  45%,
+  100% {
+    color: var(--color-verde-cruz);
+  }
+
+  18%,
+  30% {
+    color: var(--color-verde-cruz-oscuro);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scanline,
+  .scan-flash {
+    animation: none;
+  }
+}
+
+/* Sync glyph — one quarter turn per scanline cycle, retelling "sube sola"
+ * inside the terminal preview. */
+.sync-spin {
+  animation: sync-spin 5.5s var(--ease-print) 1.4s infinite;
+}
+
+@keyframes sync-spin {
+  0%,
+  38% {
+    transform: rotate(0deg);
+  }
+
+  70%,
+  100% {
+    transform: rotate(90deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-spin {
+    animation: none;
+  }
+}
+
+/* Pulse dot — a single calm heartbeat for live status (sync provenance,
+ * pending queue line). Ring inherits the dot's own color. */
+.pulse-dot {
+  position: relative;
+}
+
+.pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background-color: currentColor;
+  opacity: 0;
+  animation: pulse-ring 2.4s ease-out infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+
+  70%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-dot::after {
+    animation: none;
+  }
+}
+
+/* Card lift — hover-capable pointers only; shadows do the work, not borders. */
+@media (hover: hover) and (pointer: fine) {
+  .card-lift {
+    transition:
+      transform 200ms var(--ease-print),
+      box-shadow 200ms var(--ease-print);
+  }
+
+  .card-lift:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 34px -14px
+      color-mix(in srgb, var(--color-tinta) 22%, transparent);
+  }
+}
+
+/* Step rule — the green accent slides along the neutral rule as the step
+ * reveals, because these numbers are a real sequence. */
+.step-rule {
+  position: relative;
+}
+
+.step-rule::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 0;
+  height: 2px;
+  width: 0;
+  background: var(--color-verde-cruz);
+  transition: width 500ms var(--ease-print) 150ms;
+}
+
+.step-rule[data-visible="true"]::after {
+  width: 3.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-rule::after {
+    transition: none;
+  }
+}
+
+/* FAQ question — color + 4px indent on hover; feedback without decoration. */
+.faq-q {
+  transition:
+    color 160ms ease-out,
+    padding-left 160ms var(--ease-print);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .faq-q:hover {
+    color: var(--color-verde-cruz);
+    padding-left: 0.25rem;
+  }
+}
+
+/* Hero ambient — pharmacy green breathing behind the terminal. Static field,
+ * no parallax, no mouse tracking. The outlined cross is a static mark:
+ * motion here would push the first viewport past the ambient-animation
+ * budget (ticker + machine cycle already live there). */
+.hero-ambient {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      560px 420px at 82% 18%,
+      color-mix(in srgb, var(--color-verde-cruz) 9%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      520px 400px at 8% 92%,
+      color-mix(in srgb, var(--color-verde-cruz) 6%, transparent),
+      transparent 72%
+    );
+}
+
+.hero-plus {
+  width: 220px;
+  height: 220px;
+  opacity: 0.09;
+  pointer-events: none;
+}
+
 /* Mobile buy bar — fixed bottom, slides up once the hero is scrolled past.
  * Transition (not keyframes) so fast scrolls retarget smoothly; reduced
  * motion collapses the slide to a fade. Visibility itself is display:none
@@ -344,11 +618,11 @@
     opacity 260ms ease-out;
 }
 
-.mobile-buy-bar[data-visible='false'] {
+.mobile-buy-bar[data-visible="false"] {
   opacity: 0;
 }
 
-.mobile-buy-bar[data-visible='true'] {
+.mobile-buy-bar[data-visible="true"] {
   transform: none;
   opacity: 1;
 }
@@ -359,7 +633,7 @@
     transition: opacity 200ms ease-out;
   }
 
-  .mobile-buy-bar[data-visible='false'] {
+  .mobile-buy-bar[data-visible="false"] {
     transform: none;
   }
 }

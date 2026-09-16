@@ -1,8 +1,8 @@
-import type { BillingPeriod } from '@pharmacy/shared-types';
+import type { BillingPeriod } from "@pharmacy/shared-types";
 
-const copFormatter = new Intl.NumberFormat('es-CO', {
-  style: 'currency',
-  currency: 'COP',
+const copFormatter = new Intl.NumberFormat("es-CO", {
+  style: "currency",
+  currency: "COP",
   maximumFractionDigits: 0,
 });
 
@@ -23,11 +23,11 @@ export function calculatePeriodPriceCents(
   period: BillingPeriod,
 ): number {
   switch (period) {
-    case 'QUARTERLY':
+    case "QUARTERLY":
       return Math.round(basePriceCents * 3 * 0.9);
-    case 'ANNUAL':
+    case "ANNUAL":
       return Math.round(basePriceCents * 12 * 0.8);
-    case 'MONTHLY':
+    case "MONTHLY":
     default:
       return basePriceCents;
   }
@@ -36,11 +36,11 @@ export function calculatePeriodPriceCents(
 /** Months covered by a billing period, used for the "≈ per month" line. */
 export function periodMonths(period: BillingPeriod): number {
   switch (period) {
-    case 'QUARTERLY':
+    case "QUARTERLY":
       return 3;
-    case 'ANNUAL':
+    case "ANNUAL":
       return 12;
-    case 'MONTHLY':
+    case "MONTHLY":
     default:
       return 1;
   }

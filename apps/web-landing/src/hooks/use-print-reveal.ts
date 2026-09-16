@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 /**
  * Marks an element with data-printed="true" the first time it enters the
@@ -13,7 +13,7 @@ export function usePrintReveal<T extends HTMLElement>() {
     const element = elementRef.current;
     if (!element) return;
 
-    const markPrinted = () => element.setAttribute('data-printed', 'true');
+    const markPrinted = () => element.setAttribute("data-printed", "true");
 
     const rect = element.getBoundingClientRect();
     if (rect.top < window.innerHeight && rect.bottom > 0) {
@@ -22,7 +22,7 @@ export function usePrintReveal<T extends HTMLElement>() {
       return () => cancelAnimationFrame(frame);
     }
 
-    if (typeof IntersectionObserver === 'undefined') {
+    if (typeof IntersectionObserver === "undefined") {
       markPrinted();
       return;
     }
@@ -31,14 +31,14 @@ export function usePrintReveal<T extends HTMLElement>() {
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            entry.target.setAttribute('data-printed', 'true');
+            entry.target.setAttribute("data-printed", "true");
             observer.unobserve(entry.target);
           }
         }
       },
       // Start slightly before fully visible so the print animation begins
       // as the document scrolls into view, not after it already landed.
-      { rootMargin: '0px 0px -15% 0px', threshold: 0.1 },
+      { rootMargin: "0px 0px -15% 0px", threshold: 0.1 },
     );
 
     observer.observe(element);
