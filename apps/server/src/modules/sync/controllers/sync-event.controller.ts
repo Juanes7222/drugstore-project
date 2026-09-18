@@ -6,6 +6,7 @@
  * Admin endpoints for creating events and viewing the event log.
  */
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -32,11 +33,34 @@ export class SyncEventController {
   constructor(private readonly syncEventService: SyncEventService) {}
 
   /**
+   * Resolves which workstation the caller is acting for.
+   *
+   * Prefers the explicit query parameter so a hub can pull and acknowledge on
+   * behalf of a peer workstation, and falls back to the workstation bound to
+   * the session. A missing workstation is rejected instead of silently
+   * matching every event: with no workstation the acknowledgement filters
+   * degrade into "no rows" and the caller would see a misleading event set.
+   */
+  private resolveWorkstationId(
+    queryWorkstationId: string | undefined,
+    user: User,
+  ): string {
+    const workstationId =
+      queryWorkstationId ?? ((user as { lastLoginWorkstationId?: string }).lastLoginWorkstationId);
+    if (!workstationId) {
+      throw new BadRequestException(
+        'workstationId is required (query parameter or workstation-bound session)',
+      );
+    }
+    return workstationId;
+  }
+
+  /**
    * Pull pending events for a workstation.
    *
-   * Returns unacknowledged, non-expired events (both broadcast and
-   * workstation-specific). The workstation should process and acknowledge
-   * each event after applying it locally.
+   * Returns non-expired events this workstation has not acknowledged yet (both
+   * broadcast and workstation-specific). The workstation should process and
+   * acknowledge each event after applying it locally.
    *
    * Guard: SyncAuthGuard (JWT or offline token) so the workstation can
    * authenticate even with a long-lived offline token — same as POST /sync/batch.
@@ -44,7 +68,8 @@ export class SyncEventController {
   @Get('pending')
   @UseGuards(SyncAuthGuard)
   async getPendingEvents(
-    @Query('workstationId') workstationId: string,
+    @Query('workstationId') workstationId: string | undefined,
+    @CurrentUser() user: User,
   ): Promise<Array<{
     id: string;
     eventType: string;
@@ -54,23 +79,32 @@ export class SyncEventController {
     severity: string;
     createdAt: Date;
   }>> {
-    return this.syncEventService.getPendingEvents(workstationId);
+    return this.syncEventService.getPendingEvents(
+      this.resolveWorkstationId(workstationId, user),
+    );
   }
 
   /**
    * Acknowledge an event after applying it locally.
    *
-   * Idempotent: acknowledging an already-acknowledged event is a no-op.
+   * Idempotent per workstation: acknowledging the same event twice from the
+   * same terminal is a no-op, and one workstation acknowledging a broadcast
+   * event does not hide it from the others.
    */
   @Post(':id/acknowledge')
   @UseGuards(SyncAuthGuard)
   @HttpCode(200)
   async acknowledgeEvent(
     @Param('id') eventId: string,
+    @Query('workstationId') workstationId: string | undefined,
     @CurrentUser() user: User,
   ): Promise<{ acknowledged: boolean }> {
-    const acknowledgedById = (user as any).id ?? 'unknown';
-    await this.syncEventService.acknowledgeEvent(eventId, acknowledgedById);
+    const acknowledgedById = (user as { id?: string }).id ?? 'unknown';
+    await this.syncEventService.acknowledgeEvent(
+      eventId,
+      this.resolveWorkstationId(workstationId, user),
+      acknowledgedById,
+    );
     return { acknowledged: true };
   }
 

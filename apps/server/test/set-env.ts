@@ -1,10 +1,9 @@
 // Set test environment variables before any module is compiled.
 // This file runs via jest.config setupFiles, so it executes in the same
 // Node.js context as the tests, ensuring ConfigModule.forRoot() picks them up.
+import { TEST_DATABASE_URL } from './test-database-url.cjs';
 
-process.env.DATABASE_URL =
-  process.env.DATABASE_URL ??
-  'postgresql://pharmacy_test:pharmacy_test@localhost:5433/pharmacy_test_db';
+process.env.DATABASE_URL = process.env.DATABASE_URL ?? TEST_DATABASE_URL;
 
 process.env.JWT_ACCESS_SECRET =
   process.env.JWT_ACCESS_SECRET ??

@@ -2,9 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import * as argon2 from 'argon2';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
+import { ValidationPipe } from '@nestjs/common';
+import { TenantContextInterceptor } from '../src/modules/tenant/tenant-context.interceptor';
 
 const TEST_WORKSTATION_ID = 'e2e-ws-lock-001';
 const TEST_USERNAME = 'e2e-lockout@test.test';
@@ -16,11 +19,12 @@ describe('Account lockout (e2e)', () => {
 
   beforeAll(async () => {
     prisma = new PrismaClient({
-      datasourceUrl: process.env.DATABASE_URL,
+      adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
     });
     await prisma.$connect();
 
     // Clean up any leftover data
+    await prisma.auditLog.deleteMany({ where: { userId: 'e2e-lockout-user-id' } });
     await prisma.userSession.deleteMany({ where: { userId: 'e2e-lockout-user-id' } });
     await prisma.user.deleteMany({ where: { username: TEST_USERNAME } });
     await prisma.workstation.deleteMany({ where: { id: TEST_WORKSTATION_ID } });
@@ -36,7 +40,7 @@ describe('Account lockout (e2e)', () => {
       },
     });
 
-    // Seed: User with 4 failed attempts (one away from lockout threshold of 5)
+    // Seed: User with 4 failed attempts (threshold of 5 is one away)
     const passwordHash = await argon2.hash(TEST_PASSWORD);
     await prisma.user.create({
       data: {
@@ -59,6 +63,8 @@ describe('Account lockout (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     app.useGlobalFilters(new HttpExceptionFilter());
+    app.useGlobalInterceptors(app.get(TenantContextInterceptor));
+    app.useGlobalPipes(new ValidationPipe({ transform: true }));
     await app.init();
   });
 
@@ -68,6 +74,7 @@ describe('Account lockout (e2e)', () => {
     }
 
     if (prisma) {
+      await prisma.auditLog.deleteMany({ where: { userId: 'e2e-lockout-user-id' } });
       await prisma.userSession.deleteMany({ where: { userId: 'e2e-lockout-user-id' } });
       await prisma.user.deleteMany({ where: { username: TEST_USERNAME } });
       await prisma.workstation.deleteMany({ where: { id: TEST_WORKSTATION_ID } });
@@ -76,29 +83,27 @@ describe('Account lockout (e2e)', () => {
   });
 
   describe('Step 1: 5th failed attempt triggers lockout', () => {
-    it('should return 401 for each of the first 4 attempts (pre-seeded)', async () => {
-      // The user is pre-seeded with 4 failedLoginAttempts.
-      // A 5th failed attempt should trigger lockout.
-      // First, verify a wrong password returns 401.
+    it('should lock the account when the 5th failed attempt happens (403)', async () => {
+      // The 5th failed attempt itself is rejected with the lock exception:
+      // the counter is incremented first, the threshold is crossed, and the
+      // handler throws before the generic invalid-credentials error.
       const res = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ username: TEST_USERNAME, password: 'WrongPassword!' })
+        .send({ identifier: TEST_USERNAME, secret: 'WrongPassword!', sessionType: 'PASSWORD' })
         .set('x-workstation-id', TEST_WORKSTATION_ID)
-        .expect(401);
+        .expect(403);
 
       expect(res.body).toHaveProperty('message');
     });
 
-    it('should lock the account and return 423 or 403 on 6th attempt', async () => {
-      // After the 5th failed attempt (step above), the account is locked.
-      // Even correct password should be rejected.
+    it('should reject even the correct password while locked (403)', async () => {
+      // The account is now locked. Even correct password must be rejected.
       const res = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ username: TEST_USERNAME, password: TEST_PASSWORD })
-        .set('x-workstation-id', TEST_WORKSTATION_ID);
+        .send({ identifier: TEST_USERNAME, secret: TEST_PASSWORD, sessionType: 'PASSWORD' })
+        .set('x-workstation-id', TEST_WORKSTATION_ID)
+        .expect(403);
 
-      // Either 423 (Locked) or 403 (Forbidden) depending on implementation
-      expect([403, 423]).toContain(res.status);
       expect(res.body).toHaveProperty('message');
     });
   });
@@ -106,7 +111,7 @@ describe('Account lockout (e2e)', () => {
   describe('Step 2: Clear lock via DB and verify login works', () => {
     it('should allow login after lock is cleared', async () => {
       // Directly update the DB to clear the lockout
-      await prisma.user.update({
+      await prisma.user.updateMany({
         where: { username: TEST_USERNAME },
         data: {
           failedLoginAttempts: 0,
@@ -117,7 +122,7 @@ describe('Account lockout (e2e)', () => {
       // Now login should succeed
       const res = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ username: TEST_USERNAME, password: TEST_PASSWORD })
+        .send({ identifier: TEST_USERNAME, secret: TEST_PASSWORD, sessionType: 'PASSWORD' })
         .set('x-workstation-id', TEST_WORKSTATION_ID)
         .expect(200);
 

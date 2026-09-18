@@ -14,16 +14,42 @@ model SyncEvent {
   payload             Json?
   severity            String     @default("INFO") // INFO | WARNING | CRITICAL
   sourceWorkstationId String?    // null = broadcast to all workstations
-  acknowledgedAt      DateTime?
-  acknowledgedById    String?
   createdAt           DateTime   @default(now())
   expiresAt           DateTime?
+  /// One row per workstation that has applied this event. Acknowledging is
+  /// per workstation, never global: a broadcast PRICE_UPDATE must still reach
+  /// every other terminal after the first one applies it.
+  acknowledgments     SyncEventAcknowledgment[]
 
   @@index([subscriptionId])
   @@index([createdAt])
-  @@index([sourceWorkstationId, acknowledgedAt])
+  @@index([sourceWorkstationId])
   @@index([eventType, createdAt])
   @@index([expiresAt])
+}
+
+/// Tracks which workstation has applied a SyncEvent.
+///
+/// Kept as a separate row per workstation instead of a single
+/// `SyncEvent.acknowledgedAt` column because broadcast events
+/// (`sourceWorkstationId = null`) are delivered to every terminal: with one
+/// global flag, the first workstation to acknowledge made the event disappear
+/// for all the others, so a branch with a hub plus terminals only ever applied
+/// a critical event on one machine.
+model SyncEventAcknowledgment {
+  id               String   @id @default(uuid())
+  subscriptionId   String
+  eventId          String
+  workstationId    String
+  acknowledgedById String?
+  acknowledgedAt   DateTime @default(now())
+
+  event SyncEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  /// Makes acknowledgement idempotent for a workstation.
+  @@unique([eventId, workstationId])
+  @@index([subscriptionId])
+  @@index([workstationId, acknowledgedAt])
 }
 
 /// Record of a conflict detected during operation merge.

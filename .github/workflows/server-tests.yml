@@ -1,0 +1,74 @@
+# Server e2e and type gates.
+#
+# Why this exists: the e2e suite runs against a real Postgres, and until this
+# workflow existed "green" only meant "green on the machine of whoever had
+# migrated the test database by hand". test/global-setup.cjs now provisions the
+# schema from prisma/migrations and rebuilds the CJS Prisma bundle when stale,
+# so a fresh runner with the test containers is enough — no manual setup.
+#
+# Lint is deliberately NOT part of this gate: `eslint src` already reports 13
+# pre-existing errors on main (no-empty catch blocks, no-prototype-builtins in
+# sale-sequence-audit.service.spec.ts, no-control-regex in object-storage).
+# Fixing them is its own change, and gating this workflow on them would hide
+# the sync coverage behind unrelated formatting debt.
+
+name: server-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # postgres-test (5433) and redis-test (6380) are what test/set-env.ts
+      # points at. --wait blocks until both healthchecks pass, so the migrations
+      # in global-setup.cjs never race a still-starting database.
+      - name: Start test services
+        run: docker compose -f docker-compose.test.yml up -d --wait
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # @pharmacy/server and its workspace dependencies (including the
+      # generated Prisma 7 full client, which turbo generates as a build
+      # dependency). The jest e2e config bundles packages/database/dist for its
+      # CJS runtime, so this build is a prerequisite, not just a type gate.
+      - name: Build server and dependencies
+        run: pnpm turbo run build --filter=@pharmacy/server...
+
+      # The e2e specs are compiled with ts-jest diagnostics disabled, which is
+      # why a syntax error once survived a green run. This is the gate that
+      # catches it: it resolves PrismaClient to the generated full client.
+      - name: Typecheck e2e specs
+        run: pnpm --filter @pharmacy/server typecheck:e2e
+
+      - name: Run unit tests
+        run: pnpm --filter @pharmacy/server test
+
+      - name: Run e2e suite
+        run: pnpm --filter @pharmacy/server test:e2e
+
+      - name: Stop test services
+        if: always()
+        run: docker compose -f docker-compose.test.yml down

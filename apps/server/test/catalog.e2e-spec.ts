@@ -2,9 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { seedSubscription } from './helpers/subscription-seed';
 import * as argon2 from 'argon2';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
+import { ValidationPipe } from '@nestjs/common';
+import { TenantContextInterceptor } from '../src/modules/tenant/tenant-context.interceptor';
 
 const TEST_WORKSTATION_ID = 'e2e-ws-cat-001';
 const TEST_ADMIN_USERNAME = 'e2e-admin@catalog.test';
@@ -24,9 +28,12 @@ describe('Catalog management with RBAC (e2e)', () => {
 
   beforeAll(async () => {
     prisma = new PrismaClient({
-      datasourceUrl: process.env.DATABASE_URL,
+      adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
     });
     await prisma.$connect();
+
+    // Multi-tenant schema: every operational row requires a subscription.
+    const subscriptionId = await seedSubscription(prisma, 'catalog');
 
     // Clean up any leftover data
     await prisma.productTaxHistory.deleteMany({ where: { product: { createdById: 'e2e-cat-admin-id' } } });
@@ -35,6 +42,7 @@ describe('Catalog management with RBAC (e2e)', () => {
     await prisma.product.deleteMany({ where: { createdById: 'e2e-cat-admin-id' } });
     await prisma.category.deleteMany({ where: { id: TEST_CATEGORY_ID } });
     await prisma.taxScheme.deleteMany({ where: { id: TEST_TAX_SCHEME_ID } });
+    await prisma.auditLog.deleteMany({ where: { userId: { in: ['e2e-cat-admin-id', 'e2e-cat-cashier-id'] } } });
     await prisma.userSession.deleteMany({ where: { userId: { in: ['e2e-cat-admin-id', 'e2e-cat-cashier-id'] } } });
     await prisma.user.deleteMany({ where: { username: { in: [TEST_ADMIN_USERNAME, TEST_CASHIER_USERNAME] } } });
     await prisma.workstation.deleteMany({ where: { id: TEST_WORKSTATION_ID } });
@@ -60,6 +68,7 @@ describe('Catalog management with RBAC (e2e)', () => {
         passwordHash: adminHash,
         passwordAlgorithm: 'argon2',
         role: 'ADMIN',
+        subscriptionId,
         isActive: true,
       },
     });
@@ -74,6 +83,7 @@ describe('Catalog management with RBAC (e2e)', () => {
         passwordHash: cashierHash,
         passwordAlgorithm: 'argon2',
         role: 'CASHIER',
+        subscriptionId,
         isActive: true,
       },
     });
@@ -81,10 +91,11 @@ describe('Catalog management with RBAC (e2e)', () => {
     // Seed: Tax scheme (required by CreateProductSchema)
     await prisma.taxScheme.create({
       data: {
+        subscriptionId,
         id: TEST_TAX_SCHEME_ID,
         code: 'IVA0',
         name: 'IVA 0%',
-        taxType: 'EXEMPT',
+        taxType: 'EXENTO',
         rate: new Prisma.Decimal('0.0000'),
         effectiveFrom: new Date('2024-01-01'),
         isActive: true,
@@ -95,6 +106,7 @@ describe('Catalog management with RBAC (e2e)', () => {
     // Seed: Category
     await prisma.category.create({
       data: {
+        subscriptionId,
         id: TEST_CATEGORY_ID,
         name: 'E2E Test Category',
         isActive: true,
@@ -108,6 +120,8 @@ describe('Catalog management with RBAC (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     app.useGlobalFilters(new HttpExceptionFilter());
+    app.useGlobalInterceptors(app.get(TenantContextInterceptor));
+    app.useGlobalPipes(new ValidationPipe({ transform: true }));
     await app.init();
   });
 
@@ -124,6 +138,7 @@ describe('Catalog management with RBAC (e2e)', () => {
       await prisma.product.deleteMany({ where: { createdById: 'e2e-cat-admin-id' } });
       await prisma.category.deleteMany({ where: { id: TEST_CATEGORY_ID } });
       await prisma.taxScheme.deleteMany({ where: { id: TEST_TAX_SCHEME_ID } });
+      await prisma.auditLog.deleteMany({ where: { userId: { in: ['e2e-cat-admin-id', 'e2e-cat-cashier-id'] } } });
       await prisma.userSession.deleteMany({ where: { userId: { in: ['e2e-cat-admin-id', 'e2e-cat-cashier-id'] } } });
       await prisma.user.deleteMany({ where: { username: { in: [TEST_ADMIN_USERNAME, TEST_CASHIER_USERNAME] } } });
       await prisma.workstation.deleteMany({ where: { id: TEST_WORKSTATION_ID } });
@@ -135,7 +150,7 @@ describe('Catalog management with RBAC (e2e)', () => {
     it('should return admin token', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ username: TEST_ADMIN_USERNAME, password: TEST_ADMIN_PASSWORD })
+        .send({ identifier: TEST_ADMIN_USERNAME, secret: TEST_ADMIN_PASSWORD, sessionType: 'PASSWORD' })
         .set('x-workstation-id', TEST_WORKSTATION_ID)
         .expect(200);
 
@@ -148,7 +163,7 @@ describe('Catalog management with RBAC (e2e)', () => {
     it('should return cashier token', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ username: TEST_CASHIER_USERNAME, password: TEST_CASHIER_PASSWORD })
+        .send({ identifier: TEST_CASHIER_USERNAME, secret: TEST_CASHIER_PASSWORD, sessionType: 'PASSWORD' })
         .set('x-workstation-id', TEST_WORKSTATION_ID)
         .expect(200);
 
@@ -165,8 +180,6 @@ describe('Catalog management with RBAC (e2e)', () => {
         .send({
           internalCode: 'E2E-CAT-PROD-001',
           commercialName: 'E2E Catalog Test Product',
-          genericName: 'E2E Catalog Generic',
-          activePrinciple: 'E2E Principle',
           laboratory: 'E2E Lab',
           saleType: 'FREE_SALE',
           minimumStock: 10,
@@ -220,8 +233,6 @@ describe('Catalog management with RBAC (e2e)', () => {
         .send({
           internalCode: 'E2E-CAT-PROD-FAKE',
           commercialName: 'Fake Product',
-          genericName: 'Fake Generic',
-          activePrinciple: 'Fake Principle',
           laboratory: 'Fake Lab',
           saleType: 'FREE_SALE',
           minimumStock: 5,
@@ -242,9 +253,9 @@ describe('Catalog management with RBAC (e2e)', () => {
         .query({ isActive: true })
         .expect(200);
 
-      expect(res.body).toHaveProperty('data');
+      expect(res.body).toHaveProperty('items');
       expect(res.body).toHaveProperty('total');
-      expect(res.body.data.length).toBeGreaterThanOrEqual(1);
+      expect(res.body.items.length).toBeGreaterThanOrEqual(1);
     });
   });
 });

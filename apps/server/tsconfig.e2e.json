@@ -1,7 +1,25 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    // tsconfig.json paths are replaced wholesale, so they are repeated here.
+    // `@prisma/client` is remapped on purpose: the specs import PrismaClient
+    // from it, but apps/server has no generated client under
+    // node_modules/.prisma (jest resolves that import to the bundled full
+    // client at runtime via moduleNameMapper). Without this entry tsc checks
+    // the specs against a stub client that knows no model delegates, so every
+    // prisma call escapes type checking.
+    "baseUrl": "./",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@pharmacy/shared-types": ["../../packages/shared-types/src"],
+      "@pharmacy/shared-validation": ["../../packages/shared-validation/src"],
+      "@pharmacy/database": ["../../packages/database/src"],
+      "@pharmacy/infisical-config": ["../../packages/infisical-config/src"],
+      "@prisma/client": [
+        "../../packages/database/generated/full-client/client.ts"
+      ]
+    }
   },
-  "include": ["test/**/*.e2e-spec.ts", "test/set-env.ts"]
+  "include": ["test/**/*.e2e-spec.ts", "test/**/*.ts", "test/**/*.cjs"]
 }

@@ -2,9 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import * as argon2 from 'argon2';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
+import { ValidationPipe } from '@nestjs/common';
+import { TenantContextInterceptor } from '../src/modules/tenant/tenant-context.interceptor';
 
 const TEST_WORKSTATION_ID = 'e2e-test-ws-001';
 const TEST_USERNAME = 'e2e-test-user@pharmacy.test';
@@ -19,11 +22,12 @@ describe('Auth (e2e)', () => {
   beforeAll(async () => {
     // Seed test data directly in the database
     prisma = new PrismaClient({
-      datasourceUrl: process.env.DATABASE_URL,
+      adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
     });
     await prisma.$connect();
 
     // Clean up any leftover data from previous test runs
+    await prisma.auditLog.deleteMany({ where: { userId: 'e2e-test-user-id-001' } });
     await prisma.userSession.deleteMany({ where: { userId: 'e2e-test-user-id-001' } });
     await prisma.user.deleteMany({ where: { username: TEST_USERNAME } });
     await prisma.user.deleteMany({ where: { id: 'e2e-test-user-id-001' } });
@@ -60,6 +64,8 @@ describe('Auth (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     app.useGlobalFilters(new HttpExceptionFilter());
+    app.useGlobalInterceptors(app.get(TenantContextInterceptor));
+    app.useGlobalPipes(new ValidationPipe({ transform: true }));
     await app.init();
   });
 
@@ -70,8 +76,10 @@ describe('Auth (e2e)', () => {
 
     // Cleanup test data
     if (prisma) {
-      const testUser = await prisma.user.findUnique({ where: { username: TEST_USERNAME } });
+      const testUser = await prisma.user.findFirst({
+        where: { username: TEST_USERNAME } });
       if (testUser) {
+        await prisma.auditLog.deleteMany({ where: { userId: testUser.id } });
         await prisma.userSession.deleteMany({ where: { userId: testUser.id } });
         await prisma.user.deleteMany({ where: { username: TEST_USERNAME } });
       }
@@ -87,7 +95,7 @@ describe('Auth (e2e)', () => {
     it('should return 200 and tokens with valid credentials', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ username: TEST_USERNAME, password: TEST_PASSWORD })
+        .send({ identifier: TEST_USERNAME, secret: TEST_PASSWORD, sessionType: 'PASSWORD' })
         .set('x-workstation-id', TEST_WORKSTATION_ID)
         .expect(200);
 
@@ -96,7 +104,9 @@ describe('Auth (e2e)', () => {
       expect(res.body).toHaveProperty('expiresAt');
       expect(res.body).toHaveProperty('user');
       expect(res.body.user.username).toBe(TEST_USERNAME);
-      expect(res.body.user.fullName).toBe(TEST_FULL_NAME);
+      // The safe user DTO projects displayName (fullName fallback), not a raw
+      // fullName column.
+      expect(res.body.user.displayName).toBe(TEST_FULL_NAME);
       expect(res.body.user.role).toBe(TEST_ROLE);
       expect(res.body.user).not.toHaveProperty('passwordHash');
       expect(res.body.user).not.toHaveProperty('passwordAlgorithm');
@@ -108,7 +118,7 @@ describe('Auth (e2e)', () => {
     it('should return 401 with wrong password', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ username: TEST_USERNAME, password: 'WrongPassword!' })
+        .send({ identifier: TEST_USERNAME, secret: 'WrongPassword!', sessionType: 'PASSWORD' })
         .set('x-workstation-id', TEST_WORKSTATION_ID)
         .expect(401);
 
@@ -119,7 +129,7 @@ describe('Auth (e2e)', () => {
     it('should return 401 with non-existent user', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ username: 'noone@pharmacy.test', password: TEST_PASSWORD })
+        .send({ identifier: 'noone@pharmacy.test', secret: TEST_PASSWORD, sessionType: 'PASSWORD' })
         .set('x-workstation-id', TEST_WORKSTATION_ID)
         .expect(401);
 
@@ -136,7 +146,7 @@ describe('Auth (e2e)', () => {
         .expect(200);
 
       expect(res.body.username).toBe(TEST_USERNAME);
-      expect(res.body.fullName).toBe(TEST_FULL_NAME);
+      expect(res.body.displayName).toBe(TEST_FULL_NAME);
       expect(res.body.role).toBe(TEST_ROLE);
       expect(res.body).not.toHaveProperty('passwordHash');
       expect(res.body).not.toHaveProperty('passwordAlgorithm');
@@ -161,24 +171,20 @@ describe('Auth (e2e)', () => {
   });
 
   describe('POST /auth/logout', () => {
-    it('should return 501 (not implemented for this phase)', async () => {
-      const res = await request(app.getHttpServer())
+    it('should return 204 and revoke the session', async () => {
+      await request(app.getHttpServer())
         .post('/auth/logout')
         .set('Authorization', `Bearer ${accessToken}`)
-        .expect(501);
-
-      expect(res.body.errorCode).toBe('NOT_IMPLEMENTED_FOR_PHASE');
+        .expect(204);
     });
   });
 
   describe('POST /auth/refresh', () => {
-    it('should return 501 (not implemented for this phase)', async () => {
-      const res = await request(app.getHttpServer())
+    it('should return 401 after logout (session already revoked)', async () => {
+      await request(app.getHttpServer())
         .post('/auth/refresh')
         .set('Authorization', `Bearer ${accessToken}`)
-        .expect(501);
-
-      expect(res.body.errorCode).toBe('NOT_IMPLEMENTED_FOR_PHASE');
+        .expect(401);
     });
   });
 });

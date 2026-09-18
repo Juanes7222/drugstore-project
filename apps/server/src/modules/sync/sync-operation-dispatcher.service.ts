@@ -1380,7 +1380,10 @@ export class SyncOperationDispatcherService {
       fiscal: 'FISCAL_DIAN' as any,
       report: 'REPORTS' as any,
     };
-    return map[category] ?? ('SYNC_OFFLINE' as any);
+    // Case-insensitive: the POS writes snake_case ("cash_shift"), and an
+    // uppercased category used to fall through to SYNC_OFFLINE, misfiling the
+    // audit row instead of reporting a mapping problem.
+    return map[category.toLowerCase()] ?? ('SYNC_OFFLINE' as any);
   }
 
   private mapAuditAction(localAction: string): import('@pharmacy/database').AuditAction {

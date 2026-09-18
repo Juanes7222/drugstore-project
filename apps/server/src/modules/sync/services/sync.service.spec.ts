@@ -23,6 +23,11 @@ const mockSyncQueue = {
 
 const mockPrisma = {
   syncQueue: mockSyncQueue,
+  // Savepoint bookkeeping: the service scopes immediate dispatch and permanent
+  // failures with SAVEPOINT / ROLLBACK TO SAVEPOINT on the request's pinned
+  // connection, because a nested $transaction() runs on a different connection
+  // and cannot see the queue row the request transaction has not committed yet.
+  $executeRawUnsafe: jest.fn(async () => 0),
   $transaction: jest.fn(async (arg: any) => {
     if (typeof arg === 'function') {
       // Interactive transaction: execute callback with the mock as tx
@@ -742,7 +747,10 @@ describe('SyncService', () => {
 
         const pending = service.receiveBatch(batchDto, 'ws-1');
 
-        // The first create is in flight and the second must not start yet.
+        // The operation reaches createQueueEntry only after the savepoint
+        // round-trip settles, so flush microtasks first. The first create
+        // stays unresolved, which is what keeps the second operation queued.
+        await new Promise((resolve) => setImmediate(resolve));
         expect(mockSyncQueue.create).toHaveBeenCalledTimes(1);
 
         resolveFirst({ id: 'entry-1' });

@@ -503,7 +503,16 @@ describe('PurchaseOrdersService', () => {
     });
 
     it('creates a CONFIRMED purchase order with items and calculated totals', async () => {
-      (prisma.purchaseOrder.findFirst as jest.Mock).mockResolvedValue(null);
+      // Both the idempotency lookup and the sequential-number allocation go
+      // through purchaseOrder.findFirst, so the mock has to tell them apart:
+      // the orderBy query is the "highest allocated number so far" lookup, and
+      // its value is what makes the next number 100. The payload's own number
+      // (1) must NOT be used: POS numbering is per workstation and collides
+      // with the server's per-subscription sequence.
+      (prisma.purchaseOrder.findFirst as jest.Mock).mockImplementation(
+        async (args: { orderBy?: unknown }) =>
+          args?.orderBy ? { sequentialNumber: 99 } : null,
+      );
       mockSuppliersService.resolveSupplierForSync.mockResolvedValue({ id: 'supplier-sync-1' });
       (prisma.product.findUnique as jest.Mock).mockResolvedValue({ id: 'prod-1' });
       (prisma.purchaseOrder.create as jest.Mock).mockResolvedValue({

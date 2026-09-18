@@ -197,9 +197,26 @@ export class SyncService {
       await this.prisma.$executeRawUnsafe(`RELEASE SAVEPOINT "${savepoint}"`);
       return { operationUuid: op.operationUuid, status: 'ACCEPTED' };
     } catch (error: any) {
-      try {
-        await this.prisma.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT "${savepoint}"`);
-      } catch {}
+      if (error instanceof DomainException) {
+        // A permanent failure keeps its queue row. tryImmediateDispatch already
+        // rolled back the dispatch savepoint and marked the row FAILED, so
+        // rolling back to the ingest savepoint here would delete that row and
+        // with it the only server-side record that the operation was rejected —
+        // `GET /sync/queue` and the admin retry endpoint exist to inspect those
+        // rows. The transaction is healthy because the inner savepoint was
+        // already rolled back.
+        try {
+          await this.prisma.$executeRawUnsafe(
+            `RELEASE SAVEPOINT "${savepoint}"`,
+          );
+        } catch {}
+      } else {
+        try {
+          await this.prisma.$executeRawUnsafe(
+            `ROLLBACK TO SAVEPOINT "${savepoint}"`,
+          );
+        } catch {}
+      }
       if (error.code === 'P2002') {
         // The same operationUuid was already inserted — surface the
         // server-assigned entityId / entityInternalCode that the previous
@@ -264,23 +281,32 @@ export class SyncService {
       correlationId: null,
     };
 
+    // The queue row was inserted on the request's RLS transaction: the tenant
+    // interceptor pins one pooled connection for the whole request, which is why
+    // every query here must go through `this.prisma` and reach that same
+    // connection. A nested `this.prisma.$transaction()` opens a SECOND pooled
+    // connection that cannot see the still-uncommitted row, so the update failed
+    // with P2025 and the catch below classified it as transient — leaving every
+    // immediate-dispatch operation (PRODUCT_CREATION, PRODUCT_UPDATE,
+    // AUDIT_LOG_BATCH, SHIFT_OPEN) PENDING forever with no `entityId` stamped.
+    // Savepoints scope the work without leaving the request transaction.
+    const savepoint = `sp_dispatch_${entryId.replace(/-/g, '').slice(0, 16)}`;
+    await this.prisma.$executeRawUnsafe(`SAVEPOINT "${savepoint}"`);
     try {
-      let result: DispatchResult | null = null;
-      await this.prisma.$transaction(async (tx) => {
-        const dispatchResult = await this.dispatcher.dispatch(entry);
-        await tx.syncQueue.update({
-          where: { id: entryId },
-          data: {
-            status: 'COMPLETED',
-            processedAt: new Date(),
-            entityId: dispatchResult.entityId ?? null,
-            entityInternalCode: dispatchResult.entityInternalCode ?? null,
-          },
-        });
-        result = dispatchResult;
+      const dispatchResult = await this.dispatcher.dispatch(entry);
+      await this.prisma.syncQueue.update({
+        where: { id: entryId },
+        data: {
+          status: 'COMPLETED',
+          processedAt: new Date(),
+          entityId: dispatchResult.entityId ?? null,
+          entityInternalCode: dispatchResult.entityInternalCode ?? null,
+        },
       });
-      return result;
+      await this.prisma.$executeRawUnsafe(`RELEASE SAVEPOINT "${savepoint}"`);
+      return dispatchResult;
     } catch (error: unknown) {
+      await this.rollbackToSavepoint(savepoint);
       if (error instanceof DomainException) {
         // Permanent error — mark the row FAILED without a retry
         // schedule so the cron job does not pick it up.  Re-throw so
@@ -291,15 +317,18 @@ export class SyncService {
         // transaction remains healthy.
         const errorMessage = error instanceof Error ? error.message : String(error);
         try {
-          await this.prisma.$transaction(async (tx) => {
-            await tx.syncQueue.update({
-              where: { id: entryId },
-              data: {
-                status: 'FAILED',
-                lastErrorMessage: errorMessage,
-              },
-            });
+          const failedSavepoint = `sp_failed_${entryId.replace(/-/g, '').slice(0, 16)}`;
+          await this.prisma.$executeRawUnsafe(`SAVEPOINT "${failedSavepoint}"`);
+          await this.prisma.syncQueue.update({
+            where: { id: entryId },
+            data: {
+              status: 'FAILED',
+              lastErrorMessage: errorMessage,
+            },
           });
+          await this.prisma.$executeRawUnsafe(
+            `RELEASE SAVEPOINT "${failedSavepoint}"`,
+          );
         } catch (updateError: unknown) {
           // Best-effort: if marking FAILED itself fails, do not mask the
           // original DomainException — the row stays PENDING and the cron
@@ -311,6 +340,21 @@ export class SyncService {
       // job retry on its 30s tick. The dispatch savepoint already rolled
       // back, so the outer batch transaction is still healthy.
       return null;
+    }
+  }
+
+  /**
+   * Rolls back to a savepoint, restoring the surrounding transaction to a
+   * usable state so the caller can keep writing on the same connection.
+   */
+  private async rollbackToSavepoint(savepoint: string): Promise<void> {
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `ROLLBACK TO SAVEPOINT "${savepoint}"`,
+      );
+    } catch {
+      // The savepoint may already be gone if the connection itself failed;
+      // the caller's error is more informative than this one.
     }
   }
 

@@ -2,9 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import * as argon2 from 'argon2';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
+import { ValidationPipe } from '@nestjs/common';
+import { TenantContextInterceptor } from '../src/modules/tenant/tenant-context.interceptor';
 
 const WS_ID = 'e2e-ws-lots-rbac';
 const ADMIN_USER = 'e2e-admin@lots-rbac.test';
@@ -24,9 +27,12 @@ describe('LotsController RBAC (e2e)', () => {
   let adminToken: string;
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL });
+    prisma = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+    });
     await prisma.$connect();
 
+    await prisma.auditLog.deleteMany({ where: { userId: { in: ['e2e-lots-rbac-admin', 'e2e-lots-rbac-cashier'] } } });
     await prisma.userSession.deleteMany({ where: { userId: { in: ['e2e-lots-rbac-admin', 'e2e-lots-rbac-cashier'] } } });
     await prisma.user.deleteMany({ where: { username: { in: [ADMIN_USER, CASHIER_USER] } } });
     await prisma.workstation.deleteMany({ where: { id: WS_ID } });
@@ -43,17 +49,20 @@ describe('LotsController RBAC (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleFixture.createNestApplication();
     app.useGlobalFilters(new HttpExceptionFilter());
+    app.useGlobalInterceptors(app.get(TenantContextInterceptor));
+    app.useGlobalPipes(new ValidationPipe({ transform: true }));
     await app.init();
 
-    const adminRes = await request(app.getHttpServer()).post('/auth/login').send({ username: ADMIN_USER, password: PWD }).set('x-workstation-id', WS_ID).expect(200);
+    const adminRes = await request(app.getHttpServer()).post('/auth/login').send({ identifier: ADMIN_USER, secret: PWD, sessionType: 'PASSWORD' }).set('x-workstation-id', WS_ID).expect(200);
     adminToken = adminRes.body.accessToken;
-    const cashierRes = await request(app.getHttpServer()).post('/auth/login').send({ username: CASHIER_USER, password: PWD }).set('x-workstation-id', WS_ID).expect(200);
+    const cashierRes = await request(app.getHttpServer()).post('/auth/login').send({ identifier: CASHIER_USER, secret: PWD, sessionType: 'PASSWORD' }).set('x-workstation-id', WS_ID).expect(200);
     cashierToken = cashierRes.body.accessToken;
   });
 
   afterAll(async () => {
     await app?.close();
     if (prisma) {
+      await prisma.auditLog.deleteMany({ where: { userId: { in: ['e2e-lots-rbac-admin', 'e2e-lots-rbac-cashier'] } } });
       await prisma.userSession.deleteMany({ where: { userId: { in: ['e2e-lots-rbac-admin', 'e2e-lots-rbac-cashier'] } } });
       await prisma.user.deleteMany({ where: { username: { in: [ADMIN_USER, CASHIER_USER] } } });
       await prisma.workstation.deleteMany({ where: { id: WS_ID } });

@@ -43,7 +43,9 @@ describe('FiscalResolutionAllocationsController (integration)', () => {
 
       const result = await controller.findAll();
 
-      expect(service.findAll).toHaveBeenCalledWith(1, 20);
+      // Third argument is the keyset continuation token, which wins over page
+      // when present; it is undefined unless the caller sends ?cursor=.
+      expect(service.findAll).toHaveBeenCalledWith(1, 20, undefined);
       expect(result).toEqual(expected);
     });
 
@@ -52,7 +54,15 @@ describe('FiscalResolutionAllocationsController (integration)', () => {
 
       await controller.findAll('2' as any, '10' as any);
 
-      expect(service.findAll).toHaveBeenCalledWith(2, 10);
+      expect(service.findAll).toHaveBeenCalledWith(2, 10, undefined);
+    });
+
+    it('should forward the cursor when one is provided', async () => {
+      service.findAll.mockResolvedValue([]);
+
+      await controller.findAll('2' as any, '10' as any, 'cursor-token');
+
+      expect(service.findAll).toHaveBeenCalledWith(2, 10, 'cursor-token');
     });
   });
 

@@ -27,11 +27,11 @@ describe('App (e2e) — health / smoke', () => {
     expect(res.body).toHaveProperty('message');
   });
 
-  it('POST /auth/login — returns 401 for missing credentials (validates auth module is wired)', async () => {
+  it('POST /auth/login — returns 400 for missing credentials (validates validation pipe is wired)', async () => {
     const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({})
-      .expect(401);
+      .expect(400);
 
     expect(res.body).toHaveProperty('message');
   });
