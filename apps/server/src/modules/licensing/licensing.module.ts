@@ -13,7 +13,6 @@ import { ActivationsController } from './activations/activations.controller';
 import { CheckInsService } from './check-ins/check-ins.service';
 import { CheckInsController } from './check-ins/check-ins.controller';
 import { FraudDetectionService } from './fraud/fraud-detection.service';
-import { FraudAlertsController } from './fraud/fraud-alerts.controller';
 import { LicenseTokenService } from './tokens/license-token.service';
 import { LicenseRequiredGuard } from './guards/license-required.guard';
 import { WompiConfigService } from './payments/wompi-config.service';
@@ -29,7 +28,6 @@ import { CheckoutController } from './payments/checkout.controller';
     LocationsController,
     ActivationsController,
     CheckInsController,
-    FraudAlertsController,
     WompiWebhookController,
     CheckoutController,
   ],

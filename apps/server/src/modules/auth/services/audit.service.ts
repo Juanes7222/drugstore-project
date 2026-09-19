@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 import { AuditAction, SystemModule } from '@pharmacy/database';
 import type { AuditLog as AuditLogModel } from '@pharmacy/database';
 import { paginateWithCursor } from '@/common/utils/cursor-pagination';
@@ -103,7 +104,10 @@ export interface AuditContext {
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantContext: TenantContextService,
+  ) {}
 
   /**
    * Log an audit event.
@@ -114,6 +118,11 @@ export class AuditService {
       await this.prisma.auditLog.create({
         data: {
           id: crypto.randomUUID(),
+          // Attribute the row to the request's tenant when one is active;
+          // platform/cron paths without a tenant context stay NULL.
+          subscriptionId: this.tenantContext.hasTenant()
+            ? this.tenantContext.getSubscriptionId()
+            : undefined,
           action: this.mapEventToAction(event),
           module: SystemModule.AUTH_USERS,
           entityType: context.targetType ?? 'unknown',

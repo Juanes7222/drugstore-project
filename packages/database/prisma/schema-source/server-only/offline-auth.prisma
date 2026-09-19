@@ -12,8 +12,8 @@ model OfflineSessionBlessing {
   userId                  String
   user                    User      @relation(fields: [userId], references: [id])
   subscriptionId          String?
-  workstationId           String
-  workstation             Workstation @relation(fields: [workstationId], references: [id])
+  workstationId           String?
+  workstation             Workstation? @relation(fields: [workstationId], references: [id], onDelete: SetNull)
   offlineTokenJwt         String    @db.Text
   workstationFingerprint  String
   status                  OfflineBlessingStatus @default(PENDING)

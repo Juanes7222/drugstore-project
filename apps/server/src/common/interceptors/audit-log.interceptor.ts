@@ -12,7 +12,10 @@ import { Request } from 'express';
 import * as crypto from 'crypto';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '@/modules/tenant/tenant-context.service';
-import type { AuditAction as PrismaAuditAction, SystemModule as PrismaSystemModule } from '@pharmacy/database';
+import type {
+  AuditAction as PrismaAuditAction,
+  SystemModule as PrismaSystemModule,
+} from '@pharmacy/database';
 import {
   AUDITABLE_KEY,
   AuditableMetadata,
@@ -27,20 +30,21 @@ import { AuditAction, SystemModule, User } from '@pharmacy/shared-types';
 // without a Prisma counterpart (AUDIT module, READ action) has no current
 // @Auditable user and skips the write with a warning rather than failing
 // at the DB; add a Prisma enum migration first if one ever gets used.
-const SYSTEM_MODULE_MAP: Record<SystemModule, PrismaSystemModule | undefined> = {
-  [SystemModule.AUTH]: 'AUTH_USERS',
-  [SystemModule.CATALOG]: 'CATALOG',
-  [SystemModule.INVENTORY]: 'INVENTORY',
-  [SystemModule.PURCHASES]: 'PURCHASES',
-  [SystemModule.SALES]: 'SALES_POS',
-  [SystemModule.CASH_SHIFT]: 'CASH_SHIFT',
-  [SystemModule.FISCAL]: 'FISCAL_DIAN',
-  [SystemModule.SYNC]: 'SYNC_OFFLINE',
-  [SystemModule.CONFIG]: 'CONFIGURATION',
-  [SystemModule.AUDIT]: undefined,
-  [SystemModule.CLIENTS]: 'CLIENTS',
-  [SystemModule.REPORTS]: 'REPORTS',
-};
+const SYSTEM_MODULE_MAP: Record<SystemModule, PrismaSystemModule | undefined> =
+  {
+    [SystemModule.AUTH]: 'AUTH_USERS',
+    [SystemModule.CATALOG]: 'CATALOG',
+    [SystemModule.INVENTORY]: 'INVENTORY',
+    [SystemModule.PURCHASES]: 'PURCHASES',
+    [SystemModule.SALES]: 'SALES_POS',
+    [SystemModule.CASH_SHIFT]: 'CASH_SHIFT',
+    [SystemModule.FISCAL]: 'FISCAL_DIAN',
+    [SystemModule.SYNC]: 'SYNC_OFFLINE',
+    [SystemModule.CONFIG]: 'CONFIGURATION',
+    [SystemModule.AUDIT]: undefined,
+    [SystemModule.CLIENTS]: 'CLIENTS',
+    [SystemModule.REPORTS]: 'REPORTS',
+  };
 
 const AUDIT_ACTION_MAP: Record<AuditAction, PrismaAuditAction | undefined> = {
   [AuditAction.CREATE]: 'CREATE',
@@ -99,12 +103,14 @@ export class AuditLogInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap({
         next: () => {
-          this.writeAuditLog(metadata, request, userId, userRole).catch((error) => {
-            this.logger.error(
-              `Failed to write audit log for ${request.method} ${request.url}`,
-              error,
-            );
-          });
+          this.writeAuditLog(metadata, request, userId, userRole).catch(
+            (error) => {
+              this.logger.error(
+                `Failed to write audit log for ${request.method} ${request.url}`,
+                error,
+              );
+            },
+          );
         },
         error: (error) => {
           this.logger.error(`Error in ${request.method} ${request.url}`, error);
@@ -137,6 +143,12 @@ export class AuditLogInterceptor implements NestInterceptor {
       await db.auditLog.create({
         data: {
           id: this.generateId(),
+          // Attribute the row to the request's tenant when one is active so
+          // online mutations are visible in the tenant backoffice; requests
+          // outside a tenant context (platform, pre-auth) stay NULL.
+          subscriptionId: this.tenantContext.hasTenant()
+            ? this.tenantContext.getSubscriptionId()
+            : undefined,
           action,
           module,
           entityType: metadata.entityType,

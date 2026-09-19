@@ -157,6 +157,43 @@ describe('AuditLogInterceptor', () => {
       );
     });
 
+    it('should stamp subscriptionId from the tenant context when one is active', async () => {
+      tenantContext.hasTenant.mockReturnValue(true);
+      tenantContext.getSubscriptionId.mockReturnValue('sub-tenant-a');
+
+      const ctx = createMockContext('POST', '/products', {
+        id: 'user-1',
+        role: 'ADMIN',
+      });
+      const next = createCallHandler();
+      jest.spyOn(reflector, 'get').mockReturnValue(auditableMeta);
+
+      await interceptor.intercept(ctx, next).toPromise();
+
+      expect(mockPrisma.auditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ subscriptionId: 'sub-tenant-a' }),
+        }),
+      );
+    });
+
+    it('should leave subscriptionId unset outside a tenant context', async () => {
+      tenantContext.hasTenant.mockReturnValue(false);
+
+      const ctx = createMockContext('POST', '/products', {
+        id: 'user-1',
+        role: 'ADMIN',
+      });
+      const next = createCallHandler();
+      jest.spyOn(reflector, 'get').mockReturnValue(auditableMeta);
+
+      await interceptor.intercept(ctx, next).toPromise();
+
+      const data = mockPrisma.auditLog.create.mock.calls[0][0].data;
+      // Prisma treats undefined as "column not set" → NULL in the database.
+      expect(data.subscriptionId).toBeUndefined();
+    });
+
     it('should include userId from the authenticated user', async () => {
       const ctx = createMockContext('POST', '/products', {
         id: 'user-42',

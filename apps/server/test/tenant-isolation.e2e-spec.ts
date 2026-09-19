@@ -101,23 +101,18 @@ const KNOWN_UNPROTECTED_TABLES: ReadonlyArray<{
   },
   {
     table: 'FraudAlert',
-    // Review 2026-09-18: subscriptionId is NOT NULL and the detector write
-    // path could be tenant-scoped, so a policy looks possible. Two blockers:
-    // (1) saas-admin fraud surface (SaasAdminOverviewService._count via
+    // Review 2026-09-19 (updated after the FraudAlertsController removal):
+    // subscriptionId is NOT NULL and the detector write path could be
+    // tenant-scoped, so a policy looks possible. One remaining blocker:
+    // saas-admin fraud surface (SaasAdminOverviewService._count via
     // Subscription, SaasAdminFraudService) runs as a platform admin with NO
-    // tenant bound — a policy hides every row from it; (2) the legacy
-    // admin/licensing/fraud controller (FraudAlertsController) is mounted,
-    // gated to RoleType.ADMIN (a TENANT role), and reads fraud alerts of ALL
-    // tenants with no filter — under a policy it would silently return only
-    // the caller's tenant rows, hiding its current cross-tenant behavior
-    // instead of fixing it. Decide its ownership (saas-admin vs tenant)
-    // before any policy. NOTE: that controller is also an app-layer
-    // isolation gap in its own right — a tenant ADMIN can list another
-    // tenant's fraud alerts today.
+    // tenant bound — a policy hides every row from it. The legacy
+    // admin/licensing/fraud controller (FraudAlertsController) that a tenant
+    // ADMIN could use to list other tenants' fraud alerts was removed
+    // (2026-09-19); the only consumer is saas-admin/fraud-alerts.
     reason:
-      'saas-admin reads it with no tenant bound (platform admin) and the ' +
-      'legacy admin/licensing/fraud controller reads cross-tenant by design; ' +
-      'policy would silently change both instead of fixing them',
+      'saas-admin reads it with no tenant bound (platform admin); policy ' +
+      'would hide every row from the platform fraud queue',
   },
   {
     table: 'LicenseCheckIn',

@@ -12,6 +12,7 @@ import { createPrismaDatabaseMock } from '../../../../test/helpers/prisma-databa
 jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { AuditService, AuditEvent } from './audit.service';
+import { TenantContextService } from '@/modules/tenant/tenant-context.service';
 
 const CURSOR_TIMESTAMP = '2026-07-02T15:00:00.000Z';
 
@@ -161,6 +162,36 @@ describe('AuditService.query', () => {
       expect(findManyMock()).toHaveBeenCalledWith(
         expect.objectContaining({ take: 50, skip: 0 }),
       );
+    });
+  });
+
+  describe('log() tenant attribution', () => {
+    let tenantContext: TenantContextService;
+
+    beforeEach(() => {
+      tenantContext = new TenantContextService();
+      service = new AuditService(prisma as never, tenantContext);
+      (prisma.auditLog as any).create.mockResolvedValue({});
+    });
+
+    it('stamps subscriptionId from the tenant context when one is active', async () => {
+      await tenantContext.runWithTenant('sub-tenant-a', async () => {
+        await service.log(AuditEvent.LOGIN_SUCCESS, { actorId: 'user-1' });
+      });
+
+      expect((prisma.auditLog as any).create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ subscriptionId: 'sub-tenant-a' }),
+        }),
+      );
+    });
+
+    it('leaves subscriptionId unset outside a tenant context (platform paths)', async () => {
+      await service.log(AuditEvent.FORGOT_PASSWORD, { actorId: null });
+
+      const data = (prisma.auditLog as any).create.mock.calls[0][0].data;
+      // undefined is what Prisma treats as "column not set" → stays NULL.
+      expect(data.subscriptionId).toBeUndefined();
     });
   });
 });

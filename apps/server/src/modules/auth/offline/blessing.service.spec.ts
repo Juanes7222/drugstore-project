@@ -617,6 +617,7 @@ describe('BlessingService', () => {
         mockWorkstationActivation.findFirst.mockResolvedValue({
           id: 'activation-uuid-1',
           isActive: true,
+          subscriptionId: 'sub-uuid-1',
         });
 
         const response = await service.blessSessions(
@@ -633,8 +634,19 @@ describe('BlessingService', () => {
         });
         expect(mockWorkstationActivation.findFirst).toHaveBeenCalledWith({
           where: { hardwareFingerprint: REQUEST_FINGERPRINT },
-          select: { isActive: true },
+          select: { isActive: true, id: true, subscriptionId: true },
         });
+        // The blessing row must be attributed: real workstation FK and
+        // tenant stamp (regression guard — workstationId used to be written
+        // as '' and every insert died on the FK, silently).
+        expect(mockOfflineSessionBlessing.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              workstationId: 'activation-uuid-1',
+              subscriptionId: 'sub-uuid-1',
+            }),
+          }),
+        );
       });
 
       it('rejects with WORKSTATION_REVOKED when no activation row exists for the request fingerprint', async () => {
@@ -685,6 +697,7 @@ describe('BlessingService', () => {
         mockWorkstationActivation.findFirst.mockResolvedValue({
           id: 'activation-uuid-1',
           isActive: true,
+          subscriptionId: 'sub-uuid-1',
         });
 
         const response = await service.blessSessions(

@@ -126,6 +126,14 @@ export class BlessingService {
     // keeps its own error isolation so one failure cannot affect the rest.
     const results: BlessingResult[] = [];
     const batchSize = 5;
+    // WorkstationActivation (subscriptionId + id) resolved during validation,
+    // keyed by session so recordBlessing can attribute each row. A session
+    // that never reaches Step 7 has no entry; its blessing row then stays
+    // workstation-anonymous (workstationId null) with the tenant from claims.
+    const activationBySession = new Map<
+      string,
+      { isActive: boolean; id: string; subscriptionId: string }
+    >();
     for (let i = 0; i < requests.length; i += batchSize) {
       const chunk = requests.slice(i, i + batchSize);
       const chunkResults = await Promise.all(
@@ -138,10 +146,15 @@ export class BlessingService {
                 claims: claimsBySession.get(req.localSessionId) ?? null,
                 revokedJtis,
                 user: userMap.get(req.userId) ?? null,
+                activationBySession,
               },
             );
             // Record the blessing result in the database
-            await this.recordBlessing(req, result);
+            await this.recordBlessing(
+              req,
+              result,
+              activationBySession.get(req.localSessionId),
+            );
             return result;
           } catch (error) {
             this.logger.error(
@@ -182,6 +195,11 @@ export class BlessingService {
         subscriptionId: string | null;
         lockedUntil: Date | null;
       } | null;
+      /** Session-keyed activation map owned by blessSessions. */
+      activationBySession: Map<
+        string,
+        { isActive: boolean; id: string; subscriptionId: string }
+      >;
     },
   ): Promise<BlessingResult> {
     // Step 1: Verify the offline token signature
@@ -287,7 +305,7 @@ export class BlessingService {
     // Step 7: Verify the workstation is still registered and active
     const activation = await this.prisma.workstationActivation.findFirst({
       where: { hardwareFingerprint: requestWorkstationFingerprint },
-      select: { isActive: true },
+      select: { isActive: true, id: true, subscriptionId: true },
     });
     if (!activation || !activation.isActive) {
       return {
@@ -296,6 +314,9 @@ export class BlessingService {
         reason: 'WORKSTATION_REVOKED',
       };
     }
+    // The activation (already validated active) carries the tenant and the
+    // workstation identity for recordBlessing below.
+    precomputed.activationBySession.set(req.localSessionId, activation);
 
     // Step 8: Verify location access
     if (claims.locationIds && claims.locationIds.length > 0) {
@@ -452,10 +473,17 @@ export class BlessingService {
 
   /**
    * Record the blessing result in the database.
+   *
+   * `activation` is the WorkstationActivation resolved during validation
+   * (undefined when validation rejected before Step 7): it supplies the
+   * workstation foreign key and the tenant attribution. Without it the row
+   * is stored workstation-anonymous (workstationId null) with the tenant
+   * from the token claims.
    */
   private async recordBlessing(
     req: BlessingRequest,
     result: BlessingResult,
+    activation: { id: string; subscriptionId: string } | undefined,
   ): Promise<void> {
     try {
       const isBlessed = result.status === 'BLESSED';
@@ -465,7 +493,11 @@ export class BlessingService {
           id: crypto.randomUUID(),
           localSessionId: req.localSessionId,
           userId: req.userId,
-          workstationId: '',
+          // Tenant attribution: only the sync applier stamped this before.
+          subscriptionId: activation?.subscriptionId ?? undefined,
+          // The FK must reference a real Workstation row — the previous
+          // empty-string sentinel made every create fail on the constraint.
+          workstationId: activation?.id,
           offlineTokenJwt: req.offlineTokenJwt,
           workstationFingerprint: req.workstationFingerprint,
           status: isBlessed ? 'BLESSED' : 'REJECTED',
