@@ -11,7 +11,10 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
-const { TEST_DATABASE_URL } = require('./test-database-url.cjs');
+const {
+  TEST_APP_DATABASE_URL,
+  TEST_DATABASE_URL,
+} = require('./test-database-url.cjs');
 
 const serverDir = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -167,7 +170,54 @@ function buildDatabaseBundle() {
   console.log('[global-setup] database CJS bundle rebuilt');
 }
 
+/**
+ * The app role is created by the RLS migration without a password, and the
+ * Docker image trusts localhost connections, so the harness sets one to keep the
+ * app URL explicit and independent of pg_hba. Idempotent.
+ */
+function ensureAppRoleCanConnect() {
+  const password = new URL(TEST_APP_DATABASE_URL).password;
+  if (!password) return;
+
+  const sqlFile = path.join(__dirname, 'generated', 'app-role.sql');
+  fs.mkdirSync(path.dirname(sqlFile), { recursive: true });
+  fs.writeFileSync(
+    sqlFile,
+    `ALTER ROLE pharmacy_app WITH LOGIN PASSWORD '${password.replace(/'/g, "''")}';\n`,
+  );
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      prismaCli,
+      'db',
+      'execute',
+      '--file',
+      sqlFile,
+      '--config',
+      prismaConfig,
+    ],
+    {
+      cwd: serverDir,
+      env: {
+        ...process.env,
+        DATABASE_URL: process.env.DATABASE_URL ?? TEST_DATABASE_URL,
+      },
+      encoding: 'utf8',
+    },
+  );
+
+  if (result.status !== 0) {
+    throw new Error(
+      ['[global-setup] could not grant the app role a password', result.stdout, result.stderr]
+        .filter(Boolean)
+        .join('\n'),
+    );
+  }
+}
+
 module.exports = async function globalSetup() {
   provisionSchema();
+  ensureAppRoleCanConnect();
   if (bundleIsStale()) buildDatabaseBundle();
 };

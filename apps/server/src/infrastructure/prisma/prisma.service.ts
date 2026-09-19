@@ -40,14 +40,25 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   constructor(private readonly tenantContext: TenantContextService) {
-    const connectionString = process.env.DATABASE_URL;
+    // The application must connect as the non-superuser role RLS is written
+    // for: row level security never applies to a superuser or a BYPASSRLS role,
+    // so pointing this at the migration/owner URL silently disables every
+    // policy. Migrations and the Prisma CLI legitimately need the owner (DDL,
+    // extensions, GRANTs), which is why the two URLs are separate settings —
+    // APP_DATABASE_URL falls back to DATABASE_URL so single-URL deployments
+    // keep working unchanged.
+    const connectionString =
+      process.env.APP_DATABASE_URL ?? process.env.DATABASE_URL;
     const adapter = new PrismaPg({ connectionString, max: resolveDbPoolMax() });
     super({ adapter });
     // Return the tenant-aware proxy as the DI instance: `this.prisma.x`
     // inside a request resolves to the active transaction, outside to the
     // root pool client. `instanceof PrismaService` keeps working because
     // the proxy targets this instance.
-    return buildTenantAwareProxy(this, () => this.tenantContext.getTx());
+    return buildTenantAwareProxy(this, {
+      current: () => this.tenantContext.getTx(),
+      runWith: (tx, fn) => this.tenantContext.runWithTx(tx, fn),
+    });
   }
 
   onModuleInit(): Promise<void> {

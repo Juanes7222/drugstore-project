@@ -51,6 +51,47 @@ describe('TenantContextService', () => {
     expect(afterInner).toBe(outerTx);
   });
 
+  /**
+   * Nested `$transaction` calls are savepoints: Prisma requires each one to be
+   * issued from the innermost client, so the model calls inside its callback
+   * must resolve to that savepoint and the enclosing transaction must be back
+   * in place afterwards.
+   */
+  it('binds the nested tx during runWithTx and restores the outer one', async () => {
+    const outerTx = { sale: { findMany: 1 } };
+    const nestedTx = { sale: { findMany: 2 } };
+    let duringNested: unknown;
+    let afterNested: unknown;
+
+    await service.runWithTenant('sub-1', async () => {
+      service.setTx(outerTx as never);
+      await service.runWithTx(nestedTx as never, async () => {
+        duringNested = service.getTx();
+      });
+      afterNested = service.getTx();
+    });
+
+    expect(duringNested).toBe(nestedTx);
+    expect(afterNested).toBe(outerTx);
+  });
+
+  it('restores the outer tx when the nested callback throws', async () => {
+    const outerTx = { sale: { findMany: 1 } };
+    let afterThrow: unknown;
+
+    await service.runWithTenant('sub-1', async () => {
+      service.setTx(outerTx as never);
+      await expect(
+        service.runWithTx({ sale: { findMany: 2 } } as never, async () => {
+          throw new Error('nested failed');
+        }),
+      ).rejects.toThrow('nested failed');
+      afterThrow = service.getTx();
+    });
+
+    expect(afterThrow).toBe(outerTx);
+  });
+
   it('reports hasTenant false outside any context', () => {
     expect(service.hasTenant()).toBe(false);
   });

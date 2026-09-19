@@ -11,8 +11,12 @@ type AfterCommitCallback = () => void | Promise<void>;
 
 export interface TenantStore {
   subscriptionId: string;
-  /** Active request transaction, or null outside any withTenant scope. */
-  tx: Prisma.TransactionClient | null;
+  /**
+   * Active transactions of this scope, outermost first. The first entry is the
+   * request transaction; each nested `$transaction` (a savepoint inside it)
+   * pushes one more. Empty outside any withTenant scope.
+   */
+  txStack: Prisma.TransactionClient[];
   afterCommit: AfterCommitCallback[];
 }
 
@@ -22,7 +26,10 @@ export class TenantContextService {
 
   /** Runs fn with the tenant bound in async-local storage. */
   runWithTenant<T>(subscriptionId: string, fn: () => T): T {
-    return this.storage.run({ subscriptionId, tx: null, afterCommit: [] }, fn);
+    return this.storage.run(
+      { subscriptionId, txStack: [], afterCommit: [] },
+      fn,
+    );
   }
 
   /** Subscription id of the current request; throws outside any context. */
@@ -49,19 +56,37 @@ export class TenantContextService {
     if (!store) {
       throw new Error('TenantContextService: tx set outside a tenant context');
     }
-    store.tx = tx;
+    store.txStack.push(tx);
   }
 
-  /** Active request transaction, or null when none is bound. */
+  /** Innermost active transaction, or null when none is bound. */
   getTx(): Prisma.TransactionClient | null {
-    return this.storage.getStore()?.tx ?? null;
+    return this.storage.getStore()?.txStack.at(-1) ?? null;
   }
 
-  /** Unbinds the active transaction (called when the request transaction ends). */
+  /**
+   * Binds `tx` for the duration of `fn` and restores the previous transaction
+   * afterwards. Used for nested `$transaction` calls: Prisma requires each
+   * nested transaction to be issued from the innermost client, and the model
+   * calls inside the callback must route to that savepoint.
+   */
+  async runWithTx<T>(
+    tx: Prisma.TransactionClient,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    this.setTx(tx);
+    try {
+      return await fn();
+    } finally {
+      this.clearTx();
+    }
+  }
+
+  /** Unbinds the innermost transaction (called when its transaction ends). */
   clearTx(): void {
     const store = this.storage.getStore();
     if (store) {
-      store.tx = null;
+      store.txStack.pop();
     }
   }
 

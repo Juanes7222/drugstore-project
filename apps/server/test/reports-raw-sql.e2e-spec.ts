@@ -43,6 +43,7 @@ import { PrismaService } from '../src/infrastructure/prisma/prisma.service';
 import { TenantContextService } from '../src/modules/tenant/tenant-context.service';
 
 const SUB = 'e2e-rpt-sub';
+const SUB_B = 'e2e-rpt-sub-b';
 const USER_ID = 'e2e-rpt-user';
 const WORKSTATION_ID = 'e2e-rpt-ws';
 
@@ -74,6 +75,17 @@ function ts(dateIso: string): string {
   return dateIso.replace(/Z$/, '');
 }
 
+const APP_ROLE = 'pharmacy_app';
+const APP_ROLE_PASSWORD = 'pharmacy_app';
+
+/** Container connection string, but as the RLS app role the server uses. */
+function appRoleConnectionUri(containerUri: string): string {
+  const url = new URL(containerUri);
+  url.username = APP_ROLE;
+  url.password = APP_ROLE_PASSWORD;
+  return url.toString();
+}
+
 describe('ReportsService raw SQL (e2e)', () => {
   let container: StartedPostgreSqlContainer;
   let seedClient: PrismaClient;
@@ -82,6 +94,14 @@ describe('ReportsService raw SQL (e2e)', () => {
 
   let nextLocalNumber = 1;
   let nextConsecutive = 1;
+
+  /**
+   * Runs a report the way a request does: inside the tenant-scoped RLS
+   * transaction the interceptor opens. Called outside one, the service reads
+   * nothing at all, because its queries filter by nothing but the policies.
+   */
+  const asTenant = <T>(fn: () => Promise<T>): Promise<T> =>
+    prismaService.withTenant(SUB, fn);
 
   beforeAll(async () => {
     // Fresh postgres:16-alpine instance per run.
@@ -115,6 +135,17 @@ describe('ReportsService raw SQL (e2e)', () => {
       adapter: new PrismaPg({ connectionString: containerUrl }),
     });
     await seedClient.$connect();
+
+    // The service under test must run under RLS to mean anything: its queries
+    // carry no subscriptionId filter and rely on the policies (see the service
+    // header). The app role has no password in the migrated schema and the
+    // container only accepts TCP connections, so set one and point the app at
+    // it. Without this the service would connect as the container superuser and
+    // every tenant-isolation assertion here would be vacuous.
+    await seedClient.$executeRawUnsafe(
+      `ALTER ROLE ${APP_ROLE} WITH LOGIN PASSWORD '${APP_ROLE_PASSWORD}'`,
+    );
+    process.env.APP_DATABASE_URL = appRoleConnectionUri(containerUrl);
 
     await seedBaseData();
 
@@ -235,6 +266,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     openedAt: string;
     closedAt?: string | null;
     expectedClosingAmount: string;
+    subscriptionId?: string;
   }): Promise<void> {
     const closedAt = input.closedAt ?? null;
     await insert(
@@ -242,7 +274,7 @@ describe('ReportsService raw SQL (e2e)', () => {
       ['id', 'subscriptionId', 'workstationId', 'userId', 'state', 'openedAt', 'closedAt', 'closedByUserId', 'openingBalance', 'expectedClosingAmount', 'actualClosingAmount'],
       [
         input.id,
-        SUB,
+        input.subscriptionId ?? SUB,
         WORKSTATION_ID,
         USER_ID,
         input.state,
@@ -264,13 +296,14 @@ describe('ReportsService raw SQL (e2e)', () => {
     totalTax: string;
     totalAmount: string;
     annulledAt?: string | null;
+    subscriptionId?: string;
   }): Promise<void> {
     await insert(
       'Sale',
       ['id', 'subscriptionId', 'localNumber', 'operationalState', 'startedAt', 'confirmedAt', 'annulledAt', 'subtotal', 'totalTax', 'totalAmount', 'lastModifiedAt', 'cashShiftId', 'workstationId', 'userId', 'sourceWorkstationId'],
       [
         input.id,
-        SUB,
+        input.subscriptionId ?? SUB,
         String(nextLocalNumber++),
         input.operationalState,
         ts('2026-01-05T12:00:00Z'),
@@ -299,13 +332,14 @@ describe('ReportsService raw SQL (e2e)', () => {
     subtotal: string;
     total: string;
     commissionAmount?: string;
+    subscriptionId?: string;
   }): Promise<void> {
     await insert(
       'SaleItem',
       ['id', 'subscriptionId', 'saleId', 'productId', 'productInternalCodeSnapshot', 'productCommercialNameSnapshot', 'quantity', 'unitPrice', 'taxRate', 'taxAmount', 'subtotal', 'total', 'commissionAmount'],
       [
         input.id,
-        SUB,
+        input.subscriptionId ?? SUB,
         input.saleId,
         input.productId,
         'SNAP-CODE',
@@ -495,10 +529,57 @@ describe('ReportsService raw SQL (e2e)', () => {
         subtotal: '7777.00',
         total: '7777.00',
       });
+
+      // Another tenant, same window, larger amount: the report must never see
+      // it. The raw SQL carries no subscriptionId filter, so only the RLS
+      // policies stand between one pharmacy's numbers and another's.
+      await seedShift({
+        id: 'e2e-rpt-shift-aug-other',
+        subscriptionId: SUB_B,
+        state: 'OPEN',
+        openedAt: '2026-08-01T08:00:00Z',
+        expectedClosingAmount: '0',
+      });
+      await seedSale({
+        id: 'e2e-rpt-ss-other',
+        subscriptionId: SUB_B,
+        cashShiftId: 'e2e-rpt-shift-aug-other',
+        operationalState: 'CONFIRMED',
+        confirmedAt: '2026-08-15T12:00:00Z',
+        totalTax: '0.00',
+        totalAmount: '999999.00',
+      });
+      await seedSaleItem({
+        id: 'e2e-rpt-ss-other-i1',
+        subscriptionId: SUB_B,
+        saleId: 'e2e-rpt-ss-other',
+        productId: PRODUCT_A_ID,
+        quantity: 9,
+        unitPrice: '111111.00',
+        taxRate: '0.0000',
+        taxAmount: '0.00',
+        subtotal: '999999.00',
+        total: '999999.00',
+      });
+    });
+
+    it("never reports another tenant's sales in the same window", async () => {
+      // Control first: the other tenant's row is really in the table, so
+      // "not reported" cannot pass because the fixture was never written.
+      const seeded = await seedClient.$queryRawUnsafe<{ count: bigint }[]>(
+        `SELECT count(*)::bigint AS count FROM "Sale" WHERE "subscriptionId" = $1`,
+        SUB_B,
+      );
+      expect(Number(seeded[0].count)).toBe(1);
+
+      const result = await asTenant(() => service.getSalesSummary(AUGUST));
+
+      expect(result.totalSales).toBe('45000.00');
+      expect(result.totalQuantity).toBe(6);
     });
 
     it('aggregates only CONFIRMED sales within the confirmedAt range', async () => {
-      const result = await service.getSalesSummary(AUGUST);
+      const result = await asTenant(() => service.getSalesSummary(AUGUST));
 
       expect(result.totalSales).toBe('45000.00');
       expect(result.totalQuantity).toBe(6);
@@ -506,7 +587,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('groups the breakdown by each product saleType with count, total and average', async () => {
-      const result = await service.getSalesSummary(AUGUST);
+      const result = await asTenant(() => service.getSalesSummary(AUGUST));
 
       // GROUP BY without ORDER BY: normalize row order before comparing.
       const breakdown = [...result.breakdownBySaleType].sort((a, b) =>
@@ -529,8 +610,10 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('returns zeroed totals when no sales match the window', async () => {
-      const result = await service.getSalesSummary(
-        dto('2030-01-01T00:00:00Z', '2030-01-31T23:59:59Z'),
+      const result = await asTenant(() =>
+        service.getSalesSummary(
+          dto('2030-01-01T00:00:00Z', '2030-01-31T23:59:59Z'),
+        ),
       );
 
       expect(result.totalSales).toBe('0.00');
@@ -540,12 +623,16 @@ describe('ReportsService raw SQL (e2e)', () => {
 
     it('throws ReportInvalidDateRangeException when dateFrom is after dateTo', async () => {
       await expect(
-        service.getSalesSummary(dto('2026-08-31T00:00:00Z', '2026-08-01T00:00:00Z')),
+        asTenant(() =>
+          service.getSalesSummary(
+            dto('2026-08-31T00:00:00Z', '2026-08-01T00:00:00Z'),
+          ),
+        ),
       ).rejects.toThrow(ReportInvalidDateRangeException);
     });
 
     it('produces a JSON-serializable response (no BigInt leakage)', async () => {
-      const result = await service.getSalesSummary(AUGUST);
+      const result = await asTenant(() => service.getSalesSummary(AUGUST));
 
       expect(() => JSON.stringify(result)).not.toThrow();
     });
@@ -654,14 +741,14 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('counts only CLOSED shifts within the range and sums expectedClosingAmount', async () => {
-      const result = await service.getCashShiftSummary(JULY);
+      const result = await asTenant(() => service.getCashShiftSummary(JULY));
 
       expect(result.totalShifts).toBe(2);
       expect(result.totalCashMovement).toBe('70000.00');
     });
 
     it('breaks payments down per category over confirmed sales of in-range closed shifts only', async () => {
-      const result = await service.getCashShiftSummary(JULY);
+      const result = await asTenant(() => service.getCashShiftSummary(JULY));
 
       // The query orders by pm.category, so this array comparison is stable.
       expect(result.breakdownByPaymentMethod).toEqual([
@@ -681,7 +768,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('produces a JSON-serializable response (no BigInt leakage)', async () => {
-      const result = await service.getCashShiftSummary(JULY);
+      const result = await asTenant(() => service.getCashShiftSummary(JULY));
 
       expect(() => JSON.stringify(result)).not.toThrow();
     });
@@ -731,7 +818,9 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('values active lots per product and excludes zero-stock lots entirely', async () => {
-      const result = await service.getInventoryValuation(JUNE_FIRST);
+      const result = await asTenant(() =>
+        service.getInventoryValuation(JUNE_FIRST),
+      );
 
       expect(result.valuationDate).toBe('2026-06-01T00:00:00.000Z');
       // Ordered by commercialName ASC.
@@ -756,7 +845,9 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('rolls up lot counts including unknown-cost lots and excludes their value', async () => {
-      const result = await service.getInventoryValuation(JUNE_FIRST);
+      const result = await asTenant(() =>
+        service.getInventoryValuation(JUNE_FIRST),
+      );
 
       expect(result.totalLotsActive).toBe(3);
       expect(result.totalLotsExpiring).toBe(2);
@@ -766,7 +857,9 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('treats a lot expiring exactly at the threshold as expiring', async () => {
-      const result = await service.getInventoryValuation(JUNE_FIRST);
+      const result = await asTenant(() =>
+        service.getInventoryValuation(JUNE_FIRST),
+      );
 
       const betaRow = result.breakdownByProduct.find(
         (row: { productId: string }) => row.productId === VALUATION_BETA_ID,
@@ -775,7 +868,9 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('produces a JSON-serializable response (no BigInt leakage)', async () => {
-      const result = await service.getInventoryValuation(JUNE_FIRST);
+      const result = await asTenant(() =>
+        service.getInventoryValuation(JUNE_FIRST),
+      );
 
       expect(() => JSON.stringify(result)).not.toThrow();
     });
@@ -917,7 +1012,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('buckets subtotal and tax by stored taxRate over validated invoices updated in range', async () => {
-      const result = await service.getTaxSummary(APRIL);
+      const result = await asTenant(() => service.getTaxSummary(APRIL));
 
       // The query orders by taxRate ASC.
       expect(result.breakdownByTaxRate).toEqual([
@@ -937,7 +1032,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('counts documents without items in totalDocuments but not in monetary buckets', async () => {
-      const result = await service.getTaxSummary(APRIL);
+      const result = await asTenant(() => service.getTaxSummary(APRIL));
 
       // Three VALIDATED INVOICEs were updated in April: fdt1 (items at both
       // rates), fdt2 (0.19 items) and fdt3 (no items at all).
@@ -948,7 +1043,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('echoes the requested period', async () => {
-      const result = await service.getTaxSummary(APRIL);
+      const result = await asTenant(() => service.getTaxSummary(APRIL));
 
       expect(result.reportPeriod).toEqual({
         dateFrom: '2026-04-01T00:00:00Z',
@@ -957,7 +1052,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('produces a JSON-serializable response (no BigInt leakage)', async () => {
-      const result = await service.getTaxSummary(APRIL);
+      const result = await asTenant(() => service.getTaxSummary(APRIL));
 
       expect(() => JSON.stringify(result)).not.toThrow();
     });
@@ -1029,7 +1124,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('nests states per document type alphabetically, states sorted by descending count', async () => {
-      const result = await service.getFiscalReport(MAY);
+      const result = await asTenant(() => service.getFiscalReport(MAY));
 
       expect(result.breakdownByType).toHaveLength(2);
       expect(result.breakdownByType[0].documentType).toBe('CREDIT_NOTE');
@@ -1048,7 +1143,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('sums totals over ALL in-range rows regardless of fiscal state', async () => {
-      const result = await service.getFiscalReport(MAY);
+      const result = await asTenant(() => service.getFiscalReport(MAY));
 
       expect(result.totalDocuments).toBe(4);
       expect(result.totalSubtotal).toBe('58000.00');
@@ -1057,7 +1152,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('echoes the requested period and view', async () => {
-      const result = await service.getFiscalReport(MAY);
+      const result = await asTenant(() => service.getFiscalReport(MAY));
 
       expect(result.reportPeriod).toEqual({
         dateFrom: '2026-05-01T00:00:00Z',
@@ -1067,7 +1162,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('produces a JSON-serializable response (no BigInt leakage)', async () => {
-      const result = await service.getFiscalReport(MAY);
+      const result = await asTenant(() => service.getFiscalReport(MAY));
 
       expect(() => JSON.stringify(result)).not.toThrow();
     });
@@ -1197,7 +1292,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('buckets confirmed sales per YYYY-MM-DD day with per-day averages', async () => {
-      const result = await service.getDailyReport(SEPTEMBER);
+      const result = await asTenant(() => service.getDailyReport(SEPTEMBER));
 
       expect(result.dailyEntries).toEqual([
         {
@@ -1231,7 +1326,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('does not double-count multi-item sales in day or roll-up totals', async () => {
-      const result = await service.getDailyReport(SEPTEMBER);
+      const result = await asTenant(() => service.getDailyReport(SEPTEMBER));
 
       // dd3 has two items but contributes its totalAmount exactly once.
       const sep20 = result.dailyEntries.find(
@@ -1249,7 +1344,7 @@ describe('ReportsService raw SQL (e2e)', () => {
     });
 
     it('produces a JSON-serializable response (no BigInt leakage)', async () => {
-      const result = await service.getDailyReport(SEPTEMBER);
+      const result = await asTenant(() => service.getDailyReport(SEPTEMBER));
 
       expect(() => JSON.stringify(result)).not.toThrow();
     });

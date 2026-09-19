@@ -226,13 +226,13 @@ export class SyncProcessingJob {
         this.logger.log(`SyncProcessingJob completed ${entry.id} -> COMPLETED`);
       });
     } catch (error: unknown) {
-      // CashShiftNotOpenForWorkstation remains potentially transient during
-      // a replay burst under the GLOBAL shift model: salesService.create
-      // opens a nested interactive transaction on its own connection, which
-      // cannot see this dispatcher's still-uncommitted shift bootstrap
-      // (adoption or legacy upsert). The next retry runs on a fresh
-      // connection where the committed shift — global or adopted — is
-      // visible, so treat it as retriable instead of permanently failing.
+      // CashShiftNotOpenForWorkstation stays retriable rather than permanent
+      // under the GLOBAL shift model: the shift a POS sale needs can be opened
+      // by another workstation (or by a concurrent tick) moments later, so the
+      // next attempt can legitimately succeed. Nested transactions are
+      // savepoints on this same transaction, so a retry sees the shift this
+      // attempt bootstrapped; it is a genuinely missing global shift that the
+      // retry waits on.
       if (error instanceof CashShiftNotOpenForWorkstationException) {
         await this.markFailed(entry, error);
         return;

@@ -32,6 +32,7 @@ describe('PrismaService', () => {
     clearTx: jest.Mock;
     drainAfterCommit: jest.Mock;
     runWithTenant: jest.Mock;
+    runWithTx: jest.Mock;
   };
 
   const createService = (): PrismaService => {
@@ -43,6 +44,7 @@ describe('PrismaService', () => {
       runWithTenant: jest.fn(
         (_subscriptionId: string, fn: () => unknown) => fn(),
       ),
+      runWithTx: jest.fn((_tx: unknown, fn: () => unknown) => fn()),
     };
     return new PrismaService(tenantContext);
   };
@@ -139,30 +141,61 @@ describe('PrismaService', () => {
     });
   });
 
-  describe('adapter construction (pool sizing)', () => {
+  describe('adapter construction (connection string and pool sizing)', () => {
     const TEST_DATABASE_URL =
       'postgresql://pool-test:test@localhost:5432/pool_test';
+    const TEST_APP_DATABASE_URL =
+      'postgresql://pool-app-test:test@localhost:5432/pool_test';
     let originalDatabaseUrl: string | undefined;
+    let originalAppDatabaseUrl: string | undefined;
     let originalDbPoolMax: string | undefined;
 
     beforeEach(() => {
       originalDatabaseUrl = process.env.DATABASE_URL;
+      originalAppDatabaseUrl = process.env.APP_DATABASE_URL;
       originalDbPoolMax = process.env.DB_POOL_MAX;
       process.env.DATABASE_URL = TEST_DATABASE_URL;
+      delete process.env.APP_DATABASE_URL;
       delete process.env.DB_POOL_MAX;
     });
 
     afterEach(() => {
-      if (originalDatabaseUrl === undefined) {
-        delete process.env.DATABASE_URL;
-      } else {
-        process.env.DATABASE_URL = originalDatabaseUrl;
+      for (const [key, original] of [
+        ['DATABASE_URL', originalDatabaseUrl],
+        ['APP_DATABASE_URL', originalAppDatabaseUrl],
+        ['DB_POOL_MAX', originalDbPoolMax],
+      ] as const) {
+        if (original === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = original;
+        }
       }
-      if (originalDbPoolMax === undefined) {
-        delete process.env.DB_POOL_MAX;
-      } else {
-        process.env.DB_POOL_MAX = originalDbPoolMax;
-      }
+    });
+
+    /**
+     * RLS only applies to the role the policies are written for. The server must
+     * therefore be able to connect with the app role while the migration/seed
+     * URL stays the owner — and single-URL deployments must keep working.
+     */
+    it('connects with APP_DATABASE_URL when set, leaving DATABASE_URL to the CLI', () => {
+      process.env.APP_DATABASE_URL = TEST_APP_DATABASE_URL;
+
+      createService();
+
+      expect(mockPrismaPgConstructor).toHaveBeenCalledWith({
+        connectionString: TEST_APP_DATABASE_URL,
+        max: 20,
+      });
+    });
+
+    it('falls back to DATABASE_URL when APP_DATABASE_URL is unset', () => {
+      createService();
+
+      expect(mockPrismaPgConstructor).toHaveBeenCalledWith({
+        connectionString: TEST_DATABASE_URL,
+        max: 20,
+      });
     });
 
     it('passes DATABASE_URL and DB_POOL_MAX as the adapter connection options', () => {

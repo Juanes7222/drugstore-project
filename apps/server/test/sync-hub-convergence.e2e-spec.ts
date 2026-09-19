@@ -916,6 +916,19 @@ describe('Sync hub convergence (e2e)', () => {
       });
 
     /**
+     * Asserts the domain outcome while surfacing why it failed: a bare status
+     * assertion reports `FAILED` without the handler's reason, which is the one
+     * thing worth reading when the application of an operation breaks.
+     */
+    const expectApplied = async (): Promise<void> => {
+      const applied = await queueRow();
+      expect({
+        status: applied?.status,
+        lastErrorMessage: applied?.lastErrorMessage,
+      }).toEqual({ status: 'COMPLETED', lastErrorMessage: null });
+    };
+
+    /**
      * Ticks the job until the row leaves PENDING. A tick is skipped while an
      * earlier one is still running (`processing` flag) and the real cron can
      * beat this call to the row, so the loop keeps the test about the domain
@@ -966,7 +979,7 @@ describe('Sync hub convergence (e2e)', () => {
 
       await tickUntilProcessed();
 
-      expect((await queueRow())?.status).toBe('COMPLETED');
+      await expectApplied();
       expect(await lotStock()).toBe(ADJUSTMENT_QUANTITY);
       expect(await movementsForLot()).toBe(1);
     }, 60000);
@@ -1088,7 +1101,7 @@ describe('Sync hub convergence (e2e)', () => {
 
       await tickUntilProcessed();
 
-      expect((await queueRow())?.status).toBe('COMPLETED');
+      await expectApplied();
       expect(await lotStock()).toBe(ADJUSTMENT_QUANTITY);
       expect(await movementsForLot()).toBe(1);
     }, 60000);
