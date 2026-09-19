@@ -8,6 +8,7 @@ import * as crypto from 'node:crypto';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { TenantContextInterceptor } from '../src/modules/tenant/tenant-context.interceptor';
+import { JwtService } from '@nestjs/jwt';
 import { SyncProcessingJob } from '../src/modules/sync/jobs/sync-processing.job';
 import { SyncHousekeepingJob } from '../src/modules/sync/jobs/sync-housekeeping.job';
 import { seedSubscription } from './helpers/subscription-seed';
@@ -56,6 +57,10 @@ const TEST_TAX_SCHEME_ID = uuidFrom('e2e-sync-tax-scheme-id');
 const PRODUCT_CREATION_OP_UUID = uuidFrom('e2e-sync-op-product-creation');
 const POS_LOCAL_PRODUCT_ID = uuidFrom('e2e-sync-pos-local-product-id');
 const AUDIT_BATCH_OP_UUID = uuidFrom('e2e-sync-op-audit-batch');
+const OFFLINE_BATCH_OP_UUID = uuidFrom('e2e-sync-op-offline-batch');
+const FINGERPRINTLESS_OP_UUID = uuidFrom('e2e-sync-op-fingerprintless');
+const EXPIRED_BEARER_OP_UUID = uuidFrom('e2e-sync-op-expired-bearer');
+const BAD_OFFLINE_OP_UUID = uuidFrom('e2e-sync-op-bad-offline');
 const AUDIT_LOG_ENTRY_ID = uuidFrom('e2e-sync-audit-log-entry');
 const AUDIT_LOG_ENTRY_ID_UPPER = uuidFrom('e2e-sync-audit-log-entry-upper');
 const SHIFT_OPEN_OP_UUID = uuidFrom('e2e-sync-op-shift-open');
@@ -1223,5 +1228,167 @@ describe('Sync hub convergence (e2e)', () => {
         }),
       ).toBe(1);
     }, 60000);
+  });
+
+  /**
+   * The offline window: the 15-minute access token is expected to expire while
+   * a workstation keeps selling, and the long-lived offline token is what keeps
+   * it authenticated (`SyncAuthGuard` dual path). No spec sent
+   * `X-Offline-Token` before this one, so the fallback, the `request.user` it
+   * produces and the RLS reads behind it were never exercised end to end — a
+   * guard that silently returned an empty tenant would have looked identical to
+   * a healthy one.
+   */
+  describe('offline window (X-Offline-Token)', () => {
+    let offlineToken: string;
+    let fingerprintlessOfflineToken: string;
+    let expiredAccessToken: string;
+
+    const batchOf = (operationUuid: string, clientSequence: number) => [
+      buildOperation({ operationUuid, clientSequence }),
+    ];
+
+    beforeAll(async () => {
+      const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          identifier: ORIGIN_USERNAME,
+          secret: TEST_PASSWORD,
+          sessionType: 'PASSWORD',
+          workstationId: ORIGIN_WORKSTATION_ID,
+          hardwareFingerprint: ORIGIN_WORKSTATION_ID,
+        })
+        .expect(200);
+      offlineToken = res.body.offlineToken.token as string;
+      expect(offlineToken).toBeTruthy();
+
+      // QuickSwitch logs in without a hardware fingerprint (the POS passes
+      // `undefined` there), which used to mint an offline token carrying
+      // `wfp: ''` — rejected by the server verifier and by the POS's own
+      // offline-login binding check.
+      const quickSwitch = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          identifier: ORIGIN_USERNAME,
+          secret: TEST_PASSWORD,
+          sessionType: 'PASSWORD',
+          workstationId: ORIGIN_WORKSTATION_ID,
+        })
+        .expect(200);
+      fingerprintlessOfflineToken = quickSwitch.body.offlineToken
+        .token as string;
+
+      // Signed with the real secret and a negative TTL: exactly the token the
+      // POS still holds when its 15-minute access token has run out.
+      expiredAccessToken = await app.get(JwtService).signAsync(
+        {
+          sub: ORIGIN_USER_ID,
+          tokenHash: 'expired-session-hash',
+          sessionId: null,
+        },
+        { secret: process.env.JWT_ACCESS_SECRET, expiresIn: -60 },
+      );
+    });
+
+    it('accepts a batch carrying only the offline token', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/sync/batch')
+        .set('X-Offline-Token', offlineToken)
+        .send(batchOf(OFFLINE_BATCH_OP_UUID, 700))
+        .expect(202);
+
+      expect(res.body[0]).toEqual({
+        operationUuid: OFFLINE_BATCH_OP_UUID,
+        status: 'ACCEPTED',
+      });
+      // Attribution comes from the authenticated session, so a wrong fallback
+      // path would still accept the batch under the wrong workstation.
+      const queued = await prisma.syncQueue.findUnique({
+        where: { operationUuid: OFFLINE_BATCH_OP_UUID },
+      });
+      expect(queued?.sourceWorkstationId).toBe(ORIGIN_WORKSTATION_ID);
+      expect(queued?.subscriptionId).toBe(subscriptionId);
+    });
+
+    it('falls back to the offline token when the access token is expired', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/sync/batch')
+        .set('Authorization', `Bearer ${expiredAccessToken}`)
+        .set('X-Offline-Token', offlineToken)
+        .send(batchOf(EXPIRED_BEARER_OP_UUID, 701))
+        .expect(202);
+
+      expect(res.body[0].status).toBe('ACCEPTED');
+    });
+
+    /**
+     * A login without a hardware fingerprint (QuickSwitch, the 2FA step, the web
+     * backoffice) must still yield a usable offline token: the server binds it to
+     * the resolved workstation, which is the fingerprint the POS compares
+     * against when it logs in offline.
+     */
+    it('accepts a batch whose offline token was issued without a fingerprint', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/sync/batch')
+        .set('X-Offline-Token', fingerprintlessOfflineToken)
+        .send(batchOf(FINGERPRINTLESS_OP_UUID, 703))
+        .expect(202);
+
+      expect(res.body[0].status).toBe('ACCEPTED');
+    });
+
+    it('rejects a batch when neither credential is valid', async () => {
+      await request(app.getHttpServer())
+        .post('/sync/batch')
+        .set('X-Offline-Token', 'not-a-jwt')
+        .send(batchOf(BAD_OFFLINE_OP_UUID, 702))
+        .expect(401);
+
+      expect(
+        await prisma.syncQueue.count({
+          where: { operationUuid: BAD_OFFLINE_OP_UUID },
+        }),
+      ).toBe(0);
+    });
+
+    /**
+     * The read the POS performs on every resync. `@Public()` + SyncAuthGuard
+     * means the tenant reaches the query only through the guard's request.user:
+     * if the guard stops populating it, the interceptor skips the tenant
+     * transaction and RLS fails closed, answering 200 with an empty catalog.
+     */
+    it('reads the tenant catalog with the offline token alone', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/catalog/products')
+        .set('X-Offline-Token', offlineToken)
+        .expect(200);
+
+      const ids = (res.body.items as Array<{ id: string }>).map((i) => i.id);
+      expect(ids).toContain(TEST_PRODUCT_ID);
+    });
+
+    it('returns no catalog at all without credentials (fails closed, no leak)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/catalog/products')
+        .expect(200);
+
+      expect(res.body.items).toEqual([]);
+    });
+
+    it('exchanges the offline token for fresh credentials', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/auth/token/exchange')
+        .send({ offlineToken })
+        .expect(200);
+
+      expect(res.body.accessToken).toBeTruthy();
+      expect(res.body.offlineToken.token).toBeTruthy();
+
+      // The fresh access token must work on a tenant-scoped read.
+      await request(app.getHttpServer())
+        .get('/auth/me')
+        .set('Authorization', `Bearer ${res.body.accessToken}`)
+        .expect(200);
+    });
   });
 });

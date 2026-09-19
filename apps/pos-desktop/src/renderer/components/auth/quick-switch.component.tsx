@@ -182,7 +182,11 @@ export const QuickSwitch: FC = () => {
         password,
         'PASSWORD',
         session.workstationId,
-        undefined,
+        // The offline token's `wfp` claim and the CVK's transport key are both
+        // bound to this value, and offline login compares it against
+        // WORKSTATION_ID. Sending none here issued an offline token that both
+        // the server and this terminal then rejected.
+        session.workstationId,
         'pos-desktop',
       );
 
@@ -215,7 +219,8 @@ export const QuickSwitch: FC = () => {
           pin,
           'PIN',
           session.workstationId,
-          undefined,
+          // Same device binding as the password path above.
+          session.workstationId,
           'pos-desktop',
         );
 

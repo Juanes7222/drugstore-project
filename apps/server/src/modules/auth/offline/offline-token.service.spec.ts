@@ -154,6 +154,42 @@ describe('OfflineTokenService', () => {
       );
     });
 
+    /**
+     * A blank fingerprint used to be written into `wfp` verbatim, which made the
+     * token unusable by both consumers: `verifyToken` below rejects it, and the
+     * POS refuses a token whose `wfp` differs from its own fingerprint. The
+     * fallback is the workstation id — the value the POS sends when it does send
+     * one — so a login can never hand out a dead offline credential.
+     */
+    it.each(['', '   '])(
+      'binds the token to the workstation when the fingerprint is %p',
+      async (blankFingerprint) => {
+        await expect(
+          service.issueToken(
+            buildIssueTokenParams({ workstationFingerprint: blankFingerprint }),
+          ),
+        ).resolves.toBeDefined();
+
+        expect(mockJwtService.sign).toHaveBeenCalledWith(
+          expect.objectContaining({
+            wfp: buildIssueTokenParams().workstationId,
+          }),
+          expect.anything(),
+        );
+      },
+    );
+
+    it('keeps the client-supplied fingerprint when one is given', async () => {
+      await service.issueToken(
+        buildIssueTokenParams({ workstationFingerprint: 'device-abc' }),
+      );
+
+      expect(mockJwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({ wfp: 'device-abc' }),
+        expect.anything(),
+      );
+    });
+
     it('respects role-based TTLs — cashier uses 30 days when subscription not found', async () => {
       mockSubscription.findUnique.mockResolvedValue(null);
       mockJwtService.sign.mockReturnValue('offline-jwt');

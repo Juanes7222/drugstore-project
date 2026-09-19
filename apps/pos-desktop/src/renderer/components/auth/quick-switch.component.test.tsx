@@ -262,7 +262,10 @@ describe('QuickSwitch', () => {
         'secret123',
         'PASSWORD',
         'ws-1',
-        undefined,
+        // The device binding, not just the workstation: the offline token's
+        // `wfp` claim and the offline-login check both compare against it, so
+        // omitting it here left the terminal without usable offline credentials.
+        'ws-1',
         'pos-desktop',
       );
     });

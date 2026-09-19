@@ -20,6 +20,7 @@ import { BackupCodesService } from './services/backup-codes.service';
 import { SessionService } from './services/session.service';
 import { AuditService, AuditEvent } from './services/audit.service';
 import { OfflineTokenService } from './offline/offline-token.service';
+import { resolveWorkstationFingerprint } from './offline/workstation-fingerprint';
 import { CredentialCacheService } from './offline/credential-cache.service';
 import { InvalidCredentialsException } from './exceptions/invalid-credentials.exception';
 import { FirebaseEmailConflictException } from './exceptions/firebase-email-conflict.exception';
@@ -1255,14 +1256,21 @@ export class AuthService {
     });
     const locationIds = locationAccess.map((la) => la.locationId);
 
-    // Issue offline token (long-lived JWT bound to workstation)
+    // Resolve the device binding once: a blank fingerprint would issue an
+    // offline token `verifyToken` rejects and a CVK that no client can decrypt
+    // (see resolveWorkstationFingerprint).
+    const workstationFingerprint = resolveWorkstationFingerprint(
+      params.hardwareFingerprint,
+      params.workstationId,
+    );
+
     const offlineToken = await this.offlineTokenService.issueToken({
       userId: user.id,
       role: user.role,
       subscriptionId: user.subscriptionId,
       locationIds,
       workstationId: params.workstationId,
-      workstationFingerprint: params.hardwareFingerprint ?? '',
+      workstationFingerprint,
       sessionId: session.id,
     });
 
@@ -1271,7 +1279,7 @@ export class AuthService {
       userId: user.id,
       passwordHash: user.passwordHash,
       pinHash: user.pinHash,
-      workstationFingerprint: params.hardwareFingerprint ?? '',
+      workstationFingerprint,
       expiresAt: offlineToken.expiresAt,
     });
 

@@ -16,6 +16,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { paginateWithCursor } from '@/common/utils/cursor-pagination';
 import { EnvConfig } from '@/config/env.schema';
+import { resolveWorkstationFingerprint } from './workstation-fingerprint';
 import * as crypto from 'node:crypto';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,8 @@ export interface RevocationListEntry {
 const CASHIER_OFFLINE_TTL_DAYS = 30;
 const MANAGER_OFFLINE_TTL_DAYS = 14;
 const OWNER_OFFLINE_TTL_DAYS = 14;
+
+
 
 // ---------------------------------------------------------------------------
 // Service
@@ -97,7 +100,10 @@ export class OfflineTokenService {
       role: params.role,
       subscriptionId: params.subscriptionId,
       locationIds: params.locationIds,
-      wfp: params.workstationFingerprint,
+      wfp: resolveWorkstationFingerprint(
+        params.workstationFingerprint,
+        params.workstationId,
+      ),
       typ: 'offline' as const,
       jti,
       iat: now,
