@@ -75,33 +75,72 @@ const KNOWN_UNPROTECTED_TABLES: ReadonlyArray<{
 }> = [
   {
     table: 'ActivationCode',
+    // Review 2026-09-18: still pre-tenant by design. A future policy could
+    // use a permissive USING (subscriptionId IS NOT NULL OR code = current)
+    // but the WITH CHECK side would still break the activate flow; keep out.
     reason:
       'POST public/licensing/activate looks the code up BY CODE — the subscription is ' +
       'what the flow is resolving, so the tenant cannot be bound beforehand',
   },
   {
     table: 'AuditLog',
+    // Review 2026-09-18 (RLS triage round 2): the OFFLINE applier stamps
+    // subscriptionId (sync-operation-dispatcher.handleAuditLogBatch) and the
+    // tenant backoffice reads are already scoped via BackofficeScopeService,
+    // BUT the online writers never stamp it: AuditService.log and the
+    // AuditLogInterceptor create rows with subscriptionId NULL (verified in
+    // the test DB: 0 of N rows stamped). A WITH CHECK policy would therefore
+    // silently drop every online audit row, and a USING-only policy would
+    // make them invisible to the tenant backoffice. Policy requires first
+    // stamping subscriptionId from TenantContext in both online writers and
+    // keeping the saas-admin platform path working (it has no tenant at all).
     reason:
-      'saas-admin reads it cross-tenant (SaasAdminAccessAuditService.listAccessEvents ' +
-      'is deliberately unfiltered) and records exports with subscriptionId NULL',
+      'online writers (AuditService.log, AuditLogInterceptor) do NOT stamp ' +
+      'subscriptionId — a policy would silently drop every online audit row; ' +
+      'needs writer-side stamping first, and saas-admin reads it cross-tenant',
   },
   {
     table: 'FraudAlert',
+    // Review 2026-09-18: subscriptionId is NOT NULL and the detector write
+    // path could be tenant-scoped, so a policy looks possible. Two blockers:
+    // (1) saas-admin fraud surface (SaasAdminOverviewService._count via
+    // Subscription, SaasAdminFraudService) runs as a platform admin with NO
+    // tenant bound — a policy hides every row from it; (2) the legacy
+    // admin/licensing/fraud controller (FraudAlertsController) is mounted,
+    // gated to RoleType.ADMIN (a TENANT role), and reads fraud alerts of ALL
+    // tenants with no filter — under a policy it would silently return only
+    // the caller's tenant rows, hiding its current cross-tenant behavior
+    // instead of fixing it. Decide its ownership (saas-admin vs tenant)
+    // before any policy. NOTE: that controller is also an app-layer
+    // isolation gap in its own right — a tenant ADMIN can list another
+    // tenant's fraud alerts today.
     reason:
-      'written by the detectors on the public check-in path and read cross-tenant by ' +
-      'saas-admin (saas-admin-fraud.service)',
+      'saas-admin reads it with no tenant bound (platform admin) and the ' +
+      'legacy admin/licensing/fraud controller reads cross-tenant by design; ' +
+      'policy would silently change both instead of fixing them',
   },
   {
     table: 'LicenseCheckIn',
+    // Review 2026-09-18: rows are always written with the resolved
+    // subscriptionId (NOT NULL), but the write happens on the public path
+    // before any tenant is bound; getCheckInHistory('admin/...') is read by
+    // id and consumed by saas-admin. Stay out until that endpoint is
+    // re-homed behind a tenant or platform scope.
     reason:
       'POST public/licensing/check-in runs before a tenant is known; the subscription ' +
       'comes from the activation the request resolves',
   },
   {
     table: 'OfflineSessionBlessing',
+    // Review 2026-09-18: subscriptionId is nullable and recordBlessing() does
+    // not set it (rows land with NULL) — a WITH CHECK policy would reject
+    // every blessing record. Policy requires stamping it from the resolved
+    // user and keeping the pre-tenant rejection rows writable (partial policy
+    // or column default); no candidate design yet that keeps both.
     reason:
       'recorded from the offline blessing request, which is pre-tenant by nature ' +
-      '(it stores workstationId: "" until the blessing is resolved)',
+      '(it stores workstationId: "" and subscriptionId NULL until resolved); ' +
+      'a WITH CHECK policy would reject every blessing row',
   },
   {
     table: 'SubscriptionPaymentHistory',
