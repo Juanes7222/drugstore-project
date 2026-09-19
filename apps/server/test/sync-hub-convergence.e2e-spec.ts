@@ -47,8 +47,10 @@ const HUB_WORKSTATION_ID = uuidFrom('e2e-sync-hub-workstation');
 const ORIGIN_WORKSTATION_ID = uuidFrom('e2e-sync-origin-workstation');
 const HUB_USER_ID = 'e2e-sync-hub-user-id';
 const ORIGIN_USER_ID = 'e2e-sync-origin-user-id';
+const SHARED_USER_ID = 'e2e-sync-shared-user-id';
 const HUB_USERNAME = 'e2e-sync-hub@sync.test';
 const ORIGIN_USERNAME = 'e2e-sync-origin@sync.test';
+const SHARED_USERNAME = 'e2e-sync-shared@sync.test';
 const TEST_PASSWORD = 'SyncPass123!';
 const TEST_PRODUCT_ID = uuidFrom('e2e-sync-product-id');
 const TEST_TAX_SCHEME_ID = uuidFrom('e2e-sync-tax-scheme-id');
@@ -157,7 +159,9 @@ describe('Sync hub convergence (e2e)', () => {
     return (res.body as Array<{ id: string }>).map((event) => event.id);
   };
 
-  const createEvent = async (body: Record<string, unknown>): Promise<string> => {
+  const createEvent = async (
+    body: Record<string, unknown>,
+  ): Promise<string> => {
     const res = await request(app.getHttpServer())
       .post('/sync/events')
       .set('Authorization', `Bearer ${hubToken}`)
@@ -193,7 +197,9 @@ describe('Sync hub convergence (e2e)', () => {
       },
     });
     await prisma.auditLog.deleteMany({
-      where: { userId: { in: [HUB_USER_ID, ORIGIN_USER_ID] } },
+      where: {
+        userId: { in: [HUB_USER_ID, ORIGIN_USER_ID, SHARED_USER_ID] },
+      },
     });
     // Offline audit rows arrive with a null userId (the local one is kept in
     // details), so they are not covered by the delete above.
@@ -229,10 +235,14 @@ describe('Sync hub convergence (e2e)', () => {
     await prisma.product.deleteMany({ where: { id: TEST_PRODUCT_ID } });
     await prisma.taxScheme.deleteMany({ where: { id: TEST_TAX_SCHEME_ID } });
     await prisma.userSession.deleteMany({
-      where: { userId: { in: [HUB_USER_ID, ORIGIN_USER_ID] } },
+      where: {
+        userId: { in: [HUB_USER_ID, ORIGIN_USER_ID, SHARED_USER_ID] },
+      },
     });
     await prisma.user.deleteMany({
-      where: { id: { in: [HUB_USER_ID, ORIGIN_USER_ID] } },
+      where: {
+        id: { in: [HUB_USER_ID, ORIGIN_USER_ID, SHARED_USER_ID] },
+      },
     });
     await prisma.workstation.deleteMany({
       where: { id: { in: [HUB_WORKSTATION_ID, ORIGIN_WORKSTATION_ID] } },
@@ -274,6 +284,16 @@ describe('Sync hub convergence (e2e)', () => {
           id: ORIGIN_USER_ID,
           username: ORIGIN_USERNAME,
           fullName: 'E2E Sync Origin Cashier',
+          passwordHash,
+          passwordAlgorithm: 'argon2',
+          role: 'CASHIER',
+          subscriptionId,
+          isActive: true,
+        },
+        {
+          id: SHARED_USER_ID,
+          username: SHARED_USERNAME,
+          fullName: 'E2E Sync Shared Cashier',
           passwordHash,
           passwordAlgorithm: 'argon2',
           role: 'CASHIER',
@@ -339,7 +359,9 @@ describe('Sync hub convergence (e2e)', () => {
       },
     });
     await prisma.auditLog.deleteMany({
-      where: { userId: { in: [HUB_USER_ID, ORIGIN_USER_ID] } },
+      where: {
+        userId: { in: [HUB_USER_ID, ORIGIN_USER_ID, SHARED_USER_ID] },
+      },
     });
     // Offline audit rows arrive with a null userId (the local one is kept in
     // details), so they are not covered by the delete above.
@@ -372,10 +394,14 @@ describe('Sync hub convergence (e2e)', () => {
     await prisma.product.deleteMany({ where: { id: TEST_PRODUCT_ID } });
     await prisma.taxScheme.deleteMany({ where: { id: TEST_TAX_SCHEME_ID } });
     await prisma.userSession.deleteMany({
-      where: { userId: { in: [HUB_USER_ID, ORIGIN_USER_ID] } },
+      where: {
+        userId: { in: [HUB_USER_ID, ORIGIN_USER_ID, SHARED_USER_ID] },
+      },
     });
     await prisma.user.deleteMany({
-      where: { id: { in: [HUB_USER_ID, ORIGIN_USER_ID] } },
+      where: {
+        id: { in: [HUB_USER_ID, ORIGIN_USER_ID, SHARED_USER_ID] },
+      },
     });
     await prisma.workstation.deleteMany({
       where: { id: { in: [HUB_WORKSTATION_ID, ORIGIN_WORKSTATION_ID] } },
@@ -420,7 +446,9 @@ describe('Sync hub convergence (e2e)', () => {
       expect(queueEntry.operationType).toBe('PRODUCT_UPDATE');
       expect(queueEntry.operationSource).toBe('DIRECT');
       expect(queueEntry.processedAt).not.toBeNull();
-      expect(queueEntry.payloadSize).toBe(JSON.stringify(operation.payload).length);
+      expect(queueEntry.payloadSize).toBe(
+        JSON.stringify(operation.payload).length,
+      );
 
       // Server-side outcome ledger — the source of truth for sync health.
       const outcomes = await prisma.syncOperationOutcome.findMany({
@@ -736,7 +764,9 @@ describe('Sync hub convergence (e2e)', () => {
         },
       });
 
-      const second = await sendBatch(originToken, [secondOperation]).expect(202);
+      const second = await sendBatch(originToken, [secondOperation]).expect(
+        202,
+      );
       expect(second.body[0].status).toBe('REJECTED');
 
       const failedEntry = await prisma.syncQueue.findUniqueOrThrow({
@@ -866,9 +896,9 @@ describe('Sync hub convergence (e2e)', () => {
       const ackRows = await prisma.syncEventAcknowledgment.findMany({
         where: { eventId },
       });
-      expect(
-        ackRows.map((row) => row.workstationId).sort(),
-      ).toEqual([HUB_WORKSTATION_ID, ORIGIN_WORKSTATION_ID].sort());
+      expect(ackRows.map((row) => row.workstationId).sort()).toEqual(
+        [HUB_WORKSTATION_ID, ORIGIN_WORKSTATION_ID].sort(),
+      );
     }, 30000);
   });
 
@@ -1004,46 +1034,45 @@ describe('Sync hub convergence (e2e)', () => {
     it('selects every operation type the dispatcher implements', async () => {
       const absentClientId = uuidFrom('e2e-sync-absent-client');
       const absentPaymentId = uuidFrom('e2e-sync-absent-payment');
-      const cases: Array<{ type: string; payload: Record<string, unknown> }> =
-        [
-          {
-            type: 'CLIENT_UPDATE',
-            payload: {
-              userId: ORIGIN_USER_ID,
-              clientId: absentClientId,
-              updateClientDto: { commercialName: 'E2E' },
-            },
+      const cases: Array<{ type: string; payload: Record<string, unknown> }> = [
+        {
+          type: 'CLIENT_UPDATE',
+          payload: {
+            userId: ORIGIN_USER_ID,
+            clientId: absentClientId,
+            updateClientDto: { commercialName: 'E2E' },
           },
-          {
-            type: 'CLIENT_DEACTIVATE',
-            payload: {
-              userId: ORIGIN_USER_ID,
-              deactivateClientDto: { clientId: absentClientId },
-            },
+        },
+        {
+          type: 'CLIENT_DEACTIVATE',
+          payload: {
+            userId: ORIGIN_USER_ID,
+            deactivateClientDto: { clientId: absentClientId },
           },
-          {
-            type: 'CLIENT_CREDIT_PAYMENT',
-            payload: {
-              clientId: absentClientId,
-              amount: '1000',
-              paymentMethodId: TEST_TAX_SCHEME_ID,
-              createdById: ORIGIN_USER_ID,
-              cashShiftId: TEST_SHIFT_ID,
-              workstationId: ORIGIN_WORKSTATION_ID,
-              metadata: { localPaymentId: absentPaymentId },
-            },
+        },
+        {
+          type: 'CLIENT_CREDIT_PAYMENT',
+          payload: {
+            clientId: absentClientId,
+            amount: '1000',
+            paymentMethodId: TEST_TAX_SCHEME_ID,
+            createdById: ORIGIN_USER_ID,
+            cashShiftId: TEST_SHIFT_ID,
+            workstationId: ORIGIN_WORKSTATION_ID,
+            metadata: { localPaymentId: absentPaymentId },
           },
-          {
-            type: 'CLIENT_CREDIT_PAYMENT_ANNULMENT',
-            payload: {
-              clientId: absentClientId,
-              annulledById: ORIGIN_USER_ID,
-              annulmentReason: 'E2E coverage',
-              metadata: { localPaymentId: absentPaymentId },
-            },
+        },
+        {
+          type: 'CLIENT_CREDIT_PAYMENT_ANNULMENT',
+          payload: {
+            clientId: absentClientId,
+            annulledById: ORIGIN_USER_ID,
+            annulmentReason: 'E2E coverage',
+            metadata: { localPaymentId: absentPaymentId },
           },
-          { type: 'INVOICE_TRANSMISSION', payload: {} },
-        ];
+        },
+        { type: 'INVOICE_TRANSMISSION', payload: {} },
+      ];
 
       const operations = cases.map((entry, index) =>
         buildOperation({
@@ -1215,7 +1244,9 @@ describe('Sync hub convergence (e2e)', () => {
         }),
       ).toBe(0);
       // Inside its TTL: still deliverable, so it must stay.
-      expect(await prisma.syncEvent.count({ where: { id: LIVE_EVENT_ID } })).toBe(1);
+      expect(
+        await prisma.syncEvent.count({ where: { id: LIVE_EVENT_ID } }),
+      ).toBe(1);
 
       expect(
         await prisma.workstationHeartbeat.count({
@@ -1228,6 +1259,203 @@ describe('Sync hub convergence (e2e)', () => {
         }),
       ).toBe(1);
     }, 60000);
+  });
+
+  /**
+   * clientSequence collision between two workstations.
+   *
+   * The POS numbers its operations per terminal, so the server only has a
+   * guarantee WITHIN one sourceWorkstationId — the (sourceWorkstationId,
+   * clientSequence) index is deliberately non-unique and the local-number-hint
+   * endpoint hands back the max per workstation. Two terminals WILL send the
+   * same sequence numbers and the hub must keep their streams independent:
+   * any global constraint or cross-workstation mixing corrupts the hint the
+   * terminals use to continue their own numbering.
+   */
+  describe('clientSequence collision across workstations', () => {
+    const COLLI_BASE = 1000;
+
+    const productUpdateFor = (userId: string, note: string) => ({
+      ...buildProductUpdatePayload(note),
+      userId,
+    });
+
+    const hintFor = async (
+      token: string,
+      workstationId: string,
+    ): Promise<number | null> => {
+      const res = await request(app.getHttpServer())
+        .get('/sync/local-number-hint')
+        .query({ workstationId })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      return res.body.maxLocalNumber as number | null;
+    };
+
+    it('keeps two interleaved workstation streams independent when they share the same sequence numbers', async () => {
+      // Origin: 1001, 1002, 1003. Hub: 1001, 1002 — interleaved so the same
+      // clientSequence values arrive from both streams.
+      const plan: Array<{
+        token: string;
+        workstationId: string;
+        userId: string;
+        seq: number;
+      }> = [
+        {
+          token: originToken,
+          workstationId: ORIGIN_WORKSTATION_ID,
+          userId: ORIGIN_USER_ID,
+          seq: COLLI_BASE + 1,
+        },
+        {
+          token: hubToken,
+          workstationId: HUB_WORKSTATION_ID,
+          userId: HUB_USER_ID,
+          seq: COLLI_BASE + 1,
+        },
+        {
+          token: originToken,
+          workstationId: ORIGIN_WORKSTATION_ID,
+          userId: ORIGIN_USER_ID,
+          seq: COLLI_BASE + 2,
+        },
+        {
+          token: hubToken,
+          workstationId: HUB_WORKSTATION_ID,
+          userId: HUB_USER_ID,
+          seq: COLLI_BASE + 2,
+        },
+        {
+          token: originToken,
+          workstationId: ORIGIN_WORKSTATION_ID,
+          userId: ORIGIN_USER_ID,
+          seq: COLLI_BASE + 3,
+        },
+      ];
+
+      for (const step of plan) {
+        const res = await sendBatch(step.token, [
+          buildOperation({
+            operationUuid: uuidFrom(
+              `e2e-sync-collision-${step.workstationId}-${step.seq}`,
+            ),
+            clientSequence: step.seq,
+            payload: productUpdateFor(
+              step.userId,
+              `collision-${step.workstationId.slice(0, 8)}-${step.seq}`,
+            ),
+          }),
+        ]).expect(202);
+        expect(res.body[0].status).toBe('ACCEPTED');
+      }
+
+      // The same clientSequence from two workstations must coexist: exactly
+      // one row per workstation, never merged or dropped.
+      const collisionRows = await prisma.syncQueue.findMany({
+        where: { clientSequence: BigInt(COLLI_BASE + 1) },
+        select: {
+          sourceWorkstationId: true,
+          subscriptionId: true,
+          status: true,
+        },
+      });
+      expect(collisionRows).toHaveLength(2);
+      expect(
+        collisionRows.map((row) => row.sourceWorkstationId).sort(),
+      ).toEqual([HUB_WORKSTATION_ID, ORIGIN_WORKSTATION_ID].sort());
+      for (const row of collisionRows) {
+        expect(row.subscriptionId).toBe(subscriptionId);
+        expect(row.status).toBe('COMPLETED');
+      }
+
+      // The hint each terminal reads to continue its numbering must reflect
+      // ONLY its own stream: origin's highest sent is 1003, hub's is 1002.
+      expect(await hintFor(originToken, ORIGIN_WORKSTATION_ID)).toBe(
+        COLLI_BASE + 3,
+      );
+      expect(await hintFor(hubToken, HUB_WORKSTATION_ID)).toBe(COLLI_BASE + 2);
+
+      // Cross-tenant safety net: no other tenant's row may leak into the hint
+      // aggregate, so its scope must be the workstation (which belongs to one
+      // tenant) — nothing here is tenant-ambiguous, but a wrong global max
+      // would break both terminals' numbering on a multi-tenant server.
+      const allCollisionRows = await prisma.syncQueue.count({
+        where: { clientSequence: BigInt(COLLI_BASE + 3) },
+      });
+      expect(allCollisionRows).toBe(1);
+    }, 30000);
+
+    it('accepts two concurrent batches with the same clientSequence from different workstations', async () => {
+      const seq = COLLI_BASE + 20;
+      const build = (workstationId: string, token: string, userId: string) =>
+        sendBatch(token, [
+          buildOperation({
+            operationUuid: uuidFrom(
+              `e2e-sync-concurrent-${workstationId}-${seq}`,
+            ),
+            clientSequence: seq,
+            payload: productUpdateFor(userId, `concurrent-${seq}`),
+          }),
+        ]);
+
+      // True race: both in flight at once, not sequential sends.
+      const [originRes, hubRes] = await Promise.all([
+        build(ORIGIN_WORKSTATION_ID, originToken, ORIGIN_USER_ID),
+        build(HUB_WORKSTATION_ID, hubToken, HUB_USER_ID),
+      ]);
+      expect(originRes.status).toBe(202);
+      expect(hubRes.status).toBe(202);
+      expect(originRes.body[0].status).toBe('ACCEPTED');
+      expect(hubRes.body[0].status).toBe('ACCEPTED');
+
+      const rows = await prisma.syncQueue.findMany({
+        where: { clientSequence: BigInt(seq) },
+        select: { sourceWorkstationId: true },
+      });
+      expect(rows).toHaveLength(2);
+      expect(rows.map((row) => row.sourceWorkstationId).sort()).toEqual(
+        [HUB_WORKSTATION_ID, ORIGIN_WORKSTATION_ID].sort(),
+      );
+    }, 30000);
+
+    /**
+     * The terminal that logged in FIRST keeps selling with its first session:
+     * batches must be attributed to the workstation of the SESSION that sent
+     * them, not to wherever the user happened to log in last. The user row's
+     * `lastLoginWorkstationId` is mutated by every login, so an attribution
+     * that reads it at request time pins both terminals' streams onto one
+     * workstation — merging their clientSequence spaces and poisoning both
+     * local-number-hints.
+     */
+    it('attributes a batch to the session workstation even after the same user logs in elsewhere', async () => {
+      const seq = COLLI_BASE + 30;
+
+      // One cashier, two terminals: hub first, then origin.
+      const sharedHubToken = await login(SHARED_USERNAME, HUB_WORKSTATION_ID);
+      const sharedOriginToken = await login(
+        SHARED_USERNAME,
+        ORIGIN_WORKSTATION_ID,
+      );
+
+      const res = await sendBatch(sharedHubToken, [
+        buildOperation({
+          operationUuid: uuidFrom(`e2e-sync-shared-user-${seq}`),
+          clientSequence: seq,
+          payload: productUpdateFor(SHARED_USER_ID, `shared-user-${seq}`),
+        }),
+      ]).expect(202);
+      expect(res.body[0].status).toBe('ACCEPTED');
+
+      const row = await prisma.syncQueue.findUniqueOrThrow({
+        where: {
+          operationUuid: uuidFrom(`e2e-sync-shared-user-${seq}`),
+        },
+        select: { sourceWorkstationId: true },
+      });
+      // The session was created at the hub workstation; the origin login must
+      // not steal the attribution of the hub session's in-flight batches.
+      expect(row.sourceWorkstationId).toBe(HUB_WORKSTATION_ID);
+    }, 30000);
   });
 
   /**

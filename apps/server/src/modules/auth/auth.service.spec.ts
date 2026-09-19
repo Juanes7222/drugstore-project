@@ -102,6 +102,7 @@ describe('AuthService', () => {
     createSession: jest.Mock;
     enforceSessionLimit: jest.Mock;
     findActiveSessionByTokenHash: jest.Mock;
+    findSessionById: jest.Mock;
     updateSessionTokens: jest.Mock;
     revokeUserSessions: jest.Mock;
     touchLastActivity: jest.Mock;
@@ -121,12 +122,17 @@ describe('AuthService', () => {
     });
     passwordHasher = {
       verify: jest.fn().mockResolvedValue(true),
-      hash: jest.fn().mockResolvedValue({ hash: 'hash', algorithm: 'argon2id' }),
+      hash: jest
+        .fn()
+        .mockResolvedValue({ hash: 'hash', algorithm: 'argon2id' }),
     };
     sessionService = {
       createSession: jest.fn().mockResolvedValue({ id: 'session-1' }),
-      enforceSessionLimit: jest.fn().mockResolvedValue({ evictedSessionId: null }),
+      enforceSessionLimit: jest
+        .fn()
+        .mockResolvedValue({ evictedSessionId: null }),
       findActiveSessionByTokenHash: jest.fn(),
+      findSessionById: jest.fn(),
       updateSessionTokens: jest.fn().mockResolvedValue({}),
       revokeUserSessions: jest.fn().mockResolvedValue(1),
       touchLastActivity: jest.fn().mockResolvedValue(undefined),
@@ -138,9 +144,11 @@ describe('AuthService', () => {
         .mockResolvedValue({ token: 'offline-tok', expiresAt: new Date(123) }),
     };
     credentialCacheService = {
-      generateCvk: jest
-        .fn()
-        .mockResolvedValue({ encryptedBlob: 'blob', keyFingerprint: 'fp', version: 1 }),
+      generateCvk: jest.fn().mockResolvedValue({
+        encryptedBlob: 'blob',
+        keyFingerprint: 'fp',
+        version: 1,
+      }),
     };
     prisma.user.update.mockResolvedValue({} as never);
     prisma.userLocationAccess.findMany.mockResolvedValue([] as never);
@@ -218,7 +226,9 @@ describe('AuthService', () => {
     });
 
     it('creates a new OWNER/OAUTH_GOOGLE user in PENDING_SETUP when no local account matches', async () => {
-      prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(null as never);
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null as never)
+        .mockResolvedValueOnce(null as never);
       const created = buildPrismaUser({
         id: 'new-1',
         firebaseUid: 'fb-new',
@@ -263,7 +273,9 @@ describe('AuthService', () => {
         }
         return undefined;
       });
-      prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(null as never);
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null as never)
+        .mockResolvedValueOnce(null as never);
 
       await expect(
         service.loginWithFirebase({
@@ -286,7 +298,9 @@ describe('AuthService', () => {
         }
         return undefined;
       });
-      prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(null as never);
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null as never)
+        .mockResolvedValueOnce(null as never);
       prisma.user.create.mockResolvedValueOnce(
         buildPrismaUser({
           id: 'new-2',
@@ -317,8 +331,13 @@ describe('AuthService', () => {
         authMethod: 'PASSWORD',
         passwordHash: null,
       });
-      prisma.user.findFirst.mockResolvedValueOnce(null as never).mockResolvedValueOnce(local as never);
-      prisma.user.update.mockResolvedValueOnce({ ...local, firebaseUid: 'fb-link' } as never);
+      prisma.user.findFirst
+        .mockResolvedValueOnce(null as never)
+        .mockResolvedValueOnce(local as never);
+      prisma.user.update.mockResolvedValueOnce({
+        ...local,
+        firebaseUid: 'fb-link',
+      } as never);
 
       const result = await service.loginWithFirebase({
         firebaseUid: 'fb-link',
@@ -542,7 +561,9 @@ describe('AuthService', () => {
       prisma.user.findFirst.mockResolvedValue(
         buildPrismaUser({ id: 'user-1', passwordHash: 'hash' }) as never,
       );
-      prisma.workstation.upsert.mockResolvedValue({ id: 'ws-web-admin' } as never);
+      prisma.workstation.upsert.mockResolvedValue({
+        id: 'ws-web-admin',
+      } as never);
 
       await service.login({
         identifier: 'user@example.com',
@@ -562,7 +583,10 @@ describe('AuthService', () => {
         select: { id: true },
       });
       expect(sessionService.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({ workstationId: 'ws-web-admin', userId: 'user-1' }),
+        expect.objectContaining({
+          workstationId: 'ws-web-admin',
+          userId: 'user-1',
+        }),
       );
     });
 
@@ -580,7 +604,10 @@ describe('AuthService', () => {
 
       expect(prisma.workstation.upsert).not.toHaveBeenCalled();
       expect(sessionService.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({ workstationId: 'ws-pos-1', userId: 'user-1' }),
+        expect.objectContaining({
+          workstationId: 'ws-pos-1',
+          userId: 'user-1',
+        }),
       );
     });
   });
@@ -590,7 +617,9 @@ describe('AuthService', () => {
       prisma.user.findFirst.mockResolvedValue(
         buildPrismaUser({ id: 'user-1' }) as never,
       );
-      prisma.workstation.upsert.mockResolvedValue({ id: 'ws-web-admin' } as never);
+      prisma.workstation.upsert.mockResolvedValue({
+        id: 'ws-web-admin',
+      } as never);
 
       await service.loginWithFirebase({
         firebaseUid: 'fb-uid-1',
@@ -611,7 +640,10 @@ describe('AuthService', () => {
         select: { id: true },
       });
       expect(sessionService.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({ workstationId: 'ws-web-admin', userId: 'user-1' }),
+        expect.objectContaining({
+          workstationId: 'ws-web-admin',
+          userId: 'user-1',
+        }),
       );
     });
 
@@ -630,7 +662,10 @@ describe('AuthService', () => {
 
       expect(prisma.workstation.upsert).not.toHaveBeenCalled();
       expect(sessionService.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({ workstationId: 'ws-firebase-1', userId: 'user-1' }),
+        expect.objectContaining({
+          workstationId: 'ws-firebase-1',
+          userId: 'user-1',
+        }),
       );
     });
   });
@@ -674,7 +709,10 @@ describe('AuthService', () => {
         }),
       );
       expect(sessionService.createSession).toHaveBeenCalledWith(
-        expect.objectContaining({ workstationId: 'ws-new-1', userId: 'user-1' }),
+        expect.objectContaining({
+          workstationId: 'ws-new-1',
+          userId: 'user-1',
+        }),
       );
     });
 
@@ -892,14 +930,20 @@ describe('AuthService', () => {
   });
 
   describe('refreshSession', () => {
-    const session = { id: 'session-1', userId: 'user-1', workstationId: 'ws-1' };
+    const session = {
+      id: 'session-1',
+      userId: 'user-1',
+      workstationId: 'ws-1',
+    };
 
     it('rotates both tokens and extends the session using the refresh TTL', async () => {
       sessionService.findActiveSessionByTokenHash.mockResolvedValue(session);
 
       const result = await service.refreshSession('old-hash', 'user-1');
 
-      expect(sessionService.findActiveSessionByTokenHash).toHaveBeenCalledWith('old-hash');
+      expect(sessionService.findActiveSessionByTokenHash).toHaveBeenCalledWith(
+        'old-hash',
+      );
       expect(jwtService.sign).toHaveBeenNthCalledWith(
         1,
         expect.objectContaining({
@@ -920,7 +964,8 @@ describe('AuthService', () => {
       );
 
       expect(sessionService.updateSessionTokens).toHaveBeenCalledTimes(1);
-      const updateCall = (sessionService.updateSessionTokens as jest.Mock).mock.calls[0];
+      const updateCall = (sessionService.updateSessionTokens as jest.Mock).mock
+        .calls[0];
       expect(updateCall[0]).toBe('session-1');
       expect(updateCall[1]).toEqual(expect.any(String));
       expect(updateCall[2]).toEqual(expect.any(String));
@@ -1041,11 +1086,39 @@ describe('AuthService', () => {
         }) as never,
       );
 
-      const result = await service.validateActiveSession('user-1', 'token-hash');
+      const result = await service.validateActiveSession(
+        'user-1',
+        'token-hash',
+      );
 
       expect(result.id).toBe('user-1');
       expect(result).not.toHaveProperty('passwordHash');
       expect(result).not.toHaveProperty('passwordAlgorithm');
+    });
+
+    it('stamps the session workstation on the DTO, not the user row last-login column', async () => {
+      // The session was created at ws-hub; the user row says ws-origin
+      // (mutated by a later login on another terminal).
+      sessionService.findActiveSessionByTokenHash.mockResolvedValue({
+        id: 'session-1',
+        userId: 'user-1',
+        workstationId: 'ws-hub',
+      });
+      prisma.user.findUnique.mockResolvedValue(
+        buildPrismaUser({
+          id: 'user-1',
+          lastLoginWorkstationId: 'ws-origin',
+        }) as never,
+      );
+
+      const result = await service.validateActiveSession(
+        'user-1',
+        'token-hash',
+      );
+
+      // Sync batch attribution reads this field: if the later login's value
+      // leaked through, both terminals' clientSequence streams would merge.
+      expect(result.lastLoginWorkstationId).toBe('ws-hub');
     });
   });
 
@@ -1064,6 +1137,37 @@ describe('AuthService', () => {
       expect(result.id).toBe('user-1');
       expect(result).not.toHaveProperty('passwordHash');
       expect(result).not.toHaveProperty('passwordAlgorithm');
+    });
+
+    it('stamps the offline-token session workstation when a sessionId is given', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        buildPrismaUser({
+          id: 'user-1',
+          lastLoginWorkstationId: 'ws-origin',
+        }) as never,
+      );
+      sessionService.findSessionById.mockResolvedValue({
+        id: 'session-hub',
+        userId: 'user-1',
+        workstationId: 'ws-hub',
+      } as never);
+
+      const result = await service.getActiveUser('user-1', 'session-hub');
+
+      expect(result.lastLoginWorkstationId).toBe('ws-hub');
+    });
+
+    it('keeps the user row value when no sessionId is given', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        buildPrismaUser({
+          id: 'user-1',
+          lastLoginWorkstationId: 'ws-origin',
+        }) as never,
+      );
+
+      const result = await service.getActiveUser('user-1');
+
+      expect(result.lastLoginWorkstationId).toBe('ws-origin');
     });
   });
 });

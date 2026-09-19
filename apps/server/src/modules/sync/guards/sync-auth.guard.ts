@@ -18,7 +18,12 @@
  * same `User` DTO shape that the JWT strategy produces, so downstream pipes
  * (`@CurrentUser()`, `RolesGuard`, `@Auditable()`) work identically.
  */
-import { ExecutionContext, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  Injectable,
+  Optional,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from '@/modules/auth/auth.service';
@@ -56,9 +61,14 @@ export class SyncAuthGuard extends AuthGuard('jwt') {
         try {
           const claims = this.offlineTokenService.verifyToken(offlineToken);
           if (claims) {
-            const isRevoked = await this.offlineTokenService.isRevoked(claims.jti);
+            const isRevoked = await this.offlineTokenService.isRevoked(
+              claims.jti,
+            );
             if (!isRevoked) {
-              const user = await this.authService.getActiveUser(claims.sub);
+              const user = await this.authService.getActiveUser(
+                claims.sub,
+                claims.sid,
+              );
               request.user = user;
               return true;
             }
@@ -113,8 +123,10 @@ export class SyncAuthGuard extends AuthGuard('jwt') {
       throw new UnauthorizedException('Offline token has been revoked');
     }
 
-    // 3. Look up the user and verify they are still active
-    const user = await this.authService.getActiveUser(claims.sub);
+    // 3. Look up the user and verify they are still active. The sid claim
+    // pins the workstation of the issuing session so batch attribution is
+    // not stolen by a later login of the same user on another terminal.
+    const user = await this.authService.getActiveUser(claims.sub, claims.sid);
 
     // 4. Populate request.user so downstream decorators (CurrentUser,
     //    RolesGuard, Auditable) work identically to the JWT path

@@ -521,7 +521,15 @@ export class AuthService {
     // Touch lastActivity asynchronously (fire-and-forget)
     this.sessionService.touchLastActivity(session.id).catch(() => {});
 
-    return this.toSafeUser(user);
+    const userDto = this.toSafeUser(user);
+    // The workstation of THIS session, not the user row's
+    // lastLoginWorkstationId: that column is mutated by every login, so a
+    // cashier logged into two terminals would see the second login steal the
+    // attribution of the first session's sync batches (merging their
+    // clientSequence spaces and poisoning both local-number-hints).
+    userDto.lastLoginWorkstationId = session.workstationId;
+
+    return userDto;
   }
 
   // ---------------------------------------------------------------------------
@@ -535,16 +543,28 @@ export class AuthService {
    * `SyncAuthGuard` to authenticate sync requests with an offline token
    * when the short-lived access token has already expired.
    *
+   * `sessionId` (the offline token's `sid` claim) pins the workstation of the
+   * session that issued the token, so batch attribution survives the user
+   * logging in on another terminal (the user row's lastLoginWorkstationId is
+   * mutated by every login).
+   *
    * @throws `UnauthorizedException` if user not found or inactive
    */
-  async getActiveUser(userId: string): Promise<User> {
+  async getActiveUser(userId: string, sessionId?: string): Promise<User> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
     });
     if (!user || !user.isActive) {
       throw new UnauthorizedException('User not found or inactive');
     }
-    return this.toSafeUser(user);
+    const userDto = this.toSafeUser(user);
+    if (sessionId) {
+      const session = await this.sessionService.findSessionById(sessionId);
+      if (session) {
+        userDto.lastLoginWorkstationId = session.workstationId;
+      }
+    }
+    return userDto;
   }
 
   /**
@@ -1140,7 +1160,9 @@ export class AuthService {
   }
 
   /** Unique machine-readable code for a self-registered workstation. */
-  private async generateWorkstationCode(tx: Prisma.TransactionClient): Promise<string> {
+  private async generateWorkstationCode(
+    tx: Prisma.TransactionClient,
+  ): Promise<string> {
     for (let attempt = 0; attempt < 5; attempt++) {
       const candidate = `AUTO-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
       const clash = await tx.workstation.findUnique({
