@@ -884,6 +884,10 @@ export class SyncOperationDispatcherService {
    * (stale stock check). The auto-apply runs inside a single transaction
    * (createAndApply) with tenant RLS set and lot version increment via
    * optimistic locking, preserving the adjustmentDocument ↔ movements link.
+   *
+   * Idempotent by operationUuid: the item quantities are deltas, so a replay of
+   * an operation whose queue row is still PENDING (the cron is this type's only
+   * path) would move the stock a second time.
    */
   private async handleInventoryAdjustment(entry: SyncQueueEntry): Promise<void> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
@@ -911,6 +915,7 @@ export class SyncOperationDispatcherService {
       createAdjustmentDto as unknown as CreateInventoryAdjustmentDto,
       payload.userId as string,
       lotContext.size > 0 ? lotContext : undefined,
+      entry.operationUuid,
     );
   }
 

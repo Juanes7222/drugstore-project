@@ -30,6 +30,11 @@ model InventoryAdjustmentDocument {
   annulmentReason         String?
   physicalCountId         String?
   physicalCount           PhysicalCount? @relation(fields: [physicalCountId], references: [id])
+  /// Sync operation that produced this document. The sync replay path checks
+  /// it before applying anything: the stock quantity in the payload is a
+  /// DELTA, so replaying an operation that already moved stock doubles the
+  /// movement instead of being a no-op.
+  sourceOperationUuid     String?   @unique
 
   @@index([subscriptionId])
   @@unique([subscriptionId, sequentialNumber])

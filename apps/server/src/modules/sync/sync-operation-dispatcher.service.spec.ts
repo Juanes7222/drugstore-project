@@ -633,6 +633,9 @@ describe('SyncOperationDispatcherService', () => {
         }),
         'u-1',
         undefined,
+        // The operation uuid is the idempotency key: quantities are deltas, so
+        // dropping it here makes a replay move the stock a second time.
+        'uuid-1',
       );
     });
 

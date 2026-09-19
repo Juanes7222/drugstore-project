@@ -190,11 +190,18 @@ export class InventoryAdjustmentsService {
    * so the server Lot mirrors the POS Lot and the next lot-sync pull carries
    * the new stock. Tenant RLS is set via ensureTenant and the
    * InventoryMovement rows remain linked via adjustmentDocumentId.
+   *
+   * `sourceOperationUuid` makes the replay idempotent: every item quantity is a
+   * delta (`currentStock + quantity`), so applying the same sync operation
+   * twice moves the stock twice. When the caller passes the operation uuid and
+   * a document already carries it, the existing document is returned untouched;
+   * the unique index on the column backstops two concurrent replays.
    */
   async createAndApply(
     createDto: CreateInventoryAdjustmentDto,
     userId: string,
     syncLotContext?: Map<string, LotSyncData>,
+    sourceOperationUuid?: string,
   ): Promise<any> {
     if (!createDto.items || createDto.items.length === 0) {
       throw new Error(
@@ -204,6 +211,20 @@ export class InventoryAdjustmentsService {
 
     return this.prisma.$transaction(async (tx) => {
       await this.ensureTenant(tx);
+
+      if (sourceOperationUuid) {
+        const alreadyApplied = await tx.inventoryAdjustmentDocument.findUnique({
+          where: { sourceOperationUuid },
+        });
+        if (alreadyApplied) {
+          this.logger.log(
+            `INVENTORY_ADJUSTMENT idempotent: operationUuid=${sourceOperationUuid} ` +
+              `already applied as document ${alreadyApplied.id} — skipping`,
+          );
+          return alreadyApplied;
+        }
+      }
+
       const itemsData = await this.prepareAdjustmentItems(
         tx,
         createDto.items,
@@ -226,6 +247,7 @@ export class InventoryAdjustmentsService {
           approvedByUserId: userId,
           approvalNotes: 'auto-approved via sync',
           appliedAt: now,
+          sourceOperationUuid: sourceOperationUuid ?? null,
         },
       });
       const movements: any[] = [];

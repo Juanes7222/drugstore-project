@@ -8,6 +8,7 @@ import * as crypto from 'node:crypto';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { TenantContextInterceptor } from '../src/modules/tenant/tenant-context.interceptor';
+import { SyncProcessingJob } from '../src/modules/sync/jobs/sync-processing.job';
 import { seedSubscription } from './helpers/subscription-seed';
 
 /**
@@ -60,6 +61,10 @@ const SHIFT_OPEN_OP_UUID = uuidFrom('e2e-sync-op-shift-open');
 const SECOND_SHIFT_OPEN_OP_UUID = uuidFrom('e2e-sync-op-shift-open-second');
 const TEST_SHIFT_ID = uuidFrom('e2e-sync-shift-id');
 const SECOND_SHIFT_ID = uuidFrom('e2e-sync-shift-id-second');
+const TEST_LOT_ID = uuidFrom('e2e-sync-lot-id');
+const TEST_LOT_BATCH = 'E2E-SYNC-CRON-LOT';
+const CRON_ADJUSTMENT_OP_UUID = uuidFrom('e2e-sync-op-cron-adjustment');
+const ADJUSTMENT_QUANTITY = 7;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -195,6 +200,14 @@ describe('Sync hub convergence (e2e)', () => {
     await prisma.cashShift.deleteMany({
       where: { id: { in: [TEST_SHIFT_ID, SECOND_SHIFT_ID] } },
     });
+    // Movements reference the adjustment document and the lot, so they go first.
+    await prisma.inventoryMovement.deleteMany({
+      where: { lotId: TEST_LOT_ID },
+    });
+    await prisma.inventoryAdjustmentDocument.deleteMany({
+      where: { subscriptionId },
+    });
+    await prisma.lot.deleteMany({ where: { id: TEST_LOT_ID } });
     await prisma.auditLog.deleteMany({
       where: { id: { in: [AUDIT_LOG_ENTRY_ID, AUDIT_LOG_ENTRY_ID_UPPER] } },
     });
@@ -333,6 +346,14 @@ describe('Sync hub convergence (e2e)', () => {
     await prisma.cashShift.deleteMany({
       where: { id: { in: [TEST_SHIFT_ID, SECOND_SHIFT_ID] } },
     });
+    // Movements reference the adjustment document and the lot, so they go first.
+    await prisma.inventoryMovement.deleteMany({
+      where: { lotId: TEST_LOT_ID },
+    });
+    await prisma.inventoryAdjustmentDocument.deleteMany({
+      where: { subscriptionId },
+    });
+    await prisma.lot.deleteMany({ where: { id: TEST_LOT_ID } });
     await prisma.productPriceHistory.deleteMany({
       where: { product: { sourceOperationUuid: PRODUCT_CREATION_OP_UUID } },
     });
@@ -843,5 +864,131 @@ describe('Sync hub convergence (e2e)', () => {
         ackRows.map((row) => row.workstationId).sort(),
       ).toEqual([HUB_WORKSTATION_ID, ORIGIN_WORKSTATION_ID].sort());
     }, 30000);
+  });
+
+  /**
+   * The cron is the only thing that applies an operation outside
+   * IMMEDIATE_DISPATCH_TYPES (PRODUCT_CREATION, PRODUCT_UPDATE,
+   * AUDIT_LOG_BATCH, SHIFT_OPEN): every other type is inserted PENDING and
+   * waits for SyncProcessingJob. Nothing exercised that path, and it is where
+   * a replay turns into a double application.
+   */
+  describe('cron replay (SyncProcessingJob)', () => {
+    let job: SyncProcessingJob;
+
+    /** Offline stock correction, the shape the POS ships for the cron to apply. */
+    const buildAdjustmentPayload = () => ({
+      createAdjustmentDto: {
+        reason: 'E2E cron replay',
+        items: [
+          {
+            lotId: TEST_LOT_ID,
+            movementType: 'POSITIVE_ADJUSTMENT',
+            quantity: ADJUSTMENT_QUANTITY,
+            reason: 'E2E cron replay',
+            lot: {
+              productId: TEST_PRODUCT_ID,
+              batchNumber: TEST_LOT_BATCH,
+              expirationDate: '2027-01-01T00:00:00.000Z',
+              currentStock: 0,
+              locationCode: null,
+            },
+          },
+        ],
+      },
+      userId: ORIGIN_USER_ID,
+    });
+
+    const lotStock = async (): Promise<number> => {
+      const lot = await prisma.lot.findUniqueOrThrow({
+        where: { id: TEST_LOT_ID },
+      });
+      return lot.currentStock;
+    };
+
+    const movementsForLot = () =>
+      prisma.inventoryMovement.count({ where: { lotId: TEST_LOT_ID } });
+
+    const queueRow = () =>
+      prisma.syncQueue.findFirst({
+        where: { operationUuid: CRON_ADJUSTMENT_OP_UUID },
+      });
+
+    /**
+     * Ticks the job until the row leaves PENDING. A tick is skipped while an
+     * earlier one is still running (`processing` flag) and the real cron can
+     * beat this call to the row, so the loop keeps the test about the domain
+     * outcome instead of about who processed it first.
+     */
+    const tickUntilProcessed = async (): Promise<void> => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await job.processPendingOperations();
+        if ((await queueRow())?.status === 'COMPLETED') return;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+
+    beforeAll(async () => {
+      job = app.get(SyncProcessingJob);
+      await prisma.lot.create({
+        data: {
+          id: TEST_LOT_ID,
+          subscriptionId,
+          batchNumber: TEST_LOT_BATCH,
+          expirationDate: new Date('2027-01-01'),
+          entryDate: new Date('2026-01-01'),
+          productId: TEST_PRODUCT_ID,
+          currentStock: 0,
+          version: 0,
+        },
+      });
+    });
+
+    it('applies an operation that is not immediately dispatched, exactly once', async () => {
+      const res = await sendBatch(originToken, [
+        buildOperation({
+          operationType: 'INVENTORY_ADJUSTMENT',
+          operationUuid: CRON_ADJUSTMENT_OP_UUID,
+          clientSequence: 900,
+          payload: buildAdjustmentPayload(),
+        }),
+      ]).expect(202);
+
+      // Not an immediate-dispatch type: accepted, still PENDING, stock untouched.
+      expect(res.body[0]).toEqual({
+        operationUuid: CRON_ADJUSTMENT_OP_UUID,
+        status: 'ACCEPTED',
+      });
+      expect((await queueRow())?.status).toBe('PENDING');
+      expect(await lotStock()).toBe(0);
+      expect(await movementsForLot()).toBe(0);
+
+      await tickUntilProcessed();
+
+      expect((await queueRow())?.status).toBe('COMPLETED');
+      expect(await lotStock()).toBe(ADJUSTMENT_QUANTITY);
+      expect(await movementsForLot()).toBe(1);
+    }, 60000);
+
+    it('never applies the same operation twice when its queue row is still PENDING', async () => {
+      // The replay trigger is a documented production state, not an invention:
+      // a queue row survives as PENDING when its status write is lost, which is
+      // exactly why PRODUCT_CREATION carries an operationUuid guard (11
+      // duplicate "uy, uy" products with sequential P-codes came from it).
+      await prisma.syncQueue.updateMany({
+        where: { operationUuid: CRON_ADJUSTMENT_OP_UUID },
+        data: { status: 'PENDING', processedAt: null },
+      });
+
+      // Fail loudly if the real cron already took the row between the flip and
+      // the tick below, rather than passing on a row someone else completed.
+      expect((await queueRow())?.status).toBe('PENDING');
+
+      await tickUntilProcessed();
+
+      expect((await queueRow())?.status).toBe('COMPLETED');
+      expect(await lotStock()).toBe(ADJUSTMENT_QUANTITY);
+      expect(await movementsForLot()).toBe(1);
+    }, 60000);
   });
 });
