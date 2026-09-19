@@ -115,10 +115,16 @@ export class ClientReturnsService {
     return ret;
   }
 
+  /**
+   * `recordId` lets the caller fix the row id: the sync replay path passes the
+   * POS-originated return id so the same offline return always maps to the same
+   * server row (see `createConfirmedFromSync`).
+   */
   async create(
     createDto: CreateClientReturnDto,
     userId: string,
     workstationId: string,
+    recordId?: string,
   ): Promise<any> {
     return this.prisma.$transaction(async (tx) => {
       const { sale, cashShift } = await this.validatePreconditions(
@@ -146,7 +152,7 @@ export class ClientReturnsService {
       const sequentialNumber = await this.calc.getNextSequentialNumber(tx);
       return tx.clientReturn.create({
         data: {
-          id: crypto.randomUUID(),
+          id: recordId ?? crypto.randomUUID(),
           subscriptionId: this.tenantContext.getSubscriptionId(),
           sequentialNumber,
           saleId: sale.id,
@@ -183,6 +189,47 @@ export class ClientReturnsService {
         include: { items: { include: { lots: true } } },
       });
     });
+  }
+
+  /**
+   * Sync entry point for an offline return replayed from the POS.
+   *
+   * The POS recorded the return as CONFIRMED and already reverted its local
+   * stock, so the server has to mirror BOTH halves: create the row and confirm
+   * it — stock credited back to the lots plus the credit note. Calling only
+   * `create` left the return in DRAFT and the server stock permanently higher
+   * than the POS's, which is the state every synced return was in while this
+   * operation type had no dispatch path.
+   *
+   * `localReturnId` is the POS-originated id and doubles as the idempotency key:
+   * it becomes the row id, so a replayed operation finds the existing return
+   * instead of creating a second one. A second one would refund the client and
+   * credit the stock twice. When the id is absent (older payloads) the row id is
+   * random and protection rests on the queue row's status alone.
+   *
+   * Resumable: a return that exists but is not CONFIRMED (an earlier attempt
+   * died between create and confirm) is confirmed rather than duplicated.
+   */
+  async createConfirmedFromSync(
+    createDto: CreateClientReturnDto,
+    userId: string,
+    workstationId: string,
+    localReturnId?: string,
+  ): Promise<any> {
+    const id = localReturnId ?? crypto.randomUUID();
+
+    const existing = await this.prisma.clientReturn.findUnique({
+      where: { id },
+      select: { id: true, state: true },
+    });
+    if (existing?.state === ClientReturnState.CONFIRMED) {
+      return existing;
+    }
+
+    if (!existing) {
+      await this.create(createDto, userId, workstationId, id);
+    }
+    return this.confirm(id, userId);
   }
 
   async markPendingPickup(id: string): Promise<any> {

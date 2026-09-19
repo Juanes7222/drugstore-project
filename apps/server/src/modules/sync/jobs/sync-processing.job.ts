@@ -21,13 +21,39 @@ const RETRY_FIXED_DELAY_SECONDS = 60;
  */
 const MAX_RETRY_ATTEMPTS = 10;
 
-/** Operation types that the cron job replays. */
+/**
+ * Operation types the cron job replays.
+ *
+ * Membership rule: every type `SyncOperationDispatcherService` implements that
+ * is NOT in the batch endpoint's immediate-dispatch set
+ * (`SyncService.IMMEDIATE_DISPATCH_TYPES` — the four whose result the POS needs
+ * in the same response, i.e. the catalog and shift types that get a
+ * server-assigned id stamped back) belongs here. A type in neither set is
+ * ingested as PENDING and never applied, which is how CLIENT_RETURN,
+ * CLIENT_UPDATE, CLIENT_DEACTIVATE, CLIENT_CREDIT_PAYMENT,
+ * CLIENT_CREDIT_PAYMENT_ANNULMENT and INVOICE_TRANSMISSION used to behave.
+ *
+ * Every type listed here is replayed up to MAX_RETRY_ATTEMPTS times, so its
+ * handler must be idempotent on its own key (an operation uuid, or the
+ * POS-originated row id).
+ *
+ * `PRESCRIPTION_REGISTRATION`, `FISCAL_DOCUMENT_SYNC` and
+ * `RESOLUTION_ALLOCATION` stay out on purpose: the fiscal engine owns the first
+ * two and the third is allocated server-side. The dispatcher does not
+ * implement them as anything but a log line.
+ */
 const SUPPORTED_TYPES: SyncQueueEntry['operationType'][] = [
   'SALE_CONFIRMATION',
   'SHIFT_CLOSURE',
   'SHIFT_OPEN',
   'CLIENT_CREATION',
+  'CLIENT_UPDATE',
+  'CLIENT_DEACTIVATE',
+  'CLIENT_RETURN',
+  'CLIENT_CREDIT_PAYMENT',
+  'CLIENT_CREDIT_PAYMENT_ANNULMENT',
   'INVENTORY_ADJUSTMENT',
+  'INVOICE_TRANSMISSION',
   'INVOICE_ADJUSTMENT',
   'PRODUCT_CREATION',
   'PRODUCT_UPDATE',

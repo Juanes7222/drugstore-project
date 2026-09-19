@@ -34,6 +34,7 @@ const mockClientsService = {
 
 const mockClientReturnsService = {
   create: jest.fn(),
+  createConfirmedFromSync: jest.fn(),
 } as unknown as ClientReturnsService;
 
 const mockInventoryAdjustmentsService = {
@@ -379,8 +380,8 @@ describe('SyncOperationDispatcherService', () => {
       metadata: { localReturnId: 'local-ret-uuid' },
     });
 
-    it('calls clientReturnsService.create with mapped DTO', async () => {
-      mockClientReturnsService.create.mockResolvedValue({ id: 'return-1' });
+    it('calls clientReturnsService.createConfirmedFromSync with the mapped DTO and the POS return id', async () => {
+      mockClientReturnsService.createConfirmedFromSync.mockResolvedValue({ id: 'return-1' });
       mockSyncOperationOutcome.create.mockResolvedValue({});
 
       await service.dispatch(buildEntry({
@@ -388,7 +389,11 @@ describe('SyncOperationDispatcherService', () => {
         payload: returnPayload,
       }));
 
-      expect(mockClientReturnsService.create).toHaveBeenCalledWith(
+      // createConfirmedFromSync, not create: the POS already recorded the return
+      // as CONFIRMED and reverted its local stock, and confirming is what credits
+      // the stock back and issues the credit note. The POS return id is the
+      // idempotency key that stops a replay from refunding twice.
+      expect(mockClientReturnsService.createConfirmedFromSync).toHaveBeenCalledWith(
         expect.objectContaining({
           saleId: 'sale-1',
           refundMethodId: 'rm-1',
@@ -396,6 +401,7 @@ describe('SyncOperationDispatcherService', () => {
         }),
         'u-1',
         'ws-1',
+        'local-ret-uuid',
       );
     });
   });

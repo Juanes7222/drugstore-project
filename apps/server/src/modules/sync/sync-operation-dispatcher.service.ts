@@ -701,15 +701,17 @@ export class SyncOperationDispatcherService {
   }
 
   /**
-   * Replays a CLIENT_RETURN by creating the return server-side.
+   * Replays a CLIENT_RETURN by creating and confirming the return server-side.
    *
    * The POS has already reversed stock locally and recorded the return as
    * CONFIRMED. The server re-validates every constraint against its current
-   * state and processes the return through its own workflow (credit note
-   * generation via FiscalDocumentsService).
+   * state, credits the stock back to the lots and generates the credit note via
+   * FiscalDocumentsService — all of that lives in confirm(), so creating the row
+   * alone would leave it in DRAFT with the server stock higher than the POS's.
    *
-   * The local return ID is preserved in the payload so the server can
-   * correlate the server-issued credit note back to the POS transaction.
+   * Idempotent by the POS-originated return id (`metadata.localReturnId`), which
+   * becomes the server row id: a replayed operation confirms the same return
+   * instead of refunding the client and crediting the stock a second time.
    */
   private async handleClientReturn(entry: SyncQueueEntry): Promise<void> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
@@ -734,13 +736,13 @@ export class SyncOperationDispatcherService {
       })),
     };
 
-    // Create the return server-side. Passing the local return ID allows the
-    // server to preserve it as the authoritative ID, avoiding a future ID
-    // reconciliation step.
-    await this.clientReturnsService.create(
+    // The local return id is the authoritative server id, which is also what
+    // makes the replay idempotent.
+    await this.clientReturnsService.createConfirmedFromSync(
       createDto,
       userId,
       workstationId,
+      localReturnId,
     );
   }
 

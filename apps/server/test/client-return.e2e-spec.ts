@@ -10,6 +10,7 @@ import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { ValidationPipe } from '@nestjs/common';
 import { TenantContextInterceptor } from '../src/modules/tenant/tenant-context.interceptor';
+import { SyncProcessingJob } from '../src/modules/sync/jobs/sync-processing.job';
 
 // API DTOs validate ids as UUIDs (z.uuid()); these constants are derived
 // deterministically from the legacy names so reruns reuse the same rows.
@@ -42,6 +43,16 @@ const INITIAL_LOT_STOCK = 50;
 const SALE_QUANTITY = 5;
 const RETURN_QUANTITY = 2;
 const UNIT_PRICE = '12000.00';
+
+// The offline return replayed through the sync queue. It returns one more unit
+// (3 remain returnable after the API-driven return above) and carries the
+// POS-originated id the sync path uses as the server row id and idempotency key.
+const POS_RETURN_ID = uuidFrom('e2e-ret-pos-return-001');
+const SYNC_RETURN_OP_UUID = uuidFrom('e2e-ret-pos-return-op-001');
+const SYNCED_RETURN_QUANTITY = 1;
+
+const sha256 = (value: unknown): string =>
+  crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 describe('Client return (e2e)', () => {
   let app: INestApplication;
@@ -81,6 +92,11 @@ describe('Client return (e2e)', () => {
     await prisma.taxScheme.deleteMany({ where: { id: TEST_TAX_SCHEME_ID } });
     await prisma.paymentMethod.deleteMany({ where: { id: { in: [TEST_CASH_PM_ID] } } });
     await prisma.auditLog.deleteMany({ where: { userId: { in: ['e2e-ret-cashier-id', 'e2e-ret-admin-id'] } } });
+    // Queue rows are keyed by operationUuid, so a leftover row from a crashed
+    // run would make the replay assertions below read stale state.
+    await prisma.syncQueue.deleteMany({
+      where: { operationUuid: SYNC_RETURN_OP_UUID },
+    });
     // Fiscal allocation references the user and workstation.
     await prisma.fiscalDocument.deleteMany({ where: { resolution: { workstationId: TEST_WORKSTATION_ID } } });
     await prisma.fiscalResolutionAllocation.deleteMany({ where: { workstationId: TEST_WORKSTATION_ID } });
@@ -432,6 +448,9 @@ describe('Client return (e2e)', () => {
     await prisma.taxScheme.deleteMany({ where: { id: TEST_TAX_SCHEME_ID } });
       await prisma.paymentMethod.deleteMany({ where: { id: { in: [TEST_CASH_PM_ID] } } });
       await prisma.auditLog.deleteMany({ where: { userId: 'e2e-ret-cashier-id' } });
+      await prisma.syncQueue.deleteMany({
+        where: { operationUuid: SYNC_RETURN_OP_UUID },
+      });
       // Fiscal allocation references the user and workstation.
       await prisma.fiscalDocument.deleteMany({ where: { resolution: { workstationId: TEST_WORKSTATION_ID } } });
       await prisma.fiscalResolutionAllocation.deleteMany({ where: { workstationId: TEST_WORKSTATION_ID } });
@@ -538,5 +557,135 @@ describe('Client return (e2e)', () => {
       expect(res.body.items[0].lots).toHaveLength(1);
       expect(res.body.items[0].lots[0].lotId).toBe(TEST_LOT_ID);
     });
+  });
+
+  /**
+   * Step 5 covers the offline path: the POS recorded this return while it had no
+   * network, so it arrives as a sync operation and the cron applies it.
+   *
+   * Three defects used to stack up on that path. CLIENT_RETURN was implemented in
+   * the dispatcher but absent from the cron's supported set, so the operation was
+   * queued and never applied; the handler then created the return in DRAFT and
+   * never confirmed it, leaving the server stock higher than the POS's; and it
+   * generated a fresh row id per attempt, so a replay would have refunded the
+   * client and credited the stock a second time.
+   */
+  describe('Step 5: an offline return replayed by the cron', () => {
+    const stockAfterApiReturn =
+      INITIAL_LOT_STOCK - SALE_QUANTITY + RETURN_QUANTITY;
+    const stockAfterSyncedReturn = stockAfterApiReturn + SYNCED_RETURN_QUANTITY;
+
+    const lotStock = async (): Promise<number> => {
+      const res = await request(app.getHttpServer())
+        .get(`/inventory-lots/lots/${TEST_LOT_ID}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      return res.body.currentStock as number;
+    };
+
+    const queueStatus = async (): Promise<string | undefined> =>
+      (
+        await prisma.syncQueue.findFirst({
+          where: { operationUuid: SYNC_RETURN_OP_UUID },
+          select: { status: true },
+        })
+      )?.status;
+
+    /**
+     * Ticks until the row leaves PENDING. The job skips a tick while an earlier
+     * one is still running and the real cron can beat this call to the row, so
+     * the loop keeps the test about the outcome rather than about who got there
+     * first.
+     */
+    const tickUntilProcessed = async (): Promise<void> => {
+      const job = app.get(SyncProcessingJob);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await job.processPendingOperations();
+        if ((await queueStatus()) === 'COMPLETED') return;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+
+    const syncedReturnPayload = () => ({
+      saleId: TEST_SALE_ID,
+      refundMethodId: TEST_CASH_PM_ID,
+      reason: 'E2E offline return replayed by the cron',
+      items: [
+        {
+          saleItemId: TEST_SALE_ITEM_ID,
+          quantity: SYNCED_RETURN_QUANTITY,
+          lots: [{ lotId: TEST_LOT_ID, quantity: SYNCED_RETURN_QUANTITY }],
+        },
+      ],
+      createdById: 'e2e-ret-cashier-id',
+      workstationId: TEST_WORKSTATION_ID,
+      metadata: { localReturnId: POS_RETURN_ID },
+    });
+
+    it('queues the operation without applying the return', async () => {
+      const payload = syncedReturnPayload();
+      const res = await request(app.getHttpServer())
+        .post('/sync/batch')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send([
+          {
+            operationType: 'CLIENT_RETURN',
+            operationUuid: SYNC_RETURN_OP_UUID,
+            payload,
+            payloadHash: sha256(payload),
+            sourceCreatedAt: new Date().toISOString(),
+            clientSequence: 1,
+            source: 'DIRECT',
+          },
+        ])
+        .expect(202);
+
+      expect(res.body[0]).toEqual({
+        operationUuid: SYNC_RETURN_OP_UUID,
+        status: 'ACCEPTED',
+      });
+      expect(await queueStatus()).toBe('PENDING');
+      expect(
+        await prisma.clientReturn.count({ where: { id: POS_RETURN_ID } }),
+      ).toBe(0);
+      expect(await lotStock()).toBe(stockAfterApiReturn);
+    }, 60000);
+
+    it('creates and confirms the return, preserving the POS id and crediting stock', async () => {
+      await tickUntilProcessed();
+
+      expect(await queueStatus()).toBe('COMPLETED');
+
+      // The POS id is authoritative, so no later id reconciliation is needed.
+      expect(
+        await prisma.clientReturn.findUnique({
+          where: { id: POS_RETURN_ID },
+          select: { id: true, state: true },
+        }),
+      ).toEqual({ id: POS_RETURN_ID, state: 'CONFIRMED' });
+
+      // CONFIRMED is what credits the stock back; a DRAFT row left the server
+      // stock higher than the POS's, which is why this assertion reads the lot
+      // through the API rather than trusting the return row.
+      expect(await lotStock()).toBe(stockAfterSyncedReturn);
+    }, 60000);
+
+    it('never refunds the client or credits the stock twice when replayed', async () => {
+      // A queue row survives as PENDING when its status write is lost, which is
+      // exactly what makes the cron replay an operation it already applied.
+      await prisma.syncQueue.updateMany({
+        where: { operationUuid: SYNC_RETURN_OP_UUID },
+        data: { status: 'PENDING', processedAt: null },
+      });
+      expect(await queueStatus()).toBe('PENDING');
+
+      await tickUntilProcessed();
+
+      expect(await queueStatus()).toBe('COMPLETED');
+      expect(
+        await prisma.clientReturn.count({ where: { id: POS_RETURN_ID } }),
+      ).toBe(1);
+      expect(await lotStock()).toBe(stockAfterSyncedReturn);
+    }, 60000);
   });
 });

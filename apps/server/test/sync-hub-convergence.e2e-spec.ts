@@ -970,6 +970,107 @@ describe('Sync hub convergence (e2e)', () => {
       expect(await movementsForLot()).toBe(1);
     }, 60000);
 
+    /**
+     * The dispatch sets are the only thing that decides whether an operation is
+     * ever applied: the batch endpoint dispatches four types synchronously and
+     * the cron selects the rest. A type the dispatcher implements but that sits
+     * in neither set is queued and never applied — which is how CLIENT_UPDATE,
+     * CLIENT_DEACTIVATE, CLIENT_CREDIT_PAYMENT, CLIENT_CREDIT_PAYMENT_ANNULMENT
+     * and INVOICE_TRANSMISSION behaved before.
+     *
+     * The payloads are deliberately minimal and the handlers fail on them: what
+     * is asserted is that the job SELECTS each type, so a handler error is
+     * expected and irrelevant. A PENDING row is the failure this test looks for.
+     */
+    it('selects every operation type the dispatcher implements', async () => {
+      const absentClientId = uuidFrom('e2e-sync-absent-client');
+      const absentPaymentId = uuidFrom('e2e-sync-absent-payment');
+      const cases: Array<{ type: string; payload: Record<string, unknown> }> =
+        [
+          {
+            type: 'CLIENT_UPDATE',
+            payload: {
+              userId: ORIGIN_USER_ID,
+              clientId: absentClientId,
+              updateClientDto: { commercialName: 'E2E' },
+            },
+          },
+          {
+            type: 'CLIENT_DEACTIVATE',
+            payload: {
+              userId: ORIGIN_USER_ID,
+              deactivateClientDto: { clientId: absentClientId },
+            },
+          },
+          {
+            type: 'CLIENT_CREDIT_PAYMENT',
+            payload: {
+              clientId: absentClientId,
+              amount: '1000',
+              paymentMethodId: TEST_TAX_SCHEME_ID,
+              createdById: ORIGIN_USER_ID,
+              cashShiftId: TEST_SHIFT_ID,
+              workstationId: ORIGIN_WORKSTATION_ID,
+              metadata: { localPaymentId: absentPaymentId },
+            },
+          },
+          {
+            type: 'CLIENT_CREDIT_PAYMENT_ANNULMENT',
+            payload: {
+              clientId: absentClientId,
+              annulledById: ORIGIN_USER_ID,
+              annulmentReason: 'E2E coverage',
+              metadata: { localPaymentId: absentPaymentId },
+            },
+          },
+          { type: 'INVOICE_TRANSMISSION', payload: {} },
+        ];
+
+      const operations = cases.map((entry, index) =>
+        buildOperation({
+          operationType: entry.type,
+          operationUuid: uuidFrom(`e2e-sync-dispatch-coverage-${entry.type}`),
+          clientSequence: 950 + index,
+          payload: entry.payload,
+        }),
+      );
+
+      const res = await sendBatch(originToken, operations).expect(202);
+      for (const entry of res.body as Array<{ status: string }>) {
+        expect(entry.status).toBe('ACCEPTED');
+      }
+
+      // None of these is immediately dispatched, so all five start queued.
+      const queued = await prisma.syncQueue.findMany({
+        where: {
+          operationUuid: {
+            in: operations.map((op) => op.operationUuid as string),
+          },
+        },
+        select: { operationUuid: true, status: true },
+      });
+      expect(queued).toHaveLength(cases.length);
+      expect(queued.map((row) => row.status)).toEqual(
+        Array(cases.length).fill('PENDING'),
+      );
+
+      await job.processPendingOperations();
+
+      const processed = await prisma.syncQueue.findMany({
+        where: {
+          operationUuid: {
+            in: operations.map((op) => op.operationUuid as string),
+          },
+        },
+        select: { operationUuid: true, status: true },
+      });
+      expect(processed).toHaveLength(cases.length);
+      const stillPending = processed
+        .filter((row) => row.status === 'PENDING')
+        .map((row) => row.operationUuid);
+      expect(stillPending).toEqual([]);
+    }, 60000);
+
     it('never applies the same operation twice when its queue row is still PENDING', async () => {
       // The replay trigger is a documented production state, not an invention:
       // a queue row survives as PENDING when its status write is lost, which is
