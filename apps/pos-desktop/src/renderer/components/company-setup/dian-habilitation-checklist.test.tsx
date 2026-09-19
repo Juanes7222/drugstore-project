@@ -10,7 +10,7 @@
  * are covered by the domain and hook suites, not here.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { DianHabilitationChecklist } from "./dian-habilitation-checklist";
 import {
   useCompanySetup,
@@ -83,7 +83,7 @@ const PROCESS_STEP_TITLES = [
 const CERT_PENDING_HINT =
   "Carga tu certificado digital en la plataforma o solicita asistencia.";
 
-const getStepItem = (title: string): HTMLElement =>
+const getStepItem = (title: string | RegExp): HTMLElement =>
   screen.getByText(title).closest("li") as HTMLElement;
 
 // ---------------------------------------------------------------------------
@@ -117,8 +117,8 @@ describe("DianHabilitationChecklist", () => {
       expect(
         screen.getByText("5. Fecha de inicio de facturación"),
       ).toBeInTheDocument();
-      // Step 6 carries its numeral in the casilla, not in the heading.
-      const rangeItem = getStepItem("Rango de numeración autorizado");
+      // Step 6 carries its numeral in the heading ("6. " + title, split text nodes).
+      const rangeItem = getStepItem(/Rango de numeración autorizado/);
       expect(within(rangeItem).getByText("6")).toBeInTheDocument();
     });
 
@@ -135,22 +135,27 @@ describe("DianHabilitationChecklist", () => {
   });
 
   describe("seal", () => {
-    it("stamps En trámite while the draft has no resolution number", () => {
+    it("stamps En trámite while the draft has no resolution number", async () => {
       setupHook({ draft: makeDraft({ resolutionNumber: null }) });
 
       render(<DianHabilitationChecklist />);
 
-      expect(screen.getByRole("status", { name: "En trámite" })).toBeVisible();
+      // The seal fades in (framer-motion); wait for the animation to finish.
+      await waitFor(() => {
+        expect(screen.getByRole("status", { name: "En trámite" })).toBeVisible();
+      });
     });
 
-    it("stamps Operando once the draft carries a resolution number", () => {
+    it("stamps Operando once the draft carries a resolution number", async () => {
       setupHook({ draft: OPERATING_DRAFT });
 
       render(<DianHabilitationChecklist />);
 
-      expect(
-        screen.getByRole("status", { name: "Operando" }),
-      ).toBeVisible();
+      await waitFor(() => {
+        expect(
+          screen.getByRole("status", { name: "Operando" }),
+        ).toBeVisible();
+      });
     });
   });
 
@@ -241,7 +246,8 @@ describe("DianHabilitationChecklist", () => {
       expect(screen.getByText("Obtenido automáticamente")).toBeInTheDocument();
       expect(screen.getByText("Prefijo FE")).toBeInTheDocument();
       expect(screen.getByText("Rango 1000–1999")).toBeInTheDocument();
-      const banner = screen.getByText("Prefijo FE").closest("p");
+      // The operating banner is a div with the monospace font-data class.
+      const banner = screen.getByText("Prefijo FE").closest(".font-data");
       expect(banner).toHaveClass("font-data");
     });
   });

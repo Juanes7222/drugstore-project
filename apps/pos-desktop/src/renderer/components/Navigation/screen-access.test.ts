@@ -119,6 +119,7 @@ const INVENTORY_SCREENS: PosScreen[] = [
   "products",
   "inventory-lots",
   "inventory-adjustments",
+  "inventory-count",
   "purchases-main",
   "suppliers",
   "purchase-orders",

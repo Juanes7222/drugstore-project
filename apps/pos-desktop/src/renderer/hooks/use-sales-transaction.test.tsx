@@ -335,11 +335,15 @@ describe("useSalesTransaction", () => {
           ]),
         }),
       );
-      // unitPrice is now always sent (cart price) so the DB total matches the frontend grandTotal
+      // unitPrice is deliberately OMITTED for untouched cart lines: the service
+      // re-reads the catalog price, and always sending the cart price would make
+      // validateItemPricing treat every sale as a price override (rejected for
+      // cashiers). It is only sent when the cashier actually overrode the price.
       const firstCall = mockSalesPosService.create.mock.calls[0][0] as {
-        items: Array<{ unitPrice?: unknown }>;
+        items: Array<{ unitPrice?: unknown; overrideUnitPriceCents?: unknown }>;
       };
-      expect(firstCall.items[0].unitPrice).toBeDefined();
+      expect(firstCall.items[0].unitPrice).toBeUndefined();
+      expect(firstCall.items[0].overrideUnitPriceCents).toBeUndefined();
       expect(mockDispatch).toHaveBeenCalledWith(
         initializePayment({ totalCents: 50_000 }),
       );
