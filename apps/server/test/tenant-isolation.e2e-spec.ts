@@ -17,7 +17,9 @@ import { seedSubscription } from './helpers/subscription-seed';
  *   - a tenant can neither read nor write another tenant's rows by passing a
  *     foreign id explicitly,
  *   - every tenant-scoped table still carries a policy, so a new table cannot
- *     ship unprotected without the ratchet below failing.
+ *     ship unprotected without the ratchet below failing,
+ *   - the tables that are still unprotected are an explicit allowlist, each
+ *     entry carrying the code path that makes a naive policy impossible.
  */
 
 const uuidFrom = (seed: string): string => {
@@ -37,37 +39,95 @@ const APP_ROLE = 'pharmacy_app';
 const TENANT_A_PRODUCT_ID = uuidFrom('e2e-rls-product-tenant-a');
 const TENANT_B_PRODUCT_ID = uuidFrom('e2e-rls-product-tenant-b');
 const TENANT_B_USER_USERNAME = 'e2e-rls-tenant-b@rls.test';
+const TENANT_B_SYNC_EVENT_ID = uuidFrom('e2e-rls-sync-event-tenant-b');
 
 /**
- * Tables that carry `subscriptionId` but have NO row level security policy.
- *
- * This is a frozen list of KNOWN GAPS, not an endorsement: each of these is
- * readable across tenants by any query that omits the tenant filter, because
- * nothing at the database layer stops it. They are listed here so that the
- * coverage test below fails when a NEW table joins them — triaging this list
- * is separate work (the tenant interceptor is the only thing protecting them
- * today).
+ * Tables the policy migration `20260918000001_rls_policies_for_tenant_tables`
+ * brings under row level security. Every code path that touches them runs with
+ * a tenant context (an authenticated request, or a scheduler that iterates
+ * tenants inside withTenant), so a policy isolates rows instead of breaking a
+ * flow.
  */
-const KNOWN_UNPROTECTED_TABLES = [
-  'ActivationCode',
-  'AuditLog',
+const POLICY_MIGRATION_TABLES = [
   'DataImport',
   'FiscalCertificate',
   'FiscalWebhookEvent',
-  'FraudAlert',
-  'LicenseCheckIn',
   'Location',
   'NamedPreset',
-  'OfflineSessionBlessing',
-  'SubscriptionPaymentHistory',
-  'SubscriptionPendingPayment',
   'SyncConflictLog',
   'SyncEvent',
   'SyncEventAcknowledgment',
   'SystemConfig',
   'TenantConfig',
-  'User',
-  'WorkstationActivation',
+] as const;
+
+/**
+ * Tables that carry `subscriptionId` and still have NO policy, each with the
+ * reason a policy cannot simply be added. This list is the durable output of
+ * the RLS triage: it is deliberately NOT a set of endorsed gaps. An entry may
+ * only stay here while its reason holds, and the coverage test below fails
+ * when a table joins the list without one.
+ */
+const KNOWN_UNPROTECTED_TABLES: ReadonlyArray<{
+  table: string;
+  /** The pre-tenant or platform path that a naive policy would break. */
+  reason: string;
+}> = [
+  {
+    table: 'ActivationCode',
+    reason:
+      'POST public/licensing/activate looks the code up BY CODE — the subscription is ' +
+      'what the flow is resolving, so the tenant cannot be bound beforehand',
+  },
+  {
+    table: 'AuditLog',
+    reason:
+      'saas-admin reads it cross-tenant (SaasAdminAccessAuditService.listAccessEvents ' +
+      'is deliberately unfiltered) and records exports with subscriptionId NULL',
+  },
+  {
+    table: 'FraudAlert',
+    reason:
+      'written by the detectors on the public check-in path and read cross-tenant by ' +
+      'saas-admin (saas-admin-fraud.service)',
+  },
+  {
+    table: 'LicenseCheckIn',
+    reason:
+      'POST public/licensing/check-in runs before a tenant is known; the subscription ' +
+      'comes from the activation the request resolves',
+  },
+  {
+    table: 'OfflineSessionBlessing',
+    reason:
+      'recorded from the offline blessing request, which is pre-tenant by nature ' +
+      '(it stores workstationId: "" until the blessing is resolved)',
+  },
+  {
+    table: 'SubscriptionPaymentHistory',
+    reason:
+      'platform billing, written from the saas-admin surface — a platform admin has ' +
+      'no subscriptionId at all (BackofficeScopeService.requireSubscription throws)',
+  },
+  {
+    table: 'SubscriptionPendingPayment',
+    reason:
+      'written by webhooks/wompi and public/licensing/checkout; subscriptionId is ' +
+      'nullable because a NEW_SUBSCRIPTION checkout has no subscription yet',
+  },
+  {
+    table: 'User',
+    reason:
+      'auth/login is public AND JwtStrategy.validateActiveSession reads prisma.user in ' +
+      'the GUARD phase, before TenantContextInterceptor binds the tenant — a policy ' +
+      'would 401 every authenticated request, not just login',
+  },
+  {
+    table: 'WorkstationActivation',
+    reason:
+      'GET public/licensing/status/:workstationId and the activation write/revoke run ' +
+      'on the same public onboarding flow',
+  },
 ];
 
 interface TablePolicyRow {
@@ -84,15 +144,20 @@ describe('Tenant isolation (RLS)', () => {
 
   /**
    * Runs `fn` as the application role, inside one transaction so every
-   * statement shares the connection that `SET ROLE` applies to. The role
-   * change and the tenant setting are transactional: both vanish at commit.
+   * statement shares the connection that the role change applies to.
+   *
+   * SET LOCAL, never plain SET ROLE: the pooled connection is returned to the
+   * pool after the transaction, and a session-scoped role change survives that
+   * (pg does not reset session state on release). The next query would then be
+   * answered by the app role with no tenant bound — silently seeing zero rows
+   * and having its writes affect nothing, anywhere in this process.
    */
   const asAppRole = async <T>(
     tenantId: string | null,
     fn: (tx: PrismaClient) => Promise<T>,
   ): Promise<T> =>
     prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET ROLE ${APP_ROLE}`);
+      await tx.$executeRawUnsafe(`SET LOCAL ROLE ${APP_ROLE}`);
       if (tenantId !== null) {
         await tx.$executeRaw`SELECT set_config('app.current_tenant', ${tenantId}, true)`;
       }
@@ -131,6 +196,21 @@ describe('Tenant isolation (RLS)', () => {
       },
     });
 
+    // A row in a table the policy migration covers, so the enforcement tests
+    // below fail on isolation instead of on an empty table.
+    await prisma.syncEvent.deleteMany({
+      where: { id: TENANT_B_SYNC_EVENT_ID },
+    });
+    await prisma.syncEvent.create({
+      data: {
+        id: TENANT_B_SYNC_EVENT_ID,
+        subscriptionId: tenantBId,
+        eventType: 'PRICE_UPDATE',
+        entityType: 'Product',
+        entityId: TENANT_B_PRODUCT_ID,
+      },
+    });
+
     await prisma.product.createMany({
       data: [
         {
@@ -156,6 +236,9 @@ describe('Tenant isolation (RLS)', () => {
   }, 60000);
 
   afterAll(async () => {
+    await prisma.syncEvent.deleteMany({
+      where: { id: TENANT_B_SYNC_EVENT_ID },
+    });
     await prisma.product.deleteMany({
       where: { id: { in: [TENANT_A_PRODUCT_ID, TENANT_B_PRODUCT_ID] } },
     });
@@ -221,6 +304,70 @@ describe('Tenant isolation (RLS)', () => {
     ).rejects.toThrow(/row-level security/i);
   }, 30000);
 
+  it('blocks a cross-tenant read on a table the policy migration enforced', async () => {
+    // Control: the row exists. Read as the superuser, which bypasses RLS —
+    // otherwise "tenant A sees nothing" would hold for the wrong reason.
+    expect(
+      await prisma.syncEvent.count({ where: { id: TENANT_B_SYNC_EVENT_ID } }),
+    ).toBe(1);
+
+    const [ownTenant] = await asAppRole(
+      tenantBId,
+      (tx) =>
+        tx.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) FROM "SyncEvent" WHERE id = ${TENANT_B_SYNC_EVENT_ID}`,
+    );
+    expect(Number(ownTenant.count)).toBe(1);
+
+    const [foreignTenant] = await asAppRole(
+      tenantAId,
+      (tx) =>
+        tx.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) FROM "SyncEvent" WHERE id = ${TENANT_B_SYNC_EVENT_ID}`,
+    );
+    expect(Number(foreignTenant.count)).toBe(0);
+  }, 30000);
+
+  it('lets a tenant-scoped write reach its own rows, the contract the cron relies on', async () => {
+    // The scheduled jobs iterate subscriptions and then run a bare updateMany
+    // inside withTenant (e.g. expiring certificates). Under a policy that is
+    // exactly where a silent "0 rows updated" would hide, so assert the row
+    // count the job's statement actually reaches.
+    expect(
+      await asAppRole(
+        tenantAId,
+        (tx) =>
+          tx.$executeRaw`UPDATE "SyncEvent" SET severity = 'WARNING' WHERE id = ${TENANT_B_SYNC_EVENT_ID}`,
+      ),
+    ).toBe(0);
+
+    expect(
+      await asAppRole(
+        tenantBId,
+        (tx) =>
+          tx.$executeRaw`UPDATE "SyncEvent" SET severity = 'WARNING' WHERE id = ${TENANT_B_SYNC_EVENT_ID}`,
+      ),
+    ).toBe(1);
+
+    const [updated] = await prisma.syncEvent.findMany({
+      where: { id: TENANT_B_SYNC_EVENT_ID },
+      select: { severity: true },
+    });
+    expect(updated.severity).toBe('WARNING');
+  }, 30000);
+
+  it('fails closed on every table the policy migration enforced', async () => {
+    for (const table of POLICY_MIGRATION_TABLES) {
+      const [row] = await asAppRole(null, (tx) =>
+        tx.$queryRawUnsafe<Array<{ count: bigint }>>(
+          `SELECT count(*) FROM "${table}"`,
+        ),
+      );
+      expect({ table, count: Number(row.count) }).toEqual({
+        table,
+        count: 0,
+      });
+    }
+  }, 60000);
+
   it('protects every tenant-scoped table with a policy, with no new gaps', async () => {
     const rows = await prisma.$queryRaw<TablePolicyRow[]>`
       SELECT c.relname,
@@ -245,10 +392,16 @@ describe('Tenant isolation (RLS)', () => {
       .filter((row) => !row.relrowsecurity || Number(row.policies) === 0)
       .map((row) => row.relname);
 
-    // Any table here that is not on the frozen gap list is a NEW unprotected
-    // tenant table: either give it a policy migration or add it to the list
-    // with a reason.
-    expect(unprotected).toEqual(KNOWN_UNPROTECTED_TABLES);
+    // Any table here that is not on the allowlist is a NEW unprotected tenant
+    // table: either give it a policy migration or add it here with a reason.
+    expect(unprotected).toEqual(
+      KNOWN_UNPROTECTED_TABLES.map((entry) => entry.table).sort(),
+    );
+
+    // The allowlist must be reasoned, not just a list of names.
+    for (const entry of KNOWN_UNPROTECTED_TABLES) {
+      expect(entry.reason.length).toBeGreaterThan(40);
+    }
   }, 30000);
 
   it('forces row level security on the tables that do have policies', async () => {
