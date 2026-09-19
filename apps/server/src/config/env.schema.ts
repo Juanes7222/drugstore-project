@@ -26,6 +26,15 @@ export const envSchema = z.object({
     .min(1)
     .max(365)
     .default(30),
+  // Hours a workstation heartbeat is kept before the housekeeping job deletes
+  // it. Heartbeats are written every heartbeat interval (and once per peer
+  // reported by a hub), so this window is the table's whole growth control.
+  HEARTBEAT_RETENTION_HOURS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(8760)
+    .default(72),
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z
     .enum(['development', 'production', 'test'])

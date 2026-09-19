@@ -24,6 +24,7 @@ import { SyncRequeueService } from './services/sync-requeue.service';
 import { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
 import { SyncProcessingJob } from './jobs/sync-processing.job';
 import { SyncQueueCleanupJob } from './jobs/sync-queue-cleanup.job';
+import { SyncHousekeepingJob } from './jobs/sync-housekeeping.job';
 import { SyncAuthGuard } from './guards/sync-auth.guard';
 
 @Module({
@@ -53,6 +54,7 @@ import { SyncAuthGuard } from './guards/sync-auth.guard';
     SyncOperationDispatcherService,
     SyncProcessingJob,
     SyncQueueCleanupJob,
+    SyncHousekeepingJob,
     TerminalBackupService,
     InvoiceTransmissionResultService,
     SyncIntegrityService,

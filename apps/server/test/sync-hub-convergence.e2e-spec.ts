@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { TenantContextInterceptor } from '../src/modules/tenant/tenant-context.interceptor';
 import { SyncProcessingJob } from '../src/modules/sync/jobs/sync-processing.job';
+import { SyncHousekeepingJob } from '../src/modules/sync/jobs/sync-housekeeping.job';
 import { seedSubscription } from './helpers/subscription-seed';
 
 /**
@@ -1090,6 +1091,124 @@ describe('Sync hub convergence (e2e)', () => {
       expect((await queueRow())?.status).toBe('COMPLETED');
       expect(await lotStock()).toBe(ADJUSTMENT_QUANTITY);
       expect(await movementsForLot()).toBe(1);
+    }, 60000);
+  });
+
+  /**
+   * Retention. `SyncEvent.deleteExpired()` and `WorkstationHeartbeat.deleteOld()`
+   * existed, were documented as housekeeping and had no caller, so both tables
+   * grew for the whole life of a deployment while `SyncQueue` was the only one
+   * with a job behind its window. The expiry filters on the read path
+   * (`getPendingEvents`, `countPending`) are what hid it: stale rows never reach
+   * a workstation, they just never leave the database either.
+   */
+  describe('housekeeping (SyncHousekeepingJob)', () => {
+    const EXPIRED_EVENT_ID = uuidFrom('e2e-sync-expired-event');
+    const LIVE_EVENT_ID = uuidFrom('e2e-sync-live-event');
+    const OLD_HEARTBEAT_ID = uuidFrom('e2e-sync-old-heartbeat');
+    const FRESH_HEARTBEAT_ID = uuidFrom('e2e-sync-fresh-heartbeat');
+
+    beforeAll(async () => {
+      const now = Date.now();
+      await prisma.syncEvent.deleteMany({
+        where: { id: { in: [EXPIRED_EVENT_ID, LIVE_EVENT_ID] } },
+      });
+      await prisma.syncEvent.createMany({
+        data: [
+          {
+            id: EXPIRED_EVENT_ID,
+            subscriptionId,
+            eventType: 'PRICE_UPDATE',
+            entityType: 'Product',
+            entityId: TEST_PRODUCT_ID,
+            expiresAt: new Date(now - 60_000),
+          },
+          {
+            id: LIVE_EVENT_ID,
+            subscriptionId,
+            eventType: 'PRICE_UPDATE',
+            entityType: 'Product',
+            entityId: TEST_PRODUCT_ID,
+            expiresAt: new Date(now + 3_600_000),
+          },
+        ],
+      });
+      // An acknowledgement on the expired event: the purge has to take it too.
+      await prisma.syncEventAcknowledgment.deleteMany({
+        where: { eventId: EXPIRED_EVENT_ID },
+      });
+      await prisma.syncEventAcknowledgment.create({
+        data: {
+          subscriptionId,
+          eventId: EXPIRED_EVENT_ID,
+          workstationId: ORIGIN_WORKSTATION_ID,
+        },
+      });
+      await prisma.workstationHeartbeat.deleteMany({
+        where: { id: { in: [OLD_HEARTBEAT_ID, FRESH_HEARTBEAT_ID] } },
+      });
+      await prisma.workstationHeartbeat.createMany({
+        data: [
+          {
+            id: OLD_HEARTBEAT_ID,
+            workstationId: ORIGIN_WORKSTATION_ID,
+            reportedBy: ORIGIN_WORKSTATION_ID,
+            // Past the 72h default window.
+            receivedAt: new Date(now - 100 * 3_600_000),
+          },
+          {
+            id: FRESH_HEARTBEAT_ID,
+            workstationId: ORIGIN_WORKSTATION_ID,
+            reportedBy: ORIGIN_WORKSTATION_ID,
+            receivedAt: new Date(now - 60_000),
+          },
+        ],
+      });
+    });
+
+    it('collects expired events and old heartbeats while keeping the live rows', async () => {
+      // Control first: with the fixture missing, "count is 0 after the purge"
+      // would pass for the wrong reason.
+      expect(
+        await prisma.syncEvent.count({
+          where: { id: { in: [EXPIRED_EVENT_ID, LIVE_EVENT_ID] } },
+        }),
+      ).toBe(2);
+      expect(
+        await prisma.syncEventAcknowledgment.count({
+          where: { eventId: EXPIRED_EVENT_ID },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.workstationHeartbeat.count({
+          where: { id: { in: [OLD_HEARTBEAT_ID, FRESH_HEARTBEAT_ID] } },
+        }),
+      ).toBe(2);
+
+      await app.get(SyncHousekeepingJob).purgeExpiredRows();
+
+      expect(
+        await prisma.syncEvent.count({ where: { id: EXPIRED_EVENT_ID } }),
+      ).toBe(0);
+      // The cascade takes the acknowledgement rows with the event.
+      expect(
+        await prisma.syncEventAcknowledgment.count({
+          where: { eventId: EXPIRED_EVENT_ID },
+        }),
+      ).toBe(0);
+      // Inside its TTL: still deliverable, so it must stay.
+      expect(await prisma.syncEvent.count({ where: { id: LIVE_EVENT_ID } })).toBe(1);
+
+      expect(
+        await prisma.workstationHeartbeat.count({
+          where: { id: OLD_HEARTBEAT_ID },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.workstationHeartbeat.count({
+          where: { id: FRESH_HEARTBEAT_ID },
+        }),
+      ).toBe(1);
     }, 60000);
   });
 });
