@@ -18,7 +18,12 @@
     }
   },
   "include": ["src", "vitest.setup.ts"],
-  "exclude": ["node_modules", "dist", "src-tauri"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src-tauri",
+    "src/domain/integration"
+  ],
   "references": [
     { "path": "./tsconfig.node.json" }
   ]

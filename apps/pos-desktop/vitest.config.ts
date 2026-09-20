@@ -39,6 +39,15 @@ export default defineConfig({
     "process.versions.node": "void 0",
   },
 
+  // The POS↔server integration tests (src/domain/integration/*.integration.test.ts)
+  // live in their own vitest project (vitest.integration.config.ts): they load
+  // the real NestJS AppModule, whose source uses the server tsconfig's `@/`
+  // alias, which conflicts with this project's renderer `@/` alias.
+  test: {
+    ...resolved.test,
+    exclude: ["src/domain/integration/**", ...(resolved.test?.exclude ?? [])],
+  },
+
   // Override `server` to inherit the base config's settings but add
   // PGlite packages to the external list for safety (even though the
   // define removal is the actual fix, externalisation prevents any

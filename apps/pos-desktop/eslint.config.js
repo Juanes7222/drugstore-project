@@ -16,7 +16,9 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import eslintConfigPrettier from 'eslint-config-prettier';
 import eslintPluginPrettier from 'eslint-plugin-prettier';
 
-export default tseslint.defineConfig(
+// tseslint.defineConfig was removed in typescript-eslint 8.66's default
+// export (only `config` remains); the helper names are equivalent here.
+export default tseslint.config(
   {
     ignores: [
       'dist/**',
