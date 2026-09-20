@@ -114,8 +114,8 @@ const uuidFrom = (seed: string): string => {
   ].join("-");
 };
 
-const SERVER_WS_ID = uuidFrom("pos-int-server-ws");
-const SERVER_USER_ID = "pos-int-server-user-id";
+const SERVER_WS_ID = uuidFrom("pos-int-sale-server-ws");
+const SERVER_USER_ID = "pos-int-sale-server-user-id";
 const USERNAME = "pos-integration@pos.test";
 const PASSWORD = "PosIntegration123!";
 const SERVER_PRODUCT_ID = uuidFrom("pos-int-server-product");
@@ -171,7 +171,7 @@ describe("POS ↔ Server integration (real PGlite + real NestJS server)", () => 
     });
     await serverPrisma.$connect();
 
-    subscriptionId = await seedSubscription(serverPrisma, "pos-int");
+    subscriptionId = await seedSubscription(serverPrisma, "pos-int-sale");
 
     // ── Seed the server-side world (workstation, user, catalog, fiscal) ──
     await serverPrisma.syncOperationOutcome.deleteMany({
@@ -236,6 +236,10 @@ describe("POS ↔ Server integration (real PGlite + real NestJS server)", () => 
     });
     await serverPrisma.auditLog.deleteMany({
       where: { userId: SERVER_USER_ID },
+    });
+    // AuditLog also references the workstation (device events).
+    await serverPrisma.auditLog.deleteMany({
+      where: { workstationId: SERVER_WS_ID },
     });
     await serverPrisma.userSession.deleteMany({
       where: { userId: SERVER_USER_ID },
@@ -627,6 +631,9 @@ describe("POS ↔ Server integration (real PGlite + real NestJS server)", () => 
       });
       await serverPrisma.auditLog.deleteMany({
         where: { userId: SERVER_USER_ID },
+      });
+      await serverPrisma.auditLog.deleteMany({
+        where: { workstationId: SERVER_WS_ID },
       });
       await serverPrisma.userSession.deleteMany({
         where: { userId: SERVER_USER_ID },

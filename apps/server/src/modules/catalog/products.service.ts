@@ -134,6 +134,16 @@ export class ProductsService {
     sourceProductId?: string | null,
   ): Promise<any> {
     const priceDecimal = new Prisma.Decimal(dto.initialPrice);
+    // Sync replay (PRODUCT_CREATION from the POS) carries the initial
+    // barcode set inside the DTO; the public REST caller does not.
+    const syncBarcodes =
+      Array.isArray((dto as Record<string, unknown>).barcodes)
+        ? ((dto as Record<string, unknown>).barcodes as Array<{
+            barcode: string;
+            barcodeType: string;
+            isPrimary?: boolean;
+          }>)
+        : [];
 
     return this.prisma.$transaction(async (tx: any) => {
       await this.ensureTenant(tx);
@@ -173,6 +183,23 @@ export class ProductsService {
           updatedAt: new Date(),
         },
       });
+
+      // Persist the POS-sent barcodes (deduplicated). The ProductBarcode
+      // unique constraint already rejects exact duplicates defensively.
+      for (const bc of syncBarcodes) {
+        await tx.productBarcode.upsert({
+          where: { subscriptionId_barcode: { subscriptionId: this.tenantContext.getSubscriptionId(), barcode: bc.barcode } },
+          create: {
+            id: this.generateId(),
+            subscriptionId: this.tenantContext.getSubscriptionId(),
+            productId: product.id,
+            barcode: bc.barcode,
+            barcodeType: bc.barcodeType,
+            isPrimary: bc.isPrimary ?? false,
+          },
+          update: {},
+        });
+      }
 
       const priceHistory = await tx.productPriceHistory.create({
         data: {

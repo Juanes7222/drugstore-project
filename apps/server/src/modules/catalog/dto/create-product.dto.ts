@@ -20,6 +20,20 @@ export const CreateProductSchema = z.object({
   initialPrice: z.string().min(1, 'Initial price is required'),
   initialTaxSchemeId: z.string().min(1, 'Initial tax scheme ID is required'),
   initialCost: z.string().optional(),
+  // Sync-only field: the POS PRODUCT_CREATION payload carries the initial
+  // barcode set (the public REST caller does not send it). Declared here so
+  // Zod's parsed output KEEPS the field — the sync dispatcher hands
+  // `result.data` to ProductsService.createProduct, which persists them.
+  barcodes: z
+    .array(
+      z.object({
+        barcode: z.string().min(1),
+        barcodeType: z.enum(['EAN13', 'EAN14', 'GTIN', 'INTERNAL', 'DATAMATRIX']),
+        isPrimary: z.boolean().optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
   // Sales-commission configuration. Optional so legacy POS builds and
   // direct API callers that do not send it keep the NONE default.
   commissionType: z

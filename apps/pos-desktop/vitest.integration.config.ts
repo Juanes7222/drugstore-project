@@ -61,6 +61,9 @@ export default defineConfig({
     environment: "node",
     globals: true,
     include: ["src/domain/integration/*.integration.test.ts"],
+    // The specs share fixed fixture rows in one database (uuidFrom-derived
+    // ids); run files sequentially to avoid cross-file fixture races.
+    fileParallelism: false,
     // The base vitest.setup.ts is renderer-oriented; integration tests boot
     // their own environment (PGlite + real Nest app) inside beforeAll.
     setupFiles: [],

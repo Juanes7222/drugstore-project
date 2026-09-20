@@ -645,7 +645,13 @@ export class SyncOperationDispatcherService {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
     const userId = payload.userId as string;
     const createClientDto = payload.createClientDto as unknown as CreateClientDto;
-    const localClientId = payload.localClientId as string | undefined;
+    // The POS puts the local UUID in `metadata.localClientId` (see
+    // clients.service.ts createSyncQueueEntry). Accept the root-level
+    // spelling too for backward compatibility with older payloads.
+    const metadata = payload.metadata as Record<string, unknown> | undefined;
+    const localClientId =
+      (metadata?.localClientId as string | undefined) ??
+      (payload.localClientId as string | undefined);
 
     const client = await this.clientsService.create(
       createClientDto,
@@ -1013,7 +1019,7 @@ export class SyncOperationDispatcherService {
     const metadata = (payload.metadata ?? {}) as Record<string, unknown>;
     const localProductId = (metadata.productId as string | undefined) ?? null;
 
-    const dto = { ...result.data };
+    const dto = result.data;
     if (dto.internalCode.startsWith('OFFLINE-')) {
       dto.internalCode = await this.generateNextOfflineProductCode();
     }
