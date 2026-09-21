@@ -15,6 +15,8 @@ export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
   clientId?: string | null;
   items!: Array<{
     productId: string;
+    /** Local POS SaleItem UUID — used as the server SaleItem id on sync replay. */
+    localSaleItemId?: string;
     quantity: number;
     unitPrice: string;
     discount?: string;
@@ -65,6 +67,8 @@ export class CreateSaleDto implements z.infer<typeof CreateSaleSchema> {
 
 export type CreateSaleItemDto = {
   productId: string;
+  /** Local POS SaleItem UUID — used as the server SaleItem id on sync replay. */
+  localSaleItemId?: string;
   quantity: number;
   unitPrice: string;
   discount?: string;

@@ -10,6 +10,17 @@ const SaleItemInputSchema = z.object({
   productId: z
     .string()
     .uuid("ID de producto invalido"),
+  /**
+   * Local POS SaleItem UUID. When present (SALE_CONFIRMATION sync replay),
+   * the server uses it as the SaleItem id so subsequent offline documents
+   * (CLIENT_RETURN items reference local saleItemIds) can be remapped to
+   * the server rows. Absent on direct HTTP API calls — the server then
+   * generates its own id.
+   */
+  localSaleItemId: z
+    .string()
+    .uuid("ID local de item de venta invalido")
+    .optional(),
   quantity: z
     .number()
     .int()

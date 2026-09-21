@@ -1404,6 +1404,12 @@ export class SalesPosService {
         clientId: sale.clientId ?? GENERIC_CLIENT_UUID,
         items: sale.items.map((item) => ({
           productId: serverIdByLocal.get(item.productId) ?? item.productId,
+          // Local SaleItem UUID. The server adopts it as the SaleItem id
+          // during the replay, so a later CLIENT_RETURN pushed from this
+          // workstation (whose items reference the local saleItemIds)
+          // resolves against real server rows instead of failing with
+          // SaleNotFoundException.
+          localSaleItemId: item.id,
           quantity: item.quantity,
           unitPrice: item.unitPrice.toString(),
           discount: item.discountPercentage.toString(),

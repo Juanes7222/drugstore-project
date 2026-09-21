@@ -725,12 +725,84 @@ export class SyncOperationDispatcherService {
     const workstationId = payload.workstationId as string;
     const localReturnId = (payload.metadata as Record<string, unknown> | undefined)?.localReturnId as string | undefined;
 
+    // ── Sale / SaleItem identity remapping ──────────────────────────────
+    // The POS records the return against its LOCAL sale and sale-item UUIDs.
+    // The server sale replay adopts those local ids (createSaleDto.items[].
+    // localSaleItemId → SaleItem.id) when the SALE_CONFIRMATION carried
+    // them, so try a direct lookup first; only fall back to heuristic
+    // resolution for legacy sales replayed before that field existed.
+    let saleId = payload.saleId as string;
+    let sale = await this.prisma.sale.findUnique({
+      where: { id: saleId },
+      select: { id: true },
+    });
+    if (!sale) {
+      // Legacy resolution path: find the server sale replayed from the POS
+      // sale with this local id. The SALE_CONFIRMATION payload carries
+      // metadata.localSaleId and the server sale stores the replay's
+      // sourceOperationUuid — but there is no backlink from localSaleId to
+      // the server sale id, so scan the sync queue payloads. Complements
+      // (not replaces) the direct lookup above.
+      const creation = await this.prisma.syncQueue.findFirst({
+        where: {
+          operationType: 'SALE_CONFIRMATION',
+          payload: { contains: saleId as string },
+        },
+        orderBy: { receivedAt: 'desc' },
+        select: { operationUuid: true },
+      });
+      if (creation) {
+        const bySource = await this.prisma.sale.findFirst({
+          where: { sourceOperationUuid: creation.operationUuid },
+          select: { id: true },
+        });
+        if (bySource) {
+          saleId = bySource.id;
+          sale = bySource;
+        }
+      }
+    }
+    if (!sale) {
+      throw new Error(`Sale ${String(payload.saleId)} not found for client return replay.`);
+    }
+
+    const remappedItems = [];
+    for (const item of payload.items as Array<Record<string, unknown>>) {
+      const localSaleItemId = item.saleItemId as string;
+      let saleItemId = localSaleItemId;
+      const directItem = await this.prisma.saleItem.findUnique({
+        where: { id: localSaleItemId },
+        select: { id: true, saleId: true },
+      });
+      if (!directItem || directItem.saleId !== saleId) {
+        const candidates = await this.prisma.saleItem.findMany({
+          where: {
+            saleId,
+            quantity: item.quantity as number,
+          },
+          select: { id: true, unitPrice: true, clientReturnItems: { select: { id: true } } },
+        });
+        const match = candidates.find(
+          (c) => c.unitPrice.equals(new Prisma.Decimal(item.unitPriceAtSale as string)) &&
+            c.clientReturnItems.length === 0,
+        );
+        if (match) {
+          saleItemId = match.id;
+        } else {
+          throw new Error(
+            `SaleItem ${localSaleItemId} not found in server sale ${saleId} for client return replay.`,
+          );
+        }
+      }
+      remappedItems.push({ ...item, saleItemId });
+    }
+
     // Build the DTO from the POS payload — matches CreateClientReturnDto shape
     const createDto: CreateClientReturnDto = {
-      saleId: payload.saleId as string,
+      saleId,
       refundMethodId: payload.refundMethodId as string,
       reason: (payload.reason as string) ?? undefined,
-      items: (payload.items as Array<Record<string, unknown>>).map((item: Record<string, unknown>) => ({
+      items: remappedItems.map((item: Record<string, unknown>) => ({
         saleItemId: item.saleItemId as string,
         quantity: item.quantity as number,
         lots: (item.lots as Array<Record<string, unknown>> | undefined)?.map(

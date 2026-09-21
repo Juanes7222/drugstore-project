@@ -751,7 +751,11 @@ export class SalesService {
     );
 
     return {
-      id: crypto.randomUUID(),
+      // On the SALE_CONFIRMATION sync replay the payload carries the local
+      // POS SaleItem UUID; adopting it as the server id lets CLIENT_RETURN
+      // items (which reference local saleItemIds) resolve to these rows.
+      // Direct HTTP API calls omit the field and get a generated id.
+      id: itemDto.localSaleItemId ?? crypto.randomUUID(),
       subscriptionId: this.tenantContext.getSubscriptionId(),
       product: { connect: { id: itemDto.productId } },
       productInternalCodeSnapshot: product.internalCode,
