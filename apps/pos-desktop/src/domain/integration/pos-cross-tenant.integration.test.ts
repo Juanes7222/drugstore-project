@@ -592,4 +592,66 @@ describe("POS ↔ Server integration — cross-tenant isolation (RLS)", () => {
     });
     expect(leaked).toBeNull();
   }, 120000);
+
+  it("two workstations replaying the same offline client converge instead of failing (P2002 conflict path)", async () => {
+    // Production scenario: the same person walks into both branches while
+    // the internet is down. Each workstation records the client offline
+    // with ITS OWN local UUID but the same identification. Both pushes land
+    // in tenant B's queue; the second replay collides with the
+    // identification unique key. The upsert must fold them into ONE server
+    // client (last writer wins) — never the aborted-transaction failure the
+    // old create→catch P2002→update flow produced (25P02 masked the real
+    // error and left the replay permanently FAILED).
+    const idNumber = "B-CC-DUPL-0001";
+    const op1Uuid = crypto.randomUUID();
+    const op2Uuid = crypto.randomUUID();
+    const local1 = uuidFrom("pos-xt-dup-client-1");
+    const local2 = uuidFrom("pos-xt-dup-client-2");
+
+    const res = await request(serverApp.getHttpServer())
+      .post("/sync/batch")
+      .set("Authorization", `Bearer ${tokenB}`)
+      .send([
+        buildClientCreation(op1Uuid, 10, local1, idNumber, WS_B_ID),
+        buildClientCreation(op2Uuid, 11, local2, idNumber, WS_B_ID),
+      ])
+      .expect(202);
+    expect(res.body).toHaveLength(2);
+
+    const job = serverApp.get(SyncProcessingJob);
+    for (let i = 0; i < 8; i++) {
+      await job.processPendingOperations();
+      const pending = await serverPrisma.syncQueue.count({
+        where: {
+          subscriptionId: subBId,
+          status: { in: ["PENDING", "PROCESSING"] },
+        },
+      });
+      if (pending === 0) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    const entries = await serverPrisma.syncQueue.findMany({
+      where: {
+        subscriptionId: subBId,
+        operationUuid: { in: [op1Uuid, op2Uuid] },
+      },
+      select: { status: true, lastErrorMessage: true },
+    });
+    expect(entries).toHaveLength(2);
+    // BOTH replays must complete — the second one via the conflict path.
+    for (const e of entries) {
+      expect(`${e.status}: ${e.lastErrorMessage ?? "ok"}`).toBe(
+        "COMPLETED: ok",
+      );
+    }
+
+    // Exactly ONE server client exists for that identification, and it is
+    // the local id of one of the two pushes (the losing id was folded).
+    const clients = await serverPrisma.client.findMany({
+      where: { subscriptionId: subBId, identificationNumber: idNumber },
+    });
+    expect(clients).toHaveLength(1);
+    expect([local1, local2]).toContain(clients[0]!.id);
+  }, 120000);
 });

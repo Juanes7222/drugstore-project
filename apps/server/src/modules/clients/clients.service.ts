@@ -52,11 +52,46 @@ export class ClientsService {
     clientId?: string,
   ): Promise<any> {
     const recordId = clientId ?? crypto.randomUUID();
+    const subscriptionId = this.tenantContext.getSubscriptionId();
+
+    // Sync-replay path (the POS always sends its local client UUID):
+    // upsert by the tenant identification key. Atomic — INSERT ... ON
+    // CONFLICT — so a replay that collides with an already-created row
+    // (lost COMPLETED write, retried entry, or a second workstation that
+    // recorded the same person offline) updates the live record with the
+    // POS's latest data instead of failing. The previous create→catch
+    // P2002→update flow issued the follow-up update on the transaction the
+    // failed INSERT had already aborted (Postgres 25P02), masking the real
+    // error and leaving every replayed duplicate permanently FAILED.
+    if (clientId) {
+      return this.prisma.client.upsert({
+        where: {
+          subscriptionId_identificationType_identificationNumber: {
+            subscriptionId,
+            identificationType: dto.identificationType,
+            identificationNumber: dto.identificationNumber,
+          },
+        },
+        update: {
+          ...dto,
+          updatedById: userId,
+        },
+        create: {
+          id: recordId,
+          subscriptionId,
+          ...dto,
+          createdById: userId,
+        },
+      });
+    }
+
+    // Backoffice HTTP path: creation must NOT silently adopt an existing
+    // client — surface the duplicate as a 4xx.
     try {
       return await this.prisma.client.create({
         data: {
           id: recordId,
-          subscriptionId: this.tenantContext.getSubscriptionId(),
+          subscriptionId,
           ...dto,
           createdById: userId,
         },
@@ -64,25 +99,6 @@ export class ClientsService {
     } catch (error: unknown) {
       const err = error as { code?: string };
       if (err.code === 'P2002') {
-        // Sync-replay conflict resolution: the client already exists by
-        // identification.  Update the live record with the POS's latest data
-        // instead of discarding it — the client's own data is the freshest
-        // version available at this workstation.
-        if (clientId) {
-          return this.prisma.client.update({
-            where: {
-              subscriptionId_identificationType_identificationNumber: {
-                subscriptionId: this.tenantContext.getSubscriptionId(),
-                identificationType: dto.identificationType,
-                identificationNumber: dto.identificationNumber,
-              },
-            },
-            data: {
-              ...dto,
-              updatedById: userId,
-            },
-          });
-        }
         throw new DuplicateClientIdentificationException(
           dto.identificationType,
           dto.identificationNumber,
