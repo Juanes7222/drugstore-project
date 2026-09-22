@@ -3,6 +3,7 @@ import { createPrismaDatabaseMock } from '../../../test/helpers/prisma-database-
 jest.mock('@pharmacy/database', () => createPrismaDatabaseMock());
 
 import { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
+import { SyncDependencyRequeueService } from './services/sync-dependency-requeue.service';
 import { Prisma } from '@pharmacy/database';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { CashShiftService } from '@/modules/cash-shift/cash-shift.service';
@@ -64,6 +65,10 @@ const mockSupplierReturnsService = {
   confirmReturnFromSync: jest.fn(),
 } as unknown as SupplierReturnsService;
 
+const mockDependencyRequeue = {
+  requeueDependentsOf: jest.fn().mockResolvedValue(0),
+} as unknown as SyncDependencyRequeueService;
+
 const mockSyncOperationOutcome = {
   create: jest.fn(),
 };
@@ -93,6 +98,12 @@ const mockPrisma = {
     findFirst: jest.fn().mockResolvedValue(null),
     update: jest.fn(),
   },
+  saleItem: {
+    // Null default: the direct lookup misses and the handler keeps the
+    // local sale-item id (server replay adopted local ids).
+    findUnique: jest.fn().mockResolvedValue(null),
+    findMany: jest.fn().mockResolvedValue([]),
+  },
   client: {
     findUnique: jest.fn(),
   },
@@ -100,6 +111,10 @@ const mockPrisma = {
     upsert: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
+  },
+  syncQueue: {
+    findFirst: jest.fn().mockResolvedValue(null),
+    findMany: jest.fn().mockResolvedValue([]),
   },
 } as unknown as PrismaService;
 
@@ -190,6 +205,7 @@ describe('SyncOperationDispatcherService', () => {
       mockPurchaseOrdersService,
       mockPurchaseReceptionsService,
       mockSupplierReturnsService,
+      mockDependencyRequeue,
     );
   });
 
@@ -383,6 +399,16 @@ describe('SyncOperationDispatcherService', () => {
     it('calls clientReturnsService.createConfirmedFromSync with the mapped DTO and the POS return id', async () => {
       mockClientReturnsService.createConfirmedFromSync.mockResolvedValue({ id: 'return-1' });
       mockSyncOperationOutcome.create.mockResolvedValue({});
+      // Direct identity paths: the server sale adopted the POS's local sale
+      // id and sale-item id (createSaleDto carried them), so the handler's
+      // direct lookups resolve without the legacy queue scan or fuzzy item
+      // matching. Once-scoped so implementations don't leak (clearAllMocks
+      // keeps mockResolvedValue implementations).
+      (mockPrisma.sale.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'sale-1' });
+      (mockPrisma.saleItem.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'si-1',
+        saleId: 'sale-1',
+      });
 
       await service.dispatch(buildEntry({
         operationType: 'CLIENT_RETURN',

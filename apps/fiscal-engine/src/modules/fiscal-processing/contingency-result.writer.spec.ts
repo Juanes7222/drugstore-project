@@ -22,6 +22,10 @@ describe('ContingencyResultWriter', () => {
     ptResponseCode: '00',
     ptResponseMessage: 'Ok',
     saleId: 'sale-1',
+    // Workstation fallbacks for contingency docs (saleId is the POS's LOCAL
+    // sale id there and matches no server Sale).
+    allocation: { workstationId: 'ws-1' },
+    resolution: { workstationId: 'ws-1' },
   };
 
   const rejectedDoc = {
@@ -59,6 +63,8 @@ describe('ContingencyResultWriter', () => {
           ptResponseCode: true,
           ptResponseMessage: true,
           saleId: true,
+          allocation: { select: { workstationId: true } },
+          resolution: { select: { workstationId: true } },
         },
       });
       expect(prisma.sale.findUnique).toHaveBeenCalledWith({
@@ -139,8 +145,12 @@ describe('ContingencyResultWriter', () => {
       expect(prisma.syncInvoiceResult.upsert).not.toHaveBeenCalled();
     });
 
-    it('is a no-op when the sale has no sourceWorkstationId', async () => {
-      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue(validatedDoc);
+    it('is a no-op when the sale has no sourceWorkstationId and no allocation/resolution fallback', async () => {
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue({
+        ...validatedDoc,
+        allocation: null,
+        resolution: null,
+      });
       (prisma.sale.findUnique as jest.Mock).mockResolvedValue({
         sourceWorkstationId: null,
       });
@@ -150,16 +160,65 @@ describe('ContingencyResultWriter', () => {
       expect(prisma.syncInvoiceResult.upsert).not.toHaveBeenCalled();
     });
 
-    it('is a no-op when the document has no sale', async () => {
+    it('resolves the workstation from the allocation when the sale lookup misses (contingency doc)', async () => {
+      // Contingency docs carry the POS's LOCAL sale id, which matches no
+      // server Sale — the allocation that numbered the doc names the owner.
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue({
+        ...validatedDoc,
+        allocation: { workstationId: 'ws-alloc' },
+        resolution: { workstationId: 'ws-res' },
+      });
+      (prisma.sale.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.syncInvoiceResult.upsert as jest.Mock).mockResolvedValue({});
+
+      await writer.writeForDocument('fd-1');
+
+      expect(prisma.syncInvoiceResult.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ workstationId: 'ws-alloc' }),
+        }),
+      );
+    });
+
+    it('falls back to the resolution workstation when the allocation is null', async () => {
+      (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue({
+        ...validatedDoc,
+        allocation: null,
+        resolution: { workstationId: 'ws-res' },
+      });
+      (prisma.sale.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.syncInvoiceResult.upsert as jest.Mock).mockResolvedValue({});
+
+      await writer.writeForDocument('fd-1');
+
+      expect(prisma.syncInvoiceResult.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ workstationId: 'ws-res' }),
+        }),
+      );
+    });
+
+    it('writes the result keyed by the document id when the doc has no sale (allocation fallback)', async () => {
+      // No sale behind the doc: the result is still attributed via the
+      // allocation fallback, keyed by the fiscal document id so the POS can
+      // at least observe the outcome instead of silently losing it.
       (prisma.fiscalDocument.findUnique as jest.Mock).mockResolvedValue({
         ...validatedDoc,
         saleId: null,
       });
+      (prisma.syncInvoiceResult.upsert as jest.Mock).mockResolvedValue({});
 
       await writer.writeForDocument('fd-1');
 
       expect(prisma.sale.findUnique).not.toHaveBeenCalled();
-      expect(prisma.syncInvoiceResult.upsert).not.toHaveBeenCalled();
+      expect(prisma.syncInvoiceResult.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            invoiceId: 'fd-1',
+            workstationId: 'ws-1',
+          }),
+        }),
+      );
     });
 
     it('swallows errors so the surrounding job never fails', async () => {
