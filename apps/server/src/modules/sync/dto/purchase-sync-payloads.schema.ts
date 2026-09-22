@@ -83,7 +83,9 @@ export const PurchaseReceptionConfirmationPayloadSchema = z.object({
   sequentialNumber: z.number().int().positive(),
   supplierId: idString,
   supplier: SupplierSyncDataSchema.optional(),
-  purchaseOrderId: idString.optional(),
+  // POS sends explicit null for direct receptions created without a purchase
+  // order (see pos-desktop sync-payload-contract.test.ts) — nullish, not optional.
+  purchaseOrderId: idString.nullish(),
   notes: z.string().nullish(),
   confirmedByUserId: idString,
   createdById: idString,

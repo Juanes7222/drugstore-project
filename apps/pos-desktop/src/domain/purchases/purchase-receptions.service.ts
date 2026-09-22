@@ -872,7 +872,10 @@ export class PurchaseReceptionsService {
       },
     });
 
-    // Fetch reception items with their lot details for the sync payload
+    // Fetch reception items with their lot details for the sync payload.
+    // The product ids on the wire must be SERVER ids: rows created offline
+    // carry a local UUID whose Product.serverId is the id the server knows
+    // (same remap SALE_CONFIRMATION already does before enqueueing).
     const items = await tx.purchaseReceptionItem.findMany({
       where: { purchaseReceptionId: reception.id },
       select: {
@@ -885,6 +888,15 @@ export class PurchaseReceptionsService {
         lotId: true,
       },
     });
+    const productIds = [...new Set(items.map((i) => i.productId))];
+    const productRows = await tx.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, serverId: true },
+    });
+    const serverIdByLocal = new Map<string, string>();
+    for (const p of productRows) {
+      if (p.serverId) serverIdByLocal.set(p.id, p.serverId);
+    }
 
     // Batch-fetch lots for all items that have a lotId
     const lotIds = items
@@ -908,7 +920,11 @@ export class PurchaseReceptionsService {
     const payloadItems = items.map((item) => {
       const lot = item.lotId ? lotMap.get(item.lotId) : undefined;
       return {
-        productId: item.productId,
+        productId: serverIdByLocal.get(item.productId) ?? item.productId,
+        // Local lot id travels on the wire: the server's resolveLotForSync
+        // adopts it as the server-side lot id, keeping the POS↔server
+        // shared-id invariant sales depend on (sales reference this same id).
+        lotId: item.lotId ?? undefined,
         // JSON keys align with PurchaseReceptionConfirmationItemSchema
         // (apps/server/src/modules/sync/dto/purchase-sync-payloads.schema.ts).
         // Local column / model / form field names stay as `receivedQuantity`
@@ -919,7 +935,9 @@ export class PurchaseReceptionsService {
           ? {
               batchNumber: lot.batchNumber,
               expirationDate: lot.expirationDate.toISOString(),
-              productId: lot.productId,
+              // Same product-id remap as the item: the lot snapshot's
+              // productId must be the id the server knows.
+              productId: serverIdByLocal.get(lot.productId) ?? lot.productId,
               currentStock: lot.currentStock,
               locationCode: lot.locationCode ?? undefined,
             }
