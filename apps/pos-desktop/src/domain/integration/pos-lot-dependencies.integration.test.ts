@@ -835,7 +835,7 @@ describe("POS ↔ Server integration — lot dependency ordering", () => {
     expect(pending).toBe(0);
   }, 120000);
 
-  it("sale pushed BEFORE its lot's reception fails permanently and stays failed after the reception lands", async () => {
+  it("sale pushed BEFORE its lot's reception fails, then the dependency requeue repairs it when the reception lands", async () => {
     // ── Step 1: sell product B locally — its lot exists ONLY on the POS ─
     const lotB = await localPrisma.lot.create({
       data: {
@@ -915,26 +915,34 @@ describe("POS ↔ Server integration — lot dependency ordering", () => {
     );
     expect(receptionStatus.status).toBe("COMPLETED");
 
-    // The lot now exists server-side — but with the POS-created UUID, while
-    // the failed sale never referenced any lot the server could adopt. The
-    // sale remains PERMANENT_FAILURE: the ordering gap is NOT self-healing.
-    const stillFailed = await serverPrisma.syncQueue.findFirstOrThrow({
-      where: {
-        operationType: "SALE_CONFIRMATION",
-        sourceWorkstationId: SERVER_WS_ID,
-        payload: { contains: saleB.id },
-      },
-      select: { status: true },
-    });
-    expect(stillFailed.status).toBe("PERMANENT_FAILURE");
+    // The lot now exists server-side with the POS-created UUID (shared id
+    // semantics). The dependency requeue service revives the failed sale —
+    // it goes back through the idempotent dispatcher, finds its lot, and
+    // completes. The ordering gap IS self-healing.
+    const repairedSale = await drainServerQueue(
+      "SALE_CONFIRMATION",
+      "COMPLETED",
+    );
+    expect(repairedSale.status).toBe("COMPLETED");
 
-    // The lot itself DID arrive (shared id semantics). Stock converges with
-    // the POS: snapshot stock at confirmation (10 − 1 sold = 9) + the 10
-    // received units.
+    // The replayed sale is now a real server sale attached to the shared lot
+    // (the previous test's sale A is the only other sale for this WS).
+    const serverSaleB = await serverPrisma.sale.findFirstOrThrow({
+      where: {
+        sourceWorkstationId: SERVER_WS_ID,
+        items: { some: { productId: SERVER_PRODUCT_B_ID } },
+      },
+      include: { items: { include: { lots: true } } },
+    });
+    expect(serverSaleB.items).toHaveLength(1);
+    expect(serverSaleB.items[0].lots[0].lotId).toBe(posLotBId);
+
+    // Stock converges with the POS: the server lot holds the 10 received
+    // units minus the replayed sale's 1 — exactly like the local lot (10 − 1).
     const serverLotB = await serverPrisma.lot.findUniqueOrThrow({
       where: { id: posLotBId },
     });
-    expect(serverLotB.currentStock).toBe(19);
+    expect(serverLotB.currentStock).toBe(9);
   }, 120000);
 
   it("sale of a lot that exists server-side without acquisition cost fails with a cost error", async () => {

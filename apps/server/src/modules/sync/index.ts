@@ -13,6 +13,7 @@ export type {
   LedgerVerdict,
 } from './services/sync-integrity.service';
 export { SyncRequeueService } from './services/sync-requeue.service';
+export { SyncDependencyRequeueService } from './services/sync-dependency-requeue.service';
 export type { RequeueResult } from './services/sync-requeue.service';
 export { PayloadHashMismatchException } from './exceptions/payload-hash-mismatch.exception';
 export { SyncPayloadValidationException } from './exceptions/sync-payload-validation.exception';

@@ -19,6 +19,7 @@ import { InvoiceAdjustmentPayloadSchema } from './dto/invoice-adjustment-payload
 import { AuditLogBatchPayloadSchema } from './dto/audit-log-batch.schema';
 import { ShiftOpenPayloadSchema } from './dto/shift-open-payload.schema';
 import { SyncPayloadValidationException } from './exceptions/sync-payload-validation.exception';
+import { SyncDependencyRequeueService } from './services/sync-dependency-requeue.service';
 import { ShiftAlreadyOpenException } from '@/modules/cash-shift/exceptions/shift-already-open.exception';
 import {
   PurchaseOrderConfirmationPayloadSchema,
@@ -78,6 +79,7 @@ export class SyncOperationDispatcherService {
     @Inject(PurchaseOrdersService) private readonly purchaseOrdersService: PurchaseOrdersService,
     @Inject(PurchaseReceptionsService) private readonly purchaseReceptionsService: PurchaseReceptionsService,
     @Inject(SupplierReturnsService) private readonly supplierReturnsService: SupplierReturnsService,
+    private readonly dependencyRequeue: SyncDependencyRequeueService,
   ) {}
 
   /**
@@ -658,6 +660,11 @@ export class SyncOperationDispatcherService {
       userId,
       localClientId,
     );
+    // Sales referencing the local client uuid failed while the client did
+    // not exist server-side; now it does.
+    if (localClientId) {
+      await this.dependencyRequeue.requeueDependentsOf(localClientId);
+    }
     return { entityId: (client as { id: string }).id };
   }
 
@@ -1106,6 +1113,11 @@ export class SyncOperationDispatcherService {
       entry.operationUuid,
       localProductId,
     );
+    // Sales referencing the local product uuid failed while the product did
+    // not exist server-side; now it does.
+    if (localProductId) {
+      await this.dependencyRequeue.requeueDependentsOf(localProductId);
+    }
     return {
       entityId: (product as { id: string }).id,
       entityInternalCode: (product as { internalCode: string }).internalCode,
@@ -1319,6 +1331,14 @@ export class SyncOperationDispatcherService {
     ) as PurchaseReceptionConfirmationPayload;
     const userId = payload.confirmedByUserId;
     await this.purchaseReceptionsService.confirmReceptionFromSync(payload, userId);
+    // The reception materialized its lots server-side. Sales that arrived
+    // earlier and failed for a missing dependency can now complete: sales
+    // consume stock by FEFO per PRODUCT (their payloads carry productId,
+    // never lotId), so dependents are matched both by lot id and product id.
+    for (const item of payload.items ?? []) {
+      if (item.lotId) await this.dependencyRequeue.requeueDependentsOf(item.lotId);
+      await this.dependencyRequeue.requeueDependentsOf(item.productId);
+    }
   }
 
   /**

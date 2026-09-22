@@ -566,6 +566,14 @@ export class PurchaseReceptionsService {
           const incomingLotId = (item as any).lotId as string | undefined;
           if (lotPayload || incomingLotId) {
             const lotIdForResolve = incomingLotId ?? crypto.randomUUID();
+            // A reception ADDS item.quantity units. The payload snapshot's
+            // currentStock is the lot's stock at confirmation time — local
+            // sales confirmed after this reception may have already deducted
+            // from it — so it must never seed the server-side lot stock.
+            const preExisting = await tx.lot.findUnique({
+              where: { id: lotIdForResolve },
+              select: { currentStock: true },
+            });
             const lotDataForResolve: LotSyncData =
               lotPayload ??
               ({
@@ -574,12 +582,26 @@ export class PurchaseReceptionsService {
                 productId: item.productId,
                 currentStock: item.quantity,
               } as LotSyncData);
+            lotDataForResolve.currentStock = item.quantity;
             const resolved = await this.lotsService.resolveLotForSync(
               tx,
               lotIdForResolve,
               lotDataForResolve,
             );
             resolvedLotId = resolved.id;
+
+            // If the lot already existed server-side (e.g. admin-created),
+            // the replayed reception still has to add its units —
+            // resolveLotForSync returns the existing row untouched.
+            const resultingStock = preExisting
+              ? preExisting.currentStock + item.quantity
+              : item.quantity;
+            if (preExisting) {
+              await tx.lot.update({
+                where: { id: resolved.id },
+                data: { currentStock: resultingStock },
+              });
+            }
 
             // Record an inventory movement for the receipt
             await tx.inventoryMovement.create({
@@ -589,8 +611,8 @@ export class PurchaseReceptionsService {
                 lotId: resolvedLotId,
                 movementType: MovementType.PURCHASE_RECEIPT,
                 quantity: item.quantity,
-                previousStock: resolved.currentStock - item.quantity,
-                resultingStock: resolved.currentStock,
+                previousStock: resultingStock - item.quantity,
+                resultingStock,
                 createdById: 'system',
                 createdAt: new Date(payload.confirmedAt),
                 purchaseReceptionId: receptionId,

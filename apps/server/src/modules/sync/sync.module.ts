@@ -21,6 +21,7 @@ import { TerminalBackupService } from './services/terminal-backup.service';
 import { InvoiceTransmissionResultService } from './services/invoice-transmission-result.service';
 import { SyncIntegrityService } from './services/sync-integrity.service';
 import { SyncRequeueService } from './services/sync-requeue.service';
+import { SyncDependencyRequeueService } from './services/sync-dependency-requeue.service';
 import { SyncOperationDispatcherService } from './sync-operation-dispatcher.service';
 import { SyncProcessingJob } from './jobs/sync-processing.job';
 import { SyncQueueCleanupJob } from './jobs/sync-queue-cleanup.job';
@@ -59,6 +60,7 @@ import { SyncAuthGuard } from './guards/sync-auth.guard';
     InvoiceTransmissionResultService,
     SyncIntegrityService,
     SyncRequeueService,
+    SyncDependencyRequeueService,
     SyncAuthGuard,
   ],
   exports: [
