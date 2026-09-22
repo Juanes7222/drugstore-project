@@ -11,6 +11,7 @@ import {
   forwardRef,
   type FC,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type MutableRefObject,
   type Ref,
   useCallback,
@@ -29,6 +30,7 @@ import { formatCurrency } from "@/utils/format-currency";
 import { formatShortDate } from "@/utils/format-date";
 import { CommissionBadge } from "@/components/common/commission-badge";
 import { PinIcon } from "@/components/ui/icons";
+import type { MovementsTarget } from "./product-movements-context-action";
 
 interface ProductSearchResultsProps {
   results: CatalogItem[];
@@ -44,6 +46,8 @@ interface ProductSearchResultsProps {
    * ArrowDown from the input so the listbox's own keydown handles arrows.
    */
   listboxRef?: Ref<HTMLDivElement>;
+  /** Right-click on a result card — parent opens the movement history menu. */
+  onMovementsContext?: (target: MovementsTarget, position: { x: number; y: number }) => void;
 }
 
 export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
@@ -53,6 +57,7 @@ export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
   onTogglePin,
   isPinned,
   listboxRef,
+  onMovementsContext,
 }) => {
   const { t } = useTranslation();
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
@@ -183,6 +188,7 @@ export const ProductSearchResults: FC<ProductSearchResultsProps> = ({
             pinned={pinned}
             onSelect={handleSelect}
             onTogglePin={onTogglePin}
+            onMovementsContext={onMovementsContext}
             ref={(el) => {
               cardRefs.current[index] = el;
             }}
@@ -207,6 +213,7 @@ interface ProductResultCardProps {
   pinned: boolean;
   onSelect: (item: CatalogItem) => void;
   onTogglePin?: (productId: string) => void;
+  onMovementsContext?: (target: MovementsTarget, position: { x: number; y: number }) => void;
 }
 
 const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
@@ -219,6 +226,7 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
   pinned,
   onSelect,
   onTogglePin,
+  onMovementsContext,
 }, cardRef) => {
   const { t } = useTranslation();
 
@@ -232,6 +240,14 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
 
   const handleTogglePin = () => {
     onTogglePin?.(item.id);
+  };
+
+  const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    onMovementsContext?.(
+      { productId: item.id, productName: item.name },
+      { x: event.clientX, y: event.clientY },
+    );
   };
 
   // Individual Enter/Space for direct keyboard activation (roving tabindex approach)
@@ -264,6 +280,7 @@ const ProductResultCard = forwardRef<HTMLDivElement, ProductResultCardProps>(({
       aria-selected={justAdded}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
+      onContextMenu={handleContextMenu}
       className={`rounded-pos border bg-panel p-pos-md transition-all duration-200 scroll-mt-pos-sm scroll-mb-pos-sm ${
         isFocused
           ? "border-pharma/60 ring-2 ring-pharma/20"

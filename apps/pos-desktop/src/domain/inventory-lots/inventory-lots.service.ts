@@ -81,6 +81,18 @@ export interface LotMovementRecord {
   saleId: string | null;
 }
 
+/**
+ * A single inventory movement record for a product across all its lots.
+ *
+ * Extends the per-lot record with the lot identifier and batch number so
+ * a flat product-level timeline can attribute each movement to a lot.
+ */
+export interface ProductMovementRecord extends LotMovementRecord {
+  lotId: string;
+  /** Human-readable batch number of the lot the movement touched. */
+  lotBatchNumber: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Grouped-lot query types
 // ---------------------------------------------------------------------------
@@ -352,6 +364,67 @@ export class InventoryLotsService {
       createdByName: null,
       adjustmentDocumentId: m.adjustmentDocumentId,
       saleId: m.saleId,
+    }));
+  }
+
+  /**
+   * Retrieve all inventory movements for a given product across all its
+   * lots, most recent first.
+   *
+   * Joins `Lot` to expose the batch number so a flat chronological list
+   * can still tell apart movements that touched different lots of the
+   * same product.
+   *
+   * @param filters.movementType  Only movements of this type when set.
+   * @param filters.fromDate      Inclusive lower bound on `createdAt`.
+   * @param filters.toDate        Inclusive upper bound on `createdAt`.
+   */
+  async getMovementsForProduct(
+    productId: string,
+    filters?: {
+      movementType?: string;
+      fromDate?: Date;
+      toDate?: Date;
+    },
+  ): Promise<ProductMovementRecord[]> {
+    const where: Prisma.InventoryMovementWhereInput = { lot: { productId } };
+
+    if (filters?.movementType) {
+      where.movementType = filters.movementType as MovementType;
+    }
+    if (filters?.fromDate || filters?.toDate) {
+      where.createdAt = {};
+      if (filters.fromDate) where.createdAt.gte = filters.fromDate;
+      if (filters.toDate) where.createdAt.lte = filters.toDate;
+    }
+
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const lotIds = [...new Set(movements.map((m) => m.lotId))];
+    const lots = lotIds.length
+      ? await this.prisma.lot.findMany({
+          where: { id: { in: lotIds } },
+          select: { id: true, batchNumber: true },
+        })
+      : [];
+    const batchByLotId = new Map(lots.map((l) => [l.id, l.batchNumber]));
+
+    return movements.map((m) => ({
+      id: m.id,
+      movementType: m.movementType,
+      quantity: m.quantity,
+      previousStock: m.previousStock,
+      resultingStock: m.resultingStock,
+      createdAt: m.createdAt.toISOString(),
+      reason: m.reason,
+      createdByName: null,
+      adjustmentDocumentId: m.adjustmentDocumentId,
+      saleId: m.saleId,
+      lotId: m.lotId,
+      lotBatchNumber: batchByLotId.get(m.lotId) ?? null,
     }));
   }
 

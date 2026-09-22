@@ -58,6 +58,9 @@ vi.mock("../../hooks/use-data-export", () => ({
 
 vi.mock("../common/service-context", () => ({
   useProductService: () => mockProductService,
+  useInventoryLotsService: () => ({
+    getMovementsForProduct: vi.fn().mockResolvedValue([]),
+  }),
 }));
 
 vi.mock("../../../domain/auth/local-session.store", () => ({

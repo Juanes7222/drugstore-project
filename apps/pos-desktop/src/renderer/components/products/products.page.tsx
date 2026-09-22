@@ -37,6 +37,7 @@ import { mapToDisplayProduct, type RawProduct } from "./products.types";
 import { ProductHeader } from "./product-header";
 import { ProductList } from "./product-list";
 import { ProductForm } from "./product-form";
+import { ProductMovementHistoryModal } from "./product-movement-history-modal";
 import { useProductFormData } from "./use-product-form-data";
 import {
   canImportEntity,
@@ -79,6 +80,9 @@ export const ProductsPage: FC = () => {
 
   // Import state (role-gated — the service enforces the same rule)
   const [isImportOpen, setIsImportOpen] = useState(false);
+
+  // Movement history modal state
+  const [movementsProduct, setMovementsProduct] = useState<DisplayProduct | null>(null);
   const sessionRole = useLocalSessionStore((s) => s.session?.role);
   const canImportProducts = canImportEntity("products", sessionRole);
 
@@ -166,6 +170,14 @@ export const ProductsPage: FC = () => {
     setSelectedProduct(product);
     setFormMode("edit");
     setError(null);
+  }, []);
+
+  const handleShowMovements = useCallback((product: DisplayProduct) => {
+    setMovementsProduct(product);
+  }, []);
+
+  const handleCloseMovements = useCallback(() => {
+    setMovementsProduct(null);
   }, []);
 
   const handleCancelForm = useCallback(() => {
@@ -383,6 +395,7 @@ export const ProductsPage: FC = () => {
             selectedProductId={selectedProduct?.id ?? null}
             onSelectProduct={handleSelectProduct}
             onEditProduct={handleEditProduct}
+            onShowMovements={handleShowMovements}
           />
         </div>
 
@@ -419,6 +432,14 @@ export const ProductsPage: FC = () => {
         open={isImportOpen}
         onOpenChange={setIsImportOpen}
         onImported={handleImported}
+      />
+
+      {/* Product movement history */}
+      <ProductMovementHistoryModal
+        visible={movementsProduct !== null}
+        productId={movementsProduct?.id ?? null}
+        productName={movementsProduct?.commercialName ?? ""}
+        onClose={handleCloseMovements}
       />
     </section>
   );

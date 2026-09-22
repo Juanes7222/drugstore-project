@@ -24,6 +24,7 @@ interface ProductListProps {
   selectedProductId: string | null;
   onSelectProduct: (product: DisplayProduct) => void;
   onEditProduct: (product: DisplayProduct) => void;
+  onShowMovements: (product: DisplayProduct) => void;
 }
 
 export const ProductList: FC<ProductListProps> = ({
@@ -39,6 +40,7 @@ export const ProductList: FC<ProductListProps> = ({
   selectedProductId,
   onSelectProduct,
   onEditProduct,
+  onShowMovements,
 }) => {
   const { t } = useTranslation();
 
@@ -282,6 +284,17 @@ export const ProductList: FC<ProductListProps> = ({
                         aria-label={t("products.edit_product")}
                       >
                         {t("common.edit")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onShowMovements(product);
+                        }}
+                        className="pos-button pos-button-secondary px-pos-sm py-pos-xs text-caption"
+                        aria-label={t("product_movements.row_action")}
+                      >
+                        {t("product_movements.row_action")}
                       </button>
                     </td>
                   </tr>

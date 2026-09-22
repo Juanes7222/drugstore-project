@@ -13,6 +13,7 @@ import { formatCurrency } from "@/utils/format-currency";
 import { formatShortDate } from "@/utils/format-date";
 import { CommissionBadge } from "@/components/common/commission-badge";
 import { useLocalSessionStore } from "../../../domain/auth/local-session.store";
+import type { MovementsTarget } from "./product-movements-context-action";
 
 interface CartLineItemProps {
   item: CartItem;
@@ -22,6 +23,8 @@ interface CartLineItemProps {
   onRemove: (id: string) => void;
   onUpdatePrice: (id: string, unitPriceCents: number) => void;
   onUpdateDiscount: (id: string, discountPercentage: number | null) => void;
+  /** Right-click on the line — parent opens the movement history menu. */
+  onMovementsContext?: (target: MovementsTarget, position: { x: number; y: number }) => void;
 }
 
 export const CartLineItem: FC<CartLineItemProps> = ({
@@ -31,6 +34,7 @@ export const CartLineItem: FC<CartLineItemProps> = ({
   onRemove,
   onUpdatePrice,
   onUpdateDiscount,
+  onMovementsContext,
 }) => {
   const { t } = useTranslation();
   const session = useLocalSessionStore((s) => s.session);
@@ -165,9 +169,21 @@ export const CartLineItem: FC<CartLineItemProps> = ({
     }
   }, [editingDiscount]);
 
+  const handleContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      onMovementsContext?.(
+        { productId: item.productId, productName: item.name },
+        { x: event.clientX, y: event.clientY },
+      );
+    },
+    [item.productId, item.name, onMovementsContext],
+  );
+
   return (
     <tr
       className="border-b border-ink/10"
+      onContextMenu={handleContextMenu}
       style={{
         borderBottomColor: "color-mix(in srgb, var(--color-ink) 8%, transparent)",
         ...(isSelected

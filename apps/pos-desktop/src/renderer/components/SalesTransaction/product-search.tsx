@@ -30,6 +30,7 @@ import { QuickButtons } from "./quick-buttons";
 import { HelpBar } from "./help-bar";
 import { SearchIcon } from "@/components/ui/icons";
 import type { SearchSubmitResult } from "../../hooks/use-sales-keyboard";
+import type { MovementsTarget } from "./product-movements-context-action";
 
 const PRINTABLE_KEY_RE = /^[a-zA-Z0-9ñáéíóúü.,;:ñÑ\-_@#$%&*()+=<>?¡¿!]/;
 
@@ -53,6 +54,8 @@ interface ProductSearchProps {
   onTogglePin?: (productId: string) => void;
   /** Whether a product is currently pinned to the quick buttons row. */
   isPinned?: (productId: string) => boolean;
+  /** Right-click on a result card — parent opens the movement history menu. */
+  onMovementsContext?: (target: MovementsTarget, position: { x: number; y: number }) => void;
 }
 
 export const ProductSearch: FC<ProductSearchProps> = ({
@@ -65,6 +68,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
   onAddQuickProduct = () => {},
   onTogglePin = () => {},
   isPinned = () => false,
+  onMovementsContext = () => {},
 }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
@@ -345,6 +349,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
             onTogglePin={onTogglePin}
             isPinned={isPinned}
             listboxRef={resultsListRef}
+            onMovementsContext={onMovementsContext}
           />
         )}
       </div>

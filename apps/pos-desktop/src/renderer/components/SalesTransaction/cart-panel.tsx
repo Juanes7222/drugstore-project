@@ -34,6 +34,7 @@ import type { LineQuickEdit as LineQuickEditState } from "../../hooks/use-sales-
 import type { ClientSelection } from "../../hooks/use-sales-transaction";
 import type { CreateClientInput } from "../../../domain/clients";
 import { InfoIcon, ShoppingBagIcon } from "@/components/ui/icons";
+import type { MovementsTarget } from "./product-movements-context-action";
 
 /**
  * Epoch ms → local "HH:mm" label for a held-cart recall button.
@@ -60,6 +61,8 @@ interface CartPanelProps {
   onQuickEditCommit?: () => void;
   onQuickEditCancel?: () => void;
   onQuickEditDone?: () => void;
+  /** Right-click on a cart line — parent opens the movement history menu. */
+  onMovementsContext?: (target: MovementsTarget, position: { x: number; y: number }) => void;
 }
 
 export const CartPanel: FC<CartPanelProps> = ({
@@ -75,6 +78,7 @@ export const CartPanel: FC<CartPanelProps> = ({
   onQuickEditCommit = () => {},
   onQuickEditCancel = () => {},
   onQuickEditDone = () => {},
+  onMovementsContext = () => {},
 }: CartPanelProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
@@ -288,6 +292,7 @@ export const CartPanel: FC<CartPanelProps> = ({
                       onRemove={handleRemove}
                       onUpdatePrice={handleUpdatePrice}
                       onUpdateDiscount={handleUpdateDiscount}
+                      onMovementsContext={onMovementsContext}
                     />
                     {activeEdit && (
                       <tr>

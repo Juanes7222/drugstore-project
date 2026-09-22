@@ -8,7 +8,7 @@
  * Left panel: product search with help bar and scrollable results.
  * Right panel: client selector, cart items, totals, and checkout button.
  */
-import { type FC, useCallback, useRef } from "react";
+import { type FC, useCallback, useRef, useState } from "react";
 import { useSalesTransaction } from "../../hooks/use-sales-transaction";
 import { useSalesKeyboard } from "../../hooks/use-sales-keyboard";
 import { useZoneNavigation } from "../../hooks/use-zone-navigation";
@@ -16,6 +16,10 @@ import { useQuickButtons } from "../../hooks/use-quick-buttons";
 import { ProductSearch } from "./product-search";
 import { CartPanel } from "./cart-panel";
 import { RestrictedConfirmationDialog } from "./restricted-confirmation-dialog";
+import {
+  ProductMovementsContextAction,
+  type MovementsTarget,
+} from "./product-movements-context-action";
 
 export const SalesTransaction: FC = () => {
   const {
@@ -35,6 +39,21 @@ export const SalesTransaction: FC = () => {
   } = useSalesTransaction();
 
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Right-click → movement history (shared by search results and cart lines).
+  const [movementsTarget, setMovementsTarget] = useState<MovementsTarget | null>(null);
+  const [movementsPosition, setMovementsPosition] = useState<{ x: number; y: number } | null>(null);
+  const handleMovementsContext = useCallback(
+    (target: MovementsTarget, position: { x: number; y: number }) => {
+      setMovementsTarget(target);
+      setMovementsPosition(position);
+    },
+    [],
+  );
+  const clearMovementsContext = useCallback(() => {
+    setMovementsTarget(null);
+    setMovementsPosition(null);
+  }, []);
 
   const { quickProductIds, isPinned, togglePin, addQuickProduct } =
     useQuickButtons({
@@ -97,6 +116,7 @@ export const SalesTransaction: FC = () => {
         }}
         onTogglePin={togglePin}
         isPinned={isPinned}
+        onMovementsContext={handleMovementsContext}
       />
       <CartPanel
         onCheckout={handleCheckout}
@@ -111,6 +131,13 @@ export const SalesTransaction: FC = () => {
         onQuickEditCommit={commitQuickEdit}
         onQuickEditCancel={cancelQuickEdit}
         onQuickEditDone={handleQuickEditDone}
+        onMovementsContext={handleMovementsContext}
+      />
+
+      <ProductMovementsContextAction
+        target={movementsTarget}
+        position={movementsPosition}
+        onClear={clearMovementsContext}
       />
 
       <RestrictedConfirmationDialog
