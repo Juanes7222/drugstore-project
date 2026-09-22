@@ -119,7 +119,7 @@ function buildEntry(overrides: Record<string, unknown> = {}) {
 /** Valid UUID v4 for invoice transmission tests. */
 const UUID = '00000000-0000-4000-8000-000000000001';
 /** Valid 64-char hex string (simulates SHA-384). */
-const CUFE = 'a'.repeat(64);
+const CUFE = 'a'.repeat(96);
 /** Minimal FullInvoiceData that passes the Zod schema. */
 const MINIMAL_FULL_INVOICE_DATA = {
   invoiceType: 'ELECTRONIC_INVOICE',

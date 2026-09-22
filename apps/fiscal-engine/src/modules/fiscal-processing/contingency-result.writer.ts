@@ -33,11 +33,19 @@ export class ContingencyResultWriter {
           ptResponseCode: true,
           ptResponseMessage: true,
           saleId: true,
+          allocation: { select: { workstationId: true } },
+          resolution: { select: { workstationId: true } },
         },
       });
 
       if (!doc) return;
 
+      // Workstation resolution, in order of precision:
+      // 1. Server-origin documents: saleId references a real server Sale.
+      // 2. Contingency documents: saleId is the POS's LOCAL sale id (it
+      //    traveled in the INVOICE_TRANSMISSION payload), which never exists
+      //    as a server Sale — resolve the owning workstation from the
+      //    allocation/resolution that numbered the document instead.
       let workstationId: string | null = null;
       if (doc.saleId) {
         const sale = await this.prisma.sale.findUnique({
@@ -46,6 +54,8 @@ export class ContingencyResultWriter {
         });
         workstationId = sale?.sourceWorkstationId ?? null;
       }
+      workstationId ??= doc.allocation?.workstationId ?? null;
+      workstationId ??= doc.resolution?.workstationId ?? null;
 
       if (!workstationId) {
         this.logger.warn(
@@ -62,6 +72,9 @@ export class ContingencyResultWriter {
         create: {
           id: resultId,
           subscriptionId: doc.subscriptionId,
+          // doc.saleId is the originating POS's LOCAL sale id for contingency
+          // documents — the workstation matches it back to its local invoice
+          // via the invoice's saleId (see InvoiceService.applyTransmissionResult).
           invoiceId: doc.saleId ?? fiscalDocumentId,
           workstationId,
           status: isAccepted ? 'AUTHORIZED' : 'REJECTED',

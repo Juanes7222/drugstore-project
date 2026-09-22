@@ -70,6 +70,7 @@ import {
   ContingencyTechKeyPlaceholderError,
 } from './exceptions';
 import { isContingencyTechKeyPlaceholder } from '../../config/fiscal';
+import { getTenantInfo } from '../configuration/local-config.store';
 
 export interface InvoiceServiceConfig {
   prisma: PrismaClient;
@@ -502,17 +503,27 @@ class InvoiceServiceImpl implements InvoiceService {
     if (input.cufeOfficial) updateData.cufeOfficial = input.cufeOfficial;
     if (input.dianXml) updateData.fiscalXml = input.dianXml;
 
-    const invoice = await this.prisma.invoice.update({
-      where: { id: input.invoiceId },
+    // The server's ContingencyResultWriter records the LOCAL SALE id as the
+    // result's invoiceId (FiscalDocument.saleId holds the POS sale id that
+    // traveled in the INVOICE_TRANSMISSION payload, not a server-side id).
+    // Match by id first (direct transmission path) and fall back to saleId
+    // (contingency path) so both result origins apply locally.
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { OR: [{ id: input.invoiceId }, { saleId: input.invoiceId }] },
+    });
+    if (!invoice) throw new InvoiceNotFoundException(input.invoiceId);
+
+    const updated = await this.prisma.invoice.update({
+      where: { id: invoice.id },
       data: updateData as Prisma.InvoiceUpdateInput,
     });
 
     // Remember to update the contingency event counts
-    if (invoice.contingencyEventId && input.status === 'TRANSMITTED_AUTHORIZED') {
-      await this.contingency.incrementTransmitted(invoice.contingencyEventId);
+    if (updated.contingencyEventId && input.status === 'TRANSMITTED_AUTHORIZED') {
+      await this.contingency.incrementTransmitted(updated.contingencyEventId);
     }
 
-    return invoice as unknown as InvoiceModel;
+    return updated as unknown as InvoiceModel;
   }
 
   async findById(invoiceId: string): Promise<InvoiceModel | null> {
@@ -800,6 +811,7 @@ class InvoiceServiceImpl implements InvoiceService {
     totalAmount: Prisma.Decimal;
     changeAmount: Prisma.Decimal;
     items: Array<{
+      productId: string;
       productCommercialNameSnapshot: string;
       productInternalCodeSnapshot: string;
       productGenericNameSnapshot: string | null;
@@ -855,6 +867,7 @@ class InvoiceServiceImpl implements InvoiceService {
       totalAmount: sale.totalAmount,
       changeAmount: sale.changeAmount,
       items: sale.items.map((item) => ({
+        productId: item.productId,
         productCommercialNameSnapshot: item.productCommercialNameSnapshot,
         productInternalCodeSnapshot: item.productInternalCodeSnapshot,
         productGenericNameSnapshot: item.productGenericNameSnapshot,
@@ -890,9 +903,12 @@ class InvoiceServiceImpl implements InvoiceService {
     relatedInvoiceNumber: string | null,
   ): InvoiceFullData {
     const now = new Date().toISOString();
+    // The seller identity lives in the local tenant config, hydrated from the
+    // company setup (RUT) — DIAN requires it on every transmitted document.
+    const tenant = getTenantInfo();
 
     const lineItems: InvoiceLineItem[] = sale.items.map((item) => ({
-      productId: '',
+      productId: item.productId,
       internalCode: item.productInternalCodeSnapshot,
       commercialName: item.productCommercialNameSnapshot,
       genericName: item.productGenericNameSnapshot,
@@ -952,13 +968,13 @@ class InvoiceServiceImpl implements InvoiceService {
     };
 
     const seller: InvoiceSeller = {
-      nit: '',
-      name: '',
-      address: null,
-      phone: null,
-      resolutionNumber: null,
-      resolutionDate: null,
-      resolutionPrefix: 'FE',
+      nit: tenant.nit,
+      name: tenant.name,
+      address: tenant.address,
+      phone: tenant.phone,
+      resolutionNumber: tenant.resolutionNumber,
+      resolutionDate: tenant.resolutionDate,
+      resolutionPrefix: tenant.resolutionPrefix,
     };
 
     return {
@@ -1070,15 +1086,15 @@ class InvoiceServiceImpl implements InvoiceService {
 
   private async buildAndInsertSyncQueueEntry(
     tx: Prisma.TransactionClient,
-    invoice: { id: string },
+    invoice: { id: string; saleId: string; cufeProvisional: string },
     fullData: InvoiceFullData,
   ): Promise<void> {
     const payload = {
       invoiceId: invoice.id,
       invoiceNumber: fullData.invoiceNumber,
       contingencyNumber: fullData.contingencyNumber,
-      saleId: '', // resolved at queue time from the invoice record
-      provisionalCufe: '',
+      saleId: invoice.saleId,
+      provisionalCufe: invoice.cufeProvisional,
       fullInvoiceData: fullData,
       workstationId: this.workstationId,
     };

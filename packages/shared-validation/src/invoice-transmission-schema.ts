@@ -100,8 +100,8 @@ export const InvoiceTransmissionPayloadSchema = z.object({
   saleId: z.string().uuid('saleId must be a valid UUID'),
   provisionalCufe: z
     .string()
-    .length(64, 'provisionalCufe must be a 64-character hex SHA-384 hash')
-    .regex(/^[0-9a-f]{64}$/i, 'provisionalCufe must be a valid hex string'),
+    .length(96, 'provisionalCufe must be a 96-character hex SHA-384 hash')
+    .regex(/^[0-9a-f]{96}$/i, 'provisionalCufe must be a valid hex string'),
   workstationId: z.string().min(1, 'workstationId is required'),
   fullInvoiceData: FullInvoiceDataSchema,
 });
