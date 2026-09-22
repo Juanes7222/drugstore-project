@@ -75,6 +75,7 @@ export const QuickButtons: FC<QuickButtonsProps> = ({
     <div
       role="toolbar"
       aria-label={t("sales.quick_buttons.label")}
+      data-nav-zone="quick-buttons"
       className="mb-pos-sm flex items-center gap-pos-sm overflow-x-auto rounded-pos border px-pos-sm py-pos-xs"
       style={{
         borderColor: "color-mix(in srgb, var(--color-pharma) 18%, transparent)",

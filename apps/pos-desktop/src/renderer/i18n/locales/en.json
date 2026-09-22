@@ -630,7 +630,7 @@
       "title_with_count": "Cart ({{count}} items)",
       "empty": "The cart is empty",
       "empty_hint": "Scan a product or type the code — ↵ to add",
-      "keyboard_hint": "↑↓ select · F7 repeat · F8 hold · F9 pay · Ctrl+Z undo",
+      "keyboard_hint": "←→ sections · ↑↓ lines · 0-9 quantity · % discount · = price · Del remove · F7 repeat · F8 hold · F9 pay · Ctrl+Z undo",
       "held_carts_one": "{{count}} cart held — F8 to resume",
       "held_carts_other": "{{count}} carts held — F8 to resume",
       "held_cart_recall": "Resume cart from {{time}}",
@@ -765,7 +765,9 @@
   "receipt": {
     "title": "Payment confirmed",
     "placeholder_message": "Sale recorded. Phase 4 will show the receipt, print, and email options here.",
-    "new_sale": "New sale"
+    "new_sale": "New sale",
+    "print": "Print",
+    "keyboard_hint": "Enter new sale · P print · ←→ switch button"
   },
   "returns": {
     "title": "Returns",

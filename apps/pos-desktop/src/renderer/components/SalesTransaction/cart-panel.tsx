@@ -5,7 +5,7 @@
  * Integrates the ClientSelector for customer selection during a sale.
  * Respects tenant config for whether client is required/optional/hidden.
  */
-import { Fragment, type FC } from "react";
+import { Fragment, type FC, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   discardHeldCart,
@@ -78,6 +78,21 @@ export const CartPanel: FC<CartPanelProps> = ({
 }: CartPanelProps) => {
   const { t } = useTranslation();
   const dispatch = useAppDispatch();
+  const sectionRef = useRef<HTMLElement>(null);
+  const checkoutButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Zone activation (Enter from the zone-navigation loop): jump straight
+  // to the money action — the checkout button — so Enter twice confirms.
+  useEffect(() => {
+    const handleZoneActivate = () => {
+      checkoutButtonRef.current?.focus();
+    };
+    const section = sectionRef.current;
+    if (!section) return;
+    section.addEventListener("zone-activate", handleZoneActivate);
+    return () =>
+      section.removeEventListener("zone-activate", handleZoneActivate);
+  }, []);
 
   const items = useAppSelector(selectCartItems);
   const count = useAppSelector(selectCartItemCount);
@@ -124,7 +139,11 @@ export const CartPanel: FC<CartPanelProps> = ({
   const isEmpty = items.length === 0;
 
   return (
-    <section className="pos-panel flex min-h-0 flex-col p-pos-md">
+    <section
+      ref={sectionRef}
+      className="pos-panel flex min-h-0 flex-col p-pos-md"
+      data-nav-zone="cart"
+    >
       {/* Client selector — always at top, config-aware */}
       <ClientSelector
         selectedClient={selectedClient}
@@ -341,6 +360,7 @@ export const CartPanel: FC<CartPanelProps> = ({
 
           <button
             type="button"
+            ref={checkoutButtonRef}
             onClick={onCheckout}
             disabled={isCreating}
             className="pos-button pos-button-primary mt-pos-md w-full text-ui py-pos-md"
@@ -348,6 +368,15 @@ export const CartPanel: FC<CartPanelProps> = ({
             <span className="flex items-center justify-center gap-2">
               <ShoppingBagIcon size={18} />
               {isCreating ? t("common.processing") : t("sales.cart.checkout")}
+              <kbd
+                className="rounded border px-1.5 py-0.5 font-mono text-caption-xs leading-none"
+                style={{
+                  borderColor: "color-mix(in srgb, white 35%, transparent)",
+                  color: "color-mix(in srgb, white 80%, transparent)",
+                }}
+              >
+                F9
+              </kbd>
             </span>
           </button>
         </>

@@ -11,6 +11,7 @@
 import { type FC, useCallback, useRef } from "react";
 import { useSalesTransaction } from "../../hooks/use-sales-transaction";
 import { useSalesKeyboard } from "../../hooks/use-sales-keyboard";
+import { useZoneNavigation } from "../../hooks/use-zone-navigation";
 import { useQuickButtons } from "../../hooks/use-quick-buttons";
 import { ProductSearch } from "./product-search";
 import { CartPanel } from "./cart-panel";
@@ -67,6 +68,13 @@ export const SalesTransaction: FC = () => {
     onAddCatalogItem: handleSelect,
     onCheckout: handleCheckout,
     onQuickSelect: handleQuickSelect,
+  });
+
+  // Arrow-key traversal between screen sections. Yields to the specialized
+  // flows (search results own their arrows; quick edits own Escape).
+  useZoneNavigation({
+    activeScreen: "sales",
+    isEditorOpen: isDialogOpen || quickEdit !== null,
   });
 
   // After a quick edit closes, hand focus back to the search input so the

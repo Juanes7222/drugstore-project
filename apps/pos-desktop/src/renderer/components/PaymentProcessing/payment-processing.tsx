@@ -581,7 +581,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
             {t("payment.keyboard_hint")}
           </p>
 
-          <div>
+          <div data-payment-rows>
             {methods.map((method, index) => (
               <PaymentMethodRow
                 key={method.id}
@@ -830,7 +830,18 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
             disabled={!canConfirm || isCompleting || creditBlocked}
             className="pos-button pos-button-primary px-pos-xl"
           >
-            {isCompleting ? t("payment.confirming") : t("payment.confirm")}
+            <span className="flex items-center gap-2">
+              {isCompleting ? t("payment.confirming") : t("payment.confirm")}
+              <kbd
+                className="rounded border px-1.5 py-0.5 font-mono text-caption-xs leading-none"
+                style={{
+                  borderColor: "color-mix(in srgb, white 35%, transparent)",
+                  color: "color-mix(in srgb, white 80%, transparent)",
+                }}
+              >
+                F9
+              </kbd>
+            </span>
           </button>
         </div>
       </div>

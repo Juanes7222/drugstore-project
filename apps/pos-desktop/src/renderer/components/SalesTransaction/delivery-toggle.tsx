@@ -66,6 +66,8 @@ export const DeliveryToggle: FC = () => {
           aria-haspopup="dialog"
           aria-describedby={clientBlocked ? "delivery-client-hint" : undefined}
           disabled={clientBlocked}
+          data-nav-zone="delivery"
+          data-nav-disabled={clientBlocked || undefined}
           onClick={() => setIsFormOpen(true)}
           className="flex w-full items-center gap-2 rounded-pos border border-dashed px-pos-md py-pos-sm text-body-sm font-medium transition-colors hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
           style={{
@@ -106,6 +108,7 @@ export const DeliveryToggle: FC = () => {
   return (
     <div
       className="mt-pos-md rounded-pos border px-pos-md py-pos-sm"
+      data-nav-zone="delivery"
       style={{
         borderColor: "color-mix(in srgb, var(--color-sync) 30%, transparent)",
         backgroundColor:

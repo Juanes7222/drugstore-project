@@ -19,7 +19,14 @@
  * mounts when activeScreen = "receipt" with phase "completing", plays the
  * entry choreography, then dispatches completeSaleCompletion.
  */
-import { type FC, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FC,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
@@ -43,10 +50,8 @@ import {
 } from "@/store/slices/payment-slice";
 import { getTenantInfo } from "../../../domain/configuration/local-config.store";
 import { useTenantConfigStore } from "../../../domain/config/tenant-config.store";
-import {
-  generateReceiptHtml,
-  printReceipt,
-} from "../../../domain/fiscal/receipt-generator";
+import { generateReceiptHtml, printReceipt } from "../../../domain/fiscal/receipt-generator";
+import { useZoneNavigation } from "../../hooks/use-zone-navigation";
 import type {
   InvoiceFullData,
   InvoiceLineItem,
@@ -248,6 +253,9 @@ export const Receipt: FC = () => {
     }
   }, [dispatch, phase]);
 
+  // Arrow-key traversal between the print / new-sale buttons.
+  useZoneNavigation({ activeScreen: "receipt" });
+
   const handleAnimationComplete = useCallback(() => {
     dispatch(completeSaleCompletion());
   }, [dispatch]);
@@ -262,6 +270,46 @@ export const Receipt: FC = () => {
       printReceipt(receiptHtml);
     }
   }, [receiptHtml]);
+
+  // ---- Keyboard-first sale close ----
+  // Enter / F9 start a new sale (same muscle memory as the F9 checkout);
+  // P prints the receipt. The listener runs in the capture phase so it
+  // fires no matter where focus rests. Targets inside form controls and
+  // buttons are skipped: a focused button handles Enter natively (click)
+  // and would double-fire this handler.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.defaultPrevented) return;
+
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase() ?? "";
+      if (
+        tagName === "input" ||
+        tagName === "textarea" ||
+        tagName === "button" ||
+        target?.isContentEditable === true
+      ) {
+        return;
+      }
+
+      if (event.key === "Enter" || event.key === "F9") {
+        event.preventDefault();
+        event.stopPropagation();
+        handleNewSale();
+        return;
+      }
+
+      const isPlainKey = !event.metaKey && !event.ctrlKey && !event.altKey;
+      if ((event.key === "p" || event.key === "P") && isPlainKey && receiptHtml) {
+        event.preventDefault();
+        event.stopPropagation();
+        handlePrint();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [handleNewSale, handlePrint, receiptHtml]);
 
   const itemCountLabel = items.length === 1 ? "1 producto" : `${items.length} productos`;
 
@@ -298,7 +346,7 @@ export const Receipt: FC = () => {
           </p>
         </div>
 
-        {/* Preview toolbar — paper info */}
+        {/* Preview toolbar — paper info + keyboard hint */}
         {receiptHtml && (
           <div className="flex items-center justify-between rounded-lg border bg-white px-3 py-2 text-caption">
             <span
@@ -309,7 +357,7 @@ export const Receipt: FC = () => {
               Papel 80 mm · Térmica
             </span>
             <span className="hidden sm:inline" style={{ color: "color-mix(in srgb, var(--color-ink) 45%, transparent)" }}>
-              Vista previa · impresión usa tamaño real
+              {t("receipt.keyboard_hint")} · Vista previa usa tamaño real al imprimir
             </span>
           </div>
         )}
@@ -351,14 +399,33 @@ export const Receipt: FC = () => {
           )}
         </div>
 
-        {/* Actions */}
+        {/* Actions — keyboard-first: Enter starts the next sale, P prints;
+            arrows move between the two buttons via zone navigation. */}
         <div className="flex flex-col gap-2 pb-2">
-          <button type="button" onClick={handlePrint} disabled={!receiptHtml} className="pos-button pos-button-secondary w-full">
+          <button type="button" data-nav-zone="receipt-print" data-nav-disabled={!receiptHtml || undefined} onClick={handlePrint} disabled={!receiptHtml} className="pos-button pos-button-secondary w-full">
             <PrinterIcon className="mr-2 inline h-4 w-4" />
-            {t("receipt.print")}
+            <span className="flex-1 text-left">{t("receipt.print")}</span>
+            <kbd
+              className="rounded border px-1.5 py-0.5 font-mono text-caption-xs leading-none"
+              style={{
+                borderColor: "color-mix(in srgb, var(--color-ink) 25%, transparent)",
+                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+              }}
+            >
+              P
+            </kbd>
           </button>
-          <button type="button" onClick={handleNewSale} className="pos-button pos-button-primary w-full">
-            {t("receipt.new_sale")}
+          <button type="button" data-nav-zone="receipt-new-sale" onClick={handleNewSale} autoFocus className="pos-button pos-button-primary w-full">
+            <span className="flex-1 text-left">{t("receipt.new_sale")}</span>
+            <kbd
+              className="rounded border px-1.5 py-0.5 font-mono text-caption-xs leading-none"
+              style={{
+                borderColor: "color-mix(in srgb, white 35%, transparent)",
+                color: "color-mix(in srgb, white 80%, transparent)",
+              }}
+            >
+              Enter
+            </kbd>
           </button>
         </div>
       </div>

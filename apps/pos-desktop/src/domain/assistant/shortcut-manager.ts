@@ -82,6 +82,11 @@ const DEFAULT_BINDINGS: ShortcutBinding[] = [
   { id: "shortcut.quick-price", key: "=", commandId: "cmd.quick-price", context: "SALE_FLOW", description: "Editar precio de la línea seleccionada" },
   { id: "shortcut.repeat-sale", key: "F7", commandId: "cmd.repeat-last-sale", context: "SALE_FLOW", description: "Repetir última venta" },
   { id: "shortcut.hold-cart", key: "F8", commandId: "cmd.hold-recall-cart", context: "SALE_FLOW", description: "Apartar / retomar carrito" },
+  { id: "shortcut.receipt-new-sale", key: "Enter", commandId: "cmd.receipt-new-sale", context: "SALE_FLOW", description: "Nueva venta (recibo)" },
+  { id: "shortcut.receipt-print", key: "P", commandId: "cmd.receipt-print", context: "SALE_FLOW", description: "Imprimir recibo" },
+  { id: "shortcut.zone-next", key: "→", commandId: "cmd.zone-next", context: "SALE_FLOW", description: "Siguiente sección (ventas / recibo)" },
+  { id: "shortcut.zone-prev", key: "←", commandId: "cmd.zone-prev", context: "SALE_FLOW", description: "Sección anterior (ventas / recibo)" },
+  { id: "shortcut.zone-activate", key: "Enter", commandId: "cmd.zone-activate", context: "SALE_FLOW", description: "Abrir sección resaltada" },
 ];
 
 // ---------------------------------------------------------------------------

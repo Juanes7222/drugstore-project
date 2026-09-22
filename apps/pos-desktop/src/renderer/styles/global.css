@@ -262,6 +262,14 @@
     animation: var(--animate-scan-feedback);
   }
 
+  /* Zone navigation highlight — applied by useZoneNavigation to the
+     [data-nav-zone] element currently targeted by the arrow-key loop. */
+  [data-zone-active] {
+    outline: 2px solid color-mix(in srgb, var(--color-pharma) 55%, transparent);
+    outline-offset: 2px;
+    border-radius: var(--radius-pos);
+  }
+
   .scan-feedback-ring[data-kind="success"] {
     border-color: var(--color-pharma);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-pharma) 15%, transparent);

@@ -13,7 +13,10 @@ import {
   resetSaleFlow,
   completeSaleCompletion,
 } from "@/store/slices/ui-slice";
-import { salesSlice } from "@/store/slices/sales-slice";
+import {
+  clearCart,
+  salesSlice,
+} from "@/store/slices/sales-slice";
 import { paymentSlice } from "@/store/slices/payment-slice";
 import { SaleType } from "@pharmacy/shared-types";
 import { generateReceiptHtml } from "../../../domain/fiscal/receipt-generator";
@@ -182,6 +185,7 @@ const renderReceipt = (store: ReturnType<typeof createTestStore>) =>
 describe("Receipt", () => {
   beforeEach(() => {
     vi.clearAllTimers();
+    vi.mocked(generateReceiptHtml).mockClear();
   });
 
   it("renders the success title", () => {
@@ -229,6 +233,68 @@ describe("Receipt", () => {
     renderReceipt(store);
 
     expect(dispatch).toHaveBeenCalledWith(completeSaleCompletion());
+  });
+
+  it("starts a new sale on Enter pressed outside a form control", () => {
+    const store = createTestStore("completing", { items: [cartItem()] });
+    const dispatch = vi.spyOn(store, "dispatch");
+    renderReceipt(store);
+
+    fireEvent.keyDown(window, { key: "Enter" });
+
+    expect(dispatch).toHaveBeenCalledWith(clearCart());
+    expect(dispatch).toHaveBeenCalledWith(resetSaleFlow());
+  });
+
+  it("starts a new sale on F9 pressed outside a form control", () => {
+    const store = createTestStore("completing", { items: [cartItem()] });
+    const dispatch = vi.spyOn(store, "dispatch");
+    renderReceipt(store);
+
+    fireEvent.keyDown(window, { key: "F9" });
+
+    expect(dispatch).toHaveBeenCalledWith(resetSaleFlow());
+  });
+
+  it("does not double-fire new sale when Enter lands on a focused button", () => {
+    const store = createTestStore("completing", { items: [cartItem()] });
+    const dispatch = vi.spyOn(store, "dispatch");
+    renderReceipt(store);
+
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: /Nueva venta/ }),
+      { key: "Enter" },
+    );
+
+    // The capture-phase handler must skip buttons; the native click path
+    // is the only one that should trigger the reset.
+    expect(dispatch).not.toHaveBeenCalledWith(resetSaleFlow());
+  });
+
+  it("prints on P when receipt HTML is available", async () => {
+    const store = createTestStore("completing", { items: [cartItem()] });
+    renderReceipt(store);
+
+    fireEvent.keyDown(window, { key: "p" });
+
+    const { printReceipt } = await import(
+      "../../../domain/fiscal/receipt-generator"
+    );
+    expect(vi.mocked(printReceipt)).toHaveBeenCalled();
+  });
+
+  it("does not print on P with modifier keys held", async () => {
+    const store = createTestStore("completing", { items: [cartItem()] });
+    renderReceipt(store);
+
+    const { printReceipt } = await import(
+      "../../../domain/fiscal/receipt-generator"
+    );
+    vi.mocked(printReceipt).mockClear();
+
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+
+    expect(vi.mocked(printReceipt)).not.toHaveBeenCalled();
   });
 
   it("has an accessible region labelled 'receipt'", () => {

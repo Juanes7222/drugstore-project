@@ -73,6 +73,7 @@ export const ProductSearch: FC<ProductSearchProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const resultsListRef = useRef<HTMLDivElement>(null);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
@@ -217,11 +218,26 @@ export const ProductSearch: FC<ProductSearchProps> = ({
     inputRef.current?.focus();
   }, []);
 
+  // Zone activation (Enter from the zone-navigation loop): focus the search
+  // input so the cashier can type immediately.
+  useEffect(() => {
+    const handleZoneActivate = () => {
+      inputRef.current?.focus();
+    };
+    const section = sectionRef.current;
+    if (!section) return;
+    section.addEventListener("zone-activate", handleZoneActivate);
+    return () =>
+      section.removeEventListener("zone-activate", handleZoneActivate);
+  }, []);
+
   const resultCount = results.length;
 
   return (
     <section
+      ref={sectionRef}
       role="search"
+      data-nav-zone="product-search"
       className="pos-panel flex min-h-0 flex-col p-pos-md"
     >
       {/* Quick buttons row — pinned fast-movers, appears only when pins exist */}
