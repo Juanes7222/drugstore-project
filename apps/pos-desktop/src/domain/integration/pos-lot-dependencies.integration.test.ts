@@ -268,6 +268,12 @@ describe("POS ↔ Server integration — lot dependency ordering", () => {
     await serverPrisma.cashShift.deleteMany({
       where: { workstationId: SERVER_WS_ID },
     });
+    // The CLIENT_CREATION upsert keys on identification: a client left by a
+    // previous run would be UPDATED (keeping its old uuid) instead of
+    // adopting this run's local id — delete it so every run starts clean.
+    await serverPrisma.client.deleteMany({
+      where: { identificationNumber: "LOTDEP-CR-0001" },
+    });
 
     await serverPrisma.inventoryMovement.deleteMany({
       where: { lotId: { in: lotIds } },
@@ -645,6 +651,9 @@ describe("POS ↔ Server integration — lot dependency ordering", () => {
       await serverPrisma.cashShift.deleteMany({
         where: { workstationId: SERVER_WS_ID },
       });
+      await serverPrisma.client.deleteMany({
+        where: { identificationNumber: "LOTDEP-CR-0001" },
+      });
       await serverPrisma.inventoryMovement.deleteMany({
         where: { lotId: { in: lotIds } },
       });
@@ -1001,6 +1010,135 @@ describe("POS ↔ Server integration — lot dependency ordering", () => {
       where: { id: uuidFrom("pos-int-lotdep-server-lot-c") },
     });
     expect(serverLotC.currentStock).toBe(20);
+  }, 120000);
+
+  it("credit sale pushed BEFORE its client's CLIENT_CREATION fails, then the dependency requeue repairs it when the client lands", async () => {
+    // ── Step 1: create the client + CREDIT payment method ONLY locally ─
+    // (offline scenario: the client was registered at the register moments
+    // before the sale; nothing has been pushed yet)
+    const { createClientsService } =
+      await import("../clients/clients.service");
+    const clientsService = createClientsService(localPrisma, {
+      requireRole: () => useLocalSessionStore.getState().session!,
+    } as any);
+    const offlineClient = await clientsService.create({
+      fullName: "Cliente Crédito Offline",
+      identificationType: "CC",
+      identificationNumber: "LOTDEP-CR-0001",
+      creditLimit: 500000,
+    });
+
+    const PM_CREDIT_ID = uuidFrom("pos-int-lotdep-pm-credit");
+    // Upsert: the payment method survives the suite's own cleanup (its id is
+    // not in the serverProductIds scoping), so re-runs must tolerate it.
+    await localPrisma.paymentMethod.upsert({
+      where: { id: PM_CREDIT_ID },
+      update: {},
+      create: {
+        id: PM_CREDIT_ID,
+        internalCode: "POS-INT-LOTDEP-CREDIT",
+        name: "POS LotDep Credit",
+        category: "CREDIT",
+        isCash: false,
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    await serverPrisma.paymentMethod.upsert({
+      where: { id: PM_CREDIT_ID },
+      update: {},
+      create: {
+        id: PM_CREDIT_ID,
+        subscriptionId,
+        internalCode: "POS-INT-LOTDEP-CREDIT",
+        name: "POS LotDep Credit",
+        category: "CREDIT",
+        isCash: false,
+      },
+    });
+
+    // ── Step 2: sell product B to the offline client on credit ─────────
+    // (product B's lot was materialized by the previous test's reception)
+    const saleD = (await salesPos.create({
+      clientId: offlineClient.id,
+      items: [{ productId: LOCAL_PRODUCT_B_ID, quantity: 1 }],
+    })) as { id: string };
+    const saleDTotal = Math.round(1 * UNIT_PRICE_B * 1.19);
+    await salesPos.confirm(saleD.id, {
+      payments: [{ paymentMethodId: PM_CREDIT_ID, amount: saleDTotal }],
+    });
+
+    // ── Step 3: push ONLY the sale (hold the CLIENT_CREATION back) ─────
+    // CLIENT_CREATION has priority 1 and would go first in a normal batch;
+    // update it to FAILED with a far-future nextRetryAt so the push skips
+    // it — exactly the window where the server has the sale but not the
+    // client.
+    const holdUntil = new Date(Date.now() + 60 * 60 * 1000);
+    await localPrisma.syncQueue.updateMany({
+      where: { operationType: "CLIENT_CREATION", status: "PENDING" },
+      data: { status: "FAILED", nextRetryAt: holdUntil },
+    });
+
+    const push = createSyncPushService({
+      prisma: localPrisma,
+      baseUrl: `http://127.0.0.1:${serverPort}`,
+      accessToken: serverToken,
+    });
+    const salePush = await push.pushPending();
+    expect(salePush.accepted).toBeGreaterThanOrEqual(1);
+
+    const saleStatus = await drainServerQueue(
+      "SALE_CONFIRMATION",
+      "PERMANENT_FAILURE",
+    );
+    expect(saleStatus.status).toBe("PERMANENT_FAILURE");
+
+    // Server: the sale was NOT created and the client does not exist yet.
+    // (The previous test's repaired sale also sells product B — filter by
+    // the offline client, which only sale D references.)
+    const serverSaleDCount = await serverPrisma.sale.count({
+      where: { clientId: offlineClient.id },
+    });
+    expect(serverSaleDCount).toBe(0);
+
+    // ── Step 4: NOW the client creation lands → auto-repair ───────────
+    await localPrisma.syncQueue.updateMany({
+      where: { operationType: "CLIENT_CREATION" },
+      data: { status: "PENDING", nextRetryAt: null },
+    });
+    const clientPush = await push.pushPending();
+    expect(clientPush.accepted).toBeGreaterThanOrEqual(1);
+    const clientStatus = await drainServerQueue(
+      "CLIENT_CREATION",
+      "COMPLETED",
+    );
+    expect(clientStatus.status).toBe("COMPLETED");
+
+    // The dependency requeue service revived the failed credit sale and the
+    // dispatcher replayed it with the client now in place.
+    const repairedSale = await drainServerQueue(
+      "SALE_CONFIRMATION",
+      "COMPLETED",
+    );
+    expect(repairedSale.status).toBe("COMPLETED");
+
+    // The replayed sale references the server client row (same uuid —
+    // CLIENT_CREATION adopts the local id) and is CONFIRMED.
+    const serverSaleD = await serverPrisma.sale.findFirstOrThrow({
+      where: { clientId: offlineClient.id },
+      include: { payments: true },
+    });
+    expect(serverSaleD.operationalState).toBe("CONFIRMED");
+    expect(serverSaleD.clientId).toBe(offlineClient.id);
+    expect(serverSaleD.payments).toHaveLength(1);
+    expect(serverSaleD.payments[0].paymentMethodId).toBe(PM_CREDIT_ID);
+
+    // ── Step 5: the local outbox drained completely ────────────────────
+    const pending = await localPrisma.syncQueue.count({
+      where: { status: { in: ["PENDING", "FAILED"] } },
+    });
+    expect(pending).toBe(0);
   }, 120000);
 
   it("drains the local outbox completely — no operation is left behind", async () => {
