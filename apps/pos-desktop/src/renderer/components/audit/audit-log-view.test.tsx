@@ -6,11 +6,11 @@
  *   2. commonQuery.action key mismatches server's expected "event" param
  *   3. getEventConfig fallback defaults to AUTH_USERS for unknown events
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, within, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { AuditLogView } from './audit-log-view';
-import type { AuditLogEntry } from './audit-event-card';
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, within, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { AuditLogView } from "./audit-log-view";
+import type { AuditLogEntry } from "./audit-event-card";
 
 // ---------------------------------------------------------------------------
 // Mock ALL external dependencies
@@ -19,7 +19,7 @@ import type { AuditLogEntry } from './audit-event-card';
 const mockUseLocalSessionStore = vi.hoisted(() => vi.fn());
 const mockHasMinRole = vi.hoisted(() => vi.fn());
 
-vi.mock('../../../domain/auth/local-session.store', () => ({
+vi.mock("../../../domain/auth/local-session.store", () => ({
   useLocalSessionStore: mockUseLocalSessionStore,
   hasMinRole: mockHasMinRole,
 }));
@@ -29,17 +29,17 @@ const mockCreateAuthService = vi.hoisted(() =>
   vi.fn(() => ({ getAuditLogs: mockGetAuditLogs })),
 );
 
-vi.mock('../../../domain/auth/auth.service', () => ({
+vi.mock("../../../domain/auth/auth.service", () => ({
   createAuthService: mockCreateAuthService,
 }));
 
 const mockGetLocalAuditEntries = vi.hoisted(() => vi.fn());
-vi.mock('../../../domain/audit/audit.service', () => ({
+vi.mock("../../../domain/audit/audit.service", () => ({
   getLocalAuditEntries: mockGetLocalAuditEntries,
 }));
 
 const mockGetLocalDatabase = vi.hoisted(() => vi.fn());
-vi.mock('../../../infrastructure/local-database', () => ({
+vi.mock("../../../infrastructure/local-database", () => ({
   getLocalDatabase: mockGetLocalDatabase,
 }));
 
@@ -49,20 +49,19 @@ vi.mock('../../../infrastructure/local-database', () => ({
 
 function makeLocalRow(overrides: Partial<AuditLogEntry> = {}): AuditLogEntry {
   return {
-    id: 'local-1',
-    action: 'CASH_SHIFT_OPENED',
-    createdAt: '2026-07-22T10:00:00.000Z',
-    userId: 'user-1',
-    userRole: 'MANAGER',
-    entityType: 'CashShift',
-    entityId: 'shift-1',
+    id: "local-1",
+    action: "CASH_SHIFT_OPENED",
+    createdAt: "2026-07-22T10:00:00.000Z",
+    userId: "user-1",
+    userRole: "MANAGER",
+    entityType: "CashShift",
+    entityId: "shift-1",
     details: null,
     productName: undefined,
     lotBatch: undefined,
     ...overrides,
   };
 }
-
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -77,9 +76,9 @@ function setupDefaultMocks() {
     (selector: (s: Record<string, unknown>) => unknown) => {
       const state = {
         session: {
-          userId: 'manager-1',
-          role: 'MANAGER',
-          accessToken: 'tok_xxx',
+          userId: "manager-1",
+          role: "MANAGER",
+          accessToken: "tok_xxx",
         },
       };
       return selector(state);
@@ -110,7 +109,7 @@ async function waitForInitialFetchAndReset() {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('AuditLogView — filter routing logic', () => {
+describe("AuditLogView — filter routing logic", () => {
   beforeEach(() => {
     setupDefaultMocks();
   });
@@ -121,7 +120,7 @@ describe('AuditLogView — filter routing logic', () => {
 
   // ── Default: all modules ──────────────────────────────────────────────
 
-  it('calls BOTH local and server when moduleFilter is empty (default)', async () => {
+  it("calls BOTH local and server when moduleFilter is empty (default)", async () => {
     render(<AuditLogView />);
 
     await waitFor(() => {
@@ -134,7 +133,7 @@ describe('AuditLogView — filter routing logic', () => {
     });
   });
 
-  it('passes module: undefined to getLocalAuditEntries when moduleFilter is empty', async () => {
+  it("passes module: undefined to getLocalAuditEntries when moduleFilter is empty", async () => {
     render(<AuditLogView />);
 
     await waitFor(() => {
@@ -147,12 +146,12 @@ describe('AuditLogView — filter routing logic', () => {
 
   // ── Local-only modules ────────────────────────────────────────────────
 
-  it('calls ONLY local when moduleFilter is CASH_SHIFT', async () => {
+  it("calls ONLY local when moduleFilter is CASH_SHIFT", async () => {
     render(<AuditLogView />);
     await waitForInitialFetchAndReset();
 
-    const moduleSelect = screen.getByRole('combobox', { name: /módulo/i });
-    await userEvent.selectOptions(moduleSelect, 'CASH_SHIFT');
+    const moduleSelect = screen.getByRole("combobox", { name: /módulo/i });
+    await userEvent.selectOptions(moduleSelect, "CASH_SHIFT");
 
     await waitFor(() => {
       expect(mockGetLocalAuditEntries).toHaveBeenCalled();
@@ -161,15 +160,15 @@ describe('AuditLogView — filter routing logic', () => {
     });
 
     const lastCall = mockGetLocalAuditEntries.mock.calls.at(-1);
-    expect(lastCall![1].module).toBe('CASH_SHIFT');
+    expect(lastCall![1].module).toBe("CASH_SHIFT");
   });
 
-  it('calls ONLY local when moduleFilter is SALES', async () => {
+  it("calls ONLY local when moduleFilter is SALES", async () => {
     render(<AuditLogView />);
     await waitForInitialFetchAndReset();
 
-    const moduleSelect = screen.getByRole('combobox', { name: /módulo/i });
-    await userEvent.selectOptions(moduleSelect, 'SALES');
+    const moduleSelect = screen.getByRole("combobox", { name: /módulo/i });
+    await userEvent.selectOptions(moduleSelect, "SALES");
 
     await waitFor(() => {
       expect(mockGetLocalAuditEntries).toHaveBeenCalled();
@@ -180,12 +179,12 @@ describe('AuditLogView — filter routing logic', () => {
 
   // ── Server-only module ────────────────────────────────────────────────
 
-  it('calls ONLY server when moduleFilter is AUTH_USERS', async () => {
+  it("calls ONLY server when moduleFilter is AUTH_USERS", async () => {
     render(<AuditLogView />);
     await waitForInitialFetchAndReset();
 
-    const moduleSelect = screen.getByRole('combobox', { name: /módulo/i });
-    await userEvent.selectOptions(moduleSelect, 'AUTH_USERS');
+    const moduleSelect = screen.getByRole("combobox", { name: /módulo/i });
+    await userEvent.selectOptions(moduleSelect, "AUTH_USERS");
 
     await waitFor(() => {
       expect(mockGetAuditLogs).toHaveBeenCalled();
@@ -197,38 +196,38 @@ describe('AuditLogView — filter routing logic', () => {
 
   // ── Event filter with local module ────────────────────────────────────
 
-  it('passes action to getLocalAuditEntries when eventFilter is set and module is CASH_SHIFT', async () => {
+  it("passes action to getLocalAuditEntries when eventFilter is set and module is CASH_SHIFT", async () => {
     render(<AuditLogView />);
     await waitForInitialFetchAndReset();
 
-    const moduleSelect = screen.getByRole('combobox', { name: /módulo/i });
-    await userEvent.selectOptions(moduleSelect, 'CASH_SHIFT');
+    const moduleSelect = screen.getByRole("combobox", { name: /módulo/i });
+    await userEvent.selectOptions(moduleSelect, "CASH_SHIFT");
     await waitFor(() => {
       expect(mockGetLocalAuditEntries).toHaveBeenCalled();
     });
     vi.clearAllMocks();
 
     // Now set event filter
-    const eventSelect = screen.getByRole('combobox', { name: /evento/i });
-    await userEvent.selectOptions(eventSelect, 'CASH_SHIFT_OPENED');
+    const eventSelect = screen.getByRole("combobox", { name: /evento/i });
+    await userEvent.selectOptions(eventSelect, "CASH_SHIFT_OPENED");
 
     await waitFor(() => {
       const lastCall = mockGetLocalAuditEntries.mock.calls.at(-1);
-      expect(lastCall![1].action).toBe('CASH_SHIFT_OPENED');
-      expect(lastCall![1].module).toBe('CASH_SHIFT');
+      expect(lastCall![1].action).toBe("CASH_SHIFT_OPENED");
+      expect(lastCall![1].module).toBe("CASH_SHIFT");
     });
   });
 
-  it('does NOT pass action when eventFilter is empty', async () => {
+  it("does NOT pass action when eventFilter is empty", async () => {
     render(<AuditLogView />);
     await waitForInitialFetchAndReset();
 
-    const moduleSelect = screen.getByRole('combobox', { name: /módulo/i });
-    await userEvent.selectOptions(moduleSelect, 'CASH_SHIFT');
+    const moduleSelect = screen.getByRole("combobox", { name: /módulo/i });
+    await userEvent.selectOptions(moduleSelect, "CASH_SHIFT");
 
     await waitFor(() => {
       const lastCall = mockGetLocalAuditEntries.mock.calls.at(-1);
-      expect(lastCall![1].module).toBe('CASH_SHIFT');
+      expect(lastCall![1].module).toBe("CASH_SHIFT");
       // eventFilter starts empty after module change — action should be undefined
       expect(lastCall![1].action).toBeUndefined();
     });
@@ -242,8 +241,8 @@ describe('AuditLogView — filter routing logic', () => {
       await waitForInitialFetchAndReset();
 
       // Set event filter
-      const eventSelect = screen.getByRole('combobox', { name: /evento/i });
-      await userEvent.selectOptions(eventSelect, 'AUTH_LOGIN_SUCCESS');
+      const eventSelect = screen.getByRole("combobox", { name: /evento/i });
+      await userEvent.selectOptions(eventSelect, "AUTH_LOGIN_SUCCESS");
 
       await waitFor(() => {
         expect(mockGetAuditLogs).toHaveBeenCalled();
@@ -252,7 +251,7 @@ describe('AuditLogView — filter routing logic', () => {
       const serverArgs = mockGetAuditLogs.mock.calls.at(-1)?.[0];
       // server.getAuditLogs reads "filters.event" — the component must use
       // the same key so the filter is not silently dropped.
-      expect(serverArgs!.event).toBe('AUTH_LOGIN_SUCCESS');
+      expect(serverArgs!.event).toBe("AUTH_LOGIN_SUCCESS");
       expect(serverArgs!.action).toBeUndefined();
     });
 
@@ -260,8 +259,8 @@ describe('AuditLogView — filter routing logic', () => {
       render(<AuditLogView />);
       await waitForInitialFetchAndReset();
 
-      const eventSelect = screen.getByRole('combobox', { name: /evento/i });
-      await userEvent.selectOptions(eventSelect, 'AUTH_LOGIN_SUCCESS');
+      const eventSelect = screen.getByRole("combobox", { name: /evento/i });
+      await userEvent.selectOptions(eventSelect, "AUTH_LOGIN_SUCCESS");
 
       await waitFor(() => {
         expect(mockGetAuditLogs).toHaveBeenCalled();
@@ -269,33 +268,33 @@ describe('AuditLogView — filter routing logic', () => {
 
       const serverArgs = mockGetAuditLogs.mock.calls.at(-1)?.[0];
       // The server expects serverArgs.event — the component now sends it.
-      expect(serverArgs!.event).toBe('AUTH_LOGIN_SUCCESS');
+      expect(serverArgs!.event).toBe("AUTH_LOGIN_SUCCESS");
     });
   });
 
   // ── Event filter cleared when module changes ──────────────────────────
 
-  it('clears eventFilter when moduleFilter changes', async () => {
+  it("clears eventFilter when moduleFilter changes", async () => {
     render(<AuditLogView />);
     await waitForInitialFetchAndReset();
 
-    const eventSelect = screen.getByRole('combobox', { name: /evento/i });
+    const eventSelect = screen.getByRole("combobox", { name: /evento/i });
     // Set an event filter first
-    await userEvent.selectOptions(eventSelect, 'CASH_SHIFT_OPENED');
+    await userEvent.selectOptions(eventSelect, "CASH_SHIFT_OPENED");
 
     // Now change module — this should reset eventFilter to ""
-    const moduleSelect = screen.getByRole('combobox', { name: /módulo/i });
-    await userEvent.selectOptions(moduleSelect, 'CASH_SHIFT');
+    const moduleSelect = screen.getByRole("combobox", { name: /módulo/i });
+    await userEvent.selectOptions(moduleSelect, "CASH_SHIFT");
 
     await waitFor(() => {
-      expect((eventSelect as HTMLSelectElement).value).toBe('');
+      expect((eventSelect as HTMLSelectElement).value).toBe("");
     });
   });
 
   // ── Offline resilience ────────────────────────────────────────────────
 
-  it('does not crash when server fails but local resolves', async () => {
-    mockGetAuditLogs.mockRejectedValue(new Error('Network error — offline'));
+  it("shows LOCAL events when server fails (offline-first merge)", async () => {
+    mockGetAuditLogs.mockRejectedValue(new Error("Network error — offline"));
     mockGetLocalAuditEntries.mockResolvedValue({
       rows: [makeLocalRow()],
       total: 1,
@@ -303,20 +302,48 @@ describe('AuditLogView — filter routing logic', () => {
 
     render(<AuditLogView />);
 
-    // In "all modules" view, Promise.all rejects when server fails.
-    // The catch block prevents a crash. Component should show empty state.
     await waitFor(() => {
       expect(mockGetLocalAuditEntries).toHaveBeenCalled();
       expect(mockGetAuditLogs).toHaveBeenCalled();
     });
 
-    // Component should recover to loading=false and not throw
+    // The local event card must be rendered even though the server failed
+    await waitFor(() => {
+      expect(screen.getByRole("article")).toBeInTheDocument();
+    });
+    // And a status banner explains the degraded source
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
+  it("does not crash when both local and server fail", async () => {
+    mockGetAuditLogs.mockRejectedValue(new Error("Network error"));
+    mockGetLocalAuditEntries.mockRejectedValue(new Error("Local DB error"));
+
+    render(<AuditLogView />);
+
     await waitFor(() => {
       expect(screen.queryByText(/cargando|loading/i)).not.toBeInTheDocument();
     });
+    // Empty state, no crash
+    expect(screen.queryByRole("article")).not.toBeInTheDocument();
   });
 
-  it('handles local-only modules without server calls', async () => {
+  it("does not show the server error banner when both sources succeed", async () => {
+    mockGetLocalAuditEntries.mockResolvedValue({
+      rows: [makeLocalRow()],
+      total: 1,
+    });
+    mockGetAuditLogs.mockResolvedValue({ rows: [], total: 0 });
+
+    render(<AuditLogView />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("article")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("handles local-only modules without server calls", async () => {
     mockGetLocalAuditEntries.mockResolvedValue({
       rows: [makeLocalRow()],
       total: 1,
@@ -325,8 +352,8 @@ describe('AuditLogView — filter routing logic', () => {
     render(<AuditLogView />);
     await waitForInitialFetchAndReset();
 
-    const moduleSelect = screen.getByRole('combobox', { name: /módulo/i });
-    await userEvent.selectOptions(moduleSelect, 'CASH_SHIFT');
+    const moduleSelect = screen.getByRole("combobox", { name: /módulo/i });
+    await userEvent.selectOptions(moduleSelect, "CASH_SHIFT");
 
     await waitFor(() => {
       expect(mockGetLocalAuditEntries).toHaveBeenCalled();
@@ -337,28 +364,32 @@ describe('AuditLogView — filter routing logic', () => {
 
   // ── filteredEventOptions ──────────────────────────────────────────────
 
-  describe('filteredEventOptions', () => {
-    it('shows many event options when no module is selected (all modules)', async () => {
+  describe("filteredEventOptions", () => {
+    it("shows many event options when no module is selected (all modules)", async () => {
       render(<AuditLogView />);
 
-      const eventSelect = screen.getByRole('combobox', { name: /evento/i });
-      const options = within(eventSelect).getAllByRole('option');
+      const eventSelect = screen.getByRole("combobox", { name: /evento/i });
+      const options = within(eventSelect).getAllByRole("option");
 
       // All events (42+) + placeholder = many options
       expect(options.length).toBeGreaterThan(10);
     });
 
-    it('shows only CASH_SHIFT events when moduleFilter is CASH_SHIFT', async () => {
+    it("shows only CASH_SHIFT events when moduleFilter is CASH_SHIFT", async () => {
       render(<AuditLogView />);
       await waitForInitialFetchAndReset();
 
-      const moduleSelect = screen.getByRole('combobox', { name: /módulo/i });
-      await userEvent.selectOptions(moduleSelect, 'CASH_SHIFT');
+      const moduleSelect = screen.getByRole("combobox", { name: /módulo/i });
+      await userEvent.selectOptions(moduleSelect, "CASH_SHIFT");
 
       await waitFor(() => {
-        const eventSelect = screen.getByRole('combobox', { name: /evento/i });
-        const options = within(eventSelect).getAllByRole('option') as HTMLOptionElement[];
-        const nonEmptyValues = options.map((o) => o.value).filter((v) => v !== '');
+        const eventSelect = screen.getByRole("combobox", { name: /evento/i });
+        const options = within(eventSelect).getAllByRole(
+          "option",
+        ) as HTMLOptionElement[];
+        const nonEmptyValues = options
+          .map((o) => o.value)
+          .filter((v) => v !== "");
         // After module change, event options should be filtered
         // CASH_SHIFT has: CASH_SHIFT_OPENED, CASH_SHIFT_CLOSED, CASH_SHIFT_FORCED_CLOSE, CASH_COUNT_PARTIAL
         expect(nonEmptyValues.length).toBeGreaterThanOrEqual(3);
@@ -373,20 +404,28 @@ describe('AuditLogView — filter routing logic', () => {
       await waitForInitialFetchAndReset();
 
       // Select a module to filter
-      const moduleSelect = screen.getByRole('combobox', { name: /módulo/i });
-      await userEvent.selectOptions(moduleSelect, 'CASH_SHIFT');
+      const moduleSelect = screen.getByRole("combobox", { name: /módulo/i });
+      await userEvent.selectOptions(moduleSelect, "CASH_SHIFT");
 
       // Go back to all modules
-      await userEvent.selectOptions(moduleSelect, '');
+      await userEvent.selectOptions(moduleSelect, "");
 
       await waitFor(() => {
-        const eventSelect = screen.getByRole('combobox', { name: /evento/i });
-        const options = within(eventSelect).getAllByRole('option') as HTMLOptionElement[];
-        const nonEmptyValues = options.map((o) => o.value).filter((v) => v !== '');
+        const eventSelect = screen.getByRole("combobox", { name: /evento/i });
+        const options = within(eventSelect).getAllByRole(
+          "option",
+        ) as HTMLOptionElement[];
+        const nonEmptyValues = options
+          .map((o) => o.value)
+          .filter((v) => v !== "");
         // Should have many events again (not just CASH_SHIFT)
-        const cashShiftCount = nonEmptyValues.filter((v) => v.startsWith('CASH_')).length;
+        const cashShiftCount = nonEmptyValues.filter((v) =>
+          v.startsWith("CASH_"),
+        ).length;
         expect(cashShiftCount).toBeGreaterThan(0);
-        const nonCashCount = nonEmptyValues.filter((v) => !v.startsWith('CASH_')).length;
+        const nonCashCount = nonEmptyValues.filter(
+          (v) => !v.startsWith("CASH_"),
+        ).length;
         expect(nonCashCount).toBeGreaterThan(0);
       });
     });
@@ -394,7 +433,7 @@ describe('AuditLogView — filter routing logic', () => {
 
   // ── Role gate ─────────────────────────────────────────────────────────
 
-  it('shows no permission message when session is null', async () => {
+  it("shows no permission message when session is null and does NOT fetch", async () => {
     mockUseLocalSessionStore.mockImplementation(
       (selector: (s: Record<string, unknown>) => unknown) => {
         return selector({ session: null });
@@ -408,16 +447,15 @@ describe('AuditLogView — filter routing logic', () => {
       expect(screen.getByText(/permiso/i)).toBeInTheDocument();
     });
 
-    // BUG-MINOR: the useEffect with fetchLogs fires even when the role gate
-    // will block rendering. This is a performance concern — the fetch is
-    // queued during render before the early return. Not security-critical
-    // since the data isn't displayed, but wasteful.
+    // Role gate: the fetch must not fire when the view is blocked.
+    expect(mockGetLocalAuditEntries).not.toHaveBeenCalled();
+    expect(mockGetAuditLogs).not.toHaveBeenCalled();
   });
 
-  it('shows no permission message when role is below MANAGER', async () => {
+  it("shows no permission message when role is below MANAGER and does NOT fetch", async () => {
     mockUseLocalSessionStore.mockImplementation(
       (selector: (s: Record<string, unknown>) => unknown) => {
-        return selector({ session: { userId: 'cashier-1', role: 'CASHIER' } });
+        return selector({ session: { userId: "cashier-1", role: "CASHIER" } });
       },
     );
     mockHasMinRole.mockReturnValue(false);
@@ -428,6 +466,7 @@ describe('AuditLogView — filter routing logic', () => {
       expect(screen.getByText(/permiso/i)).toBeInTheDocument();
     });
 
-    // BUG-MINOR: same as above — fetch fires despite role gate
+    expect(mockGetLocalAuditEntries).not.toHaveBeenCalled();
+    expect(mockGetAuditLogs).not.toHaveBeenCalled();
   });
 });

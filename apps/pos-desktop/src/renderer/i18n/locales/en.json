@@ -491,7 +491,6 @@
       "createSupplier": "Create supplier",
       "receive": "Receive",
       "emptyState": "No purchase orders registered"
-
     },
     "receptions": {
       "title": "Receptions",
@@ -1504,7 +1503,16 @@
     "hours_ago": "{{count}} h ago",
     "hours_ago_plural": "{{count}} h ago",
     "days_ago": "{{count}} d ago",
-    "days_ago_plural": "{{count}} d ago"
+    "days_ago_plural": "{{count}} d ago",
+    "module_reports": "Reports",
+    "category_report": "Reports",
+    "detail_stock_delta": "Stock: {{from}} → {{to}} units",
+    "synced": "Synced",
+    "synced_at": "Synced at",
+    "pending_sync": "Pending sync",
+    "pending_sync_hint": "This event has not been sent to the server yet. It will be sent automatically when a connection is available.",
+    "server_error": "Could not reach the server. Events saved on this terminal are shown below.",
+    "filter_pending_sync": "Pending sync"
   },
   "audit_events": {
     "ACCESS": "Token access",
@@ -1556,7 +1564,14 @@
     "PURCHASE_RECEPTION_CONFIRMED": "Purchase reception confirmed",
     "FISCAL_INVOICE_EMITTED": "Electronic invoice emitted",
     "FISCAL_CONTINGENCY_ACTIVATED": "DIAN contingency activated",
-    "FISCAL_TRANSMISSION_FAILED": "DIAN transmission failed"
+    "FISCAL_TRANSMISSION_FAILED": "DIAN transmission failed",
+    "SYNC_PUSH_COMPLETED": "Sync push completed",
+    "SYNC_PUSH_FAILED": "Sync push failed",
+    "SYNC_PULL_COMPLETED": "Sync pull completed",
+    "SYNC_CONFLICT": "Sync conflict",
+    "REPORT_EXPORTED": "Report exported",
+    "REPORT_SHIFT_CLOSE_DOCUMENT_PERSISTED": "Shift close document persisted",
+    "REPORT_SHIFT_CLOSE_DOCUMENT_RECOVERED": "Shift close document recovered"
   },
   "step_up": {
     "title": "Authorization required",

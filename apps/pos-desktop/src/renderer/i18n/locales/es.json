@@ -1631,7 +1631,16 @@
     "hours_ago": "hace {{count}} h",
     "hours_ago_plural": "hace {{count}} h",
     "days_ago": "hace {{count}} d",
-    "days_ago_plural": "hace {{count}} d"
+    "days_ago_plural": "hace {{count}} d",
+    "module_reports": "Reportes",
+    "category_report": "Reportes",
+    "detail_stock_delta": "Stock: {{from}} → {{to}} unidades",
+    "synced": "Sincronizado",
+    "synced_at": "Sincronizado el",
+    "pending_sync": "Pendiente de sincronizar",
+    "pending_sync_hint": "Este evento aún no se ha enviado al servidor. Se enviará automáticamente cuando haya conexión.",
+    "server_error": "No se pudo conectar con el servidor. Se muestran los eventos guardados en esta terminal.",
+    "filter_pending_sync": "Pendientes de sincronizar"
   },
   "audit_events": {
     "ACCESS": "Acceso al sistema",
@@ -1683,7 +1692,14 @@
     "PURCHASE_RECEPTION_CONFIRMED": "Recepción de compra confirmada",
     "FISCAL_INVOICE_EMITTED": "Factura electrónica emitida",
     "FISCAL_CONTINGENCY_ACTIVATED": "Contingencia DIAN activada",
-    "FISCAL_TRANSMISSION_FAILED": "Transmisión DIAN fallida"
+    "FISCAL_TRANSMISSION_FAILED": "Transmisión DIAN fallida",
+    "SYNC_PUSH_COMPLETED": "Sincronización enviada",
+    "SYNC_PUSH_FAILED": "Sincronización fallida",
+    "SYNC_PULL_COMPLETED": "Sincronización recibida",
+    "SYNC_CONFLICT": "Conflicto de sincronización",
+    "REPORT_EXPORTED": "Reporte exportado",
+    "REPORT_SHIFT_CLOSE_DOCUMENT_PERSISTED": "Documento de cierre de turno guardado",
+    "REPORT_SHIFT_CLOSE_DOCUMENT_RECOVERED": "Documento de cierre de turno recuperado"
   },
   "step_up": {
     "title": "Autorización requerida",

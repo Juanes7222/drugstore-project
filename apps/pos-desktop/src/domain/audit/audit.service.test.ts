@@ -29,7 +29,10 @@ const makeMockPrisma = () => {
 
 describe("getLocalAuditEntries", () => {
   let prisma: any;
-  let localAuditLog: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
+  let localAuditLog: {
+    findMany: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     const mocks = makeMockPrisma();
@@ -45,41 +48,48 @@ describe("getLocalAuditEntries", () => {
     it("reads from InventoryMovement via the PGlite client", async () => {
       const client = makeMockClient();
       client.query
-        .mockResolvedValueOnce({ rows: [{ count: 2 }] })   // COUNT query
-        .mockResolvedValueOnce({ rows: [                   // data query
-          {
-            id: "mov-1",
-            movement_type: "SALE",
-            quantity: 5,
-            previous_stock: 20,
-            resulting_stock: 15,
-            created_by_id: "user-1",
-            created_at: new Date("2026-07-15T10:00:00Z"),
-            lot_id: "lot-1",
-            reason: "Venta directa",
-            batch_number: "BATCH-001",
-            product_name: "Acetaminofén 500mg",
-          },
-          {
-            id: "mov-2",
-            movement_type: "PURCHASE_RECEIPT",
-            quantity: 10,
-            previous_stock: 15,
-            resulting_stock: 25,
-            created_by_id: "user-2",
-            created_at: new Date("2026-07-14T08:00:00Z"),
-            lot_id: "lot-2",
-            reason: null,
-            batch_number: "BATCH-002",
-            product_name: "Ibuprofeno 400mg",
-          },
-        ] });
+        .mockResolvedValueOnce({ rows: [{ count: 2 }] }) // COUNT query
+        .mockResolvedValueOnce({
+          rows: [
+            // data query
+            {
+              id: "mov-1",
+              movement_type: "SALE",
+              quantity: 5,
+              previous_stock: 20,
+              resulting_stock: 15,
+              created_by_id: "user-1",
+              created_at: new Date("2026-07-15T10:00:00Z"),
+              lot_id: "lot-1",
+              reason: "Venta directa",
+              batch_number: "BATCH-001",
+              product_name: "Acetaminofén 500mg",
+            },
+            {
+              id: "mov-2",
+              movement_type: "PURCHASE_RECEIPT",
+              quantity: 10,
+              previous_stock: 15,
+              resulting_stock: 25,
+              created_by_id: "user-2",
+              created_at: new Date("2026-07-14T08:00:00Z"),
+              lot_id: "lot-2",
+              reason: null,
+              batch_number: "BATCH-002",
+              product_name: "Ibuprofeno 400mg",
+            },
+          ],
+        });
 
-      const result = await getLocalAuditEntries(prisma, {
-        module: "INVENTORY",
-        fromDate: "2026-07-01",
-        toDate: "2026-07-31",
-      }, client as any);
+      const result = await getLocalAuditEntries(
+        prisma,
+        {
+          module: "INVENTORY",
+          fromDate: "2026-07-01",
+          toDate: "2026-07-31",
+        },
+        client as any,
+      );
 
       expect(result.total).toBe(2);
       expect(result.rows).toHaveLength(2);
@@ -107,11 +117,15 @@ describe("getLocalAuditEntries", () => {
         .mockResolvedValueOnce({ rows: [{ count: 0 }] })
         .mockResolvedValueOnce({ rows: [] });
 
-      await getLocalAuditEntries(prisma, {
-        module: "INVENTORY",
-        fromDate: "2026-07-01",
-        toDate: "2026-07-15",
-      }, client as any);
+      await getLocalAuditEntries(
+        prisma,
+        {
+          module: "INVENTORY",
+          fromDate: "2026-07-01",
+          toDate: "2026-07-15",
+        },
+        client as any,
+      );
 
       // First call = COUNT, second = data query.
       // The params array is passed as the second argument to client.query.
@@ -125,11 +139,15 @@ describe("getLocalAuditEntries", () => {
         .mockResolvedValueOnce({ rows: [{ count: 0 }] })
         .mockResolvedValueOnce({ rows: [] });
 
-      const result = await getLocalAuditEntries(prisma, {
-        module: "INVENTORY",
-        fromDate: "2025-01-01",
-        toDate: "2025-01-02",
-      }, client as any);
+      const result = await getLocalAuditEntries(
+        prisma,
+        {
+          module: "INVENTORY",
+          fromDate: "2025-01-01",
+          toDate: "2025-01-02",
+        },
+        client as any,
+      );
 
       expect(result.total).toBe(0);
       expect(result.rows).toHaveLength(0);
@@ -139,25 +157,31 @@ describe("getLocalAuditEntries", () => {
       const client = makeMockClient();
       client.query
         .mockResolvedValueOnce({ rows: [{ count: 1 }] })
-        .mockResolvedValueOnce({ rows: [
-          {
-            id: "mov-3",
-            movement_type: "CUSTOM_TYPE",
-            quantity: 1,
-            previous_stock: 10,
-            resulting_stock: 9,
-            created_by_id: "user-1",
-            created_at: new Date("2026-07-20T12:00:00Z"),
-            lot_id: "lot-3",
-            reason: null,
-            batch_number: null,
-            product_name: null,
-          },
-        ] });
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: "mov-3",
+              movement_type: "CUSTOM_TYPE",
+              quantity: 1,
+              previous_stock: 10,
+              resulting_stock: 9,
+              created_by_id: "user-1",
+              created_at: new Date("2026-07-20T12:00:00Z"),
+              lot_id: "lot-3",
+              reason: null,
+              batch_number: null,
+              product_name: null,
+            },
+          ],
+        });
 
-      const result = await getLocalAuditEntries(prisma, {
-        module: "INVENTORY",
-      }, client as any);
+      const result = await getLocalAuditEntries(
+        prisma,
+        {
+          module: "INVENTORY",
+        },
+        client as any,
+      );
 
       expect(result.rows[0].action).toBe("CUSTOM_TYPE");
     });
@@ -317,6 +341,99 @@ describe("getLocalAuditEntries", () => {
 
       const where = localAuditLog.findMany.mock.calls[0][0].where;
       expect(where.category).toBe("sale");
+    });
+
+    it("filters pending-sync rows by null syncedAt watermark", async () => {
+      localAuditLog.findMany.mockResolvedValue([]);
+      localAuditLog.count.mockResolvedValue(0);
+
+      await getLocalAuditEntries(prisma, { syncStatus: "pending" });
+
+      const where = localAuditLog.findMany.mock.calls[0][0].where;
+      expect(where.syncedAt).toBeNull();
+    });
+
+    it("does not filter by syncedAt when syncStatus is not set", async () => {
+      localAuditLog.findMany.mockResolvedValue([]);
+      localAuditLog.count.mockResolvedValue(0);
+
+      await getLocalAuditEntries(prisma, {});
+
+      const where = localAuditLog.findMany.mock.calls[0][0].where;
+      expect(where.syncedAt).toBeUndefined();
+    });
+
+    it("returns entityName and syncedAt from LocalAuditLog rows", async () => {
+      localAuditLog.findMany.mockResolvedValue([
+        {
+          id: "log-1",
+          action: "CLIENT_CREATED",
+          createdAt: new Date("2026-07-15T10:00:00Z"),
+          entityType: "Client",
+          entityId: "client-1",
+          entityName: "Juan Pérez",
+          syncedAt: new Date("2026-07-15T11:00:00Z"),
+          details: null,
+        },
+      ]);
+      localAuditLog.count.mockResolvedValue(1);
+
+      const result = await getLocalAuditEntries(prisma, {});
+
+      expect(result.rows[0].entityName).toBe("Juan Pérez");
+      expect(result.rows[0].syncedAt).toBe("2026-07-15T11:00:00.000Z");
+    });
+
+    it("returns syncedAt null when row has not been synced", async () => {
+      localAuditLog.findMany.mockResolvedValue([
+        {
+          id: "log-2",
+          action: "SALE_CONFIRMED",
+          createdAt: new Date("2026-07-15T10:00:00Z"),
+          entityName: null,
+          syncedAt: null,
+          details: null,
+        },
+      ]);
+      localAuditLog.count.mockResolvedValue(1);
+
+      const result = await getLocalAuditEntries(prisma, {});
+
+      expect(result.rows[0].entityName).toBeUndefined();
+      expect(result.rows[0].syncedAt).toBeNull();
+    });
+
+    it("returns stock delta fields for inventory movements", async () => {
+      const client = { query: vi.fn() };
+      client.query
+        .mockResolvedValueOnce({ rows: [{ count: 1 }] })
+        .mockResolvedValueOnce({
+          rows: [
+            {
+              id: "mov-1",
+              movement_type: "SALE",
+              quantity: 3,
+              previous_stock: 12,
+              resulting_stock: 9,
+              created_by_id: "user-1",
+              created_at: new Date("2026-07-15T10:00:00Z"),
+              lot_id: "lot-1",
+              reason: null,
+              batch_number: null,
+              product_name: "Acetaminofén 500mg",
+            },
+          ],
+        });
+
+      const result = await getLocalAuditEntries(
+        prisma,
+        { module: "INVENTORY" },
+        client as any,
+      );
+
+      expect(result.rows[0].quantity).toBe(3);
+      expect(result.rows[0].previousStock).toBe(12);
+      expect(result.rows[0].resultingStock).toBe(9);
     });
 
     it("reads from LocalAuditLog when no module is specified", async () => {

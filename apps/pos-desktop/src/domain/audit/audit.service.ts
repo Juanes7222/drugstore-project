@@ -17,8 +17,8 @@
  * from local-only `LocalAuditLog` for non-inventory events and from the
  * already-existing `InventoryMovement` for stock events.
  */
-import type { PGlite } from '@electric-sql/pglite';
-import type { PrismaClient } from '@pharmacy/database/local';
+import type { PGlite } from "@electric-sql/pglite";
+import type { PrismaClient } from "@pharmacy/database/local";
 
 // ---------------------------------------------------------------------------
 // Types — mirror the shape audit-log-view.tsx / audit-event-card.tsx expects
@@ -36,6 +36,14 @@ export interface LocalAuditEntry {
   /** Extra fields not in the server shape — for richer rendering */
   productName?: string;
   lotBatch?: string;
+  /** Human-readable entity name (client name, document label, etc.) */
+  entityName?: string;
+  /** Set once the row has been enqueued to the SyncQueue and acked. */
+  syncedAt?: string | null;
+  /** InventoryMovement-only: stock delta fields for the movement card. */
+  quantity?: number;
+  previousStock?: number;
+  resultingStock?: number;
 }
 
 /**
@@ -48,21 +56,24 @@ export interface LocalAuditEntry {
 export interface LocalAuditQuery {
   /** Domain module to scope the query to. */
   module?:
-    | 'INVENTORY'
-    | 'CASH_SHIFT'
-    | 'SALES'
-    | 'AUTH'
-    | 'SYNC'
-    | 'CLIENTS'
-    | 'PRESCRIPTIONS'
-    | 'PURCHASES'
-    | 'FISCAL';
+    | "INVENTORY"
+    | "CASH_SHIFT"
+    | "SALES"
+    | "AUTH"
+    | "SYNC"
+    | "CLIENTS"
+    | "PRESCRIPTIONS"
+    | "PURCHASES"
+    | "FISCAL"
+    | "REPORTS";
   /** LocalAuditLog category filter (e.g. "cash_shift", "sale"). */
   category?: string;
   /** Specific audit action filter (e.g. "CASH_SHIFT_OPENED"). */
   action?: string;
   fromDate?: string;
   toDate?: string;
+  /** 'pending' → only rows whose sync watermark is still null. */
+  syncStatus?: "pending";
   limit?: number;
   offset?: number;
 }
@@ -77,14 +88,15 @@ export interface LocalAuditResponse {
 // ---------------------------------------------------------------------------
 
 const MODULE_CATEGORY_MAP: Record<string, string> = {
-  CASH_SHIFT: 'cash_shift',
-  SALES: 'sale',
-  AUTH: 'auth',
-  SYNC: 'sync',
-  CLIENTS: 'client',
-  PRESCRIPTIONS: 'prescription',
-  PURCHASES: 'purchase',
-  FISCAL: 'fiscal',
+  CASH_SHIFT: "cash_shift",
+  SALES: "sale",
+  AUTH: "auth",
+  SYNC: "sync",
+  CLIENTS: "client",
+  PRESCRIPTIONS: "prescription",
+  PURCHASES: "purchase",
+  FISCAL: "fiscal",
+  REPORTS: "report",
 };
 
 // ---------------------------------------------------------------------------
@@ -92,17 +104,17 @@ const MODULE_CATEGORY_MAP: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 const MOVEMENT_TYPE_LABELS: Record<string, string> = {
-  PURCHASE_RECEIPT: 'INVENTORY_PURCHASE_RECEIPT',
-  SALE: 'INVENTORY_SALE',
-  POSITIVE_ADJUSTMENT: 'INVENTORY_ADJUSTMENT_POSITIVE',
-  NEGATIVE_ADJUSTMENT: 'INVENTORY_ADJUSTMENT_NEGATIVE',
-  CLIENT_RETURN: 'INVENTORY_CLIENT_RETURN',
-  SUPPLIER_RETURN: 'INVENTORY_SUPPLIER_RETURN',
-  ADMIN_BLOCK: 'INVENTORY_ADMIN_BLOCK',
-  ADMIN_UNBLOCK: 'INVENTORY_ADMIN_UNBLOCK',
-  AUTO_EXPIRATION: 'INVENTORY_AUTO_EXPIRATION',
-  PHYSICAL_COUNT: 'INVENTORY_PHYSICAL_COUNT',
-  INITIAL_STOCK: 'INVENTORY_INITIAL_STOCK',
+  PURCHASE_RECEIPT: "INVENTORY_PURCHASE_RECEIPT",
+  SALE: "INVENTORY_SALE",
+  POSITIVE_ADJUSTMENT: "INVENTORY_ADJUSTMENT_POSITIVE",
+  NEGATIVE_ADJUSTMENT: "INVENTORY_ADJUSTMENT_NEGATIVE",
+  CLIENT_RETURN: "INVENTORY_CLIENT_RETURN",
+  SUPPLIER_RETURN: "INVENTORY_SUPPLIER_RETURN",
+  ADMIN_BLOCK: "INVENTORY_ADMIN_BLOCK",
+  ADMIN_UNBLOCK: "INVENTORY_ADMIN_UNBLOCK",
+  AUTO_EXPIRATION: "INVENTORY_AUTO_EXPIRATION",
+  PHYSICAL_COUNT: "INVENTORY_PHYSICAL_COUNT",
+  INITIAL_STOCK: "INVENTORY_INITIAL_STOCK",
 };
 
 // ---------------------------------------------------------------------------
@@ -121,10 +133,10 @@ export async function getLocalAuditEntries(
   query: LocalAuditQuery = {},
   client?: PGlite,
 ): Promise<LocalAuditResponse> {
-  if (query.module === 'INVENTORY') {
+  if (query.module === "INVENTORY") {
     if (!client) {
       throw new Error(
-        'getLocalAuditEntries: PGlite client is required for INVENTORY module',
+        "getLocalAuditEntries: PGlite client is required for INVENTORY module",
       );
     }
     return getInventoryMovements(client, query);
@@ -148,9 +160,9 @@ async function getFromLocalAuditLog(
   const where: Record<string, unknown> = {};
 
   // Map module to category
-  const category = query.category ?? (
-    query.module ? MODULE_CATEGORY_MAP[query.module] : undefined
-  );
+  const category =
+    query.category ??
+    (query.module ? MODULE_CATEGORY_MAP[query.module] : undefined);
   if (category) {
     where.category = category;
   }
@@ -159,13 +171,17 @@ async function getFromLocalAuditLog(
     where.action = query.action;
   }
 
+  if (query.syncStatus === "pending") {
+    where.syncedAt = null;
+  }
+
   if (query.fromDate || query.toDate) {
     const createdAt: Record<string, Date | string> = {};
     if (query.fromDate) {
       createdAt.gte = query.fromDate;
     }
     if (query.toDate) {
-      createdAt.lte = query.toDate + 'T23:59:59.999Z';
+      createdAt.lte = query.toDate + "T23:59:59.999Z";
     }
     where.createdAt = createdAt;
   }
@@ -173,7 +189,7 @@ async function getFromLocalAuditLog(
   const [rows, total] = await Promise.all([
     (prisma as any).localAuditLog.findMany({
       where,
-      orderBy: { createdAt: 'desc' as const },
+      orderBy: { createdAt: "desc" as const },
       take: limit,
       skip: offset,
     }),
@@ -184,14 +200,22 @@ async function getFromLocalAuditLog(
     rows: rows.map((r: any) => ({
       id: r.id,
       action: r.action,
-      createdAt: r.createdAt instanceof Date
-        ? r.createdAt.toISOString()
-        : String(r.createdAt),
+      createdAt:
+        r.createdAt instanceof Date
+          ? r.createdAt.toISOString()
+          : String(r.createdAt),
       userId: r.userId ?? undefined,
       userRole: r.userRole ?? null,
       entityType: r.entityType ?? undefined,
       entityId: r.entityId ?? undefined,
       details: r.details ?? null,
+      entityName: r.entityName ?? undefined,
+      syncedAt:
+        r.syncedAt == null
+          ? null
+          : r.syncedAt instanceof Date
+            ? r.syncedAt.toISOString()
+            : String(r.syncedAt),
     })),
     total,
   };
@@ -222,8 +246,9 @@ async function getInventoryMovements(
 
   if (query.action) {
     // Reverse-lookup: find movementType key by its label
-    const movementType = Object.entries(MOVEMENT_TYPE_LABELS)
-      .find(([, label]) => label === query.action)?.[0];
+    const movementType = Object.entries(MOVEMENT_TYPE_LABELS).find(
+      ([, label]) => label === query.action,
+    )?.[0];
     if (movementType) {
       conditions.push(`im."movementType" = $${paramIdx++}`);
       params.push(movementType);
@@ -236,12 +261,11 @@ async function getInventoryMovements(
   }
   if (query.toDate) {
     conditions.push(`im."createdAt" <= $${paramIdx++}`);
-    params.push(query.toDate + 'T23:59:59.999Z');
+    params.push(query.toDate + "T23:59:59.999Z");
   }
 
-  const whereClause = conditions.length > 0
-    ? `WHERE ${conditions.join(' AND ')}`
-    : '';
+  const whereClause =
+    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   // Count query
   const countResult = await client.query<{ count: number }>(
@@ -293,11 +317,14 @@ async function getInventoryMovements(
       action: MOVEMENT_TYPE_LABELS[r.movement_type] ?? r.movement_type,
       createdAt: new Date(r.created_at).toISOString(),
       userId: r.created_by_id,
-      entityType: 'InventoryMovement',
+      entityType: "InventoryMovement",
       entityId: r.lot_id,
       details: r.reason ?? null,
       productName: r.product_name ?? undefined,
       lotBatch: r.batch_number ?? undefined,
+      quantity: r.quantity,
+      previousStock: r.previous_stock,
+      resultingStock: r.resulting_stock,
     })),
     total,
   };

@@ -435,31 +435,44 @@ Full legend shown in a togglable panel below the header:
 | **Security** | Restrict Violet `#5B3E96` | STEP_UP_AUTHORIZED, USER_ROLE_CHANGED, SESSION_REVOKED, AUTH_PASSWORD_CHANGED, AUTH_PIN_RESET |
 | **Users** | Sync Slate `#4A6572` | USER_CREATED, USER_DISABLED |
 | **Inventory** | Urgency Amber `#E8780A` | All INVENTORY_* events |
-| **Network** | Network Blue `#1565C0` | LOCAL_SYNC_HUB_ELECTION, LOCAL_SYNC_CONFLICT, LOCAL_SYNC_PUSH, LOCAL_SYNC_PULL |
+| **Network** | Network Blue `#1565C0` | LOCAL_SYNC_HUB_ELECTION, LOCAL_SYNC_CONFLICT, LOCAL_SYNC_PUSH, LOCAL_SYNC_PULL, SYNC_PUSH_COMPLETED, SYNC_PUSH_FAILED, SYNC_PULL_COMPLETED, SYNC_CONFLICT |
 | **Cash Shift** | Cash Green `#2E7D32` | CASH_SHIFT_OPENED, CASH_SHIFT_CLOSED, CASH_SHIFT_FORCED_CLOSE, CASH_COUNT_PARTIAL |
 | **Sale** | Dark Teal `#00897B` | SALE_CONFIRMED, SALE_ANNULLED |
 | **Client** | Blue-Grey `#546E7A` | CLIENT_CREATED, CLIENT_UPDATED, CLIENT_DEACTIVATED |
 | **Prescription** | Purple `#7B1FA2` | PRESCRIPTION_REGISTERED |
 | **Purchase** | Deep Orange `#E65100` | PURCHASE_ORDER_CREATED, PURCHASE_RECEPTION_CONFIRMED |
 | **Fiscal** | Dark Blue `#0D47A1` | FISCAL_INVOICE_EMITTED, FISCAL_CONTINGENCY_ACTIVATED |
+| **Report** | Report Teal `#00838F` | REPORT_EXPORTED, REPORT_SHIFT_CLOSE_DOCUMENT_PERSISTED, REPORT_SHIFT_CLOSE_DOCUMENT_RECOVERED |
 | **Default** | Grey `#D4D2CC` | Unknown/unclassified events |
 
-### Event card anatomy
+### Event card anatomy (redesigned 2026-09-22)
 
-1. **Left border** — 3px, category color.
-2. **Icon row** — Event-type icon (varied lucide-react icons per event type) +
-   translated event name in semibold 14px + module badge (muted pill) + relative
-   timestamp right-aligned in caption 12px.
-3. **Actor row** — User ID in `font-data` + translated role badge (e.g. "Dueño",
+1. **Left border** — 3px, category color (unchanged).
+2. **Timeline node** — 32px icon square tinted with the category color at 12%
+   (`color-mix`), event icon in full category color. Anchors each card to the
+   day rail and replaces the bare inline icon.
+3. **Category chip** — colored dot-style chip next to the event name: category
+   color at 10% background, category color text. Makes the color legend
+   self-documenting on every card (no need to open the legend to know what
+   amber vs deep orange means).
+4. **Event name + module pill** — translated event name semibold 14px, module
+   pill after it (muted). Relative timestamp right-aligned in `font-data`.
+5. **Actor row** — User ID in `font-data` + translated role badge (e.g. "Dueño",
    "Cajero", "Contador") using `translateRole()` helper — NEVER raw English
-   role strings. Role badges use `bg-ink/8` by default; per-role semantic colors
-   are defined in user-management.helpers.ts.
-4. **Detail summary** — 1-2 lines of human-readable fragments with inline dots.
+   role strings.
+6. **Stock delta chip** — for InventoryMovement-backed entries with known
+   `previousStock → resultingStock`, a monospace chip "20 → 15 u" shows the
+   stock transition at a glance. Only for stock-affecting actions.
+7. **Detail summary** — 1-2 lines of human-readable fragments with inline dots.
    Terminology uses plain Spanish: "Conexión sin internet" (not "Token offline"),
    "Clave criptográfica v{{version}}" (not "CVK v{{version}}"), "Sesión anterior
    cerrada" (not "evictada").
-5. **Target** — Only when meaningful (not "unknown:unknown" or empty). Muted
-   caption below details: e.g., "Producto: Ibuprofeno 400mg · Lote: IB-2411".
+8. **Target** — Only when meaningful. Prefers `entityName` (human-readable,
+   e.g. client name) over truncated `entityId`.
+9. **Sync status badge** — when the entry carries `syncedAt`: "Sincronizado"
+   (cloud icon) or "Pendiente de sincronizar" (clock icon). Server-sourced
+   entries (`syncedAt === undefined`) show no badge — only local rows carry
+   the watermark.
 
 ### Expanded detail panel
 
