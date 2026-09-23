@@ -894,12 +894,6 @@ describe("POS ↔ Server integration — sync resilience (unhappy paths)", () =>
 
     // After the cron drain, exactly the healthy sale was replayed.
     await drainServerQueue();
-    // TEMP diagnostic
-    const diagQ = await serverPrisma.syncQueue.findMany({
-      where: { subscriptionId },
-      select: { operationType: true, status: true, lastErrorMessage: true },
-    });
-    console.log("[pos-res] queue after drain:", JSON.stringify(diagQ));
     const saleCount = await serverPrisma.sale.count({
       where: { sourceOperationUuid: { in: [opUuidGood, opUuidBad] } },
     });

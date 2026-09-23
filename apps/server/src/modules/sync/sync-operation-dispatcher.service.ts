@@ -352,13 +352,15 @@ export class SyncOperationDispatcherService {
                 createSaleDto.clientId = byIdent.id;
               }
             }
-          } catch {}
+          } catch {
+            // Malformed legacy CLIENT_CREATION payload — the identification
+            // remap is best-effort; the sale replay degrades gracefully.
+          }
         }
       }
     }
 
-    // ── Product ID remapping ─────────────────────────────────────────
-    // The POS records the local UUID of each product in the sale item.
+    // ── Product ID remapping ──────────────────────────────────────
     // When the product was created via PRODUCT_CREATION sync, the server
     // may have assigned a different UUID (or, with the fix, used the
     // local UUID directly via sourceProductId).  Remap every item's
@@ -416,17 +418,7 @@ export class SyncOperationDispatcherService {
           this.logger.log(
             `Patching orphan sale ${existingSale.id} client NULL → ${clientData.id} (${clientData.identificationNumber})`,
           );
-          await this.prisma.sale.update({
-            where: { id: existingSale.id },
-            data: {
-              clientId: clientData.id,
-              clientIdentificationTypeSnapshot: clientData.identificationType,
-              clientIdentificationNumberSnapshot: clientData.identificationNumber,
-              clientNameSnapshot: clientData.fullName,
-              clientClassificationIdSnapshot: clientData.classification?.id ?? null,
-              clientTypeSnapshot: (clientData as any).classification?.type ?? null,
-            },
-          });
+          await this.patchOrphanSaleClient(existingSale.id, clientData);
         }
       }
       await this.salesService.confirm(
@@ -664,6 +656,42 @@ export class SyncOperationDispatcherService {
     // not exist server-side; now it does.
     if (localClientId) {
       await this.dependencyRequeue.requeueDependentsOf(localClientId);
+
+      // Degraded-but-confirmed sales: a cash sale that arrived BEFORE this
+      // CLIENT_CREATION was replayed as CONFIRMED with a NULL client (the
+      // documented offline-first degrade in getClientSnapshot). Its
+      // SALE_CONFIRMATION row is COMPLETED, so requeueDependentsOf can never
+      // see it and the POS never re-delivers a completed entry — without
+      // this patch the client attribution of the sale is silently lost.
+      const degradedOps = await this.prisma.syncQueue.findMany({
+        where: {
+          operationType: 'SALE_CONFIRMATION',
+          status: 'COMPLETED',
+          payload: { contains: localClientId },
+        },
+        select: { operationUuid: true },
+        take: 50,
+      });
+      if (degradedOps.length > 0) {
+        const clientData = await this.prisma.client.findUnique({
+          where: { id: localClientId },
+          include: { classification: true },
+        });
+        if (clientData) {
+          for (const op of degradedOps) {
+            const orphan = await this.prisma.sale.findFirst({
+              where: { sourceOperationUuid: op.operationUuid, clientId: null },
+              select: { id: true },
+            });
+            if (!orphan) continue;
+            this.logger.log(
+              `Patching degraded sale ${orphan.id} client NULL → ${clientData.id} ` +
+                `(${clientData.identificationNumber}) after CLIENT_CREATION ${entry.operationUuid}`,
+            );
+            await this.patchOrphanSaleClient(orphan.id, clientData);
+          }
+        }
+      }
     }
     return { entityId: (client as { id: string }).id };
   }
@@ -679,6 +707,35 @@ export class SyncOperationDispatcherService {
    * A ClientNotFoundException is thrown if the localClientId does not match
    * any server-side record.
    */
+  /**
+   * Re-attributes a degraded sale (clientId NULL — the offline-first degrade
+   * in getClientSnapshot) to the now-materialized client. Shared by the
+   * SALE_CONFIRMATION idempotent path and the CLIENT_CREATION degraded-sale
+   * scan so both sites stamp the exact same snapshot columns.
+   */
+  private async patchOrphanSaleClient(
+    saleId: string,
+    clientData: {
+      id: string;
+      identificationType: import('@pharmacy/database').IdentificationType;
+      identificationNumber: string;
+      fullName: string;
+      classification?: { id: string; type: import('@pharmacy/database').ClientType } | null;
+    },
+  ): Promise<void> {
+    await this.prisma.sale.update({
+      where: { id: saleId },
+      data: {
+        clientId: clientData.id,
+        clientIdentificationTypeSnapshot: clientData.identificationType,
+        clientIdentificationNumberSnapshot: clientData.identificationNumber,
+        clientNameSnapshot: clientData.fullName,
+        clientClassificationIdSnapshot: clientData.classification?.id ?? null,
+        clientTypeSnapshot: clientData.classification?.type ?? null,
+      },
+    });
+  }
+
   private async handleClientUpdate(entry: SyncQueueEntry): Promise<void> {
     const payload = JSON.parse(entry.payload) as Record<string, unknown>;
     const userId = payload.userId as string;
