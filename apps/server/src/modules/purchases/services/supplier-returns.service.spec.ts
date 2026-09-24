@@ -531,7 +531,7 @@ describe('SupplierReturnsService', () => {
       );
     });
 
-    it('creates a CONFIRMED return with items and supplier', async () => {
+    it('creates the return as DRAFT, consumes stock, then confirms with items and supplier', async () => {
       mockPrisma.$transaction.mockImplementation(async (cb: Function) => {
         mockTx.supplierReturn.findFirst.mockResolvedValue(null);
         mockSuppliersService.resolveSupplierForSync.mockResolvedValue({ id: 'supplier-sync-1' });
@@ -541,21 +541,45 @@ describe('SupplierReturnsService', () => {
           version: 1,
           state: 'ACTIVE',
         });
-        mockTx.supplierReturn.create.mockResolvedValue({ id: 'new-sr' });
+        mockTx.supplierReturn.create.mockResolvedValue({
+          id: 'new-sr',
+          items: [{ lotId: 'lot-sync-1', quantity: 5 }],
+        });
+        mockTx.supplierReturn.update.mockResolvedValue({
+          id: 'new-sr',
+          state: 'CONFIRMED',
+        });
         return cb(mockTx);
       });
 
       const result = await service.confirmReturnFromSync(syncPayload, 'user-1');
 
       expect(result.id).toBe('new-sr');
+      // Created as DRAFT: the stock movements reference the return id (FK)
+      // and are written before the row is confirmed.
       expect(mockTx.supplierReturn.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             sequentialNumber: 300,
             supplierId: 'supplier-sync-1',
             reason: 'Damaged in transit',
-            state: 'CONFIRMED',
+            state: 'DRAFT',
           }),
+        }),
+      );
+      // The replayed return MUST consume the server stock, exactly like the
+      // online create→confirm flow (regression: it used to skip this).
+      expect(mockLotsService.consumeStockForSupplierReturn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lotId: 'lot-sync-1',
+          quantity: 5,
+          supplierReturnId: 'new-sr',
+        }),
+      );
+      expect(mockTx.supplierReturn.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'new-sr' },
+          data: { state: 'CONFIRMED' },
         }),
       );
     });

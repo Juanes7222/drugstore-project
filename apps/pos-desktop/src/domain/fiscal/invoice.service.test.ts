@@ -88,6 +88,18 @@ function createMockPrisma() {
       }),
       findFirst: vi.fn(async ({ where, orderBy }: any) => {
         let results = [...invoiceStore];
+        // applyTransmissionResult matches by id OR saleId (the contingency
+        // result writer records the local sale id, not an invoice id).
+        if (Array.isArray(where?.OR)) {
+          const ids = new Set<string>();
+          for (const clause of where.OR as any[]) {
+            if (typeof clause?.id === "string") ids.add(clause.id);
+            if (typeof clause?.saleId === "string") ids.add(clause.saleId);
+          }
+          results = results.filter(
+            (i: any) => ids.has(i.id) || ids.has(i.saleId),
+          );
+        }
         if (where?.workstationId) {
           results = results.filter(
             (i: any) => i.workstationId === where.workstationId,
@@ -391,10 +403,10 @@ describe("InvoiceService", () => {
 
   describe("applyTransmissionResult", () => {
     it("updates invoice status and CUFE", async () => {
-      mockPrisma.invoice.update = vi.fn().mockResolvedValue({
-        id: "inv-1",
-        contingencyEventId: "event-1",
-        status: "TRANSMITTED_AUTHORIZED",
+      // Seed the invoice the result is applied to — the service matches by
+      // id OR saleId (contingency results carry the local sale id).
+      (mockPrisma.invoice.create as any)({
+        data: { id: "inv-1", saleId: "sale-1", status: "CONTINGENCY_PENDING_TRANSMISSION" },
       });
 
       const service = createInvoiceService({
@@ -412,13 +424,17 @@ describe("InvoiceService", () => {
       });
 
       expect(result.status).toBe("TRANSMITTED_AUTHORIZED");
+      expect(result.cufeOfficial).toBe("OFFICIAL-CUFE-HASH");
     });
 
     it("increments transmitted counter when contingency event exists", async () => {
-      mockPrisma.invoice.update = vi.fn().mockResolvedValue({
-        id: "inv-1",
-        contingencyEventId: "event-1",
-        status: "TRANSMITTED_AUTHORIZED",
+      (mockPrisma.invoice.create as any)({
+        data: {
+          id: "inv-1",
+          saleId: "sale-1",
+          status: "CONTINGENCY_PENDING_TRANSMISSION",
+          contingencyEventId: "event-1",
+        },
       });
 
       const service = createInvoiceService({
@@ -434,6 +450,31 @@ describe("InvoiceService", () => {
       });
 
       expect(mockContingency.incrementTransmitted).toHaveBeenCalledWith("event-1");
+    });
+
+    it("matches the result by saleId when the DIAN writer recorded the local sale id", async () => {
+      (mockPrisma.invoice.create as any)({
+        data: {
+          id: "inv-cont",
+          saleId: "local-sale-9",
+          status: "CONTINGENCY_PENDING_TRANSMISSION",
+        },
+      });
+
+      const service = createInvoiceService({
+        prisma: mockPrisma as any,
+        workstationId: "ws-001",
+        numberingService: mockNumbering,
+        contingencyService: mockContingency,
+      });
+
+      // Regression guard for bug #5: the result's invoiceId is the SALE id.
+      const result = await service.applyTransmissionResult({
+        invoiceId: "local-sale-9",
+        status: "TRANSMITTED_AUTHORIZED",
+      });
+
+      expect(result.id).toBe("inv-cont");
     });
   });
 

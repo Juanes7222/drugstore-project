@@ -15,10 +15,11 @@
  * Retry semantics
  * ---------------
  * The 10-attempt exponential-backoff logic from Phase 1 is preserved
- * unchanged. When the 10th attempt fails, the entry transitions to
- * PERMANENT_FAILURE with the classified failureCategory (previously it
- * remained as FAILED with no structured category). Entries with DISCARDED
- * or PERMANENT_FAILURE status are never selected.
+ * unchanged: a failed attempt moves the entry to FAILED with a
+ * `nextRetryAt` computed from `computeNextRetryDelay`, and when the 10th
+ * attempt fails the entry transitions to PERMANENT_FAILURE with the
+ * classified failureCategory. Entries with DISCARDED or PERMANENT_FAILURE
+ * status are never selected.
  *
  * One deliberate exception: an AUTH failure recorded while the push
  * service holds no offline token means the request went out with an
@@ -851,7 +852,17 @@ class SyncPushServiceImpl implements SyncPushService {
 
         if (isExhausted) {
           updateData.status = 'PERMANENT_FAILURE';
+          updateData.nextRetryAt = null;
         } else {
+          // Encode the failure as FAILED, not PENDING. The backoff below is
+          // only honoured for FAILED entries: `fetchPendingEntries` selects
+          // PENDING rows unconditionally (no nextRetryAt filter), and the
+          // scheduler's offline→online reset only targets FAILED rows.
+          // Leaving a transiently failed row PENDING meant every push retried
+          // the whole batch immediately — no backoff — so a short server
+          // outage burned all MAX_RETRY_ATTEMPTS in seconds and stranded the
+          // operations in PERMANENT_FAILURE.
+          updateData.status = 'FAILED';
           updateData.nextRetryAt = new Date(
             Date.now() + computeNextRetryDelay(newRetryCount),
           );

@@ -971,4 +971,105 @@ describe("POS ↔ Server integration — contingency transmission window expiry"
       expect(s.operationalState).toBe("CONFIRMED");
     }
   }, 120000);
+
+  it("duplicate transmission for one sale converges to ONE server document; a late DIAN result beats the local expiry", async () => {
+    // Contingency is still active from the previous test.
+    expect(await contingency.isInContingency()).toBe(true);
+
+    // ── One contingency sale with its transmission queued ───────────────
+    const sale = await confirmOneSale();
+    expect(sale.invoiceGenerated).toBe(true);
+    const invoice = await localPrisma.invoice.findFirstOrThrow({
+      where: { saleId: sale.saleId },
+    });
+    expect(invoice.status).toBe("CONTINGENCY_PENDING_TRANSMISSION");
+
+    // ── Operator retried the transmission: the SAME invoice is queued a
+    // second time (a second outbox entry, same provisional CUFE) ────────
+    await invoiceService.queueInvoiceForTransmission(invoice.id);
+    const pendingTransmissions = await localPrisma.syncQueue.findMany({
+      where: { operationType: "INVOICE_TRANSMISSION", status: "PENDING" },
+    });
+    expect(pendingTransmissions.length).toBeGreaterThanOrEqual(2);
+
+    const push = createSyncPushService({
+      prisma: localPrisma,
+      baseUrl: `http://127.0.0.1:${serverPort}`,
+      accessToken: serverToken,
+    });
+    await push.pushPending();
+    await drainServerQueue("INVOICE_TRANSMISSION", "COMPLETED");
+
+    // Idempotency by (saleId, documentType): ONE FiscalDocument for the
+    // provisional CUFE, no matter how many times the POS retried.
+    const documents = await serverPrisma.fiscalDocument.findMany({
+      where: { cufeCude: invoice.cufeProvisional },
+    });
+    expect(documents).toHaveLength(1);
+    expect(documents[0]!.fiscalState).toBe("CONTINGENCY");
+
+    // ── The 48h window lapses BEFORE the DIAN result arrives ────────────
+    await localPrisma.invoice.update({
+      where: { id: invoice.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const scheduler = createFiscalScheduler({
+      invoiceService,
+      contingencyService: contingency,
+    });
+    const expiry = await scheduler.checkNow();
+    expect(expiry.expiredCount).toBeGreaterThanOrEqual(1);
+    const expired = await localPrisma.invoice.findUniqueOrThrow({
+      where: { id: invoice.id },
+    });
+    expect(expired.status).toBe("EXPIRED_CONTINGENCY");
+
+    // ── The DIAN result arrives LATE (after the local expiry) ───────────
+    // OBSERVED + INTENDED behavior: the authoritative DIAN outcome wins over
+    // the local bookkeeping deadline — the document WAS transmitted, so the
+    // invoice must end TRANSMITTED_AUTHORIZED with the official CUFE. The
+    // expiry is only a local reminder, never a terminal state once DIAN has
+    // ruled.
+    const lateResultId = uuidFrom("pos-int-fiscalexpiry-late-result");
+    await serverPrisma.syncInvoiceResult.upsert({
+      where: { id: lateResultId },
+      create: {
+        id: lateResultId,
+        subscriptionId,
+        invoiceId: sale.saleId,
+        workstationId: SERVER_WS_ID,
+        status: "AUTHORIZED",
+        cufeOfficial: "a".repeat(96),
+        dianXml: "<Invoice>late-dian-xml</Invoice>",
+        authorizedAt: new Date(),
+      },
+      update: {
+        status: "AUTHORIZED",
+        cufeOfficial: "a".repeat(96),
+        dianXml: "<Invoice>late-dian-xml</Invoice>",
+        authorizedAt: new Date(),
+      },
+    });
+
+    const applied = await invoiceService.pullAndApplyResults(
+      `http://127.0.0.1:${serverPort}`,
+      serverToken,
+    );
+    expect(applied).toBeGreaterThanOrEqual(1);
+
+    const authorized = await localPrisma.invoice.findUniqueOrThrow({
+      where: { id: invoice.id },
+    });
+    expect(authorized.status).toBe("TRANSMITTED_AUTHORIZED");
+    expect(authorized.cufeOfficial).toBe("a".repeat(96));
+    expect(authorized.fiscalXml).toContain("late-dian-xml");
+
+    // ── A later expiry pass must NOT re-expire an invoice that carries an
+    // authoritative result ─────────────────────────────────────────────
+    await scheduler.checkNow();
+    const afterSecondPass = await localPrisma.invoice.findUniqueOrThrow({
+      where: { id: invoice.id },
+    });
+    expect(afterSecondPass.status).toBe("TRANSMITTED_AUTHORIZED");
+  }, 180000);
 });

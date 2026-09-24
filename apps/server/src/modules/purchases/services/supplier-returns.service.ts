@@ -357,12 +357,10 @@ export class SupplierReturnsService {
 
       if (payload.items && payload.items.length > 0) {
         for (const item of payload.items) {
-          // Resolve lot — create inline if missing and payload carries data
-          const lot = await this.lotsService.resolveLotForSync(
-            tx,
-            item.lotId,
-            item.lot,
-          );
+          // Resolve lot — create inline if missing and payload carries data.
+          // Called for its side effect: the lot must exist before the
+          // stock consumption below.
+          await this.lotsService.resolveLotForSync(tx, item.lotId, item.lot);
 
           itemsData.push({
             id: crypto.randomUUID(),
@@ -389,8 +387,15 @@ export class SupplierReturnsService {
       }
 
       // Use the POS-originated return ID so the server-side record matches
-      // the ID the POS references across sync operations.
-      return tx.supplierReturn.create({
+      // the ID the POS references across sync operations. The row is created
+      // as DRAFT first because the stock consumption below writes
+      // InventoryMovement rows that reference the return id (FK), and only
+      // afterwards is it flipped to CONFIRMED — mirroring the online
+      // create→consume→confirm flow. Without the consumption step the
+      // replayed return left the server lot untouched: the returned goods
+      // stayed sellable online and the server inventory diverged from the
+      // store.
+      const created = await tx.supplierReturn.create({
         data: {
           id: payload.returnId,
           subscriptionId: this.tenantContext.getSubscriptionId(),
@@ -400,10 +405,26 @@ export class SupplierReturnsService {
           reason: notes,
           subtotal,
           totalAmount: subtotal,
-          state: PurchaseReturnState.CONFIRMED,
+          state: PurchaseReturnState.DRAFT,
           createdById: userId,
           ...(itemsData.length > 0 ? { items: { create: itemsData } } : {}),
         },
+        include: { items: true, supplier: true },
+      });
+
+      // Legacy payloads without items carry no lot to consume from.
+      for (const item of created.items ?? []) {
+        await this.lotsService.consumeStockForSupplierReturn({
+          lotId: item.lotId,
+          quantity: item.quantity,
+          supplierReturnId: created.id,
+          tx,
+        });
+      }
+
+      return tx.supplierReturn.update({
+        where: { id: created.id },
+        data: { state: PurchaseReturnState.CONFIRMED },
         include: { items: true, supplier: true },
       });
     });

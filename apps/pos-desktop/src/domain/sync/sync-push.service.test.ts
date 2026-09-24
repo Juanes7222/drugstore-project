@@ -176,8 +176,12 @@ describe("SyncPushService", () => {
         expect.objectContaining({
           where: { id: "entry-1" },
           data: expect.objectContaining({
+            // FAILED, not PENDING: the backoff below is only honoured for
+            // FAILED entries, so a transient failure must leave PENDING.
+            status: "FAILED",
             retryCount: 1,
             failureCategory: "NETWORK",
+            nextRetryAt: expect.any(Date),
           }),
         }),
       );
