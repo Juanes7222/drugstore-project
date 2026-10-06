@@ -29,29 +29,29 @@ export function LegalPage({ document: doc }: { document: LegalDocument }) {
   return (
     <main
       id="contenido"
-      className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:py-20"
+      className="mx-auto max-w-3xl px-5 py-16 sm:px-8 lg:py-20"
     >
       <Link
         to="/"
-        className="data inline-flex items-center gap-2 text-sm text-verde-cruz underline-offset-4 hover:underline"
+        className="data inline-flex items-center gap-2 text-sm text-verde"
       >
         <ArrowRightIcon className="rotate-180 text-base" />
         {t("legal.back_home")}
       </Link>
 
-      <h1 className="display mt-8 text-3xl font-bold sm:text-4xl">
+      <h1 className="display mt-8 text-[clamp(1.8rem,3.4vw,2.5rem)]">
         {content.title}
       </h1>
-      <p className="data mt-3 text-sm text-tinta-media">{content.updated}</p>
+      <p className="data mt-3 text-sm text-grafito">{content.updated}</p>
 
       <div className="mt-12 space-y-10">
         {content.sections.map((section) => (
           <section key={section.heading}>
-            <h2 className="display text-xl font-bold">{section.heading}</h2>
+            <h2 className="display text-xl">{section.heading}</h2>
             {section.paragraphs.map((paragraph) => (
               <p
                 key={paragraph.slice(0, 48)}
-                className="mt-4 leading-relaxed text-tinta-media"
+                className="mt-4 leading-relaxed text-grafito"
               >
                 {paragraph}
               </p>

@@ -1,35 +1,46 @@
 {
   "brand": {
     "name": "PuntoFarma",
-    "tagline": "El punto de venta de las droguerías colombianas."
+    "tagline": "El punto de venta de las droguerías colombianas.",
+    "doc_id": "Documento PF·LIC · Colombia"
   },
   "a11y": {
     "skip_to_content": "Saltar al contenido"
-  },
-  "ticker": {
-    "summary": "Estado del sistema en vivo: lotes por vencer, fórmulas verificadas, turnos y sincronización."
   },
   "support": {
     "channel_email": "",
     "channel_label": "Escríbanos"
   },
   "nav": {
-    "product": "Producto",
+    "product": "Mostrador",
     "pricing": "Planes",
+    "activation": "Activación",
     "faq": "Preguntas",
     "buy": "Comprar licencia",
     "open_menu": "Abrir menú",
     "close_menu": "Cerrar menú"
   },
+  "rail": {
+    "label": "Contenido del documento",
+    "items": [
+      { "folio": "01", "label": "Portada", "href": "#inicio" },
+      { "folio": "02", "label": "Mostrador", "href": "#mostrador" },
+      { "folio": "03", "label": "Sin conexión", "href": "#offline" },
+      { "folio": "04", "label": "Planes", "href": "#planes" },
+      { "folio": "05", "label": "Activación", "href": "#activacion" },
+      { "folio": "06", "label": "Preguntas", "href": "#faq" }
+    ]
+  },
   "hero": {
     "eyebrow": "POS para droguerías colombianas",
     "title": "La caja que no se detiene cuando se va internet.",
-    "subtitle": "Cobre, revise lotes y facture ante la DIAN desde un solo computador. Si se va internet, siga vendiendo: todo sube solo cuando vuelve.",
+    "subtitle": "Cobre, revise lotes y facture ante la DIAN. Si se cae internet, sigue vendiendo.",
     "cta_primary": "Comprar licencia",
     "cta_secondary": "Ver planes",
-    "chip_dian": "Facturación electrónica DIAN",
-    "chip_invima": "Control de lotes INVIMA",
-    "chip_offline": "Vende sin internet"
+    "reassure": "Sin contrato de permanencia · Cancele cuando quiera",
+    "stamp_dian": "Facturación DIAN",
+    "stamp_invima": "Lotes INVIMA",
+    "stamp_offline": "Vende sin internet"
   },
   "pos_preview": {
     "label": "Vista del punto de venta",
@@ -41,62 +52,95 @@
     "item_acetaminofen": "Acetaminofén 500 mg · caja ×10",
     "item_loratadina": "Loratadina 10 mg · caja ×10",
     "item_losartan": "Losartán 50 mg · caja ×30",
-    "lot_near_expiry": "Lote L-2481 · vence 30 sep 26",
+    "lot_code": "L-2481 · vence 30 sep 26",
     "near_expiry_flag": "Por vencer",
     "requires_formula": "Requiere fórmula",
-    "formula_verified": "Fórmula verificada",
+    "formula_verified": "Verificada",
     "subtotal": "Subtotal",
     "tax_zero": "IVA (0 %)",
     "total": "Total",
     "pay_button": "Cobrar"
   },
-  "pillars": {
-    "title": "Hecho para el mostrador de una droguería",
+  "counter": {
+    "eyebrow": "Folio 02 · Mostrador",
+    "title": "Lo que pasa en el mostrador",
     "items": [
       {
-        "icon": "barcode",
         "title": "Escaneo y lotes",
-        "body": "Pase el código de barras y el producto entra al carrito con su lote y su fecha de vencimiento a la vista. Lo que está por vencer se marca antes de facturar, no después del reclamo.",
-        "detail": "L-2481 · vence 30 sep 26 · por vencer"
+        "body": "El lote y el vencimiento entran con el producto."
       },
       {
-        "icon": "shield-check",
-        "title": "Medicamentos controlados",
-        "body": "Las ventas que exigen fórmula médica piden una confirmación aparte, pensada para que nadie la pase de memoria ni por costumbre.",
-        "detail": "F-00214 · fórmula verificada ✓"
+        "title": "Fórmula médica",
+        "body": "Confirmación aparte, no de memoria."
       },
       {
-        "icon": "clock",
         "title": "Turno de caja",
-        "body": "La jornada abre con turno: quién vende, con cuánto empieza y con cuánto cierra. Si al cuadrar falta dinero, el turno muestra dónde quedó la diferencia.",
-        "detail": "Turno #38 · base $200.000"
-      },
-      {
-        "icon": "refresh-cw",
-        "title": "Se sincroniza solo",
-        "body": "Cada venta queda guardada en el equipo y sube al servidor cuando vuelve la conexión, en orden y sin duplicados. Nadie tiene que hacer nada.",
-        "detail": "Cola: 0 pendientes · última 14:11"
+        "body": "Quién vende, con cuánto abre y con cuánto cierra."
       }
-    ]
+    ],
+    "lots_label": "Lotes",
+    "col_lot": "Lote",
+    "col_expiry": "Vence",
+    "col_stock": "Exist.",
+    "formula_label": "Fórmula",
+    "formula_title": "Este producto exige fórmula médica",
+    "formula_code": "Código",
+    "formula_signature": "Firma",
+    "formula_signed": "Firmada",
+    "shift_balanced": "Cuadra",
+    "shift_base": "Base",
+    "shift_sales": "Ventas del turno",
+    "shift_counted": "Contado en caja"
   },
   "offline": {
-    "eyebrow": "Modo offline",
+    "eyebrow": "Folio 03 · Sin conexión",
     "title": "Se fue internet. La caja sigue abierta.",
-    "body": "Cada venta se guarda en el computador de la tienda. Cuando la conexión vuelve, la cola sube sola, en orden y sin duplicados.",
-    "queue_label": "Cola local (ejemplo)",
-    "status_sent": "enviada",
-    "status_queued": "en cola",
-    "queue_items": [
-      "14:02 · Venta #1042 · $18.500",
-      "14:07 · Venta #1043 · $7.900",
-      "14:11 · Venta #1044 · $21.700"
+    "body": "Vender, buscar y facturar funcionan sin conexión. Cada venta se guarda en el equipo y la cola sube sola, en orden y sin duplicados, cuando vuelve la red.",
+    "steps": [
+      {
+        "title": "Cobra como siempre",
+        "body": "El carrito, los lotes y el total son los de siempre. La venta no cambia por estar sin red."
+      },
+      {
+        "title": "Se guarda en el equipo",
+        "body": "Al perder la conexión la venta queda escrita en el disco del punto de venta, con su hora y su número. No se pierde y no se duplica al reconectar."
+      },
+      {
+        "title": "La cola sube sola",
+        "body": "Cuando vuelve internet, el POS envía lo pendiente en el orden en que se cobró."
+      },
+      {
+        "title": "Queda enviada ante la DIAN",
+        "body": "Cada venta enviada sale con su factura electrónica. La DIAN no se entera de que hubo un corte."
+      }
     ],
-    "note": "El estado siempre está a la vista: qué falta subir y cuándo subió lo último."
+    "screen": {
+      "state_charging": "Cobrando",
+      "state_stored": "Sin conexión",
+      "state_syncing": "Conexión restablecida",
+      "state_sent": "Factura transmitida",
+      "cart_note": "Venta #1045 · $ 9.800",
+      "saved_note": "Guardada en este equipo · 14:16",
+      "syncing_note": "Subiendo 1 venta pendiente…",
+      "dian_note": "DIAN FE-1045 · transmitida",
+      "action_label": "Tecla",
+      "pay_button": "F2 cobrar",
+      "retry_button": "F2 cobrar",
+      "sync_button": "Sincronizando",
+      "next_button": "F12 siguiente"
+    },
+    "receipt": {
+      "head": "Tirilla · venta #1045",
+      "line_sale": "Subtotal · {{amount}}",
+      "line_tax": "IVA (0 %) · {{amount}}",
+      "line_total": "Total · {{amount}}",
+      "line_dian": "DIAN FE-1045 · transmitida"
+    }
   },
   "pricing": {
-    "eyebrow": "Planes",
+    "eyebrow": "Folio 04 · Planes",
     "title": "Un precio. Dos maneras de facturar.",
-    "subtitle": "Todo el sistema por $199.000 COP al mes. La única diferencia entre los dos: quién maneja el certificado ante la DIAN.",
+    "price_label": "Licencia POS · todas las sedes",
     "period_label": "Período de pago",
     "period_monthly": "Mensual",
     "period_quarterly": "Trimestral −10 %",
@@ -104,12 +148,11 @@
     "per_month_equivalent": "≈ {{amount}} al mes",
     "doc_heading": "Resumen de suscripción",
     "doc_disclaimer": "Documento informativo — no es una factura",
-    "row_license": "Licencia POS",
+    "doc_reissued": "Reimpreso",
     "row_workstations": "Puestos de venta incluidos",
     "row_extra_workstation": "Puesto adicional",
     "row_locations": "Sedes",
     "row_support": "Soporte",
-    "value_license": "{{amount}} al mes",
     "value_workstations": "3 por sede",
     "value_extra_workstation": "{{amount}} al mes",
     "value_locations": "Ilimitadas",
@@ -124,75 +167,90 @@
     "total_suffix_quarterly": "por trimestre",
     "total_suffix_annual": "por año",
     "doc_cta": "Comprar este plan",
-    "all_features_note": "Incluye: multi-sede, modo offline, inventario y lotes, prescripciones, impresión fiscal, informes, soporte prioritario, API y respaldo.",
-    "workstation_note": "Incluye 3 puestos de venta por sede. Puesto adicional: $40.000 COP/mes, máximo 5 por sede. Sedes ilimitadas.",
-    "payment_note": "Pago seguro por Wompi: tarjetas, PSE y Botón Bancario.",
+    "terms_items": [
+      "3 puestos por sede",
+      "Puesto adicional $40.000",
+      "Sedes ilimitadas",
+      "Pago por Wompi: tarjetas, PSE y Botón Bancario"
+    ],
+    "included_items": [
+      "Modo offline",
+      "Inventario y lotes",
+      "Prescripciones",
+      "Impresión fiscal",
+      "Informes",
+      "API",
+      "Respaldo"
+    ],
     "source_live": "Precios verificados contra el servidor · {{time}}",
     "source_fallback": "Precios de referencia — sin conexión con el servidor"
   },
   "steps": {
-    "title": "Cómo empieza",
+    "eyebrow": "Folio 05 · Activación",
+    "title": "Tres pasos, el mismo día",
     "items": [
       {
         "title": "Escoja su plan y pague",
-        "body": "Pague por Wompi con tarjeta, PSE o Botón Bancario. Sin cotizaciones ni llamadas."
+        "body": "Tarjeta, PSE o Botón Bancario por Wompi. Sin cotizaciones ni llamadas."
       },
       {
         "title": "Reciba su código",
-        "body": "Llega un código de activación a su correo electrónico. Si no aparece, revise spam."
+        "body": "Llega a su correo. Si no aparece, revise spam."
       },
       {
         "title": "Actívelo en el POS",
-        "body": "Digítelo una sola vez en el POS, abra turno y venda."
+        "body": "Digítelo una vez, abra turno y venda."
       }
     ]
   },
   "faq": {
-    "eyebrow": "Preguntas frecuentes",
+    "eyebrow": "Folio 06 · Preguntas",
     "title": "Lo que preguntan antes de comprar",
     "items": [
       {
         "q": "¿Funciona sin internet?",
-        "a": "Sí. Vender, buscar productos y facturar funciona sin conexión. Las ventas quedan guardadas en el equipo y suben solas al servidor cuando vuelve internet."
+        "a": "Sí. Vender, buscar y facturar funciona sin conexión. Las ventas se guardan en el equipo y suben solas cuando vuelve."
       },
       {
         "q": "¿Qué necesito para instalarlo?",
-        "a": "Un computador con Windows, macOS o Linux y una impresora térmica para el tirilla. La conexión a internet solo hace falta para la activación y la sincronización."
+        "a": "Un computador con Windows, macOS o Linux y una impresora térmica. Internet solo hace falta para activar y sincronizar."
       },
       {
         "q": "¿Cuál es la diferencia entre los dos planes?",
-        "a": "El precio y las funciones son idénticos. En «Gestionada por nosotros» transmitimos sus facturas ante la DIAN como proveedor tecnológico. En «Con su certificado DIAN» usted emite con su propio certificado digital cargado en el POS."
+        "a": "El precio y las funciones son iguales. Solo cambia quién transmite la factura ante la DIAN."
       },
       {
         "q": "¿Cómo activo la licencia?",
-        "a": "Después del pago recibe un código por correo electrónico. Lo ingresa una sola vez en el POS y el sistema queda activo."
+        "a": "Después del pago recibe un código por correo. Lo ingresa una vez en el POS y queda activo."
       },
       {
         "q": "¿Puedo agregar más puestos de venta?",
-        "a": "Cada sede incluye 3 puestos. Puede agregar hasta 5 por sede, a $40.000 COP al mes cada puesto adicional."
+        "a": "Cada sede incluye 3. Puede agregar hasta 5 por sede, a $40.000 COP al mes cada uno."
       },
       {
         "q": "¿Cómo se paga y puedo cancelar?",
-        "a": "El pago se hace por Wompi: tarjetas de crédito y débito, PSE o Botón Bancario. La licencia es mensual, se renueva sola y puede cancelar cuando quiera; la cancelación aplica al cierre del período ya pagado."
+        "a": "Por Wompi: tarjetas, PSE o Botón Bancario. La licencia es mensual, se renueva sola y puede cancelar cuando quiera; aplica al cierre del período pagado."
       },
       {
         "q": "¿Cómo funciona el soporte?",
-        "a": "Todos los planes incluyen soporte prioritario en horario hábil colombiano, por los canales que recibe junto con su código de activación."
+        "a": "Todos los planes lo incluyen, en horario hábil colombiano, por los canales que recibe con su código."
       },
       {
         "q": "¿Qué pasa con los datos de mis clientes?",
-        "a": "Se tratan conforme a la Ley 1581 de 2012 (régimen de Habeas Data) y a nuestra Política de tratamiento de datos personales, disponible en el pie de página."
+        "a": "Se tratan conforme a la Ley 1581 de 2012 y a nuestra política de datos, disponible en el pie de página."
       }
     ]
   },
   "cta_band": {
-    "doc_title": "Licencia mensual · PuntoFarma POS",
-    "doc_line_sedes": "Sedes ilimitadas · 3 puestos por sede",
-    "doc_line_features": "DIAN · Lotes INVIMA · Modo offline",
+    "doc_title": "Licencia · PuntoFarma POS",
     "total_row": "Total",
     "title": "Abra su turno hoy.",
     "button": "Comprar licencia",
-    "note": "Sin contrato de permanencia. Cancela cuando quiera."
+    "testimonial": {
+      "quote": "",
+      "name": "",
+      "role": ""
+    }
   },
   "mobile_bar": {
     "price_note": "al mes · cancela cuando quiera",

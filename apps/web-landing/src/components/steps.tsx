@@ -1,67 +1,55 @@
-import { useTranslation } from "react-i18next";
 import type { CSSProperties } from "react";
-import { Reveal } from "./reveal";
-import { useReveal } from "../hooks/use-reveal";
+import { useTranslation } from "react-i18next";
+import { Tear } from "./tear";
 
 interface Step {
   title: string;
   body: string;
 }
 
-interface StepItemProps {
-  step: Step;
-  index: number;
-}
-
 /**
- * One purchase step. The reveal lives on the <li> itself so the .reveal CSS
- * and the .step-rule accent both key off the same data-visible attribute.
- */
-function StepItem({ step, index }: StepItemProps) {
-  const revealRef = useReveal<HTMLLIElement>();
-
-  return (
-    <li
-      ref={revealRef}
-      data-visible="false"
-      className="step-rule reveal border-t-2 border-tinta/15 pt-6"
-      style={{ "--reveal-index": index } as CSSProperties}
-    >
-      <span className="data text-sm font-semibold text-verde-cruz">
-        {String(index + 1).padStart(2, "0")}
-      </span>
-      <h3 className="display mt-3 text-lg font-bold">{step.title}</h3>
-      <p className="mt-2 leading-relaxed text-tinta-media">{step.body}</p>
-    </li>
-  );
-}
-
-/**
- * The three purchase steps. Numbered because the order is real information:
- * pay → receive code → activate. Each rule draws its green accent as the
- * step reveals — a sequence, told with motion.
+ * The three purchase steps as a drawn rule: the line connects them because the
+ * order is real information — pay, receive the code, activate. Numbered, and the
+ * numbering is the only marker on the page.
  */
 export function Steps() {
   const { t } = useTranslation();
   const items = t("steps.items", { returnObjects: true }) as Step[];
 
   return (
-    <section aria-labelledby="steps-title" className="py-20 lg:py-24">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <Reveal>
-          <h2
-            id="steps-title"
-            className="display text-3xl font-bold sm:text-4xl"
-          >
-            {t("steps.title")}
-          </h2>
-        </Reveal>
+    <section
+      id="activacion"
+      aria-labelledby="steps-title"
+      className="scroll-mt-20 bg-papel-alto"
+    >
+      <Tear bite="var(--color-papel)" />
 
-        <ol className="mt-12 grid gap-8 sm:grid-cols-3">
-          {items.map((step, index) => (
-            <StepItem key={step.title} step={step} index={index} />
-          ))}
-        </ol>
+      <div className="mx-auto max-w-[78rem] px-5 pt-12 pb-20 sm:px-8 lg:pt-16 lg:pb-24">
+        <p className="folio text-verde">{t("steps.eyebrow")}</p>
+        <h2
+          id="steps-title"
+          className="display mt-5 max-w-2xl text-[clamp(1.8rem,3.4vw,2.5rem)]"
+        >
+          {t("steps.title")}
+        </h2>
+
+        <div className="step-rule mt-14">
+          <ol className="grid gap-8 sm:grid-cols-3 sm:gap-10">
+            {items.map((step, index) => (
+              <li
+                key={step.title}
+                className="step-node"
+                style={{ "--node-index": index } as CSSProperties}
+              >
+                <span className="data block text-sm font-semibold text-verde">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <h3 className="display mt-3 text-xl">{step.title}</h3>
+                <p className="mt-2 leading-relaxed text-grafito">{step.body}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
       </div>
     </section>
   );

@@ -168,7 +168,7 @@ export function CheckoutDialog() {
       ref={dialogRef}
       aria-labelledby="checkout-title"
       onClick={handleBackdropClick}
-      className="dialog-panel m-auto w-[min(28rem,calc(100%-2rem))] rounded-xl border border-tinta/20 bg-white p-0 text-tinta shadow-xl backdrop:bg-tinta/50 backdrop:backdrop-blur-[2px]"
+      className="dialog-panel m-auto w-[min(28rem,calc(100%-2rem))] border border-line bg-papel-alto p-0 text-tinta shadow-xl backdrop:bg-tinta/60 backdrop:backdrop-blur-[2px]"
     >
       <form onSubmit={handleSubmit} noValidate className="p-6 sm:p-8">
         <div className="flex items-start justify-between gap-4">
@@ -176,7 +176,7 @@ export function CheckoutDialog() {
             <h2 id="checkout-title" className="display text-xl font-bold">
               {t("checkout.title")}
             </h2>
-            <p className="mt-1 text-sm leading-relaxed text-tinta-media">
+            <p className="mt-1 text-sm leading-relaxed text-grafito">
               {t("checkout.subtitle")}
             </p>
           </div>
@@ -223,7 +223,7 @@ export function CheckoutDialog() {
                 fieldErrors.customerName ? "checkout-name-error" : undefined
               }
               className={`w-full rounded-md border px-3 py-2.5 min-h-11 ${
-                fieldErrors.customerName ? "border-error" : "border-tinta/25"
+                fieldErrors.customerName ? "border-error" : "border-line-strong"
               }`}
               disabled={submitting}
             />
@@ -248,7 +248,9 @@ export function CheckoutDialog() {
                 fieldErrors.customerEmail ? "checkout-email-error" : undefined
               }
               className={`w-full rounded-md border px-3 py-2.5 min-h-11 ${
-                fieldErrors.customerEmail ? "border-error" : "border-tinta/25"
+                fieldErrors.customerEmail
+                  ? "border-error"
+                  : "border-line-strong"
               }`}
               disabled={submitting}
             />
@@ -273,7 +275,9 @@ export function CheckoutDialog() {
                 fieldErrors.customerTaxId ? "checkout-tax-id-error" : undefined
               }
               className={`data w-full rounded-md border px-3 py-2.5 min-h-11 ${
-                fieldErrors.customerTaxId ? "border-error" : "border-tinta/25"
+                fieldErrors.customerTaxId
+                  ? "border-error"
+                  : "border-line-strong"
               }`}
               disabled={submitting}
             />
@@ -296,7 +300,9 @@ export function CheckoutDialog() {
                 fieldErrors.customerPhone ? "checkout-phone-error" : undefined
               }
               className={`data w-full rounded-md border px-3 py-2.5 min-h-11 ${
-                fieldErrors.customerPhone ? "border-error" : "border-tinta/25"
+                fieldErrors.customerPhone
+                  ? "border-error"
+                  : "border-line-strong"
               }`}
               disabled={submitting}
             />
@@ -319,7 +325,7 @@ export function CheckoutDialog() {
         >
           {submitting ? t("checkout.submitting") : t("checkout.submit")}
         </button>
-        <p className="mt-3 text-center text-xs text-tinta-media">
+        <p className="mt-3 text-center text-xs text-grafito">
           {t("checkout.redirect_note")}
         </p>
       </form>

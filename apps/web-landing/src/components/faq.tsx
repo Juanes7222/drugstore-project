@@ -1,81 +1,62 @@
-import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDownIcon } from "./icons";
 import { Reveal } from "./reveal";
+import { Tear } from "./tear";
 
 interface FaqItem {
   q: string;
   a: string;
 }
 
-/** Single-open FAQ accordion; grid-rows transition keeps it interruptible. */
+interface ColumnProps {
+  items: FaqItem[];
+}
+
+function FaqColumn({ items }: ColumnProps) {
+  return (
+    <dl className="border-t border-line-quiet">
+      {items.map((item) => (
+        <div key={item.q} className="border-b border-line-quiet py-6">
+          <dt className="display text-lg">{item.q}</dt>
+          <dd className="mt-2.5 leading-relaxed text-grafito">{item.a}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * The objections, all of them, in two columns. No accordion: a shop owner
+ * deciding whether to trust a POS should be able to read every answer without
+ * clicking, and eight hidden answers read as eight things being hidden.
+ */
 export function Faq() {
   const { t } = useTranslation();
-  const baseId = useId();
-  const [openQuestion, setOpenQuestion] = useState<number | null>(0);
   const items = t("faq.items", { returnObjects: true }) as FaqItem[];
+  const midpoint = Math.ceil(items.length / 2);
 
   return (
     <section
       id="faq"
       aria-labelledby="faq-title"
-      className="scroll-mt-16 py-20 lg:py-28"
+      className="scroll-mt-20 bg-papel"
     >
-      <div className="mx-auto max-w-3xl px-4 sm:px-6">
-        <p className="eyebrow text-verde-cruz">{t("faq.eyebrow")}</p>
+      <Tear bite="var(--color-papel-alto)" />
+
+      <div className="mx-auto max-w-[78rem] px-5 pt-12 pb-20 sm:px-8 lg:pt-16 lg:pb-28">
+        <p className="folio text-verde">{t("faq.eyebrow")}</p>
         <Reveal>
           <h2
             id="faq-title"
-            className="display mt-4 text-3xl font-bold sm:text-4xl"
+            className="display mt-5 max-w-2xl text-[clamp(1.8rem,3.4vw,2.5rem)]"
           >
             {t("faq.title")}
           </h2>
         </Reveal>
 
-        <dl className="mt-10 divide-y divide-tinta/10 border-y border-tinta/10">
-          {items.map((item, index) => {
-            const isOpen = openQuestion === index;
-            const buttonId = `${baseId}-q${index}`;
-            const panelId = `${baseId}-a${index}`;
-
-            return (
-              <div key={item.q}>
-                <dt className="min-w-0">
-                  <button
-                    type="button"
-                    id={buttonId}
-                    aria-expanded={isOpen}
-                    aria-controls={panelId}
-                    className="faq-q flex w-full items-center justify-between gap-4 py-5 pr-1 text-left text-base font-semibold"
-                    onClick={() => setOpenQuestion(isOpen ? null : index)}
-                  >
-                    {item.q}
-                    <ChevronDownIcon
-                      className={`shrink-0 text-lg text-tinta-media transition-transform duration-200 ease-out ${
-                        isOpen ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-                </dt>
-                <dd>
-                  <div
-                    id={panelId}
-                    role="region"
-                    aria-labelledby={buttonId}
-                    className="accordion-panel"
-                    data-open={isOpen}
-                  >
-                    <div>
-                      <p className="pb-5 leading-relaxed text-tinta-media">
-                        {item.a}
-                      </p>
-                    </div>
-                  </div>
-                </dd>
-              </div>
-            );
-          })}
-        </dl>
+        <div className="mt-12 grid gap-x-16 gap-y-0 lg:grid-cols-2">
+          <FaqColumn items={items.slice(0, midpoint)} />
+          <FaqColumn items={items.slice(midpoint)} />
+        </div>
       </div>
     </section>
   );

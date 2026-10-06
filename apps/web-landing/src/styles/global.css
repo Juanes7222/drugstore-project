@@ -1,30 +1,99 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
+ * Metric-matched fallbacks for the three webfonts.
+ *
+ * Google serves display=swap, so before the real faces arrive the browser draws
+ * with the local stack and reflows when they land — worst of all on the hero
+ * headline, which is the LCP element. Overriding the fallback's ascent, descent
+ * and size to the real face's metrics keeps every line box the same height, so
+ * the swap moves no pixels and CLS stops counting the font exchange.
+ * ------------------------------------------------------------------------- */
+@font-face {
+  font-family: "Schibsted Grotesk Fallback";
+  src: local("Segoe UI"), local("Helvetica Neue"), local("Arial");
+  ascent-override: 100%;
+  descent-override: 25%;
+  size-adjust: 100%;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Fallback";
+  src: local("Segoe UI"), local("Helvetica Neue"), local("Arial");
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  size-adjust: 100%;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono Fallback";
+  src:
+    local("Cascadia Mono"), local("Consolas"), local("Menlo"),
+    local("DejaVu Sans Mono");
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
+  size-adjust: 100%;
+}
+
+/* ---------------------------------------------------------------------------
  * Design tokens — see DESIGN.md for the rationale behind every value.
+ *
+ * The page is treated as one continuous printed document: receipt stock as the
+ * ground, ink for type, one institutional green, and exactly one alarm colour
+ * (ámbar) that may only ever mean "lote por vencer".
  * ------------------------------------------------------------------------- */
 @theme {
-  --color-verde-cruz: #0f6b3f;
-  --color-verde-cruz-oscuro: #0b5230;
-  --color-tinta: #15221b;
-  --color-tinta-media: #46554c;
-  --color-papel: #f7f8f5;
-  --color-menta: #dfede4;
-  --color-ambar-lote: #b45309;
-  --color-ambar-lote-fondo: #fbeedd;
+  --color-papel: #f1f4ef;
+  --color-papel-alto: #fbfcfa;
+  --color-tinta: #111d17;
+  --color-tinta-alta: #18261f;
+  --color-grafito: #55655c;
+  --color-verde: #0f6b3f;
+  --color-verde-hondo: #0a4a2b;
+  --color-verde-claro: #2f8f60;
+  /* Text-safe step for the green on the ink band. verde-claro sits at 4.3:1
+   * against tinta, under the AA floor for the 11px folio; this clears 4.9:1 and
+   * still reads as institutional green rather than mint. Same reason the amber
+   * has its own text step below. */
+  --color-verde-texto: #33996a;
+  --color-menta: #ddebe1;
+  --color-ambar: #b45309;
+  --color-ambar-fondo: #fbeedd;
+  /* Text-safe amber: ámbar on its pale fondo sits at 4.4:1, below the AA floor
+   * for the 11–12px chip text. This darker step clears 6:1. */
+  --color-ambar-texto: #92400e;
   --color-error: #a83c2c;
   --color-error-fondo: #f9e9e6;
-  --color-verde-agua: #e8f3ec;
-  /* Text-safe amber: ambar-lote on its pale fondo sits at 4.4:1, below the
-   * AA floor for the 11–12px chip text. This darker step clears 6:1. */
-  --color-ambar-lote-texto: #92400e;
 
-  --ease-print: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Structural ink as named tiers instead of scattered percentages. Every
+   * hairline, rule and panel edge resolves to one of these, which is what keeps
+   * the document's line weights from drifting apart across eight components. */
+  --color-line-quiet: #111d171f;
+  --color-line: #111d1733;
+  --color-line-strong: #111d174d;
+  --color-line-invert-quiet: #fbfcfa26;
+  --color-line-invert: #fbfcfa40;
+  /* Text tiers on the dark bands (tinta, verde). On a coloured ground secondary
+   * text is tinted from that ground, never grayed. */
+  --color-ond-dark-muted: #fbfcfa8c;
+  --color-ond-dark-body: #fbfcfabf;
 
+  --ease-tira: cubic-bezier(0.22, 1, 0.28, 1);
+
+  --font-display:
+    "Schibsted Grotesk", "Schibsted Grotesk Fallback", ui-sans-serif, system-ui,
+    sans-serif;
   --font-sans:
-    "Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    "IBM Plex Sans", "IBM Plex Sans Fallback", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", sans-serif;
   --font-mono:
-    "IBM Plex Mono", ui-monospace, "Cascadia Mono", "Consolas", monospace;
+    "IBM Plex Mono", "IBM Plex Mono Fallback", ui-monospace, "Cascadia Mono",
+    "Consolas", monospace;
+
+  /* Chips carry lot codes, keystrokes and queue states. One declared size, so
+   * they cannot drift back under the 12px legibility floor. */
+  --text-chip: 0.75rem;
+  --text-chip--line-height: 1.15rem;
 }
 
 /* ---------------------------------------------------------------------------
@@ -33,6 +102,8 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    /* Every anchor target clears the sticky header without a per-element offset. */
+    scroll-padding-top: 5rem;
   }
 
   body {
@@ -40,16 +111,22 @@
     color: var(--color-tinta);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Browser furniture nobody drew still has to belong to the palette: the
+     * caret, the selection bar and the scrollbar track all shipped green-on-
+     * paper-stock before this. */
+    caret-color: var(--color-verde);
+    scrollbar-color: var(--color-line-strong) var(--color-papel);
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-verde-cruz);
-    outline-offset: 2px;
+    outline: 2px solid var(--color-verde);
+    outline-offset: 3px;
   }
 
   ::selection {
-    background-color: var(--color-menta);
-    color: var(--color-verde-cruz-oscuro);
+    background-color: var(--color-verde);
+    color: #fff;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -61,340 +138,607 @@
 
 /* ---------------------------------------------------------------------------
  * Components
- *
- * .display — Archivo at natural width for headlines: the institutional voice.
- * .data    — IBM Plex Mono for every peso, lot code, NIT and timestamp.
- *
- * These live in @layer components so Tailwind utilities can still override
- * single properties where a spot genuinely needs it.
  * ------------------------------------------------------------------------- */
 @layer components {
+  /* Display voice: the printed wordmark of a shop. Humanist, open apertures,
+   * softened terminals — institutional without reading as machined. */
   .display {
-    letter-spacing: -0.01em;
+    font-family: var(--font-display);
+    font-weight: 700;
+    line-height: 1.04;
+    letter-spacing: -0.02em;
     text-wrap: balance;
   }
 
+  /* Every peso, lot code, NIT, folio and timestamp. Hard rule: money and
+   * fiscal data never leave the mono. */
   .data {
     font-family: var(--font-mono);
     font-feature-settings: "tnum" 1;
+    font-variant-numeric: tabular-nums;
   }
 
-  .eyebrow {
+  /* Section label. Carries the folio number, so it is never decorative. */
+  .folio {
     font-family: var(--font-mono);
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.18em;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
     text-transform: uppercase;
   }
 
-  /* Buttons — press feedback per DESIGN.md motion budget. Hover transforms
-   * are gated behind hover-capable pointers only. min-height keeps every
-   * button at the 44px touch-target floor (small variant included). */
+  /* Chip — the page's smallest labelled surface: lot codes, keystrokes, queue
+   * states. It always sits on a filled background, so it carries its own inset
+   * and the one shared size rather than each call site inventing both. */
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: var(--text-chip);
+    line-height: var(--text-chip--line-height);
+    padding: 0.25rem 0.5rem;
+  }
+
+  /* Raised sheet — the terminal preview, the counter panels, the plan documents
+   * and the tear-off stub are the same object on different pages of the
+   * document: one edge weight, one ground, one corner radius. Declared once so
+   * those four cannot drift into four different card styles.
+   *
+   * It also declares its own foreground. A sheet of paper is always dark ink on
+   * light stock, and two of them live inside the dark bands — without this they
+   * inherit the band's cream and end up as white text on a white ground. */
+  .sheet {
+    border: 1px solid var(--color-line);
+    background-color: var(--color-papel-alto);
+    color: var(--color-tinta);
+    border-radius: 2px;
+  }
+
+  /* Buttons. min-height keeps every variant on the 44px touch-target floor;
+   * hover feedback is gated behind hover-capable pointers only. */
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    border-radius: 6px;
+    border-radius: 2px;
     font-weight: 600;
     line-height: 1;
-    padding: 0.875rem 1.5rem;
+    padding: 1rem 1.5rem;
     min-height: 2.75rem;
     cursor: pointer;
     touch-action: manipulation;
     transition:
-      transform 160ms cubic-bezier(0.23, 1, 0.32, 1),
       background-color 160ms ease-out,
       border-color 160ms ease-out,
       color 160ms ease-out;
   }
 
-  .btn:active {
-    transform: scale(0.97);
+  .btn-sm {
+    padding: 0.75rem 1.125rem;
+    font-size: 0.875rem;
   }
 
-  /* Compact size for the sticky header row and inline actions. */
-  .btn-sm {
-    padding: 0.625rem 1.25rem;
-    font-size: 0.875rem;
-    min-height: 2.75rem;
+  /* The checkout dialog's submit button holds this state while the browser
+   * navigates to Wompi; without it the label is the only signal that anything
+   * is happening. */
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
   }
 
   .btn-primary {
-    background-color: var(--color-verde-cruz);
-    color: #ffffff;
+    background-color: var(--color-verde);
+    color: #fff;
   }
 
   @media (hover: hover) and (pointer: fine) {
-    .btn-primary:hover {
-      background-color: var(--color-verde-cruz-oscuro);
+    .btn-primary:hover:not(:disabled) {
+      background-color: var(--color-verde-hondo);
     }
   }
 
   .btn-secondary {
     background-color: transparent;
     color: var(--color-tinta);
-    border: 1px solid color-mix(in srgb, var(--color-tinta) 25%, transparent);
+    border: 1px solid var(--color-line-strong);
   }
 
   @media (hover: hover) and (pointer: fine) {
-    .btn-secondary:hover {
+    .btn-secondary:hover:not(:disabled) {
       border-color: var(--color-tinta);
-      background-color: color-mix(in srgb, var(--color-tinta) 4%, transparent);
-    }
-  }
-
-  .btn-on-dark {
-    background-color: transparent;
-    color: var(--color-papel);
-    border: 1px solid color-mix(in srgb, var(--color-papel) 40%, transparent);
-  }
-
-  @media (hover: hover) and (pointer: fine) {
-    .btn-on-dark:hover {
-      border-color: var(--color-papel);
-      background-color: color-mix(in srgb, var(--color-papel) 10%, transparent);
+      background-color: color-mix(in srgb, var(--color-tinta) 5%, transparent);
     }
   }
 
   .btn-invert {
-    background-color: var(--color-papel);
-    color: var(--color-verde-cruz-oscuro);
+    background-color: var(--color-papel-alto);
+    color: var(--color-verde-hondo);
   }
 
   @media (hover: hover) and (pointer: fine) {
-    .btn-invert:hover {
-      background-color: var(--color-menta);
+    .btn-invert:hover:not(:disabled) {
+      background-color: #fff;
     }
   }
 
-  /* Arrow inside primary CTAs nudges forward on hover — a direction cue,
-   * not decoration; gated to hover-capable pointers. */
+  /* Arrow inside primary CTAs nudges forward on hover — a direction cue. */
   .btn-arrow {
-    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+    transition: transform 160ms var(--ease-tira);
   }
 
   @media (hover: hover) and (pointer: fine) {
     .btn:hover .btn-arrow {
-      transform: translateX(2px);
+      transform: translateX(3px);
+    }
+  }
+
+  /* Quiet text action with a rule that draws in from the left. */
+  .link-rule {
+    position: relative;
+    display: inline-block;
+    padding-bottom: 2px;
+  }
+
+  .link-rule::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 1px;
+    width: 100%;
+    background-color: currentColor;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 220ms var(--ease-tira);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .link-rule:hover::after {
+      transform: scaleX(1);
     }
   }
 }
 
 /* ---------------------------------------------------------------------------
- * Signature motion + decorative helpers.
+ * Structure: torn edges, printed sheets, specification rows.
  *
- * Kept OUTSIDE any cascade layer on purpose: these are one-off effects whose
- * internal state transitions must never be partially overridden by utilities.
+ * These live OUTSIDE any cascade layer on purpose — they are one-off effects
+ * whose internal state must never be partially overridden by utilities.
  * ------------------------------------------------------------------------- */
 
-/* Receipt perforation — scalloped bottom edge of the plan documents. */
-.perforation {
-  position: relative;
+/* A row of bites out of a sheet's edge. Circles are centred on the edge itself
+ * and filled with the colour of the neighbouring surface, so the sheet below
+ * looks torn rather than decorated. One mechanism, reused at every boundary. */
+.notch {
+  --notch-color: var(--color-papel);
+  height: 5px;
+  background-image: radial-gradient(
+    circle at 5px 0,
+    var(--notch-color) 0 4.6px,
+    transparent 4.7px
+  );
+  background-size: 10px 5px;
+  background-repeat: repeat-x;
 }
 
-.perforation::after {
+/* ---------------------------------------------------------------------------
+ * Scroll motion.
+ *
+ * Every entry effect on this page is scroll-linked CSS, driven by an anonymous
+ * view() timeline on the element that moves. Two consequences worth keeping:
+ *
+ * 1. Nothing here needs an IntersectionObserver, so no reveal costs a React
+ *    state write and no observer callback lands on the main thread during
+ *    scroll — which is what INP measures. Only the genuinely discrete states
+ *    (which section is current, is the buy bar up) still use one.
+ *
+ * 2. The resting state of every animated element is its *finished* state.
+ *    Animation is an enhancement layered on visible content, not the thing
+ *    that makes content appear. So `prefers-reduced-motion` needs no override
+ *    blocks at all — it needs the animations never to be declared, which is
+ *    what the no-preference gate below does — and a browser without
+ *    animation-timeline renders the finished page rather than a blank one.
+ *
+ * Ranges are expressed against `cover` rather than a fixed offset: cover spans
+ * from the moment an element starts being covered by the scrollport to the
+ * moment it stops, so the end state is always reachable even for an element
+ * taller than the viewport or sitting at the very bottom of the document —
+ * the two cases that leave `entry`-ranged reveals stuck at their first frame.
+ * ------------------------------------------------------------------------- */
+
+/* The signature device: a torn edge between two sections, opened by a single
+ * left-to-right clip sweep tied to the reader's scroll position.
+ *
+ * `.tear`, `.print-face` and `.reveal` deliberately have no base rule at all,
+ * and that is the point. The hidden state lives in each animation's `from`
+ * keyframe, which `animation-fill-mode: both` applies before the range starts.
+ * So every one of these elements' own state is its finished state, and a browser
+ * without scroll timelines — or a visitor who asked for reduced motion — renders
+ * content instead of an invisible page. A base `opacity: 0` or
+ * `clip-path: inset(0 0 100% 0)` here would make each reveal depend entirely on
+ * its animation existing, which is how the torn edges and the printed sheets
+ * once vanished for anyone on a browser without `animation-timeline`. */
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal-up linear both;
+      animation-timeline: view();
+      animation-range: cover calc(4% + var(--reveal-index, 0) * 5%) cover
+        calc(26% + var(--reveal-index, 0) * 5%);
+    }
+
+    .tear {
+      animation: tear-open linear both;
+      animation-timeline: view();
+      animation-range: cover 2% cover 24%;
+    }
+
+    .print-face {
+      animation: print-face linear both;
+      animation-timeline: view();
+      animation-range: cover 3% cover 30%;
+    }
+  }
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tear-open {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes print-face {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+  }
+
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* Specification row (the counter sheet). The left rule draws top to bottom as
+ * the row enters — the same "the line draws" motif as the tear and the price
+ * plate, never a new one. */
+.spec-row {
+  position: relative;
+  /* Clearance for the rule that draws down the left edge. */
+  padding-left: 1.5rem;
+}
+
+.spec-row::before {
   content: "";
   position: absolute;
   left: 0;
+  top: 1.75rem;
+  bottom: 1.75rem;
+  width: 1px;
+  background-color: var(--color-verde);
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .spec-row::before {
+      transform-origin: top;
+      animation: spec-draw linear both;
+      animation-timeline: view();
+      animation-range: cover 6% cover 34%;
+    }
+  }
+}
+
+@keyframes spec-draw {
+  from {
+    transform: scaleY(0);
+  }
+
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .spec-row:hover {
+    background-color: color-mix(in srgb, var(--color-verde) 5%, transparent);
+  }
+}
+
+/* Activation rule — the three steps are joined by a line that draws itself when
+ * the section enters, and each node lands on it in turn. The order is real, so
+ * the line and the numbering both carry information. */
+.step-rule {
+  position: relative;
+}
+
+.step-rule::before,
+.step-rule::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
   right: 0;
-  bottom: -7px;
-  height: 14px;
-  background-image: radial-gradient(
-    circle at 7px 0px,
-    transparent 6px,
-    var(--perforation-bg, var(--color-papel)) 6.5px
-  );
-  background-size: 14px 14px;
-  background-repeat: repeat-x;
-  pointer-events: none;
+  height: 1px;
 }
 
-/* Signature moment — documents "print" top-to-bottom once, on first view.
- * JS adds data-printed when the IntersectionObserver fires. Reduced motion
- * collapses this to a simple fade. */
-.print-reveal {
-  clip-path: inset(0 0 100% 0);
-  transition: clip-path 900ms cubic-bezier(0.23, 1, 0.32, 1);
+.step-rule::before {
+  background-color: var(--color-line-strong);
 }
 
-.print-reveal[data-printed="true"] {
-  clip-path: inset(0 0 0% 0);
+.step-rule::after {
+  background-color: var(--color-verde);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .print-reveal {
-    clip-path: none;
+.step-node {
+  position: relative;
+  /* Room for the node square to sit above the number, on the rule. */
+  padding-top: 1.75rem;
+}
+
+.step-node::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--color-verde);
+  background-color: var(--color-papel-alto);
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .step-rule::after {
+      transform-origin: left;
+      animation: rule-draw linear both;
+      animation-timeline: view();
+      animation-range: cover 8% cover 46%;
+    }
+
+    /* Each node lands on the line at its own point along the scroll, so the
+     * numbering and the drawing read as one event instead of a timer. */
+    .step-node::before {
+      animation: node-land linear both;
+      animation-timeline: view();
+      animation-range: cover calc(10% + var(--node-index, 0) * 6%) cover
+        calc(38% + var(--node-index, 0) * 6%);
+    }
+  }
+}
+
+@keyframes rule-draw {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes node-land {
+  from {
     opacity: 0;
-    transition: opacity 300ms ease-out;
+    transform: scale(0.3);
   }
 
-  .print-reveal[data-printed="true"] {
-    opacity: 1;
-  }
-}
-
-/* Hero entrance stagger — short, decorative, never blocks interaction. */
-.rise-in {
-  opacity: 0;
-  transform: translateY(10px);
-  animation: rise-in 320ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
-  animation-delay: calc(var(--rise-index, 0) * 55ms);
-}
-
-@keyframes rise-in {
   to {
     opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rise-in {
     transform: none;
-    animation-name: rise-in-reduced;
-    animation-delay: 0ms;
   }
 }
 
-@keyframes rise-in-reduced {
+/* The one amber alarm on the site flashes exactly once, as the lot row enters,
+ * then holds. It is a fact about a product, not a decoration. */
+.alarm-flash {
+  background-color: var(--color-ambar-fondo);
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .alarm-flash {
+      animation: alarm-once 1.6s ease-out both;
+      animation-timeline: view();
+      animation-range: cover 12% cover 30%;
+    }
+  }
+}
+
+@keyframes alarm-once {
+  0% {
+    background-color: var(--color-ambar);
+    /* The chip turns to solid amber, so its text has to turn with it: ámbar-texto
+     * on ámbar is 1.4:1, and the flash lasts long enough to be read. */
+    color: var(--color-papel-alto);
+  }
+
+  22%,
+  100% {
+    background-color: var(--color-ambar-fondo);
+    color: var(--color-ambar-texto);
+  }
+}
+
+/* Total rule — the dashed line above a total draws itself as the document
+ * prints, the same "the line draws" motif as the tear and the shift nodes. */
+.doc-rule {
+  border-top: 1px dashed var(--color-line-strong);
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .doc-rule {
+      transform-origin: left;
+      animation: doc-draw linear both;
+      animation-timeline: view();
+      animation-range: cover 14% cover 34%;
+    }
+  }
+}
+
+@keyframes doc-draw {
+  from {
+    transform: scaleX(0);
+  }
+
   to {
-    opacity: 1;
+    transform: scaleX(1);
   }
 }
 
-/* FAQ accordion — grid-rows transition stays interruptible mid-open. */
-.accordion-panel {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 200ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.accordion-panel[data-open="true"] {
-  grid-template-rows: 1fr;
-}
-
-.accordion-panel > div {
-  overflow: hidden;
-}
-
-/* Queue drain — offline panel lines arrive one by one once the panel prints
- * in, telling the "cola sube sola" story with motion instead of prose.
- * Transition-based (not keyframes) so it stays interruptible; the parent's
- * data-printed attribute (usePrintReveal) is the trigger. */
-.queue-line {
-  opacity: 0;
-  transform: translateY(6px);
+/* Mobile buy bar — fixed bottom, slides up once the hero is out of view. */
+.mobile-buy-bar {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 40;
+  transform: translateY(100%);
   transition:
-    opacity 280ms ease-out,
-    transform 280ms cubic-bezier(0.23, 1, 0.32, 1);
-  transition-delay: calc(
-    var(--queue-index, 0) * 160ms + 400ms
-  ); /* wait for the panel itself to mostly print */
+    transform 260ms var(--ease-tira),
+    opacity 260ms ease-out;
 }
 
-[data-printed="true"] .queue-line {
-  opacity: 1;
+.mobile-buy-bar[data-visible="false"] {
+  opacity: 0;
+}
+
+.mobile-buy-bar[data-visible="true"] {
   transform: none;
+  opacity: 1;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .queue-line {
-    transform: none;
-    transition: opacity 200ms ease-out;
-    transition-delay: calc(var(--queue-index, 0) * 80ms);
-  }
-}
-
-/* Checkout dialog — enter via @starting-style (Emil pattern); exit snaps,
- * since the element leaves the render tree immediately on close. */
+/* Checkout dialog — enter via @starting-style; the element leaves the render
+ * tree immediately on close, so the exit cannot be transitioned. */
 .dialog-panel[open] {
   opacity: 1;
   transform: none;
   transition:
-    opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
-    transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+    opacity 200ms var(--ease-tira),
+    transform 200ms var(--ease-tira);
 }
 
 @starting-style {
   .dialog-panel[open] {
     opacity: 0;
-    transform: translateY(6px) scale(0.97);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dialog-panel[open] {
-    transition: opacity 150ms ease-out;
-  }
-
-  @starting-style {
-    .dialog-panel[open] {
-      transform: none;
-    }
+    transform: translateY(6px) scale(0.98);
   }
 }
 
 /* ---------------------------------------------------------------------------
- * Motion system — September 2026 redesign pass. Every effect here is a
- * transition (interruptible) or a single looping ambient; all of it respects
- * prefers-reduced-motion and the hover-capable-pointer gate. Budget:
- * reveals fire once, two tiny loops (ticker, scanline) and nothing else.
+ * Time-based motion and the ambient loops.
+ *
+ * One metaphor, executed consistently: the page is a document being printed and
+ * a machine running. Everything tied to the reader's position lives in the
+ * scroll-motion section above; what is here either happens once on load or is
+ * one of the site's ambient loops — the POS scanline and the status heartbeat,
+ * and nothing else.
  * ------------------------------------------------------------------------- */
 
-/* Scroll reveal — fade-up once, on first view. Gated on html[data-js] so
- * content is never hidden when JavaScript is unavailable. */
-html[data-js="true"] .reveal {
+/* Hero entrance — a short stagger on first paint only. The hero is above the
+ * fold by definition, so this one is a timer and not a scroll timeline. */
+.rise-in {
   opacity: 0;
-  transform: translateY(14px);
-  transition:
-    opacity 500ms ease-out,
-    transform 500ms var(--ease-print);
-  transition-delay: calc(var(--reveal-index, 0) * 70ms);
+  transform: translateY(16px);
 }
 
-html[data-js="true"] .reveal[data-visible="true"] {
-  opacity: 1;
-  transform: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html[data-js="true"] .reveal {
-    transform: none;
-    transition: opacity 250ms ease-out;
-    transition-delay: calc(var(--reveal-index, 0) * 40ms);
+@supports not (animation-timeline: view()) {
+  /* Without scroll timelines the reveal classes hold their first frame, so the
+   * hero has to finish on its own or the headline never appears. */
+  .rise-in {
+    animation: rise-in 560ms var(--ease-tira) forwards;
+    animation-delay: calc(var(--rise-index, 0) * 70ms);
   }
 }
 
-/* Fiscal tape — the domain's real data (lotes, turnos, cola) reprinting as a
- * live status line. Pauses on hover so a line can be read. */
-.ticker-track {
-  animation: ticker-scroll 36s linear infinite;
+@media (prefers-reduced-motion: no-preference) {
+  .rise-in {
+    animation: rise-in 560ms var(--ease-tira) forwards;
+    animation-delay: calc(var(--rise-index, 0) * 70ms);
+  }
 }
 
-@keyframes ticker-scroll {
+@keyframes rise-in {
   to {
-    transform: translateX(-50%);
+    opacity: 1;
+    transform: none;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ticker-track {
-    animation: none;
+/* Rows of a POS panel printing in. The hero screen prints as the page paints
+ * because it is always in the first viewport; the counter panels are below the
+ * fold, so they print against their own position in the scroll instead — an
+ * animation started on mount would be finished before anyone got there. */
+/* `cart-print` carries the hidden state in its `from`; nothing is declared
+ * here, so a line with no animation applied is simply a visible line. */
+@keyframes cart-print {
+  from {
+    opacity: 0;
+    clip-path: inset(0 0 100% 0);
+  }
+
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
   }
 }
 
-/* POS scanline — a scanner pass sweeping the terminal preview. The 2px line
- * rides a full-height track moved with transform only (never top/left), so
- * the sweep stays on the compositor. Active ~40% of the cycle; the rest is
- * silence so it reads as an event. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .cart-line {
+      animation: cart-print linear both;
+      animation-timeline: view();
+      animation-range: cover calc(6% + var(--line-index, 0) * 4%) cover
+        calc(30% + var(--line-index, 0) * 4%);
+    }
+
+    /* The hero screen is in the first viewport, so its timeline is already past
+     * the range at scroll 0. Giving it back its own timer is what makes it
+     * print on load — and `animation-timeline: auto` is what stops it from
+     * inheriting the view timeline declared for below-the-fold lines. */
+    .pos-preview .cart-line {
+      animation: cart-print 420ms var(--ease-tira) both;
+      animation-timeline: auto;
+      animation-range: normal;
+      animation-delay: calc(340ms + var(--line-index, 0) * 110ms);
+    }
+  }
+}
+
+@keyframes cart-print {
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+/* POS scanline — a scanner pass sweeping the terminal preview, once per cycle.
+ * The 2px line rides a full-height track moved with transform only, so the
+ * sweep stays on the compositor with no promotion hint left standing at rest.
+ * Active ~40% of the cycle; the rest is silence so it reads as an event. */
 .scanline {
   position: absolute;
-  inset: 8px 12px;
+  inset: 10px 14px;
   pointer-events: none;
   opacity: 0;
-  animation: scanline-sweep 5.5s var(--ease-print) 1.4s infinite;
-  will-change: transform;
 }
 
 .scanline::before {
@@ -404,13 +748,24 @@ html[data-js="true"] .reveal[data-visible="true"] {
   left: 0;
   right: 0;
   height: 2px;
-  border-radius: 999px;
   background: linear-gradient(
     90deg,
     transparent,
-    color-mix(in srgb, var(--color-verde-cruz) 55%, transparent),
+    color-mix(in srgb, var(--color-verde) 60%, transparent),
     transparent
   );
+}
+
+/* Sync glyph turns a quarter turn per scanline cycle, retelling "it uploads on
+ * its own" inside the terminal preview. The three share one cycle length so the
+ * sweep, the flash and the glyph read as one machine. */
+.scanline,
+.scan-flash,
+.sync-spin {
+  animation-duration: 5.5s;
+  animation-timing-function: var(--ease-tira);
+  animation-iteration-count: infinite;
+  animation-delay: 1.6s;
 }
 
 @keyframes scanline-sweep {
@@ -435,35 +790,17 @@ html[data-js="true"] .reveal[data-visible="true"] {
   }
 }
 
-/* The scanner glyph shifts tone in the same cycle as the sweep. */
-.scan-flash {
-  animation: scan-flash 5.5s ease-in-out 1.4s infinite;
-}
-
 @keyframes scan-flash {
   0%,
   45%,
   100% {
-    color: var(--color-verde-cruz);
+    color: var(--color-verde);
   }
 
   18%,
   30% {
-    color: var(--color-verde-cruz-oscuro);
+    color: var(--color-verde-hondo);
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .scanline,
-  .scan-flash {
-    animation: none;
-  }
-}
-
-/* Sync glyph — one quarter turn per scanline cycle, retelling "sube sola"
- * inside the terminal preview. */
-.sync-spin {
-  animation: sync-spin 5.5s var(--ease-print) 1.4s infinite;
 }
 
 @keyframes sync-spin {
@@ -478,14 +815,7 @@ html[data-js="true"] .reveal[data-visible="true"] {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .sync-spin {
-    animation: none;
-  }
-}
-
-/* Pulse dot — a single calm heartbeat for live status (sync provenance,
- * pending queue line). Ring inherits the dot's own color. */
+/* Status heartbeat — a single calm pulse for live state. One per zone. */
 .pulse-dot {
   position: relative;
 }
@@ -497,143 +827,343 @@ html[data-js="true"] .reveal[data-visible="true"] {
   border-radius: 9999px;
   background-color: currentColor;
   opacity: 0;
-  animation: pulse-ring 2.4s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .scanline {
+    animation-name: scanline-sweep;
+  }
+
+  .scan-flash {
+    animation-name: scan-flash;
+    animation-timing-function: ease-in-out;
+  }
+
+  .sync-spin {
+    animation-name: sync-spin;
+  }
+
+  .pulse-dot::after {
+    animation: pulse-ring 2.6s ease-out infinite;
+  }
 }
 
 @keyframes pulse-ring {
   0% {
     transform: scale(1);
-    opacity: 0.45;
+    opacity: 0.4;
   }
 
   70%,
   100% {
-    transform: scale(2.6);
+    transform: scale(2.8);
     opacity: 0;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .pulse-dot::after {
-    animation: none;
+/* The shift balancing is the proof the whole panel exists, so it gets the one
+ * moment where the counted total reaches the base plus the sales. */
+.shift-balance[data-balanced="true"] {
+  animation: balance-once 1.1s var(--ease-tira) both;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .shift-balance[data-balanced="true"] {
+    animation-name: balance-once;
   }
 }
 
-/* Card lift — hover-capable pointers only; shadows do the work, not borders. */
-@media (hover: hover) and (pointer: fine) {
-  .card-lift {
-    transition:
-      transform 200ms var(--ease-print),
-      box-shadow 200ms var(--ease-print);
+@keyframes balance-once {
+  0% {
+    background-color: var(--color-verde);
+    color: var(--color-papel-alto);
   }
 
-  .card-lift:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 14px 34px -14px
-      color-mix(in srgb, var(--color-tinta) 22%, transparent);
+  100% {
+    background-color: transparent;
+    color: var(--color-verde);
   }
 }
 
-/* Step rule — the green accent slides along the neutral rule as the step
- * reveals, because these numbers are a real sequence. */
-.step-rule {
+/* Price plate — the total line of a receipt, at architectural size. */
+.price-plate {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 0.86;
+  letter-spacing: -0.04em;
+}
+
+/* Struck list price. The element is a real <s>, so assistive technology gets the
+ * semantics of "this figure no longer applies"; the line is drawn by a pseudo
+ * element instead of text-decoration, because that lets it sweep in from the
+ * left when the period changes — the same "the line draws" motif as the tear,
+ * the total rule and the activation nodes. */
+.price-was {
   position: relative;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
-.step-rule::after {
+.price-was::after {
   content: "";
   position: absolute;
-  top: -2px;
-  left: 0;
-  height: 2px;
-  width: 0;
-  background: var(--color-verde-cruz);
-  transition: width 500ms var(--ease-print) 150ms;
+  /* Overshoot the glyphs slightly, the way a struck price is drawn by hand. */
+  left: -0.15em;
+  right: -0.15em;
+  top: 52%;
+  height: 1px;
+  background-color: currentColor;
+  /* Struck by default: the hidden state lives in `strike-in`'s `from`, not
+   * here, so a browser or preference that never applies the animation still
+   * shows the discount as a real strikethrough. */
+  transform-origin: left;
 }
 
-.step-rule[data-visible="true"]::after {
-  width: 3.5rem;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .step-rule::after {
-    transition: none;
+@media (prefers-reduced-motion: no-preference) {
+  .price-was {
+    animation: strike-in 420ms var(--ease-tira) both;
   }
 }
 
-/* FAQ question — color + 4px indent on hover; feedback without decoration. */
-.faq-q {
-  transition:
-    color 160ms ease-out,
-    padding-left 160ms var(--ease-print);
-}
+@keyframes strike-in {
+  from {
+    transform: scaleX(0);
+  }
 
-@media (hover: hover) and (pointer: fine) {
-  .faq-q:hover {
-    color: var(--color-verde-cruz);
-    padding-left: 0.25rem;
+  to {
+    transform: scaleX(1);
   }
 }
 
-/* Hero ambient — pharmacy green breathing behind the terminal. Static field,
- * no parallax, no mouse tracking. The outlined cross is a static mark:
- * motion here would push the first viewport past the ambient-animation
- * budget (ticker + machine cycle already live there). */
+/* Hero ambient — a static field of institutional green. No parallax, no mouse
+ * tracking: the scanline already carries the first viewport. */
 .hero-ambient {
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
     radial-gradient(
-      560px 420px at 82% 18%,
-      color-mix(in srgb, var(--color-verde-cruz) 9%, transparent),
+      720px 520px at 78% 8%,
+      color-mix(in srgb, var(--color-verde) 10%, transparent),
       transparent 70%
     ),
-    radial-gradient(
-      520px 400px at 8% 92%,
-      color-mix(in srgb, var(--color-verde-cruz) 6%, transparent),
-      transparent 72%
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-verde) 4%, transparent),
+      transparent 40%
     );
 }
 
-.hero-plus {
-  width: 220px;
-  height: 220px;
-  opacity: 0.09;
-  pointer-events: none;
+/* Reissue stamp — changing the billing period issues a different document, so
+ * the sheet says so rather than silently changing one number in place. Keyed on
+ * a counter in the component, so it re-enters on every reissue. */
+.reprint-stamp {
+  border-color: var(--color-verde);
+  color: var(--color-verde-hondo);
 }
 
-/* Mobile buy bar — fixed bottom, slides up once the hero is scrolled past.
- * Transition (not keyframes) so fast scrolls retarget smoothly; reduced
- * motion collapses the slide to a fade. Visibility itself is display:none
- * ≥ md via utility classes, so desktop never mounts the transform. */
-.mobile-buy-bar {
-  position: fixed;
-  inset-inline: 0;
-  bottom: 0;
-  z-index: 40;
-  transform: translateY(100%);
-  transition:
-    transform 260ms cubic-bezier(0.23, 1, 0.32, 1),
-    opacity 260ms ease-out;
+@media (prefers-reduced-motion: no-preference) {
+  .reprint-stamp {
+    animation: stamp-on 520ms var(--ease-tira) both;
+  }
 }
 
-.mobile-buy-bar[data-visible="false"] {
-  opacity: 0;
+@keyframes stamp-on {
+  from {
+    opacity: 0;
+    transform: scale(1.14) rotate(-3deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.mobile-buy-bar[data-visible="true"] {
-  transform: none;
-  opacity: 1;
+/* ---------------------------------------------------------------------------
+ * Offline demo — the sale that survives the cut.
+ *
+ * The argument of the product is a transition, not a feature: ring the sale up,
+ * lose the network, watch it hold locally, see it go up on its own. So the
+ * section performs it. Each step and the terminal state it is about are the same
+ * grid row, and the terminal stays pinned while that step crosses the screen.
+ *
+ * Pairing by row is what keeps it in sync: "you are reading step N, you are
+ * looking at screen N" holds by construction, whatever the text height or the
+ * viewport is. There is no crossfade between layered screens and no arithmetic
+ * over a single track's travel — the earlier version had both, and both failed
+ * (the states missed their steps, and four absolutely-positioned screens in a
+ * heightless stage collapsed on top of each other).
+ *
+ * Every screen is real POS UI and every label is something the product actually
+ * reports. Offline is normal work here, so nothing in it is styled as an error.
+ * ------------------------------------------------------------------------- */
+
+/* Rows stack in normal flow: on a phone each step is followed by its own screen
+ * and the whole sequence reads top to bottom. */
+.offline-row {
+  display: grid;
+  gap: 2rem;
+  padding-block: 2rem;
 }
 
+.offline-row + .offline-row {
+  border-top: 1px solid var(--color-line-invert-quiet);
+}
+
+.offline-row__canvas {
+  min-width: 0;
+}
+
+/* The state line is what the step is about, so it prints as the row arrives —
+ * the same clip the cart and the plan documents use. */
+.offline-note {
+  border-color: var(--color-line);
+  background-color: var(--color-papel);
+  color: var(--color-grafito);
+}
+
+/* The one state that ended well: the only green surface in the whole section,
+ * and the only place the amber-alarm rule does not apply. */
+.offline-note--done {
+  border-color: color-mix(in srgb, var(--color-verde) 30%, transparent);
+  background-color: var(--color-menta);
+  color: var(--color-verde-hondo);
+}
+
+/* No base rule: `print-face`'s `from` keyframe hides each line before its range
+ * opens, and its absence here is what leaves the whole receipt legible in a
+ * browser that never applies the animation. */
+
+@media (min-width: 64rem) {
+  /* Room for the pinned screen to travel while its step is still on screen.
+   *
+   * The row has to be taller than the screen it pins, or there is no travel
+   * left and the sticky does nothing — so the height is tied to the viewport.
+   * But only so far: past about 960px there is nothing more to read, and an
+   * uncapped `vh` on a tall monitor turns the whole section into empty black.
+   */
+  .offline-row {
+    grid-template-columns: 0.85fr 1fr;
+    gap: 5rem;
+    align-items: start;
+    min-height: 78vh;
+    max-height: 60rem;
+    padding-block: 3rem;
+  }
+
+  /* self-start is what leaves the screen something to stick through; stretched
+     to the full row height there is no travel left and it would not move. */
+  .offline-row__canvas {
+    position: sticky;
+    top: 6rem;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    /* The row names its own timeline. A named view timeline is visible to the
+       element's descendants, so the note line and the receipt below it — even
+       the ones inside the pinned canvas — resolve it without any scope
+       plumbing and without depending on how tall the whole track is. */
+    .offline-row {
+      view-timeline-name: var(--tl);
+      view-timeline-axis: block;
+    }
+
+    .offline-note {
+      animation: print-face linear both;
+      animation-timeline: var(--tl);
+      animation-range: cover 20% cover 52%;
+    }
+
+    /* The receipt belongs to the last row, and prints one line per step of that
+       row's scroll rather than on a clock. This is the only place the paper
+       fills at the reader's own pace. */
+    .offline-receipt__line {
+      animation: print-face linear both;
+      animation-timeline: var(--tl);
+      animation-range: cover calc(22% + var(--line-index, 0) * 7%) cover
+        calc(50% + var(--line-index, 0) * 7%);
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Contrast and colour-assist overrides.
+ * ------------------------------------------------------------------------- */
+
+/* The document's structure is carried almost entirely by hairline borders and
+ * low-opacity tints. Under a forced palette those collapse to nothing and the
+ * page turns into floating text, so every surface that draws its own shape is
+ * handed a system-colour border. */
+@media (forced-colors: active) {
+  .sheet,
+  .tear,
+  .notch,
+  .pulse-dot::after {
+    forced-color-adjust: none;
+  }
+
+  .sheet {
+    border-color: CanvasText;
+  }
+
+  /* Documents paint their own edges, so the sheets that need the system border
+   * are the ones whose edges are not drawn by a child. */
+  .print-face {
+    border-color: CanvasText;
+  }
+
+  .tear,
+  .notch {
+    --notch-color: Canvas;
+  }
+
+  :focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* Raised-contrast preference: the quiet tiers are the ones that fail first, so
+ * only they move — the ink itself stays where the palette put it. */
+@media (prefers-contrast: more) {
+  :root {
+    --color-line-quiet: #111d1729;
+    --color-line: #111d1740;
+    --color-line-strong: #111d1766;
+    --color-line-invert-quiet: #fbfcfa33;
+    --color-line-invert: #fbfcfa5c;
+    --color-ond-dark-muted: #fbfcfaa8;
+    --color-ond-dark-body: #fbfcfad4;
+    --color-grafito: #414f47;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion.
+ *
+ * Scroll motion and the ambient loops are already gated on
+ * prefers-reduced-motion: no-preference where they are declared, so nothing
+ * needs cancelling here. What remains are the two effects driven by discrete
+ * state rather than by scroll — the buy bar and the dialog — which swap their
+ * movement for a plain opacity change.
+ * ------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
-  .mobile-buy-bar {
+  .mobile-buy-bar,
+  .mobile-buy-bar[data-visible="false"] {
     transform: none;
     transition: opacity 200ms ease-out;
   }
 
-  .mobile-buy-bar[data-visible="false"] {
-    transform: none;
+  .dialog-panel[open] {
+    transition: opacity 150ms ease-out;
+  }
+
+  @starting-style {
+    .dialog-panel[open] {
+      transform: none;
+    }
   }
 }

@@ -8,7 +8,7 @@
       name="description"
       content="Punto de venta para droguerías colombianas que sigue vendiendo sin internet: control de lotes y vencimientos, fórmulas y facturación electrónica DIAN. Licencia mensual, cancele cuando quiera."
     />
-    <meta name="theme-color" content="#F7F8F5" />
+    <meta name="theme-color" content="#F1F4EF" />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="es_CO" />
     <meta
@@ -21,14 +21,27 @@
     />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230F6B3F'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23F7F8F5'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%230F6B3F'/%3E%3Cpath d='M13 7h6v6h6v6h-6v6h-6v-6H7v-6h6z' fill='%23F1F4EF'/%3E%3C/svg%3E"
     />
+    <!-- The LCP element is the hero headline in Schibsted Grotesk 700. Only the
+         weights the site actually renders are requested (see .display / .data),
+         and the sheet loads out of the render path so first paint never waits on
+         a third party. Metric-matched @font-face fallbacks in global.css absorb
+         the swap, so the headline does not shift when the real face arrives. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..900&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all';this.onload=null"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
   </head>
   <body>
     <div id="root"></div>

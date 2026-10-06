@@ -11,7 +11,7 @@ import { usePlansStore } from "../stores/plans-store";
 /**
  * Mobile-only sticky buy bar. Appears once the hero scrolls out of view so the
  * primary CTA is always one thumb-tap away; the pricing section selector keeps
- * controlling which total it quotes. Desktop never renders it (md:hidden).
+ * controlling which total it quotes. Desktop never renders it (lg:hidden).
  */
 export function MobileBuyBar() {
   const { t } = useTranslation();
@@ -44,15 +44,16 @@ export function MobileBuyBar() {
 
   return (
     <div
+      role="complementary"
       data-visible={heroScrolledPast}
       aria-label={t("mobile_bar.label")}
-      className="mobile-buy-bar border-t border-tinta/15 bg-papel/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-sm md:hidden"
+      className="mobile-buy-bar border-t border-line bg-papel/95 px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur-sm lg:hidden"
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+      <div className="mx-auto flex max-w-[78rem] items-center justify-between gap-4">
         <p className="min-w-0">
           <span className="data block text-base font-semibold">
             {formatCOP(monthlyEquivalentCents)}
-            <span className="ml-1 text-xs font-normal text-tinta-media">
+            <span className="ml-1 text-xs font-normal text-grafito">
               {t("mobile_bar.price_note")}
             </span>
           </span>

@@ -1,26 +1,23 @@
 import type { CSSProperties, ReactNode } from "react";
-import { useReveal } from "../hooks/use-reveal";
 
 interface RevealProps {
   children: ReactNode;
-  /** 0-based stagger slot; each step adds 70 ms of delay. */
+  /** 0-based stagger slot; each step shifts the reveal 5% along the scroll. */
   index?: number;
   className?: string;
   id?: string;
 }
 
 /**
- * Scroll-triggered fade-up wrapper (see .reveal in global.css). Reveals once
- * on first view; with reduced motion it collapses to a short fade.
+ * Scroll-reveal wrapper. The motion lives entirely in `.reveal` in global.css,
+ * driven by a view() timeline on the element itself — this component only
+ * carries the stagger index. Nothing here observes, so a reveal costs no
+ * JavaScript and no state write during scroll.
  */
 export function Reveal({ children, index = 0, className, id }: RevealProps) {
-  const ref = useReveal<HTMLDivElement>();
-
   return (
     <div
-      ref={ref}
       id={id}
-      data-visible="false"
       className={`reveal ${className ?? ""}`}
       style={{ "--reveal-index": index } as CSSProperties}
     >

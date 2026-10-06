@@ -1497,20 +1497,24 @@ export class SyncOperationDispatcherService {
         });
       });
     } catch (err: unknown) {
-      // createMany can still fail on validation (e.g. invalid enum). Fall
-      // back to per-row best-effort so one bad row doesn't drop the whole
-      // batch. Each per-row insert runs in its own nested savepoint so a
-      // single bad row does not abort the outer withTenant / processEntry
-      // transaction (25P02).
+      // createMany is all-or-nothing: one bad row (invalid enum, FK/check
+      // violation on a column skipDuplicates does not cover) rejects the
+      // whole statement and, before this fallback existed, the ENTIRE
+      // batch was marked FAILED and every valid audit row was dropped.
+      // Per-row best-effort salvages the good rows: each insert runs in
+      // its own nested savepoint so a single bad row does not abort the
+      // outer withTenant / processEntry transaction (25P02).
       this.logger.warn(
         `AUDIT_LOG_BATCH createMany failed, falling back to per-row: ${err instanceof Error ? err.message : String(err)}`,
       );
+      let skipped = 0;
       for (const row of rowsToCreate) {
         try {
           await this.prisma.$transaction(async (tx) => {
             await tx.auditLog.create({ data: row });
           });
         } catch (perRowErr: unknown) {
+          skipped++;
           if (
             perRowErr instanceof Prisma.PrismaClientKnownRequestError &&
             perRowErr.code === 'P2002'
@@ -1521,6 +1525,16 @@ export class SyncOperationDispatcherService {
             `AUDIT_LOG_BATCH skipped log id=${row.id}: ${perRowErr instanceof Error ? perRowErr.message : String(perRowErr)}`,
           );
         }
+      }
+      // Only fail the batch when EVERY row was rejected — a complete
+      // failure signals a systemic problem (schema drift, RLS) that the
+      // integrity/health surfaces must see. A partial failure is expected
+      // here and already logged per row; throwing would burn the retry
+      // budget re-processing rows that were persisted fine.
+      if (skipped === rowsToCreate.length) {
+        throw new Error(
+          `AUDIT_LOG_BATCH rejected every log (${skipped}/${rowsToCreate.length}) — systemic persistence failure`,
+        );
       }
     }
 
