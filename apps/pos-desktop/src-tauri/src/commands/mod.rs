@@ -2,6 +2,7 @@
 
 pub mod backup;
 pub mod local_sync;
+pub mod oauth_popup;
 pub mod printer_discovery;
 pub mod report;
 pub mod sentinel;

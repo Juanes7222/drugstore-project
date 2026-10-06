@@ -15,6 +15,8 @@
     },
     "windows": [
       {
+        "label": "main",
+        "create": false,
         "fullscreen": false,
         "height": 900,
         "resizable": true,

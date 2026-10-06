@@ -81,11 +81,14 @@ pub fn run() {
 
     let app = builder
         .setup(|app| {
+            // The main window is declared with "create": false in
+            // tauri.conf.json and built here instead, because the OAuth
+            // popup handler can only be attached through the builder.
+            let main_window = commands::oauth_popup::build_main_window(app.handle())
+                .map_err(std::io::Error::other)?;
+
             #[cfg(debug_assertions)]
-            {
-                let window = app.get_webview_window("main").unwrap();
-                window.open_devtools();
-            }
+            main_window.open_devtools();
 
             let initial_status = assess_startup_health(app.handle());
             app.manage(BackupState::new(initial_status));
@@ -113,6 +116,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             hardware_fingerprint::get_hardware_fingerprint,
+            // OAuth popup
+            commands::oauth_popup::close_oauth_popup,
             // Backup commands
             commands::backup::get_startup_health,
             commands::backup::acknowledge_clean_startup,
