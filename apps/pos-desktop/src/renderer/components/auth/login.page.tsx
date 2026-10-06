@@ -25,6 +25,7 @@ import { LoginHeader } from './login-header';
 import { AvatarGrid } from './avatar-grid';
 import { ManualLoginForm } from './manual-login-form';
 import { SelectedUserCredential } from './selected-user-credential';
+import { GoogleSignInButton } from './google-signin-button';
 import { ErrorBanner } from './error-banner';
 import { TwoFactorModal } from './two-factor-modal';
 import { WifiIcon } from "@/components/ui/icons";
@@ -72,6 +73,12 @@ export const LoginPage: FC = () => {
     setIdentifier,
     setPassword,
     setSelectedUser,
+
+    // Google sign-in
+    googleAvailable,
+    googleLoading,
+    googleError,
+    handleGoogleSignIn,
 
     // Offline extensions
     isOfflineMode,
@@ -130,6 +137,14 @@ export const LoginPage: FC = () => {
     : selectedUser
       ? `credential-${selectedUser.id}`
       : 'selection';
+
+  // Google sign-in is an alternative to picking or typing credentials, so it
+  // is offered on the selection and manual screens only — once a local
+  // profile is chosen, the local PIN/password path owns the flow.
+  const showGoogleSignIn =
+    googleAvailable &&
+    ((contentKey === 'manual' && cachedUsers !== null) ||
+      (contentKey === 'selection' && mergedUsers !== null));
 
   return (
     <div
@@ -274,6 +289,20 @@ export const LoginPage: FC = () => {
             </motion.div>
           </AnimatePresence>
         </div>
+
+        {/* Google sign-in — below the credential path, separated by an "or" */}
+        <AnimatePresence>
+          {showGoogleSignIn && (
+            <GoogleSignInButton
+              available
+              loading={googleLoading}
+              error={googleError}
+              onSignIn={() => {
+                void handleGoogleSignIn();
+              }}
+            />
+          )}
+        </AnimatePresence>
 
         {/* Global error (shown when no user is selected) */}
         <AnimatePresence>

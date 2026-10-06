@@ -7,7 +7,14 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useLoginPage } from "./use-login-page";
-import { InvalidCredentialsException, NetworkErrorException } from "../../domain/auth/exceptions";
+import {
+  InvalidCredentialsException,
+  NetworkErrorException,
+  FirebaseNotConfiguredException,
+  GoogleAccountCollisionException,
+  GooglePopupUnavailableException,
+  InvalidFirebaseTokenException,
+} from "../../domain/auth/exceptions";
 import { setActiveScreen } from "@/store/slices/ui-slice";
 import { offlineAuthSlice } from "../store/slices/offline-auth-slice";
 import { RoleType } from "@pharmacy/shared-types";
@@ -136,19 +143,43 @@ vi.mock("../../domain/auth/user-cache.service", async (importOriginal) => {
 // Firebase (Google) sign-in service. fetchPublicConfig resolves to a
 // configured response so the mount effect enables the Google button;
 // isFirebaseConfigured is mutable so tests can flip availability.
-const { mockFirebaseAuth, mockIsFirebaseConfigured } = vi.hoisted(() => ({
-  mockFirebaseAuth: {
+// closePopup is called from the hook's `finally` block on every outcome.
+const {
+  mockFirebaseAuth,
+  mockIsFirebaseConfigured,
+  GOOGLE_CANCEL_CODES,
+} = vi.hoisted(() => {
+  // Mirrors POPUP_CANCELLED_CODES and the readFirebaseErrorCode normalisation
+  // in firebase-auth.service.ts, so the cancellation branch under test
+  // behaves like production instead of always reporting "not cancelled".
+  // The list holds bare codes; the SDK emits them namespaced as auth/<code>.
+  const GOOGLE_CANCEL_CODES: readonly string[] = [
+    "popup-closed-by-user",
+    "user-cancelled",
+  ];
+  const mockFirebaseAuth = {
     signInWithGoogle: vi.fn(),
+    closePopup: vi.fn().mockResolvedValue(undefined),
     fetchPublicConfig: vi
       .fn()
       .mockResolvedValue({ firebaseConfig: { apiKey: "test-key" } }),
-  },
-  mockIsFirebaseConfigured: vi.fn((cfg: unknown) => cfg != null),
-}));
+  };
+  const mockIsFirebaseConfigured = vi.fn((cfg: unknown) => cfg != null);
+  return { mockFirebaseAuth, mockIsFirebaseConfigured, GOOGLE_CANCEL_CODES };
+});
 
 vi.mock("../../domain/auth/firebase-auth.service", () => ({
   createFirebaseAuthService: () => mockFirebaseAuth,
   isFirebaseConfigured: mockIsFirebaseConfigured,
+  // Mirrors readFirebaseErrorCode: a leading auth/ is stripped before the
+  // bare-code comparison.
+  isGoogleSignInCancelled: (error: unknown) => {
+    if (typeof error !== "object" || error === null) return false;
+    const raw = (error as { code?: unknown }).code;
+    if (typeof raw !== "string") return false;
+    const code = raw.startsWith("auth/") ? raw.slice("auth/".length) : raw;
+    return GOOGLE_CANCEL_CODES.includes(code);
+  },
 }));
 
 vi.mock("@infra/config", () => ({
@@ -661,6 +692,37 @@ describe("useLoginPage", () => {
       expect(result.current.googleLoading).toBe(false);
     });
 
+    it("closes the native popup after a successful sign-in exchange", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockResolvedValueOnce("google-id-token");
+      mockAuthService.loginWithGoogle.mockResolvedValueOnce({
+        session: fakeLocalSession,
+      });
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(mockFirebaseAuth.closePopup).toHaveBeenCalledTimes(1);
+    });
+
+    it("closes the native popup after the exchange throws", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce(
+        new GoogleAccountCollisionException(),
+      );
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(mockFirebaseAuth.closePopup).toHaveBeenCalledTimes(1);
+    });
+
     it("does not call loginWithGoogle when Google sign-in is unavailable", async () => {
       mockFirebaseAuth.fetchPublicConfig.mockResolvedValueOnce(null);
 
@@ -675,6 +737,208 @@ describe("useLoginPage", () => {
 
       expect(mockAuthService.loginWithGoogle).not.toHaveBeenCalled();
       expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    describe("popup unavailable", () => {
+      it("sets 'auth.google_popup_blocked' when the popup cannot be opened", async () => {
+        mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce(
+          new GooglePopupUnavailableException("popup-blocked"),
+        );
+
+        const { result } = renderHook(() => useLoginPage());
+
+        await act(async () => {});
+        await act(async () => {
+          await result.current.handleGoogleSignIn();
+        });
+
+        expect(result.current.googleError).toBe("auth.google_popup_blocked");
+      });
+
+      it("does not call loginWithGoogle when the popup cannot be opened", async () => {
+        mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce(
+          new GooglePopupUnavailableException("popup-blocked"),
+        );
+
+        const { result } = renderHook(() => useLoginPage());
+
+        await act(async () => {});
+        await act(async () => {
+          await result.current.handleGoogleSignIn();
+        });
+
+        expect(mockAuthService.loginWithGoogle).not.toHaveBeenCalled();
+      });
+
+      it("keeps googleAvailable true so the user can fall back to password sign-in", async () => {
+        mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce(
+          new GooglePopupUnavailableException("popup-blocked"),
+        );
+
+        const { result } = renderHook(() => useLoginPage());
+
+        await act(async () => {});
+        await act(async () => {
+          await result.current.handleGoogleSignIn();
+        });
+
+        expect(result.current.googleAvailable).toBe(true);
+      });
+    });
+
+    it("sets 'auth.google_collision' when the Google email is linked to a password account", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockResolvedValueOnce("google-id-token");
+      mockAuthService.loginWithGoogle.mockRejectedValueOnce(
+        new GoogleAccountCollisionException(),
+      );
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleError).toBe("auth.google_collision");
+    });
+
+    it("sets 'auth.google_unavailable' and hides the button when Firebase is not configured server-side", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce(
+        new FirebaseNotConfiguredException(),
+      );
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleAvailable).toBe(false);
+      expect(result.current.googleError).toBe("auth.google_unavailable");
+    });
+
+    it("leaves googleError null when the user cancels the popup", async () => {
+      // auth/-prefixed, matching what the Firebase SDK actually emits.
+      mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce({
+        code: "auth/popup-closed-by-user",
+      });
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleError).toBeNull();
+    });
+
+    it("sets 'auth.google_generic_error' for an unrecognised failure", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce(
+        new Error("popup exploded"),
+      );
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleError).toBe("auth.google_generic_error");
+    });
+
+    it("sets 'auth.google_generic_error' when the server rejects the ID token", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockResolvedValueOnce("google-id-token");
+      mockAuthService.loginWithGoogle.mockRejectedValueOnce(
+        new InvalidFirebaseTokenException(),
+      );
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleError).toBe("auth.google_generic_error");
+    });
+
+    it("sets 'auth.google_generic_error' when the server is unreachable", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockResolvedValueOnce("google-id-token");
+      mockAuthService.loginWithGoogle.mockRejectedValueOnce(
+        new NetworkErrorException(),
+      );
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleError).toBe("auth.google_generic_error");
+    });
+
+    it("clears googleLoading after a cancelled popup", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce({
+        code: "auth/popup-closed-by-user",
+      });
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleLoading).toBe(false);
+    });
+
+    it("clears googleLoading after a generic failure", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce(
+        new Error("popup exploded"),
+      );
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleLoading).toBe(false);
+    });
+
+    it("clears googleLoading after a popup-unavailable failure", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce(
+        new GooglePopupUnavailableException("popup-blocked"),
+      );
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleLoading).toBe(false);
+    });
+
+    it("clears googleLoading when Firebase turns out not to be configured", async () => {
+      mockFirebaseAuth.signInWithGoogle.mockRejectedValueOnce(
+        new FirebaseNotConfiguredException(),
+      );
+
+      const { result } = renderHook(() => useLoginPage());
+
+      await act(async () => {});
+      await act(async () => {
+        await result.current.handleGoogleSignIn();
+      });
+
+      expect(result.current.googleLoading).toBe(false);
     });
   });
 

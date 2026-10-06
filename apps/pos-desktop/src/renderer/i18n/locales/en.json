@@ -1258,7 +1258,14 @@
     "verifying_pin": "Verifying...",
     "cancel_pin": "Cancel",
     "numeric_keypad_aria": "Numeric keypad",
-    "delete_key_aria": "Delete"
+    "delete_key_aria": "Delete",
+    "continue_with_google": "Continue with Google",
+    "signing_in_with_google": "Connecting to Google...",
+    "or_divider": "or",
+    "google_unavailable": "Google sign-in is not available on this server.",
+    "google_popup_blocked": "The Google sign-in window could not be opened. Use your username and password.",
+    "google_collision": "This email is already linked to a password account. Sign in with your password.",
+    "google_generic_error": "We could not sign you in with Google. Please try again."
   },
   "assistant": {
     "suggestion": {

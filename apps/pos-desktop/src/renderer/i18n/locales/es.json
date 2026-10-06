@@ -1345,7 +1345,14 @@
     "verifying_pin": "Verificando...",
     "cancel_pin": "Cancelar",
     "numeric_keypad_aria": "Teclado numérico",
-    "delete_key_aria": "Borrar"
+    "delete_key_aria": "Borrar",
+    "continue_with_google": "Continuar con Google",
+    "signing_in_with_google": "Conectando con Google...",
+    "or_divider": "o",
+    "google_unavailable": "El acceso con Google no está disponible en este servidor.",
+    "google_popup_blocked": "No se pudo abrir la ventana de acceso de Google. Usá tu usuario y contraseña.",
+    "google_collision": "Este correo ya está asociado a una cuenta con contraseña. Ingresá con tu contraseña.",
+    "google_generic_error": "No pudimos iniciar sesión con Google. Intentá de nuevo."
   },
   "assistant": {
     "suggestion": {

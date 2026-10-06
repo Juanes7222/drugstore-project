@@ -17,11 +17,20 @@ export {
 } from './auth-http-client';
 
 export {
+  createFirebaseAuthService,
+  isFirebaseConfigured,
+  isGoogleSignInCancelled,
+  type FirebaseAuthService,
+  type FirebasePublicConfig,
+} from './firebase-auth.service';
+
+export {
   InvalidCredentialsException,
   NoActiveSessionException,
   InsufficientRoleException,
   FirebaseNotConfiguredException,
   GoogleAccountCollisionException,
+  GooglePopupUnavailableException,
   InvalidFirebaseTokenException,
   UserPullHttpException,
 } from './exceptions';

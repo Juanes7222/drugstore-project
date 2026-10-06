@@ -89,6 +89,23 @@ export class InvalidFirebaseTokenException extends DomainError {
 }
 
 /**
+ * Thrown when the desktop shell refuses to open the Google consent popup
+ * (Firebase `auth/popup-blocked`), or when no popup window can be created.
+ * Distinct from a rejected token: retrying will not help, and the caller
+ * should fall back to password/PIN sign-in.
+ */
+export class GooglePopupUnavailableException extends DomainError {
+  constructor(cause?: string) {
+    super(
+      'GOOGLE_POPUP_UNAVAILABLE',
+      cause
+        ? `Google sign-in window could not be opened: ${cause}`
+        : 'Google sign-in window could not be opened',
+    );
+  }
+}
+
+/**
  * Thrown when the user-identities pull (`GET /users/login-identities`)
  * fails at the HTTP layer. The scheduler treats 403 as a role mismatch to
  * suppress until next login; every other status is retried next tick.

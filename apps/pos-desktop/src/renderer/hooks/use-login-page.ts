@@ -25,11 +25,13 @@ import {
   NetworkErrorException,
   FirebaseNotConfiguredException,
   GoogleAccountCollisionException,
+  GooglePopupUnavailableException,
   InvalidFirebaseTokenException,
 } from '../../domain/auth/exceptions';
 import {
   createFirebaseAuthService,
   isFirebaseConfigured,
+  isGoogleSignInCancelled,
 } from '../../domain/auth/firebase-auth.service';
 import {
   NoOfflineCredentialsException,
@@ -642,6 +644,10 @@ export function useLoginPage(): UseLoginPageReturn {
         // Server disabled Firebase — hide the button and inform the user.
         setGoogleAvailable(false);
         setGoogleError(t('auth.google_unavailable'));
+      } else if (err instanceof GooglePopupUnavailableException) {
+        // The desktop shell could not open a consent window. Retrying will
+        // not help, so steer the user back to password/PIN sign-in.
+        setGoogleError(t('auth.google_popup_blocked'));
       } else if (err instanceof GoogleAccountCollisionException) {
         // Email already linked to a password account.
         setGoogleError(t('auth.google_collision'));
@@ -650,17 +656,14 @@ export function useLoginPage(): UseLoginPageReturn {
         err instanceof NetworkErrorException
       ) {
         setGoogleError(t('auth.google_generic_error'));
-      } else {
-        // User cancelled the popup (auth/popup-closed-by-user,
-        // auth/cancelled-popup-request) — silently ignore.
-        const code = (err as { code?: string })?.code ?? '';
-        const cancelled =
-          code.includes('popup-closed') || code.includes('cancelled');
-        if (!cancelled) {
-          setGoogleError(t('auth.google_generic_error'));
-        }
+      } else if (!isGoogleSignInCancelled(err)) {
+        // A cancelled popup is a deliberate user action, not a failure.
+        setGoogleError(t('auth.google_generic_error'));
       }
     } finally {
+      // The consent window is a native window that ignores `window.close()`,
+      // so it is dismissed explicitly once the exchange settles.
+      await firebaseAuth.closePopup();
       setGoogleLoading(false);
     }
   }, [googleAvailable, firebaseAuth, authService, dispatch, t]);
