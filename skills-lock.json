@@ -85,6 +85,12 @@
       "skillPath": "skills/frontend-design/SKILL.md",
       "computedHash": "93f53fd1c0352d3d7ec17b8f73d7351bf76f4821e55d123c9d2abc2c53ba48e4"
     },
+    "impeccable": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/impeccable/SKILL.md",
+      "computedHash": "a3bf1f01d711ffd8b4da3689e7eefe3a1855aa046edc71b53e26c5d69a561244"
+    },
     "landing-page-design": {
       "source": "skills-101/superpowers",
       "sourceType": "github",
