@@ -16,6 +16,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ExtractJwt } from 'passport-jwt';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'node:crypto';
@@ -29,7 +30,18 @@ import { FirebaseAuthService } from './services/firebase-auth.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ChangePinDto } from './dto/change-pin.dto';
-import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
+import {
+  ForgotPasswordSchema,
+  ForgotPasswordDto,
+  ResetPasswordSchema,
+  ResetPasswordDto,
+} from './dto/password-reset.dto';
+import {
+  ResendVerificationSchema,
+  ResendVerificationDto,
+  VerifyEmailSchema,
+  VerifyEmailDto,
+} from './dto/email-verification.dto';
 import {
   LoginDto,
   LoginSchema,
@@ -139,6 +151,7 @@ export class AuthController {
     const result = await this.authService.loginWithFirebase({
       firebaseUid: claims.uid,
       email: claims.email,
+      emailVerified: claims.emailVerified,
       displayName: claims.displayName,
       photoURL: claims.photoURL,
       workstationId: dto.workstationId,
@@ -302,23 +315,102 @@ export class AuthController {
     return { message: 'PIN changed successfully' };
   }
 
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  // 10 attempts/minute/IP. A wrong token is a client mistake or a guess; the
+  // ceiling exists to stop bulk guessing and stays well above human retry rates.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Redeem an account-verification link',
+    description:
+      'Consumes the single-use token and stamps emailVerifiedAt. The emailed ' +
+      'link targets the web backoffice, which calls this endpoint only after the ' +
+      'user confirms — never on page load, so mail-client link scanners cannot ' +
+      'consume the token first.',
+  })
+  async verifyEmail(
+    @Body(new ZodValidationPipe(VerifyEmailSchema)) dto: VerifyEmailDto,
+  ): Promise<{ verified: true; email: string }> {
+    const { email } = await this.authService.verifyEmail({
+      token: dto.token,
+    });
+    return { verified: true, email };
+  }
+
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  // 3/hour/IP on top of the per-account cooldown enforced in the service. This
+  // is the endpoint that spends the mail provider's daily quota, so it carries
+  // the tightest bound of the unauthenticated routes.
+  @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
+  @ApiOperation({
+    summary: 'Send a new account-verification email',
+    description:
+      'Always answers the same way whether or not the address belongs to an ' +
+      'account awaiting verification.',
+  })
+  async resendVerification(
+    @Body(new ZodValidationPipe(ResendVerificationSchema))
+    dto: ResendVerificationDto,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
+    await this.authService.requestEmailVerification({
+      email: dto.email,
+      requestIp: this.clientIp(req),
+    });
+
+    return {
+      message:
+        'If the address matches an account needing this email, a message has been sent.',
+    };
+  }
+
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Request password reset link' })
+  @UseGuards(ThrottlerGuard)
+  // 3/hour/IP: same rationale as resend-verification — it triggers outbound mail
+  // for an unauthenticated caller.
+  @Throttle({ default: { limit: 3, ttl: 3_600_000 } })
+  @ApiOperation({
+    summary: 'Request password reset link',
+    description:
+      'Always answers the same way whether or not the address is registered and ' +
+      'verified.',
+  })
   async forgotPassword(
-    @Body() dto: ForgotPasswordDto,
+    @Body(new ZodValidationPipe(ForgotPasswordSchema)) dto: ForgotPasswordDto,
+    @Req() req: Request,
   ): Promise<{ message: string }> {
-    return this.authService.forgotPassword(dto.email);
+    return this.authService.forgotPassword({
+      email: dto.email,
+      requestIp: this.clientIp(req),
+    });
   }
 
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Complete password reset with token' })
   async resetPassword(
-    @Body() dto: ResetPasswordDto,
+    @Body(new ZodValidationPipe(ResetPasswordSchema)) dto: ResetPasswordDto,
   ): Promise<{ message: string }> {
     await this.authService.resetPassword(dto.token, dto.newPassword);
     return { message: 'Password reset successfully' };
+  }
+
+  /**
+   * First client IP from the forwarding chain, falling back to the socket
+   * address. Recorded on verification tokens for abuse tracing only.
+   */
+  private clientIp(req: Request): string | undefined {
+    return (
+      (req.headers['x-forwarded-for'] as string | undefined)
+        ?.split(',')[0]
+        ?.trim() || req.ip
+    );
   }
 
   // ---------------------------------------------------------------------------

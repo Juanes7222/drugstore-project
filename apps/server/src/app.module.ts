@@ -3,7 +3,7 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { envSchemaWithStoragePolicy, EnvConfig } from './config/env.schema';
+import { envSchemaWithPolicies, EnvConfig } from './config/env.schema';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { StorageModule } from './infrastructure/storage/storage.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -26,6 +26,7 @@ import { TenantModule } from './modules/tenant/tenant.module';
 import { PrintModule } from './modules/print/print.module';
 import { DevModule } from './modules/dev/dev.module';
 import { DataImportModule } from './modules/data-import/data-import.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
 /** Dev-only modules — only registered when NODE_ENV=development */
@@ -39,7 +40,7 @@ const DEV_MODULES = process.env.NODE_ENV === 'development' ? [DevModule] : [];
       // process.env by loadInfisicalSecretsIfNeeded in main.ts) — never from
       // a local .env file.
       ignoreEnvFile: process.env.NODE_ENV === 'production',
-      validate: (config) => envSchemaWithStoragePolicy.parse(config),
+      validate: (config) => envSchemaWithPolicies.parse(config),
     }),
     ScheduleModule.forRoot(),
     // Rate limiting is intentionally SELECTIVE, not a global APP_GUARD: no
@@ -63,6 +64,9 @@ const DEV_MODULES = process.env.NODE_ENV === 'development' ? [DevModule] : [];
     TenantModule,
     PrismaModule,
     StorageModule,
+    // AuthModule injects MailService for verification and password-reset mail,
+    // so the notifications module is registered ahead of it.
+    NotificationsModule,
     AuthModule,
     BackofficeModule,
     SaasAdminModule,

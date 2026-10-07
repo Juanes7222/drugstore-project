@@ -9,9 +9,11 @@ import {
   RoleType,
   SessionRevocationReason,
   UserStatus,
+  VerificationPurpose,
 } from '@pharmacy/database';
 import type { Prisma, User as PrismaUser } from '@pharmacy/database';
 import { User } from '@pharmacy/shared-types';
+import { MailService } from '@/modules/notifications/mail.service';
 import * as crypto from 'node:crypto';
 import { PasswordHasherService } from './services/password-hasher.service';
 import { PinService } from './services/pin.service';
@@ -19,6 +21,7 @@ import { TotpService } from './services/totp.service';
 import { BackupCodesService } from './services/backup-codes.service';
 import { SessionService } from './services/session.service';
 import { AuditService, AuditEvent } from './services/audit.service';
+import { VerificationTokenService } from './services/verification-token.service';
 import { OfflineTokenService } from './offline/offline-token.service';
 import { resolveWorkstationFingerprint } from './offline/workstation-fingerprint';
 import { CredentialCacheService } from './offline/credential-cache.service';
@@ -26,11 +29,17 @@ import { InvalidCredentialsException } from './exceptions/invalid-credentials.ex
 import { FirebaseEmailConflictException } from './exceptions/firebase-email-conflict.exception';
 import { AccountLockedException } from './exceptions/account-locked.exception';
 import { AccountInactiveException } from './exceptions/account-inactive.exception';
+import { EmailNotVerifiedException } from './exceptions/email-not-verified.exception';
+import { StaleVerificationTokenException } from './exceptions/stale-verification-token.exception';
 import { SessionExpiredException } from './exceptions/session-expired.exception';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import {
   MAX_FAILED_LOGIN_ATTEMPTS,
   ACCOUNT_LOCK_DURATION_MINUTES,
+  EMAIL_VERIFICATION_TTL_MS,
+  EMAIL_VERIFICATION_REISSUE_COOLDOWN_MS,
+  PASSWORD_RESET_TTL_MS,
+  PASSWORD_RESET_REISSUE_COOLDOWN_MS,
 } from './constants/auth.constants';
 
 // ---------------------------------------------------------------------------
@@ -88,10 +97,14 @@ interface TwoFactorChallenge {
   createdAt: Date;
 }
 
-interface PasswordResetEntry {
-  userId: string;
-  expiresAt: Date;
-}
+/**
+ * Generic acknowledgement returned by every endpoint that triggers an email.
+ * The wording must not vary with whether the address exists, is already
+ * verified, or is still inside its re-issue cooldown — any difference is a
+ * user-enumeration oracle.
+ */
+const EMAIL_REQUEST_ACKNOWLEDGEMENT =
+  'If the address matches an account needing this email, a message has been sent.';
 
 // ---------------------------------------------------------------------------
 // Service
@@ -103,9 +116,6 @@ export class AuthService {
 
   /** Short-lived 2FA challenges (TTL: 5 min). */
   private readonly twoFactorChallenges = new Map<string, TwoFactorChallenge>();
-
-  /** In-memory password-reset store — replace with DB-backed in production. */
-  private readonly passwordResetTokens = new Map<string, PasswordResetEntry>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -119,6 +129,8 @@ export class AuthService {
     private readonly auditService: AuditService,
     private readonly offlineTokenService: OfflineTokenService,
     private readonly credentialCacheService: CredentialCacheService,
+    private readonly verificationTokenService: VerificationTokenService,
+    private readonly mailService: MailService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -140,7 +152,12 @@ export class AuthService {
       },
     });
 
-    this.assertAccountIsUsable(user);
+    this.assertAccountIsUsable(user, {
+      // Only password logins must prove the address first. A PIN is issued by an
+      // authenticated admin onto a named terminal, so it is a store credential
+      // rather than a claim about a remote identity.
+      gateEmailVerification: sessionType === 'PASSWORD',
+    });
 
     let isValid: boolean;
 
@@ -260,6 +277,7 @@ export class AuthService {
   async loginWithFirebase(params: {
     firebaseUid: string;
     email: string | null;
+    emailVerified?: boolean;
     displayName: string | null;
     photoURL: string | null;
     workstationId?: string;
@@ -314,24 +332,30 @@ export class AuthService {
           displayName: params.displayName,
           avatarUrl: params.photoURL,
           authMethod: 'OAUTH_GOOGLE',
-          emailVerifiedAt: params.email ? new Date() : null,
+          // Only the provider's own email_verified claim counts as proof.
+          // Assuming it from the mere presence of an address would let an
+          // unverified Google account skip the verification flow entirely.
+          emailVerifiedAt:
+            params.email && params.emailVerified ? new Date() : null,
           status: UserStatus.PENDING_SETUP,
           isActive: false,
           firebaseUid: params.firebaseUid,
         },
       });
     } else if (!user.firebaseUid) {
+      const verifiedAt =
+        params.email && params.emailVerified ? new Date() : null;
       await this.prisma.user.update({
         where: { id: user.id },
         data: {
           firebaseUid: params.firebaseUid,
           authMethod: 'OAUTH_GOOGLE',
-          emailVerifiedAt: params.email ? new Date() : user.emailVerifiedAt,
+          emailVerifiedAt: verifiedAt ?? user.emailVerifiedAt,
         },
       });
       user.firebaseUid = params.firebaseUid;
       user.authMethod = 'OAUTH_GOOGLE';
-      user.emailVerifiedAt = params.email ? new Date() : user.emailVerifiedAt;
+      user.emailVerifiedAt = verifiedAt ?? user.emailVerifiedAt;
     }
 
     this.assertAccountIsUsable(user);
@@ -982,54 +1006,178 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------------------------
-  // Password reset flow
+  // Email verification & password reset
   // ---------------------------------------------------------------------------
 
-  async forgotPassword(email: string): Promise<{ message: string }> {
-    const user = await this.prisma.user.findFirst({ where: { email } });
+  /**
+   * Issues and mails a fresh account-verification link.
+   *
+   * Deliberately silent for unknown addresses, already-verified accounts, PIN-only
+   * accounts and addresses still inside the re-issue cooldown: all four resolve
+   * without sending, and the caller's response is identical in every case.
+   */
+  async requestEmailVerification(params: {
+    email: string;
+    requestIp?: string;
+  }): Promise<void> {
+    const user = await this.findUserByEmail(params.email);
 
-    // Don't reveal whether the email exists
-    if (!user?.emailVerifiedAt) {
-      return {
-        message: 'Si el correo existe, recibirás un enlace de recuperación.',
-      };
+    if (!user) {
+      return;
     }
 
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await this.sendVerificationEmail(user, params.requestIp);
+  }
 
-    this.passwordResetTokens.set(resetToken, { userId: user.id, expiresAt });
-    setTimeout(
-      () => this.passwordResetTokens.delete(resetToken),
-      60 * 60 * 1000,
-    );
+  /**
+   * Issues and mails a verification link for an account with an unproven
+   * address. Returns whether a message was actually queued, which is false when
+   * the address is absent, already verified, or inside the re-issue cooldown —
+   * callers treat all three alike rather than reporting them.
+   */
+  async sendVerificationEmail(
+    user: PrismaUser,
+    requestIp?: string,
+  ): Promise<boolean> {
+    if (!user.email || user.emailVerifiedAt) {
+      return false;
+    }
 
-    await this.auditService.log(AuditEvent.FORGOT_PASSWORD, {
-      actorId: user.id,
-      actorRole: user.role,
-      details: { email },
+    const issued = await this.verificationTokenService.issue({
+      userId: user.id,
+      email: user.email,
+      purpose: VerificationPurpose.EMAIL_VERIFICATION,
+      ttlMs: EMAIL_VERIFICATION_TTL_MS,
+      cooldownMs: EMAIL_VERIFICATION_REISSUE_COOLDOWN_MS,
+      requestIp,
     });
 
-    this.logger.log(
-      `Password reset requested for ${email}. Token: ${resetToken}`,
+    // Null means the cooldown suppressed this send, not a failure.
+    if (!issued) {
+      return false;
+    }
+
+    await this.mailService.sendEmailVerification({
+      to: user.email,
+      recipientName: user.displayName ?? user.fullName,
+      token: issued.rawToken,
+      idempotencyKey: issued.tokenId,
+      expiresAt: issued.expiresAt,
+    });
+
+    await this.auditService.log(AuditEvent.EMAIL_VERIFICATION_REQUESTED, {
+      actorId: user.id,
+      actorRole: user.role,
+      details: { email: user.email },
+    });
+
+    return true;
+  }
+
+  /**
+   * Redeems an account-verification link and stamps emailVerifiedAt.
+   *
+   * The token records the address it was issued for; if the account's email has
+   * changed since, the link proves control of an address the account no longer
+   * uses, so verification is refused and the new address must be proven instead.
+   */
+  async verifyEmail(params: {
+    token: string;
+    requestIp?: string;
+  }): Promise<{ email: string }> {
+    const consumed = await this.verificationTokenService.consume(
+      params.token,
+      VerificationPurpose.EMAIL_VERIFICATION,
     );
 
-    return {
-      message: 'Si el correo existe, recibirás un enlace de recuperación.',
-    };
+    const user = await this.prisma.user.findUnique({
+      where: { id: consumed.userId },
+      select: { id: true, role: true, email: true, emailVerifiedAt: true },
+    });
+
+    if (!user || user.email === null || user.email !== consumed.email) {
+      await this.auditService.log(AuditEvent.EMAIL_VERIFICATION_FAILED, {
+        actorId: consumed.userId,
+        actorRole: null,
+        details: { reason: 'EMAIL_CHANGED_SINCE_ISSUE' },
+      });
+      throw new StaleVerificationTokenException();
+    }
+
+    if (user.emailVerifiedAt) {
+      return { email: user.email };
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerifiedAt: new Date() },
+    });
+
+    await this.auditService.log(AuditEvent.EMAIL_VERIFICATION_COMPLETED, {
+      actorId: user.id,
+      actorRole: user.role,
+      details: { email: user.email },
+    });
+
+    return { email: user.email };
+  }
+
+  /**
+   * Issues and mails a password-reset link.
+   *
+   * Requires a verified address: a reset sent to an unproven inbox would let
+   * whoever signed up with someone else's address take the account over, which
+   * is exactly what the verification flow exists to prevent.
+   */
+  async forgotPassword(params: {
+    email: string;
+    requestIp?: string;
+  }): Promise<{ message: string }> {
+    const user = await this.findUserByEmail(params.email);
+
+    if (user?.emailVerifiedAt && user.email) {
+      const issued = await this.verificationTokenService.issue({
+        userId: user.id,
+        email: user.email,
+        purpose: VerificationPurpose.PASSWORD_RESET,
+        ttlMs: PASSWORD_RESET_TTL_MS,
+        cooldownMs: PASSWORD_RESET_REISSUE_COOLDOWN_MS,
+        requestIp: params.requestIp,
+      });
+
+      if (issued) {
+        await this.mailService.sendPasswordReset({
+          to: user.email,
+          recipientName: user.displayName ?? user.fullName,
+          token: issued.rawToken,
+          idempotencyKey: issued.tokenId,
+          expiresAt: issued.expiresAt,
+        });
+
+        await this.auditService.log(AuditEvent.PASSWORD_RESET_REQUESTED, {
+          actorId: user.id,
+          actorRole: user.role,
+          details: { email: user.email },
+        });
+      }
+    }
+
+    return { message: EMAIL_REQUEST_ACKNOWLEDGEMENT };
   }
 
   async resetPassword(resetToken: string, newPassword: string): Promise<void> {
-    const stored = this.passwordResetTokens.get(resetToken);
-    if (!stored || new Date() > stored.expiresAt) {
-      throw new InvalidCredentialsException('Invalid or expired reset token');
-    }
+    const consumed = await this.verificationTokenService.consume(
+      resetToken,
+      VerificationPurpose.PASSWORD_RESET,
+    );
 
     const user = await this.prisma.user.findUnique({
-      where: { id: stored.userId },
+      where: { id: consumed.userId },
+      select: { id: true, role: true, email: true },
     });
-    if (!user) {
-      throw new InvalidCredentialsException('User not found');
+
+    if (!user || user.email !== consumed.email) {
+      throw new StaleVerificationTokenException();
     }
 
     const { hash: newHash, algorithm } =
@@ -1045,11 +1193,16 @@ export class AuthService {
       },
     });
 
-    this.passwordResetTokens.delete(resetToken);
-
     await this.sessionService.revokeUserSessions(
       user.id,
       SessionRevocationReason.PASSWORD_CHANGED,
+    );
+
+    // Offline tokens too: a terminal holding a cached credential blob for the
+    // old password must not stay usable after a reset, matching changePassword.
+    await this.offlineTokenService.revokeAllUserTokens(
+      user.id,
+      'PASSWORD_CHANGED',
     );
 
     await this.auditService.log(AuditEvent.PASSWORD_RESET_COMPLETED, {
@@ -1297,9 +1450,19 @@ export class AuthService {
     });
 
     // Generate credential verification key (encrypted credential blob)
+    //
+    // An unverified account's passwordHash is withheld here even though the PIN
+    // path may legitimately have reached this point. The CVK is cached on the
+    // terminal and consulted offline, so including it would let the same
+    // password authenticate on the next network-less boot — turning the online
+    // verification gate into a one-time hurdle. The PIN still travels, so
+    // store-local logins keep working; a fresh online login after the address
+    // is verified issues a CVK that includes the password again.
     const cvk = await this.credentialCacheService.generateCvk({
       userId: user.id,
-      passwordHash: user.passwordHash,
+      passwordHash: this.requiresEmailVerification(user)
+        ? null
+        : user.passwordHash,
       pinHash: user.pinHash,
       workstationFingerprint,
       expiresAt: offlineToken.expiresAt,
@@ -1439,6 +1602,7 @@ export class AuthService {
 
   private assertAccountIsUsable(
     user: PrismaUser | null,
+    options?: { gateEmailVerification?: boolean },
   ): asserts user is PrismaUser {
     if (!user) {
       throw new InvalidCredentialsException();
@@ -1452,6 +1616,46 @@ export class AuthService {
     if (user.lockedUntil && user.lockedUntil > now) {
       throw new AccountLockedException(user.lockedUntil);
     }
+
+    if (
+      options?.gateEmailVerification &&
+      this.requiresEmailVerification(user)
+    ) {
+      throw new EmailNotVerifiedException(user.email as string);
+    }
+  }
+
+  /**
+   * Whether the account must still prove control of its email address.
+   *
+   * Narrow on purpose: an account with no address has nothing to verify, and one
+   * with no password cannot authenticate by password at all. Firebase (Google)
+   * accounts are already proven by the identity provider, which is why
+   * loginWithFirebase never consults this.
+   */
+  private requiresEmailVerification(user: PrismaUser): boolean {
+    return (
+      user.email !== null &&
+      user.passwordHash !== null &&
+      user.emailVerifiedAt === null
+    );
+  }
+
+  /**
+   * Case-insensitive email lookup.
+   *
+   * The unique index on User.email is plain btree and therefore
+   * case-sensitive, so an exact-match query would miss an account whose stored
+   * address differs in case from what the user typed — and a verification or
+   * reset link would silently never be sent. Comparing case-insensitively is the
+   * correct read behaviour regardless; a functional unique index over
+   * LOWER(email) is a separate hardening step because it depends on existing
+   * data having no case-colliding rows.
+   */
+  private async findUserByEmail(email: string): Promise<PrismaUser | null> {
+    return this.prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+    });
   }
 
   /**

@@ -104,6 +104,10 @@ describe('UsersController', () => {
   let auditServiceMock: { log: jest.Mock };
   let pinServiceMock: { hash: jest.Mock; generate: jest.Mock };
   let passwordHasherMock: { hash: jest.Mock };
+  let authServiceMock: {
+    sendVerificationEmail: jest.Mock;
+    forgotPassword: jest.Mock;
+  };
   let controller: UsersController;
 
   beforeEach(async () => {
@@ -117,6 +121,13 @@ describe('UsersController', () => {
       hash: jest
         .fn()
         .mockResolvedValue({ hash: 'hashed-password', algorithm: 'argon2id' }),
+    };
+    // createUser and updateUser hand the new/updated account to AuthService so
+    // it can issue the account's verification link, so the stub must expose
+    // that entry point.
+    authServiceMock = {
+      sendVerificationEmail: jest.fn().mockResolvedValue(true),
+      forgotPassword: jest.fn().mockResolvedValue({ message: 'ack' }),
     };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -137,7 +148,7 @@ describe('UsersController', () => {
         { provide: SessionService, useValue: {} },
         { provide: AuditService, useValue: auditServiceMock },
         { provide: OfflineTokenService, useValue: {} },
-        { provide: AuthService, useValue: {} },
+        { provide: AuthService, useValue: authServiceMock },
       ],
     })
       // listLoginIdentities binds ThrottlerGuard at method level; its real

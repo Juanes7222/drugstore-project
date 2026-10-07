@@ -7,3 +7,4 @@ export { OfflineTokenService } from './offline/offline-token.service';
 export { CredentialCacheService } from './offline/credential-cache.service';
 export { BlessingService } from './offline/blessing.service';
 export { RevocationListService } from './offline/revocation-list.service';
+export { VerificationTokenService } from './services/verification-token.service';

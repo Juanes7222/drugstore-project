@@ -46,6 +46,18 @@ const WorkstationsPage = lazy(() =>
 const NotFoundPage = lazy(() =>
   import("./pages/not-found-page").then((m) => ({ default: m.NotFoundPage })),
 );
+// Emailed-link pages. Public by definition (the recipient is signed out) and
+// deliberately outside <RequireAuth />.
+const VerifyEmailPage = lazy(() =>
+  import("./pages/verify-email-page").then((m) => ({
+    default: m.VerifyEmailPage,
+  })),
+);
+const ResetPasswordPage = lazy(() =>
+  import("./pages/reset-password-page").then((m) => ({
+    default: m.ResetPasswordPage,
+  })),
+);
 
 // Platform-owner surface (/admin) — separate layout, palette and pages.
 const PlatformOverviewPage = lazy(() =>
@@ -135,7 +147,10 @@ function RequirePlatformAdmin() {
 export function App() {
   return (
     <Suspense fallback={<LoadingState />}>
-      <Routes>        <Route path="/login" element={<LoginPage />} />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route element={<RequireAuth />}>
           {/* Platform owner surface */}
           <Route element={<RequirePlatformAdmin />}>

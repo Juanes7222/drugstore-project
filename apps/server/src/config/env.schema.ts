@@ -193,6 +193,43 @@ export const envSchema = z.object({
     .string()
     .optional()
     .describe('Firebase measurement id'),
+
+  // ----------------------------------------------------------------------------
+  // Transactional email (account verification, password reset).
+  //
+  // EMAIL_DRIVER defaults to 'console' in every environment, mirroring
+  // STORAGE_DRIVER: with the console driver no mail configuration is needed at
+  // all and the message is written to the log instead of sent over the network,
+  // so local and CI runs never depend on a third-party API. Selecting 'resend'
+  // surfaces a delivery-policy message when the credential set is incomplete,
+  // rather than failing at the first send.
+  //
+  // 'resend' additionally requires a verified sending domain with SPF, DKIM and
+  // DMARC records; the shared onboarding@resend.dev address only delivers to the
+  // account owner's own mailbox and is never valid for real users.
+  // ----------------------------------------------------------------------------
+  EMAIL_DRIVER: z
+    .enum(['console', 'resend'])
+    .default('console')
+    .describe('How transactional email is delivered'),
+  RESEND_API_KEY: z.preprocess(
+    emptyStringToUndefined,
+    z.string().trim().min(1).optional(),
+  ),
+  EMAIL_FROM: z.preprocess(
+    emptyStringToUndefined,
+    z.string().trim().min(3).optional(),
+  ),
+  EMAIL_REPLY_TO: z.preprocess(emptyStringToUndefined, z.email().optional()),
+  // Absolute base URL of the web backoffice. Verification and reset links are
+  // opened in a browser, so this must be the externally reachable origin and
+  // not an internal address.
+  WEB_APP_BASE_URL: z
+    .url()
+    .default('http://localhost:5173')
+    .describe(
+      'Public base URL of the web backoffice, used to build email links',
+    ),
 });
 
 // When the R2 driver is selected, its full credential set is mandatory — a
@@ -215,6 +252,29 @@ export const envSchemaWithStoragePolicy = envSchema.refine(
     message:
       'STORAGE_DRIVER=r2 requires: ' +
       R2_REQUIRED_KEYS_WHEN_DRIVER_IS_R2.join(', '),
+  },
+);
+
+// Same rationale for the mail driver: with 'console' there is nothing to
+// configure, so RESEND_API_KEY / EMAIL_FROM must be present exactly when
+// 'resend' is selected.
+const EMAIL_REQUIRED_KEYS_WHEN_DRIVER_IS_RESEND = [
+  'RESEND_API_KEY',
+  'EMAIL_FROM',
+] as const;
+
+/**
+ * Every cross-field driver policy the application boots under. Individual
+ * policies stay exported for their own focused tests.
+ */
+export const envSchemaWithPolicies = envSchemaWithStoragePolicy.refine(
+  (env) =>
+    env.EMAIL_DRIVER !== 'resend' ||
+    EMAIL_REQUIRED_KEYS_WHEN_DRIVER_IS_RESEND.every((key) => Boolean(env[key])),
+  {
+    message:
+      'EMAIL_DRIVER=resend requires: ' +
+      EMAIL_REQUIRED_KEYS_WHEN_DRIVER_IS_RESEND.join(', '),
   },
 );
 

@@ -58,6 +58,68 @@ export const es = {
     switchToAdmin: "Ir al panel de plataforma",
     switchToTenant: "Volver al panel de la farmacia",
   },
+  /** Copy shared by the emailed-link pages. */
+  emailActions: {
+    emailLabel: "Correo electrónico",
+    emailError: {
+      required: "El correo es obligatorio",
+      invalid: "Ingresa un correo válido",
+      tooLong: "El correo es demasiado largo",
+    },
+    promptForEmail: "Ingresa el correo de la cuenta y te enviaremos un enlace nuevo.",
+    // Deliberately identical for every outcome: the server does not reveal
+    // whether the address is registered, so the page must not either.
+    acknowledgement:
+      "Si la dirección corresponde a una cuenta que necesita este correo, te enviamos un mensaje.",
+    rateLimited: "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+    requestFailed: "No se pudo completar la solicitud. Intenta de nuevo.",
+  },
+  verifyEmail: {
+    title: "Verifica tu correo",
+    subtitle: "Confirma que esta dirección es tuya para activar tu acceso.",
+    confirm: "Confirmar verificación",
+    confirmHint:
+      "Al confirmar se gastará este enlace y las copias antiguas dejarán de servir. Si lo abriste en otro navegador, solicita un enlace nuevo.",
+    verifiedTitle: "Correo verificado",
+    verifiedBody: "Verificamos el correo {{email}}. Ya puedes usar tu cuenta.",
+    verifiedNext:
+      "Inicia sesión con este correo y contraseña.",
+    goToLogin: "Ir al inicio de sesión",
+    missingToken:
+      "El enlace no incluye un código de verificación. Abre el mensaje de correo completo o solicita uno nuevo.",
+    invalidTitle: "Este enlace ya no es válido",
+    invalidBody:
+      "El enlace de verificación venció, ya se usó o el correo de la cuenta cambió. Solicita uno nuevo para continuar.",
+    requestNew: "Enviar enlace de verificación",
+  },
+  resetPassword: {
+    title: "Restablece tu contraseña",
+    subtitle: "Elige una contraseña nueva para tu cuenta.",
+    confirmHint:
+      "Al guardar se cerrarán todas las sesiones activas de la cuenta, en cada dispositivo y terminal.",
+    submit: "Guardar contraseña",
+    doneTitle: "Contraseña actualizada",
+    doneBody: "Tu contraseña se actualizó correctamente.",
+    sessionsRevoked:
+      "Por seguridad cerramos la sesión en todos los dispositivos y terminales. Tendrás que volver a iniciar sesión en cada uno.",
+    goToLogin: "Ir al inicio de sesión",
+    missingToken:
+      "El enlace no incluye un código de recuperación. Abre el mensaje de correo completo o solicita uno nuevo.",
+    invalidTitle: "Este enlace ya no es válido",
+    invalidBody:
+      "El enlace venció, ya se usó o el correo de la cuenta cambió. Solicita uno nuevo para continuar.",
+    requestNew: "Enviar enlace de recuperación",
+    newPassword: "Nueva contraseña",
+    confirmPassword: "Confirmar contraseña",
+    passwordHint: "Entre {{min}} y {{max}} caracteres.",
+    fieldError: {
+      required: "Este campo es obligatorio",
+      tooShort: "La contraseña debe tener al menos {{min}} caracteres",
+      tooLong: "La contraseña no puede superar {{max}} caracteres",
+      mismatch: "Las contraseñas no coinciden",
+    },
+    requestFailed: "No se pudo restablecer la contraseña. Intenta de nuevo.",
+  },
   login: {
     title: "Iniciar sesión",
     subtitle: "Acceso al panel de administración",

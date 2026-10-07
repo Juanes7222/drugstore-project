@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
+import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersController } from './users.controller';
@@ -19,16 +20,19 @@ import { SessionService } from './services/session.service';
 import { FirebaseAuthService } from './services/firebase-auth.service';
 import { StepUpService } from './services/step-up.service';
 import { AuditService } from './services/audit.service';
+import { VerificationTokenService } from './services/verification-token.service';
 import { OfflineTokenService } from './offline/offline-token.service';
 import { CredentialCacheService } from './offline/credential-cache.service';
 import { BlessingService } from './offline/blessing.service';
 import { BlessingController } from './offline/blessing.controller';
 import { RevocationListService } from './offline/revocation-list.service';
+import { VerificationTokenCleanupJob } from './jobs/verification-token-cleanup.job';
 import { EnvConfig } from '@/config/env.schema';
 
 @Module({
   imports: [
     PassportModule,
+    NotificationsModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService<EnvConfig>) => ({
         secret: configService.get('JWT_ACCESS_SECRET'),
@@ -64,6 +68,8 @@ import { EnvConfig } from '@/config/env.schema';
     CredentialCacheService,
     BlessingService,
     RevocationListService,
+    VerificationTokenService,
+    VerificationTokenCleanupJob,
   ],
   exports: [
     AuthService,
@@ -74,6 +80,7 @@ import { EnvConfig } from '@/config/env.schema';
     CredentialCacheService,
     BlessingService,
     RevocationListService,
+    VerificationTokenService,
   ],
 })
 export class AuthModule {}

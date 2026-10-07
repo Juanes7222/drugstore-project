@@ -9,7 +9,10 @@ export class ForgotPasswordDto implements z.infer<typeof ForgotPasswordSchema> {
 }
 
 export const ResetPasswordSchema = z.object({
-  token: z.string().min(1),
+  // Lower bound kept at 1 for the same reason as VerifyEmailSchema: a damaged
+  // token must surface as AUTH_INVALID_VERIFICATION_TOKEN, not a schema-level
+  // BAD_REQUEST that the client would have to handle separately.
+  token: z.string().min(1).max(200),
   newPassword: z.string().min(8).max(128),
 });
 

@@ -1,5 +1,6 @@
 import {
   envSchema,
+  envSchemaWithPolicies,
   envSchemaWithStoragePolicy,
 } from './env.schema';
 
@@ -225,6 +226,167 @@ describe('envSchemaWithStoragePolicy', () => {
         R2_UPDATES_SECRET_ACCESS_KEY: '',
       });
       expect(result.R2_ENDPOINT).toBeUndefined();
+    });
+  });
+});
+
+describe('envSchemaWithPolicies', () => {
+  const baseEnv = {
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/pharmacy',
+    JWT_ACCESS_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+  };
+
+  const resendEnv = {
+    ...baseEnv,
+    EMAIL_DRIVER: 'resend',
+    RESEND_API_KEY: 're_test_key',
+    EMAIL_FROM: 'no-reply@example.test',
+  };
+
+  describe('when EMAIL_DRIVER is resend', () => {
+    it('parses successfully when both Resend credentials are present', () => {
+      const result = envSchemaWithPolicies.parse(resendEnv);
+      expect(result.EMAIL_DRIVER).toBe('resend');
+      expect(result.RESEND_API_KEY).toBe('re_test_key');
+    });
+
+    it('rejects when RESEND_API_KEY is missing', () => {
+      const { RESEND_API_KEY: _, ...rest } = resendEnv;
+      expect(() => envSchemaWithPolicies.parse(rest)).toThrow(
+        /EMAIL_DRIVER=resend requires/,
+      );
+    });
+
+    it('rejects when EMAIL_FROM is missing', () => {
+      const { EMAIL_FROM: _, ...rest } = resendEnv;
+      expect(() => envSchemaWithPolicies.parse(rest)).toThrow(
+        /EMAIL_DRIVER=resend requires/,
+      );
+    });
+
+    it('rejects when a Resend credential is an empty string', () => {
+      expect(() =>
+        envSchemaWithPolicies.parse({ ...resendEnv, RESEND_API_KEY: '' }),
+      ).toThrow(/EMAIL_DRIVER=resend requires/);
+    });
+
+    it('rejects when a Resend credential is whitespace only', () => {
+      expect(() =>
+        envSchemaWithPolicies.parse({ ...resendEnv, EMAIL_FROM: '   ' }),
+      ).toThrow(/EMAIL_DRIVER=resend requires/);
+    });
+  });
+
+  describe('when EMAIL_DRIVER is console or omitted', () => {
+    it('applies default EMAIL_DRIVER console when not provided', () => {
+      const result = envSchemaWithPolicies.parse(baseEnv);
+      expect(result.EMAIL_DRIVER).toBe('console');
+    });
+
+    it('needs no mail configuration at all with the console driver', () => {
+      expect(() =>
+        envSchemaWithPolicies.parse({
+          ...baseEnv,
+          EMAIL_DRIVER: 'console',
+        }),
+      ).not.toThrow();
+    });
+
+    it('treats present-but-empty mail credentials as unset with the console driver', () => {
+      const result = envSchemaWithPolicies.parse({
+        ...baseEnv,
+        RESEND_API_KEY: '',
+        EMAIL_FROM: '   ',
+      });
+      expect(result.RESEND_API_KEY).toBeUndefined();
+    });
+
+    it('rejects an EMAIL_DRIVER outside the allowed set', () => {
+      expect(() =>
+        envSchemaWithPolicies.parse({ ...baseEnv, EMAIL_DRIVER: 'sendgrid' }),
+      ).toThrow();
+    });
+  });
+
+  describe('WEB_APP_BASE_URL', () => {
+    it('defaults to the local Vite dev origin', () => {
+      const result = envSchemaWithPolicies.parse(baseEnv);
+      expect(result.WEB_APP_BASE_URL).toBe('http://localhost:5173');
+    });
+
+    it('accepts an externally reachable origin', () => {
+      const result = envSchemaWithPolicies.parse({
+        ...baseEnv,
+        WEB_APP_BASE_URL: 'https://app.example.test',
+      });
+      expect(result.WEB_APP_BASE_URL).toBe('https://app.example.test');
+    });
+
+    it('rejects a value that is not a URL', () => {
+      expect(() =>
+        envSchemaWithPolicies.parse({
+          ...baseEnv,
+          WEB_APP_BASE_URL: 'app.example.test',
+        }),
+      ).toThrow();
+    });
+
+    it('accepts any syntactically valid URL, including an internal host', () => {
+      // z.url() validates syntax only. The schema comment says this "must be
+      // the externally reachable origin and not an internal address", but no
+      // cross-field rule enforces that, so a deployment can point emailed links
+      // at an address no user can open. Pinned here as observed behaviour.
+      const result = envSchemaWithPolicies.parse({
+        ...baseEnv,
+        WEB_APP_BASE_URL: 'http://localhost:3000',
+      });
+      expect(result.WEB_APP_BASE_URL).toBe('http://localhost:3000');
+    });
+  });
+
+  describe('EMAIL_REPLY_TO', () => {
+    it('is optional', () => {
+      const result = envSchemaWithPolicies.parse(baseEnv);
+      expect(result.EMAIL_REPLY_TO).toBeUndefined();
+    });
+
+    it('accepts a valid address', () => {
+      const result = envSchemaWithPolicies.parse({
+        ...baseEnv,
+        EMAIL_REPLY_TO: 'support@example.test',
+      });
+      expect(result.EMAIL_REPLY_TO).toBe('support@example.test');
+    });
+
+    it('rejects a malformed address', () => {
+      expect(() =>
+        envSchemaWithPolicies.parse({
+          ...baseEnv,
+          EMAIL_REPLY_TO: 'not-an-email',
+        }),
+      ).toThrow();
+    });
+  });
+
+  describe('composition', () => {
+    it('still enforces the storage policy when the mail policy passes', () => {
+      expect(() =>
+        envSchemaWithPolicies.parse({
+          ...baseEnv,
+          STORAGE_DRIVER: 'r2',
+        }),
+      ).toThrow(/STORAGE_DRIVER=r2 requires/);
+    });
+
+    it('still enforces the mail policy when the storage policy passes', () => {
+      expect(() =>
+        envSchemaWithPolicies.parse({
+          ...baseEnv,
+          STORAGE_DRIVER: 'local',
+          EMAIL_DRIVER: 'resend',
+        }),
+      ).toThrow(/EMAIL_DRIVER=resend requires/);
     });
   });
 });

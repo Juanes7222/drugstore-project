@@ -14,9 +14,11 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Request } from 'express';
 import { PrismaService } from '@/infrastructure/prisma/prisma.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
@@ -362,6 +364,7 @@ export class UsersController {
     role: string;
     initialPin?: string | null;
     mustChangePassword: boolean;
+    emailVerificationSent: boolean;
   }> {
     // Managers can only create cashiers
     if (user.role === RoleType.MANAGER && dto.role === 'MANAGER') {
@@ -436,6 +439,12 @@ export class UsersController {
       });
     }
 
+    // An address supplied at creation is unproven, so the account is issued a
+    // verification link here rather than waiting for the user to notice they
+    // cannot sign in with a password yet.
+    const verificationEmailSent =
+      await this.authService.sendVerificationEmail(newUser);
+
     await this.auditService.log(AuditEvent.USER_CREATED, {
       actorId: user.id,
       actorRole: user.role,
@@ -453,6 +462,9 @@ export class UsersController {
       // (or echoed when the admin supplied it). Never exposed again afterwards.
       initialPin,
       mustChangePassword: true,
+      // Lets the admin tell the user what to expect instead of reporting that
+      // the account works and only then failing at the login screen.
+      emailVerificationSent: verificationEmailSent,
     };
   }
 
@@ -515,8 +527,19 @@ export class UsersController {
           throw new ConflictException('Email is already in use');
         }
       }
+
       updateData.email = dto.email;
       changes.push(`email: ${targetUser.email} → ${dto.email ?? '(none)'}`);
+
+      // Re-pointing an account at an address the caller controls would
+      // otherwise leave emailVerifiedAt set: the account would still read as
+      // verified at the attacker's address, and the next password reset would
+      // be delivered to them. Clearing the flag forces the new address to prove
+      // itself, which also suspends password login until it does.
+      if (dto.email !== null && dto.email !== targetUser.email) {
+        updateData.emailVerifiedAt = null;
+        changes.push('emailVerifiedAt: reset');
+      }
     }
 
     if (dto.role !== undefined) {
@@ -548,6 +571,17 @@ export class UsersController {
       where: { id },
       data: updateData,
     });
+
+    // The address was just re-pointed and its verification flag cleared, so the
+    // new owner has to prove they read it. Sent after the update so the token
+    // row is only created if the change actually committed.
+    if (
+      dto.email !== undefined &&
+      dto.email !== null &&
+      dto.email !== targetUser.email
+    ) {
+      await this.authService.sendVerificationEmail(updatedUser);
+    }
 
     if (dto.locationIds !== undefined) {
       await this.prisma.userLocationAccess.deleteMany({
@@ -824,7 +858,10 @@ export class UsersController {
   @Roles(RoleType.OWNER, RoleType.MANAGER)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Send a password reset link to the user's email" })
-  async resetPassword(@Param('id') id: string): Promise<{ message: string }> {
+  async resetPassword(
+    @Param('id') id: string,
+    @Req() req: Request,
+  ): Promise<{ message: string }> {
     const targetUser = await this.prisma.user.findUnique({ where: { id } });
     if (!targetUser) {
       throw new NotFoundException('User not found');
@@ -834,7 +871,14 @@ export class UsersController {
       throw new BadRequestException('User does not have an email address');
     }
 
-    await this.authService.forgotPassword(targetUser.email);
+    // forgotPassword answers identically whether or not it sends, so this
+    // endpoint cannot be used to probe which users have a verified address.
+    await this.authService.forgotPassword({
+      email: targetUser.email,
+      requestIp:
+        (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0] ??
+        req.ip,
+    });
 
     return { message: "Password reset link sent to the user's email" };
   }

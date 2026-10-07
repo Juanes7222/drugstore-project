@@ -60,6 +60,67 @@ export const en: typeof es = {
     switchToAdmin: "Go to platform panel",
     switchToTenant: "Back to the pharmacy panel",
   },
+  /** Copy shared by the emailed-link pages. */
+  emailActions: {
+    emailLabel: "Email address",
+    emailError: {
+      required: "Email is required",
+      invalid: "Enter a valid email address",
+      tooLong: "Email address is too long",
+    },
+    promptForEmail: "Enter the account email and we will send a new link.",
+    // Deliberately identical for every outcome: the server does not reveal
+    // whether the address is registered, so the page must not either.
+    acknowledgement:
+      "If the address matches an account needing this email, we sent a message.",
+    rateLimited: "Too many attempts. Wait a few minutes and try again.",
+    requestFailed: "Could not complete the request. Please try again.",
+  },
+  verifyEmail: {
+    title: "Verify your email",
+    subtitle: "Confirm this address is yours to activate your access.",
+    confirm: "Confirm verification",
+    confirmHint:
+      "Confirming spends this link and older copies stop working. If you opened it in another browser, request a new link.",
+    verifiedTitle: "Email verified",
+    verifiedBody: "We verified {{email}}. Your account is ready to use.",
+    verifiedNext: "Sign in with this email and your password.",
+    goToLogin: "Go to sign in",
+    missingToken:
+      "This link has no verification code. Open the full email or request a new one.",
+    invalidTitle: "This link is no longer valid",
+    invalidBody:
+      "The verification link expired, was already used, or the account email changed. Request a new one to continue.",
+    requestNew: "Send verification link",
+  },
+  resetPassword: {
+    title: "Reset your password",
+    subtitle: "Choose a new password for your account.",
+    confirmHint:
+      "Saving closes every active session for the account, on every device and terminal.",
+    submit: "Save password",
+    doneTitle: "Password updated",
+    doneBody: "Your password was updated successfully.",
+    sessionsRevoked:
+      "For your security we signed you out on every device and terminal. You will need to sign in again on each one.",
+    goToLogin: "Go to sign in",
+    missingToken:
+      "This link has no recovery code. Open the full email or request a new one.",
+    invalidTitle: "This link is no longer valid",
+    invalidBody:
+      "The link expired, was already used, or the account email changed. Request a new one to continue.",
+    requestNew: "Send recovery link",
+    newPassword: "New password",
+    confirmPassword: "Confirm password",
+    passwordHint: "Between {{min}} and {{max}} characters.",
+    fieldError: {
+      required: "This field is required",
+      tooShort: "The password must be at least {{min}} characters",
+      tooLong: "The password cannot exceed {{max}} characters",
+      mismatch: "The passwords do not match",
+    },
+    requestFailed: "Could not reset the password. Please try again.",
+  },
   login: {
     title: "Sign in",
     subtitle: "Backoffice administration access",
@@ -532,6 +593,7 @@ export const en: typeof es = {
       model_PER_LOCATION: "Per location",
       model_PER_WORKSTATION: "Per terminal",
       model_TIERED: "Tiered",
+      locations: "Locations"
     },
     admins: {
       title: "Platform admin accounts",

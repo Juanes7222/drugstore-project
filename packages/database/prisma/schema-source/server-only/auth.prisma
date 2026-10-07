@@ -64,6 +64,7 @@ model User {
   auditLogs                 AuditLog[]
   offlineSessionBlessings   OfflineSessionBlessing[]
   offlineTokenRevocations   OfflineTokenRevocation[]
+  verificationTokens        VerificationToken[]
 
   @@index([role])
   @@index([subscriptionId, username])
@@ -181,4 +182,42 @@ model LoginAttempt {
   @@index([userId, createdAt])
   @@index([identifier, createdAt])
   @@index([createdAt])
+}
+
+enum VerificationPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  EMAIL_CHANGE
+}
+
+/// Single-use capability proving control of an email inbox: email verification,
+/// password reset, and email-change confirmation all share this table.
+///
+/// Only the SHA-256 hash of the token is stored, so a database read cannot mint
+/// a working link — same discipline as UserSession.tokenHash. Issuing a token
+/// consumes any earlier unconsumed token for the same (userId, purpose), so
+/// only the most recently emailed link ever works.
+///
+/// Deliberately has NO row-level security policy, matching User and UserSession:
+/// the verification endpoints are unauthenticated, so no tenant context is set
+/// on the request and an RLS predicate keyed on app.current_tenant() would
+/// deny every row. Isolation instead comes from the 256-bit token itself plus
+/// the userId binding — a row is reachable only by presenting its token.
+/// See apps/server/src/modules/auth/services/verification-token.service.ts.
+model VerificationToken {
+  id         String              @id
+  userId     String
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose    VerificationPurpose
+  tokenHash  String              @unique
+  /// Email the token was issued for. Kept so a token stops working if the
+  /// account's email changes before it is consumed.
+  email      String
+  requestIp  String?
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime            @default(now())
+
+  @@index([userId, purpose])
+  @@index([expiresAt])
 }
