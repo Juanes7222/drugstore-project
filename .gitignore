@@ -142,6 +142,15 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
+# tsc build-info / declaration artifacts emitted next to the sources they
+# describe. Regenerated on every `tsc -b`, so tracking them only produces churn.
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.d.ts.map
+
+# WebDriver binaries the e2e harness downloads on demand (msedgedriver).
+apps/pos-desktop/e2e/.artifacts/
+
 *.db
 
 generated/
@@ -173,3 +182,6 @@ graphify-out/
 RUT.pdf
 # Per-station cargo target dirs created by scripts/dev-multi-station.mjs --desktop
 apps/pos-desktop/src-tauri/.target-*
+
+# WDIO e2e run artifacts (server log, screenshots)
+apps/pos-desktop/e2e/.artifacts/
