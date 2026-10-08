@@ -19,10 +19,10 @@ import {
   LotState,
   MovementType,
   SyncOperationType,
-} from '@pharmacy/database/local';
-import type { AuthService } from '../auth/auth.service';
-import { RoleType } from '@pharmacy/shared-types';
-import { notifyPendingEntry } from '../sync/sync-queue-notifier';
+} from "@pharmacy/database/local";
+import type { AuthService } from "../auth/auth.service";
+import { RoleType } from "@pharmacy/shared-types";
+import { notifyPendingEntry } from "../sync/sync-queue-notifier";
 import {
   SupplierNotFoundException,
   PurchaseReceptionNotFoundException,
@@ -33,7 +33,7 @@ import {
   PurchaseOrderItemMismatchException,
   ConcurrentStockModificationException,
   ProductNotFoundException,
-} from './exceptions';
+} from "./exceptions";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -170,10 +170,12 @@ export class PurchaseReceptionsService {
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         include: {
           supplier: { select: { id: true, businessName: true } },
-          purchaseOrder: { select: { id: true, sequentialNumber: true, state: true } },
+          purchaseOrder: {
+            select: { id: true, sequentialNumber: true, state: true },
+          },
           items: true,
         },
       }),
@@ -181,11 +183,15 @@ export class PurchaseReceptionsService {
     ]);
 
     // Batch-fetch product names for all items across all receptions
-    const allProductIds = receptions.flatMap((r) => r.items.map((i) => i.productId));
+    const allProductIds = receptions.flatMap((r) =>
+      r.items.map((i) => i.productId),
+    );
     const productNameMap = await this.fetchProductNameMap(allProductIds);
 
     return {
-      data: receptions.map((r) => this.mapReception(r, r.items, productNameMap)),
+      data: receptions.map((r) =>
+        this.mapReception(r, r.items, productNameMap),
+      ),
       total,
     };
   }
@@ -199,7 +205,9 @@ export class PurchaseReceptionsService {
       where: { id },
       include: {
         supplier: { select: { id: true, businessName: true } },
-        purchaseOrder: { select: { id: true, sequentialNumber: true, state: true } },
+        purchaseOrder: {
+          select: { id: true, sequentialNumber: true, state: true },
+        },
         items: true,
       },
     });
@@ -232,13 +240,18 @@ export class PurchaseReceptionsService {
       if (!supplier) throw new SupplierNotFoundException(input.supplierId);
 
       // Validate purchase order if provided
-      let purchaseOrder: { id: string; sequentialNumber: number; state: string } | null = null;
+      let purchaseOrder: {
+        id: string;
+        sequentialNumber: number;
+        state: string;
+      } | null = null;
       if (input.purchaseOrderId) {
         purchaseOrder = await tx.purchaseOrder.findUnique({
           where: { id: input.purchaseOrderId },
           select: { id: true, sequentialNumber: true, state: true },
         });
-        if (!purchaseOrder) throw new PurchaseOrderNotFoundException(input.purchaseOrderId);
+        if (!purchaseOrder)
+          throw new PurchaseOrderNotFoundException(input.purchaseOrderId);
       }
 
       // Build items data (pre-validate purchase order item links)
@@ -267,18 +280,20 @@ export class PurchaseReceptionsService {
             where: { id: item.purchaseOrderItemId },
           });
           if (!poItem) {
-            throw new PurchaseOrderItemNotFoundException(item.purchaseOrderItemId);
+            throw new PurchaseOrderItemNotFoundException(
+              item.purchaseOrderItemId,
+            );
           }
           if (poItem.purchaseOrderId !== input.purchaseOrderId) {
             throw new PurchaseOrderItemMismatchException(
               item.purchaseOrderItemId,
-              'Does not belong to the specified purchase order.',
+              "Does not belong to the specified purchase order.",
             );
           }
           if (poItem.productId !== item.productId) {
             throw new PurchaseOrderItemMismatchException(
               item.purchaseOrderItemId,
-              'Product ID mismatch.',
+              "Product ID mismatch.",
             );
           }
         }
@@ -294,7 +309,9 @@ export class PurchaseReceptionsService {
           purchaseOrderItemId: item.purchaseOrderItemId ?? null,
           receivedQuantity: item.receivedQuantity,
           lotNumber: item.lotNumber ?? null,
-          expirationDate: item.expirationDate ? new Date(item.expirationDate) : null,
+          expirationDate: item.expirationDate
+            ? new Date(item.expirationDate)
+            : null,
           realUnitCost: new Prisma.Decimal(item.realUnitCost),
           taxSchemeId: item.taxSchemeId,
           taxRate: new Prisma.Decimal(item.taxRate),
@@ -326,7 +343,9 @@ export class PurchaseReceptionsService {
         },
         include: {
           supplier: { select: { id: true, businessName: true } },
-          purchaseOrder: { select: { id: true, sequentialNumber: true, state: true } },
+          purchaseOrder: {
+            select: { id: true, sequentialNumber: true, state: true },
+          },
           items: true,
         },
       });
@@ -368,226 +387,240 @@ export class PurchaseReceptionsService {
     );
     const confirmedAt = new Date();
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      // 1. Validate reception exists and is draft
-      const reception = await tx.purchaseReception.findUnique({
-        where: { id },
-        include: {
-          items: { include: { purchaseOrderItem: true } },
-          purchaseOrder: { include: { items: true } },
-        },
-      });
-      if (!reception) throw new PurchaseReceptionNotFoundException(id);
-      if (reception.state !== PurchaseReceptionState.DRAFT) {
-        throw new PurchaseReceptionNotDraftException(id, reception.state);
-      }
-
-      // 2a. Collect pre-update stock/cost per product for CPP calculation
-      //     Group reception items by product to know total received per product
-      const productReceivedQuantities = new Map<string, number>();
-      const productReceivedCosts = new Map<string, Prisma.Decimal>();
-      for (const item of reception.items) {
-        const prevQty = productReceivedQuantities.get(item.productId) ?? 0;
-        productReceivedQuantities.set(item.productId, prevQty + item.receivedQuantity);
-        // Use the first item's cost per product (all items of same product in one reception
-        // should have the same realUnitCost; if not, the last one wins — conservative choice)
-        productReceivedCosts.set(item.productId, item.realUnitCost);
-      }
-
-      // Fetch current product costs and total stock per product (pre-update)
-      const productCostMap = new Map<string, string | null>();
-      const productStockMap = new Map<string, number>();
-      for (const productId of productReceivedQuantities.keys()) {
-        // Get current cost from product's active cost history
-        const product = await tx.product.findUnique({
-          where: { id: productId },
-          select: {
-            currentCostId: true,
-            costHistories: {
-              where: { effectiveTo: null },
-              select: { cost: true },
-              take: 1,
-            },
+    const updated = await this.prisma
+      .$transaction(async (tx) => {
+        // 1. Validate reception exists and is draft
+        const reception = await tx.purchaseReception.findUnique({
+          where: { id },
+          include: {
+            items: { include: { purchaseOrderItem: true } },
+            purchaseOrder: { include: { items: true } },
           },
         });
-        if (!product) throw new ProductNotFoundException(productId);
-        productCostMap.set(productId, product.costHistories[0]?.cost.toString() ?? null);
-
-        // Get total stock across all lots for this product (pre-update)
-        const lotsAgg = await tx.lot.aggregate({
-          where: { productId },
-          _sum: { currentStock: true },
-        });
-        productStockMap.set(productId, lotsAgg._sum.currentStock ?? 0);
-      }
-
-      // 2b. For each item, create/update lot and record movement
-      for (const item of reception.items) {
-        // Resolve the lot: find existing or create new
-        // When no lotNumber is provided, generate an internal one so stock
-        // tracking still works — the UI layer decides whether to require one.
-        const lotExpiration = item.expirationDate ?? new Date(
-          Date.now() + 365 * 24 * 60 * 60 * 1000,
-        );
-        const lot = await this.resolveLot(tx, {
-          productId: item.productId,
-          lotNumber: item.lotNumber ?? `REC-${reception.sequentialNumber}`,
-          expirationDate: lotExpiration,
-        });
-
-        // Optimistic-locked stock increment
-        const newStock = lot.currentStock + item.receivedQuantity;
-        const updatedLot = await tx.lot.updateMany({
-          where: { id: lot.id, version: lot.version },
-          data: {
-            currentStock: newStock,
-            version: { increment: 1 },
-            state: LotState.ACTIVE,
-          },
-        });
-        if (updatedLot.count === 0) {
-          throw new ConcurrentStockModificationException(lot.id);
+        if (!reception) throw new PurchaseReceptionNotFoundException(id);
+        if (reception.state !== PurchaseReceptionState.DRAFT) {
+          throw new PurchaseReceptionNotDraftException(id, reception.state);
         }
 
-        // Record inventory movement
-        await tx.inventoryMovement.create({
-          data: {
-            id: globalThis.crypto.randomUUID(),
-            lotId: lot.id,
-            movementType: MovementType.PURCHASE_RECEIPT,
-            quantity: item.receivedQuantity,
-            previousStock: lot.currentStock,
-            resultingStock: newStock,
-            createdById: session.userId,
-            createdAt: confirmedAt,
-            purchaseReceptionId: reception.id,
-          },
-        });
+        // 2a. Collect pre-update stock/cost per product for CPP calculation
+        //     Group reception items by product to know total received per product
+        const productReceivedQuantities = new Map<string, number>();
+        const productReceivedCosts = new Map<string, Prisma.Decimal>();
+        for (const item of reception.items) {
+          const prevQty = productReceivedQuantities.get(item.productId) ?? 0;
+          productReceivedQuantities.set(
+            item.productId,
+            prevQty + item.receivedQuantity,
+          );
+          // Use the first item's cost per product (all items of same product in one reception
+          // should have the same realUnitCost; if not, the last one wins — conservative choice)
+          productReceivedCosts.set(item.productId, item.realUnitCost);
+        }
 
-        // Link lot to reception item
-        await tx.purchaseReceptionItem.update({
-          where: { id: item.id },
-          data: { lotId: lot.id },
-        });
-
-        // Update linked purchase order item if present
-        if (item.purchaseOrderItemId) {
-          const poItem = item.purchaseOrderItem;
-          if (poItem) {
-            const newReceived = poItem.receivedQuantity + item.receivedQuantity;
-            const newPending = Math.max(0, poItem.requestedQuantity - newReceived);
-            await tx.purchaseOrderItem.update({
-              where: { id: item.purchaseOrderItemId },
-              data: {
-                receivedQuantity: newReceived,
-                pendingQuantity: newPending,
+        // Fetch current product costs and total stock per product (pre-update)
+        const productCostMap = new Map<string, string | null>();
+        const productStockMap = new Map<string, number>();
+        for (const productId of productReceivedQuantities.keys()) {
+          // Get current cost from product's active cost history
+          const product = await tx.product.findUnique({
+            where: { id: productId },
+            select: {
+              currentCostId: true,
+              costHistories: {
+                where: { effectiveTo: null },
+                select: { cost: true },
+                take: 1,
               },
+            },
+          });
+          if (!product) throw new ProductNotFoundException(productId);
+          productCostMap.set(
+            productId,
+            product.costHistories[0]?.cost.toString() ?? null,
+          );
+
+          // Get total stock across all lots for this product (pre-update)
+          const lotsAgg = await tx.lot.aggregate({
+            where: { productId },
+            _sum: { currentStock: true },
+          });
+          productStockMap.set(productId, lotsAgg._sum.currentStock ?? 0);
+        }
+
+        // 2b. For each item, create/update lot and record movement
+        for (const item of reception.items) {
+          // Resolve the lot: find existing or create new
+          // When no lotNumber is provided, generate an internal one so stock
+          // tracking still works — the UI layer decides whether to require one.
+          const lotExpiration =
+            item.expirationDate ??
+            new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+          const lot = await this.resolveLot(tx, {
+            productId: item.productId,
+            lotNumber: item.lotNumber ?? `REC-${reception.sequentialNumber}`,
+            expirationDate: lotExpiration,
+          });
+
+          // Optimistic-locked stock increment
+          const newStock = lot.currentStock + item.receivedQuantity;
+          const updatedLot = await tx.lot.updateMany({
+            where: { id: lot.id, version: lot.version },
+            data: {
+              currentStock: newStock,
+              version: { increment: 1 },
+              state: LotState.ACTIVE,
+            },
+          });
+          if (updatedLot.count === 0) {
+            throw new ConcurrentStockModificationException(lot.id);
+          }
+
+          // Record inventory movement
+          await tx.inventoryMovement.create({
+            data: {
+              id: globalThis.crypto.randomUUID(),
+              lotId: lot.id,
+              movementType: MovementType.PURCHASE_RECEIPT,
+              quantity: item.receivedQuantity,
+              previousStock: lot.currentStock,
+              resultingStock: newStock,
+              createdById: session.userId,
+              createdAt: confirmedAt,
+              purchaseReceptionId: reception.id,
+            },
+          });
+
+          // Link lot to reception item
+          await tx.purchaseReceptionItem.update({
+            where: { id: item.id },
+            data: { lotId: lot.id },
+          });
+
+          // Update linked purchase order item if present
+          if (item.purchaseOrderItemId) {
+            const poItem = item.purchaseOrderItem;
+            if (poItem) {
+              const newReceived =
+                poItem.receivedQuantity + item.receivedQuantity;
+              const newPending = Math.max(
+                0,
+                poItem.requestedQuantity - newReceived,
+              );
+              await tx.purchaseOrderItem.update({
+                where: { id: item.purchaseOrderItemId },
+                data: {
+                  receivedQuantity: newReceived,
+                  pendingQuantity: newPending,
+                },
+              });
+            }
+          }
+        }
+
+        // 3. Update linked purchase order state
+        if (reception.purchaseOrder) {
+          const po = reception.purchaseOrder;
+          const allItems = await tx.purchaseOrderItem.findMany({
+            where: { purchaseOrderId: po.id },
+          });
+          const hasPendingItems = allItems.some((i) => i.pendingQuantity > 0);
+          const newOrderState = hasPendingItems
+            ? PurchaseOrderState.PARTIALLY_RECEIVED
+            : PurchaseOrderState.FULLY_RECEIVED;
+
+          if (po.state !== newOrderState) {
+            await tx.purchaseOrder.update({
+              where: { id: po.id },
+              data: { state: newOrderState },
             });
           }
         }
-      }
 
-      // 3. Update linked purchase order state
-      if (reception.purchaseOrder) {
-        const po = reception.purchaseOrder;
-        const allItems = await tx.purchaseOrderItem.findMany({
-          where: { purchaseOrderId: po.id },
-        });
-        const hasPendingItems = allItems.some((i) => i.pendingQuantity > 0);
-        const newOrderState = hasPendingItems
-          ? PurchaseOrderState.PARTIALLY_RECEIVED
-          : PurchaseOrderState.FULLY_RECEIVED;
+        // 4. Calculate and update CPP for each product (RF-COM-35 / RF-COM-36)
+        //    CPP_nuevo = (stock_anterior × CPP_anterior + cantidad_recibida × costo_recibido)
+        //              / (stock_anterior + cantidad_recibida)
+        for (const [productId, receivedQty] of productReceivedQuantities) {
+          const prevStock = productStockMap.get(productId) ?? 0;
+          const prevCostStr = productCostMap.get(productId);
+          const receivedCost = productReceivedCosts.get(productId)!;
 
-        if (po.state !== newOrderState) {
-          await tx.purchaseOrder.update({
-            where: { id: po.id },
-            data: { state: newOrderState },
+          const prevCost = prevCostStr
+            ? new Prisma.Decimal(prevCostStr)
+            : new Prisma.Decimal(0);
+          const prevStockD = new Prisma.Decimal(prevStock);
+          const receivedQtyD = new Prisma.Decimal(receivedQty);
+
+          // If no prior stock, new CPP = received cost
+          // If no prior cost, new CPP = received cost
+          let newCost: Prisma.Decimal;
+          if (prevStock === 0 || !prevCostStr) {
+            newCost = receivedCost;
+          } else {
+            newCost = prevStockD
+              .times(prevCost)
+              .plus(receivedQtyD.times(receivedCost))
+              .dividedBy(prevStockD.plus(receivedQtyD));
+          }
+
+          // Expire current cost history
+          const product = await tx.product.findUnique({
+            where: { id: productId },
+            select: { currentCostId: true },
+          });
+          if (product?.currentCostId) {
+            await tx.productCostHistory.update({
+              where: { id: product.currentCostId },
+              data: { effectiveTo: confirmedAt },
+            });
+          }
+
+          // Create new cost history
+          const newCostHistoryId = globalThis.crypto.randomUUID();
+          await tx.productCostHistory.create({
+            data: {
+              id: newCostHistoryId,
+              productId,
+              previousCostHistoryId: product?.currentCostId ?? null,
+              cost: newCost,
+              effectiveFrom: confirmedAt,
+              changedById: session.userId,
+              changedAt: confirmedAt,
+              changeReason: "CPP updated after purchase reception confirmation",
+            },
+          });
+
+          // Update product pointer
+          await tx.product.update({
+            where: { id: productId },
+            data: { currentCostId: newCostHistoryId },
           });
         }
-      }
 
-      // 4. Calculate and update CPP for each product (RF-COM-35 / RF-COM-36)
-      //    CPP_nuevo = (stock_anterior × CPP_anterior + cantidad_recibida × costo_recibido)
-      //              / (stock_anterior + cantidad_recibida)
-      for (const [productId, receivedQty] of productReceivedQuantities) {
-        const prevStock = productStockMap.get(productId) ?? 0;
-        const prevCostStr = productCostMap.get(productId);
-        const receivedCost = productReceivedCosts.get(productId)!;
-
-        const prevCost = prevCostStr
-          ? new Prisma.Decimal(prevCostStr)
-          : new Prisma.Decimal(0);
-        const prevStockD = new Prisma.Decimal(prevStock);
-        const receivedQtyD = new Prisma.Decimal(receivedQty);
-
-        // If no prior stock, new CPP = received cost
-        // If no prior cost, new CPP = received cost
-        let newCost: Prisma.Decimal;
-        if (prevStock === 0 || !prevCostStr) {
-          newCost = receivedCost;
-        } else {
-          newCost = prevStockD
-            .times(prevCost)
-            .plus(receivedQtyD.times(receivedCost))
-            .dividedBy(prevStockD.plus(receivedQtyD));
-        }
-
-        // Expire current cost history
-        const product = await tx.product.findUnique({
-          where: { id: productId },
-          select: { currentCostId: true },
-        });
-        if (product?.currentCostId) {
-          await tx.productCostHistory.update({
-            where: { id: product.currentCostId },
-            data: { effectiveTo: confirmedAt },
-          });
-        }
-
-        // Create new cost history
-        const newCostHistoryId = globalThis.crypto.randomUUID();
-        await tx.productCostHistory.create({
+        // 6. Transition reception to CONFIRMED
+        const updatedReception = await tx.purchaseReception.update({
+          where: { id },
           data: {
-            id: newCostHistoryId,
-            productId,
-            previousCostHistoryId: product?.currentCostId ?? null,
-            cost: newCost,
-            effectiveFrom: confirmedAt,
-            changedById: session.userId,
-            changedAt: confirmedAt,
-            changeReason: 'CPP updated after purchase reception confirmation',
+            state: PurchaseReceptionState.CONFIRMED,
+            receivedAt: confirmedAt,
+          },
+          include: {
+            supplier: { select: { id: true, businessName: true } },
+            purchaseOrder: {
+              select: { id: true, sequentialNumber: true, state: true },
+            },
+            items: true,
           },
         });
 
-        // Update product pointer
-        await tx.product.update({
-          where: { id: productId },
-          data: { currentCostId: newCostHistoryId },
-        });
-      }
+        // 7. Create SyncQueue entry
+        await this.createSyncQueueEntry(tx, reception, session, confirmedAt);
 
-      // 6. Transition reception to CONFIRMED
-      const updatedReception = await tx.purchaseReception.update({
-        where: { id },
-        data: {
-          state: PurchaseReceptionState.CONFIRMED,
-          receivedAt: confirmedAt,
-        },
-        include: {
-          supplier: { select: { id: true, businessName: true } },
-          purchaseOrder: { select: { id: true, sequentialNumber: true, state: true } },
-          items: true,
-        },
+        return updatedReception;
+      })
+      .then((result) => {
+        notifyPendingEntry();
+        return result;
       });
-
-      // 7. Create SyncQueue entry
-      await this.createSyncQueueEntry(tx, reception, session, confirmedAt);
-
-      return updatedReception;
-    }).then((result) => {
-      notifyPendingEntry();
-      return result;
-    });
 
     const productIds = updated.items.map((i) => i.productId);
     const productNameMap = await this.fetchProductNameMap(productIds);
@@ -609,7 +642,11 @@ export class PurchaseReceptionsService {
    */
   async getOrderItemsForReception(
     orderId: string,
-  ): Promise<{ supplierId: string; notes: string | null; items: ReceptionOrderItem[] }> {
+  ): Promise<{
+    supplierId: string;
+    notes: string | null;
+    items: ReceptionOrderItem[];
+  }> {
     const order = await this.prisma.purchaseOrder.findUnique({
       where: { id: orderId },
       include: { items: true },
@@ -630,7 +667,9 @@ export class PurchaseReceptionsService {
         },
       },
     });
-    const productNameMap = new Map(products.map((p) => [p.id, p.commercialName]));
+    const productNameMap = new Map(
+      products.map((p) => [p.id, p.commercialName]),
+    );
     const productCostMap = new Map(
       products.map((p) => [p.id, p.costHistories[0]?.cost.toString() ?? null]),
     );
@@ -638,7 +677,7 @@ export class PurchaseReceptionsService {
     // Look up default tax scheme for fallback
     const defaultTaxScheme = await this.prisma.taxScheme.findFirst({
       where: { isActive: true },
-      orderBy: { code: 'asc' },
+      orderBy: { code: "asc" },
       select: { id: true, rate: true },
     });
 
@@ -646,7 +685,7 @@ export class PurchaseReceptionsService {
       const currentCost = productCostMap.get(item.productId);
       return {
         productId: item.productId,
-        productName: productNameMap.get(item.productId) ?? '',
+        productName: productNameMap.get(item.productId) ?? "",
         purchaseOrderItemId: item.id,
         requestedQuantity: item.requestedQuantity,
         pendingQuantity: item.pendingQuantity,
@@ -655,8 +694,10 @@ export class PurchaseReceptionsService {
         expirationDate: undefined,
         // Pre-fill with the last known cost from ProductCostHistory;
         // fall back to the PO's expected unit cost if no history exists.
-        realUnitCost: currentCost ? Number(currentCost) : Number(item.expectedUnitCost),
-        taxSchemeId: defaultTaxScheme?.id ?? '',
+        realUnitCost: currentCost
+          ? Number(currentCost)
+          : Number(item.expectedUnitCost),
+        taxSchemeId: defaultTaxScheme?.id ?? "",
         taxRate: defaultTaxScheme ? Number(defaultTaxScheme.rate) : 0,
       };
     });
@@ -702,7 +743,7 @@ export class PurchaseReceptionsService {
 
         const newStock = Math.max(0, lot.currentStock - item.receivedQuantity);
         const newState: LotState =
-          newStock <= 0 ? LotState.EXHAUSTED : lot.state as LotState;
+          newStock <= 0 ? LotState.EXHAUSTED : (lot.state as LotState);
 
         const updatedLot = await tx.lot.updateMany({
           where: { id: item.lotId, version: lot.version },
@@ -770,7 +811,9 @@ export class PurchaseReceptionsService {
         },
         include: {
           supplier: { select: { id: true, businessName: true } },
-          purchaseOrder: { select: { id: true, sequentialNumber: true, state: true } },
+          purchaseOrder: {
+            select: { id: true, sequentialNumber: true, state: true },
+          },
           items: true,
         },
       });
@@ -886,6 +929,7 @@ export class PurchaseReceptionsService {
         taxRate: true,
         discountAmount: true,
         lotId: true,
+        expirationDate: true,
       },
     });
     const productIds = [...new Set(items.map((i) => i.productId))];
@@ -902,19 +946,20 @@ export class PurchaseReceptionsService {
     const lotIds = items
       .map((i) => i.lotId)
       .filter((id): id is string => id !== null);
-    const lots = lotIds.length > 0
-      ? await tx.lot.findMany({
-          where: { id: { in: lotIds } },
-          select: {
-            id: true,
-            batchNumber: true,
-            expirationDate: true,
-            productId: true,
-            currentStock: true,
-            locationCode: true,
-          },
-        })
-      : [];
+    const lots =
+      lotIds.length > 0
+        ? await tx.lot.findMany({
+            where: { id: { in: lotIds } },
+            select: {
+              id: true,
+              batchNumber: true,
+              expirationDate: true,
+              productId: true,
+              currentStock: true,
+              locationCode: true,
+            },
+          })
+        : [];
     const lotMap = new Map(lots.map((l) => [l.id, l]));
 
     const payloadItems = items.map((item) => {
@@ -931,6 +976,14 @@ export class PurchaseReceptionsService {
         // and `realUnitCost`; only the sync-payload wire names change.
         quantity: item.receivedQuantity,
         unitCost: Number(item.realUnitCost),
+        // The expiry belongs on the reception ITEM as well as on the lot: the
+        // item is the record of what was received and when it expires, and
+        // PurchaseReceptionConfirmationItemSchema accepts it. Sending only
+        // `lot.expirationDate` left the server's reception item with a null
+        // expiry even though the lot carried the right date.
+        expirationDate: item.expirationDate
+          ? item.expirationDate.toISOString()
+          : undefined,
         lot: lot
           ? {
               batchNumber: lot.batchNumber,
@@ -946,7 +999,7 @@ export class PurchaseReceptionsService {
     });
 
     const payload = JSON.stringify({
-      operationType: 'PURCHASE_RECEPTION_CONFIRMATION',
+      operationType: "PURCHASE_RECEPTION_CONFIRMATION",
       receptionId: reception.id,
       sequentialNumber: reception.sequentialNumber,
       supplierId: reception.supplierId,
@@ -979,7 +1032,7 @@ export class PurchaseReceptionsService {
 
     const latestSeq = await tx.syncQueue.findFirst({
       where: { sourceWorkstationId: session.workstationId },
-      orderBy: { clientSequence: 'desc' },
+      orderBy: { clientSequence: "desc" },
       select: { clientSequence: true },
     });
     const clientSequence = latestSeq ? latestSeq.clientSequence + 1n : 1n;
@@ -993,7 +1046,7 @@ export class PurchaseReceptionsService {
         payloadHash,
         payloadSize: payloadBytes.length,
         versionSchema: 1,
-        status: 'PENDING',
+        status: "PENDING",
         retryCount: 0,
         sourceWorkstationId: session.workstationId,
         sourceCreatedAt: confirmedAt,
@@ -1004,9 +1057,9 @@ export class PurchaseReceptionsService {
 
   private async computeHash(payload: string): Promise<string> {
     const data = new TextEncoder().encode(payload);
-    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
+    const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   // ---------------------------------------------------------------------------
@@ -1017,7 +1070,7 @@ export class PurchaseReceptionsService {
     tx: Prisma.TransactionClient,
   ): Promise<number> {
     const latest = await tx.purchaseReception.findFirst({
-      orderBy: { sequentialNumber: 'desc' },
+      orderBy: { sequentialNumber: "desc" },
       select: { sequentialNumber: true },
     });
     return (latest?.sequentialNumber ?? 0) + 1;
@@ -1032,7 +1085,11 @@ export class PurchaseReceptionsService {
       taxAmount: Prisma.Decimal;
       subtotal: Prisma.Decimal;
     }>,
-  ): { subtotal: Prisma.Decimal; totalTax: Prisma.Decimal; totalAmount: Prisma.Decimal } {
+  ): {
+    subtotal: Prisma.Decimal;
+    totalTax: Prisma.Decimal;
+    totalAmount: Prisma.Decimal;
+  } {
     const subtotal = items.reduce(
       (sum, item) => sum.plus(item.subtotal),
       new Prisma.Decimal(0),
@@ -1053,7 +1110,9 @@ export class PurchaseReceptionsService {
    * Batch-fetch Product records for the given product IDs and return
    * a Map<productId, commercialName>.  Missing IDs yield an empty string.
    */
-  private async fetchProductNameMap(productIds: string[]): Promise<Map<string, string>> {
+  private async fetchProductNameMap(
+    productIds: string[],
+  ): Promise<Map<string, string>> {
     const unique = [...new Set(productIds)];
     if (unique.length === 0) return new Map();
     const products = await this.prisma.product.findMany({
@@ -1075,7 +1134,11 @@ export class PurchaseReceptionsService {
       supplierId: string;
       supplier: { id: string; businessName: string };
       purchaseOrderId: string | null;
-      purchaseOrder: { id: string; sequentialNumber: number; state: string } | null;
+      purchaseOrder: {
+        id: string;
+        sequentialNumber: number;
+        state: string;
+      } | null;
       notes: string | null;
       subtotal: Prisma.Decimal;
       totalTax: Prisma.Decimal;
@@ -1119,7 +1182,7 @@ export class PurchaseReceptionsService {
       items: items.map((item) => ({
         id: item.id,
         productId: item.productId,
-        productName: productNameMap.get(item.productId) ?? '',
+        productName: productNameMap.get(item.productId) ?? "",
         purchaseOrderItemId: item.purchaseOrderItemId,
         lotId: item.lotId,
         receivedQuantity: item.receivedQuantity,

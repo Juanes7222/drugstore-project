@@ -476,9 +476,17 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     expect(localLot).toBeDefined();
     expect(localLot?.currentStock).toBe(RECEIVED_QUANTITY);
     expect(localLot?.state).toBe("ACTIVE");
-    // A received lot must carry the typed expiry, so a null is a failure in
-    // itself and not something to tolerate before slicing.
-    expect(localLot?.expirationDate).not.toBeNull();
+
+    // A received lot must carry the typed expiry. Reported with every row for
+    // this product, because a null here is either a lot created without one or a
+    // second row for the same batch written by the pull, and the two need
+    // opposite fixes.
+    if (localLot?.expirationDate === null) {
+      throw new Error(
+        `lot "${RECEIVED_BATCH}" has no expirationDate; local lots for the ` +
+          `product: ${JSON.stringify(localLots, null, 2)}`,
+      );
+    }
     expect(localLot?.expirationDate?.slice(0, 10)).toBe(RECEIVED_EXPIRATION);
 
     const localReceptions = await fetchLocalPurchaseReceptions();
@@ -507,10 +515,16 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     );
     // The expiry the cashier typed is the expiry the lot carries, to the day:
     // a lot that expires on the wrong date is a regulatory problem, not a
-    // cosmetic one.
-    expect(reception.items[0].expirationDate?.slice(0, 10)).toBe(
-      RECEIVED_EXPIRATION,
-    );
+    // cosmetic one. The received value is reported because a one-day drift here
+    // means the server is storing the calendar date in a timezone rather than as
+    // the typed day.
+    const serverExpiry = reception.items[0].expirationDate;
+    if (serverExpiry?.slice(0, 10) !== RECEIVED_EXPIRATION) {
+      throw new Error(
+        `server reception expiry for batch ${RECEIVED_BATCH} is ` +
+          `"${serverExpiry}", expected "${RECEIVED_EXPIRATION}"`,
+      );
+    }
 
     const serverLot = await fetchServerLotByBatch(RECEIVED_BATCH);
     expect(serverLot).not.toBeNull();

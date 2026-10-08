@@ -52,9 +52,45 @@ export async function queryLocal<T = Record<string, unknown>>(
         done([{ __error: "window.__db is not available" }]);
         return;
       }
+      // Dates are flattened to ISO strings HERE, while they are still real Date
+      // objects.
+      //
+      // Crossing the WebDriver bridge does not preserve them: a `Date` arrives
+      // as an empty object, so every `DateTime` column silently became `{}`.
+      // That is why `lot.entryDate` — which the reception service sets
+      // explicitly to `new Date()` — read back as absent, and why the specs saw a
+      // lot with stock but no dates at all rather than an obvious failure.
+      const serialiseDates = (row: Record<string, unknown>) => {
+        const out: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(row)) {
+          out[key] =
+            value instanceof Date
+              ? Number.isNaN(value.getTime())
+                ? null
+                : value.toISOString()
+              : value;
+        }
+        return out;
+      };
+
       devtools
         .query(statement, values)
-        .then((result) => done(result))
+        .then((result) => {
+          const list: unknown[] = Array.isArray(result)
+            ? result
+            : [
+                {
+                  __error: `unexpected local query result: ${JSON.stringify(result)}`,
+                },
+              ];
+          done(
+            list.map((row) =>
+              row && typeof row === "object"
+                ? serialiseDates(row as Record<string, unknown>)
+                : row,
+            ),
+          );
+        })
         .catch((error: unknown) => done([{ __error: String(error) }]));
     },
     sql,
@@ -244,37 +280,17 @@ export interface LocalLot {
 /**
  * An ISO timestamp, or `null` when the column holds no usable date.
  *
- * Three shapes have to be accepted, because the local Prisma client does not
- * present a `DateTime` column consistently:
- *
- *  - an ISO string, which is what a plain `executeAsyncScript` row yields;
- *  - a `Date`, when the row is handed over without a JSON round trip;
- *  - a tagged `{ type: "DateTime", value }` object, which is how the client
- *    carries a `DateTime` through that boundary. `new Date()` on the object
- *    itself yields an Invalid Date, so reading it naively reports a real
- *    expiry as absent.
- *
- * `new Date(x).toISOString()` also throws a `RangeError` on a null or empty
- * column, and lots legitimately carry no expiry, so a bare conversion turned one
- * such row into a crash that aborted every spec reading inventory.
+ * `queryLocal` already flattens `Date` values to ISO strings inside the browser,
+ * so a `DateTime` column arrives here as a string, a number, or `null` for a lot
+ * that legitimately has no expiry. `new Date(x).toISOString()` throws a
+ * `RangeError` on that `null`, which turned one expiry-less lot into a crash
+ * that aborted every spec reading inventory — hence the explicit emptiness check
+ * instead of a bare conversion.
  */
 function isoOrNull(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
-
-  const tagged = value as { type?: unknown; value?: unknown };
-  const raw =
-    typeof tagged === "object" && typeof tagged.value !== "undefined"
-      ? tagged.value
-      : value;
-
-  if (typeof raw === "string" || typeof raw === "number") {
-    const parsed = new Date(raw);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-  }
-  if (raw instanceof Date) {
-    return Number.isNaN(raw.getTime()) ? null : raw.toISOString();
-  }
-  return null;
+  const parsed = new Date(value as string | number);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 /**
