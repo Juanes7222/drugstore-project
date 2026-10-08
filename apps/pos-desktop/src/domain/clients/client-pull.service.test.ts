@@ -10,12 +10,15 @@ import type { SyncHttpClient } from "../catalog/catalog-sync.service";
 // ---------------------------------------------------------------------------
 
 const makeMockPrisma = () => {
-  const tx: any = {
-    $executeRawUnsafe: vi.fn().mockResolvedValue(0),
-    clientClassification: {
-      findMany: vi.fn().mockResolvedValue([]),
-    },
-  };
+const tx: any = {
+$executeRawUnsafe: vi.fn().mockResolvedValue(0),
+client: {
+upsert: vi.fn().mockResolvedValue({}),
+},
+clientClassification: {
+findMany: vi.fn().mockResolvedValue([]),
+},
+};
 
   const prisma = {
     $transaction: vi.fn(async (cb: (t: any) => unknown) => cb(tx)),
@@ -94,18 +97,25 @@ describe("ClientPullService", () => {
 
       await service.pullClients();
 
-      // The batch upsert runs through a single INSERT ... ON CONFLICT
-      // statement — no per-row create/update loop, no giant OR lookup.
-      expect(tx.$executeRawUnsafe).toHaveBeenCalledTimes(1);
-      const [sql, ...values] = tx.$executeRawUnsafe.mock.calls[0];
-      expect(sql).toContain('INSERT INTO "Client"');
-      expect(sql).toContain('ON CONFLICT ("identificationType", "identificationNumber")');
-      expect(sql).toContain('DO UPDATE SET');
-      expect(values).toContain("Juan Pérez");
-      expect(values).toContain("12345678");
+// The upsert is a typed Prisma write, one per row, rather than a batch INSERT:
+// the Tauri WebView has no SharedArrayBuffer, so PGlite cannot prepare a
+// $executeRawUnsafe statement there even though it works in Node.
+expect(tx.client.upsert).toHaveBeenCalledTimes(1);
+const arg = tx.client.upsert.mock.calls[0][0];
+expect(arg.where).toEqual({
+identificationType_identificationNumber: {
+identificationType: "CC",
+identificationNumber: "12345678",
+},
+});
+expect(arg.create).toEqual(expect.objectContaining({ fullName: "Juan Pérez" }));
+// Identity fields must survive a conflict: an existing local row keeps its id.
+expect(arg.update.id).toBeUndefined();
+expect(arg.update.createdAt).toBeUndefined();
+expect(arg.update.createdById).toBeUndefined();
 
-      vi.unstubAllGlobals();
-    });
+vi.unstubAllGlobals();
+});
 
     it("batches large pulls into multiple chunked upsert statements", async () => {
       vi.stubGlobal("navigator", { onLine: true });
@@ -129,13 +139,19 @@ describe("ClientPullService", () => {
         });
       }
 
-      await service.pullClients();
+await service.pullClients();
 
-      // 1200 rows / 500 per batch = 3 statements (500 + 500 + 200).
-      expect(tx.$executeRawUnsafe).toHaveBeenCalledTimes(3);
+// 1200 rows across 500-row chunks (500 + 500 + 200), all written inside the
+// pull's single transaction. The chunking exists to keep each statement under
+// the parameter limit, so what matters is that no row is dropped.
+expect(tx.client.upsert).toHaveBeenCalledTimes(1200);
+const written = tx.client.upsert.mock.calls.map(([arg]: any[]) => arg.create.id);
+expect(new Set(written).size).toBe(1200);
+expect(written).toContain("client-0");
+expect(written).toContain("client-1199");
 
-      vi.unstubAllGlobals();
-    });
+vi.unstubAllGlobals();
+});
 
     it("nulls classificationId when the classification is unknown locally", async () => {
       vi.stubGlobal("navigator", { onLine: true });
@@ -160,14 +176,14 @@ describe("ClientPullService", () => {
         pageSize: 200,
       });
 
-      await service.pullClients();
+await service.pullClients();
 
-      const [, ...values] = tx.$executeRawUnsafe.mock.calls[0];
-      expect(values).toContain("cls-known");
-      expect(values).not.toContain("cls-missing");
+const written = tx.client.upsert.mock.calls.map(([arg]: any[]) => arg.create.classificationId);
+expect(written).toContain("cls-known");
+expect(written).not.toContain("cls-missing");
 
-      vi.unstubAllGlobals();
-    });
+vi.unstubAllGlobals();
+});
 
     it("does nothing when offline", async () => {
       vi.stubGlobal("navigator", { onLine: false });

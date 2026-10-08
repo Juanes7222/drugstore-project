@@ -11,7 +11,7 @@
  * a single `pullClients()` method, a factory function, and records its
  * completion in the shared `sync-metadata` store.
  */
-import { PrismaClient, Prisma } from '@pharmacy/database/local';
+import { PrismaClient, Prisma, IdentificationType, DataSubjectRequestStatus } from '@pharmacy/database/local';
 import { isOnline } from '../../common/is-online';
 import {
   getClientsLastSyncedAt,
@@ -303,50 +303,23 @@ interface ClientRow {
 const CLIENT_UPSERT_BATCH_SIZE = 500;
 
 /**
- * (column-name, cast) pairs for the batch INSERT. Enum and JSONB columns
- * need explicit casts because the parameters arrive as text.
- */
-const CLIENT_UPSERT_COLUMNS: ReadonlyArray<readonly [string, string?]> = [
-  ['"id"'],
-  ['"fullName"'],
-  ['"identificationType"', '"IdentificationType"'],
-  ['"identificationNumber"'],
-  ['"email"'],
-  ['"phone"'],
-  ['"address"'],
-  ['"municipality"'],
-  ['"department"'],
-  ['"isActive"'],
-  ['"classificationId"'],
-  ['"createdById"'],
-  ['"updatedById"'],
-  ['"consentGivenAt"', 'timestamp(3)'],
-  ['"consentVersion"'],
-  ['"consentScope"', 'jsonb'],
-  ['"dataSubjectRequestStatus"', '"DataSubjectRequestStatus"'],
-  ['"dataSubjectRequestAt"', 'timestamp(3)'],
-  ['"creditLimit"', 'decimal(15,2)'],
-  ['"createdAt"', 'timestamp(3)'],
-  ['"updatedAt"', 'timestamp(3)'],
-] as const;
-
-/**
- * Upsert a chunk of client rows in a single INSERT ... ON CONFLICT statement.
+ * Upsert a chunk of client rows.
  *
- * The conflict target is the local unique index
- * (identificationType, identificationNumber), which is the same business key
- * the old OR lookup used. `id`, `createdAt` and `createdById` are
- * intentionally NOT updated on conflict so an existing local row keeps its
- * identity, mirroring the previous update-by-existing-id behaviour.
+ * Runs inside the caller's transaction and issues one typed Prisma upsert per
+ * row instead of a hand-built batch INSERT. The batch statement was faster, but
+ * it went through $executeRawUnsafe, and the Tauri WebView has no
+ * SharedArrayBuffer, so PGlite cannot prepare that statement there: the pull
+ * failed at runtime in the app while passing in Node.
+ *
+ * `id`, `createdAt` and `createdById` are intentionally NOT updated on conflict
+ * so an existing local row keeps its identity, mirroring the previous
+ * update-by-existing-id behaviour.
  */
 async function upsertClientsChunk(
   tx: Prisma.TransactionClient,
   rows: ClientRow[],
   knownClassificationIds: Set<string>,
 ): Promise<void> {
-  const tuples: string[] = [];
-  const values: unknown[] = [];
-
   for (const client of rows) {
     // Null out classificationId if the target classification does not exist
     // locally — avoids FK constraint violations when the server references a
@@ -356,61 +329,66 @@ async function upsertClientsChunk(
         ? client.classificationId
         : null;
 
-    const rowValues = [
-      client.id,
-      client.fullName,
-      client.identificationType,
-      client.identificationNumber,
-      client.email ?? null,
-      client.phone ?? null,
-      client.address ?? null,
-      client.municipality ?? null,
-      client.department ?? null,
-      client.isActive,
+    const data = {
+      id: client.id,
+      fullName: client.fullName,
+      identificationType: client.identificationType as IdentificationType,
+      identificationNumber: client.identificationNumber,
+      email: client.email ?? null,
+      phone: client.phone ?? null,
+      address: client.address ?? null,
+      municipality: client.municipality ?? null,
+      department: client.department ?? null,
+      isActive: client.isActive,
       classificationId,
-      client.createdById,
-      client.updatedById ?? null,
-      client.consentGivenAt ? new Date(client.consentGivenAt).toISOString() : null,
-      client.consentVersion ?? null,
-      client.consentScope ? JSON.stringify(client.consentScope) : null,
-      client.dataSubjectRequestStatus,
-      client.dataSubjectRequestAt ? new Date(client.dataSubjectRequestAt).toISOString() : null,
-      client.creditLimit !== null && client.creditLimit !== undefined
-        ? String(client.creditLimit)
+      createdById: client.createdById,
+      updatedById: client.updatedById ?? null,
+      consentGivenAt: client.consentGivenAt
+        ? new Date(client.consentGivenAt)
         : null,
-      new Date(client.createdAt).toISOString(),
-      new Date(client.updatedAt).toISOString(),
-    ];
+      consentVersion: client.consentVersion ?? null,
+      consentScope: (client.consentScope ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+      dataSubjectRequestStatus:
+        client.dataSubjectRequestStatus as DataSubjectRequestStatus,
+      dataSubjectRequestAt: client.dataSubjectRequestAt
+        ? new Date(client.dataSubjectRequestAt)
+        : null,
+      creditLimit:
+        client.creditLimit !== null && client.creditLimit !== undefined
+          ? String(client.creditLimit)
+          : null,
+      createdAt: new Date(client.createdAt),
+      updatedAt: new Date(client.updatedAt),
+    };
 
-    const base = values.length;
-    const placeholders = CLIENT_UPSERT_COLUMNS.map(([, cast], index) => {
-      const placeholder = `$${base + index + 1}`;
-      return cast ? `${placeholder}::${cast}` : placeholder;
+    await tx.client.upsert({
+      where: {
+        identificationType_identificationNumber: {
+          identificationType: data.identificationType,
+          identificationNumber: data.identificationNumber,
+        },
+      },
+      create: data,
+      update: {
+        fullName: data.fullName,
+        email: data.email,
+        phone: data.phone,
+        address: data.address,
+        municipality: data.municipality,
+        department: data.department,
+        isActive: data.isActive,
+        classificationId: data.classificationId,
+        updatedById: data.updatedById,
+        consentGivenAt: data.consentGivenAt,
+        consentVersion: data.consentVersion,
+        consentScope: data.consentScope,
+        dataSubjectRequestStatus: data.dataSubjectRequestStatus,
+        dataSubjectRequestAt: data.dataSubjectRequestAt,
+        creditLimit: data.creditLimit,
+        updatedAt: data.updatedAt,
+      },
     });
-    tuples.push(`(${placeholders.join(', ')})`);
-    values.push(...rowValues);
   }
-
-  if (tuples.length === 0) return;
-
-  const columns = CLIENT_UPSERT_COLUMNS.map(([name]) => name).join(', ');
-  const updateSet = CLIENT_UPSERT_COLUMNS
-    .filter(
-      ([name]) =>
-        name !== '"id"' &&
-        name !== '"createdAt"' &&
-        name !== '"createdById"',
-    )
-    .map(([name]) => `${name} = EXCLUDED.${name}`)
-    .join(', ');
-
-  await tx.$executeRawUnsafe(
-    `INSERT INTO "Client" (${columns})
-     VALUES ${tuples.join(', ')}
-     ON CONFLICT ("identificationType", "identificationNumber") DO UPDATE SET
-       ${updateSet}`,
-    ...values,
-  );
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
