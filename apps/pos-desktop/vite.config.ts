@@ -1,8 +1,23 @@
-import { defineConfig, searchForWorkspaceRoot, type Plugin, type Connect } from "vite";
+import {
+  defineConfig,
+  searchForWorkspaceRoot,
+  type Plugin,
+  type Connect,
+} from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve, join } from "path";
-import { accessSync, constants, existsSync, createReadStream, readdirSync, statSync } from "fs";
+import {
+  accessSync,
+  constants,
+  existsSync,
+  createReadStream,
+  readdirSync,
+  statSync,
+} from "fs";
+// Vite 8's Connect namespace no longer re-exports ServerResponse; it is the
+// node:http type. Referencing ServerResponse fails the build's tsc step.
+import type { ServerResponse } from "http";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -21,9 +36,15 @@ const workstationId = process.env.VITE_WORKSTATION_ID;
 function resolvePgliteDist(): string | null {
   const candidates = [
     // pnpm store — @electric-sql+pglite@0.5.4 with PeerDependencies
-    resolve(__dirname, "../../node_modules/.pnpm/@electric-sql+pglite@0.5.4/node_modules/@electric-sql/pglite/dist"),
+    resolve(
+      __dirname,
+      "../../node_modules/.pnpm/@electric-sql+pglite@0.5.4/node_modules/@electric-sql/pglite/dist",
+    ),
     // pnpm store — @electric-sql+pglite@0.5.4 without PeerDependencies
-    resolve(__dirname, "../../node_modules/.pnpm/@electric-sql+pglite@0.5.4/node_modules/@electric-sql/pglite/dist"),
+    resolve(
+      __dirname,
+      "../../node_modules/.pnpm/@electric-sql+pglite@0.5.4/node_modules/@electric-sql/pglite/dist",
+    ),
     // flat node_modules
     resolve(__dirname, "../../node_modules/@electric-sql/pglite/dist"),
     // local node_modules (for linked packages)
@@ -54,8 +75,8 @@ function pgliteAssetsPlugin(): Plugin {
   if (!pgliteDist) {
     console.warn(
       "[pglite-assets] Could not find PGlite dist directory. " +
-      "WASM loading may fall back to the network at /pglite/... " +
-      "Install @electric-sql/pglite and verify its dist/ contains pglite.wasm",
+        "WASM loading may fall back to the network at /pglite/... " +
+        "Install @electric-sql/pglite and verify its dist/ contains pglite.wasm",
     );
     return {
       name: "pglite-assets",
@@ -88,7 +109,7 @@ function pgliteAssetsPlugin(): Plugin {
         filePath: string,
         contentType: string,
         req: Connect.IncomingMessage,
-        res: Connect.ServerResponse,
+        res: ServerResponse,
       ): boolean => {
         try {
           const { size } = statSync(filePath);
@@ -120,13 +141,15 @@ function pgliteAssetsPlugin(): Plugin {
       // to verify the middleware is active and see the resolved dist path.
       server.middlewares.use("/pglite/__diag", (_req, res) => {
         const list = existsSync(pgliteDist)
-          ? readdirSync(pgliteDist).filter((f) => f.endsWith('.wasm') || f.endsWith('.data'))
+          ? readdirSync(pgliteDist).filter(
+              (f) => f.endsWith(".wasm") || f.endsWith(".data"),
+            )
           : [];
-        res.setHeader('Content-Type', 'application/json');
+        res.setHeader("Content-Type", "application/json");
         res.end(
           JSON.stringify(
             {
-              status: 'ok',
+              status: "ok",
               pgliteDist,
               exists: existsSync(pgliteDist),
               wasmFiles: list.map((f) => ({
@@ -165,15 +188,17 @@ function pgliteAssetsPlugin(): Plugin {
       // internal Emscripten data-loading paths may attempt to fetch it.
       const catchAllHandler = (
         req: Connect.IncomingMessage,
-        res: Connect.ServerResponse,
+        res: ServerResponse,
         next: () => void,
       ) => {
-        if (req.method !== 'GET') return next();
-        const pathname = req.url ?? '';
-        const basename = pathname.split('/').pop()?.split('?')[0] ?? '';
+        if (req.method !== "GET") return next();
+        const pathname = req.url ?? "";
+        const basename = pathname.split("/").pop()?.split("?")[0] ?? "";
         // PGlite's own binaries — served from the resolved dist directory.
-        if (basename === 'pglite.wasm' || basename === 'initdb.wasm') {
-          if (serveFile(join(pgliteDist, basename), 'application/wasm', req, res)) {
+        if (basename === "pglite.wasm" || basename === "initdb.wasm") {
+          if (
+            serveFile(join(pgliteDist, basename), "application/wasm", req, res)
+          ) {
             return;
           }
           return next();
@@ -181,11 +206,18 @@ function pgliteAssetsPlugin(): Plugin {
         // Any other .wasm (e.g. Prisma's query engine) must also reach the
         // browser as raw binary, but from its own node_modules location —
         // Vite's static server handles that correctly, so pass through.
-        if (basename.endsWith('.wasm')) {
+        if (basename.endsWith(".wasm")) {
           return next();
         }
-        if (basename === 'pglite.data') {
-          if (serveFile(join(pgliteDist, basename), 'application/octet-stream', req, res)) {
+        if (basename === "pglite.data") {
+          if (
+            serveFile(
+              join(pgliteDist, basename),
+              "application/octet-stream",
+              req,
+              res,
+            )
+          ) {
             return;
           }
         }
@@ -193,7 +225,7 @@ function pgliteAssetsPlugin(): Plugin {
       };
       // Insert at the beginning of the Connect middleware stack so it takes
       // priority over Vite's built-in static file server for these assets.
-      server.middlewares.stack.unshift({ route: '', handle: catchAllHandler });
+      server.middlewares.stack.unshift({ route: "", handle: catchAllHandler });
 
       server.middlewares.use("/pglite", (req, res, next) => {
         if (req.method !== "GET") return next();
@@ -201,7 +233,9 @@ function pgliteAssetsPlugin(): Plugin {
         // ("/pglite/pglite.wasm" arrives as "/pglite.wasm"); older setups or
         // direct hits may still carry it. Normalize both forms defensively.
         let relativePath = decodeURIComponent(req.url ?? "");
-        relativePath = relativePath.replace(/^\/pglite\//, "").replace(/^\/+/, "");
+        relativePath = relativePath
+          .replace(/^\/pglite\//, "")
+          .replace(/^\/+/, "");
         // Reject traversal attempts before touching the filesystem.
         if (!relativePath || relativePath.includes("..")) return next();
         const filePath = join(pgliteDist, relativePath);
@@ -246,7 +280,11 @@ function pgliteAssetsBuildPlugin(): Plugin {
 
 // https://v2.tauri.app/start/frontend/vite/
 export default defineConfig(() => ({
-  plugins: [react(), tailwindcss(), pgliteAssetsPlugin(), pgliteAssetsBuildPlugin(),
+  plugins: [
+    react(),
+    tailwindcss(),
+    pgliteAssetsPlugin(),
+    pgliteAssetsBuildPlugin(),
 
     // ---- Prisma WASM query compiler patch ----
     // Prisma 7's generated decodeBase64AsWasm() uses Node.js
@@ -259,7 +297,9 @@ export default defineConfig(() => ({
       enforce: "pre",
       transform(code: string, id: string): string | null {
         if (
-          id.includes("packages/database/generated/local-client/internal/class.ts") &&
+          id.includes(
+            "packages/database/generated/local-client/internal/class.ts",
+          ) &&
           code.includes("import('node:buffer')")
         ) {
           const original = [
@@ -268,7 +308,7 @@ export default defineConfig(() => ({
             `  const wasmArray = Buffer.from(wasmBase64, 'base64')`,
             `  return new WebAssembly.Module(wasmArray)`,
             `}`,
-          ].join('\n');
+          ].join("\n");
           const replacement = [
             `async function decodeBase64AsWasm(wasmBase64: string): Promise<WebAssembly.Module> {`,
             `  const binary = atob(wasmBase64);`,
@@ -278,10 +318,12 @@ export default defineConfig(() => ({
             `  }`,
             `  return new WebAssembly.Module(bytes);`,
             `}`,
-          ].join('\n');
+          ].join("\n");
           const patched = code.replace(original, replacement);
           if (patched !== code) {
-            console.log(`[prisma-wasm-patch] Patched decodeBase64AsWasm in ${id}`);
+            console.log(
+              `[prisma-wasm-patch] Patched decodeBase64AsWasm in ${id}`,
+            );
             return patched;
           }
         }
@@ -337,59 +379,161 @@ export default defineConfig(() => ({
     alias: [
       // ---- workspace package aliases (exact string prefix matching) ----
       { find: "@", replacement: resolve(__dirname, "./src/renderer") },
-      { find: "@infra", replacement: resolve(__dirname, "./src/infrastructure") },
+      {
+        find: "@infra",
+        replacement: resolve(__dirname, "./src/infrastructure"),
+      },
       // IMPORTANT: more-specific aliases must come BEFORE less-specific ones so
       // Vite resolves e.g. @pharmacy/database/local to the correct file rather
       // than appending "/local" to the generic @pharmacy/database path.
-      { find: "@pharmacy/database/local-schema", replacement: resolve(__dirname, "../../packages/database/src/local-schema.ts") },
-      { find: "@pharmacy/database/local", replacement: resolve(__dirname, "../../packages/database/src/local.ts") },
-      { find: "@pharmacy/database", replacement: resolve(__dirname, "../../packages/database/src/index.ts") },
-      { find: "@pharmacy/shared-types", replacement: resolve(__dirname, "../../packages/shared-types/src/index.ts") },
-      { find: "@pharmacy/shared-validation", replacement: resolve(__dirname, "../../packages/shared-validation/src/index.ts") },
+      {
+        find: "@pharmacy/database/local-schema",
+        replacement: resolve(
+          __dirname,
+          "../../packages/database/src/local-schema.ts",
+        ),
+      },
+      {
+        find: "@pharmacy/database/local",
+        replacement: resolve(__dirname, "../../packages/database/src/local.ts"),
+      },
+      {
+        find: "@pharmacy/database",
+        replacement: resolve(__dirname, "../../packages/database/src/index.ts"),
+      },
+      {
+        find: "@pharmacy/shared-types",
+        replacement: resolve(
+          __dirname,
+          "../../packages/shared-types/src/index.ts",
+        ),
+      },
+      {
+        find: "@pharmacy/shared-validation",
+        replacement: resolve(
+          __dirname,
+          "../../packages/shared-validation/src/index.ts",
+        ),
+      },
 
       // ---- node:* polyfill aliases (exact string prefix matching) ----
-      { find: "node:url", replacement: resolve(__dirname, "./src/renderer/dev/empty-url-polyfill.ts") },
-      { find: "node:crypto", replacement: resolve(__dirname, "./src/renderer/dev/empty-crypto-polyfill.ts") },
-      { find: "node:async_hooks", replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts") },
-      { find: "node:events", replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts") },
-      { find: "node:os", replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts") },
-      { find: "node:module", replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts") },
-      { find: "node:process", replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts") },
-      { find: "node:path", replacement: resolve(__dirname, "./src/renderer/dev/path-polyfill.ts") },
-      { find: "node:buffer", replacement: resolve(__dirname, "./src/renderer/dev/buffer-polyfill.ts") },
-      { find: "node:fs", replacement: resolve(__dirname, "./src/renderer/dev/fs-polyfill.ts") },
+      {
+        find: "node:url",
+        replacement: resolve(
+          __dirname,
+          "./src/renderer/dev/empty-url-polyfill.ts",
+        ),
+      },
+      {
+        find: "node:crypto",
+        replacement: resolve(
+          __dirname,
+          "./src/renderer/dev/empty-crypto-polyfill.ts",
+        ),
+      },
+      {
+        find: "node:async_hooks",
+        replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts"),
+      },
+      {
+        find: "node:events",
+        replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts"),
+      },
+      {
+        find: "node:os",
+        replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts"),
+      },
+      {
+        find: "node:module",
+        replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts"),
+      },
+      {
+        find: "node:process",
+        replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts"),
+      },
+      {
+        find: "node:path",
+        replacement: resolve(__dirname, "./src/renderer/dev/path-polyfill.ts"),
+      },
+      {
+        find: "node:buffer",
+        replacement: resolve(
+          __dirname,
+          "./src/renderer/dev/buffer-polyfill.ts",
+        ),
+      },
+      {
+        find: "node:fs",
+        replacement: resolve(__dirname, "./src/renderer/dev/fs-polyfill.ts"),
+      },
 
       // ---- bare builtin aliases (RegExp — exact match only) ----
       // These use /^...$/ so they don't match as prefixes: e.g. `fs` must
       // NOT also match `fs/promises`.
-      { find: /^path$/, replacement: resolve(__dirname, "./src/renderer/dev/path-polyfill.ts") },
-      { find: /^fs$/, replacement: resolve(__dirname, "./src/renderer/dev/fs-polyfill.ts") },
+      {
+        find: /^path$/,
+        replacement: resolve(__dirname, "./src/renderer/dev/path-polyfill.ts"),
+      },
+      {
+        find: /^fs$/,
+        replacement: resolve(__dirname, "./src/renderer/dev/fs-polyfill.ts"),
+      },
       // PGlite's chunk-VVBUWNGP.js dynamically imports "fs/promises" inside
       // an `if (IN_NODE)` block that never fires in the webview.  The alias
       // exists only to satisfy Vite's module graph scanner.
-      { find: /^fs\/promises$/, replacement: resolve(__dirname, "./src/renderer/dev/fs-promises-polyfill.ts") },
+      {
+        find: /^fs\/promises$/,
+        replacement: resolve(
+          __dirname,
+          "./src/renderer/dev/fs-promises-polyfill.ts",
+        ),
+      },
       // Bare `buffer` (without `node:` prefix) — some CJS deps do
       // require('buffer') instead of require('node:buffer').
-      { find: /^buffer$/, replacement: resolve(__dirname, "./src/renderer/dev/buffer-polyfill.ts") },
+      {
+        find: /^buffer$/,
+        replacement: resolve(
+          __dirname,
+          "./src/renderer/dev/buffer-polyfill.ts",
+        ),
+      },
       // Bare `module` (without `node:` prefix) — PGlite's Emscripten runtime
       // calls `createRequire` from the bare `module` builtin during WASM
       // initialisation.  We redirect it to the unified node-polyfills module
       // which provides a `createRequire` stub registered with `node:*` shims.
-      { find: /^module$/, replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts") },
+      {
+        find: /^module$/,
+        replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts"),
+      },
       // Bare `url` (without `node:` prefix) — Emscripten runtime calls
       // `require("url")` for `fileURLToPath` during WASM initialisation.
-      { find: /^url$/, replacement: resolve(__dirname, "./src/renderer/dev/empty-url-polyfill.ts") },
+      {
+        find: /^url$/,
+        replacement: resolve(
+          __dirname,
+          "./src/renderer/dev/empty-url-polyfill.ts",
+        ),
+      },
       // Bare `process` (without `node:` prefix) — some deps reference
       // `process` directly rather than `node:process` (e.g. certain CJS
       // bundles that check `typeof process`).
-      { find: /^process$/, replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts") },
+      {
+        find: /^process$/,
+        replacement: resolve(__dirname, "./src/renderer/dev/node-polyfills.ts"),
+      },
 
       // ---- CJS npm package polyfill aliases — esbuild pre-bundling can't
       // handle these because they're deep transitive deps of excluded
       // packages (@prisma/client).  We substitute a local ESM copy here
       // instead.  String-prefix matching is fine because these are bare
       // package names that never appear as prefixes of other packages.
-      { find: "postgres-array", replacement: resolve(__dirname, "./src/renderer/dev/postgres-array-polyfill.ts") },
+      {
+        find: "postgres-array",
+        replacement: resolve(
+          __dirname,
+          "./src/renderer/dev/postgres-array-polyfill.ts",
+        ),
+      },
     ],
   },
 
@@ -430,23 +574,20 @@ export default defineConfig(() => ({
   // Make Vite treat these workspace dependencies as not external during SSR/Tauri
   // builds so they are bundled inline rather than left as bare imports.
   ssr: {
-    noExternal: [
-      "@pharmacy/database",
-      "@pharmacy/database/local",
-    ],
+    noExternal: ["@pharmacy/database", "@pharmacy/database/local"],
   },
 
   // Treat .wasm files as static assets (raw binary served as-is) rather than
   // processing them through Vite's module transform pipeline which may inline
   // them as base64.  PGlite's internal worker, Prisma's WASM engine, and any
   // other .wasm fetch MUST receive raw binary for WebAssembly.compile() to work.
-  assetsInclude: ['.wasm'],
+  assetsInclude: [".wasm"],
 
   // Vite options tailored for Tauri development
   // PGlite uses Web Workers internally — 'es' format ensures correct module
   // loading and WASM instantiation in both dev and production builds.
   worker: {
-    format: 'es' as const,
+    format: "es" as const,
   },
 
   clearScreen: false,
@@ -465,8 +606,8 @@ export default defineConfig(() => ({
     // Cross-Origin isolation headers so `SharedArrayBuffer` is available
     // in the Vite dev server (jsPDF / fflate needs it).
     headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
     },
     hmr: host
       ? {
@@ -520,7 +661,8 @@ export default defineConfig(() => ({
   // the source code receives a throwing function instead of undefined.
   define: {
     "process.versions.node": "void 0",
-    "process.binding": "(function(n) { throw new Error('process.binding polyfilled: ' + n); })",
+    "process.binding":
+      "(function(n) { throw new Error('process.binding polyfilled: ' + n); })",
   },
 
   // Env variables starting with TAURI_ will be exposed to tauri's source code
