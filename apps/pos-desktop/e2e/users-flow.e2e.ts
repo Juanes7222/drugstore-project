@@ -27,11 +27,10 @@ import { $, browser, expect } from "@wdio/globals";
 import {
   signInAs,
   waitVisible,
-  waitEnabled,
   expectToast,
   openScreen,
   setInputValue,
-  clickWhenPresent,
+  clickButtonByExactText,
   resetForSpec,
   type SuiteAccount,
 } from "./helpers";
@@ -63,14 +62,22 @@ function userRow(displayName: string): string {
 }
 
 /**
- * The create-user modal, which is a plain overlay div and carries no ARIA role.
+ * Selector conventions this file depends on, both established by measurement:
  *
- * Scoped by the panel's own class rather than by "any div containing the
- * heading": the overlay wraps the panel, so a bare descendant test matches both
- * and the outer wrapper has no fields in it.
+ * 1. Modal scope and fields are CSS, not XPath. An exact attribute or text
+ *    equality inside an XPath predicate does not match in this driver —
+ *    `//input[placeholder="Nombre del usuario"]` returns nothing while the same
+ *    attribute matches through `contains(@placeholder, …)` and through
+ *    `querySelectorAll`. XPath is used only for structure.
+ * 2. Buttons are addressed by exact text via `clickButtonByExactText`, which
+ *    refuses to click when the label is not unique. A `contains` match picks
+ *    whichever element comes first and a native click on a covered element
+ *    reports success without doing anything.
+ *
+ * Both modal panels render as `div.pos-panel` with a heading, and only one modal
+ * is ever open at a time in this spec.
  */
-const CREATE_MODAL =
-  '(//div[contains(@class,"pos-panel")][.//h2[normalize-space(.)="Agregar usuario"]])[1]';
+const CREATE_MODAL = "div.pos-panel:has(h2)";
 
 describe("User management (real Tauri app against the real backend)", () => {
   beforeEach(() => {
@@ -94,58 +101,49 @@ describe("User management (real Tauri app against the real backend)", () => {
       "user table filters",
     );
 
-    await waitEnabled(
-      '//button[contains(normalize-space(.),"Agregar usuario")]',
-      20,
-      1_000,
-      "Agregar usuario",
-    );
-    await clickWhenPresent(
-      '//button[contains(normalize-space(.),"Agregar usuario")]',
-      "Agregar usuario",
-    );
+    // Exact text, not a `contains` match: the header button's label is
+    // "+ Agregar usuario" and clicking it through a partial selector reported
+    // success while the modal never opened.
+    await clickButtonByExactText("+ Agregar usuario");
 
     // The modal exposes no ids and no aria-labels on its inputs — only
     // placeholders — so every field is addressed by its placeholder inside the
     // modal, which is what keeps them from colliding with the edit modal.
     await waitVisible(
-      `${CREATE_MODAL}//input[placeholder="Nombre del usuario"]`,
+      `${CREATE_MODAL} input[placeholder="Nombre del usuario"]`,
       20,
       1_000,
       "display name input",
     );
     await setInputValue(
-      `${CREATE_MODAL}//input[placeholder="Nombre del usuario"]`,
+      `${CREATE_MODAL} input[placeholder="Nombre del usuario"]`,
       NEW_USER.displayName,
       "display name",
     );
     await setInputValue(
-      `${CREATE_MODAL}//input[placeholder="Nombre de usuario (opcional)"]`,
+      `${CREATE_MODAL} input[placeholder="Nombre de usuario (opcional)"]`,
       NEW_USER.username,
       "username",
     );
     await setInputValue(
-      `${CREATE_MODAL}//input[placeholder="correo@ejemplo.com (opcional)"]`,
+      `${CREATE_MODAL} input[placeholder="correo@ejemplo.com (opcional)"]`,
       NEW_USER.email,
       "email",
     );
 
     // CASHIER is the modal's default role, which is also the only one that
     // renders the PIN input.
-    const roleSelect = `${CREATE_MODAL}//select`;
+    const roleSelect = `${CREATE_MODAL} select`;
     await waitVisible(roleSelect, 20, 500, "role select");
     await (await $(roleSelect)).selectByAttribute("value", "CASHIER");
 
     await setInputValue(
-      `${CREATE_MODAL}//input[placeholder="4-6 dígitos (opcional)"]`,
+      `${CREATE_MODAL} input[placeholder="4-6 dígitos (opcional)"]`,
       NEW_USER.pin,
       "initial PIN",
     );
 
-    await clickWhenPresent(
-      `${CREATE_MODAL}//button[normalize-space(.)="Crear"]`,
-      "Crear",
-    );
+    await clickButtonByExactText("Crear");
     await expectToast("Usuario creado exitosamente");
 
     // The new row appears without a reload — the list re-fetches on success.
@@ -168,30 +166,24 @@ describe("User management (real Tauri app against the real backend)", () => {
 
     // And the server refuses a second user with the same username rather than
     // creating a duplicate identity.
-    await clickWhenPresent(
-      '//button[contains(normalize-space(.),"Agregar usuario")]',
-      "Agregar usuario",
-    );
+    await clickButtonByExactText("+ Agregar usuario");
     await waitVisible(
-      `${CREATE_MODAL}//input[placeholder="Nombre del usuario"]`,
+      `${CREATE_MODAL} input[placeholder="Nombre del usuario"]`,
       20,
       1_000,
       "second create modal",
     );
     await setInputValue(
-      `${CREATE_MODAL}//input[placeholder="Nombre del usuario"]`,
+      `${CREATE_MODAL} input[placeholder="Nombre del usuario"]`,
       `${NEW_USER.displayName} duplicado`,
       "duplicate display name",
     );
     await setInputValue(
-      `${CREATE_MODAL}//input[placeholder="Nombre de usuario (opcional)"]`,
+      `${CREATE_MODAL} input[placeholder="Nombre de usuario (opcional)"]`,
       NEW_USER.username,
       "duplicate username",
     );
-    await clickWhenPresent(
-      `${CREATE_MODAL}//button[normalize-space(.)="Crear"]`,
-      "Crear",
-    );
+    await clickButtonByExactText("Crear");
     await expectToast("Error al crear usuario");
 
     const users = await fetchServerUsers();
@@ -215,21 +207,13 @@ describe("User management (real Tauri app against the real backend)", () => {
     );
 
     const row = userRow(NEW_USER.displayName);
-    await waitVisible(
-      `${row}//button[normalize-space(.)="Reset PIN"]`,
-      30,
-      500,
-      "Reset PIN",
-    );
-    await clickWhenPresent(
-      `${row}//button[normalize-space(.)="Reset PIN"]`,
-      "Reset PIN",
-    );
+    await waitVisible(`${row} button`, 30, 500, "user row actions");
+    await clickButtonByExactText("Reset PIN");
 
-    // The PIN dialog is a plain overlay too; only its title distinguishes it from
-    // the create modal's identically-placed PIN input.
-    const pinDialog = `//div[.//h2[contains(text(),"Establecer PIN para")]]`;
-    const pinInput = `${pinDialog}//input[placeholder="4-6 dígitos (opcional)"]`;
+    // The PIN dialog is a plain overlay too, so it is the same `pos-panel`
+    // dialog shape as the create modal; only one is open at a time here.
+    const pinDialog = "div.pos-panel:has(h2)";
+    const pinInput = `${pinDialog} input[placeholder="4-6 dígitos (opcional)"]`;
     await waitVisible(pinInput, 20, 1_000, "set PIN dialog");
 
     // Under four digits the dialog refuses to submit — the button stays disabled
@@ -248,10 +232,7 @@ describe("User management (real Tauri app against the real backend)", () => {
     ).toBe(true);
 
     await setInputValue(pinInput, "7359", "new PIN");
-    await clickWhenPresent(
-      `${pinDialog}//button[normalize-space(.)="Confirmar"]`,
-      "Confirmar",
-    );
+    await clickButtonByExactText("Confirmar");
     await expectToast("PIN actualizado correctamente");
 
     // The hash is salted, so it must differ — a hash that stayed the same would
@@ -276,16 +257,8 @@ describe("User management (real Tauri app against the real backend)", () => {
 
     // "Activar" is a substring of "Desactivar", so the button is matched on its
     // EXACT text inside the row — a partial match would toggle the wrong way.
-    await waitVisible(
-      `${row}//button[normalize-space(.)="Desactivar"]`,
-      30,
-      500,
-      "Desactivar",
-    );
-    await clickWhenPresent(
-      `${row}//button[normalize-space(.)="Desactivar"]`,
-      "Desactivar",
-    );
+    await waitVisible(`${row} button`, 30, 500, "user row actions");
+    await clickButtonByExactText("Desactivar");
     await expectToast("Usuario desactivado");
 
     const disabled = await waitForServerUserStatus(
@@ -297,10 +270,10 @@ describe("User management (real Tauri app against the real backend)", () => {
     // The row renders "Activar" now, and a status filter proves the change is a
     // server-side query rather than a local one.
     await waitVisible(
-      `${userRow(NEW_USER.displayName)}//button[normalize-space(.)="Activar"]`,
+      `${userRow(NEW_USER.displayName)} button`,
       30,
       500,
-      "Activar",
+      "user row actions",
     );
 
     await (
@@ -308,10 +281,7 @@ describe("User management (real Tauri app against the real backend)", () => {
     ).selectByAttribute("value", "DISABLED");
     await waitVisible(row, 30, 500, "user row under the DISABLED filter");
 
-    await clickWhenPresent(
-      `${row}//button[normalize-space(.)="Activar"]`,
-      "Activar",
-    );
+    await clickButtonByExactText("Activar");
     await expectToast("Usuario activado");
 
     const enabled = await waitForServerUserStatus(NEW_USER.username, "ACTIVE");

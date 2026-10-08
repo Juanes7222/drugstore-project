@@ -47,6 +47,7 @@ import {
   setInputValue,
   selectSearchableOption,
   clickWhenPresent,
+  clickButtonByExactText,
   expectPesos,
   resetForSpec,
   type SuiteAccount,
@@ -200,8 +201,17 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
 
     const orderBefore = (await fetchLocalPurchaseOrders()).length;
 
-    await waitEnabled("button*=Nueva orden", 20, 1_000, "Nueva orden");
-    await clickWhenPresent("button*=Nueva orden", "Nueva orden");
+    // Exact text, not `button*=Nueva orden`: the partial selector reported a
+    // successful click while the form never opened, so the create could not
+    // even start. The hub card is the other route to this same form and is used
+    // by the spec below.
+    await clickButtonByExactText("+ Nueva orden");
+    await waitVisible(
+      '//h2[normalize-space(.)="Nueva orden de compra"]',
+      20,
+      500,
+      "new order form",
+    );
     await waitVisible(
       '//h1[normalize-space(text())="Nueva orden de compra"]',
       20,

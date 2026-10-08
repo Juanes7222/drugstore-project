@@ -74,11 +74,21 @@ async function elementState(
       return { found: false, visible: false, disabled: true };
     }
 
+    // Deliberately layout-space visibility rather than `checkVisibility()`.
+    //
+    // `checkVisibility({checkOpacity: true})` also rejects an element sitting
+    // inside a subtree whose opacity is 0, which a Framer Motion overlay
+    // briefly is while it animates out. Combined with a `[1]` modal selector
+    // that let a still-mounted, fully transparent remnant outrank the live
+    // modal and every field of it read as absent. Occupying layout space and
+    // not being `visibility: hidden` is what the specs actually mean.
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
     const visible =
-      el instanceof HTMLElement && el.checkVisibility
-        ? el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
-        : el.getBoundingClientRect().width > 0 &&
-          el.getBoundingClientRect().height > 0;
+      rect.width > 0 &&
+      rect.height > 0 &&
+      style.visibility !== "hidden" &&
+      style.display !== "none";
 
     const disabled =
       el instanceof HTMLButtonElement ||
@@ -735,6 +745,64 @@ export async function clickWhenPresent(
       lastError instanceof Error ? lastError.message : String(lastError)
     }`,
   );
+}
+
+/** Build an XPath string literal, so a label containing a quote stays valid. */
+function xpathLiteral(value: string): string {
+  if (!value.includes("'")) return `'${value}'`;
+  if (!value.includes('"')) return `"${value}"`;
+  return `concat('${value.split("'").join("', \"'\", '")}')`;
+}
+
+/**
+ * Click a button addressed by its EXACT normalised text.
+ *
+ * Partial-text selectors (`button*=Nueva orden`) resolve to whichever element
+ * the driver happens to find first, and when that element is covered — a sticky
+ * page header, a scroll container — the native click lands on the cover instead
+ * of the button and still reports success. Both `+ Nueva orden` and
+ * `+ Agregar usuario` behaved exactly that way: the click "succeeded", no
+ * exception was raised, and the form or modal never appeared.
+ *
+ * Exact text removes the ambiguity, and refusing to guess when the match count
+ * is not 1 turns a silent no-op into a failure that names the candidates.
+ */
+export async function clickButtonByExactText(
+  text: string,
+  attempts = 20,
+  interval = 500,
+): Promise<void> {
+  const xpath = `//button[normalize-space(.)=${xpathLiteral(text)}]`;
+
+  await browser.waitUntil(
+    async () => {
+      const found = await browser.execute((wanted) => {
+        const labels = Array.from(document.querySelectorAll("button"))
+          .map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim())
+          .filter((label) => label === wanted);
+        return { count: labels.length, labels };
+      }, text);
+
+      if (found.count > 1) {
+        throw new Error(
+          `${found.count} buttons have the exact text ${JSON.stringify(text)}, ` +
+            `so there is no single target: ${JSON.stringify(found.labels)}`,
+        );
+      }
+      return found.count === 1;
+    },
+    {
+      timeout: attempts * interval,
+      interval,
+      timeoutMsg: `no button has the exact text ${JSON.stringify(text)}`,
+    },
+  );
+
+  const target = await $(xpath);
+  // A covered button fails silently under a plain native click, so centre it
+  // first: scrolling to the middle puts it outside sticky-header overlap.
+  await target.scrollIntoView({ block: "center", inline: "center" });
+  await target.click();
 }
 
 /** Assert an actual amount equals the expected one to the cent. */
