@@ -632,7 +632,7 @@ describe("POS ↔ Server integration — sync resilience (unhappy paths)", () =>
             productId,
             quantity: 1,
             unitPrice: UNIT_PRICE.toString(),
-            discount: "0",
+            discountPercentage: 0,
             discountReason: null,
             commissionType: "NONE",
             commissionValue: null,

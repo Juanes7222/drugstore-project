@@ -1441,7 +1441,13 @@ changeAmount = new Prisma.Decimal(0);
           localSaleItemId: item.id,
           quantity: item.quantity,
           unitPrice: item.unitPrice.toString(),
-          discount: item.discountPercentage.toString(),
+          // The server reads `discountPercentage` (a number) and recomputes the
+          // line's discount amount from it — `discount` is accepted on the wire
+          // but ignored. Sending the wrong key left SaleItem.discountPercentage
+          // and discountAmount at 0 while the snapshotted header said otherwise,
+          // so the sale header and its lines disagreed and the DIAN document's
+          // line breakdown overstated the sale.
+          discountPercentage: item.discountPercentage.toNumber(),
           discountReason: item.discountReason,
           // Commission is evaluated on the POS at sale time (the only
           // correct reference for the validity window) and replayed

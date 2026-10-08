@@ -21,9 +21,11 @@ import {
   signInAs,
   waitVisible,
   waitEnabled,
+  waitGone,
   expectToast,
   expectPageHeading,
   openScreen,
+  selectSearchableOption,
   setInputValue,
   clickWhenPresent,
   readText,
@@ -32,6 +34,7 @@ import {
 } from "./helpers";
 import {
   waitForServerClient,
+  waitForServerClientActiveState,
   fetchServerClients,
   waitForTerminalSyncOperation,
 } from "./server-state";
@@ -148,20 +151,29 @@ describe("Clients flow (real Tauri app against the real backend)", () => {
       "client address",
     );
 
-    // The department/municipality pair is deliberately NOT filled here.
-    //
-    // `DepartmentMunicipalityFields.handleDepartmentSelect` calls
-    // `onDepartmentChange` and then `onMunicipalityChange("")`, and both are
-    // `(x) => onChange({ ...data, x })` in client-form.tsx. Each therefore spreads
-    // the SAME pre-update `data`, so the second call overwrites the department
-    // the first one just set and React batches both into a single render. The
-    // observable result is that no client can ever be saved with a location: the
-    // combobox empties itself, the municipality stays disabled, and the server
-    // row carries `department: ""` with `municipality: null`.
-    //
-    // That is an application defect, not a selector problem — this suite verified
-    // it end to end — so the spec asserts the fields that do round-trip instead
-    // of encoding a broken interaction as an expectation.
+    // The linked department/municipality pair. Both are `SearchableSelect`
+    // comboboxes whose dropdown is portalled to document.body with a `mousedown`
+    // listener that closes it on an outside click, so each choice is committed
+    // with Enter (which selects the single filtered option) rather than a driver
+    // click on the <li>.
+    await selectSearchableOption(
+      'input[aria-label="Departamento"]',
+      NEW_CLIENT.department,
+      "department",
+    );
+    // The municipality only enables once a department is chosen, which makes the
+    // enabled state the confirmation that the selection landed.
+    await waitEnabled(
+      'input[aria-label="Municipio"]',
+      20,
+      500,
+      "municipality combobox, enabled once a department is picked",
+    );
+    await selectSearchableOption(
+      'input[aria-label="Municipio"]',
+      NEW_CLIENT.municipality,
+      "municipality",
+    );
 
     await clickWhenPresent(
       '//div[.//h3[normalize-space(.)="Crear nuevo cliente"]]//button[normalize-space(.)="Nuevo cliente"]',
@@ -200,14 +212,12 @@ describe("Clients flow (real Tauri app against the real backend)", () => {
     expect(server.phone).toBe(NEW_CLIENT.phone);
     expect(server.isActive).toBe(true);
 
-    // The location pair never arrives, and the reason is the defect described
-    // above — not an oversight in this spec. The server stores an empty string
-    // rather than null, so the assertion is written against falsiness rather
-    // than one exact representation. When client-form's two callbacks stop
-    // spreading a stale `data`, this becomes the assertion that the linked
-    // comboboxes work.
-    expect(server.municipality ?? "").toBe("");
-    expect(server.department ?? "").toBe("");
+    // The location pair is a regression guard, not filler. Both callbacks of the
+    // linked comboboxes fire in one handler, so a non-functional `onChange` made
+    // the second one overwrite the department the first had just set — and every
+    // client was saved with no location at all.
+    expect(server.municipality).toBe(NEW_CLIENT.municipality);
+    expect(server.department).toBe(NEW_CLIENT.department);
   });
 
   it("E2E-C02: editing a client through the detail dialog replays the change server-side", async () => {
@@ -227,18 +237,8 @@ describe("Clients flow (real Tauri app against the real backend)", () => {
     const row = `//tr[.//span[normalize-space(.)="${NEW_CLIENT.fullName}"]]`;
     await waitVisible(row, 20, 500, "client row");
 
-    // Editing is reached through the DETAIL DIALOG, not through the row's pencil
-    // button, and the reason is a second defect this suite surfaced.
-    //
-    // `client-table.tsx` wraps its action buttons in a container carrying
-    // `onClickCapture={(e) => e.stopPropagation()}`. React replays the tree
-    // capture-first, so that call halts the traversal before the buttons' own
-    // `onClick` runs — the eye, pencil and trash buttons never fire. They are
-    // also `opacity-0` until the row is hovered, so they are not even reported
-    // as displayed.
-    //
-    // Clicking the row itself is unaffected (the click never traverses the action
-    // container), which makes the dialog the working entry point to editing.
+    // Editing is reached through the DETAIL DIALOG here because the table's own
+    // pencil button is covered by E2E-C04, which drives it directly.
     await clickWhenPresent(`${row}/td[1]`, "client row name cell");
 
     const dialog = '//div[@role="dialog"]';
@@ -292,14 +292,8 @@ describe("Clients flow (real Tauri app against the real backend)", () => {
   });
 
   it("E2E-C03: the detail dialog shows the identity and status a cashier checks", async () => {
-    // The dialog is the one per-client view that is reachable end to end, so it
-    // is what this spec pins.
-    //
-    // The DELETE it would otherwise cover is not reachable at all: deactivation
-    // is wired only to the table's trash button, and that button never fires (see
-    // E2E-C02). Until the action container stops swallowing its own clicks there
-    // is no UI path to deactivate a client, so this suite cannot assert a flow
-    // that does not exist.
+    // The dialog is the one per-client view reachable from the row, so it is what
+    // this spec pins.
     await signInAs(ADMIN);
 
     await openScreen("Clientes");
@@ -324,5 +318,85 @@ describe("Clients flow (real Tauri app against the real backend)", () => {
     expect(text).toContain("CC");
     expect(text).toContain("Activo");
     expect(text).toContain(NEW_CLIENT.email);
+  });
+
+  it("E2E-C04: the row's edit and delete buttons fire, and delete deactivates server-side", async () => {
+    // Regression guard for a defect this suite found: the action buttons were
+    // wrapped in a container whose `onClickCapture` called stopPropagation().
+    // React replays the tree capture-first, so that halted the traversal before
+    // the buttons' own onClick ran — the eye, pencil and trash buttons did
+    // nothing at all, which also left deactivation with no reachable UI path
+    // (it is wired only to the trash button).
+    //
+    // The buttons are `opacity-0` until the row is hovered, so they are never
+    // "visible" to a visibility-aware check; they are located by existence
+    // inside the row instead.
+    await signInAs(ADMIN);
+
+    await openScreen("Clientes");
+    await expectPageHeading("Clientes");
+
+    await setInputValue(
+      CLIENT_SEARCH,
+      NEW_CLIENT.identificationNumber,
+      "client search",
+    );
+    const row = `//tr[.//span[normalize-space(.)="${RENAMED_CLIENT}"]]`;
+    await waitVisible(row, 20, 500, "client row");
+
+    // ---- Edit, straight from the row button.
+    await clickWhenPresent(`${row}//button[@aria-label="Editar"]`, "Editar");
+    await waitVisible(
+      '//h3[normalize-space(.)="Editar cliente"]',
+      20,
+      1_000,
+      "client edit panel opened from the row button",
+    );
+    // Leaving without saving must not have changed anything.
+    await clickWhenPresent(
+      '//div[.//h3[normalize-space(.)="Editar cliente"]]//button[normalize-space(.)="Cancelar"]',
+      "Cancelar",
+    );
+    await waitGone(
+      '//h3[normalize-space(.)="Editar cliente"]',
+      20,
+      250,
+      "client edit panel after cancelling",
+    );
+
+    // ---- Delete, straight from the row button.
+    await clickWhenPresent(
+      `${row}//button[@aria-label="Eliminar"]`,
+      "Eliminar",
+    );
+
+    // Radix dialog: the title and the confirm button both read "Eliminar", so
+    // everything is scoped to the dialog and the confirmation is the last button.
+    await waitVisible('//div[@role="dialog"]', 20, 1_000, "delete dialog");
+    await clickWhenPresent(
+      '(//div[@role="dialog"])[last()]//button[normalize-space(.)="Eliminar"]',
+      "confirm delete",
+    );
+    await expectToast("Cliente eliminado correctamente.");
+
+    // A delete is a deactivation, never a row removal: the server keeps the
+    // client because past invoices reference it.
+    const server = await waitForServerClientActiveState(
+      NEW_CLIENT.identificationNumber,
+      false,
+    );
+    expect(server.isActive).toBe(false);
+    expect(server.fullName).toBe(RENAMED_CLIENT);
+
+    const replay = await waitForTerminalSyncOperation("CLIENT_DEACTIVATE");
+    expect(replay.status).toBe("COMPLETED");
+
+    // Still on the server, just inactive, and still exactly one row.
+    const all = await fetchServerClients();
+    expect(
+      all.filter(
+        (c) => c.identificationNumber === NEW_CLIENT.identificationNumber,
+      ),
+    ).toHaveLength(1);
   });
 });

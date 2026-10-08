@@ -53,8 +53,13 @@ function assertValidCreateSaleDto(value: unknown): void {
     expect(item.productId).toMatch(UUID_RE);
     expect(typeof item.quantity).toBe("number");
     expect(item.unitPrice).toMatch(DECIMAL_RE);
-    expect(typeof item.discount).toBe("string");
-    expect(item.discount).toMatch(DECIMAL_RE);
+    // The server reads `discountPercentage` as a NUMBER. The payload must
+    // therefore carry it, and must NOT carry the string-valued `discount` that
+    // the server silently ignores.
+    expect(typeof item.discountPercentage).toBe("number");
+    expect(item.discountPercentage).toBeGreaterThanOrEqual(0);
+    expect(item.discountPercentage).toBeLessThanOrEqual(100);
+    expect(item.discount).toBeUndefined();
     // Commission snapshot: type/value are null when no commission was
     // active at sale time; amount is always a decimal string (0 when
     // inactive) so the server persists the same figure verbatim.
@@ -138,7 +143,12 @@ interface PosItemInput {
   productId: string;
   quantity: number;
   unitPrice: string;
-  discount: string;
+  /**
+   * The field the server reads. `discount` is still accepted on the wire but
+   * ignored, so a payload that only sends it replays with no discount applied
+   * to the line while the snapshotted header claims one.
+   */
+  discountPercentage: number;
   discountReason?: string | null;
   /** Snapshot of the active commission at sale time (null when inactive). */
   commissionType: string | null;
@@ -197,7 +207,7 @@ function makePosSyncPayload(overrides?: Partial<PosSyncPayload>): PosSyncPayload
           productId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
           quantity: 2,
           unitPrice: "5000.00",
-          discount: "0",
+          discountPercentage: 0,
           discountReason: null,
           // 2 × 5000, no discount → 5 % of 10000 = 500.
           commissionType: "PERCENTAGE",
@@ -273,7 +283,7 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
       ).not.toThrow();
     });
 
-    it("includes discount as string and discountReason", () => {
+    it("includes discountPercentage and discountReason", () => {
       const payload = makePosSyncPayload({
         createSaleDto: {
           ...makePosSyncPayload().createSaleDto,
@@ -282,7 +292,7 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
               productId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
               quantity: 1,
               unitPrice: "5000.00",
-              discount: "10",
+              discountPercentage: 10,
               discountReason: "Promoción del día",
               commissionType: "PERCENTAGE",
               commissionValue: "5",
@@ -292,8 +302,16 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
         },
       });
 
-      expect(payload.createSaleDto.items[0]?.discount).toBe("10");
+      // `discountPercentage` as a NUMBER, because that is the only key
+      // `SalesService.buildSaleItemFromRequest` reads. Sending a string under
+      // `discount` instead parsed as no discount and left the sale header
+      // disagreeing with its own lines.
+      expect(payload.createSaleDto.items[0]?.discountPercentage).toBe(10);
       expect(payload.createSaleDto.items[0]?.discountReason).toBe("Promoción del día");
+      expect(
+        (payload.createSaleDto.items[0] as unknown as Record<string, unknown>)
+          .discount,
+      ).toBeUndefined();
     });
 
     it("includes the commission snapshot fields on every item", () => {
@@ -315,7 +333,7 @@ describe("SyncQueue SALE_CONFIRMATION payload contract", () => {
               productId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
               quantity: 1,
               unitPrice: "5000.00",
-              discount: "0",
+              discountPercentage: 0,
               discountReason: null,
               commissionType: null,
               commissionValue: null,

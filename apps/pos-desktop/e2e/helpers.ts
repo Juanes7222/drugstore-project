@@ -654,6 +654,16 @@ export async function setInputValue(
       return;
     } catch (error) {
       lastError = error;
+
+      // Fall back to the keyboard instead of retrying the same failing call.
+      //
+      // `setValue` clears before typing, and `elementClear` intermittently
+      // fails with "element not interactable" on inputs that are re-rendering.
+      // A failed clear still moves focus, which is fatal for the cart's inline
+      // editors: their `onBlur` commits, so the editor unmounts and the retry
+      // then finds nothing. Focusing and typing never touches the clear step.
+      if (attempt === 0 && (await typeOverFocused(selector, value))) return;
+
       await browser.pause(500);
     }
   }
@@ -663,6 +673,42 @@ export async function setInputValue(
       lastError instanceof Error ? lastError.message : String(lastError)
     }`,
   );
+}
+
+/**
+ * Focus a field, select whatever it holds and type over it.
+ *
+ * Returns false when the element cannot be found or focused, so the caller can
+ * keep its own retry/timeout policy rather than inheriting a second one.
+ */
+async function typeOverFocused(
+  selector: string,
+  value: string,
+): Promise<boolean> {
+  const focused = await browser.execute((sel: string) => {
+    const el =
+      sel.startsWith("//") || sel.startsWith("(")
+        ? (document.evaluate(
+            sel,
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null,
+          ).singleNodeValue as HTMLElement | null)
+        : document.querySelector<HTMLElement>(sel);
+    if (!el) return false;
+    el.focus();
+    return document.activeElement === el;
+  }, selector);
+
+  if (!focused) return false;
+
+  // Select-all then type, which replaces the field's current contents the same
+  // way a user would. Done with keys rather than the DOM's `select()` because
+  // that throws on `input[type=number]`, which is what the cart editors are.
+  await browser.keys(["Control", "a"]);
+  await browser.keys(value);
+  return true;
 }
 
 /** Click an element, tolerating a remount between locating and clicking it. */
@@ -737,21 +783,38 @@ export async function expectReturnToast(): Promise<void> {
 }
 
 /**
- * Press Enter on the currently focused element.
+ * Press Enter on a field, focusing it explicitly first.
  *
- * The cart's inline editors and the QuickSwitch password panel all commit on
- * Enter, and `setInputValue` leaves the field it filled focused, so sending the
- * key at the browser is both simpler and more robust than re-resolving a handle
- * and sending it there — a re-resolved handle can race a re-render, and the
- * chainable element type does not expose a `keys` method anyway.
+ * Two things make the obvious `browser.keys("Enter")` unreliable here:
  *
- * The pause before the key matters: these inputs are React-controlled and their
- * `onKeyDown` reads the state variable, not the DOM value. Firing Enter in the
- * same tick as the last keystroke can therefore submit a stale (empty) value —
- * which on the QuickSwitch password panel looks exactly like the server
- * rejecting valid credentials.
+ *   - WebDriver's element `sendKeys` does not guarantee the element holds DOM
+ *     focus, and `browser.keys` sends to whatever `document.activeElement` is.
+ *     When that is `<body>` the key goes nowhere and the commit silently never
+ *     happens. Focusing the target by selector removes the ambiguity.
+ *   - These inputs are React-controlled and their `onKeyDown` reads the state
+ *     variable, not the DOM value, so the key must not land in the same tick as
+ *     the last keystroke — otherwise it submits a stale (empty) value, which on
+ *     the QuickSwitch password panel looks exactly like valid credentials being
+ *     rejected.
+ *
+ * @param selector The field to commit. Omit to press Enter wherever focus is.
  */
-export async function pressEnter(): Promise<void> {
+export async function pressEnter(selector?: string): Promise<void> {
+  if (selector) {
+    await browser.execute((sel: string) => {
+      const el =
+        sel.startsWith("//") || sel.startsWith("(")
+          ? (document.evaluate(
+              sel,
+              document,
+              null,
+              XPathResult.FIRST_ORDERED_NODE_TYPE,
+              null,
+            ).singleNodeValue as HTMLElement | null)
+          : document.querySelector<HTMLElement>(sel);
+      el?.focus();
+    }, selector);
+  }
   await browser.pause(300);
   await browser.keys("Enter");
 }
@@ -792,7 +855,7 @@ export async function selectSearchableOption(
   await browser.execute((selector: string) => {
     document.querySelector<HTMLInputElement>(selector)?.focus();
   }, inputSelector);
-  await pressEnter();
+  await pressEnter(inputSelector);
 }
 
 // ---------------------------------------------------------------------------
@@ -1055,8 +1118,8 @@ export async function applyCartLineDiscount(
 
   const input = `${cartRow(productName)}//input[@aria-label="Editar descuento"]`;
   await waitVisible(input, 20, 500, `Discount input for ${productName}`);
-  await setInputValue(input, String(percent), `discount for ${productName}`);
-  await await pressEnter();
+  await typeIntoEditor(input, String(percent), `discount for ${productName}`);
+  await pressEnter(input);
 
   // The input unmounts on commit; that is the confirmation the percentage stuck.
   await waitGone(input, 20, 250, `Discount input for ${productName}`);
@@ -1089,9 +1152,38 @@ export async function setCartLinePrice(
 
   const input = `${cartRow(productName)}//input[@aria-label="Editar precio"]`;
   await waitVisible(input, 20, 500, `Price input for ${productName}`);
-  await setInputValue(input, pesos, `price for ${productName}`);
-  await await pressEnter();
+  await typeIntoEditor(input, pesos, `price for ${productName}`);
+  await pressEnter(input);
   await browser.pause(500);
+}
+
+/**
+ * Type into a field that commits on blur, without using `setValue`.
+ *
+ * The cart's inline price and discount editors unmount the moment they lose
+ * focus, and WebDriver's `setValue` is built on `elementClear`, which moves
+ * focus. A clear that fails intermittently — "element not interactable" on a
+ * re-rendering input — is therefore enough to make the editor commit and
+ * vanish, after which the element handle can never be resolved again and the
+ * failure surfaces as an unrelated "not interactable"/"not existing".
+ *
+ * Focusing the field directly and typing avoids the clear step altogether:
+ * focus is already where it needs to be, Ctrl+A selects the pre-filled value,
+ * and the keystrokes replace it.
+ */
+export async function typeIntoEditor(
+  selector: string,
+  value: string,
+  label = "editor",
+): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await typeOverFocused(selector, value)) return;
+    await browser.pause(300);
+  }
+  throw new Error(
+    `could not type into ${label} (${selector}) — the editor is probably ` +
+      `already committed`,
+  );
 }
 
 /**
@@ -1255,22 +1347,71 @@ export async function switchUser(
     '//button[@aria-label="Cambiar de usuario"]/following-sibling::div//input[@type="password"]';
   await waitVisible(passwordInput, 20, 500, "QuickSwitch password input");
   await setInputValue(passwordInput, password, "quick-switch password");
-  await pressEnter();
+  await pressEnter(passwordInput);
 
-  // The trigger's label is the switch's confirmation: the dropdown closes only
-  // after `setSession` succeeds.
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  // The switch is a real login round trip: QuickSwitch calls
+  // `authService.login`, swaps the session and only then closes the panel. The
+  // panel shows a literal "..." while that is in flight, so the wait is bounded
+  // generously and distinguishes "still authenticating" from "the server
+  // rejected it" — conflating the two turns a slow switch into a false
+  // credentials error.
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
     const current = await currentUserName();
     if (current.includes(displayName)) return;
-    if (current !== "" && !current.includes(displayName)) {
+
+    if (!(await isQuickSwitchBusy())) {
       throw new Error(
         `switching to ${displayName} left the session as "${current}" — the ` +
-          `server rejected the credentials`,
+          `login returned without switching. ${await describeQuickSwitchState()}`,
       );
     }
-    await browser.pause(500);
+    await browser.pause(1_000);
   }
-  throw new Error(`the session never became ${displayName}`);
+  throw new Error(
+    `the session never became ${displayName} within 120s. ` +
+      (await describeQuickSwitchState()),
+  );
+}
+
+/**
+ * Whether the QuickSwitch panel is still showing its in-flight marker.
+ *
+ * The confirm button renders `...` while `isLoading` is true, so its absence of
+ * that literal means the login settled — successfully or not.
+ */
+async function isQuickSwitchBusy(): Promise<boolean> {
+  return browser.execute(() =>
+    (document.querySelector("div.pos-panel")?.textContent ?? "").includes(
+      "...",
+    ),
+  );
+}
+
+/**
+ * What the QuickSwitch panel is showing right now.
+ *
+ * A session switch that silently does nothing is otherwise indistinguishable
+ * from one the server refused: both leave the trigger showing the old user. The
+ * panel text and the typed password's length separate "the panel never opened",
+ * "the password never landed" and "the server rejected it".
+ */
+async function describeQuickSwitchState(): Promise<string> {
+  const state = await browser.execute(() => {
+    const panel = document.querySelector("div.pos-panel");
+    const password = document.querySelector<HTMLInputElement>(
+      'input[type="password"]',
+    );
+    return {
+      panelOpen: Boolean(panel),
+      panelText: (panel?.textContent ?? "").trim().slice(0, 200),
+      passwordLength: password?.value.length ?? -1,
+    };
+  });
+  return (
+    `QuickSwitch panel open=${state.panelOpen} ` +
+    `passwordLength=${state.passwordLength} panelText=${JSON.stringify(state.panelText)}`
+  );
 }
 
 /**

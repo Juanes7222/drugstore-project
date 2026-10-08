@@ -28,10 +28,31 @@ const SaleItemInputSchema = z.object({
   unitPrice: z
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, "Precio unitario invalido"),
+  /**
+   * @deprecated Accepted for wire compatibility only. The server reads
+   * `discountPercentage`, so a payload carrying just `discount` replays with no
+   * discount applied to the item. Use `discountPercentage` + `discountReason`.
+   */
   discount: z
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, "Descuento invalido")
     .optional(),
+  /**
+   * Discount applied to this line, in percent.
+   *
+   * This is the field the server reads (`SalesService.buildSaleItemFromRequest`)
+   * and the one every caller must send: the header totals may be snapshotted by
+   * the POS, but the per-line figures are always recomputed here, so a payload
+   * that omits this leaves `SaleItem.discountPercentage`/`discountAmount` at 0
+   * while the sale header says otherwise.
+   */
+  discountPercentage: z
+    .number()
+    .min(0, "El descuento no puede ser negativo")
+    .max(100, "El descuento no puede superar el 100%")
+    .optional(),
+  /** Required by the server whenever `discountPercentage` is greater than 0. */
+  discountReason: z.string().min(1).optional(),
   /**
    * Commission evaluated by the offline POS at real sale time. When present,
    * the server persists these values verbatim on the SaleItem (client-

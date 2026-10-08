@@ -551,7 +551,7 @@ describe("PGlite data integrity", () => {
               productId: crypto.randomUUID(),
               quantity: 2,
               unitPrice: "5000.00",
-              discount: "0",
+              discountPercentage: 0,
               discountReason: null,
             },
           ],

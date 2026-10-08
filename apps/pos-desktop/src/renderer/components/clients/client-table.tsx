@@ -207,26 +207,43 @@ export const ClientTable: FC<ClientTableProps> = ({
                 {[client.municipality, client.department].filter(Boolean).join(", ") || "—"}
               </Td>
               <Td className="text-right">
-                <div
-                  className="inline-flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100"
-                  onClickCapture={(e) => e.stopPropagation()}
-                >
+                {/*
+                  The buttons stop the click from ALSO reaching the row's own
+                  onClick (which opens the detail dialog) by calling
+                  stopPropagation in the BUBBLE phase.
+
+                  This used to be `onClickCapture` on the container, which was
+                  silently fatal: React replays the tree capture-first, so
+                  stopping propagation there halted the traversal before the
+                  buttons' own onClick ever ran. The row opened, but view/edit/
+                  delete did nothing at all.
+                */}
+                <div className="inline-flex items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
                   <IconButton
                     icon={<EyeIcon className="size-3.5" />}
                     label={t("clients.view_details")}
-                    onClick={() => onView(client)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onView(client);
+                    }}
                     color="var(--color-sync)"
                   />
                   <IconButton
                     icon={<PencilIcon className="size-3.5" />}
                     label={t("clients.edit")}
-                    onClick={() => onEdit(client)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(client);
+                    }}
                     color="var(--color-pharma)"
                   />
                   <IconButton
                     icon={<Trash2Icon className="size-3.5" />}
                     label={t("clients.delete")}
-                    onClick={() => onDelete(client.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(client.id);
+                    }}
                     color="var(--color-urgency)"
                   />
                 </div>
@@ -274,7 +291,8 @@ const Td: FC<{
 const IconButton: FC<{
   icon: React.ReactNode;
   label: string;
-  onClick: () => void;
+  /** Receives the click so a caller can stop it reaching the enclosing row. */
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
   color: string;
 }> = ({ icon, label, onClick, color }) => (
   <button

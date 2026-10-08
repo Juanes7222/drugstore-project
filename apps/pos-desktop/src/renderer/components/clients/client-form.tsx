@@ -32,7 +32,17 @@ export const ID_TYPES: { value: string; labelKey: string }[] = [
 export interface ClientFormProps {
   mode: "create" | "edit";
   data: CreateClientInput;
-  onChange: (data: CreateClientInput) => void;
+  /**
+   * Accepts an updater so a handler can merge against the LATEST form state.
+   *
+   * Typed as the state setter both call sites already pass (`setFormData` /
+   * `setEditFormData`). It has to be an updater rather than a plain value
+   * setter because the linked department/municipality pair fires two changes in
+   * one handler: with `{ ...data, x }` both would spread the same render-time
+   * snapshot and the second would overwrite the first, silently dropping the
+   * department on every save.
+   */
+  onChange: (updater: (prev: CreateClientInput) => CreateClientInput) => void;
   onSubmit: () => void;
   onCancel: () => void;
   isSubmitting: boolean;
@@ -170,7 +180,7 @@ export const ClientForm: FC<ClientFormProps> = ({
                 {field.type === "select" && field.options ? (
                   <select
                     value={value}
-                    onChange={(e) => onChange({ ...data, [field.key]: e.target.value })}
+                    onChange={(e) => onChange((prev) => ({ ...prev, [field.key]: e.target.value }))}
                     className={INPUT_CLASS}
                     style={{
                       backgroundColor: "var(--color-panel)",
@@ -190,7 +200,7 @@ export const ClientForm: FC<ClientFormProps> = ({
                   <input
                     type={field.type}
                     value={value}
-                    onChange={(e) => onChange({ ...data, [field.key]: e.target.value })}
+                    onChange={(e) => onChange((prev) => ({ ...prev, [field.key]: e.target.value }))}
                     placeholder={t(field.labelKey)}
                     className={INPUT_CLASS}
                     style={{
@@ -213,8 +223,8 @@ export const ClientForm: FC<ClientFormProps> = ({
           <DepartmentMunicipalityFields
             department={data.department ?? ""}
             municipality={data.municipality ?? ""}
-            onDepartmentChange={(department) => onChange({ ...data, department: department || null })}
-            onMunicipalityChange={(municipality) => onChange({ ...data, municipality: municipality || null })}
+            onDepartmentChange={(department) => onChange((prev) => ({ ...prev, department: department || null }))}
+            onMunicipalityChange={(municipality) => onChange((prev) => ({ ...prev, municipality: municipality || null }))}
           />
         </div>
 
@@ -242,20 +252,20 @@ export const ClientForm: FC<ClientFormProps> = ({
               if (raw === "") {
                 // Empty = apply the tenant default when creating, or keep
                 // credit disabled when editing.
-                onChange({
-                  ...data,
+                onChange((prev) => ({
+                  ...prev,
                   creditLimit: mode === "create" ? undefined : null,
-                });
+                }));
                 return;
               }
               const parsed = Number(raw);
-              onChange({
-                ...data,
+              onChange((prev) => ({
+                ...prev,
                 creditLimit:
                   Number.isFinite(parsed) && parsed > 0
                     ? Math.round(parsed)
                     : null,
-              });
+              }));
             }}
             placeholder={t("clients.credit_limit_placeholder")}
             className={INPUT_CLASS}

@@ -62,9 +62,15 @@ function userRow(displayName: string): string {
   return `//tr[.//p[normalize-space(.)="${displayName}"]]`;
 }
 
-/** The create-user modal, which is a plain overlay div and carries no ARIA role. */
+/**
+ * The create-user modal, which is a plain overlay div and carries no ARIA role.
+ *
+ * Scoped by the panel's own class rather than by "any div containing the
+ * heading": the overlay wraps the panel, so a bare descendant test matches both
+ * and the outer wrapper has no fields in it.
+ */
 const CREATE_MODAL =
-  '(//div[.//h2[normalize-space(.)="Agregar usuario"]])[last()]';
+  '(//div[contains(@class,"pos-panel")][.//h2[normalize-space(.)="Agregar usuario"]])[1]';
 
 describe("User management (real Tauri app against the real backend)", () => {
   beforeEach(() => {
