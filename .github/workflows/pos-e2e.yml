@@ -1,0 +1,84 @@
+# POS Tauri end-to-end suite.
+#
+# Why this exists: this suite drives the real desktop binary against the REAL
+# NestJS backend, against real Postgres and Redis. The previous version ran
+# against a hand-written HTTP mock, which was a second unverified copy of the
+# API contract — a change to a real response shape left the mock green while the
+# application broke. Sharing only the HTTP wire is what makes that fail here.
+#
+# Why it is Windows-only: driving tauri-driver directly (rather than through
+# @wdio/tauri-service) is the setup the Tauri docs document, and it needs the
+# Edge WebDriver that only exists on Windows and Linux. The runners also need
+# the WebView2 runtime, which the Windows image ships.
+#
+# The step is blocking. It ran non-blocking while the suite carried two known
+# application defects; both are fixed, so a failure here is a real regression.
+name: pos-e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    # Windows-only: tauri-driver + msedgedriver (see the header).
+    runs-on: windows-latest
+    # A cold cargo build of the Tauri binary plus the server bundle is the bulk
+    # of this job.
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The Windows image ships a Rust toolchain; only tauri-driver is missing.
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Builds the frontend with the e2e environment (pinned API URL and
+      # workstation id), the server bundle, and the Tauri debug binary with the
+      # plugin. turbo also generates the Prisma client the server needs.
+      - name: Build for e2e
+        run: pnpm test:e2e:build
+        working-directory: apps/pos-desktop
+
+      # Typechecks the e2e suite itself. The specs are compiled by the runner
+      # without diagnostics, so this is the gate that catches a broken spec.
+      - name: Typecheck e2e specs
+        run: pnpm typecheck:e2e
+        working-directory: apps/pos-desktop
+
+      # The runner brings up docker-compose.test.yml, migrates, seeds the
+      # fixture world and starts the backend itself (see e2e/real-backend.ts),
+      # so there is no separate infrastructure step to drift out of sync.
+      - name: Run POS e2e suite
+        run: pnpm exec wdio run wdio.conf.ts
+        working-directory: apps/pos-desktop
+
+      # Without this a failing run leaves nothing to diagnose: the suite asserts
+      # on server state, and the server log is where a failed pull explains why.
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pos-e2e-server-log
+          path: apps/pos-desktop/e2e/.artifacts/server.log
+          if-no-files-found: ignore
+          retention-days: 7

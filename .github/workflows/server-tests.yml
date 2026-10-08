@@ -69,6 +69,30 @@ jobs:
       - name: Run e2e suite
         run: pnpm --filter @pharmacy/server test:e2e
 
+      # ------------------------------------------------------------------------
+      # POS <-> server integration suite.
+      #
+      # These 18 specs drive the real POS services over PGlite against the real
+      # NestJS AppModule and Postgres, exchanging data only over HTTP. They have
+      # already caught real production bugs (an empty CUFE, seller fields shipped
+      # blank, supplier returns that never consumed stock, a degraded-sale patch
+      # gap) — and until this step existed none of them ran in CI, because
+      # `pnpm test:int` is wired to nothing: turbo has no `test:int` task and the
+      # unit config excludes src/domain/integration. A green pipeline said
+      # nothing about sync.
+      #
+      # Ordering matters and is deliberate:
+      #   - db:generate below produces the LOCAL Prisma client (@pharmacy/database/local)
+      #     that these specs boot PGlite with.
+      #   - The suite above builds the CJS bundle of @pharmacy/database via the
+      #     jest globalSetup, which is how these specs obtain the full client.
+      # ------------------------------------------------------------------------
+      - name: Generate local Prisma client
+        run: pnpm --filter @pharmacy/pos-desktop db:generate
+
+      - name: Run POS server integration suite
+        run: pnpm --filter @pharmacy/pos-desktop test:int
+
       - name: Stop test services
         if: always()
         run: docker compose -f docker-compose.test.yml down
