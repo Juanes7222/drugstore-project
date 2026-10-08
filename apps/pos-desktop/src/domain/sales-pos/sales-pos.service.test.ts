@@ -784,6 +784,95 @@ describe("SalesPosService", () => {
       ).rejects.toThrow(ChangeRequiresCashPaymentException);
     });
 
+    it("persists the change derived from the tendered cash, not from the payment rows", async () => {
+      // The register applies 10 000 to the sale and the customer hands over
+      // 20 000. The payment row only carries what was applied, so change has to
+      // come from `cashReceived` or it persists as 0.
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const sale = makeSale();
+      sale.totalAmount = new Prisma.Decimal(10000);
+      tx.sale.findUnique.mockResolvedValue(sale);
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash",
+        isCash: true,
+      });
+      inventoryLots.consumeStockForSale.mockResolvedValue([
+        { lotId: "lot-1", quantity: 1, unitCostAtSale: new Prisma.Decimal(0) },
+      ]);
+      tx.saleItem.update.mockResolvedValue({});
+      tx.saleItemLot.create.mockResolvedValue({});
+      tx.salePayment.createMany.mockResolvedValue({ count: 1 });
+      tx.sale.update.mockResolvedValue({
+        ...sale,
+        operationalState: "CONFIRMED",
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      await service.confirm("sale-1", {
+        payments: [{ paymentMethodId: "pm-cash", amount: 10000 }],
+        cashReceived: 20000,
+      });
+
+      expect(tx.sale.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            changeAmount: new Prisma.Decimal(10000),
+          }),
+        }),
+      );
+    });
+
+    it("replays the tendered cash in the sync payload so the server derives the same change", async () => {
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const sale = makeSale();
+      sale.totalAmount = new Prisma.Decimal(10000);
+      tx.sale.findUnique.mockResolvedValue(sale);
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash",
+        isCash: true,
+      });
+      inventoryLots.consumeStockForSale.mockResolvedValue([
+        { lotId: "lot-1", quantity: 1, unitCostAtSale: new Prisma.Decimal(0) },
+      ]);
+      tx.saleItem.update.mockResolvedValue({});
+      tx.saleItemLot.create.mockResolvedValue({});
+      tx.salePayment.createMany.mockResolvedValue({ count: 1 });
+      tx.sale.update.mockResolvedValue({
+        ...sale,
+        operationalState: "CONFIRMED",
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      await service.confirm("sale-1", {
+        payments: [{ paymentMethodId: "pm-cash", amount: 10000 }],
+        cashReceived: 20000,
+      });
+
+      const payload = JSON.parse(
+        (tx.syncQueue.create as unknown as { mock: { calls: Array<[{ data: { payload: string } }]> } }).mock
+          .calls[0][0].data.payload,
+      );
+      expect(payload.confirmSaleDto.cashReceived).toBe(20000);
+    });
+
+    it("still rejects an underpaid sale when a tendered cash figure is reported", async () => {
+      // The tendered figure must never let a short payment through: the rows
+      // still have to cover the amount due.
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const sale = makeSale();
+      sale.totalAmount = new Prisma.Decimal(10000);
+      tx.sale.findUnique.mockResolvedValue(sale);
+
+      await expect(
+        service.confirm("sale-1", {
+          payments: [{ paymentMethodId: "pm-cash", amount: 4000 }],
+          cashReceived: 20000,
+        }),
+      ).rejects.toThrow(PaymentAmountMismatchException);
+    });
+
     it("creates SalePayment records for each payment method", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       const sale = makeSale();

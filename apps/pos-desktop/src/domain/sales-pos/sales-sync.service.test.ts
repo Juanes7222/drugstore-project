@@ -18,6 +18,7 @@ const makeMockPrisma = (overrides?: { syncQueueFindMany?: unknown }) => {
   const tx: any = {
     sale: { upsert: vi.fn() },
     saleItem: { upsert: vi.fn(), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+  saleItemLot: { upsert: vi.fn(), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     salePayment: { upsert: vi.fn(), deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     cashShift: {
       findUnique: vi.fn().mockResolvedValue({ id: "shift-1" }),
@@ -32,6 +33,7 @@ const makeMockPrisma = (overrides?: { syncQueueFindMany?: unknown }) => {
     $transaction: vi.fn(async (cb: (t: any) => unknown) => cb(tx)),
     sale: tx.sale,
     saleItem: tx.saleItem,
+  saleItemLot: tx.saleItemLot,
     salePayment: tx.salePayment,
     syncQueue: {
       findMany: vi.fn().mockResolvedValue(overrides?.syncQueueFindMany ?? []),
@@ -302,6 +304,61 @@ describe("SalesSyncService", () => {
       );
       expect(tx.saleItem.upsert).toHaveBeenCalledTimes(2);
       expect(tx.salePayment.upsert).toHaveBeenCalledTimes(2);
+    });
+
+    it("persists the lot assignments the return reverses stock into", async () => {
+      // Without these rows a sale pulled from another workstation can be found
+      // and returned, but the credit has no batch to land on and the return
+      // fails at the stock reversal.
+      const row = makeSaleRow({
+        items: [
+          {
+            id: "item-1",
+            productId: "prod-1",
+            quantity: 2,
+            unitPrice: "100",
+            discountPercentage: "0",
+            discountAmount: "0",
+            discountReason: null,
+            taxRate: "0.19",
+            taxAmount: "38",
+            subtotal: "200",
+            total: "238",
+            productInternalCodeSnapshot: "P001",
+            productCommercialNameSnapshot: "A",
+            productGenericNameSnapshot: null,
+            productConcentrationSnapshot: null,
+            lots: [{ id: "sil-1", lotId: "lot-9", quantity: 2, unitCostAtSale: "60" }],
+          },
+        ],
+      });
+
+      await service.applySales([row as any]);
+
+      expect(tx.saleItemLot.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "sil-1" },
+          create: expect.objectContaining({
+            id: "sil-1",
+            saleItemId: "item-1",
+            lotId: "lot-9",
+            quantity: 2,
+            unitCostAtSale: expect.anything(),
+          }),
+        }),
+      );
+    });
+
+    it("does not fail the sale when the row carries no lot assignments", async () => {
+      // A legacy response predating the server's items.lots include must still
+      // hydrate; it just has nothing to reverse into.
+      const row = makeSaleRow();
+
+      await service.applySales([row as any]);
+
+      expect(tx.saleItemLot.upsert).not.toHaveBeenCalled();
+      expect(tx.saleItemLot.deleteMany).toHaveBeenCalled();
+      expect(tx.sale.upsert).toHaveBeenCalledTimes(1);
     });
 
     it("still records syncedAt when rows array is empty", async () => {

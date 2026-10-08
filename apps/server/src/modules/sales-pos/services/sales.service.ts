@@ -178,8 +178,18 @@ export class SalesService {
       cursor: input.cursor ?? null,
       timeField: 'lastModifiedAt',
       orderBy: [{ lastModifiedAt: 'asc' }, { id: 'asc' }],
+      // items.lots travels with the item because the POS reverses stock into
+      // exactly these lots when returning a sale. Without them a sale pulled
+      // from another workstation has no lot assignment, and its return cannot
+      // credit stock back to the batch the sale consumed.
       include: {
-        items: true,
+        items: {
+          include: {
+            lots: {
+              include: { lot: { select: { batchNumber: true } } },
+            },
+          },
+        },
         payments: true,
       },
     });
@@ -397,7 +407,31 @@ export class SalesService {
         );
       }
 
-      const changeAmount = new Prisma.Decimal(totalPaid).minus(amountDue);
+      // Change comes from the tendered figure when the POS reported one: the payment
+      // rows carry the amount applied to the sale, so an overpayment would
+      // otherwise be invisible and change would persist as 0. The payment rows
+      // are still required to cover the amount due (checked above).
+      const ONE_CENT = new Prisma.Decimal('0.01');
+      // A zero tendered figure means "not reported", not "nothing handed over":
+      // the POS register field starts at 0 and is only filled in for an overpay.
+      // Honouring a literal 0 would reject every split payment.
+      const reportedCashReceived =
+        confirmDto.cashReceived !== undefined && confirmDto.cashReceived > 0
+          ? new Prisma.Decimal(confirmDto.cashReceived)
+          : null;
+      const tenderedCash = reportedCashReceived ?? new Prisma.Decimal(totalPaid);
+      const rawChange = tenderedCash.minus(amountDue);
+      if (rawChange.lessThan(0)) {
+        // The POS never settles below the amount due, so this means a payload
+        // that disagrees with the stored total rather than a real shortfall.
+        throw new PaymentAmountMismatchException(
+          amountDue.toNumber(),
+          reportedCashReceived?.toNumber() ?? totalPaid,
+        );
+      }
+      const changeAmount = rawChange.greaterThan(ONE_CENT)
+        ? rawChange
+        : new Prisma.Decimal(0);
       if (changeAmount.greaterThan(0)) {
         const hasCashPayment = await this.hasCashPaymentMethod(
           tx,

@@ -20,6 +20,16 @@ export const PaymentInputSchema = z.object({
  */
 export const ConfirmSaleSchema = z.object({
   payments: z.array(PaymentInputSchema),
+  /**
+   * Cash the customer actually handed over, when it exceeds the amount due.
+   *
+   * The POS keeps the tendered figure separate from the payment rows (the cash
+   * row carries the amount applied to the sale, the "received" field carries
+   * what the customer gave). Without this the change only exists in the
+   * renderer, so `Sale.changeAmount` persisted 0 both locally and here even
+   * though cash left the drawer as change.
+   */
+  cashReceived: z.number().nonnegative("El efectivo recibido no puede ser negativo").optional(),
 });
 
 export type ConfirmSaleDto = z.infer<typeof ConfirmSaleSchema>;

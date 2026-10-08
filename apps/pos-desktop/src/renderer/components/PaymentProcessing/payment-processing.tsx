@@ -364,6 +364,9 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     // 2. Persist to DB — consumes stock, creates SalePayment, sets CONFIRMED
     await salesPosService.confirm(currentSaleId, {
       payments: resolvedPayments,
+      // The tendered cash is what the change is derived from; without it the
+      // register shows the right change but the sale persists 0.
+      cashReceived: cashReceived / 100,
     });
 
     // 3. Clear sale & payment state now that it's persisted
@@ -376,7 +379,7 @@ export const PaymentProcessing: FC<PaymentProcessingProps> = ({
     timeoutRef.current = window.setTimeout(() => {
       dispatch(navigateToReceipt());
     }, SALE_COMPLETION_INITIATE_MS);
-  }, [methods, currentSaleId, salesPosService, dispatch]);
+  }, [methods, currentSaleId, cashReceived, salesPosService, dispatch]);
 
   const handleConfirm = useCallback(async () => {
     if (!canConfirm || isCompleting || creditBlocked) {

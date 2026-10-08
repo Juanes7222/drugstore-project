@@ -118,6 +118,14 @@ export interface PaymentInput {
 export interface ConfirmSaleInput {
   /** At least one payment is required. */
   payments: PaymentInput[];
+  /**
+   * Cash the customer handed over, when it exceeds the amount due.
+   *
+   * The payment rows carry the amount applied to the sale; the tendered figure
+   * lives in the register's "received" field. Without it the change exists only
+   * in the renderer and `Sale.changeAmount` persists as 0.
+   */
+  cashReceived?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -477,30 +485,51 @@ export class SalesPosService {
       );
       const saleTotalNumber = Number(saleTotalDecimal.toString());
 
-      const changeAmount = totalPaidDecimal.minus(saleTotalDecimal).toDecimalPlaces(
-        2, Prisma.Decimal.ROUND_HALF_UP,
-      );
-
-      // Ghost-difference guard: any gap < 1 cent (₡0.01) is IEEE 754 drift,
+// Ghost-difference guard: any gap < 1 cent (₡0.01) is IEEE 754 drift,
       // not a real discrepancy.  COP has no fractional centavos — the
       // frontend always works in whole cents — so any meaningful difference
-      // is ≥ 1¢.  This covers both the overpayment and underpayment sides
+      // is ≥ 1¢.  This covers both the overpayment and underpayment sides
       // without requiring the DB-stored total to match the frontend's exact
       // rounding (frontend uses Math.round for tax, DB uses Decimal).
       const ONE_CENT = new Prisma.Decimal('0.01');
-      if (changeAmount.abs().lessThanOrEqualTo(ONE_CENT)) {
-        // treat as exact match — no change, proceed.
-        // Covers 1¢ rounding drift between frontend cents-math and Decimal tax rounding.
-      } else if (changeAmount.lessThan(0)) {
+
+      // The payment rows must always cover the amount due — a tendered cash
+      // figure never excuses an underpaid sale.
+      const paymentShortfall = totalPaidDecimal
+        .minus(saleTotalDecimal)
+        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+      if (paymentShortfall.lessThan(ONE_CENT.negated())) {
         throw new PaymentAmountMismatchException(
           saleTotalNumber,
           totalPaidDecimal.toNumber(),
         );
-      } else {
+      }
+
+      // Change comes from the tendered figure when the register reported one:
+      // the payment rows carry the amount applied to the sale, so the cash the
+      // customer actually handed over is otherwise invisible and change would
+      // persist as 0. A zero (or absent) tendered figure means "not reported",
+      // never "the customer handed over nothing": the register field starts at 0
+      // and is only filled in for a cash overpay, so honouring a literal 0 would
+      // reject every split payment.
+      const tenderedCash =
+        input.cashReceived !== undefined && input.cashReceived > 0
+          ? new Prisma.Decimal(input.cashReceived)
+          : totalPaidDecimal;
+      const rawChange = tenderedCash
+        .minus(saleTotalDecimal)
+        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+
+      let changeAmount = rawChange;
+      if (rawChange.greaterThan(ONE_CENT)) {
         const hasCash = await this.hasAnyCashPaymentMethod(tx, input.payments);
         if (!hasCash) {
           throw new ChangeRequiresCashPaymentException();
         }
+      } else {
+        // No change (or a sub-cent rounding artifact): normalise to zero so the
+        // persisted figure never carries phantom centavos.
+changeAmount = new Prisma.Decimal(0);
       }
 
       // 2b. ---- Store credit validation ----
@@ -1452,6 +1481,12 @@ export class SalesPosService {
           batchNumber: p.batchNumber ?? null,
           processorResponseCode: p.processorResponseCode ?? null,
         })),
+        // Replayed so the server derives the same change the register gave. Only
+        // a real overpay is reported: 0 is the register's "not filled in" value.
+        cashReceived:
+          input.cashReceived !== undefined && input.cashReceived > 0
+            ? input.cashReceived
+            : null,
       },
       metadata: {
         localSaleId: sale.id,

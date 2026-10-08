@@ -171,6 +171,35 @@ export class SalesSyncService {
                 total: new Prisma.Decimal(item.total ?? 0),
               },
             });
+
+            // Lot assignments, reconciled like the items themselves. These are
+            // what a return reverses stock into: a sale pulled from another
+            // workstation without them could be found and returned, but the
+            // credit would have no batch to land on.
+            const incomingLots = item.lots ?? [];
+            await tx.saleItemLot.deleteMany({
+              where: {
+                saleItemId: item.id,
+                id: { notIn: incomingLots.map((l) => l.id) },
+              },
+            });
+            for (const lot of incomingLots) {
+              await tx.saleItemLot.upsert({
+                where: { id: lot.id },
+                create: {
+                  id: lot.id,
+                  saleItemId: item.id,
+                  lotId: lot.lotId,
+                  quantity: lot.quantity,
+                  unitCostAtSale: new Prisma.Decimal(lot.unitCostAtSale ?? 0),
+                },
+                update: {
+                  lotId: lot.lotId,
+                  quantity: lot.quantity,
+                  unitCostAtSale: new Prisma.Decimal(lot.unitCostAtSale ?? 0),
+                },
+              });
+            }
           }
 
           const incomingPaymentIds = new Set(sale.payments.map((p) => p.id));
@@ -336,6 +365,19 @@ interface SaleSyncRow {
     productCommercialNameSnapshot: string;
     productGenericNameSnapshot: string | null;
     productConcentrationSnapshot: string | null;
+    /**
+     * Lot assignments, the lots this line consumed.
+     *
+     * Absent on a legacy response that predates the server including them;
+     * `applySales` treats that as "no lot assignments" rather than failing the
+     * whole sale.
+     */
+    lots?: Array<{
+      id: string;
+      lotId: string;
+      quantity: number;
+      unitCostAtSale: string | number;
+    }>;
   }>;
   payments: Array<{
     id: string;

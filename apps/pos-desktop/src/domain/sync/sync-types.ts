@@ -37,6 +37,14 @@ export interface SaleConfirmationPayload {
       batchNumber: string | null;
       processorResponseCode: string | null;
     }>;
+    /**
+     * Cash the customer handed over, when it exceeds the amount due.
+     *
+     * Null when the register reported no tendered figure (exact payment). The
+     * server derives `Sale.changeAmount` from it, so a replay preserves the
+     * change the cashier actually gave.
+     */
+    cashReceived: number | null;
   };
   metadata: {
     localSaleId: string;

@@ -669,6 +669,63 @@ describe('SalesService', () => {
 
       expect(updateData.changeAmount.toNumber()).toBe(5000);
     });
+
+    it('derives change from the reported tendered cash when the payment rows only carry what was applied', async () => {
+      // This is the offline replay shape: the POS applies exactly the amount
+      // due to the sale and reports the tendered figure separately, so the
+      // server must use it or the change is lost on replay.
+      setupTransactionMock();
+      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({
+        ...mockSale,
+        items: [mockSaleItem],
+        totalAmount: new Prisma.Decimal(10000),
+      });
+      (prisma.paymentMethod.findUnique as jest.Mock).mockResolvedValue({ id: 'pm-cash', isCash: true });
+      (lotsService.consumeStockForSale as jest.Mock).mockResolvedValue([
+        { lotId: 'lot-1', quantity: 3, unitCostAtSale: new Prisma.Decimal(2500) },
+      ]);
+      (prisma.salePayment.createMany as jest.Mock).mockResolvedValue({ count: 1 } as any);
+      (prisma.saleItem.update as jest.Mock).mockResolvedValue({} as any);
+      (prisma.saleItemLot.createMany as jest.Mock).mockResolvedValue({ count: 1 } as any);
+      (fiscalDocumentsService.createPendingDocumentForSale as jest.Mock).mockResolvedValue({ id: 'fd-1' });
+
+      let updateData: any;
+      (prisma.sale.update as jest.Mock).mockImplementation(({ data }: any) => {
+        updateData = data;
+        return { ...mockSale, ...data };
+      });
+
+      await service.confirm(
+        'sale-1',
+        {
+          payments: [{ paymentMethodId: 'pm-cash', amount: 10000 }],
+          cashReceived: 25000,
+        },
+        'user-1',
+      );
+
+      expect(updateData.changeAmount.toNumber()).toBe(15000);
+    });
+
+    it('rejects a reported tendered figure below the amount due', async () => {
+      setupTransactionMock();
+      (prisma.sale.findUnique as jest.Mock).mockResolvedValue({
+        ...mockSale,
+        items: [mockSaleItem],
+        totalAmount: new Prisma.Decimal(10000),
+      });
+
+      await expect(
+        service.confirm(
+          'sale-1',
+          {
+            payments: [{ paymentMethodId: 'pm-cash', amount: 10000 }],
+            cashReceived: 5000,
+          },
+          'user-1',
+        ),
+      ).rejects.toThrow(PaymentAmountMismatchException);
+    });
   });
 
   describe('annul', () => {

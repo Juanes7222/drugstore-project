@@ -390,7 +390,7 @@ export class ReturnsService {
         unitPriceCents: Number(item.unitPrice.times(100).toFixed(0)),
         taxRate: Number(item.taxRate),
         totalCents: Number(item.total.times(100).toFixed(0)),
-        lotCode: item.lots[0]?.lot.batchNumber ?? '',
+        lotCode: item.lots?.[0]?.lot.batchNumber ?? '',
       })),
       totalCents: Number(sale.totalAmount.times(100).toFixed(0)),
     };
