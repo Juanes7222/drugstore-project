@@ -234,27 +234,63 @@ export interface LocalLot {
   id: string;
   batchNumber: string;
   productId: string;
-  expirationDate: string;
-  entryDate: string;
+  expirationDate: string | null;
+  entryDate: string | null;
   state: string;
   currentStock: number;
   locationCode: string | null;
 }
 
 /**
+ * An ISO timestamp, or `null` when the column holds no usable date.
+ *
+ * Three shapes have to be accepted, because the local Prisma client does not
+ * present a `DateTime` column consistently:
+ *
+ *  - an ISO string, which is what a plain `executeAsyncScript` row yields;
+ *  - a `Date`, when the row is handed over without a JSON round trip;
+ *  - a tagged `{ type: "DateTime", value }` object, which is how the client
+ *    carries a `DateTime` through that boundary. `new Date()` on the object
+ *    itself yields an Invalid Date, so reading it naively reports a real
+ *    expiry as absent.
+ *
+ * `new Date(x).toISOString()` also throws a `RangeError` on a null or empty
+ * column, and lots legitimately carry no expiry, so a bare conversion turned one
+ * such row into a crash that aborted every spec reading inventory.
+ */
+function isoOrNull(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  const tagged = value as { type?: unknown; value?: unknown };
+  const raw =
+    typeof tagged === "object" && typeof tagged.value !== "undefined"
+      ? tagged.value
+      : value;
+
+  if (typeof raw === "string" || typeof raw === "number") {
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  if (raw instanceof Date) {
+    return Number.isNaN(raw.getTime()) ? null : raw.toISOString();
+  }
+  return null;
+}
+
+/**
  * Lots the POS holds locally, newest entry first.
  *
- * `expirationDate` comes back as an ISO string through `executeAsyncScript`,
- * which JSON-serialises the row, so the specs compare it as a date rather than
- * as an opaque id.
+ * Dates come back as ISO strings through `executeAsyncScript`, which
+ * JSON-serialises the row, so the specs compare them as dates rather than as
+ * opaque ids. `expirationDate` is null for a lot with no expiry.
  */
 export async function fetchLocalLots(productId?: string): Promise<LocalLot[]> {
   const rows = await queryLocal<{
     id: string;
     batchNumber: string;
     productId: string;
-    expirationDate: string;
-    entryDate: string;
+    expirationDate: string | null;
+    entryDate: string | null;
     state: string;
     currentStock: number;
     locationCode: string | null;
@@ -268,8 +304,8 @@ export async function fetchLocalLots(productId?: string): Promise<LocalLot[]> {
   );
   return rows.map((row) => ({
     ...row,
-    expirationDate: new Date(row.expirationDate).toISOString(),
-    entryDate: new Date(row.entryDate).toISOString(),
+    expirationDate: isoOrNull(row.expirationDate),
+    entryDate: isoOrNull(row.entryDate),
   }));
 }
 

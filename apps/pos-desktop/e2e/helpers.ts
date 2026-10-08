@@ -686,6 +686,62 @@ export async function setInputValue(
 }
 
 /**
+ * Set a date input to an ISO `YYYY-MM-DD` value.
+ *
+ * A date input is three segmented sub-fields, not free text: WebDriver's
+ * `setValue` and a keystroke fallback both deliver the characters into whatever
+ * segment currently has focus, so "2027-12-31" lands as day 20, month 02, year
+ * 71231 — a year seven centuries out that then blows up as a Prisma DateTime.
+ *
+ * Assigning through the prototype's value setter and dispatching `input` then
+ * `change` is the React-sanctioned way to update a controlled input, and it
+ * writes the whole field at once. The assertion afterwards is deliberate: it
+ * fails loudly if the browser refuses or truncates the value, instead of letting
+ * a wrong date reach the backend.
+ */
+export async function setDateInputValue(
+  selector: string,
+  isoDate: string,
+  label = "date input",
+): Promise<void> {
+  const applied = await browser.execute(
+    (sel: string, value: string) => {
+      const el =
+        sel.startsWith("//") || sel.startsWith("(")
+          ? (document.evaluate(
+              sel,
+              document,
+              null,
+              XPathResult.FIRST_ORDERED_NODE_TYPE,
+              null,
+            ).singleNodeValue as HTMLInputElement | null)
+          : document.querySelector<HTMLInputElement>(sel);
+      if (!el) return { ok: false, reason: "not found", value: "" };
+
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      if (!setter) return { ok: false, reason: "no value setter", value: "" };
+
+      setter.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return { ok: el.value === value, reason: "", value: el.value };
+    },
+    selector,
+    isoDate,
+  );
+
+  if (!applied.ok) {
+    throw new Error(
+      `could not set ${label} (${selector}) to ${isoDate}: ${applied.reason}` +
+        (applied.value ? `, field holds "${applied.value}"` : ""),
+    );
+  }
+}
+
+/**
  * Focus a field, select whatever it holds and type over it.
  *
  * Returns false when the element cannot be found or focused, so the caller can
@@ -755,48 +811,81 @@ function xpathLiteral(value: string): string {
 }
 
 /**
- * Click a button addressed by its EXACT normalised text.
+ * Click a button addressed by its EXACT label.
+ *
+ * "Label" is the `aria-label` when the button has one and its own visible text
+ * otherwise, and either will match. Both are needed: an icon-only action repeats
+ * the same visible text on every row of a table and is only distinguishable by
+ * its `aria-label` (the purchase order list renders an "Editar" button per row
+ * whose label is "Ver orden #<n>"), while a header button carries only text.
  *
  * Partial-text selectors (`button*=Nueva orden`) resolve to whichever element
  * the driver happens to find first, and when that element is covered — a sticky
- * page header, a scroll container — the native click lands on the cover instead
- * of the button and still reports success. Both `+ Nueva orden` and
- * `+ Agregar usuario` behaved exactly that way: the click "succeeded", no
- * exception was raised, and the form or modal never appeared.
+ * page header, a scroll container, a full-width table row — the native click
+ * lands on the cover instead of the button and still reports success. Both
+ * `+ Nueva orden` and `+ Agregar usuario` behaved exactly that way: the click
+ * "succeeded", no exception was raised, and the form or modal never appeared.
  *
- * Exact text removes the ambiguity, and refusing to guess when the match count
- * is not 1 turns a silent no-op into a failure that names the candidates.
+ * Exact labels remove the ambiguity, and refusing to guess when more than one
+ * button carries the label turns a silent wrong-target click into a failure that
+ * names every candidate. `allowMultiple` opts into clicking the first match and
+ * belongs only where duplicates are genuine — the receive screen renders
+ * "Confirmar recepci&#243;n" in both its header and its footer, wired to one
+ * handler.
+ *
+ * The label matching below is duplicated inside the browser script because a
+ * function from this module is not in scope there.
  */
 export async function clickButtonByExactText(
   text: string,
-  attempts = 20,
-  interval = 500,
+  options: {
+    allowMultiple?: boolean;
+    attempts?: number;
+    interval?: number;
+  } = {},
 ): Promise<void> {
-  const xpath = `//button[normalize-space(.)=${xpathLiteral(text)}]`;
+  const { allowMultiple = false, attempts = 20, interval = 500 } = options;
+  const xpath = `//button[normalize-space(.)=${xpathLiteral(text)} or @aria-label=${xpathLiteral(text)}]`;
 
-  await browser.waitUntil(
-    async () => {
-      const found = await browser.execute((wanted) => {
-        const labels = Array.from(document.querySelectorAll("button"))
-          .map((el) => (el.textContent ?? "").replace(/\s+/g, " ").trim())
-          .filter((label) => label === wanted);
-        return { count: labels.length, labels };
-      }, text);
+  if (allowMultiple) {
+    await waitVisible(xpath, attempts, interval, `button "${text}"`);
+  }
 
-      if (found.count > 1) {
-        throw new Error(
-          `${found.count} buttons have the exact text ${JSON.stringify(text)}, ` +
-            `so there is no single target: ${JSON.stringify(found.labels)}`,
-        );
-      }
-      return found.count === 1;
-    },
-    {
-      timeout: attempts * interval,
-      interval,
-      timeoutMsg: `no button has the exact text ${JSON.stringify(text)}`,
-    },
-  );
+  if (!allowMultiple) {
+    await browser.waitUntil(
+      async () => {
+        const found = await browser.execute((wanted) => {
+          const buttons = Array.from(document.querySelectorAll("button"));
+          const hit = (el: Element) => {
+            const aria = el.getAttribute("aria-label")?.trim();
+            const own = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+            return aria === wanted || own === wanted;
+          };
+          return {
+            count: buttons.filter(hit).length,
+            labels: buttons.map((el) => {
+              const aria = el.getAttribute("aria-label")?.trim();
+              const own = (el.textContent ?? "").replace(/\s+/g, " ").trim();
+              return aria ? `${own} (aria: ${aria})` : own;
+            }),
+          };
+        }, text);
+
+        if (found.count > 1) {
+          throw new Error(
+            `${found.count} buttons carry the exact label ${JSON.stringify(text)}, ` +
+              `so there is no single target: ${JSON.stringify(found.labels)}`,
+          );
+        }
+        return found.count === 1;
+      },
+      {
+        timeout: attempts * interval,
+        interval,
+        timeoutMsg: `no button carries the exact label ${JSON.stringify(text)}`,
+      },
+    );
+  }
 
   const target = await $(xpath);
   // A covered button fails silently under a plain native click, so centre it
@@ -1100,7 +1189,10 @@ export async function openScreen(menuLabel: string): Promise<void> {
  * buttons.
  */
 export async function openHubCard(cardTitle: string): Promise<void> {
-  const card = `//h3[normalize-space(text())="${cardTitle}"]/ancestor::button`;
+  // `normalize-space(.)`, not `(text())`: a heading built from an interpolated
+  // JSX expression plus literal text renders as several text nodes, and `text()`
+  // only ever sees the first one.
+  const card = `//h3[normalize-space(.)="${cardTitle}"]/ancestor::button`;
   await waitVisible(card, 20, 1_000, `Hub card "${cardTitle}"`);
   await (await $(card)).click();
 }
@@ -1111,7 +1203,7 @@ export async function expectPageHeading(
   attempts = 20,
 ): Promise<void> {
   await waitVisible(
-    `//h1[normalize-space(text())="${heading}"]`,
+    `//h1[normalize-space(.)="${heading}"]`,
     attempts,
     1_000,
     `Page heading "${heading}"`,
@@ -1145,7 +1237,7 @@ function cartRow(productName: string): string {
 export async function readCartTotalRow(label: string): Promise<number> {
   return parsePesos(
     await readText(
-      `//span[normalize-space(text())="${label}"]/following-sibling::span[1]`,
+      `//span[normalize-space(.)="${label}"]/following-sibling::span[1]`,
     ),
   );
 }
@@ -1159,7 +1251,7 @@ export async function readCartTotalRow(label: string): Promise<number> {
  */
 export async function readCartTotal(): Promise<number> {
   await waitVisible(
-    `//span[normalize-space(text())="TOTAL"]/following-sibling::span[1]`,
+    `//span[normalize-space(.)="TOTAL"]/following-sibling::span[1]`,
     20,
     500,
     "Cart TOTAL row",

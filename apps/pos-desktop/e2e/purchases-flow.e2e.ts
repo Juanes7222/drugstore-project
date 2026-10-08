@@ -45,6 +45,7 @@ import {
   openHubCard,
   openScreen,
   setInputValue,
+  setDateInputValue,
   selectSearchableOption,
   clickWhenPresent,
   clickButtonByExactText,
@@ -98,9 +99,24 @@ const RECEIVED_EXPIRATION = "2027-12-31";
 
 const IBUPROFENO = "Ibuprofeno 400mg";
 
-/** The order detail heading, which carries the sequential number as a child. */
+/**
+ * The order detail heading.
+ *
+ * `normalize-space(.)` and not `normalize-space(text())`: the heading renders as
+ * `{orderTitle} #{sequentialNumber}`, which React emits as TWO adjacent text
+ * nodes. `text()` yields only the first of them — "Orden de compra" — so the
+ * `#` this predicate anchors on never appears and the heading reads as absent
+ * even though the page plainly shows "ORDEN DE COMPRA #1". `.` is the element's
+ * full string value, so it concatenates both nodes.
+ */
 const ORDER_DETAIL_HEADING =
-  '//h2[starts-with(normalize-space(text()),"Orden de compra #")]';
+  '//h2[starts-with(normalize-space(.),"Orden de compra #")]';
+
+/**
+ * The order page's own `<h1>`, which reads "Orden de compra" for the detail
+ * view — distinct from the `<h2>` above, which carries the sequential number.
+ */
+const ORDER_DETAIL_PAGE_HEADING = '//h1[normalize-space(.)="Orden de compra"]';
 
 describe("Purchases flow (real Tauri app against the real backend)", () => {
   beforeEach(() => {
@@ -157,7 +173,7 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     expect(created?.isActive).toBe(true);
 
     await waitVisible(
-      '//tr[td[normalize-space(text())="901555777-9"]]',
+      '//tr[td[normalize-space(.)="901555777-9"]]',
       20,
       500,
       "new supplier row",
@@ -206,14 +222,11 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     // even start. The hub card is the other route to this same form and is used
     // by the spec below.
     await clickButtonByExactText("+ Nueva orden");
+    // The create page's heading is the page component's `<h1>`; the form itself
+    // renders no heading at all, so an `<h2>` here never matches.
+    await expectPageHeading("Nueva orden de compra");
     await waitVisible(
-      '//h2[normalize-space(.)="Nueva orden de compra"]',
-      20,
-      500,
-      "new order form",
-    );
-    await waitVisible(
-      '//h1[normalize-space(text())="Nueva orden de compra"]',
+      '//h1[normalize-space(.)="Nueva orden de compra"]',
       20,
       1_000,
       "purchase order form",
@@ -302,10 +315,12 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
       await expectPageHeading("Compras");
       await openHubCard("Órdenes de compra");
       await expectPageHeading("Órdenes de compra");
-      await clickWhenPresent(
-        `tr[role="button"][aria-label="Ver orden #${localOrder.sequentialNumber}"]`,
-        "purchase order row",
-      );
+      // The row itself is a full-width `<tr role="button">`, so its centre point
+      // can land under the sticky table header, and a click the sticky header
+      // absorbs reports success while doing nothing. The row's own nested
+      // "Ver orden #N" button is a small target, and the sequential number makes
+      // that label unique per row.
+      await clickButtonByExactText(`Ver orden #${localOrder.sequentialNumber}`);
       await waitVisible(
         ORDER_DETAIL_HEADING,
         30,
@@ -386,40 +401,19 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     expect(target).toBeDefined();
     const orderNumber = target!.sequentialNumber;
 
+    await clickButtonByExactText(`Ver orden #${orderNumber}`);
+    await waitVisible(ORDER_DETAIL_HEADING, 20, 1_000, "purchase order detail");
+
+    // Receiving is what the whole step is about, so the order must first be
+    // CONFIRMED — a draft order carries no "Recibir" affordance.
     await waitVisible(
-      `tr[role="button"][aria-label="Ver orden #${orderNumber}"]`,
+      '//span[contains(@class,"pos-badge") and normalize-space(.)="Confirmada"]',
       20,
       500,
-      "purchase order row",
+      "confirmed badge",
     );
-    await clickWhenPresent(
-      `tr[role="button"][aria-label="Ver orden #${orderNumber}"]`,
-      "purchase order row",
-    );
-
-    await waitVisible(
-      '//h2[starts-with(normalize-space(text()),"Orden de compra #")]',
-      20,
-      1_000,
-      "purchase order detail",
-    );
-
-    await waitEnabled(
-      "//button[normalize-space(text())='Recibir']",
-      20,
-      1_000,
-      "Recibir",
-    );
-    await clickWhenPresent(
-      "//button[normalize-space(text())='Recibir']",
-      "Recibir",
-    );
-    await waitVisible(
-      '//h1[normalize-space(text())="Recibir"]',
-      20,
-      1_000,
-      "receive screen",
-    );
+    await clickButtonByExactText("Recibir");
+    await expectPageHeading("Recibir");
 
     // The receive screen pre-fills one row per order line with the PENDING
     // quantity, and leaves lot and expiry blank on purpose.
@@ -445,7 +439,7 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
       RECEIVED_BATCH,
       "lot number",
     );
-    await setInputValue(
+    await setDateInputValue(
       `${row}//input[@type="date"]`,
       RECEIVED_EXPIRATION,
       "expiration date",
@@ -458,26 +452,19 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
 
     // "Confirmar recepción" appears twice (page header and footer) and both are
     // wired to the same handler, so either is fine.
-    await waitEnabled(
-      '//button[normalize-space(text())="Confirmar recepción"]',
-      20,
-      1_000,
-      "Confirmar recepción",
-    );
-    await clickWhenPresent(
-      '//button[normalize-space(text())="Confirmar recepción"]',
-      "Confirmar recepción",
-    );
+    await clickButtonByExactText("Confirmar recepción", {
+      allowMultiple: true,
+    });
 
     // It lands back on the order detail, now fully received.
     await waitVisible(
-      '//h1[normalize-space(text())="Orden de compra"]',
+      ORDER_DETAIL_PAGE_HEADING,
       60,
       1_000,
       "back on the order detail",
     );
     await waitVisible(
-      '//span[contains(@class,"pos-badge") and normalize-space(text())="Recibida totalmente"]',
+      '//span[contains(@class,"pos-badge") and normalize-space(.)="Recibida totalmente"]',
       60,
       1_000,
       "fully received badge",
@@ -489,7 +476,10 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     expect(localLot).toBeDefined();
     expect(localLot?.currentStock).toBe(RECEIVED_QUANTITY);
     expect(localLot?.state).toBe("ACTIVE");
-    expect(localLot?.expirationDate.slice(0, 10)).toBe(RECEIVED_EXPIRATION);
+    // A received lot must carry the typed expiry, so a null is a failure in
+    // itself and not something to tolerate before slicing.
+    expect(localLot?.expirationDate).not.toBeNull();
+    expect(localLot?.expirationDate?.slice(0, 10)).toBe(RECEIVED_EXPIRATION);
 
     const localReceptions = await fetchLocalPurchaseReceptions();
     expect(localReceptions.length).toBeGreaterThan(0);
