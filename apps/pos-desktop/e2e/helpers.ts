@@ -1,9 +1,10 @@
 /**
  * Shared WDIO helpers for Tauri e2e tests.
  *
- * These helpers drive the real Tauri app (WebView2) through WebDriver.
- * They rely on the app's Spanish UI labels and on the deterministic mock
- * backend served by `e2e/mock-server.mjs` on port 3000.
+ * These helpers drive the real Tauri app (WebView2) through WebDriver against
+ * the real NestJS backend (see e2e/real-backend.ts). They rely on the app's
+ * Spanish UI labels and on the server fixture world seeded by
+ * apps/server/test/pos-e2e/baseline.ts.
  *
  * NOTE: `isDisplayed` / `waitForDisplayed` / `waitForEnabled` / `isExisting`
  * run their checks through `executeAsyncScript`, which is killed by the
@@ -15,9 +16,26 @@
  * native WebDriver protocol commands and are reliable.
  */
 
-import { browser } from "@wdio/globals";
+import { $, browser } from "@wdio/globals";
 
-const SEARCH_SELECTOR = 'input[aria-label="Buscar producto por nombre o código de barras..."]';
+const SEARCH_SELECTOR =
+  'input[aria-label="Buscar producto por nombre o código de barras..."]';
+
+/**
+ * Isolation is handled once per RUN, by `resetWebViewProfile()` in onPrepare.
+ *
+ * There is deliberately no per-spec reset of the backend either: truncating it
+ * between specs destroys the UserSession behind the token the app already holds
+ * (the app logs in once and stays logged in for the whole run), so the POS stops
+ * pushing entirely and every later spec fails with "the POS never pushed".
+ *
+ * Specs therefore identify their own sale by comparison: they read the highest
+ * local number before acting and wait for a higher one, which is unambiguous
+ * because the local sequence only moves forward.
+ */
+export function resetForSpec(): void {
+  // Intentionally empty — see the docblock.
+}
 
 /**
  * Resolve an element via the same selector styles used across the specs
@@ -59,7 +77,8 @@ async function elementState(
     const visible =
       el instanceof HTMLElement && el.checkVisibility
         ? el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
-        : el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
+        : el.getBoundingClientRect().width > 0 &&
+          el.getBoundingClientRect().height > 0;
 
     const disabled =
       el instanceof HTMLButtonElement ||
@@ -124,6 +143,31 @@ async function waitEnabled(
   throw new Error(`${label} never became enabled (selector: ${selector})`);
 }
 
+/**
+ * Assert an element never becomes enabled within the attempt budget.
+ *
+ * The inverse of waitEnabled, for negative cases: a control that must stay
+ * locked (confirming a payment that has not been fully tendered, for example).
+ * Polls the whole budget instead of sampling once, so a button that enables
+ * late — after the state settles — is still caught.
+ */
+export async function waitStaysDisabled(
+  selector: string,
+  attempts: number,
+  pauseMs = 1_000,
+  label = "element",
+): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const state = await elementState(selector);
+    if (state.found && state.visible && !state.disabled) {
+      throw new Error(
+        `${label} became enabled but must stay disabled (selector: ${selector})`,
+      );
+    }
+    await browser.pause(pauseMs);
+  }
+}
+
 export { isVisible, waitVisible, waitEnabled };
 
 /**
@@ -138,7 +182,12 @@ export async function pinSidebar(): Promise<void> {
   if (await isVisible('button[aria-label="Expandir menú"]')) {
     const pinButton = await $('button[aria-label="Expandir menú"]');
     await pinButton.click();
-    await waitVisible('button[aria-label="Colapsar menú"]', 15, 1_000, "Sidebar pin");
+    await waitVisible(
+      'button[aria-label="Colapsar menú"]',
+      15,
+      1_000,
+      "Sidebar pin",
+    );
   }
 }
 
@@ -188,9 +237,8 @@ async function clearResidualCart(): Promise<boolean> {
  * navigates to the sales screen so specs stay idempotent across a warm app.
  */
 export async function login(
-  username: string,
+  identifier: string,
   password: string,
-  depth = 0,
 ): Promise<void> {
   // Already on the sales screen? ensureSalesScreen() handles residual-cart
   // cleanup, so just delegate and return.
@@ -199,66 +247,125 @@ export async function login(
     return;
   }
 
-  // Wait for the app to boot into a known screen (form, avatar grid, or the
-  // logged-in app shell). The boot is slow on a cold start (~1 min), so
-  // the budget is generous and polls at 1s granularity.
-  const booted = await (async (): Promise<boolean> => {
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      const states = await browser.execute(() => ({
-        hasSearch: !!document.querySelector('input[aria-label="Buscar producto por nombre o código de barras..."]'),
-        hasForm: !!document.querySelector('input[placeholder="usuario@ejemplo.com"]'),
-        hasOther: Array.from(document.querySelectorAll("button")).some((b) =>
-          b.textContent?.includes("Otro usuario"),
-        ),
-        hasHome: !!document.querySelector('nav[role="navigation"]'),
-      }));
-      if (states.hasSearch || states.hasForm || states.hasOther || states.hasHome) {
-        return true;
-      }
-      await browser.pause(1_000);
-    }
-    return false;
-  })();
-  if (!booted) {
-    throw new Error("App never reached a known screen (login or app shell)");
-  }
+  const LOGIN_IDENTIFIER_SELECTOR = 'input[placeholder="usuario@ejemplo.com"]';
 
-  const manualFormVisible = await isVisible('input[placeholder="usuario@ejemplo.com"]');
-  const otherAccountVisible = await isVisible('button*=Otro usuario');
+  /**
+   * The app is not stable right after launch: React renders the login form
+   * first, then the boot services take over and it falls back to "Cargando..."
+   * while PGlite initialises and the catalog sync runs. A single-pass login
+   * therefore finds a form that disappears mid-interaction, or gives up during
+   * a cold boot that simply takes longer than the budget.
+   *
+   * So: retry the whole detect-and-sign-in cycle until the shell is up. Each
+   * pass is a fresh look at the DOM, which is what makes a form that remounted
+   * mid-fill recoverable instead of fatal.
+   */
+  let lastError = "";
 
-  // Still on the login page? Sign in.
-  if (manualFormVisible || otherAccountVisible) {
-    if (otherAccountVisible) {
-      const otherAccount = await $('button*=Otro usuario');
-      await otherAccount.click();
-      await waitVisible('input[placeholder="usuario@ejemplo.com"]', 15, 1_000, "Manual login form");
-    }
-
-    const usernameInput = await $('input[type="text"][placeholder="usuario@ejemplo.com"]');
-    const passwordInput = await $('input[type="password"]');
-    const submitButton = await $('button*=Ingresar');
-
-    await usernameInput.setValue(username);
-    await passwordInput.setValue(password);
-    await submitButton.click();
-
-    // Wait for the app shell (sales screen or home dashboard) to appear.
-    await (async (): Promise<void> => {
-      for (let attempt = 0; attempt < 20; attempt += 1) {
-        const visible = await browser.execute(() => ({
-          hasSearch: !!document.querySelector('input[aria-label="Buscar producto por nombre o código de barras..."]'),
+  for (let pass = 0; pass < 4; pass += 1) {
+    // 1. Wait for any known screen. Generous: a wiped PGlite plus a real boot
+    //    sync against the backend is minutes on a cold start.
+    const landed = await pollFor(
+      () =>
+        browser.execute(() => ({
+          hasSearch: !!document.querySelector(
+            'input[aria-label="Buscar producto por nombre o código de barras..."]',
+          ),
+          hasForm: !!document.querySelector(
+            'input[placeholder="usuario@ejemplo.com"]',
+          ),
+          hasOther: Array.from(document.querySelectorAll("button")).some((b) =>
+            b.textContent?.includes("Otro usuario"),
+          ),
           hasHome: !!document.querySelector('nav[role="navigation"]'),
-        }));
-        if (visible.hasSearch || visible.hasHome) {
-          return;
-        }
-        await browser.pause(1_000);
+        })),
+      90,
+    );
+
+    if (!landed) {
+      lastError = "app never reached a known screen (login or app shell)";
+      continue;
+    }
+
+    // 2. Already signed in? Jump to sales and finish.
+    if (await isVisible(SEARCH_SELECTOR)) {
+      await ensureSalesScreen();
+      return;
+    }
+
+    const otherAccountVisible = await isVisible("button*=Otro usuario");
+    const manualFormVisible = await isVisible(LOGIN_IDENTIFIER_SELECTOR);
+
+    if (!manualFormVisible && !otherAccountVisible) {
+      // The shell rendered without the search input (e.g. home dashboard).
+      await ensureSalesScreen();
+      if (await isVisible(SEARCH_SELECTOR)) return;
+      lastError = "app shell appeared but never exposed the sales screen";
+      continue;
+    }
+
+    try {
+      if (otherAccountVisible && !manualFormVisible) {
+        await clickWhenPresent("button*=Otro usuario", "other-user link");
+        await waitVisible(
+          LOGIN_IDENTIFIER_SELECTOR,
+          15,
+          1_000,
+          "Manual login form",
+        );
       }
-      throw new Error("Sales or home screen never appeared after login");
-    })();
+
+      await setInputValue(
+        LOGIN_IDENTIFIER_SELECTOR,
+        identifier,
+        "login identifier",
+      );
+      await setInputValue('input[type="password"]', password, "login password");
+      await clickWhenPresent("button*=Ingresar", "login submit");
+
+      // 3. Wait for the shell to take over.
+      const signedIn = await pollFor(
+        () =>
+          browser.execute(() => ({
+            hasSearch: !!document.querySelector(
+              'input[aria-label="Buscar producto por nombre o código de barras..."]',
+            ),
+            hasHome: !!document.querySelector('nav[role="navigation"]'),
+          })),
+        60,
+      );
+
+      if (!signedIn) {
+        lastError = "sales or home screen never appeared after login";
+        continue;
+      }
+
+      await ensureSalesScreen();
+      return;
+    } catch (error) {
+      // A form that remounted mid-interaction lands here; the next pass looks
+      // at the DOM again rather than failing the spec.
+      lastError = error instanceof Error ? error.message : String(error);
+    }
   }
 
-  await ensureSalesScreen();
+  throw new Error(`login did not reach the sales screen: ${lastError}`);
+}
+
+/**
+ * Poll `probe` until it reports a truthy state, or the budget runs out.
+ * Returns whether it became truthy, so callers can retry rather than throw.
+ */
+async function pollFor(
+  probe: () => Promise<Record<string, boolean>>,
+  attempts: number,
+): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const state = await probe();
+    if (Object.values(state).some(Boolean)) return true;
+    await browser.pause(1_000);
+  }
+  return false;
 }
 
 /**
@@ -280,7 +387,7 @@ export async function ensureSalesScreen(depth = 0): Promise<void> {
   }
 
   // Shift-required overlay already blocking the sales screen?
-  if (await isVisible('button*=Ir a Turno')) {
+  if (await isVisible("button*=Ir a Turno")) {
     await openCashShiftAndReturnToSales();
     await waitVisible(SEARCH_SELECTOR, 20, 1_000, "Sales search input");
     return;
@@ -297,8 +404,8 @@ export async function ensureSalesScreen(depth = 0): Promise<void> {
     }
   }
 
-  if (await isVisible('button*=Nueva venta')) {
-    await (await $('button*=Nueva venta')).click();
+  if (await isVisible("button*=Nueva venta")) {
+    await (await $("button*=Nueva venta")).click();
     await handleSalesGate();
   }
 }
@@ -312,7 +419,7 @@ async function handleSalesGate(): Promise<void> {
     if (await isVisible(SEARCH_SELECTOR)) {
       return;
     }
-    if (await isVisible('button*=Ir a Turno')) {
+    if (await isVisible("button*=Ir a Turno")) {
       await openCashShiftAndReturnToSales();
       await waitVisible(SEARCH_SELECTOR, 20, 1_000, "Sales search input");
       return;
@@ -327,7 +434,7 @@ async function handleSalesGate(): Promise<void> {
  * and navigate back to the sales screen through the pinned sidebar.
  */
 async function openCashShiftAndReturnToSales(): Promise<void> {
-  const goToShift = await $('button*=Ir a Turno');
+  const goToShift = await $("button*=Ir a Turno");
   await goToShift.click();
 
   // Cash Shift page with the open-shift form (no active shift yet). The
@@ -337,14 +444,16 @@ async function openCashShiftAndReturnToSales(): Promise<void> {
   const balanceInput = await $("#opening-balance");
   await balanceInput.setValue("0");
 
-  await waitEnabled('button*=Abrir turno', 20, 1_000, "Open shift button");
-  await (await $('button*=Abrir turno')).click();
+  await waitEnabled("button*=Abrir turno", 20, 1_000, "Open shift button");
+  await (await $("button*=Abrir turno")).click();
 
   // Return to sales through the pinned sidebar (no hover dependency).
   await pinSidebar();
   const sidebar = await $('nav[role="navigation"]');
   await sidebar.moveTo().catch(() => undefined);
-  await (await $('//*[@role="menuitem" and contains(., "Ventas")]'))
+  await (
+    await $('//*[@role="menuitem" and contains(., "Ventas")]')
+  )
     .click()
     .catch(() => undefined);
 
@@ -358,40 +467,66 @@ async function openCashShiftAndReturnToSales(): Promise<void> {
     }
     await browser.pause(1_000);
   }
-  throw new Error("Sales search input never appeared after opening the cash shift");
+  throw new Error(
+    "Sales search input never appeared after opening the cash shift",
+  );
 }
 
 /** Search for a product and click its result card to add it to the cart. */
-export async function addProductToCart(query: string, productName: string): Promise<void> {
-  const search = await $(SEARCH_SELECTOR);
-  await search.setValue(query);
+export async function addProductToCart(
+  query: string,
+  productName: string,
+): Promise<void> {
+  await setInputValue(SEARCH_SELECTOR, query, "product search");
 
   // The result card renders with role="option" inside a role="listbox".
   const resultSelector = `//*[@role="option" or @role="listbox"]//*[contains(text(), "${productName}")]`;
-  await waitVisible(resultSelector, 20, 1_000, `Search result for ${productName}`);
+  await waitVisible(
+    resultSelector,
+    20,
+    1_000,
+    `Search result for ${productName}`,
+  );
 
   const result = await $(resultSelector);
   await result.click();
 
   // The cart panel (a table of rows) shows the added item.
   const cartItemSelector = `//tr[.//p[contains(text(), "${productName}")]]`;
-  await waitVisible(cartItemSelector, 20, 1_000, `Cart item for ${productName}`);
+  await waitVisible(
+    cartItemSelector,
+    20,
+    1_000,
+    `Cart item for ${productName}`,
+  );
 }
 
 /** Click COBRAR and wait for the payment screen. */
 export async function goToPayment(): Promise<void> {
-  await waitVisible('button*=COBRAR', 15, 1_000, "COBRAR button");
-  await (await $('button*=COBRAR')).click();
+  await waitVisible("button*=COBRAR", 15, 1_000, "COBRAR button");
+  await (await $("button*=COBRAR")).click();
 
-  await waitVisible('[data-testid="payment-total-due"]', 15, 1_000, "Payment total");
+  await waitVisible(
+    '[data-testid="payment-total-due"]',
+    15,
+    1_000,
+    "Payment total",
+  );
 }
 
 /**
  * Fill the cash "Recibido" amount. The change panel updates live, so specs
  * that need to assert the change value call this before confirming.
  */
-export async function setCashReceived(cashReceivedPesos: string): Promise<void> {
-  await waitVisible('input[aria-label="Recibido"]', 15, 1_000, "Cash received input");
+export async function setCashReceived(
+  cashReceivedPesos: string,
+): Promise<void> {
+  await waitVisible(
+    'input[aria-label="Recibido"]',
+    15,
+    1_000,
+    "Cash received input",
+  );
   const received = await $('input[aria-label="Recibido"]');
   await received.setValue(cashReceivedPesos);
 }
@@ -403,30 +538,210 @@ export async function setCashReceived(cashReceivedPesos: string): Promise<void> 
 export async function payWithCash(cashReceivedPesos: string): Promise<void> {
   await setCashReceived(cashReceivedPesos);
 
-  await waitEnabled('button*=Confirmar pago', 15, 1_000, "Confirm payment button");
-  await (await $('button*=Confirmar pago')).click();
+  await waitEnabled(
+    "button*=Confirmar pago",
+    15,
+    1_000,
+    "Confirm payment button",
+  );
+  await (await $("button*=Confirmar pago")).click();
 }
 
 /** Wait for the receipt screen ("Pago confirmado") and start a new sale. */
 export async function waitForReceiptAndNewSale(): Promise<void> {
-  await waitVisible('//*[contains(text(), "Pago confirmado")]', 15, 1_000, "Receipt title");
+  await waitVisible(
+    '//*[contains(text(), "Pago confirmado")]',
+    15,
+    1_000,
+    "Receipt title",
+  );
 
-  await waitVisible('button*=Nueva venta', 15, 1_000, "New sale button");
-  await (await $('button*=Nueva venta')).click();
+  await waitVisible("button*=Nueva venta", 15, 1_000, "New sale button");
+  await (await $("button*=Nueva venta")).click();
 
   await waitVisible(SEARCH_SELECTOR, 15, 1_000, "Sales search input");
+}
+
+/**
+ * Parse a Colombian peso amount out of display text.
+ *
+ * Handles "$1.234.567,89" (dot thousands, comma decimals), "$1234.56",
+ * "$ 595" and bare digits. The specs must not assume a particular rendering:
+ * the point of these tests is to catch money bugs, and a hardcoded expectation
+ * would fail on formatting instead of on arithmetic.
+ */
+export function parsePesos(text: string): number {
+  const cleaned = text.replace(/[^\d.,]/g, "");
+  if (cleaned === "") {
+    throw new Error(`No numeric amount in "${text}"`);
+  }
+
+  const lastDot = cleaned.lastIndexOf(".");
+  const lastComma = cleaned.lastIndexOf(",");
+  let normalized: string;
+
+  if (lastDot >= 0 && lastComma >= 0) {
+    // Whichever separator comes last is the decimal point.
+    const decimalAt = Math.max(lastDot, lastComma);
+    const thousands = cleaned.slice(0, decimalAt).replace(/[.,]/g, "");
+    const decimals = cleaned.slice(decimalAt + 1);
+    normalized = `${thousands}.${decimals}`;
+  } else if (lastComma >= 0) {
+    const decimals = cleaned.slice(lastComma + 1);
+    normalized =
+      decimals.length === 3
+        ? cleaned.replace(/,/g, "")
+        : cleaned.replace(",", ".");
+  } else if (lastDot >= 0) {
+    const decimals = cleaned.slice(lastDot + 1);
+    normalized =
+      decimals.length === 3
+        ? cleaned.replace(/\./g, "")
+        : cleaned.replace(".", ".");
+  } else {
+    normalized = cleaned;
+  }
+
+  const value = Number(normalized);
+  if (Number.isNaN(value)) {
+    throw new Error(`Could not parse "${text}" as a peso amount`);
+  }
+  return value;
+}
+
+/**
+ * Read the amount the payment screen says is due, in pesos.
+ *
+ * Paying exactly what the screen claims is deliberate: it turns the cash
+ * tender into a cross-check. If the screen and the server disagree, the
+ * confirmation either fails (overpay/underpay) or the sale lands with a
+ * different total than the cashier was shown — and the specs assert the
+ * server total equals this number.
+ */
+export async function readPaymentTotalDue(): Promise<number> {
+  await waitVisible(
+    '[data-testid="payment-total-due"]',
+    15,
+    1_000,
+    "Payment total due",
+  );
+  const total = await $('[data-testid="payment-total-due"]');
+  return parsePesos(await total.getText());
+}
+
+/**
+ * Type into a field, tolerating a remount between locating and filling it.
+ *
+ * `waitVisible` checks visibility through `browser.execute`, i.e. JS
+ * `querySelector`. The interaction then goes through WebDriver `findElement`,
+ * and the two can disagree: the login form is re-mounted while the boot
+ * services finish, so a field that was verified a moment ago can be gone by
+ * the time `$()` runs. Waiting for existence at the DRIVER level (which retries
+ * findElement) and retrying the write closes that gap.
+ */
+export async function setInputValue(
+  selector: string,
+  value: string,
+  label = "input",
+): Promise<void> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const field = await $(selector);
+    try {
+      await field.waitForExist({ timeout: 10_000 });
+      await field.setValue(value);
+      return;
+    } catch (error) {
+      lastError = error;
+      await browser.pause(500);
+    }
+  }
+
+  throw new Error(
+    `could not fill ${label} (${selector}): ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
+/** Click an element, tolerating a remount between locating and clicking it. */
+export async function clickWhenPresent(
+  selector: string,
+  label = "element",
+): Promise<void> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const target = await $(selector);
+      await target.waitForExist({ timeout: 10_000 });
+      await target.click();
+      return;
+    } catch (error) {
+      lastError = error;
+      await browser.pause(500);
+    }
+  }
+
+  throw new Error(
+    `could not click ${label} (${selector}): ${
+      lastError instanceof Error ? lastError.message : String(lastError)
+    }`,
+  );
+}
+
+/** Assert an actual amount equals the expected one to the cent. */
+export function expectPesos(
+  actual: number,
+  expected: number,
+  label: string,
+): void {
+  if (Math.abs(actual - expected) > 0.005) {
+    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+  }
 }
 
 /** Expand the sidebar (pinned) and click "Devoluciones". */
 export async function openReturns(): Promise<void> {
   await pinSidebar();
 
-  const returnsSelector = '//*[@role="menuitem" and contains(., "Devoluciones")]';
+  const returnsSelector =
+    '//*[@role="menuitem" and contains(., "Devoluciones")]';
   await waitVisible(returnsSelector, 15, 1_000, "Returns menu item");
   await (await $(returnsSelector)).click();
 }
 
-/** Assert the shared operation toast appears after a return submission. */
+/** Trimmed text of the first match, or "" when absent. */
+async function getText(selector: string): Promise<string> {
+  try {
+    return (await $(selector).getText()).trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Assert the shared operation toast appears after a return submission.
+ *
+ * The toast is only set once the local create and confirm both succeed, so a
+ * submission that fails surfaces as the page's `role="alert"` instead. Reporting
+ * that text turns "the toast never showed up" into the actual cause.
+ */
 export async function expectReturnToast(): Promise<void> {
-  await waitVisible('[role="status"][class*="pos-toast"]', 15, 1_000, "Operation toast");
+  const TOAST = '[role="status"][class*="pos-toast"]';
+  const SUBMIT_ERROR = '[role="alert"]';
+
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (await isVisible(TOAST)) return;
+
+    if (await isVisible(SUBMIT_ERROR)) {
+      throw new Error(
+        `return submission was rejected: ${await getText(SUBMIT_ERROR)}`,
+      );
+    }
+    await browser.pause(500);
+  }
+  throw new Error(`Operation toast never appeared (selector: ${TOAST})`);
 }

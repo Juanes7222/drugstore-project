@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": ["node", "mocha", "webdriverio"],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowJs": false
+  },
+  "include": ["e2e/**/*.ts", "wdio.conf.ts"]
+}

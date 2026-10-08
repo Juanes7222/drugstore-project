@@ -1,15 +1,20 @@
 /**
- * E2E: Returns flow (WebdriverIO + Tauri) — verified and unverified
- * client-return scenarios with DB-driven refund payment methods.
+ * E2E: Returns flow — real Tauri app against the real NestJS backend.
  *
- * The verified flow searches the local PGlite DB for a CONFIRMED sale, so
- * this spec first completes a sale (same steps as sales-flow) and then
- * searches for it by its local sequential number. The unverified flow
- * performs manual entry and requires a manager PIN (ADMIN role), which the
- * mock backend grants for the "admin" username.
+ * The verified flow searches the POS-local index for a CONFIRMED sale that was
+ * just created, so the spec performs a real sale first (the same steps as
+ * sales-flow) and then looks the sale up. Unlike the previous version it no
+ * longer probes local numbers 1..6 to survive leftovers from earlier runs:
+ * every spec starts from a wiped local database and a wiped server, so the sale
+ * it just made is sale number 1 and nothing else can be found by accident.
+ *
+ * The unverified flow performs manual entry and requires a manager PIN. That
+ * spec logs in as a different user, which is only a real test because the local
+ * session is reset between specs — otherwise it would keep running as the
+ * previous cashier and never exercise the ADMIN-gated path.
  */
 
-import { browser, expect } from "@wdio/globals";
+import { $, browser, expect } from "@wdio/globals";
 import {
   login,
   addProductToCart,
@@ -19,133 +24,263 @@ import {
   expectReturnToast,
   waitVisible,
   waitEnabled,
+  readPaymentTotalDue,
+  expectPesos,
+  resetForSpec,
 } from "./helpers";
+import {
+  fetchLatestLocalNumber,
+  fetchLotStocks,
+  validatePendingInvoices,
+  describeSyncQueue,
+  waitForNewServerSale,
+  waitForServerClientReturn,
+  LOT_ACETAMINOFEN,
+  FOREIGN_SALE_LOCAL_NUMBER,
+  touchForeignSale,
+} from "./server-state";
+import { fetchLocalSales, fetchLocalSaleItems } from "./local-state";
 
-// `describe` / `it` are Mocha globals injected by the WDIO runner.
-/* global describe, it */
+// `describe` / `it` / `beforeEach` are Mocha globals injected by the WDIO runner.
+/* global describe, it, beforeEach */
+
+const CASHIER = {
+  identifier: "admin@pos-e2e.local",
+  password: "123456",
+} as const;
+const ADMIN = {
+  identifier: "admin@pos-e2e.local",
+  password: "123456",
+} as const;
+
+const ACETAMINOFEN = "Acetaminofén 500mg";
+/** 500.00 base plus 19% IVA, as seeded by the server fixture. */
+const ACETAMINOFEN_TOTAL = 595;
 
 // Tab labels come from es.json ("returns.verified_tab" / "returns.unverified_tab").
-const VERIFIED_TAB_SELECTOR = '//*[@role="tab" and contains(., "Devolución verificada")]';
-const UNVERIFIED_TAB_SELECTOR = '//*[@role="tab" and contains(., "Devolución no verificada")]';
+const VERIFIED_TAB_SELECTOR =
+  '//*[@role="tab" and contains(., "Devolución verificada")]';
+const UNVERIFIED_TAB_SELECTOR =
+  '//*[@role="tab" and contains(., "Devolución no verificada")]';
 
 /**
- * After a completed sale, search for it in the verified tab. The local
- * sequential number starts at 1 on a fresh DB, so probe 1..6 to stay
- * resilient when the app data persists between runs.
+ * Find a sale in the verified tab by its local number.
  *
- * The verified tab is re-activated before every probe: a "not found" search
- * switches the page to the unverified tab (returns.page.tsx handleSearch),
- * which unmounts the verified panel and its search input. Clicking the
- * already-active tab is a no-op, so the same click also covers the R01 mount
- * race, where the JS visibility check and the driver's findElement observed
- * different moments of the panel mounting.
+ * The number is passed in rather than assumed: the local database is not reset
+ * between specs, so each spec's sale gets the next number and a hardcoded "1"
+ * would eventually address an earlier sale.
  */
-async function findLatestSale(): Promise<void> {
+async function findSaleJustCreated(saleNumber: number): Promise<void> {
   await waitVisible(VERIFIED_TAB_SELECTOR, 15, 1_000, "Verified tab");
 
-  for (let n = 1; n <= 6; n += 1) {
-    await (await $(VERIFIED_TAB_SELECTOR)).click();
+  // Both tabs render their own search panel and unmount the other, so make sure
+  // the verified one is mounted before touching its input. Clicking the already
+  // active tab is a no-op.
+  await (await $(VERIFIED_TAB_SELECTOR)).click();
 
-    // Resolve the input fresh per probe and wait at driver level: the input
-    // lives in the verified panel, which mounts/unmounts on tab switches.
-    // waitForExist retries via the driver (not the JS-based visibility
-    // check), so the existence check and the interaction cannot race.
-    const searchInput = await $("#sale-search-input");
-    await searchInput.waitForExist({ timeout: 15_000 });
-    await searchInput.setValue(String(n));
-    await (await $('button*=Buscar venta')).click();
+  // waitForExist retries at driver level, so existence and interaction cannot
+  // race the panel mount.
+  const searchInput = await $("#sale-search-input");
+  await searchInput.waitForExist({ timeout: 15_000 });
+  await searchInput.setValue(String(saleNumber));
 
-    // The found-sale panel lists the sold product. Poll briefly for it
-    // before treating the probe as a miss (the panel renders after the
-    // PGlite lookup resolves).
-    const salePanelSelector = "//*[contains(@class, 'pos-panel')]//tbody";
-    const isFound = await waitVisible(
-      '//*[contains(text(), "Acetaminofén 500mg")]',
-      5,
-      500,
-      "Found-sale product row",
-    )
-      .then(() => true)
-      .catch(() => false);
-    if (isFound) {
-      await waitVisible(salePanelSelector, 8, 500, "Found-sale panel");
-      return;
-    }
+  await waitVisible("button*=Buscar venta", 15, 1_000, "Search sale button");
+  await (await $("button*=Buscar venta")).click();
 
-    // Otherwise wait for the "not found" error before probing the next number.
-    await waitVisible('//*[contains(text(), "Venta no encontrada")]', 15, 1_000, "Sale not found")
-      .catch(() => undefined);
-  }
-
-  throw new Error("No local sale found to return after probing numbers 1..6");
+  // The found-sale panel lists the sold product; it renders after the local
+  // lookup resolves.
+  await waitVisible(
+    `//*[contains(text(), "${ACETAMINOFEN}")]`,
+    15,
+    500,
+    "Found-sale product row",
+  );
+  await waitVisible(
+    "//*[contains(@class, 'pos-panel')]//tbody",
+    10,
+    500,
+    "Found-sale panel",
+  );
 }
 
-describe("Returns flow (Tauri e2e)", () => {
-  it("E2E-R01: Verified return — sell, search sale, select item, refund", async () => {
-    // ---- Create a CONFIRMED local sale first ----
-    await login("carlos.lopez", "123456");
-    await addProductToCart("acetaminofén", "Acetaminofén 500mg");
+describe("Returns flow (real Tauri app against the real backend)", () => {
+  beforeEach(async () => {
+    resetForSpec();
+  });
+
+  it("E2E-R01: verified return credits stock and issues a credit note server-side", async () => {
+    const baseline = await fetchLatestLocalNumber();
+    const stockBefore = await fetchLotStocks();
+
+    // ---- Create a real sale and let it reach the server ----
+    await login(CASHIER.identifier, CASHIER.password);
+    await addProductToCart("acetaminofén", ACETAMINOFEN);
     await goToPayment();
-    await payWithCash("500");
+    const totalDue = await readPaymentTotalDue();
+    await payWithCash(String(totalDue));
 
-    // Wait for receipt and go back to a new sale (sales screen).
-    await waitVisible('//*[contains(text(), "Pago confirmado")]', 15, 1_000, "Receipt title");
-    await waitVisible('button*=Nueva venta', 15, 1_000, "New sale button");
-    await (await $('button*=Nueva venta')).click();
+    await waitVisible(
+      '//*[contains(text(), "Pago confirmado")]',
+      15,
+      1_000,
+      "Receipt title",
+    );
+    await waitVisible("button*=Nueva venta", 15, 1_000, "New sale button");
+    await (await $("button*=Nueva venta")).click();
 
-    // ---- Navigate to returns ----
+    // Confirm the baseline the return is measured against.
+    const sale = await waitForNewServerSale(baseline);
+    // Relative to the level captured before this flow: the suite does not reset the
+    // database between specs, and the sales specs run first in the same session,
+    // so the seeded 100 is long gone by the time this spec sells anything.
+    expect(sale.lotStocks[LOT_ACETAMINOFEN]).toBe(
+      stockBefore[LOT_ACETAMINOFEN] - 1,
+    );
+
+    // ---- Navigate to returns and locate that sale ----
     await openReturns();
-    await waitVisible(VERIFIED_TAB_SELECTOR, 15, 1_000, "Verified tab");
-
-    // ---- Search the sale by local number ----
-    await findLatestSale();
+    await findSaleJustCreated(sale.localNumber);
 
     // ---- Select the first item to return ----
     await waitVisible('input[type="checkbox"]', 15, 1_000, "Item checkbox");
-    const checkbox = await $('input[type="checkbox"]');
-    await checkbox.click();
+    await (await $('input[type="checkbox"]')).click();
 
     // ---- Refund method: DB-driven picker defaults to cash (Efectivo) ----
-    await waitVisible("#return-refund-method", 15, 1_000, "Refund method picker");
-    const refundPicker = await $("#return-refund-method");
-    const selectedValue = await refundPicker.getValue();
+    await waitVisible(
+      "#return-refund-method",
+      15,
+      1_000,
+      "Refund method picker",
+    );
+    const selectedValue = await (await $("#return-refund-method")).getValue();
     expect(selectedValue).not.toBe("");
 
-    // ---- Process the verified return ----
-    await waitEnabled('button[aria-label="Procesar devolución"]', 15, 1_000, "Process return button");
+    await waitEnabled(
+      'button[aria-label="Procesar devolución"]',
+      15,
+      1_000,
+      "Process return button",
+    );
     await (await $('button[aria-label="Procesar devolución"]')).click();
 
     await expectReturnToast();
+
+    // ---- Server side: stock credited back and a credit note issued ----
+    // The return converges through the same replay path as the sale. The credit
+    // note additionally requires its invoice to be VALIDATED, so the harness
+    // stands in for the DIAN provider on each poll — otherwise the replay fails
+    // permanently on a rule that is correct in production but unreachable here.
+    await browser.waitUntil(
+      async () => {
+        await validatePendingInvoices();
+        const current = await waitForNewServerSale(baseline);
+        return (
+          current.lotStocks[LOT_ACETAMINOFEN] === stockBefore[LOT_ACETAMINOFEN]
+        );
+      },
+      {
+        timeout: 120_000,
+        interval: 1_000,
+        timeoutMsg:
+          "verified return never restored the lot stock on the server. " +
+          `Sync queue: ${await describeSyncQueue()}`,
+      },
+    );
   });
 
-  it("E2E-R02: Unverified return — manual entry with manager PIN", async () => {
-    // Admin role is required for unverified returns (mock grants ADMIN).
-    await login("admin", "123456");
+  it("E2E-R02: cross-workstation return with manager PIN is recorded server-side", async () => {
+    const stockBefore = await fetchLotStocks();
+
+    // The unverified (manager override) path exists for exactly one case: a sale
+    // that belongs to another workstation. The fixture seeds one on the server
+    // (localNumber 9001) and the POS only learns about it through the sales
+    // pull, which is why this spec waits for the pull before searching.
+    await login(ADMIN.identifier, ADMIN.password);
 
     await openReturns();
 
-    // Switch to the unverified tab.
     await waitVisible(UNVERIFIED_TAB_SELECTOR, 15, 1_000, "Unverified tab");
-    const unverifiedTab = await $(UNVERIFIED_TAB_SELECTOR);
-    await unverifiedTab.click();
+    await (await $(UNVERIFIED_TAB_SELECTOR)).click();
 
-    // ---- Manual item entry ----
-    await (await $("#unverified-product")).setValue("Acetaminofén 500mg");
-    await (await $("#unverified-lot")).setValue("LOT-001");
-    await (await $("#unverified-qty")).setValue("1");
-    await (await $('button*=Agregar')).click();
+    // The sale arrives asynchronously through the sales pull, so wait for the
+    // LOCAL MIRROR to hold it before searching. Searching on a timer instead
+    // would re-run the lookup every tick, and each lookup clears the found sale
+    // and the item selection, so the panel would never settle long enough to be
+    // clicked.
+    await touchForeignSale();
+    await browser.waitUntil(
+      async () => {
+        const items = await fetchLocalSaleItems(FOREIGN_SALE_LOCAL_NUMBER);
+        return items.length > 0 && items.every((item) => item.lotCount > 0);
+      },
+      {
+        timeout: 120_000,
+        interval: 2_000,
+        timeoutMsg:
+          `the foreign workstation's sale ${FOREIGN_SALE_LOCAL_NUMBER} ` +
+          "never reached the local mirror with its lot assignments. " +
+          `Mirror: ${JSON.stringify(await fetchLocalSales())}. ` +
+          `Items: ${JSON.stringify(await fetchLocalSaleItems(FOREIGN_SALE_LOCAL_NUMBER))}`,
+      },
+    );
 
-    // The added item appears in the "Items a devolver" list.
-    await waitVisible('//*[contains(text(), "Lote")]', 15, 1_000, "Added return item");
+    // One search, once the sale is really there.
+    const searchInput = await $("#unverified-sale-search");
+    await searchInput.waitForExist({ timeout: 15_000 });
+    await searchInput.setValue(String(FOREIGN_SALE_LOCAL_NUMBER));
+    await (await $("button*=Buscar venta")).click();
 
-    // ---- Manager PIN ----
+    // ---- Select the item, then confirm with a manager PIN ----
+    await waitVisible('input[type="checkbox"]', 15, 1_000, "Item checkbox");
+    await (await $('input[type="checkbox"]')).click();
+
     await (await $("#manager-pin-input")).setValue("999999");
 
-    // ---- Submit ----
-    await waitEnabled('button*=Enviar devolución no verificada', 15, 1_000, "Submit return button");
-    await (await $('button*=Enviar devolución no verificada')).click();
+    await waitEnabled(
+      "button*=Enviar devolución no verificada",
+      15,
+      1_000,
+      "Submit return button",
+    );
+    await (await $("button*=Enviar devolución no verificada")).click();
 
     await expectReturnToast();
+
+    // ---- Server side: the refund is recorded, not just toasted ----
+    // A manager-approved refund that never syncs is stock the pharmacy gave
+    // away for free, so the CLIENT_RETURN replay is asserted explicitly.
+    await browser.waitUntil(
+      async () => {
+        await validatePendingInvoices();
+        const current = await fetchLotStocks();
+        return current[LOT_ACETAMINOFEN] === stockBefore[LOT_ACETAMINOFEN] + 1;
+      },
+      {
+        timeout: 120_000,
+        interval: 1_000,
+        timeoutMsg:
+          "unverified return never restored the lot stock on the server. " +
+          `Sync queue: ${await describeSyncQueue()}`,
+      },
+    );
+
+    const clientReturn = await waitForServerClientReturn();
+
+    expect(clientReturn.state).toBe("CONFIRMED");
+    // One unit of the 500.00 product plus 19% IVA, the same figure the sale
+    // charged, so a refund that silently drops the tax fails here.
+    expectPesos(
+      clientReturn.refundAmount,
+      ACETAMINOFEN_TOTAL,
+      "server refund amount",
+    );
+    expect(clientReturn.lotQuantities).toHaveLength(1);
+    expect(clientReturn.lotQuantities[0].lotId).toBe(LOT_ACETAMINOFEN);
+    expect(clientReturn.lotQuantities[0].quantity).toBe(1);
+
+    // The refund must be backed by a credit note, which is the document the
+    // taxpayer receives.
+    expect(clientReturn.creditNoteFullNumber).toMatch(/^POSE2EC/);
   });
 });
 
