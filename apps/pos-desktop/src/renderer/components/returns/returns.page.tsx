@@ -18,13 +18,7 @@
  * @category Page
  */
 
-import {
-  type FC,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { type FC, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppDispatch } from "@/store/hooks";
 import { navigateBackToSales } from "@/store/slices/ui-slice";
@@ -34,7 +28,7 @@ import { useActivePaymentMethods } from "@/hooks/use-active-payment-methods";
 import type { PaymentMethodOption } from "@/store/slices/payment-types";
 import { RoleType } from "@pharmacy/shared-types";
 import { useReturnsService } from "../common/service-context";
-import type { SaleSearchResult, UnverifiedItemEntry, ReturnTab } from "./returns.types";
+import type { SaleSearchResult, ReturnTab } from "./returns.types";
 
 // ── Presentational components (provided by frontend-pos) ────────────────
 import { ReturnsHeader } from "./returns-header";
@@ -61,8 +55,7 @@ export const ReturnsPage: FC = () => {
 
   useEffect(() => {
     if (refundMethodId) return;
-    const fallback =
-      refundMethods.find((m) => m.isCash) ?? refundMethods[0];
+    const fallback = refundMethods.find((m) => m.isCash) ?? refundMethods[0];
     if (fallback) {
       setRefundMethodId(fallback.id);
     }
@@ -84,9 +77,6 @@ export const ReturnsPage: FC = () => {
   );
 
   // Unverified flow
-  const [unverifiedItems, setUnverifiedItems] = useState<
-    UnverifiedItemEntry[]
-  >([]);
   const [managerPin, setManagerPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
 
@@ -133,10 +123,8 @@ export const ReturnsPage: FC = () => {
           })),
           totalCents: result.totalCents,
         });
-        setActiveTab("verified");
       } else {
         setSearchError(t("returns.sale_not_found"));
-        setActiveTab("unverified");
       }
     } catch {
       setSearchError(t("returns.search_error"));
@@ -164,6 +152,21 @@ export const ReturnsPage: FC = () => {
     });
   }, []);
 
+  /**
+   * Build the create payload from the selected items of the found sale.
+   *
+   * Both tabs return against a real sale: the service resolves prices, tax and
+   * lot reversal from the stored sale items, so only real ids are usable.
+   */
+  const buildReturnItems = useCallback(() => {
+    const sale = foundSale;
+    if (!sale) return [];
+    return Array.from(selectedItemIds).map((saleItemId) => {
+      const item = sale.items.find((i) => i.id === saleItemId)!;
+      return { saleItemId, quantity: item.quantity };
+    });
+  }, [foundSale, selectedItemIds]);
+
   /** Submit a verified return. Role re-checked at call time. */
   const handleSubmitVerified = useCallback(async () => {
     setSubmitError(null);
@@ -180,7 +183,8 @@ export const ReturnsPage: FC = () => {
       return;
     }
 
-    if (!foundSale || selectedItemIds.size === 0) {
+    const items = buildReturnItems();
+    if (!foundSale || items.length === 0) {
       setSubmitError(t("returns.no_items_selected"));
       return;
     }
@@ -192,13 +196,7 @@ export const ReturnsPage: FC = () => {
         saleId: foundSale.id,
         clientId: "",
         refundMethodId,
-        items: Array.from(selectedItemIds).map((saleItemId) => {
-          const item = foundSale.items.find((i) => i.id === saleItemId)!;
-          return {
-            saleItemId,
-            quantity: item.quantity,
-          };
-        }),
+        items,
       });
 
       const confirmed = await returnsService.confirm(
@@ -225,9 +223,12 @@ export const ReturnsPage: FC = () => {
         err instanceof Error ? err.message : t("returns.submit_error"),
       );
     }
-  }, [foundSale, selectedItemIds, returnsService, t]);
+  }, [foundSale, refundMethodId, buildReturnItems, returnsService, t]);
 
-  /** Submit an unverified return. Role re-checked at call time. */
+  /**
+   * Submit an unverified return: a sale that exists locally but belongs to
+   * another workstation. Role re-checked at call time.
+   */
   const handleSubmitUnverified = useCallback(async () => {
     setSubmitError(null);
     setPinError(null);
@@ -244,8 +245,9 @@ export const ReturnsPage: FC = () => {
       return;
     }
 
-    if (unverifiedItems.length === 0) {
-      setSubmitError(t("returns.no_items_entered"));
+    const items = buildReturnItems();
+    if (!foundSale || items.length === 0) {
+      setSubmitError(t("returns.no_items_selected"));
       return;
     }
 
@@ -262,18 +264,13 @@ export const ReturnsPage: FC = () => {
     try {
       setIsProcessing(true);
 
-      const placeholderSaleId = `UNVERIFIED-${Date.now()}`;
-
       const draftReturn = await returnsService.create({
-        saleId: placeholderSaleId,
+        saleId: foundSale.id,
         clientId: "",
         refundMethodId,
         reason: "UNVERIFIED_RETURN",
-        notes: `Physical receipt: ${managerPin}`,
-        items: unverifiedItems.map((item) => ({
-          saleItemId: `manual-${item.productId}`,
-          quantity: item.quantity,
-        })),
+        notes: `Manager override: ${managerPin}`,
+        items,
       });
 
       const confirmed = await returnsService.confirm(
@@ -291,7 +288,9 @@ export const ReturnsPage: FC = () => {
         isVerified: false,
       });
 
-      setUnverifiedItems([]);
+      setFoundSale(null);
+      setSelectedItemIds(new Set());
+      setSearchQuery("");
       setManagerPin("");
     } catch (err) {
       setIsProcessing(false);
@@ -299,7 +298,14 @@ export const ReturnsPage: FC = () => {
         err instanceof Error ? err.message : t("returns.submit_error"),
       );
     }
-  }, [unverifiedItems, managerPin, returnsService, t]);
+  }, [
+    foundSale,
+    managerPin,
+    refundMethodId,
+    buildReturnItems,
+    returnsService,
+    t,
+  ]);
 
   const handleBack = useCallback(() => {
     dispatch(navigateBackToSales());
@@ -322,11 +328,12 @@ export const ReturnsPage: FC = () => {
 
   const canSubmitUnverified = useMemo(
     () =>
-      unverifiedItems.length > 0 &&
+      foundSale !== null &&
+      selectedItemIds.size > 0 &&
       managerPin.trim().length >= 4 &&
       refundMethodId !== "" &&
       !isProcessing,
-    [unverifiedItems, managerPin, refundMethodId, isProcessing],
+    [foundSale, selectedItemIds, managerPin, refundMethodId, isProcessing],
   );
 
   // ── Render ─────────────────────────────────────────────────────────
@@ -337,15 +344,9 @@ export const ReturnsPage: FC = () => {
       className="flex h-full flex-col overflow-y-auto"
       style={{ backgroundColor: "var(--color-surface)" }}
     >
-      <ReturnsHeader
-        isOnline={isOnline}
-        onBack={handleBack}
-      />
+      <ReturnsHeader isOnline={isOnline} onBack={handleBack} />
 
-      <ReturnTabs
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-      />
+      <ReturnTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div className="flex-1 px-pos-xl pb-pos-xl">
         {activeTab === "verified" && (
@@ -369,8 +370,14 @@ export const ReturnsPage: FC = () => {
 
         {activeTab === "unverified" && (
           <UnverifiedReturnFlow
-            items={unverifiedItems}
-            onItemsChange={setUnverifiedItems}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            onSearch={handleSearch}
+            onKeyDown={handleKeyDown}
+            searchError={searchError}
+            foundSale={foundSale}
+            selectedItemIds={selectedItemIds}
+            onToggleItem={toggleItemSelection}
             managerPin={managerPin}
             onManagerPinChange={setManagerPin}
             pinError={pinError}
@@ -383,17 +390,19 @@ export const ReturnsPage: FC = () => {
           />
         )}
 
-        {submitError && <div
-          className="mt-pos-md rounded px-pos-md py-pos-sm text-body font-medium"
-          role="alert"
-          style={{
-            backgroundColor:
-              "color-mix(in srgb, var(--color-urgency) 10%, transparent)",
-            color: "var(--color-urgency)",
-          }}
-        >
-          {submitError}
-        </div>}
+        {submitError && (
+          <div
+            className="mt-pos-md rounded px-pos-md py-pos-sm text-body font-medium"
+            role="alert"
+            style={{
+              backgroundColor:
+                "color-mix(in srgb, var(--color-urgency) 10%, transparent)",
+              color: "var(--color-urgency)",
+            }}
+          >
+            {submitError}
+          </div>
+        )}
       </div>
 
       {toast && (

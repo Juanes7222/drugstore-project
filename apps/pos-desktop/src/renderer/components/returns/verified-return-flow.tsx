@@ -17,9 +17,9 @@ import { useTranslation } from "react-i18next";
 import type { SaleSearchResult } from "./returns.types";
 import { formatCents } from "./returns.types";
 import { SearchIcon } from "@/components/ui/icons";
-import { StickyScrollX } from "../ui/sticky-scroll-x";
 import { PaymentMethodPicker } from "@/components/common/payment-method-picker";
 import type { PaymentMethodOption } from "@/store/slices/payment-types";
+import { ReturnSaleItemsTable } from "./return-sale-items-table";
 
 interface VerifiedReturnFlowProps {
   /** The current sale search query string. */
@@ -51,8 +51,6 @@ interface VerifiedReturnFlowProps {
   /** Whether the submit button should be enabled. */
   canSubmit: boolean;
 }
-
-
 
 export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
   searchQuery,
@@ -138,7 +136,8 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
           <div
             className="flex items-center justify-between px-pos-lg py-pos-md"
             style={{
-              borderBottom: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
+              borderBottom:
+                "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
             }}
           >
             <div className="flex flex-col gap-pos-xs">
@@ -147,7 +146,8 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
                   fontFamily: "var(--font-ui)",
                   fontSize: "var(--text-body-sm)",
                   fontWeight: "var(--font-weight-medium)",
-                  color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                  color:
+                    "color-mix(in srgb, var(--color-ink) 50%, transparent)",
                 }}
               >
                 {t("returns.sale_number")}
@@ -168,7 +168,8 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
                 style={{
                   fontFamily: "var(--font-ui)",
                   fontSize: "var(--text-body-sm)",
-                  color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
+                  color:
+                    "color-mix(in srgb, var(--color-ink) 50%, transparent)",
                 }}
               >
                 {foundSale.clientName}
@@ -187,83 +188,19 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
           </div>
 
           {/* Items table */}
-          <StickyScrollX radius={4}>
-            <table className="pos-return-table w-full">
-              <thead>
-                <tr>
-                  <th className="pos-return-table__th" style={{ width: 48 }}>
-                    <span className="sr-only">{t("returns.select_item")}</span>
-                  </th>
-                  <th className="pos-return-table__th">
-                    {t("returns.table_product")}
-                  </th>
-                  <th className="pos-return-table__th">
-                    {t("returns.table_lot")}
-                  </th>
-                  <th className="pos-return-table__th pos-return-table__th--numeric">
-                    {t("returns.table_qty")}
-                  </th>
-                  <th className="pos-return-table__th pos-return-table__th--numeric">
-                    {t("returns.table_price")}
-                  </th>
-                  <th className="pos-return-table__th pos-return-table__th--numeric">
-                    {t("returns.table_refund")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {foundSale.items.map((item) => {
-                  const isSelected = selectedItemIds.has(item.id);
-
-                  return (
-                    <tr
-                      key={item.id}
-                      className={`pos-return-table__row ${
-                        isSelected ? "pos-return-table__row--selected" : ""
-                      }`}
-                      onClick={() => onToggleItem(item.id)}
-                    >
-                      <td className="pos-return-table__td" style={{ width: 48 }}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => onToggleItem(item.id)}
-                          aria-label={`${t("returns.select_item")} ${item.productName}`}
-                          disabled={isProcessing}
-                          onClick={(e) => e.stopPropagation()}
-                          style={{
-                            accentColor: "var(--color-pharma)",
-                            cursor: "pointer",
-                          }}
-                        />
-                      </td>
-                      <td className="pos-return-table__td font-medium">
-                        {item.productName}
-                      </td>
-                      <td className="pos-return-table__td font-data tabular-nums">
-                        {item.lotCode}
-                      </td>
-                      <td className="pos-return-table__td pos-return-table__td--numeric font-data">
-                        {item.quantity}
-                      </td>
-                      <td className="pos-return-table__td pos-return-table__td--numeric font-data">
-                        {formatCents(item.unitPriceCents)}
-                      </td>
-                      <td className="pos-return-table__td pos-return-table__td--numeric font-data">
-                        {formatCents(item.totalCents)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </StickyScrollX>
+          <ReturnSaleItemsTable
+            sale={foundSale}
+            selectedItemIds={selectedItemIds}
+            onToggleItem={onToggleItem}
+            isProcessing={isProcessing}
+          />
 
           {/* Refund method + process button */}
           <div
             className="flex items-end justify-between gap-pos-md px-pos-lg py-pos-md"
             style={{
-              borderTop: "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
+              borderTop:
+                "1px solid color-mix(in srgb, var(--color-ink) 8%, transparent)",
             }}
           >
             <div className="flex flex-col gap-pos-xs" style={{ maxWidth: 260 }}>
@@ -271,7 +208,8 @@ export const VerifiedReturnFlow: FC<VerifiedReturnFlowProps> = ({
                 htmlFor="return-refund-method"
                 className="text-caption font-medium"
                 style={{
-                  color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
+                  color:
+                    "color-mix(in srgb, var(--color-ink) 60%, transparent)",
                 }}
               >
                 {t("returns.refund_method_label")}

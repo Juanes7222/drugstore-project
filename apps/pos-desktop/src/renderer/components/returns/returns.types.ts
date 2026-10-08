@@ -23,13 +23,6 @@ export interface SaleSearchResult {
   totalCents: number;
 }
 
-export interface UnverifiedItemEntry {
-  productId: string;
-  productName: string;
-  lotCode: string;
-  quantity: number;
-}
-
 export type ReturnTab = "verified" | "unverified";
 
 /** Format cents (COP) as a locale-aware currency string. */

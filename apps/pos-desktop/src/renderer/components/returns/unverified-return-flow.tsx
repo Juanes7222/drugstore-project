@@ -1,27 +1,44 @@
 /**
- * UnverifiedReturnFlow — manual item entry, manager PIN confirmation,
- * and unverified return submission.
+ * UnverifiedReturnFlow — manager-override return of a sale that belongs to
+ * another workstation.
  *
- * Used when the sale is not found locally (e.g. from a different
- * workstation that hasn't synced yet). Requires an ADMIN role and a
- * manager PIN override. Uses the restrict-violet accent to visually
- * distinguish this flow's higher regulatory weight.
+ * "Unverified" means the sale is not this workstation's own: it is recognised
+ * only through the shared sale history pulled from the server, so confirming it
+ * locally requires an ADMIN role and a manager PIN. Both tabs therefore return
+ * against a real stored sale; this one additionally passes
+ * `managerOverride: true` to `ReturnsService.confirm`.
+ *
+ * Uses the restrict-violet accent to visually distinguish this flow's higher
+ * regulatory weight.
  *
  * @category Component
  */
 
-import { type FC, useCallback, useState } from "react";
+import type { FC } from "react";
 import { useTranslation } from "react-i18next";
-import type { UnverifiedItemEntry } from "./returns.types";
-import { Trash2Icon } from "@/components/ui/icons";
 import { PaymentMethodPicker } from "@/components/common/payment-method-picker";
 import type { PaymentMethodOption } from "@/store/slices/payment-types";
+import type { SaleSearchResult } from "./returns.types";
+import { formatCents } from "./returns.types";
+import { ReturnSaleItemsTable } from "./return-sale-items-table";
 
 interface UnverifiedReturnFlowProps {
-  /** Current list of manually entered items. */
-  items: UnverifiedItemEntry[];
-  /** Called when the items list changes (add/remove). */
-  onItemsChange: (items: UnverifiedItemEntry[]) => void;
+  /** Current search query for the sale. */
+  searchQuery: string;
+  /** Called when the search query changes. */
+  onSearchQueryChange: (value: string) => void;
+  /** Called to run the sale search. */
+  onSearch: () => void;
+  /** Key handler for the search field. */
+  onKeyDown: (e: React.KeyboardEvent) => void;
+  /** Search error message, or null. */
+  searchError: string | null;
+  /** The sale found by the search, or null. */
+  foundSale: SaleSearchResult | null;
+  /** Ids of the sale items selected for return. */
+  selectedItemIds: Set<string>;
+  /** Called to toggle an item's selection. */
+  onToggleItem: (itemId: string) => void;
   /** Current manager PIN input value. */
   managerPin: string;
   /** Called when the PIN input changes. */
@@ -43,8 +60,14 @@ interface UnverifiedReturnFlowProps {
 }
 
 export const UnverifiedReturnFlow: FC<UnverifiedReturnFlowProps> = ({
-  items,
-  onItemsChange,
+  searchQuery,
+  onSearchQueryChange,
+  onSearch,
+  onKeyDown,
+  searchError,
+  foundSale,
+  selectedItemIds,
+  onToggleItem,
   managerPin,
   onManagerPinChange,
   pinError,
@@ -56,50 +79,6 @@ export const UnverifiedReturnFlow: FC<UnverifiedReturnFlowProps> = ({
   canSubmit,
 }) => {
   const { t } = useTranslation();
-
-  // Local entry form state — cleared after "Add"
-  const [productName, setProductName] = useState("");
-  const [lotCode, setLotCode] = useState("");
-  const [quantity, setQuantity] = useState(1);
-
-  const handleAddItem = useCallback(() => {
-    const trimmedName = productName.trim();
-    const trimmedLot = lotCode.trim();
-
-    if (!trimmedName || !trimmedLot || quantity < 1) {
-      return;
-    }
-
-    const newItem: UnverifiedItemEntry = {
-      productId: `manual-${trimmedName}-${Date.now()}`,
-      productName: trimmedName,
-      lotCode: trimmedLot,
-      quantity,
-    };
-
-    onItemsChange([...items, newItem]);
-    setProductName("");
-    setLotCode("");
-    setQuantity(1);
-  }, [productName, lotCode, quantity, items, onItemsChange]);
-
-  const handleRemoveItem = useCallback(
-    (itemIndex: number) => {
-      const next = items.filter((_, i) => i !== itemIndex);
-      onItemsChange(next);
-    },
-    [items, onItemsChange],
-  );
-
-  const handleQuantityKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleAddItem();
-      }
-    },
-    [handleAddItem],
-  );
 
   return (
     <div className="flex flex-col gap-pos-xl">
@@ -134,191 +113,94 @@ export const UnverifiedReturnFlow: FC<UnverifiedReturnFlowProps> = ({
         </p>
       </div>
 
-      {/* ── Product / Lot Entry Grid ── */}
+      {/* ── Sale search ── */}
       <div className="pos-panel p-pos-lg">
-        <div
-          className="grid gap-pos-md"
+        <label
+          htmlFor="unverified-sale-search"
+          className="text-caption font-medium"
           style={{
-            gridTemplateColumns: "1fr 1fr 80px auto",
-            alignItems: "end",
+            color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
           }}
         >
-          {/* Product name */}
-          <div>
-            <label
-              htmlFor="unverified-product"
-              style={{
-                fontFamily: "var(--font-ui)",
-                fontSize: "var(--text-caption)",
-                fontWeight: "var(--font-weight-semibold)",
-                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                display: "block",
-                marginBottom: "var(--spacing-pos-xs)",
-              }}
-            >
-              {t("returns.unverified_product")}
-            </label>
-            <input
-              id="unverified-product"
-              type="text"
-              className="pos-input"
-              placeholder={t("returns.unverified_product_placeholder")}
-              value={productName}
-              onChange={(e) => setProductName(e.target.value)}
-              disabled={isProcessing}
-              autoComplete="off"
-            />
-          </div>
-
-          {/* Lot code */}
-          <div>
-            <label
-              htmlFor="unverified-lot"
-              style={{
-                fontFamily: "var(--font-ui)",
-                fontSize: "var(--text-caption)",
-                fontWeight: "var(--font-weight-semibold)",
-                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                display: "block",
-                marginBottom: "var(--spacing-pos-xs)",
-              }}
-            >
-              {t("returns.unverified_lot")}
-            </label>
-            <input
-              id="unverified-lot"
-              type="text"
-              className="pos-input font-data"
-              placeholder={t("returns.unverified_lot_placeholder")}
-              value={lotCode}
-              onChange={(e) => setLotCode(e.target.value)}
-              disabled={isProcessing}
-              autoComplete="off"
-            />
-          </div>
-
-          {/* Quantity */}
-          <div>
-            <label
-              htmlFor="unverified-qty"
-              style={{
-                fontFamily: "var(--font-ui)",
-                fontSize: "var(--text-caption)",
-                fontWeight: "var(--font-weight-semibold)",
-                color: "color-mix(in srgb, var(--color-ink) 60%, transparent)",
-                display: "block",
-                marginBottom: "var(--spacing-pos-xs)",
-              }}
-            >
-              {t("returns.table_qty")}
-            </label>
-            <input
-              id="unverified-qty"
-              type="number"
-              className="pos-input font-data tabular-nums"
-              min={1}
-              value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-              onKeyDown={handleQuantityKeyDown}
-              disabled={isProcessing}
-              style={{ textAlign: "right" }}
-            />
-          </div>
-
-          {/* Add button */}
+          {t("returns.search_label")}
+        </label>
+        <div className="flex gap-pos-sm">
+          <input
+            id="unverified-sale-search"
+            type="text"
+            className="pos-input font-data"
+            value={searchQuery}
+            onChange={(e) => onSearchQueryChange(e.target.value)}
+            onKeyDown={onKeyDown}
+            disabled={isProcessing}
+            placeholder={t("returns.search_placeholder")}
+            autoComplete="off"
+          />
           <button
             type="button"
             className="pos-button pos-button-primary"
-            onClick={handleAddItem}
-            disabled={isProcessing || !productName.trim() || !lotCode.trim() || quantity < 1}
-            style={{ alignSelf: "end" }}
+            onClick={onSearch}
+            disabled={isProcessing || !searchQuery.trim()}
+            aria-label={t("returns.search_button")}
           >
-            {t("common.add", { defaultValue: "Agregar" })}
+            {t("returns.search_button")}
           </button>
         </div>
-      </div>
-
-      {/* ── Added Items List ── */}
-      {items.length > 0 && (
-        <div className="pos-panel p-pos-lg">
+        {searchError && (
           <p
+            role="alert"
+            className="mt-pos-xs"
             style={{
               fontFamily: "var(--font-ui)",
-              fontSize: "var(--text-body-sm)",
-              fontWeight: "var(--font-weight-semibold)",
-              color: "color-mix(in srgb, var(--color-ink) 50%, transparent)",
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
-              margin: "0 0 var(--spacing-pos-md)",
+              fontSize: "var(--text-caption)",
+              color: "var(--color-urgency)",
             }}
           >
-            {t("returns.items_to_return")}
+            {searchError}
           </p>
+        )}
+      </div>
 
-          <div className="flex flex-col gap-pos-sm">
-            {items.map((item, index) => (
-              <div
-                key={`${item.productId}-${index}`}
-                className="flex items-center justify-between rounded-pos px-pos-md py-pos-sm"
-                style={{
-                  backgroundColor: "color-mix(in srgb, var(--color-surface) 40%, white)",
-                }}
-              >
-                <div className="flex items-center gap-pos-lg">
-                  <span
-                    style={{
-                      fontFamily: "var(--font-ui)",
-                      fontSize: "var(--text-body)",
-                      fontWeight: "var(--font-weight-medium)",
-                      color: "var(--color-ink)",
-                    }}
-                  >
-                    {item.productName}
-                  </span>
-                  <span className="font-data tabular-nums" style={{ fontSize: "var(--text-body-sm)", color: "var(--color-sync)" }}>
-                    {t("sales.product.lot", { defaultValue: "Lote" })}: {item.lotCode}
-                  </span>
-                  <span className="font-data tabular-nums" style={{ fontSize: "var(--text-body-sm)", color: "color-mix(in srgb, var(--color-ink) 60%, transparent)" }}>
-                    {t("returns.table_qty")}: {item.quantity}
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleRemoveItem(index)}
-                  disabled={isProcessing}
-                  className="flex items-center justify-center rounded-pos"
-                  aria-label={`${t("common.remove", { defaultValue: "Eliminar" })} ${item.productName}`}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    padding: 0,
-                    border: "none",
-                    backgroundColor: "transparent",
-                    color: "color-mix(in srgb, var(--color-ink) 40%, transparent)",
-                    cursor: "pointer",
-                    transition: "color 100ms ease, background-color 100ms ease",
-                  }}
-                  onMouseOver={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.color = "var(--color-urgency)";
-                    (e.currentTarget as HTMLButtonElement).style.backgroundColor =
-                      "color-mix(in srgb, var(--color-urgency) 10%, transparent)";
-                  }}
-                  onMouseOut={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.color =
-                      "color-mix(in srgb, var(--color-ink) 40%, transparent)";
-                    (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent";
-                  }}
-                >
-                  <Trash2Icon size={16} />
-                </button>
-              </div>
-            ))}
+      {/* ── Found sale and its items ── */}
+      {foundSale && (
+        <div className="pos-panel p-pos-lg">
+          <div className="mb-pos-md flex items-center justify-between">
+            <p
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: "var(--text-body-sm)",
+                fontWeight: "var(--font-weight-semibold)",
+                color: "var(--color-ink)",
+                margin: 0,
+              }}
+            >
+              {t("returns.found_sale", {
+                number: foundSale.sequentialNumber,
+                workstation: foundSale.workstationName,
+              })}
+            </p>
+            <span
+              style={{
+                fontFamily: "var(--font-ui)",
+                fontSize: "var(--text-body-sm)",
+                fontWeight: "var(--font-weight-semibold)",
+                color: "var(--color-ink)",
+              }}
+            >
+              {formatCents(foundSale.totalCents)}
+            </span>
           </div>
+
+          <ReturnSaleItemsTable
+            sale={foundSale}
+            selectedItemIds={selectedItemIds}
+            onToggleItem={onToggleItem}
+            isProcessing={isProcessing}
+          />
         </div>
       )}
 
-      {/* ── Manager PIN and Submit ── */}
+      {/* ── Manager PIN and submit ── */}
       <div className="pos-panel p-pos-lg">
         <div className="flex flex-col gap-pos-md">
           <div style={{ maxWidth: 320 }}>
@@ -346,9 +228,7 @@ export const UnverifiedReturnFlow: FC<UnverifiedReturnFlowProps> = ({
               placeholder="********"
               autoComplete="off"
               style={{
-                borderColor: pinError
-                  ? "var(--color-urgency)"
-                  : undefined,
+                borderColor: pinError ? "var(--color-urgency)" : undefined,
               }}
             />
             {pinError && (

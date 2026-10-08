@@ -60,10 +60,7 @@ const createTestStore = () =>
   configureStore({
     reducer: { ui: uiSlice.reducer },
     preloadedState: {
-      ui: uiSlice.reducer(
-        uiSlice.getInitialState(),
-        { type: "unknown" },
-      ),
+      ui: uiSlice.reducer(uiSlice.getInitialState(), { type: "unknown" }),
     },
   });
 
@@ -91,7 +88,7 @@ const baseSession: LocalSession = {
   avatarUrl: null,
   avatarColor: null,
   mustChangePassword: false,
-  sessionTrust: 'SERVER_VERIFIED',
+  sessionTrust: "SERVER_VERIFIED",
 };
 
 const setSession = (session: LocalSession | null): void => {
@@ -150,7 +147,9 @@ describe("ReturnsPage", () => {
     it("shows Verified tab as active by default", () => {
       renderPage();
 
-      const verifiedTab = screen.getByRole("tab", { name: /^Devolución verificada$/ });
+      const verifiedTab = screen.getByRole("tab", {
+        name: /^Devolución verificada$/,
+      });
       expect(verifiedTab).toHaveAttribute("aria-selected", "true");
     });
   });
@@ -189,9 +188,7 @@ describe("ReturnsPage", () => {
       fireEvent.click(screen.getByRole("button", { name: /Buscar venta/i }));
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/Acetaminofén 500mg/i),
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Acetaminofén 500mg/i)).toBeInTheDocument();
       });
     });
 
@@ -223,9 +220,7 @@ describe("ReturnsPage", () => {
 
       // Wait for items to appear
       await waitFor(() => {
-        expect(
-          screen.getByText(/Acetaminofén 500mg/i),
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Acetaminofén 500mg/i)).toBeInTheDocument();
       });
 
       // Select the item and submit
@@ -234,9 +229,7 @@ describe("ReturnsPage", () => {
           screen.getByRole("checkbox", { name: /Acetaminofén/i }),
         ).toBeInTheDocument();
       });
-      fireEvent.click(
-        screen.getByRole("checkbox", { name: /Acetaminofén/i }),
-      );
+      fireEvent.click(screen.getByRole("checkbox", { name: /Acetaminofén/i }));
 
       const submitButton = screen.getByRole("button", {
         name: /Procesar devolución/i,
@@ -259,9 +252,7 @@ describe("ReturnsPage", () => {
       fireEvent.click(screen.getByRole("button", { name: /Buscar venta/i }));
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/Acetaminofén 500mg/i),
-        ).toBeInTheDocument();
+        expect(screen.getByText(/Acetaminofén 500mg/i)).toBeInTheDocument();
       });
 
       await waitFor(() => {
@@ -269,9 +260,7 @@ describe("ReturnsPage", () => {
           screen.getByRole("checkbox", { name: /Acetaminofén/i }),
         ).toBeInTheDocument();
       });
-      fireEvent.click(
-        screen.getByRole("checkbox", { name: /Acetaminofén/i }),
-      );
+      fireEvent.click(screen.getByRole("checkbox", { name: /Acetaminofén/i }));
 
       fireEvent.click(
         screen.getByRole("button", { name: /Procesar devolución/i }),
@@ -284,22 +273,28 @@ describe("ReturnsPage", () => {
   });
 
   describe("RETP-05: unverified flow inputs", () => {
-    it("shows manual entry fields when switching to the Unverified tab", () => {
+    it("offers a sale search instead of manual item entry on the Unverified tab", () => {
       renderPage();
 
       fireEvent.click(
         screen.getByRole("tab", { name: /^Devolución no verificada$/ }),
       );
 
+      // The unverified flow returns against a real sale, so it searches for one
+      // rather than accepting hand-entered products and lots.
       expect(
-        screen.getByPlaceholderText(/producto/i),
+        screen.getByPlaceholderText(/Número de venta o UUID/i),
       ).toBeInTheDocument();
+      expect(
+        screen.queryByPlaceholderText(/Buscar producto/i),
+      ).not.toBeInTheDocument();
     });
   });
 
   describe("RETP-06: unverified requires PIN", () => {
     beforeEach(() => {
       setSession({ ...baseSession, role: "MANAGER" });
+      mockSearchSale.mockResolvedValue(mockSaleSearchResult);
     });
 
     it("shows a PIN input field on the unverified tab", () => {
@@ -309,9 +304,7 @@ describe("ReturnsPage", () => {
         screen.getByRole("tab", { name: /^Devolución no verificada$/ }),
       );
 
-      expect(
-        screen.getByLabelText(/pin/i),
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText(/pin/i)).toBeInTheDocument();
     });
 
     it("disables the submit until a 4-digit PIN is entered", async () => {
@@ -321,16 +314,20 @@ describe("ReturnsPage", () => {
         screen.getByRole("tab", { name: /^Devolución no verificada$/ }),
       );
 
-      // Add a product item
+      // Find the sale and select its item
       await userEvent.type(
-        screen.getByPlaceholderText(/Buscar producto/i),
-        "Ibuprofeno",
+        screen.getByPlaceholderText(/Número de venta o UUID/i),
+        "42",
       );
-      await userEvent.type(
-        screen.getByPlaceholderText(/Lote de caché/i),
-        "LOT-001",
+      fireEvent.click(screen.getByRole("button", { name: /Buscar venta/i }));
+      await waitFor(() => {
+        expect(
+          screen.getByLabelText(/Seleccionar item: Acetaminofén 500mg/i),
+        ).toBeInTheDocument();
+      });
+      fireEvent.click(
+        screen.getByLabelText(/Seleccionar item: Acetaminofén 500mg/i),
       );
-      fireEvent.click(screen.getByRole("button", { name: /Agregar/i }));
 
       // Submit button is disabled without PIN
       const submitBtn = screen.getByRole("button", {
@@ -366,9 +363,7 @@ describe("ReturnsPage", () => {
       fireEvent.click(screen.getByRole("button", { name: /Buscar venta/i }));
 
       await waitFor(() => {
-        expect(
-          screen.getByRole("alert"),
-        ).toBeInTheDocument();
+        expect(screen.getByRole("alert")).toBeInTheDocument();
       });
     });
   });
@@ -376,9 +371,11 @@ describe("ReturnsPage", () => {
   describe("RETP-08: submit unverified return", () => {
     beforeEach(() => {
       setSession({ ...baseSession, role: "ADMIN" });
+      mockSearchSale.mockResolvedValue(mockSaleSearchResult);
     });
 
-    it("calls returnsService.create with a placeholder sale id and confirm with managerOverride", async () => {
+    /** Open the unverified tab, find the sale and select its only item. */
+    async function selectSaleItemOnUnverifiedTab() {
       renderPage();
 
       fireEvent.click(
@@ -386,14 +383,24 @@ describe("ReturnsPage", () => {
       );
 
       await userEvent.type(
-        screen.getByPlaceholderText(/Buscar producto/i),
-        "Acetaminofén 500mg",
+        screen.getByPlaceholderText(/Número de venta o UUID/i),
+        "42",
       );
-      await userEvent.type(
-        screen.getByPlaceholderText(/Lote de caché/i),
-        "LOT-001",
+      fireEvent.click(screen.getByRole("button", { name: /Buscar venta/i }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByLabelText(/Seleccionar item: Acetaminofén 500mg/i),
+        ).toBeInTheDocument();
+      });
+
+      fireEvent.click(
+        screen.getByLabelText(/Seleccionar item: Acetaminofén 500mg/i),
       );
-      fireEvent.click(screen.getByRole("button", { name: /Agregar/i }));
+    }
+
+    it("returns the real sale and confirms it with managerOverride", async () => {
+      await selectSaleItemOnUnverifiedTab();
 
       await userEvent.type(
         screen.getByLabelText(/Confirmación PIN de gerente/i),
@@ -406,36 +413,69 @@ describe("ReturnsPage", () => {
         }),
       );
 
+      // The sale and item ids must be the ones the search resolved: the
+      // service reads prices, tax and lot reversal from the stored sale item,
+      // so a synthesised id could never be returned against.
       await waitFor(() => {
         expect(mockCreate).toHaveBeenCalledWith(
           expect.objectContaining({
-            saleId: expect.stringMatching(/^UNVERIFIED-/),
+            saleId: "sale-1",
             reason: "UNVERIFIED_RETURN",
+            items: [{ saleItemId: "item-1", quantity: 2 }],
           }),
         );
         expect(mockConfirm).toHaveBeenCalledWith(
-          expect.any(String),
+          "return-1",
           expect.objectContaining({ managerOverride: true }),
         );
       });
     });
 
-    it("shows a success toast after a successful unverified return", async () => {
+    it("keeps submit disabled until an item and a valid PIN are present", async () => {
       renderPage();
 
       fireEvent.click(
         screen.getByRole("tab", { name: /^Devolución no verificada$/ }),
       );
 
+      const submitBtn = screen.getByRole("button", {
+        name: /Enviar devolución no verificada/i,
+      });
+      await waitFor(() => {
+        expect(submitBtn).toBeDisabled();
+      });
+
+      // A valid PIN alone is not enough: no sale item is selected yet.
       await userEvent.type(
-        screen.getByPlaceholderText(/Buscar producto/i),
-        "Acetaminofén 500mg",
+        screen.getByLabelText(/Confirmación PIN de gerente/i),
+        "1234",
       );
+      await waitFor(() => {
+        expect(submitBtn).toBeDisabled();
+      });
+
       await userEvent.type(
-        screen.getByPlaceholderText(/Lote de caché/i),
-        "LOT-001",
+        screen.getByPlaceholderText(/Número de venta o UUID/i),
+        "42",
       );
-      fireEvent.click(screen.getByRole("button", { name: /Agregar/i }));
+      fireEvent.click(screen.getByRole("button", { name: /Buscar venta/i }));
+      await waitFor(() => {
+        expect(
+          screen.getByLabelText(/Seleccionar item: Acetaminofén 500mg/i),
+        ).toBeInTheDocument();
+      });
+
+      // Now both a real item and a PIN are present.
+      fireEvent.click(
+        screen.getByLabelText(/Seleccionar item: Acetaminofén 500mg/i),
+      );
+      await waitFor(() => {
+        expect(submitBtn).toBeEnabled();
+      });
+    });
+
+    it("shows a success toast after a successful unverified return", async () => {
+      await selectSaleItemOnUnverifiedTab();
 
       await userEvent.type(
         screen.getByLabelText(/Confirmación PIN de gerente/i),
