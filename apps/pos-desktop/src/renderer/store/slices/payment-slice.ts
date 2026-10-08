@@ -265,6 +265,13 @@ export const selectAreElectronicMethodsApproved = createSelector(
  * Payment can be confirmed when the split is exact, every electronic method
  * is approved (or zero), nothing is pending, and every row is backed by a
  * real DB payment method.
+ *
+ * The cash the customer actually handed over also has to cover what the cash
+ * rows are charged. Comparing only the payment rows' total against the amount
+ * due let a card-only sale whose cash line covered nothing enable Confirmar,
+ * which the server then rejected with ChangeRequiresCashPaymentException.
+ * A `cashReceivedCents` of 0 means the register was never filled in, so it is
+ * not treated as "nothing handed over".
  */
 export const selectCanConfirmPayment = createSelector(
   [
@@ -272,10 +279,25 @@ export const selectCanConfirmPayment = createSelector(
     selectAreElectronicMethodsApproved,
     selectHasPendingElectronicMethods,
     selectPaymentMethods,
+    selectCashOwedCents,
+    selectCashReceivedCents,
   ],
-  (difference, allApproved, hasPending, methods) =>
-    difference === 0 &&
-    allApproved &&
-    !hasPending &&
-    methods.every((method) => method.paymentMethodId !== ""),
+  (
+    difference,
+    allApproved,
+    hasPending,
+    methods,
+    cashOwedCents,
+    cashReceivedCents,
+  ) => {
+    const cashCovered =
+      cashReceivedCents === 0 || cashReceivedCents >= cashOwedCents;
+    return (
+      difference === 0 &&
+      cashCovered &&
+      allApproved &&
+      !hasPending &&
+      methods.every((method) => method.paymentMethodId !== "")
+    );
+  },
 );

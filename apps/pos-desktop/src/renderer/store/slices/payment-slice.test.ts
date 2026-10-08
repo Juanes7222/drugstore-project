@@ -295,6 +295,49 @@ describe("payment selectors", () => {
     expect(selectPaymentChangeCents(root)).toBe(-16_164);
   });
 
+  it("blocks confirmation when the tendered cash does not cover the cash rows", () => {
+    // A card-only sale whose cash line covers nothing used to enable Confirmar,
+    // because only the payment rows' total was compared against the amount due.
+    // The server then rejected it with ChangeRequiresCashPaymentException.
+    let root = createRootState(66_164);
+    root = applyPaymentAction(root, addPaymentMethod(CARD_METHOD));
+    const cardId = root.payment.methods[1]?.id as string;
+
+    // Cash row is dropped to zero and a card covers the whole total.
+    root = applyPaymentAction(
+      root,
+      updatePaymentMethodAmount({ id: root.payment.methods[0]?.id as string, amountCents: 0 }),
+    );
+    root = applyPaymentAction(
+      root,
+      updatePaymentMethodAmount({ id: cardId, amountCents: 66_164 }),
+    );
+    root = applyPaymentAction(
+      root,
+      setAuthorizationStatus({ id: cardId, status: "approved", reference: "A" }),
+    );
+    // No cash was tendered, so nothing covers the (zero) cash row.
+    root = applyPaymentAction(root, setCashReceived(0));
+
+    expect(selectPaymentDifferenceCents(root)).toBe(0);
+    expect(selectCanConfirmPayment(root)).toBe(true);
+
+    // Once the register reports cash that covers the cash row it is confirmable.
+    root = applyPaymentAction(root, setCashReceived(1));
+    expect(selectCanConfirmPayment(root)).toBe(true);
+  });
+
+  it("blocks confirmation when the tendered cash is short of the cash row", () => {
+    let root = createRootState(66_164);
+    root = applyPaymentAction(root, setCashReceived(60_000));
+
+    expect(selectPaymentDifferenceCents(root)).toBe(0);
+    expect(selectCanConfirmPayment(root)).toBe(false);
+
+    root = applyPaymentAction(root, setCashReceived(66_164));
+    expect(selectCanConfirmPayment(root)).toBe(true);
+  });
+
   it("resets electronic approval when the payment method changes", () => {
     let root = createRootState(66_164);
     root = applyPaymentAction(root, addPaymentMethod(CARD_METHOD));
