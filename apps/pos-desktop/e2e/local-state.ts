@@ -147,6 +147,261 @@ export async function fetchLocalSyncMetadata(): Promise<
   });
 }
 
+// ---------------------------------------------------------------------------
+// Sync queue
+// ---------------------------------------------------------------------------
+
+export interface LocalSyncQueueRow {
+  operationType: string;
+  status: string;
+  payload: string;
+}
+
+/**
+ * Sync-queue entries of `operationType`, newest last.
+ *
+ * The queue is the POS's own record of what it still owes the server, so it is
+ * the only place a locally-created entity can be seen *before* the replay
+ * lands. Asserting on it separates "the POS never queued it" from "the POS
+ * queued it and the server rejected it", which look identical from the UI.
+ */
+export async function fetchLocalSyncQueue(
+  operationType?: string,
+): Promise<LocalSyncQueueRow[]> {
+  return queryLocal<LocalSyncQueueRow>(
+    `SELECT "operationType", status, payload
+       FROM "SyncQueue"
+      WHERE $1::text IS NULL OR "operationType" = $1
+      ORDER BY "clientSequence"`,
+    [operationType ?? null],
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Suppliers
+// ---------------------------------------------------------------------------
+
+/**
+ * Suppliers the POS holds locally.
+ *
+ * Supplier creation is the one master-data flow that is LOCAL ONLY: the sync
+ * operation type list has no supplier member, and SuppliersService.create
+ * writes a local row without queueing anything. The supplier pull only upserts,
+ * so a locally created supplier survives every later pull — which is what makes
+ * this table, rather than the server's, the place its creation is verified.
+ */
+export async function fetchLocalSuppliers(): Promise<
+  Array<{
+    id: string;
+    identificationType: string;
+    identificationNumber: string;
+    businessName: string;
+    contactName: string | null;
+    phone: string | null;
+    email: string | null;
+    paymentTermsDays: number;
+    creditLimit: number;
+    isActive: boolean;
+  }>
+> {
+  const rows = await queryLocal<{
+    id: string;
+    identificationType: string;
+    identificationNumber: string;
+    businessName: string;
+    contactName: string | null;
+    phone: string | null;
+    email: string | null;
+    paymentTermsDays: number;
+    creditLimit: string;
+    isActive: boolean;
+  }>(
+    `SELECT id, "identificationType", "identificationNumber", "businessName",
+            "contactName", phone, email, "paymentTermsDays", "creditLimit",
+            "isActive"
+       FROM "Supplier"
+      ORDER BY "identificationNumber"`,
+  );
+  // `creditLimit` is a NUMERIC column, so PGlite hands it back as a string.
+  return rows.map((row) => ({ ...row, creditLimit: Number(row.creditLimit) }));
+}
+
+// ---------------------------------------------------------------------------
+// Lots and purchase pipeline
+// ---------------------------------------------------------------------------
+
+export interface LocalLot {
+  id: string;
+  batchNumber: string;
+  productId: string;
+  expirationDate: string;
+  entryDate: string;
+  state: string;
+  currentStock: number;
+  locationCode: string | null;
+}
+
+/**
+ * Lots the POS holds locally, newest entry first.
+ *
+ * `expirationDate` comes back as an ISO string through `executeAsyncScript`,
+ * which JSON-serialises the row, so the specs compare it as a date rather than
+ * as an opaque id.
+ */
+export async function fetchLocalLots(productId?: string): Promise<LocalLot[]> {
+  const rows = await queryLocal<{
+    id: string;
+    batchNumber: string;
+    productId: string;
+    expirationDate: string;
+    entryDate: string;
+    state: string;
+    currentStock: number;
+    locationCode: string | null;
+  }>(
+    `SELECT l.id, l."batchNumber", l."productId", l."expirationDate",
+            l."entryDate", l.state, l."currentStock", l."locationCode"
+       FROM "Lot" l
+      WHERE $1::text IS NULL OR l."productId" = $1
+      ORDER BY l."entryDate" DESC, l."batchNumber"`,
+    [productId ?? null],
+  );
+  return rows.map((row) => ({
+    ...row,
+    expirationDate: new Date(row.expirationDate).toISOString(),
+    entryDate: new Date(row.entryDate).toISOString(),
+  }));
+}
+
+export interface LocalPurchaseOrder {
+  id: string;
+  sequentialNumber: number;
+  state: string;
+  supplierId: string;
+  supplierName: string;
+  subtotal: number;
+}
+
+/** Purchase orders the POS holds locally, newest sequential number first. */
+export async function fetchLocalPurchaseOrders(): Promise<
+  LocalPurchaseOrder[]
+> {
+  const rows = await queryLocal<{
+    id: string;
+    sequentialNumber: string;
+    state: string;
+    supplierId: string;
+    supplierName: string;
+    subtotal: string;
+  }>(
+    `SELECT po.id, po."sequentialNumber", po.state, po."supplierId",
+            s."businessName" AS "supplierName", po.subtotal
+       FROM "PurchaseOrder" po
+       LEFT JOIN "Supplier" s ON s.id = po."supplierId"
+      ORDER BY po."sequentialNumber" DESC`,
+  );
+  return rows.map((row) => ({
+    ...row,
+    sequentialNumber: Number(row.sequentialNumber),
+    subtotal: Number(row.subtotal),
+  }));
+}
+
+export interface LocalPurchaseReception {
+  id: string;
+  sequentialNumber: number;
+  state: string;
+  purchaseOrderId: string | null;
+  totalAmount: number;
+  itemCount: number;
+}
+
+/** Purchase receptions the POS holds locally, newest first. */
+export async function fetchLocalPurchaseReceptions(): Promise<
+  LocalPurchaseReception[]
+> {
+  const rows = await queryLocal<{
+    id: string;
+    sequentialNumber: string;
+    state: string;
+    purchaseOrderId: string | null;
+    totalAmount: string;
+    itemCount: string;
+  }>(
+    `SELECT pr.id, pr."sequentialNumber", pr.state, pr."purchaseOrderId",
+            pr."totalAmount",
+            (SELECT count(*)::int FROM "PurchaseReceptionItem" pri
+              WHERE pri."purchaseReceptionId" = pr.id) AS "itemCount"
+       FROM "PurchaseReception" pr
+      ORDER BY pr."sequentialNumber" DESC`,
+  );
+  return rows.map((row) => ({
+    ...row,
+    sequentialNumber: Number(row.sequentialNumber),
+    totalAmount: Number(row.totalAmount),
+    itemCount: Number(row.itemCount),
+  }));
+}
+
+/**
+ * The active cost of a product, i.e. the row `Product.currentCostId` points at.
+ *
+ * This is the figure a sale's `unitCost` snapshot is built from, so it is what
+ * makes a reception's real unit cost observable in the *next* sale. Reading the
+ * pointer rather than the newest history row matters: the reception closes the
+ * previous row (`effectiveTo`) instead of mutating it, so the newest row by
+ * date is not necessarily the active one.
+ */
+export async function fetchLocalProductCost(
+  productId: string,
+): Promise<{ cost: number; changeReason: string | null } | null> {
+  const rows = await queryLocal<{ cost: string; changeReason: string | null }>(
+    `SELECT pch.cost, pch."changeReason"
+       FROM "Product" p
+       JOIN "ProductCostHistory" pch ON pch.id = p."currentCostId"
+      WHERE p.id = $1`,
+    [productId],
+  );
+  const row = rows[0];
+  return row
+    ? { cost: Number(row.cost), changeReason: row.changeReason }
+    : null;
+}
+
+// ---------------------------------------------------------------------------
+// Local configuration store
+// ---------------------------------------------------------------------------
+
+/**
+ * The persisted POS configuration block (`localStorage.pharmacy_local_config`).
+ *
+ * Some configuration tabs have no server round trip: the sales tab's discount
+ * limits are written straight to this store and the POS only ever READS them
+ * from `GET /configuration/pos-settings`. For those controls the store is the
+ * database of record, so asserting on it is asserting on the application's real
+ * state rather than on a mirror.
+ */
+export async function fetchLocalConfig(): Promise<Record<string, unknown>> {
+  const raw = await browser.execute(() =>
+    localStorage.getItem("pharmacy_local_config"),
+  );
+  if (!raw) {
+    throw new Error(
+      "localStorage.pharmacy_local_config is absent — the POS has not " +
+        "persisted its configuration block",
+    );
+  }
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch (error) {
+    throw new Error(
+      `pharmacy_local_config is not valid JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
 /**
  * Wipe the local database and wait for the app to boot again.
  *

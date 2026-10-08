@@ -54,18 +54,64 @@ export const ADMIN = {
   email: "admin@pos-e2e.local",
   password: "123456",
 };
+/**
+ * OWNER, needed for the flows ADMIN is not authorised for.
+ *
+ * Two server-side gates make this unavoidable rather than convenient:
+ *
+ *   - `POST|PATCH|DELETE /users*` are `@Roles(OWNER, MANAGER)`, so the
+ *     user-management screen 403s for an ADMIN session; and
+ *   - `resolvePriceOverrideRoleKey` (sales-pricing-validator.ts) has no ADMIN
+ *     branch and returns null, which `validateItemPricing` turns into
+ *     PriceOverrideNotAllowedForRoleException — even though `CartLineItem`
+ *     still renders the editable price control for ADMIN.
+ *
+ * OWNER is the only role that clears both: it passes every users guard and is
+ * the single role `validateItemPricing` exempts from the override check. See
+ * the role-duplication note in apps/pos-desktop/e2e/users-flow.e2e.ts.
+ */
+export const OWNER = {
+  username: "owner",
+  email: "owner@pos-e2e.local",
+  password: "123456",
+  displayName: "Dueña E2E",
+};
 
 const CASHIER_ID = "1c9d2b8e-7f43-4a6d-b0c1-3e5a9d2f7b64";
 const ADMIN_ID = "4e8b0a3f-6d25-4c91-8f7b-0a2d6e1c9d53";
+const OWNER_ID = "0f3a7c48-5b91-4d6e-8a72-1b2c3d4e5f60";
 
 export const TAX_SCHEME_ID = "7d1f4c60-2b98-4e35-9a0d-6c8b3e5f1d27";
 export const TAX_RATE_PERCENT = "19";
 
 export const PRODUCT_ACETAMINOFEN = "b2e6d814-5c93-4f27-a1d8-3e7c9b0f5a62";
 export const PRODUCT_IBUPROFENO = "5a1c8f37-9d24-4e68-b3c1-7f0a2d6e4b98";
+export const PRODUCT_NITROFEN = "9e3d5a26-1b47-4f80-8a52-6c7d8e9f0a13";
+export const PRODUCT_OTRIVIN = "7c4b6e38-2d59-4a91-b0e3-5f6a7b8c9d24";
 
 export const LOT_ACETAMINOFEN = "c4a1f592-8e37-4d6b-9e25-1a3f7c0d8b45";
 export const LOT_IBUPROFENO = "d8b2e071-4f63-4a19-8c37-6e0d5a9f2c14";
+export const LOT_NITROFEN = "3f5a7c49-6b08-4d2e-a1c5-8e9f0a1b2c37";
+export const LOT_OTRIVIN = "a8b9c0d1-4e2f-4a3b-9c4d-0e1f2a3b4c58";
+
+/**
+ * Days until expiry for the two extra catalog entries.
+ *
+ * These are the only fixture dates expressed as an OFFSET rather than a fixed
+ * calendar date, because they are exactly what the specs under test:
+ *
+ *   - the sales-side `isNearExpiry` warns inside a 30-day window, so 15 days
+ *     out must produce the "VENCE PRONTO" badge; and
+ *   - an ALREADY expired lot is a separate case, because `isNearExpiry`
+ *     returns false for `diffDays < 0` and nothing in the app transitions a
+ *     lot's state on expiry. So the expired lot is seeded with `state: ACTIVE`
+ *     to reproduce what the database really looks like the day after a lot
+ *     expires.
+ *
+ * A fixed date would silently stop testing this the day it passes.
+ */
+export const NEAR_EXPIRY_DAYS = 15;
+export const ALREADY_EXPIRED_DAYS = -10;
 
 /** Both products share this single cash method; the picker sorts by sortOrder. */
 export const PM_CASH_ID = "e5c3a186-2d74-4b90-8f16-3a9d7e0b5c82";
@@ -122,6 +168,8 @@ export const PRODUCTS = [
     price: "500.00",
     lotId: LOT_ACETAMINOFEN,
     lotNumber: "LOT-001",
+    /** Days from "now" to the lot's expiration; omitted means a far-future date. */
+    expiresInDays: undefined as number | undefined,
   },
   {
     id: PRODUCT_IBUPROFENO,
@@ -130,13 +178,74 @@ export const PRODUCTS = [
     price: "400.00",
     lotId: LOT_IBUPROFENO,
     lotNumber: "LOT-002",
+    expiresInDays: undefined as number | undefined,
+  },
+  {
+    id: PRODUCT_NITROFEN,
+    internalCode: "NITROFEN-500",
+    commercialName: "Nitrofen 500mg",
+    price: "500.00",
+    lotId: LOT_NITROFEN,
+    lotNumber: "LOT-003",
+    expiresInDays: NEAR_EXPIRY_DAYS,
+  },
+  {
+    id: PRODUCT_OTRIVIN,
+    internalCode: "OTRIVIN-100",
+    commercialName: "Otrivin 100mcg",
+    price: "500.00",
+    lotId: LOT_OTRIVIN,
+    lotNumber: "LOT-004",
+    expiresInDays: ALREADY_EXPIRED_DAYS,
   },
 ] as const;
 
+/**
+ * Fixed far-future expiration for the products that are not about expiry.
+ *
+ * Kept as a constant so the lot and its purchase-reception item always agree;
+ * the seeded reception is what gives every lot its unit cost, and the server
+ * refuses to replay a sale whose lot has no cost.
+ */
+const FAR_FUTURE_EXPIRATION = new Date("2030-06-01");
+
+/** Resolve a product's lot expiration from its offset, if it has one. */
+function expirationFor(expiresInDays: number | undefined): Date {
+  if (expiresInDays === undefined) return FAR_FUTURE_EXPIRATION;
+  const date = new Date();
+  date.setDate(date.getDate() + expiresInDays);
+  // Noon avoids a UTC-vs-local shift moving the day across the boundary.
+  date.setHours(12, 0, 0, 0);
+  return date;
+}
+
 const SUPPLIER_ID = "eac70d52-7d48-4b03-9e6f-1c4b8a2d6e09";
 const RECEPTION_ID = "fbd81e63-8e59-4c14-af70-2d5c9b3e7f1a";
-const RECEPTION_ITEM_ACETAMINOFEN = "ace92f74-9f6a-4d25-b081-3e6d4ac4f8a2b";
-const RECEPTION_ITEM_IBUPROFENO = "bdfa3085-307b-4e36-c192-4f7ebd509b3c";
+
+/**
+ * One reception item per catalog entry, in PRODUCTS order.
+ *
+ * Indexed rather than named per product so adding a catalog entry cannot
+ * silently skip the reception row — a lot with no reception item has no unit
+ * cost, and the server then rejects every sale of it with
+ * LotCostUnavailableException, which reads like a sales bug rather than a
+ * fixture gap.
+ */
+const RECEPTION_ITEM_IDS = [
+  "ace92f74-9f6a-4d25-b081-3e6d4ac4f8a2b",
+  "bdfa3085-307b-4e36-c192-4f7ebd509b3c",
+  "cf0b4196-418a-4f47-d2a3-5a8b9c0d1e2f",
+  "d0c15207-529b-4068-e3b4-6b9c0d1e2f3a",
+] as const;
+
+/**
+ * First of the per-position EAN13 barcodes.
+ *
+ * Derived from the catalog index rather than named per product so two entries
+ * can never collide — a duplicate barcode makes the POS search resolve to an
+ * arbitrary one of them and every product assertion becomes ambiguous.
+ */
+const BARCODE_BASE = 7_701_234_567_890;
 
 /**
  * A client the POS can actually find.
@@ -204,9 +313,10 @@ export async function resetBaseline(prisma: PrismaLike): Promise<void> {
     },
   });
 
-  const [cashierHash, adminHash] = await Promise.all([
+  const [cashierHash, adminHash, ownerHash] = await Promise.all([
     argon2.hash(CASHIER.password),
     argon2.hash(ADMIN.password),
+    argon2.hash(OWNER.password),
   ]);
 
   await prisma.user.create({
@@ -238,6 +348,25 @@ export async function resetBaseline(prisma: PrismaLike): Promise<void> {
       passwordHash: adminHash,
       passwordAlgorithm: "argon2",
       role: "ADMIN",
+      status: "ACTIVE",
+      emailVerifiedAt: new Date("2026-01-01"),
+      subscriptionId,
+      isActive: true,
+    },
+  });
+
+  // No PIN: the spec switches to this account through the QuickSwitch password
+  // panel, which the component reaches by default for any role that is neither
+  // CASHIER nor MANAGER. A PIN here would put a keypad in front of the switch.
+  await prisma.user.create({
+    data: {
+      id: OWNER_ID,
+      username: OWNER.username,
+      email: OWNER.email,
+      fullName: OWNER.displayName,
+      passwordHash: ownerHash,
+      passwordAlgorithm: "argon2",
+      role: "OWNER",
       status: "ACTIVE",
       emailVerifiedAt: new Date("2026-01-01"),
       subscriptionId,
@@ -290,8 +419,8 @@ export async function resetBaseline(prisma: PrismaLike): Promise<void> {
     await createProduct(prisma, {
       subscriptionId,
       product,
-      receptionItemId:
-        index === 0 ? RECEPTION_ITEM_ACETAMINOFEN : RECEPTION_ITEM_IBUPROFENO,
+      receptionItemId: RECEPTION_ITEM_IDS[index],
+      barcode: BARCODE_BASE + index,
     });
   }
 
@@ -608,9 +737,12 @@ async function createProduct(
     subscriptionId: string;
     product: ProductSpec;
     receptionItemId: string;
+    /** Unique EAN13 assigned by position, so no two products share a barcode. */
+    barcode: number;
   },
 ): Promise<void> {
   const { subscriptionId, product, receptionItemId } = args;
+  const expirationDate = expirationFor(product.expiresInDays);
 
   await prisma.product.create({
     data: {
@@ -632,10 +764,7 @@ async function createProduct(
       id: `bc-${product.id}`,
       subscriptionId,
       productId: product.id,
-      barcode:
-        product.internalCode === "ACETAMIN-500"
-          ? "7701234567890"
-          : "7701234567891",
+      barcode: String(args.barcode),
       barcodeType: "EAN13",
       isPrimary: true,
     },
@@ -675,12 +804,15 @@ async function createProduct(
     },
   });
 
+  // `state` stays ACTIVE even for the already-expired lot on purpose: nothing in
+  // the product transitions a lot's state when its date passes, so the expired
+  // fixture has to reproduce the state the database really holds the day after.
   await prisma.lot.create({
     data: {
       id: product.lotId,
       subscriptionId,
       batchNumber: product.lotNumber,
-      expirationDate: new Date("2030-06-01"),
+      expirationDate,
       entryDate: new Date("2026-01-15"),
       state: "ACTIVE",
       currentStock: INITIAL_STOCK,
@@ -699,7 +831,7 @@ async function createProduct(
       lotId: product.lotId,
       receivedQuantity: INITIAL_STOCK,
       lotNumber: product.lotNumber,
-      expirationDate: new Date("2030-06-01"),
+      expirationDate,
       realUnitCost: LOT_UNIT_COST,
       taxSchemeId: TAX_SCHEME_ID,
     },

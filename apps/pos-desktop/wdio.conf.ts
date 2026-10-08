@@ -139,7 +139,33 @@ process.on("SIGTERM", () => {
 export const config: WebdriverIO.Config & Options.WebdriverIO = {
   runner: "local",
 
-  specs: ["./e2e/sales-flow.e2e.ts", "./e2e/returns-flow.e2e.ts"],
+  /**
+   * Execution order is a test dependency, not a preference.
+   *
+   *   - `purchases-flow` must precede `tenant-config-flow`: the config specs turn
+   *     `allowOverReception` on and leave it on, and the purchase specs create
+   *     orders and receptions that the over-reception rules would otherwise
+   *     reject differently from one run to the next.
+   *   - `purchases-flow`'s later specs depend on its own earlier ones — the
+   *     reception is what gives Ibuprofeno a cost, which is the only thing that
+   *     makes the price floor and the cost snapshot observable. Mocha runs a
+   *     file's `it`s in declaration order, so they stay adjacent here.
+   *   - `lot-expiry-flow` sets and clears `requireLotOnReception` itself rather
+   *     than depending on `tenant-config-flow`, so it is order-independent.
+   *   - `users-flow` and `tenant-config-flow` sign in as OWNER, because every
+   *     `/users` guard and the only price-override exemption require that role.
+   *     They run last so the role switch happens once.
+   */
+  specs: [
+    "./e2e/sales-flow.e2e.ts",
+    "./e2e/sales-pricing-flow.e2e.ts",
+    "./e2e/returns-flow.e2e.ts",
+    "./e2e/purchases-flow.e2e.ts",
+    "./e2e/clients-flow.e2e.ts",
+    "./e2e/lot-expiry-flow.e2e.ts",
+    "./e2e/users-flow.e2e.ts",
+    "./e2e/tenant-config-flow.e2e.ts",
+  ],
 
   // One instance: the app drives a single shared local database and a single
   // backend, so parallel specs would fight over both.

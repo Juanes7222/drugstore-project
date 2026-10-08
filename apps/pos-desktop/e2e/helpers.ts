@@ -712,15 +712,6 @@ export async function openReturns(): Promise<void> {
   await (await $(returnsSelector)).click();
 }
 
-/** Trimmed text of the first match, or "" when absent. */
-async function getText(selector: string): Promise<string> {
-  try {
-    return (await $(selector).getText()).trim();
-  } catch {
-    return "";
-  }
-}
-
 /**
  * Assert the shared operation toast appears after a return submission.
  *
@@ -736,12 +727,622 @@ export async function expectReturnToast(): Promise<void> {
   while (Date.now() < deadline) {
     if (await isVisible(TOAST)) return;
 
-    if (await isVisible(SUBMIT_ERROR)) {
-      throw new Error(
-        `return submission was rejected: ${await getText(SUBMIT_ERROR)}`,
-      );
+    const error = await readText(SUBMIT_ERROR);
+    if (error !== "") {
+      throw new Error(`return submission was rejected: ${error}`);
     }
     await browser.pause(500);
   }
   throw new Error(`Operation toast never appeared (selector: ${TOAST})`);
+}
+
+/**
+ * Press Enter on the currently focused element.
+ *
+ * The cart's inline editors and the QuickSwitch password panel all commit on
+ * Enter, and `setInputValue` leaves the field it filled focused, so sending the
+ * key at the browser is both simpler and more robust than re-resolving a handle
+ * and sending it there — a re-resolved handle can race a re-render, and the
+ * chainable element type does not expose a `keys` method anyway.
+ *
+ * The pause before the key matters: these inputs are React-controlled and their
+ * `onKeyDown` reads the state variable, not the DOM value. Firing Enter in the
+ * same tick as the last keystroke can therefore submit a stale (empty) value —
+ * which on the QuickSwitch password panel looks exactly like the server
+ * rejecting valid credentials.
+ */
+export async function pressEnter(): Promise<void> {
+  await browser.pause(300);
+  await browser.keys("Enter");
+}
+
+/**
+ * Pick an option from a `SearchableSelect` combobox by typing then pressing Enter.
+ *
+ * The component offers two ways to choose, and only one of them is reliable from
+ * a driver:
+ *
+ *   - Clicking the `<li>` is bound to `onMouseDown`, and the listbox is
+ *     portalled to `document.body` with a `mousedown` document listener that
+ *     closes it on any click outside the portal. A driver click on the option
+ *     races that listener, and the observable symptom is a silently ignored
+ *     selection — which downstream looks like "the next field stayed disabled".
+ *   - The keyboard path is not racy: typing narrows the list, and
+ *     `handleKeyDown` selects the single remaining option on Enter.
+ *
+ * So the label is typed (which also proves the filter matches it) and the
+ * selection is committed with Enter.
+ *
+ * @param inputSelector  The combobox's `input`, addressed by aria-label or placeholder.
+ * @param optionLabel    The exact visible label of the option to choose.
+ */
+export async function selectSearchableOption(
+  inputSelector: string,
+  optionLabel: string,
+  label = inputSelector,
+): Promise<void> {
+  await setInputValue(inputSelector, optionLabel, label);
+
+  const option = `//li[@role="option"][.//span[normalize-space(.)="${optionLabel}"]]`;
+  await waitVisible(option, 20, 500, `${optionLabel} option`);
+
+  // The option has to be present before Enter is sent, but Enter has to reach the
+  // INPUT — so the input is focused explicitly rather than relying on the click
+  // having left it there.
+  await browser.execute((selector: string) => {
+    document.querySelector<HTMLInputElement>(selector)?.focus();
+  }, inputSelector);
+  await pressEnter();
+}
+
+// ---------------------------------------------------------------------------
+// Reading element text
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a selector to its trimmed text, or "" when it is absent.
+ *
+ * Goes through `browser.execute` for the same reason the state helpers do: a
+ * synchronous `executeScript` is not subject to the @wdio/utils 17s async
+ * wrapper. Handles the same selector dialect as `elementState` — plain CSS,
+ * `tag*=text` partial text and XPath.
+ */
+export async function readText(selector: string): Promise<string> {
+  try {
+    const text = await browser.execute((sel: string) => {
+      let el: Element | null = null;
+
+      if (sel.startsWith("//") || sel.startsWith("(")) {
+        const result = document.evaluate(
+          sel,
+          document,
+          null,
+          XPathResult.FIRST_ORDERED_NODE_TYPE,
+          null,
+        );
+        el = result.singleNodeValue as Element | null;
+      } else {
+        const textMatch = sel.match(/^([a-zA-Z-]+)\*="?([^"]+)"?$/);
+        if (textMatch) {
+          const [, tag, needle] = textMatch;
+          el =
+            Array.from(document.querySelectorAll(tag)).find((node) =>
+              node.textContent?.includes(needle),
+            ) ?? null;
+        } else {
+          el = document.querySelector(sel);
+        }
+      }
+
+      return el?.textContent?.trim() ?? "";
+    }, selector);
+    return typeof text === "string" ? text : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Poll `readText` until it is non-empty, or the budget runs out. */
+export async function waitForText(
+  selector: string,
+  attempts: number,
+  pauseMs = 1_000,
+  label = "element",
+): Promise<string> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const text = await readText(selector);
+    if (text !== "") return text;
+    await browser.pause(pauseMs);
+  }
+  throw new Error(`${label} never produced text (selector: ${selector})`);
+}
+
+// ---------------------------------------------------------------------------
+// Waiting for absence
+// ---------------------------------------------------------------------------
+
+/**
+ * Poll until the selector matches nothing, or the budget runs out.
+ *
+ * The inverse of `waitVisible`, for the transitions these specs actually rely
+ * on: a form unmounting after a successful save, a page switching view mode.
+ * Asserting on the transition rather than on a fixed pause is what keeps a
+ * "did the save actually happen?" check honest.
+ */
+export async function waitGone(
+  selector: string,
+  attempts: number,
+  pauseMs = 500,
+  label = "element",
+): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (!(await isVisible(selector))) return;
+    await browser.pause(pauseMs);
+  }
+  throw new Error(`${label} never went away (selector: ${selector})`);
+}
+
+// ---------------------------------------------------------------------------
+// Toast / inline alert assertions
+// ---------------------------------------------------------------------------
+
+/**
+ * Assert a sileo toast carrying `expected` is on screen.
+ *
+ * The POS uses sileo (`renderer/utils/notify.ts`) for the success and failure
+ * toasts of the clients and user-management screens, which is a DIFFERENT
+ * component from the `role="status" pos-toast` the returns flow uses. Matching
+ * on the shared `data-sileo-toast` attribute is what makes one helper usable
+ * for both.
+ *
+ * `data-ready="true"` is required because sileo animates the toast in and the
+ * text is present before the element is fully shown.
+ */
+export async function expectToast(expected: string): Promise<void> {
+  const TOAST = '[data-sileo-toast][data-ready="true"]';
+  const deadline = Date.now() + 20_000;
+
+  while (Date.now() < deadline) {
+    const text = await readText(TOAST);
+    if (text.includes(expected)) return;
+
+    if (text !== "") {
+      throw new Error(
+        `a toast appeared but did not carry "${expected}": ${text}`,
+      );
+    }
+    await browser.pause(500);
+  }
+  throw new Error(`no toast carrying "${expected}" appeared within 20s`);
+}
+
+/**
+ * Assert an inline `role="alert"` banner carrying `expected` is on screen.
+ *
+ * Used for the flows with no toast at all: the purchase screens surface every
+ * failure as a red banner (`reception-form.tsx`, `supplier-form.tsx`,
+ * `purchase-orders.page.tsx`), and so does the cart when a checkout-level rule
+ * rejects the sale.
+ */
+export async function expectAlert(expected: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+
+  while (Date.now() < deadline) {
+    const text = await readText('[role="alert"]');
+    if (text.includes(expected)) return;
+
+    if (text !== "") {
+      throw new Error(
+        `an alert appeared but did not carry "${expected}": ${text}`,
+      );
+    }
+    await browser.pause(500);
+  }
+  throw new Error(`no alert carrying "${expected}" appeared within 15s`);
+}
+
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
+
+/**
+ * Open a screen from the pinned navigation sidebar by its visible label.
+ *
+ * The rail is collapsed by default, so pinning first is what makes the menu
+ * items reachable at all — an unpinned click lands on the collapsed rail's
+ * hidden menuitem instead. Every screen is addressed by its Spanish label
+ * because that is what the sidebar's `aria-label` actually is.
+ */
+export async function openScreen(menuLabel: string): Promise<void> {
+  await pinSidebar();
+  const item = `button[role="menuitem"][aria-label="${menuLabel}"]`;
+  await waitVisible(item, 20, 1_000, `Sidebar item "${menuLabel}"`);
+  await (await $(item)).click();
+}
+
+/**
+ * Open a sub-screen from a hub page card, addressed by the card's heading.
+ *
+ * The purchases and inventory hub pages are card grids whose only handle is the
+ * `<h3>` title inside a `<button>`, so the heading is the anchor — matching the
+ * button by partial text would also match the sub-page's own "+ Nuevo …"
+ * buttons.
+ */
+export async function openHubCard(cardTitle: string): Promise<void> {
+  const card = `//h3[normalize-space(text())="${cardTitle}"]/ancestor::button`;
+  await waitVisible(card, 20, 1_000, `Hub card "${cardTitle}"`);
+  await (await $(card)).click();
+}
+
+/** Assert a hub page finished loading by its page heading. */
+export async function expectPageHeading(
+  heading: string,
+  attempts = 20,
+): Promise<void> {
+  await waitVisible(
+    `//h1[normalize-space(text())="${heading}"]`,
+    attempts,
+    1_000,
+    `Page heading "${heading}"`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Cart pricing controls
+// ---------------------------------------------------------------------------
+
+/**
+ * The cart panel's scoped root.
+ *
+ * Every cart control repeats across the whole screen (one discount button per
+ * line, one "Eliminar" per row), so scoping to the panel is what keeps the
+ * selectors unambiguous as soon as more than one line is in the cart.
+ *
+ * Expressed in XPath because the helpers resolve a selector with
+ * `document.evaluate` whenever it starts with `//` — a CSS prefix would send
+ * `cartRow`'s composite selector to `querySelector` instead, where the `//tr…`
+ * tail is not valid CSS.
+ */
+const CART = '//section[@data-nav-zone="cart"]';
+
+/** The `<tr>` for one cart line, addressed by the product name it renders. */
+function cartRow(productName: string): string {
+  return `${CART}//tr[.//p[contains(text(),"${productName}")]]`;
+}
+
+/** Read a cart totals row by its Spanish label ("Subtotal", "IVA (19%)", "TOTAL"). */
+export async function readCartTotalRow(label: string): Promise<number> {
+  return parsePesos(
+    await readText(
+      `//span[normalize-space(text())="${label}"]/following-sibling::span[1]`,
+    ),
+  );
+}
+
+/**
+ * The grand total the cart panel shows.
+ *
+ * Distinct from `readPaymentTotalDue`: this is what the cashier sees BEFORE
+ * charging, so a spec can prove the cart arithmetic before paying rather than
+ * only reconciling after the fact.
+ */
+export async function readCartTotal(): Promise<number> {
+  await waitVisible(
+    `//span[normalize-space(text())="TOTAL"]/following-sibling::span[1]`,
+    20,
+    500,
+    "Cart TOTAL row",
+  );
+  return readCartTotalRow("TOTAL");
+}
+
+/**
+ * Apply a per-line discount percentage and commit it with Enter.
+ *
+ * The discount cell is a button (`aria-label` "Editar descuento") that swaps to
+ * an `input[type=number]` with the SAME aria-label, so the edit is entered
+ * through the input and the button only afterwards. Enter is required rather
+ * than a blur because a blur commits too but leaves the spec racing whatever the
+ * next click lands on.
+ */
+export async function applyCartLineDiscount(
+  productName: string,
+  percent: number,
+): Promise<void> {
+  const button = `${cartRow(productName)}//button[@aria-label="Editar descuento"]`;
+  await waitVisible(button, 20, 500, `Discount button for ${productName}`);
+  await (await $(button)).click();
+
+  const input = `${cartRow(productName)}//input[@aria-label="Editar descuento"]`;
+  await waitVisible(input, 20, 500, `Discount input for ${productName}`);
+  await setInputValue(input, String(percent), `discount for ${productName}`);
+  await await pressEnter();
+
+  // The input unmounts on commit; that is the confirmation the percentage stuck.
+  await waitGone(input, 20, 250, `Discount input for ${productName}`);
+}
+
+/** The percentage the cart line now shows ("25%" or the empty "—"). */
+export async function readCartLineDiscount(
+  productName: string,
+): Promise<string> {
+  return readText(
+    `${cartRow(productName)}//button[@aria-label="Editar descuento"]`,
+  );
+}
+
+/**
+ * Type a new unit price for a cart line and commit it with Enter.
+ *
+ * Does NOT throw when the commit is refused: refusing is the point of the price
+ * floor, and the caller asserts on the error that the refused commit leaves
+ * behind. `setLinePriceExpectingRejection` documents that intent at the call
+ * site.
+ */
+export async function setCartLinePrice(
+  productName: string,
+  pesos: string,
+): Promise<void> {
+  const button = `${cartRow(productName)}//button[@aria-label="Editar precio"]`;
+  await waitVisible(button, 20, 500, `Price button for ${productName}`);
+  await (await $(button)).click();
+
+  const input = `${cartRow(productName)}//input[@aria-label="Editar precio"]`;
+  await waitVisible(input, 20, 500, `Price input for ${productName}`);
+  await setInputValue(input, pesos, `price for ${productName}`);
+  await await pressEnter();
+  await browser.pause(500);
+}
+
+/**
+ * The cost-floor message the cart shows inside the price cell.
+ *
+ * Only rendered while the edit stays open: `commitPrice` returns early on a
+ * below-cost price instead of closing, which is what makes the refusal visible.
+ * Returns "" when the price was accepted.
+ */
+export async function readCartPriceError(productName: string): Promise<string> {
+  return readText(`${cartRow(productName)}//p[@role="alert"]`);
+}
+
+/** Whether the price editor for a line is still open (i.e. still refusing). */
+export async function isCartPriceEditing(
+  productName: string,
+): Promise<boolean> {
+  return isVisible(
+    `${cartRow(productName)}//input[@aria-label="Editar precio"]`,
+  );
+}
+
+/**
+ * Bump a cart line's quantity through its own "+" control.
+ *
+ * Used instead of the keyboard shortcut because the button carries an explicit
+ * `aria-label`, so the spec does not depend on which element currently holds
+ * keyboard focus.
+ */
+export async function incrementCartLineQuantity(
+  productName: string,
+  times: number,
+): Promise<void> {
+  const plus = `${cartRow(productName)}//button[@aria-label="Agregar"]`;
+  for (let step = 0; step < times; step += 1) {
+    await (await $(plus)).click();
+    await browser.pause(250);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Configuration switches
+// ---------------------------------------------------------------------------
+
+/**
+ * Read a configuration toggle's on/off state.
+ *
+ * The config tabs render their booleans as `<button role="switch" id={key}>`
+ * with `aria-checked`, not as checkboxes, so this is the only way to read them.
+ */
+export async function readSwitch(id: string): Promise<boolean> {
+  return browser.execute((switchId: string) => {
+    const el = document.getElementById(switchId);
+    return el?.getAttribute("aria-checked") === "true";
+  }, id);
+}
+
+/**
+ * Put a configuration toggle into `desired`, clicking only when it differs.
+ *
+ * Idempotent on purpose: several specs need a flag on, and clicking an
+ * already-correct toggle would silently invert it. The config page has no undo
+ * and no save button, so every click is an immediate server write.
+ */
+export async function setSwitch(id: string, desired: boolean): Promise<void> {
+  const selector = `button#${id}[role="switch"]`;
+  await waitVisible(selector, 20, 1_000, `Config switch #${id}`);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if ((await readSwitch(id)) === desired) return;
+    await (await $(selector)).click();
+    await browser.pause(500);
+    if ((await readSwitch(id)) === desired) return;
+  }
+  throw new Error(`config switch #${id} never reached ${desired}`);
+}
+
+/** Open a tab of the tenant configuration page by its visible label. */
+export async function openConfigTab(label: string): Promise<void> {
+  const tab = `//nav[@aria-label="Empresa"]//button[normalize-space(.)="${label}"]`;
+  await waitVisible(tab, 20, 1_000, `Config tab "${label}"`);
+  await (await $(tab)).click();
+}
+
+/** Assert a config tab finished mounting by its section heading. */
+export async function expectConfigSection(heading: string): Promise<void> {
+  await waitVisible(
+    `//h3[normalize-space(.)="${heading}"]`,
+    20,
+    1_000,
+    `Config section "${heading}"`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Session identity and switching
+// ---------------------------------------------------------------------------
+
+/** The QuickSwitch trigger, which renders the signed-in user's display name. */
+const QUICK_SWITCH = 'button[aria-label="Cambiar de usuario"]';
+
+/**
+ * Display name of the signed-in user, or "" when the login screen is up.
+ *
+ * Reading it off the QuickSwitch trigger is the only DOM-visible statement of
+ * who is signed in, and it is what makes `signInAs` able to notice that the
+ * session belongs to somebody else instead of silently reusing it.
+ */
+export async function currentUserName(): Promise<string> {
+  return readText(QUICK_SWITCH);
+}
+
+/**
+ * Switch the active user through the QuickSwitch component.
+ *
+ * This is the app's own user-switching UI, so a spec that needs a different
+ * role drives the same path a cashier does rather than poking the session
+ * store. It works from an ADMIN session because QuickSwitch lists the
+ * available users from the local cache when `GET /users` is refused, and that
+ * cache is complete: `AuthService.login` fire-and-forgets
+ * `UserPullService.pullUserIdentities()` on every successful login, and
+ * `GET /users/login-identities` is open to every role.
+ *
+ * The password panel is chosen over the PIN keypad by the component itself:
+ * `handleUserSelect` defaults to a PIN only for CASHIER and MANAGER, or when
+ * the server reports `hasPin`.
+ */
+export async function switchUser(
+  displayName: string,
+  password: string,
+): Promise<void> {
+  await waitVisible(QUICK_SWITCH, 20, 1_000, "QuickSwitch trigger");
+  await (await $(QUICK_SWITCH)).click();
+
+  const entry = `//div[contains(@class,"pos-panel")]//button[.//span[normalize-space(.)="${displayName}"]]`;
+  await waitVisible(entry, 20, 1_000, `QuickSwitch entry for ${displayName}`);
+  await (await $(entry)).click();
+
+  // Wait for the panel's CONFIRM button, not just the input: the component swaps
+  // the whole list panel for the password panel in one re-render, so an input that
+  // merely "exists" can still be the node the previous render produced. The
+  // button only exists once the password panel is mounted.
+  await browser.waitUntil(
+    async () =>
+      (await readText(
+        '//button[@aria-label="Cambiar de usuario"]/following-sibling::div//input[@type="password"]/following::button[normalize-space(.)="Cambiar"]',
+      )) !== "",
+    {
+      timeout: 20_000,
+      interval: 500,
+      timeoutMsg:
+        "the QuickSwitch password panel never appeared after selecting " +
+        displayName,
+    },
+  );
+
+  // The password panel is a following sibling of the trigger button, inside the
+  // same wrapper. XPath rather than a CSS sibling combinator so the whole
+  // selector is resolved by the one code path in this file that understands it.
+  const passwordInput =
+    '//button[@aria-label="Cambiar de usuario"]/following-sibling::div//input[@type="password"]';
+  await waitVisible(passwordInput, 20, 500, "QuickSwitch password input");
+  await setInputValue(passwordInput, password, "quick-switch password");
+  await pressEnter();
+
+  // The trigger's label is the switch's confirmation: the dropdown closes only
+  // after `setSession` succeeds.
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const current = await currentUserName();
+    if (current.includes(displayName)) return;
+    if (current !== "" && !current.includes(displayName)) {
+      throw new Error(
+        `switching to ${displayName} left the session as "${current}" — the ` +
+          `server rejected the credentials`,
+      );
+    }
+    await browser.pause(500);
+  }
+  throw new Error(`the session never became ${displayName}`);
+}
+
+/**
+ * Dismiss any modal still open from a previous spec.
+ *
+ * The app shares ONE WebView across the whole run, and a Radix dialog's overlay
+ * is `position: fixed; inset: 0` at `z-50` — so a dialog left open by one spec
+ * intercepts every click in the next one, and the failure surfaces far away as
+ * "element click intercepted" on a sidebar item. Escape is the dialog's own
+ * dismissal affordance, so this is the same path a user takes.
+ */
+export async function dismissOverlays(): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const open = await browser.execute(
+      () => document.querySelectorAll('[role="dialog"]').length,
+    );
+    if (!open) return;
+    await browser.keys("Escape");
+    await browser.pause(500);
+  }
+
+  const stillOpen = await browser.execute(
+    () => document.querySelectorAll('[role="dialog"]').length,
+  );
+  if (stillOpen) {
+    throw new Error(
+      `${stillOpen} dialog(s) survived five Escape presses — a spec left a ` +
+        `modal open, and it will intercept every later click`,
+    );
+  }
+}
+
+/** An account the suite signs in as, with the display name the UI renders. */
+export interface SuiteAccount {
+  identifier: string;
+  password: string;
+  displayName: string;
+}
+
+/**
+ * Ensure the active session belongs to `account`, switching or logging in as needed.
+ *
+ * `login` alone is not enough once the suite uses more than one role: it
+ * returns as soon as the sales screen is on, so a spec that "logs in" as a
+ * different user would keep running as whoever signed in before — a false green
+ * for every role-gated assertion in it. This helper checks the session identity
+ * first and only acts when it does not match.
+ */
+export async function signInAs(account: SuiteAccount): Promise<void> {
+  // Before anything else: a modal left open by the previous spec would swallow
+  // every click below and report the failure somewhere unrelated.
+  await dismissOverlays();
+
+  const current = await currentUserName();
+
+  if (current.includes(account.displayName)) {
+    await ensureSalesScreen();
+    return;
+  }
+
+  if (current !== "") {
+    // A session exists for somebody else — swap it through QuickSwitch.
+    await switchUser(account.displayName, account.password);
+    await ensureSalesScreen();
+    return;
+  }
+
+  await login(account.identifier, account.password);
+  const signedIn = await currentUserName();
+  if (!signedIn.includes(account.displayName)) {
+    throw new Error(
+      `signed in as ${account.identifier} but the session reports "${signedIn}"`,
+    );
+  }
 }
