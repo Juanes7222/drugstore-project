@@ -482,11 +482,19 @@ async function openCashShiftAndReturnToSales(): Promise<void> {
   );
 }
 
-/** Search for a product and click its result card to add it to the cart. */
+/**
+ * Search for a product and click its result card to add it to the cart.
+ *
+ * The sales screen is guaranteed first: specs share one app session, so a spec
+ * that left the app on Compras with a cart editor open (the price-floor refusal
+ * does exactly that, by design) otherwise fails with "product search still not
+ * existing" and blames the wrong thing.
+ */
 export async function addProductToCart(
   query: string,
   productName: string,
 ): Promise<void> {
+  await ensureSalesScreen();
   await setInputValue(SEARCH_SELECTOR, query, "product search");
 
   // The result card renders with role="option" inside a role="listbox".
@@ -645,9 +653,18 @@ export async function readPaymentTotalDue(): Promise<number> {
  * `waitVisible` checks visibility through `browser.execute`, i.e. JS
  * `querySelector`. The interaction then goes through WebDriver `findElement`,
  * and the two can disagree: the login form is re-mounted while the boot
- * services finish, so a field that was verified a moment ago can be gone by
- * the time `$()` runs. Waiting for existence at the DRIVER level (which retries
+ * services finish, so a field that was verified a moment ago can be gone by the
+ * time `$()` runs. Waiting for existence at the DRIVER level (which retries
  * findElement) and retrying the write closes that gap.
+ *
+ * Every write is then VERIFIED against the field's own value. That check is not
+ * belt-and-braces: `setValue`'s clear intermittently fails to reach React's
+ * controlled state, so the typed digits get appended to whatever was already
+ * there. A purchase-order quantity asked for as "100" was stored as "1100",
+ * which made a correct partial receipt look like a product defect — the order
+ * legitimately read RECIBIDA PARCIALMENTE because it had been asked for 1100.
+ * Asserting the field afterwards turns that class of silent corruption into a
+ * failure naming the selector.
  */
 export async function setInputValue(
   selector: string,
@@ -661,6 +678,43 @@ export async function setInputValue(
     try {
       await field.waitForExist({ timeout: 10_000 });
       await field.setValue(value);
+
+      const held = await field.getValue();
+      if (held !== value) {
+        // Repair through the native setter: assigning the whole value in one go
+        // updates React's state atomically, which a keystroke sequence cannot.
+        await browser.execute(
+          (sel: string, wanted: string) => {
+            const el =
+              sel.startsWith("//") || sel.startsWith("(")
+                ? (document.evaluate(
+                    sel,
+                    document,
+                    null,
+                    XPathResult.FIRST_ORDERED_NODE_TYPE,
+                    null,
+                  ).singleNodeValue as HTMLInputElement | null)
+                : document.querySelector<HTMLInputElement>(sel);
+            if (!el) return;
+            const setter = Object.getOwnPropertyDescriptor(
+              HTMLInputElement.prototype,
+              "value",
+            )?.set;
+            setter?.call(el, wanted);
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+          },
+          selector,
+          value,
+        );
+        const repaired = await field.getValue();
+        if (repaired !== value) {
+          throw new Error(
+            `${label} (${selector}) holds "${repaired}" after being set to ` +
+              `"${value}"`,
+          );
+        }
+      }
       return;
     } catch (error) {
       lastError = error;

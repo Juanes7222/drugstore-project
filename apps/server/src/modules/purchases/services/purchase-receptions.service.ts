@@ -1,39 +1,39 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '@/infrastructure/prisma/prisma.service';
-import { TenantContextService } from '@/modules/tenant/tenant-context.service';
+import { Injectable } from "@nestjs/common";
+import { PrismaService } from "@/infrastructure/prisma/prisma.service";
+import { TenantContextService } from "@/modules/tenant/tenant-context.service";
 import {
   Prisma,
   PurchaseReceptionState,
   PurchaseOrderState,
   MovementType,
   LotState,
-} from '@pharmacy/database';
-import { paginateWithCursor } from '@/common/utils/cursor-pagination';
-import * as crypto from 'crypto';
+} from "@pharmacy/database";
+import { paginateWithCursor } from "@/common/utils/cursor-pagination";
+import * as crypto from "crypto";
 import {
   CreatePurchaseReceptionDto,
   CreatePurchaseReceptionItemDto,
-} from '../dto/create-purchase-reception.dto';
-import { QueryPurchaseReceptionDto } from '../dto/query-purchase-reception.dto';
-import { PurchaseReceptionNotConfirmedException } from '../exceptions/purchase-reception-not-confirmed.exception';
-import { PurchaseReceptionNotDraftException } from '../exceptions/purchase-reception-not-draft.exception';
-import { PurchaseReceptionNotFoundException } from '../exceptions/purchase-reception-not-found.exception';
-import { MissingExpirationDateException } from '../exceptions/missing-expiration-date.exception';
-import { OverReceptionException } from '../exceptions/over-reception.exception';
-import { PurchaseOrderItemMismatchException } from '../exceptions/purchase-order-item-mismatch.exception';
-import { ProductNotFoundException } from '@/modules/catalog/exceptions/product-not-found.exception';
-import { SupplierNotFoundException } from '../exceptions/supplier-not-found.exception';
-import { PurchaseOrderNotFoundException } from '../exceptions/purchase-order-not-found.exception';
-import { PurchaseOrderItemNotFoundException } from '../exceptions/purchase-order-item-not-found.exception';
-import { SuppliersService } from './suppliers.service';
-import { LotsService } from '@/modules/inventory-lots/services/lots.service';
-import { FiscalDocumentsService } from '@/modules/fiscal-dian/services/fiscal-documents.service';
-import { toDecimal } from '@/common/to-decimal';
-import { acquireAdvisoryLock } from '@/common/utils/advisory-lock';
+} from "../dto/create-purchase-reception.dto";
+import { QueryPurchaseReceptionDto } from "../dto/query-purchase-reception.dto";
+import { PurchaseReceptionNotConfirmedException } from "../exceptions/purchase-reception-not-confirmed.exception";
+import { PurchaseReceptionNotDraftException } from "../exceptions/purchase-reception-not-draft.exception";
+import { PurchaseReceptionNotFoundException } from "../exceptions/purchase-reception-not-found.exception";
+import { MissingExpirationDateException } from "../exceptions/missing-expiration-date.exception";
+import { OverReceptionException } from "../exceptions/over-reception.exception";
+import { PurchaseOrderItemMismatchException } from "../exceptions/purchase-order-item-mismatch.exception";
+import { ProductNotFoundException } from "@/modules/catalog/exceptions/product-not-found.exception";
+import { SupplierNotFoundException } from "../exceptions/supplier-not-found.exception";
+import { PurchaseOrderNotFoundException } from "../exceptions/purchase-order-not-found.exception";
+import { PurchaseOrderItemNotFoundException } from "../exceptions/purchase-order-item-not-found.exception";
+import { SuppliersService } from "./suppliers.service";
+import { LotsService } from "@/modules/inventory-lots/services/lots.service";
+import { FiscalDocumentsService } from "@/modules/fiscal-dian/services/fiscal-documents.service";
+import { toDecimal } from "@/common/to-decimal";
+import { acquireAdvisoryLock } from "@/common/utils/advisory-lock";
 import type {
   PurchaseReceptionConfirmationPayload,
   LotSyncData,
-} from '@/modules/sync/dto/purchase-sync-payloads';
+} from "@/modules/sync/dto/purchase-sync-payloads";
 
 @Injectable()
 export class PurchaseReceptionsService {
@@ -80,9 +80,9 @@ export class PurchaseReceptionsService {
         baseWhere: where,
         limit: query.pageSize,
         cursor: query.cursor,
-        timeField: 'createdAt',
-        direction: 'desc',
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        timeField: "createdAt",
+        direction: "desc",
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         include: listInclude,
       });
       return {
@@ -98,7 +98,7 @@ export class PurchaseReceptionsService {
         where,
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         include: listInclude,
       }),
       this.prisma.purchaseReception.count({ where }),
@@ -160,7 +160,7 @@ export class PurchaseReceptionsService {
       baseWhere,
       limit: input.limit ?? 200,
       cursor: input.cursor ?? null,
-      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      orderBy: [{ updatedAt: "asc" }, { id: "asc" }],
       include: {
         supplier: true,
         purchaseOrder: true,
@@ -235,18 +235,16 @@ export class PurchaseReceptionsService {
               itemDto.purchaseOrderItemId,
             );
           }
-          if (
-            purchaseOrderItem.purchaseOrderId !== createDto.purchaseOrderId
-          ) {
+          if (purchaseOrderItem.purchaseOrderId !== createDto.purchaseOrderId) {
             throw new PurchaseOrderItemMismatchException(
               itemDto.purchaseOrderItemId,
-              'Does not belong to the specified purchase order.',
+              "Does not belong to the specified purchase order.",
             );
           }
           if (purchaseOrderItem.productId !== itemDto.productId) {
             throw new PurchaseOrderItemMismatchException(
               itemDto.purchaseOrderItemId,
-              'Product ID mismatch.',
+              "Product ID mismatch.",
             );
           }
           if (
@@ -349,7 +347,7 @@ export class PurchaseReceptionsService {
           productId: item.productId,
           quantity: item.receivedQuantity,
           unitCost: item.realUnitCost as unknown as Prisma.Decimal,
-          batchNumber: item.lotNumber || 'UNKNOWN',
+          batchNumber: item.lotNumber || "UNKNOWN",
           expirationDate: item.expirationDate,
           locationCode: undefined,
           purchaseReceptionId: reception.id,
@@ -516,7 +514,7 @@ export class PurchaseReceptionsService {
               createdById: userId,
               confirmedById: userId,
               confirmedAt: new Date(payload.confirmedAt),
-              notes: 'Auto-created by reception sync — PO confirmation pending',
+              notes: "Auto-created by reception sync — PO confirmation pending",
             },
             include: { items: true },
           });
@@ -526,11 +524,11 @@ export class PurchaseReceptionsService {
       // Resolve a default tax scheme for reception items.
       const defaultTaxScheme = await tx.taxScheme.findFirst({
         where: { isActive: true },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { createdAt: "asc" },
         select: { id: true, rate: true },
       });
       const taxSchemeId =
-        defaultTaxScheme?.id ?? '00000000-0000-0000-0000-000000000000';
+        defaultTaxScheme?.id ?? "00000000-0000-0000-0000-000000000000";
       const taxRate = defaultTaxScheme?.rate ?? new Prisma.Decimal(0);
 
       // Use the POS-originated reception ID so downstream sync operations
@@ -577,8 +575,9 @@ export class PurchaseReceptionsService {
             const lotDataForResolve: LotSyncData =
               lotPayload ??
               ({
-                batchNumber: (item as any).batchNumber ?? 'UNKNOWN',
-                expirationDate: (item as any).expirationDate ?? new Date().toISOString(),
+                batchNumber: (item as any).batchNumber ?? "UNKNOWN",
+                expirationDate:
+                  (item as any).expirationDate ?? new Date().toISOString(),
                 productId: item.productId,
                 currentStock: item.quantity,
               } as LotSyncData);
@@ -613,7 +612,7 @@ export class PurchaseReceptionsService {
                 quantity: item.quantity,
                 previousStock: resultingStock - item.quantity,
                 resultingStock,
-                createdById: 'system',
+                createdById: "system",
                 createdAt: new Date(payload.confirmedAt),
                 purchaseReceptionId: receptionId,
               },
@@ -659,7 +658,7 @@ export class PurchaseReceptionsService {
       // Compute notes — append a marker when items were missing from payload
       let notes = payload.notes ?? null;
       if (!payload.items || payload.items.length === 0) {
-        const legacyMarker = '[Legacy sync: items metadata unavailable]';
+        const legacyMarker = "[Legacy sync: items metadata unavailable]";
         notes = notes ? `${notes} ${legacyMarker}` : legacyMarker;
       }
 
@@ -702,8 +701,113 @@ export class PurchaseReceptionsService {
         },
       });
 
+      // Advance the purchase order this reception settles.
+      //
+      // The reception rows are written above, but an order is only "fulfilled"
+      // when its lines record what arrived. Without this the order stayed
+      // CONFIRMED indefinitely: the units existed in stock and in the
+      // reception, yet the order that ordered them showed nothing received.
+      await this.applyReceptionToPurchaseOrder(
+        tx,
+        payload.purchaseOrderId ?? null,
+        itemsData,
+      );
+
       return reception;
     });
+  }
+
+  /**
+   * Credit a reception's units to their purchase-order lines and recompute the
+   * order's state.
+   *
+   * Additive on purpose: a second reception for the same line accumulates, so a
+   * partially received order can be completed by several deliveries.
+   * `pendingQuantity` is derived rather than incremented so it cannot drift
+   * away from `requestedQuantity`.
+   *
+   * Lines are matched by `(purchaseOrderId, productId)` rather than by an id
+   * carried on the wire: `PurchaseOrderConfirmationItemSchema` has no item id, so
+   * the server mints its own `PurchaseOrderItem.id` when it replays the order
+   * confirmation. A POS-side order-item id would therefore never match a server
+   * row. The product id is already remapped to the server's by the caller.
+   */
+  private async applyReceptionToPurchaseOrder(
+    tx: Prisma.TransactionClient,
+    purchaseOrderId: string | null,
+    itemsData: Array<{ productId: string; receivedQuantity: number }>,
+  ): Promise<void> {
+    if (!purchaseOrderId || itemsData.length === 0) return;
+
+    const orderLines = await tx.purchaseOrderItem.findMany({
+      where: { purchaseOrderId },
+      select: { id: true, productId: true },
+    });
+    // A stub order created earlier in this same replay has no lines yet, so there
+    // is nothing to credit and the order's state must stay untouched.
+    if (orderLines.length === 0) return;
+
+    const lineIdByProduct = new Map(
+      orderLines.map((line) => [line.productId, line.id]),
+    );
+
+    // A product can appear on more than one reception line, so units accumulate
+    // per order line rather than being applied per reception row.
+    const receivedByLineId = new Map<string, number>();
+    for (const item of itemsData) {
+      const lineId = lineIdByProduct.get(item.productId);
+      // A reception for a product this order never ordered credits nothing.
+      if (!lineId) continue;
+      receivedByLineId.set(
+        lineId,
+        (receivedByLineId.get(lineId) ?? 0) + item.receivedQuantity,
+      );
+    }
+
+    for (const [lineId, received] of receivedByLineId) {
+      const updated = await tx.purchaseOrderItem.update({
+        where: { id: lineId },
+        data: { receivedQuantity: { increment: received } },
+        select: { requestedQuantity: true, receivedQuantity: true },
+      });
+      await tx.purchaseOrderItem.update({
+        where: { id: lineId },
+        data: {
+          pendingQuantity: Math.max(
+            0,
+            updated.requestedQuantity - updated.receivedQuantity,
+          ),
+        },
+      });
+    }
+
+    if (receivedByLineId.size === 0) return;
+
+    const orderItems = await tx.purchaseOrderItem.findMany({
+      where: { purchaseOrderId },
+      select: { requestedQuantity: true, receivedQuantity: true },
+    });
+
+    const fullyReceived = orderItems.every(
+      (line) => line.receivedQuantity >= line.requestedQuantity,
+    );
+    const anyReceived = orderItems.some((line) => line.receivedQuantity > 0);
+    const nextState = fullyReceived
+      ? PurchaseOrderState.FULLY_RECEIVED
+      : anyReceived
+        ? PurchaseOrderState.PARTIALLY_RECEIVED
+        : null;
+
+    if (nextState) {
+      await tx.purchaseOrder.updateMany({
+        where: {
+          id: purchaseOrderId,
+          // Never walk an ANNULLED order back into a fulfilment state.
+          state: { not: PurchaseOrderState.ANNULLED },
+        },
+        data: { state: nextState },
+      });
+    }
   }
 
   async annul(id: string, userId: string): Promise<any> {
@@ -800,14 +904,14 @@ export class PurchaseReceptionsService {
       const fiscalDoc = await tx.fiscalDocument.findFirst({
         where: {
           purchaseReceptionId: id,
-          fiscalState: { notIn: ['ANNULLED'] },
+          fiscalState: { notIn: ["ANNULLED"] },
         },
         select: { id: true },
       });
       if (fiscalDoc) {
         await tx.fiscalDocument.update({
           where: { id: fiscalDoc.id },
-          data: { fiscalState: 'ANNULLED' },
+          data: { fiscalState: "ANNULLED" },
         });
       }
 
@@ -853,7 +957,7 @@ export class PurchaseReceptionsService {
     tx: Prisma.TransactionClient,
   ): Promise<number> {
     const latestReception = await tx.purchaseReception.findFirst({
-      orderBy: { sequentialNumber: 'desc' },
+      orderBy: { sequentialNumber: "desc" },
       select: { sequentialNumber: true },
     });
     return (latestReception?.sequentialNumber || 0) + 1;

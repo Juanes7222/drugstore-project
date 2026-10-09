@@ -574,13 +574,20 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     expect(await isCartPriceEditing(IBUPROFENO)).toBe(true);
 
     // The floor quoted is the reception's cost, not a hardcoded figure.
-    const floor = Number(
-      error
-        .match(/\(([\d.,]+)\)/g)
-        ?.at(-1)
-        ?.replace(/[^\d]/g, "") ?? "0",
-    );
-    expectPesos(floor, RECEIVED_UNIT_COST, "floor quoted by the cart");
+    //
+    // The message renders as "… ($ 100) está por debajo del costo mínimo
+    // ($ 4.000)", so the amount is a parenthesised group with a space after the
+    // currency symbol. A tighter `/\(([\d.,]+)\)/` matches neither group and
+    // silently yields 0, which reads exactly like a broken cost floor — the
+    // whitespace is therefore allowed explicitly.
+    const groups = error.match(/\(\s*\$?\s*([\d.,]+)\s*\)/g) ?? [];
+    const floor = Number((groups.at(-1) ?? "").replace(/[^\d]/g, ""));
+    if (Math.abs(floor - RECEIVED_UNIT_COST) > 0.005) {
+      throw new Error(
+        `floor quoted by the cart is ${floor}, expected ${RECEIVED_UNIT_COST}. ` +
+          `Raw error: ${JSON.stringify(error)}`,
+      );
+    }
 
     // The catalog price is untouched, and nothing was booked.
     if ((await fetchLatestLocalNumber()) > baseline) {
@@ -601,6 +608,11 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
 
     const lotBefore = await fetchServerLotByBatch(RECEIVED_BATCH);
     expect(lotBefore?.currentStock).toBe(RECEIVED_QUANTITY);
+
+    // P05 deliberately leaves the cart's price editor open on the refusal, so the
+    // app is still on Compras here. Navigate explicitly rather than relying on
+    // the previous spec's leftovers.
+    await openScreen("Ventas");
 
     await addProductToCart("ibuprofeno", IBUPROFENO);
     await goToPayment();

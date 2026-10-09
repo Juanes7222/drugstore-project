@@ -16,7 +16,7 @@
 
 export interface SupplierSyncData {
   businessName: string;
-  identificationType: 'NIT' | 'CC' | 'CE' | 'PASSPORT';
+  identificationType: "NIT" | "CC" | "CE" | "PASSPORT";
   identificationNumber: string;
   contactName?: string;
   phone?: string;

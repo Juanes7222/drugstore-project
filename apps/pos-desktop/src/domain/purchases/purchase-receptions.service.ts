@@ -640,9 +640,7 @@ export class PurchaseReceptionsService {
    *
    * @throws PurchaseOrderNotFoundException
    */
-  async getOrderItemsForReception(
-    orderId: string,
-  ): Promise<{
+  async getOrderItemsForReception(orderId: string): Promise<{
     supplierId: string;
     notes: string | null;
     items: ReceptionOrderItem[];

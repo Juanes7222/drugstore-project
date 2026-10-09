@@ -16,13 +16,13 @@
  * The interface types from `purchase-sync-payloads.ts` remain the
  * developer-facing shape; the schema is the runtime contract.
  */
-import { z } from 'zod';
+import { z } from "zod";
 
 const idString = z.string().min(1);
 
 const SupplierSyncDataSchema = z.object({
   businessName: z.string().min(1),
-  identificationType: z.enum(['NIT', 'CC', 'CE', 'PASSPORT']),
+  identificationType: z.enum(["NIT", "CC", "CE", "PASSPORT"]),
   identificationNumber: z.string().min(1),
   contactName: z.string().optional(),
   phone: z.string().optional(),
