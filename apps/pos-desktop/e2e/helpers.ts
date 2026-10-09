@@ -959,6 +959,35 @@ export function expectPesos(
   }
 }
 
+/**
+ * A one-line summary of what the page currently shows.
+ *
+ * Included in timeouts that would otherwise report only "the screen never
+ * changed", which is indistinguishable across a dozen causes: still on the form,
+ * a modal in the way, an empty item list.
+ */
+export async function describeScreen(): Promise<string> {
+  const state = await browser.execute(() => ({
+    headings: Array.from(document.querySelectorAll("h1, h2"))
+      .map((el) => (el.textContent ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 4),
+    alerts: Array.from(document.querySelectorAll('[role="alert"]'))
+      .map((el) => (el.textContent ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 3),
+    buttons: Array.from(document.querySelectorAll("button"))
+      .map((el) => (el.textContent ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 12),
+  }));
+  return (
+    `headings=${JSON.stringify(state.headings)} ` +
+    `alerts=${JSON.stringify(state.alerts)} ` +
+    `buttons=${JSON.stringify(state.buttons)}`
+  );
+}
+
 /** Expand the sidebar (pinned) and click "Devoluciones". */
 export async function openReturns(): Promise<void> {
   await pinSidebar();
@@ -1230,7 +1259,17 @@ export async function expectAlert(expected: string): Promise<void> {
 export async function openScreen(menuLabel: string): Promise<void> {
   await pinSidebar();
   const item = `button[role="menuitem"][aria-label="${menuLabel}"]`;
-  await waitVisible(item, 20, 1_000, `Sidebar item "${menuLabel}"`);
+  try {
+    await waitVisible(item, 20, 1_000, `Sidebar item "${menuLabel}"`);
+  } catch (error) {
+    // The sidebar disappearing between specs is usually a leftover overlay or a
+    // collapsed shell from the previous spec, and neither is visible from the
+    // bare "never became visible" message.
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)}. ` +
+        `Screen: ${await describeScreen()}`,
+    );
+  }
   await (await $(item)).click();
 }
 
@@ -1675,29 +1714,49 @@ export interface SuiteAccount {
  * first and only acts when it does not match.
  */
 export async function signInAs(account: SuiteAccount): Promise<void> {
-  // Before anything else: a modal left open by the previous spec would swallow
-  // every click below and report the failure somewhere unrelated.
-  await dismissOverlays();
+  // Establishing a session is not the same as keeping it: see the note above.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    // A modal left open by the previous spec would swallow every click below
+    // and report the failure somewhere unrelated.
+    await dismissOverlays();
 
-  const current = await currentUserName();
+    const current = await currentUserName();
 
-  if (current.includes(account.displayName)) {
-    await ensureSalesScreen();
-    return;
+    if (current.includes(account.displayName)) {
+      await ensureSalesScreen();
+    } else if (current !== "") {
+      // A session exists for somebody else - swap it through QuickSwitch.
+      await switchUser(account.displayName, account.password);
+      await ensureSalesScreen();
+    } else {
+      await login(account.identifier, account.password);
+      const signedIn = await currentUserName();
+      if (!signedIn.includes(account.displayName)) {
+        throw new Error(
+          `signed in as ${account.identifier} but the session reports "${signedIn}"`,
+        );
+      }
+    }
+
+    // A dropped session must RETRY, not abort: the bounce happens a moment after
+    // a successful sign-in, so the next pass starts from the login screen with
+    // `current` empty and logs in again.
+    try {
+      await waitVisible(
+        QUICK_SWITCH,
+        5,
+        500,
+        `session shell for ${account.displayName}`,
+      );
+      if ((await currentUserName()).includes(account.displayName)) return;
+    } catch {
+      // Fall through to the retry below.
+    }
+    await browser.pause(500);
   }
 
-  if (current !== "") {
-    // A session exists for somebody else — swap it through QuickSwitch.
-    await switchUser(account.displayName, account.password);
-    await ensureSalesScreen();
-    return;
-  }
-
-  await login(account.identifier, account.password);
-  const signedIn = await currentUserName();
-  if (!signedIn.includes(account.displayName)) {
-    throw new Error(
-      `signed in as ${account.identifier} but the session reports "${signedIn}"`,
-    );
-  }
+  throw new Error(
+    `could not keep a session for ${account.identifier} after 3 attempts. ` +
+      `Screen: ${await describeScreen()}`,
+  );
 }

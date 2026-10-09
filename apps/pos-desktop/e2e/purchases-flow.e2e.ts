@@ -44,6 +44,7 @@ import {
   expectPageHeading,
   openHubCard,
   openScreen,
+  describeScreen,
   setInputValue,
   setDateInputValue,
   selectSearchableOption,
@@ -644,31 +645,3 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     expect(sale.queue?.status).toBe("COMPLETED");
   });
 });
-
-/**
- * A one-line summary of what the page currently shows.
- *
- * Included in timeouts that would otherwise report only "the screen never
- * changed", which is indistinguishable across a dozen causes: still on the form,
- * a modal in the way, an empty item list.
- */
-async function describeScreen(): Promise<string> {
-  const state = await browser.execute(() => ({
-    headings: Array.from(document.querySelectorAll("h1, h2"))
-      .map((el) => (el.textContent ?? "").trim())
-      .filter(Boolean)
-      .slice(0, 4),
-    alerts: Array.from(document.querySelectorAll('[role="alert"]'))
-      .map((el) => (el.textContent ?? "").trim())
-      .filter(Boolean)
-      .slice(0, 3),
-    buttons: Array.from(document.querySelectorAll("button"))
-      .map((el) => (el.textContent ?? "").trim())
-      .filter(Boolean)
-      .slice(0, 12),
-  }));
-  return (
-    `headings=${JSON.stringify(state.headings)} ` +
-    `alerts=${JSON.stringify(state.alerts)} buttons=${JSON.stringify(state.buttons)}`
-  );
-}
