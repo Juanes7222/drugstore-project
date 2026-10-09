@@ -663,6 +663,11 @@ export class PurchaseReceptionsService {
           select: { cost: true },
           take: 1,
         },
+        taxHistories: {
+          where: { effectiveTo: null },
+          select: { taxSchemeId: true },
+          take: 1,
+        },
       },
     });
     const productNameMap = new Map(
@@ -672,15 +677,41 @@ export class PurchaseReceptionsService {
       products.map((p) => [p.id, p.costHistories[0]?.cost.toString() ?? null]),
     );
 
-    // Look up default tax scheme for fallback
-    const defaultTaxScheme = await this.prisma.taxScheme.findFirst({
-      where: { isActive: true },
-      orderBy: { code: "asc" },
-      select: { id: true, rate: true },
-    });
+    // The scheme each product is actually assigned to.
+    //
+    // This used to be a single `taxScheme.findFirst({ where: { isActive: true },
+    // orderBy: { code: "asc" } })`, which silently picked whichever active scheme
+    // sorted first by code - `EXENTO` at 0% rather than `IVA19` at 19%. Every
+    // reception prefilled with a zero rate, so goods arrived untaxed and the
+    // server recorded the zero it was sent. A product's own tax pointer is the
+    // rate that actually applies to it.
+    const assignedSchemeIds = [
+      ...new Set(
+        products
+          .map((p) => p.taxHistories[0]?.taxSchemeId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const assignedSchemes = assignedSchemeIds.length
+      ? await this.prisma.taxScheme.findMany({
+          where: { id: { in: assignedSchemeIds } },
+          select: { id: true, rate: true },
+        })
+      : [];
+    const assignedSchemeById = new Map(assignedSchemes.map((s) => [s.id, s]));
+    const schemeByProduct = new Map(
+      products.map((p) => {
+        const schemeId = p.taxHistories[0]?.taxSchemeId;
+        const scheme = schemeId ? assignedSchemeById.get(schemeId) : undefined;
+        return [p.id, scheme];
+      }),
+    );
 
     const items: ReceptionOrderItem[] = order.items.map((item) => {
       const currentCost = productCostMap.get(item.productId);
+      // The scheme the product is assigned to; a product with no tax pointer
+      // contributes no rate rather than borrowing another product's.
+      const scheme = schemeByProduct.get(item.productId);
       return {
         productId: item.productId,
         productName: productNameMap.get(item.productId) ?? "",
@@ -695,8 +726,8 @@ export class PurchaseReceptionsService {
         realUnitCost: currentCost
           ? Number(currentCost)
           : Number(item.expectedUnitCost),
-        taxSchemeId: defaultTaxScheme?.id ?? "",
-        taxRate: defaultTaxScheme ? Number(defaultTaxScheme.rate) : 0,
+        taxSchemeId: scheme?.id ?? "",
+        taxRate: scheme ? Number(scheme.rate) : 0,
       };
     });
 

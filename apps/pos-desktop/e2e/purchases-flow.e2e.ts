@@ -74,6 +74,7 @@ import {
   fetchLocalPurchaseOrders,
   fetchLocalPurchaseReceptions,
   fetchLocalPurchaseReception,
+  fetchLocalTaxSchemes,
   fetchLocalPurchaseReceptionIdByBatch,
   fetchLocalPurchaseReceptionItems,
   fetchLocalProductCost,
@@ -99,6 +100,11 @@ const RECEIVED_BATCH = "LOT-E2E-100";
 const RECEIVED_QUANTITY = 100;
 /** Unit cost typed at reception — 4000, half the seeded 8000. */
 const RECEIVED_UNIT_COST = 4000;
+/**
+ * The price the received lot is actually sold at: above the received cost, so the
+ * price floor admits it. The seeded catalog price no longer does.
+ */
+const SOLD_UNIT_PRICE = 4500;
 /** YYYY-MM-DD, ~14 months out, so it can never look near-expiry mid-run. */
 const RECEIVED_EXPIRATION = "2027-12-31";
 
@@ -591,6 +597,35 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
       },
     );
 
+    // ---- An ABSOLUTE check, not a diff.
+    //
+    // Reconciliation can only prove the two stores agree. They can agree on a
+    // wrong value, and here they did: with no active TaxScheme in the local
+    // database the POS prefills every reception line with a 0% rate, and the
+    // server then faithfully records the 0 it was sent. A diff of two zeros is
+    // green. This asserts the invariant instead — the POS must hold an active
+    // scheme, and its rate must be the tenant's.
+    // An active 19% scheme must exist locally, because the rate lives only on the
+    // TaxScheme row (a product's tax pointer is just a scheme id). The check
+    // looks for the RATE rather than assuming a scheme code sorts first: the
+    // original bug was picking whichever active scheme sorted first by code,
+    // which was EXENTO at 0%.
+    const localSchemes = await fetchLocalTaxSchemes();
+    const taxedLocal = localSchemes.filter(
+      (s) => s.isActive && Math.abs(Number(s.rate) - 19) < 0.005,
+    );
+    if (taxedLocal.length === 0) {
+      throw new Error(
+        "the POS local database holds no active 19% TaxScheme, so reception " +
+          "lines cannot be prefilled with the tenant's rate. " +
+          `Local tax schemes: ${JSON.stringify(localSchemes)}`,
+      );
+    }
+
+    // And the received line must actually carry it — the business invariant the
+    // zero-rate bug violated, which a local-versus-server diff cannot see.
+    expectPesos(Number(localItems[0]?.taxRate), 19, "received line tax rate");
+
     assertNoDefects(
       [...headerFindings, ...itemFindings],
       "purchase reception P03",
@@ -698,6 +733,29 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     await openScreen("Ventas");
 
     await addProductToCart("ibuprofeno", IBUPROFENO);
+
+    // The reception just made 4,000 the product's active cost, which is the
+    // price floor the cart enforces. The seeded catalog price (400) now sits
+    // BELOW that floor, so checkout is refused by design and the payment screen
+    // never opens — the same control P05 asserts from the other side.
+    //
+    // So the line has to be priced above the new cost before it can be sold.
+    // That is also what makes this spec interesting: it proves a received cost
+    // immediately governs what the cashier may charge.
+    await setCartLinePrice(IBUPROFENO, String(SOLD_UNIT_PRICE));
+
+    // A refused price leaves the editor OPEN (P05 asserts exactly that), so a
+    // still-open editor here means the set never committed and the line would go
+    // to payment at the catalog price the floor forbids.
+    const stillEditing = await isCartPriceEditing(IBUPROFENO);
+    const priceError = await readCartPriceError(IBUPROFENO);
+    if (stillEditing || priceError !== "") {
+      throw new Error(
+        `pricing the line at ${SOLD_UNIT_PRICE} did not commit ` +
+          `(editorOpen=${stillEditing}, error=${JSON.stringify(priceError)})`,
+      );
+    }
+
     await goToPayment();
     const totalDue = await readPaymentTotalDue();
     await payWithCash(String(totalDue));
@@ -718,10 +776,11 @@ describe("Purchases flow (real Tauri app against the real backend)", () => {
     // from the received one rather than from stock that was already there.
     expect((await fetchLotStocks())[LOT_IBUPROFENO]).toBe(seededLotBefore);
 
-    // The cost the reception wrote is what the sale is valued at.
+    // The booked price is the one the cashier set above the floor, not the
+    // seeded catalog price that the floor now forbids.
     expectPesos(
       sale.items[0].unitPrice,
-      400,
+      SOLD_UNIT_PRICE,
       "server unit price of the received product",
     );
     expect(sale.queue?.status).toBe("COMPLETED");

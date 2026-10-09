@@ -368,6 +368,25 @@ export interface LocalPurchaseReception {
   itemCount: number;
 }
 
+/**
+ * Tax schemes the POS holds locally.
+ *
+ * The product's tax pointer only stores a `taxSchemeId`, so the rate itself
+ * lives on this table. An empty local table is invisible to a local-versus-server
+ * diff: the POS then computes documents with a zero rate and the server records
+ * the zero it was sent, so the two stores agree on a wrong value.
+ */
+export async function fetchLocalTaxSchemes(): Promise<
+  Array<{ id: string; code: string; rate: string; isActive: boolean }>
+> {
+  return queryLocal<{
+    id: string;
+    code: string;
+    rate: string;
+    isActive: boolean;
+  }>(`SELECT id, code, rate, "isActive" FROM "TaxScheme" ORDER BY code`);
+}
+
 /** The reception id the POS holds for a given lot batch, or null. */
 export async function fetchLocalPurchaseReceptionIdByBatch(
   batchNumber: string,
