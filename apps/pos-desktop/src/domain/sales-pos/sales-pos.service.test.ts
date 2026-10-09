@@ -2,7 +2,12 @@
  * Unit tests for SalesPosService — create and confirm local sales.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { SalesPosService, createSalesPosService, type CreateSaleInput, type ConfirmSaleInput } from "./sales-pos.service";
+import {
+  SalesPosService,
+  createSalesPosService,
+  type CreateSaleInput,
+  type ConfirmSaleInput,
+} from "./sales-pos.service";
 import {
   SaleNotInProgressException,
   PrescriptionRequiredNotSupportedException,
@@ -17,9 +22,17 @@ import {
   CreditLimitExceededException,
   NoOpenCashShiftException,
 } from "./exceptions";
-import { Prisma, SaleOperationalState, ShiftState } from "@pharmacy/database/local";
+import {
+  Prisma,
+  SaleOperationalState,
+  ShiftState,
+} from "@pharmacy/database/local";
 import { dbWriteLock } from "../../infrastructure/write-lock";
-import { useLocalConfigStore, type DiscountLimits, type SalesConfig } from "../configuration/local-config.store";
+import {
+  useLocalConfigStore,
+  type DiscountLimits,
+  type SalesConfig,
+} from "../configuration/local-config.store";
 import { RoleType } from "@pharmacy/shared-types";
 import { GENERIC_CLIENT_UUID } from "../clients/constants/clients.constants";
 
@@ -51,6 +64,11 @@ const makeMockPrisma = () => {
     clientReturn: {
       aggregate: vi.fn().mockResolvedValue({
         _sum: { refundAmount: new Prisma.Decimal(0) },
+      }),
+    },
+    clientCreditPayment: {
+      aggregate: vi.fn().mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal(0) },
       }),
     },
     client: {
@@ -190,11 +208,15 @@ describe("SalesPosService", () => {
         items: [{ id: "item-1", productId: "prod-1", quantity: 2 }],
       });
 
-      const result = await service.create(validInput) as { localNumber: bigint };
+      const result = (await service.create(validInput)) as {
+        localNumber: bigint;
+      };
 
       expect(auth.requireRole).toHaveBeenCalledWith("CASHIER", "ADMIN");
       expect(tx.sale.create).toHaveBeenCalled();
-      expect(tx.sale.create.mock.calls[0][0].data.operationalState).toBe("IN_PROGRESS");
+      expect(tx.sale.create.mock.calls[0][0].data.operationalState).toBe(
+        "IN_PROGRESS",
+      );
       expect(result.localNumber).toBe(1n);
     });
 
@@ -208,10 +230,16 @@ describe("SalesPosService", () => {
         identificationType: "CC",
         identificationNumber: "12345678",
         fullName: "Juan Pérez",
-        classification: { id: "class-1", type: "GENERAL", discountPercentage: 5 },
+        classification: {
+          id: "class-1",
+          type: "GENERAL",
+          discountPercentage: 5,
+        },
       });
       tx.sale.create.mockResolvedValue({
-        id: "sale-1", localNumber: 1n, items: [],
+        id: "sale-1",
+        localNumber: 1n,
+        items: [],
       });
 
       const input: CreateSaleInput = {
@@ -232,7 +260,11 @@ describe("SalesPosService", () => {
       tx.product.findUnique.mockResolvedValue(makeProduct());
       tx.sale.findFirst.mockResolvedValue(null);
       tx.client.findUnique.mockResolvedValue({ id: GENERIC_CLIENT_UUID });
-      tx.sale.create.mockResolvedValue({ id: "sale-1", localNumber: 1n, items: [] });
+      tx.sale.create.mockResolvedValue({
+        id: "sale-1",
+        localNumber: 1n,
+        items: [],
+      });
 
       await service.create({ items: [{ productId: "prod-1", quantity: 1 }] });
 
@@ -260,11 +292,15 @@ describe("SalesPosService", () => {
         items: [],
       });
 
-      const result = await service.create(validInput) as { localNumber: bigint };
+      const result = (await service.create(validInput)) as {
+        localNumber: bigint;
+      };
 
       expect(result.localNumber).toBe(1n);
       expect(tx.sale.create).toHaveBeenCalled();
-      const createArg = tx.sale.create.mock.calls[0][0] as { data: { cashShiftId: string } };
+      const createArg = tx.sale.create.mock.calls[0][0] as {
+        data: { cashShiftId: string };
+      };
       // The sale attaches to the foreign, admin-opened shift — not to any
       // (user, workstation) pair of the seller.
       expect(createArg.data.cashShiftId).toBe("shift-admin-opened");
@@ -274,9 +310,7 @@ describe("SalesPosService", () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
 
-      await expect(
-        service.create(validInput),
-      ).rejects.toThrow(); // product missing — irrelevant, lookup already ran
+      await expect(service.create(validInput)).rejects.toThrow(); // product missing — irrelevant, lookup already ran
 
       expect(tx.cashShift.findFirst).toHaveBeenCalledWith({
         where: { state: ShiftState.OPEN },
@@ -320,13 +354,18 @@ describe("SalesPosService", () => {
       tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
       tx.product.findUnique.mockResolvedValue(makeProduct());
       tx.sale.findFirst
-        .mockResolvedValueOnce(null)  // first attempt: no prior → 1n
+        .mockResolvedValueOnce(null) // first attempt: no prior → 1n
         .mockResolvedValueOnce({ localNumber: 1n }); // retry: prior exists → 2n
       tx.sale.create
-        .mockRejectedValueOnce({ code: "P2002", meta: { target: "ux_sale_local_per_ws" } })
+        .mockRejectedValueOnce({
+          code: "P2002",
+          meta: { target: "ux_sale_local_per_ws" },
+        })
         .mockResolvedValueOnce({ id: "sale-2", localNumber: 2n, items: [] });
 
-      const result = await service.create({ items: [{ productId: "prod-1", quantity: 1 }] }) as { localNumber: bigint };
+      const result = (await service.create({
+        items: [{ productId: "prod-1", quantity: 1 }],
+      })) as { localNumber: bigint };
 
       expect(result.localNumber).toBe(2n);
     });
@@ -345,7 +384,9 @@ describe("SalesPosService", () => {
         })
         .mockResolvedValueOnce({ id: "sale-2", localNumber: 2n, items: [] });
 
-      const result = await service.create({ items: [{ productId: "prod-1", quantity: 1 }] }) as { localNumber: bigint };
+      const result = (await service.create({
+        items: [{ productId: "prod-1", quantity: 1 }],
+      })) as { localNumber: bigint };
 
       expect(result.localNumber).toBe(2n);
       expect(prisma.$transaction).toHaveBeenCalledTimes(2);
@@ -365,7 +406,9 @@ describe("SalesPosService", () => {
         })
         .mockResolvedValueOnce({ id: "sale-5", localNumber: 5n, items: [] });
 
-      const result = await service.create({ items: [{ productId: "prod-1", quantity: 1 }] }) as { localNumber: bigint };
+      const result = (await service.create({
+        items: [{ productId: "prod-1", quantity: 1 }],
+      })) as { localNumber: bigint };
 
       expect(result.localNumber).toBe(5n);
       expect(prisma.$transaction).toHaveBeenCalledTimes(2);
@@ -388,7 +431,9 @@ describe("SalesPosService", () => {
         })
         .mockResolvedValueOnce({ id: "sale-2", localNumber: 2n, items: [] });
 
-      const result = await service.create({ items: [{ productId: "prod-1", quantity: 1 }] }) as { localNumber: bigint };
+      const result = (await service.create({
+        items: [{ productId: "prod-1", quantity: 1 }],
+      })) as { localNumber: bigint };
 
       expect(result.localNumber).toBe(2n);
     });
@@ -497,7 +542,9 @@ describe("SalesPosService", () => {
       tx.sale.findFirst.mockResolvedValue(null);
       tx.syncQueue.findFirst.mockResolvedValue(null); // first ever → seq 1
       tx.sale.create.mockResolvedValue({
-        id: "sale-1", localNumber: 1n, items: [],
+        id: "sale-1",
+        localNumber: 1n,
+        items: [],
       });
 
       await service.create({ items: [{ productId: "prod-1", quantity: 1 }] });
@@ -551,12 +598,12 @@ describe("SalesPosService", () => {
         items: data.items.create.map((i: any) => ({ ...i })),
       }));
 
-      const result = await service.create({
+      const result = (await service.create({
         items: [
           { productId: "prod-1", quantity: 1 },
           { productId: "prod-1", quantity: 1 },
         ],
-      }) as {
+      })) as {
         totalAmount: Prisma.Decimal;
         items: Array<{ taxAmount: Prisma.Decimal; total: Prisma.Decimal }>;
       };
@@ -589,9 +636,9 @@ describe("SalesPosService", () => {
         items: data.items?.create?.map((i: any) => ({ id: i.id, ...i })) ?? [],
       }));
 
-      const result = await service.create({
+      const result = (await service.create({
         items: [{ productId: "prod-1", quantity: 1 }],
-      }) as { id: string };
+      })) as { id: string };
 
       // Verify the service generated UUIDs that were passed to sale.create
       expect(tx.sale.create).toHaveBeenCalledWith(
@@ -675,28 +722,30 @@ describe("SalesPosService", () => {
       workstationId: "ws-1",
       clientId: null as string | null,
       startedAt: new Date(),
-      items: [{
-        id: "item-1",
-        productId: "prod-1",
-        quantity: 2,
-        unitPrice: new Prisma.Decimal(5000),
-        taxRate: new Prisma.Decimal(19),
-        taxAmount: new Prisma.Decimal(1900),
-        subtotal: new Prisma.Decimal(10000),
-        total: new Prisma.Decimal(11900),
-        discountPercentage: new Prisma.Decimal(0),
-        discountAmount: new Prisma.Decimal(0),
-        discountReason: null,
-        commissionTypeSnapshot: null,
-        commissionValueSnapshot: null,
-        commissionAmount: new Prisma.Decimal(0),
-        requiresPrescription: false,
-        productSnapshot: {
-          internalCode: "P001",
-          commercialName: "Acetaminofén",
-          concentration: "500mg",
+      items: [
+        {
+          id: "item-1",
+          productId: "prod-1",
+          quantity: 2,
+          unitPrice: new Prisma.Decimal(5000),
+          taxRate: new Prisma.Decimal(19),
+          taxAmount: new Prisma.Decimal(1900),
+          subtotal: new Prisma.Decimal(10000),
+          total: new Prisma.Decimal(11900),
+          discountPercentage: new Prisma.Decimal(0),
+          discountAmount: new Prisma.Decimal(0),
+          discountReason: null,
+          commissionTypeSnapshot: null,
+          commissionValueSnapshot: null,
+          commissionAmount: new Prisma.Decimal(0),
+          requiresPrescription: false,
+          productSnapshot: {
+            internalCode: "P001",
+            commercialName: "Acetaminofén",
+            concentration: "500mg",
+          },
         },
-      }],
+      ],
     });
 
     const validConfirmInput: ConfirmSaleInput = {
@@ -707,7 +756,8 @@ describe("SalesPosService", () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.sale.findUnique.mockResolvedValue(makeSale());
       tx.paymentMethod.findUnique.mockResolvedValue({
-        id: "pm-cash", isCash: true,
+        id: "pm-cash",
+        isCash: true,
       });
       inventoryLots.consumeStockForSale.mockResolvedValue([
         { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
@@ -723,7 +773,9 @@ describe("SalesPosService", () => {
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
 
-      const result = await service.confirm("sale-1", validConfirmInput) as { operationalState: string };
+      const result = (await service.confirm("sale-1", validConfirmInput)) as {
+        operationalState: string;
+      };
 
       expect(result.operationalState).toBe("CONFIRMED");
       expect(inventoryLots.consumeStockForSale).toHaveBeenCalledWith(
@@ -774,7 +826,8 @@ describe("SalesPosService", () => {
       sale.totalAmount = new Prisma.Decimal(10000);
       tx.sale.findUnique.mockResolvedValue(sale);
       tx.paymentMethod.findUnique.mockResolvedValue({
-        id: "pm-card", isCash: false,
+        id: "pm-card",
+        isCash: false,
       });
 
       await expect(
@@ -851,8 +904,11 @@ describe("SalesPosService", () => {
       });
 
       const payload = JSON.parse(
-        (tx.syncQueue.create as unknown as { mock: { calls: Array<[{ data: { payload: string } }]> } }).mock
-          .calls[0][0].data.payload,
+        (
+          tx.syncQueue.create as unknown as {
+            mock: { calls: Array<[{ data: { payload: string } }]> };
+          }
+        ).mock.calls[0][0].data.payload,
       );
       expect(payload.confirmSaleDto.cashReceived).toBe(20000);
     });
@@ -877,14 +933,20 @@ describe("SalesPosService", () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       const sale = makeSale();
       tx.sale.findUnique.mockResolvedValue(sale);
-      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash",
+        isCash: true,
+      });
       inventoryLots.consumeStockForSale.mockResolvedValue([
         { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
       ]);
       tx.saleItem.update.mockResolvedValue({});
       tx.saleItemLot.create.mockResolvedValue({});
       tx.salePayment.createMany.mockResolvedValue({ count: 2 });
-      tx.sale.update.mockResolvedValue({ ...sale, operationalState: "CONFIRMED" });
+      tx.sale.update.mockResolvedValue({
+        ...sale,
+        operationalState: "CONFIRMED",
+      });
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
 
@@ -990,6 +1052,59 @@ describe("SalesPosService", () => {
       ).rejects.toThrow(CreditLimitExceededException);
     });
 
+    it("counts abonos toward the debt, so a client who paid in full can buy on credit again", async () => {
+      // Regression: `computeClientCreditDebt` omitted the abono term, so the
+      // sale-time validator saw the client's debt as still outstanding after a
+      // full payment. The client screen (CreditService) reported the debt at 0
+      // while the POS refused the sale with the stale balance — the two live in
+      // the same database and disagreed. The server's equivalent
+      // (sales.service.ts) does subtract abonos, so this also diverged from
+      // the value the server would have enforced.
+      auth.requireRole.mockReturnValue(makeMockSession());
+      const sale = makeSale();
+      sale.clientId = "client-1";
+      tx.sale.findUnique.mockResolvedValue(sale);
+      tx.paymentMethod.findMany.mockResolvedValue([
+        { id: "pm-credit", category: "CREDIT" },
+      ]);
+      // Limit 15000; a prior credit sale of 8000 fully settled by an abono of
+      // 8000 → real debt 0, available 15000. Paying this 11900 sale on credit
+      // fits. Ignoring the abono would leave the debt at 8000, available
+      // 7000, and wrongly refuse the sale.
+      tx.client.findUnique.mockResolvedValue({
+        id: "client-1",
+        creditLimit: new Prisma.Decimal(15000),
+      });
+      tx.salePayment.aggregate.mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal(8000) },
+      });
+      tx.clientReturn.aggregate.mockResolvedValue({
+        _sum: { refundAmount: new Prisma.Decimal(0) },
+      });
+      tx.clientCreditPayment.aggregate.mockResolvedValue({
+        _sum: { amount: new Prisma.Decimal(8000) },
+      });
+      inventoryLots.consumeStockForSale.mockResolvedValue([
+        { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
+      ]);
+      tx.saleItem.update.mockResolvedValue({});
+      tx.saleItemLot.create.mockResolvedValue({});
+      tx.salePayment.createMany.mockResolvedValue({ count: 1 });
+      tx.sale.update.mockResolvedValue({
+        ...makeSale(),
+        operationalState: "CONFIRMED",
+        confirmedAt: new Date(),
+      });
+      tx.syncQueue.findFirst.mockResolvedValue(null);
+      tx.syncQueue.create.mockResolvedValue({});
+
+      const result = (await service.confirm("sale-1", {
+        payments: [{ paymentMethodId: "pm-credit", amount: 11900 }],
+      })) as { operationalState: string };
+
+      expect(result.operationalState).toBe("CONFIRMED");
+    });
+
     it("confirms a CREDIT payment when it stays within the available balance", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       const sale = makeSale();
@@ -1022,9 +1137,9 @@ describe("SalesPosService", () => {
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
 
-      const result = await service.confirm("sale-1", {
+      const result = (await service.confirm("sale-1", {
         payments: [{ paymentMethodId: "pm-credit", amount: 11900 }],
-      }) as { operationalState: string };
+      })) as { operationalState: string };
 
       expect(result.operationalState).toBe("CONFIRMED");
       expect(tx.salePayment.createMany).toHaveBeenCalled();
@@ -1034,14 +1149,20 @@ describe("SalesPosService", () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       const sale = makeSale();
       tx.sale.findUnique.mockResolvedValue(sale);
-      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash",
+        isCash: true,
+      });
       inventoryLots.consumeStockForSale.mockResolvedValue([
         { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
       ]);
       tx.saleItem.update.mockResolvedValue({});
       tx.saleItemLot.create.mockResolvedValue({});
       tx.salePayment.createMany.mockResolvedValue({ count: 1 });
-      tx.sale.update.mockResolvedValue({ ...sale, operationalState: "CONFIRMED" });
+      tx.sale.update.mockResolvedValue({
+        ...sale,
+        operationalState: "CONFIRMED",
+      });
       tx.syncQueue.findFirst.mockResolvedValue(null);
       tx.syncQueue.create.mockResolvedValue({});
 
@@ -1075,28 +1196,30 @@ describe("SalesPosService", () => {
       workstationId: "ws-1",
       clientId: null as string | null,
       startedAt: new Date(),
-      items: [{
-        id: "item-1",
-        productId: "prod-1",
-        quantity: 2,
-        unitPrice: new Prisma.Decimal(5000),
-        taxRate: new Prisma.Decimal(19),
-        taxAmount: new Prisma.Decimal(1900),
-        subtotal: new Prisma.Decimal(10000),
-        total: new Prisma.Decimal(11900),
-        discountPercentage: new Prisma.Decimal(0),
-        discountAmount: new Prisma.Decimal(0),
-        discountReason: null,
-        commissionTypeSnapshot: null,
-        commissionValueSnapshot: null,
-        commissionAmount: new Prisma.Decimal(0),
-        requiresPrescription: false,
-        productSnapshot: {
-          internalCode: "P001",
-          commercialName: "Acetaminofén",
-          concentration: "500mg",
+      items: [
+        {
+          id: "item-1",
+          productId: "prod-1",
+          quantity: 2,
+          unitPrice: new Prisma.Decimal(5000),
+          taxRate: new Prisma.Decimal(19),
+          taxAmount: new Prisma.Decimal(1900),
+          subtotal: new Prisma.Decimal(10000),
+          total: new Prisma.Decimal(11900),
+          discountPercentage: new Prisma.Decimal(0),
+          discountAmount: new Prisma.Decimal(0),
+          discountReason: null,
+          commissionTypeSnapshot: null,
+          commissionValueSnapshot: null,
+          commissionAmount: new Prisma.Decimal(0),
+          requiresPrescription: false,
+          productSnapshot: {
+            internalCode: "P001",
+            commercialName: "Acetaminofén",
+            concentration: "500mg",
+          },
         },
-      }],
+      ],
     });
 
     const validConfirmInput: ConfirmSaleInput = {
@@ -1105,11 +1228,21 @@ describe("SalesPosService", () => {
 
     it("writes SALE_CONFIRMED event after successful confirm", async () => {
       const auditWriter = { write: vi.fn() };
-      service = createSalesPosService(prisma, auth as any, inventoryLots as any, undefined, undefined, auditWriter as any);
+      service = createSalesPosService(
+        prisma,
+        auth as any,
+        inventoryLots as any,
+        undefined,
+        undefined,
+        auditWriter as any,
+      );
 
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.sale.findUnique.mockResolvedValue(makeSale());
-      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash",
+        isCash: true,
+      });
       inventoryLots.consumeStockForSale.mockResolvedValue([
         { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
       ]);
@@ -1148,12 +1281,24 @@ describe("SalesPosService", () => {
 
     it("reports invoiceGenerated=true when invoice service succeeds", async () => {
       const auditWriter = { write: vi.fn() };
-      const invoiceService = { generateInvoiceForSale: vi.fn().mockResolvedValue(undefined) };
-      service = createSalesPosService(prisma, auth as any, inventoryLots as any, invoiceService as any, undefined, auditWriter as any);
+      const invoiceService = {
+        generateInvoiceForSale: vi.fn().mockResolvedValue(undefined),
+      };
+      service = createSalesPosService(
+        prisma,
+        auth as any,
+        inventoryLots as any,
+        invoiceService as any,
+        undefined,
+        auditWriter as any,
+      );
 
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.sale.findUnique.mockResolvedValue(makeSale());
-      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash",
+        isCash: true,
+      });
       inventoryLots.consumeStockForSale.mockResolvedValue([
         { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
       ]);
@@ -1183,13 +1328,25 @@ describe("SalesPosService", () => {
     it("reports invoiceError when invoice service fails", async () => {
       const auditWriter = { write: vi.fn() };
       const invoiceService = {
-        generateInvoiceForSale: vi.fn().mockRejectedValue(new Error("Fiscal API unavailable")),
+        generateInvoiceForSale: vi
+          .fn()
+          .mockRejectedValue(new Error("Fiscal API unavailable")),
       };
-      service = createSalesPosService(prisma, auth as any, inventoryLots as any, invoiceService as any, undefined, auditWriter as any);
+      service = createSalesPosService(
+        prisma,
+        auth as any,
+        inventoryLots as any,
+        invoiceService as any,
+        undefined,
+        auditWriter as any,
+      );
 
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.sale.findUnique.mockResolvedValue(makeSale());
-      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash",
+        isCash: true,
+      });
       inventoryLots.consumeStockForSale.mockResolvedValue([
         { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
       ]);
@@ -1220,7 +1377,10 @@ describe("SalesPosService", () => {
     it("does not throw when auditWriter is not configured", async () => {
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.sale.findUnique.mockResolvedValue(makeSale());
-      tx.paymentMethod.findUnique.mockResolvedValue({ id: "pm-cash", isCash: true });
+      tx.paymentMethod.findUnique.mockResolvedValue({
+        id: "pm-cash",
+        isCash: true,
+      });
       inventoryLots.consumeStockForSale.mockResolvedValue([
         { lotId: "lot-1", quantity: 2, unitCostAtSale: new Prisma.Decimal(0) },
       ]);
@@ -1305,7 +1465,13 @@ describe("SalesPosService", () => {
 
       await expect(
         service.create({
-          items: [{ productId: "prod-1", quantity: 1, unitPrice: new Prisma.Decimal(4000) }],
+          items: [
+            {
+              productId: "prod-1",
+              quantity: 1,
+              unitPrice: new Prisma.Decimal(4000),
+            },
+          ],
         }),
       ).rejects.toThrow(PriceOverrideNotAllowedForRoleException);
     });
@@ -1359,8 +1525,18 @@ describe("SalesPosService", () => {
       await expect(
         service.create({
           items: [
-            { productId: "prod-1", quantity: 1, discountPercentage: 6, discountReason: "promo-a" },
-            { productId: "prod-1", quantity: 1, discountPercentage: 6, discountReason: "promo-b" },
+            {
+              productId: "prod-1",
+              quantity: 1,
+              discountPercentage: 6,
+              discountReason: "promo-a",
+            },
+            {
+              productId: "prod-1",
+              quantity: 1,
+              discountPercentage: 6,
+              discountReason: "promo-b",
+            },
           ],
         }),
       ).rejects.toThrow(DiscountExceedsRoleLimitException);
@@ -1368,8 +1544,18 @@ describe("SalesPosService", () => {
       try {
         await service.create({
           items: [
-            { productId: "prod-1", quantity: 1, discountPercentage: 6, discountReason: "promo-a" },
-            { productId: "prod-1", quantity: 1, discountPercentage: 6, discountReason: "promo-b" },
+            {
+              productId: "prod-1",
+              quantity: 1,
+              discountPercentage: 6,
+              discountReason: "promo-a",
+            },
+            {
+              productId: "prod-1",
+              quantity: 1,
+              discountPercentage: 6,
+              discountReason: "promo-b",
+            },
           ],
         });
       } catch (err) {
@@ -1381,7 +1567,9 @@ describe("SalesPosService", () => {
     it("allows an owner to apply a 100% item discount when product cost is 0", async () => {
       auth.requireRole.mockReturnValue(makeSessionForRole(RoleType.OWNER));
       tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
-      tx.product.findUnique.mockResolvedValue(makeProductWithCost(new Prisma.Decimal(0)));
+      tx.product.findUnique.mockResolvedValue(
+        makeProductWithCost(new Prisma.Decimal(0)),
+      );
       tx.sale.findFirst.mockResolvedValue(null);
       tx.sale.create.mockResolvedValue({
         id: "sale-1",
@@ -1409,7 +1597,9 @@ describe("SalesPosService", () => {
     it("throws PriceBelowCostException when owner overrides below cost with the floor enabled", async () => {
       auth.requireRole.mockReturnValue(makeSessionForRole(RoleType.OWNER));
       tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
-      tx.product.findUnique.mockResolvedValue(makeProductWithCost(new Prisma.Decimal(50)));
+      tx.product.findUnique.mockResolvedValue(
+        makeProductWithCost(new Prisma.Decimal(50)),
+      );
       tx.sale.findFirst.mockResolvedValue(null);
 
       // Owner provides an explicit override unitPrice of 5 (below cost 50)
@@ -1434,7 +1624,9 @@ describe("SalesPosService", () => {
     it("allows an owner to apply a 50% discount with no override when catalog price is above cost", async () => {
       auth.requireRole.mockReturnValue(makeSessionForRole(RoleType.OWNER));
       tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
-      tx.product.findUnique.mockResolvedValue(makeProductWithCost(new Prisma.Decimal(50)));
+      tx.product.findUnique.mockResolvedValue(
+        makeProductWithCost(new Prisma.Decimal(50)),
+      );
       tx.sale.findFirst.mockResolvedValue(null);
       tx.sale.create.mockResolvedValue({
         id: "sale-1",
@@ -1464,12 +1656,17 @@ describe("SalesPosService", () => {
     it("allows a price override below cost when the price floor is disabled", async () => {
       useLocalConfigStore.setState({
         discountLimits: defaultDiscountLimits(),
-        salesConfig: defaultSalesConfig({ cashierAllowed: true, floorEnabled: false }),
+        salesConfig: defaultSalesConfig({
+          cashierAllowed: true,
+          floorEnabled: false,
+        }),
       });
 
       auth.requireRole.mockReturnValue(makeMockSession());
       tx.cashShift.findFirst.mockResolvedValue(makeOpenCashShift());
-      tx.product.findUnique.mockResolvedValue(makeProductWithCost(new Prisma.Decimal(50)));
+      tx.product.findUnique.mockResolvedValue(
+        makeProductWithCost(new Prisma.Decimal(50)),
+      );
       tx.sale.findFirst.mockResolvedValue(null);
       tx.sale.create.mockResolvedValue({
         id: "sale-1",

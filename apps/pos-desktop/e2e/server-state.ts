@@ -1043,7 +1043,133 @@ export async function waitForServerClient(
   );
 }
 
-/** Wait until the server-side copy of a client reports `isActive`. */
+/**
+ * Server-side store-credit state, recomputed with the same three terms the
+ * server's own `computeCreditDebt` uses.
+ *
+ * Deliberately a re-implementation rather than a call into the service: the
+ * suite's value here is comparing two independent computations of the same
+ * quantity. Asking the server what it thinks its own debt is would only prove
+ * the server agrees with itself.
+ */
+export async function fetchServerCreditState(
+  identificationNumber: string,
+): Promise<{
+  clientId: string;
+  creditLimit: number;
+  debt: number;
+  creditPaymentCount: number;
+}> {
+  const rows = await query<{
+    clientId: string;
+    creditLimit: string | number | null;
+    salesDebt: string | number | null;
+    creditRefunds: string | number | null;
+    abonos: string | number | null;
+    creditPaymentCount: string | number | null;
+  }>(
+    `SELECT c."id"                                  AS "clientId",
+            c."creditLimit"                         AS "creditLimit",
+            COALESCE((
+              SELECT SUM(sp."amount")
+                FROM "SalePayment" sp
+                JOIN "Sale" s ON s."id" = sp."saleId"
+               WHERE s."clientId" = c."id"
+                 AND s."operationalState" = 'CONFIRMED'
+                 AND sp."paymentMethodId" IN (
+                       SELECT "id" FROM "PaymentMethod" WHERE "category" = 'CREDIT')
+            ), 0)                                   AS "salesDebt",
+            COALESCE((
+              SELECT SUM(r."refundAmount")
+                FROM "ClientReturn" r
+               WHERE r."clientId" = c."id"
+                 AND r."state" = 'CONFIRMED'
+                 AND r."refundMethodId" IN (
+                       SELECT "id" FROM "PaymentMethod" WHERE "category" = 'CREDIT')
+            ), 0)                                   AS "creditRefunds",
+            COALESCE((
+              SELECT SUM(p."amount")
+                FROM "ClientCreditPayment" p
+               WHERE p."clientId" = c."id" AND p."annulledAt" IS NULL
+            ), 0)                                   AS "abonos",
+            (SELECT COUNT(*)
+               FROM "SalePayment" sp
+               JOIN "Sale" s ON s."id" = sp."saleId"
+              WHERE s."clientId" = c."id"
+                AND s."operationalState" = 'CONFIRMED'
+                AND sp."paymentMethodId" IN (
+                      SELECT "id" FROM "PaymentMethod" WHERE "category" = 'CREDIT')
+            )                                       AS "creditPaymentCount"
+       FROM "Client" c
+      WHERE c."identificationNumber" = $1
+      LIMIT 1`,
+    [identificationNumber],
+  );
+
+  const row = rows[0];
+  if (!row) {
+    throw new Error(
+      `no server client with identification ${identificationNumber}`,
+    );
+  }
+
+  const num = (value: string | number | null): number => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const debt = num(row.salesDebt) - num(row.creditRefunds) - num(row.abonos);
+  return {
+    clientId: row.clientId,
+    creditLimit: num(row.creditLimit),
+    debt: Math.max(0, debt),
+    creditPaymentCount: num(row.creditPaymentCount),
+  };
+}
+
+/**
+ * Wait until the server's own debt figure for a client reaches `expected`.
+ *
+ * Used after an abono so the assertion is about a settled server-side
+ * computation rather than about the row landing at all.
+ */
+export async function waitForServerCreditDebt(
+  identificationNumber: string,
+  expected: number,
+  timeoutMs = 120_000,
+): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  let last: number | null = null;
+
+  while (Date.now() < deadline) {
+    try {
+      last = (await fetchServerCreditState(identificationNumber)).debt;
+      if (Math.abs(last - expected) <= 0.005) return last;
+    } catch {
+      // Client not on the server yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  throw new Error(
+    `server credit debt for ${identificationNumber} never reached ${expected} ` +
+      `within ${timeoutMs}ms (last: ${last}). Queue: ${await describeSyncQueue()}`,
+  );
+}
+
+/** CREDIT payment methods the server knows, by name. */
+export async function fetchServerCreditMethods(): Promise<
+  Array<{ id: string; name: string; isCash: boolean }>
+> {
+  return query<{ id: string; name: string; isCash: boolean }>(
+    `SELECT "id", "name", "isCash"
+       FROM "PaymentMethod"
+      WHERE "category" = 'CREDIT' AND "isActive" = true
+      ORDER BY "sortOrder"`,
+  );
+}
+
+/** Wait until the server's copy of a client reports `isActive`. */
 export async function waitForServerClientActiveState(
   identificationNumber: string,
   isActive: boolean,

@@ -261,8 +261,7 @@ async function clearCartViaUi(): Promise<boolean> {
   for (let step = 0; step < before + 2; step += 1) {
     if ((await countRows()) === 0) break;
 
-    const removeLast =
-      `(${CART}//tbody/tr)[last()]//button[@aria-label="Eliminar"][last()]`;
+    const removeLast = `(${CART}//tbody/tr)[last()]//button[@aria-label="Eliminar"][last()]`;
     const button = await $(removeLast);
     await button.waitForExist({ timeout: 10_000 });
     await button.click();
@@ -554,19 +553,9 @@ async function recoverFromLogin(): Promise<boolean> {
   // (`delay: users.length * 0.05 + 0.15` in avatar-grid.tsx), so both the click
   // and the form it reveals have to be waited for rather than sampled once.
   if (!(await isVisible(LOGIN_IDENTIFIER_SELECTOR))) {
-    await waitVisible(
-      "button*=Otro usuario",
-      10,
-      500,
-      "other-user link",
-    );
+    await waitVisible("button*=Otro usuario", 10, 500, "other-user link");
     await clickWhenPresent("button*=Otro usuario", "other-user link");
-    await waitVisible(
-      LOGIN_IDENTIFIER_SELECTOR,
-      20,
-      500,
-      "manual login form",
-    );
+    await waitVisible(LOGIN_IDENTIFIER_SELECTOR, 20, 500, "manual login form");
   }
 
   await setInputValue(
@@ -1845,7 +1834,12 @@ export async function forceConfigSwitch(
   section: "purchases" | "strictness",
   desired: boolean,
 ): Promise<void> {
-  await waitVisible(`button#${id}[role="switch"]`, 20, 1_000, `Config switch #${id}`);
+  await waitVisible(
+    `button#${id}[role="switch"]`,
+    20,
+    1_000,
+    `Config switch #${id}`,
+  );
 
   if ((await readSwitch(id)) !== desired) {
     await setSwitch(id, desired);

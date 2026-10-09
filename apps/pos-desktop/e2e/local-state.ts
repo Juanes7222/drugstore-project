@@ -545,6 +545,149 @@ export async function fetchLocalConfig(): Promise<Record<string, unknown>> {
 }
 
 /**
+ * Store-credit state as the POS computes it, read straight out of the local
+ * database.
+ *
+ * `debt` is recomputed here in SQL using the SAME three terms the domain uses
+ * — confirmed sales paid with a CREDIT method, minus confirmed credit refunds,
+ * minus non-annulled abonos — rather than trusting a stored column. That is the
+ * point of the reader: `SalesPosService.computeClientCreditDebt` and
+ * `CreditService.computeDebtCents` drifted apart once already (the former
+ * dropped the abono term), and a reader that just echoed whatever the app wrote
+ * would have agreed with whichever one was wrong.
+ */
+export async function fetchLocalCreditState(
+  identificationNumber: string,
+): Promise<{
+  clientId: string;
+  creditLimit: number;
+  debt: number;
+  creditPaymentCount: number;
+}> {
+  const rows = await queryLocal<{
+    clientId: string;
+    creditLimit: string | number | null;
+    salesDebt: string | number | null;
+    creditRefunds: string | number | null;
+    abonos: string | number | null;
+    creditPaymentCount: string | number | null;
+  }>(
+    `SELECT c."id"                                  AS "clientId",
+            c."creditLimit"                         AS "creditLimit",
+            COALESCE((
+              SELECT SUM(sp."amount")
+                FROM "SalePayment" sp
+                JOIN "Sale" s ON s."id" = sp."saleId"
+               WHERE s."clientId" = c."id"
+                 AND s."operationalState" = 'CONFIRMED'
+                 AND sp."paymentMethodId" IN (
+                       SELECT "id" FROM "PaymentMethod" WHERE "category" = 'CREDIT')
+            ), 0)                                   AS "salesDebt",
+            COALESCE((
+              SELECT SUM(r."refundAmount")
+                FROM "ClientReturn" r
+               WHERE r."clientId" = c."id"
+                 AND r."state" = 'CONFIRMED'
+                 AND r."refundMethodId" IN (
+                       SELECT "id" FROM "PaymentMethod" WHERE "category" = 'CREDIT')
+            ), 0)                                   AS "creditRefunds",
+            COALESCE((
+              SELECT SUM(p."amount")
+                FROM "ClientCreditPayment" p
+               WHERE p."clientId" = c."id" AND p."annulledAt" IS NULL
+            ), 0)                                   AS "abonos",
+            (SELECT COUNT(*)
+               FROM "SalePayment" sp
+               JOIN "Sale" s ON s."id" = sp."saleId"
+              WHERE s."clientId" = c."id"
+                AND s."operationalState" = 'CONFIRMED'
+                AND sp."paymentMethodId" IN (
+                      SELECT "id" FROM "PaymentMethod" WHERE "category" = 'CREDIT')
+            )                                       AS "creditPaymentCount"
+       FROM "Client" c
+      WHERE c."identificationNumber" = $1`,
+    [identificationNumber],
+  );
+
+  const row = rows[0];
+  if (!row) {
+    throw new Error(
+      `no local client with identification ${identificationNumber}`,
+    );
+  }
+
+  const num = (value: string | number | null): number => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const debt = num(row.salesDebt) - num(row.creditRefunds) - num(row.abonos);
+  return {
+    clientId: row.clientId,
+    creditLimit: num(row.creditLimit),
+    debt: Math.max(0, debt),
+    creditPaymentCount: num(row.creditPaymentCount),
+  };
+}
+
+/** CREDIT payment methods the POS holds locally, by name. */
+export async function fetchLocalCreditMethods(): Promise<
+  Array<{ id: string; name: string; isCash: boolean }>
+> {
+  return queryLocal<{ id: string; name: string; isCash: boolean }>(
+    `SELECT "id", "name", "isCash"
+       FROM "PaymentMethod"
+      WHERE "category" = 'CREDIT' AND "isActive" = true
+      ORDER BY "sortOrder"`,
+  );
+}
+
+/**
+ * The credit payment line of a locally held sale.
+ *
+ * Read separately from the sale header because a sale can be CONFIRMED while
+ * carrying no credit line at all — the shape a dropped `SalePayment` row takes,
+ * which is indistinguishable from a cash sale unless the payments are looked at
+ * directly.
+ */
+export async function fetchLocalCreditSalePayment(
+  localNumber: number,
+): Promise<{
+  amount: number;
+  methodName: string;
+  category: string;
+  isCash: boolean;
+} | null> {
+  const rows = await queryLocal<{
+    amount: string | number | null;
+    methodName: string;
+    category: string;
+    isCash: boolean;
+  }>(
+    `SELECT sp."amount"  AS "amount",
+            pm."name"    AS "methodName",
+            pm."category" AS "category",
+            pm."isCash"  AS "isCash"
+       FROM "SalePayment" sp
+       JOIN "Sale" s ON s."id" = sp."saleId"
+       JOIN "PaymentMethod" pm ON pm."id" = sp."paymentMethodId"
+      WHERE s."localNumber" = $1
+        AND pm."category" = 'CREDIT'`,
+    [localNumber],
+  );
+
+  const row = rows[0];
+  if (!row) return null;
+  const amount = Number(row.amount ?? 0);
+  return {
+    amount: Number.isFinite(amount) ? amount : 0,
+    methodName: row.methodName,
+    category: row.category,
+    isCash: row.isCash,
+  };
+}
+
+/**
  * Wipe the local database and wait for the app to boot again.
  *
  * The session token and workstation id live in localStorage and survive the

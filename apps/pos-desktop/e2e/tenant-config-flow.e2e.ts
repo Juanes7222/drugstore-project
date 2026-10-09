@@ -32,7 +32,6 @@ import { $, expect } from "@wdio/globals";
 import {
   signInAs,
   waitVisible,
-  setSwitch,
   readSwitch,
   toggleConfigSwitch,
   openConfigTab,
@@ -76,19 +75,6 @@ async function openConfig(): Promise<void> {
     1_000,
     "config page heading",
   );
-}
-
-/**
- * Flip a switch and wait for the server to have persisted the new value.
- *
- * The wait is the whole point: two changes fired back to back race on
- * `configVersion`, so the caller must observe the first one land before
- * flipping the second.
- */
-async function setPurchasesSwitch(id: string, desired: boolean): Promise<void> {
-  await setSwitch(id, desired);
-  const config = await waitForTenantConfigValue("purchases", id, desired);
-  expect(config.configVersion).toBeGreaterThan(0);
 }
 
 describe("Tenant configuration (real Tauri app against the real backend)", () => {
@@ -169,14 +155,17 @@ describe("Tenant configuration (real Tauri app against the real backend)", () =>
     expect(after?.configVersion).toBeGreaterThan(before?.configVersion ?? 0);
 
     // Over-reception is a third, independent flag in the same section.
-    const overTarget = await toggleConfigSwitch("allowOverReception", "purchases");
+    const overTarget = await toggleConfigSwitch(
+      "allowOverReception",
+      "purchases",
+    );
     const withOver = await fetchServerTenantConfig();
     expect(withOver?.purchases.requireExpiryOnReception).toBe(target);
 
     // Restore both, so this spec does not leak into the ones that follow.
-    expect(
-      await toggleConfigSwitch("allowOverReception", "purchases"),
-    ).toBe(!overTarget);
+    expect(await toggleConfigSwitch("allowOverReception", "purchases")).toBe(
+      !overTarget,
+    );
     expect(
       await toggleConfigSwitch("requireExpiryOnReception", "purchases"),
     ).toBe(!target);

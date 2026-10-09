@@ -155,10 +155,14 @@ export const config: WebdriverIO.Config & Options.WebdriverIO = {
    *   - `users-flow` and `tenant-config-flow` sign in as OWNER, because every
    *     `/users` guard and the only price-override exemption require that role.
    *     They run last so the role switch happens once.
+   *   - `sales-credit-flow` is order-independent: it snapshots the client's
+   *     credit state itself and asserts the DELTA its sale causes, so it neither
+   *     inherits nor leaks credit state. It sits with the other sales specs.
    */
   specs: [
     "./e2e/sales-flow.e2e.ts",
     "./e2e/sales-pricing-flow.e2e.ts",
+    "./e2e/sales-credit-flow.e2e.ts",
     "./e2e/returns-flow.e2e.ts",
     "./e2e/purchases-flow.e2e.ts",
     "./e2e/clients-flow.e2e.ts",

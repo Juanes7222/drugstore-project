@@ -30,25 +30,28 @@ import {
   ShiftState,
   CommissionType,
   ClientReturnState,
-} from '@pharmacy/database/local';
-import { dbWriteLock } from '../../infrastructure/write-lock';
-import type { LocalSession } from '../auth/local-session.store';
-import { notifyPendingEntry } from '../sync/sync-queue-notifier';
-import type { AuthService } from '../auth/auth.service';
-import type { InventoryLotsService, ConsumedLot } from '../inventory-lots/inventory-lots.service';
-import type { InvoiceService } from '../fiscal/invoice.service';
-import type { PrintRouter } from '../printing/print-router';
-import { PrintJobType, PrintPayloadType } from '../printing/printing-types';
-import { writePrintPayload } from '../printing/print-payload-writer';
-import { RoleType, SaleDeliveryInfo } from '@pharmacy/shared-types';
-import type { LocalAuditWriter } from '../audit/local-audit-writer.service';
-import { LocalAuditEvent } from '../audit/local-audit-writer.service';
+} from "@pharmacy/database/local";
+import { dbWriteLock } from "../../infrastructure/write-lock";
+import type { LocalSession } from "../auth/local-session.store";
+import { notifyPendingEntry } from "../sync/sync-queue-notifier";
+import type { AuthService } from "../auth/auth.service";
+import type {
+  InventoryLotsService,
+  ConsumedLot,
+} from "../inventory-lots/inventory-lots.service";
+import type { InvoiceService } from "../fiscal/invoice.service";
+import type { PrintRouter } from "../printing/print-router";
+import { PrintJobType, PrintPayloadType } from "../printing/printing-types";
+import { writePrintPayload } from "../printing/print-payload-writer";
+import { RoleType, SaleDeliveryInfo } from "@pharmacy/shared-types";
+import type { LocalAuditWriter } from "../audit/local-audit-writer.service";
+import { LocalAuditEvent } from "../audit/local-audit-writer.service";
 import {
   GENERIC_CLIENT_UUID,
   GENERIC_CLIENT_IDENTIFICATION_TYPE,
   GENERIC_CLIENT_IDENTIFICATION_NUMBER,
   GENERIC_CLIENT_NAME,
-} from '../../domain/clients/constants/clients.constants';
+} from "../../domain/clients/constants/clients.constants";
 import {
   SaleNotInProgressException,
   PrescriptionRequiredNotSupportedException,
@@ -63,17 +66,17 @@ import {
   CreditNotEnabledForClientException,
   CreditLimitExceededException,
   NoOpenCashShiftException,
-} from './exceptions';
+} from "./exceptions";
 import {
   validateItemPricing,
   validateSalePricing,
-} from './sales-pricing-validator';
-import { calculateCommission } from './commission';
+} from "./sales-pricing-validator";
+import { calculateCommission } from "./commission";
 import {
   getDiscountLimits,
   getSalesConfig,
-} from '../configuration/local-config.store';
-import { getEffectiveDeliveryConfig } from '../config';
+} from "../configuration/local-config.store";
+import { getEffectiveDeliveryConfig } from "../config";
 
 // ---------------------------------------------------------------------------
 // Public input types
@@ -198,7 +201,14 @@ export const createSalesPosService = (
   printRouter?: PrintRouter,
   auditWriter?: LocalAuditWriter,
 ): SalesPosService => {
-  return new SalesPosService(prisma, auth, inventoryLots, invoiceService, printRouter, auditWriter);
+  return new SalesPosService(
+    prisma,
+    auth,
+    inventoryLots,
+    invoiceService,
+    printRouter,
+    auditWriter,
+  );
 };
 
 // ---------------------------------------------------------------------------
@@ -254,7 +264,7 @@ export class SalesPosService {
     // creators: MAX(localNumber)+1 is only safe when no other writer can
     // interleave between the read and the insert. Foreground priority so a
     // checkout never waits behind queued background sync steps.
-    await dbWriteLock.acquire('foreground');
+    await dbWriteLock.acquire("foreground");
     try {
       let lastConflict: unknown = null;
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -270,7 +280,9 @@ export class SalesPosService {
       }
       throw lastConflict instanceof Error
         ? lastConflict
-        : new Error('Failed to create sale after multiple retries due to local number conflict.');
+        : new Error(
+            "Failed to create sale after multiple retries due to local number conflict.",
+          );
     } finally {
       dbWriteLock.release();
     }
@@ -285,7 +297,7 @@ export class SalesPosService {
    */
   private async createAttempt(
     input: CreateSaleInput,
-    session: Pick<LocalSession, 'userId' | 'workstationId' | 'role'>,
+    session: Pick<LocalSession, "userId" | "workstationId" | "role">,
   ): Promise<unknown> {
     return this.prisma.$transaction(async (tx) => {
       const cashShift = await this.getOpenCashShift(tx);
@@ -293,11 +305,14 @@ export class SalesPosService {
       const resolvedClientId = input.clientId ?? GENERIC_CLIENT_UUID;
       // Defensive fallback for the generic client — getClientSnapshot normally
       // finds it because seedGenericClientIfEmpty runs on startup.
-      const clientData = await this.getClientSnapshot(tx, resolvedClientId)
-        ?? this.buildInlineGenericClientSnapshot();
+      const clientData =
+        (await this.getClientSnapshot(tx, resolvedClientId)) ??
+        this.buildInlineGenericClientSnapshot();
 
       const clientDiscountPct = clientData?.classification?.discountPercentage
-        ? new Prisma.Decimal(clientData.classification.discountPercentage.toString())
+        ? new Prisma.Decimal(
+            clientData.classification.discountPercentage.toString(),
+          )
         : new Prisma.Decimal(0);
 
       // Sequential — parallel tx queries inside the same PGlite
@@ -345,7 +360,10 @@ export class SalesPosService {
       // retry covers the residual race (e.g. a pulled server sale landing
       // in between), which surfaces as a unique conflict on
       // (localNumber, sourceWorkstationId).
-      const localNumber = await this.getNextLocalNumber(tx, session.workstationId);
+      const localNumber = await this.getNextLocalNumber(
+        tx,
+        session.workstationId,
+      );
       const sale = await tx.sale.create({
         data: {
           id: globalThis.crypto.randomUUID(),
@@ -357,11 +375,14 @@ export class SalesPosService {
           workstationId: session.workstationId,
           userId: session.userId,
           sourceWorkstationId: session.workstationId,
-          clientIdentificationTypeSnapshot: clientData?.identificationType ?? null,
-          clientIdentificationNumberSnapshot: clientData?.identificationNumber ?? null,
+          clientIdentificationTypeSnapshot:
+            clientData?.identificationType ?? null,
+          clientIdentificationNumberSnapshot:
+            clientData?.identificationNumber ?? null,
           clientNameSnapshot: clientData?.fullName ?? null,
           clientId: clientData?.id ?? null,
-          clientClassificationIdSnapshot: clientData?.classification?.id ?? null,
+          clientClassificationIdSnapshot:
+            clientData?.classification?.id ?? null,
           clientTypeSnapshot: clientData?.classification?.type ?? null,
           subtotal: totals.subtotal,
           totalDiscount: totals.totalDiscount,
@@ -375,7 +396,8 @@ export class SalesPosService {
               id: globalThis.crypto.randomUUID(),
               productId: item.productId,
               productInternalCodeSnapshot: item.productSnapshot.internalCode,
-              productCommercialNameSnapshot: item.productSnapshot.commercialName,
+              productCommercialNameSnapshot:
+                item.productSnapshot.commercialName,
               // The Product model no longer has a generic-name field.
               // The snapshot column stays (historical fiscal records
               // reference it) but new sales store NULL.
@@ -394,7 +416,7 @@ export class SalesPosService {
               commissionValueSnapshot: item.commissionValueSnapshot,
               commissionAmount: item.commissionAmount,
               requiresPrescription: false,
-              })),
+            })),
           },
         },
         include: { items: true },
@@ -444,382 +466,418 @@ export class SalesPosService {
     // This guarantees the $transaction never contends for the single
     // connection — sale confirm completes in real time. Foreground priority:
     // a user action never waits behind queued background sync steps.
-    await dbWriteLock.acquire('foreground');
+    await dbWriteLock.acquire("foreground");
     try {
       let lastError: unknown;
-      for (let attempt = 1; attempt <= SalesPosService.MAX_CONFIRM_RETRIES; attempt++) {
+      for (
+        let attempt = 1;
+        attempt <= SalesPosService.MAX_CONFIRM_RETRIES;
+        attempt++
+      ) {
         try {
-          return await this.prisma.$transaction(async (tx) => {
-      // 1. Find and validate sale
-      const sale = await tx.sale.findUnique({
-        where: { id: saleId },
-        include: { items: true },
-      });
-
-      if (!sale) throw new SaleNotFoundException(saleId);
-      if (sale.operationalState !== SaleOperationalState.IN_PROGRESS) {
-        throw new SaleNotInProgressException(saleId);
-      }
-
-      // 2. Validate payments
-      // Use Decimal arithmetic throughout to avoid IEEE 754 drift from
-      // cents→pesos division (e.g. 12495 / 100 = 124.94999… in JS).
-      // Round the sum to 2 decimal places so any floating-point artifact is
-      // eliminated before comparing with the DB-stored total.
-      const totalPaidDecimal = input.payments.reduce(
-        (sum, p) => sum.plus(p.amount),
-        new Prisma.Decimal(0),
-      ).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-      // Round DB-stored total too — sales created before the cents→pesos fix
-      // (old JS division) stored imprecise values like 124.949999… instead of
-      // exactly 124.95. Rounding both sides eliminates the ghost difference.
-      // When the sale is a domicilio, the delivery fee (stored on the
-      // `delivery` JSON column) is part of the amount the customer owes and
-      // is included in the comparison.
-      const deliveryFeeDecimal = new Prisma.Decimal(
-        this.deliveryFeeCentsFromJson(sale.delivery),
-      ).dividedBy(100);
-      const dueTotalDecimal = sale.totalAmount.plus(deliveryFeeDecimal);
-      const saleTotalDecimal = dueTotalDecimal.toDecimalPlaces(
-        2, Prisma.Decimal.ROUND_HALF_UP,
-      );
-      const saleTotalNumber = Number(saleTotalDecimal.toString());
-
-// Ghost-difference guard: any gap < 1 cent (₡0.01) is IEEE 754 drift,
-      // not a real discrepancy.  COP has no fractional centavos — the
-      // frontend always works in whole cents — so any meaningful difference
-      // is ≥ 1¢.  This covers both the overpayment and underpayment sides
-      // without requiring the DB-stored total to match the frontend's exact
-      // rounding (frontend uses Math.round for tax, DB uses Decimal).
-      const ONE_CENT = new Prisma.Decimal('0.01');
-
-      // The payment rows must always cover the amount due — a tendered cash
-      // figure never excuses an underpaid sale.
-      const paymentShortfall = totalPaidDecimal
-        .minus(saleTotalDecimal)
-        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-      if (paymentShortfall.lessThan(ONE_CENT.negated())) {
-        throw new PaymentAmountMismatchException(
-          saleTotalNumber,
-          totalPaidDecimal.toNumber(),
-        );
-      }
-
-      // Change comes from the tendered figure when the register reported one:
-      // the payment rows carry the amount applied to the sale, so the cash the
-      // customer actually handed over is otherwise invisible and change would
-      // persist as 0. A zero (or absent) tendered figure means "not reported",
-      // never "the customer handed over nothing": the register field starts at 0
-      // and is only filled in for a cash overpay, so honouring a literal 0 would
-      // reject every split payment.
-      const tenderedCash =
-        input.cashReceived !== undefined && input.cashReceived > 0
-          ? new Prisma.Decimal(input.cashReceived)
-          : totalPaidDecimal;
-      const rawChange = tenderedCash
-        .minus(saleTotalDecimal)
-        .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-
-      let changeAmount = rawChange;
-      if (rawChange.greaterThan(ONE_CENT)) {
-        const hasCash = await this.hasAnyCashPaymentMethod(tx, input.payments);
-        if (!hasCash) {
-          throw new ChangeRequiresCashPaymentException();
-        }
-      } else {
-        // No change (or a sub-cent rounding artifact): normalise to zero so the
-        // persisted figure never carries phantom centavos.
-changeAmount = new Prisma.Decimal(0);
-      }
-
-      // 2b. ---- Store credit validation ----
-      // A CREDIT payment is only allowed for a registered client (never the
-      // generic consumer) whose credit debt stays within their limit after
-      // this payment. Runs inside the same transaction as the payment insert
-      // so the balance check is atomic with the confirmation.
-      const creditTotal = await this.sumCreditPayments(tx, input.payments);
-      if (creditTotal.greaterThan(0)) {
-        const isRegisteredClient =
-          !!sale.clientId && sale.clientId !== GENERIC_CLIENT_UUID;
-        if (!isRegisteredClient) {
-          throw new CreditRequiresRegisteredClientException();
-        }
-
-        const client = await tx.client.findUnique({
-          where: { id: sale.clientId! },
-          select: { creditLimit: true },
-        });
-        const creditLimit = client?.creditLimit ?? null;
-        if (!creditLimit || creditLimit.lessThanOrEqualTo(0)) {
-          throw new CreditNotEnabledForClientException(sale.clientId!);
-        }
-
-        const currentDebt = await this.computeClientCreditDebt(tx, sale.clientId!);
-        const available = creditLimit.minus(currentDebt);
-        if (creditTotal.greaterThan(available)) {
-          throw new CreditLimitExceededException(
-            Math.round(Number(available) * 100),
-            Math.round(Number(creditTotal) * 100),
-          );
-        }
-      }
-
-      // 3. Consume stock for each item
-      for (const item of sale.items) {
-        const consumedLots = await this.inventoryLots.consumeStockForSale({
-          productId: item.productId,
-          quantity: item.quantity,
-          saleId: sale.id,
-        }, tx); // Pass tx to avoid nested $transaction on single-connection PGlite
-
-        const weightedUnitCost = this.computeWeightedUnitCost(consumedLots);
-
-        await tx.saleItem.update({
-          where: { id: item.id },
-          data: { unitCost: weightedUnitCost },
-        });
-
-        for (const cl of consumedLots) {
-          await tx.saleItemLot.create({
-            data: {
-              id: globalThis.crypto.randomUUID(),
-              saleItemId: item.id,
-              lotId: cl.lotId,
-              quantity: cl.quantity,
-              unitCostAtSale: cl.unitCostAtSale,
-            },
-          });
-        }
-      }
-
-      // 4. Create payment records
-      await tx.salePayment.createMany({
-        data: input.payments.map((p) => ({
-          id: globalThis.crypto.randomUUID(),
-          saleId: sale.id,
-          paymentMethodId: p.paymentMethodId,
-          amount: new Prisma.Decimal(p.amount),
-          transactionReference: p.transactionReference ?? null,
-          authorizationCode: p.authorizationCode ?? null,
-          cardBrand: p.cardBrand ?? null,
-          cardLastFour: p.cardLastFour ?? null,
-          batchNumber: p.batchNumber ?? null,
-          processorResponseCode: p.processorResponseCode ?? null,
-        })),
-      });
-
-      // 5. Update sale to CONFIRMED
-      const confirmedAt = new Date();
-      const updatedSale = await tx.sale.update({
-        where: { id: saleId },
-        data: {
-          operationalState: SaleOperationalState.CONFIRMED,
-          confirmedAt,
-          lastModifiedAt: confirmedAt,
-          changeAmount,
-        },
-      });
-
-      // 6. Insert SyncQueue entry inside the same transaction
-      await this.createSyncQueueEntry(tx, sale, input, session, confirmedAt);
-
-      return updatedSale;
-    }).then(async (result) => {
-      // Transaction committed — trigger immediate push instead of waiting
-      // for the 5-minute scheduler cycle.
-      notifyPendingEntry();
-
-      // 7. Generate invoice (fiscal document) after the sale confirms.
-      //    This runs outside the main transaction so it doesn't block the
-      //    confirm with fiscal computation. If invoice generation fails, the
-      //    sale is still confirmed — the failure is logged.
-      let invoiceGenerated = false;
-      let invoiceError: string | undefined;
-      if (this.invoiceService) {
-        try {
-          await this.invoiceService.generateInvoiceForSale(saleId);
-          invoiceGenerated = true;
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          invoiceError = message;
-          console.error(
-            `[SalesPosService] Invoice generation FAILED for sale ${saleId}. ` +
-            `Sale is confirmed but no fiscal document was created. Reason: ${message}`,
-          );
-          if (err instanceof Error && err.stack) {
-            console.error(`[SalesPosService] Stack: ${err.stack}`);
-          }
-        }
-      } else {
-        console.warn(
-          `[SalesPosService] No invoiceService configured for workstation. ` +
-          `Sale ${saleId} confirmed without fiscal document.`,
-        );
-      }
-
-      // 8. Enqueue the receipt print job (fire-and-forget from the caller's
-      //    perspective). The print router handles the routing, fallback, and
-      //    queueing. If the router is not configured, printing is skipped.
-      if (this.printRouter) {
-        try {
-          const resultData = result as {
-            id: string;
-            localNumber: bigint;
-            delivery?: Prisma.JsonValue | null;
-          };
-          // The receipt prints the delivery section when this sale is a
-          // domicilio, and includes the fee line in the totals.
-          const deliveryJson = resultData.delivery ?? null;
-          const deliveryForReceipt =
-            deliveryJson !== null &&
-            typeof deliveryJson === 'object' &&
-            !Array.isArray(deliveryJson)
-              ? (deliveryJson as {
-                  address?: unknown;
-                  contactName?: unknown;
-                  contactPhone?: unknown;
-                  notes?: unknown;
-                  scheduledAt?: unknown;
-                })
-              : null;
-          // The receipt payload is generated as HTML for thermal printers.
-          // At this point the invoice may have been generated above with a
-          // fiscal PDF — we print the SALE_RECEIPT version.
-          const receiptHtml = (await import('../fiscal/receipt-generator'))
-            .generateReceiptHtml({
-              id: saleId,
-              invoiceNumber: `V${String(resultData.localNumber)}`,
-              contingencyNumber: null,
-              invoiceType: 'SALE_RECEIPT',
-              status: 'TRANSMITTED_AUTHORIZED',
-              cufeProvisional: '',
-              cufeOfficial: null,
-              issuedAt: new Date(),
-              fullData: null,
-              delivery: deliveryForReceipt
-                ? {
-                    address:
-                      typeof deliveryForReceipt.address === 'string'
-                        ? deliveryForReceipt.address
-                        : null,
-                    contactName:
-                      typeof deliveryForReceipt.contactName === 'string'
-                        ? deliveryForReceipt.contactName
-                        : null,
-                    contactPhone:
-                      typeof deliveryForReceipt.contactPhone === 'string'
-                        ? deliveryForReceipt.contactPhone
-                        : null,
-                    notes:
-                      typeof deliveryForReceipt.notes === 'string'
-                        ? deliveryForReceipt.notes
-                        : null,
-                    scheduledAt:
-                      typeof deliveryForReceipt.scheduledAt === 'string'
-                        ? deliveryForReceipt.scheduledAt
-                        : null,
-                  }
-                : null,
-              deliveryFeeCents: this.deliveryFeeCentsFromJson(deliveryJson),
-            });
-
-          // Write receipt HTML to a temp file for the print router
-          const receiptPath = await writePrintPayload(
-            `receipt-${saleId}.html`,
-            receiptHtml,
-          );
-
-          await this.printRouter.print(PrintJobType.SALE_RECEIPT, {
-            payloadPath: receiptPath,
-            payloadType: PrintPayloadType.HTML,
-            saleId,
-          });
-
-          // 8b. If the invoice was generated, also enqueue the
-          //     ELECTRONIC_INVOICE print job (for laser/inkjet printers).
-          //     Fire-and-forget from the caller's perspective.
-          if (invoiceGenerated) {
-            try {
-              const invoicePath = await writePrintPayload(
-                `invoice-${saleId}.html`,
-                receiptHtml, // Reuse the receipt HTML; the actual fiscal PDF
-                              // is generated server-side and available later
-              );
-
-              await this.printRouter.print(PrintJobType.ELECTRONIC_INVOICE, {
-                payloadPath: invoicePath,
-                payloadType: PrintPayloadType.HTML,
-                saleId,
+          return await this.prisma
+            .$transaction(async (tx) => {
+              // 1. Find and validate sale
+              const sale = await tx.sale.findUnique({
+                where: { id: saleId },
+                include: { items: true },
               });
-            } catch (err) {
-              console.error(
-                `[SalesPosService] Electronic invoice print routing failed for sale ${saleId}:`,
-                err instanceof Error ? err.message : err,
+
+              if (!sale) throw new SaleNotFoundException(saleId);
+              if (sale.operationalState !== SaleOperationalState.IN_PROGRESS) {
+                throw new SaleNotInProgressException(saleId);
+              }
+
+              // 2. Validate payments
+              // Use Decimal arithmetic throughout to avoid IEEE 754 drift from
+              // cents→pesos division (e.g. 12495 / 100 = 124.94999… in JS).
+              // Round the sum to 2 decimal places so any floating-point artifact is
+              // eliminated before comparing with the DB-stored total.
+              const totalPaidDecimal = input.payments
+                .reduce((sum, p) => sum.plus(p.amount), new Prisma.Decimal(0))
+                .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+              // Round DB-stored total too — sales created before the cents→pesos fix
+              // (old JS division) stored imprecise values like 124.949999… instead of
+              // exactly 124.95. Rounding both sides eliminates the ghost difference.
+              // When the sale is a domicilio, the delivery fee (stored on the
+              // `delivery` JSON column) is part of the amount the customer owes and
+              // is included in the comparison.
+              const deliveryFeeDecimal = new Prisma.Decimal(
+                this.deliveryFeeCentsFromJson(sale.delivery),
+              ).dividedBy(100);
+              const dueTotalDecimal = sale.totalAmount.plus(deliveryFeeDecimal);
+              const saleTotalDecimal = dueTotalDecimal.toDecimalPlaces(
+                2,
+                Prisma.Decimal.ROUND_HALF_UP,
               );
-            }
+              const saleTotalNumber = Number(saleTotalDecimal.toString());
+
+              // Ghost-difference guard: any gap < 1 cent (₡0.01) is IEEE 754 drift,
+              // not a real discrepancy.  COP has no fractional centavos — the
+              // frontend always works in whole cents — so any meaningful difference
+              // is ≥ 1¢.  This covers both the overpayment and underpayment sides
+              // without requiring the DB-stored total to match the frontend's exact
+              // rounding (frontend uses Math.round for tax, DB uses Decimal).
+              const ONE_CENT = new Prisma.Decimal("0.01");
+
+              // The payment rows must always cover the amount due — a tendered cash
+              // figure never excuses an underpaid sale.
+              const paymentShortfall = totalPaidDecimal
+                .minus(saleTotalDecimal)
+                .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+              if (paymentShortfall.lessThan(ONE_CENT.negated())) {
+                throw new PaymentAmountMismatchException(
+                  saleTotalNumber,
+                  totalPaidDecimal.toNumber(),
+                );
+              }
+
+              // Change comes from the tendered figure when the register reported one:
+              // the payment rows carry the amount applied to the sale, so the cash the
+              // customer actually handed over is otherwise invisible and change would
+              // persist as 0. A zero (or absent) tendered figure means "not reported",
+              // never "the customer handed over nothing": the register field starts at 0
+              // and is only filled in for a cash overpay, so honouring a literal 0 would
+              // reject every split payment.
+              const tenderedCash =
+                input.cashReceived !== undefined && input.cashReceived > 0
+                  ? new Prisma.Decimal(input.cashReceived)
+                  : totalPaidDecimal;
+              const rawChange = tenderedCash
+                .minus(saleTotalDecimal)
+                .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+
+              let changeAmount = rawChange;
+              if (rawChange.greaterThan(ONE_CENT)) {
+                const hasCash = await this.hasAnyCashPaymentMethod(
+                  tx,
+                  input.payments,
+                );
+                if (!hasCash) {
+                  throw new ChangeRequiresCashPaymentException();
+                }
+              } else {
+                // No change (or a sub-cent rounding artifact): normalise to zero so the
+                // persisted figure never carries phantom centavos.
+                changeAmount = new Prisma.Decimal(0);
+              }
+
+              // 2b. ---- Store credit validation ----
+              // A CREDIT payment is only allowed for a registered client (never the
+              // generic consumer) whose credit debt stays within their limit after
+              // this payment. Runs inside the same transaction as the payment insert
+              // so the balance check is atomic with the confirmation.
+              const creditTotal = await this.sumCreditPayments(
+                tx,
+                input.payments,
+              );
+              if (creditTotal.greaterThan(0)) {
+                const isRegisteredClient =
+                  !!sale.clientId && sale.clientId !== GENERIC_CLIENT_UUID;
+                if (!isRegisteredClient) {
+                  throw new CreditRequiresRegisteredClientException();
+                }
+
+                const client = await tx.client.findUnique({
+                  where: { id: sale.clientId! },
+                  select: { creditLimit: true },
+                });
+                const creditLimit = client?.creditLimit ?? null;
+                if (!creditLimit || creditLimit.lessThanOrEqualTo(0)) {
+                  throw new CreditNotEnabledForClientException(sale.clientId!);
+                }
+
+                const currentDebt = await this.computeClientCreditDebt(
+                  tx,
+                  sale.clientId!,
+                );
+                const available = creditLimit.minus(currentDebt);
+                if (creditTotal.greaterThan(available)) {
+                  throw new CreditLimitExceededException(
+                    Math.round(Number(available) * 100),
+                    Math.round(Number(creditTotal) * 100),
+                  );
+                }
+              }
+
+              // 3. Consume stock for each item
+              for (const item of sale.items) {
+                const consumedLots =
+                  await this.inventoryLots.consumeStockForSale(
+                    {
+                      productId: item.productId,
+                      quantity: item.quantity,
+                      saleId: sale.id,
+                    },
+                    tx,
+                  ); // Pass tx to avoid nested $transaction on single-connection PGlite
+
+                const weightedUnitCost =
+                  this.computeWeightedUnitCost(consumedLots);
+
+                await tx.saleItem.update({
+                  where: { id: item.id },
+                  data: { unitCost: weightedUnitCost },
+                });
+
+                for (const cl of consumedLots) {
+                  await tx.saleItemLot.create({
+                    data: {
+                      id: globalThis.crypto.randomUUID(),
+                      saleItemId: item.id,
+                      lotId: cl.lotId,
+                      quantity: cl.quantity,
+                      unitCostAtSale: cl.unitCostAtSale,
+                    },
+                  });
+                }
+              }
+
+              // 4. Create payment records
+              await tx.salePayment.createMany({
+                data: input.payments.map((p) => ({
+                  id: globalThis.crypto.randomUUID(),
+                  saleId: sale.id,
+                  paymentMethodId: p.paymentMethodId,
+                  amount: new Prisma.Decimal(p.amount),
+                  transactionReference: p.transactionReference ?? null,
+                  authorizationCode: p.authorizationCode ?? null,
+                  cardBrand: p.cardBrand ?? null,
+                  cardLastFour: p.cardLastFour ?? null,
+                  batchNumber: p.batchNumber ?? null,
+                  processorResponseCode: p.processorResponseCode ?? null,
+                })),
+              });
+
+              // 5. Update sale to CONFIRMED
+              const confirmedAt = new Date();
+              const updatedSale = await tx.sale.update({
+                where: { id: saleId },
+                data: {
+                  operationalState: SaleOperationalState.CONFIRMED,
+                  confirmedAt,
+                  lastModifiedAt: confirmedAt,
+                  changeAmount,
+                },
+              });
+
+              // 6. Insert SyncQueue entry inside the same transaction
+              await this.createSyncQueueEntry(
+                tx,
+                sale,
+                input,
+                session,
+                confirmedAt,
+              );
+
+              return updatedSale;
+            })
+            .then(async (result) => {
+              // Transaction committed — trigger immediate push instead of waiting
+              // for the 5-minute scheduler cycle.
+              notifyPendingEntry();
+
+              // 7. Generate invoice (fiscal document) after the sale confirms.
+              //    This runs outside the main transaction so it doesn't block the
+              //    confirm with fiscal computation. If invoice generation fails, the
+              //    sale is still confirmed — the failure is logged.
+              let invoiceGenerated = false;
+              let invoiceError: string | undefined;
+              if (this.invoiceService) {
+                try {
+                  await this.invoiceService.generateInvoiceForSale(saleId);
+                  invoiceGenerated = true;
+                } catch (err) {
+                  const message =
+                    err instanceof Error ? err.message : String(err);
+                  invoiceError = message;
+                  console.error(
+                    `[SalesPosService] Invoice generation FAILED for sale ${saleId}. ` +
+                      `Sale is confirmed but no fiscal document was created. Reason: ${message}`,
+                  );
+                  if (err instanceof Error && err.stack) {
+                    console.error(`[SalesPosService] Stack: ${err.stack}`);
+                  }
+                }
+              } else {
+                console.warn(
+                  `[SalesPosService] No invoiceService configured for workstation. ` +
+                    `Sale ${saleId} confirmed without fiscal document.`,
+                );
+              }
+
+              // 8. Enqueue the receipt print job (fire-and-forget from the caller's
+              //    perspective). The print router handles the routing, fallback, and
+              //    queueing. If the router is not configured, printing is skipped.
+              if (this.printRouter) {
+                try {
+                  const resultData = result as {
+                    id: string;
+                    localNumber: bigint;
+                    delivery?: Prisma.JsonValue | null;
+                  };
+                  // The receipt prints the delivery section when this sale is a
+                  // domicilio, and includes the fee line in the totals.
+                  const deliveryJson = resultData.delivery ?? null;
+                  const deliveryForReceipt =
+                    deliveryJson !== null &&
+                    typeof deliveryJson === "object" &&
+                    !Array.isArray(deliveryJson)
+                      ? (deliveryJson as {
+                          address?: unknown;
+                          contactName?: unknown;
+                          contactPhone?: unknown;
+                          notes?: unknown;
+                          scheduledAt?: unknown;
+                        })
+                      : null;
+                  // The receipt payload is generated as HTML for thermal printers.
+                  // At this point the invoice may have been generated above with a
+                  // fiscal PDF — we print the SALE_RECEIPT version.
+                  const receiptHtml = (
+                    await import("../fiscal/receipt-generator")
+                  ).generateReceiptHtml({
+                    id: saleId,
+                    invoiceNumber: `V${String(resultData.localNumber)}`,
+                    contingencyNumber: null,
+                    invoiceType: "SALE_RECEIPT",
+                    status: "TRANSMITTED_AUTHORIZED",
+                    cufeProvisional: "",
+                    cufeOfficial: null,
+                    issuedAt: new Date(),
+                    fullData: null,
+                    delivery: deliveryForReceipt
+                      ? {
+                          address:
+                            typeof deliveryForReceipt.address === "string"
+                              ? deliveryForReceipt.address
+                              : null,
+                          contactName:
+                            typeof deliveryForReceipt.contactName === "string"
+                              ? deliveryForReceipt.contactName
+                              : null,
+                          contactPhone:
+                            typeof deliveryForReceipt.contactPhone === "string"
+                              ? deliveryForReceipt.contactPhone
+                              : null,
+                          notes:
+                            typeof deliveryForReceipt.notes === "string"
+                              ? deliveryForReceipt.notes
+                              : null,
+                          scheduledAt:
+                            typeof deliveryForReceipt.scheduledAt === "string"
+                              ? deliveryForReceipt.scheduledAt
+                              : null,
+                        }
+                      : null,
+                    deliveryFeeCents:
+                      this.deliveryFeeCentsFromJson(deliveryJson),
+                  });
+
+                  // Write receipt HTML to a temp file for the print router
+                  const receiptPath = await writePrintPayload(
+                    `receipt-${saleId}.html`,
+                    receiptHtml,
+                  );
+
+                  await this.printRouter.print(PrintJobType.SALE_RECEIPT, {
+                    payloadPath: receiptPath,
+                    payloadType: PrintPayloadType.HTML,
+                    saleId,
+                  });
+
+                  // 8b. If the invoice was generated, also enqueue the
+                  //     ELECTRONIC_INVOICE print job (for laser/inkjet printers).
+                  //     Fire-and-forget from the caller's perspective.
+                  if (invoiceGenerated) {
+                    try {
+                      const invoicePath = await writePrintPayload(
+                        `invoice-${saleId}.html`,
+                        receiptHtml, // Reuse the receipt HTML; the actual fiscal PDF
+                        // is generated server-side and available later
+                      );
+
+                      await this.printRouter.print(
+                        PrintJobType.ELECTRONIC_INVOICE,
+                        {
+                          payloadPath: invoicePath,
+                          payloadType: PrintPayloadType.HTML,
+                          saleId,
+                        },
+                      );
+                    } catch (err) {
+                      console.error(
+                        `[SalesPosService] Electronic invoice print routing failed for sale ${saleId}:`,
+                        err instanceof Error ? err.message : err,
+                      );
+                    }
+                  }
+                } catch (err) {
+                  console.error(
+                    `[SalesPosService] Print routing failed for sale ${saleId}:`,
+                    err instanceof Error ? err.message : err,
+                  );
+                }
+              }
+
+              // Audit trail — sale confirmed
+              const confirmedSale = result as {
+                id: string;
+                localNumber?: bigint;
+                totalAmount?: Prisma.Decimal;
+              };
+              this.auditWriter?.write(LocalAuditEvent.SALE_CONFIRMED, {
+                category: "sale",
+                entityType: "Sale",
+                entityId: saleId,
+                userId: session.userId,
+                userRole: session.role,
+                workstationId: session.workstationId,
+                details: {
+                  localNumber: confirmedSale.localNumber?.toString(),
+                  totalAmount: confirmedSale.totalAmount?.toString(),
+                  paymentCount: input.payments.length,
+                  invoiceGenerated,
+                  invoiceError,
+                },
+              });
+
+              return {
+                ...(result as Record<string, unknown>),
+                invoiceGenerated,
+                ...(invoiceError ? { invoiceError } : {}),
+              } as ConfirmResult;
+            });
+        } catch (error: unknown) {
+          // PrismaClientKnownRequestError with code P2028 means the
+          // transaction could not start because the single PGlite connection
+          // was busy (e.g. sync scheduler running).  Retry with backoff.
+          const isTimeout =
+            error instanceof Error &&
+            (error as { code?: string }).code === "P2028" &&
+            error.message.includes("Unable to start a transaction");
+
+          if (isTimeout && attempt < SalesPosService.MAX_CONFIRM_RETRIES) {
+            const delay = attempt * 500; // 500 ms, 1000 ms, 1500 ms
+            console.warn(
+              `[SalesPosService] Transaction timeout on confirm attempt ${attempt}/${SalesPosService.MAX_CONFIRM_RETRIES}. ` +
+                `Retrying after ${delay} ms...`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            lastError = error;
+            continue;
           }
-        } catch (err) {
-          console.error(
-            `[SalesPosService] Print routing failed for sale ${saleId}:`,
-            err instanceof Error ? err.message : err,
-          );
+
+          // Non-timeout error or final attempt exhausted — propagate.
+          throw error;
         }
       }
 
-      // Audit trail — sale confirmed
-      const confirmedSale = result as { id: string; localNumber?: bigint; totalAmount?: Prisma.Decimal };
-      this.auditWriter?.write(LocalAuditEvent.SALE_CONFIRMED, {
-        category: 'sale',
-        entityType: 'Sale',
-        entityId: saleId,
-        userId: session.userId,
-        userRole: session.role,
-        workstationId: session.workstationId,
-        details: {
-          localNumber: confirmedSale.localNumber?.toString(),
-          totalAmount: confirmedSale.totalAmount?.toString(),
-          paymentCount: input.payments.length,
-          invoiceGenerated,
-          invoiceError,
-        },
-      });
-
-      return {
-        ...(result as Record<string, unknown>),
-        invoiceGenerated,
-        ...(invoiceError ? { invoiceError } : {}),
-      } as ConfirmResult;
-    });
-      } catch (error: unknown) {
-        // PrismaClientKnownRequestError with code P2028 means the
-        // transaction could not start because the single PGlite connection
-        // was busy (e.g. sync scheduler running).  Retry with backoff.
-        const isTimeout =
-          error instanceof Error &&
-          (error as { code?: string }).code === 'P2028' &&
-          error.message.includes('Unable to start a transaction');
-
-        if (isTimeout && attempt < SalesPosService.MAX_CONFIRM_RETRIES) {
-          const delay = attempt * 500; // 500 ms, 1000 ms, 1500 ms
-          console.warn(
-            `[SalesPosService] Transaction timeout on confirm attempt ${attempt}/${SalesPosService.MAX_CONFIRM_RETRIES}. ` +
-            `Retrying after ${delay} ms...`,
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          lastError = error;
-          continue;
-        }
-
-        // Non-timeout error or final attempt exhausted — propagate.
-        throw error;
-      }
+      // All retries exhausted — throw the last captured error.
+      throw lastError ?? new Error("Sale confirm failed after retries");
+    } finally {
+      dbWriteLock.release();
     }
-
-    // All retries exhausted — throw the last captured error.
-    throw lastError ?? new Error('Sale confirm failed after retries');
-      } finally {
-        dbWriteLock.release();
-      }
   }
 
   // -----------------------------------------------------------------------
@@ -918,18 +976,18 @@ changeAmount = new Prisma.Decimal(0);
         commissionEndsAt: true,
         priceHistories: {
           take: 1,
-          orderBy: { effectiveFrom: 'desc' },
+          orderBy: { effectiveFrom: "desc" },
           select: { price: true },
         },
         costHistories: {
           where: { effectiveTo: null },
           take: 1,
-          orderBy: { effectiveFrom: 'desc' },
+          orderBy: { effectiveFrom: "desc" },
           select: { cost: true },
         },
         taxHistories: {
           take: 1,
-          orderBy: { effectiveFrom: 'desc' },
+          orderBy: { effectiveFrom: "desc" },
           select: {
             taxScheme: { select: { rate: true } },
           },
@@ -948,12 +1006,12 @@ changeAmount = new Prisma.Decimal(0);
     // Resolve unit price: use the explicit override if provided, otherwise
     // read from the latest PriceHistory.  This matches the server's behaviour
     // of always using the latest catalog price.
-    const catalogUnitPrice = product.priceHistories[0]?.price
-      ?? new Prisma.Decimal(0);
+    const catalogUnitPrice =
+      product.priceHistories[0]?.price ?? new Prisma.Decimal(0);
     const unitPrice = item.unitPrice ?? catalogUnitPrice;
 
-    const taxRate = product.taxHistories[0]?.taxScheme?.rate
-      ?? new Prisma.Decimal(0);
+    const taxRate =
+      product.taxHistories[0]?.taxScheme?.rate ?? new Prisma.Decimal(0);
 
     const quantity = new Prisma.Decimal(item.quantity);
     const itemSubtotal = unitPrice.times(quantity);
@@ -967,7 +1025,9 @@ changeAmount = new Prisma.Decimal(0);
       discountPercentage = new Prisma.Decimal(item.discountPercentage);
       discountReason = item.discountReason ?? null;
       if (discountPercentage.greaterThan(0) && !discountReason) {
-        throw new Error(`Discount reason is required for product ${item.productId} when discountPercentage > 0.`);
+        throw new Error(
+          `Discount reason is required for product ${item.productId} when discountPercentage > 0.`,
+        );
       }
     } else {
       discountPercentage = clientDiscountPercentage;
@@ -1091,7 +1151,7 @@ changeAmount = new Prisma.Decimal(0);
   ): Promise<bigint> {
     const latestSale = await tx.sale.findFirst({
       where: { sourceWorkstationId: workstationId },
-      orderBy: { localNumber: 'desc' },
+      orderBy: { localNumber: "desc" },
       select: { localNumber: true },
     });
     return latestSale ? latestSale.localNumber + 1n : 1n;
@@ -1109,24 +1169,22 @@ changeAmount = new Prisma.Decimal(0);
    */
   private isLocalNumberConflict(error: unknown): boolean {
     const err = error as { code?: string; meta?: { target?: unknown } };
-    if (!err || err.code !== 'P2002') return false;
+    if (!err || err.code !== "P2002") return false;
     const target = err.meta?.target;
     if (
-      target === 'ux_sale_local_per_ws' ||
-      target === 'Sale_localNumber_sourceWorkstationId_key'
+      target === "ux_sale_local_per_ws" ||
+      target === "Sale_localNumber_sourceWorkstationId_key"
     ) {
       return true;
     }
     if (Array.isArray(target)) {
       return (
-        target.includes('localNumber') &&
-        target.includes('sourceWorkstationId')
+        target.includes("localNumber") && target.includes("sourceWorkstationId")
       );
     }
-    if (typeof target === 'string') {
+    if (typeof target === "string") {
       return (
-        target.includes('localNumber') &&
-        target.includes('sourceWorkstationId')
+        target.includes("localNumber") && target.includes("sourceWorkstationId")
       );
     }
     return false;
@@ -1199,7 +1257,7 @@ changeAmount = new Prisma.Decimal(0);
 
     const feeCents = Math.max(0, Math.round(delivery.feeCents));
     switch (policy.deliveryFeeMode) {
-      case 'DISABLED':
+      case "DISABLED":
         if (feeCents > 0) {
           throw new DeliveryFeePolicyException(
             `Delivery fee (${feeCents}) is not allowed because the tenant has delivery fees disabled.`,
@@ -1208,7 +1266,7 @@ changeAmount = new Prisma.Decimal(0);
           );
         }
         break;
-      case 'FIXED':
+      case "FIXED":
         if (feeCents !== policy.fixedDeliveryFeeCents) {
           throw new DeliveryFeePolicyException(
             `Delivery fee (${feeCents}) does not match the tenant's fixed fee of ${policy.fixedDeliveryFeeCents}.`,
@@ -1217,7 +1275,7 @@ changeAmount = new Prisma.Decimal(0);
           );
         }
         break;
-      case 'MANUAL': {
+      case "MANUAL": {
         const cap = policy.maxDeliveryFeeCents;
         if (cap > 0 && feeCents > cap) {
           throw new DeliveryFeePolicyException(
@@ -1236,12 +1294,12 @@ changeAmount = new Prisma.Decimal(0);
    * JSON column value. Missing column or malformed JSON → 0 (no fee).
    */
   private deliveryFeeCentsFromJson(value: Prisma.JsonValue | null): number {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
       return 0;
     }
     const parsed = value as Record<string, unknown>;
     const raw = parsed.feeCents;
-    return typeof raw === 'number' && Number.isFinite(raw)
+    return typeof raw === "number" && Number.isFinite(raw)
       ? Math.max(0, Math.round(raw))
       : 0;
   }
@@ -1274,7 +1332,7 @@ changeAmount = new Prisma.Decimal(0);
   ): Promise<Prisma.Decimal> {
     const creditMethodIds = (
       await tx.paymentMethod.findMany({
-        where: { category: 'CREDIT' },
+        where: { category: "CREDIT" },
         select: { id: true },
       })
     ).map((m) => m.id);
@@ -1291,9 +1349,10 @@ changeAmount = new Prisma.Decimal(0);
 
   /**
    * Current credit debt in pesos for a client, computed the same way as
-   * CreditService.getCreditDebtCents (but in pesos): confirmed sales paid
-   * with a CREDIT method accumulate debt, confirmed client returns refunded
-   * via a CREDIT method pay it down. Clamped at 0.
+   * CreditService.getCreditDebtCents and the server's computeCreditDebt:
+   * confirmed sales paid with a CREDIT method accumulate debt; confirmed client
+   * returns refunded via a CREDIT method and recorded abonos pay it down.
+   * Clamped at 0.
    */
   private async computeClientCreditDebt(
     tx: Prisma.TransactionClient,
@@ -1301,17 +1360,17 @@ changeAmount = new Prisma.Decimal(0);
   ): Promise<Prisma.Decimal> {
     const creditMethodIds = (
       await tx.paymentMethod.findMany({
-        where: { category: 'CREDIT' },
+        where: { category: "CREDIT" },
         select: { id: true },
       })
     ).map((m) => m.id);
     if (creditMethodIds.length === 0) return new Prisma.Decimal(0);
 
-    const [salesDebt, creditRefunds] = await Promise.all([
+    const [salesDebt, creditRefunds, creditPayments] = await Promise.all([
       tx.salePayment.aggregate({
         where: {
           sale: { clientId, operationalState: SaleOperationalState.CONFIRMED },
-          paymentMethod: { category: 'CREDIT' },
+          paymentMethod: { category: "CREDIT" },
         },
         _sum: { amount: true },
       }),
@@ -1323,11 +1382,21 @@ changeAmount = new Prisma.Decimal(0);
         },
         _sum: { refundAmount: true },
       }),
+      // Abonos pay the debt down, exactly as CreditService.getCreditDebtCents
+      // and the server's computeCreditDebt do. Without this term a client who
+      // had settled their balance in full was still judged against the stale
+      // figure: the client screen showed a debt of 0 while this validator
+      // refused their next credit sale. Annulled abonos do not count.
+      tx.clientCreditPayment.aggregate({
+        where: { clientId, annulledAt: null },
+        _sum: { amount: true },
+      }),
     ]);
 
     const debt = salesDebt._sum.amount ?? new Prisma.Decimal(0);
     const refunds = creditRefunds._sum.refundAmount ?? new Prisma.Decimal(0);
-    const net = debt.minus(refunds);
+    const abonos = creditPayments._sum.amount ?? new Prisma.Decimal(0);
+    const net = debt.minus(refunds).minus(abonos);
     return net.greaterThan(0) ? net : new Prisma.Decimal(0);
   }
 
@@ -1341,7 +1410,10 @@ changeAmount = new Prisma.Decimal(0);
    * correct weighted average.
    */
   private computeWeightedUnitCost(consumedLots: ConsumedLot[]): Prisma.Decimal {
-    const totalQuantity = consumedLots.reduce((sum, cl) => sum + cl.quantity, 0);
+    const totalQuantity = consumedLots.reduce(
+      (sum, cl) => sum + cl.quantity,
+      0,
+    );
     if (totalQuantity === 0) return new Prisma.Decimal(0);
 
     const totalCost = consumedLots.reduce(
@@ -1360,9 +1432,9 @@ changeAmount = new Prisma.Decimal(0);
   private async computePayloadHash(payload: string): Promise<string> {
     const encoder = new TextEncoder();
     const data = encoder.encode(payload);
-    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
+    const hashBuffer = await globalThis.crypto.subtle.digest("SHA-256", data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   /**
@@ -1428,7 +1500,7 @@ changeAmount = new Prisma.Decimal(0);
     const payloadObj = {
       userId: session.userId,
       createSaleDto: {
-        saleType: 'FREE_SALE',
+        saleType: "FREE_SALE",
         cashShiftId: sale.cashShiftId,
         clientId: sale.clientId ?? GENERIC_CLIENT_UUID,
         items: sale.items.map((item) => ({
@@ -1457,8 +1529,7 @@ changeAmount = new Prisma.Decimal(0);
           // commission was active; `commissionAmount` is always a
           // decimal string (0 when inactive).
           commissionType: item.commissionTypeSnapshot,
-          commissionValue:
-            item.commissionValueSnapshot?.toString() ?? null,
+          commissionValue: item.commissionValueSnapshot?.toString() ?? null,
           commissionAmount: item.commissionAmount.toString(),
         })),
         prescriptionNumber: null,
@@ -1513,7 +1584,7 @@ changeAmount = new Prisma.Decimal(0);
     // Get the next sequential clientSequence per workstation
     const latestSeq = await tx.syncQueue.findFirst({
       where: { sourceWorkstationId: session.workstationId },
-      orderBy: { clientSequence: 'desc' },
+      orderBy: { clientSequence: "desc" },
       select: { clientSequence: true },
     });
     const clientSequence = latestSeq ? latestSeq.clientSequence + 1n : 1n;
@@ -1522,12 +1593,12 @@ changeAmount = new Prisma.Decimal(0);
       data: {
         id: globalThis.crypto.randomUUID(),
         operationUuid,
-        operationType: 'SALE_CONFIRMATION',
+        operationType: "SALE_CONFIRMATION",
         payload,
         payloadHash,
         payloadSize,
         versionSchema: 1,
-        status: 'PENDING',
+        status: "PENDING",
         retryCount: 0,
         sourceWorkstationId: session.workstationId,
         sourceCreatedAt: confirmedAt,
@@ -1565,7 +1636,7 @@ changeAmount = new Prisma.Decimal(0);
         workstationId: session.workstationId,
         operationalState: SaleOperationalState.CONFIRMED,
       },
-      orderBy: { confirmedAt: 'desc' },
+      orderBy: { confirmedAt: "desc" },
       select: {
         clientId: true,
         clientNameSnapshot: true,
@@ -1584,7 +1655,8 @@ changeAmount = new Prisma.Decimal(0);
     if (!sale) return null;
 
     const identificationSnapshot =
-      sale.clientIdentificationTypeSnapshot && sale.clientIdentificationNumberSnapshot
+      sale.clientIdentificationTypeSnapshot &&
+      sale.clientIdentificationNumberSnapshot
         ? `${sale.clientIdentificationTypeSnapshot}: ${sale.clientIdentificationNumberSnapshot}`
         : null;
 

@@ -119,6 +119,22 @@ export const PM_DEBIT_ID = "f1d4b297-6a85-4e23-9b40-7c2e8a1d6f53";
 export const PM_TRANSFER_ID = "a6e5c308-1f96-4d47-8a25-3b0d9c7e2f64";
 export const PM_NEQUI_ID = "b7f6d419-2a07-4e58-9b36-4c1e0d8f3a75";
 
+/**
+ * Store credit.
+ *
+ * The only method in `PaymentMethodCategory.CREDIT`, and the one both the POS
+ * and the server key their whole credit calculation off: both sum debt by
+ * filtering `paymentMethod.category = 'CREDIT'`. With no such row the entire
+ * credit feature is unreachable and silently inert — every credit total comes
+ * back zero and `sumCreditPayments` returns 0, so a "credit" payment would be
+ * treated as an ordinary one with no limit ever checked.
+ *
+ * `dianCode: null` because store credit is not a payment channel reported to
+ * DIAN; it is a deferred receivable. Sort order puts it last so it does not
+ * disturb the existing picker ordering the other specs assert on.
+ */
+export const PM_CREDIT_ID = "c8e7a520-3b18-4f69-8c47-5d2e9f9a4b86";
+
 export const RESOLUTION_ID = "c8a7e520-3b18-4f69-ac47-5d2f1b9e4a86";
 export const ALLOCATION_ID = "d9b8f631-4c29-4a7a-bd58-6e3a2c0f5b97";
 export const RESOLUTION_NUMBER = "18764000000001";
@@ -257,6 +273,17 @@ const BARCODE_BASE = 7_701_234_567_890;
 export const CLIENT_ID = "c90a1e85-4f3b-4d69-b8a2-5e6c7d8f9a01";
 export const CLIENT_IDENTIFICATION = "900123456-7";
 export const CLIENT_NAME = "Cliente de Prueba E2E";
+
+/**
+ * Store-credit limit for the baseline client, in pesos (the column is a
+ * Decimal of pesos, not cents).
+ *
+ * Credit is per-client and enforced by `creditLimit > 0`: with it null the POS
+ * raises `CreditNotEnabledForClientException` and the server agrees, so a
+ * credit sale is impossible without this. Deliberately large enough that the
+ * limit is never the thing under test unless a spec says so.
+ */
+export const CLIENT_CREDIT_LIMIT = 500_000;
 
 /**
  * Fixed UUID of the generic consumer the POS seeds locally.
@@ -485,6 +512,7 @@ export async function resetBaseline(prisma: PrismaLike): Promise<void> {
       email: "cliente.e2e@pos-e2e.local",
       phone: "3001234567",
       address: "Calle 1 # 2-3",
+      creditLimit: CLIENT_CREDIT_LIMIT,
       isActive: true,
       createdById: ADMIN_ID,
     },
@@ -878,6 +906,18 @@ async function createPaymentMethods(
       category: "DIGITAL_WALLET",
       isCash: false,
       sortOrder: 4,
+    },
+    {
+      id: PM_CREDIT_ID,
+      internalCode: "CREDITO",
+      name: "Crédito",
+      dianCode: null,
+      category: "CREDIT",
+      // Not cash: an abono-style receivable must never be counted as cash
+      // tendered, or the cash-shift reconciliation would balance against money
+      // that was never received.
+      isCash: false,
+      sortOrder: 5,
     },
   ] as const;
 

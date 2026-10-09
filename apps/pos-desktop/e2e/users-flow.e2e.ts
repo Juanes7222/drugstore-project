@@ -249,8 +249,16 @@ describe("User management (real Tauri app against the real backend)", () => {
       "user table filters",
     );
 
-    await waitVisible(userRowActions(NEW_USER.displayName), 30, 500, "user row actions");
-    await clickButtonInScope(userRowActionsCell(NEW_USER.displayName), "Reset PIN");
+    await waitVisible(
+      userRowActions(NEW_USER.displayName),
+      30,
+      500,
+      "user row actions",
+    );
+    await clickButtonInScope(
+      userRowActionsCell(NEW_USER.displayName),
+      "Reset PIN",
+    );
 
     // The PIN dialog is a plain overlay too, so it is the same `pos-panel`
     // dialog shape as the create modal; only one is open at a time here.
@@ -299,8 +307,16 @@ describe("User management (real Tauri app against the real backend)", () => {
 
     // "Activar" is a substring of "Desactivar", so the button is matched on its
     // EXACT text inside the row — a partial match would toggle the wrong way.
-    await waitVisible(userRowActions(NEW_USER.displayName), 30, 500, "user row actions");
-    await clickButtonInScope(userRowActionsCell(NEW_USER.displayName), "Desactivar");
+    await waitVisible(
+      userRowActions(NEW_USER.displayName),
+      30,
+      500,
+      "user row actions",
+    );
+    await clickButtonInScope(
+      userRowActionsCell(NEW_USER.displayName),
+      "Desactivar",
+    );
     await expectToast("Usuario desactivado");
 
     const disabled = await waitForServerUserStatus(
@@ -311,14 +327,22 @@ describe("User management (real Tauri app against the real backend)", () => {
 
     // The row renders "Activar" now, and a status filter proves the change is a
     // server-side query rather than a local one.
-    await waitVisible(userRowActions(NEW_USER.displayName), 30, 500, "user row actions");
+    await waitVisible(
+      userRowActions(NEW_USER.displayName),
+      30,
+      500,
+      "user row actions",
+    );
 
     await (
       await $('select[aria-label="Filtrar por estado"]')
     ).selectByAttribute("value", "DISABLED");
     await waitVisible(row, 30, 500, "user row under the DISABLED filter");
 
-    await clickButtonInScope(userRowActionsCell(NEW_USER.displayName), "Activar");
+    await clickButtonInScope(
+      userRowActionsCell(NEW_USER.displayName),
+      "Activar",
+    );
     await expectToast("Usuario activado");
 
     const enabled = await waitForServerUserStatus(NEW_USER.username, "ACTIVE");
